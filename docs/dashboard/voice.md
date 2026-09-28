@@ -176,7 +176,7 @@ To hear a voice before you keep it:
 
 ### General tab
 
-![The General tab in dark mode: Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Speech to text, Default voice provider and Launch at login](/screenshots/voice/settings-general.png)
+![The General tab in dark mode: Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Speech to text set to On this Mac, the On-this-Mac engine set to Parakeet, End of a hands-free turn set to Voice detection, Default voice provider and Launch at login](/screenshots/voice/settings-general.png)
 
 | Setting | What it does | Saved as |
 |---|---|---|
@@ -184,7 +184,9 @@ To hear a voice before you keep it:
 | **Stop every voice** | Silences everything spoken. Default **Command–Option–.** | `voice.hotkeys.stop` |
 | **Smart paste** | Reshapes the clipboard, then pastes. Default **Command–Option–V** | `voice.hotkeys.paste` |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
-| **Speech to text** | **Automatic**: ElevenLabs when a key is set, Whisper on this Mac otherwise. **ElevenLabs**: the same, and the app log says so when no key is set. **On this Mac (Whisper)**: your voice never leaves the Mac | `voice.stt` |
+| **Speech to text** | **Automatic**: ElevenLabs when a key is set, the engine on this Mac otherwise. **ElevenLabs**: the same, and the app log says so when no key is set. **On this Mac**: your voice never leaves the Mac | `voice.stt` |
+| **On-this-Mac engine** | **Whisper**: mlx-whisper, every language. **Parakeet**: faster, no Arabic, downloads 483 MB the first time. See [Speech to text on this Mac](#speech-to-text-on-this-mac) | `voice.localStt` |
+| **End of a hands-free turn** | **Voice detection**: the turn ends when you stop talking. **Volume**: the older check, which ends it when the room goes quiet. See [When a hands-free turn ends](#when-a-hands-free-turn-ends) | `voice.endOfTurn` |
 | **Default voice provider** | The voice provider for agents set to **Default** | `voice.provider` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |
 
@@ -209,10 +211,74 @@ In `agentx.json` a shortcut is written as modifiers and a key joined by `+`, for
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper`, the local transcription executable |
 | `AGENTX_MLX_MODEL` | `mlx-community/whisper-large-v3-turbo` |
 | `AGENTX_VOICE_PATH` | Read by the installer, not the app: the full `PATH` to give the login service. By default, this is the folder of the `ffmpeg` found at install time plus macOS's standard folders |
+| `AGENTX_MODELS_DIR` | `~/.agentx/models`, where the voice detection and Parakeet models are downloaded |
 
 Without an ElevenLabs key, transcription needs a working local `mlx_whisper` installation. Speech uses the free macOS voices unless you choose ElevenLabs (see [Agent voices](#agent-voices)). ElevenLabs usage and the agent's model usage are separate costs. The app checks the key environment variable first, then `~/.elevenlabs/key` and `~/.agentx/elevenlabs-key.txt`.
 
 The installer persists the pinned agent (if any), daemon URL, helper path, and CLI command in the login service. Finder does not inherit terminal environment variables. Use a key file for speech credentials or configure the login service environment for advanced speech settings.
+
+## When a hands-free turn ends
+
+After an answer, the microphone opens again by itself for a follow-up, and clicking the pill opens it too. Nobody holds a key then, so the app has to hear when you have finished. It sends what you said once you have stopped talking for 1.2 seconds. Shorter pauses, the kind people make in the middle of a sentence, don't end the turn.
+
+By default the app listens with *voice detection*: a small model (Silero VAD, 0.9 MB) that tells a voice apart from a fan, a keyboard, or a busy café. Background noise then neither ends your turn early nor keeps the microphone open after you have finished. The older way, **Volume**, treats any sound louder than a fixed level as talking, so in a loud room it can keep listening long after you have finished.
+
+The model is downloaded the first time the microphone opens, into `~/.agentx/models/silero-vad-coreml` (about 1 MB, checked against a fixed checksum). Until it has arrived, and whenever it can't be loaded, the app uses the volume check instead.
+
+To change it:
+
+1. **Mac:** click the AgentX icon in the menu bar and choose **Settings…**.
+2. **Mac:** open the **General** tab.
+3. **Mac:** set **End of a hands-free turn** to **Voice detection** or **Volume**.
+4. **Mac:** choose **Save**. The next hands-free turn uses it.
+
+In `agentx.json` this is `voice.endOfTurn`: `"vad"` (default) or `"volume"`.
+
+## Speech to text on this Mac
+
+When the app can't use ElevenLabs (no key, no network, or **Speech to text** set to **On this Mac**), it turns your speech into text on the Mac itself. Two engines can do that:
+
+| | Whisper (default) | Parakeet |
+|---|---|---|
+| Program | `mlx_whisper`, a Python tool you install (see [local Whisper](../requirements.md#option-b-local-whisper)) | Built into the app; nothing to install |
+| Languages | All Whisper languages, including Arabic | 25 European languages, including English and French. **No Arabic** |
+| Download | About 1.5 GB, by `mlx_whisper` the first time | 483 MB, by the app the first time |
+| Speed | Several seconds per question | A fraction of a second per question |
+
+Parakeet is NVIDIA's Parakeet TDT 0.6B v3 speech model (licensed CC-BY-4.0), in the Core ML format that runs on the Mac's Neural Engine. The app downloads it from Hugging Face into `~/.agentx/models/parakeet-tdt-0.6b-v3-coreml` and checks every file against a fixed checksum before using it. Whisper stays the default until the comparison below has been reviewed.
+
+### Switch to Parakeet
+
+1. **Mac:** click the AgentX icon in the menu bar and choose **Settings…**.
+2. **Mac:** open the **General** tab.
+3. **Mac:** set **On-this-Mac engine** to **Parakeet**, then choose **Save**.
+4. **Mac:** ask a question. If **Speech to text** is **On this Mac**, or no ElevenLabs key is set, the app starts downloading Parakeet in the background the first time, and Whisper answers meanwhile.
+5. **Mac:** after the download, the first question loads Parakeet, which can take about 30 seconds on a new Mac (macOS prepares it for the Neural Engine once). Whisper answers until it is ready; after that, Parakeet answers.
+
+To download the models ahead of time instead:
+
+1. **Terminal:** run
+   ```sh
+   ~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local fetch all
+   ```
+   It prints its progress and `parakeet: installed in …` when done.
+2. **Terminal:** run the same program with `status`. Both models show `installed`.
+
+In `agentx.json` the engine is `voice.localStt`: `"mlx-whisper"` (default) or `"parakeet"`.
+
+### Compare the local engines
+
+A benchmark script runs Whisper and Parakeet on the same recordings and reports the time each takes and its *word error rate* (the share of words it got wrong; lower is better). It uses sentences spoken by the Mac's own English, French and Arabic voices, the same with room noise added, and optionally real recordings.
+
+1. **Terminal:** from a source checkout, build the app: `apps/mac-voice/build.sh`.
+2. **Terminal:** fetch Parakeet: `"apps/mac-voice/build/AgentX Voice.app/Contents/MacOS/agentx-voice-local" fetch parakeet`.
+3. **Terminal:** run the comparison, adding eight recordings per language from the FLEURS public dataset:
+   ```sh
+   node scripts/voice-stt-bench/index.mjs --fleurs 8
+   ```
+4. Read the tables it prints: first where a hands-free turn ended with each detector, then speed and word error rate per engine and language.
+
+To test your own recordings, put `NAME.wav` (16 kHz, mono) next to `NAME.txt` (what was said) and `NAME.lang` (`en`, `fr` or `ar`) in a folder and add `--clips <folder>`.
 
 ## Agent voices
 
@@ -279,6 +345,8 @@ agentx voice set helper <voice-id> --provider elevenlabs   # this agent speaks t
 | agent `voice.priority` | `high`, `normal` (default) or `low`: where this agent's lines go in the speaking queue |
 | agent `voice.hotkey` | A shortcut that asks this agent from AgentX Voice, e.g. `"ctrl+opt+1"` (see [Settings window](#settings-window)) |
 | `voice.stt` | AgentX Voice speech to text: `auto` (default), `elevenlabs` or `local` |
+| `voice.localStt` | The engine on this Mac: `mlx-whisper` (default) or `parakeet` (see [Speech to text on this Mac](#speech-to-text-on-this-mac)) |
+| `voice.endOfTurn` | How a hands-free turn ends: `vad` (default, voice detection) or `volume` (see [When a hands-free turn ends](#when-a-hands-free-turn-ends)) |
 | `voice.hotkeys` | AgentX Voice shortcuts: `talk` (default `opt+space`), `stop` (`cmd+opt+period`), `paste` (`cmd+opt+v`) |
 
 The system voice is chosen in this order: the agent's own, the global `voice.system` if it matches the agent's gender, then one assigned to it. A name that is not installed is skipped, and the daemon log says so once. With `provider: "system"`, no request goes to ElevenLabs, even when a key is set. `meshVoices` entries accept the same `provider`, `system` and `gender` fields.
@@ -628,11 +696,17 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 18. **Mac:** choose one agent from the **Agent** menu at the top of the window. Only that agent's questions are listed.
 19. **Mac:** select a question and choose **Replay**. The answer is spoken again, after anything already speaking.
 20. **Terminal:** run `curl -s 'http://127.0.0.1:18800/voice/history?limit=3'`. It prints your last three questions, each with an `answerPreview` and not the whole answer.
+17. **Terminal:** to check the on-device models, run `~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local status`. `vad: installed` appears once the microphone has been used; `parakeet: installed` once Parakeet has been chosen and downloaded.
+18. **Mac:** click the pill so the microphone opens without a key, say a sentence with a short pause in the middle, then stop. The question is sent about a second after your last word, not during the pause.
 
 ## If something is wrong
 
 - **No recording:** check the microphone permission in System Settings › Privacy & Security › Microphone, and hold the shortcut while speaking.
 - **"Sorry, I didn't hear that":** transcription failed and nothing was sent. Check your ElevenLabs key, or the local Whisper program and model.
+- **A hands-free turn is sent in the middle of a sentence, or never ends:** **Terminal:** run `agentx-voice-local status` (see [Check it worked](#check-it-worked)). If `vad` is `not installed`, the app is still using the volume check: run `agentx-voice-local fetch vad`. The app log (`~/Library/Logs/agentx-voice.log`) says `Silero VAD would not load` when the model is there but broken; delete `~/.agentx/models/silero-vad-coreml` and fetch it again. To go back to the old behaviour, set **End of a hands-free turn** to **Volume**.
+- **Parakeet is chosen but Whisper still answers:** the app log says why. `Parakeet is not downloaded yet` means the 483 MB download is still running or failed (`could not be downloaded: …`); run `agentx-voice-local fetch parakeet` in Terminal to see the error. `still loading` means the first load on this Mac is under way; ask again in a minute.
+- **Parakeet answers an Arabic question in Latin letters, or with nonsense:** Parakeet has no Arabic. Set **On-this-Mac engine** back to **Whisper**, or use ElevenLabs.
+- **A model download fails with `did not match its checksum`:** the file arrived damaged or changed upstream, and was deleted. Run the fetch again; if it keeps failing, the app needs an update.
 - **Local Whisper fails:** **Terminal:** run `agentx doctor`. If it reports `ffmpeg not reachable by the desktop app`, install FFmpeg (for example `brew install ffmpeg`) and run `agentx desktop install` again.
 - **Agent unavailable:** check the daemon address, then pick another agent from the menu. If the menu can't switch, the app is pinned to one agent: it was installed with `--agent`, or installed before the menu existed (older installs always pinned an agent). Run `agentx desktop install` again without `--agent`.
 - **The menu says the daemon isn't reachable:** **Terminal:** run `agentx daemon status`, start the daemon, then choose **Retry**.
