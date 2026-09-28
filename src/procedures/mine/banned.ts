@@ -6,7 +6,7 @@
 export const BANNED_WORDS = [
   "bash", "zsh", "grep", "curl", "sed", "awk", "regex", "terminal", "shell",
   "script", "cli", "mcp", "api", "json", "yaml", "sql", "sqlite", "http", "localhost",
-  "llm", "claude", "anthropic", "gpt", "chatgpt", "agent", "assistant", "bot",
+  "llm", "ai", "claude", "anthropic", "gpt", "chatgpt", "agent", "assistant", "bot",
   "model", "session", "prompt", "token", "daemon", "webhook", "endpoint",
   "database", "workflow", "stdout", "stderr", "subprocess",
 ] as const
