@@ -13,6 +13,8 @@
 // queued:collect:1" on the thread (#282). This is the one place that knows
 // the marker's shape.
 
+import { unwrapMeshError } from "@/a2a/mesh-errors"
+
 export const QUEUED_MARKER = "__queued__"
 
 export interface QueuedAnswer {
@@ -27,16 +29,16 @@ export function queuedMarker(mode: string, pending: number): string {
   return `${QUEUED_MARKER}:${mode}:${pending}`
 }
 
-// The marker either opens the text (local answer) or follows a ": " left by
-// a mesh wrapper. Anchored at the end so a reply that merely quotes the
-// marker mid-sentence is not mistaken for one.
-const QUEUED_RE = /(?:^|:\s*)__queued__(?::([A-Za-z-]+))?(?::(\d+))?\s*$/
+// After the mesh wrappers are peeled (the same peel the router's failure
+// notice uses), the whole remaining text must be the marker: anything
+// else, including an error that merely ends in it, is a real error.
+const QUEUED_RE = /^__queued__(?::([A-Za-z-]+):(\d+))?$/
 
 /** The queued answer inside `text` (a registry error or a mesh error
  *  message), or null when it is anything else. */
 export function parseQueued(text: string | null | undefined): QueuedAnswer | null {
   if (!text) return null
-  const m = QUEUED_RE.exec(text.trim())
+  const m = QUEUED_RE.exec(unwrapMeshError(text))
   if (!m) return null
   return { mode: m[1] || "collect", pending: m[2] ? Number(m[2]) : 1 }
 }

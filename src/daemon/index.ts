@@ -12,7 +12,7 @@ import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./confi
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
-import { markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
+import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, type AgentTask } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
@@ -2213,9 +2213,10 @@ export class AgentXDaemon {
       // Loop guard: an agent's configured forge usernames are its "own bot
       // identity" for the self-authored skip. The GitLab adapter also stamps
       // ctx.authorAgent from its token-resolved map, which covers the rest.
+      // The same list the forge adapters trust an agent's signature from.
       forgeUsernames: (agentId) => [
-        ...(this.config.channels.gitlab?.agentMappings ?? []).filter((m) => m.agentId === agentId).flatMap((m) => m.gitlabUsernames),
-        ...(this.config.channels.github?.agentMappings ?? []).filter((m) => m.agentId === agentId).flatMap((m) => m.githubUsernames),
+        ...mappedForgeUsernames(this.config.channels.gitlab?.agentMappings, "gitlabUsernames", agentId),
+        ...mappedForgeUsernames(this.config.channels.github?.agentMappings, "githubUsernames", agentId),
       ],
     })
 

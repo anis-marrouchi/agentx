@@ -75,6 +75,11 @@ export interface AgentPeer {
 export interface AgentTask {
   message: string
   agentId: string
+  /** Set by the queue flush: when this message was first queued. The run
+   *  prepends the stale-state note from it when it starts, and a flushed
+   *  message that has to queue again keeps it, so the note is added once
+   *  and reports the whole wait (#282). */
+  queuedAt?: number
   /** Correlator threaded by the workflow engine. When the engine dispatches
    *  an agent as part of a state transition, this carries the run id so
    *  post:response can re-enter the engine with an agentResult condition. */
