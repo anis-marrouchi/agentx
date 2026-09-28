@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.61.0](https://github.com/anis-marrouchi/agentx/compare/v0.60.0...v0.61.0) (2026-09-28)
+
+
+### Features
+
+* **app:** voice-first Chat with the AgentX Voice orb ([#224](https://github.com/anis-marrouchi/agentx/issues/224)) ([3023318](https://github.com/anis-marrouchi/agentx/commit/30233186d11fa55f806fe7befd41161e6a25f17b))
+
 ## [0.60.0](https://github.com/anis-marrouchi/agentx/compare/v0.59.0...v0.60.0) (2026-09-28)
 
 
