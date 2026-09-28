@@ -26,7 +26,8 @@ The dashboard has six main tabs: [Live](./dashboard/live.md), [Operations](./das
 ## More ways to work with your agents
 
 - [In-page chat](dashboard/chat.md): ask about the dashboard view you are looking at.
-- [Desktop assistant](dashboard/voice.md): speak to an agent from your Mac.
+- [AgentX Voice](guides/agentx-voice.md): talk to any agent from anywhere on your Mac, and hear it answer in its own voice.
+- [Desktop assistant](dashboard/voice.md): talks between agents, live lessons, narration and automations.
 - [Terminal UI](dashboard/tui.md): use OpenCode as the conversation interface.
 - [Tailscale setup](jobs/tailscale.md): connect machines privately.
 - [Agent-to-agent communication](reference/a2a.md): send work to agents on other machines, or connect an outside tool that speaks A2A (an open standard for agents talking to each other).
