@@ -146,8 +146,10 @@ export class MeshVoices {
 
   /** Agents on mesh peers, minus any id that is also local (local wins). */
   list(): MeshAgent[] {
+    const local = this.config().agents
     const seen = new Map<string, MeshAgent>()
     for (const a of this.all()) {
+      if (local[a.id]) continue
       const prev = seen.get(a.id)
       if (prev && (prev.healthy || !a.healthy)) continue
       seen.set(a.id, a)
@@ -160,7 +162,7 @@ export class MeshVoices {
   }
 
   /** The agent `id` on `peer` exactly. Another peer's agent of the same id
-   *  is never taken for it. */
+   *  is never taken for it, and a local agent of that id doesn't hide it. */
   on(peer: string, id: string): MeshAgent | undefined {
     return this.all().find((a) => a.peer === peer && a.id === id)
   }
@@ -194,20 +196,19 @@ export class MeshVoices {
     return agent && voice ? this.persona(agent, voice, introduce) : undefined
   }
 
-  /** Every agent on every peer, minus ids that are also local (local wins). */
+  /** Every agent on every peer, local ids included (list() drops those). */
   private all(): MeshAgent[] {
-    const local = this.config().agents
     const out: MeshAgent[] = []
     for (const p of this.directory()) {
       for (const s of p.skills) {
-        if (local[s.id]) continue
         out.push({ id: s.id, name: s.name || s.id, description: s.description ?? "", tags: s.tags ?? [], peer: p.peer, healthy: p.healthy })
       }
     }
     return out
   }
 
-  /** Agents of an id `list()` already has, on other peers, keyed "<peer>/<id>". */
+  /** Peer agents `list()` doesn't pick, keyed "<peer>/<id>": the same id on
+   *  another peer, or an id that is also local. */
   private shadowed(): Array<MeshAgent & { key: string }> {
     const primary = new Map(this.list().map((a) => [a.id, a.peer]))
     return this.all().filter((a) => primary.get(a.id) !== a.peer).map((a) => ({ ...a, key: `${a.peer}/${a.id}` }))
