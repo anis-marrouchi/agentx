@@ -73,6 +73,8 @@ export interface AppConversation {
   nodeName: string
   agent: string
   agentName?: string
+  /** The agent's orb colour when the conversation started, if it had one. */
+  color?: string
   createdAt: number
   updatedAt: number
   messages: AppChatMessage[]
@@ -80,7 +82,21 @@ export interface AppConversation {
 
 export type AppConversationSummary = Omit<AppConversation, "messages"> & { messages: number; last?: string }
 
+/** A conversation whose newest message is an answer this phone hasn't opened. */
+export interface AppUnreadAnswer {
+  id: string
+  title: string
+  agent: string
+  agentName?: string
+  color?: string
+  /** The answer's first ~240 characters, whitespace squeezed. */
+  answer: string
+  status: "done" | "error" | "stopped"
+  at: number
+}
+
 const ID_RE = /^c[a-z0-9]{8,32}$/
+const COLOR_RE = /^#[0-9a-fA-F]{6}$/
 
 export function isConversationId(id: string): boolean {
   return ID_RE.test(id)
@@ -104,14 +120,24 @@ export class AppChatStore {
     // Databases from before answers could declare files lack the column.
     const cols = db.prepare("PRAGMA table_info(app_chat_messages)").all() as Array<{ name: string }>
     if (!cols.some((c) => c.name === "files")) db.exec("ALTER TABLE app_chat_messages ADD COLUMN files TEXT")
+    // Read state (#265): when the phone last opened each conversation. Rows
+    // from before it count as read, so an update never lights up the strip
+    // with every old conversation.
+    const convCols = db.prepare("PRAGMA table_info(app_chat_conversations)").all() as Array<{ name: string }>
+    if (!convCols.some((c) => c.name === "read_at")) {
+      db.exec("ALTER TABLE app_chat_conversations ADD COLUMN read_at INTEGER; UPDATE app_chat_conversations SET read_at = updated_at")
+    }
+    if (!convCols.some((c) => c.name === "color")) db.exec("ALTER TABLE app_chat_conversations ADD COLUMN color TEXT")
   }
 
-  create(deviceId: string, init: Pick<AppConversation, "node" | "nodeName" | "agent" | "agentName">, firstMessage: string, now = Date.now()): AppConversation {
+  create(deviceId: string, init: Pick<AppConversation, "node" | "nodeName" | "agent" | "agentName" | "color">, firstMessage: string, now = Date.now()): AppConversation {
     const id = `c${now.toString(36)}${randomBytes(4).toString("hex")}`
-    const conv: AppConversation = { id, title: titleFrom(firstMessage), ...init, createdAt: now, updatedAt: now, messages: [] }
+    const { color: wanted, ...rest } = init
+    const color = wanted && COLOR_RE.test(wanted) ? wanted : undefined
+    const conv: AppConversation = { id, title: titleFrom(firstMessage), ...rest, ...(color ? { color } : {}), createdAt: now, updatedAt: now, messages: [] }
     this.db.prepare(`INSERT INTO app_chat_conversations
-      (id, device_id, title, node, node_name, agent, agent_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, deviceId, conv.title, conv.node, conv.nodeName, conv.agent, conv.agentName ?? null, now, now)
+      (id, device_id, title, node, node_name, agent, agent_name, color, created_at, updated_at, read_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(id, deviceId, conv.title, conv.node, conv.nodeName, conv.agent, conv.agentName ?? null, color ?? null, now, now, now)
     this.pruneDevice(deviceId)
     return conv
   }
@@ -136,6 +162,32 @@ export class AppChatStore {
       const last = typeof r.last === "string" ? r.last.replace(/\s+/g, " ").trim().slice(0, 120) : ""
       return { ...toConversation(r), messages: r.n, ...(last ? { last } : {}) }
     })
+  }
+
+  /** The phone has seen this conversation up to `now` (opened, attached,
+   *  or watched an answer finish). Only its own conversations. */
+  markRead(deviceId: string, id: string, now = Date.now()): void {
+    if (!isConversationId(id)) return
+    this.db.prepare("UPDATE app_chat_conversations SET read_at = MAX(COALESCE(read_at, 0), ?) WHERE id = ? AND device_id = ?").run(now, id, deviceId)
+  }
+
+  /** Conversations whose newest message is an answer saved after the phone
+   *  last opened them, newest first. One indexed query per poll. */
+  unread(deviceId: string, limit: number): AppUnreadAnswer[] {
+    const rows = this.db.prepare(`SELECT c.id, c.title, c.agent, c.agent_name, c.color,
+        substr(m.content, 1, 240) AS answer, m.status, m.at
+      FROM app_chat_conversations c
+      JOIN app_chat_messages m ON m.id = (SELECT MAX(id) FROM app_chat_messages WHERE conversation_id = c.id)
+      WHERE c.device_id = ? AND m.role = 'assistant' AND m.at > COALESCE(c.read_at, 0)
+      ORDER BY m.at DESC, m.id DESC LIMIT ?`).all(deviceId, Math.max(0, limit)) as any[]
+    return rows.map((r) => ({
+      id: r.id, title: r.title, agent: r.agent,
+      ...(r.agent_name ? { agentName: r.agent_name } : {}),
+      ...(r.color ? { color: r.color } : {}),
+      answer: String(r.answer ?? "").trim(),
+      status: r.status === "error" || r.status === "stopped" ? r.status : "done",
+      at: r.at,
+    }))
   }
 
   append(deviceId: string, id: string, m: AppChatMessage): boolean {
@@ -205,6 +257,7 @@ function toConversation(r: any): Omit<AppConversation, "messages"> {
   return {
     id: r.id, title: r.title, node: r.node, nodeName: r.node_name, agent: r.agent,
     ...(r.agent_name ? { agentName: r.agent_name } : {}),
+    ...(r.color ? { color: r.color } : {}),
     createdAt: r.created_at, updatedAt: r.updated_at,
   }
 }

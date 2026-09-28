@@ -4,6 +4,7 @@ import type { AppChatStore, AppConversation } from "./app-chat-store"
 import { readJson, type NodeReply, type SnapshotNode } from "./app-fleet"
 import { relayTurn, type DaemonTarget } from "./app-chat-relay"
 import { ChatTurn, ORPHAN_LIMIT_MS } from "./app-chat-turns"
+import { ACTIVE_LIMIT, AppPresence, buildActive, finishPush, shouldPushFinish, type FinishPush, type RunningTurn } from "./app-chat-active"
 
 // --- Phone app: Chat (/api/app/agents, /api/app/chat, /api/app/conversations) ---
 //
@@ -38,6 +39,13 @@ export interface AppChatDeps {
   tokenFor?: (nodeUrl: string) => string | undefined
   /** How long a turn may run with no phone attached (default 30 min). */
   orphanLimitMs?: number
+  /** Whether this phone wants a notification when an answer finishes out
+   *  of its sight (#265). False when this computer sends no pushes. */
+  finishAlerts?: (deviceId: string) => boolean
+  /** Sends one push to one phone. Failures are logged, never thrown. */
+  notifyFinish?: (push: FinishPush) => Promise<void>
+  /** Which phones have the app open (tests pass their own). */
+  presence?: AppPresence
 }
 
 export interface PickerNode {
@@ -52,6 +60,9 @@ const MAX_MESSAGE = 8_000
 const AGENT_RE = /^[A-Za-z0-9_.:-]{1,64}$/
 /** conversation id → its running turn. One turn at a time per conversation. */
 const inflight = new Map<string, ChatTurn>()
+/** conversation id → who the running turn is for, for the strip. */
+const owners = new Map<string, Omit<RunningTurn, "text" | "startedAt">>()
+const defaultPresence = new AppPresence()
 
 export async function handleAppChat(
   req: IncomingMessage,
@@ -62,7 +73,9 @@ export async function handleAppChat(
   deps: AppChatDeps,
 ): Promise<boolean> {
   if (path !== "/api/app/agents" && path !== "/api/app/chat" && path !== "/api/app/chat/stop" && path !== "/api/app/chat/attach" &&
+    path !== "/api/app/chat/active" && path !== "/api/app/chat/away" &&
     path !== "/api/app/conversations" && !path.startsWith("/api/app/conversations/")) return false
+  const presence = deps.presence ?? defaultPresence
 
   if (method === "GET" && path === "/api/app/agents") {
     return json(res, 200, { nodes: await picker(deps) })
@@ -70,6 +83,16 @@ export async function handleAppChat(
   const store = deps.store()
   if (!store) return json(res, 503, { error: "The database on this computer is unavailable, so chats can't be saved." })
 
+  if (method === "GET" && path === "/api/app/chat/active") {
+    // The strip: this phone's running turns and unread answers only.
+    presence.poll(device.id)
+    return json(res, 200, { conversations: buildActive(device.id, running(), store.unread(device.id, ACTIVE_LIMIT)) })
+  }
+  if (method === "POST" && path === "/api/app/chat/away") {
+    // The app went to the background: announce finishes by push again.
+    presence.away(device.id)
+    return json(res, 200, { ok: true })
+  }
   if (method === "GET" && path === "/api/app/conversations") {
     return json(res, 200, { conversations: store.list(device.id) })
   }
@@ -77,6 +100,9 @@ export async function handleAppChat(
   if (one) {
     const conv = store.get(device.id, decodeURIComponent(one[1]))
     if (!conv) return json(res, 404, { error: "no such conversation" })
+    // Opening it reads it. `peek` is for reading an answer out in the
+    // background, which leaves its chip in the strip.
+    if (new URL(req.url || path, "http://x").searchParams.get("peek") !== "1") store.markRead(device.id, conv.id)
     const turn = inflight.get(conv.id)
     // A running turn comes with what the agent has written so far.
     return json(res, 200, { ...conv, running: !!turn, ...(turn ? { partial: { text: turn.text, tools: turn.tools, ...(turn.plain ? { plain: true } : {}) } } : {}) })
@@ -87,6 +113,7 @@ export async function handleAppChat(
     const conv = store.get(device.id, new URL(req.url || path, "http://x").searchParams.get("conversationId") || "")
     const turn = conv && inflight.get(conv.id)
     if (!conv || !turn) return json(res, 404, { error: "nothing is running in this conversation" })
+    store.markRead(device.id, conv.id)
     openSse(res)
     const { id, title, node, nodeName, agent, agentName } = conv
     res.write(sse("conversation", { id, title, node, nodeName, agent, agentName }))
@@ -179,14 +206,15 @@ async function startTurn(res: ServerResponse, body: Record<string, unknown>, dev
     if (!target.online) { json(res, 409, { error: `${target.name} is offline` }); return }
     const a = target.agents.find((x) => x.id === agent)
     if (!a) { json(res, 400, { error: `no agent "${agent}" on ${target.name}` }); return }
-    conv = store.create(device.id, { node, nodeName: target.name, agent, agentName: a.name }, message)
+    conv = store.create(device.id, { node, nodeName: target.name, agent, agentName: a.name, ...(a.color ? { color: a.color } : {}) }, message)
   }
   if (inflight.has(conv.id)) { json(res, 409, { error: "The agent is still answering in this conversation." }); return }
 
   const turn = new ChatTurn(deps.orphanLimitMs ?? ORPHAN_LIMIT_MS)
   inflight.set(conv.id, turn)
-  store.append(device.id, conv.id, { role: "user", content: message, at: Date.now() })
   const { id, title, node, nodeName, agent, agentName } = conv
+  owners.set(id, { id, deviceId: device.id, title, agent, ...(agentName ? { agentName } : {}), ...(conv.color ? { color: conv.color } : {}) })
+  store.append(device.id, conv.id, { role: "user", content: message, at: Date.now() })
   openSse(res)
   res.write(sse("conversation", { id, title, node, nodeName, agent, agentName }))
   // The phone leaving (locked screen, lost signal) does NOT stop the turn:
@@ -209,10 +237,29 @@ async function startTurn(res: ServerResponse, body: Record<string, unknown>, dev
       status: out.status, content: out.text,
       ...(out.error ? { error: out.error } : {}), ...(out.ui ? { ui: out.ui } : {}), ...(files.length ? { files } : {}),
     })
+    // A phone streaming it has seen the answer; otherwise its chip lights
+    // up, and a phone with the app closed gets a notification.
+    const attached = turn.watched()
+    if (attached) store.markRead(device.id, id)
+    const facts = { status: out.status, attached, appOpen: (deps.presence ?? defaultPresence).open(device.id), enabled: !!deps.finishAlerts?.(device.id) }
+    if (deps.notifyFinish && shouldPushFinish(facts)) {
+      deps.notifyFinish(finishPush(device.id, conv, out.status, out.text, out.error)).catch(() => {})
+    }
   } finally {
     inflight.delete(id)
+    owners.delete(id)
     turn.finish()
   }
+}
+
+/** The running turns, with what each has written so far. */
+function running(): RunningTurn[] {
+  const out: RunningTurn[] = []
+  for (const [id, o] of owners) {
+    const turn = inflight.get(id)
+    if (turn) out.push({ ...o, text: turn.text, startedAt: turn.startedAt })
+  }
+  return out
 }
 
 function openSse(res: ServerResponse): void {

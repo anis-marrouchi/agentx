@@ -47,18 +47,25 @@ export async function handleAppPush(
       // Only rows made with the current key count, so a phone subscribed
       // before `push-keys --force` sees 0 and subscribes again.
       subscriptions: store && publicKey ? store.list(device.id).filter((s) => s.publicKey === publicKey).length : 0,
+      // Per phone: a notification when a chat answer finishes elsewhere.
+      chatFinish: store ? store.chatFinishOn(device.id) : true,
     })
   }
   if (method === "GET" && path === "/api/app/alerts") {
     return json(res, 200, { items: store ? store.recent(deps.keepRecent, device.id) : [] })
   }
-  if (method !== "POST" || (path !== "/api/app/push/subscribe" && path !== "/api/app/push/unsubscribe")) {
+  if (method !== "POST" || (path !== "/api/app/push/subscribe" && path !== "/api/app/push/unsubscribe" && path !== "/api/app/push/prefs")) {
     return json(res, 404, { error: "not found" })
   }
   if (!store || unavailable) return json(res, 503, { error: unavailable })
 
   let body: Record<string, any>
   try { body = await readJson(req) } catch (e: any) { return json(res, 400, { error: e.message }) }
+  if (path === "/api/app/push/prefs") {
+    if (typeof body.chatFinish !== "boolean") return json(res, 400, { error: "chatFinish must be true or false" })
+    store.setChatFinish(device.id, body.chatFinish)
+    return json(res, 200, { ok: true, chatFinish: body.chatFinish })
+  }
   const endpoint = validEndpoint(body.endpoint, deps.allowedHosts)
   if (!endpoint) {
     let host = ""
