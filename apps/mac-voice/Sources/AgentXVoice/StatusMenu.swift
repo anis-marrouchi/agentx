@@ -23,6 +23,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// The daemon's speaking queue, polled while anything is in flight.
     private var queue: AgentClient.QueueState?
     private var queuePoll: Timer?
+    /// The last three voice exchanges, for a quick replay.
+    private let recent = RecentExchanges()
 
     /// Questions this widget has in flight, per agent. Set by the app.
     var thinking: [String: Int] = [:] {
@@ -76,6 +78,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
             let agents = await AgentClient.agents()
             roster = agents.map { .loaded($0) } ?? .down
             queue = await AgentClient.queueState()
+            await recent.refresh()
             rebuild()
             showBadge()
             if reopenAfterRefresh { reopenAfterRefresh = false; open() }
@@ -175,6 +178,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
                 menu.addItem(row)
             }
         }
+        recent.addItems(to: menu, name: name(of:))
 
         menu.addItem(.separator())
         menu.addItem(action("Stop speaking", #selector(stop), key: ".", modifiers: [.command, .option]))
@@ -251,7 +255,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func openSettings() { onSettings?() }
     @objc private func openDashboardHome() { openDashboard("/admin") }
-    @objc private func openHistory() { openDashboard("/activity") }
+    @objc private func openHistory() { HistoryWindow.shared.show() }
 
     private func openDashboard(_ path: String) {
         guard let url = URL(string: Config.dashboardURL + path) else { return }
