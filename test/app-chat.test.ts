@@ -40,6 +40,9 @@ const TURN = [
   }],
 ] as const
 
+/** When set, replaces the data of TURN's done event. */
+let doneData: Record<string, unknown> | null = null
+
 let dir: string
 let deps: AppChatDeps
 let tokens: TokenStore
@@ -70,7 +73,7 @@ async function fakeDaemon(req: IncomingMessage, res: ServerResponse) {
     release.push(() => { if (res.writableEnded || res.destroyed) return; for (const [event, data] of TURN.slice(3)) sse(res, event, data); res.end() })
     return
   }
-  for (const [event, data] of TURN) sse(res, event, data)
+  for (const [event, data] of TURN) sse(res, event, event === "done" && doneData ? doneData : data)
   res.end()
 }
 
@@ -118,7 +121,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-beforeEach(() => { seen = []; hold = false; release = []; posts.length = 0; running = []; deps.orphanLimitMs = undefined })
+beforeEach(() => { seen = []; doneData = null; hold = false; release = []; posts.length = 0; running = []; deps.orphanLimitMs = undefined })
 
 const auth = (t = appToken) => ({ Authorization: `Bearer ${t}`, "Content-Type": "application/json" })
 const getJson = async (path: string, t = appToken) => {
@@ -200,6 +203,23 @@ describe("sending a message", () => {
         ui: { buttons: [{ label: "Docs", url: "https://example.com/docs" }], poll: { question: "Ship?", options: ["Yes", "No"], multiple: false } },
       },
     })
+  })
+
+  it("sends quick replies and reply buttons, at most 4 of each", async () => {
+    doneData = { content: `Run the tests?\n\n${FENCE}agentx:ui\n{"quickReplies":["Yes","No","Later","Never","Maybe"],"buttons":[{"label":"Only unit tests","reply":"Run only the unit tests"}]}\n${FENCE}` }
+    const { events } = await chat({ node: "local", agent: "alpha", message: "Done?" })
+    expect(events.at(-1)!.data).toEqual({
+      status: "done", content: "Run the tests?",
+      ui: { quickReplies: ["Yes", "No", "Later", "Never"], replies: [{ label: "Only unit tests", reply: "Run only the unit tests" }] },
+    })
+  })
+
+  it("shows no extras for an agent with richMessages off, and still hides the block", async () => {
+    doneData = { content: `Pick one.\n\n${FENCE}agentx:ui\n{"quickReplies":["Yes","No"],"buttons":[{"label":"Docs","url":"https://example.com/docs"}]}\n${FENCE}`, richMessages: false }
+    const { events } = await chat({ node: "local", agent: "alpha", message: "Plain please" })
+    expect(events.at(-1)!.data).toEqual({ status: "done", content: "Pick one." })
+    const saved = await getJson(`/api/app/conversations/${events[0].data.id}`)
+    expect(saved.body.messages[1].ui).toBeUndefined()
   })
 
   it("runs a peer's agent through /mesh/task on the same daemon", async () => {

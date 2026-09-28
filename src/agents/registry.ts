@@ -1938,17 +1938,7 @@ export class AgentRegistry {
     // the agent hasn't opted out. Rides the cacheable system prompt so it
     // costs nothing per turn. Kept short and conditional ("when it genuinely
     // helps") so agents don't spray buttons on every reply.
-    const richReplyInstruction =
-      (state.def.richMessages !== false && (channel === "telegram" || channel === "whatsapp" || channel === "app"))
-        ? [
-            "[Rich replies]",
-            "On this chat channel you may add buttons, a poll, or media to a reply by appending ONE fenced block at the very end:",
-            "```agentx:ui",
-            '{ "buttons": [{"label": "Open docs", "url": "https://..."}], "poll": {"question": "Ship it?", "options": ["Yes", "No"]}, "media": {"type": "image", "url": "https://..."} }',
-            "```",
-            "All fields are optional; include only what helps. Buttons must be https URLs (tappable callback actions aren't supported yet). Use this sparingly — only when a link, choice, or image genuinely improves the reply. The block is stripped from the visible text.",
-          ].join("\n")
-        : ""
+    const richReplyInstruction = richReplyPrompt(state.def.richMessages, channel)
 
     // Context Surgery — Fix 3: per-workspace CLAUDE.md auto-injection. Read
     // once at task-setup, cap at 4KB to bound prompt size, silent fallback so
@@ -2995,4 +2985,22 @@ export class AgentRegistry {
   getTokenTracker(): TokenTracker {
     return this.tokenTracker
   }
+}
+
+/** The rich-reply convention for an agent's system prompt: only on the
+ *  interactive chat channels, and only when the agent hasn't opted out.
+ *  Quick replies are offered in the phone app alone, which renders them. */
+export function richReplyPrompt(richMessages: boolean | undefined, channel: string | undefined): string {
+  if (richMessages === false || (channel !== "telegram" && channel !== "whatsapp" && channel !== "app")) return ""
+  return [
+    "[Rich replies]",
+    "On this chat channel you may add buttons, a poll, or media to a reply by appending ONE fenced block at the very end:",
+    "```agentx:ui",
+    '{ "buttons": [{"label": "Open docs", "url": "https://..."}], "poll": {"question": "Ship it?", "options": ["Yes", "No"]}, "media": {"type": "image", "url": "https://..."} }',
+    "```",
+    "All fields are optional; include only what helps. Buttons must be https URLs (tappable callback actions aren't supported yet). Use this sparingly — only when a link, choice, or image genuinely improves the reply. The block is stripped from the visible text.",
+    ...(channel === "app"
+      ? ['In this phone app you may also offer up to 4 short answers the user can tap instead of typing: "quickReplies": ["Yes", "Not now"] (at most 40 characters each), or a button with a reply instead of a url: {"label": "Run the tests", "reply": "Please run the tests"}. A tap sends that text as the user\'s next message, nothing more. Offer them only when the user is likely to answer with one of them.']
+      : []),
+  ].join("\n")
 }

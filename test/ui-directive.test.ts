@@ -28,6 +28,17 @@ describe("extractUiDirective", () => {
     expect(r.ui?.media).toEqual({ type: "image", url: "https://x/img.png", caption: "q3" })
   })
 
+  it("parses quick replies and reply buttons, next to URL buttons", () => {
+    const text = 'Run them?\n```agentx:ui\n{"quickReplies":["Yes"," ",7,"  Not now "],"buttons":[{"label":"Docs","url":"https://x.dev"},{"label":"Tests","reply":"Please run the tests"},{"label":"Empty","reply":"  "}]}\n```'
+    const r = extractUiDirective(text)
+    expect(r.cleanText).toBe("Run them?")
+    expect(r.ui).toEqual({
+      buttons: [{ label: "Docs", url: "https://x.dev" }],
+      replies: [{ label: "Tests", reply: "Please run the tests" }],
+      quickReplies: ["Yes", "Not now"],
+    })
+  })
+
   it("last block wins when several are present", () => {
     const text =
       '```agentx:ui\n{"buttons":[{"label":"A","url":"https://a"}]}\n```\n' +
@@ -74,5 +85,16 @@ describe("stripUiDirectiveForPreview", () => {
 
   it("leaves plain text alone", () => {
     expect(stripUiDirectiveForPreview("nothing special")).toBe("nothing special")
+  })
+})
+
+describe("richReplyPrompt", () => {
+  it("offers quick replies in the phone app only, and nothing with richMessages off", async () => {
+    const { richReplyPrompt } = await import("../src/agents/registry")
+    expect(richReplyPrompt(undefined, "app")).toContain('"quickReplies"')
+    expect(richReplyPrompt(true, "telegram")).toContain("[Rich replies]")
+    expect(richReplyPrompt(true, "telegram")).not.toContain("quickReplies")
+    expect(richReplyPrompt(false, "app")).toBe("")
+    expect(richReplyPrompt(true, "github")).toBe("")
   })
 })

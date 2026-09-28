@@ -60,11 +60,22 @@ You can leave the app, lock the phone or lose the connection while the agent ans
 
 ## Buttons, polls and pictures
 
-Some answers come with extras: link buttons, a small poll, or a picture, sound or video. Links open in the phone's browser. Tapping a poll answer sends it to the agent as your next message. Extras are never read out loud.
+Some answers come with extras: link buttons, quick replies, a small poll, or a picture, sound or video. Links open in the phone's browser. Tapping a poll answer sends it to the agent as your next message. Extras are never read out loud.
 
 ![An answer with the tools the agent used, a link button and a poll](/screenshots/mobile-app/chat.png)
 
-Agents add these on their own. To turn them off for one agent, set `richMessages` to `false` in its [agent settings](../reference/config-agents.md).
+Agents add these on their own. To turn them off for one agent, set `richMessages` to `false` in its [agent settings](../reference/config-agents.md). The agent is then not told about them, and the phone shows none of them.
+
+### Quick replies
+
+When the agent expects a short answer, it can offer up to 4 of them as *quick replies*, rounded buttons under its answer such as **Yes** and **Not now**. Some buttons carry a longer message than their label, for example **Only unit tests** sends `Run only the unit tests`. Such a button shows the message it sends in smaller text under its label, so you see what you are sending before you tap.
+
+1. **Phone:** tap a quick reply. It is sent as your next message, exactly as if you had typed it, and it shows in the conversation as your message.
+2. **Phone:** wait for the answer as usual.
+
+After you tap one, the quick replies of that answer turn grey and can't be tapped again. They also turn grey as soon as a newer message is in the conversation, whether you typed it or tapped it. A tap never does anything more than sending that text: it runs no command of its own. Text you were typing in the box stays there.
+
+A label longer than 40 characters is cut short on screen with `…`, but the full text is sent. More than 4 quick replies, or more than 4 reply buttons, are left out.
 
 ## Pictures and files in an answer
 
@@ -183,6 +194,7 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 4. **Phone:** listen. The answer is read out loud while the orb pulses.
 5. **Phone:** tap **History**. The conversation is listed with the agent's name.
 6. **Phone:** ask an agent: `make a small chart of three numbers, save it as a png and attach it`. The chart appears under the answer. Tap it to see it full screen.
+7. **Phone:** ask an agent: `ask me yes or no with quick replies`. **Yes** and **No** appear under the answer. Tap **Yes**: it shows as your message, both turn grey, and the agent answers.
 
 ## If something is wrong
 
@@ -208,6 +220,8 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 - **"Stopped: the phone was away for more than 30 minutes"** — nobody opened the conversation while the agent answered, so it was stopped. Send the message again, and keep the conversation open or come back to it within 30 minutes.
 - **An answer keeps going after you close the app** — that is expected. To end it, open the conversation and tap **Stop**.
 - **"The database on this computer is unavailable"** — AgentX can't open `.agentx/db.sqlite`. On the computer, run `agentx doctor`.
+- **No quick replies appear** — the agent chose not to offer any; ask for them, as in [Check it worked](#check-it-worked). If they never appear, the agent has `richMessages` set to `false`, or the computer that runs it has an older AgentX.
+- **Tapping a quick reply does nothing** — it is grey because a newer message is already in the conversation, or the phone is offline and says so. Type the answer instead, or tap again once the phone is back online.
 - **A picture from the web shows only its description** — its address doesn't start with `https://` or `http://`, or the answer already shows 8 pictures. A picture that stays blank was refused by the site that hosts it.
 - **The agent says it attached a file, but nothing shows** — the file type is not in the [list above](#limits), or the agent didn't end its answer with the `<agentx-artifact>` line. Ask it to attach the file as in [How an agent attaches a file](#how-an-agent-attaches-a-file).
 - **A file shows as a broken picture, or Open shows an error** — tap **Open**, or open the picture's address, to read the reason:

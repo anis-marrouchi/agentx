@@ -13,13 +13,22 @@
 // or malformed block leaves the text untouched and yields no directive, so a
 // half-written or invalid fence just renders as ordinary text.
 //
-// Phase 1 is non-interactive: buttons are URL-only. A `{ "action": … }` button
-// (a tappable callback that re-invokes the agent) is parsed but skipped until
-// the inbound callback_query plumbing lands (Phase 2).
+// Chat channels render URL buttons. The phone app also renders quick-reply
+// chips (`"quickReplies": ["Yes", "No"]`) and reply buttons
+// (`{ "label": …, "reply": … }`): a tap sends that text as the user's next
+// message, exactly as if it had been typed. Other channels ignore them. A
+// `{ "action": … }` button (a callback that runs without a user message) is
+// parsed but skipped until the inbound callback_query plumbing lands (Phase 2).
 
 export interface UiButton {
   label: string
   url: string
+}
+
+/** A button whose tap sends `reply` as the user's next message (phone app). */
+export interface UiReply {
+  label: string
+  reply: string
 }
 
 export interface UiPoll {
@@ -38,6 +47,9 @@ export interface UiDirective {
   buttons?: UiButton[]
   poll?: UiPoll
   media?: UiMedia
+  /** Chips whose text is sent as the user's next message when tapped. */
+  quickReplies?: string[]
+  replies?: UiReply[]
   /** Labels of `action` (callback) buttons dropped because Phase 2 isn't wired
    *  yet — surfaced so the caller can log them. */
   skippedActions?: string[]
@@ -108,16 +120,20 @@ function parseDirective(json: string): UiDirective | null {
 
   if (Array.isArray(raw.buttons)) {
     const buttons: UiButton[] = []
+    const replies: UiReply[] = []
     const skippedActions: string[] = []
     for (const b of raw.buttons) {
       if (!b || typeof b.label !== "string") continue
       if (typeof b.url === "string" && /^https?:\/\//i.test(b.url)) {
         buttons.push({ label: b.label, url: b.url })
+      } else if (typeof b.reply === "string" && b.reply.trim()) {
+        replies.push({ label: b.label, reply: b.reply.trim() })
       } else if (b.action != null) {
         skippedActions.push(b.label) // Phase 2
       }
     }
     if (buttons.length) ui.buttons = buttons
+    if (replies.length) ui.replies = replies
     if (skippedActions.length) ui.skippedActions = skippedActions
   }
 
@@ -140,9 +156,14 @@ function parseDirective(json: string): UiDirective | null {
     }
   }
 
+  if (Array.isArray(raw.quickReplies)) {
+    const chips = raw.quickReplies.filter((q: unknown) => typeof q === "string" && q.trim()).map((q: string) => q.trim())
+    if (chips.length) ui.quickReplies = chips
+  }
+
   // Nothing renderable (and no skipped actions worth reporting) → treat as
   // "no directive" so the block is left in the text rather than silently
   // vanishing.
-  if (!ui.buttons && !ui.poll && !ui.media && !ui.skippedActions) return null
+  if (!ui.buttons && !ui.poll && !ui.media && !ui.quickReplies && !ui.replies && !ui.skippedActions) return null
   return ui
 }

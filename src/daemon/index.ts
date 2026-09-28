@@ -4902,6 +4902,8 @@ export class AgentXDaemon {
                   content: resp.content,
                   duration: resp.duration,
                   usage: resp.usage,
+                  // The phone app hides agentx:ui extras for such an agent.
+                  ...(this.registry.getAgent(agentId)?.richMessages === false ? { richMessages: false } : {}),
                 })
               }
             } catch (e: any) {

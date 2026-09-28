@@ -3,7 +3,7 @@
 // Loaded before APP_CHAT_SCRIPT. Markdown bubbles (the shared escape-first
 // markdownToHtml, injected by app.ts, with its web pictures on), collapsed
 // tool badges, the files an answer declared, the `agentx:ui` extras (link
-// buttons, a poll, media), a full-screen picture viewer and the IndexedDB
+// buttons, quick replies, a poll, media), a full-screen picture viewer and the IndexedDB
 // copy of each conversation, so History opens with no connection.
 //
 // Everything an agent wrote is escaped or set as text; only http(s) links
@@ -23,6 +23,8 @@ window.AXChatView = (function () {
   // Pictures shown inline in one answer; more stay links.
   var MAX_PICS = 8;
   var FILE_ID = /^[a-f0-9]{32}$/;
+  // A quick reply's label on screen; the full text is what a tap sends.
+  var CHIP_LABEL = 40;
 
   function esc(v) {
     return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
@@ -162,6 +164,29 @@ window.AXChatView = (function () {
       btns.forEach(function (b) { row.appendChild(link(httpUrl(b.url), b.label)); });
       box.appendChild(row);
     }
+    // Quick replies and reply buttons: a tap is the same as typing the text.
+    // Once one is sent, none of them can be tapped again.
+    var chips = (ui.quickReplies || []).map(function (q) { return { label: q, reply: q }; }).concat(ui.replies || [])
+      .filter(function (c) { return c && c.label && c.reply; }).slice(0, 8);
+    if (chips.length) {
+      var crow = document.createElement('div');
+      crow.className = 'cx-ui-row cx-chips';
+      chips.forEach(function (c) {
+        var b = document.createElement('button'), label = String(c.label), reply = String(c.reply);
+        b.type = 'button'; b.className = 'cx-ui-btn cx-reply';
+        b.textContent = clip(label);
+        // A reply button that sends other words shows them too, so a tap is honest.
+        if (reply !== label) {
+          var said = document.createElement('small');
+          said.textContent = clip(reply);
+          b.appendChild(said);
+        }
+        if (clip(label) !== reply) b.title = reply;
+        b.addEventListener('click', function () { if (send(c.reply) !== false) retire(crow); });
+        crow.appendChild(b);
+      });
+      box.appendChild(crow);
+    }
     if (ui.poll && ui.poll.options) {
       // A poll answer is simply the next message in the conversation.
       var fs = document.createElement('fieldset'), lg = document.createElement('legend'), opts = document.createElement('div');
@@ -189,6 +214,13 @@ window.AXChatView = (function () {
       }
       box.appendChild(fs);
     }
+  }
+
+  function clip(t) { return t.length > CHIP_LABEL ? t.slice(0, CHIP_LABEL - 1) + '…' : t; }
+
+  // Quick replies under el can't be tapped any more.
+  function retire(el) {
+    Array.prototype.slice.call(el.querySelectorAll('.cx-reply')).forEach(function (b) { b.disabled = true; });
   }
 
   // Reads the agentx SSE wire from a fetch body: event: <kind>, data: <json>.
@@ -249,7 +281,7 @@ window.AXChatView = (function () {
   function cacheGet(id) { return idb('readonly', function (s) { return s.get(id); }); }
   function cacheDrop(id) { return idb('readwrite', function (s) { s.delete(id); }); }
 
-  return { NL: NL, esc: esc, httpUrl: httpUrl, md: md, preview: preview, setTools: setTools, renderUi: renderUi, renderFiles: renderFiles,
+  return { NL: NL, esc: esc, httpUrl: httpUrl, md: md, preview: preview, setTools: setTools, renderUi: renderUi, retire: retire, renderFiles: renderFiles,
     openViewer: openViewer, closeViewer: closeViewer, readStream: readStream,
     cachePut: cachePut, cacheGet: cacheGet, cacheAll: cacheAll, cacheDrop: cacheDrop };
 })();
