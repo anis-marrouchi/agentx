@@ -90,9 +90,10 @@ local agent and no other remote uses.
 
 The pill (`Panel.swift`) is the one floating widget. Its head is a 36 pt
 SwiftUI orb (`Orb.swift`: MeshGradient on macOS 15, a two-gradient fallback
-on 14) in the answering agent's colour: `/agents` `color`, else the same id
-hash as the daemon's `presenceLook` (`OrbMath.swift`, tested in
-`Tests/Orb`). It follows the microphone level while listening, turns a ring
+on 14) in the answering agent's nature palette: `/agents` `palette.colors`
+(the daemon's `src/voice/orb-palettes.ts` is the only list), else shades of
+`/agents` `color`, else the same id hash as the daemon's `presenceLook`
+(`OrbMath.swift`, tested in `Tests/Orb`). It follows the microphone level while listening, turns a ring
 while thinking, and pulses in a synthetic rhythm while speaking (the daemon
 plays the audio). Idle or hidden, its timeline is paused and the level
 timer stopped; Reduce Motion, or "Animated orb" off in the menu
@@ -102,9 +103,13 @@ Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
 launch and when screens change it is clamped onto a connected screen, and
 "Reset position" puts it back bottom-right. The close button (on hover), Esc
 after a click, and "Hide pill" hide it and stop speech until the next talk
-key. The answer card opens above or below the pill, whichever has more
-room, and follows it. `PillPlacement.swift` holds that geometry, tested in
-`Tests/Pill`. The panel is non-activating and only becomes key when clicked.
+key. An answer worth reading grows the pill itself (`PanelAnswer.swift`,
+`AnswerView.swift`): up or down from its row, whichever has more room, then
+back to the same place `voice.card.timeout` seconds after it is spoken (not
+while hovered), at most `voice.card.maxHeight` tall. `PillPlacement.swift`
+holds that geometry, tested in `Tests/Pill`. `Surface.swift` is the native
+background (popover vibrancy, continuous corners, hairline, Increase
+Contrast). The panel is non-activating and only becomes key when clicked.
 
 ## On-device models
 
@@ -150,8 +155,9 @@ needs no Accessibility permission — an `NSEvent` global monitor would have.
 ## Settings window
 
 `SettingsWindow.swift` edits per-agent voices (provider, voice, preview,
-speed, narration, queue priority, shortcut, orb colour) and the general
-shortcuts, speech-to-text engine, default provider and launch at login.
+speed, narration, queue priority, shortcut, orb colour and palette) and the general
+shortcuts, speech-to-text engine, default provider, answer time and height
+(`SettingsLook.swift`) and launch at login.
 Everything but launch at login (SMAppService, and read-only when the
 installer's LaunchAgent starts the app) is read from `GET /voice/settings`
 and saved with `POST /voice/settings`, which validates and writes

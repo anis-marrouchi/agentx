@@ -326,16 +326,19 @@ private struct AgentForm: View {
             get: { Color(hex: agent.color) },
             set: { agent.color = $0.hex; agent.colorSet = true })
         let footer = agent.colorSet
-            ? "Hold the shortcut and speak to ask this agent without changing who is ticked in the menu. The colour also paints this agent's pointer."
-            : "Hold the shortcut and speak to ask this agent without changing who is ticked in the menu. The colour comes from the agent's id until you pick one."
+            ? "Hold the shortcut and speak to ask this agent without changing who is ticked in the menu. The colour also paints this agent's pointer, and picks the orb's palette unless you choose one."
+            : "Hold the shortcut and speak to ask this agent without changing who is ticked in the menu. The colour comes from the agent's id until you pick one, and picks the orb's palette unless you choose one."
         return Section {
             HotkeyField(title: "Ask with shortcut", value: $agent.voice.hotkey, optional: true, model: model, id: "agent.\(agent.id)")
             HStack {
                 ColorPicker("Orb colour", selection: color, supportsOpacity: false)
                 Button("Use default") { agent.colorSet = false }.disabled(!agent.colorSet)
             }
+            if let palettes = settings.palettes, !palettes.isEmpty {
+                PalettePicker(agent: $agent, palettes: palettes)
+            }
         } header: {
-            Text("Shortcut and colour")
+            Text("Shortcut and look")
         } footer: {
             Text(footer).font(.caption).foregroundStyle(.secondary)
         }
@@ -384,6 +387,10 @@ private struct GeneralTab: View {
                 } footer: {
                     Text("Automatic uses ElevenLabs when a key is set, and the engine on this Mac otherwise. Parakeet has no Arabic; until its model has downloaded, Whisper answers instead. Voice detection ends a turn when you stop talking, not when the room goes quiet. The default provider is for agents that don't choose their own. All apply to the next question.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                if draft.general.card != nil {
+                    AnswerCardSection(card: Binding(get: { model.draft?.general.card ?? .standard },
+                                                    set: { model.draft?.general.card = $0 }))
                 }
                 Section {
                     Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))

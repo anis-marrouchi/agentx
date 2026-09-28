@@ -70,6 +70,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1)
     }
 
+    /// The agent's orb palette, five colours deep to light, or nil when
+    /// the daemon sent none.
+    func palette(of id: String) -> [NSColor]? {
+        guard case .loaded(let agents) = roster,
+              let hexes = agents.first(where: { $0.id == id })?.palette?.colors, hexes.count == 5 else { return nil }
+        let colors = hexes.compactMap(OrbMath.parseHex).map { NSColor(srgbRed: $0.r, green: $0.g, blue: $0.b, alpha: 1) }
+        return colors.count == 5 ? colors : nil
+    }
+
     /// Open the menu from the keyboard.
     func open() { item.button?.performClick(nil) }
 

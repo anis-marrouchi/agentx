@@ -8,6 +8,13 @@ struct VoiceSettings: Codable, Equatable {
         var stop: String
         var paste: String
     }
+    /// The answer shown in the pill: seconds open once spoken (0: until
+    /// closed), and its tallest height in points.
+    struct Card: Codable, Equatable {
+        var timeout: Double
+        var maxHeight: Double
+        static let standard = Card(timeout: 30, maxHeight: 320)
+    }
     struct General: Codable, Equatable {
         var provider: String
         var fallback: String
@@ -17,11 +24,14 @@ struct VoiceSettings: Codable, Equatable {
         /// How a hands-free turn's end is heard: "vad" or "volume".
         var endOfTurn: String
         var hotkeys: Hotkeys
+        /// Nil from a daemon older than the card settings.
+        var card: Card?
 
         init(provider: String, fallback: String, stt: String, localStt: String = "mlx-whisper",
-             endOfTurn: String = "vad", hotkeys: Hotkeys) {
+             endOfTurn: String = "vad", hotkeys: Hotkeys, card: Card? = nil) {
             self.provider = provider; self.fallback = fallback; self.stt = stt
             self.localStt = localStt; self.endOfTurn = endOfTurn; self.hotkeys = hotkeys
+            self.card = card
         }
 
         /// A daemon from before these fields leaves them out: the defaults.
@@ -33,6 +43,7 @@ struct VoiceSettings: Codable, Equatable {
             localStt = try c.decodeIfPresent(String.self, forKey: .localStt) ?? "mlx-whisper"
             endOfTurn = try c.decodeIfPresent(String.self, forKey: .endOfTurn) ?? "vad"
             hotkeys = try c.decode(Hotkeys.self, forKey: .hotkeys)
+            card = try c.decodeIfPresent(Card.self, forKey: .card)
         }
     }
     struct Voice: Codable, Equatable {
@@ -54,6 +65,10 @@ struct VoiceSettings: Codable, Equatable {
         let name: String
         var color: String
         var colorSet: Bool
+        /// The chosen orb palette; nil follows the colour.
+        var palette: String?
+        /// The palette the colour gives when none is chosen.
+        let paletteDefault: String?
         var voice: Voice
         let speaks: Speaks
     }
@@ -63,9 +78,18 @@ struct VoiceSettings: Codable, Equatable {
         let locale: String
     }
 
+    /// One of the orb's nature palettes: five colours, deep to light.
+    struct Palette: Codable, Equatable, Identifiable {
+        let id: String
+        let label: String
+        let colors: [String]
+    }
+
     var general: General
     var agents: [Agent]
     let systemVoices: [SystemVoice]
+    /// Nil from a daemon older than the palettes.
+    let palettes: [Palette]?
     let menuHotkey: String
 
     /// The change from `old` to this, as POST /voice/settings takes it:
@@ -83,6 +107,12 @@ struct VoiceSettings: Codable, Equatable {
         if self.general.hotkeys.stop != old.general.hotkeys.stop { keys["stop"] = self.general.hotkeys.stop }
         if self.general.hotkeys.paste != old.general.hotkeys.paste { keys["paste"] = self.general.hotkeys.paste }
         if !keys.isEmpty { general["hotkeys"] = keys }
+        if let card = self.general.card {
+            var c: [String: Any] = [:]
+            if card.timeout != old.general.card?.timeout { c["timeout"] = card.timeout }
+            if card.maxHeight != old.general.card?.maxHeight { c["maxHeight"] = card.maxHeight }
+            if !c.isEmpty { general["card"] = c }
+        }
         if !general.isEmpty { out["general"] = general }
 
         var agents: [String: Any] = [:]
@@ -100,6 +130,7 @@ struct VoiceSettings: Codable, Equatable {
             field("narrate", agent.voice.narrate, before.voice.narrate)
             field("priority", agent.voice.priority, before.voice.priority)
             field("hotkey", agent.voice.hotkey, before.voice.hotkey)
+            field("palette", agent.palette, before.palette)
             if agent.colorSet != before.colorSet || (agent.colorSet && agent.color != before.color) {
                 a["color"] = agent.colorSet ? agent.color as Any : NSNull()
             }

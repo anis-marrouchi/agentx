@@ -70,5 +70,34 @@ let preview = saved.previewVoice(for: "researcher")
 check(preview["system"] == nil && preview["rate"] as? Double == 1.2, "a preview leaves a per-language voice alone")
 check(saved.previewVoice(for: "writer")["system"] as? String == "Ava", "and sends a single voice")
 
+// --- Palettes and the answer card (#211) ---
+
+check(saved.general.card == nil && saved.palettes == nil && saved.agents[0].palette == nil,
+      "a daemon without palettes or card settings still decodes")
+
+let newer = """
+{"general":{"provider":"system","fallback":"system","stt":"auto","hotkeys":{"talk":"opt+space","stop":"cmd+opt+period","paste":"cmd+opt+v"},
+  "card":{"timeout":30,"maxHeight":320}},
+ "agents":[{"id":"writer","name":"Writer","color":"#0D9488","colorSet":false,"paletteDefault":"lagoon",
+   "voice":{"systemPerLanguage":false},"speaks":{"provider":"system","systemVoice":null}},
+  {"id":"researcher","name":"Researcher","color":"#123456","colorSet":true,"palette":"forest","paletteDefault":"ocean",
+   "voice":{"systemPerLanguage":false},"speaks":{"provider":"system","systemVoice":null}}],
+ "systemVoices":[],"palettes":[{"id":"lagoon","label":"Lagoon","colors":["#0B6E73","#0E9594","#1FBFB2","#56DCCB","#B8F4EA"]}],
+ "menuHotkey":"cmd+opt+a"}
+"""
+let current = try! JSONDecoder().decode(VoiceSettings.self, from: Data(newer.utf8))
+check(current.general.card == VoiceSettings.Card(timeout: 30, maxHeight: 320) && current.palettes?.first?.colors.count == 5,
+      "card settings and palettes decode")
+var edit = current
+edit.agents[0].palette = "dusk"
+edit.agents[1].palette = nil
+edit.general.card?.timeout = 0
+let p2 = edit.patch(from: current)
+let a2 = p2["agents"] as? [String: [String: Any]]
+check(a2?["writer"]?["palette"] as? String == "dusk", "a picked palette is sent")
+check(a2?["researcher"]?["palette"] is NSNull, "back to the colour's palette sends null")
+let card2 = (p2["general"] as? [String: Any])?["card"] as? [String: Any]
+check(card2?["timeout"] as? Double == 0 && card2?["maxHeight"] == nil, "only the changed card setting is sent")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")
