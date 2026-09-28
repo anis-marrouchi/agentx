@@ -41,7 +41,7 @@ function fakeDom() {
       tagName: tag.toUpperCase(), children: [] as any[], listeners: {} as Record<string, Function>,
       appendChild(c: any) { el.children.push(c); return c },
       addEventListener(t: string, f: Function) { el.listeners[t] = f },
-      querySelectorAll: () => [],
+      querySelectorAll: (sel: string) => sel === ".cx-reply" ? walk(el).filter((c: any) => c !== el && /\bcx-reply\b/.test(c.className || "")) : [],
       set innerHTML(v: string) { if (v !== "") throw new Error("renderUi must not write HTML: " + v); el.children = [] },
     }
     return el
@@ -101,6 +101,41 @@ describe("rendering what an agent wrote", () => {
     expect(sent).toEqual(["<No>"]) // a poll answer is the next message
   })
 
+  it("sends a tapped quick reply as the next message, then none can be tapped again", () => {
+    const { V } = view()
+    const box = fakeDom().createElement("div")
+    const sent: string[] = []
+    V.renderUi(box, { quickReplies: ["Yes", "No", "<Later>"] }, (t: string) => sent.push(t))
+    const chips = walk(box).filter((e) => e.tagName === "BUTTON")
+    expect(chips.map((b) => [b.textContent, b.disabled])).toEqual([["Yes", undefined], ["No", undefined], ["<Later>", undefined]])
+    chips[1].listeners.click()
+    expect(sent).toEqual(["No"]) // exactly what typing "No" would send
+    expect(chips.map((b) => b.disabled)).toEqual([true, true, true])
+  })
+
+  it("clips a long label on screen but sends the full text, and a reply button sends its reply", () => {
+    const { V } = view()
+    const box = fakeDom().createElement("div")
+    const sent: string[] = []
+    const long = "Please also update the changelog and the docs page"
+    V.renderUi(box, { quickReplies: [long], replies: [{ label: "Tests", reply: "Please run the tests" }] }, (t: string) => sent.push(t))
+    const [chip, reply] = walk(box).filter((e) => e.tagName === "BUTTON")
+    expect(chip.textContent).toBe(long.slice(0, 39) + "…")
+    expect(chip.title).toBe(long)
+    chip.listeners.click()
+    expect(sent).toEqual([long])
+    expect(reply.disabled).toBe(true)
+  })
+
+  it("keeps quick replies tappable when the message could not be sent", () => {
+    const { V } = view()
+    const box = fakeDom().createElement("div")
+    V.renderUi(box, { quickReplies: ["Yes", "No"] }, () => false) // offline
+    const chips = walk(box).filter((e) => e.tagName === "BUTTON")
+    chips[0].listeners.click()
+    expect(chips.map((b) => b.disabled)).toEqual([undefined, undefined])
+  })
+
   it("drops media that isn't a web link", () => {
     const { V } = view()
     const box = fakeDom().createElement("div")
@@ -123,6 +158,18 @@ describe("the saved agentx:ui block", () => {
     expect(ui.media).toBeUndefined()
     expect(ui.skippedActions).toBeUndefined()
     expect(safeUi({ buttons: [{ label: "a", url: "ftp://x" }] })).toBeUndefined()
+  })
+
+  it("keeps at most 4 quick replies and 4 reply buttons, with their full text", () => {
+    const long = "y".repeat(60)
+    const ui = safeUi({
+      quickReplies: ["a", "b", "c", long, "e"],
+      replies: [...Array(6)].map((_, i) => ({ label: `r${i}`, reply: `reply ${i}` })),
+    })!
+    expect(ui.quickReplies).toEqual(["a", "b", "c", long])
+    expect(ui.replies).toHaveLength(4)
+    expect(ui.replies![0]).toEqual({ label: "r0", reply: "reply 0" })
+    expect(safeUi({ quickReplies: ["z".repeat(900)] })!.quickReplies![0]).toHaveLength(500)
   })
 
   it("routes local agents to /task and peers to /mesh/task with the app context", () => {

@@ -34,6 +34,8 @@ export interface TurnOutcome {
 }
 
 const MAX_TOOLS = 50
+const QUICK_REPLIES = 4
+const MAX_REPLY = 500
 
 /** The upstream path and body for one turn. */
 export function upstreamRequest(t: TurnRequest): { path: string; body: Record<string, unknown> } {
@@ -57,12 +59,14 @@ export async function relayTurn(
   let text = ""
   const tools: AppToolBadge[] = []
   const byId = new Map<string, AppToolBadge>()
-  const end = (status: TurnOutcome["status"], raw: string, error?: string): TurnOutcome => {
+  const end = (status: TurnOutcome["status"], raw: string, error?: string, rich = true): TurnOutcome => {
     // Declared files come out of every answer, even a stopped one, so a
     // sentinel is never shown or read out.
     const declared = extractArtifacts(raw, ARTIFACT_LIMITS.perMessage)
     const { cleanText, ui } = status === "done" ? extractUiDirective(declared.text) : { cleanText: declared.text, ui: undefined }
-    const safe = safeUi(ui)
+    // An agent with richMessages off still has the block stripped, but
+    // nothing from it is shown.
+    const safe = rich ? safeUi(ui) : undefined
     return { status, text: cleanText, tools, files: declared.artifacts, ...(safe ? { ui: safe } : {}), ...(error ? { error } : {}) }
   }
   try {
@@ -92,7 +96,7 @@ export async function relayTurn(
       } else if (ev.event === "tool" && d.status === "result" && d.error === true && byId.has(String(d.id))) {
         byId.get(String(d.id))!.error = true
       } else if (ev.event === "done") {
-        return end("done", typeof d.content === "string" && d.content ? d.content : text)
+        return end("done", typeof d.content === "string" && d.content ? d.content : text, undefined, d.richMessages !== false)
       } else if (ev.event === "error") {
         return end("error", text, friendlyError(d.error))
       }
@@ -132,6 +136,12 @@ export function safeUi(ui: UiDirective | undefined): UiDirective | undefined {
   if (ui.media && web(ui.media.url)) {
     out.media = { type: ui.media.type, url: ui.media.url, ...(ui.media.caption ? { caption: ui.media.caption.slice(0, 300) } : {}) }
   }
+  // A tap sends the text as the user's message: at most 4 of each, and the
+  // page clips long labels on screen while the full text is sent.
+  const chips = (ui.quickReplies ?? []).slice(0, QUICK_REPLIES).map((q) => q.slice(0, MAX_REPLY))
+  if (chips.length) out.quickReplies = chips
+  const replies = (ui.replies ?? []).slice(0, QUICK_REPLIES).map((r) => ({ label: r.label.slice(0, 80), reply: r.reply.slice(0, MAX_REPLY) }))
+  if (replies.length) out.replies = replies
   return Object.keys(out).length ? out : undefined
 }
 

@@ -65,8 +65,10 @@ export const APP_CHAT_SCRIPT = `
     empty.hidden = true;
     return el;
   }
-  function userMsg(text) { var el = bubble('cx-user'); el.textContent = text; return el; }
+  // A newer message ends the quick replies of the answers above it.
+  function userMsg(text) { V.retire(log); var el = bubble('cx-user'); el.textContent = text; return el; }
   function agentMsg() {
+    V.retire(log);
     var el = bubble('cx-agent');
     el.innerHTML = '<div class="md cx-typing">Thinking…</div><div class="cx-files"></div><div class="cx-ui"></div><p class="cx-note" hidden></p>';
     return el;
@@ -212,28 +214,37 @@ export const APP_CHAT_SCRIPT = `
     log.setAttribute('aria-busy', on ? 'true' : 'false');
     emit('busy', { on: on });
   }
+  // Empties the box only for the text it held: a tapped quick reply keeps
+  // a half-typed draft.
+  function clearInput(sent) {
+    if (input.value.trim() !== sent) return;
+    input.value = ''; input.style.height = '';
+  }
+  // False when the text was neither sent nor queued, so a quick reply
+  // stays tappable.
   function send(text) {
     text = String(text || '').trim();
-    if (!text) return;
+    if (!text) return false;
     if (state.busy) {
       // A follow-up while the agent answers: shown now, sent as the next
       // turn so its answer streams here as well.
       var q = userMsg(text);
       q.classList.add('cx-queued');
       state.queue.push({ text: text, el: q });
-      input.value = ''; input.style.height = '';
+      clearInput(text);
       scrollDown();
-      return;
+      return true;
     }
-    if (!navigator.onLine) { flash('Offline. Messages can be sent once the phone is connected again.'); return; }
-    if (!state.conv && !state.target) { toggle(picker, true); loadPicker(); return; }
+    if (!navigator.onLine) { flash('Offline. Messages can be sent once the phone is connected again.'); return false; }
+    if (!state.conv && !state.target) { toggle(picker, true); loadPicker(); return false; }
     var body = state.conv
       ? { conversationId: state.conv.id, message: text }
       : { node: state.target.node, agent: state.target.agent, message: text };
     state.stopWanted = false;
     userMsg(text);
-    input.value = ''; input.style.height = '';
+    clearInput(text);
     follow(post('/api/app/chat', body), agentMsg(), null);
+    return true;
   }
   // Streams one turn into the bubble el, from a send or from attaching
   // to a turn that is still running. The phone losing its connection does
