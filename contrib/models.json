@@ -1,0 +1,9 @@
+{
+  "about": "Recommended models for `agentx contribute`. A model counts when its id equals an entry, starts with the entry followed by a dash (a dated snapshot), or equals one of its aliases. Update this list by pull request as models improve.",
+  "updated": "2026-09-28",
+  "models": [
+    { "id": "claude-fable-5-1", "aliases": ["fable"] },
+    { "id": "claude-opus-5-5", "aliases": ["opus"] },
+    { "id": "claude-sonnet-5", "aliases": ["sonnet"] }
+  ]
+}

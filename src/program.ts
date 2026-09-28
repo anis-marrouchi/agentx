@@ -53,6 +53,7 @@ import { exec as execCmd } from "@/commands/exec"
 import { whatsapp } from "@/commands/whatsapp"
 import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
+import { contribute } from "@/commands/contribute"
 import { getPackageInfo } from "@/utils/get-package-info"
 import { commandPath, recordSurfaceUse, shouldRecordCommand } from "@/observability/surface-usage"
 
@@ -107,6 +108,7 @@ export async function buildProgram(): Promise<Command> {
     usage,                       // what it cost, what gets used
     serve,                       // MCP
     token, configCmd, completion,
+    contribute,                  // file a clear issue, with your agent's help
   ]) program.addCommand(cmd)
 
   // --- Advanced: registered, documented, hidden from the default help ------
