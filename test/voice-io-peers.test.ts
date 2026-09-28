@@ -11,7 +11,7 @@ import type { VoiceRef } from "../src/voice/speaker"
 
 const directory: MeshDirectory = [
   { peer: "peer-a", healthy: true, skills: [{ id: "main", name: "Main", description: "The first computer's agent." }] },
-  { peer: "peer-b", healthy: true, skills: [{ id: "main", name: "Main", description: "The second computer's agent." }, { id: "helper", name: "Helper" }] },
+  { peer: "peer-b", healthy: true, skills: [{ id: "main", name: "Main", description: "The second computer's agent." }, { id: "helper", name: "Helper" }, { id: "local", name: "Remote namesake" }] },
 ]
 
 function mesh(meshVoices: Record<string, any> = {}) {
@@ -49,6 +49,16 @@ describe("the voice of an agent on a mesh peer", () => {
     expect(resolveVoice("local", undefined, config, voices)?.elevenlabs).toBe("voice-local")
     expect(resolveVoice("main", undefined, config, voices)).toBeNull()
   })
+
+  it("finds a peer's agent whose id is also local, in a voice of its own", () => {
+    const { config, voices } = mesh()
+    const remote = resolveVoice("local", "peer-b", config, voices)
+    expect(remote).not.toBeNull()
+    expect(remote!.elevenlabs).not.toBe("voice-local")
+    expect(resolveVoice("local", undefined, config, voices)?.elevenlabs).toBe("voice-local")
+    // Everywhere else, local still wins: the mesh list leaves it out.
+    expect(voices.list().map((a) => a.id)).not.toContain("local")
+  })
 })
 
 describe("POST /voice/speak with the real wiring", () => {
@@ -61,7 +71,7 @@ describe("POST /voice/speak with the real wiring", () => {
     server = createServer((req, res) => {
       void handleVoiceIo(req, res, "/voice/speak", {
         stt: () => "auto",
-        host: () => ({ key: "k", mlx: null, whisper: null, ffmpeg: null }),
+        host: () => ({ key: "k", mlx: null, whisper: null, ffmpeg: "/usr/bin/ffmpeg" }),
         voiceOf: (id, peer) => resolveVoice(id, peer, config, voices),
         elevenLabsKey: () => "k",
         log: () => {},
