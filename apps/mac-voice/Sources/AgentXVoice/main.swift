@@ -321,20 +321,14 @@ final class App: NSObject, NSApplicationDelegate {
     // Ending on SILENCE rather than a timer is the whole trick. A fixed
     // window either cuts people off mid-sentence or leaves the mic open
     // staring at them; the only honest signal that a sentence has finished
-    // is the room going quiet.
+    // is the voice stopping. The recorder judges that (TurnEnd.swift).
 
-    /// RMS above which the microphone is hearing a voice rather than a room.
-    private let speechLevel: Float = 0.02
-    /// Quiet this long after speech ends the turn.
-    private let endSilence: TimeInterval = 1.2
     /// How long an unprompted follow-up window waits before giving up.
     private let followUpPatience: TimeInterval = 4.0
     /// How long a clicked session waits for you to start talking.
     private let clickPatience: TimeInterval = 8.0
 
     private var listenPoll: Timer?
-    private var heardSpeech = false
-    private var quietSince: Date?
     private var openedAt = Date()
     private var patience: TimeInterval = 8.0
     /// True when nothing was said and the window should close in silence.
@@ -343,14 +337,13 @@ final class App: NSObject, NSApplicationDelegate {
     /// Open the microphone with no key held.
     private func listenHandsFree(followUp: Bool) {
         guard !busy, !recorder.isRecording else { return }
+        recorder.endOfTurn = settings?.general.endOfTurn ?? "vad"
         do {
             try recorder.start()
         } catch {
             panel.render(.error(error.localizedDescription))
             return
         }
-        heardSpeech = false
-        quietSince = nil
         openedAt = Date()
         patience = followUp ? followUpPatience : clickPatience
         silentClose = followUp
@@ -369,23 +362,13 @@ final class App: NSObject, NSApplicationDelegate {
 
     private func pollLevel() {
         guard recorder.isRecording else { stopPolling(); return }
-        let level = recorder.level
-
-        if level > speechLevel {
-            heardSpeech = true
-            quietSince = nil
+        switch recorder.turnState {
+        case .speaking: return
+        case .ended:
+            stopPolling()
+            stopAndSend()
             return
-        }
-        if heardSpeech {
-            // Speech has stopped. Give it a beat before deciding the
-            // sentence is over — people pause inside sentences.
-            let since = quietSince ?? Date()
-            quietSince = since
-            if Date().timeIntervalSince(since) >= endSilence {
-                stopPolling()
-                stopAndSend()
-            }
-            return
+        case .waiting: break
         }
         // Nothing said yet. Close quietly rather than making the person
         // dismiss a window they did not ask for.
@@ -444,6 +427,8 @@ final class App: NSObject, NSApplicationDelegate {
         lastSpokeAt = Date()
         talkCheck = Task { await AgentClient.hush() }
         Log.info("door: opened\(busy ? " (a turn is running)" : "")")
+        // Push-to-talk ends on key release; no end-of-turn detection needed.
+        recorder.endOfTurn = "hold"
         do {
             try recorder.start()
             asideSpeaker = nil
@@ -474,7 +459,8 @@ final class App: NSObject, NSApplicationDelegate {
 
         Task { @MainActor in
             var heard = ""
-            do { heard = try await Speech.transcribe(wav: wav, engine: settings?.general.stt ?? "auto") }
+            do { heard = try await Speech.transcribe(wav: wav, engine: settings?.general.stt ?? "auto",
+                                                          local: settings?.general.localStt ?? "mlx-whisper") }
             catch { Log.warn("transcription failed: \(error.localizedDescription)") }
             guard !heard.isEmpty else {
                 _ = await door.value
