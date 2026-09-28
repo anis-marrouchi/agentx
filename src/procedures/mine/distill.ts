@@ -1,6 +1,7 @@
 import { z } from "zod"
 import { callPromotionLlm, type PromotionLlmOptions } from "@/wiki/promote"
 import { buildExtractionPrompt, type ClusterSample } from "./prompts"
+import { BANNED } from "./banned"
 
 // --- Distillation ---
 // One LLM round-trip per extraction run: all ready clusters in one prompt,
@@ -29,22 +30,6 @@ export interface DistillResult {
   skipped: Array<{ cluster: string; reason: string }>
   warnings: string[]
 }
-
-/** System vocabulary that must never appear in user-perspective procedure
- *  text. Word-boundary matched, case-insensitive. Common English verbs that
- *  double as tool names (read, write, edit) are deliberately NOT here. */
-const BANNED = new RegExp(
-  "\\b(" +
-    [
-      "bash", "zsh", "grep", "curl", "sed", "awk", "regex", "terminal", "shell",
-      "script", "cli", "mcp", "api", "json", "yaml", "sql", "sqlite", "http", "localhost",
-      "llm", "claude", "anthropic", "gpt", "chatgpt", "agent", "assistant", "bot",
-      "model", "session", "prompt", "token", "daemon", "webhook", "endpoint",
-      "database", "workflow", "stdout", "stderr", "subprocess",
-    ].join("|") +
-    ")\\b",
-  "i",
-)
 
 /** Returns violations like `steps[2]: "grep"` — empty means clean. */
 export function lintBlackBox(p: MinedProcedure): string[] {
