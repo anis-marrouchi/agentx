@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.62.0](https://github.com/anis-marrouchi/agentx/compare/v0.61.0...v0.62.0) (2026-09-28)
+
+
+### Features
+
+* **daemon:** report running version and commit in /health ([#229](https://github.com/anis-marrouchi/agentx/issues/229)) ([b8ae884](https://github.com/anis-marrouchi/agentx/commit/b8ae884e8fa929b8b22e3138efdc235594e2821b))
+
+
+### Bug Fixes
+
+* **app:** enforce the 2-minute voice cap and speak the pinned peer's voice ([#228](https://github.com/anis-marrouchi/agentx/issues/228)) ([2b11f5c](https://github.com/anis-marrouchi/agentx/commit/2b11f5cd96555aa824ca988eee35400c847d7b63))
+* **procedures:** render the miner prompt's banned words from the lint list ([#231](https://github.com/anis-marrouchi/agentx/issues/231)) ([bac8e42](https://github.com/anis-marrouchi/agentx/commit/bac8e42f6d19fa62c913e8d5e5f408f8a5218fba)), closes [#230](https://github.com/anis-marrouchi/agentx/issues/230)
+
 ## [0.61.0](https://github.com/anis-marrouchi/agentx/compare/v0.60.0...v0.61.0) (2026-09-28)
 
 
