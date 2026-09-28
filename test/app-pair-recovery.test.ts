@@ -45,6 +45,15 @@ describe("session cookie", () => {
     for (const attr of ["SameSite=Lax", "Secure", "HttpOnly", "Path=/"]) expect(set).toContain(attr)
     expect(set).not.toContain("Strict")
   })
+
+  it("is set again on each app load, so phones paired under Strict move to Lax", async () => {
+    const { token } = store.create({ name: "Old phone", scopes: ["app"] })
+    const r = await fetch(`${base}/app`, { headers: { Cookie: `${APP_COOKIE}=${token}` } })
+    expect(r.status).toBe(200)
+    expect(r.headers.get("set-cookie")).toMatch(new RegExp(`^${APP_COOKIE}=${token};.*SameSite=Lax`))
+    const byHeader = await fetch(`${base}/app`, { headers: { Authorization: `Bearer ${token}` } })
+    expect(byHeader.headers.get("set-cookie")).toBeNull()
+  })
 })
 
 describe("401 trace", () => {

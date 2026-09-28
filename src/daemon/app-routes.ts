@@ -115,7 +115,13 @@ export async function handleAppRequest(
     return sendJson(res, 401, { error: "this device is not paired", hint: "run: agentx app pair" })
   }
 
-  if (method === "GET" && path === "/app") return send(res, 200, "text/html; charset=utf-8", renderAppPage())
+  if (method === "GET" && path === "/app") {
+    // Set the cookie again on each app load, so phones paired while it was
+    // SameSite=Strict move to Lax without pairing again.
+    const c = cookie(req, APP_COOKIE)
+    if (c && !bearer(req)) res.setHeader("Set-Cookie", sessionCookie(c))
+    return send(res, 200, "text/html; charset=utf-8", renderAppPage())
+  }
   if (method === "GET" && path === "/api/app/me") {
     // The locked page probes here before asking for a code (app-locked.client.ts).
     // Success means the cookie reached a fetch but not the page load before it.
