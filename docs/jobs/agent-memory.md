@@ -13,6 +13,12 @@ This page shows how to review each one. Everything here happens in a **terminal*
 - **Passwords, tokens and keys.** If a conversation contains one, it isn't saved as a fact, even when someone asks.
 - **Facts from public channels without your approval.** Anyone can write to a public web chat, so facts from there wait for you before any agent sees them. Facts from your own tools, your team's chats, GitLab and GitHub are used straight away.
 
+## Facts that go out of date
+
+A fact is a note of what was true when it was written. Some things change on their own, such as a bill, an account, an outage or a deploy. When a fact about one of these is more than 2 days old, AgentX marks it `UNVERIFIED` when it reminds the agent. The agent must then check it again at the source (for example the service's API or dashboard) before telling you, or say it's unverified and ask you.
+
+When a long conversation is restarted, the agent writes a short summary of it to carry on from. AgentX treats that summary as work in progress, not as facts. It is always marked `UNVERIFIED` after 2 days, and it's deleted after 7 days.
+
 Held facts and proposed lessons also appear in the dashboard's **Approvals** tab and in `agentx approvals list`, next to everything else waiting for you. See [Approvals](../dashboard/approvals.md).
 
 ## 1. Approve or reject facts from public channels
