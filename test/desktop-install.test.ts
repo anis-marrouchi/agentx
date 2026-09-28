@@ -52,19 +52,19 @@ describe('desktop installation', () => {
     const script = '/Applications/AgentX Voice.app/Contents/MacOS/AgentXVoice'
     const dir = '/Users/me/Library/LaunchAgents'
     // install.sh writes an indented plist; the adopted label is written back as-is.
-    const old = `<dict>\n  <key>Label</key><string>tn.noqta.agentx.voice</string>\n  <key>ProgramArguments</key>\n  <array><string>${script}</string></array>\n</dict>`
+    const old = `<dict>\n  <key>Label</key><string>tn.example.agentx.voice</string>\n  <key>ProgramArguments</key>\n  <array><string>${script}</string></array>\n</dict>`
     const { keep, remove } = adoptLoginItem(dir, [
-      { file: `${dir}/tn.noqta.agentx.voice.plist`, plist: old },
+      { file: `${dir}/tn.example.agentx.voice.plist`, plist: old },
       { file: `${dir}/tn.acme.agentx.voice.plist`, plist: item(DESKTOP_LABEL, desktop) },
       { file: `${dir}/x.agentx.voice.other.plist`, plist: item('x.agentx.voice.other', '/usr/bin/true') },
     ])
     expect(keep).toEqual({ file: `${dir}/tn.acme.agentx.voice.plist`, label: DESKTOP_LABEL })
-    expect(remove).toEqual([{ file: `${dir}/tn.noqta.agentx.voice.plist`, label: 'tn.noqta.agentx.voice' }])
-    const only = adoptLoginItem(dir, [{ file: `${dir}/tn.noqta.agentx.voice.plist`, plist: old }])
-    expect(only).toEqual({ keep: { file: `${dir}/tn.noqta.agentx.voice.plist`, label: 'tn.noqta.agentx.voice' }, remove: [] })
-    expect(item(only.keep.label, desktop)).toContain('<key>Label</key><string>tn.noqta.agentx.voice</string>')
+    expect(remove).toEqual([{ file: `${dir}/tn.example.agentx.voice.plist`, label: 'tn.example.agentx.voice' }])
+    const only = adoptLoginItem(dir, [{ file: `${dir}/tn.example.agentx.voice.plist`, plist: old }])
+    expect(only).toEqual({ keep: { file: `${dir}/tn.example.agentx.voice.plist`, label: 'tn.example.agentx.voice' }, remove: [] })
+    expect(item(only.keep.label, desktop)).toContain('<key>Label</key><string>tn.example.agentx.voice</string>')
     expect(adoptLoginItem(dir, [])).toEqual({ keep: { file: `${dir}/${DESKTOP_LABEL}.plist`, label: DESKTOP_LABEL }, remove: [] })
-    expect(['tn.noqta.agentx.voice.plist', 'tn.acme.agentx.voice.plist.disabled-20260928', 'tn.noqta.agentx.voice.plist.bak-1', 'other.plist'].filter(isVoiceLoginItemFile)).toEqual(['tn.noqta.agentx.voice.plist'])
+    expect(['tn.example.agentx.voice.plist', 'tn.acme.agentx.voice.plist.disabled-20260928', 'tn.example.agentx.voice.plist.bak-1', 'other.plist'].filter(isVoiceLoginItemFile)).toEqual(['tn.example.agentx.voice.plist'])
   })
   it('honors an explicit helper path', () => {
     expect(resolveHelper('/tmp/repo', '/tmp/home', '/custom/helper')).toBe('/custom/helper')

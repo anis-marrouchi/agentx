@@ -110,15 +110,22 @@ final class SettingsModel: ObservableObject {
 
 /// Launch at login is macOS's own setting, never agentx.json.
 enum LoginItem {
-    /// The launchd label `agentx desktop install` gives the app.
-    static let installerLabel = "tn.acme.agentx.voice"
-
-    /// Installed with `agentx desktop install`, which starts the app at
-    /// login with launchd. A second login item would start a second copy.
+    /// Installed with `agentx desktop install` or install.sh, which start
+    /// the app at login with launchd. A second login item would start a
+    /// second copy. Same rule as the installers: any `*agentx.voice*.plist`
+    /// whose ProgramArguments[0] is the voice app, whatever its label.
     static var managedByInstaller: Bool {
-        if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == installerLabel { return true }
-        let plist = "\(NSHomeDirectory())/Library/LaunchAgents/\(installerLabel).plist"
-        return FileManager.default.fileExists(atPath: plist)
+        if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"]?.contains("agentx.voice") == true { return true }
+        let dir = "\(NSHomeDirectory())/Library/LaunchAgents"
+        let files = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
+        return files.contains { name in
+            guard name.range(of: #"agentx\.voice.*\.plist$"#, options: .regularExpression) != nil,
+                  let data = FileManager.default.contents(atPath: "\(dir)/\(name)"),
+                  let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
+                  let program = (plist["ProgramArguments"] as? [String])?.first
+            else { return false }
+            return program.hasSuffix("/Contents/MacOS/AgentXVoice")
+        }
     }
 
     static var isOn: Bool { managedByInstaller || SMAppService.mainApp.status == .enabled }
