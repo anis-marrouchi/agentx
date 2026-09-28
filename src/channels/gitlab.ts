@@ -1612,7 +1612,9 @@ export class GitLabAdapter implements ChannelAdapter {
     for (const n of notes) {
       if (n.system) continue // skip GitLab-generated "assigned to / closed" lines
       if (sinceMs && new Date(n.created_at).getTime() < sinceMs) continue
-      const sourceAgent = detectAgentxMarker(n.body)
+      // Only a note posted by an account AgentX posts with can be an
+      // agent's; anyone can type the marker (see postsAs).
+      const sourceAgent = this.postsAs(n.author?.username ?? "") ? detectAgentxMarker(n.body) : null
       const cleanBody = stripAgentxMarkers(n.body)
       out.push({
         role: sourceAgent ? "agent" : "user",
