@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.59.0](https://github.com/anis-marrouchi/agentx/compare/v0.58.0...v0.59.0) (2026-09-28)
+
+
+### Features
+
+* **voice:** History window, recent replays and bounded history routes ([#215](https://github.com/anis-marrouchi/agentx/issues/215)) ([0bfa659](https://github.com/anis-marrouchi/agentx/commit/0bfa6595cc0a8b402138d52dc35fcfa1c33bafdc))
+* **voice:** Silero VAD end of turn and opt-in Parakeet on-device speech-to-text ([#221](https://github.com/anis-marrouchi/agentx/issues/221)) ([c7c4fcc](https://github.com/anis-marrouchi/agentx/commit/c7c4fcc872c7a6839f55768b2677430372eec287))
+
+
+### Bug Fixes
+
+* **app:** pair the installed phone app with a one-time code ([#217](https://github.com/anis-marrouchi/agentx/issues/217)) ([b313cc0](https://github.com/anis-marrouchi/agentx/commit/b313cc0b769dd886f24b8e20028a1c3a826f91ce))
+* **daemon:** require a mesh token for task traces from off-box ([#216](https://github.com/anis-marrouchi/agentx/issues/216)) ([c2f7b9f](https://github.com/anis-marrouchi/agentx/commit/c2f7b9fbd909b7561078f4684c25a08e7dd22678))
+
 ## [0.58.0](https://github.com/anis-marrouchi/agentx/compare/v0.57.0...v0.58.0) (2026-09-28)
 
 

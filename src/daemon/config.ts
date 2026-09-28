@@ -1049,6 +1049,15 @@ export const daemonConfigSchema = z.object({
      *  set and the local Whisper otherwise; "elevenlabs" or "local" pick
      *  one (ElevenLabs still falls back to local when it fails). */
     stt: z.enum(["auto", "elevenlabs", "local"]).default("auto"),
+    /** The on-device engine behind "local" and every fallback:
+     *  mlx-whisper (Python, all languages) or Parakeet (Core ML, 25
+     *  European languages, no Arabic; 483 MB downloaded on first use into
+     *  ~/.agentx/models). mlx-whisper answers until Parakeet is ready. */
+    localStt: z.enum(["mlx-whisper", "parakeet"]).default("mlx-whisper"),
+    /** How AgentX Voice hears the end of a hands-free turn: "vad" (Silero
+     *  voice detection, 0.9 MB downloaded on first use; the volume
+     *  threshold until then) or "volume" (the old fixed threshold). */
+    endOfTurn: z.enum(["vad", "volume"]).default("vad"),
     /** AgentX Voice shortcuts: hold `talk` to speak, `stop` silences every
      *  voice, `paste` is smart paste. */
     hotkeys: z.object({

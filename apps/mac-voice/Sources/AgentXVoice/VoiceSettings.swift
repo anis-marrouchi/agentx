@@ -19,9 +19,32 @@ struct VoiceSettings: Codable, Equatable {
         var provider: String
         var fallback: String
         var stt: String
+        /// The on-device engine: "mlx-whisper" or "parakeet".
+        var localStt: String
+        /// How a hands-free turn's end is heard: "vad" or "volume".
+        var endOfTurn: String
         var hotkeys: Hotkeys
         /// Nil from a daemon older than the card settings.
         var card: Card?
+
+        init(provider: String, fallback: String, stt: String, localStt: String = "mlx-whisper",
+             endOfTurn: String = "vad", hotkeys: Hotkeys, card: Card? = nil) {
+            self.provider = provider; self.fallback = fallback; self.stt = stt
+            self.localStt = localStt; self.endOfTurn = endOfTurn; self.hotkeys = hotkeys
+            self.card = card
+        }
+
+        /// A daemon from before these fields leaves them out: the defaults.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            provider = try c.decode(String.self, forKey: .provider)
+            fallback = try c.decode(String.self, forKey: .fallback)
+            stt = try c.decode(String.self, forKey: .stt)
+            localStt = try c.decodeIfPresent(String.self, forKey: .localStt) ?? "mlx-whisper"
+            endOfTurn = try c.decodeIfPresent(String.self, forKey: .endOfTurn) ?? "vad"
+            hotkeys = try c.decode(Hotkeys.self, forKey: .hotkeys)
+            card = try c.decodeIfPresent(Card.self, forKey: .card)
+        }
     }
     struct Voice: Codable, Equatable {
         var provider: String?
@@ -77,6 +100,8 @@ struct VoiceSettings: Codable, Equatable {
         var general: [String: Any] = [:]
         if self.general.provider != old.general.provider { general["provider"] = self.general.provider }
         if self.general.stt != old.general.stt { general["stt"] = self.general.stt }
+        if self.general.localStt != old.general.localStt { general["localStt"] = self.general.localStt }
+        if self.general.endOfTurn != old.general.endOfTurn { general["endOfTurn"] = self.general.endOfTurn }
         var keys: [String: Any] = [:]
         if self.general.hotkeys.talk != old.general.hotkeys.talk { keys["talk"] = self.general.hotkeys.talk }
         if self.general.hotkeys.stop != old.general.hotkeys.stop { keys["stop"] = self.general.hotkeys.stop }

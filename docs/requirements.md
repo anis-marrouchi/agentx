@@ -171,6 +171,10 @@ This is an optional local transcription setup for Apple Silicon. It needs Python
 
 **Ready when:** the test creates a text transcript. Restart the desktop assistant and test Option–Space. Without ElevenLabs, spoken replies use macOS `say`. Local transcription does not make a remotely hosted agent model work offline.
 
+### Option C: Parakeet, built into the app
+
+The desktop app can also transcribe with Parakeet, which needs no Python and no FFmpeg. It downloads a 483 MB model the first time and has no Arabic. Keep Option B installed as well: Whisper answers while Parakeet downloads or loads. If you speak Arabic, stay on Whisper. See [Speech to text on this Mac](./dashboard/voice.md#speech-to-text-on-this-mac) to switch it on.
+
 ## macOS permissions
 
 1. Open **System Settings → Privacy & Security**.

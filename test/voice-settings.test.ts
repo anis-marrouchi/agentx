@@ -89,6 +89,12 @@ describe("checkVoiceSettings", () => {
     expect(checkVoiceSettings({ general: { hotkeys: { talk: "ctrl+space" } }, agents: { writer: { hotkey: "opt+space" } } }, config())).toEqual([])
   })
 
+  it("accepts the local engine and the end of a turn, and refuses other values", () => {
+    expect(checkVoiceSettings({ general: { localStt: "parakeet", endOfTurn: "volume" } }, config())).toEqual([])
+    const errors = checkVoiceSettings({ general: { localStt: "whisper.cpp", endOfTurn: "timer" } } as never, config())
+    expect(errors.map((e) => e.path)).toEqual(["general.localStt", "general.endOfTurn"])
+  })
+
   it("refuses unknown settings instead of dropping them", () => {
     const errors = checkVoiceSettings({ agents: { writer: { volume: 3 } as never }, colour: 1 } as never, config())
     expect(errors.map((e) => e.path)).toEqual(expect.arrayContaining(["colour", "agents.writer.volume"]))
@@ -110,6 +116,12 @@ describe("applyVoiceSettings", () => {
     expect(raw.agents.researcher.presence).toBeUndefined()
     expect(raw.agents.researcher.voice).toEqual({ priority: "low" })
     expect(raw.channels.telegram.token).toBe("${EXAMPLE_TOKEN}")
+  })
+
+  it("writes the local engine and the end of a turn", () => {
+    const raw: any = rawConfig()
+    applyVoiceSettings(raw, { general: { localStt: "parakeet", endOfTurn: "volume" } })
+    expect(raw.voice).toEqual({ localStt: "parakeet", endOfTurn: "volume" })
   })
 })
 
@@ -188,7 +200,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 } })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 } })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })

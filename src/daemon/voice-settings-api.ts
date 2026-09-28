@@ -51,11 +51,16 @@ export interface VoiceSettingsPatch {
   general?: {
     provider?: Provider
     stt?: "auto" | "elevenlabs" | "local"
+    localStt?: LocalStt
+    endOfTurn?: EndOfTurn
     hotkeys?: { talk?: string; stop?: string; paste?: string }
     card?: { timeout?: number; maxHeight?: number }
   }
   agents?: Record<string, AgentVoicePatch>
 }
+
+type LocalStt = "mlx-whisper" | "parakeet"
+type EndOfTurn = "vad" | "volume"
 
 export interface SettingsError { path: string; message: string }
 
@@ -64,6 +69,8 @@ export interface VoiceSettingsView {
     provider: Provider
     fallback: "system" | "none"
     stt: "auto" | "elevenlabs" | "local"
+    localStt: LocalStt
+    endOfTurn: EndOfTurn
     hotkeys: { talk: string; stop: string; paste: string }
     /** The answer shown in the pill: seconds open once spoken (0: until
      *  closed) and its tallest height in points. */
@@ -108,6 +115,8 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       provider: v.provider,
       fallback: v.fallback,
       stt: v.stt ?? "auto",
+      localStt: v.localStt ?? "mlx-whisper",
+      endOfTurn: v.endOfTurn ?? "vad",
       hotkeys: { ...DEFAULT_HOTKEYS, ...(v.hotkeys ?? {}) },
       card: { timeout: v.card.timeout, maxHeight: v.card.maxHeight },
     },
@@ -157,9 +166,11 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   for (const k of Object.keys(patch)) if (k !== "general" && k !== "agents") err(k, `"${k}" is not a voice setting`)
 
   const g = patch.general ?? {}
-  for (const k of Object.keys(g)) if (!["provider", "stt", "hotkeys", "card"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
+  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
   if (g.provider !== undefined && !["system", "elevenlabs"].includes(g.provider)) err("general.provider", "Voice provider must be system or elevenlabs")
   if (g.stt !== undefined && !["auto", "elevenlabs", "local"].includes(g.stt)) err("general.stt", "Speech to text must be auto, elevenlabs or local")
+  if (g.localStt !== undefined && !["mlx-whisper", "parakeet"].includes(g.localStt)) err("general.localStt", "The engine on this Mac must be mlx-whisper or parakeet")
+  if (g.endOfTurn !== undefined && !["vad", "volume"].includes(g.endOfTurn)) err("general.endOfTurn", "The end of a turn must be vad or volume")
   for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
     if (!["talk", "stop", "paste"].includes(k)) { err(`general.hotkeys.${k}`, `"${k}" is not a shortcut the window sets`); continue }
     const r = parseHotkey(String(value ?? ""))
@@ -220,6 +231,8 @@ export function applyVoiceSettings(raw: any, patch: VoiceSettingsPatch): void {
     raw.voice ??= {}
     if (g.provider !== undefined) raw.voice.provider = g.provider
     if (g.stt !== undefined) raw.voice.stt = g.stt
+    if (g.localStt !== undefined) raw.voice.localStt = g.localStt
+    if (g.endOfTurn !== undefined) raw.voice.endOfTurn = g.endOfTurn
     for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
       const r = parseHotkey(String(value))
       if (!r.ok) continue
