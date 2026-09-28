@@ -18,6 +18,31 @@ export interface QueuedMessage {
   chatId: string
   /** Full context from the original message, preserved for re-routing */
   originalContext?: Record<string, unknown>
+  /** When the oldest message folded into this one was queued. Set on a
+   *  collect batch, whose `timestamp` is the flush time; a single queued
+   *  message's own `timestamp` already is its queue time. */
+  queuedAt?: number
+}
+
+/** A queued turn that waited longer than this is told the world may have
+ *  moved on while it waited (#282). Shorter waits are the normal back-to-back
+ *  case and get nothing, so a busy chat does not pay for the note. */
+export const STALE_QUEUE_NOTE_AFTER_MS = 60_000
+
+function hhmm(ms: number): string {
+  return new Date(ms).toISOString().slice(11, 16)
+}
+
+/**
+ * The one-line note a flushed queued turn carries when it waited long
+ * enough for what it refers to — a PR head, an issue's state, a file — to
+ * have changed. The message itself still describes the moment it was
+ * queued, and agents otherwise report on that stale snapshot ("I checked
+ * the new head X" after Y was pushed). Null when the wait was short.
+ */
+export function staleQueueNote(queuedAt: number, now: number = Date.now()): string | null {
+  if (!Number.isFinite(queuedAt) || now - queuedAt <= STALE_QUEUE_NOTE_AFTER_MS) return null
+  return `[queued at ${hhmm(queuedAt)} UTC, running at ${hhmm(now)} UTC — anything it refers to (PR head, issue state, files) may have changed; re-check the current state before acting or replying]`
 }
 
 interface SessionQueue {
@@ -156,6 +181,7 @@ export class MessageQueue {
           channel: messages[0].channel,
           chatId: messages[0].chatId,
           originalContext: messages[messages.length - 1].originalContext,
+          queuedAt: Math.min(...messages.map((m) => m.queuedAt ?? m.timestamp)),
         }
 
         // Fire flush callback with combined message
