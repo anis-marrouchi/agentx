@@ -137,7 +137,7 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import type { DelegationManager } from "@/a2a/delegation"
-import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -2328,10 +2328,7 @@ export class AgentXDaemon {
     body: Record<string, unknown>,
     target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
     opts: { callback?: boolean } = {},
-  ):
-    | { refused: string }
-    | { accepted: Record<string, unknown> }
-    | { track: { onStart: (runId: string) => void; end: () => void } } {
+  ): DelegationGateResult {
     const hint = callerHintFrom(req, body)
     const caller = resolveCallerTurn(hint, this.registry)
     if (!target.peer && this.registry.getAgent(target.callee)) {
@@ -4710,8 +4707,7 @@ export class AgentXDaemon {
           // #277 — same gate as /task: refuse a cycle, or call back when a
           // person started it.
           const gate = this.delegationGate(req, body, { callee: targetAgent, message: text })
-          if ("refused" in gate) { this.json(res, 409, { error: gate.refused }); break }
-          if ("accepted" in gate) { this.json(res, 202, gate.accepted); break }
+          if (!("track" in gate)) { const a = gateAnswer(gate); this.json(res, a.status, a.body); break }
           // Local agent? Dispatch directly through the registry.
           const localDef = this.registry.getAgent(targetAgent)
           if (localDef) {
@@ -4909,8 +4905,7 @@ export class AgentXDaemon {
             message: String(body.message),
             calleeContext: body.context as Record<string, unknown> | undefined,
           }, { callback: body.stream !== true && !String(req.headers["accept"] || "").includes("text/event-stream") })
-          if ("refused" in gate) { this.json(res, 409, { error: gate.refused }); break }
-          if ("accepted" in gate) { this.json(res, 202, gate.accepted); break }
+          if (!("track" in gate)) { const a = gateAnswer(gate); this.json(res, a.status, a.body); break }
           const track = gate.track
           // Per-task context strategy override. When absent, registry falls
           // back to config.session.contextStrategy. Used by the bench
@@ -5443,8 +5438,11 @@ export class AgentXDaemon {
               message: body.message as string,
               calleeContext: meshContext,
             })
-            if ("accepted" in gate) {
-              this.json(res, 202, gate.accepted)
+            // A refusal is final here too, as on /task and /send/agent: it
+            // used to fall through to the synchronous path below (#282).
+            if (!("track" in gate)) {
+              const a = gateAnswer(gate)
+              this.json(res, a.status, a.body)
               break
             }
           }
