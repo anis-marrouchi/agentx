@@ -35,6 +35,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onTargetChanged: ((String) -> Void)?
     var onPillChanged: ((Bool) -> Void)?
     var onOrbChanged: ((Bool) -> Void)?
+    var onSettings: (() -> Void)?
 
     override init() {
         super.init()
@@ -183,6 +184,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
         menu.addItem(.separator())
         menu.addItem(action("Settings…", #selector(openSettings), key: ","))
+        menu.addItem(action("Dashboard…", #selector(openDashboardHome), key: "d"))
         menu.addItem(action("History…", #selector(openHistory), key: "y"))
         menu.addItem(.separator())
         menu.addItem(NSMenuItem(title: "Quit AgentX Voice",
@@ -234,7 +236,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         onOrbChanged?(Config.showOrb)
     }
 
-    @objc private func openSettings() { openDashboard("/admin") }
+    @objc private func openSettings() { onSettings?() }
+    @objc private func openDashboardHome() { openDashboard("/admin") }
     @objc private func openHistory() { openDashboard("/activity") }
 
     private func openDashboard(_ path: String) {

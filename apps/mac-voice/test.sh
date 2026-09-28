@@ -9,3 +9,6 @@ swiftc -O -o "$out/speech-end-tests" Sources/AgentXVoice/SpeechEnd.swift Tests/S
 swiftc -O -o "$out/orb-tests" Sources/AgentXVoice/OrbMath.swift Tests/Orb/main.swift \
   -target arm64-apple-macosx14.0
 "$out/orb-tests"
+swiftc -O -o "$out/settings-tests" Sources/AgentXVoice/HotkeySpec.swift Sources/AgentXVoice/VoiceSettings.swift \
+  Tests/Settings/main.swift -target arm64-apple-macosx14.0
+"$out/settings-tests"

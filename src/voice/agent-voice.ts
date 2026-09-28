@@ -46,6 +46,10 @@ export interface AgentVoice {
   gender: "female" | "male" | "neutral" | null
   style: string | null
   intro: string
+  /** Speaking speed, 1 = normal; absent when unset. */
+  rate?: number
+  /** Place in the speaking queue; absent when unset (normal). */
+  priority?: "high" | "normal" | "low"
 }
 
 /**
@@ -77,6 +81,8 @@ export function resolveAgentVoice(
     gender: v?.gender ?? null,
     style: v?.style || null,
     intro: v?.intro || deriveIntro(name, agent?.systemPrompt),
+    ...(v?.rate ? { rate: v.rate } : {}),
+    ...(v?.priority ? { priority: v.priority } : {}),
   }
 }
 
@@ -179,6 +185,8 @@ export function voiceRef(v: AgentVoice, explicit?: string | null): VoiceRef {
   const ref: VoiceRef = { provider: v.provider, elevenlabs: pickVoiceId(explicit, v.elevenlabsVoiceId), system: v.systemVoice, fallback: v.fallback }
   const langs = Object.entries(v.systemByLanguage ?? {})
   if (langs.length) ref.languages = Object.fromEntries(langs.map(([l, sys]) => [l, sys?.id ?? null]))
+  if (v.rate && v.rate !== 1) ref.rate = v.rate
+  if (v.priority && v.priority !== "normal") ref.priority = v.priority
   return ref
 }
 
