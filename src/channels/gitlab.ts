@@ -499,8 +499,12 @@ export class GitLabAdapter implements ChannelAdapter {
     // PRIMARY CASCADE PREVENTION: Check for AgentX signature.
     // Every comment posted by AgentX has <!-- agentx:AGENT_ID --> appended.
     // This is the most reliable check — immune to race conditions and
-    // username misconfiguration.
-    const sourceAgent = detectAgentxMarker(note)
+    // username misconfiguration. Only from an account an agent posts with
+    // (a token owner, a configured or known bot username): anyone can type
+    // the signature, and it must not hide their note or relabel it (#287).
+    const sourceAgent = this.postsAs(user.username) || this.isBotUser(user.username)
+      ? detectAgentxMarker(note)
+      : null
     if (sourceAgent) {
       // Allow bot-to-bot handoff: if an agent's comment @mentions a DIFFERENT agent
       const mentions = note.match(/@(\w[\w.-]*)/g)?.map(m => m.slice(1).replace(/[.]+$/, "")) || []
