@@ -1837,6 +1837,11 @@ export class AgentXDaemon {
           })
           this.router.addChannel(push)
           await push.start()
+          // #268 — mesh announcements to phones that want them. Peers'
+          // announcements arrive on this bus through the feed.
+          const { attachAnnouncePush } = await import("@/channels/push-announce")
+          const { PushPrefs } = await import("@/channels/push-prefs")
+          attachAnnouncePush({ bus: getAgentEventBus(), store: new PushStore(db), prefs: new PushPrefs(db), send: (m) => push.send(m), log: this.log })
         }
       }
     }
