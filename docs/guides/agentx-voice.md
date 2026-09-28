@@ -216,7 +216,7 @@ The General tab is longer than the window: scroll down for **Answer in the pill*
 
 A shortcut needs **Control**, **Option** or **Command** (a function key such as **F5** can be used alone). Two actions can't share one shortcut.
 
-![A refused save: the red message next to Revert and Save says the shortcut is already in use](/screenshots/voice/settings-error.png)
+![A refused save on the General tab: Smart paste is set to Control–Option–2, and the red message next to Revert and Save says that shortcut is used for both smart paste and asking Researcher](/screenshots/voice/settings-error.png)
 
 ## Talking to agents
 
@@ -308,7 +308,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 
 Agents on other AgentX computers in your mesh can get a voice here too, under `meshVoices.<agent-id>`, with the same keys except `rate`, `priority` and `hotkey`, plus `name` (what to call the agent aloud).
 
-A shortcut is written as modifiers and a key joined by `+`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`. Keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `leftbracket`, `rightbracket`, `backslash`, `grave`, `return` or `tab`. In `agentx.json`, use these names only. The settings window also accepts the character itself (`.` `,` `/` …) and saves it by name.
+A shortcut is written as modifiers and a key joined by `+`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`. Keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `leftbracket`, `rightbracket`, `backslash`, `grave`, `return` or `tab`. In `agentx.json`, use these names only. A character such as `.` or `,` in its place is not understood by the app. In the settings window you just press the keys, and it saves them by name.
 
 ### Settings kept on the Mac only
 
