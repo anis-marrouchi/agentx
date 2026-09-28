@@ -60,7 +60,10 @@ export async function handleAppVoice(
   // Only an answer this conversation holds is read out, so a phone can't
   // have arbitrary text said in an agent's voice.
   if (!isAnswerIn(conv.messages, text)) return json(res, 404, { error: "no such answer in this conversation" })
-  const upstream = { agent: conv.agent, text, ...(conv.node !== "local" ? { peer: conv.node } : {}) }
+  // An answer from a conversation in the background starts with who is
+  // talking (#265). The name comes from the conversation, not the phone.
+  const said = body?.announce === true ? `${conv.agentName || conv.agent}: ${text}` : text
+  const upstream = { agent: conv.agent, text: said, ...(conv.node !== "local" ? { peer: conv.node } : {}) }
   return forward(res, deps.daemon, "/voice/speak", Buffer.from(JSON.stringify(upstream)), { "Content-Type": "application/json" }, 90_000)
 }
 

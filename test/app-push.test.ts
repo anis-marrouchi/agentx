@@ -63,7 +63,7 @@ describe("phone app notifications", () => {
   it("subscribes, reports it, and unsubscribes only its own", async () => {
     const a = phone("Phone A")
     const b = phone("Phone B")
-    expect(await (await a.call("GET", "/api/app/push")).json()).toEqual({ available: true, reason: null, publicKey: "BPUBLICKEY", subscriptions: 0 })
+    expect(await (await a.call("GET", "/api/app/push")).json()).toEqual({ available: true, reason: null, publicKey: "BPUBLICKEY", subscriptions: 0, chatFinish: true })
     expect((await a.call("POST", "/api/app/push/subscribe", SUB)).status).toBe(200)
     expect(store.list(a.id)).toMatchObject([{ endpoint: SUB.endpoint, deviceName: "Phone A", publicKey: "BPUBLICKEY" }])
     expect((await (await a.call("GET", "/api/app/push")).json()).subscriptions).toBe(1)
@@ -72,6 +72,21 @@ describe("phone app notifications", () => {
     expect(store.list()).toHaveLength(1)
     expect(await (await a.call("POST", "/api/app/push/unsubscribe", { endpoint: SUB.endpoint })).json()).toEqual({ ok: true, removed: true })
     expect(store.list()).toHaveLength(0)
+  })
+
+  it("keeps the finish-notification setting per phone, on by default (#265)", async () => {
+    const a = phone("Phone A")
+    const b = phone("Phone B")
+    expect((await (await a.call("GET", "/api/app/push")).json()).chatFinish).toBe(true)
+    expect(await (await a.call("POST", "/api/app/push/prefs", { chatFinish: false })).json()).toEqual({ ok: true, chatFinish: false })
+    expect((await (await a.call("GET", "/api/app/push")).json()).chatFinish).toBe(false)
+    expect(store.chatFinishOn(a.id)).toBe(false)
+    // Another phone keeps its own.
+    expect((await (await b.call("GET", "/api/app/push")).json()).chatFinish).toBe(true)
+    expect((await a.call("POST", "/api/app/push/prefs", { chatFinish: "no" })).status).toBe(400)
+    expect((await fetch(`${base}/api/app/push/prefs`, { method: "POST", body: JSON.stringify({ chatFinish: true }) })).status).toBe(401)
+    await a.call("POST", "/api/app/push/prefs", { chatFinish: true })
+    expect(store.chatFinishOn(a.id)).toBe(true)
   })
 
   it("refuses a subscription made with keys the computer no longer has", async () => {

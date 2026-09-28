@@ -63,11 +63,29 @@ Each phone turns notifications on for itself. Repeat these steps on every phone 
 
 ## Use it
 
-- Tap a notification to open the app on the **Alerts** tab. When the message carries a link, for example to a failed job, tapping opens that link instead.
+- Tap a notification to open the app on the **Alerts** tab. When the message carries a link, for example to a failed job, tapping opens that link instead. A notification about a chat answer opens that conversation (see below).
 - Some notifications have buttons. Each button opens its own link.
 - To stop notifications on one phone, open **Alerts** and tap **Turn off**.
 - Removing a phone with `agentx app revoke` also stops its notifications.
 - Once notifications are on, `agentx notify` sends to the phone app. To send somewhere else by default, run `agentx notifications channel ntfy` (or another channel's name). For ntfy, see [Get notified](../jobs/notifications.md).
+
+## Notifications when a chat answer finishes
+
+When you talk to several agents at once in [Chat](./mobile-chat.md#talk-to-several-agents-at-once), an answer can finish while you look at another conversation, or while the app is closed. The phone is told:
+
+- **App open:** a banner at the top of the screen. No notification is sent.
+- **App closed or in the background:** a notification with the agent's name and the first line of its answer. Tapping it opens that conversation.
+
+It only goes to the phone that asked the question, never to your other phones. Nothing is sent for the conversation you are looking at, or for an answer you stopped yourself.
+
+This is on by default. To turn it off or on again for this phone:
+
+1. **Phone:** open the AgentX app and tap **Alerts**.
+2. **Phone:** tap the switch next to **When a chat answer finishes**.
+
+![The Alerts tab with the "When a chat answer finishes" switch turned on](/screenshots/mobile-app/alerts-chat-finish.png)
+
+The setting is kept on the computer, for this phone's pairing: other phones keep their own, and a phone paired again starts with it on. It only changes notifications: the in-app banner still shows while the app is open.
 
 ## Check it worked
 
@@ -79,6 +97,7 @@ Each phone turns notifications on for itself. Repeat these steps on every phone 
 3. **Phone:** a notification titled **Test** appears within a few seconds.
 4. **Phone:** open the app and tap **Alerts**. **Test** is at the top of **Recent**.
 5. **Terminal (other computer):** if you set up a second computer, run the same `agentx notify` there. The phone gets it too.
+6. **Phone:** in **Chat**, ask an agent something that takes a while, then close the app. When the answer is ready, a notification with the agent's name appears. Tap it: the app opens on that conversation.
 
 ## If something is wrong
 
@@ -91,4 +110,5 @@ Each phone turns notifications on for itself. Repeat these steps on every phone 
 - **`agentx notify` says `Unknown channel: "push"`** — notifications aren't turned on on this computer. Follow the setup above, or restart AgentX if you just turned them on.
 - **A second computer says "is not a mesh peer of this node"** — the name after `--relay-to` doesn't match. Check it with `agentx mesh list`.
 - **Notifications stopped after `agentx app push-keys --force`** — new keys cut off every phone. Open **Alerts** on each phone; the card shows **Off**. Tap **Turn on** again.
+- **No notification when a chat answer finishes** — check that the **When a chat answer finishes** switch is on, and that notifications are **On** for this phone. While the app is open on screen you get a banner instead; close the app or lock the phone to get a notification.
 - **Tapping Turn on shows "known push service"** — the phone's browser uses a push service that isn't in `channels.push.allowedHosts`. Add the host name the error shows to that list in `agentx.json`, restart AgentX, and try again.

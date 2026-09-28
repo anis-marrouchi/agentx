@@ -24,6 +24,7 @@ export class ChatTurn {
   plain = false
   /** Set when the orphan limit ended the turn. */
   orphaned = false
+  readonly startedAt = Date.now()
   private listeners = new Map<Listener, ServerResponse>()
   private orphanTimer: ReturnType<typeof setTimeout> | null = null
   private done = false
@@ -38,6 +39,11 @@ export class ChatTurn {
       this.tools.push({ name: String(data.name || "tool"), ...(data.arg ? { arg: String(data.arg) } : {}) })
     }
     for (const l of this.listeners.keys()) l(event, data)
+  }
+
+  /** A phone is streaming this turn right now. */
+  watched(): boolean {
+    return this.listeners.size > 0
   }
 
   /** Streams this turn to `res` until it ends or the phone goes away. */

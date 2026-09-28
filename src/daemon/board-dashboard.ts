@@ -2263,6 +2263,37 @@ function appChatDeps(config: DaemonConfig): AppChatDeps {
     },
     nodePost: (nodeUrl, path, body) => fleet.nodePost(nodeUrl, path, body),
     tokenFor: (nodeUrl) => dashboardTokenForNode(config.dashboard, nodeUrl.replace(/\/+$/, "")),
+    ...finishAlertDeps(config, url, token),
+  }
+}
+
+/** Finish notifications for the phone app (#265). The push channel runs in
+ *  the daemon, so the dashboard asks it through POST /channel/send with the
+ *  phone's device id as the chat id: that addresses one phone, never all.
+ *  Off when this computer doesn't send pushes itself, when the phone has
+ *  no subscription, or when it turned the setting off in Alerts. */
+function finishAlertDeps(config: DaemonConfig, url: string, token: string | undefined): Pick<AppChatDeps, "finishAlerts" | "notifyFinish"> {
+  const pushDeps = appPushDeps(config)
+  return {
+    finishAlerts: (deviceId) => {
+      const store = pushDeps.store()
+      return !!store && store.chatFinishOn(deviceId) && store.list(deviceId).length > 0
+    },
+    notifyFinish: async (p) => {
+      try {
+        const r = await fetch(url + "/channel/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          // First line is the title (splitTitle in channels/ntfy.ts); the
+          // one button's link is where a tap on the notification lands.
+          body: JSON.stringify({ channel: "push", chatId: p.deviceId, text: `${p.title}\n${p.body}`, buttons: [{ label: "Open", url: p.url }] }),
+          signal: AbortSignal.timeout(10_000),
+        })
+        if (!r.ok) console.error(`[app] finish notification not sent: HTTP ${r.status} ${(await r.text()).slice(0, 160)}`)
+      } catch (e: any) {
+        console.error(`[app] finish notification not sent: ${e?.message || e}`)
+      }
+    },
   }
 }
 

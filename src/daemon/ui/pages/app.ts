@@ -21,6 +21,11 @@ import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
 import { APP_CHAT_SCRIPT } from "./app-chat.client"
 import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
+import { APP_CHAT_SHEETS_SCRIPT } from "./app-chat-sheets.client"
+import { APP_CHAT_LOG_SCRIPT } from "./app-chat-log.client"
+import { APP_CHAT_STRIP_SCRIPT } from "./app-chat-strip.client"
+import { APP_CHAT_STRIP_CSS } from "./app-chat-strip.css"
+import { nextSpeech, queueSpeech } from "./app-speech-queue"
 import { APP_CHAT_CSS } from "./app-chat.css"
 import { APP_ORB_SCRIPT } from "./app-orb.client"
 import { APP_VOICE_AUDIO_SCRIPT } from "./app-voice-audio.client"
@@ -72,7 +77,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_VOICE_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -87,8 +92,9 @@ export function renderAppPage(): string {
 <script>${APP_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
-<script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_SCRIPT}</script>
-<script>${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
+<script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_LOG_SCRIPT}${APP_CHAT_SHEETS_SCRIPT}${APP_CHAT_SCRIPT}</script>
+<script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
+<script>${APP_CHAT_STRIP_SCRIPT}</script>
 </body>
 </html>`
 }
@@ -146,7 +152,7 @@ export function renderAppManifest(): string {
 const APP_SCRIPT = `
 (function () {
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
-  function select(tab, focus) {
+  function select(tab, focus, keepHash) {
     tabs.forEach(function (t) {
       var on = t === tab;
       t.setAttribute('aria-selected', on ? 'true' : 'false');
@@ -154,6 +160,7 @@ const APP_SCRIPT = `
       document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
     });
     if (focus) tab.focus();
+    if (keepHash) return;
     try { history.replaceState(null, '', '#' + tab.dataset.tab); } catch (e) {}
   }
   tabs.forEach(function (t, i) {
@@ -167,9 +174,12 @@ const APP_SCRIPT = `
       if (next) { ev.preventDefault(); select(next, true); }
     });
   });
+  // #chat=<id> (a notification's link) opens Chat; the Chat script reads
+  // the id, so the hash is left as it is.
   function fromHash() {
-    var t = tabs.filter(function (t) { return '#' + t.dataset.tab === location.hash; })[0];
-    if (t) select(t, false);
+    var name = location.hash.split('=')[0];
+    var t = tabs.filter(function (t) { return '#' + t.dataset.tab === name; })[0];
+    if (t) select(t, false, true);
   }
   fromHash();
   window.addEventListener('hashchange', fromHash);
