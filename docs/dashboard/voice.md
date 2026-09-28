@@ -86,7 +86,7 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 | **Reset position** | Puts the pill back in the bottom-right corner of the screen |
 | **Settings…** | Opens the [settings window](#settings-window): voices, shortcuts and speech to text |
 | **Dashboard…** | Opens the dashboard's [Settings](./settings.md) page |
-| **History…** | Opens the dashboard's [Activity](./activity.md) page |
+| **History…** | Opens the [History window](#history-of-what-you-asked): past questions and answers, by day |
 
 If the daemon isn't running, the menu says **AgentX daemon isn't reachable** and offers **Retry**. Right-clicking the pill opens the same menu.
 
@@ -202,7 +202,7 @@ In `agentx.json` a shortcut is written as modifiers and a key joined by `+`, for
 |---|---|
 | `AGENTX_DAEMON_URL` | `http://127.0.0.1:18800` |
 | `AGENTX_VOICE_AGENT` | Pins the agent the app talks to; the menu can't switch while it is set. `agentx desktop install --agent <id>` sets it. Without it: the agent picked in the menu, else the daemon's `node.defaultAgent`, else the first agent |
-| `AGENTX_DASHBOARD_URL` | `http://127.0.0.1:4202`, opened by the menu's **Dashboard…** and **History…** |
+| `AGENTX_DASHBOARD_URL` | `http://127.0.0.1:4202`, opened by the menu's **Dashboard…** and by **Open task in dashboard** in the History window |
 | `ELEVENLABS_API_KEY` | Optional hosted transcription, and speech for agents whose provider is `elevenlabs` |
 | `AGENTX_VOICE_ID` | ElevenLabs voice ID for `elevenlabs` agents without `voice.elevenlabsVoiceId` |
 | `AGENTX_VOICE_PROVIDER` | `system`; which engine speaks before the daemon has named one (e.g. an error line) |
@@ -366,6 +366,55 @@ Each line shows its `id`, the agent (`agentId`), what kind of line it is (`answe
 Agents can check the queue themselves when they need to, using the `agentx_voice_queue` tool of `agentx serve`. It is never added to every message an agent receives.
 
 If the daemon can't be reached, the widget speaks its answer itself, as before.
+
+## History of what you asked
+
+The History window lists the questions you asked out loud and the answers you got, grouped by day, newest first. Each row shows the agent, the time, how long the answer took, what you said and the start of the answer. A question that failed shows why in red.
+
+The daemon already keeps a record of every spoken question: each one is a task in the agent's task history, marked as coming from voice. The window reads those records, so nothing new is stored and nothing is kept on the Mac.
+
+![The History window: Today and Yesterday, each row with the agent's colour and name, the time, how long it took, the question and the start of the answer. On the right, the selected answer in full with a link, an Open the survey button, and Replay, Copy and Open task in dashboard](/screenshots/voice/history-light.png)
+
+To read an answer again:
+
+1. **Mac:** click the AgentX icon in the menu bar, or press **Command–Option–A**.
+2. **Mac:** choose **History…** (or press **Command–Y** while the menu is open).
+3. **Mac:** select a question on the left. The answer shows in full on the right, as it was written, with its links and buttons.
+
+To see one agent only:
+
+1. **Mac:** in the History window, open the **Agent** menu at the top.
+2. **Mac:** choose the agent. Only its questions and answers are listed. Choose **All agents** to see everyone again.
+
+![The History window filtered to one agent: only its questions are listed](/screenshots/voice/history-filtered.png)
+
+With an answer selected, you can:
+
+- **Replay** (**Command–Return**): the agent says the answer again. It joins the end of the [speaking queue](#one-queue-for-everything-spoken), so it never talks over a line already playing or waiting.
+- **Copy** (**Command–Shift–C**): copies the written answer.
+- **Open task in dashboard**: opens the task on the dashboard, with every step the agent took.
+
+The window shows 30 questions at a time. Choose **Load older** at the bottom of the list for more, and **Refresh** (**Command–R**) to see new ones.
+
+![The History window in dark mode](/screenshots/voice/history-dark.png)
+
+### Replay from the menu
+
+The AgentX menu lists your last three questions under **Recent · click to replay**, with the agent that answered each one. Click one to hear its answer again, through the speaking queue like any other answer. A question with no answer is greyed out. Point at a row to see the start of its answer.
+
+<!-- Screenshot needed: the AgentX menu's Recent section (native macOS menu). Not captured: a menu-bar menu only renders while it is open on a real screen, and opening one on the owner's Mac would show a live fleet instead of a demo instance. -->
+
+### History for scripts
+
+The same records are available to scripts from the daemon. Requests from the same Mac need nothing more; requests from another computer need the mesh token, the same as agent memory. The list never contains a whole answer, only its first 240 characters and its length; ask for one exchange to read all of it.
+
+| Address | What it does |
+|---|---|
+| `GET /voice/history` | Past spoken questions, newest first: `{"exchanges": [...], "next"}`. Add `?agent=<id>` for one agent, `&limit=<n>` for how many (20 by default, at most 50), and `&before=<next>` for the page after this one. `next` is empty on the last page |
+| `GET /voice/history/<id>` | One exchange in full: the question, the written `answer`, its `ui` links and buttons, `durationMs`, and `taskPath`, the task's address on the dashboard |
+| `POST /voice/history/<id>/replay` | Say that answer again in its agent's voice, at the end of the speaking queue. Replies `202` with the queued line |
+
+Each row of the list has an `id`, the `agentId`, `at` (when you asked, in milliseconds since 1970), `durationMs`, `status` (`ok`, `error`, `in-flight`, `canceled` or `timeout`), your `question` (up to 200 characters), `answerPreview`, `answerChars` and `error`.
 
 ## Task narration
 
@@ -550,6 +599,7 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `POST /voice/queue/<id>/front` | Play that waiting line next |
 | `POST /voice/queue/<id>/replay` | Say a waiting or recently finished line again, next |
 | `POST /voice/queue/pause`, `POST /voice/queue/resume` | Hold the queue, or let it play on. A held queue plays on by itself after a minute |
+| `GET /voice/history`, `GET /voice/history/<id>`, `POST /voice/history/<id>/replay` | Past spoken questions and answers, and saying one again (see [History for scripts](#history-for-scripts)) |
 | `GET /narration`, `POST /narration` | Read or set narration switches: `{"agentId": "<id>", "on": true}` or `{"taskId": "<id>", "on": null}` |
 
 `/talk/hush` and `/talk/door` still work as older names for `/voice/hush` and `/voice/door`.
@@ -574,6 +624,10 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 14. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice. Choose **Save**, then ask that agent something: the answer uses the new voice.
 15. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/settings`. It prints the saved settings, including the change you just made.
 16. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
+17. **Mac:** open the AgentX menu and choose **History…**. The question you asked in step 3 is listed under **Today**, with the agent's name and how long it took.
+18. **Mac:** choose one agent from the **Agent** menu at the top of the window. Only that agent's questions are listed.
+19. **Mac:** select a question and choose **Replay**. The answer is spoken again, after anything already speaking.
+20. **Terminal:** run `curl -s 'http://127.0.0.1:18800/voice/history?limit=3'`. It prints your last three questions, each with an `answerPreview` and not the whole answer.
 
 ## If something is wrong
 
@@ -605,4 +659,10 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **No pointer appears after an answer:** presence mode is off, or the seat chose `talk` with low confidence. Look for `[presence]` lines in the daemon log.
 - **A lesson says "Bring … to the front":** click the app the lesson started in; it carries on.
 - **The agent never clicks in `act` mode:** set `"allowActions": true` in the agent's `presence` block.
+- **History says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then choose **Refresh**.
+- **History is empty:** only questions asked out loud (with the widget, Siri or `/ask`) are listed, and only those this daemon answered. A question answered by an agent on another computer is in that computer's history.
+- **Replay is greyed out, or says there is no answer:** the question failed or was stopped before an answer came back. Ask it again.
+- **A replay plays late:** it waits for the lines ahead of it in the speaking queue. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue` to see what is ahead.
+- **Open task in dashboard shows nothing:** the dashboard isn't running on `AGENTX_DASHBOARD_URL`. **Terminal:** run `agentx board serve`, or set `AGENTX_DASHBOARD_URL` to where it runs.
+- **`401` from `/voice/history` on another computer:** send the mesh token as `Authorization: Bearer <token>`.
 - **Narration stays silent:** check `voice.narrate` for the agent, or run `agentx narrate <agent-id> on`. Scheduled jobs need `"all"`, and questions from the widget are never narrated this way.
