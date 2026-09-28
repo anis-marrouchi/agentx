@@ -57,6 +57,7 @@ describe("fact disagreements stay with a person", () => {
     const again = l.write({ ...base, value: "past due", verifiedAt: "now" }, { now: NOW + 1000 })
     expect(again.status).toBe("contradiction")
     expect(again.questionId).toBeUndefined()
+    expect(again.questionClosed).toBe("dismissed")
     expect(l.list()[0]).toMatchObject({ value: "active" })
   })
 })
