@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.57.0](https://github.com/anis-marrouchi/agentx/compare/v0.56.0...v0.57.0) (2026-09-28)
+
+
+### Features
+
+* **voice:** per-agent settings window saved through the daemon ([#204](https://github.com/anis-marrouchi/agentx/issues/204)) ([#206](https://github.com/anis-marrouchi/agentx/issues/206)) ([c84726d](https://github.com/anis-marrouchi/agentx/commit/c84726d5bc782c3d694808b850f2357c746b04cc))
+
 ## [0.56.0](https://github.com/anis-marrouchi/agentx/compare/v0.55.0...v0.56.0) (2026-09-28)
 
 
