@@ -79,29 +79,29 @@ Conversations are saved on the computer (in `.agentx/db.sqlite`, next to `agentx
 
 ## What the computer needs for voice
 
-Your voice is recorded on the phone and turned into text on the computer the phone is paired with. That computer tries these *speech-to-text engines* (programs that write down what was said) in order, the same order as [AgentX Voice](./voice.md) on a Mac:
+Your voice is recorded on the phone and turned into text on the computer the phone is paired with. That computer always needs `ffmpeg`, a free program that reads audio files: AgentX uses it to measure how long each recording really is, and turns voice input from the phone off on a computer without it. Then it tries these *speech-to-text engines* (programs that write down what was said) in order, the same order as [AgentX Voice](./voice.md) on a Mac:
 
 1. **ElevenLabs**, a paid online service, when an ElevenLabs key is set on the computer.
 2. **Whisper on the computer**, when `mlx_whisper` (Apple silicon Macs) or `whisper` is installed, together with `ffmpeg` to read the phone's recording. Nothing leaves the computer.
 
-To set up one of them:
+To set up voice input:
 
-1. **Terminal (computer):** for ElevenLabs, save your key in a file the AgentX service can read:
+1. **Terminal (computer):** install `ffmpeg`. On a Mac: `brew install ffmpeg`. On Debian or Ubuntu: `sudo apt install ffmpeg`.
+2. **Terminal (computer):** for ElevenLabs, save your key in a file the AgentX service can read:
 
    ```sh
    mkdir -p ~/.elevenlabs && printf '%s' 'your-elevenlabs-key' > ~/.elevenlabs/key
    ```
 
-2. **Terminal (computer):** for Whisper on a Mac with Apple silicon, install `ffmpeg` and `mlx_whisper`:
+3. **Terminal (computer):** or, for Whisper on a Mac with Apple silicon, install `mlx_whisper`:
 
    ```sh
-   brew install ffmpeg
    pipx install mlx-whisper
    ```
 
    The first recording downloads the Whisper model, which takes a few minutes.
 
-3. **Terminal (computer):** restart AgentX so it picks up the key: `agentx daemon restart`.
+4. **Terminal (computer):** restart AgentX so it picks up the key: `agentx daemon restart`.
 
 `voice.stt` in `agentx.json` chooses between them: `auto` (default) and `elevenlabs` try ElevenLabs first and Whisper if that fails; `local` never sends your voice off the computer. Spoken answers in an agent's own voice need the ElevenLabs key too.
 
@@ -115,7 +115,7 @@ To set up one of them:
 | `AGENTX_WHISPER`, `AGENTX_WHISPER_MODEL` | Where the `whisper` command is, and its model (`base` by default), for computers without `mlx_whisper` |
 | `AGENTX_FFMPEG` | Where `ffmpeg` is, when it is not in one of the folders above |
 
-A recording is at most 2 minutes long. The phone records at a fixed quality so 2 minutes stay under 1 MB, and the computer refuses anything over 2 MB. When the computer has `ffmpeg`, it also measures the recording itself and refuses one longer than 2 minutes. A recording is kept in a private temporary folder only while it is written down, then deleted, and it is never written to a log. The computer writes down at most two recordings at a time.
+A recording is at most 2 minutes long. The computer measures every recording itself with `ffmpeg`, whatever the phone or the file says about its length, and refuses one longer than 2 minutes. The phone records at a fixed quality so 2 minutes stay under 1 MB, and the computer also refuses any file over 2 MB. A recording is kept in a private temporary folder only while it is written down, then deleted, and it is never written to a log. The computer writes down at most two recordings at a time.
 
 ## Allow the microphone on an iPhone
 
@@ -136,7 +136,9 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 
 ## If something is wrong
 
-- **"Voice input isn't set up on this computer"** — the computer has neither an ElevenLabs key nor Whisper with `ffmpeg`. Set one up as in [What the computer needs for voice](#what-the-computer-needs-for-voice). Until then the text box opens so you can type.
+- **"Install ffmpeg on … for voice input from the phone"** — that computer has no `ffmpeg`. Install it as in [What the computer needs for voice](#what-the-computer-needs-for-voice), and set `AGENTX_FFMPEG` if it is in an unusual folder. Until then the text box opens so you can type.
+- **"The recording could not be read"** — the file from the phone was damaged or in a format `ffmpeg` can't read. Record it again.
+- **"Voice input isn't set up on this computer"** — the computer has neither an ElevenLabs key nor Whisper. Set one up as in [What the computer needs for voice](#what-the-computer-needs-for-voice). Until then the text box opens so you can type.
 - **"The microphone is blocked"** — the phone refused the microphone. Allow it as in [Allow the microphone on an iPhone](#allow-the-microphone-on-an-iphone), or in the browser's site settings on Android. You can type meanwhile.
 - **"This browser can't record here"** — the page is not on its `https://` address, or the browser can't record. Open the app from the address in [Install the phone app](./mobile-app.md).
 - **"No words were heard"** — the recording was silent or too short. Hold the orb, speak, then let go.

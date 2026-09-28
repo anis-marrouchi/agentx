@@ -20,8 +20,10 @@ export type SttEngine = "elevenlabs" | "mlx-whisper" | "whisper"
 /** Bounds on one recording, checked by the dashboard and by the daemon.
  *  The phone records at `bitsPerSecond`, so 2 minutes is under 1 MB; the
  *  byte cap is 2 minutes at about twice that, room for a browser that
- *  ignores the requested rate and for the container. It bounds the length
- *  of what reaches an engine whatever the phone claims about it. */
+ *  ignores the requested rate and for the container. The byte cap bounds
+ *  bytes only: at a low bitrate 2 MB holds far more than 2 minutes. The
+ *  length is bounded by decoding the file (measureSeconds), which is why
+ *  the daemon takes phone recordings only where it has ffmpeg. */
 export const AUDIO_LIMITS = {
   ms: 2 * 60 * 1000,
   bitsPerSecond: 64_000,
@@ -99,18 +101,12 @@ export function detectSttHost(key: string | null): SttHost {
   }
 }
 
-/** Seconds of audio in a file, measured, not taken from the phone:
- *  ffprobe's container duration, else (a MediaRecorder webm has none)
- *  ffmpeg decoding it. Decoding stops a little past the cap, so a long file
- *  costs no more than a legal one. Null when neither tool is here. */
+/** Seconds of audio in a file, by decoding it with ffmpeg. Never the
+ *  phone's header and never the container's stated duration: both are
+ *  written by the sender (a webm's Segment Duration is 8 bytes anyone can
+ *  patch). Decoding stops a little past the cap, so a long file costs no
+ *  more than a legal one. Null without ffmpeg, or when it can't decode. */
 export async function measureSeconds(file: string, ffmpeg: string | null): Promise<number | null> {
-  const ffprobe = ffmpeg && existsExec(join(dirname(ffmpeg), "ffprobe")) ? join(dirname(ffmpeg), "ffprobe") : findBinary("ffprobe")
-  if (ffprobe) {
-    try {
-      const s = parseFloat((await run(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], 10_000)).trim())
-      if (Number.isFinite(s) && s > 0) return s
-    } catch { /* decode instead */ }
-  }
   return ffmpeg ? decodeSeconds(file, ffmpeg) : null
 }
 
@@ -123,10 +119,6 @@ export async function decodeSeconds(file: string, ffmpeg: string): Promise<numbe
     const m = times[times.length - 1]
     return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null
   } catch { return null }
-}
-
-function existsExec(p: string): boolean {
-  try { accessSync(p, constants.X_OK); return true } catch { return false }
 }
 
 /** ElevenLabs Scribe. The recording goes as it is: Scribe reads webm and mp4. */

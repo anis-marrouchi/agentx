@@ -46,8 +46,9 @@ beforeEach(() => {
     log: (l) => logs.push(l),
     engines: { elevenlabs: engine("elevenlabs"), "mlx-whisper": engine("mlx-whisper"), whisper: engine("whisper") },
     synth: async (_key, voice, text) => { spoken.push({ voice, text }); return Buffer.from("ID3-mp3") },
-    // The fake bytes can't be measured; the real measurement has its own tests.
-    measure: async () => null,
+    // The fake bytes can't be decoded; the real measurement has its own
+    // tests (voice-io-measure.test.ts). Here every recording is 3 s.
+    measure: async () => 3,
   }
 })
 
@@ -107,7 +108,7 @@ describe("POST /voice/transcribe", () => {
     expect(r.status).toBe(503)
     const j = await r.json()
     expect(j.error).toMatch(/isn't set up/)
-    expect(j.hint).toMatch(/ElevenLabs key.*mlx-whisper and ffmpeg/)
+    expect(j.hint).toMatch(/Install ffmpeg on this computer.*ElevenLabs key.*mlx-whisper and ffmpeg/)
     expect(calls).toEqual([])
     expect(sttSetupHint("auto", { key: null, mlx: "/x", whisper: null, ffmpeg: null })).toMatch(/no ffmpeg/)
   })
@@ -144,6 +145,23 @@ describe("POST /voice/transcribe", () => {
     expect(AUDIO_LIMITS.bytes).toBeLessThanOrEqual(2 * 1024 * 1024)
     const r = await transcribe(Buffer.alloc(AUDIO_LIMITS.bytes + 1), { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": "1000" })
     expect(r.status).toBe(413)
+    expect(calls).toEqual([])
+  })
+
+  it("refuses phone voice input where ffmpeg is missing, even with an ElevenLabs key", async () => {
+    // Without ffmpeg the length can't be measured, and neither the header
+    // nor the byte cap bounds it.
+    deps.host = () => ({ key: "k", mlx: null, whisper: null, ffmpeg: null })
+    deps.nodeName = "office-mac"
+    const r = await transcribe(AUDIO)
+    expect(r.status).toBe(503)
+    expect((await r.json()).hint).toBe("Install ffmpeg on office-mac for voice input from the phone.")
+    expect(calls).toEqual([])
+  })
+
+  it("refuses a recording ffmpeg can't decode", async () => {
+    deps.measure = async () => null
+    expect((await transcribe(AUDIO)).status).toBe(422)
     expect(calls).toEqual([])
   })
 

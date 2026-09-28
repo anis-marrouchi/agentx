@@ -45,6 +45,8 @@ export interface VoiceIoDeps {
   /** Tests swap the engines and the synthesiser. */
   engines?: Partial<Record<SttEngine, (file: string, mime: string, host: SttHost, dir: string) => Promise<string>>>
   measure?: (file: string, ffmpeg: string | null) => Promise<number | null>
+  /** This node's name, for the phone's setup hint. */
+  nodeName?: string
   synth?: (key: string, voice: VoiceRef, text: string) => Promise<Buffer>
 }
 
@@ -68,6 +70,16 @@ async function transcribe(req: IncomingMessage, res: ServerResponse, deps: Voice
   const setting = deps.stt()
   const host = deps.host()
   const engines = sttEngines(setting, host)
+  // Without ffmpeg the recording's length can't be measured, and neither
+  // the header nor the byte cap bounds it: refuse rather than trust them.
+  if (!host.ffmpeg) {
+    const where = deps.nodeName ? `on ${deps.nodeName}` : "on this computer"
+    return json(res, 503, {
+      error: "Voice input isn't set up on this computer.",
+      hint: `Install ffmpeg ${where} for voice input from the phone.${engines.length ? "" : " " + sttSetupHint(setting, host)}`,
+      setup: false,
+    })
+  }
   if (!engines.length) {
     return json(res, 503, { error: "Voice input isn't set up on this computer.", hint: sttSetupHint(setting, host), setup: false })
   }
@@ -90,10 +102,11 @@ async function transcribe(req: IncomingMessage, res: ServerResponse, deps: Voice
 async function transcribeIn(dir: string, name: string, audio: Buffer, mime: string, host: SttHost, engines: SttEngine[], deps: VoiceIoDeps): Promise<[number, unknown]> {
   const file = join(dir, name)
   await writeFile(file, audio, { mode: 0o600 })
-  // The real length where this host can measure it, whatever the header
-  // said. Without ffmpeg or ffprobe the byte cap bounds it instead.
+  // The real length, decoded, whatever the header or the container says.
+  // A file ffmpeg can't decode isn't passed on either.
   const secs = await (deps.measure ?? measureSeconds)(file, host.ffmpeg)
-  if (secs != null && secs * 1000 > AUDIO_LIMITS.ms + 2000) return [413, { error: tooLongMessage() }]
+  if (secs == null) return [422, { error: "The recording could not be read. Try again." }]
+  if (secs * 1000 > AUDIO_LIMITS.ms + 2000) return [413, { error: tooLongMessage() }]
   const failures: string[] = []
   for (const engine of engines) {
     try {

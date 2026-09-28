@@ -2565,6 +2565,7 @@ export class AgentXDaemon {
           host: () => detectSttHost(elevenLabsKey()),
           elevenLabsKey,
           voiceOf: (id, peer) => resolveVoice(id, peer, this.config, this.voiceMesh.voices),
+          nodeName: this.config.node?.name,
           log: (m) => this.log(m),
         })
         return
