@@ -7,6 +7,7 @@ import { handleAppChat, type AppChatDeps } from "./app-chat"
 import { handleAppVoice, type AppVoiceDeps } from "./app-voice"
 import { PairAttemptLimiter, redeemPairCode } from "./app-pair-code"
 import { PairCodeStore } from "./pair-codes"
+import { RejectLog, credentialState, rejectFields } from "./app-auth-log"
 import {
   APP_SERVICE_WORKER,
   renderAppLockedPage,
@@ -50,10 +51,14 @@ export interface AppRouteCtx {
   pairLimiter?: PairAttemptLimiter
   /** Minimum duration of a pair-code attempt (tests shorten it). */
   pairMinMs?: number
+  /** Where refused requests are traced (tests pass their own). */
+  rejectLog?: RejectLog
 }
 
 /** One limiter per dashboard process: the global cap must span requests. */
 const defaultPairLimiter = new PairAttemptLimiter()
+/** Likewise one rate limit for the "unauthenticated" trace lines. */
+const defaultRejectLog = new RejectLog()
 
 /** Handles the request and returns true if `path` belongs to the phone app. */
 export async function handleAppRequest(
@@ -104,6 +109,11 @@ export async function handleAppRequest(
 
   const rec = verifyAppToken(appToken(req), tokens)
   if (!rec) {
+    const sent = bearer(req)
+    ;(ctx.rejectLog ?? defaultRejectLog).record(
+      path.slice(0, 120),
+      rejectFields(req, credentialState(cookie(req, APP_COOKIE), tokens), sent ? credentialState(sent, tokens) : null),
+    )
     if (path === "/app") return send(res, 401, "text/html; charset=utf-8", renderAppLockedPage())
     return sendJson(res, 401, { error: "this device is not paired", hint: "run: agentx app pair" })
   }
@@ -126,8 +136,23 @@ export function verifyAppToken(token: string | null, tokens: TokenStore): TokenR
   return rec && recordHasScope(rec, "app") ? rec : null
 }
 
-function sessionCookie(token: string): string {
-  return `${APP_COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Strict`
+/** The one place the session cookie is built, for both the Bearer route
+ *  and the pair-code route.
+ *
+ *  SameSite=Lax, not Strict (#234). An app on the iOS home screen opens and
+ *  resumes /app with a top-level navigation that WebKit may treat as coming
+ *  from outside the site, and a Strict cookie is then left off: the phone
+ *  looked unpaired after every update or restart and the owner paired again.
+ *  Lax sends the cookie on top-level GET navigations, which is all that
+ *  changes.
+ *
+ *  POSTs stay protected. Lax still leaves the cookie off cross-site POSTs
+ *  and subresource requests, and the dashboard rejects any state-changing
+ *  request whose Origin is another site with a 403 before it reaches these
+ *  routes (classifyBrowserRequest in board-dashboard.ts). A cross-site GET
+ *  can at most open the app page; every GET under /api/app only reads. */
+export function sessionCookie(token: string): string {
+  return `${APP_COOKIE}=${token}; Path=/; Max-Age=${COOKIE_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`
 }
 
 function appToken(req: IncomingMessage): string | null {
