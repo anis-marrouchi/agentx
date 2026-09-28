@@ -32,6 +32,9 @@ const MEMO_PROMPT =
   "- Decisions made and their reasoning\n" +
   "- Open tasks or commitments to follow up on\n" +
   "- Identifiers (issue numbers, PR numbers, ticket ids) the user referred to\n\n" +
+  "Do not restate the state of an outside system (billing, account, plan, outage, " +
+  "deploy) unless you checked it in this session; then say how and when you checked " +
+  "(e.g. \"active per GET /v1/user, 2026-09-28\").\n\n" +
   "Format: 3-12 short bullet points. Each ≤120 chars. No prose, no preamble, " +
   "no header. If the session was uninformative or just casual chat, reply with " +
   "exactly the literal text \"(no memo)\".\n\n" +

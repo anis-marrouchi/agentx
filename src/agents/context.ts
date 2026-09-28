@@ -445,7 +445,7 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       priority: 7.6,
       maxTokens: budget("rotation-memo", 800),
       content: [
-        `[Continuity memo — your previous session for this chat ended (${input.rotationMemo.reason}, ${input.rotationMemo.capturedAt}). Carry on from these facts; do not claim you lack prior context:]`,
+        `[Continuity memo — your previous session for this chat ended (${input.rotationMemo.reason}, ${input.rotationMemo.capturedAt}). Carry on from this work state; do not claim you lack prior context. It is a summary, not checked facts: re-check account, billing, outage or deploy state before stating it, or say it is unverified and ask the owner:]`,
         input.rotationMemo.memo,
       ].join("\n"),
       tags: ["continuity", "rotation-memo"],

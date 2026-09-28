@@ -888,9 +888,11 @@ export class AgentRegistry {
       // continues. Without keywords BM25 has nothing to score against
       // and the memo only floats up via the recent-fallback branch.
       const chatKeyword = chatId.split(/[:@.]/).filter(Boolean).slice(0, 4)
+      // Work state, not a durable fact: a summary restates what the session
+      // believed, unsourced, so it expires like other task state (#273).
       this.memoryStore.addMemory(agentId, {
         agentId,
-        category: "fact",
+        category: "task-state",
         content: `[Rotation memo · ${reason}] ${result.memo}`,
         keywords: ["rotation-memo", channel, ...chatKeyword],
         source: { channel, chatId, sender: "system:rotation", date: new Date().toISOString().slice(0, 10) },

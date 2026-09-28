@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs"
 import { resolve } from "path"
 import { buildIndexCached, scoreAll } from "../memory/bm25"
+import { ageDays, needsRecheck, VERIFY_OR_ASK_RULE } from "./fact-freshness"
 import { containsSecret, factTrust, initialReview, isInjectable, trustForChannel, type FactReview, type SourceTrust } from "./memory-trust"
 
 // --- Persistent agent memory store ---
@@ -113,9 +114,10 @@ export class MemoryStore {
   }
 
   buildContext(memories: MemoryFact[]): string {
-    const lines = this.contextLines(memories).map((l) => l.line)
-    if (lines.length === 0) return ""
-    return ["[Agent Memory — persistent facts from past conversations]", ...lines, "[End Memory]"].join("\n")
+    const kept = this.contextLines(memories)
+    if (kept.length === 0) return ""
+    const rule = kept.some((l) => l.unverified) ? [VERIFY_OR_ASK_RULE] : []
+    return ["[Agent Memory — persistent facts from past conversations]", ...rule, ...kept.map((l) => l.line), "[End Memory]"].join("\n")
   }
 
   /** The facts buildContext actually renders — the rest fall past its
@@ -124,18 +126,27 @@ export class MemoryStore {
     return this.contextLines(memories).map((l) => l.fact)
   }
 
-  private contextLines(memories: MemoryFact[]): Array<{ fact: MemoryFact; line: string }> {
-    const kept: Array<{ fact: MemoryFact; line: string }> = []
+  private contextLines(memories: MemoryFact[]): Array<{ fact: MemoryFact; line: string; unverified: boolean }> {
+    const kept: Array<{ fact: MemoryFact; line: string; unverified: boolean }> = []
     let chars = "[Agent Memory — persistent facts from past conversations]".length
+    let ruleCounted = false
+    const now = Date.now()
 
     for (const m of memories) {
       const isDM = !m.source.chatId.startsWith("-") && /^\d+$/.test(m.source.chatId)
       const scope = isDM ? "DM" : m.source.chatId
-      const line = `- [${m.category}] ${m.content} (${scope}, ${m.source.date})`
+      // Stale account/billing/deploy state and session summaries are
+      // flagged so the agent re-checks or asks before stating them (#273).
+      const unverified = needsRecheck(m, now)
+      const age = ageDays(m, now)
+      const flag = unverified ? `UNVERIFIED (${age === null ? "age unknown" : `${age}d old`}) ` : ""
+      const line = `- [${m.category}] ${flag}${m.content} (${scope}, ${m.source.date})`
+      const extra = unverified && !ruleCounted ? VERIFY_OR_ASK_RULE.length : 0
 
-      if (chars + line.length > 2400) break
-      kept.push({ fact: m, line })
-      chars += line.length
+      if (chars + extra + line.length > 2400) break
+      kept.push({ fact: m, line, unverified })
+      chars += extra + line.length
+      if (extra) ruleCounted = true
     }
     return kept
   }
