@@ -427,6 +427,8 @@ final class App: NSObject, NSApplicationDelegate {
         lastSpokeAt = Date()
         talkCheck = Task { await AgentClient.hush() }
         Log.info("door: opened\(busy ? " (a turn is running)" : "")")
+        // Push-to-talk ends on key release; no end-of-turn detection needed.
+        recorder.endOfTurn = "hold"
         do {
             try recorder.start()
             asideSpeaker = nil

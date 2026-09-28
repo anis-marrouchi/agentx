@@ -696,8 +696,8 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 18. **Mac:** choose one agent from the **Agent** menu at the top of the window. Only that agent's questions are listed.
 19. **Mac:** select a question and choose **Replay**. The answer is spoken again, after anything already speaking.
 20. **Terminal:** run `curl -s 'http://127.0.0.1:18800/voice/history?limit=3'`. It prints your last three questions, each with an `answerPreview` and not the whole answer.
-17. **Terminal:** to check the on-device models, run `~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local status`. `vad: installed` appears once the microphone has been used; `parakeet: installed` once Parakeet has been chosen and downloaded.
-18. **Mac:** click the pill so the microphone opens without a key, say a sentence with a short pause in the middle, then stop. The question is sent about a second after your last word, not during the pause.
+21. **Terminal:** to check the on-device models, run `~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local status`. `vad: installed` appears once the microphone has been used; `parakeet: installed` once Parakeet has been chosen and downloaded.
+22. **Mac:** click the pill so the microphone opens without a key, say a sentence with a short pause in the middle, then stop. The question is sent about a second after your last word, not during the pause.
 
 ## If something is wrong
 

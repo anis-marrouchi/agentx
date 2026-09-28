@@ -30,8 +30,9 @@ final class Recorder {
     private(set) var level: Float = 0
 
     /// How a hands-free turn's end is heard: "vad" (Silero VAD, once its
-    /// model is downloaded; the volume threshold until then) or "volume".
-    /// agentx.json's `voice.endOfTurn`, set before each `start()`.
+    /// model is downloaded; the volume threshold until then) or "volume",
+    /// from agentx.json's `voice.endOfTurn`. Push-to-talk sets "hold": its
+    /// turn ends on key release, so no detector runs. Set before `start()`.
     var endOfTurn = "vad"
     /// True while this recording's turn is judged by Silero VAD.
     private(set) var usingVAD = false
@@ -148,7 +149,9 @@ final class Recorder {
     /// with the model downloading in the background for next time.
     private func prepareTurn() {
         var detector: SileroVAD?
-        if endOfTurn != "volume" {
+        // Only a hands-free turn listens for its own end; push-to-talk ("hold")
+        // ends on key release, so it never loads or runs the model.
+        if endOfTurn == "vad" {
             do {
                 if let model = try SileroVAD.loadModel() {
                     detector = try SileroVAD(model: model)
