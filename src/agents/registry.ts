@@ -285,7 +285,7 @@ export function buildWikiContext(
     "",
     "It walks the catalog and the wikilink graph and returns a cited answer. Ask it before you grep the workspace or answer from your own recollection.",
     "",
-    `Facts about outside systems (billing, accounts, outages, deploys) carry a source and a check date: \`node ${cli} wiki facts list --dir ${wikiDir}\`. Past its time limit a fact must be re-checked at the source before you state it; record what you checked with \`wiki facts set\`. If you can't check, say it is unverified and ask the owner.`,
+    `Facts about outside systems (billing, accounts, outages, deploys) carry a source and a check date: \`node ${cli} wiki facts list --dir ${wikiDir}\`. Past its time limit a fact must be re-checked at the source before you state it; record what you checked with \`wiki facts set ... --checked-at now\`. If you can't check, say it is unverified and ask the owner.`,
     "[End Institutional Wiki]",
   ].join("\n")
 }

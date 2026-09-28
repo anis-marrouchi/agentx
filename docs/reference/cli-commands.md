@@ -1083,7 +1083,7 @@ One fact, with its earlier values.
 
 ### `agentx wiki facts set`
 
-Record a fact you just checked. A different value replaces the current one only with a newer check or `--confirm`; otherwise a question is added to `agentx wiki questions`.
+Record a fact you checked. A different value replaces the current one only with a newer `--checked-at` (and never one a person confirmed), or with `--confirm`; otherwise a question is added to `agentx wiki questions`.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1092,7 +1092,7 @@ Record a fact you just checked. A different value replaces the current one only 
 | `--value <text>` | required | The value you found. |
 | `--source <text>` | required | Where you checked: a system, URL, command, or "owner said". |
 | `--by <id>` | `operator`, or the agent running it (`AGENTX_AGENT_ID`) | Who checked it. |
-| `--checked-at <iso>` | now | When it was checked. |
+| `--checked-at <iso>` | — | When you checked it: an ISO date, or `now`. Without it the value can't replace a different one already recorded. |
 | `--class <class>` | from the wording | billing \| account \| outage \| deploy \| work-state \| stable. |
 | `--ttl-days <n>` | from the class | Days it stays trusted. |
 | `--confirm` | — | A person confirms this value: replace a newer-dated one. |
@@ -1563,7 +1563,7 @@ Find stored facts that contain credentials; --apply deletes them.
 
 ### `agentx memory facts flag-unsourced`
 
-Mark facts about billing, accounts, outages or deploys that name no source as unverified; --apply writes (with a backup in `.agentx/memory/_backup/`). Running it again changes nothing.
+Mark facts about billing, accounts, outages or deploys that name no source as unverified; --apply writes (with a backup in `.agentx/memory/_backup/`); stop the daemon first. Running it again changes nothing.
 
 | Flag | Default | What it does |
 |---|---|---|

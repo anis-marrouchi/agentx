@@ -124,10 +124,11 @@ Agents do this themselves after they check something. You can do it too, in a **
 1. Record the fact and where you checked it:
    ```sh
    agentx wiki facts set --subject "vendor account" --attribute "billing status" \
-     --value "active" --source "vendor dashboard" --by operator
+     --value "active" --source "vendor dashboard" --checked-at now --by operator
    ```
-2. If the wiki already holds a more recent value, AgentX doesn't replace it and adds a question instead. To replace it anyway, because you know it's right, add `--confirm`.
-3. See every checked fact, or only the ones past their time limit:
+2. `--checked-at` says when you checked. Without it, a new value can't replace a different one that's already recorded.
+3. If the wiki already holds a more recent value, or one a person confirmed, AgentX doesn't replace it and adds a question instead. To replace it anyway, because you know it's right, add `--confirm`.
+4. See every checked fact, or only the ones past their time limit:
    ```sh
    agentx wiki facts list
    agentx wiki facts list --stale
@@ -142,11 +143,19 @@ Facts saved before this version don't say where they came from. This one-time st
    ```sh
    agentx memory facts flag-unsourced
    ```
-2. Mark them:
+2. Stop the daemon, so no agent saves a fact while the files are rewritten:
+   ```sh
+   agentx daemon stop
+   ```
+3. Mark them:
    ```sh
    agentx memory facts flag-unsourced --apply
    ```
    A copy of each changed file is saved first, in `.agentx/memory/_backup/`. Running it again changes nothing.
+4. Start the daemon again:
+   ```sh
+   agentx daemon start --detach
+   ```
 
 ## 7. Approve the lessons proposed for the shared wiki
 
@@ -262,8 +271,9 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 - **`agentx trace lessons` says no lesson has enough runs:** only tasks run since this version record their lessons, and a task has to repeat on both sides of a lesson. Wait for more runs, widen `--since`, or lower `--min`.
 - **`agentx trace lessons` says `No db at`:** run it in the folder that holds `agentx.json`, or name that folder with `--cwd <folder>`. To read a database copied from another machine, add `--path <file>`.
 - **A lesson you expected is missing from the report:** procedures and the wiki's table of contents are only given at the start of a fresh conversation, so runs that continue an earlier conversation don't count for them.
-- **`agentx wiki facts set` says the value was not replaced:** the wiki holds a value checked more recently. Answer the question it added with `agentx wiki answer`, or add `--confirm` if you know yours is right.
+- **`agentx wiki facts set` says the value was not replaced:** the wiki holds a value checked more recently, or one a person confirmed, or you left out `--checked-at`. Answer the question it added with `agentx wiki answer`, or add `--confirm` if you know yours is right.
 - **`approve` says it couldn't read a subject, attribute and value:** the claim wasn't a simple "X is Y" sentence. Approve it again with `--subject`, `--attribute` and `--value`.
-- **An agent keeps calling a fact unverified:** the fact is past its time limit. Check it, then record it with `agentx wiki facts set`.
+- **An agent keeps calling a fact unverified:** the fact is past its time limit. Check it, then record it with `agentx wiki facts set --checked-at now`.
+- **A command says the fact ledger is unreadable:** the file `.agentx/wiki/_facts.json` is damaged, so AgentX writes nothing to it rather than replace it. Fix the file, or move it aside to start an empty list; agents keep working without it.
 - **You want the old memory back after `flag-unsourced --apply`:** copy the file from `.agentx/memory/_backup/` over the agent's file in `.agentx/memory/`.
 - **Memory changes are refused with `403`:** the request named a task from another agent. Each agent can only change its own memories.

@@ -159,7 +159,7 @@ export function needsRecheck(f: FreshnessFields, now = Date.now()): boolean {
 /** The rule injected with every memory block that holds a flagged line. */
 export const VERIFY_OR_ASK_RULE =
   "[These are notes, not checked facts. Before you state one marked UNVERIFIED to a person or act on it, " +
-  "re-check it against its source (API, CLI, dashboard) and record it with `agentx wiki facts set`. " +
+  "re-check it against its source (API, CLI, dashboard) and record it with `agentx wiki facts set --checked-at now`. " +
   "If you can't, say it is unverified and ask the owner.]"
 
 // --- Session summaries ---

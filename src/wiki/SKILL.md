@@ -35,10 +35,10 @@ A bill, a credit balance, an account (suspended, blocked, expired), an outage or
 1. Look it up: `agentx wiki facts list`. Each fact shows its source, when it was checked and by whom.
 2. If it is fresh, use it. If it is marked `UNVERIFIED` or `STALE`, or you only have it from memory or a conversation summary, check it again at the source (the service's API, CLI or dashboard).
 3. Record what you found, with where you checked it:
-   `agentx wiki facts set --subject "vendor account" --attribute "billing status" --value "active" --source "GET /v1/user"`
+   `agentx wiki facts set --subject "vendor account" --attribute "billing status" --value "active" --source "GET /v1/user" --checked-at now`
 4. If you can't check it, say it is unverified and ask the owner. Never state it as true.
 
-If the wiki holds a more recent value than yours, `set` doesn't overwrite it; it adds a question for a person. Don't retry with `--confirm`: that flag is for a person confirming the value.
+Only pass `--checked-at now` when you really checked the source just now; a value from memory or a summary is not a check. If the wiki holds a more recent value, or one a person confirmed, `set` doesn't overwrite it; it adds a question for a person. Don't retry with `--confirm`: that flag is for a person confirming the value.
 
 ## The primary command
 

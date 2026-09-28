@@ -261,7 +261,15 @@ export class MemoryStore {
 
   /** Replace every fact of an agent. Callers back the file up first. */
   rewrite(agentId: string, memories: MemoryFact[]): void {
-    writeFileSync(this.filePath(agentId), memories.map((m) => JSON.stringify(m)).join("\n") + (memories.length ? "\n" : ""))
+    // Lines getAll could not parse are kept as they are, not dropped:
+    // a rewrite must never lose what it did not understand.
+    let unreadable: string[] = []
+    try {
+      unreadable = readFileSync(this.filePath(agentId), "utf-8").split("\n")
+        .filter((l) => { if (!l.trim()) return false; try { JSON.parse(l); return false } catch { return true } })
+    } catch { /* no file yet */ }
+    const lines = [...memories.map((m) => JSON.stringify(m)), ...unreadable]
+    writeFileSync(this.filePath(agentId), lines.join("\n") + (lines.length ? "\n" : ""))
   }
 
   /**

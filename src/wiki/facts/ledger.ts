@@ -1,6 +1,7 @@
 import { createHash } from "crypto"
-import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "fs"
-import { dirname, resolve } from "path"
+import { existsSync, statSync } from "fs"
+import { resolve } from "path"
+import { readLedger, withLock, writeLedger } from "./ledger-file"
 import { classifyAttribute, classifyFact, isFactClass, isPastTtl, type FactClass, type Provenance } from "@/agents/fact-freshness"
 import type { ContradictionIssue } from "../lint-contradictions"
 import { QuestionStore, questionId } from "../questions"
@@ -43,7 +44,8 @@ export interface FactInput {
   value: string
   source: string
   verifiedBy: string
-  /** When the source was checked. Default: now. */
+  /** When the source was checked (ISO date, or "now"). Without it the
+   *  write is undated and never counts as newer than an existing fact. */
   verifiedAt?: string
   volatility?: FactClass
   ttlDays?: number
@@ -74,35 +76,50 @@ export function factId(subject: string, attribute: string): string {
 export class FactLedger {
   readonly file: string
   private cache?: { mtimeMs: number; data: LedgerFile }
+  private reported?: number
 
   constructor(readonly wikiDir: string) {
     this.file = resolve(wikiDir, "_facts.json")
   }
 
+  /** The ledger as stored. Throws LedgerCorruptError on a file that does
+   *  not parse: it is never read as empty, so it is never overwritten. */
   load(): LedgerFile {
     if (!existsSync(this.file)) return { version: 1, facts: [], proposals: [] }
+    const mtimeMs = statSync(this.file).mtimeMs
+    if (this.cache?.mtimeMs === mtimeMs) return structuredClone(this.cache.data)
+    let raw
     try {
-      const mtimeMs = statSync(this.file).mtimeMs
-      if (this.cache?.mtimeMs === mtimeMs) return structuredClone(this.cache.data)
-      const raw = JSON.parse(readFileSync(this.file, "utf-8")) as Partial<LedgerFile>
-      const data: LedgerFile = {
-        version: 1,
-        facts: Array.isArray(raw?.facts) ? raw.facts : [],
-        proposals: Array.isArray(raw?.proposals) ? raw.proposals : [],
+      raw = readLedger(this.file)
+    } catch (e) {
+      // Once per version of the bad file, not once per prompt.
+      if (this.reported !== mtimeMs) {
+        this.reported = mtimeMs
+        console.error(`[wiki-facts] ${(e as Error).message}`)
       }
-      this.cache = { mtimeMs, data }
-      return structuredClone(data)
-    } catch {
-      return { version: 1, facts: [], proposals: [] }
+      throw e
     }
+    const data: LedgerFile = { version: 1, facts: (raw?.facts ?? []) as WikiFact[], proposals: (raw?.proposals ?? []) as LedgerFile["proposals"] }
+    this.cache = { mtimeMs, data }
+    return structuredClone(data)
   }
 
-  save(f: LedgerFile): void {
-    mkdirSync(dirname(this.file), { recursive: true })
-    const tmp = `${this.file}.${process.pid}.tmp`
-    writeFileSync(tmp, JSON.stringify(f, null, 2) + "\n")
-    renameSync(tmp, this.file)
-    this.cache = undefined
+  /**
+   * Load, change and save under the ledger's lock, so concurrent writers
+   * (a daemon proposing memo claims, a CLI `set`) can't drop each other's
+   * change. `fn` returns whether to save, and a result.
+   */
+  update<T>(fn: (data: LedgerFile) => { save: boolean; result: T }): T {
+    return withLock(this.file, () => {
+      this.cache = undefined
+      const data = this.load()
+      const { save, result } = fn(data)
+      if (save) {
+        writeLedger(this.file, data)
+        this.cache = undefined
+      }
+      return result
+    })
   }
 
   list(): WikiFact[] { return this.load().facts }
@@ -113,8 +130,13 @@ export class FactLedger {
 
   /**
    * Record a checked fact. Refuses a fact with no source. A different value
-   * replaces the current one only with a newer check or `confirmedBy`;
-   * otherwise it raises a contradiction and the current value stays.
+   * replaces the current one only with a dated check newer than the current
+   * one, or `confirmedBy`. A value a person confirmed is replaced only by
+   * another confirmation. Otherwise the current value stays and a
+   * contradiction question is raised.
+   *
+   * A write with no `verifiedAt` is undated: it can create a fact, but it
+   * never counts as newer than a fact already there.
    */
   write(input: FactInput, opts: { confirmedBy?: string; now?: number } = {}): WriteResult {
     const now = opts.now ?? Date.now()
@@ -123,9 +145,10 @@ export class FactLedger {
     if (!input.subject?.trim() || !input.attribute?.trim() || !input.value?.trim()) {
       throw new Error("a fact needs a subject, an attribute and a value")
     }
-    const checked = Date.parse(input.verifiedAt ?? "")
+    const checked = input.verifiedAt === "now" ? now : Date.parse(input.verifiedAt ?? "")
+    const dated = Number.isFinite(checked)
     // A check can't be dated after it happened.
-    const verifiedAt = Number.isFinite(checked) ? new Date(Math.min(checked, now)).toISOString() : nowIso
+    const verifiedAt = dated ? new Date(Math.min(checked, now)).toISOString() : nowIso
     const volatility = isFactClass(input.volatility)
       ? input.volatility
       : classifyAttribute(input.attribute, `${input.subject} ${input.attribute} is ${input.value}`)
@@ -133,45 +156,49 @@ export class FactLedger {
       source: input.source.trim(), verifiedAt, verifiedBy: input.verifiedBy || "unknown", volatility,
       ...(typeof input.ttlDays === "number" ? { ttlDays: input.ttlDays } : {}),
     }
-
-    const data = this.load()
     const id = factId(input.subject, input.attribute)
-    const existing = data.facts.find((f) => f.id === id)
 
-    if (!existing) {
-      const fact: WikiFact = {
-        id, subject: input.subject.trim(), attribute: input.attribute.trim(), value: input.value.trim(),
-        ...provenance, createdAt: nowIso, updatedAt: nowIso,
-        ...(opts.confirmedBy ? { confirmedBy: opts.confirmedBy } : {}),
+    const out = this.update<WriteResult | { contradiction: WikiFact }>((data) => {
+      const existing = data.facts.find((f) => f.id === id)
+      if (!existing) {
+        const fact: WikiFact = {
+          id, subject: input.subject.trim(), attribute: input.attribute.trim(), value: input.value.trim(),
+          ...provenance, createdAt: nowIso, updatedAt: nowIso,
+          ...(opts.confirmedBy ? { confirmedBy: opts.confirmedBy } : {}),
+        }
+        data.facts.push(fact)
+        return { save: true, result: { status: "created", fact } }
       }
-      data.facts.push(fact)
-      this.save(data)
-      return { status: "created", fact }
-    }
 
-    const newer = Date.parse(verifiedAt) > Date.parse(existing.verifiedAt) || !Number.isFinite(Date.parse(existing.verifiedAt))
-    if (norm(existing.value) === norm(input.value)) {
-      if (!newer && !opts.confirmedBy) return { status: "unchanged", fact: existing }
-      Object.assign(existing, provenance, { updatedAt: nowIso }, opts.confirmedBy ? { confirmedBy: opts.confirmedBy } : {})
-      this.save(data)
-      return { status: "verified", fact: existing }
-    }
+      const prior = Date.parse(existing.verifiedAt)
+      const newer = dated && (!Number.isFinite(prior) || Date.parse(verifiedAt) > prior)
+      if (norm(existing.value) === norm(input.value)) {
+        if (!newer && !opts.confirmedBy) return { save: false, result: { status: "unchanged", fact: existing } }
+        Object.assign(existing, provenance, { updatedAt: nowIso }, opts.confirmedBy ? { confirmedBy: opts.confirmedBy } : {})
+        return { save: true, result: { status: "verified", fact: existing } }
+      }
 
-    if (!newer && !opts.confirmedBy) {
-      const questionId = raiseContradiction(this.wikiDir, existing, { ...input, verifiedAt })
-      return { status: "contradiction", fact: existing, questionId }
-    }
+      // A person's confirmation outranks any agent's date.
+      if (!opts.confirmedBy && (!newer || existing.confirmedBy)) {
+        return { save: false, result: { contradiction: existing } }
+      }
 
-    existing.history = [...(existing.history ?? []), {
-      value: existing.value, source: existing.source, verifiedAt: existing.verifiedAt,
-      verifiedBy: existing.verifiedBy, replacedAt: nowIso,
-    }].slice(-10)
-    existing.value = input.value.trim()
-    Object.assign(existing, provenance, { updatedAt: nowIso })
-    if (opts.confirmedBy) existing.confirmedBy = opts.confirmedBy
-    else delete existing.confirmedBy
-    this.save(data)
-    return { status: "updated", fact: existing }
+      existing.history = [...(existing.history ?? []), {
+        value: existing.value, source: existing.source, verifiedAt: existing.verifiedAt,
+        verifiedBy: existing.verifiedBy, replacedAt: nowIso,
+      }].slice(-10)
+      existing.value = input.value.trim()
+      Object.assign(existing, provenance, { updatedAt: nowIso })
+      if (opts.confirmedBy) existing.confirmedBy = opts.confirmedBy
+      else delete existing.confirmedBy
+      return { save: true, result: { status: "updated", fact: existing } }
+    })
+
+    if ("contradiction" in out) {
+      const questionId = raiseContradiction(this.wikiDir, out.contradiction, { ...input, verifiedAt: dated ? verifiedAt : "undated" })
+      return { status: "contradiction", fact: out.contradiction, questionId }
+    }
+    return out
   }
 }
 

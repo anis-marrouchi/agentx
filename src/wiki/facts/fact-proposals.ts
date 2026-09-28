@@ -58,45 +58,65 @@ export function parseClaim(claim: string): { subject?: string; attribute?: strin
   return { subject: m[1].trim(), attribute: cls === "stable" ? "state" : `${cls} status`, value: m[2].trim() }
 }
 
-/** Queue claims. The same claim from the same agent is kept once. */
+function newProposal(it: ProposalInput, id: string, claim: string): FactProposal {
+  const at = it.at ?? new Date().toISOString()
+  const cited = citedCheck(claim)
+  const cls = classifyFact(claim)
+  return {
+    id, status: "pending", claim, ...parseClaim(claim),
+    // A summary's claim is never stable: at best it was true that day.
+    volatility: cls === "stable" ? "work-state" : cls,
+    source: cited?.source ?? `${it.origin} (unchecked summary)`,
+    verifiedAt: cited?.verifiedAt ?? at,
+    verifiedBy: it.agentId,
+    origin: it.origin, agentId: it.agentId,
+    ...(it.chat ? { chat: it.chat } : {}),
+    createdAt: at,
+  }
+}
+
+/** Queue claims, under the ledger's lock. The same claim from the same
+ *  agent is kept once. Throws on an unreadable ledger rather than
+ *  writing over it. */
 export function proposeFacts(ledger: FactLedger, items: ProposalInput[]): FactProposal[] {
   if (items.length === 0) return []
-  const data = ledger.load()
-  const out: FactProposal[] = []
-  for (const it of items) {
-    const claim = it.claim.replace(/^[-*•]\s*/, "").trim()
-    if (!claim) continue
-    const id = proposalId(it.agentId, claim)
-    const seen = data.proposals.find((p) => p.id === id)
-    if (seen) { out.push(seen); continue }
-    const at = it.at ?? new Date().toISOString()
-    const cited = citedCheck(claim)
-    const p: FactProposal = {
-      id, status: "pending", claim, ...parseClaim(claim),
-      // A summary's claim is never stable: at best it was true that day.
-      volatility: classifyFact(claim) === "stable" ? "work-state" : classifyFact(claim),
-      source: cited?.source ?? `${it.origin} (unchecked summary)`,
-      verifiedAt: cited?.verifiedAt ?? at,
-      verifiedBy: it.agentId,
-      origin: it.origin, agentId: it.agentId,
-      ...(it.chat ? { chat: it.chat } : {}),
-      createdAt: at,
+  return ledger.update((data) => {
+    const out: FactProposal[] = []
+    let added = false
+    for (const it of items) {
+      const claim = it.claim.replace(/^[-*•]\s*/, "").trim()
+      if (!claim) continue
+      const id = proposalId(it.agentId, claim)
+      const seen = data.proposals.find((p) => p.id === id)
+      if (seen) { out.push(seen); continue }
+      const p = newProposal(it, id, claim)
+      data.proposals.push(p)
+      out.push(p)
+      added = true
     }
-    data.proposals.push(p)
-    out.push(p)
-  }
-  ledger.save(data)
-  return out
+    return { save: added, result: out }
+  })
 }
 
 export function listFactProposals(ledger: FactLedger, status?: FactProposalStatus): FactProposal[] {
   return ledger.load().proposals.filter((p) => !status || p.status === status)
 }
 
-function findProposal(ledger: FactLedger, id: string) {
-  const data = ledger.load()
-  const p = data.proposals.find((x) => x.id === id || (id.length >= 6 && x.id.startsWith(id)))
-  return { data, p }
+const matches = (x: FactProposal, id: string) => x.id === id || (id.length >= 6 && x.id.startsWith(id))
+
+function findProposal(ledger: FactLedger, id: string): FactProposal | undefined {
+  return ledger.load().proposals.find((x) => matches(x, id))
+}
+
+/** Decide a pending proposal under the ledger's lock. */
+function decide(ledger: FactLedger, id: string, fields: Partial<FactProposal>): FactProposal {
+  return ledger.update((data) => {
+    const p = data.proposals.find((x) => matches(x, id))
+    if (!p) throw new Error(`no fact proposal "${id}"`)
+    if (p.status !== "pending") throw new Error(`proposal ${p.id} is already ${p.status}`)
+    Object.assign(p, fields)
+    return { save: true, result: p }
+  })
 }
 
 /**
@@ -107,7 +127,7 @@ export function approveFactProposal(
   ledger: FactLedger, id: string, by: string,
   edit: Partial<Pick<FactInput, "subject" | "attribute" | "value" | "source">> = {},
 ): { proposal: FactProposal; write: WriteResult } {
-  const { p } = findProposal(ledger, id)
+  const p = findProposal(ledger, id)
   if (!p) throw new Error(`no fact proposal "${id}"`)
   if (p.status !== "pending") throw new Error(`proposal ${p.id} is already ${p.status}`)
   const subject = edit.subject ?? p.subject
@@ -120,18 +140,12 @@ export function approveFactProposal(
     { subject, attribute, value, source: edit.source ?? p.source, verifiedBy: p.verifiedBy, verifiedAt: p.verifiedAt, volatility: p.volatility },
     { confirmedBy: by },
   )
-  const after = findProposal(ledger, p.id)
-  Object.assign(after.p!, { status: "approved", decidedAt: new Date().toISOString(), decidedBy: by })
-  ledger.save(after.data)
-  return { proposal: after.p!, write }
+  const proposal = decide(ledger, p.id, { status: "approved", decidedAt: new Date().toISOString(), decidedBy: by })
+  return { proposal, write }
 }
 
 export function rejectFactProposal(ledger: FactLedger, id: string, by: string, reason?: string): FactProposal {
-  const { data, p } = findProposal(ledger, id)
-  if (!p) throw new Error(`no fact proposal "${id}"`)
-  Object.assign(p, { status: "rejected", decidedAt: new Date().toISOString(), decidedBy: by, ...(reason ? { reason } : {}) })
-  ledger.save(data)
-  return p
+  return decide(ledger, id, { status: "rejected", decidedAt: new Date().toISOString(), decidedBy: by, ...(reason ? { reason } : {}) })
 }
 
 /**
