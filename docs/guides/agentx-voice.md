@@ -384,4 +384,5 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **A question by name went to the ticked agent:** the name matched no agent, or more than one. Check names and mentions with `agentx agent list`.
 - **History is empty or says the daemon isn't reachable:** History reads from the daemon. Start it, then choose **Refresh**.
 - **Save in the settings window shows a red message:** a shortcut is used twice. Change one of them and save again.
+- **Where to find the logs:** the app keeps its own log in `~/Library/Logs/agentx-voice.log`, whichever way you installed it. Crash messages and anything else it prints go to a second file that depends on how you installed it: `~/Library/Logs/agentx-desktop.err.log` after `agentx desktop install`, or `~/Library/Logs/agentx-voice.err.log` after `apps/mac-voice/install.sh`. The installer prints this second path when it finishes. **Terminal:** run `tail -n 50 <path>` to see the latest lines.
 - **Anything else:** see [If something is wrong](../dashboard/voice.md#if-something-is-wrong) on the Desktop assistant page.
