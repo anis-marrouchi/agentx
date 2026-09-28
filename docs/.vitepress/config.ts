@@ -47,6 +47,10 @@ const groups = [
     { text: "Persistent OpenCode servers", link: "/architecture/persistent-opencode-process" },
     { text: "Author a teach lesson", link: "/guides/teach-authoring" },
   ] },
+  { text: "Community", items: [
+    { text: "Contribute to AgentX", link: "/guides/contribute" },
+    { text: "Most requested", link: "/community/most-requested" },
+  ] },
   { text: "Reference for engineers", items: [
     { text: "CLI", link: "/reference/cli" }, { text: "Every CLI command and flag", link: "/reference/cli-commands" },
     { text: "Configuration", link: "/reference/config" },

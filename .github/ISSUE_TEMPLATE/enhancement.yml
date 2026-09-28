@@ -1,27 +1,30 @@
-name: Feature
-description: Propose something AgentX cannot do today
-title: "Feat: <area> – <what it enables>"
+name: Enhancement
+description: Improve something AgentX already does
+title: "Enh: <area> – <what gets better>"
 labels: ["enhancement"]
 body:
   - type: markdown
     attributes:
       value: |
         Thank you for taking the time to share this. Before you post, please look at the [open requests](https://github.com/anis-marrouchi/agentx/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc) and give a 👍 to the ones you care about. It is an invitation, not a requirement. [How voting works](https://agentx-docs.pages.dev/guides/contribute).
-  - type: textarea
-    id: problem
+  - type: input
+    id: area
     attributes:
-      label: What problem does this solve?
-      description: Describe the scenario — what are you trying to run/operate, and where does agentx fall short today?
+      label: Which part of AgentX?
+      description: For example the dashboard Settings page, a CLI command, a channel, or the phone app.
     validations:
       required: true
   - type: textarea
-    id: proposal
+    id: today
     attributes:
-      label: Proposed behavior
-      description: What would this look like? CLI, config, dashboard, mesh?
+      label: How it works today
+      description: What you do now, and where it falls short.
     validations:
       required: true
   - type: textarea
-    id: alternatives
+    id: better
     attributes:
-      label: Workarounds you've tried
+      label: How it could work
+      description: What would be better, from your point of view as a user.
+    validations:
+      required: true

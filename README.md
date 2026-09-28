@@ -126,9 +126,19 @@ The most valuable contribution right now is **trying AgentX and reporting what h
 2. **Help with triage and workflow/pipeline management.** Reproduce reports, identify duplicates, clarify priorities, and help follow issues through fixes, CI, and releases.
 3. **Contribute code and documentation.** Fix bugs, improve setup and Settings, clarify instructions, or help design the missing mesh-level and agent-level RBAC. Discuss larger changes in an issue first.
 
-[Report an issue](https://github.com/anis-marrouchi/agentx/issues/new) with your version, operating system, steps to reproduce, and relevant logs or screenshots. Remove secrets and private data before sharing. Report security vulnerabilities through the [security policy](SECURITY.md).
+[Report an issue](https://github.com/anis-marrouchi/agentx/issues/new/choose) yourself, or let your own agent help you draft it with [`agentx contribute`](docs/guides/contribute.md). Include your version, operating system, steps to reproduce, and relevant logs or screenshots. Remove secrets and private data before sharing. Report security vulnerabilities through the [security policy](SECURITY.md).
 
 See [Contributing](CONTRIBUTING.md) for testing, issue triage, and development instructions.
+
+### Most requested
+
+Give a 👍 to the open requests you care about; the community decides together what matters most. This list is updated every day.
+
+<!-- most-requested:start -->
+No request has 5 votes yet. Yours could be the first: give a 👍 to the issues you care about.
+
+[Full ranked list](https://agentx-docs.pages.dev/community/most-requested) · [How voting works](https://agentx-docs.pages.dev/guides/contribute)
+<!-- most-requested:end -->
 
 ## Sponsors
 

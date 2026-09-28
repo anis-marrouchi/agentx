@@ -177,12 +177,34 @@ at `http://127.0.0.1:18931`. Set `CHROME_PATH` if your browser is elsewhere, or
 
 ## Filing issues
 
-- **Bug or confusing behavior** — [open an issue](https://github.com/anis-marrouchi/agentx/issues/new) with:
-  - AgentX version (`agentx --version`), operating system, and installation method (npm, source, or Docker).
-  - Steps to reproduce, expected behavior, and actual behavior.
-  - Relevant logs, screenshots, or a minimal config excerpt, with secrets and private data removed.
-  - Whether it happens consistently and any workaround you found.
-- **Feature** — describe the real-world scenario first; the API second.
+People are the heart of this project, and every contribution is equally welcome, however it was written. There are two ways to open an issue.
+
+**Write it yourself**
+
+1. Open the [new issue page](https://github.com/anis-marrouchi/agentx/issues/new/choose).
+2. Pick a form: Bug report, Enhancement, Feature, Integration (channel, MCP server, skill or model provider), Idea, or Docs.
+3. Fill it in and press **Create**.
+
+**Let your agent help**
+
+1. Install the skill in your agent's workspace: `agentx skill install anis-marrouchi/agentx/agentx-contribute`
+2. Ask your agent to help you file an AgentX issue.
+3. Review the draft together. The agent checks for duplicates and gives you a link to a filled-in form.
+4. Open the link, check it, and press **Create** yourself. Nothing is posted for you.
+
+The helper drafts only with a model from [`contrib/models.json`](contrib/models.json), which keeps drafts clear and consistent. With another model it kindly points you to the web form. The [contribute guide](docs/guides/contribute.md) has the details.
+
+For a bug, include your AgentX version (`agentx --version`), operating system, installation method, steps to reproduce, and what you expected. Remove secrets and private data from logs and config first.
+
+### Voting
+
+The community decides together what matters most.
+
+1. Open the [open requests, most voted first](https://github.com/anis-marrouchi/agentx/issues?q=is%3Aissue+is%3Aopen+sort%3Areactions-%2B1-desc).
+2. Add a 👍 reaction under the first message of each request you care about. That is your vote; comments do not count, so discussion stays free.
+3. Before you open a new request, you are warmly invited to vote on a few open ones. It is never required.
+
+The issue author's own reaction, bots, and accounts younger than 7 days are not counted. Bugs are fixed by severity, as described in the [maintainer runbook](.github/maintainer/TRIAGE.md), not by votes. Every day a GitHub Action updates the **Most requested** list in the README (top 5 with at least 5 votes) and the [full ranked list](docs/community/most-requested.md). The numbers live in [`contrib/voting.json`](contrib/voting.json). Votes help guide the roadmap; maintainers make the final decisions and explain them.
 
 ## Security
 
