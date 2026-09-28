@@ -49,6 +49,8 @@ When a long conversation is restarted, the agent writes a short summary of it to
 
 A new value only replaces a checked fact when it was checked more recently, or when you confirm it. Otherwise the old value stays, and AgentX adds a question for you to `agentx wiki questions`. Earlier values are kept with the fact, so nothing is lost.
 
+Only a person can confirm a fact, approve or reject a fact proposal, or answer a disagreement. When an agent runs one of those commands, AgentX refuses it and the agent has to ask you. A fact recorded without a check time is shown as `UNCHECKED` in `agentx wiki facts list`, and agents see it as unverified until someone checks it.
+
 Held facts and proposed lessons also appear in the dashboard's **Approvals** tab and in `agentx approvals list`, next to everything else waiting for you. See [Approvals](../dashboard/approvals.md).
 
 ## 1. Approve or reject facts from public channels
@@ -274,6 +276,8 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 - **`agentx wiki facts set` says the value was not replaced:** the wiki holds a value checked more recently, or one a person confirmed, or you left out `--checked-at`. Answer the question it added with `agentx wiki answer`, or add `--confirm` if you know yours is right.
 - **`approve` says it couldn't read a subject, attribute and value:** the claim wasn't a simple "X is Y" sentence. Approve it again with `--subject`, `--attribute` and `--value`.
 - **An agent keeps calling a fact unverified:** the fact is past its time limit. Check it, then record it with `agentx wiki facts set --checked-at now`.
-- **A command says the fact ledger is unreadable:** the file `.agentx/wiki/_facts.json` is damaged, so AgentX writes nothing to it rather than replace it. Fix the file, or move it aside to start an empty list; agents keep working without it.
+- **A command says only a person can do this:** it was run by an agent (inside an agent's session). Run it yourself in a terminal.
+- **A command says the fact ledger is busy:** another `agentx` command is writing to it. Try again. If nothing else is running, delete the lock file named in the message.
+- **A command says the fact ledger is unreadable:** the file `.agentx/wiki/_facts.json` is damaged, so AgentX writes nothing to it rather than replace it. The same applies to `.agentx/wiki/_questions.json`. Fix the file, or move it aside to start an empty list; agents keep working without it.
 - **You want the old memory back after `flag-unsourced --apply`:** copy the file from `.agentx/memory/_backup/` over the agent's file in `.agentx/memory/`.
 - **Memory changes are refused with `403`:** the request named a task from another agent. Each agent can only change its own memories.

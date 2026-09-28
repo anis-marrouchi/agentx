@@ -34,6 +34,9 @@ export interface WikiFact extends Provenance {
   updatedAt: string
   /** Set when a person confirmed the value over a newer-dated one. */
   confirmedBy?: string
+  /** Recorded with no check time: never counts as checked, so it is
+   *  always shown UNVERIFIED until a dated check or a person confirms it. */
+  undated?: true
   /** Earlier values, newest last. Nothing is replaced silently. */
   history?: Array<{ value: string; source: string; verifiedAt: string; verifiedBy: string; replacedAt: string }>
 }
@@ -67,6 +70,16 @@ export interface LedgerFile {
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim()
+
+/**
+ * Confirming a fact is a person's act. A process an agent runs carries
+ * AGENTX_AGENT_ID (the runtime sets it for every agent), so a confirmation
+ * from inside one is refused: an agent can't outrank a person, or itself.
+ */
+export function assertPerson(action: string): void {
+  const agent = process.env.AGENTX_AGENT_ID?.trim()
+  if (agent) throw new Error(`only a person can ${action}; this is running as agent "${agent}". Ask the owner instead.`)
+}
 
 /** Stable per subject and attribute, so a re-check lands on the same fact. */
 export function factId(subject: string, attribute: string): string {
@@ -139,6 +152,7 @@ export class FactLedger {
    * never counts as newer than a fact already there.
    */
   write(input: FactInput, opts: { confirmedBy?: string; now?: number } = {}): WriteResult {
+    if (opts.confirmedBy) assertPerson("confirm a fact")
     const now = opts.now ?? Date.now()
     const nowIso = new Date(now).toISOString()
     if (!input.source?.trim()) throw new Error("a fact needs a source: a system, URL, command or \"owner said\"")
@@ -164,6 +178,7 @@ export class FactLedger {
         const fact: WikiFact = {
           id, subject: input.subject.trim(), attribute: input.attribute.trim(), value: input.value.trim(),
           ...provenance, createdAt: nowIso, updatedAt: nowIso,
+          ...(!dated && !opts.confirmedBy ? { undated: true as const } : {}),
           ...(opts.confirmedBy ? { confirmedBy: opts.confirmedBy } : {}),
         }
         data.facts.push(fact)
@@ -171,10 +186,12 @@ export class FactLedger {
       }
 
       const prior = Date.parse(existing.verifiedAt)
-      const newer = dated && (!Number.isFinite(prior) || Date.parse(verifiedAt) > prior)
+      // Any dated check beats a fact that was never dated.
+      const newer = dated && (existing.undated || !Number.isFinite(prior) || Date.parse(verifiedAt) > prior)
       if (norm(existing.value) === norm(input.value)) {
         if (!newer && !opts.confirmedBy) return { save: false, result: { status: "unchanged", fact: existing } }
         Object.assign(existing, provenance, { updatedAt: nowIso }, opts.confirmedBy ? { confirmedBy: opts.confirmedBy } : {})
+        delete existing.undated
         return { save: true, result: { status: "verified", fact: existing } }
       }
 
@@ -189,6 +206,7 @@ export class FactLedger {
       }].slice(-10)
       existing.value = input.value.trim()
       Object.assign(existing, provenance, { updatedAt: nowIso })
+      delete existing.undated
       if (opts.confirmedBy) existing.confirmedBy = opts.confirmedBy
       else delete existing.confirmedBy
       return { save: true, result: { status: "updated", fact: existing } }
@@ -202,7 +220,7 @@ export class FactLedger {
   }
 }
 
-function raiseContradiction(wikiDir: string, current: WikiFact, input: FactInput & { verifiedAt: string }): string {
+function raiseContradiction(wikiDir: string, current: WikiFact, input: FactInput & { verifiedAt: string }): string | undefined {
   const store = new QuestionStore(wikiDir)
   const item = {
     kind: "contradiction" as const,
@@ -220,8 +238,11 @@ function raiseContradiction(wikiDir: string, current: WikiFact, input: FactInput
       `(${current.source}, checked ${current.verifiedAt.slice(0, 10)}), but ${input.verifiedBy} reports ` +
       `"${input.value.trim()}" (${input.source.trim()}, checked ${input.verifiedAt.slice(0, 10)}). Which is true?`,
   }
+  const id = questionId(item.kind, item.agentId, item.subject, item.field)
   store.add([item])
-  return questionId(item.kind, item.agentId, item.subject, item.field)
+  // Undefined when the queue could not take it (an unreadable file): the
+  // old value still stands, and the caller says the question is missing.
+  return store.list().some((q) => q.id === id) ? id : undefined
 }
 
 /** Open fact contradictions, in the shape `wiki lint` reports. */
@@ -238,7 +259,7 @@ export function factContradictions(wikiDir: string): ContradictionIssue[] {
 
 /** A fact is stale when it is past its class TTL. */
 export function isStaleFact(f: WikiFact, now = Date.now()): boolean {
-  return isPastTtl(f, now)
+  return f.undated === true || isPastTtl(f, now)
 }
 
 /**

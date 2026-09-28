@@ -29,7 +29,8 @@ function flag(unverified: boolean, age: number | null): string {
 
 export function wikiRefLine(f: WikiFact, now = Date.now()): { line: string; unverified: boolean } {
   const unverified = isStaleFact(f, now)
-  const line = `- [wiki ${f.id}] ${flag(unverified, daysSince(f.verifiedAt, now))}` +
+  const tag = f.undated ? "UNVERIFIED (never checked) " : flag(unverified, daysSince(f.verifiedAt, now))
+  const line = `- [wiki ${f.id}] ${tag}` +
     `${f.subject} · ${f.attribute}: ${f.value} (${f.source}, checked ${f.verifiedAt.slice(0, 10)} by ${f.verifiedBy})`
   return { line, unverified }
 }

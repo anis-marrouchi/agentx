@@ -37,7 +37,7 @@ export function registerWikiFacts(wiki: Command): void {
     .command("list")
     .description("every recorded fact, with where and when it was checked")
     .option("--dir <path>", "wiki directory")
-    .option("--stale", "only facts past their time limit")
+    .option("--stale", "only facts past their time limit, or never checked")
     .option("--json")
     .action(safe(async (opts) => {
       const { isStaleFact } = await import("@/wiki/facts/ledger")
@@ -45,7 +45,7 @@ export function registerWikiFacts(wiki: Command): void {
       if (opts.json) { console.log(JSON.stringify(all, null, 2)); return }
       if (all.length === 0) { console.log(chalk.dim("  no facts recorded")); return }
       for (const f of all) {
-        const stale = isStaleFact(f) ? chalk.yellow(" STALE") : ""
+        const stale = f.undated ? chalk.yellow(" UNCHECKED") : isStaleFact(f) ? chalk.yellow(" STALE") : ""
         console.log(`  ${chalk.cyan(f.id)} ${chalk.bold(f.subject)} · ${f.attribute}: ${f.value}${stale}`)
         console.log(chalk.dim(`    ${f.volatility} · ${f.source} · checked ${f.verifiedAt.slice(0, 10)} by ${f.verifiedBy}`))
       }
@@ -89,7 +89,9 @@ export function registerWikiFacts(wiki: Command): void {
           ? `${r.fact.confirmedBy} confirmed it, so only a person can change it`
           : opts.checkedAt ? "and this check is not newer" : "and this value has no --checked-at"
         console.log(chalk.yellow(`  not replaced: the wiki says "${r.fact.value}" (checked ${r.fact.verifiedAt.slice(0, 10)}), ${why}.`))
-        console.log(chalk.dim(`  Queued question ${r.questionId}: agentx wiki questions  ·  agentx wiki answer ${r.questionId} "<true value>"`))
+        console.log(r.questionId
+          ? chalk.dim(`  Queued question ${r.questionId}: agentx wiki questions  ·  agentx wiki answer ${r.questionId} "<true value>"`)
+          : chalk.red("  No question could be queued: the questions file is unreadable. Repair .agentx/wiki/_questions.json."))
         process.exitCode = 2
         return
       }

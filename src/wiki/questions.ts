@@ -50,6 +50,8 @@ export interface WikiQuestion {
 export interface QuestionsFile {
   version: 1
   questions: WikiQuestion[]
+  /** The file exists but could not be read. It is then never written. */
+  unreadable?: string
 }
 
 /**
@@ -76,16 +78,24 @@ export class QuestionStore {
     if (!existsSync(this.file)) return { version: 1, questions: [] }
     try {
       const parsed = JSON.parse(readFileSync(this.file, "utf-8")) as Partial<QuestionsFile>
-      if (!Array.isArray(parsed?.questions)) return { version: 1, questions: [] }
+      if (!Array.isArray(parsed?.questions)) return { version: 1, questions: [], unreadable: "no questions list" }
       return { version: 1, questions: parsed.questions as WikiQuestion[] }
-    } catch {
-      // A corrupt queue must not stop an absorb. Worst case the
-      // questions are asked again; they are idempotent by id.
-      return { version: 1, questions: [] }
+    } catch (e) {
+      // A corrupt queue must not stop an absorb, and must not be
+      // replaced by an empty one on the next save either: reads see no
+      // questions, writes are refused until a person repairs the file.
+      return { version: 1, questions: [], unreadable: String((e as Error)?.message ?? e) }
     }
   }
 
+  private refuse(f: QuestionsFile): boolean {
+    if (!f.unreadable) return false
+    console.error(`[wiki-questions] ${this.file} is unreadable (${f.unreadable}); not writing to it. Repair or move it aside.`)
+    return true
+  }
+
   private save(f: QuestionsFile): void {
+    if (f.unreadable) throw new Error(`${this.file} is unreadable; not writing to it`)
     mkdirSync(dirname(this.file), { recursive: true })
     writeFileSync(this.file, `${JSON.stringify(f, null, 2)}\n`)
   }
@@ -104,6 +114,7 @@ export class QuestionStore {
    */
   add(items: Array<Omit<WikiQuestion, "id" | "status" | "asked">>): { added: number; skipped: number } {
     const f = this.load()
+    if (this.refuse(f)) return { added: 0, skipped: items.length }
     const seen = new Set(f.questions.map((q) => q.id))
     let added = 0, skipped = 0
     const now = new Date().toISOString()

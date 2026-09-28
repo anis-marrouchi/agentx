@@ -1,6 +1,7 @@
 import { createHash } from "crypto"
 import { citedCheck, classifyFact, splitMemo, type FactClass } from "@/agents/fact-freshness"
-import { FactLedger, type FactInput, type WriteResult } from "./ledger"
+import { assertPerson, FactLedger, type FactInput, type WriteResult } from "./ledger"
+import { withLock } from "./ledger-file"
 
 // --- Fact proposals: what a session summary claims, waiting for a check ---
 //
@@ -127,6 +128,16 @@ export function approveFactProposal(
   ledger: FactLedger, id: string, by: string,
   edit: Partial<Pick<FactInput, "subject" | "attribute" | "value" | "source">> = {},
 ): { proposal: FactProposal; write: WriteResult } {
+  assertPerson("approve a fact proposal")
+  // One lock for the whole approval: the fact write and the decision
+  // land together, or neither does (both re-enter this lock).
+  return withLock(ledger.file, () => approveLocked(ledger, id, by, edit))
+}
+
+function approveLocked(
+  ledger: FactLedger, id: string, by: string,
+  edit: Partial<Pick<FactInput, "subject" | "attribute" | "value" | "source">>,
+): { proposal: FactProposal; write: WriteResult } {
   const p = findProposal(ledger, id)
   if (!p) throw new Error(`no fact proposal "${id}"`)
   if (p.status !== "pending") throw new Error(`proposal ${p.id} is already ${p.status}`)
@@ -145,6 +156,7 @@ export function approveFactProposal(
 }
 
 export function rejectFactProposal(ledger: FactLedger, id: string, by: string, reason?: string): FactProposal {
+  assertPerson("reject a fact proposal")
   return decide(ledger, id, { status: "rejected", decidedAt: new Date().toISOString(), decidedBy: by, ...(reason ? { reason } : {}) })
 }
 

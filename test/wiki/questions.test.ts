@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { resolve } from "path"
-import { beforeEach, describe, expect, it } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { QuestionStore, questionId } from "../../src/wiki/questions"
 
 let dir: string
@@ -77,10 +77,14 @@ describe("QuestionStore", () => {
     expect(store.resolve("nope", "answered", "x")).toBeNull()
   })
 
-  it("survives a corrupt queue file instead of breaking the absorb", () => {
+  it("survives a corrupt queue file without breaking the absorb or overwriting it", () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => {})
     writeFileSync(store.path, "{ not json")
     expect(store.list()).toEqual([])
-    expect(store.add([fieldQ("alex", "language")]).added).toBe(1)
+    expect(store.add([fieldQ("alex", "language")])).toEqual({ added: 0, skipped: 1 })
+    expect(readFileSync(store.path, "utf-8")).toBe("{ not json")
+    expect(err).toHaveBeenCalled()
+    err.mockRestore()
   })
 
   it("filters by status", () => {
