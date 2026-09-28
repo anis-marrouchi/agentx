@@ -70,29 +70,34 @@ describe("registry flush of a queued channel message", () => {
     agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
   })
 
-  async function flushOne(ageMs: number): Promise<string> {
-    const r = new AgentRegistry(config(), () => {})
+  const ctx = { channel: "telegram", chatId: "chat-1", sender: "Sam" }
+  const pendingOf = (r: AgentRegistry) => (r as any).messageQueue.queues.get("ops:telegram:chat-1").pending
+
+  /** Start a hanging turn on chat-1; resolves with its id and run. */
+  async function busy(r: AgentRegistry) {
     let onStart!: (id: string) => void
     const started = new Promise<string>((res) => { onStart = res })
-    const ctx = { channel: "telegram", chatId: "chat-1", sender: "Sam" }
-    const first = r.execute({ message: "first", agentId: "ops", context: ctx, onStart })
-    const firstId = await started
+    const run = r.execute({ message: "first", agentId: "ops", context: ctx, onStart })
+    return { id: await started, run }
+  }
 
+  /** The message of the turn the flush started (the planner hangs it). */
+  async function flushedMessage(r: AgentRegistry, first: { id: string; run: Promise<unknown> }): Promise<string> {
+    r.cancelRunningTask(first.id, "done")
+    await first.run
+    const state = (r as any).agents.get("ops")
+    for (let i = 0; i < 100 && state.runningTasks.length === 0; i++) await new Promise((res) => setTimeout(res, 20))
+    return state.runningTasks[0].message
+  }
+
+  async function flushOne(ageMs: number): Promise<string> {
+    const r = new AgentRegistry(config(), () => {})
+    const first = await busy(r)
     const queued = await r.execute({ message: "look at the PR head", agentId: "ops", context: ctx })
     expect(isQueued(queued.error)).toBe(true)
     // Age the queued message as if it had waited behind a long turn.
-    const pending = (r as any).messageQueue.queues.get("ops:telegram:chat-1").pending
-    pending[0].timestamp = Date.now() - ageMs
-
-    const flushed = new Promise<string>((res) => {
-      vi.spyOn(r, "execute").mockImplementation(async (task: any) => {
-        res(task.message)
-        return { content: "" } as any
-      })
-    })
-    r.cancelRunningTask(firstId, "done")
-    await first
-    return flushed
+    pendingOf(r)[0].timestamp = Date.now() - ageMs
+    return flushedMessage(r, first)
   }
 
   it("prepends the note when the message waited past the threshold", async () => {
@@ -104,5 +109,20 @@ describe("registry flush of a queued channel message", () => {
 
   it("leaves a short wait untouched", async () => {
     expect(await flushOne(2_000)).toBe("look at the PR head")
+  })
+
+  it("a flushed message that queues again keeps its clean text and first queue time: one note", async () => {
+    const r = new AgentRegistry(config(), () => {})
+    const first = await busy(r)
+    const firstQueued = Date.now() - 20 * 60_000
+    // What the flush dispatches, meeting a chat that is busy again.
+    const again = await r.execute({ message: "look at the PR head", agentId: "ops", context: ctx, queuedAt: firstQueued })
+    expect(isQueued(again.error)).toBe(true)
+    expect(pendingOf(r)[0]).toMatchObject({ text: "look at the PR head", queuedAt: firstQueued })
+
+    const message = await flushedMessage(r, first)
+    expect(message.match(/\[queued at /g)).toHaveLength(1)
+    expect(message).toContain(`queued at ${new Date(firstQueued).toISOString().slice(11, 16)} UTC`)
+    expect(message.endsWith("\nlook at the PR head")).toBe(true)
   })
 })
