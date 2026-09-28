@@ -27,6 +27,7 @@ import { getDefaultLedger } from "@/intent/instance"
 import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/router"
 import type { LegacyOutcome } from "@/intent/divergence"
 import type { IntentResolutionStatus } from "@/intent/types"
+import { parseQueued, type QueuedAnswer } from "@/agents/queued"
 import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from "./ui-directive"
 import type { Resumer } from "@/agents/resume/coordinator"
 
@@ -1041,7 +1042,7 @@ export class MessageRouter {
 
     if (response.error) {
       // Queued messages are not errors — the message will be processed later
-      if (response.error.startsWith("__queued__")) {
+      if (parseQueued(response.error)) {
         clearInterval(typingTimer)
         this.log(`Message queued for ${agentName}`)
         return
@@ -1533,6 +1534,28 @@ export class MessageRouter {
     }).catch((e: any) => this.log(`Mesh failure notice failed to post on ${key}: ${e.message}`))
   }
 
+  /**
+   * The peer's agent was busy on this chat, so the peer queued the message
+   * and answered with the registry's queued marker. That is an accepted
+   * message, not a failure: the peer's queue flush runs it when the current
+   * turn ends and posts the reply on the thread itself. So, as on the local
+   * path: no ❌, no failure comment, and the intent resolves as "queued".
+   *
+   * `meshFailureNotified` is left alone: nothing was announced, so there is
+   * nothing to mark, and the queued turn has not succeeded yet, so it is no
+   * reason to re-arm a notice already posted on this thread.
+   */
+  private noteMeshQueued(
+    msg: IncomingMessage,
+    peerName: string,
+    agentId: string,
+    queued: QueuedAnswer,
+    startedAt: number | null,
+  ): void {
+    this.log(`Message queued on peer "${peerName}" for ${agentId} (mode: ${queued.mode}, pending: ${queued.pending})`)
+    this.resolveIntent(msg, "queued", startedAt, `queued on ${peerName} (${queued.mode}, ${queued.pending} pending)`)
+  }
+
   /** A mesh-routed task succeeded — re-arm the failure notice for this thread. */
   private clearMeshFailure(channel: string, chatId: string): void {
     this.meshFailureNotified.delete(`${channel}:${chatId}`)
@@ -1694,6 +1717,11 @@ export class MessageRouter {
             return true
           } catch (e: any) {
             clearInterval(typingTimer)
+            const queued = parseQueued(e.message)
+            if (queued) {
+              this.noteMeshQueued(msg, peer.peer, skill.id, queued, null)
+              return true
+            }
             // Same policy as handleViaMeshByAgentId/handleViaMeshByPeer —
             // react ❌ as the agent and announce once per thread.
             this.log(`Mesh routing error for ${peer.peer}/${skill.id}: ${e.message}`)
@@ -1756,6 +1784,11 @@ export class MessageRouter {
         return true
       } catch (e: any) {
         clearInterval(typingTimer)
+        const queued = parseQueued(e.message)
+        if (queued) {
+          this.noteMeshQueued(msg, peer.peer, agentId, queued, start)
+          return true
+        }
         // Surface the real error in the local log (mesh.ts includes the peer's
         // response body) and tell the thread once — see notifyMeshFailure for
         // why ❌-only silence was worse than one comment.
@@ -1959,6 +1992,11 @@ export class MessageRouter {
       return true
     } catch (e: any) {
       clearInterval(typingTimer)
+      const queued = parseQueued(e.message)
+      if (queued) {
+        this.noteMeshQueued(msg, peerName, agentId, queued, start)
+        return true
+      }
       // See notifyMeshFailure — log the full error (includes the peer's
       // response body via mesh.ts), react ❌ as the agent, and announce once.
       this.log(`Mesh routing error for ${peerName}/${agentId}: ${e.message}`)

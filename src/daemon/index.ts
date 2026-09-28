@@ -11,6 +11,7 @@ import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
+import { parseQueued } from "@/agents/queued"
 import { resolvePermission, type AgentTask } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
@@ -5315,8 +5316,9 @@ export class AgentXDaemon {
           // didn't work" while the agent was in fact working on what the
           // person asked for thirty seconds earlier. The honest answer is
           // to say so, out loud, rather than to claim a failure.
-          if (response.error?.startsWith("__queued__")) {
-            const pending = Number(response.error.split(":")[2] || 1)
+          const queued = parseQueued(response.error)
+          if (queued) {
+            const pending = queued.pending
             this.json(res, 202, {
               ...speaker,
               text: pending > 1
