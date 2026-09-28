@@ -15,11 +15,23 @@ const ffmpeg = findBinary("ffmpeg")
 let dir: string
 let long: string
 let short: string
+let forged: string
 
 function silence(file: string, seconds: number) {
   // Piped out, like a MediaRecorder stream: written without seeking back.
   const out = execFileSync(ffmpeg!, ["-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", String(seconds), "-c:a", "libopus", "-b:a", "16k", "-f", "webm", "pipe:1"], { maxBuffer: 8 * 1024 * 1024 })
   writeFileSync(file, out)
+}
+
+// Rewrites the webm Segment Duration (EBML id 0x4489, an 8-byte float in
+// ms, the file's default timescale) as a sender could: ffprobe then reports
+// it, while decoding still finds the real length.
+function forgeDuration(webm: Buffer, seconds: number): Buffer {
+  const out = Buffer.from(webm)
+  const at = out.indexOf(Buffer.from([0x44, 0x89, 0x88]))
+  if (at < 0) throw new Error("no 8-byte Duration element")
+  out.writeDoubleBE(seconds * 1000, at + 3)
+  return out
 }
 
 const canEncode = (() => {
@@ -37,6 +49,11 @@ describe.skipIf(!canEncode)("measuring a recording", () => {
     long = join(dir, "long.webm"); short = join(dir, "short.webm")
     silence(long, AUDIO_LIMITS.ms / 1000 + 10)
     silence(short, 3)
+    // Written to a file (not piped) so the muxer seeks back and stores a Duration.
+    const seekable = join(dir, "seekable.webm")
+    execFileSync(ffmpeg!, ["-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=48000:cl=mono", "-t", String(AUDIO_LIMITS.ms / 1000 + 10), "-c:a", "libopus", "-b:a", "16k", seekable])
+    forged = join(dir, "forged.webm")
+    writeFileSync(forged, forgeDuration(readFileSync(seekable), 60))
     const deps: VoiceIoDeps = {
       stt: () => "auto",
       host: () => ({ key: "k", mlx: null, whisper: null, ffmpeg }),
@@ -63,6 +80,19 @@ describe.skipIf(!canEncode)("measuring a recording", () => {
     expect(decoded).toBeGreaterThan(AUDIO_LIMITS.ms / 1000 + 2)
     expect(decoded).toBeLessThanOrEqual(AUDIO_LIMITS.ms / 1000 + 5)
     expect(await decodeSeconds(short, ffmpeg!)).toBeCloseTo(3, 0)
+  }, 30_000)
+
+  it("ignores a forged container duration", async () => {
+    const ffprobe = findBinary("ffprobe")
+    if (ffprobe) {
+      // The forgery works: the container now claims 60 s.
+      const stated = execFileSync(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", forged]).toString()
+      expect(parseFloat(stated)).toBeCloseTo(60, 0)
+    }
+    expect(await measureSeconds(forged, ffmpeg)).toBeGreaterThan(AUDIO_LIMITS.ms / 1000 + 2)
+    const r = await fetch(base, { method: "POST", headers: { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": "60000" }, body: readFileSync(forged) })
+    expect(r.status).toBe(413)
+    expect(reached).toBe(0)
   }, 30_000)
 
   it("refuses a long recording whose header says it is short", async () => {

@@ -91,9 +91,14 @@ async function transcribeIn(dir: string, name: string, audio: Buffer, mime: stri
   const file = join(dir, name)
   await writeFile(file, audio, { mode: 0o600 })
   // The real length where this host can measure it, whatever the header
-  // said. Without ffmpeg or ffprobe the byte cap bounds it instead.
-  const secs = await (deps.measure ?? measureSeconds)(file, host.ffmpeg)
-  if (secs != null && secs * 1000 > AUDIO_LIMITS.ms + 2000) return [413, { error: tooLongMessage() }]
+  // said. With ffmpeg, a recording it can't read is refused rather than
+  // passed on unmeasured. Without ffmpeg only the byte cap applies, which
+  // bounds bytes, not minutes.
+  if (host.ffmpeg) {
+    const secs = await (deps.measure ?? measureSeconds)(file, host.ffmpeg)
+    if (secs == null) return [422, { error: "This computer couldn't read the recording. Try again." }]
+    if (secs * 1000 > AUDIO_LIMITS.ms + 2000) return [413, { error: tooLongMessage() }]
+  }
   const failures: string[] = []
   for (const engine of engines) {
     try {

@@ -47,7 +47,7 @@ beforeEach(() => {
     engines: { elevenlabs: engine("elevenlabs"), "mlx-whisper": engine("mlx-whisper"), whisper: engine("whisper") },
     synth: async (_key, voice, text) => { spoken.push({ voice, text }); return Buffer.from("ID3-mp3") },
     // The fake bytes can't be measured; the real measurement has its own tests.
-    measure: async () => null,
+    measure: async () => 3,
   }
 })
 
@@ -154,6 +154,18 @@ describe("POST /voice/transcribe", () => {
     expect(calls).toEqual([])
     deps.measure = async () => 2.5
     expect((await transcribe(AUDIO)).status).toBe(200)
+  })
+
+  it("refuses a recording ffmpeg can't read, and relies on the byte cap without ffmpeg", async () => {
+    deps.measure = async () => null
+    const r = await transcribe(AUDIO)
+    expect(r.status).toBe(422)
+    expect(calls).toEqual([])
+    let measured = false
+    deps.measure = async () => { measured = true; return null }
+    deps.host = () => ({ ...host, ffmpeg: null })
+    expect((await transcribe(AUDIO)).status).toBe(200)
+    expect(measured).toBe(false)
   })
 
   it(`runs at most ${MAX_TRANSCRIBING} transcriptions at once`, async () => {
