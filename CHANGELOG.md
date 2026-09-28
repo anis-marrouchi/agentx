@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.56.0](https://github.com/anis-marrouchi/agentx/compare/v0.55.0...v0.56.0) (2026-09-28)
+
+
+### Features
+
+* **voice:** Siri-style orb overlay tinted with the agent's colour ([#203](https://github.com/anis-marrouchi/agentx/issues/203)) ([920a17e](https://github.com/anis-marrouchi/agentx/commit/920a17e3afc41e9c98e58ff87069aa485ca74ea7))
+
 ## [0.55.0](https://github.com/anis-marrouchi/agentx/compare/v0.54.0...v0.55.0) (2026-09-27)
 
 
