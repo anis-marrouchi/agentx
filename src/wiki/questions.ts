@@ -24,8 +24,10 @@ export type QuestionStatus = "open" | "answered" | "dismissed"
 export interface WikiQuestion {
   id: string
   /** "field" — a named gap in an existing article.
-   *  "article" — absorb referenced something with no article at all. */
-  kind: "field" | "article"
+   *  "article" — absorb referenced something with no article at all.
+   *  "contradiction" — a write disagreed with a wiki fact and could not
+   *  replace it (facts/ledger.ts); the answer is the true value. */
+  kind: "field" | "article" | "contradiction"
   agentId: string
   /** Article path for a field question; empty for a missing article. */
   path: string
@@ -36,6 +38,9 @@ export interface WikiQuestion {
   /** What tier of the build this gap sits at, so asking can be ordered. */
   tier?: string
   question: string
+  /** For a contradiction: the wiki fact and the value that was refused. */
+  factId?: string
+  proposed?: { value: string; source: string; verifiedAt: string; verifiedBy: string }
   status: QuestionStatus
   asked: string
   answered?: string

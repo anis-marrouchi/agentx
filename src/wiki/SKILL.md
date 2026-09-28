@@ -28,6 +28,18 @@ You have access to a curated wiki that is **shared across all agents in the team
 - Real-time system status → use `mesh-awareness` or curl the daemon
 - Anything you already know from the current conversation
 
+## Facts about outside systems: check it or say it's unverified
+
+A bill, a credit balance, an account (suspended, blocked, expired), an outage or a deploy changes on its own. Before you tell a person one of these, or act on it:
+
+1. Look it up: `agentx wiki facts list`. Each fact shows its source, when it was checked and by whom.
+2. If it is fresh, use it. If it is marked `UNVERIFIED` or `STALE`, or you only have it from memory or a conversation summary, check it again at the source (the service's API, CLI or dashboard).
+3. Record what you found, with where you checked it:
+   `agentx wiki facts set --subject "vendor account" --attribute "billing status" --value "active" --source "GET /v1/user" --checked-at now`
+4. If you can't check it, say it is unverified and ask the owner. Never state it as true.
+
+Only pass `--checked-at now` when you really checked the source just now; a value from memory or a summary is not a check. If the wiki holds a more recent value, or one a person confirmed, `set` doesn't overwrite it; it adds a question for a person. Don't retry with `--confirm`: that flag is for a person confirming the value.
+
 ## The primary command
 
 ```

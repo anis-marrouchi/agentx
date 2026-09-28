@@ -155,6 +155,7 @@ How to use these, step by step: [Review what your agents learn](../jobs/agent-me
 | `agentx memory facts approve <id> --agent <id>` | Let a held fact be used |
 | `agentx memory facts reject <id> --agent <id>` | Keep a held fact out for good |
 | `agentx memory facts scrub [--apply]` | Count stored facts that contain credentials; `--apply` deletes them |
+| `agentx memory facts flag-unsourced [--apply]` | One time: mark facts about bills, accounts, outages or deploys that name no source as unverified; `--apply` writes, with a backup (stop the daemon first) |
 | `agentx trace lessons [--since 30d] [--agent <id>] [--min 2] [--json]` | Compare repeated tasks before and after each fact, procedure or wiki was first used |
 | `agentx wiki promote [--commit]` | Preview (or, with `--commit`, judge and propose) lessons for the shared wiki |
 | `agentx wiki promote --failures [--min-sessions <n>]` | Also propose lessons from failures that happened in at least `n` separate sessions (default 3) |
@@ -162,6 +163,12 @@ How to use these, step by step: [Review what your agents learn](../jobs/agent-me
 | `agentx wiki proposals show <id>` | The proposed article and its evidence |
 | `agentx wiki proposals approve <id>` | Write it into the shared wiki; refuses if the article changed since, unless `--force` |
 | `agentx wiki proposals reject <id> [--reason]` | Decline it; its sources aren't judged again until they change |
+| `agentx wiki facts list [--stale]` | Checked facts, with where, when and by whom they were checked |
+| `agentx wiki facts show <id>` | One fact and its earlier values |
+| `agentx wiki facts set --subject --attribute --value --source --checked-at now` | Record a fact you checked; a different value needs a newer check or `--confirm` |
+| `agentx wiki facts proposals list` | Claims from conversation summaries, waiting for a check |
+| `agentx wiki facts proposals approve <id>` | Confirm a claim and record it as a fact |
+| `agentx wiki facts proposals reject <id> [--reason]` | Drop a claim |
 
 ## Computer use and teaching
 

@@ -54,6 +54,11 @@ export class WikiHub {
     return store
   }
 
+  /** The wiki root: shared sidecars (_facts.json, _questions.json) live here. */
+  getBaseDir(): string {
+    return this.baseDir
+  }
+
   getSharedStore(): WikiStore {
     return this.sharedStore
   }

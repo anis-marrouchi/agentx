@@ -284,6 +284,8 @@ export function buildWikiContext(
     `For the contents of an article, or any question spanning several, run:\n  node ${cli} wiki query "the question" --dir ${wikiDir} --agent ${agentId}`,
     "",
     "It walks the catalog and the wikilink graph and returns a cited answer. Ask it before you grep the workspace or answer from your own recollection.",
+    "",
+    `Facts about outside systems (billing, accounts, outages, deploys) carry a source and a check date: \`node ${cli} wiki facts list --dir ${wikiDir}\`. Past its time limit a fact must be re-checked at the source before you state it; record what you checked with \`wiki facts set ... --checked-at now\`. If you can't check, say it is unverified and ask the owner.`,
     "[End Institutional Wiki]",
   ].join("\n")
 }
@@ -889,27 +891,15 @@ export class AgentRegistry {
         )
         return
       }
-      // Pull a few keywords from the chatId / channel so the memo
-      // surfaces from MemoryStore.findRelevant when the same chat
-      // continues. Without keywords BM25 has nothing to score against
-      // and the memo only floats up via the recent-fallback branch.
-      const chatKeyword = chatId.split(/[:@.]/).filter(Boolean).slice(0, 4)
-      // Work state, not a durable fact: a summary restates what the session
-      // believed, unsourced, so it expires like other task state (#273).
-      this.memoryStore.addMemory(agentId, {
-        agentId,
-        category: "task-state",
-        content: `[Rotation memo · ${reason}] ${result.memo}`,
-        keywords: ["rotation-memo", channel, ...chatKeyword],
-        source: { channel, chatId, sender: "system:rotation", date: new Date().toISOString().slice(0, 10) },
+      // Claims go to wiki proposals, work state to memory (#273).
+      const { storeRotationMemo } = await import("./rotation-memo-store")
+      const stored = storeRotationMemo(this.memoryStore, this.sessions, {
+        wikiDir: this.wikiHub.getBaseDir(), agentId, channel, chatId, reason, memo: result.memo,
       })
-      // Also pin it per-chat for DETERMINISTIC injection into the next
-      // fresh session — MemoryStore retrieval is BM25-scored and rarely
-      // surfaces the memo on the turn right after rotation, which is
-      // exactly when it matters.
-      this.sessions.setRotationMemo(agentId, channel, chatId, result.memo, reason)
+      if (stored.error) this.log(`[${agentId}] memo claims not proposed: ${stored.error}`)
       this.log(
-        `[${agentId}] rotation memo captured (${reason}, ${result.durationMs}ms, ${result.memo.length} chars)`,
+        `[${agentId}] rotation memo captured (${reason}, ${result.durationMs}ms, ${result.memo.length} chars, ` +
+        `${stored.proposals} claim(s) proposed to the wiki)`,
       )
     } catch (e: any) {
       this.log(`rotation memo error: ${e?.message || e}`)
