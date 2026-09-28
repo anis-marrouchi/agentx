@@ -7,6 +7,7 @@ import { startWikiServer } from "@/wiki/serve"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
+import { registerWikiFacts } from "./wiki-facts"
 import { resolve, relative, dirname } from "path"
 import { execSync } from "child_process"
 import { writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from "fs"
@@ -29,6 +30,8 @@ function modeLabel(mode: WikiMode): string {
 export const wiki = new Command()
   .name("wiki")
   .description("wiki knowledge base management")
+
+registerWikiFacts(wiki)
 
 // agentx wiki status
 wiki
@@ -83,7 +86,7 @@ wiki
   .option("--dir <path>", "wiki directory")
   .option("--mode <mode>", "graph (default, canonical) | unified | flat (legacy, back-compat)", "graph")
   .option("--agent <id>", "lint a specific agent's wiki")
-  .action((opts) => {
+  .action(async (opts) => {
     const hub = getHub(opts.dir, opts.mode as WikiMode)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     let totalIssues = 0
@@ -103,6 +106,15 @@ wiki
           console.log(`    [${icon}] ${chalk.dim(issue.type)} ${issue.article}: ${issue.message}`)
         }
       }
+    }
+
+    // Facts that disagree and could not replace each other (#273).
+    const { factContradictions } = await import("@/wiki/facts/ledger")
+    const contradictions = factContradictions(wikiDir(opts.dir))
+    totalIssues += contradictions.length
+    if (contradictions.length > 0) {
+      console.log(`  ${chalk.cyan("facts")}: ${chalk.yellow(`${contradictions.length} contradiction(s)`)}`)
+      for (const c of contradictions) console.log(`    [!] ${chalk.dim(c.type)} ${c.articles[0]}: ${c.message}`)
     }
 
     console.log()
@@ -3041,6 +3053,21 @@ wiki
     const q = store.resolve(id, "answered", value)
     if (!q) { console.log(chalk.red(`  no question matching "${id}"`)); return }
     console.log(chalk.green(`  answered: ${q.question}`))
+
+    // A fact contradiction: the answer is the true value, confirmed by a
+    // person, so it is written to the fact ledger over either side.
+    if (q.kind === "contradiction" && q.factId) {
+      const { FactLedger } = await import("@/wiki/facts/ledger")
+      const ledger = new FactLedger(wikiDir(opts.dir))
+      const fact = ledger.get(q.factId)
+      if (!fact) { console.log(chalk.yellow(`  fact ${q.factId} is gone; answer recorded only.`)); return }
+      const r = ledger.write(
+        { subject: fact.subject, attribute: fact.attribute, value, source: "owner said", verifiedBy: "operator", volatility: fact.volatility },
+        { confirmedBy: "operator" },
+      )
+      console.log(chalk.green(`  ${r.status}: ${fact.id} ${fact.subject} · ${fact.attribute}: ${r.fact.value}`))
+      return
+    }
 
     // An answer to a missing-article question is a note, not a patch —
     // there is no article yet to write it into. Absorb will create one
