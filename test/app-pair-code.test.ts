@@ -161,6 +161,18 @@ describe("POST /api/app/pair-code", () => {
   })
 })
 
+describe("GET /app", () => {
+  it("sets the cookie again on each load, so phones paired under Strict move to Lax", async () => {
+    const { token } = tokens.create({ name: "Old phone", scopes: ["app"] })
+    const r = await fetch(`${base}/app`, { headers: { Cookie: `${APP_COOKIE}=${token}` } })
+    expect(r.status).toBe(200)
+    expect(r.headers.get("set-cookie")).toMatch(new RegExp(`^${APP_COOKIE}=${token};.*SameSite=Lax`))
+    const byHeader = await fetch(`${base}/app`, { headers: { Authorization: `Bearer ${token}` } })
+    expect(byHeader.status).toBe(200)
+    expect(byHeader.headers.get("set-cookie")).toBeNull()
+  })
+})
+
 describe("attempt limiter", () => {
   it("limits each client, and all clients together", () => {
     let now = 0
