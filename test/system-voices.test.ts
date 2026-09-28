@@ -187,7 +187,10 @@ describe("speech engine", () => {
 describe("config", () => {
   it("defaults to free system voices with a system fallback", () => {
     const parsed = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(parsed.voice).toEqual({ provider: "system", fallback: "system", locale: "en" })
+    expect(parsed.voice).toEqual({
+      provider: "system", fallback: "system", locale: "en", stt: "auto",
+      hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
+    })
   })
 
   it("accepts a per-agent provider and system voice", () => {

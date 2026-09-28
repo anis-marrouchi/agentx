@@ -46,6 +46,7 @@ interface Entry {
 }
 
 const RECENT = 10
+const RANK = { high: 0, normal: 1, low: 2 } as const
 
 export class SpeechOut {
   private waiting: Entry[] = []
@@ -90,7 +91,14 @@ export class SpeechOut {
     const audio = this.synth(u, ac.signal).then((f) => ({ f }), (e) => ({ e }))
     const entry: Entry = { item, u, audio, ac, started: false, done }
     if (front) this.waiting.unshift(entry)
-    else this.waiting.push(entry)
+    else {
+      // A "high" agent's line goes ahead of waiting normal and low ones,
+      // a normal one ahead of low ones; equals keep arrival order.
+      const mine = RANK[u.voice.priority ?? "normal"]
+      const at = this.waiting.findIndex((e) => RANK[e.u.voice.priority ?? "normal"] > mine)
+      if (at < 0) this.waiting.push(entry)
+      else this.waiting.splice(at, 0, entry)
+    }
     this.changed()
     this.next()
     return { item, done: played }

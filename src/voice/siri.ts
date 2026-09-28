@@ -124,6 +124,7 @@ export const SIRI_SAY = `#!/bin/sh
 #                                the OS default for it; any other id is
 #                                passed to say -v.
 #   siri-say.sh --stop           silence the line speaking, drop the queue.
+#   AGENTX_SAY_RATE=<words a minute> sets the speed; unset, say's own.
 D=com.apple.Accessibility K=SpokenContentDefaultVoiceSelectionsByLanguage
 dir="$HOME/.agentx/voice" lock="$HOME/.agentx/voice/siri.lock" saved="$HOME/.agentx/voice/siri-saved.plist"
 stops="$dir/stop"
@@ -138,10 +139,12 @@ if [ "$1" = --stop ]; then
   exit 0
 fi
 case "$1" in com.apple.ttsbundle.gryphon-neural_*) siri=$1 voice= ;; *) siri= voice=$1 ;; esac
+rate=\${AGENTX_SAY_RATE:-}
+case "$rate" in *[!0-9]*) rate= ;; esac
 case "$siri" in *[!A-Za-z0-9._-]*) echo "bad voice id" >&2; exit 2;; esac
 # Not macOS, or no pref tools: speak as is and never touch a pref.
 if [ "$(uname)" != Darwin ] || ! command -v defaults >/dev/null || ! command -v plutil >/dev/null; then
-  if [ -n "$voice" ]; then exec say -v "$voice"; else exec say; fi
+  if [ -n "$voice" ]; then exec say \${rate:+-r "$rate"} -v "$voice"; else exec say \${rate:+-r "$rate"}; fi
 fi
 mkdir -p "$dir" || exit 1
 mine=$(cat "$stops" 2>/dev/null)
@@ -196,7 +199,7 @@ fi
 # held the lock for minutes), capped at max_s.
 limit=$((5 + $(wc -w < "$txt") * 6 / 10))
 [ $limit -gt $max_s ] && limit=$max_s
-if [ -n "$voice" ]; then say -v "$voice" -f "$txt" & else say -f "$txt" & fi
+if [ -n "$voice" ]; then say \${rate:+-r "$rate"} -v "$voice" -f "$txt" & else say \${rate:+-r "$rate"} -f "$txt" & fi
 say_pid=$!
 ( sleep "$limit"; echo "say ran past \${limit}s; stopped" >&2; kill "$say_pid" 2>/dev/null ) & dog=$!
 wait "$say_pid"
