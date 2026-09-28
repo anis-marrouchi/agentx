@@ -42,6 +42,7 @@ import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workfl
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import type { AppPushDeps } from "./app-push"
+import { appAnnounceDeps } from "./app-announce"
 import { PushStore } from "@/channels/push-store"
 import { AppChatStore } from "./app-chat-store"
 import type { AppChatDeps, AppMeshPeer } from "./app-chat"
@@ -192,7 +193,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
 
   // Phone app. First, above every proxy and the loopback-trusting gates
   // below: /app and /api/app/* always need a device token (app-routes.ts).
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config) })) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a

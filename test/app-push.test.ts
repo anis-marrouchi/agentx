@@ -63,7 +63,7 @@ describe("phone app notifications", () => {
   it("subscribes, reports it, and unsubscribes only its own", async () => {
     const a = phone("Phone A")
     const b = phone("Phone B")
-    expect(await (await a.call("GET", "/api/app/push")).json()).toEqual({ available: true, reason: null, publicKey: "BPUBLICKEY", subscriptions: 0, chatFinish: true })
+    expect(await (await a.call("GET", "/api/app/push")).json()).toEqual({ available: true, reason: null, publicKey: "BPUBLICKEY", subscriptions: 0, chatFinish: true, announce: true })
     expect((await a.call("POST", "/api/app/push/subscribe", SUB)).status).toBe(200)
     expect(store.list(a.id)).toMatchObject([{ endpoint: SUB.endpoint, deviceName: "Phone A", publicKey: "BPUBLICKEY" }])
     expect((await (await a.call("GET", "/api/app/push")).json()).subscriptions).toBe(1)

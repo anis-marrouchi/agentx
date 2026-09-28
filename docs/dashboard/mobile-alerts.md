@@ -87,6 +87,28 @@ This is on by default. To turn it off or on again for this phone:
 
 The setting is kept on the computer, for this phone's pairing: other phones keep their own, and a phone paired again starts with it on. It only changes notifications: the in-app banner still shows while the app is open.
 
+## Announcements
+
+An *announcement* is a short note sent to every computer in the mesh, for example "Maintenance tonight at 22:00". The **Alerts** tab lists the most recent ones (up to 50), newest first, from every computer. Each shows the text, who sent it when an agent did, the computer it came from and how long ago. The list refreshes every few seconds while the tab is open.
+
+![The Announcements card in the Alerts tab, with the notify switch and two announcements](/screenshots/mobile-app/alerts-announcements.png)
+
+To send one:
+
+1. **Terminal (any computer in the mesh):** run
+   ```sh
+   agentx mesh announce "Maintenance tonight at 22:00"
+   ```
+
+By default, a phone with notifications on also gets a notification titled **Announcement** for each new one. Tapping it opens the **Alerts** tab. Each announcement is sent once, even though every computer sees it. Announcements made before AgentX started, or more than ten minutes old when they arrive, are listed but not sent.
+
+To stop announcement notifications on one phone, and keep the others:
+
+1. **Phone:** open the app and tap **Alerts**.
+2. **Phone:** in the **Announcements** card, turn off **Notify me of announcements**.
+
+The switch only shows when this computer sends the notifications itself (see [Set up the computer that hosts the phone app](#set-up-the-computer-that-hosts-the-phone-app)). More about announcements: [Events › Announcements](../reference/events.md#announcements).
+
 ## Check it worked
 
 1. **Terminal (computer):** run `agentx notifications show`. The `push` line says `on`, `subject set` and `keys set`.
@@ -98,6 +120,7 @@ The setting is kept on the computer, for this phone's pairing: other phones keep
 4. **Phone:** open the app and tap **Alerts**. **Test** is at the top of **Recent**.
 5. **Terminal (other computer):** if you set up a second computer, run the same `agentx notify` there. The phone gets it too.
 6. **Phone:** in **Chat**, ask an agent something that takes a while, then close the app. When the answer is ready, a notification with the agent's name appears. Tap it: the app opens on that conversation.
+7. **Terminal (any computer):** run `agentx mesh announce "Hello from the mesh"`. Within a few seconds the phone shows an **Announcement** notification, and the text is at the top of the **Announcements** card in **Alerts**.
 
 ## If something is wrong
 
@@ -111,4 +134,7 @@ The setting is kept on the computer, for this phone's pairing: other phones keep
 - **A second computer says "is not a mesh peer of this node"** — the name after `--relay-to` doesn't match. Check it with `agentx mesh list`.
 - **Notifications stopped after `agentx app push-keys --force`** — new keys cut off every phone. Open **Alerts** on each phone; the card shows **Off**. Tap **Turn on** again.
 - **No notification when a chat answer finishes** — check that the **When a chat answer finishes** switch is on, and that notifications are **On** for this phone. While the app is open on screen you get a banner instead; close the app or lock the phone to get a notification.
+- **An announcement is listed but no notification came** — check that **Notify me of announcements** is on for this phone and that notifications are **On** in the card above it. Announcements older than ten minutes when they arrive, for example from a computer that was offline, are not sent.
+- **The Announcements card says "Could not load announcements"** — AgentX on this computer isn't answering. Run `agentx daemon status`, and start it if it's stopped.
+- **An announcement from another computer doesn't show** — that computer is not reachable in the mesh. Run `agentx mesh list` and check it is listed as healthy.
 - **Tapping Turn on shows "known push service"** — the phone's browser uses a push service that isn't in `channels.push.allowedHosts`. Add the host name the error shows to that list in `agentx.json`, restart AgentX, and try again.

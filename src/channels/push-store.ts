@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3"
+import { PushPrefs } from "./push-prefs"
 
 // --- Web Push subscriptions and recent pushes (SQLite) ---
 //
@@ -47,20 +48,21 @@ export class PushStore {
       CREATE INDEX IF NOT EXISTS push_subscriptions_device ON push_subscriptions(device_id);
       CREATE TABLE IF NOT EXISTS push_log (
       id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, title TEXT NOT NULL,
-      body TEXT NOT NULL, url TEXT, delivered INTEGER NOT NULL, device_id TEXT);
-      CREATE TABLE IF NOT EXISTS push_device_prefs (
-      device_id TEXT PRIMARY KEY, chat_finish INTEGER NOT NULL, updated_at INTEGER NOT NULL);`)
+      body TEXT NOT NULL, url TEXT, delivered INTEGER NOT NULL, device_id TEXT);`)
+    this.prefs = new PushPrefs(db)
   }
+
+  /** Per-phone switches for each kind of notification (push-prefs.ts). */
+  readonly prefs: PushPrefs
 
   /** Whether this phone is told when a chat answer finishes while it looks
    *  elsewhere (#265). On unless the phone turned it off. */
   chatFinishOn(deviceId: string): boolean {
-    const r = this.db.prepare("SELECT chat_finish FROM push_device_prefs WHERE device_id = ?").get(deviceId) as { chat_finish: number } | undefined
-    return r ? r.chat_finish === 1 : true
+    return this.prefs.on(deviceId, "finish")
   }
 
   setChatFinish(deviceId: string, on: boolean, now = Date.now()): void {
-    this.db.prepare("INSERT OR REPLACE INTO push_device_prefs (device_id, chat_finish, updated_at) VALUES (?, ?, ?)").run(deviceId, on ? 1 : 0, now)
+    this.prefs.set(deviceId, "finish", on, now)
   }
 
   /** Adds or refreshes a subscription. A browser that re-subscribes keeps

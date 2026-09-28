@@ -124,8 +124,17 @@ export class AppChatStore {
     // from before it count as read, so an update never lights up the strip
     // with every old conversation.
     const convCols = db.prepare("PRAGMA table_info(app_chat_conversations)").all() as Array<{ name: string }>
+    // The column and its backfill go in one transaction: a crash between
+    // them would leave every old conversation unread and never backfilled.
+    // IMMEDIATE takes the write lock before the second look, so the
+    // dashboard and the daemon opening the file together can't both add it.
     if (!convCols.some((c) => c.name === "read_at")) {
-      db.exec("ALTER TABLE app_chat_conversations ADD COLUMN read_at INTEGER; UPDATE app_chat_conversations SET read_at = updated_at")
+      db.transaction(() => {
+        const again = db.prepare("PRAGMA table_info(app_chat_conversations)").all() as Array<{ name: string }>
+        if (again.some((c) => c.name === "read_at")) return
+        db.exec("ALTER TABLE app_chat_conversations ADD COLUMN read_at INTEGER")
+        db.exec("UPDATE app_chat_conversations SET read_at = updated_at")
+      }).immediate()
     }
     if (!convCols.some((c) => c.name === "color")) db.exec("ALTER TABLE app_chat_conversations ADD COLUMN color TEXT")
   }

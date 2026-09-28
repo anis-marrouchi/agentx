@@ -19,6 +19,7 @@ import { AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
+import { APP_ANNOUNCE_SCRIPT } from "./app-announce.client"
 import { APP_CHAT_SCRIPT } from "./app-chat.client"
 import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
 import { APP_CHAT_SHEETS_SCRIPT } from "./app-chat-sheets.client"
@@ -92,6 +93,7 @@ export function renderAppPage(): string {
 <script>${APP_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
+<script>${APP_ANNOUNCE_SCRIPT}</script>
 <script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_LOG_SCRIPT}${APP_CHAT_SHEETS_SCRIPT}${APP_CHAT_SCRIPT}</script>
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
 <script>${APP_CHAT_STRIP_SCRIPT}</script>

@@ -5,6 +5,7 @@ import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
 import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
 import { handleAppPush, type AppPushDeps } from "./app-push"
+import { handleAppAnnounce, type AppAnnounceDeps } from "./app-announce"
 import { handleAppChat, type AppChatDeps } from "./app-chat"
 import { handleAppFiles } from "./app-files"
 import { handleAppVoice, type AppVoiceDeps } from "./app-voice"
@@ -48,6 +49,7 @@ export interface AppRouteCtx {
   tokens?: TokenStore
   fleet?: AppFleetDeps
   push?: AppPushDeps
+  announce?: AppAnnounceDeps
   chat?: AppChatDeps
   voice?: AppVoiceDeps
   pairCodes?: PairCodeStore
@@ -137,6 +139,7 @@ export async function handleAppRequest(
   }
   if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet)) return true
   if (ctx.push && await handleAppPush(req, res, path, method, rec, ctx.push)) return true
+  if (ctx.announce && await handleAppAnnounce(req, res, path, method, rec, ctx.announce)) return true
   if (ctx.chat && await handleAppChat(req, res, path, method, rec, ctx.chat)) return true
   if (ctx.chat && await handleAppFiles(req, res, path, method, rec, ctx.chat)) return true
   if (ctx.voice && await handleAppVoice(req, res, path, method, rec, ctx.voice)) return true

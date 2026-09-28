@@ -188,6 +188,21 @@ describe("GET /api/app/chat/active", () => {
     expect(old.unread("dev", 12).map((u) => u.answer)).toEqual(["new answer"])
     db.close()
   })
+
+  it("adds read_at and its backfill together or not at all", () => {
+    const db = new Database(join(dir, "old-fail.sqlite"))
+    db.exec(`CREATE TABLE app_chat_conversations (id TEXT PRIMARY KEY, device_id TEXT NOT NULL, title TEXT NOT NULL,
+      node TEXT NOT NULL, node_name TEXT NOT NULL, agent TEXT NOT NULL, agent_name TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+      INSERT INTO app_chat_conversations VALUES ('cold0000002', 'dev', 'Old', 'local', 'n', 'alpha', NULL, 1, 50);
+      CREATE TRIGGER no_update BEFORE UPDATE ON app_chat_conversations BEGIN SELECT RAISE(ABORT, 'backfill refused'); END;`)
+    const cols = () => (db.prepare("PRAGMA table_info(app_chat_conversations)").all() as Array<{ name: string }>).map((c) => c.name)
+    expect(() => new AppChatStore(db)).toThrow(/backfill refused/)
+    expect(cols()).not.toContain("read_at")
+    db.exec("DROP TRIGGER no_update")
+    new AppChatStore(db)
+    expect(db.prepare("SELECT read_at FROM app_chat_conversations").get()).toEqual({ read_at: 50 })
+    db.close()
+  })
 })
 
 describe("a notification when an answer finishes out of sight", () => {
