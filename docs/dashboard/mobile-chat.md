@@ -115,7 +115,7 @@ To set up one of them:
 | `AGENTX_WHISPER`, `AGENTX_WHISPER_MODEL` | Where the `whisper` command is, and its model (`base` by default), for computers without `mlx_whisper` |
 | `AGENTX_FFMPEG` | Where `ffmpeg` is, when it is not in one of the folders above |
 
-A recording is at most 10 MB and 2 minutes long. It is kept in a private temporary folder only while it is written down, then deleted, and it is never written to a log.
+A recording is at most 2 minutes long. The phone records at a fixed quality so 2 minutes stay under 1 MB, and the computer refuses anything over 2 MB. When the computer has `ffmpeg`, it also measures the recording itself and refuses one longer than 2 minutes. A recording is kept in a private temporary folder only while it is written down, then deleted, and it is never written to a log. The computer writes down at most two recordings at a time.
 
 ## Allow the microphone on an iPhone
 
@@ -141,6 +141,8 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 - **"This browser can't record here"** — the page is not on its `https://` address, or the browser can't record. Open the app from the address in [Install the phone app](./mobile-app.md).
 - **"No words were heard"** — the recording was silent or too short. Hold the orb, speak, then let go.
 - **"Speech to text failed on this computer"** — every engine failed, for example an expired ElevenLabs key. On the computer, look for `[voice] phone transcription` in the AgentX log.
+- **"This computer is already writing down other recordings"** — two recordings are being written down already, maybe from another phone. Wait a moment and try again.
+- **"The recording is longer than 2 minutes"** or **"larger than 2 MB"** — say it in two shorter messages.
 - **"AgentX on this computer is too old for voice"** — update AgentX on the computer the phone is paired with.
 - **The answer is not read out loud** — check that the speaker button shows sound waves and that the phone's volume is up. On an iPhone, turn the ring switch off silent.
 - **The answer is read by the phone's voice, not the agent's** — the agent speaks with a system voice, or the computer has no ElevenLabs key. See [Agent voices](./voice.md#agent-voices).

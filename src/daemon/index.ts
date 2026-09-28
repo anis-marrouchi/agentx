@@ -102,7 +102,7 @@ import { extractUiDirective } from "@/channels/ui-directive"
 import { setVoiceLog } from "@/voice/system-voices"
 import { elevenLabsKey, siriSayScript } from "@/voice/speaker"
 import { detectSttHost } from "@/voice/transcribe"
-import { handleVoiceIo, isVoiceIoPath } from "@/daemon/voice-io-api"
+import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-api"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
@@ -2560,14 +2560,11 @@ export class AgentXDaemon {
       // The phone app's voice: a recording in, words out; an answer in, the
       // agent's ElevenLabs voice out. Gated by isMeshGatedPath above.
       if (isVoiceIoPath(path)) {
-        const agents = this.config?.agents ?? {}
         await handleVoiceIo(req, res, path, {
           stt: () => this.config.voice.stt,
           host: () => detectSttHost(elevenLabsKey()),
           elevenLabsKey,
-          voiceOf: (id, peer) => !peer && agents[id]
-            ? voiceRef(resolveAgentVoice(id, agents, this.config.voice))
-            : this.voiceMesh.voices.speaker(id, false)?.voice ?? null,
+          voiceOf: (id, peer) => resolveVoice(id, peer, this.config, this.voiceMesh.voices),
           log: (m) => this.log(m),
         })
         return

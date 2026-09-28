@@ -17,11 +17,27 @@ import { basename, delimiter, dirname, extname, join } from "path"
 export type SttSetting = "auto" | "elevenlabs" | "local"
 export type SttEngine = "elevenlabs" | "mlx-whisper" | "whisper"
 
-/** Bounds on one recording, checked by the dashboard and again here. */
+/** Bounds on one recording, checked by the dashboard and by the daemon.
+ *  The phone records at `bitsPerSecond`, so 2 minutes is under 1 MB; the
+ *  byte cap is 2 minutes at about twice that, room for a browser that
+ *  ignores the requested rate and for the container. It bounds the length
+ *  of what reaches an engine whatever the phone claims about it. */
 export const AUDIO_LIMITS = {
-  bytes: 10 * 1024 * 1024,
   ms: 2 * 60 * 1000,
+  bitsPerSecond: 64_000,
+  bytes: 2 * 1024 * 1024,
 } as const
+
+/** The recording's length as the phone states it (X-Audio-Duration-Ms).
+ *  Required: a missing or malformed value is refused, as is one over the
+ *  cap (with 2 s of slack for the recorder's own rounding). */
+export function checkDurationHeader(header: string | string[] | undefined): { status: 400 | 413; error: string } | null {
+  const raw = Array.isArray(header) ? header[0] : header
+  if (!raw || !/^\d{1,9}$/.test(raw.trim())) return { status: 400, error: "Say how long the recording is (X-Audio-Duration-Ms)." }
+  return Number(raw) > AUDIO_LIMITS.ms + 2000 ? { status: 413, error: tooLongMessage() } : null
+}
+
+export const tooLongMessage = (): string => `The recording is longer than ${AUDIO_LIMITS.ms / 60000} minutes.`
 
 const AUDIO_TYPES: Record<string, string> = {
   "audio/webm": "webm", "video/webm": "webm", "audio/ogg": "ogg",
@@ -83,16 +99,34 @@ export function detectSttHost(key: string | null): SttHost {
   }
 }
 
-/** Seconds of audio in a file by ffprobe, or null when it can't tell (no
- *  ffprobe, or a webm from MediaRecorder, which often has no duration). */
-export async function probeSeconds(file: string, ffmpeg: string | null): Promise<number | null> {
-  const ffprobe = ffmpeg ? join(dirname(ffmpeg), "ffprobe") : findBinary("ffprobe")
-  if (!ffprobe) return null
+/** Seconds of audio in a file, measured, not taken from the phone:
+ *  ffprobe's container duration, else (a MediaRecorder webm has none)
+ *  ffmpeg decoding it. Decoding stops a little past the cap, so a long file
+ *  costs no more than a legal one. Null when neither tool is here. */
+export async function measureSeconds(file: string, ffmpeg: string | null): Promise<number | null> {
+  const ffprobe = ffmpeg && existsExec(join(dirname(ffmpeg), "ffprobe")) ? join(dirname(ffmpeg), "ffprobe") : findBinary("ffprobe")
+  if (ffprobe) {
+    try {
+      const s = parseFloat((await run(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], 10_000)).trim())
+      if (Number.isFinite(s) && s > 0) return s
+    } catch { /* decode instead */ }
+  }
+  return ffmpeg ? decodeSeconds(file, ffmpeg) : null
+}
+
+/** Decodes up to the cap plus 5 s and reads ffmpeg's last "time=". */
+export async function decodeSeconds(file: string, ffmpeg: string): Promise<number | null> {
+  const limit = String(AUDIO_LIMITS.ms / 1000 + 5)
   try {
-    const out = await run(ffprobe, ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file], 10_000)
-    const s = parseFloat(out.trim())
-    return Number.isFinite(s) ? s : null
+    const err = await runStderr(ffmpeg, ["-nostdin", "-hide_banner", "-t", limit, "-i", file, "-f", "null", "-"], 30_000)
+    const times = [...err.matchAll(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/g)]
+    const m = times[times.length - 1]
+    return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]) : null
   } catch { return null }
+}
+
+function existsExec(p: string): boolean {
+  try { accessSync(p, constants.X_OK); return true } catch { return false }
 }
 
 /** ElevenLabs Scribe. The recording goes as it is: Scribe reads webm and mp4. */
@@ -124,6 +158,18 @@ export async function localWhisper(engine: "mlx-whisper" | "whisper", bin: strin
   } catch {
     throw new Error(`${engine} wrote no transcript`)
   }
+}
+
+/** Runs to the end and resolves with the tail of stderr (ffmpeg's progress). */
+function runStderr(cmd: string, args: string[], timeoutMs: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] })
+    let err = ""
+    const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error(`${basename(cmd)} took too long`)) }, timeoutMs)
+    child.stderr.on("data", (d) => { err = (err + d).slice(-8192) })
+    child.on("error", (e) => { clearTimeout(timer); reject(e) })
+    child.on("exit", (code) => { clearTimeout(timer); code === 0 ? resolve(err) : reject(new Error(`${basename(cmd)} exited ${code}`)) })
+  })
 }
 
 function run(cmd: string, args: string[], timeoutMs: number, env: NodeJS.ProcessEnv = process.env): Promise<string> {

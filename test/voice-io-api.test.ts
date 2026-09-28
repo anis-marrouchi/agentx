@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "http"
 import { existsSync, readFileSync } from "fs"
-import { handleVoiceIo, speakableAnswer, SPEAK_MAX_CHARS, type VoiceIoDeps } from "../src/daemon/voice-io-api"
-import { AUDIO_LIMITS, audioExt, sttEngines, sttSetupHint, type SttHost } from "../src/voice/transcribe"
+import { handleVoiceIo, speakableAnswer, SPEAK_MAX_CHARS, MAX_TRANSCRIBING, type VoiceIoDeps } from "../src/daemon/voice-io-api"
+import { AUDIO_LIMITS, audioExt, checkDurationHeader, sttEngines, sttSetupHint, type SttHost } from "../src/voice/transcribe"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 import type { VoiceRef } from "../src/voice/speaker"
 
@@ -46,10 +46,13 @@ beforeEach(() => {
     log: (l) => logs.push(l),
     engines: { elevenlabs: engine("elevenlabs"), "mlx-whisper": engine("mlx-whisper"), whisper: engine("whisper") },
     synth: async (_key, voice, text) => { spoken.push({ voice, text }); return Buffer.from("ID3-mp3") },
+    // The fake bytes can't be measured; the real measurement has its own tests.
+    measure: async () => null,
   }
 })
 
-const transcribe = (body: BodyInit, headers: Record<string, string> = { "Content-Type": "audio/webm;codecs=opus" }) =>
+const SHORT = { "X-Audio-Duration-Ms": "3000" }
+const transcribe = (body: BodyInit, headers: Record<string, string> = { "Content-Type": "audio/webm;codecs=opus", ...SHORT }) =>
   fetch(`${base}/voice/transcribe`, { method: "POST", headers, body })
 const speak = (body: unknown) => fetch(`${base}/voice/speak`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
 
@@ -92,7 +95,7 @@ describe("POST /voice/transcribe", () => {
 
   it("falls back to the local Whisper when ElevenLabs fails", async () => {
     fail.add("elevenlabs")
-    const r = await transcribe(AUDIO, { "Content-Type": "audio/mp4" })
+    const r = await transcribe(AUDIO, { "Content-Type": "audio/mp4", ...SHORT })
     expect(await r.json()).toEqual({ text: "hello from whisper", engine: "mlx-whisper" })
     expect(calls.map((c) => c.engine)).toEqual(["elevenlabs", "mlx-whisper"])
     expect(calls[1].file.endsWith("speech.m4a")).toBe(true)
@@ -117,13 +120,54 @@ describe("POST /voice/transcribe", () => {
   })
 
   it("bounds the size, the length and the type", async () => {
-    expect((await transcribe(AUDIO, { "Content-Type": "text/plain" })).status).toBe(415)
-    expect((await transcribe(Buffer.alloc(AUDIO_LIMITS.bytes + 1))).status).toBe(413)
+    expect((await transcribe(AUDIO, { "Content-Type": "text/plain", ...SHORT })).status).toBe(415)
     const long = await transcribe(AUDIO, { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": String(AUDIO_LIMITS.ms + 5000) })
     expect(long.status).toBe(413)
     expect((await long.json()).error).toMatch(/longer than 2 minutes/)
     expect((await transcribe(Buffer.alloc(0))).status).toBe(400)
     expect(calls).toEqual([])
+  })
+
+  it("requires the stated length: missing or malformed is refused", async () => {
+    for (const d of [undefined, "", "abc", "-5", "1e9", "3000ms"]) {
+      const r = await transcribe(AUDIO, { "Content-Type": "audio/webm", ...(d === undefined ? {} : { "X-Audio-Duration-Ms": d }) })
+      expect(r.status, String(d)).toBe(400)
+    }
+    expect(checkDurationHeader("120000")).toBeNull()
+    expect(checkDurationHeader(String(AUDIO_LIMITS.ms + 2001))?.status).toBe(413)
+    expect(calls).toEqual([])
+  })
+
+  it("caps the bytes at 2 minutes of the phone's bitrate, whatever length is stated", async () => {
+    // 2 minutes at the recorder's 64 kbps is under 1 MB; the cap leaves room.
+    expect(AUDIO_LIMITS.bytes).toBeGreaterThan((AUDIO_LIMITS.ms / 1000) * AUDIO_LIMITS.bitsPerSecond / 8)
+    expect(AUDIO_LIMITS.bytes).toBeLessThanOrEqual(2 * 1024 * 1024)
+    const r = await transcribe(Buffer.alloc(AUDIO_LIMITS.bytes + 1), { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": "1000" })
+    expect(r.status).toBe(413)
+    expect(calls).toEqual([])
+  })
+
+  it("measures the recording and refuses a long one whose header lies", async () => {
+    deps.measure = async () => AUDIO_LIMITS.ms / 1000 + 30
+    const r = await transcribe(AUDIO, { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": "1000" })
+    expect(r.status).toBe(413)
+    expect(calls).toEqual([])
+    deps.measure = async () => 2.5
+    expect((await transcribe(AUDIO)).status).toBe(200)
+  })
+
+  it(`runs at most ${MAX_TRANSCRIBING} transcriptions at once`, async () => {
+    let open: Array<() => void> = []
+    deps.engines = { elevenlabs: async () => { await new Promise<void>((r) => open.push(r)); return "hi" } }
+    const first = Array.from({ length: MAX_TRANSCRIBING }, () => transcribe(AUDIO))
+    for (let i = 0; i < 200 && open.length < MAX_TRANSCRIBING; i++) await new Promise((r) => setTimeout(r, 5))
+    expect(open.length).toBe(MAX_TRANSCRIBING)
+    expect((await transcribe(AUDIO)).status).toBe(429)
+    open.forEach((r) => r()); open = []
+    for (const r of await Promise.all(first)) expect(r.status).toBe(200)
+    // The slots are free again.
+    deps.engines = { elevenlabs: async () => "hi" }
+    expect((await transcribe(AUDIO)).status).toBe(200)
   })
 
   it("never writes the audio or the words to the log", async () => {
@@ -160,14 +204,15 @@ describe("POST /voice/speak", () => {
   })
 
   it("hands the cleaned text back for the phone's own voice when ElevenLabs can't speak", async () => {
+    // The normal case for a system-voice agent: a 200, not an error.
     const sys = await speak({ agent: "sys", text: "Hello `code` there" })
-    expect(sys.status).toBe(503)
+    expect(sys.status).toBe(200)
     expect(await sys.json()).toMatchObject({ fallback: "browser", text: "Hello there" })
 
     deps.elevenLabsKey = () => null
     const nokey = await speak({ agent: "alpha", text: "Hi" })
-    expect(nokey.status).toBe(503)
-    expect(await nokey.json()).toMatchObject({ fallback: "browser", text: "Hi", error: expect.stringMatching(/No ElevenLabs key/) })
+    expect(nokey.status).toBe(200)
+    expect(await nokey.json()).toMatchObject({ fallback: "browser", text: "Hi", reason: expect.stringMatching(/No ElevenLabs key/) })
 
     deps.elevenLabsKey = () => "k"
     deps.synth = async () => { throw new Error("quota exceeded") }
