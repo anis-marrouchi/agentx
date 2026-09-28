@@ -99,13 +99,18 @@ export function rootInitiatorOf(ctx: InitiatorContext | undefined | null, agentI
   return root
 }
 
-/** Is this turn the one talking to the person? Only that turn may hand
- *  work off and end: a delegated turn (it carries a root) has a caller
- *  waiting on its answer, and a callback turn (it carries `delegation`)
- *  must not fan out again. */
-export function isHumanFacingTurn(ctx: InitiatorContext | undefined | null): boolean {
+/** Is this turn inside a chain rather than at its root? A delegated turn
+ *  (it carries a root) has a caller waiting on its answer, and a callback
+ *  turn (it carries `delegation`) must not fan out again. Neither may hand
+ *  work off and end, whatever the request asks for. */
+export function isChainHop(ctx: InitiatorContext | undefined | null): boolean {
   if (!ctx) return false
-  if (validRoot(ctx.initiator)) return false
-  if (ctx.delegation) return false
+  return validRoot(ctx.initiator) !== null || Boolean(ctx.delegation)
+}
+
+/** Is this turn the one talking to the person? Only that turn may hand
+ *  work off and end on its own. */
+export function isHumanFacingTurn(ctx: InitiatorContext | undefined | null): boolean {
+  if (!ctx || isChainHop(ctx)) return false
   return classifyInitiator(ctx) === "human"
 }

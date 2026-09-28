@@ -22,7 +22,7 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { dirname } from "path"
 import { randomBytes } from "crypto"
-import { isHumanFacingTurn, rootInitiatorOf, type RootInitiator } from "./initiator"
+import { isChainHop, isHumanFacingTurn, rootInitiatorOf, type RootInitiator } from "./initiator"
 
 export type DelegationStatus = "done" | "error" | "timeout" | "lost"
 
@@ -190,10 +190,14 @@ export class DelegationManager {
    * Decide whether a delegation from this caller turn goes the callback
    * way. `asyncFlag` is the request's own `async` field: false always
    * keeps it synchronous, true asks for a callback even from an
-   * agent-started turn, and absent means "only when a person started it".
+   * agent-started root turn, and absent means "only when a person started
+   * it". A delegated hop or a callback turn is always synchronous: the
+   * first has a caller waiting on its answer, and the second would chain
+   * callbacks with no depth limit.
    */
   shouldCallback(caller: CallerTurn | null, asyncFlag?: boolean): boolean {
     if (asyncFlag === false || !caller) return false
+    if (isChainHop(caller.context)) return false
     if (!originOf(caller.context)) return false
     if (asyncFlag === true) return true
     if (this.deps.asyncWhenHuman === false) return false

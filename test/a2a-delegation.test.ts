@@ -81,6 +81,17 @@ describe("when a delegation calls back", () => {
     expect(mgr.shouldCallback(HUMAN_TURN, false)).toBe(false)
   })
 
+  it("keeps delegated hops and callback turns synchronous even with async:true", () => {
+    const { mgr } = harness()
+    const CALLBACK_TURN: CallerTurn = {
+      agentId: "front",
+      taskId: "run-4",
+      context: { channel: "telegram", chatId: "chat-1", sender: "agent:worker", delegation: { taskId: "dlg-1", from: "worker", status: "done" } },
+    }
+    expect(mgr.shouldCallback(CALLBACK_TURN, true)).toBe(false)
+    expect(mgr.shouldCallback(DELEGATED_TURN, true)).toBe(false)
+  })
+
   it("can be switched off for person-started turns", () => {
     const { mgr } = harness({ asyncWhenHuman: false })
     expect(mgr.shouldCallback(HUMAN_TURN)).toBe(false)
