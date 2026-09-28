@@ -225,6 +225,27 @@ facts
       : chalk.dim(`  ${total} fact(s) contain credentials (never injected). Run with --apply to delete them.`))
   })
 
+facts
+  .command("flag-unsourced")
+  .description("mark facts about billing, accounts, outages or deploys that name no source as unverified; --apply writes (with a backup)")
+  .option("--agent <id>", "one agent (default: all)")
+  .option("--apply", "flag them (default: list only)")
+  .action(async (opts: { agent?: string; apply?: boolean }) => {
+    const { flagUnsourced } = await import("@/agents/memory-migrate")
+    const store = new MemoryStore()
+    let total = 0
+    for (const id of factAgents(opts.agent)) {
+      const r = flagUnsourced(store, id, { apply: !!opts.apply })
+      if (r.flagged.length === 0) continue
+      total += r.flagged.length
+      console.log(`  ${chalk.bold(id)}  ${r.flagged.length}${r.backup ? chalk.dim(`  (backup: ${r.backup})`) : ""}`)
+      for (const f of r.flagged.slice(0, 10)) console.log(chalk.dim(`    ${f.id} [${f.volatility}] ${f.content.slice(0, 100)}`))
+    }
+    console.log(opts.apply
+      ? chalk.green(`  ✓ flagged ${total} fact(s) as unverified`)
+      : chalk.dim(`  ${total} fact(s) state billing, account, outage or deploy state with no source. Run with --apply to flag them.`))
+  })
+
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = []
   for await (const chunk of process.stdin) chunks.push(chunk as Buffer)

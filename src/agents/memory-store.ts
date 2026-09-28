@@ -1,7 +1,9 @@
 import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs"
 import { resolve } from "path"
 import { buildIndexCached, scoreAll } from "../memory/bm25"
-import { ageDays, needsRecheck, VERIFY_OR_ASK_RULE } from "./fact-freshness"
+import { FactLedger } from "@/wiki/facts/ledger"
+import type { Provenance } from "./fact-freshness"
+import { memoryContextLines, renderMemoryBlock, type ContextLine } from "./memory-context"
 import { containsSecret, factTrust, initialReview, isInjectable, trustForChannel, type FactReview, type SourceTrust } from "./memory-trust"
 
 // --- Persistent agent memory store ---
@@ -23,6 +25,10 @@ export interface MemoryFact {
   reviewedAt?: string
   createdAt: string
   expiresAt?: string
+  /** Where the fact was checked (#273). Absent on facts nobody checked. */
+  provenance?: Partial<Provenance>
+  /** Flagged by `agentx memory facts flag-unsourced`: volatile, no source. */
+  unverified?: { since: string; reason: string }
   // Spaced repetition fields
   accessCount?: number
   lastAccessed?: string
@@ -37,9 +43,13 @@ const TASK_STATE_TTL_DAYS = 7
 
 export class MemoryStore {
   private memoryDir: string
+  /** The wiki's fact ledger: memory lines that restate one of its facts
+   *  are rendered as references to it (memory-context.ts). */
+  private ledger: FactLedger
 
   constructor(baseDir: string = process.cwd()) {
     this.memoryDir = resolve(baseDir, ".agentx/memory")
+    this.ledger = new FactLedger(resolve(baseDir, ".agentx/wiki"))
     if (!existsSync(this.memoryDir)) {
       mkdirSync(this.memoryDir, { recursive: true })
     }
@@ -114,10 +124,7 @@ export class MemoryStore {
   }
 
   buildContext(memories: MemoryFact[]): string {
-    const kept = this.contextLines(memories)
-    if (kept.length === 0) return ""
-    const rule = kept.some((l) => l.unverified) ? [VERIFY_OR_ASK_RULE] : []
-    return ["[Agent Memory — persistent facts from past conversations]", ...rule, ...kept.map((l) => l.line), "[End Memory]"].join("\n")
+    return renderMemoryBlock(this.contextLines(memories))
   }
 
   /** The facts buildContext actually renders — the rest fall past its
@@ -126,29 +133,10 @@ export class MemoryStore {
     return this.contextLines(memories).map((l) => l.fact)
   }
 
-  private contextLines(memories: MemoryFact[]): Array<{ fact: MemoryFact; line: string; unverified: boolean }> {
-    const kept: Array<{ fact: MemoryFact; line: string; unverified: boolean }> = []
-    let chars = "[Agent Memory — persistent facts from past conversations]".length
-    let ruleCounted = false
-    const now = Date.now()
-
-    for (const m of memories) {
-      const isDM = !m.source.chatId.startsWith("-") && /^\d+$/.test(m.source.chatId)
-      const scope = isDM ? "DM" : m.source.chatId
-      // Stale account/billing/deploy state and session summaries are
-      // flagged so the agent re-checks or asks before stating them (#273).
-      const unverified = needsRecheck(m, now)
-      const age = ageDays(m, now)
-      const flag = unverified ? `UNVERIFIED (${age === null ? "age unknown" : `${age}d old`}) ` : ""
-      const line = `- [${m.category}] ${flag}${m.content} (${scope}, ${m.source.date})`
-      const extra = unverified && !ruleCounted ? VERIFY_OR_ASK_RULE.length : 0
-
-      if (chars + extra + line.length > 2400) break
-      kept.push({ fact: m, line, unverified })
-      chars += extra + line.length
-      if (extra) ruleCounted = true
-    }
-    return kept
+  private contextLines(memories: MemoryFact[]): ContextLine[] {
+    let wikiFacts: ReturnType<FactLedger["list"]> = []
+    try { wikiFacts = this.ledger.list() } catch { /* no ledger: plain memory */ }
+    return memoryContextLines(memories, wikiFacts)
   }
 
   /**
@@ -266,7 +254,13 @@ export class MemoryStore {
     return out
   }
 
-  private rewrite(agentId: string, memories: MemoryFact[]): void {
+  /** The agent's facts file, for backups. */
+  fileFor(agentId: string): string {
+    return this.filePath(agentId)
+  }
+
+  /** Replace every fact of an agent. Callers back the file up first. */
+  rewrite(agentId: string, memories: MemoryFact[]): void {
     writeFileSync(this.filePath(agentId), memories.map((m) => JSON.stringify(m)).join("\n") + (memories.length ? "\n" : ""))
   }
 
