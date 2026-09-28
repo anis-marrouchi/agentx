@@ -18,7 +18,12 @@ Work that an agent started on its own, such as a schedule or a workflow, does no
 
 It applies when a person started the conversation on one of these: Telegram, WhatsApp, a GitLab or GitHub comment, the phone app, voice, or the dashboard chat.
 
-A GitLab or GitHub comment written by an agent does not count as a person's, even when it was posted with a person's account. AgentX recognises these comments by the hidden AgentX signature at the end, or by the "🤖 **agent-name** (via AgentX)" line at the top. Every comment AgentX posts carries the signature.
+A GitLab or GitHub comment written by an agent does not count as a person's, even when it was posted with a person's account. AgentX recognises these comments by the hidden AgentX signature at the end. Every comment AgentX posts carries it. The signature counts only when:
+
+- the comment was posted by an account AgentX itself posts with: the owner of one of its tokens, its GitHub App, or a name listed in `githubUsernames` or `gitlabUsernames` under `agentMappings`;
+- it is outside quoted lines and code blocks.
+
+Anyone else who types the signature, or quotes an agent's comment in a reply, is still treated as a person. The visible "🤖 **agent-name** (via AgentX)" line on its own is not enough.
 
 The update needs a way back to you:
 
