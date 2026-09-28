@@ -16,6 +16,7 @@ import { openDb, closeDb } from "../src/storage/sqlite"
 
 const DAEMON_TOKEN = "daemon-secret"
 const AUDIO = Buffer.from("fake-mp4-audio-" + "y".repeat(500))
+const LONG = "a".repeat(SPEAK_INPUT_MAX + 500)
 
 interface Seen { path: string; auth?: string; type?: string; duration?: string; body: Buffer }
 let seen: Seen[] = []
@@ -53,6 +54,9 @@ beforeAll(async () => {
   const id = tokens.verify(phone)!.id
   convId = store.create(id, { node: "local", nodeName: "node-a", agent: "alpha", agentName: "Alpha" }, "hi").id
   peerConvId = store.create(id, { node: "peer-b", nodeName: "node-b", agent: "beta", agentName: "Beta" }, "hi").id
+  // The answers a phone may have read out: only these.
+  for (const content of ["Hello there", "**Hello** there", LONG]) store.append(id, convId, { role: "assistant", content, status: "done", at: Date.now() })
+  store.append(id, peerConvId, { role: "assistant", content: "Hi", status: "done", at: Date.now() })
 
   daemon = createServer((req, res) => { void fakeDaemon(req, res) })
   await new Promise<void>((r) => daemon.listen(0, "127.0.0.1", r))
@@ -106,10 +110,16 @@ describe("POST /api/app/voice/transcribe", () => {
 
   it("bounds the type, the size and the length before anything reaches the daemon", async () => {
     expect((await transcribe(AUDIO, { "Content-Type": "application/json" })).status).toBe(415)
-    expect((await transcribe(Buffer.alloc(AUDIO_LIMITS.bytes + 10), { "Content-Type": "audio/webm" })).status).toBe(413)
+    // Too many bytes for 2 minutes, whatever length it claims.
+    expect((await transcribe(Buffer.alloc(AUDIO_LIMITS.bytes + 10), { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": "1000" })).status).toBe(413)
     const long = await transcribe(AUDIO, { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": String(AUDIO_LIMITS.ms + 60_000) })
     expect(long.status).toBe(413)
-    expect((await transcribe(Buffer.alloc(0), { "Content-Type": "audio/webm" })).status).toBe(400)
+    expect((await transcribe(Buffer.alloc(0), { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": "1000" })).status).toBe(400)
+    // The stated length is required.
+    const missing = await transcribe(AUDIO, { "Content-Type": "audio/webm" })
+    expect(missing.status).toBe(400)
+    expect((await missing.json()).error).toMatch(/X-Audio-Duration-Ms/)
+    expect((await transcribe(AUDIO, { "Content-Type": "audio/webm", "X-Audio-Duration-Ms": "soon" })).status).toBe(400)
     expect((await fetch(base + "/api/app/voice/transcribe", { headers: { Authorization: `Bearer ${phone}` } })).status).toBe(405)
     expect(seen).toEqual([])
   })
@@ -154,14 +164,14 @@ describe("POST /api/app/voice/speak", () => {
   })
 
   it("caps the text it sends", async () => {
-    await speak({ conversationId: convId, text: "a".repeat(SPEAK_INPUT_MAX + 500) })
+    await speak({ conversationId: convId, text: LONG })
     expect(JSON.parse(seen[0].body.toString()).text).toHaveLength(SPEAK_INPUT_MAX)
   })
 
   it("passes on the daemon's fallback to the phone's own voice", async () => {
-    reply = (res) => { res.writeHead(503, { "Content-Type": "application/json" }); res.end(JSON.stringify({ error: "No ElevenLabs key", fallback: "browser", text: "Hello there" })) }
+    reply = (res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end(JSON.stringify({ reason: "No ElevenLabs key", fallback: "browser", text: "Hello there" })) }
     const r = await speak({ conversationId: convId, text: "**Hello** there" })
-    expect(r.status).toBe(503)
+    expect(r.status).toBe(200)
     expect(await r.json()).toMatchObject({ fallback: "browser", text: "Hello there" })
   })
 
@@ -169,6 +179,9 @@ describe("POST /api/app/voice/speak", () => {
     expect((await speak({ conversationId: convId, text: "hi" }, otherPhone)).status).toBe(404)
     expect((await speak({ conversationId: "cnotreal123", text: "hi" })).status).toBe(404)
     expect((await speak({ conversationId: convId, text: "  " })).status).toBe(400)
+    // Only an answer the conversation holds, not any text.
+    expect((await speak({ conversationId: convId, text: "Say something else" })).status).toBe(404)
+    expect((await speak({ conversationId: convId, text: "hi" })).status).toBe(404) // the user's own message
     expect(seen).toEqual([])
   })
 })

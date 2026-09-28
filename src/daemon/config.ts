@@ -1022,7 +1022,8 @@ export const daemonConfigSchema = z.object({
   }).default({}),
   screen: screenSchema,
   mesh: meshConfigSchema.default({}),
-  /** Voices for agents on mesh peers, keyed by remote agent id. The Mac
+  /** Voices for agents on mesh peers, keyed by remote agent id, or by
+   *  "<peer>/<id>" for one peer's agent (it wins over the id). The Mac
    *  speaks for them, so their nodes need no ElevenLabs key. Unset fields
    *  are derived from the agent card; see src/voice/mesh-voice.ts. */
   meshVoices: z.record(z.string(), voiceSchema.omit({ rate: true, priority: true, hotkey: true }).extend({

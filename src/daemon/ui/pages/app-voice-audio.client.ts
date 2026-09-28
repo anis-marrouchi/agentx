@@ -68,7 +68,11 @@ window.AXVoiceIO = (function () {
     var type = mimeType();
     return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then(function (stream) {
       var rec, chunks = [], started = Date.now(), src = null, meter = null;
-      try { rec = type ? new MediaRecorder(stream, { mimeType: type }) : new MediaRecorder(stream); }
+      // 64 kbps: 2 minutes stay well under the computer's 2 MB limit
+      // (AUDIO_LIMITS in src/voice/transcribe.ts).
+      var opts = { audioBitsPerSecond: 64000 };
+      if (type) opts.mimeType = type;
+      try { rec = new MediaRecorder(stream, opts); }
       catch (e) { stream.getTracks().forEach(function (t) { t.stop(); }); throw e; }
       rec.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
       var c = context();

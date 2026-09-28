@@ -2,8 +2,8 @@ import type { IncomingMessage, ServerResponse } from "http"
 import type { TokenRecord } from "./token-store"
 import type { AppChatStore } from "./app-chat-store"
 import type { DaemonTarget } from "./app-chat-relay"
-import { durationTooLong, readRaw } from "./voice-io-api"
-import { AUDIO_LIMITS, audioExt } from "@/voice/transcribe"
+import { readRaw, tooBigMessage } from "./voice-io-api"
+import { AUDIO_LIMITS, audioExt, checkDurationHeader } from "@/voice/transcribe"
 
 // --- Phone app: voice (/api/app/voice/transcribe, /api/app/voice/speak) ---
 //
@@ -38,14 +38,12 @@ export async function handleAppVoice(
   if (path === "/api/app/voice/transcribe") {
     const mime = String(req.headers["content-type"] || "")
     if (!audioExt(mime)) return json(res, 415, { error: "Send the recording as audio (webm, mp4, ogg, mp3 or wav)." })
-    const tooLong = durationTooLong(req.headers["x-audio-duration-ms"])
-    if (tooLong) return json(res, 413, { error: tooLong })
+    const stated = checkDurationHeader(req.headers["x-audio-duration-ms"])
+    if (stated) { req.resume(); return json(res, stated.status, { error: stated.error }) }
     const audio = await readRaw(req, AUDIO_LIMITS.bytes)
-    if (!audio) return json(res, 413, { error: `The recording is larger than ${AUDIO_LIMITS.bytes / 1024 / 1024} MB.` })
+    if (!audio) return json(res, 413, { error: tooBigMessage() })
     if (!audio.length) return json(res, 400, { error: "The recording is empty." })
-    const headers: Record<string, string> = { "Content-Type": mime }
-    const ms = req.headers["x-audio-duration-ms"]
-    if (typeof ms === "string" && /^\d{1,9}$/.test(ms)) headers["X-Audio-Duration-Ms"] = ms
+    const headers = { "Content-Type": mime, "X-Audio-Duration-Ms": String(req.headers["x-audio-duration-ms"]).trim() }
     return forward(res, deps.daemon, "/voice/transcribe", audio, headers, 180_000)
   }
 
@@ -59,6 +57,9 @@ export async function handleAppVoice(
   if (!conv) return json(res, 404, { error: "no such conversation" })
   const text = typeof body?.text === "string" ? body.text.slice(0, SPEAK_INPUT_MAX) : ""
   if (!text.trim()) return json(res, 400, { error: "text is required" })
+  // Only an answer this conversation holds is read out, so a phone can't
+  // have arbitrary text said in an agent's voice.
+  if (!isAnswerIn(conv.messages, text)) return json(res, 404, { error: "no such answer in this conversation" })
   const upstream = { agent: conv.agent, text, ...(conv.node !== "local" ? { peer: conv.node } : {}) }
   return forward(res, deps.daemon, "/voice/speak", Buffer.from(JSON.stringify(upstream)), { "Content-Type": "application/json" }, 90_000)
 }
@@ -100,4 +101,10 @@ function json(res: ServerResponse, status: number, body: unknown): true {
 
 function parse(buf: Buffer): any {
   try { return JSON.parse(buf.toString("utf8")) } catch { return null }
+}
+
+/** `text` is one of the saved answers, or the first SPEAK_INPUT_MAX
+ *  characters of one (a long answer is sent cut). */
+export function isAnswerIn(messages: Array<{ role: string; content: string }>, text: string): boolean {
+  return messages.some((m) => m.role === "assistant" && (m.content === text || (text.length === SPEAK_INPUT_MAX && m.content.startsWith(text))))
 }
