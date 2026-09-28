@@ -149,6 +149,18 @@ function daemonUrl(): string {
   return daemonUrlCache
 }
 
+/** Which running turn is delegating (#277). The AgentX runtime exports
+ *  these to the processes an agent launches; the daemon uses them to find
+ *  the caller's turn and, when a person started it, answer at once and
+ *  call back later. Never taken from model-supplied arguments. */
+export function callerFields(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (env.AGENTX_TASK_ID) out.callerTaskId = env.AGENTX_TASK_ID
+  if (env.AGENTX_CHANNEL) out.callerChannel = env.AGENTX_CHANNEL
+  if (env.AGENTX_CHAT_ID) out.callerChatId = env.AGENTX_CHAT_ID
+  return out
+}
+
 /** Test seams. `_reset…` drops the memoized value so a caller can change
  *  env/cwd; `_resolve…` exposes the uncached resolution itself. */
 export function _resetDaemonUrlForTesting(): void {
@@ -347,7 +359,7 @@ const TOOLS = [
   {
     name: "agentx_send_agent",
     description:
-      "Send a message to ANOTHER AGENT by exact agentId — uses the AgentX A2A mesh (or local registry when the agent lives on this daemon). This is the deterministic path for agent-to-agent communication; it never falls through to a contact lookup, so an unknown agentId returns 404 with the list of known agents instead of silently sending to a similarly-named human. Use this when the target is a registered agent.",
+      "Send a message to ANOTHER AGENT by exact agentId — uses the AgentX A2A mesh (or local registry when the agent lives on this daemon). This is the deterministic path for agent-to-agent communication; it never falls through to a contact lookup, so an unknown agentId returns 404 with the list of known agents instead of silently sending to a similarly-named human. Use this when the target is a registered agent. When a person started this conversation, the call returns at once with a task id; tell the person who you asked, end your turn, and the answer arrives later as a new message in this conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -443,7 +455,8 @@ const TOOLS = [
   {
     name: "agentx_task",
     description:
-      "Send a task to a specific agent on the daemon. The agent processes it and returns a response. Use to delegate work to specialized agents.",
+      "Send a task to a specific agent on the daemon. The agent processes it and returns a response. Use to delegate work to specialized agents. " +
+      "When a person started this conversation, the call returns at once with a task id instead: tell the person who you asked and why, then end your turn. The answer arrives later as a new message in this same conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -973,9 +986,12 @@ async function handleToolCall(
       const res = await fetch(`${daemonUrl()}/send/agent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId, text, senderAgentId }),
+        body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...callerFields() }),
       })
       const data = await res.json() as any
+      if (res.status === 202 && data?.accepted) {
+        return { content: [{ type: "text", text: data.note || `Delegated to ${agentId} (task ${data.taskId}).` }] }
+      }
       if (!res.ok) {
         const known = Array.isArray(data?.known) ? ` Known agents: ${data.known.join(", ")}.` : ""
         return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}.${known}` }] }
@@ -1082,9 +1098,14 @@ async function handleToolCall(
       const res = await fetch(`${daemonUrl()}/task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context }),
+        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context, ...callerFields() }),
       })
       const data = await res.json() as any
+      // #277 — the daemon took it in the background (a person is waiting
+      // on this conversation); the answer comes back as a new turn.
+      if (res.status === 202 && data?.accepted) {
+        return { content: [{ type: "text", text: data.note || `Delegated to ${agent} (task ${data.taskId}).` }] }
+      }
       if (data.error) {
         return { content: [{ type: "text", text: `Agent error: ${data.error}` }] }
       }

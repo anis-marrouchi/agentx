@@ -133,6 +133,7 @@ export class LandscapeBuilder {
     lines.push(`- Only respond when YOU (${handles}) are mentioned or this is a DM to you`)
     lines.push("- If another agent was mentioned and you were NOT, stay silent — they will handle it")
     lines.push("- The agent list above shows all agents on the node — do NOT assume they are all in the current chat group")
+    lines.push("- Asking another agent while a person waits: the call may return at once with a task id. Tell the person who you asked, then end your turn. The answer comes back later as a message that starts with [agentx:delegation-result]; reply to the person from it.")
     lines.push("- When asked about group members, only mention agents you have seen in the conversation history")
     lines.push("- To delegate on Telegram: mention the agent's handle in your response")
     lines.push("- On GitLab: reply directly, no Telegram handles. To send to other channels, use the /send API below")

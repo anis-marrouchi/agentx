@@ -137,6 +137,34 @@ export class AppChatStore {
       }).immediate()
     }
     if (!convCols.some((c) => c.name === "color")) db.exec("ALTER TABLE app_chat_conversations ADD COLUMN color TEXT")
+    // Answers that arrive later, outside a turn (#277 delegation callbacks),
+    // are filed once per key, whatever the number of times they are seen.
+    db.exec(`CREATE TABLE IF NOT EXISTS app_chat_delivered (
+      key TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, at INTEGER NOT NULL)`)
+  }
+
+  /** The phone a conversation belongs to. For an answer that arrives with
+   *  only the conversation id (a delegation callback). */
+  ownerOf(id: string): string | null {
+    if (!isConversationId(id)) return null
+    const row = this.db.prepare("SELECT device_id FROM app_chat_conversations WHERE id = ?").get(id) as { device_id: string } | undefined
+    return row?.device_id ?? null
+  }
+
+  /** Save an answer that arrived outside a turn, once per `key`. Returns
+   *  the files as appendWithFiles does, or null when the conversation isn't
+   *  this phone's or the key was already filed. */
+  appendOnce(deviceId: string, id: string, key: string, m: AppChatMessage, declared: DeclaredArtifact[] = [], now = Date.now()): AppFileRef[] | null {
+    if (!key || key.length > 200) return null
+    return this.db.transaction(() => {
+      const owner = this.db.prepare("SELECT 1 FROM app_chat_conversations WHERE id = ? AND device_id = ?").get(id, deviceId)
+      if (!owner) return null
+      const fresh = this.db.prepare("INSERT OR IGNORE INTO app_chat_delivered (key, conversation_id, at) VALUES (?, ?, ?)").run(key, id, now)
+      if (fresh.changes === 0) return null
+      // Keys only need to outlive the daemon's event buffer; a month is ample.
+      this.db.prepare("DELETE FROM app_chat_delivered WHERE at < ?").run(now - 30 * 24 * 60 * 60_000)
+      return this.appendWithFiles(deviceId, id, m, declared)
+    }).immediate()
   }
 
   create(deviceId: string, init: Pick<AppConversation, "node" | "nodeName" | "agent" | "agentName" | "color">, firstMessage: string, now = Date.now()): AppConversation {

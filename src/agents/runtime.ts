@@ -188,6 +188,11 @@ export interface AgentTask {
     runbookPath?: string
     /** Override list of files to read from runbookPath. Optional. */
     runbookFiles?: string[]
+    /** Root of an agent-to-agent chain (a2a/initiator.ts). Set on every
+     *  delegated hop, forwarded across mesh peers with the context. */
+    initiator?: import("@/a2a/initiator").RootInitiator
+    /** Set on a callback turn: the delegation whose result it carries. */
+    delegation?: { taskId: string; from: string; peer?: string; status: string }
   }
 }
 
@@ -473,9 +478,11 @@ function buildRuntimeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
 
 /** Export who is running and for which chat, so tools the agent launches
  *  (the agentx MCP server in particular) can identify the caller without
- *  trusting model-supplied arguments. Only per-spawn processes get this;
- *  a persistent process serves many chats, so a chat id baked into its env
- *  would be stale. */
+ *  trusting model-supplied arguments. This is the per-spawn version, with
+ *  the running task id. A warm persistent process is keyed by (agent,
+ *  channel, chatId) and gets the same agent and chat through
+ *  persistentCallerEnv (claude-process-factory.ts), but no task id, which
+ *  changes every turn. */
 export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.ProcessEnv {
   env.AGENTX_AGENT_ID = task.agentId
   // The running task, so a daemon endpoint the agent calls (agent memory)

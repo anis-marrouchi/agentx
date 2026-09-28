@@ -42,6 +42,8 @@ The mesh links several AgentX machines so their agents can reach each other. See
 | `mesh.healthCheck.timeout` | number | `10` | Seconds to wait for a peer before counting it as down. |
 | `mesh.feed.enabled` | boolean | `true` | Follow the events of every reachable peer and show them in this machine's event feed. See [Events from other machines](./events.md#events-from-other-machines). |
 | `mesh.feed.skipTypes` | list of strings | `["task:step"]` | Event types peers leave out of the feed they send this machine. The default skips per-step agent activity. A change applies when this machine next reconnects to each peer. |
+| `mesh.delegation.asyncWhenHuman` | boolean | `true` | When a person started the conversation, an agent that asks another agent gets its answer later, as a new message, instead of waiting. See [When an agent asks another agent](/jobs/ask-another-agent). Applies without the mesh too. |
+| `mesh.delegation.timeoutMinutes` | number | `30` | Minutes a helper agent has to answer before the asking agent is told it timed out. From 1 to 240. |
 
 Each entry in `mesh.peers`:
 

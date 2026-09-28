@@ -419,7 +419,13 @@ export class MessageRouter {
    */
   async sendOutbound(
     msg: OutgoingMessage & { accountId?: string },
-    opts?: { idempotencyKey?: string; dedupeWindowMs?: number },
+    opts?: {
+      idempotencyKey?: string
+      dedupeWindowMs?: number
+      /** False when the text is already in the agent's session, e.g. the
+       *  reply to a turn the registry just ran (A2A callbacks, #277). */
+      recordInSession?: boolean
+    },
   ): Promise<string | void> {
     const adapter = this.channels.get(msg.channel)
     if (!adapter) {
@@ -496,7 +502,7 @@ export class MessageRouter {
     // Only fires when an agentId is set — manual /send tests without an agent
     // identity stay out of session JSON to avoid polluting an agent's
     // conversation with anonymous bot traffic.
-    if (msg.agentId) {
+    if (msg.agentId && opts?.recordInSession !== false) {
       try {
         this.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text)
       } catch (e: any) {

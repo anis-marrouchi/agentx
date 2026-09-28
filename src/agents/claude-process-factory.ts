@@ -72,6 +72,18 @@ export class TurnDeadlineExceeded extends Error {
   }
 }
 
+/** Who this warm process serves, for the tools it launches (the agentx MCP
+ *  server reads these to name the caller of a delegation, #277). A warm
+ *  process is keyed by (agent, channel, chatId), so these never go stale;
+ *  the per-turn AGENTX_TASK_ID does, and is left out. */
+export function persistentCallerEnv(env: NodeJS.ProcessEnv, key: ProcessKey): NodeJS.ProcessEnv {
+  env.AGENTX_AGENT_ID = key.agentId
+  env.AGENTX_CHANNEL = key.channel
+  env.AGENTX_CHAT_ID = key.chatId
+  delete env.AGENTX_TASK_ID
+  return env
+}
+
 export class ClaudeProcessFactory implements ProcessFactory {
   constructor(private opts: ClaudeProcessFactoryOptions = {}) {}
 
@@ -103,7 +115,7 @@ class ClaudeProcessHandle implements ProcessHandle {
 
     this.child = spawn(binary, args, {
       cwd: spawnOpts.workspace,
-      env: claudeBillingEnv({ ...process.env }, spawnOpts.billing),
+      env: claudeBillingEnv(persistentCallerEnv({ ...process.env }, key), spawnOpts.billing),
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams
 

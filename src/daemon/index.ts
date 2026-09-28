@@ -134,6 +134,8 @@ import { recentFeed, streamEnvelopes } from "@/events/feed-http"
 import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
+import type { DelegationManager } from "@/a2a/delegation"
+import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, meshTaskMode, resolveCallerTurn, SyncWaits } from "@/daemon/delegation-wiring"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -161,6 +163,12 @@ export class AgentXDaemon {
    *  events and resolve runbook paths. */
   private projectRules: ProjectRulesStore
   private mesh?: A2AMesh
+  /** A2A delegations that call their caller back (#277). */
+  private delegations: DelegationManager
+  /** Synchronous delegations in flight, to refuse cycles that could never finish. */
+  private syncWaits = new SyncWaits()
+  /** Phone-app callback replies waiting for the dashboard to file them. */
+  private callbackReplies = new CallbackReplies()
   private hooks: HookRegistry
   private landscape: LandscapeBuilder
   private heartbeat: HeartbeatManager
@@ -438,6 +446,17 @@ export class AgentXDaemon {
         directory: () => this.mesh!.directory(),
       })
     }
+
+    // A2A callbacks (#277): a delegation a person started runs in the
+    // background and its answer comes back to the asking agent's chat.
+    this.delegations = createDelegations({
+      config: this.config,
+      registry: this.registry,
+      router: this.router,
+      mesh: () => this.mesh,
+      log: this.log,
+      replies: this.callbackReplies,
+    })
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)
     this.webhooks = new WebhookHandler(this.registry, {}, this.log, this.mesh, this.config.webhooks, this.hooks)
@@ -881,6 +900,7 @@ export class AgentXDaemon {
   async stop(): Promise<void> {
     const start = Date.now()
     this.shuttingDown = true
+    this.delegations.stop()
     this.voiceTalk.close()
     this.screenBuffer?.stop()
 
@@ -1939,6 +1959,12 @@ export class AgentXDaemon {
     this.registry.getSessionStore().setAdapterResolver((channel) => this.router.getChannel(channel))
 
     await this.router.startAll()
+
+    // Delegations cut off by the last restart: tell each caller's chat.
+    // After startAll, so the channels the callbacks reply on are up.
+    void this.delegations.recover()
+      .then((n) => { if (n) this.log(`[delegation] ${n} delegation(s) lost in the restart were reported to their callers`) })
+      .catch((e) => this.log(`[delegation] recovery failed: ${e?.message ?? e}`))
   }
 
   /** Wires the workflow dispatcher + hook subscribers against the running
@@ -2279,6 +2305,83 @@ export class AgentXDaemon {
       } catch { /* best-effort */ }
     }, 1000)
     this.attachSweep.unref?.()
+  }
+
+  /**
+   * #277 — the gate every agent-to-agent request on this node goes through.
+   *
+   *   refused   a cycle that could never finish: an agent asking itself, or
+   *             a target whose every slot is held by a turn waiting on this
+   *             caller (A -> B -> A with one slot each).
+   *   accepted  a delegation that calls its caller back, when the calling
+   *             turn qualifies (a person started it, or a root turn asked
+   *             async:true). `callee` on this node runs through the
+   *             registry; on a peer, through mesh.sendTask, whose protocol
+   *             is unchanged: the peer runs a normal synchronous task and
+   *             this daemon holds the call in the background.
+   *   track     synchronous, as before; records who waits on the callee.
+   */
+  private delegationGate(
+    req: IncomingMessage,
+    body: Record<string, unknown>,
+    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
+    opts: { callback?: boolean } = {},
+  ):
+    | { refused: string }
+    | { accepted: Record<string, unknown> }
+    | { track: { onStart: (runId: string) => void; end: () => void } } {
+    const hint = callerHintFrom(req, body)
+    const caller = resolveCallerTurn(hint, this.registry)
+    if (!target.peer && this.registry.getAgent(target.callee)) {
+      const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
+      if (why) return { refused: why }
+    }
+    const accepted = opts.callback === false ? null : this.startCallback(body, caller, target)
+    if (accepted) return { accepted }
+    let runId: string | undefined
+    return {
+      track: {
+        onStart: (id) => {
+          runId = id
+          if (caller?.taskId) this.syncWaits.begin(caller.taskId, id)
+        },
+        end: () => { if (runId) this.syncWaits.end(runId) },
+      },
+    }
+  }
+
+  private startCallback(
+    body: Record<string, unknown>,
+    caller: ReturnType<typeof resolveCallerTurn>,
+    target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
+  ): Record<string, unknown> | null {
+    const asyncFlag = body.async === true ? true : body.async === false ? false : undefined
+    if (!caller || !this.delegations.shouldCallback(caller, asyncFlag)) return null
+    let peer = target.peer
+    if (!peer && !this.registry.getAgent(target.callee)) {
+      const found = this.mesh?.findAgentPeer(target.callee)
+      if (!found?.healthy) return null
+      peer = found.peer
+    }
+    const extras: Record<string, unknown> = {}
+    if (!peer) {
+      const intentRef = this.recordInboundDispatch(
+        target.callee,
+        { channel: "a2a", sender: `agent:${caller.agentId}`, chatId: `a2a:${caller.agentId}:${target.callee}` },
+        target.message,
+        caller.agentId,
+      )
+      if (intentRef) extras.intentRef = intentRef
+    }
+    const { taskId } = this.delegations.start({
+      caller,
+      callee: target.callee,
+      peer,
+      message: target.message,
+      calleeContext: target.calleeContext,
+      extras,
+    })
+    return acceptedBody(taskId, target.callee, peer)
   }
 
   /**
@@ -2967,6 +3070,16 @@ export class AgentXDaemon {
 
       // One agent's subscriptions, read back as a bounded digest: the pull
       // delivery behind the agentx_events MCP tool and `agentx events`.
+      // #277 — a phone-app reply after a delegation, for the dashboard to
+      // file in the conversation thread. Mesh-gated: it carries the text.
+      const callbackReplyMatch = req.method === "GET" ? path.match(/^\/a2a\/delegations\/([^/]+)\/reply$/) : null
+      if (callbackReplyMatch) {
+        const reply = this.callbackReplies.get(decodeURIComponent(callbackReplyMatch[1]))
+        if (!reply) { this.json(res, 404, { error: "no reply waiting for this delegation" }); return }
+        this.json(res, 200, reply)
+        return
+      }
+
       const agentEventsMatch = req.method === "GET" ? path.match(/^\/agents\/([^/]+)\/events$/) : null
       if (agentEventsMatch) {
         const agentId = decodeURIComponent(agentEventsMatch[1])
@@ -4590,6 +4703,11 @@ export class AgentXDaemon {
           }
           const targetAgent = String(body.agentId)
           const text = String(body.text)
+          // #277 — same gate as /task: refuse a cycle, or call back when a
+          // person started it.
+          const gate = this.delegationGate(req, body, { callee: targetAgent, message: text })
+          if ("refused" in gate) { this.json(res, 409, { error: gate.refused }); break }
+          if ("accepted" in gate) { this.json(res, 202, gate.accepted); break }
           // Local agent? Dispatch directly through the registry.
           const localDef = this.registry.getAgent(targetAgent)
           if (localDef) {
@@ -4604,12 +4722,16 @@ export class AgentXDaemon {
                 text,
                 senderAgentId,
               )
-              const response = await this.registry.execute({
-                agentId: targetAgent,
-                message: text,
-                context,
-                intentRef,
-              })
+              let response
+              try {
+                response = await this.registry.execute({
+                  agentId: targetAgent,
+                  message: text,
+                  context,
+                  intentRef,
+                  onStart: gate.track.onStart,
+                })
+              } finally { gate.track.end() }
               this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
             } catch (e: any) {
               this.json(res, 500, { error: e.message })
@@ -4746,6 +4868,12 @@ export class AgentXDaemon {
           this.json(res, 200, this.router.getChannelNames())
           break
 
+        // #277 — recent delegations that call back: ids, agents and status
+        // only, never the request or the answer.
+        case "GET /a2a/delegations":
+          this.json(res, 200, { delegations: this.delegations.list() })
+          break
+
         case "GET /services":
           this.json(res, 200, (this.router as any).serviceMatcher?.list() || [])
           break
@@ -4768,6 +4896,18 @@ export class AgentXDaemon {
           if (looksLikeA2A && !senderAgentId) {
             this.log(`[a2a] /task accepted without senderAgentId for agent="${agentId}" from ${(req.socket?.remoteAddress) || "unknown"} — caller should upgrade. Required in next release.`)
           }
+          // #277 — an agent delegating from a turn a person started gets a
+          // task id now and the answer later, as a new turn in its chat.
+          // Streaming callers are watching the run, so they keep waiting.
+          // A cycle that could never finish is refused either way.
+          const gate = this.delegationGate(req, body, {
+            callee: agentId,
+            message: String(body.message),
+            calleeContext: body.context as Record<string, unknown> | undefined,
+          }, { callback: body.stream !== true && !String(req.headers["accept"] || "").includes("text/event-stream") })
+          if ("refused" in gate) { this.json(res, 409, { error: gate.refused }); break }
+          if ("accepted" in gate) { this.json(res, 202, gate.accepted); break }
+          const track = gate.track
           // Per-task context strategy override. When absent, registry falls
           // back to config.session.contextStrategy. Used by the bench
           // harness to A/B the same request under "layered" vs "planner"
@@ -4910,11 +5050,12 @@ export class AgentXDaemon {
                   contextStrategy,
                   intentRef,
                   freshSession,
+                  onStart: track.onStart,
                 },
                 onDelta,
                 onThinking,
                 onEvent,
-              ))
+              )).finally(track.end)
               streamDone = true
               clearInterval(heartbeat)
               if (resp.error) {
@@ -4946,9 +5087,10 @@ export class AgentXDaemon {
               // A Mac speaking for this agent sends only a few voice fields;
               // the instruction itself is built here.
               systemPromptAppend: remoteVoiceAppend(body.context),
+              onStart: track.onStart,
             },
             () => {},
-          ))
+          )).finally(track.end)
           this.json(res, response.error ? 500 : 200, response)
           break
         }
@@ -5282,6 +5424,25 @@ export class AgentXDaemon {
           // conversation that asked for it. See sendTask's own docstring.
           const meshContext = body.context as Record<string, unknown> | undefined
           const meshSender = typeof body.senderAgentId === "string" ? body.senderAgentId : undefined
+
+          // #277 — an agent delegating from a turn a person started (or a
+          // root turn asking async:true) gets the answer back as a new turn
+          // in its own chat. Only a request whose context names no chat of
+          // its own: one that does keeps its behaviour from before, where
+          // async:true below delivers the raw answer to that chat. Needs a
+          // named callee: "the peer's first agent" is resolved on the peer.
+          if (meshTaskMode(body, true) === "callback") {
+            const gate = this.delegationGate(req, body, {
+              callee: body.agent as string,
+              peer: body.peer as string,
+              message: body.message as string,
+              calleeContext: meshContext,
+            })
+            if ("accepted" in gate) {
+              this.json(res, 202, gate.accepted)
+              break
+            }
+          }
 
           // Async mode: answer the caller now, deliver the result later.
           //
