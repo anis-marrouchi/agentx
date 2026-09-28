@@ -1,93 +1,155 @@
 import AppKit
 import SwiftUI
 
-/// The Siri-style overlay: an orb in the agent's colour that listens,
-/// thinks and speaks, with a line of words under it.
+/// The Siri-style orb at the head of the pill: the agent's colour, and it
+/// listens, thinks and speaks.
 ///
-/// Built from SwiftUI's own gradients, no animation library. The orb only
-/// moves while it is on screen: hidden, its timeline is paused and the
-/// microphone level is no longer read, so an idle assistant costs nothing.
-/// With Reduce Motion on it is a still picture that changes between
-/// states, never a loop.
+/// Built from SwiftUI's own gradients, no animation library. It only moves
+/// while it has something to show and is on screen: idle or hidden, its
+/// timeline is paused and the microphone level is no longer read, so an
+/// idle assistant costs nothing. With Reduce Motion on, or "Animated orb"
+/// off in the menu, it is a still picture that changes between states,
+/// never a loop.
 @MainActor
 final class OrbModel: ObservableObject {
-    enum Phase: Equatable { case hidden, listening, thinking, speaking }
+    enum Phase: Equatable { case idle, listening, thinking, speaking }
 
-    @Published var phase: Phase = .hidden
+    @Published var phase: Phase = .idle
     /// 0…1: the microphone while listening.
     @Published var level: Double = 0
     @Published var tint = NSColor(srgbRed: 0.078, green: 0.722, blue: 0.651, alpha: 1)
-    @Published var name = ""
-    /// What was heard, or what is being said.
-    @Published var line = ""
-    /// The step the agent is on, and for how long.
-    @Published var status = ""
+    /// The pill is on screen. Off, nothing moves.
+    @Published var onScreen = false
     @Published var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+    /// "Animated orb" in the menu. Off: a still orb, as with Reduce Motion.
+    @Published var animated = true
+
+    var still: Bool { reduceMotion || !animated }
+    /// The timeline runs only while there is motion to draw.
+    var paused: Bool { still || phase == .idle || !onScreen }
 }
 
-struct OrbView: View {
+/// The orb as the pill draws it: `OrbBody` at its design size, scaled down
+/// to `diameter`, in a frame with room around it for the glow.
+struct PillOrbView: View {
     @ObservedObject var model: OrbModel
-    @Environment(\.colorScheme) private var scheme
+    let diameter: CGFloat
+    let frameSize: CGFloat
 
-    /// The agent's colour, lifted in dark mode so the name stays readable.
-    private var nameColor: Color {
-        guard scheme == .dark, let c = model.tint.usingColorSpace(.sRGB) else { return Color(nsColor: model.tint) }
-        var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        c.getHue(&h, saturation: &s, brightness: &b, alpha: &a)
-        return Color(nsColor: NSColor(hue: h, saturation: s * 0.55, brightness: min(1, b + 0.35), alpha: 1))
-    }
+    /// The size OrbBody's blur, ring and gradients were drawn for.
+    private static let designSize: CGFloat = 96
 
     var body: some View {
-        VStack(spacing: 8) {
-            orb.frame(width: 96, height: 96).padding(.top, 4)
-            if !model.name.isEmpty {
-                Text(model.name.uppercased())
-                    .font(.system(size: 10.5, weight: .semibold, design: .monospaced))
-                    .tracking(0.8)
-                    .foregroundStyle(nameColor)
-            }
-            if !model.line.isEmpty {
-                Text(model.line)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.primary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(3)
-                    .truncationMode(.head)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if !model.status.isEmpty {
-                Text(model.status)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 14)
-        .frame(width: OrbOverlay.width)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
-            .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
-        .frame(maxHeight: .infinity, alignment: .top)
-    }
-
-    private var orb: some View {
-        let still = model.reduceMotion
-        let paused = still || model.phase == .hidden
-        return TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused)) { context in
+        let paused = model.paused
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: paused)) { context in
             OrbBody(t: paused ? 0 : context.date.timeIntervalSinceReferenceDate,
-                    phase: model.phase, level: model.level, tint: model.tint, still: still)
+                    phase: model.phase, level: model.level, tint: model.tint, still: model.still,
+                    ringWidth: 5)
+                .frame(width: Self.designSize, height: Self.designSize)
+                .scaleEffect(diameter / Self.designSize)
         }
+        .frame(width: frameSize, height: frameSize)
+        .accessibilityElement()
         .accessibilityLabel(Text(accessibilityText))
     }
 
     private var accessibilityText: String {
         switch model.phase {
-        case .hidden: return ""
+        case .idle: return "Idle"
         case .listening: return "Listening"
         case .thinking: return "Thinking"
         case .speaking: return "Speaking"
+        }
+    }
+}
+
+/// The orb's view in the pill. Clicks go through it to the pill, so
+/// pressing on the orb drags the pill like anywhere else on it.
+@MainActor
+final class PillOrb: NSHostingView<PillOrbView> {
+    private let driver: OrbDriver
+    var model: OrbModel { driver.model }
+
+    /// The microphone's RMS level, read while listening. Set by the app.
+    var levelSource: (() -> Float)? {
+        get { driver.levelSource }
+        set { driver.levelSource = newValue; driver.watchLevel() }
+    }
+
+    init(diameter: CGFloat, frameSize: CGFloat) {
+        driver = OrbDriver()
+        super.init(rootView: PillOrbView(model: driver.model, diameter: diameter, frameSize: frameSize))
+    }
+
+    @available(*, unavailable)
+    required init(rootView: PillOrbView) { fatalError("use init(diameter:frameSize:)") }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not from a nib") }
+
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+
+    /// Show `phase` in `tint`. Cheap to call on every render: SwiftUI only
+    /// redraws what changed.
+    func show(_ phase: OrbModel.Phase, tint: NSColor) {
+        let model = driver.model
+        if model.tint != tint { model.tint = tint }
+        if model.phase != phase {
+            model.phase = phase
+            if phase != .listening { model.level = 0 }
+        }
+        driver.watchLevel()
+    }
+
+    /// The pill came on screen or went off it.
+    func setOnScreen(_ on: Bool) {
+        let model = driver.model
+        guard model.onScreen != on else { return }
+        model.onScreen = on
+        if !on { model.level = 0 }
+        driver.watchLevel()
+    }
+
+    /// "Animated orb" in the menu.
+    func setAnimated(_ on: Bool) {
+        guard driver.model.animated != on else { return }
+        driver.model.animated = on
+        driver.watchLevel()
+    }
+}
+
+/// Reads the microphone into the model while listening, and follows the
+/// Reduce Motion setting.
+@MainActor
+private final class OrbDriver {
+    let model = OrbModel()
+    var levelSource: (() -> Float)?
+    private var levelTimer: Timer?
+    private var motionObserver: NSObjectProtocol?
+
+    init() {
+        motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.model.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+                self.watchLevel()
+            }
+        }
+    }
+
+    /// The microphone is read only while listening, on screen, with
+    /// motion allowed.
+    func watchLevel() {
+        let wanted = model.phase == .listening && model.onScreen && !model.still && levelSource != nil
+        if !wanted { levelTimer?.invalidate(); levelTimer = nil; return }
+        guard levelTimer == nil else { return }
+        levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, let read = self.levelSource else { return }
+                self.model.level = OrbMath.smooth(self.model.level, toward: OrbMath.level(fromRMS: read()))
+            }
         }
     }
 }
@@ -100,11 +162,14 @@ struct OrbBody: View {
     let tint: NSColor
     /// Reduce Motion: a still orb, sized and shaded by state alone.
     let still: Bool
+    /// The thinking ring's stroke at the 96-point design size. The pill
+    /// draws the orb small, so it passes a thicker one that still reads.
+    var ringWidth: CGFloat = 2.2
 
     /// How much the orb swells and glows, 0…1.
     private var energy: Double {
         switch phase {
-        case .hidden: return 0
+        case .idle: return 0
         case .listening: return still ? 0.45 : 0.12 + 0.88 * level
         case .thinking: return still ? 0.2 : 0.22 + 0.08 * sin(t * 2.2)
         case .speaking: return still ? 0.7 : OrbMath.speakingEnvelope(at: t)
@@ -114,7 +179,7 @@ struct OrbBody: View {
     /// How fast the colours drift.
     private var speed: Double {
         switch phase {
-        case .hidden: return 0
+        case .idle: return 0
         case .listening: return 0.5 + level * 1.5
         case .thinking: return 1.3
         case .speaking: return 0.9
@@ -136,7 +201,7 @@ struct OrbBody: View {
             if phase == .thinking {
                 Circle()
                     .trim(from: 0, to: 0.28)
-                    .stroke(Color.white.opacity(0.75), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                    .stroke(Color.white.opacity(0.75), style: StrokeStyle(lineWidth: ringWidth, lineCap: .round))
                     .rotationEffect(.radians(still ? -.pi / 2 : t * 3.1))
                     .scaleEffect(scale * 0.86)
             } else {
@@ -204,108 +269,5 @@ struct OrbBody: View {
             shade(0.13, -0.1, 0.02),
             shade(0.02, -0.35 * core * 2, core),
         ]
-    }
-}
-
-/// The window the orb lives in: floating, on every Space, click-through
-/// and never key, so the app in front keeps the keyboard.
-private final class OrbPanel: NSPanel {
-    override var canBecomeKey: Bool { false }
-    override var canBecomeMain: Bool { false }
-}
-
-@MainActor
-final class OrbOverlay {
-    static let width: CGFloat = 300
-    private static let height: CGFloat = 250
-
-    let model = OrbModel()
-    private let panel: NSPanel
-    private let host: NSHostingView<OrbView>
-    private var levelTimer: Timer?
-    private var motionObserver: NSObjectProtocol?
-
-    /// The microphone's RMS level, read while listening. Set by the app.
-    var levelSource: (() -> Float)?
-
-    init() {
-        panel = OrbPanel(contentRect: NSRect(x: 0, y: 0, width: Self.width, height: Self.height),
-                         styleMask: [.borderless, .nonactivatingPanel],
-                         backing: .buffered, defer: true)
-        panel.isFloatingPanel = true
-        panel.level = .floating
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.isOpaque = false
-        panel.backgroundColor = .clear
-        panel.hasShadow = false
-        panel.ignoresMouseEvents = true
-        panel.hidesOnDeactivate = false
-        host = NSHostingView(rootView: OrbView(model: model))
-        host.frame = NSRect(x: 0, y: 0, width: Self.width, height: Self.height)
-        panel.contentView = host
-
-        let model = self.model
-        motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
-            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-            object: nil, queue: .main) { _ in
-            MainActor.assumeIsolated {
-                model.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-            }
-        }
-    }
-
-    var isVisible: Bool { panel.isVisible }
-
-    /// Where the orb's card ends on screen, for the answer card to sit
-    /// under. Nil while hidden.
-    var contentFrame: NSRect? {
-        guard panel.isVisible else { return nil }
-        let h = min(Self.height, host.fittingSize.height)
-        return NSRect(x: panel.frame.minX, y: panel.frame.maxY - h, width: Self.width, height: h)
-    }
-
-    func show(_ phase: OrbModel.Phase, name: String, tint: NSColor, line: String, status: String) {
-        guard phase != .hidden else { hide(); return }
-        model.name = name
-        model.tint = tint
-        model.line = line
-        model.status = status
-        if model.phase != phase {
-            model.phase = phase
-            if phase != .listening { model.level = 0 }
-        }
-        watchLevel()
-        if !panel.isVisible {
-            position()
-            panel.orderFrontRegardless()
-        }
-    }
-
-    func hide() {
-        model.phase = .hidden
-        model.level = 0
-        watchLevel()
-        panel.orderOut(nil)
-    }
-
-    /// Top right, under the menu bar, where macOS puts Siri.
-    private func position() {
-        guard let screen = NSScreen.main else { return }
-        let v = screen.visibleFrame
-        panel.setFrameOrigin(NSPoint(x: v.maxX - Self.width - 16, y: v.maxY - Self.height - 10))
-    }
-
-    /// The microphone is read only while listening, on screen, with
-    /// motion allowed.
-    private func watchLevel() {
-        let wanted = model.phase == .listening && !model.reduceMotion && levelSource != nil
-        if !wanted { levelTimer?.invalidate(); levelTimer = nil; return }
-        guard levelTimer == nil else { return }
-        levelTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 20, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self, let read = self.levelSource else { return }
-                self.model.level = OrbMath.smooth(self.model.level, toward: OrbMath.level(fromRMS: read()))
-            }
-        }
     }
 }

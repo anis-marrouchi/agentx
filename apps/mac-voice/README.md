@@ -84,16 +84,25 @@ Unset, a remote agent's intro comes from its agent card and it gets a
 system voice (and an ElevenLabs voice, for the `elevenlabs` provider) that no
 local agent and no other remote uses.
 
-## The orb
+## The pill and its orb
 
-While listening, thinking and speaking, `Orb.swift` shows a SwiftUI orb
-(MeshGradient on macOS 15, a two-gradient fallback on 14) in the answering
-agent's colour: `/agents` `color`, else the same id hash as the daemon's
-`presenceLook` (`OrbMath.swift`, tested in `Tests/Orb`). It follows the
-microphone level; the answer is played by the daemon, so speaking uses a
-synthetic rhythm. Hidden, its timeline is paused and the level timer is
-stopped; Reduce Motion makes it still. The window is click-through and never
-key. "Show orb" in the menu turns it off (UserDefaults `showOrb`).
+The pill (`Panel.swift`) is the one floating widget. Its head is a 36 pt
+SwiftUI orb (`Orb.swift`: MeshGradient on macOS 15, a two-gradient fallback
+on 14) in the answering agent's colour: `/agents` `color`, else the same id
+hash as the daemon's `presenceLook` (`OrbMath.swift`, tested in
+`Tests/Orb`). It follows the microphone level while listening, turns a ring
+while thinking, and pulses in a synthetic rhythm while speaking (the daemon
+plays the audio). Idle or hidden, its timeline is paused and the level
+timer stopped; Reduce Motion, or "Animated orb" off in the menu
+(UserDefaults `animatedOrb`), makes it still.
+
+Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
+launch and when screens change it is clamped onto a connected screen, and
+"Reset position" puts it back bottom-right. The close button (on hover), Esc
+after a click, and "Hide pill" hide it and stop speech until the next talk
+key. The answer card opens above or below the pill, whichever has more
+room, and follows it. `PillPlacement.swift` holds that geometry, tested in
+`Tests/Pill`. The panel is non-activating and only becomes key when clicked.
 
 ## Permissions
 

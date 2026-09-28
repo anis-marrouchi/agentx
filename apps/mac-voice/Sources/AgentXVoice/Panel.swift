@@ -6,9 +6,24 @@ import AppKit
 /// focus out of whatever you were doing — the entire point of a voice
 /// assistant is that you don't stop working to use it. It floats above
 /// normal windows, joins every Space, and is deliberately small.
+///
+/// It is the one floating widget: a small live orb at its head (Orb.swift)
+/// in the answering agent's colour, the state or the words beside it, and
+/// a close button that shows on hover. Drag it anywhere; the place is
+/// remembered across launches.
 final class Panel: NSPanel {
+    static let size = NSSize(width: 284, height: 54)
+    /// The orb's diameter, and the square it draws in with room for its glow.
+    private static let orbDiameter: CGFloat = 36
+    private static let orbFrame: CGFloat = 52
+
     private let label = NSTextField(labelWithString: "")
-    private let orb = NSView()
+    let orb = PillOrb(diameter: Panel.orbDiameter, frameSize: Panel.orbFrame)
+    private let closeButton = NSButton()
+    /// Hidden by close, Esc or the menu until the next talk key.
+    private(set) var dismissed = false
+    /// Set while the app moves the pill, so only a drag is remembered.
+    private var placing = false
 
     /// Scrolls text too long for the pill instead of truncating it.
     ///
@@ -48,15 +63,23 @@ final class Panel: NSPanel {
     /// The target agent's name, shown while listening or answering.
     var agentName: () -> String = { "" }
 
+    /// The colour of the agent shown, for the orb.
+    var agentTint: () -> NSColor = { Brand.accent }
+
     /// Stay on screen when idle. Off: the pill shows only while active.
     var alwaysVisible = false
 
-    /// The orb overlay shows listening, thinking and speaking, so the
-    /// pill stays out of the way then; it still shows idle and errors.
-    var yieldsActiveStates = false
-
     /// Told of every state rendered, so the menu-bar icon can follow.
     var onRender: ((State) -> Void)?
+
+    /// Close button or Esc. The app stops speech and calls `dismiss()`.
+    var onDismiss: (() -> Void)?
+
+    /// The pill moved, by a drag or a reset. The answer card follows.
+    var onMove: (() -> Void)?
+
+    /// The last state rendered, to draw again after a dismiss or a move.
+    private var current = State.idle
 
     override func mouseUp(with event: NSEvent) {
         defer { pressedAt = nil }
@@ -112,11 +135,14 @@ final class Panel: NSPanel {
         /// is a running commentary and belongs in body type.
         var isMeta: Bool { if case .idle = self { return true }; return false }
 
-        /// Listening, thinking or speaking: what the orb shows.
-        var isActive: Bool {
+        /// What the orb does: follows the voice, turns a ring, or pulses.
+        /// Idle and errors hold it still.
+        var orbPhase: OrbModel.Phase {
             switch self {
-            case .idle, .error: return false
-            default: return true
+            case .idle, .error: return .idle
+            case .listening: return .listening
+            case .thinking, .working: return .thinking
+            case .speaking, .saying: return .speaking
             }
         }
     }
@@ -130,7 +156,7 @@ final class Panel: NSPanel {
     var onClick: (() -> Void)?
 
     init() {
-        super.init(contentRect: NSRect(x: 0, y: 0, width: 230, height: 54),
+        super.init(contentRect: NSRect(origin: .zero, size: Self.size),
                    styleMask: [.borderless, .nonactivatingPanel],
                    backing: .buffered, defer: false)
         isFloatingPanel = true
@@ -142,7 +168,7 @@ final class Panel: NSPanel {
         isMovableByWindowBackground = true
         hidesOnDeactivate = false
 
-        let blur = NSVisualEffectView(frame: NSRect(origin: .zero, size: NSSize(width: 230, height: 54)))
+        let blur = NSVisualEffectView(frame: NSRect(origin: .zero, size: Self.size))
         blur.material = .hudWindow
         blur.blendingMode = .behindWindow
         blur.state = .active
@@ -170,16 +196,19 @@ final class Panel: NSPanel {
         tint.autoresizingMask = [.width, .height]
         blur.addSubview(tint)
 
-        orb.wantsLayer = true
-        orb.layer?.cornerRadius = 4
-        orb.frame = NSRect(x: 18, y: 22, width: 8, height: 8)
+        // The orb, centred 28 points from the left edge; its square is
+        // larger than the orb so the glow is not cut off.
+        let h = Self.size.height
+        orb.frame = NSRect(x: 28 - Self.orbFrame / 2, y: (h - Self.orbFrame) / 2,
+                           width: Self.orbFrame, height: Self.orbFrame)
         blur.addSubview(orb)
 
-        // A clipping window the label slides behind.
-        let clipView = NSView(frame: NSRect(x: 38, y: 17, width: 180, height: 20))
+        // A clipping window the label slides behind. Clicks pass through
+        // it, so pressing on the words drags the pill too.
+        let clipView = PassThroughView(frame: NSRect(x: 54, y: 17, width: 196, height: 20))
         clipView.wantsLayer = true
         clipView.layer?.masksToBounds = true
-        label.frame = NSRect(x: 0, y: 0, width: 180, height: 20)
+        label.frame = NSRect(x: 0, y: 0, width: 196, height: 20)
         label.font = Brand.body(size: 12)
         label.lineBreakMode = .byClipping
         label.wantsLayer = true
@@ -187,15 +216,115 @@ final class Panel: NSPanel {
         blur.addSubview(clipView)
         clip = clipView
 
+        // Close, shown while the pointer is over the pill. Its space is
+        // kept when hidden, so the words never jump under it.
+        closeButton.frame = NSRect(x: Self.size.width - 28, y: (h - 18) / 2, width: 18, height: 18)
+        closeButton.isBordered = false
+        closeButton.bezelStyle = .regularSquare
+        closeButton.imagePosition = .imageOnly
+        closeButton.image = NSImage(systemSymbolName: "xmark.circle.fill", accessibilityDescription: "Hide")
+        closeButton.contentTintColor = .secondaryLabelColor
+        closeButton.toolTip = "Hide (Esc)"
+        closeButton.setAccessibilityLabel("Hide the pill")
+        closeButton.target = self
+        closeButton.action = #selector(closeClicked)
+        closeButton.isHidden = true
+        blur.addSubview(closeButton)
+        blur.addTrackingArea(NSTrackingArea(rect: .zero,
+                                            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                            owner: self, userInfo: nil))
+
         render(.idle)
-        positionBottomRight()
+        restorePosition()
+
+        NotificationCenter.default.addObserver(self, selector: #selector(moved),
+                                               name: NSWindow.didMoveNotification, object: self)
+        // A monitor unplugged or rearranged: bring the pill back on screen.
+        NotificationCenter.default.addObserver(self, selector: #selector(screensChanged),
+                                               name: NSApplication.didChangeScreenParametersNotification, object: nil)
     }
 
-    /// Bottom-right, clear of the Dock — out of the way but visible.
-    private func positionBottomRight() {
-        guard let screen = NSScreen.main else { return }
-        let v = screen.visibleFrame
-        setFrameOrigin(NSPoint(x: v.maxX - frame.width - 24, y: v.minY + 24))
+    // MARK: Place
+
+    /// Where it was left, kept on a screen that still exists; the
+    /// bottom-right corner the first time.
+    @MainActor
+    func restorePosition() {
+        let screens = NSScreen.screens.map(\.visibleFrame)
+        let fallback = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
+        place(PillPlacement.clamp(saved: Config.pillOrigin, size: frame.size, screens: screens, fallback: fallback))
+    }
+
+    /// Back to the bottom-right corner, forgetting where it was dragged.
+    @MainActor
+    func resetPosition() {
+        Config.pillOrigin = nil
+        restorePosition()
+    }
+
+    @MainActor
+    private func place(_ origin: NSPoint) {
+        placing = true
+        setFrameOrigin(origin)
+        placing = false
+        onMove?()
+    }
+
+    /// Remember a drag. Moves the app makes itself are not saved, so a
+    /// reset or a clamp never overwrites where the user put it.
+    @objc private func moved() {
+        MainActor.assumeIsolated {
+            guard !placing else { return }
+            Config.pillOrigin = frame.origin
+            onMove?()
+        }
+    }
+
+    @objc private func screensChanged() {
+        MainActor.assumeIsolated { restorePosition() }
+    }
+
+    // MARK: Show and hide
+
+    /// Close, Esc or the menu: hidden until `summon()`, whatever is
+    /// rendered meanwhile.
+    @MainActor
+    func dismiss() {
+        dismissed = true
+        hide()
+    }
+
+    /// The talk key: allowed on screen again.
+    @MainActor
+    func summon() {
+        guard dismissed else { return }
+        dismissed = false
+        render(current)
+    }
+
+    @MainActor
+    private func show() {
+        orb.setOnScreen(true)
+        if !isVisible { orderFrontRegardless() }
+    }
+
+    @MainActor
+    private func hide() {
+        closeButton.isHidden = true
+        orb.setOnScreen(false)
+        if isVisible { orderOut(nil) }
+    }
+
+    @objc private func closeClicked() { onDismiss?() }
+
+    override func mouseEntered(with event: NSEvent) { closeButton.isHidden = false }
+    override func mouseExited(with event: NSEvent) { closeButton.isHidden = true }
+
+    /// Esc, once the pill has been clicked and so holds the keyboard.
+    override func cancelOperation(_ sender: Any?) { onDismiss?() }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { onDismiss?() } else { super.keyDown(with: event) }
     }
 
     /// AppKit is not thread-safe. Marking this explicitly means a stray
@@ -203,25 +332,29 @@ final class Panel: NSPanel {
     /// corruption that traps somewhere unrelated an hour later.
     @MainActor
     func render(_ state: State) {
-        orb.layer?.backgroundColor = state.color.cgColor
-        // A soft halo on the dot while active: the same --nq-ring-accent
-        // idea, and the only ornament on the pill.
-        orb.layer?.shadowColor = state.color.cgColor
-        orb.layer?.shadowOpacity = state.isMeta ? 0 : 0.55
-        orb.layer?.shadowRadius = 5
-        orb.layer?.shadowOffset = .zero
+        current = state
+        // The agent's colour, except where the state is the message: an
+        // error, or notifications held.
+        let tint: NSColor
+        switch state {
+        case .error: tint = Brand.alert
+        case .idle where Hold.isOn: tint = Brand.warn
+        default: tint = agentTint()
+        }
+        orb.show(state.orbPhase, tint: tint)
 
         if state.isMeta {
             stopMarquee()
             label.attributedStringValue = Brand.metaString(state.text, color: state.color)
             label.frame.origin.x = 0
         } else {
-            label.textColor = state.color
+            // The orb carries the state now, so the words are plain text
+            // that reads in both themes. Errors keep their colour.
+            if case .error = state { label.textColor = state.color } else { label.textColor = .labelColor }
             setText(named(state))
         }
 
-        let yield = yieldsActiveStates && state.isActive
-        if (state.isMeta && !alwaysVisible) || yield { orderOut(nil) } else { orderFrontRegardless() }
+        if dismissed || (state.isMeta && !alwaysVisible) { hide() } else { show() }
         onRender?(state)
     }
 
@@ -283,7 +416,13 @@ final class Panel: NSPanel {
         marqueeText = ""
     }
 
-    // Borderless panels refuse key status unless told otherwise; without
-    // this the widget cannot show a caret or take any future text input.
+    // Borderless panels refuse key status unless told otherwise. The pill
+    // takes it only when clicked (showing it never does: that is
+    // orderFrontRegardless, not makeKey), so Esc can reach it then.
     override var canBecomeKey: Bool { true }
+}
+
+/// A view clicks go through, to the pill behind it.
+private final class PassThroughView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

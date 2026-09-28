@@ -22,9 +22,8 @@ final class ResultCard: NSPanel {
     private let links = NSStackView()
     private let thumb = NSImageView()
 
-    /// The orb's frame on screen while it shows, for the card to slide in
-    /// under it. Nil: the card sits above the pill. Set by the app.
-    var anchor: (() -> NSRect?)?
+    /// The pill's frame on screen, which the card attaches to. Set by the app.
+    var anchor: (() -> NSRect)?
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 380, height: 260),
@@ -129,19 +128,32 @@ final class ResultCard: NSPanel {
         }
 
         if let c = contentView { layout(c) }
-        if let orb = anchor?() {
-            slideIn(under: orb)
-        } else {
-            positionAboveWidget()
-            orderFrontRegardless()
-        }
+        slideIn()
     }
 
-    /// Under the orb, right edges aligned, sliding down into place. With
-    /// Reduce Motion it simply appears there.
+    /// Where the card goes against the pill: above it when there is at
+    /// least as much room above as below, else below; right edges aligned.
     @MainActor
-    private func slideIn(under orb: NSRect) {
-        let target = NSPoint(x: orb.maxX - frame.width, y: orb.minY - frame.height - 8)
+    private func placement() -> PillPlacement.Card? {
+        guard let pill = anchor?() else { return nil }
+        let screen = NSScreen.screens.first { $0.frame.intersects(pill) } ?? NSScreen.main
+        guard let visible = screen?.visibleFrame else { return nil }
+        return PillPlacement.card(size: frame.size, pill: pill, visible: visible)
+    }
+
+    /// The pill moved: the open card moves with it, without animation.
+    @MainActor
+    func follow() {
+        guard isVisible, let spot = placement() else { return }
+        setFrameOrigin(spot.origin)
+    }
+
+    /// Slides out of the pill into place: up when it opens above, down
+    /// when below. With Reduce Motion it simply appears there.
+    @MainActor
+    private func slideIn() {
+        guard let spot = placement() else { alphaValue = 1; orderFrontRegardless(); return }
+        let target = spot.origin
         let wasVisible = isVisible
         guard !wasVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             setFrameOrigin(target)
@@ -149,7 +161,7 @@ final class ResultCard: NSPanel {
             orderFrontRegardless()
             return
         }
-        setFrameOrigin(NSPoint(x: target.x, y: target.y + 18))
+        setFrameOrigin(NSPoint(x: target.x, y: target.y + (spot.above ? -18 : 18)))
         alphaValue = 0
         orderFrontRegardless()
         NSAnimationContext.runAnimationGroup { ctx in
@@ -163,14 +175,6 @@ final class ResultCard: NSPanel {
     @objc private func openLink(_ sender: NSButton) {
         guard let s = sender.identifier?.rawValue, let u = URL(string: s) else { return }
         NSWorkspace.shared.open(u)
-    }
-
-    /// Sits just above the pill so the two read as one thing.
-    private func positionAboveWidget() {
-        guard let screen = NSScreen.main else { return }
-        let v = screen.visibleFrame
-        setFrameOrigin(NSPoint(x: v.maxX - frame.width - 24, y: v.minY + 24 + 54 + 10))
-        alphaValue = 1
     }
 
     override var canBecomeKey: Bool { true }

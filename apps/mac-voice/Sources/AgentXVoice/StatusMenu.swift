@@ -34,7 +34,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onHoldChanged: ((Bool) -> Void)?
     var onTargetChanged: ((String) -> Void)?
     var onPillChanged: ((Bool) -> Void)?
-    var onOrbChanged: ((Bool) -> Void)?
+    var onAnimatedOrbChanged: ((Bool) -> Void)?
+    /// Hide the pill and stop speech, as its close button does.
+    var onHidePill: (() -> Void)?
+    /// Put the pill back in the bottom-right corner.
+    var onResetPosition: (() -> Void)?
+    /// Whether the pill is on screen, for "Hide pill".
+    var pillVisible: () -> Bool = { false }
     var onSettings: (() -> Void)?
 
     override init() {
@@ -178,9 +184,13 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let pill = action("Show floating pill", #selector(togglePill), key: "")
         pill.state = Config.showPill ? .on : .off
         menu.addItem(pill)
-        let orb = action("Show orb", #selector(toggleOrb), key: "")
-        orb.state = Config.showOrb ? .on : .off
+        let orb = action("Animated orb", #selector(toggleOrb), key: "")
+        orb.state = Config.animatedOrb ? .on : .off
         menu.addItem(orb)
+        let hide = action("Hide pill", #selector(hidePill), key: "")
+        hide.isEnabled = pillVisible()
+        menu.addItem(hide)
+        menu.addItem(action("Reset position", #selector(resetPosition), key: ""))
 
         menu.addItem(.separator())
         menu.addItem(action("Settings…", #selector(openSettings), key: ","))
@@ -232,9 +242,12 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func toggleOrb() {
-        Config.showOrb.toggle()
-        onOrbChanged?(Config.showOrb)
+        Config.animatedOrb.toggle()
+        onAnimatedOrbChanged?(Config.animatedOrb)
     }
+
+    @objc private func hidePill() { onHidePill?() }
+    @objc private func resetPosition() { onResetPosition?() }
 
     @objc private func openSettings() { onSettings?() }
     @objc private func openDashboardHome() { openDashboard("/admin") }
