@@ -3,7 +3,7 @@
 Install and activate from your AgentX configuration directory:
 
 ```sh
-agentx desktop install --agent coder-agent
+agentx desktop install --agent writer
 ```
 
 This installs the desktop app and native computer-use helper and saves the chosen
@@ -71,15 +71,15 @@ from a terminal and fails mysteriously when double-clicked.
 
 ## Talking to other agents
 
-Say "talk to Atlas" (or "switch to Nadia", "put me through to …") and the
+Say "talk to Researcher" (or "switch to Ops", "put me through to …") and the
 following turns go to that agent, local or on a mesh peer, until "back to
-secretary". The daemon does the switch, per voice session, and answers at
+Writer". The daemon does the switch, per voice session, and answers at
 once in the new agent's voice. A remote agent runs its turn on its own node
 over the mesh; its voice is spoken here. Name or pin a remote voice in
 `agentx.json`:
 
 ```json
-"meshVoices": { "atlas": { "name": "Atlas", "elevenlabsVoiceId": "…", "style": "calm" } }
+"meshVoices": { "researcher": { "name": "Researcher", "elevenlabsVoiceId": "…", "style": "calm" } }
 ```
 
 Unset, a remote agent's intro comes from its agent card and it gets a
