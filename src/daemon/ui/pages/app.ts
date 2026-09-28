@@ -28,6 +28,8 @@ import { APP_VOICE_SCRIPT } from "./app-voice.client"
 import { APP_VOICE_CSS } from "./app-voice.css"
 import { LOCKED_BODY, LOCKED_CSS, LOCKED_SCRIPT } from "./app-locked.client"
 import { injectFns } from "../inject"
+import { formatPairInput, mayBounce, parsePairScan } from "./app-pair-logic"
+import { SCAN_BODY, SCAN_CSS, SCAN_SCRIPT } from "./app-scan.client"
 import { markdownToHtml } from "@/utils/markdown-html"
 
 export { APP_SERVICE_WORKER } from "./app-sw"
@@ -113,9 +115,11 @@ export function renderAppPairPage(): string {
 export function renderAppLockedPage(): string {
   return `<!doctype html>
 <html lang="en">
-<head>${head("Not paired · AgentX")}<style>${LOCKED_CSS}</style></head>
-<body>${LOCKED_BODY}
+<head>${head("Not paired · AgentX")}<style>${LOCKED_CSS}${SCAN_CSS}</style></head>
+<body>${LOCKED_BODY}${SCAN_BODY}
+<script>${injectFns({ mayBounce, formatPairInput, parsePairScan })}</script>
 <script>${LOCKED_SCRIPT}</script>
+<script>${SCAN_SCRIPT}</script>
 </body>
 </html>`
 }

@@ -1,5 +1,8 @@
 // --- Phone app service worker (/app/sw.js) ---
 
+import { injectFns } from "../inject"
+import { afterUnauthorized } from "./app-pair-logic"
+
 /** Network-first for the shell (so a revoked phone sees the locked page as
  *  soon as it is online), cache-first for icons and the manifest, and never
  *  anything under /api/. Bump CACHE when the precached list changes.
@@ -9,10 +12,16 @@
  *  says it needs a connection instead of a browser error. A cached paired
  *  shell always wins over it.
  *
+ *  A 401 on /app alone never throws the shell away (#234): iOS has opened
+ *  home-screen apps without their cookie. The worker first asks
+ *  /api/app/me itself; only when that is refused too does it swap the
+ *  shell for the locked page (afterUnauthorized in app-pair-logic.ts).
+ *
  *  It also shows Web Push notifications (payload from channels/push.ts) and
  *  opens their link on tap: app links in an open app window, web links in
  *  the browser. */
 export const APP_SERVICE_WORKER = `
+${injectFns({ afterUnauthorized })}
 var CACHE = 'agentx-app-v3';
 var STATIC = ['/app/manifest.webmanifest', '/app/icon-192.png', '/app/icon-512.png'];
 self.addEventListener('install', function (e) {
@@ -29,23 +38,42 @@ self.addEventListener('fetch', function (e) {
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
   if (url.pathname.indexOf('/api/') === 0) return;
   if (req.mode === 'navigate' && url.pathname === '/app') {
-    e.respondWith(fetch(req).then(function (res) {
-      var copy = res.clone();
-      caches.open(CACHE).then(function (c) {
-        if (res.ok) return Promise.all([c.put('/app', copy), c.delete('/app/locked')]);
-        if (res.status === 401) return Promise.all([c.put('/app/locked', copy), c.delete('/app')]);
-        return null;
-      });
-      return res;
-    }).catch(function () {
-      return caches.match('/app').then(function (hit) { return hit || caches.match('/app/locked'); }).then(function (hit) { return hit || Response.error(); });
-    }));
+    e.respondWith(navigateApp(req, e));
     return;
   }
   if (STATIC.indexOf(url.pathname) >= 0) {
     e.respondWith(caches.match(url.pathname).then(function (hit) { return hit || fetch(req); }));
   }
 });
+function keep(e, p) { try { e.waitUntil(p); } catch (x) { /* already settled */ } return p; }
+function saveShell(e, res) {
+  return keep(e, caches.open(CACHE).then(function (c) { return Promise.all([c.put('/app', res), c.delete('/app/locked')]); }));
+}
+function saveLocked(e, res) {
+  return keep(e, caches.open(CACHE).then(function (c) { return Promise.all([c.put('/app/locked', res), c.delete('/app')]); }));
+}
+function offlineApp() {
+  return caches.match('/app').then(function (hit) { return hit || caches.match('/app/locked'); }).then(function (hit) { return hit || Response.error(); });
+}
+function navigateApp(req, e) {
+  return fetch(req).then(function (res) {
+    if (res.ok) { saveShell(e, res.clone()); return res; }
+    if (res.status !== 401) return res;
+    // A 401 on the navigation alone doesn't mean the phone was unpaired:
+    // iOS has opened the app without its cookie (#234). Ask /api/app/me
+    // from here, where the cookie is sent, before dropping anything.
+    return fetch('/api/app/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (p) { return p.status; }, function () { return 0; }).then(function (probe) {
+      var step = afterUnauthorized(probe);
+      if (step === 'lock') { saveLocked(e, res.clone()); return res; }
+      if (step === 'keep') return res;
+      var saved = function () { return caches.match('/app').then(function (hit) { return hit || res; }); };
+      return fetch('/app', { credentials: 'same-origin', cache: 'no-store' }).then(function (again) {
+        if (again.ok) { saveShell(e, again.clone()); return again; }
+        return saved();
+      }, saved);
+    });
+  }).catch(offlineApp);
+}
 function safeUrl(u) {
   try {
     var abs = new URL(u || '/app#alerts', self.location.origin);

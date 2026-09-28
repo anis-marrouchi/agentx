@@ -31,8 +31,10 @@ The phone reaches your computer over [Tailscale](https://tailscale.com/kb/1017/i
    - **iPhone (Safari):** tap **Share**, then **Add to Home Screen**, then **Add**.
    - **Android (Chrome):** tap the **⋮** menu, then **Install app** (or **Add to Home screen**), then **Install**.
 6. **Phone:** open **AgentX** from the home screen.
-7. **Phone:** if the app says **This phone isn't paired**, tap the **Pairing code** field, type the code from step 3, and tap **Pair**. Capitals, spaces and the dash don't matter. On iPhone this step is always needed, because an app on the home screen doesn't share the browser's pairing.
-   ![The pairing code field on the "This phone isn't paired" page](/screenshots/mobile-app/not-paired.png)
+7. **Phone:** if the app says **This phone isn't paired**, pair it from inside the app. On iPhone this step is always needed, because an app on the home screen doesn't share the browser's pairing. Either:
+   - tap **Scan QR code**, allow the camera if the phone asks, and point it at the QR code from step 3. The app pairs by itself; or
+   - tap the **Pairing code** field, type the code from step 3, and tap **Pair**. You don't need capitals or the dash: the field adds them as you type, so `abcdefgh` shows as `ABCD-EFGH`.
+   ![The "This phone isn't paired" page with the Scan QR code button and a code being typed](/screenshots/mobile-app/not-paired.png)
 8. **Phone:** wait for the app to open. You'll see **AgentX** at the top with your phone's name under it.
 9. **Terminal (computer):** clear the terminal so nobody else can scan or read the codes:
    ```sh
@@ -51,7 +53,7 @@ Removing the app from the home screen also removes its pairing.
 
 1. **Terminal (computer):** from the folder that holds `agentx.json`, run `agentx app pair --name "My phone"` again.
 2. **Phone:** add the app to the home screen again, as in steps 4 and 5 of [Install](#install).
-3. **Phone:** open the app from the home screen and type the new code.
+3. **Phone:** open the app from the home screen, tap **Scan QR code** and point the camera at the new QR code (or type the new code).
 4. **Terminal (computer):** remove the old entry for this phone, as in [Manage paired phones](#manage-paired-phones).
 
 ## Use it
@@ -96,7 +98,16 @@ The pairing code gives the phone the same key. The computer keeps only a scrambl
 
 - **"Could not read this machine's Tailscale name"** — Tailscale isn't running on the computer. Start it, or pass `--url https://<address>` to `agentx app pair`.
 - **The link doesn't open on the phone** — the phone isn't connected to your tailnet. Open the Tailscale app on the phone and turn it on.
+- **The app asks to pair again after an update** — the app now checks with the computer before it shows **This phone isn't paired**. If the phone is still paired, the page opens the app again by itself within a second or two. If the page stays:
+  1. **Phone:** make sure Tailscale is on, then close the app completely and open it again from the home screen.
+  2. **Terminal (computer):** run `agentx app devices`. If your phone is listed as `active`, look in the dashboard's log for a line starting with `[app] unauthenticated`. `cookie=absent` means the phone didn't send its pairing at all; `cookie=revoked` means it was removed. These lines never contain the key itself.
+  3. **Phone:** if your phone isn't listed as `active`, pair it again: run `agentx app pair` and tap **Scan QR code** in the app.
 - **"This phone isn't paired" after pairing worked before** — the phone was removed with `agentx app revoke`, or the app was removed from the home screen and added again. Follow [Pair again after reinstalling the app](#pair-again-after-reinstalling-the-app).
+- **"That QR isn't an AgentX pairing code"** — the camera found another QR code. Point it at the one `agentx app pair` shows in the terminal, and keep other codes out of the frame.
+  ![The scanner saying the QR code isn't an AgentX pairing code](/screenshots/mobile-app/scan-not-agentx.png)
+- **"AgentX may not use the camera"** — the camera permission was refused. On iPhone, open **Settings**, then **Safari**, then **Camera**, and choose **Ask** or **Allow**. On Android, long-press the app icon, tap **App info**, then **Permissions**, then **Camera**. Or tap **Close** and type the code instead.
+  ![The scanner explaining that camera access was refused](/screenshots/mobile-app/scan-camera-denied.png)
+- **No Scan QR code button** — the app wasn't opened from an `https://` address, so the browser offers no camera. Type the code instead, or use the address from `tailscale serve`.
 - **"That code didn't work"** — the code was mistyped, is older than 10 minutes, or was already used. Check the code, or run `agentx app pair` again and type the new one.
 - **"That code didn't work" with a fresh code** — `agentx app pair` ran in a different folder from the dashboard. The terminal shows "No agentx.json here". Run it again from the folder that holds `agentx.json`.
 - **"Too many attempts. Wait 5 minutes, then try again."** — too many wrong codes were typed, on this phone or any other. Wait the time shown, then type the code again. If the code has expired meanwhile, run `agentx app pair` for a new one.
