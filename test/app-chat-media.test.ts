@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest"
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
@@ -6,6 +6,7 @@ import { markdownToHtml } from "../src/utils/markdown-html"
 import { APP_ATTACH_HINT, ARTIFACT_LIMITS, artifactType, extractArtifacts } from "../src/utils/artifact-sentinel"
 import { AppChatStore } from "../src/daemon/app-chat-store"
 import { speakableAnswer } from "../src/daemon/voice-io-api"
+import { relayTurn } from "../src/daemon/app-chat-relay"
 import { buildAgentContext } from "../src/agents/context"
 import { openDb, closeDb } from "../src/storage/sqlite"
 
@@ -101,10 +102,16 @@ describe("declared files: <agentx-artifact>", () => {
     ])
   })
 
-  it("drops malformed and half-written sentinels from the text too", () => {
-    const out = extractArtifacts('A <agentx-artifact>not json</agentx-artifact> B <agentx-artifact>{"filename":"x.png"}</agentx-artifact> C <agentx-artifact>{"filena')
+  it("drops malformed sentinels, and a cut-off answer's half-written one, from the text too", () => {
+    const out = extractArtifacts('A <agentx-artifact>not json</agentx-artifact> B <agentx-artifact>{"filename":"x.png"}</agentx-artifact> C <agentx-artifact>{"filena', Infinity, true)
     expect(out.text).toBe("A  B  C")
     expect(out.artifacts).toEqual([])
+  })
+
+  it("keeps an unclosed tag in a finished answer (#256)", () => {
+    const prose = "Wrap it in the `<agentx-artifact>` tag.\n\nStep 2: save the file."
+    expect(extractArtifacts(prose).text).toBe(prose)
+    expect(extractArtifacts(prose, Infinity, true).text).toBe("Wrap it in the `")
   })
 
   it("keeps at most `max` files", () => {
@@ -166,6 +173,10 @@ describe("what is read out loud", () => {
     expect(said).toBe("Here is the chart.")
     expect(speakableAnswer("![only a picture](https://example.com/p.png)")).toBe("")
   })
+
+  it("reads a finished answer that mentions an unclosed tag in full (#256)", () => {
+    expect(speakableAnswer("Use the <agentx-artifact> tag. Then send it.")).toContain("Then send it.")
+  })
 })
 
 describe("telling the agent how to attach files", () => {
@@ -174,5 +185,30 @@ describe("telling the agent how to attach files", () => {
     const withHint = buildAgentContext({ ...base, attachHint: APP_ATTACH_HINT })
     expect(withHint).toContain("<agentx-artifact>")
     expect(buildAgentContext(base)).not.toContain("<agentx-artifact>")
+  })
+})
+
+describe("phone chat turns: an unclosed tag (#256)", () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
+  const sse = (records: [string, unknown][]) => new Response(
+    records.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(""),
+    { headers: { "Content-Type": "text/event-stream" } },
+  )
+  const turn = { node: "local", agent: "a", message: "m", chatId: "c" }
+  const run = (records: [string, unknown][]) => {
+    vi.stubGlobal("fetch", vi.fn(async () => sse(records)))
+    return relayTurn({ url: "http://daemon" }, turn, new AbortController().signal, () => {})
+  }
+
+  it("keeps the full text of a finished answer", async () => {
+    const answer = "Use the <agentx-artifact> tag.\n\nThen send it."
+    const out = await run([["text", { text: answer }], ["done", { content: answer }]])
+    expect(out).toMatchObject({ status: "done", text: answer, files: [] })
+  })
+
+  it("still strips a half-written sentinel from a failed answer", async () => {
+    const out = await run([["text", { text: 'Here it is.\n<agentx-artifact>{"filena' }], ["error", { error: "boom" }]])
+    expect(out).toMatchObject({ status: "error", text: "Here it is.", files: [] })
   })
 })

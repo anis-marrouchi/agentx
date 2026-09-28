@@ -59,8 +59,9 @@ export async function relayTurn(
   const byId = new Map<string, AppToolBadge>()
   const end = (status: TurnOutcome["status"], raw: string, error?: string): TurnOutcome => {
     // Declared files come out of every answer, even a stopped one, so a
-    // sentinel is never shown or read out.
-    const declared = extractArtifacts(raw, ARTIFACT_LIMITS.perMessage)
+    // sentinel is never shown or read out. Only a cut-off answer loses an
+    // unclosed tag; a finished one may be explaining the format.
+    const declared = extractArtifacts(raw, ARTIFACT_LIMITS.perMessage, status !== "done")
     const { cleanText, ui } = status === "done" ? extractUiDirective(declared.text) : { cleanText: declared.text, ui: undefined }
     const safe = safeUi(ui)
     return { status, text: cleanText, tools, files: declared.artifacts, ...(safe ? { ui: safe } : {}), ...(error ? { error } : {}) }
