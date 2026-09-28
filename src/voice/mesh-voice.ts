@@ -13,6 +13,8 @@ import { listSystemVoices, type SystemVoice } from "./system-voices"
 import type { TalkSpeaker } from "./talk"
 
 type Gender = AgentVoice["gender"]
+/** One `meshVoices` entry, keyed by "<id>" or "<peer>/<id>". */
+type MeshVoiceCfg = NonNullable<DaemonConfig["meshVoices"]>[string]
 
 export interface MeshAgent {
   id: string
@@ -144,15 +146,11 @@ export class MeshVoices {
 
   /** Agents on mesh peers, minus any id that is also local (local wins). */
   list(): MeshAgent[] {
-    const local = this.config().agents
     const seen = new Map<string, MeshAgent>()
-    for (const p of this.directory()) {
-      for (const s of p.skills) {
-        if (local[s.id]) continue
-        const prev = seen.get(s.id)
-        if (prev && (prev.healthy || !p.healthy)) continue
-        seen.set(s.id, { id: s.id, name: s.name || s.id, description: s.description ?? "", tags: s.tags ?? [], peer: p.peer, healthy: p.healthy })
-      }
+    for (const a of this.all()) {
+      const prev = seen.get(a.id)
+      if (prev && (prev.healthy || !a.healthy)) continue
+      seen.set(a.id, a)
     }
     return [...seen.values()]
   }
@@ -161,17 +159,77 @@ export class MeshVoices {
     return this.list().find((a) => a.id === id)
   }
 
+  /** The agent `id` on `peer` exactly. Another peer's agent of the same id
+   *  is never taken for it. */
+  on(peer: string, id: string): MeshAgent | undefined {
+    return this.all().find((a) => a.peer === peer && a.id === id)
+  }
+
   voice(id: string): AgentVoice {
     const agent = this.get(id)
-    const cfg = this.config().meshVoices?.[id]
+    return this.build(id, agent, agent ? this.cfgFor(agent) : this.config().meshVoices?.[id])
+  }
+
+  /** The voice of `id` on `peer`. The agent `list()` picks for its id keeps
+   *  the voice `voice(id)` gives; an agent of the same id on another peer
+   *  gets voices of its own, and `meshVoices["<peer>/<id>"]` pins them. */
+  voiceOn(peer: string, id: string): AgentVoice | undefined {
+    const agent = this.on(peer, id)
+    if (!agent) return undefined
+    if (this.get(id)?.peer === peer) return this.voice(id)
+    return this.build(`${peer}/${id}`, agent, this.cfgFor(agent))
+  }
+
+  /** As a talk participant: the persona is the agent card's description. */
+  speaker(id: string, introduce: boolean): TalkSpeaker | undefined {
+    const agent = this.get(id)
+    if (!agent) return undefined
+    return this.persona(agent, this.voice(id), introduce)
+  }
+
+  /** `speaker`, for the agent `id` on `peer` exactly. */
+  speakerOn(peer: string, id: string, introduce: boolean): TalkSpeaker | undefined {
+    const agent = this.on(peer, id)
+    const voice = agent && this.voiceOn(peer, id)
+    return agent && voice ? this.persona(agent, voice, introduce) : undefined
+  }
+
+  /** Every agent on every peer, minus ids that are also local (local wins). */
+  private all(): MeshAgent[] {
+    const local = this.config().agents
+    const out: MeshAgent[] = []
+    for (const p of this.directory()) {
+      for (const s of p.skills) {
+        if (local[s.id]) continue
+        out.push({ id: s.id, name: s.name || s.id, description: s.description ?? "", tags: s.tags ?? [], peer: p.peer, healthy: p.healthy })
+      }
+    }
+    return out
+  }
+
+  /** Agents of an id `list()` already has, on other peers, keyed "<peer>/<id>". */
+  private shadowed(): Array<MeshAgent & { key: string }> {
+    const primary = new Map(this.list().map((a) => [a.id, a.peer]))
+    return this.all().filter((a) => primary.get(a.id) !== a.peer).map((a) => ({ ...a, key: `${a.peer}/${a.id}` }))
+  }
+
+  /** An agent's meshVoices entry: "<peer>/<id>" first, then the id's. */
+  private cfgFor(a: MeshAgent): MeshVoiceCfg | undefined {
+    const mv = this.config().meshVoices ?? {}
+    return mv[`${a.peer}/${a.id}`] ?? mv[a.id]
+  }
+
+  /** `key` is the id, or "<peer>/<id>" for a shadowed agent. */
+  private build(key: string, agent: MeshAgent | undefined, cfg: MeshVoiceCfg | undefined): AgentVoice {
+    const id = agent?.id ?? key
     const name = cfg?.name || agent?.name || id
     const settings = this.config().voice ?? {}
-    const sys = this.systemCast().get(id) ?? null
+    const sys = this.systemCast().get(key) ?? null
     return {
       agentId: id,
       name,
       provider: cfg?.provider ?? settings.provider ?? "system",
-      elevenlabsVoiceId: cfg?.elevenlabsVoiceId || this.assigned().get(id) || null,
+      elevenlabsVoiceId: cfg?.elevenlabsVoiceId || this.assigned().get(key) || null,
       systemVoice: sys?.id ?? null,
       systemVoiceName: sys ? label(sys) : null,
       systemByLanguage: languageVoices(id, cfg?.system, cfg?.gender ?? genderFromCard(agent?.description ?? ""), settings, this.installed()),
@@ -182,13 +240,9 @@ export class MeshVoices {
     }
   }
 
-  /** As a talk participant: the persona is the agent card's description. */
-  speaker(id: string, introduce: boolean): TalkSpeaker | undefined {
-    const agent = this.get(id)
-    if (!agent) return undefined
-    const voice = this.voice(id)
+  private persona(agent: MeshAgent, voice: AgentVoice, introduce: boolean): TalkSpeaker {
     return {
-      agentId: id,
+      agentId: agent.id,
       name: voice.name,
       voice: voiceRef(voice),
       persona: agent.description || `You are ${voice.name}.`,
@@ -196,27 +250,46 @@ export class MeshVoices {
     }
   }
 
-  /** System voices for remotes, distinct from every local agent's. */
+  /** System voices for remotes, distinct from every local agent's. The
+   *  agents `list()` picks are cast first, so a shadowed duplicate never
+   *  moves their voices. */
   private systemCast(): Map<string, SystemVoice | null> {
     const { agents, meshVoices = {}, voice: settings = {} } = this.config()
     const installed = this.installed()
     const taken = new Set([...localSystemVoices(agents, settings, installed).values()].flatMap((v) => (v ? [v.name] : [])))
-    const wishes = this.list().sort((a, b) => a.id.localeCompare(b.id)).map((a) => ({
-      id: a.id, system: meshVoices[a.id]?.system, gender: meshVoices[a.id]?.gender ?? genderFromCard(a.description),
-    }))
-    return castSystemVoices(wishes, settings, installed, taken)
+    const wishes = this.list().sort((a, b) => a.id.localeCompare(b.id)).map((a) => {
+      const cfg = this.cfgFor(a)
+      return { id: a.id, system: cfg?.system, gender: cfg?.gender ?? genderFromCard(a.description) }
+    })
+    const out = castSystemVoices(wishes, settings, installed, taken)
+    const extra = this.shadowed()
+    if (!extra.length) return out
+    for (const v of out.values()) if (v) taken.add(v.name)
+    const more = extra.sort((a, b) => a.key.localeCompare(b.key)).map((a) => {
+      const cfg = this.cfgFor(a)
+      return { id: a.key, system: cfg?.system, gender: cfg?.gender ?? genderFromCard(a.description) }
+    })
+    for (const [k, v] of castSystemVoices(more, settings, installed, taken)) out.set(k, v)
+    return out
   }
 
-  /** Default voices for every remote not pinned in meshVoices. */
+  /** Default voices for every remote not pinned in meshVoices; shadowed
+   *  duplicates after, from what is left. */
   private assigned(): Map<string, string> {
     const { agents, meshVoices = {} } = this.config()
     const reserved = new Set<string>([pickVoiceId(null, null)])
     for (const a of Object.values(agents)) if (a.voice?.elevenlabsVoiceId) reserved.add(a.voice.elevenlabsVoiceId)
     for (const v of Object.values(meshVoices)) if (v.elevenlabsVoiceId) reserved.add(v.elevenlabsVoiceId)
     const open = this.list()
-      .filter((a) => !meshVoices[a.id]?.elevenlabsVoiceId)
-      .map((a) => ({ id: a.id, gender: meshVoices[a.id]?.gender ?? genderFromCard(a.description) }))
-    return assignVoices(open, this.pool, reserved)
+      .filter((a) => !this.cfgFor(a)?.elevenlabsVoiceId)
+      .map((a) => ({ id: a.id, gender: this.cfgFor(a)?.gender ?? genderFromCard(a.description) }))
+    const out = assignVoices(open, this.pool, reserved)
+    const extra = this.shadowed().filter((a) => !this.cfgFor(a)?.elevenlabsVoiceId)
+    if (!extra.length) return out
+    for (const v of out.values()) reserved.add(v)
+    const more = extra.map((a) => ({ id: a.key, gender: this.cfgFor(a)?.gender ?? genderFromCard(a.description) }))
+    for (const [k, v] of assignVoices(more, this.pool, reserved)) out.set(k, v)
+    return out
   }
 
   /**
