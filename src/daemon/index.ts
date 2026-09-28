@@ -106,6 +106,7 @@ import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { addressedAgent } from "@/voice/address"
 import { presenceLook } from "@/voice/presence"
+import { agentPalette } from "@/voice/orb-palettes"
 import { previewLine, saveVoiceSettings, voiceSettingsView } from "@/daemon/voice-settings-api"
 import { listSystemVoices } from "@/voice/system-voices"
 import { VoiceMeshProxy } from "@/daemon/voice-mesh-proxy"
@@ -3999,6 +4000,11 @@ export class AgentXDaemon {
             // The agent's colour on screen: presence.color, else the one
             // derived from its id. The cursor and the voice orb share it.
             color: presenceLook(agent.id, this.config.agents[agent.id]).color,
+            // The voice orb's gradient: presence.palette, else the nature
+            // palette nearest that colour.
+            palette: (({ id, colors }) => ({ id, colors }))(agentPalette(
+              this.config.agents[agent.id]?.presence?.palette,
+              presenceLook(agent.id, this.config.agents[agent.id]).color)),
           })))
           break
 

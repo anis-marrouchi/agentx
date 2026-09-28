@@ -5,6 +5,9 @@ import { resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
 import { OS_DEFAULT, label, languageVoices, localSystemVoices } from "@/voice/agent-voice"
 import { candidates, findVoice, listSystemVoices, type SystemVoice } from "@/voice/system-voices"
+import { ORB_PALETTES, ORB_PALETTE_IDS, agentPalette } from "@/voice/orb-palettes"
+import { presenceLook } from "@/voice/presence"
+import { CARD_LIMITS, applyVoiceSettings, checkVoiceSettings, type VoiceSettingsPatch } from "@/daemon/voice-settings-api"
 
 // --- agentx voice: which voice each agent speaks with ---
 //
@@ -156,6 +159,71 @@ voice
       writeFileSync(file, JSON.stringify(raw, null, 2) + "\n")
       console.log(chalk.green(`  ${agentId}: ${summary}`))
       console.log(chalk.dim("  A running daemon picks this up on its next line."))
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+/** Check a settings patch as the settings window's save does, then write
+ *  it into agentx.json in place. */
+function saveSettings(file: string, patch: VoiceSettingsPatch): void {
+  const errors = checkVoiceSettings(patch, loadDaemonConfig(file))
+  if (errors.length) throw new Error(errors.map((e) => e.message).join("\n  "))
+  const raw = JSON.parse(readFileSync(file, "utf8"))
+  applyVoiceSettings(raw, patch)
+  writeFileSync(file, JSON.stringify(raw, null, 2) + "\n")
+}
+
+voice
+  .command("palette [agent] [palette]")
+  .description(`the voice orb's colours: list the palettes, or pick one for an agent (${ORB_PALETTE_IDS.join(", ")}; "default" follows the agent's colour)`)
+  .option("-c, --config <path>", "agentx.json to read or change")
+  .action((agentId: string | undefined, choice: string | undefined, opts) => {
+    try {
+      const file = configFile(opts.config)
+      if (agentId && choice) {
+        const palette = choice === "default" ? null : choice
+        saveSettings(file, { agents: { [agentId]: { palette } } })
+        console.log(chalk.green(`  ${agentId}: ${palette ? `palette ${palette}` : "palette follows its colour"}`))
+        console.log(chalk.dim("  AgentX Voice picks this up the next time its menu opens."))
+        return
+      }
+      const config = loadDaemonConfig(file)
+      if (agentId && !config.agents[agentId]) throw new Error(`No agent "${agentId}" in agentx.json`)
+      console.log(chalk.bold("\n  Orb palettes\n"))
+      for (const p of ORB_PALETTES) console.log(`  ${p.id.padEnd(10)} ${chalk.dim(p.colors.join(" "))}`)
+      console.log(chalk.bold("\n  Agents\n"))
+      for (const [id, a] of Object.entries(config.agents)) {
+        if (agentId && id !== agentId) continue
+        const color = presenceLook(id, a).color
+        const p = agentPalette(a.presence?.palette, color)
+        console.log(`  ${id.padEnd(24)} ${p.id.padEnd(10)} ${chalk.dim(p.set ? "chosen" : `nearest its colour ${color}`)}`)
+      }
+      console.log()
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+voice
+  .command("card")
+  .description("the answer shown in the pill: how long it stays open and how tall it grows")
+  .option("--timeout <seconds>", `seconds it stays open once spoken, ${CARD_LIMITS.timeout.join("–")}; 0 keeps it open until closed`)
+  .option("--max-height <points>", `tallest it grows before it scrolls, ${CARD_LIMITS.maxHeight.join("–")}`)
+  .option("-c, --config <path>", "agentx.json to read or change")
+  .action((opts) => {
+    try {
+      const file = configFile(opts.config)
+      const card: { timeout?: number; maxHeight?: number } = {}
+      if (opts.timeout !== undefined) card.timeout = Number(opts.timeout)
+      if (opts.maxHeight !== undefined) card.maxHeight = Number(opts.maxHeight)
+      if (Object.keys(card).length) saveSettings(file, { general: { card } })
+      const now = loadDaemonConfig(file).voice.card
+      const open = now.timeout === 0 ? "until closed" : `${now.timeout} s after it is spoken`
+      console.log(`  Answer card: open ${open}, at most ${now.maxHeight} pt tall`)
+      if (Object.keys(card).length) console.log(chalk.dim("  AgentX Voice picks this up the next time it reads its settings."))
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))
       process.exit(1)

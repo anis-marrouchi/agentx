@@ -1603,6 +1603,8 @@ function closeTestDrive() {
   p.setAttribute('aria-hidden', 'true');
 }
 $('btn-test-drive')?.addEventListener('click', openTestDrive);
+// /admin/agents/<id>#chat: AgentX Voice's "Open in chat" lands in the chat.
+if (location.hash === '#chat') openTestDrive();
 $('td-close')?.addEventListener('click', closeTestDrive);
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && $('td-panel')?.classList.contains('is-open')) closeTestDrive();

@@ -20,6 +20,7 @@ import { readFileSync, writeFileSync } from "fs"
 import type { DaemonConfig } from "@/daemon/config"
 import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
 import { presenceLook } from "@/voice/presence"
+import { ORB_PALETTES, agentPalette, paletteForColor } from "@/voice/orb-palettes"
 import { resolveAgentVoice, voiceRef, label } from "@/voice/agent-voice"
 import type { SystemVoice } from "@/voice/system-voices"
 import type { VoiceRef } from "@/voice/speaker"
@@ -42,6 +43,8 @@ export interface AgentVoicePatch {
   hotkey?: string | null
   /** The orb's (and pointer's) colour: agents[].presence.color. */
   color?: string | null
+  /** The orb's gradient: agents[].presence.palette. */
+  palette?: string | null
 }
 
 export interface VoiceSettingsPatch {
@@ -49,6 +52,7 @@ export interface VoiceSettingsPatch {
     provider?: Provider
     stt?: "auto" | "elevenlabs" | "local"
     hotkeys?: { talk?: string; stop?: string; paste?: string }
+    card?: { timeout?: number; maxHeight?: number }
   }
   agents?: Record<string, AgentVoicePatch>
 }
@@ -61,6 +65,9 @@ export interface VoiceSettingsView {
     fallback: "system" | "none"
     stt: "auto" | "elevenlabs" | "local"
     hotkeys: { talk: string; stop: string; paste: string }
+    /** The answer shown in the pill: seconds open once spoken (0: until
+     *  closed) and its tallest height in points. */
+    card: { timeout: number; maxHeight: number }
   }
   agents: Array<{
     id: string
@@ -69,6 +76,10 @@ export interface VoiceSettingsView {
     color: string
     /** True when presence.color is set, false when derived. */
     colorSet: boolean
+    /** presence.palette; absent when the orb follows the colour. */
+    palette?: string
+    /** The palette the orb uses without one: nearest the colour. */
+    paletteDefault: string
     voice: {
       provider?: Provider
       /** The configured system voice; absent when unset or per language. */
@@ -85,6 +96,8 @@ export interface VoiceSettingsView {
     speaks: { provider: Provider; systemVoice: string | null }
   }>
   systemVoices: Array<{ id: string; label: string; locale: string }>
+  /** Every orb palette, for the window's picker. */
+  palettes: Array<{ id: string; label: string; colors: string[] }>
   menuHotkey: string
 }
 
@@ -96,15 +109,20 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       fallback: v.fallback,
       stt: v.stt ?? "auto",
       hotkeys: { ...DEFAULT_HOTKEYS, ...(v.hotkeys ?? {}) },
+      card: { timeout: v.card.timeout, maxHeight: v.card.maxHeight },
     },
     agents: Object.entries(config.agents).map(([id, a]) => {
       const av = a.voice ?? {}
       const resolved = resolveAgentVoice(id, config.agents, v, installed)
+      const color = presenceLook(id, a).color
+      const palette = agentPalette(a.presence?.palette, color)
       return {
         id,
         name: a.name || id,
-        color: presenceLook(id, a).color,
+        color,
         colorSet: !!a.presence?.color,
+        ...(palette.set ? { palette: palette.id } : {}),
+        paletteDefault: paletteForColor(color).id,
         voice: {
           ...(av.provider ? { provider: av.provider } : {}),
           ...(typeof av.system === "string" ? { system: av.system } : {}),
@@ -119,11 +137,15 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       }
     }),
     systemVoices: installed.map((s) => ({ id: s.id, label: label(s), locale: s.locale })),
+    palettes: ORB_PALETTES.map(({ id, label, colors }) => ({ id, label, colors })),
     menuHotkey: MENU_HOTKEY,
   }
 }
 
-const AGENT_FIELDS = new Set(["provider", "system", "elevenlabsVoiceId", "rate", "narrate", "priority", "hotkey", "color"])
+const AGENT_FIELDS = new Set(["provider", "system", "elevenlabsVoiceId", "rate", "narrate", "priority", "hotkey", "color", "palette"])
+const PRESENCE_FIELDS = new Set(["color", "palette"])
+/** The answer card's limits, as the config schema has them. */
+export const CARD_LIMITS = { timeout: [0, 600], maxHeight: [120, 800] } as const
 const clear = (x: unknown) => x === null || x === ""
 
 /** Our own checks, with messages a person can act on. The config schema
@@ -135,13 +157,19 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   for (const k of Object.keys(patch)) if (k !== "general" && k !== "agents") err(k, `"${k}" is not a voice setting`)
 
   const g = patch.general ?? {}
-  for (const k of Object.keys(g)) if (!["provider", "stt", "hotkeys"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
+  for (const k of Object.keys(g)) if (!["provider", "stt", "hotkeys", "card"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
   if (g.provider !== undefined && !["system", "elevenlabs"].includes(g.provider)) err("general.provider", "Voice provider must be system or elevenlabs")
   if (g.stt !== undefined && !["auto", "elevenlabs", "local"].includes(g.stt)) err("general.stt", "Speech to text must be auto, elevenlabs or local")
   for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
     if (!["talk", "stop", "paste"].includes(k)) { err(`general.hotkeys.${k}`, `"${k}" is not a shortcut the window sets`); continue }
     const r = parseHotkey(String(value ?? ""))
     if (!r.ok) err(`general.hotkeys.${k}`, `The ${k} shortcut ${r.error}`)
+  }
+  for (const [k, value] of Object.entries(g.card ?? {})) {
+    const limits = CARD_LIMITS[k as keyof typeof CARD_LIMITS]
+    if (!limits) { err(`general.card.${k}`, `"${k}" is not an answer card setting`); continue }
+    const what = k === "timeout" ? "The answer's time on screen" : "The answer's tallest height"
+    if (typeof value !== "number" || !(value >= limits[0] && value <= limits[1])) err(`general.card.${k}`, `${what} must be between ${limits[0]} and ${limits[1]}`)
   }
 
   for (const [id, a] of Object.entries(patch.agents ?? {})) {
@@ -153,6 +181,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
     if (a.narrate != null && !["off", "on", "all"].includes(a.narrate)) err(`agents.${id}.narrate`, `${name}: narration must be off, on or all`)
     if (a.priority != null && !["high", "normal", "low"].includes(a.priority)) err(`agents.${id}.priority`, `${name}: queue priority must be high, normal or low`)
     if (a.color != null && a.color !== "" && !/^#[0-9a-fA-F]{6}$/.test(a.color)) err(`agents.${id}.color`, `${name}: colour must look like #1E90FF`)
+    if (a.palette != null && a.palette !== "" && !ORB_PALETTES.some((p) => p.id === a.palette)) err(`agents.${id}.palette`, `${name}: palette must be one of ${ORB_PALETTES.map((p) => p.id).join(", ")}`)
     if (a.system != null && typeof a.system !== "string") err(`agents.${id}.system`, `${name}: system voice must be a voice name or id`)
     if (a.elevenlabsVoiceId != null && typeof a.elevenlabsVoiceId !== "string") err(`agents.${id}.elevenlabsVoiceId`, `${name}: ElevenLabs voice must be a voice id`)
     if (a.hotkey != null && a.hotkey !== "") {
@@ -197,20 +226,24 @@ export function applyVoiceSettings(raw: any, patch: VoiceSettingsPatch): void {
       raw.voice.hotkeys ??= {}
       raw.voice.hotkeys[k] = r.value
     }
+    for (const [k, value] of Object.entries(g.card ?? {})) {
+      raw.voice.card ??= {}
+      raw.voice.card[k] = value
+    }
   }
   for (const [id, a] of Object.entries(patch.agents ?? {})) {
     const agent = raw.agents?.[id]
     if (!agent) continue
     for (const [k, value] of Object.entries(a)) {
-      if (k === "color") {
+      if (PRESENCE_FIELDS.has(k)) {
         if (clear(value)) {
           if (agent.presence) {
-            delete agent.presence.color
+            delete agent.presence[k]
             if (!Object.keys(agent.presence).length) delete agent.presence
           }
         } else {
           agent.presence ??= {}
-          agent.presence.color = String(value).toUpperCase()
+          agent.presence[k] = k === "color" ? String(value).toUpperCase() : value
         }
         continue
       }

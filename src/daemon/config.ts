@@ -5,6 +5,7 @@ import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
+import { ORB_PALETTE_IDS } from "@/voice/orb-palettes"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -348,6 +349,9 @@ const agentConfigSchema = z.object({
   presence: z.object({
     /** Cursor colour, as #RRGGBB. Default: derived from the agent id. */
     color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+    /** The voice orb's gradient, one of src/voice/orb-palettes.ts.
+     *  Default: the palette nearest `color`. */
+    palette: z.enum(ORB_PALETTE_IDS).optional(),
     /** One or two letters on the cursor. Default: from the name. */
     initial: z.string().max(2).optional(),
     /** Name shown under the cursor. Default: the agent's name. */
@@ -1051,6 +1055,14 @@ export const daemonConfigSchema = z.object({
       talk: hotkeySchema.default(DEFAULT_HOTKEYS.talk),
       stop: hotkeySchema.default(DEFAULT_HOTKEYS.stop),
       paste: hotkeySchema.default(DEFAULT_HOTKEYS.paste),
+    }).default({}),
+    /** The answer text AgentX Voice shows inside its pill. */
+    card: z.object({
+      /** Seconds the answer stays open once it has been spoken; 0 keeps
+       *  it open until closed. */
+      timeout: z.number().min(0).max(600).default(30),
+      /** Tallest the answer grows, in points, before it scrolls. */
+      maxHeight: z.number().min(120).max(800).default(320),
     }).default({}),
   }).default({}),
   business: businessConfigSchema.optional(),
