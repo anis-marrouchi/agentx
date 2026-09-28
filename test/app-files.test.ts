@@ -25,13 +25,14 @@ let local: Server, peer: Server, app: Server
 let localUrl: string, peerUrl: string, base: string
 let phone: string, otherPhone: string
 const hits: Array<{ node: string; url: string; auth?: string; range?: string }> = []
+const logs: string[] = []
 
 function daemon(name: string, agent: string, workspace: () => string) {
   return async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || "/", "http://x")
     if (url.pathname === APP_FILES_PATH) {
       hits.push({ node: name, url: req.url || "", auth: req.headers.authorization, range: req.headers.range })
-      return handleAppFilesApi(req, res, url, { workspaceOf: (id) => (id === agent ? workspace() : null) })
+      return handleAppFilesApi(req, res, url, { workspaceOf: (id) => (id === agent ? workspace() : null), log: (m) => logs.push(m) })
     }
     // POST /task: one turn that saved a chart and declared it.
     for await (const _ of req) { /* drain */ }
@@ -63,6 +64,9 @@ beforeAll(async () => {
   symlinkSync(join(wsA, "charts/a.png"), join(wsA, "inside.png"))
   mkdirSync(join(wsA, "folder.png"))
   writeFileSync(join(wsB, "peer.png"), PNG)
+  mkdirSync(join(wsA, ".agentx/outbox"), { recursive: true })
+  writeFileSync(join(wsA, ".agentx/outbox/chart.png"), PNG)
+  writeFileSync(join(dir, "chart.png"), PNG)
 
   tokens = new TokenStore(dir)
   store = new AppChatStore(openDb({ path: join(dir, "db.sqlite") })!)
@@ -94,7 +98,7 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true })
 })
 
-beforeEach(() => { hits.length = 0 })
+beforeEach(() => { hits.length = 0; logs.length = 0 })
 
 const device = (t: string) => tokens.verify(t)!.id
 const get = (path: string, t = phone, headers: Record<string, string> = {}) =>
@@ -161,6 +165,21 @@ describe("GET /api/app/files/:id", () => {
     // A link that stays inside is fine.
     const [inside] = declare("local", "alpha", "inside.png")
     expect((await get(`/api/app/files/${inside.id}`)).status).toBe(200)
+  })
+
+  it("tells an agent that attached a file outside its workspace to use the outbox (#258)", async () => {
+    const [tmp] = declare("local", "alpha", join(dir, "chart.png"))
+    const r = await get(`/api/app/files/${tmp.id}`)
+    expect(r.status).toBe(403)
+    expect((await r.json()).error).toContain("copy it into .agentx/outbox/ first")
+    expect(logs).toHaveLength(1)
+    expect(logs[0]).toContain("from alpha")
+    expect(logs[0]).toContain(".agentx/outbox/")
+    // The same file, copied into the outbox, reaches the phone.
+    const [outbox] = declare("local", "alpha", ".agentx/outbox/chart.png")
+    const ok = await get(`/api/app/files/${outbox.id}`)
+    expect(ok.status).toBe(200)
+    expect(Buffer.from(await ok.arrayBuffer())).toEqual(PNG)
   })
 
   it("refuses a disallowed type, a folder, a missing file and an oversized one", async () => {

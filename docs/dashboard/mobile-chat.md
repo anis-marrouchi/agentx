@@ -99,12 +99,20 @@ Pictures and files are never read out loud.
 
 You don't need to set anything up. When a conversation starts, the agent is told how to attach files, once. If an agent writes about a file instead of showing it, ask it to attach the file. To attach a file, the agent:
 
-1. Saves the file inside its *workspace*, the folder on the computer it works in (`workspace` in its [agent settings](../reference/config-agents.md)).
+1. Saves the file, or copies it, into the *outbox*: the folder `.agentx/outbox/` inside its *workspace*, the folder on the computer it works in (`workspace` in its [agent settings](../reference/config-agents.md)).
 2. Ends its answer with one line per file, giving the file's place inside the workspace and its type:
 
    ```text
-   <agentx-artifact>{"filename":"charts/orders.png","mime":"image/png"}</agentx-artifact>
+   <agentx-artifact>{"filename":".agentx/outbox/orders.png","mime":"image/png"}</agentx-artifact>
    ```
+
+Any other place inside the workspace works too. A file outside it, such as one in `/tmp`, is refused: the phone gets nothing, and the daemon log names the file and says to copy it into `.agentx/outbox/` first.
+
+AgentX creates the outbox when a phone conversation starts. It deletes files that have been in the outbox for more than 7 days (counted from when a file arrived there, even if it was moved in with an older date), when a phone conversation starts and when the daemon starts, and never touches anything elsewhere in the workspace. An answer older than that shows a missing file. If the workspace is a git repository, add the outbox to its `.gitignore` so the copies are never committed:
+
+```text
+.agentx/outbox/
+```
 
 The line is taken out of the answer before you see or hear it. It is the same line the daemon's web chat (`POST /chat`) uses, so one habit works in both places.
 
@@ -116,7 +124,8 @@ The line is taken out of the answer before you see or hear it. It is the same li
 | Files in one answer | 20 |
 | Size of one file | 20 MB |
 | File types | Pictures: png, jpg, gif, webp. Sound: mp3, m4a, wav. Video: mp4, webm. To open: pdf, txt, md, csv, json, svg |
-| Where the file must be | Inside the agent's workspace. A path with `..`, or a link that leads out of the workspace, is refused |
+| Where the file must be | Inside the agent's workspace, best in `.agentx/outbox/`. A path with `..`, or a link that leads out of the workspace, is refused |
+| How long the outbox keeps a file | 7 days |
 | Who can open it | Only the phone whose conversation it is in |
 | How long | As long as the message is kept (see [Go back to a conversation](#go-back-to-a-conversation)) |
 
@@ -225,7 +234,7 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 - **A picture from the web shows only its description** — its address doesn't start with `https://` or `http://`, or the answer already shows 8 pictures. A picture that stays blank was refused by the site that hosts it.
 - **The agent says it attached a file, but nothing shows** — the file type is not in the [list above](#limits), or the agent didn't end its answer with the `<agentx-artifact>` line. Ask it to attach the file as in [How an agent attaches a file](#how-an-agent-attaches-a-file).
 - **A file shows as a broken picture, or Open shows an error** — tap **Open**, or open the picture's address, to read the reason:
-  - **"the file is outside the agent's workspace"** or **"the path leaves the workspace"**: the agent saved it elsewhere, for example in a temporary folder. Ask it to save the file inside its workspace and attach it again.
+  - **"the file is outside the agent's workspace"** or **"the path leaves the workspace"**: the agent saved it elsewhere, for example in a temporary folder. Ask it to copy the file into `.agentx/outbox/` in its workspace and attach it again.
   - **"file not found"**: the file was moved or deleted on the computer after the answer.
   - **"this type of file is not served"**: the file is of a type not in the list above.
   - **"the file is larger than 20 MB"**: ask the agent for a smaller file.

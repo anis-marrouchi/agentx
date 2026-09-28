@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { closeSync, createReadStream, fstatSync, openSync, realpathSync } from "fs"
 import { isAbsolute, resolve, sep } from "path"
 import { ARTIFACT_LIMITS, artifactType } from "@/utils/artifact-sentinel"
+import { OUTBOX_DIR } from "@/utils/app-outbox"
 
 // --- GET /app-files: one file an agent declared, for the phone app ---
 //
@@ -24,6 +25,9 @@ export interface AppFilesApiDeps {
   workspaceOf: (agentId: string) => string | null
   /** Relative workspaces resolve against it (the daemon's cwd). */
   cwd?: string
+  /** Refusals are logged, so the agent's owner (and the agent, reading the
+   *  daemon log) learns why a file never reached the phone. */
+  log?: (message: string) => void
 }
 
 /** Where a declared path really is, or why it may not be served. */
@@ -31,13 +35,13 @@ export function resolveArtifact(
   workspace: string, file: string, cwd = process.cwd(),
 ): { ok: true; path: string; mime: string; kind: string } | { ok: false; status: number; error: string } {
   if (!file || file.length > ARTIFACT_LIMITS.pathChars || file.includes("\0")) return { ok: false, status: 400, error: "bad file path" }
-  if (file.split(/[\\/]/).includes("..")) return { ok: false, status: 403, error: "the path leaves the workspace" }
+  if (file.split(/[\\/]/).includes("..")) return { ok: false, status: 403, error: `the path leaves the workspace: copy the file into ${OUTBOX_DIR}/ first` }
   if (!artifactType(file)) return { ok: false, status: 415, error: "this type of file is not served" }
   let root: string
   try { root = realpathSync(resolve(cwd, workspace)) } catch { return { ok: false, status: 404, error: "the agent's workspace is missing" } }
   let real: string
   try { real = realpathSync(isAbsolute(file) ? file : resolve(root, file)) } catch { return { ok: false, status: 404, error: "file not found" } }
-  if (!real.startsWith(root + sep)) return { ok: false, status: 403, error: "the file is outside the agent's workspace" }
+  if (!real.startsWith(root + sep)) return { ok: false, status: 403, error: `the file is outside the agent's workspace: copy it into ${OUTBOX_DIR}/ first` }
   // A link inside the workspace may point at a file of another type.
   const type = artifactType(real)
   if (!type) return { ok: false, status: 415, error: "this type of file is not served" }
@@ -87,7 +91,10 @@ export function handleAppFilesApi(req: IncomingMessage, res: ServerResponse, url
   const workspace = deps.workspaceOf(agent)
   if (!workspace) return json(404, { error: `no agent "${agent}" on this computer` })
   const found = resolveArtifact(workspace, file, deps.cwd)
-  if (!found.ok) return json(found.status, { error: found.error })
+  if (!found.ok) {
+    deps.log?.(`[app-files] refused ${JSON.stringify(file.slice(0, 200))} from ${agent}: ${found.error}`)
+    return json(found.status, { error: found.error })
+  }
 
   let fd: number
   try { fd = openSync(found.path, "r") } catch { return json(404, { error: "file not found" }) }

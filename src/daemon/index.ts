@@ -68,6 +68,7 @@ import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
+import { prepareOutbox } from "@/utils/app-outbox"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -788,6 +789,16 @@ export class AgentXDaemon {
       const removed = this.registry.pruneTaskHistory()
       if (removed > 0) this.log(`  Pruned ${removed} old task-history folder(s)`)
     } catch { /* best-effort */ }
+
+    // Phone app outboxes: copies older than a week (utils/app-outbox.ts).
+    // Only existing outboxes; a fresh phone chat creates one.
+    for (const [id, def] of Object.entries(this.config.agents)) {
+      if (!def.workspace) continue
+      try {
+        const removed = prepareOutbox(def.workspace, { create: false })
+        if (removed > 0) this.log(`  Removed ${removed} old outbox file(s) for ${id}`)
+      } catch (e: any) { this.log(`  Outbox cleanup for ${id} skipped: ${e?.message ?? e}`) }
+    }
 
     // SQLite-side retention sweep — task_history / rotations / route_traces
     // grow unbounded otherwise. 90 days is generous for live debugging while
@@ -2582,7 +2593,10 @@ export class AgentXDaemon {
       // A file an agent declared in a phone app answer, for the dashboard
       // that holds the conversation. Gated by isMeshGatedPath above.
       if (path === APP_FILES_PATH) {
-        handleAppFilesApi(req, res, url, { workspaceOf: (id) => this.registry.getAgent(id)?.workspace ?? null })
+        handleAppFilesApi(req, res, url, {
+          workspaceOf: (id) => this.registry.getAgent(id)?.workspace ?? null,
+          log: (m) => this.log(m),
+        })
         return
       }
 
