@@ -13,11 +13,41 @@ This page shows how to review each one. Everything here happens in a **terminal*
 - **Passwords, tokens and keys.** If a conversation contains one, it isn't saved as a fact, even when someone asks.
 - **Facts from public channels without your approval.** Anyone can write to a public web chat, so facts from there wait for you before any agent sees them. Facts from your own tools, your team's chats, GitLab and GitHub are used straight away.
 
-## Facts that go out of date
+## One rule for facts: check it or say it's unverified
 
-A fact is a note of what was true when it was written. Some things change on their own, such as a bill, an account, an outage or a deploy. When a fact about one of these is more than 2 days old, AgentX marks it `UNVERIFIED` when it reminds the agent. The agent must then check it again at the source (for example the service's API or dashboard) before telling you, or say it's unverified and ask you.
+Every agent follows the same rule before it tells you something as a fact, or acts on it:
 
-When a long conversation is restarted, the agent writes a short summary of it to carry on from. AgentX treats that summary as work in progress, not as facts. It is always marked `UNVERIFIED` after 2 days, and it's deleted after 7 days.
+- **Fresh and checked:** it uses the fact.
+- **Out of date:** it checks the fact again at the source, such as the service's website, its API (the address programs use to talk to it) or a command, and records what it found.
+- **Can't be checked:** it tells you the fact is unverified and asks you. It never states it as true.
+
+### Which facts go out of date
+
+AgentX sorts each fact by how quickly it can change:
+
+- **Changes on its own:** a bill or a credit balance, an account (for example suspended, blocked or expired), an outage (something is down) and a deploy (which version is live). These are trusted for 2 days after they were last checked.
+- **Lasting:** names, decisions, rules and places, such as "the deploy folder is /var/www/site". These don't expire.
+
+When an agent is reminded of a fact that changes on its own and is more than 2 days old, the fact is marked `UNVERIFIED`, with a note telling the agent to check it or ask you.
+
+### Where the checked facts are kept
+
+The shared wiki (the knowledge base every agent reads) keeps a list of checked facts. Each one records:
+
+- **what it says**, for example "vendor account · billing status: active";
+- **where it was checked** (a website, a command, or "owner said");
+- **when** it was checked, and **by whom** (an agent or a person);
+- **how quickly it changes**, which sets how long it stays trusted.
+
+An agent's own notes don't copy these facts. When a note says the same thing as a checked fact, the agent is shown the checked fact, with where and when it was checked, instead of the note.
+
+### Summaries of long conversations
+
+When a long conversation is restarted, the agent writes a short summary of it to carry on from. AgentX keeps the parts about the work in progress, and deletes them after 7 days. Any claim in the summary about an outside service (a bill, an account, an outage or a deploy) is not kept as a fact. It's sent to you as a **fact proposal**, with where it came from, and it's marked `UNVERIFIED` when the conversation carries on.
+
+### When two facts disagree
+
+A new value only replaces a checked fact when it was checked more recently, or when you confirm it. Otherwise the old value stays, and AgentX adds a question for you to `agentx wiki questions`. Earlier values are kept with the fact, so nothing is lost.
 
 Held facts and proposed lessons also appear in the dashboard's **Approvals** tab and in `agentx approvals list`, next to everything else waiting for you. See [Approvals](../dashboard/approvals.md).
 
@@ -51,7 +81,74 @@ Older versions of AgentX could store a password or token as a fact. Those are no
    agentx memory facts scrub --apply
    ```
 
-## 3. Approve the lessons proposed for the shared wiki
+## 3. Check the facts proposed from summaries
+
+Do this in a **terminal**.
+
+1. See the claims waiting for you:
+   ```sh
+   agentx wiki facts proposals list
+   ```
+   Each one shows the claim, the agent that made it, and where it came from.
+2. Check the claim yourself at its source, for example on the service's website.
+3. If it's true, record it:
+   ```sh
+   agentx wiki facts proposals approve <id>
+   ```
+   If AgentX couldn't read the claim, or the value has changed, give the details, for example `--subject "vendor account" --attribute "billing status" --value "active" --source "vendor dashboard"`.
+4. If it's wrong or you can't tell, drop it:
+   ```sh
+   agentx wiki facts proposals reject <id> --reason "account is active"
+   ```
+
+## 4. Answer a disagreement between facts
+
+1. In a **terminal**, list the open questions:
+   ```sh
+   agentx wiki questions
+   ```
+   A disagreement reads like "the wiki says "active" (…), but an agent reports "past due" (…). Which is true?"
+2. Check which value is true at the source.
+3. Give the true value:
+   ```sh
+   agentx wiki answer <id> "active"
+   ```
+   Your answer replaces the fact, and the older value is kept with it.
+
+`agentx wiki lint` also lists disagreements that are still open.
+
+## 5. Record a fact you checked
+
+Agents do this themselves after they check something. You can do it too, in a **terminal**:
+
+1. Record the fact and where you checked it:
+   ```sh
+   agentx wiki facts set --subject "vendor account" --attribute "billing status" \
+     --value "active" --source "vendor dashboard" --by operator
+   ```
+2. If the wiki already holds a more recent value, AgentX doesn't replace it and adds a question instead. To replace it anyway, because you know it's right, add `--confirm`.
+3. See every checked fact, or only the ones past their time limit:
+   ```sh
+   agentx wiki facts list
+   agentx wiki facts list --stale
+   ```
+   `agentx wiki facts show <id>` prints one fact with its earlier values.
+
+## 6. Mark old unchecked facts as unverified (one time)
+
+Facts saved before this version don't say where they came from. This one-time step marks those about bills, accounts, outages and deploys (for example "past due", "blocked", "down" or a credit balance) as unverified, so agents check them before using them.
+
+1. In a **terminal**, see which facts would be marked:
+   ```sh
+   agentx memory facts flag-unsourced
+   ```
+2. Mark them:
+   ```sh
+   agentx memory facts flag-unsourced --apply
+   ```
+   A copy of each changed file is saved first, in `.agentx/memory/_backup/`. Running it again changes nothing.
+
+## 7. Approve the lessons proposed for the shared wiki
 
 Every night, `agentx wiki promote --commit` reads what agents have learned and suggests lessons for the shared wiki. Nothing is written to the wiki until you approve it.
 
@@ -97,7 +194,7 @@ Agents don't write down what went wrong, so a tool that fails in session after s
 
 While a failure lesson waits for your review, the same failure isn't suggested a second time. A failure lesson you rejected isn't offered again until the failure reaches 4 sessions, then 8, then 16, and so on.
 
-## 4. Undo a change to an agent's memory
+## 8. Undo a change to an agent's memory
 
 Every time a memory is changed or deleted, the previous version is kept (the last 20 of each). Use the daemon's web address, on port 18800 by default:
 
@@ -114,7 +211,7 @@ Every time a memory is changed or deleted, the previous version is kept (the las
 
 Each memory also records who wrote it: the agent and the task it was working on, or `unverified` when that couldn't be checked. An agent can only change its own memories.
 
-## 5. See whether what agents learn helps
+## 9. See whether what agents learn helps
 
 In this report, a *lesson* is anything the agent was reminded of for a task: a fact, a procedure (a step-by-step routine AgentX learned from repeated work) or the shared wiki's table of contents. Every task records which lessons reached the agent. Only their IDs are kept, never the text.
 
@@ -151,6 +248,8 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 4. After a restore, the memory's `versions` list includes the version you replaced.
 5. `agentx trace show <task-id>` for a recent task prints a `lessons` line.
 6. `agentx wiki promote --failures` prints a line with the number of failed tasks it read and the number of failures that recur.
+7. `agentx wiki facts list` shows each fact with where, when and by whom it was checked.
+8. `agentx memory facts flag-unsourced` reports `0 fact(s)` after you have run it with `--apply`.
 
 ## If something is wrong
 
@@ -163,4 +262,8 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 - **`agentx trace lessons` says no lesson has enough runs:** only tasks run since this version record their lessons, and a task has to repeat on both sides of a lesson. Wait for more runs, widen `--since`, or lower `--min`.
 - **`agentx trace lessons` says `No db at`:** run it in the folder that holds `agentx.json`, or name that folder with `--cwd <folder>`. To read a database copied from another machine, add `--path <file>`.
 - **A lesson you expected is missing from the report:** procedures and the wiki's table of contents are only given at the start of a fresh conversation, so runs that continue an earlier conversation don't count for them.
+- **`agentx wiki facts set` says the value was not replaced:** the wiki holds a value checked more recently. Answer the question it added with `agentx wiki answer`, or add `--confirm` if you know yours is right.
+- **`approve` says it couldn't read a subject, attribute and value:** the claim wasn't a simple "X is Y" sentence. Approve it again with `--subject`, `--attribute` and `--value`.
+- **An agent keeps calling a fact unverified:** the fact is past its time limit. Check it, then record it with `agentx wiki facts set`.
+- **You want the old memory back after `flag-unsourced --apply`:** copy the file from `.agentx/memory/_backup/` over the agent's file in `.agentx/memory/`.
 - **Memory changes are refused with `403`:** the request named a task from another agent. Each agent can only change its own memories.

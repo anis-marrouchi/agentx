@@ -1059,6 +1059,82 @@ Decline a proposal; its sources aren't judged again until they change.
 | `--reason <text>` | — | Why, kept with the decision. |
 | `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
 
+### `agentx wiki facts`
+
+Facts with a source and a check date: list, show, set, proposals. See [One rule for facts](/jobs/agent-memory#one-rule-for-facts-check-it-or-say-it-s-unverified).
+
+### `agentx wiki facts list`
+
+Every recorded fact, with where and when it was checked.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+| `--stale` | — | Only facts past their time limit. |
+| `--json` | — | Print JSON instead of a list. |
+
+### `agentx wiki facts show <id>`
+
+One fact, with its earlier values.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+
+### `agentx wiki facts set`
+
+Record a fact you just checked. A different value replaces the current one only with a newer check or `--confirm`; otherwise a question is added to `agentx wiki questions`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--subject <text>` | required | What the fact is about, e.g. "vendor account". |
+| `--attribute <text>` | required | Which property, e.g. "billing status". |
+| `--value <text>` | required | The value you found. |
+| `--source <text>` | required | Where you checked: a system, URL, command, or "owner said". |
+| `--by <id>` | `operator`, or the agent running it (`AGENTX_AGENT_ID`) | Who checked it. |
+| `--checked-at <iso>` | now | When it was checked. |
+| `--class <class>` | from the wording | billing \| account \| outage \| deploy \| work-state \| stable. |
+| `--ttl-days <n>` | from the class | Days it stays trusted. |
+| `--confirm` | — | A person confirms this value: replace a newer-dated one. |
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+
+### `agentx wiki facts proposals`
+
+Claims from conversation summaries, waiting for a check (list, approve, reject).
+
+### `agentx wiki facts proposals list`
+
+Claims waiting for a check (pending by default).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+| `--all` | — | Include approved and rejected. |
+| `--json` | — | Print JSON instead of a list. |
+
+### `agentx wiki facts proposals approve <id>`
+
+Confirm a claim and record it as a fact.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--subject <text>` | from the claim | Correct the subject. |
+| `--attribute <text>` | from the claim | Correct the attribute. |
+| `--value <text>` | from the claim | Correct the value. |
+| `--source <text>` | the claim's | Where you checked it. |
+| `--by <id>` | `operator` | Who confirms it. |
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+
+### `agentx wiki facts proposals reject <id>`
+
+Drop a claim; it is not recorded.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--reason <text>` | — | Why, kept with the decision. |
+| `--by <id>` | `operator` | Who rejects it. |
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+
 ### `agentx wiki ab-test`
 
 Side-by-side comparison: BM25 preload (old) vs agentic query (new) on real task-history messages.
@@ -1290,7 +1366,7 @@ Gaps waiting on a person.
 
 ### `agentx wiki answer <id> [value]`
 
-Answer a queued question; writes it into the article.
+Answer a queued question; writes it into the article. For a disagreement between facts, the value is the true one and replaces the fact.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1484,6 +1560,15 @@ Find stored facts that contain credentials; --apply deletes them.
 |---|---|---|
 | `--agent <id>` | — | One agent (default: all). |
 | `--apply` | — | Delete them (default: count only). |
+
+### `agentx memory facts flag-unsourced`
+
+Mark facts about billing, accounts, outages or deploys that name no source as unverified; --apply writes (with a backup in `.agentx/memory/_backup/`). Running it again changes nothing.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | One agent (default: all). |
+| `--apply` | — | Flag them (default: list only). |
 
 ## procedure (advanced)
 
