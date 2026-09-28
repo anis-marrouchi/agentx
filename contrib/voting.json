@@ -1,0 +1,9 @@
+{
+  "about": "Settings for the daily vote count (.github/workflows/contrib-votes.yml). A vote is a thumbs-up reaction on the issue itself.",
+  "minVotes": 5,
+  "topN": 5,
+  "minAccountAgeDays": 7,
+  "excludeLabels": ["bug"],
+  "readme": "README.md",
+  "page": "docs/community/most-requested.md"
+}

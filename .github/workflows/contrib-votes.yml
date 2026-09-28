@@ -1,0 +1,55 @@
+name: Count votes
+
+# Daily: rank open requests by 👍 votes and update the "Most requested"
+# block in README.md and docs/community/most-requested.md (#281).
+# Settings live in contrib/voting.json.
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: contrib-votes
+  cancel-in-progress: false
+
+jobs:
+  count:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Count votes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/contrib-votes.mjs --repo "${{ github.repository }}"
+
+      - name: Commit changes
+        id: commit
+        run: |
+          if git diff --quiet -- README.md docs/community/most-requested.md; then
+            echo "No change in the ranking."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/community/most-requested.md
+          git commit -m "chore(contrib): update most requested"
+          git push
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      # Pushes made with GITHUB_TOKEN do not start other workflows, so start the docs deploy by hand.
+      - name: Deploy docs
+        if: steps.commit.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run docs.yml --ref "${{ github.ref_name }}"
