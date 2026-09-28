@@ -89,8 +89,9 @@ export function artifactType(filename: string): { mime: string; kind: "image" | 
 /** What an agent on the phone app is told, once per fresh session. */
 export const APP_ATTACH_HINT = [
   "[Phone app: showing files]",
-  "To show the owner a file you created (a chart, a screenshot, a PDF, a recording), save it inside your workspace and end your reply with one line per file:",
-  '<agentx-artifact>{"filename":"<path relative to your workspace>","mime":"<mime/type>"}</agentx-artifact>',
+  "To show the owner a file you created (a chart, a screenshot, a PDF, a recording), save or copy it into .agentx/outbox/ in your workspace and end your reply with one line per file:",
+  '<agentx-artifact>{"filename":".agentx/outbox/<name.ext>","mime":"<mime/type>"}</agentx-artifact>',
+  "Files outside your workspace (/tmp, your home folder) are refused. Outbox files are removed after 7 days.",
   "The line is removed from the text. Images show in the reply, audio and video get a player, other files an Open link. Allowed: png, jpg, gif, webp, svg, pdf, txt, md, csv, json, mp3, m4a, wav, mp4, webm; up to 20 MB and 20 files per reply.",
   "A picture already on the web can go inline as ![what it shows](https://...).",
 ].join("\n")
