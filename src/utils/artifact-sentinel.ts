@@ -10,8 +10,10 @@ import { extname } from "path"
 //
 // The daemon's web chat (POST /chat) returns them as `artifacts`; the phone
 // app registers them per conversation and serves them through
-// /api/app/files/:id (app-files.ts). Sentinels are always stripped from the
-// text people read or hear, including malformed ones.
+// /api/app/files/:id (app-files.ts). Closed sentinels are always stripped
+// from the text people read or hear, including malformed ones. An unclosed
+// tag is only cut when the answer itself was cut off: a finished answer may
+// mention the tag in prose.
 
 export interface DeclaredArtifact {
   /** As the agent wrote it: a path relative to its workspace. */
@@ -27,8 +29,9 @@ const SENTINEL = /<agentx-artifact>([\s\S]*?)<\/agentx-artifact>/gi
 const DANGLING = /<agentx-artifact>[\s\S]*$/i
 
 /** The text without its sentinels, and the files they declare, in order.
- *  Files past `max` are stripped but not returned. */
-export function extractArtifacts(text: string, max = Infinity): { text: string; artifacts: DeclaredArtifact[] } {
+ *  Files past `max` are stripped but not returned. `cutOff` marks a stopped
+ *  or failed answer, whose half-written sentinel is stripped as well. */
+export function extractArtifacts(text: string, max = Infinity, cutOff = false): { text: string; artifacts: DeclaredArtifact[] } {
   const artifacts: DeclaredArtifact[] = []
   const raw = String(text ?? "")
   // Text without a sentinel comes back exactly as it was (a partial answer
@@ -47,8 +50,8 @@ export function extractArtifacts(text: string, max = Infinity): { text: string; 
       }
     } catch { /* malformed: dropped from the text all the same */ }
     return ""
-  }).replace(DANGLING, "").trim()
-  return { text: clean, artifacts }
+  })
+  return { text: (cutOff ? clean.replace(DANGLING, "") : clean).trim(), artifacts }
 }
 
 /** What may be served, by extension. SVG is an image but can carry script,
