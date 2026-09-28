@@ -15,6 +15,10 @@ export default defineConfig({
     // just a dead process — which is the worst possible signal to hand
     // someone debugging their own diff.
     pool: "forks",
+    // Agent processes export AGENTX_AGENT_ID, and the fact ledger refuses
+    // person-only actions under it. Clear it so the suite behaves the same
+    // whether a person or an agent runs it; tests that need it set it.
+    env: { AGENTX_AGENT_ID: "" },
   },
   plugins: [tsconfigPaths()],
 })

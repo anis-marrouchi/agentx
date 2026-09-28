@@ -7,6 +7,7 @@ import { LedgerCorruptError, takeOver, withLock } from "../src/wiki/facts/ledger
 import { approveFactProposal, listFactProposals, proposeFacts, rejectFactProposal } from "../src/wiki/facts/fact-proposals"
 import { wikiRefLine } from "../src/agents/memory-context"
 import { MemoryStore, type MemoryFact } from "../src/agents/memory-store"
+import { QuestionStore } from "../src/wiki/questions"
 
 const NOW = Date.parse("2026-09-28T12:00:00Z")
 const base = { subject: "vendor account", attribute: "billing status", source: "GET /v1/user", verifiedBy: "ops-agent" }
@@ -31,6 +32,33 @@ describe("only a person confirms", () => {
     expect(listFactProposals(l, "pending")).toHaveLength(1)
     // An agent can still record what it checked; it just can't win.
     expect(l.write({ ...base, value: "past due", verifiedAt: "now" }, { now: NOW }).status).toBe("contradiction")
+  })
+})
+
+describe("fact disagreements stay with a person", () => {
+  it("refuses an agent dismissing or answering a contradiction question", () => {
+    const l = new FactLedger(dir)
+    confirm(l)
+    const r = l.write({ ...base, value: "past due", verifiedAt: "now" }, { now: NOW })
+    expect(r.status).toBe("contradiction")
+    const qid = r.questionId!
+    vi.stubEnv("AGENTX_AGENT_ID", "sales-agent")
+    const store = new QuestionStore(dir)
+    expect(() => store.resolve(qid, "dismissed")).toThrow(/only a person can dismiss/)
+    expect(() => store.resolve(qid, "answered", "past due")).toThrow(/only a person can answer/)
+    expect(store.list("open").map((q) => q.id)).toContain(qid)
+  })
+
+  it("lets a person dismiss it, and a repeat claim then names no queued question", () => {
+    const l = new FactLedger(dir)
+    confirm(l)
+    const first = l.write({ ...base, value: "past due", verifiedAt: "now" }, { now: NOW })
+    new QuestionStore(dir).resolve(first.questionId!, "dismissed")
+    const again = l.write({ ...base, value: "past due", verifiedAt: "now" }, { now: NOW + 1000 })
+    expect(again.status).toBe("contradiction")
+    expect(again.questionId).toBeUndefined()
+    expect(again.questionClosed).toBe("dismissed")
+    expect(l.list()[0]).toMatchObject({ value: "active" })
   })
 })
 

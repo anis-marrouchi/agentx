@@ -3043,9 +3043,22 @@ wiki
     const { IDENTITY_SLOTS } = await import("@/decisions/seats/article-fields")
     const store = new QuestionStore(wikiDir(opts.dir))
 
+    // A fact disagreement a person already settled stays settled: say so
+    // rather than re-open it or throw at an agent.
+    const closed = store.list().find((x) => (x.id === id || x.id.startsWith(id)) && x.status !== "open" && x.kind === "contradiction")
+    if (closed && !store.list("open").some((x) => x.id === id || x.id.startsWith(id))) {
+      console.log(chalk.dim(`  already ${closed.status}: ${closed.question}`))
+      return
+    }
     if (opts.dismiss) {
-      const q = store.resolve(id, "dismissed")
-      console.log(q ? chalk.dim(`  dismissed: ${q.question}`) : chalk.red(`  no question matching "${id}"`))
+      try {
+        const q = store.resolve(id, "dismissed")
+        console.log(q ? chalk.dim(`  dismissed: ${q.question}`) : chalk.red(`  no question matching "${id}"`))
+      } catch (e: any) {
+        console.log(chalk.red(`  ${e?.message ?? e}`))
+        console.log(chalk.yellow("  the question stays open."))
+        process.exitCode = 1
+      }
       return
     }
     if (!value) { console.log(chalk.red("  give a value, or pass --dismiss")); return }
@@ -3079,7 +3092,15 @@ wiki
       return
     }
 
-    const q = store.resolve(id, "answered", value)
+    let q
+    try {
+      q = store.resolve(id, "answered", value)
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e?.message ?? e}`))
+      console.log(chalk.yellow("  nothing changed."))
+      process.exitCode = 1
+      return
+    }
     if (!q) { console.log(chalk.red(`  no question matching "${id}"`)); return }
     console.log(chalk.green(`  answered: ${q.question}`))
 

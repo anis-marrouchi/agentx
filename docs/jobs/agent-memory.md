@@ -49,7 +49,7 @@ When a long conversation is restarted, the agent writes a short summary of it to
 
 A new value only replaces a checked fact when it was checked more recently, or when you confirm it. Otherwise the old value stays, and AgentX adds a question for you to `agentx wiki questions`. Earlier values are kept with the fact, so nothing is lost.
 
-Only a person can confirm a fact, approve or reject a fact proposal, or answer a disagreement. When an agent runs one of those commands, AgentX refuses it and the agent has to ask you. A fact recorded without a check time is shown as `UNCHECKED` in `agentx wiki facts list`, and agents see it as unverified until someone checks it.
+Only a person can confirm a fact, approve or reject a fact proposal, or answer or dismiss a disagreement. When an agent runs one of those commands, AgentX refuses it and the agent has to ask you. A fact recorded without a check time is shown as `UNCHECKED` in `agentx wiki facts list`, and agents see it as unverified until someone checks it.
 
 Held facts and proposed lessons also appear in the dashboard's **Approvals** tab and in `agentx approvals list`, next to everything else waiting for you. See [Approvals](../dashboard/approvals.md).
 

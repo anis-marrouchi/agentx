@@ -91,7 +91,9 @@ export function registerWikiFacts(wiki: Command): void {
         console.log(chalk.yellow(`  not replaced: the wiki says "${r.fact.value}" (checked ${r.fact.verifiedAt.slice(0, 10)}), ${why}.`))
         console.log(r.questionId
           ? chalk.dim(`  Queued question ${r.questionId}: agentx wiki questions  ·  agentx wiki answer ${r.questionId} "<true value>"`)
-          : chalk.red("  No question could be queued: the questions file is unreadable. Repair .agentx/wiki/_questions.json."))
+          : r.questionClosed
+            ? chalk.dim(`  A person already ${r.questionClosed} this same claim, so it is not asked again.`)
+            : chalk.red("  No question could be queued: the questions file is unreadable. Repair .agentx/wiki/_questions.json."))
         process.exitCode = 2
         return
       }

@@ -61,6 +61,9 @@ export interface WriteResult {
   fact: WikiFact
   /** The queued question, for a contradiction. */
   questionId?: string
+  /** Set instead of questionId when a person already answered or
+   *  dismissed this same claim, so it is not asked again. */
+  questionClosed?: "answered" | "dismissed"
 }
 
 export interface LedgerFile {
@@ -76,10 +79,8 @@ const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim()
  * AGENTX_AGENT_ID (the runtime sets it for every agent), so a confirmation
  * from inside one is refused: an agent can't outrank a person, or itself.
  */
-export function assertPerson(action: string): void {
-  const agent = process.env.AGENTX_AGENT_ID?.trim()
-  if (agent) throw new Error(`only a person can ${action}; this is running as agent "${agent}". Ask the owner instead.`)
-}
+import { assertPerson } from "./person"
+export { assertPerson }
 
 /** Stable per subject and attribute, so a re-check lands on the same fact. */
 export function factId(subject: string, attribute: string): string {
@@ -213,14 +214,14 @@ export class FactLedger {
     })
 
     if ("contradiction" in out) {
-      const questionId = raiseContradiction(this.wikiDir, out.contradiction, { ...input, verifiedAt: dated ? verifiedAt : "undated" })
-      return { status: "contradiction", fact: out.contradiction, questionId }
+      const q = raiseContradiction(this.wikiDir, out.contradiction, { ...input, verifiedAt: dated ? verifiedAt : "undated" })
+      return { status: "contradiction", fact: out.contradiction, questionId: q.id, questionClosed: q.closed }
     }
     return out
   }
 }
 
-function raiseContradiction(wikiDir: string, current: WikiFact, input: FactInput & { verifiedAt: string }): string | undefined {
+function raiseContradiction(wikiDir: string, current: WikiFact, input: FactInput & { verifiedAt: string }): { id?: string; closed?: "answered" | "dismissed" } {
   const store = new QuestionStore(wikiDir)
   const item = {
     kind: "contradiction" as const,
@@ -242,7 +243,14 @@ function raiseContradiction(wikiDir: string, current: WikiFact, input: FactInput
   store.add([item])
   // Undefined when the queue could not take it (an unreadable file): the
   // old value still stands, and the caller says the question is missing.
-  return store.list().some((q) => q.id === id) ? id : undefined
+  // Only an open question is one the owner will see. A person who already
+  // answered or dismissed this same claim is not asked again; a question
+  // that is missing altogether means the queue could not take it (an
+  // unreadable file), and the old value still stands.
+  const q = store.list().find((x) => x.id === id)
+  if (!q) return {}
+  if (q.status === "answered" || q.status === "dismissed") return { closed: q.status }
+  return { id }
 }
 
 /** Open fact contradictions, in the shape `wiki lint` reports. */
