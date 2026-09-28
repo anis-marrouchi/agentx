@@ -49,7 +49,7 @@ Speech to text (turning your voice into words) runs through ElevenLabs if you ha
 
 <!-- Screenshot needed: the macOS microphone prompt for AgentX Desktop. It appears only once per Mac and comes back only after resetting privacy settings (tccutil reset Microphone), so it needs a fresh demo account. -->
 
-Developers building from a source checkout can also run `apps/mac-voice/install.sh`. It installs a copy named **AgentX Voice** into `/Applications` instead, with its log in `~/Library/Logs/agentx-voice.err.log`. Both use the same login item, so whichever you ran last is the copy that starts at login. Use one way or the other, not both.
+Developers building from a source checkout can also run `apps/mac-voice/install.sh`. It installs a copy named **AgentX Voice** into `/Applications` instead, with its log in `~/Library/Logs/agentx-voice.err.log`. Both keep a single login item: each one takes over the login item the other made (even under an older name) and removes any duplicate, so whichever you ran last is the copy that starts at login. The other copy stays in its Applications folder but no longer starts. Use one way or the other, not both.
 
 ### Ask your first question
 
