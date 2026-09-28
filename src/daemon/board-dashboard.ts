@@ -45,6 +45,7 @@ import type { AppPushDeps } from "./app-push"
 import { PushStore } from "@/channels/push-store"
 import { AppChatStore } from "./app-chat-store"
 import type { AppChatDeps, AppMeshPeer } from "./app-chat"
+import type { AppVoiceDeps } from "./app-voice"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
 import type { AppFleetDeps, ApprovalItem, NodeApprovals } from "./app-fleet"
@@ -191,7 +192,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
 
   // Phone app. First, above every proxy and the loopback-trusting gates
   // below: /app and /api/app/* always need a device token (app-routes.ts).
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), chat: appChatDeps(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config) })) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -1528,6 +1529,7 @@ interface NodeLive {
     name: string
     tier: string
     model?: string
+    color?: string
     skillCount?: number
     active: number
     total: number
@@ -1635,6 +1637,8 @@ async function fetchDaemonAgents(
     const agents: any[] = await agentsRes.json()
     base.agents = agents.map((a) => ({
       id: a.id, name: a.name, tier: a.tier, model: a.model,
+      // The agent's colour (#157), for the phone app's voice orb.
+      ...(typeof a.color === "string" && /^#[0-9a-fA-F]{6}$/.test(a.color) ? { color: a.color } : {}),
       skillCount: Number.isFinite(a.skillCount) ? a.skillCount : undefined,
       active: a.active || 0, total: a.total || 0, errors: a.errors || 0,
       lastActive: a.lastActive,
@@ -2240,6 +2244,20 @@ function appChatDeps(config: DaemonConfig): AppChatDeps {
       return r.ok ? (await r.json()) as AppMeshPeer[] : []
     },
     nodePost: (nodeUrl, path, body) => fleet.nodePost(nodeUrl, path, body),
+  }
+}
+
+/** What the phone app's voice routes forward to (app-voice.ts): the same
+ *  daemon and token as Chat, and the conversations a spoken answer is
+ *  checked against. */
+function appVoiceDeps(config: DaemonConfig): AppVoiceDeps {
+  const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  return {
+    store: () => {
+      const db = openDb()
+      return db ? new AppChatStore(db) : null
+    },
+    daemon: { url, token: dashboardTokenForNode(config.dashboard, url) },
   }
 }
 
