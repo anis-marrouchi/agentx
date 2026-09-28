@@ -17,6 +17,8 @@ You need a Mac with Apple Silicon and macOS 14 or newer, a running daemon (the A
    agentx desktop install
    ```
    This builds and installs the app into `~/Applications/AgentX Desktop.app` and its helper into `~/Applications/AgentX Helper.app`, remembers the daemon address, and starts the app at login. If Apple's command-line tools are missing, it tells you how to install them.
+
+   There is only ever one login item. If an earlier install, or `apps/mac-voice/install.sh`, already made one under another `…agentx.voice…` name, the installer keeps that name and points it at the new app, and removes any other login item that starts the voice app. `--dry-run` shows the login item it will use and the ones it will remove. `agentx desktop status`, `start` and `stop` use the same login item.
 3. **Mac:** when macOS asks, allow the microphone.
 4. **Mac:** when the helper asks, allow **Accessibility** and **Screen Recording** in System Settings › Privacy & Security.
 5. **Mac:** click the AgentX icon in the menu bar and pick the agent to talk to (see [Choose who answers](#choose-who-answers)).

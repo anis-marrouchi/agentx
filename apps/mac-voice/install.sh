@@ -15,13 +15,14 @@ BIN="$DEST/Contents/MacOS/AgentXVoice"
 AGENTS="$HOME/Library/LaunchAgents"
 
 # One login item per machine. An earlier install may have used another
-# label (the identifier was renamed); adopt that one instead of adding a
-# second KeepAlive agent, and retire any other that runs the same binary.
-# AGENTX_VOICE_LABEL forces a label.
+# label (the identifier was renamed, and `agentx desktop install` keeps
+# whatever label it finds); adopt that one instead of adding a second
+# KeepAlive agent, and retire any other that runs the voice app, whichever
+# copy. AGENTX_VOICE_LABEL forces a label.
 LABEL="${AGENTX_VOICE_LABEL:-}"
 PLIST=""
 for p in "$AGENTS"/*agentx.voice*.plist; do
-  [ -e "$p" ] && grep -qF "$BIN" "$p" || continue
+  [ -e "$p" ] && grep -qF "/Contents/MacOS/AgentXVoice" "$p" || continue
   l=$(/usr/libexec/PlistBuddy -c 'Print :Label' "$p" 2>/dev/null) || continue
   if [ -z "$LABEL" ] || [ "$l" = "$LABEL" ]; then
     LABEL="$l"; PLIST="$p"; continue
