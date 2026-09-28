@@ -92,9 +92,9 @@ If the daemon isn't running, the menu says **AgentX daemon isn't reachable** and
 
 ## The pill and its orb
 
-The pill is the small floating bar that shows what the assistant is doing. It appears in the bottom-right corner of the screen while the assistant listens, thinks or speaks. At its left end is a small, glowing orb in the colour of the agent that is answering. Next to it, the pill names the agent and says what is happening.
+The pill is the small floating bar that shows what the assistant is doing. It appears in the bottom-right corner of the screen while the assistant listens, thinks or speaks. At its left end is a small, glowing orb in the [palette](#orb-palettes) of the agent that is answering. Next to it, the pill names the agent and says what is happening.
 
-![The pill in four states, light mode: Writer listening, Researcher reading files for 12 seconds with a ring on its orb, Researcher saying its answer, and the idle pill reading HOLD ⌥SPACE](/screenshots/voice/pill-states-light.png)
+![The pill in four states, light mode: Writer listening with a lagoon orb, Researcher reading files for 12 seconds with a ring on its dusk orb, Ops saying its answer with a sunrise orb, and the idle pill reading HOLD ⌥SPACE](/screenshots/voice/pill-states-light.png)
 
 | What you see | What it means |
 |---|---|
@@ -103,9 +103,71 @@ The pill is the small floating bar that shows what the assistant is doing. It ap
 | The orb pulses in a speaking rhythm, and the answer scrolls past in the pill | The answer is being spoken |
 | A still orb and **HOLD ⌥SPACE** | The assistant is idle. You only see this when **Show floating pill** is ticked |
 
-When an answer has a link, a picture, or more text than was read aloud, the answer card opens next to the pill: above it when the pill sits low on the screen, below it when the pill sits high. The card moves with the pill.
-
 ![The same four states in dark mode](/screenshots/voice/pill-states-dark.png)
+
+### Read the answer in the pill
+
+When an answer has a link, a picture, or more text than was read aloud, the pill grows to show it. There is no separate window: the orb and the words stay where they were, and the answer opens above them when the pill sits low on the screen, or below them when it sits high.
+
+![The pill grown into an answer, light mode: a release checklist with a bulleted list, a code span and two links, a Release page button, and the pill's own row with the orb underneath](/screenshots/voice/answer-open-light.png)
+
+1. **Mac:** hold **Option–Space** and ask something with a longer answer, for example "Give me the release checklist with links."
+2. Let go. When the answer arrives, the pill grows into it while the answer is spoken.
+3. **Mac:** read, scroll, or select text in the answer. Click a link or a button to open it in your browser.
+4. **Mac:** move the pointer over the answer. Two buttons appear at its top-right corner:
+   - **Copy the answer** (the two pages) copies the whole answer.
+   - **Open in chat** (the two speech bubbles) opens the agent's page in the dashboard with its chat open.
+
+   To copy only part of it, select the text and press **Command–C**.
+
+![The answer with the pointer over it: the Copy the answer and Open in chat buttons show at its top-right corner, and the close button at the right end of the pill](/screenshots/voice/answer-hover.png)
+
+5. Leave it. Once the answer has been spoken, the pill shrinks back after 30 seconds. It never shrinks while the pointer is over it. To close it at once, click **×** or press **Esc**.
+
+It follows the look of your Mac: light or dark, and a clearer outline and a more solid background with **Increase contrast** or **Reduce transparency** on (System Settings › Accessibility › Display). With **Reduce motion** on, it grows and shrinks at once, without the animation.
+
+![The answer in dark mode](/screenshots/voice/answer-open-dark.png)
+
+![A pill near the top of the screen grows down instead, its orb row staying at the top](/screenshots/voice/answer-open-below.png)
+
+To change how long the answer stays open or how tall it grows, use **Answer in the pill** on the [General tab](#general-tab), or the Terminal:
+
+```sh
+agentx voice card --timeout 60 --max-height 400
+```
+
+`--timeout 0` keeps the answer open until you close it. `agentx voice card` on its own shows the current values. In `agentx.json` they are `voice.card.timeout` (seconds, 0 to 600, default 30) and `voice.card.maxHeight` (points, 120 to 800, default 320). A longer answer scrolls.
+
+### Orb palettes
+
+Each agent's orb flows through a gradient drawn from nature. There are seven:
+
+![The seven orb palettes: Sunrise (coral to amber), Desert (terracotta to sand), Forest (moss to fern), Lagoon (teal to aqua), Ocean (deep blue to sky), Dusk (indigo to rose) and Blossom (rose to blush)](/screenshots/voice/orb-palettes.png)
+
+| Palette | Colours | Given by default to agents coloured |
+|---|---|---|
+| `sunrise` | coral to amber | red and orange |
+| `desert` | terracotta to sand | brown and gold |
+| `forest` | moss to fern | green |
+| `lagoon` | teal to aqua | teal, and grey |
+| `ocean` | deep blue to sky | blue and cyan |
+| `dusk` | indigo to rose | violet and purple |
+| `blossom` | rose to blush | pink |
+
+Without a choice, an agent gets the palette nearest its [colour](#presence-on-screen), so its orb still matches its on-screen pointer. To pick one:
+
+1. **Mac:** open **Settings…** from the AgentX menu, pick the agent on the **Agents** tab, and choose an **Orb palette**. **Match the colour** goes back to the default.
+2. **Mac:** choose **Save**.
+
+Or in the Terminal, from the folder with your `agentx.json`:
+
+```sh
+agentx voice palette                  # the palettes, and which one each agent uses
+agentx voice palette writer forest    # pick one
+agentx voice palette writer default   # back to the one nearest the agent's colour
+```
+
+In `agentx.json` it is the agent's `presence.palette`. The app picks up a change the next time you open its menu.
 
 ### Move the pill
 
@@ -131,7 +193,7 @@ The pill stays hidden until you next hold **Option–Space** (or an agent's own 
 
 Good to know:
 
-- **Colour:** each agent's orb uses its `presence.color` from `agentx.json` (see [Presence on screen](#presence-on-screen)). Without one, the agent gets a colour from its id, the same colour as its on-screen pointer. The orb turns amber while notifications are held and red when something went wrong.
+- **Colour:** each agent's orb uses its [palette](#orb-palettes). Without one it gets the palette nearest its `presence.color` (see [Presence on screen](#presence-on-screen)), or the colour picked from its id. The orb turns amber while notifications are held and red when something went wrong.
 - **Your typing is safe:** showing the pill never takes the keyboard from the app you are using. Only clicking the pill does, so that **Esc** can reach it.
 - **Reduce Motion:** with **System Settings › Accessibility › Display › Reduce motion** on, the orb stands still. It still changes between listening, thinking and speaking, but nothing moves on its own.
 - **A still orb:** to keep the orb still without changing the system setting, click the AgentX icon in the menu bar and choose **Animated orb** to remove its tick.
@@ -153,7 +215,7 @@ Nothing in the window needs a restart. Voice changes apply to the next line the 
 
 Pick an agent on the left; its settings show on the right.
 
-![The Agents tab: an agent with its voice provider, Mac voice, speaking speed 1.25×, narration, queue priority High, a ⌃⌥1 shortcut and a blue orb colour](/screenshots/voice/settings-agents.png)
+![The Agents tab with Researcher picked: its voice provider, Mac voice, speaking speed, narration, queue priority, no shortcut, a violet orb colour and the Dusk orb palette](/screenshots/voice/settings-agents.png)
 
 | Setting | What it does | Saved in `agentx.json` as |
 |---|---|---|
@@ -165,7 +227,8 @@ Pick an agent on the left; its settings show on the right.
 | **Narration** | Short spoken updates while the agent works: **Off**, **On, except scheduled jobs**, or **On, scheduled jobs too** (see [Task narration](#task-narration)) | agent `voice.narrate` |
 | **Queue priority** | **High**: this agent's lines go ahead of lines already waiting in the [speaking queue](#one-queue-for-everything-spoken). **Low**: they go after them. **Normal**: in order of arrival | agent `voice.priority` |
 | **Ask with shortcut** | Hold this shortcut and speak to ask this agent, without changing the agent ticked in the menu. Click the field, then press the keys; **Escape** cancels, **Delete** or the clear button removes it | agent `voice.hotkey` |
-| **Orb colour** | The colour of this agent's [orb](#the-pill-and-its-orb) and on-screen pointer. **Use default** goes back to the colour picked from the agent's id | agent `presence.color` |
+| **Orb colour** | The colour of this agent's on-screen pointer, which also picks its orb palette by default. **Use default** goes back to the colour picked from the agent's id | agent `presence.color` |
+| **Orb palette** | The [nature palette](#orb-palettes) of this agent's orb. **Match the colour** uses the one nearest the orb colour | agent `presence.palette` |
 
 To hear a voice before you keep it:
 
@@ -176,7 +239,7 @@ To hear a voice before you keep it:
 
 ### General tab
 
-![The General tab in dark mode: Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Speech to text, Default voice provider and Launch at login](/screenshots/voice/settings-general.png)
+![The General tab: Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Speech to text, Default voice provider, and Answer in the pill set to 30 seconds and 320 points](/screenshots/voice/settings-general.png)
 
 | Setting | What it does | Saved as |
 |---|---|---|
@@ -186,6 +249,8 @@ To hear a voice before you keep it:
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
 | **Speech to text** | **Automatic**: ElevenLabs when a key is set, Whisper on this Mac otherwise. **ElevenLabs**: the same, and the app log says so when no key is set. **On this Mac (Whisper)**: your voice never leaves the Mac | `voice.stt` |
 | **Default voice provider** | The voice provider for agents set to **Default** | `voice.provider` |
+| **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
+| **Tallest answer** | How tall the answer grows before it scrolls, 120 to 800 points | `voice.card.maxHeight` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |
 
 A shortcut needs **Control**, **Option** or **Command** (a function key such as **F5** can stand alone), so it never takes a key away from your typing. Two actions can't share one shortcut: the window says which ones clash.
@@ -537,7 +602,7 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `GET /talk` | The running talk or lesson: what was said, its state and the pauses |
 | `POST /talk/stop` | End the talk |
 | `POST /teach/live` | Start a lesson: `{"agent": "<id>", "goal": "…", "mode": "teach", "app": "Numbers"}` (`draw` is terminal only) |
-| `GET /voice/settings` | What the settings window shows: `general`, each agent's voice and colour, and the installed system voices |
+| `GET /voice/settings` | What the settings window shows: `general` (with the answer's `card` settings), each agent's voice, colour and palette, the orb `palettes`, and the installed system voices |
 | `POST /voice/settings` | Save settings: `{"general": {…}, "agents": {"<id>": {…}}}`. `null` or `""` puts a field back to its default. `400` with `errors` when a value is refused; nothing is written then |
 | `POST /voice/preview` | `{"agentId": "<id>", "voice": {…}}`: say a sample line with unsaved voice changes, next in the queue |
 | `POST /voice/address` | `{"text": "…", "target": "<id>"}`: which agent the words are addressed to. Returns `{"agentId"}`, which is `target` when no leading name matches |
@@ -568,12 +633,14 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 8. **Mac:** ask the ticked agent something that takes a while.
 9. **Mac:** while it thinks, hold **Option–Space** and say another agent's name followed by a question, for example "Researcher, what time is it?".
 10. **Mac:** open the AgentX menu. Both agents show **thinking**, and the ticked agent is still ticked. Both answers are spoken, one after the other. While one plays and the other waits, a **1** shows next to the menu-bar icon.
-11. **Mac:** hold **Option–Space**. The pill appears with its orb in the ticked agent's colour, and the orb swells as you speak. Let go: a ring goes round the orb while the agent thinks, and it pulses while the answer is spoken.
+11. **Mac:** hold **Option–Space**. The pill appears with its orb in the ticked agent's palette, and the orb swells as you speak. Let go: a ring goes round the orb while the agent thinks, and it pulses while the answer is spoken.
 12. **Mac:** drag the pill to another place on the screen. Quit the app from its menu and start it again: the pill comes back in the same place.
 13. **Mac:** while an answer is spoken, move the pointer over the pill and click **×**. The pill goes and the voice stops. Hold **Option–Space**: the pill is back.
 14. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice. Choose **Save**, then ask that agent something: the answer uses the new voice.
 15. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/settings`. It prints the saved settings, including the change you just made.
 16. **Terminal:** to check the speaking queue, run `curl -s -X POST http://127.0.0.1:18800/voice/queue -H 'Content-Type: application/json' -d '{"text": "First line.", "agentId": "<agent-id>"}'` twice in quick succession, then `curl -s http://127.0.0.1:18800/voice/queue`. You hear both lines one after the other, and the second shows under `waiting` until the first has finished.
+17. **Mac:** ask "Give me three links about macOS design." The pill grows into the answer, with no second window. Once it has been spoken and you move the pointer away, it shrinks back after the time set in **Keep the answer open**.
+18. **Terminal:** run `agentx voice palette <agent-id> forest`, then open the AgentX menu and hold **Option–Space**. The orb is moss to fern green. Run `agentx voice palette <agent-id> default` to undo it.
 
 ## If something is wrong
 
@@ -594,7 +661,10 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **The pill doesn't appear:** it was hidden with **×**, **Esc** or **Hide pill**. Hold **Option–Space** to bring it back. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
 - **The pill is off screen or in an odd place:** click the AgentX icon in the menu bar and choose **Reset position**.
 - **Esc does nothing:** the pill only hears **Esc** after you click it. Click the pill first, or use its **×** button.
-- **The orb is the wrong colour:** set `presence.color` for that agent in `agentx.json`, as `#RRGGBB`, then restart the daemon or reload its settings. The app reads colours when you open its menu.
+- **The orb is the wrong colour:** pick a palette with `agentx voice palette <agent-id> <palette>` or in **Settings…**, or set `presence.color` for that agent as `#RRGGBB`. The app reads colours and palettes when you open its menu, so open it once after a change. An orb in plain shades of one colour means the daemon is older than the palettes: update it.
+- **No answer text in the pill:** the answer had nothing the voice didn't already say. The pill only grows for a link, a picture, or more text than was spoken. If you closed the pill with **×** or **Esc**, the next answer doesn't open it either; hold **Option–Space** first.
+- **The answer closes too soon or stays too long:** change **Keep the answer open** on the General tab, or run `agentx voice card --timeout <seconds>`.
+- **`agentx voice palette` or `agentx voice card` says a value is refused:** the palette must be one of the seven names, the timeout 0 to 600 seconds and the height 120 to 800 points.
 - **The orb doesn't move:** Reduce Motion is on, **Animated orb** is unticked in the AgentX menu, or the microphone permission is missing, so there is no voice level to follow.
 - **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the AgentX menu.
 - **An answer is late to play:** another line is ahead of it in the speaking queue. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue` to see what is ahead. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`.
