@@ -115,7 +115,6 @@ enum LoginItem {
     /// second copy. Same rule as the installers: any `*agentx.voice*.plist`
     /// whose ProgramArguments[0] is the voice app, whatever its label.
     static var managedByInstaller: Bool {
-        if ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"]?.contains("agentx.voice") == true { return true }
         let dir = "\(NSHomeDirectory())/Library/LaunchAgents"
         let files = (try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []
         return files.contains { name in
