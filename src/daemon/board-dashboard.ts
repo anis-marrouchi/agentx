@@ -1609,7 +1609,12 @@ interface LiveSnapshot {
   nodes: NodeLive[]
 }
 
-async function fetchDaemonAgents(
+/** How long an optional snapshot endpoint may take before it's skipped. */
+const OPTIONAL_ENDPOINT_MS = 2_000
+/** An optional endpoint's reply, its JSON body already read. */
+interface PrefetchedJson { ok: boolean; json: () => Promise<any> }
+
+export async function fetchDaemonAgents(
   url: string,
   token?: string,
   signal?: AbortSignal,
@@ -1620,15 +1625,34 @@ async function fetchDaemonAgents(
   const base: NodeLive = { id: url, name: url, url, reachable: false, agents: [] }
   try {
     const cronQuery = day ? `?date=${encodeURIComponent(day.date)}&timezone=${encodeURIComponent(day.timezone)}` : ""
+    // Only /agents decides whether the node is reachable. The rest are
+    // extras with their own shorter deadline, so one slow route (a node
+    // busy reading its cron history, #245) can't hold the snapshot past
+    // the shared abort and leave /agents' body unreadable.
+    // The body is read inside the same deadline, straight away: read later,
+    // after the slowest extra gave up, it would already be aborted.
+    const optional = (path: string): Promise<PrefetchedJson | null> => {
+      const own = new AbortController()
+      const timer = setTimeout(() => own.abort(), OPTIONAL_ENDPOINT_MS)
+      const stop = () => own.abort()
+      signal?.addEventListener("abort", stop, { once: true })
+      return fetch(url + path, { headers, signal: own.signal })
+        .then(async (r) => {
+          const body: unknown = r.ok ? await r.json().catch(() => undefined) : undefined
+          return { ok: body !== undefined, json: async () => body }
+        })
+        .catch(() => null)
+        .finally(() => { clearTimeout(timer); signal?.removeEventListener("abort", stop) })
+    }
     const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes, attachRes] = await Promise.all([
-      fetch(url + "/health", { headers, signal }).catch(() => null),
+      optional("/health"),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
-      fetch(url + "/mesh", { headers, signal }).catch(() => null),
-      fetch(url + "/crons", { headers, signal }).catch(() => null),
-      fetch(url + "/crons/runs" + cronQuery, { headers, signal }).catch(() => null),
-      fetch(url + "/talk", { headers, signal }).catch(() => null),
-      fetch(url + "/routines", { headers, signal }).catch(() => null),
-      fetch(url + "/attach/sessions", { headers, signal }).catch(() => null),
+      optional("/mesh"),
+      optional("/crons"),
+      optional("/crons/runs" + cronQuery),
+      optional("/talk"),
+      optional("/routines"),
+      optional("/attach/sessions"),
     ])
     if (!agentsRes || !agentsRes.ok) {
       base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
@@ -1647,7 +1671,7 @@ async function fetchDaemonAgents(
       runningTasks: Array.isArray(a.runningTasks) ? a.runningTasks : [],
     }))
     if (healthRes && healthRes.ok) {
-      const h: any = await healthRes.json()
+      const h: any = await healthRes.json().catch(() => ({}))
       base.uptimeSec = h.uptime
       if (typeof h.inflight?.total === "number") base.inflight = h.inflight.total
       if (h.restart && typeof h.restart.state === "string") base.restart = h.restart
@@ -1658,7 +1682,7 @@ async function fetchDaemonAgents(
       if (h.usage) base.usage = h.usage
     }
     if (cronsRes && cronsRes.ok) {
-      const jobs: any[] = await cronsRes.json()
+      const jobs: any[] = await cronsRes.json().then((j: unknown) => (Array.isArray(j) ? j : []), () => [])
       base.crons = jobs.map((job) => ({
         id: job.id,
         enabled: job.enabled === true,
@@ -1673,7 +1697,7 @@ async function fetchDaemonAgents(
       }))
     }
     if (cronRunsRes && cronRunsRes.ok) {
-      const history: any = await cronRunsRes.json()
+      const history: any = await cronRunsRes.json().catch(() => ({}))
       base.cronRuns = Array.isArray(history.runs) ? history.runs : []
     }
     // Older daemons 404 here; leaving `routines` unset tells the page the
@@ -1698,7 +1722,7 @@ async function fetchDaemonAgents(
     }
     base.reachable = true
     // Expose mesh peer info for discovery, but the caller does fan-out separately.
-    ;(base as any)._peers = Array.isArray(meshRes && await meshResSafe(meshRes)) ? (base as any)._peers : undefined
+    ;(base as any)._peers = Array.isArray(meshRes?.ok ? await meshRes.json() : null) ? (base as any)._peers : undefined
   } catch (e: any) {
     base.error = e.message || String(e)
   }
@@ -1730,12 +1754,6 @@ function getOrCreateWikiHandler(ctx: { config: DaemonConfig; token?: string }): 
   return _wikiHandler
 }
 
-// Tiny helper to double-json a Response only once.
-let _meshJsonCache = new WeakMap<Response, any>()
-async function meshResSafe(r: Response): Promise<any> {
-  if (_meshJsonCache.has(r)) return _meshJsonCache.get(r)
-  try { const j = r.ok ? await r.json() : null; _meshJsonCache.set(r, j); return j } catch { return null }
-}
 
 async function fetchMeshPeers(primaryUrl: string, token?: string, signal?: AbortSignal): Promise<Array<{ url: string; name: string; token?: string }>> {
   try {

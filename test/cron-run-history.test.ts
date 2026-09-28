@@ -5,12 +5,16 @@ import path from "path";
 import {
   CRON_ERROR_SUMMARY_LIMIT,
   CRON_RESPONSE_SUMMARY_LIMIT,
+  clearCronRunHistoryCache,
+  mayHoldDay,
   readCronRunHistory,
+  runFileTime,
 } from "../src/crons/run-history";
 
 let runsDir: string;
 
 beforeEach(() => {
+  clearCronRunHistoryCache();
   runsDir = mkdtempSync(path.join(tmpdir(), "agentx-cron-runs-"));
 });
 
@@ -178,5 +182,48 @@ describe("readCronRunHistory", () => {
         runsDir: path.join(runsDir, "missing"),
       }),
     ).resolves.toEqual([]);
+  });
+});
+
+
+describe("reading only the requested day (#245)", () => {
+  it("parses run file names and ignores other names", () => {
+    expect(runFileTime("2026-09-23T08-15-00-018Z.json")).toBe(Date.parse("2026-09-23T08:15:00.018Z"));
+    expect(runFileTime("notes.json")).toBeNull();
+    expect(mayHoldDay("notes.json", "2026-09-23")).toBe(true);
+  });
+
+  it("keeps files whose day can match in any time zone, and skips the rest", () => {
+    expect(mayHoldDay("2026-09-23T00-00-00-000Z.json", "2026-09-23")).toBe(true);
+    // 23:30 UTC the day before is already the 23rd east of UTC.
+    expect(mayHoldDay("2026-09-22T23-30-00-000Z.json", "2026-09-23")).toBe(true);
+    // 10:00 UTC on the 24th is still the 23rd at UTC-12.
+    expect(mayHoldDay("2026-09-24T10-00-00-000Z.json", "2026-09-23")).toBe(true);
+    expect(mayHoldDay("2026-09-10T08-00-00-000Z.json", "2026-09-23")).toBe(false);
+    expect(mayHoldDay("2026-10-05T08-00-00-000Z.json", "2026-09-23")).toBe(false);
+  });
+
+  it("with thousands of old runs, returns the day's runs without reading the others", async () => {
+    // Old files are not valid JSON: reading any of them would still skip it,
+    // so the proof is the result plus the unread files being ignored fast.
+    for (let d = 0; d < 3000; d++) {
+      const t = new Date(Date.parse("2026-01-01T09:00:00.000Z") + d * 3_600_000);
+      const name = t.toISOString().replace(/:/g, "-").replace(".", "-");
+      writeRun("daily-brief", name.replace(/-(\d{3})Z$/, "-$1Z") + ".json", run({ startedAt: t.toISOString() }));
+    }
+    writeRun("daily-brief", "2026-08-25T12-00-00-000Z.json", run());
+    const t0 = Date.now();
+    const history = await readCronRunHistory({ date: "2026-08-25", runsDir });
+    expect(history.map((r) => r.startedAt)).toEqual(["2026-08-25T12:00:00.000Z"]);
+    expect(Date.now() - t0).toBeLessThan(1500);
+  });
+
+  it("one read serves concurrent callers for the same day", async () => {
+    writeRun("daily-brief", "2026-08-25T12-00-00-000Z.json", run());
+    const [a, b] = await Promise.all([
+      readCronRunHistory({ date: "2026-08-25", runsDir }),
+      readCronRunHistory({ date: "2026-08-25", runsDir }),
+    ]);
+    expect(a).toBe(b);
   });
 });
