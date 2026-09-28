@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 // @ts-expect-error plain ESM script without type declarations
 import * as lib from "../scripts/contrib-votes-lib.mjs"
 
-const { countVotes, isVotable, rank, renderPage, renderReadmeBlock, replaceBlock, README_START, README_END } = lib
+const { countVotes, escapeTitle, isVotable, rank, renderPage, renderReadmeBlock, replaceBlock, README_START, README_END } = lib
 const settings = JSON.parse(readFileSync(new URL("../contrib/voting.json", import.meta.url), "utf8"))
 const reacted = "2026-09-20T00:00:00Z"
 const accounts = new Map([
@@ -55,6 +55,17 @@ describe("rendering", () => {
     expect(block).not.toContain("#3")
     expect(block).toContain("Req \\| 1")
     expect(block).toContain("[Full ranked list](https://page)")
+  })
+
+  it("shows titles as plain text", () => {
+    const title = "[x](https://e) ![i](https://e/i.png) <img src=x> {{ 1 + 1 }} <!-- most-requested:end --> a|b *c* `d` \\"
+    const cell = escapeTitle(title)
+    expect(cell).toBe(
+      "\\[x\\](https://e) !\\[i\\](https://e/i.png) &lt;img src=x&gt; &#123;&#123; 1 + 1 &#125;&#125; &lt;!-- most-requested:end --&gt; a\\|b \\*c\\* \\`d\\` \\\\",
+    )
+    const text = `a\n${README_START}\nold\n${README_END}\nb`
+    const once = replaceBlock(text, renderReadmeBlock([{ number: 1, votes: 9, title, url: "u" }], { minVotes: 1, topN: 5 }, "p"))
+    expect(replaceBlock(once, "new")).toBe(`a\n${README_START}\nnew\n${README_END}\nb`)
   })
 
   it("README block invites votes when nothing qualifies", () => {

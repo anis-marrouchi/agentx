@@ -41,8 +41,18 @@ export function rank(issues) {
   return issues.filter((i) => i.votes > 0).sort((a, b) => b.votes - a.votes || a.number - b.number)
 }
 
+const ENTITIES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '{': '&#123;', '}': '&#125;' }
+
+/**
+ * Issue titles come from anyone. Show them as plain text: no HTML, no links or
+ * images, no Vue `{{ }}` in the VitePress page, no README marker comments.
+ */
+export function escapeTitle(title) {
+  return title.replace(/[&<>{}]/g, (c) => ENTITIES[c]).replace(/[\\`*_[\]~|]/g, '\\$&')
+}
+
 function line(i) {
-  return `| ${i.votes} | [#${i.number}](${i.url}) | ${i.title.replace(/\|/g, '\\|')} |`
+  return `| ${i.votes} | [#${i.number}](${i.url}) | ${escapeTitle(i.title)} |`
 }
 
 /** The README block (without markers): top N with at least minVotes. */
