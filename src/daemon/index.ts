@@ -61,7 +61,7 @@ import { setProcessRegistry } from "@/agents/process-registry-instance"
 import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
-import { recordMeshDispatch } from "@/intent/sources/mesh"
+import { inboundTaskRaw, recordMeshDispatch } from "@/intent/sources/mesh"
 import { setDefaultGovernance } from "@/intent/governance"
 import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
@@ -2298,7 +2298,7 @@ export class AgentXDaemon {
       const decision = recordMeshDispatch(
         getDefaultLedger(),
         { agentId, senderAgentId, context: context as any },
-        JSON.stringify({ agentId, senderAgentId, context, message: typeof message === "string" ? message.slice(0, 200) : "" }),
+        inboundTaskRaw(agentId, senderAgentId, context, message),
         { agentId, outcome: "dispatched", reason: senderAgentId ? `from ${senderAgentId}` : null },
       )
       return decision.outcome === "dispatched"

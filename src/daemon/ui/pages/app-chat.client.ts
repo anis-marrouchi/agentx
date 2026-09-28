@@ -159,14 +159,18 @@ export const APP_CHAT_SCRIPT = `
     input.value = ''; input.style.height = '';
   }
   // False when the text was neither sent nor queued, so a quick reply
-  // stays tappable.
-  function send(text) {
+  // stays tappable. opts.spoken: the text came from voice, which the
+  // computer records as a spoken turn (Activity shows it as Voice).
+  function send(text, opts) {
     text = String(text || '').trim();
     if (!text) return false;
+    var spoken = !!(opts && opts.spoken);
     if (state.busy) {
       // A follow-up while the agent answers: shown now, sent as the next
       // turn so its answer streams here as well.
-      state.queue.push(queuedMsg(text));
+      var q = queuedMsg(text);
+      q.spoken = spoken;
+      state.queue.push(q);
       clearInput(text);
       scrollDown();
       return true;
@@ -176,6 +180,7 @@ export const APP_CHAT_SCRIPT = `
     var body = state.conv
       ? { conversationId: state.conv.id, message: text }
       : { node: state.target.node, agent: state.target.agent, message: text };
+    if (spoken) body.spoken = true;
     state.stopWanted = false;
     userMsg(text);
     clearInput(text);
@@ -186,7 +191,7 @@ export const APP_CHAT_SCRIPT = `
     if (!state.queue.length || state.busy) return;
     var next = state.queue.splice(0);
     next.forEach(function (x) { x.el.remove(); });
-    send(next.map(function (x) { return x.text; }).join(V.NL + V.NL));
+    send(next.map(function (x) { return x.text; }).join(V.NL + V.NL), { spoken: next.every(function (x) { return x.spoken; }) });
   }
   // Streams one turn into the bubble el, from a send or from attaching
   // to a turn that is still running. The phone losing its connection does

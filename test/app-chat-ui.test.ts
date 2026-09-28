@@ -185,7 +185,7 @@ describe("the saved agentx:ui block", () => {
 
   it("routes local agents to /task and peers to /mesh/task with the app context", () => {
     expect(upstreamRequest({ node: "local", agent: "a", message: "m", chatId: "app:c1" }))
-      .toEqual({ path: "/task", body: { agent: "a", message: "m", stream: true, context: { channel: "app", chatId: "app:c1" } } })
+      .toEqual({ path: "/task", body: { agent: "a", message: "m", stream: true, context: { channel: "app", chatId: "app:c1", sender: "operator" } } })
     expect(upstreamRequest({ node: "peer", agent: "a", message: "m", chatId: "app:c1" }).path).toBe("/mesh/task")
   })
 })

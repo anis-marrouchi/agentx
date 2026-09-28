@@ -188,7 +188,7 @@ describe("sending a message", () => {
     expect(seen[0].auth).toBe(`Bearer ${DAEMON_TOKEN}`)
     expect(seen[0].body).toEqual({
       agent: "alpha", message: "What's up?", stream: true,
-      context: { channel: "app", chatId: `app:${conv.data.id}` },
+      context: { channel: "app", chatId: `app:${conv.data.id}`, sender: "operator" },
     })
   })
 
@@ -231,7 +231,7 @@ describe("sending a message", () => {
     expect(seen[0].auth).toBe(`Bearer ${DAEMON_TOKEN}`)
     expect(seen[0].body).toEqual({
       peer: "peer-b", agent: "beta", message: "Hello peer", stream: true,
-      context: { channel: "app", chatId: `app:${id}` },
+      context: { channel: "app", chatId: `app:${id}`, sender: "operator" },
     })
   })
 
@@ -243,6 +243,16 @@ describe("sending a message", () => {
     expect(next.status).toBe(200)
     expect(seen[0].path).toBe("/mesh/task")
     expect(seen[0].body).toMatchObject({ peer: "peer-b", agent: "beta", message: "Two", context: { chatId: `app:${id}` } })
+  })
+
+  it("marks a spoken turn on the same channel and chat id, never as an agent", async () => {
+    const first = await chat({ node: "local", agent: "alpha", message: "Typed", spoken: false })
+    const id = first.events[0].data.id
+    expect(seen[0].body.context.via).toBeUndefined()
+    seen = []
+    await chat({ conversationId: id, message: "Said aloud", spoken: true })
+    expect(seen[0].body.context).toEqual({ channel: "app", chatId: `app:${id}`, sender: "operator", via: "voice" })
+    expect(seen[0].body.senderAgentId).toBeUndefined()
   })
 
   it("refuses unknown or offline nodes, unknown agents, empty messages and foreign conversations", async () => {

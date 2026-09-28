@@ -49,6 +49,18 @@ export function buildMeshEventInput(
   }
 }
 
+/** The raw row stored for one inbound /task, /ask or /send/agent. The
+ *  activity graph reads the initiator back out of it, so every receiver
+ *  must store the same shape. */
+export function inboundTaskRaw(
+  agentId: string,
+  senderAgentId: string | undefined,
+  context: unknown,
+  message: unknown,
+): string {
+  return JSON.stringify({ agentId, senderAgentId, context, message: typeof message === "string" ? message.slice(0, 200) : "" })
+}
+
 /** Pass-through policy. Mesh /task always dispatches (validation rejects
  *  before reaching this layer), so the legacy outcome is generally
  *  "dispatched/agentId" and divergences come from ledger active-task

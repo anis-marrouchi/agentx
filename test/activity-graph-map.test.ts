@@ -174,7 +174,7 @@ describe("layoutNetwork", () => {
   })
 
   it("feeds every channel in but fades idle ones", () => {
-    expect(net.nodes.filter((n) => n.kind === "channel")).toHaveLength(9)
+    expect(net.nodes.filter((n) => n.kind === "channel")).toHaveLength(10)
     expect(node("ch:voice").idle).toBe(false)
     expect(node("ch:telegram").idle).toBe(true)
     expect(net.edges.some((e) => e.id === "fd:voice|secretary-agent")).toBe(true)
