@@ -216,7 +216,7 @@ The General tab is longer than the window: scroll down for **Answer in the pill*
 
 A shortcut needs **Control**, **Option** or **Command** (a function key such as **F5** can be used alone). Two actions can't share one shortcut.
 
-![A refused save: the message at the bottom says the shortcut is already in use](/screenshots/voice/settings-error.png)
+![A refused save: the red message next to Revert and Save says the shortcut is already in use](/screenshots/voice/settings-error.png)
 
 ## Talking to agents
 
@@ -347,7 +347,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 
 | Command | What it does |
 |---|---|
-| `agentx desktop install` | Builds, installs and starts the app and its helper at login. `--agent <id>` pins one agent; `--dry-run` only shows the plan |
+| `agentx desktop install` | Builds and installs the app and its helper, and starts the app at login; the helper starts when an agent needs it. `--agent <id>` pins one agent; `--dry-run` only shows the plan |
 | `agentx desktop status` | Shows whether the app is installed and running |
 | `agentx desktop start` | Starts the installed app |
 | `agentx desktop stop` | Stops it until you start it again or next log in |

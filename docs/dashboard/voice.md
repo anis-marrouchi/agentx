@@ -259,7 +259,7 @@ To hear a voice before you keep it:
 
 A shortcut needs **Control**, **Option** or **Command** (a function key such as **F5** can stand alone), so it never takes a key away from your typing. Two actions can't share one shortcut: the window says which ones clash.
 
-![A refused save: the message at the bottom says the smart paste shortcut is already used to ask an agent](/screenshots/voice/settings-error.png)
+![A refused save: the red message next to Revert and Save says the smart paste shortcut is already used to ask an agent](/screenshots/voice/settings-error.png)
 
 In `agentx.json` a shortcut is written as modifiers and a key joined by `+`, for example `"opt+space"`, `"cmd+opt+period"` or `"ctrl+opt+1"`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`; keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `return` or `tab`.
 
