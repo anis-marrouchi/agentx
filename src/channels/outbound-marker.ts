@@ -146,7 +146,14 @@ export function mappedForgeUsernames(
 /** Strip every marker from a body — used when surfacing the body to the
  *  agent so it doesn't see its own bookkeeping. */
 export function stripAgentxMarkers(body: string): string {
-  return body.replace(/\n*<!--\s*agentx:[^>]*?\s*-->/g, "")
+  // Until nothing changes: one pass over a nested marker
+  // ("<!-<!-- agentx:x -->- agentx:id -->") joins into a working one.
+  let prev: string
+  do {
+    prev = body
+    body = body.replace(/\n*<!--\s*agentx:[^>]*?\s*-->/g, "")
+  } while (body !== prev)
+  return body
 }
 
 /** Convenience for the Phase 2 self-reply-guard pipeline stage. */
