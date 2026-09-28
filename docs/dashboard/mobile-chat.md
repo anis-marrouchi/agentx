@@ -79,35 +79,36 @@ Conversations are saved on the computer (in `.agentx/db.sqlite`, next to `agentx
 
 ## What the computer needs for voice
 
-Your voice is recorded on the phone and turned into text on the computer the phone is paired with. That computer tries these *speech-to-text engines* (programs that write down what was said) in order, the same order as [AgentX Voice](./voice.md) on a Mac:
+Your voice is recorded on the phone and turned into text on the computer the phone is paired with. That computer needs `ffmpeg`, a free program that reads audio files: AgentX uses it to measure how long each recording really is, and refuses voice input from the phone on a computer where it can't find `ffmpeg`. Then it tries these *speech-to-text engines* (programs that write down what was said) in order, the same order as [AgentX Voice](./voice.md) on a Mac:
 
 1. **ElevenLabs**, a paid online service, when an ElevenLabs key is set on the computer.
 2. **Whisper on the computer**, when `mlx_whisper` (Apple silicon Macs) or `whisper` is installed, together with `ffmpeg` to read the phone's recording. Nothing leaves the computer.
 
-To set up one of them:
+To set up voice input:
 
-1. **Terminal (computer):** for ElevenLabs, save your key in a file the AgentX service can read:
+1. **Terminal (computer):** install `ffmpeg`. On a Mac: `brew install ffmpeg`. On Debian or Ubuntu: `sudo apt install ffmpeg`.
+2. **Terminal (computer):** for ElevenLabs, save your key in a file the AgentX service can read:
 
    ```sh
    mkdir -p ~/.elevenlabs && printf '%s' 'your-elevenlabs-key' > ~/.elevenlabs/key
    ```
 
-2. **Terminal (computer):** for Whisper on a Mac with Apple silicon, install `ffmpeg` and `mlx_whisper`:
+3. **Terminal (computer):** or, for Whisper on a Mac with Apple silicon, install `mlx_whisper`:
 
    ```sh
-   brew install ffmpeg
    pipx install mlx-whisper
    ```
 
    The first recording downloads the Whisper model, which takes a few minutes.
 
-3. **Terminal (computer):** restart AgentX so it picks up the key: `agentx daemon restart`.
+4. **Terminal (computer):** restart AgentX so it picks up the key: `agentx daemon restart`.
 
 `voice.stt` in `agentx.json` chooses between them: `auto` (default) and `elevenlabs` try ElevenLabs first and Whisper if that fails; `local` never sends your voice off the computer. Spoken answers in an agent's own voice need the ElevenLabs key too.
 
 | Setting | What it does |
 |---|---|
 | `voice.stt` | `auto` (default), `elevenlabs` or `local`, as above |
+| `voice.allowUnmeasured` | `false` (default) refuses phone recordings when the computer has no `ffmpeg`. `true` takes them anyway, with only the 2 MB limit (see below) |
 | `ELEVENLABS_API_KEY` | ElevenLabs key; read before `~/.elevenlabs/key` and `~/.agentx/elevenlabs-key.txt` |
 | `AGENTX_STT_MODEL` | ElevenLabs speech-to-text model, `scribe_v1` by default |
 | `AGENTX_MLX_WHISPER` | Where `mlx_whisper` is, when it is not in `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin` or the service's `PATH` |
@@ -115,7 +116,9 @@ To set up one of them:
 | `AGENTX_WHISPER`, `AGENTX_WHISPER_MODEL` | Where the `whisper` command is, and its model (`base` by default), for computers without `mlx_whisper` |
 | `AGENTX_FFMPEG` | Where `ffmpeg` is, when it is not in one of the folders above |
 
-A recording is at most 2 minutes long. The phone records at a fixed quality so 2 minutes stay under 1 MB, and the computer refuses anything over 2 MB. When the computer has `ffmpeg`, it also measures the recording itself by reading all of it, and refuses one longer than 2 minutes or one it can't read. Without `ffmpeg`, only the 2 MB limit applies: a recording made at a very low quality can be much longer than 2 minutes and still reach ElevenLabs. Install `ffmpeg` to enforce the 2 minutes. A recording is kept in a private temporary folder only while it is written down, then deleted, and it is never written to a log. The computer writes down at most two recordings at a time.
+A recording is at most 2 minutes long. The phone records at a fixed quality so 2 minutes stay under 1 MB, and the computer refuses anything over 2 MB. The computer also measures every recording itself with `ffmpeg` by reading all of it, whatever the phone says about its length, and refuses one longer than 2 minutes or one it can't read.
+
+Without `ffmpeg` the computer can't measure a recording, and 2 MB of audio recorded at a very low quality holds about 40 minutes. So by default it refuses voice input from the phone and answers "Install ffmpeg on … for voice input from the phone". If you use only ElevenLabs and choose not to install `ffmpeg`, set `"voice": { "allowUnmeasured": true }` in `agentx.json` and restart AgentX: recordings are then taken with only the 2 MB limit, so one phone can send up to about 40 minutes of audio to ElevenLabs at a time. A recording is kept in a private temporary folder only while it is written down, then deleted, and it is never written to a log. The computer writes down at most two recordings at a time.
 
 ## Allow the microphone on an iPhone
 
@@ -129,13 +132,15 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 
 ## Check it worked
 
-1. **Phone:** tap **Chat**, then **Choose an agent**. Your computers and their agents are listed.
-2. **Phone:** pick an agent, hold the orb, say `hello`, and let go. Your words appear as your message, and the agent's answer appears under it.
-3. **Phone:** listen. The answer is read out loud while the orb pulses.
-4. **Phone:** tap **History**. The conversation is listed with the agent's name.
+1. **Terminal (computer):** run `agentx doctor`. Under **Runtime** it says **Daemon finds ffmpeg to measure phone recordings**. This checks the AgentX service itself, which can miss a program your terminal finds.
+2. **Phone:** tap **Chat**, then **Choose an agent**. Your computers and their agents are listed.
+3. **Phone:** pick an agent, hold the orb, say `hello`, and let go. Your words appear as your message, and the agent's answer appears under it.
+4. **Phone:** listen. The answer is read out loud while the orb pulses.
+5. **Phone:** tap **History**. The conversation is listed with the agent's name.
 
 ## If something is wrong
 
+- **"Install ffmpeg on … for voice input from the phone"** — the AgentX service on that computer can't find `ffmpeg`. Install it as in [What the computer needs for voice](#what-the-computer-needs-for-voice). If it is already installed, the service's `PATH` is shorter than your terminal's: set `AGENTX_FFMPEG` to its full path (from `which ffmpeg`) in the service's environment, then run `agentx daemon restart`. `agentx doctor` says when the service finds it. Until then the text box opens so you can type.
 - **"Voice input isn't set up on this computer"** — the computer has neither an ElevenLabs key nor Whisper with `ffmpeg`. Set one up as in [What the computer needs for voice](#what-the-computer-needs-for-voice). Until then the text box opens so you can type.
 - **"The microphone is blocked"** — the phone refused the microphone. Allow it as in [Allow the microphone on an iPhone](#allow-the-microphone-on-an-iphone), or in the browser's site settings on Android. You can type meanwhile.
 - **"This browser can't record here"** — the page is not on its `https://` address, or the browser can't record. Open the app from the address in [Install the phone app](./mobile-app.md).

@@ -102,7 +102,7 @@ import { checkPayloadWithConfirmation, checkAutonomyPayload, setAutonomyHookPort
 import { extractUiDirective } from "@/channels/ui-directive"
 import { setVoiceLog } from "@/voice/system-voices"
 import { elevenLabsKey, siriSayScript } from "@/voice/speaker"
-import { detectSttHost } from "@/voice/transcribe"
+import { detectSttHost, findFfmpeg } from "@/voice/transcribe"
 import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-api"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
@@ -568,6 +568,10 @@ export class AgentXDaemon {
     this.log("")
     this.log(`  Node: ${this.config.node.name} (${this.config.node.id})`)
     this.log(`  Bind: ${this.config.node.bind}`)
+    const ffmpeg = findFfmpeg()
+    this.log(ffmpeg
+      ? `  Voice: ffmpeg ${ffmpeg}`
+      : `  Voice: no ffmpeg on this service's PATH; phone voice input is ${this.config.voice.allowUnmeasured ? "taken unmeasured (voice.allowUnmeasured)" : "refused (install ffmpeg or set AGENTX_FFMPEG)"}`)
     this.log("")
 
     // Agent cursors left on screen by an earlier daemon go before any new
@@ -2564,6 +2568,8 @@ export class AgentXDaemon {
         await handleVoiceIo(req, res, path, {
           stt: () => this.config.voice.stt,
           host: () => detectSttHost(elevenLabsKey()),
+          allowUnmeasured: () => this.config.voice.allowUnmeasured,
+          nodeName: this.config.node?.name,
           elevenLabsKey,
           voiceOf: (id, peer) => resolveVoice(id, peer, this.config, this.voiceMesh.voices),
           log: (m) => this.log(m),
@@ -4022,6 +4028,9 @@ export class AgentXDaemon {
             // dashboard's "Restart when idle").
             inflight: this.inflightCounts(),
             restart: (({ state, requestedAt, deadline }) => ({ state, requestedAt, deadline }))(this.idleRestart.state()),
+            // Whether this process can measure a phone recording (#233);
+            // checked now, so it follows an ffmpeg install without a restart.
+            voice: { canMeasure: findFfmpeg() != null, allowUnmeasured: this.config.voice.allowUnmeasured },
           })
           break
         }

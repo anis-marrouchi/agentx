@@ -45,6 +45,10 @@ export interface VoiceIoDeps {
   /** Tests swap the engines and the synthesiser. */
   engines?: Partial<Record<SttEngine, (file: string, mime: string, host: SttHost, dir: string) => Promise<string>>>
   measure?: (file: string, ffmpeg: string | null) => Promise<number | null>
+  /** voice.allowUnmeasured: take recordings this host can't measure. */
+  allowUnmeasured?: () => boolean
+  /** This node's name, for the phone's setup hint. */
+  nodeName?: string
   synth?: (key: string, voice: VoiceRef, text: string) => Promise<Buffer>
 }
 
@@ -68,6 +72,13 @@ async function transcribe(req: IncomingMessage, res: ServerResponse, deps: Voice
   const setting = deps.stt()
   const host = deps.host()
   const engines = sttEngines(setting, host)
+  // Without ffmpeg the length can't be measured, and the byte cap bounds
+  // bytes, not minutes: refuse unless the owner opted out (#233).
+  if (!host.ffmpeg && !deps.allowUnmeasured?.()) {
+    const where = deps.nodeName ? `on ${deps.nodeName}` : "on this computer"
+    const more = engines.length ? "" : " " + sttSetupHint(setting, host)
+    return json(res, 503, { error: "Voice input isn't set up on this computer.", hint: `Install ffmpeg ${where} for voice input from the phone.${more}`, setup: false })
+  }
   if (!engines.length) {
     return json(res, 503, { error: "Voice input isn't set up on this computer.", hint: sttSetupHint(setting, host), setup: false })
   }
@@ -92,8 +103,8 @@ async function transcribeIn(dir: string, name: string, audio: Buffer, mime: stri
   await writeFile(file, audio, { mode: 0o600 })
   // The real length where this host can measure it, whatever the header
   // said. With ffmpeg, a recording it can't read is refused rather than
-  // passed on unmeasured. Without ffmpeg only the byte cap applies, which
-  // bounds bytes, not minutes.
+  // passed on unmeasured. Without ffmpeg (only with voice.allowUnmeasured)
+  // just the byte cap applies, which bounds bytes, not minutes.
   if (host.ffmpeg) {
     const secs = await (deps.measure ?? measureSeconds)(file, host.ffmpeg)
     if (secs == null) return [422, { error: "This computer couldn't read the recording. Try again." }]

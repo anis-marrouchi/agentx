@@ -1050,6 +1050,10 @@ export const daemonConfigSchema = z.object({
      *  set and the local Whisper otherwise; "elevenlabs" or "local" pick
      *  one (ElevenLabs still falls back to local when it fails). */
     stt: z.enum(["auto", "elevenlabs", "local"]).default("auto"),
+    /** Phone voice input where the daemon has no ffmpeg to measure a
+     *  recording's length: refused by default, since the 2 MB cap alone
+     *  lets through ~40 minutes of low-bitrate audio. true accepts it. */
+    allowUnmeasured: z.boolean().default(false),
     /** The on-device engine behind "local" and every fallback:
      *  mlx-whisper (Python, all languages) or Parakeet (Core ML, 25
      *  European languages, no Arabic; 483 MB downloaded on first use into

@@ -188,7 +188,7 @@ describe("config", () => {
   it("defaults to free system voices with a system fallback", () => {
     const parsed = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
     expect(parsed.voice).toEqual({
-      provider: "system", fallback: "system", locale: "en", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad",
+      provider: "system", fallback: "system", locale: "en", stt: "auto", allowUnmeasured: false, localStt: "mlx-whisper", endOfTurn: "vad",
       hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
       card: { timeout: 30, maxHeight: 320 },
     })

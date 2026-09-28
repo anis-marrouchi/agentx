@@ -712,6 +712,22 @@ function runRoutingChecks(checks: Check[], cfg: any): void {
   }
 }
 
+/** Whether the running daemon can measure phone recordings, from its own
+ *  /health: the service's PATH, not this shell's (#233). Null for a daemon
+ *  too old to say. */
+export function daemonVoiceCheck(voice: { canMeasure?: boolean; allowUnmeasured?: boolean } | undefined): Check | null {
+  if (typeof voice?.canMeasure !== "boolean") return null
+  if (voice.canMeasure) return { severity: "ok", group: "Runtime", title: "Daemon finds ffmpeg to measure phone recordings" }
+  return {
+    severity: "warn",
+    group: "Runtime",
+    title: voice.allowUnmeasured
+      ? "Daemon can't find ffmpeg: phone recordings go unmeasured (voice.allowUnmeasured)"
+      : "Daemon can't find ffmpeg: phone voice input is refused",
+    fix: "Install ffmpeg (brew install ffmpeg / sudo apt install ffmpeg), or set AGENTX_FFMPEG in the service's environment. The daemon's PATH is shorter than your shell's.",
+  }
+}
+
 async function runRuntimeChecks(checks: Check[], cfg: any): Promise<void> {
   const url = cfg.dashboard?.daemonUrl?.replace(/\/+$/, "") || "http://127.0.0.1:18800"
   const headers: Record<string, string> = {}
@@ -732,6 +748,8 @@ async function runRuntimeChecks(checks: Check[], cfg: any): Promise<void> {
       title: `Daemon healthy — ${body.agents?.length ?? 0} agents live, uptime ${Math.round((body.uptime ?? 0) / 60)}m`,
       detail: url,
     })
+    const voice = daemonVoiceCheck(body.voice)
+    if (voice) checks.push(voice)
   } catch {
     checks.push({
       severity: "warn",
