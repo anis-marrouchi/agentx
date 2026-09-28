@@ -409,7 +409,7 @@ agentx voice set helper <voice-id> --provider elevenlabs   # this agent speaks t
 | agent `voice.rate` | Speaking speed from `0.75` to `1.5` (default `1`). System voices speak 175 words a minute times this; ElevenLabs is held to 0.7–1.2 |
 | agent `voice.priority` | `high`, `normal` (default) or `low`: where this agent's lines go in the speaking queue |
 | agent `voice.hotkey` | A shortcut that asks this agent from AgentX Voice, e.g. `"ctrl+opt+1"` (see [Settings window](#settings-window)) |
-| `voice.stt` | AgentX Voice speech to text: `auto` (default), `elevenlabs` or `local` |
+| `voice.stt` | Speech to text for AgentX Voice and for [voice chat on your phone](./mobile-chat.md#what-the-computer-needs-for-voice): `auto` (default), `elevenlabs` or `local` |
 | `voice.localStt` | The engine on this Mac: `mlx-whisper` (default) or `parakeet` (see [Speech to text on this Mac](#speech-to-text-on-this-mac)) |
 | `voice.endOfTurn` | How a hands-free turn ends: `vad` (default, voice detection) or `volume` (see [When a hands-free turn ends](#when-a-hands-free-turn-ends)) |
 | `voice.hotkeys` | AgentX Voice shortcuts: `talk` (default `opt+space`), `stop` (`cmd+opt+period`), `paste` (`cmd+opt+v`) |
