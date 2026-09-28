@@ -92,6 +92,28 @@ export const LOCKED_SCRIPT = `
       say('Could not reach AgentX. Pairing needs a connection: check this phone is on your tailnet, then try again.', true);
     });
   });
+  // Self-heal (#234). This page can appear although the phone is paired:
+  // iOS has opened the app without its cookie, and the service worker keeps
+  // a copy of this page for offline starts. Ask /api/app/me first; if the
+  // phone is known, go straight back to the app. mayBounce() allows that
+  // once per 30 seconds, so a server that refuses /app but accepts the
+  // probe can't trap the phone in a reload loop.
+  function heal() {
+    if (busy || navigator.onLine === false) return;
+    var last = null;
+    try { last = Number(sessionStorage.getItem('ax-heal')) || null; } catch (x) {}
+    if (!mayBounce(last, Date.now())) return;
+    fetch('/api/app/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
+      if (r.status !== 200 || busy) return;
+      try { sessionStorage.setItem('ax-heal', String(Date.now())); } catch (x) {}
+      say('This phone is paired. Opening the app…', false);
+      location.replace('/app');
+    }).catch(function () {});
+  }
+  heal();
+  window.addEventListener('online', heal);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) heal(); });
+
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/app/sw.js', { scope: '/app' }).catch(function () {});
   }

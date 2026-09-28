@@ -8,6 +8,7 @@ import { APP_COOKIE, handleAppRequest } from "../src/daemon/app-routes"
 import { CODE_ALPHABET, CODE_TTL_MS, PairCodeStore, formatCode, generateCode, normalizeCode } from "../src/daemon/pair-codes"
 import { PAIR_CODE_FAILED, PairAttemptLimiter } from "../src/daemon/app-pair-code"
 import { renderAppLockedPage, APP_SERVICE_WORKER } from "../src/daemon/ui/pages/app"
+import { LOCKED_SCRIPT } from "../src/daemon/ui/pages/app-locked.client"
 
 vi.mock("child_process", async (orig) => ({
   ...(await orig<typeof import("child_process")>()),
@@ -196,13 +197,16 @@ describe("locked page", () => {
 
   it("scripts parse and hold no template-literal hazards", () => {
     const scripts = [...renderAppLockedPage().matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])
-    expect(scripts.length).toBe(2)
+    expect(scripts.length).toBe(3) // theme boot, injected helpers, page
     for (const s of scripts) expect(() => new Function(s)).not.toThrow()
-    expect(scripts[1]).not.toMatch(/[\\`]|\$\{/)
+    // The hand-written script is a TS template literal; the injected
+    // helpers are compiled code interpolated at runtime, so they may not.
+    expect(LOCKED_SCRIPT).not.toMatch(/[\\`]|\$\{/)
+    expect(scripts[2]).toBe(LOCKED_SCRIPT)
   })
 
   it("the service worker keeps the locked page for offline starts", () => {
-    expect(APP_SERVICE_WORKER).toContain("c.put('/app/locked', copy)")
+    expect(APP_SERVICE_WORKER).toContain("c.put('/app/locked', res)")
     expect(APP_SERVICE_WORKER).toContain("caches.match('/app/locked')")
   })
 })

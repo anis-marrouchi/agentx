@@ -28,6 +28,7 @@ import { APP_VOICE_SCRIPT } from "./app-voice.client"
 import { APP_VOICE_CSS } from "./app-voice.css"
 import { LOCKED_BODY, LOCKED_CSS, LOCKED_SCRIPT } from "./app-locked.client"
 import { injectFns } from "../inject"
+import { mayBounce } from "./app-pair-logic"
 import { markdownToHtml } from "@/utils/markdown-html"
 
 export { APP_SERVICE_WORKER } from "./app-sw"
@@ -115,6 +116,7 @@ export function renderAppLockedPage(): string {
 <html lang="en">
 <head>${head("Not paired · AgentX")}<style>${LOCKED_CSS}</style></head>
 <body>${LOCKED_BODY}
+<script>${injectFns({ mayBounce })}</script>
 <script>${LOCKED_SCRIPT}</script>
 </body>
 </html>`
