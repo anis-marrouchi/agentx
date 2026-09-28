@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.65.0](https://github.com/anis-marrouchi/agentx/compare/v0.64.0...v0.65.0) (2026-09-28)
+
+
+### Features
+
+* **app:** attach phone files from an outbox inside the workspace ([#261](https://github.com/anis-marrouchi/agentx/issues/261)) ([eb2044d](https://github.com/anis-marrouchi/agentx/commit/eb2044def5dfa87c6a6829df4410e5e39ab2adf2))
+* **app:** quick-reply chips and reply buttons in phone chat ([#263](https://github.com/anis-marrouchi/agentx/issues/263)) ([2cae695](https://github.com/anis-marrouchi/agentx/commit/2cae695342b2a19103f7a323744953596a11570b))
+* **app:** richMessages false also turns off phone pictures and files ([#262](https://github.com/anis-marrouchi/agentx/issues/262)) ([c4458e1](https://github.com/anis-marrouchi/agentx/commit/c4458e1e88b5ae2cfab6cca7adadd1e1402b77a9)), closes [#259](https://github.com/anis-marrouchi/agentx/issues/259)
+
+
+### Bug Fixes
+
+* **app:** keep finished answers that mention an unclosed agentx-artifact tag ([#260](https://github.com/anis-marrouchi/agentx/issues/260)) ([d7e6128](https://github.com/anis-marrouchi/agentx/commit/d7e6128b4419cd52b568699de9c3cbb236351d36)), closes [#256](https://github.com/anis-marrouchi/agentx/issues/256)
+
 ## [0.64.0](https://github.com/anis-marrouchi/agentx/compare/v0.63.0...v0.64.0) (2026-09-28)
 
 
