@@ -77,3 +77,19 @@ describe("isInsideDelegation", () => {
     expect(isInsideDelegation(undefined)).toBe(false)
   })
 })
+
+describe("agrees with the phone app's turns (#276/#278)", () => {
+  it("classifies typed and spoken phone turns, local or relayed, as a person", async () => {
+    const { upstreamRequest } = await import("../src/daemon/app-chat-relay")
+    for (const node of ["local", "node-b"]) {
+      for (const spoken of [false, true]) {
+        const { body } = upstreamRequest({ node, agent: "front", message: "hi", chatId: "app:cabc12345", spoken })
+        const ctx = body.context as Record<string, unknown>
+        expect(classifyInitiator(ctx)).toBe("human")
+        expect(isHumanFacingTurn(ctx)).toBe(true)
+        // The relay no longer names an agent sender.
+        expect(body.senderAgentId).toBeUndefined()
+      }
+    }
+  })
+})
