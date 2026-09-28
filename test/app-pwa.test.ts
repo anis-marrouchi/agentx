@@ -72,6 +72,15 @@ describe("app token gate (loopback is not trusted)", () => {
     expect(await page.text()).toContain('role="tablist"')
   })
 
+  it("sets the cookie again on each app load, so phones paired under Strict move to Lax", async () => {
+    const { token } = store.create({ name: "Old phone", scopes: ["app"] })
+    const page = await fetch(`${base}/app`, { headers: { Cookie: `${APP_COOKIE}=${token}` } })
+    expect(page.status).toBe(200)
+    expect(page.headers.get("set-cookie")).toMatch(new RegExp(`^${APP_COOKIE}=${token};.*SameSite=Lax`))
+    const byHeader = await fetch(`${base}/app`, { headers: bearer(token) })
+    expect(byHeader.headers.get("set-cookie")).toBeNull()
+  })
+
   it("locks a phone out as soon as it is revoked", async () => {
     const { token, record } = store.create({ name: "Lost phone", scopes: ["app"] })
     expect((await fetch(`${base}/app`, { headers: { Cookie: `${APP_COOKIE}=${token}` } })).status).toBe(200)
