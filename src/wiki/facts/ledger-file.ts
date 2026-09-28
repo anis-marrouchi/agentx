@@ -26,6 +26,12 @@ export interface RawLedger {
   proposals: unknown[]
 }
 
+const FACT_FIELDS = ["id", "subject", "attribute", "value", "source", "verifiedAt", "verifiedBy", "volatility"]
+const PROPOSAL_FIELDS = ["id", "status", "claim", "source", "verifiedAt", "agentId"]
+
+const hasStrings = (o: unknown, keys: string[]) =>
+  !!o && typeof o === "object" && !Array.isArray(o) && keys.every((k) => typeof (o as Record<string, unknown>)[k] === "string")
+
 /** Null when the file does not exist; throws when it exists but is not a ledger. */
 export function readLedger(file: string): RawLedger | null {
   if (!existsSync(file)) return null
@@ -38,6 +44,12 @@ export function readLedger(file: string): RawLedger | null {
   if (!raw || typeof raw !== "object" || !Array.isArray(raw.facts) || (raw.proposals !== undefined && !Array.isArray(raw.proposals))) {
     throw new LedgerCorruptError(file, "not a ledger: expected { facts: [], proposals: [] }")
   }
+  // Every entry is read by prompt rendering; one malformed entry must stop
+  // the ledger being used, not crash a prompt or be dropped on the next save.
+  const bad = raw.facts.findIndex((f: any) => !hasStrings(f, FACT_FIELDS))
+  if (bad >= 0) throw new LedgerCorruptError(file, `fact #${bad + 1} is missing ${FACT_FIELDS.join("/")}`)
+  const badP = (raw.proposals ?? []).findIndex((p: any) => !hasStrings(p, PROPOSAL_FIELDS))
+  if (badP >= 0) throw new LedgerCorruptError(file, `proposal #${badP + 1} is missing ${PROPOSAL_FIELDS.join("/")}`)
   return { facts: raw.facts, proposals: raw.proposals ?? [] }
 }
 
@@ -50,12 +62,44 @@ export function writeLedger(file: string, data: unknown): void {
 
 const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
+/** Locks this process holds, so a caller already inside one (approve →
+ *  write) re-enters instead of waiting on itself. */
+const held = new Set<string>()
+
+const isStale = (path: string, staleMs: number) => {
+  try { return Date.now() - statSync(path).mtimeMs > staleMs } catch { return false }
+}
+
+/**
+ * Take over a crashed holder's lock. Only one waiter may do it at a time
+ * (a second `.takeover` lock), and it re-checks under that lock, so two
+ * waiters that both saw the old lock can't both delete it — the second
+ * would otherwise delete the first one's fresh lock.
+ */
+export function takeOver(lock: string, staleMs: number): void {
+  const guard = `${lock}.takeover`
+  if (isStale(guard, staleMs)) { try { unlinkSync(guard) } catch { /* another waiter did */ } }
+  let fd: number
+  try { fd = openSync(guard, "wx") } catch { return }
+  try {
+    if (isStale(lock, staleMs)) unlinkSync(lock)
+  } catch {
+    // Not removable (a directory, a permission): the wait times out with
+    // an error naming the lock, rather than spinning.
+  } finally {
+    closeSync(fd)
+    try { unlinkSync(guard) } catch { /* gone */ }
+  }
+}
+
 /**
  * Run `fn` holding `<file>.lock`. Waits up to `timeoutMs` for another
- * holder; a lock older than `staleMs` is a crashed holder and is taken over.
+ * holder; a lock older than `staleMs` is a crashed holder and is taken
+ * over. Re-entrant within one process.
  */
 export function withLock<T>(file: string, fn: () => T, opts: { timeoutMs?: number; staleMs?: number } = {}): T {
   const lock = `${file}.lock`
+  if (held.has(lock)) return fn()
   const timeoutMs = opts.timeoutMs ?? 3000
   const staleMs = opts.staleMs ?? 15_000
   mkdirSync(dirname(lock), { recursive: true })
@@ -66,16 +110,18 @@ export function withLock<T>(file: string, fn: () => T, opts: { timeoutMs?: numbe
       fd = openSync(lock, "wx")
     } catch (e: any) {
       if (e?.code !== "EEXIST") throw e
-      try {
-        if (Date.now() - statSync(lock).mtimeMs > staleMs) { unlinkSync(lock); continue }
-      } catch { continue }
-      if (Date.now() > deadline) throw new Error(`fact ledger is busy (${lock}); try again`)
+      if (isStale(lock, staleMs)) takeOver(lock, staleMs)
+      if (Date.now() > deadline) {
+        throw new Error(`fact ledger is busy (${lock}). If no agentx command is running, delete that lock and try again.`)
+      }
       sleep(25)
     }
   }
+  held.add(lock)
   try {
     return fn()
   } finally {
+    held.delete(lock)
     closeSync(fd)
     try { unlinkSync(lock) } catch { /* already gone */ }
   }

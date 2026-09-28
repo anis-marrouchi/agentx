@@ -1070,7 +1070,7 @@ Every recorded fact, with where and when it was checked.
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
-| `--stale` | — | Only facts past their time limit. |
+| `--stale` | — | Only facts past their time limit, or never checked (`UNCHECKED`). |
 | `--json` | — | Print JSON instead of a list. |
 
 ### `agentx wiki facts show <id>`
@@ -1095,7 +1095,7 @@ Record a fact you checked. A different value replaces the current one only with 
 | `--checked-at <iso>` | — | When you checked it: an ISO date, or `now`. Without it the value can't replace a different one already recorded. |
 | `--class <class>` | from the wording | billing \| account \| outage \| deploy \| work-state \| stable. |
 | `--ttl-days <n>` | from the class | Days it stays trusted. |
-| `--confirm` | — | A person confirms this value: replace a newer-dated one. |
+| `--confirm` | — | A person confirms this value: replace a newer-dated one. Refused when run by an agent. |
 | `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
 
 ### `agentx wiki facts proposals`
@@ -1114,7 +1114,7 @@ Claims waiting for a check (pending by default).
 
 ### `agentx wiki facts proposals approve <id>`
 
-Confirm a claim and record it as a fact.
+Confirm a claim and record it as a fact. Only a person can approve or reject; both are refused when run by an agent.
 
 | Flag | Default | What it does |
 |---|---|---|
