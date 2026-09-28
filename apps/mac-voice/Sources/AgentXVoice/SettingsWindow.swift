@@ -19,7 +19,7 @@ final class SettingsModel: ObservableObject {
     @Published var error = ""
     @Published var notice = ""
     @Published var launchAtLogin = LoginItem.isOn
-    /// "agents" or "general".
+    /// "agents", "general" or "speech".
     @Published var tab = "agents"
     /// A shortcut field is waiting for keys: the app's own shortcuts are
     /// off meanwhile, or they would fire instead of being recorded.
@@ -141,6 +141,9 @@ struct SettingsView: View {
                     GeneralTab(model: model)
                         .tabItem { Text("General") }
                         .tag("general")
+                    SpeechTab(model: model)
+                        .tabItem { Text("Speech") }
+                        .tag("speech")
                 }
                 .padding([.horizontal, .top], 12)
             } else {
@@ -364,6 +367,36 @@ private struct GeneralTab: View {
                     Text("Shortcuts change as soon as you save. If one does nothing, another app already uses it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
+                if draft.general.card != nil {
+                    AnswerCardSection(card: Binding(get: { model.draft?.general.card ?? .standard },
+                                                    set: { model.draft?.general.card = $0 }))
+                }
+                Section {
+                    Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
+                        .disabled(LoginItem.managedByInstaller)
+                } footer: {
+                    Text(LoginItem.managedByInstaller
+                         ? "Started at login by `agentx desktop install`. To stop that, run `agentx desktop stop` in Terminal."
+                         : "Saved by macOS as a login item, not in agentx.json. Changes right away.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private func nonOptional(_ path: WritableKeyPath<VoiceSettings.Hotkeys, String>, _ now: String) -> Binding<String?> {
+        Binding(get: { now }, set: { if let v = $0 { model.draft?.general.hotkeys[keyPath: path] = v } })
+    }
+}
+
+/// The engines: its own tab so General fits the window without scrolling.
+private struct SpeechTab: View {
+    @ObservedObject var model: SettingsModel
+
+    var body: some View {
+        Form {
+            if model.draft != nil {
                 Section {
                     Picker("Speech to text", selection: binding(\.stt)) {
                         Text("Automatic").tag("auto")
@@ -388,19 +421,6 @@ private struct GeneralTab: View {
                     Text("Automatic uses ElevenLabs when a key is set, and the engine on this Mac otherwise. Parakeet has no Arabic; until its model has downloaded, Whisper answers instead. Voice detection ends a turn when you stop talking, not when the room goes quiet. The default provider is for agents that don't choose their own. All apply to the next question.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                if draft.general.card != nil {
-                    AnswerCardSection(card: Binding(get: { model.draft?.general.card ?? .standard },
-                                                    set: { model.draft?.general.card = $0 }))
-                }
-                Section {
-                    Toggle("Launch at login", isOn: Binding(get: { model.launchAtLogin }, set: { model.setLaunchAtLogin($0) }))
-                        .disabled(LoginItem.managedByInstaller)
-                } footer: {
-                    Text(LoginItem.managedByInstaller
-                         ? "Started at login by `agentx desktop install`. To stop that, run `agentx desktop stop` in Terminal."
-                         : "Saved by macOS as a login item, not in agentx.json. Changes right away.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
             }
         }
         .formStyle(.grouped)
@@ -409,10 +429,6 @@ private struct GeneralTab: View {
     private func binding(_ path: WritableKeyPath<VoiceSettings.General, String>) -> Binding<String> {
         Binding(get: { model.draft?.general[keyPath: path] ?? "" },
                 set: { model.draft?.general[keyPath: path] = $0 })
-    }
-
-    private func nonOptional(_ path: WritableKeyPath<VoiceSettings.Hotkeys, String>, _ now: String) -> Binding<String?> {
-        Binding(get: { now }, set: { if let v = $0 { model.draft?.general.hotkeys[keyPath: path] = v } })
     }
 }
 

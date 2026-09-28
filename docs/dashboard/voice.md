@@ -208,7 +208,7 @@ The settings window changes each agent's voice and the app's own shortcuts witho
 
 1. **Mac:** click the AgentX icon in the menu bar, or press **Command–Option–A**.
 2. **Mac:** choose **Settings…** (or press **Command–,** while the menu is open).
-3. Change what you need on the **Agents** or **General** tab.
+3. Change what you need on the **Agents**, **General** or **Speech** tab.
 4. Choose **Save** (or press **Command–S**). A red message at the bottom says what to fix if a value is refused; nothing is saved then.
 
 Nothing in the window needs a restart. Voice changes apply to the next line the agent speaks, shortcuts change as soon as you save, and the speech-to-text engine applies to your next question. **Revert** puts back what is saved.
@@ -221,7 +221,7 @@ Pick an agent on the left; its settings show on the right.
 
 | Setting | What it does | Saved in `agentx.json` as |
 |---|---|---|
-| **Voice provider** | **Mac voices** (free) or **ElevenLabs**. **Default** follows the General tab | agent `voice.provider` |
+| **Voice provider** | **Mac voices** (free) or **ElevenLabs**. **Default** follows the Speech tab | agent `voice.provider` |
 | **Mac voice** | One of the voices installed on this Mac, **The Mac's default voice**, or **Assigned automatically** (each agent gets a different one). An agent with one voice per language shows that and leaves it alone | agent `voice.system` |
 | **ElevenLabs voice ID** | The ElevenLabs voice, used when the provider is ElevenLabs. Empty: the default voice | agent `voice.elevenlabsVoiceId` |
 | **Preview** | Says a sample line in the voice as it is set in the window, before you save | nothing |
@@ -241,7 +241,7 @@ To hear a voice before you keep it:
 
 ### General tab
 
-![The General tab in dark mode: Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Speech to text set to On this Mac, the On-this-Mac engine set to Parakeet, End of a hands-free turn set to Voice detection, Default voice provider and Launch at login](/screenshots/voice/settings-general.png)
+![The General tab in dark mode: Talk, Stop every voice and Smart paste shortcuts, the fixed Open the menu shortcut, Answer in the pill with Keep the answer open and Tallest answer, and Launch at login](/screenshots/voice/settings-general.png)
 
 | Setting | What it does | Saved as |
 |---|---|---|
@@ -249,10 +249,6 @@ To hear a voice before you keep it:
 | **Stop every voice** | Silences everything spoken. Default **Command–Option–.** | `voice.hotkeys.stop` |
 | **Smart paste** | Reshapes the clipboard, then pastes. Default **Command–Option–V** | `voice.hotkeys.paste` |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
-| **Speech to text** | **Automatic**: ElevenLabs when a key is set, the engine on this Mac otherwise. **ElevenLabs**: the same, and the app log says so when no key is set. **On this Mac**: your voice never leaves the Mac | `voice.stt` |
-| **On-this-Mac engine** | **Whisper**: mlx-whisper, every language. **Parakeet**: faster, no Arabic, downloads 483 MB the first time. See [Speech to text on this Mac](#speech-to-text-on-this-mac) | `voice.localStt` |
-| **End of a hands-free turn** | **Voice detection**: the turn ends when you stop talking. **Volume**: the older check, which ends it when the room goes quiet. See [When a hands-free turn ends](#when-a-hands-free-turn-ends) | `voice.endOfTurn` |
-| **Default voice provider** | The voice provider for agents set to **Default** | `voice.provider` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
 | **Tallest answer** | How tall the answer grows before it scrolls, 120 to 800 points | `voice.card.maxHeight` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |
@@ -262,6 +258,17 @@ A shortcut needs **Control**, **Option** or **Command** (a function key such as 
 ![A refused save on the General tab: Smart paste is set to Control–Option–2, and the red message next to Revert and Save says that shortcut is used for both smart paste and asking Researcher](/screenshots/voice/settings-error.png)
 
 In `agentx.json` a shortcut is written as modifiers and a key joined by `+`, for example `"opt+space"`, `"cmd+opt+period"` or `"ctrl+opt+1"`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`; keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `return` or `tab`.
+
+### Speech tab
+
+![The Speech tab in dark mode: Speech to text, the On-this-Mac engine, End of a hands-free turn and Default voice provider](/screenshots/voice/settings-speech.png)
+
+| Setting | What it does | Saved as |
+|---|---|---|
+| **Speech to text** | **Automatic**: ElevenLabs when a key is set, the engine on this Mac otherwise. **ElevenLabs**: the same, and the app log says so when no key is set. **On this Mac**: your voice never leaves the Mac | `voice.stt` |
+| **On-this-Mac engine** | **Whisper**: mlx-whisper, every language. **Parakeet**: faster, no Arabic, downloads 483 MB the first time. See [Speech to text on this Mac](#speech-to-text-on-this-mac) | `voice.localStt` |
+| **End of a hands-free turn** | **Voice detection**: the turn ends when you stop talking. **Volume**: the older check, which ends it when the room goes quiet. See [When a hands-free turn ends](#when-a-hands-free-turn-ends) | `voice.endOfTurn` |
+| **Default voice provider** | The voice provider for agents set to **Default** | `voice.provider` |
 
 **Command–Option–V** is smart paste: it reshapes the clipboard for wherever you are typing. It runs the `agentx paste` command, so that command must work. The helper also powers [pointing, screen checks, and guided lessons](../tutorials/record-vscode.md).
 
@@ -295,7 +302,7 @@ The model is downloaded the first time the microphone opens, into `~/.agentx/mod
 To change it:
 
 1. **Mac:** click the AgentX icon in the menu bar and choose **Settings…**.
-2. **Mac:** open the **General** tab.
+2. **Mac:** open the **Speech** tab.
 3. **Mac:** set **End of a hands-free turn** to **Voice detection** or **Volume**.
 4. **Mac:** choose **Save**. The next hands-free turn uses it.
 
@@ -317,7 +324,7 @@ Parakeet is NVIDIA's Parakeet TDT 0.6B v3 speech model (licensed CC-BY-4.0), in 
 ### Switch to Parakeet
 
 1. **Mac:** click the AgentX icon in the menu bar and choose **Settings…**.
-2. **Mac:** open the **General** tab.
+2. **Mac:** open the **Speech** tab.
 3. **Mac:** set **On-this-Mac engine** to **Parakeet**, then choose **Save**.
 4. **Mac:** ask a question. If **Speech to text** is **On this Mac**, or no ElevenLabs key is set, the app starts downloading Parakeet in the background the first time, and Whisper answers meanwhile.
 5. **Mac:** after the download, the first question loads Parakeet, which can take about 30 seconds on a new Mac (macOS prepares it for the Neural Engine once). Whisper answers until it is ready; after that, Parakeet answers.
