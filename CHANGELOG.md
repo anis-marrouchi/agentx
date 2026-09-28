@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.68.0](https://github.com/anis-marrouchi/agentx/compare/v0.67.0...v0.68.0) (2026-09-28)
+
+
+### Features
+
+* **a2a:** call the caller back when a person started the delegation ([#279](https://github.com/anis-marrouchi/agentx/issues/279)) ([af3c4c1](https://github.com/anis-marrouchi/agentx/commit/af3c4c1c5d32615e55de04ce6b8e503d798582f9))
+* **contrib:** assisted issue filing and community voting ([#283](https://github.com/anis-marrouchi/agentx/issues/283)) ([1062da0](https://github.com/anis-marrouchi/agentx/commit/1062da01ba3f1502e6d7fa57f4a81c186e007a50))
+
 ## [0.67.0](https://github.com/anis-marrouchi/agentx/compare/v0.66.0...v0.67.0) (2026-09-28)
 
 
