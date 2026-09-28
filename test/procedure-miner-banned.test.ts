@@ -34,4 +34,10 @@ describe("procedure miner banned words (#230)", () => {
       expect(lintBlackBox({ ...clean, expected: `the ${word} is done` })).toEqual([`expected: "${word}"`])
     }
   })
+
+  it("keeps AI banned, as a whole word only", () => {
+    expect(BANNED_WORDS).toContain("ai")
+    expect(lintBlackBox({ ...clean, steps: ["Ask the AI for a summary", "Send it"] })).toEqual([`steps[0]: "AI"`])
+    expect(lintBlackBox({ ...clean, steps: ["Check the email she said was sent", "Reply by mail"] })).toEqual([])
+  })
 })
