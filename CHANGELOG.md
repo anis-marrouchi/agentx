@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.64.0](https://github.com/anis-marrouchi/agentx/compare/v0.63.0...v0.64.0) (2026-09-28)
+
+
+### Features
+
+* **app:** Markdown pictures and agent files in phone chat ([#254](https://github.com/anis-marrouchi/agentx/issues/254)) ([620947d](https://github.com/anis-marrouchi/agentx/commit/620947d55da467bafc559568e4dfe7de311b03d2))
+
 ## [0.63.0](https://github.com/anis-marrouchi/agentx/compare/v0.62.0...v0.63.0) (2026-09-28)
 
 
