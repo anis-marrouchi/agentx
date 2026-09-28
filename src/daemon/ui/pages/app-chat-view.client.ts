@@ -172,10 +172,16 @@ window.AXChatView = (function () {
       var crow = document.createElement('div');
       crow.className = 'cx-ui-row cx-chips';
       chips.forEach(function (c) {
-        var b = document.createElement('button'), label = String(c.label);
+        var b = document.createElement('button'), label = String(c.label), reply = String(c.reply);
         b.type = 'button'; b.className = 'cx-ui-btn cx-reply';
-        b.textContent = label.length > CHIP_LABEL ? label.slice(0, CHIP_LABEL - 1) + '…' : label;
-        if (b.textContent !== c.reply) b.title = c.reply;
+        b.textContent = clip(label);
+        // A reply button that sends other words shows them too, so a tap is honest.
+        if (reply !== label) {
+          var said = document.createElement('small');
+          said.textContent = clip(reply);
+          b.appendChild(said);
+        }
+        if (clip(label) !== reply) b.title = reply;
         b.addEventListener('click', function () { if (send(c.reply) !== false) retire(crow); });
         crow.appendChild(b);
       });
@@ -209,6 +215,8 @@ window.AXChatView = (function () {
       box.appendChild(fs);
     }
   }
+
+  function clip(t) { return t.length > CHIP_LABEL ? t.slice(0, CHIP_LABEL - 1) + '…' : t; }
 
   // Quick replies under el can't be tapped any more.
   function retire(el) {

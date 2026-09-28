@@ -97,6 +97,7 @@ main { min-height: 0; }
   border: var(--ax-border-w) solid color-mix(in oklch, var(--ax-accent) 50%, var(--ax-border)); border-radius: var(--ax-radius-pill);
   background: color-mix(in oklch, var(--ax-accent) 12%, var(--ax-surface)); color: var(--ax-accent); text-decoration: none;
 }
+.cx-reply small { display: block; font-size: 0.8em; opacity: 0.75; }
 .cx-reply:disabled { cursor: default; opacity: 0.5; }
 .cx-ui fieldset { border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); margin: 0; padding: 8px 10px; display: grid; gap: 8px; }
 .cx-ui legend { font-weight: 600; padding: 0 4px; }

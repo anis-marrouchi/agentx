@@ -68,7 +68,7 @@ Agents add these on their own. To turn them off for one agent, set `richMessages
 
 ### Quick replies
 
-When the agent expects a short answer, it can offer up to 4 of them as *quick replies*, rounded buttons under its answer such as **Yes** and **Not now**. Some buttons carry a longer message than their label, for example **Only unit tests** sends `Run only the unit tests`.
+When the agent expects a short answer, it can offer up to 4 of them as *quick replies*, rounded buttons under its answer such as **Yes** and **Not now**. Some buttons carry a longer message than their label, for example **Only unit tests** sends `Run only the unit tests`. Such a button shows the message it sends in smaller text under its label, so you see what you are sending before you tap.
 
 1. **Phone:** tap a quick reply. It is sent as your next message, exactly as if you had typed it, and it shows in the conversation as your message.
 2. **Phone:** wait for the answer as usual.
