@@ -1,6 +1,7 @@
 import { createRoot } from "react-dom/client"
 import { App } from "./App"
 import css from "./styles.css"
+import cardsCss from "./cards.css"
 import flowCss from "@xyflow/react/dist/style.css"
 
 // Inject the bundled stylesheet into the page on mount. tsup is configured
@@ -11,7 +12,7 @@ function injectStyles() {
   if (document.getElementById(id)) return
   const style = document.createElement("style")
   style.id = id
-  style.textContent = flowCss + "\n" + css
+  style.textContent = flowCss + "\n" + css + "\n" + cardsCss
   document.head.appendChild(style)
 }
 

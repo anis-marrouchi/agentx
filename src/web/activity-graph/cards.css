@@ -1,0 +1,63 @@
+/* Map detail cards and clickable map parts (#267). Tokens come from
+   styles.css (--ax-*, --tm-*), so dark and light follow the page. */
+
+/* xyflow gives nodes with no selection or drag `pointer-events: none` as an
+   inline style, which the buttons inside inherit; the map's own buttons
+   must take clicks, so this has to win over the inline style. */
+.ax-fleet .tm-canvas .react-flow__node:not(.react-flow__node-district) { pointer-events: all !important; }
+.ax-fleet button.tm-channel { font-family: inherit; cursor: pointer; }
+.ax-fleet .tm-channel.is-selected,
+.ax-fleet .tm-station.is-selected .tm-station__dot { outline: 3px solid var(--tm-bl); outline-offset: 2px; }
+.ax-fleet .tm-station { cursor: pointer; }
+.ax-fleet button.tm-station__dot { font: inherit; font-weight: 800; padding: 0; cursor: pointer; }
+.ax-fleet .tm-channel:focus-visible, .ax-fleet .tm-station__dot:focus-visible,
+.ax-fleet .tm-train:focus-visible, .ax-fleet .tm-expander:focus-visible,
+.ax-fleet .tm-panel button:focus-visible, .ax-fleet .tm-item:focus-visible { outline: 3px solid var(--tm-bl); outline-offset: 2px; }
+.ax-fleet .tm-canvas .react-flow__edge.is-clickable { cursor: pointer; }
+.ax-fleet .tm-canvas .react-flow__edge.is-clickable:hover .tm-edge { filter: brightness(1.15); }
+
+/* "+n": the hidden middle hops of a long route. */
+.ax-fleet .tm-expander {
+  position: absolute; pointer-events: all; z-index: 5; min-width: 30px; height: 24px; padding: 0 8px;
+  border-radius: 999px; border: 3px solid var(--lc, var(--tm-bl)); background: var(--ax-surface); color: var(--ax-text);
+  font: 800 12px var(--ax-mono); box-shadow: 0 2px 0 var(--tm-sh); cursor: pointer;
+}
+.ax-fleet .tm-expander.is-dim { opacity: 0.2; }
+
+/* Card bits */
+.ax-fleet .tm-empty { margin: 0; font-size: 13px; color: var(--ax-muted); }
+.ax-fleet .tm-link { border: 0; background: none; padding: 0; color: var(--tm-bl); font: inherit; font-size: 12px; font-weight: 700; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.ax-fleet .tm-rows { border: 2px solid var(--ax-border); border-radius: 14px; overflow: hidden; }
+.ax-fleet .tm-row { display: flex; align-items: center; gap: 8px; padding-right: 12px; }
+.ax-fleet .tm-row + .tm-row { border-top: 2px solid var(--tm-bd2); }
+.ax-fleet .tm-row__main {
+  flex: 1; min-width: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; row-gap: 2px; align-items: center;
+  padding: 9px 12px; border: 0; background: none; color: var(--ax-text); text-align: left; font: inherit; font-size: 13px; cursor: pointer;
+}
+.ax-fleet .tm-row__main:hover { background: color-mix(in oklch, var(--tm-bl) 8%, transparent); }
+.ax-fleet .tm-row__t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-fleet .tm-row__main small { grid-column: 2; font-size: 11px; color: var(--ax-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ax-fleet .tm-msg p { margin: 0; font-size: 13px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ax-fleet .tm-msg p.is-clamped { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ax-fleet .tm-msg.is-empty { color: var(--ax-muted); font-size: 13px; margin: 0; }
+.ax-fleet .tm-hop { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border: 2px solid var(--ax-border); border-radius: 14px; }
+.ax-fleet .tm-hop__hd { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.ax-fleet .tm-hop__hd .tm-link { margin-left: auto; }
+.ax-fleet .tm-hop__node { font-size: 11px; color: var(--ax-muted); }
+.ax-fleet .tm-hop .tm-link { align-self: flex-start; }
+
+/* The train's hop timeline */
+.ax-fleet .tm-timeline { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 3px solid var(--ax-border); display: flex; flex-direction: column; gap: 2px; }
+.ax-fleet .tm-timeline li { position: relative; }
+.ax-fleet .tm-timeline li::before { content: ""; position: absolute; left: -24px; top: 10px; width: 11px; height: 11px; border-radius: 50%; background: var(--ax-surface); border: 3px solid var(--ax-text); }
+.ax-fleet .tm-timeline li.is-return::before { border-color: var(--tm-gr); }
+.ax-fleet .tm-timeline li.tm-timeline__more::before { border-style: dotted; }
+.ax-fleet .tm-timeline li > button:not(.tm-link) {
+  width: 100%; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 10px; align-items: baseline; padding: 6px 8px;
+  border: 0; border-radius: 10px; background: none; color: var(--ax-text); text-align: left; font: inherit; font-size: 13px; cursor: pointer;
+}
+.ax-fleet .tm-timeline li > button:not(.tm-link):hover { background: color-mix(in oklch, var(--tm-bl) 8%, transparent); }
+.ax-fleet .tm-timeline li > button b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-fleet .tm-timeline li > button small { grid-column: 2; font-size: 11px; color: var(--ax-muted); }
+.ax-fleet .tm-timeline__more { padding: 4px 8px; }
