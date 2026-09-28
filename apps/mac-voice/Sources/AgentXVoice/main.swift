@@ -19,9 +19,6 @@ final class App: NSObject, NSApplicationDelegate {
     private let panel = Panel()
     private let statusMenu = StatusMenu()
     private let card = ResultCard()
-    private let orb = OrbOverlay()
-    /// What the listener said this turn, shown under the orb.
-    private var heardLine = ""
     /// The agent whose by-name answer is on screen now, while no turn runs.
     private var asideSpeaker: String?
     private let recorder = Recorder()
@@ -164,37 +161,28 @@ final class App: NSObject, NSApplicationDelegate {
         Log.info("settings: talk \(saved.general.hotkeys.talk), speech to text \(saved.general.stt)")
     }
 
-    /// Who the panel and orb name: the agent a shortcut is asking, a
-    /// by-name answer being spoken, else the agent our turn is asking,
-    /// else the target.
+    /// Who the pill names and whose colour its orb wears: the agent a
+    /// shortcut is asking, a by-name answer being spoken, else the agent
+    /// our turn is asking, else the target.
     private var shownAgent: String {
         if let forcedAgent, recorder.isRecording { return forcedAgent }
         if let asideSpeaker { return asideSpeaker }
         return busy && !turnAgent.isEmpty ? turnAgent : Config.effectiveAgentID
     }
 
-    /// The orb follows the pill's state: listening, thinking or speaking
-    /// show it; idle and errors hide it.
-    private func renderOrb(_ state: Panel.State) {
-        guard Config.showOrb else { orb.hide(); return }
-        let who = shownAgent
-        let name = who.isEmpty ? "" : statusMenu.name(of: who)
-        let tint = statusMenu.color(of: who)
-        switch state {
-        case .idle, .error:
-            orb.hide()
-        case .listening:
-            heardLine = ""
-            orb.show(.listening, name: name, tint: tint, line: "Listening…", status: "")
-        case .thinking:
-            orb.show(.thinking, name: name, tint: tint, line: heardLine, status: "Thinking…")
-        case .working(let step, let secs):
-            orb.show(.thinking, name: name, tint: tint, line: heardLine, status: "\(step) · \(secs)s")
-        case .speaking:
-            orb.show(.speaking, name: name, tint: tint, line: heardLine, status: "")
-        case .saying(let text):
-            orb.show(.speaking, name: name, tint: tint, line: text, status: "")
+    /// Close, Esc or "Hide pill": the pill goes and the voice stops, the
+    /// same stop as ⌘⌥. An open microphone closes without sending. The
+    /// next talk key brings the pill back.
+    private func dismissPill() {
+        Log.info("pill: dismissed")
+        panel.dismiss()
+        if recorder.isRecording {
+            stopPolling()
+            _ = recorder.stop()
+            forcedAgent = nil
+            talkCheck = nil
         }
+        stopSpeaking()
     }
 
     /// ⌘⌥V. Everything except the hotkey lives in `agentx paste`.
@@ -243,30 +231,33 @@ final class App: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ note: Notification) {
         NSApp.setActivationPolicy(.accessory)
         retireOlderInstances()
-        panel.onRender = { [weak self] state in
-            self?.statusMenu.show(state)
-            self?.renderOrb(state)
-        }
+        panel.onRender = { [weak self] state in self?.statusMenu.show(state) }
         panel.contextMenu = { [weak self] in self?.statusMenu.menu ?? NSMenu() }
         panel.agentName = { [weak self] in
             guard let self else { return "" }
             let who = self.shownAgent
             return who.isEmpty ? "" : self.statusMenu.name(of: who)
         }
-        panel.alwaysVisible = Config.showPill
-        panel.yieldsActiveStates = Config.showOrb
-        orb.levelSource = { [weak self] in self?.recorder.level ?? 0 }
-        card.anchor = { [weak self] in self?.orb.contentFrame }
-        statusMenu.onOrbChanged = { [weak self] on in
-            guard let self else { return }
-            self.panel.yieldsActiveStates = on
-            if !on { self.orb.hide() }
-            if !self.busy && !self.recorder.isRecording { self.panel.render(.idle) }
+        panel.agentTint = { [weak self] in
+            guard let self else { return Brand.accent }
+            return self.statusMenu.color(of: self.shownAgent)
         }
+        panel.alwaysVisible = Config.showPill
+        panel.orb.setAnimated(Config.animatedOrb)
+        panel.orb.levelSource = { [weak self] in self?.recorder.level ?? 0 }
+        panel.onDismiss = { [weak self] in self?.dismissPill() }
+        panel.onMove = { [weak self] in self?.card.follow() }
+        card.anchor = { [weak self] in self?.panel.frame ?? .zero }
+        statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
+        statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
+        statusMenu.onResetPosition = { [weak self] in self?.panel.resetPosition() }
+        statusMenu.onAnimatedOrbChanged = { [weak self] on in self?.panel.orb.setAnimated(on) }
         panel.render(.idle)
         statusMenu.onPillChanged = { [weak self] on in
             guard let self else { return }
             self.panel.alwaysVisible = on
+            // Asking for the pill brings back one that was dismissed.
+            if on { self.panel.summon() }
             if !self.busy && !self.recorder.isRecording { self.panel.render(.idle) }
         }
         statusMenu.onTargetChanged = { [weak self] id in
@@ -440,6 +431,8 @@ final class App: NSObject, NSApplicationDelegate {
         // two ways of talking never fight over the microphone.
         stopPolling()
         guard !recorder.isRecording else { return }
+        // A dismissed pill comes back with the talk key.
+        panel.summon()
         // Option-Space is the door to everything spoken, always: our own
         // answer or step line stops now, and the daemon hushes any talk,
         // lesson or narration, remembering which it was. Even mid-turn —
@@ -495,8 +488,6 @@ final class App: NSObject, NSApplicationDelegate {
                 return
             }
             Log.info("heard: \(heard)")
-            heardLine = heard
-            if orb.isVisible { orb.model.line = heard }
             let hushed = await door.value
             // Always through the door, even with nothing hushed: the
             // listener's turn is over, so the daemon's queue plays on.
@@ -580,8 +571,8 @@ final class App: NSObject, NSApplicationDelegate {
                     card.show(spoken: answer.text, written: answer.written,
                               buttons: answer.buttons, imageURL: answer.imageURL)
                 }
-                // Nothing else on screen: the orb shows this answer, in
-                // this agent's colour, while it is spoken.
+                // Nothing else on screen: the pill shows this answer, its
+                // orb in this agent's colour, while it is spoken.
                 let onScreen = !busy && !recorder.isRecording
                 if onScreen { asideSpeaker = agent; panel.render(.saying(answer.text)) }
                 await Speech.say(answer.text, agentID: answer.agentID ?? agent, kind: "answer", voice: answer.voice)

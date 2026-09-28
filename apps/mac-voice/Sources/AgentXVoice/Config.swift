@@ -28,11 +28,25 @@ enum Config {
         set { UserDefaults.standard.set(newValue, forKey: "showPill") }
     }
 
-    /// The orb overlay while listening, thinking and speaking. On by
-    /// default; off brings back the pill for those states.
-    static var showOrb: Bool {
-        get { UserDefaults.standard.object(forKey: "showOrb") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "showOrb") }
+    /// The pill's orb moves with the voice. On by default; off keeps it
+    /// still in every state, as Reduce Motion does.
+    static var animatedOrb: Bool {
+        get { UserDefaults.standard.object(forKey: "animatedOrb") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "animatedOrb") }
+    }
+
+    /// Where the pill was last dragged to (its bottom-left corner, in
+    /// screen points). Nil: the default corner.
+    static var pillOrigin: CGPoint? {
+        get {
+            guard let xy = UserDefaults.standard.array(forKey: "pillOrigin") as? [Double], xy.count == 2
+            else { return nil }
+            return CGPoint(x: xy[0], y: xy[1])
+        }
+        set {
+            if let p = newValue { UserDefaults.standard.set([Double(p.x), Double(p.y)], forKey: "pillOrigin") }
+            else { UserDefaults.standard.removeObject(forKey: "pillOrigin") }
+        }
     }
 
     /// The agent actually answering: `agentID`, else `chosenAgentID`, else
