@@ -717,6 +717,15 @@ const meshConfigSchema = z.object({
     enabled: z.boolean().default(true),
     skipTypes: z.array(z.string().min(1)).default(["task:step"]),
   }).default({}),
+  /** Agent-to-agent delegation (#277), local or across peers. When a person
+   *  started the conversation, a delegation returns at once and the answer
+   *  comes back to the asking agent as a new turn in the same chat. */
+  delegation: z.object({
+    /** Off: every delegation waits for its answer, as before. */
+    asyncWhenHuman: z.boolean().default(true),
+    /** A delegation with no answer after this long is reported as timed out. */
+    timeoutMinutes: z.number().int().min(1).max(240).default(30),
+  }).default({}),
 })
 
 /** Intent Knowledge Graph — fixed-axis, LLM-proposed taxonomy used by the

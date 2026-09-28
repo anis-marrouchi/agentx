@@ -581,6 +581,11 @@ export class AgentRegistry {
    *  to drop the orphan cancelled turn from history so the Update reads as an
    *  edit, not a bare follow-up. */
   private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
+  /** The context each running task was started with, by RunningTask id.
+   *  Kept apart from RunningTask because /agents serialises that, and a
+   *  context can carry a whole conversation history. Read by A2A
+   *  delegation to find who started the caller's turn (#277). */
+  private runningContexts = new Map<string, NonNullable<AgentTask["context"]>>()
   /** Idempotent cleanup per running task id, for runs that end before their
    *  own `finally` can run. */
   private runReleases: Map<string, (response: AgentResponse | undefined) => void> = new Map()
@@ -1076,8 +1081,10 @@ export class AgentRegistry {
       // withRoot: a queued one would be flushed from the earlier run and
       // publish under that run's rootId, or merge with it in collect mode.
       // The phone app ("app") streams its answer back over the open request
-      // and has no adapter either, so it waits the same way.
-      if (qChannel === "api" || qChannel === "app" || qChannel === "reminder" || qChannel === "events" || restricted) {
+      // and has no adapter either, so it waits the same way. Agent-to-agent
+      // runs ("a2a", "mcp") are awaited by the delegating agent or by a
+      // delegation callback (#277), and have no adapter to flush to.
+      if (qChannel === "api" || qChannel === "app" || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || restricted) {
         const start = Date.now()
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
@@ -1167,6 +1174,7 @@ export class AgentRegistry {
     }
     state.runningTasks.push(runningTask)
     task.runningTaskId = runningTask.id
+    this.runningContexts.set(runningTask.id, task.context ?? {})
     if (task.onStart) { try { task.onStart(runningTask.id) } catch { /* caller bug must not break the run */ } }
 
     // AbortController for operator stop / replace. Stored under the running
@@ -1304,6 +1312,7 @@ export class AgentRegistry {
       // Remove this run from the running-tasks list.
       const idx = state.runningTasks.findIndex((r) => r.id === runningTask.id)
       if (idx !== -1) state.runningTasks.splice(idx, 1)
+      this.runningContexts.delete(runningTask.id)
       // Drop the abort entry — the controller is unreachable after this point
       // and a future cancel for the same id should 404, not silently no-op.
       this.taskAborts.delete(runningTask.id)
@@ -2812,6 +2821,35 @@ export class AgentRegistry {
       if (t) return { agentId: s.id, channel: t.channel, chatId: t.chatId }
     }
     return null
+  }
+
+  /** A running turn of `agentId` and the context it started with, for
+   *  A2A delegation (#277). With `taskId` it must be that run; with a
+   *  channel and chat it must be the run on that chat; with neither it is
+   *  the agent's only running turn (null when it has several). */
+  findRunningTurn(
+    agentId: string,
+    by: { taskId?: string; channel?: string; chatId?: string } = {},
+  ): { taskId: string; context: NonNullable<AgentTask["context"]> } | null {
+    const state = this.agents.get(agentId)
+    if (!state) return null
+    let run: RunningTask | undefined
+    if (by.taskId) {
+      run = state.runningTasks.find((r) => r.id === by.taskId)
+    } else if (by.channel && by.chatId) {
+      const matches = state.runningTasks.filter((r) => r.channel === by.channel && r.chatId === by.chatId)
+      run = matches.length === 1 ? matches[0] : undefined
+    } else if (state.runningTasks.length === 1) {
+      run = state.runningTasks[0]
+    }
+    if (!run) return null
+    const context = this.runningContexts.get(run.id)
+    return context ? { taskId: run.id, context } : null
+  }
+
+  /** True while `agentId` has a turn running on this chat. */
+  isChatBusy(agentId: string, channel: string, chatId: string): boolean {
+    return this.messageQueue.isBusy(agentId, channel, chatId)
   }
 
   /**

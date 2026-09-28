@@ -188,6 +188,11 @@ export interface AgentTask {
     runbookPath?: string
     /** Override list of files to read from runbookPath. Optional. */
     runbookFiles?: string[]
+    /** Root of an agent-to-agent chain (a2a/initiator.ts). Set on every
+     *  delegated hop, forwarded across mesh peers with the context. */
+    initiator?: import("@/a2a/initiator").RootInitiator
+    /** Set on a callback turn: the delegation whose result it carries. */
+    delegation?: { taskId: string; from: string; peer?: string; status: string }
   }
 }
 
