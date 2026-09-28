@@ -153,7 +153,10 @@ export function stripAgentxMarkers(body: string): string {
     prev = body
     body = body.replace(/\n*<!--\s*agentx:[^>]*?\s*-->/g, "")
   } while (body !== prev)
-  return body
+  // A marker can still form once detection drops inline code
+  // ("<!-`x`- agentx:id -->"). Then escape every "<": detection can remove
+  // characters but never add one, so no marker survives.
+  return detectAgentxMarker(body) ? body.replace(/</g, "&lt;") : body
 }
 
 /** Convenience for the Phase 2 self-reply-guard pipeline stage. */

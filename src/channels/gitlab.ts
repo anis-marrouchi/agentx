@@ -1529,17 +1529,6 @@ export class GitLabAdapter implements ChannelAdapter {
     }
   }
 
-  /**
-   * Check if a username belongs to a known bot/agent user — local tokens,
-   * configured usernames, auto-derived ids, OR an agent hosted on a mesh
-   * peer (its GitLab usernames travel as agent-card skill tags, the same
-   * source resolveAgentFromMention uses). Without the mesh check, a peer
-   * agent's own API actions (replies, time logs → issue:update webhooks)
-   * look like human activity on the webhook node and re-dispatch agents
-   * in a feedback loop.
-   */
-  /** True for a GitLab user AgentX posts as: the owner of one of its
-   *  tokens, or a configured gitlabUsernames entry (the loop guard's list). */
   /** Is an issue/MR description ours to trust? The event's `user` is
    *  whoever triggered it (an assign, an edit), not the author, so the
    *  description keeps its marker only when an account AgentX posts with
@@ -1549,12 +1538,23 @@ export class GitLabAdapter implements ChannelAdapter {
     return event.user.id != null && authorId != null && event.user.id === authorId && this.postsAs(event.user.username)
   }
 
+  /** True for a GitLab user AgentX posts as: the owner of one of its
+   *  tokens, or a configured gitlabUsernames entry (the loop guard's list). */
   postsAs(username: string): boolean {
     const lc = username.toLowerCase()
     if (this.postingUsernames.has(lc)) return true
     return mappedForgeUsernames(this.config.agentMappings, "gitlabUsernames").some((u) => u.toLowerCase() === lc)
   }
 
+  /**
+   * Check if a username belongs to a known bot/agent user — local tokens,
+   * configured usernames, auto-derived ids, OR an agent hosted on a mesh
+   * peer (its GitLab usernames travel as agent-card skill tags, the same
+   * source resolveAgentFromMention uses). Without the mesh check, a peer
+   * agent's own API actions (replies, time logs → issue:update webhooks)
+   * look like human activity on the webhook node and re-dispatch agents
+   * in a feedback loop.
+   */
   private isBotUser(username: string): boolean {
     if (this.botUsernames.has(username)) return true
     if (!this.mesh) return false
