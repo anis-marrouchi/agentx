@@ -82,6 +82,8 @@ An announcement is a short note to every machine in the mesh, for example planne
 
 The daemon publishes one `announce` event, and every other machine picks it up through its feed. Programs can do the same with `POST /mesh/announce` and a body of `{ "text": "…", "by": "…" }`. Off this machine that request needs `Authorization: Bearer <mesh-token>`. Text longer than 2,000 characters is refused, and the summary keeps the first 280.
 
+The phone app lists recent announcements from every machine in its **Alerts** tab and can send a notification for each new one. See [Announcements on the phone](/dashboard/mobile-alerts#announcements).
+
 ## In code
 
 ```ts
