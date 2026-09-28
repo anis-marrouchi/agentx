@@ -289,7 +289,9 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
           kind: CALLBACK_REPLY_KIND,
           type: CALLBACK_REPLY_TYPE,
           agentId: msg.agentId,
-          summary: `${msg.agentId} replied after a delegation: ${msg.text}`,
+          // No reply text here: events reach the mesh feed; the text stays behind
+          // the mesh-gated GET /a2a/delegations/<id>/reply.
+          summary: `${msg.agentId} replied after a delegation (${msg.outcome})`,
           ref: reply.taskId,
         })
         return
