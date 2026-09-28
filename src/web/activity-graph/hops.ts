@@ -22,8 +22,11 @@ export function delegatorOf(d: FleetDispatch): string | null {
   return d.initiatorId
 }
 
-/** Clock slack between mesh nodes and between "asked" and "recorded". */
+/** How long after its run ended an agent may still be the one asking
+ *  (the run is recorded as resolved before its last message lands). */
 const SLACK_MS = 30_000
+/** Clock difference allowed between mesh nodes. */
+const SKEW_MS = 5_000
 /** Longest chain followed; guards against runaway data. */
 const MAX_DEPTH = 12
 
@@ -51,20 +54,22 @@ export interface Origin {
 
 const originChannelOf = (d: FleetDispatch) => d.root?.channel ?? d.channelId
 
-/** The sender's run in progress when it sent `d`. A run on the channel the
- *  root names is preferred; then the latest start. */
+/** The sender's run in progress when it sent `d`. Preferred, in order: a run
+ *  on the channel the root names, one that started before `d` (a later one
+ *  only within clock skew), then the latest start. */
 export function parentOf(d: FleetDispatch, pool: FleetDispatch[]): FleetDispatch | undefined {
   const sender = delegatorOf(d)
   if (!sender) return undefined
-  const fits = (p: FleetDispatch) => !d.root || originChannelOf(p) === d.root.channel
+  const rank = (p: FleetDispatch) => [Number(!d.root || originChannelOf(p) === d.root.channel), Number(p.startedAt <= d.startedAt), p.startedAt]
+  const better = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
   let best: FleetDispatch | undefined
   for (const p of pool) {
     if (p.agentId !== sender || p.id === d.id) continue
     // The turn that carries this hop's own answer back is not its parent.
     if (p.callback?.from === d.agentId && p.startedAt >= d.startedAt) continue
-    if (p.startedAt > d.startedAt + SLACK_MS) continue
+    if (p.startedAt > d.startedAt + SKEW_MS) continue
     if (!p.active && (p.resolvedAt ?? p.startedAt) + SLACK_MS < d.startedAt) continue
-    if (!best || Number(fits(p)) - Number(fits(best)) > 0 || (fits(p) === fits(best) && p.startedAt > best.startedAt)) best = p
+    if (!best || better(rank(p), rank(best)) > 0) best = p
   }
   return best
 }
@@ -154,7 +159,7 @@ export function askOf(cb: FleetDispatch, pool: FleetDispatch[]): FleetDispatch |
   if (!c) return undefined
   let best: FleetDispatch | undefined
   for (const p of pool) {
-    if (p.agentId !== c.from || delegatorOf(p) !== cb.agentId || p.startedAt > cb.startedAt + SLACK_MS) continue
+    if (p.agentId !== c.from || delegatorOf(p) !== cb.agentId || p.startedAt > cb.startedAt + SKEW_MS) continue
     const onPeer = (x: FleetDispatch) => Number(!c.peer || x.nodeId === c.peer)
     if (!best || onPeer(p) > onPeer(best) || (onPeer(p) === onPeer(best) && p.startedAt > best.startedAt)) best = p
   }

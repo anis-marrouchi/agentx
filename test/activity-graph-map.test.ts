@@ -359,6 +359,17 @@ describe("hop chains and true origin", () => {
     expect(tt.trains).toHaveLength(1)
   })
 
+  it("never takes a run the sender started well after the hop as its parent", () => {
+    const ds = [
+      chat("secretary-agent", "voice", 100_000, { active: false, resolvedAt: 103_000 }),
+      ask("devops-agent", "secretary-agent", 103_500),
+      hookRun("secretary-agent", 127_000),
+    ]
+    const t = trainOf(ds, "devops-agent")
+    expect(t.channel).toBe("voice")
+    expect(t.route).toEqual(["secretary-agent", "devops-agent"])
+  })
+
   it("keeps the full chain when a filter hides the runs that started it", () => {
     const root = { kind: "human" as const, channel: "voice", agentId: "secretary-agent" }
     const all = [
