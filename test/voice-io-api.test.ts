@@ -107,7 +107,7 @@ describe("POST /voice/transcribe", () => {
     expect(r.status).toBe(503)
     const j = await r.json()
     expect(j.error).toMatch(/isn't set up/)
-    expect(j.hint).toMatch(/ElevenLabs key.*mlx-whisper and ffmpeg/)
+    expect(j.hint).toMatch(/^Install ffmpeg on this computer.*ElevenLabs key.*mlx-whisper and ffmpeg/)
     expect(calls).toEqual([])
     expect(sttSetupHint("auto", { key: null, mlx: "/x", whisper: null, ffmpeg: null })).toMatch(/no ffmpeg/)
   })
@@ -156,16 +156,33 @@ describe("POST /voice/transcribe", () => {
     expect((await transcribe(AUDIO)).status).toBe(200)
   })
 
-  it("refuses a recording ffmpeg can't read, and relies on the byte cap without ffmpeg", async () => {
+  it("refuses a recording ffmpeg can't read", async () => {
     deps.measure = async () => null
     const r = await transcribe(AUDIO)
     expect(r.status).toBe(422)
     expect(calls).toEqual([])
+  })
+
+  it("refuses phone voice input where ffmpeg is missing, even with an ElevenLabs key", async () => {
+    // Nothing can measure the length, and 2 MB holds ~40 minutes of opus.
+    deps.host = () => ({ ...host, ffmpeg: null })
+    deps.nodeName = "office-mac"
+    const r = await transcribe(AUDIO)
+    expect(r.status).toBe(503)
+    const j = await r.json()
+    expect(j.hint).toBe("Install ffmpeg on office-mac for voice input from the phone.")
+    expect(j.setup).toBe(false)
+    expect(calls).toEqual([])
+  })
+
+  it("takes unmeasured recordings under the byte cap with voice.allowUnmeasured", async () => {
     let measured = false
     deps.measure = async () => { measured = true; return null }
     deps.host = () => ({ ...host, ffmpeg: null })
-    expect((await transcribe(AUDIO)).status).toBe(200)
+    deps.allowUnmeasured = () => true
+    expect(await (await transcribe(AUDIO)).json()).toEqual({ text: "hello from scribe", engine: "elevenlabs" })
     expect(measured).toBe(false)
+    expect((await transcribe(Buffer.alloc(AUDIO_LIMITS.bytes + 1))).status).toBe(413)
   })
 
   it(`runs at most ${MAX_TRANSCRIBING} transcriptions at once`, async () => {

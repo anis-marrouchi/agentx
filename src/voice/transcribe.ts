@@ -96,9 +96,13 @@ export function detectSttHost(key: string | null): SttHost {
     key,
     mlx: findBinary("mlx_whisper", process.env.AGENTX_MLX_WHISPER),
     whisper: findBinary("whisper", process.env.AGENTX_WHISPER),
-    ffmpeg: findBinary("ffmpeg", process.env.AGENTX_FFMPEG),
+    ffmpeg: findFfmpeg(),
   }
 }
+
+/** The ffmpeg this process would use, from its own PATH (a launchd or
+ *  systemd service's PATH is not the shell's). */
+export const findFfmpeg = (): string | null => findBinary("ffmpeg", process.env.AGENTX_FFMPEG)
 
 /** Seconds of audio in a file, measured, not taken from the phone or from
  *  the container's stated duration (which the sender writes): ffmpeg
