@@ -110,6 +110,7 @@ Click the AgentX icon in the menu bar, or press **Command–Option–A** from an
 | **Talk to** (your agents) | The ticked agent answers your questions. Click another one, or press its number (**1** to **9**) while the menu is open. Each row shows what the agent is doing: **idle**, **thinking**, **speaking**, **working** on something else, or **queued 2** when two answers wait to be spoken. The app remembers your choice |
 | **Agent (set by AGENTX_VOICE_AGENT)** | Shown instead of **Talk to** when the app was installed with `--agent`. The agent can't be changed from the menu |
 | **Loading agents…** | The app is asking the daemon for your agents |
+| **No agents configured** | The daemon answered but has no agents. Add one to `agentx.json` |
 | **AgentX daemon isn't reachable** and **Retry** | The app can't reach the daemon. Start it, then choose **Retry** (or press **R**) |
 | **Stop speaking** | Stops every voice on the Mac and drops the answers still waiting. Same as **Command–Option–.** |
 | **Hold notifications** | A "don't interrupt me" switch. While ticked, agent notifications wait and the orb turns amber. Untick it to let them through |
@@ -247,11 +248,11 @@ The settings window writes most of these for you. You can also edit `agentx.json
 
 Agents on other AgentX computers in your mesh can get a voice here too, under `meshVoices.<agent-id>`, with the same keys except `rate`, `priority` and `hotkey`, plus `name` (what to call the agent aloud).
 
-A shortcut is written as modifiers and a key joined by `+`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`. Keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `return` or `tab`.
+A shortcut is written as modifiers and a key joined by `+`. Modifiers are `ctrl`, `opt`, `shift` and `cmd`. Keys are a letter, a digit, `f1` to `f20`, or `space`, `period`, `comma`, `slash`, `semicolon`, `quote`, `minus`, `equal`, `leftbracket`, `rightbracket`, `backslash`, `grave`, `return` or `tab`. You can also type the character itself: `.` `,` `/` `;` `'` `-` `=` and `` ` ``, and `enter` for `return`.
 
 ### Settings kept on the Mac only
 
-These are menu choices, saved by macOS for your user, not in `agentx.json`.
+These are menu choices, not in `agentx.json`. macOS saves them for your user, except **Hold notifications**, which is kept in `~/.agentx/focus.json` so that `agentx notify` in the daemon and in your agents can read it. A macOS Focus also holds notifications, and the two don't override each other.
 
 | Setting | Default |
 |---|---|
@@ -273,6 +274,9 @@ These are menu choices, saved by macOS for your user, not in `agentx.json`.
 | `AGENTX_VOICE_PROVIDER` | `system` | The engine for lines spoken before the daemon names one, such as an error |
 | `AGENTX_MLX_WHISPER` | `~/.local/bin/mlx_whisper` | The Whisper program on your Mac |
 | `AGENTX_MLX_MODEL` | `mlx-community/whisper-large-v3-turbo` | The Whisper model |
+| `AGENTX_STT_MODEL` | `scribe_v1` | The ElevenLabs speech-to-text model |
+| `AGENTX_TTS_MODEL` | `eleven_turbo_v2_5` | The ElevenLabs voice model |
+| `AGENTX_PASTE_COMMAND` | the line in `~/.agentx/paste-command.txt`, else `agentx paste` | The command **Smart paste** runs. The app also uses it to find `agentx notify` |
 | `AGENTX_VOICE_PATH` | the folder of `ffmpeg` plus macOS's standard folders | Read by the installer only: the `PATH` the app starts with |
 
 An app started at login doesn't see variables set in your terminal. Keep keys in a key file rather than in your shell profile.
