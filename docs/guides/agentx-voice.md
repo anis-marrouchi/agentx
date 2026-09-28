@@ -237,13 +237,30 @@ Start with an agent's name to send just that question to it. The ticked agent st
 2. Say the agent's name first, then the question: "Researcher, what's the status?"
 3. Let go. The pill shows the agent you named while it answers.
 
-The name can be the agent's id, its name, or one of its mentions in `agentx.json`. Capital letters don't matter. If no agent matches, or more than one does, the ticked agent answers. An agent with its own **Ask with shortcut** can also be asked by holding that shortcut instead.
+The name can be the agent's id, its name, or one of its mentions in `agentx.json`. Capital letters don't matter. Only the first word or two count, so "ask Researcher later" is an ordinary question for the ticked agent. If no agent matches, or more than one does, the ticked agent answers. An agent with its own **Ask with shortcut** can also be asked by holding that shortcut instead.
+
+**Agents on your other computers.** If you link several computers running AgentX (a *mesh*), you can ask any agent on them by name the same way: "Planner, what's the status?" reaches the agent called Planner on the other computer, and the answer is spoken here. Only computers that are online right now count. If two computers each have an agent with that name, the name is ambiguous and the ticked agent answers; ask by the agent's id instead.
 
 ### Ask several agents at once
 
 1. **Mac:** ask one agent something that takes a while.
 2. While it thinks, hold **Option–Space** and ask another agent by name.
 3. Both agents work at the same time. Each answer is spoken when it arrives, one after the other.
+
+While more than one agent is busy, a row of small orbs appears in the pill, one per agent in its colours. The big orb on the left keeps following the agent that is listening or speaking.
+
+![Three pills with mini orbs, light mode: Writer drafting with small Writer and Planner orbs, both with a ring going round; Ops saying its answer with an Ops orb, a Planner orb with a 1 badge for one more question waiting and a Researcher orb with a steady ring; and the idle pill with one Planner orb still thinking](/screenshots/voice/pill-mini-orbs-light.png)
+
+![The same pills in dark mode](/screenshots/voice/pill-mini-orbs-dark.png)
+
+| Small orb | What it means |
+|---|---|
+| A ring goes round it | The agent is thinking on your question |
+| A steady ring | Its answer is ready and waits its turn to be spoken |
+| It pulses | Its answer is being spoken |
+| A number on it | More questions wait for that agent |
+
+Point at a small orb to see the agent's name and the computer it runs on. The small orbs never take clicks: clicking or dragging the pill works as before. The row goes away once only one agent is left working on what the big orb shows.
 
 Open the menu to see each agent's state. If you ask the same agent again while it is still thinking on your question, your new words replace the old question. More rules are in [Ask several agents at once](../dashboard/voice.md#ask-several-agents-at-once).
 
@@ -368,9 +385,11 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 3. **Mac:** hold **Option–Space**, say "What can you do?", then let go.
 4. **Mac:** the pill shows **Listening**, then a ring while the agent thinks, then the answer while it is spoken aloud.
 5. **Mac:** hold **Option–Space** again and say another agent's name before a question. The pill names that agent while it answers, and the ticked agent stays ticked in the menu.
-6. **Mac:** while an answer plays, press **Command–Option–.**. The voice stops at once.
-7. **Mac:** open **History…** from the menu. Your questions are listed under **Today**.
-8. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice.
+6. **Mac:** ask one agent something long, then at once ask a second agent by name. The pill shows two small orbs until both have answered.
+7. **Mac (with a mesh):** ask an agent on another computer by name. While it thinks, the menu lists it with that computer's name in brackets.
+8. **Mac:** while an answer plays, press **Command–Option–.**. The voice stops at once.
+9. **Mac:** open **History…** from the menu. Your questions are listed under **Today**.
+10. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice.
 
 ## If something is wrong
 
@@ -384,7 +403,8 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **The pill doesn't show:** it was closed with **×**, **Esc** or **Hide pill**. Hold **Option–Space** to bring it back. If it is off screen, choose **Reset position** in the menu.
 - **Option–Space does nothing:** another app already uses that shortcut. Pick another **Talk (hold)** shortcut in **Settings… › General**. The app log, `~/Library/Logs/agentx-desktop.err.log`, says `is taken by another app`.
 - **The menu can't switch agents:** the app was installed with `--agent`. **Terminal:** run `agentx desktop install` again without it.
-- **A question by name went to the ticked agent:** the name matched no agent, or more than one. Check names and mentions with `agentx agent list`.
+- **A question by name went to the ticked agent:** the name matched no agent, or more than one. Check names and mentions with `agentx agent list`. For an agent on another computer, check that computer is online: **Terminal:** run `agentx mesh list`; it should say `healthy`. Two computers with an agent of the same name make the name ambiguous; say the agent's id instead.
+- **Two agents are busy but the pill shows no small orbs:** the pill was closed or **Show floating pill** hides it when idle; hold **Option–Space** to bring it back. The row also shows only questions asked from this Mac.
 - **History is empty or says the daemon isn't reachable:** History reads from the daemon. Start it, then choose **Refresh**.
 - **Save in the settings window shows a red message:** a shortcut is used twice. Change one of them and save again.
 - **Where to find the logs:** the app keeps its own log in `~/Library/Logs/agentx-voice.log`, whichever way you installed it. Crash messages and anything else it prints go to a second file that depends on how you installed it: `~/Library/Logs/agentx-desktop.err.log` after `agentx desktop install`, or `~/Library/Logs/agentx-voice.err.log` after `apps/mac-voice/install.sh`. The installer prints this second path when it finishes. **Terminal:** run `tail -n 50 <path>` to see the latest lines.
