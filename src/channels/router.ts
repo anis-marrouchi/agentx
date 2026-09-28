@@ -1071,6 +1071,7 @@ export class MessageRouter {
             replyTo: msg.id,
             parseMode: "plain",
             accountId: replyAccountId,
+            agentId,
           })
         }
       } else {
@@ -1081,6 +1082,7 @@ export class MessageRouter {
           replyTo: msg.id,
           parseMode: "plain",
           accountId: replyAccountId,
+          agentId,
         })
       }
       return
@@ -1340,6 +1342,7 @@ export class MessageRouter {
             chatId,
             text: replyText,
             accountId: targetAccountId,
+            agentId: id,
           })
 
           // Chain: check if this response also mentions another agent
@@ -1711,6 +1714,7 @@ export class MessageRouter {
                 text: header + response,
                 replyTo: msg.id,
                 accountId: replyAccountId,
+                agentId: skill.id,
               })
             }
 
@@ -1778,6 +1782,7 @@ export class MessageRouter {
             text: response,
             replyTo: msg.id,
             accountId: replyAccountId,
+            agentId,
           })
         }
 

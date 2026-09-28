@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, See
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
-import { markBody, detectAgentxMarker, stripAgentxMarkers } from "./outbound-marker"
+import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeSender, forgeAuthorLabel } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
@@ -683,12 +683,10 @@ export class GitLabAdapter implements ChannelAdapter {
       id: String(event.object_attributes.id),
       channel: "gitlab",
       accountId: "default",
-      sender: {
-        id: chatId,
-        name: user.name,
-        username: user.username,
-      },
-      text: `[GitLab ${project} ${noteableType} #${noteableIid}: ${noteableTitle}]\n${user.name} commented:\n${noteClean}`,
+      // A signed note is an agent's handoff even when it was posted with a
+      // person's token (#282) — the signature, read before stripping, says so.
+      sender: forgeSender(note, { id: chatId, name: user.name, username: user.username }),
+      text: `[GitLab ${project} ${noteableType} #${noteableIid}: ${noteableTitle}]\n${forgeAuthorLabel(note, user.name)} commented:\n${noteClean}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: targetAgentId,
