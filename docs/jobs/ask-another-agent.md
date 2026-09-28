@@ -21,7 +21,8 @@ It applies when a person started the conversation on one of these: Telegram, Wha
 The update needs a way back to you:
 
 - Chat apps, GitLab and GitHub: the update is posted in the same chat or thread.
-- Phone app, voice and dashboard chat: the update arrives as a phone notification. This needs [phone notifications](../dashboard/mobile-alerts.md) set up. Without them, your agent waits for the helper's answer as before.
+- Phone app, typed or spoken: the update is added to the same conversation in the app's **Chat** tab. It is marked **New**, so it shows in the conversation strip, as a banner and in the spoken answers, like any answer that finishes while you look elsewhere. With the app closed, you get the usual [notification when a chat answer finishes](../dashboard/mobile-alerts.md#notifications-when-a-chat-answer-finishes), if that switch is on for your phone. This works for agents on other machines too.
+- Voice on the computer and the dashboard's **Ask an agent** panel: these have no conversation the update can be added to, so it arrives as a phone notification. This needs [phone notifications](../dashboard/mobile-alerts.md) set up. Without them, your agent waits for the helper's answer as before. Your agent still has the update when you next ask it.
 
 ## Settings
 
@@ -77,4 +78,5 @@ Some requests are refused straight away with status `409`:
 - **You get "did not answer in time":** the helper took longer than `mesh.delegation.timeoutMinutes`. Raise it, or ask for a smaller piece of work.
 - **You get "was lost":** the machine restarted while the helper worked. Ask your agent to try again.
 - **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.
+- **The phone conversation gets no update:** the dashboard files it within a few seconds of the agent replying. Check that the dashboard is running (`agentx board serve`). For an agent on another machine, that machine must be up, and the dashboard needs a token for it: the shared mesh token (`MESH_TOKEN`), or its entry in `dashboard.daemons`. The update waits for the dashboard for up to a day, and is dropped if AgentX on that machine restarts first. Your agent still has it when you next ask.
 - **The status list is empty:** only delegations since the last restart are listed, and only on the machine that runs the asking agent.

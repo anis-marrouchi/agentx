@@ -85,6 +85,8 @@ A row of *chips*, small rounded buttons, appears at the top of Chat: one for eac
 
 ### When an answer finishes out of sight
 
+This also covers an agent that asked another agent for help and comes back later with the result: its update is added to the conversation as a new answer. See [When an agent asks another agent](../jobs/ask-another-agent.md).
+
 When an agent finishes in a conversation you are not looking at:
 
 - **App open:** a banner slides in at the top with the agent's name and the first line of its answer. Tap it to open that conversation, or tap **×** to close it. It goes away by itself after about 6 seconds. When several answers finish together, their banners show one after another.
