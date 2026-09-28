@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
-import { agentHeader, forgeAuthorLabel, forgeSender, markBody, ownEchoOf } from "./outbound-marker"
+import { agentHeader, forgeAuthorLabel, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
 //
@@ -183,6 +183,10 @@ export class GitHubAdapter implements ChannelAdapter {
   private handler?: (msg: IncomingMessage) => Promise<void>
   private globalToken?: string
   private botUsernames: Set<string> = new Set()
+  /** Logins AgentX posts with: the App bot and the owners of its PATs.
+   *  Only their comments may carry an agent's signature (#282). Configured
+   *  githubUsernames are read live from the config, see postsAs. */
+  private postingLogins: Set<string> = new Set()
   private sentCommentIds: Set<string> = new Set()
   private log: (...args: unknown[]) => void
   private sendCommentForwarder?: (node: string, repo: string, issueNumber: number, agentId: string, text: string) => Promise<string>
@@ -229,7 +233,10 @@ export class GitHubAdapter implements ChannelAdapter {
           const data = await res.json() as any
           this.log(`GitHub App: "${data.name}" (slug: ${data.slug})`)
           // Add the app's bot username to cascade prevention
-          if (data.slug) this.botUsernames.add(`${data.slug}[bot]`.toLowerCase())
+          if (data.slug) {
+            this.botUsernames.add(`${data.slug}[bot]`.toLowerCase())
+            this.postingLogins.add(`${data.slug}[bot]`.toLowerCase())
+          }
         } else {
           this.log(`GitHub App auth failed: ${res.status} ${await res.text().catch(() => "")}`)
         }
@@ -249,11 +256,27 @@ export class GitHubAdapter implements ChannelAdapter {
           if (res.ok) {
             const data = await res.json() as any
             this.log(`GitHub PAT fallback: ${data.login}`)
+            if (data.login) this.postingLogins.add(String(data.login).toLowerCase())
           }
         } catch (e: any) {
           this.log(`Failed to resolve GitHub user: ${e.message}`)
         }
       }
+    }
+
+    // Per-agent PATs post as their owners: those logins sign agent comments too.
+    for (const mapping of this.config.agentMappings || []) {
+      const token = this.resolveToken(mapping.token, mapping.tokenFile)
+      if (!token) continue
+      try {
+        const res = await fetch("https://api.github.com/user", {
+          headers: { Authorization: `Bearer ${token}`, "User-Agent": "AgentX" },
+        })
+        if (res.ok) {
+          const data = await res.json() as any
+          if (data.login) this.postingLogins.add(String(data.login).toLowerCase())
+        }
+      } catch { /* the configured githubUsernames still apply */ }
     }
 
     // Register agent mapping usernames for cascade prevention
@@ -481,6 +504,14 @@ export class GitHubAdapter implements ChannelAdapter {
       return
     }
 
+    // Our own post that named no agent. Only from an account we post with:
+    // anyone can type the signature.
+    const trusted = this.postsAs(user.login)
+    if (isUnattributedEcho(comment.body, trusted)) {
+      this.log(`AgentX comment with no agent from ${user.login}, skipping its own echo (comment ${comment.id})`)
+      return
+    }
+
     const commentId = String(comment.id)
     if (this.sentCommentIds.has(commentId)) {
       this.log(`[github] echo skip: comment ${commentId} matched our own post`)
@@ -503,8 +534,8 @@ export class GitHubAdapter implements ChannelAdapter {
       accountId: "default",
       // Another agent's comment posted with the owner's token is the agent
       // speaking, not the owner (#282).
-      sender: forgeSender(comment.body, { id: chatId, name: user.login, username: user.login }),
-      text: `[GitHub ${isPR ? "PR" : "Issue"} #${event.issue.number}: ${event.issue.title}]\n${forgeAuthorLabel(comment.body, user.login)} commented:\n${comment.body}`,
+      sender: forgeSender(comment.body, { id: chatId, name: user.login, username: user.login }, trusted),
+      text: `[GitHub ${isPR ? "PR" : "Issue"} #${event.issue.number}: ${event.issue.title}]\n${forgeAuthorLabel(comment.body, user.login, trusted)} commented:\n${comment.body}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -589,6 +620,8 @@ export class GitHubAdapter implements ChannelAdapter {
 
     // Skip the agent's own signed review; other agents' reviews pass
     if (review.body && ownEchoOf(review.body, this.resolveAgent(repo))) return
+    const reviewTrusted = this.postsAs(review.user.login)
+    if (isUnattributedEcho(review.body, reviewTrusted)) return
 
     // Only handle reviews with actual content
     if (review.state === "commented" && !review.body) return
@@ -601,8 +634,8 @@ export class GitHubAdapter implements ChannelAdapter {
       id: `review-${review.id}`,
       channel: "github",
       accountId: "default",
-      sender: forgeSender(review.body, { id: chatId, name: review.user.login, username: review.user.login }),
-      text: `[GitHub PR #${event.pull_request.number} Review (${review.state})]: ${event.pull_request.title}\n${forgeAuthorLabel(review.body, review.user.login)} reviewed:\n${review.body || "(no body)"}`,
+      sender: forgeSender(review.body, { id: chatId, name: review.user.login, username: review.user.login }, reviewTrusted),
+      text: `[GitHub PR #${event.pull_request.number} Review (${review.state})]: ${event.pull_request.title}\n${forgeAuthorLabel(review.body, review.user.login, reviewTrusted)} reviewed:\n${review.body || "(no body)"}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -622,6 +655,8 @@ export class GitHubAdapter implements ChannelAdapter {
 
     // Skip the agent's own signed comments; other agents' reviews pass
     if (ownEchoOf(comment.body, this.resolveAgent(repo))) return
+    const commentTrusted = this.postsAs(comment.user.login)
+    if (isUnattributedEcho(comment.body, commentTrusted)) return
 
     const chatId = `${repo}:pull:${event.pull_request.number}`
     const agentId = this.resolveAgent(repo)
@@ -631,8 +666,8 @@ export class GitHubAdapter implements ChannelAdapter {
       id: `review-comment-${comment.id}`,
       channel: "github",
       accountId: "default",
-      sender: forgeSender(comment.body, { id: chatId, name: comment.user.login, username: comment.user.login }),
-      text: `[GitHub PR #${event.pull_request.number} Review Comment]: ${event.pull_request.title}\n${forgeAuthorLabel(comment.body, comment.user.login)} commented on ${comment.path}:${comment.line}:\n${comment.body}`,
+      sender: forgeSender(comment.body, { id: chatId, name: comment.user.login, username: comment.user.login }, commentTrusted),
+      text: `[GitHub PR #${event.pull_request.number} Review Comment]: ${event.pull_request.title}\n${forgeAuthorLabel(comment.body, comment.user.login, commentTrusted)} commented on ${comment.path}:${comment.line}:\n${comment.body}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
@@ -738,6 +773,14 @@ export class GitHubAdapter implements ChannelAdapter {
       }
     }
     return undefined
+  }
+
+  /** True for a login AgentX posts with (App bot, a PAT owner, or a
+   *  configured githubUsernames entry — the loop guard's list). */
+  postsAs(login: string): boolean {
+    const lc = login.toLowerCase()
+    if (this.postingLogins.has(lc)) return true
+    return mappedForgeUsernames(this.config.agentMappings, "githubUsernames").some((u) => u.toLowerCase() === lc)
   }
 
   private isBotUser(username: string): boolean {

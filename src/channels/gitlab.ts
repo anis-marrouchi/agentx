@@ -2,7 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta, See
 import { createServer, type IncomingMessage as HttpRequest, type ServerResponse } from "http"
 import { debug } from "@/observability/debug"
 import type { HookRegistry } from "@/hooks"
-import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeSender, forgeAuthorLabel } from "./outbound-marker"
+import { markBody, detectAgentxMarker, stripAgentxMarkers, forgeSender, forgeAuthorLabel, mappedForgeUsernames } from "./outbound-marker"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordGitLabTargetDispatch, recordGitLabNoteDispatch, recordGitLabIssueLevelDecision } from "@/intent/sources/gitlab"
@@ -146,6 +146,11 @@ export class GitLabAdapter implements ChannelAdapter {
   private server?: ReturnType<typeof createServer>
   private botUsername?: string  // resolved on first API call
   private botUsernames: Set<string> = new Set()  // all known bot users (to prevent cascading)
+  /** Users AgentX posts notes as, resolved from its own tokens. Only their
+   *  notes may carry an agent's signature (#282). Configured
+   *  gitlabUsernames are read live from the config, see postsAs. Unlike
+   *  botUsernames, names merely derived from agent ids do not count. */
+  private postingUsernames: Set<string> = new Set()
   private sentNoteIds: Set<string> = new Set()  // track our own comments
   /** Maps actual GitLab username -> agentId (resolved from tokens at startup) */
   private usernameToAgent: Map<string, string> = new Map()
@@ -277,6 +282,7 @@ export class GitLabAdapter implements ChannelAdapter {
       if (result.status === "fulfilled") {
         const { label, username } = result.value
         this.botUsernames.add(username)
+        this.postingUsernames.add(username.toLowerCase())
         if (label === "global") {
           this.botUsername = username
           this.log(`Global bot user: ${username}`)
@@ -685,8 +691,8 @@ export class GitLabAdapter implements ChannelAdapter {
       accountId: "default",
       // A signed note is an agent's handoff even when it was posted with a
       // person's token (#282) — the signature, read before stripping, says so.
-      sender: forgeSender(note, { id: chatId, name: user.name, username: user.username }),
-      text: `[GitLab ${project} ${noteableType} #${noteableIid}: ${noteableTitle}]\n${forgeAuthorLabel(note, user.name)} commented:\n${noteClean}`,
+      sender: forgeSender(note, { id: chatId, name: user.name, username: user.username }, this.postsAs(user.username)),
+      text: `[GitLab ${project} ${noteableType} #${noteableIid}: ${noteableTitle}]\n${forgeAuthorLabel(note, user.name, this.postsAs(user.username))} commented:\n${noteClean}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: targetAgentId,
@@ -1526,6 +1532,14 @@ export class GitLabAdapter implements ChannelAdapter {
    * look like human activity on the webhook node and re-dispatch agents
    * in a feedback loop.
    */
+  /** True for a GitLab user AgentX posts as: the owner of one of its
+   *  tokens, or a configured gitlabUsernames entry (the loop guard's list). */
+  postsAs(username: string): boolean {
+    const lc = username.toLowerCase()
+    if (this.postingUsernames.has(lc)) return true
+    return mappedForgeUsernames(this.config.agentMappings, "gitlabUsernames").some((u) => u.toLowerCase() === lc)
+  }
+
   private isBotUser(username: string): boolean {
     if (this.botUsernames.has(username)) return true
     if (!this.mesh) return false
