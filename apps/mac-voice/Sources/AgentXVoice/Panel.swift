@@ -51,6 +51,10 @@ final class Panel: NSPanel {
     /// Stay on screen when idle. Off: the pill shows only while active.
     var alwaysVisible = false
 
+    /// The orb overlay shows listening, thinking and speaking, so the
+    /// pill stays out of the way then; it still shows idle and errors.
+    var yieldsActiveStates = false
+
     /// Told of every state rendered, so the menu-bar icon can follow.
     var onRender: ((State) -> Void)?
 
@@ -107,6 +111,14 @@ final class Panel: NSPanel {
         /// Idle is an invitation and belongs in meta type; everything else
         /// is a running commentary and belongs in body type.
         var isMeta: Bool { if case .idle = self { return true }; return false }
+
+        /// Listening, thinking or speaking: what the orb shows.
+        var isActive: Bool {
+            switch self {
+            case .idle, .error: return false
+            default: return true
+            }
+        }
     }
 
     /// Called when the pill is clicked. Set by the app.
@@ -208,7 +220,8 @@ final class Panel: NSPanel {
             setText(named(state))
         }
 
-        if state.isMeta && !alwaysVisible { orderOut(nil) } else { orderFrontRegardless() }
+        let yield = yieldsActiveStates && state.isActive
+        if (state.isMeta && !alwaysVisible) || yield { orderOut(nil) } else { orderFrontRegardless() }
         onRender?(state)
     }
 

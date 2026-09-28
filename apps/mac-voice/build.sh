@@ -18,7 +18,7 @@ rm -rf build && mkdir -p "$BIN" "$APP/Contents/Resources"
 swiftc -O \
   -o "$BIN/AgentXVoice" \
   Sources/AgentXVoice/*.swift \
-  -framework AppKit -framework AVFoundation -framework Carbon \
+  -framework AppKit -framework AVFoundation -framework Carbon -framework SwiftUI \
   -target arm64-apple-macosx14.0
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"

@@ -34,6 +34,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onHoldChanged: ((Bool) -> Void)?
     var onTargetChanged: ((String) -> Void)?
     var onPillChanged: ((Bool) -> Void)?
+    var onOrbChanged: ((Bool) -> Void)?
 
     override init() {
         super.init()
@@ -48,6 +49,16 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     func name(of id: String) -> String {
         guard case .loaded(let agents) = roster else { return id }
         return agents.first { $0.id == id }?.label ?? id
+    }
+
+    /// The agent's colour for the orb: what the daemon sent, else the
+    /// one derived from its id, which is the same colour.
+    func color(of id: String) -> NSColor {
+        var configured: String?
+        if case .loaded(let agents) = roster { configured = agents.first { $0.id == id }?.color }
+        let hex = OrbMath.colorHex(agentID: id, configured: configured)
+        guard let c = OrbMath.parseHex(hex) else { return Brand.accent }
+        return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: 1)
     }
 
     /// Open the menu from the keyboard.
@@ -166,6 +177,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let pill = action("Show floating pill", #selector(togglePill), key: "")
         pill.state = Config.showPill ? .on : .off
         menu.addItem(pill)
+        let orb = action("Show orb", #selector(toggleOrb), key: "")
+        orb.state = Config.showOrb ? .on : .off
+        menu.addItem(orb)
 
         menu.addItem(.separator())
         menu.addItem(action("Settings…", #selector(openSettings), key: ","))
@@ -213,6 +227,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     @objc private func togglePill() {
         Config.showPill.toggle()
         onPillChanged?(Config.showPill)
+    }
+
+    @objc private func toggleOrb() {
+        Config.showOrb.toggle()
+        onOrbChanged?(Config.showOrb)
     }
 
     @objc private func openSettings() { openDashboard("/admin") }
