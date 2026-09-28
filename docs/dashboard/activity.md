@@ -29,6 +29,8 @@ The **Map** view, next to **Timeline**, draws the whole team as a transit map: p
 
 ![The Map view of Activity: channels on the left, the CX agent in the middle, and finished work on the demo shop line](/screenshots/activity/map.png)
 
+The channels on the left are where work comes from. A chat you start in the [phone app](./mobile-app.md), typed or spoken, comes in from **Phone app** and names you (`operator`) as the person who started it. That holds when the agent runs on another computer in your mesh too. In its details, a spoken message says **Voice** and a typed one says **Phone app**. Only work that one agent hands to another shows as **Agent → Agent**.
+
 ## Check it worked
 
 1. **Browser:** send an agent a small task, and wait for it to finish.
@@ -42,3 +44,4 @@ The **Map** view, next to **Timeline**, draws the whole team as a transit map: p
 - **Runs sit under unmapped when grouped by Client:** that chat isn't linked to a client yet. The list that links chats to clients is under **Settings › Business**, a tab that only appears when the business features are switched on (`business.enabled` in `agentx.json`). Restart the daemon after changing it.
 - **A machine's runs are missing:** that machine may be unreachable. Check [Operations](./operations.md).
 - **The timeline is empty:** widen the window to **7d**. Nothing may have run in the last 24 hours.
+- **A phone chat shows as Mesh (A2A) or Schedule on the map:** it ran on a computer with an older AgentX, or it was sent before the update. Update AgentX on the computer that runs the agent and on the one your phone is paired with, then restart it there. New phone chats then come in from **Phone app**.

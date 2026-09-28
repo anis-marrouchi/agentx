@@ -247,6 +247,7 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 6. **Phone:** ask an agent: `make a small chart of three numbers, save it as a png and attach it`. The chart appears under the answer. Tap it to see it full screen.
 7. **Phone:** ask an agent: `ask me yes or no with quick replies`. **Yes** and **No** appear under the answer. Tap **Yes**: it shows as your message, both turn grey, and the agent answers.
 8. **Phone:** ask one agent something long, then pick a second agent and ask it something too. Two chips show at the top of Chat. When the first agent finishes, a banner with its name appears; tap it, and its answer opens.
+9. **Browser (computer):** open the dashboard, select **Activity**, then **Map**. Your chat comes in from **Phone app**, not from **Mesh (A2A)**. See [Activity](./activity.md).
 
 ## If something is wrong
 
