@@ -3,10 +3,12 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { markdownToHtml } from "../src/utils/markdown-html"
-import { APP_ATTACH_HINT, ARTIFACT_LIMITS, artifactType, extractArtifacts } from "../src/utils/artifact-sentinel"
+import { APP_ATTACH_HINT, ARTIFACT_LIMITS, appAttachHint, artifactType, extractArtifacts, plainAnswer } from "../src/utils/artifact-sentinel"
+import { relayTurn } from "../src/daemon/app-chat-relay"
+import { ChatTurn } from "../src/daemon/app-chat-turns"
+import { createServer } from "http"
 import { AppChatStore } from "../src/daemon/app-chat-store"
 import { speakableAnswer } from "../src/daemon/voice-io-api"
-import { relayTurn } from "../src/daemon/app-chat-relay"
 import { buildAgentContext } from "../src/agents/context"
 import { openDb, closeDb } from "../src/storage/sqlite"
 
@@ -210,5 +212,76 @@ describe("phone chat turns: an unclosed tag (#256)", () => {
   it("still strips a half-written sentinel from a failed answer", async () => {
     const out = await run([["text", { text: 'Here it is.\n<agentx-artifact>{"filena' }], ["error", { error: "boom" }]])
     expect(out).toMatchObject({ status: "error", text: "Here it is.", files: [] })
+  })
+
+  it("keeps the full text of a finished answer from an agent with rich messages off", async () => {
+    const answer = "Use the <agentx-artifact> tag.\n\nThen send it."
+    const out = await run([["start", { rich: false }], ["text", { text: answer }], ["done", { content: answer }]])
+    expect(out).toMatchObject({ status: "done", text: answer, files: [] })
+  })
+
+  it("still strips a half-written sentinel from a failed plain answer", async () => {
+    const out = await run([["start", { rich: false }], ["text", { text: 'Here it is.\n<agentx-artifact>{"filena' }], ["error", { error: "boom" }]])
+    expect(out).toMatchObject({ status: "error", text: "Here it is.", files: [] })
+  })
+})
+
+// richMessages: false means plain text on the phone too (#259): no attach
+// note, no files, and pictures as links.
+describe("an agent with rich messages off", () => {
+  const ANSWER = 'Here is the chart. ![Sales](https://example.com/s.png)\n<agentx-artifact>{"filename":"charts/sales.png","mime":"image/png"}</agentx-artifact>'
+
+  it("is not told how to attach files", () => {
+    expect(appAttachHint("app", true, false)).toBeUndefined()
+    expect(appAttachHint("app", true, undefined)).toBe(APP_ATTACH_HINT)
+    expect(appAttachHint("app", true, true)).toBe(APP_ATTACH_HINT)
+    expect(appAttachHint("app", false, true)).toBeUndefined()
+    expect(appAttachHint("telegram", true, true)).toBeUndefined()
+  })
+
+  it("keeps file names as text and pictures as links; code stays code", () => {
+    expect(plainAnswer(ANSWER)).toBe("Here is the chart. [Sales](https://example.com/s.png)\ncharts/sales.png")
+    expect(plainAnswer("![](https://example.com/a.png)")).toBe("[https://example.com/a.png](https://example.com/a.png)")
+    expect(plainAnswer("`![c](https://example.com/c.png)`\n```\n![f](https://example.com/f.png)\n```")).toBe("`![c](https://example.com/c.png)`\n```\n![f](https://example.com/f.png)\n```")
+    expect(plainAnswer('a <agentx-artifact>{bad</agentx-artifact> b <agentx-artifact>{"filename":"x', true)).toBe("a  b")
+    expect(plainAnswer('a <agentx-artifact>{bad</agentx-artifact> b <agentx-artifact>{"filename":"x')).toBe('a  b <agentx-artifact>{"filename":"x')
+    expect(plainAnswer("plain ")).toBe("plain ")
+  })
+
+  async function relay(start: Record<string, unknown>) {
+    const server = createServer((_req, res) => {
+      res.writeHead(200, { "Content-Type": "text/event-stream" })
+      res.write(`event: start\ndata: ${JSON.stringify(start)}\n\n`)
+      res.end(`event: done\ndata: ${JSON.stringify({ content: ANSWER })}\n\n`)
+    })
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r))
+    try {
+      const url = `http://127.0.0.1:${(server.address() as any).port}`
+      return await relayTurn({ url }, { node: "local", agent: "alpha", message: "hi", chatId: "app:1" }, new AbortController().signal, () => {})
+    } finally { server.close() }
+  }
+
+  it("declares no files, and the phone shows the name and a link, not a picture", async () => {
+    const out = await relay({ agentId: "alpha", rich: false })
+    expect(out.files).toEqual([])
+    expect(out.text).toContain("charts/sales.png")
+    const html = markdownToHtml(out.text, { images: 8 })
+    expect(pics(html)).toEqual([])
+    expect(html).toContain('<a href="https://example.com/s.png" target="_blank" rel="noopener noreferrer">Sales</a>')
+  })
+
+  it("leaves the default as it was", async () => {
+    const out = await relay({ agentId: "alpha" })
+    expect(out.files).toEqual([{ type: "image", filename: "charts/sales.png", mime: "image/png" }])
+    expect(out.text).toBe("Here is the chart. ![Sales](https://example.com/s.png)")
+  })
+
+  it("remembers it for a phone that attaches late", () => {
+    const turn = new ChatTurn(60_000)
+    turn.broadcast("start", { rich: false })
+    expect(turn.plain).toBe(true)
+    const other = new ChatTurn(60_000)
+    other.broadcast("start", {})
+    expect(other.plain).toBe(false)
   })
 })

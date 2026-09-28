@@ -1,6 +1,6 @@
 import { extractUiDirective, type UiDirective } from "@/channels/ui-directive"
 import type { AppToolBadge } from "./app-chat-store"
-import { ARTIFACT_LIMITS, extractArtifacts, type DeclaredArtifact } from "@/utils/artifact-sentinel"
+import { ARTIFACT_LIMITS, extractArtifacts, plainAnswer, type DeclaredArtifact } from "@/utils/artifact-sentinel"
 
 // --- Phone app chat: one turn, relayed from the daemon ---
 //
@@ -57,17 +57,21 @@ export async function relayTurn(
 ): Promise<TurnOutcome> {
   const { path, body } = upstreamRequest(turn)
   let text = ""
+  // Set by the daemon's start event for an agent with rich messages off.
+  let plain = false
   const tools: AppToolBadge[] = []
   const byId = new Map<string, AppToolBadge>()
-  const end = (status: TurnOutcome["status"], raw: string, error?: string, rich = true): TurnOutcome => {
+  const end = (status: TurnOutcome["status"], raw: string, error?: string): TurnOutcome => {
     // Declared files come out of every answer, even a stopped one, so a
     // sentinel is never shown or read out. Only a cut-off answer loses an
     // unclosed tag; a finished one may be explaining the format.
-    const declared = extractArtifacts(raw, ARTIFACT_LIMITS.perMessage, status !== "done")
+    // An agent with rich messages off gets no files and no inline pictures.
+    const cutOff = status !== "done"
+    const declared = plain ? { text: plainAnswer(raw, cutOff), artifacts: [] } : extractArtifacts(raw, ARTIFACT_LIMITS.perMessage, cutOff)
     const { cleanText, ui } = status === "done" ? extractUiDirective(declared.text) : { cleanText: declared.text, ui: undefined }
     // An agent with richMessages off still has the block stripped, but
     // nothing from it is shown.
-    const safe = rich ? safeUi(ui) : undefined
+    const safe = plain ? undefined : safeUi(ui)
     return { status, text: cleanText, tools, files: declared.artifacts, ...(safe ? { ui: safe } : {}), ...(error ? { error } : {}) }
   }
   try {
@@ -88,7 +92,9 @@ export async function relayTurn(
     for await (const ev of readSse(r.body)) {
       send(ev.event, ev.data)
       const d = ev.data ?? {}
-      if (ev.event === "text" && typeof d.text === "string") {
+      if (ev.event === "start") {
+        plain = d.rich === false
+      } else if (ev.event === "text" && typeof d.text === "string") {
         text += d.text
       } else if (ev.event === "tool" && d.status === "start" && tools.length < MAX_TOOLS) {
         const badge: AppToolBadge = { name: String(d.name || "tool").slice(0, 80), ...(d.arg ? { arg: String(d.arg).slice(0, 80) } : {}) }
@@ -97,7 +103,7 @@ export async function relayTurn(
       } else if (ev.event === "tool" && d.status === "result" && d.error === true && byId.has(String(d.id))) {
         byId.get(String(d.id))!.error = true
       } else if (ev.event === "done") {
-        return end("done", typeof d.content === "string" && d.content ? d.content : text, undefined, d.richMessages !== false)
+        return end("done", typeof d.content === "string" && d.content ? d.content : text)
       } else if (ev.event === "error") {
         return end("error", text, friendlyError(d.error))
       }

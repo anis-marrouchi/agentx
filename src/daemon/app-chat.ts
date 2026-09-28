@@ -79,7 +79,7 @@ export async function handleAppChat(
     if (!conv) return json(res, 404, { error: "no such conversation" })
     const turn = inflight.get(conv.id)
     // A running turn comes with what the agent has written so far.
-    return json(res, 200, { ...conv, running: !!turn, ...(turn ? { partial: { text: turn.text, tools: turn.tools } } : {}) })
+    return json(res, 200, { ...conv, running: !!turn, ...(turn ? { partial: { text: turn.text, tools: turn.tools, ...(turn.plain ? { plain: true } : {}) } } : {}) })
   }
   if (method === "GET" && path === "/api/app/chat/attach") {
     // A phone coming back to a turn still running: what was written so far,
@@ -90,7 +90,7 @@ export async function handleAppChat(
     openSse(res)
     const { id, title, node, nodeName, agent, agentName } = conv
     res.write(sse("conversation", { id, title, node, nodeName, agent, agentName }))
-    res.write(sse("resume", { text: turn.text, tools: turn.tools }))
+    res.write(sse("resume", { text: turn.text, tools: turn.tools, ...(turn.plain ? { plain: true } : {}) }))
     turn.attach(res)
     return true
   }

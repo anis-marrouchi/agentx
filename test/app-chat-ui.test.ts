@@ -80,6 +80,14 @@ describe("rendering what an agent wrote", () => {
     expect(V.preview("Answer only")).toBe("Answer only")
   })
 
+  it("streams pictures as links for an agent with rich messages off (#259)", () => {
+    const { V } = view()
+    const text = "See ![Sales](https://example.com/s.png) and `![c](https://x/c.png)`\n```\n![f](https://x/f.png)\n```"
+    expect(V.preview(text, true)).toBe("See [Sales](https://example.com/s.png) and `![c](https://x/c.png)`\n```\n![f](https://x/f.png)\n```")
+    expect(V.preview("![](https://example.com/a.png)", true)).toBe("[https://example.com/a.png](https://example.com/a.png)")
+    expect(V.preview(text)).toBe(text)
+  })
+
   it("renders buttons, a poll and media as elements with text, never HTML", () => {
     const { V } = view()
     const box = fakeDom().createElement("div")

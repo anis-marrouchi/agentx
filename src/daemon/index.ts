@@ -4808,7 +4808,10 @@ export class AgentXDaemon {
             const writeSse = (event: string, payload: unknown) => {
               try { res.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`) } catch { /* socket gone */ }
             }
-            writeSse("start", { agentId, startedAt: Date.now() })
+            // rich:false tells the phone app's relay to keep this agent's
+            // answer plain: no files, no inline pictures, no agentx:ui extras.
+            const plain = this.registry.getAgent(agentId)?.richMessages === false
+            writeSse("start", { agentId, startedAt: Date.now(), ...(plain ? { rich: false } : {}) })
             const heartbeat = setInterval(() => {
               try { res.write(": ping\n\n") } catch { /* */ }
             }, 15_000)
@@ -4902,8 +4905,6 @@ export class AgentXDaemon {
                   content: resp.content,
                   duration: resp.duration,
                   usage: resp.usage,
-                  // The phone app hides agentx:ui extras for such an agent.
-                  ...(this.registry.getAgent(agentId)?.richMessages === false ? { richMessages: false } : {}),
                 })
               }
             } catch (e: any) {
