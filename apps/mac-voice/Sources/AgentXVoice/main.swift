@@ -29,6 +29,14 @@ final class App: NSObject, NSApplicationDelegate {
     private var pasteHotkey: Hotkey?
     private var stopHotkey: Hotkey?
     private var menuHotkey: Hotkey?
+    /// Hold to ask one agent, from agents[].voice.hotkey.
+    private var agentHotkeys: [Hotkey] = []
+    private let settingsWindow = SettingsWindow()
+    /// The saved settings: shortcuts and the speech-to-text engine. Read
+    /// from the daemon at launch and after every save; defaults until then.
+    private var settings: VoiceSettings?
+    /// The agent a per-agent shortcut is asking; nil for the talk key.
+    private var forcedAgent: String?
     /// Set by a stop: the answer being spoken ends without reopening the mic.
     private var silenced = false
     private var busy = false
@@ -88,9 +96,79 @@ final class App: NSObject, NSApplicationDelegate {
         statusMenu.thinking = counts
     }
 
-    /// Who the panel and orb name: a by-name answer being spoken, else the
-    /// agent our turn is asking, else the target.
+    // --- Shortcuts ---
+    //
+    // Talk, stop and smart paste come from agentx.json (voice.hotkeys),
+    // and each agent may have its own (agents[].voice.hotkey). ⌘⌥A, which
+    // opens the menu, is fixed. Saved in the settings window, they are
+    // registered again at once: no restart.
+
+    private func registerHotkeys() {
+        unregisterHotkeys()
+        let keys = settings?.general.hotkeys
+        func spec(_ text: String?, _ fallback: String) -> HotkeySpec {
+            text.flatMap(HotkeySpec.init) ?? HotkeySpec(fallback)!
+        }
+        let register = { (key: Hotkey, spec: HotkeySpec, what: String) in
+            if !key.register(spec) { Log.warn("shortcut \(spec.text ?? "?") for \(what) is taken by another app") }
+        }
+
+        // Hold to talk; release sends.
+        let talk = Hotkey(id: 1,
+                          onPress: { [weak self] in self?.forcedAgent = nil; self?.startListening() },
+                          onRelease: { [weak self] in self?.stopAndSend() })
+        register(talk, spec(keys?.talk, "opt+space"), "talk")
+        hotkey = talk
+
+        // Smart paste fires on RELEASE so the modifiers are up before cmd-V
+        // is sent; pressed while they are held it is a different chord.
+        let paste = Hotkey(id: 2, onPress: {}, onRelease: { [weak self] in self?.smartPaste() })
+        register(paste, spec(keys?.paste, "cmd+opt+v"), "smart paste")
+        pasteHotkey = paste
+
+        // Stop every voice now. ⌘. is the Mac's own "cancel"; Option keeps
+        // it from reaching the app in front.
+        let stop = Hotkey(id: 3, onPress: {}, onRelease: { [weak self] in self?.stopSpeaking() })
+        register(stop, spec(keys?.stop, "cmd+opt+period"), "stop")
+        stopHotkey = stop
+
+        // Open the menu-bar menu without the mouse.
+        let menu = Hotkey(id: 4, onPress: {}, onRelease: { [weak self] in self?.statusMenu.open() })
+        register(menu, HotkeySpec("cmd+opt+a")!, "the menu")
+        menuHotkey = menu
+
+        // Hold an agent's own shortcut to ask it; the target stays.
+        for (i, agent) in (settings?.agents ?? []).enumerated() {
+            guard let text = agent.voice.hotkey, let s = HotkeySpec(text) else { continue }
+            let id = agent.id
+            let key = Hotkey(id: UInt32(10 + i),
+                             onPress: { [weak self] in self?.forcedAgent = id; self?.startListening() },
+                             onRelease: { [weak self] in self?.stopAndSend() })
+            register(key, s, "asking \(agent.name)")
+            agentHotkeys.append(key)
+        }
+    }
+
+    /// Dropping a Hotkey unregisters it.
+    private func unregisterHotkeys() {
+        hotkey = nil; pasteHotkey = nil; stopHotkey = nil; menuHotkey = nil
+        agentHotkeys.removeAll()
+    }
+
+    /// Settings from the daemon: shortcuts now, the rest on next use.
+    private func apply(_ saved: VoiceSettings) {
+        settings = saved
+        if settingsWindow.model.recording == nil { registerHotkeys() }
+        // Colours may have changed.
+        statusMenu.refresh()
+        Log.info("settings: talk \(saved.general.hotkeys.talk), speech to text \(saved.general.stt)")
+    }
+
+    /// Who the panel and orb name: the agent a shortcut is asking, a
+    /// by-name answer being spoken, else the agent our turn is asking,
+    /// else the target.
     private var shownAgent: String {
+        if let forcedAgent, recorder.isRecording { return forcedAgent }
         if let asideSpeaker { return asideSpeaker }
         return busy && !turnAgent.isEmpty ? turnAgent : Config.effectiveAgentID
     }
@@ -199,12 +277,19 @@ final class App: NSObject, NSApplicationDelegate {
         }
         statusMenu.refresh()
 
-        hotkey = Hotkey(
-            id: 1,
-            onPress: { [weak self] in self?.startListening() },
-            onRelease: { [weak self] in self?.stopAndSend() })
-        hotkey?.register()
+        registerHotkeys()
         panel.onClick = { [weak self] in self?.toggleListening() }
+        statusMenu.onSettings = { [weak self] in self?.settingsWindow.show() }
+        settingsWindow.model.onSaved = { [weak self] saved in self?.apply(saved) }
+        // While a shortcut field waits for keys, ours stand aside so the
+        // keys reach the field.
+        settingsWindow.model.onRecording = { [weak self] recording in
+            guard let self else { return }
+            if recording { self.unregisterHotkeys() } else { self.registerHotkeys() }
+        }
+        Task { @MainActor in
+            if let saved = await AgentClient.settings() { apply(saved) }
+        }
 
         // Turning the hold OFF is the moment anything that piled up
         // becomes welcome. Without this the queue is a hole rather than a
@@ -217,35 +302,7 @@ final class App: NSObject, NSApplicationDelegate {
             Log.info(nowOn ? "notifications held" : "notifications delivering")
         }
 
-        // ⌘⌥V: reshape the clipboard for wherever the caret is, then paste.
-        // Fires on RELEASE so the modifiers are up before cmd-V is sent —
-        // pressing it while ⌘⌥ are still held produces a different chord
-        // in the destination app.
-        pasteHotkey = Hotkey(
-            id: 2,
-            onPress: {},
-            onRelease: { [weak self] in self?.smartPaste() })
-        pasteHotkey?.register(keyCode: UInt32(kVK_ANSI_V),
-                              modifiers: UInt32(cmdKey | optionKey))
-
-        // ⌘⌥. (and the menu): stop every voice now. ⌘. is the Mac's
-        // own "cancel"; Option keeps it from reaching the app in front.
-        stopHotkey = Hotkey(
-            id: 3,
-            onPress: {},
-            onRelease: { [weak self] in self?.stopSpeaking() })
-        stopHotkey?.register(keyCode: UInt32(kVK_ANSI_Period),
-                             modifiers: UInt32(cmdKey | optionKey))
         statusMenu.onStop = { [weak self] in self?.stopSpeaking() }
-
-        // ⌘⌥A: open the menu-bar menu without the mouse; arrows, digits
-        // and Return work from there.
-        menuHotkey = Hotkey(
-            id: 4,
-            onPress: {},
-            onRelease: { [weak self] in self?.statusMenu.open() })
-        menuHotkey?.register(keyCode: UInt32(kVK_ANSI_A),
-                             modifiers: UInt32(cmdKey | optionKey))
 
         // The target does not wait for the microphone: the menu shows it
         // either way.
@@ -409,6 +466,8 @@ final class App: NSObject, NSApplicationDelegate {
         // hush now; whatever was talking gets the words, same as the key.
         let door = talkCheck ?? Task { await AgentClient.hush() }
         talkCheck = nil
+        let forced = forcedAgent
+        forcedAgent = nil
         guard let wav = recorder.stop() else {
             // Nothing said, so no door follows the hush: let the queue play on.
             Task { _ = await door.value; await AgentClient.resume() }
@@ -422,7 +481,7 @@ final class App: NSObject, NSApplicationDelegate {
 
         Task { @MainActor in
             var heard = ""
-            do { heard = try await Speech.transcribe(wav: wav) }
+            do { heard = try await Speech.transcribe(wav: wav, engine: settings?.general.stt ?? "auto") }
             catch { Log.warn("transcription failed: \(error.localizedDescription)") }
             guard !heard.isEmpty else {
                 _ = await door.value
@@ -447,8 +506,11 @@ final class App: NSObject, NSApplicationDelegate {
                 if !midTurn { panel.render(.idle); busy = false }
                 return
             }
-            // "Writer, …" sends this one question to Writer; the target stays.
-            let agent = await AgentClient.address(heard, target: Config.effectiveAgentID)
+            // "Writer, …" sends this one question to Writer; the target
+            // stays. An agent's own shortcut already said who.
+            let agent: String
+            if let forced { agent = forced }
+            else { agent = await AgentClient.address(heard, target: Config.effectiveAgentID) }
             if midTurn {
                 // Another agent: ask it alongside ours rather than waiting.
                 if agent != turnAgent && !Self.isStop(heard) {

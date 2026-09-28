@@ -37,8 +37,14 @@ struct VoiceChoice: Decodable {
 enum Speech {
     // MARK: Speech to text
 
-    static func transcribe(wav: Data) async throws -> String {
-        if let key = Config.elevenLabsKey {
+    /// `engine` is agentx.json's `voice.stt`: "auto" and "elevenlabs" use
+    /// ElevenLabs when there is a key, falling back to mlx-whisper; "local"
+    /// never sends audio off the Mac.
+    static func transcribe(wav: Data, engine: String = "auto") async throws -> String {
+        if engine == "elevenlabs" && Config.elevenLabsKey == nil {
+            Log.warn("speech to text is set to ElevenLabs but no key is set; using mlx-whisper")
+        }
+        if engine != "local", let key = Config.elevenLabsKey {
             do { return try await elevenLabsSTT(wav: wav, key: key) }
             catch { Log.warn("ElevenLabs STT failed (\(error.localizedDescription)); falling back to mlx-whisper") }
         }

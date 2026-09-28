@@ -161,6 +161,49 @@ enum AgentClient {
         return try await URLSession.shared.data(for: req)
     }
 
+    // MARK: Settings
+    //
+    // The settings window reads and saves through the daemon, which checks
+    // every value and writes agentx.json. The app keeps no copy of its own.
+    // See src/daemon/voice-settings-api.ts.
+
+    /// GET /voice/settings, or nil when the daemon cannot be reached.
+    static func settings() async -> VoiceSettings? {
+        guard let url = URL(string: "\(Config.daemonURL)/voice/settings") else { return nil }
+        var req = URLRequest(url: url)
+        // The first call lists the Mac's voices, which can take a moment.
+        req.timeoutInterval = 15
+        guard let (data, response) = try? await URLSession.shared.data(for: req),
+              (response as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return try? JSONDecoder().decode(VoiceSettings.self, from: data)
+    }
+
+    /// Save a change. The saved settings, or the daemon's reason in words.
+    static func saveSettings(_ patch: [String: Any]) async -> Result<VoiceSettings, SettingsFailure> {
+        struct Reply: Decodable { let settings: VoiceSettings?; let error: String? }
+        do {
+            let (data, response) = try await post("/voice/settings", patch, timeout: 20)
+            let reply = try? JSONDecoder().decode(Reply.self, from: data)
+            if let s = reply?.settings, (response as? HTTPURLResponse)?.statusCode == 200 { return .success(s) }
+            return .failure(SettingsFailure(message: reply?.error ?? "The daemon did not save the settings."))
+        } catch {
+            return .failure(SettingsFailure(message: "The AgentX daemon isn't reachable: \(error.localizedDescription)"))
+        }
+    }
+
+    /// Say a sample line in an agent's voice with unsaved changes. Nil on
+    /// success, else why not.
+    static func preview(agentID: String, voice: [String: Any]) async -> String? {
+        struct Reply: Decodable { let error: String? }
+        guard let (data, response) = try? await post("/voice/preview", ["agentId": agentID, "voice": voice], timeout: 10) else {
+            return "The AgentX daemon isn't reachable."
+        }
+        if (response as? HTTPURLResponse)?.statusCode == 202 { return nil }
+        return (try? JSONDecoder().decode(Reply.self, from: data))?.error ?? "The preview didn't play."
+    }
+
+    struct SettingsFailure: Error { let message: String }
+
     /// One row of GET /agents: who can answer, and whether they are busy.
     struct AgentInfo: Decodable {
         let id: String
