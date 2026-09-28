@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.68.1](https://github.com/anis-marrouchi/agentx/compare/v0.68.0...v0.68.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **channels:** trust an agent signature only from AgentX's own accounts ([#286](https://github.com/anis-marrouchi/agentx/issues/286)) ([e268259](https://github.com/anis-marrouchi/agentx/commit/e268259723a94cdc0ea0f2947a2254681cd0ee22))
+* **router:** queued mesh turns are not failures; agent comments are agent-sent ([#284](https://github.com/anis-marrouchi/agentx/issues/284)) ([99a514a](https://github.com/anis-marrouchi/agentx/commit/99a514a90e84741587d2990a183fffaa7c83fad7))
+
 ## [0.68.0](https://github.com/anis-marrouchi/agentx/compare/v0.67.0...v0.68.0) (2026-09-28)
 
 
