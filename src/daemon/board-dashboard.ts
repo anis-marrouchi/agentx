@@ -2320,8 +2320,8 @@ function appCallbackPuller(config: DaemonConfig): AppCallbackPuller {
       if (since) q.set("since", since)
       const r = await fetch(`${primary}/events/recent?${q}`, { headers: auth(primary), signal: AbortSignal.timeout(5000) })
       if (!r.ok) throw new Error(`the daemon answered ${r.status}`)
-      const body = await r.json() as { events?: CallbackEvent[] }
-      return Array.isArray(body.events) ? body.events : []
+      const body = await r.json() as { events?: CallbackEvent[]; gap?: boolean }
+      return { events: Array.isArray(body.events) ? body.events : [], gap: body.gap === true }
     },
     nodeUrl: async (node) => {
       const snap = await buildLiveSnapshot(config)
@@ -2344,6 +2344,7 @@ function appCallbackPuller(config: DaemonConfig): AppCallbackPuller {
     finishAlerts: chat.finishAlerts,
     notifyFinish: chat.notifyFinish,
     log: (m) => console.log(m),
+    warn: (m) => console.warn(m),
   })
 }
 
