@@ -177,7 +177,7 @@ describe("layoutNetwork", () => {
     expect(net.nodes.filter((n) => n.kind === "channel")).toHaveLength(10)
     expect(node("ch:voice").idle).toBe(false)
     expect(node("ch:telegram").idle).toBe(true)
-    expect(net.edges.some((e) => e.id === "fd:voice|secretary-agent")).toBe(true)
+    expect(net.edges.some((e) => e.id === `fd:voice|secretary-agent|${V2}`)).toBe(true)
   })
 
   it("hides idle stations unless asked", () => {
@@ -270,5 +270,151 @@ describe("map data scope", () => {
     } finally { globalThis.fetch = orig }
     expect(seen).toHaveLength(2)
     for (const u of seen) expect(u).toContain("peer=fleet")
+  })
+})
+
+// #267 — every train starts at its true origin and shows every A2A hop.
+describe("hop chains and true origin", () => {
+  const WEB = "acme/web"
+  const ask = (agentId: string, from: string, startedAt: number, p: Partial<FleetDispatch> = {}) => dispatch({
+    agentId, channelId: "a2a", initiatorId: from, initiatorKind: "a2a", intent: "mesh.a2a", clientId: "acme", projectId: WEB,
+    subject: `→ ${agentId}`, startedAt, resolvedAt: startedAt + 500, ...p,
+  })
+  const chat = (agentId: string, channelId: string, startedAt: number, p: Partial<FleetDispatch> = {}) => dispatch({
+    agentId, channelId, initiatorId: "voice", initiatorKind: channelId as FleetDispatch["initiatorKind"], clientId: "unmapped",
+    projectId: `unmapped/_${channelId}`, subject: `chat:${channelId}:${agentId}`, startedAt, resolvedAt: null, active: true, ...p,
+  })
+  const hookRun = (agentId: string, startedAt: number, p: Partial<FleetDispatch> = {}) => dispatch({
+    agentId, clientId: "acme", projectId: WEB, subject: "MR #7", inputPreview: "[GitLab acme/web MR !7 open]: x", startedAt, ...p,
+  })
+  const trainOf = (ds: FleetDispatch[], agentId: string, snapDs = ds) =>
+    buildTransit(snapshot(snapDs), ds).trains.find((t) => t.agentId === agentId)!
+
+  it("starts a GitLab-triggered job at GitLab, not at an agent that asked about it later", () => {
+    const ds = [
+      chat("secretary-agent", "voice", 100),
+      hookRun("devops-agent", 200),
+      ask("devops-agent", "secretary-agent", 900, { inputPreview: "status of !7?" }),
+    ]
+    const t = trainOf(ds, "devops-agent")
+    expect(t).toMatchObject({ tag: "!7", channel: "gitlab", route: ["devops-agent"], delegator: null })
+    expect(routeOf(t, undefined, (id) => id)).toEqual(["GitLab", "devops-agent", WEB])
+    // The later question is still on the train's timeline, after the webhook.
+    expect(t.hops.filter((h) => h.to === "devops-agent").map((h) => h.from)).toEqual([null, "secretary-agent"])
+  })
+
+  it("routes GitLab → receiving agent on a peer → local agent, with no Secretary", () => {
+    const root = { kind: "human" as const, channel: "gitlab", agentId: "coder-agent" }
+    const ds = [
+      chat("secretary-agent", "voice", 100),
+      hookRun("coder-agent", 200, { nodeId: "peer-a", resolvedAt: 5_000 }),
+      ask("devops-agent", "coder-agent", 300, { root, inputPreview: "deploy !7" }),
+    ]
+    const t = trainOf(ds, "devops-agent")
+    expect(t.channel).toBe("gitlab")
+    expect(t.route).toEqual(["coder-agent", "devops-agent"])
+    expect(t.hops.map((h) => h.node)).toEqual(["peer-a", "mac"])
+  })
+
+  it("renders a 3-hop chain in order, across mesh peers", () => {
+    const root = { kind: "human" as const, channel: "voice", agentId: "secretary-agent" }
+    const ds = [
+      chat("secretary-agent", "voice", 100),
+      ask("idle-agent", "secretary-agent", 200, { root, nodeId: "peer-a", resolvedAt: null, active: true }),
+      ask("devops-agent", "idle-agent", 300, { root, inputPreview: "ship !9" }),
+    ]
+    const t = trainOf(ds, "devops-agent")
+    expect(t.channel).toBe("voice")
+    expect(t.route).toEqual(["secretary-agent", "idle-agent", "devops-agent"])
+    expect(t.hops.map((h) => `${h.from ?? "voice"}→${h.to}@${h.node}`)).toEqual([
+      "voice→secretary-agent@mac", "secretary-agent→idle-agent@peer-a", "idle-agent→devops-agent@mac",
+    ])
+    expect(routeOf(t, undefined, (id) => id)).toEqual(["Voice", "secretary-agent", "idle-agent", "devops-agent", WEB])
+  })
+
+  it("falls back to the root marker when the run that started it is missing", () => {
+    const root = { kind: "human" as const, channel: "telegram", sender: "Sam", agentId: "secretary-agent" }
+    const ds = [ask("devops-agent", "idle-agent", 300, { root })]
+    const t = trainOf(ds, "devops-agent")
+    expect(t).toMatchObject({ channel: "telegram", startedBy: "Sam", originId: null })
+    expect(t.route).toEqual(["secretary-agent", "idle-agent", "devops-agent"])
+    expect(t.hops[0]).toMatchObject({ dispatchId: null, from: null, to: "secretary-agent" })
+  })
+
+  it("draws a callback as a return hop on the train it answers, not as a new origin", () => {
+    const root = { kind: "human" as const, channel: "app", agentId: "secretary-agent" }
+    const ds = [
+      chat("secretary-agent", "app", 100, { active: false, resolvedAt: 150 }),
+      ask("devops-agent", "secretary-agent", 140, { root, inputPreview: "check !7" }),
+      chat("secretary-agent", "app", 900, { initiatorId: "devops-agent", initiatorKind: "a2a", callback: { from: "devops-agent", status: "done" } }),
+    ]
+    const tt = buildTransit(snapshot(ds), ds)
+    const t = tt.trains.find((x) => x.agentId === "devops-agent")!
+    expect(t.channel).toBe("app")
+    expect(t.route).toEqual(["secretary-agent", "devops-agent"])
+    expect(t.hops.map((h) => `${h.kind}:${h.from}→${h.to}`)).toEqual([
+      "ask:null→secretary-agent", "ask:secretary-agent→devops-agent", "return:devops-agent→secretary-agent",
+    ])
+    expect(tt.trains.some((x) => x.channel === "mesh")).toBe(false)
+    expect(tt.trains).toHaveLength(1)
+  })
+
+  it("keeps the full chain when a filter hides the runs that started it", () => {
+    const root = { kind: "human" as const, channel: "voice", agentId: "secretary-agent" }
+    const all = [
+      chat("secretary-agent", "voice", 100, { active: false, resolvedAt: 250 }),
+      ask("idle-agent", "secretary-agent", 200, { root, resolvedAt: 260 }),
+      ask("devops-agent", "idle-agent", 240, { root, active: true, resolvedAt: null }),
+    ]
+    const t = trainOf(all.filter((d) => d.active), "devops-agent", all)
+    expect(t.route).toEqual(["secretary-agent", "idle-agent", "devops-agent"])
+  })
+
+  describe("layout of long chains", () => {
+    const root = { kind: "human" as const, channel: "voice", agentId: "secretary-agent" }
+    const ds = [
+      chat("secretary-agent", "voice", 100),
+      ask("idle-agent", "secretary-agent", 200, { root, active: true, resolvedAt: null }),
+      ask("coder-agent", "idle-agent", 300, { root, active: true, resolvedAt: null }),
+      ask("devops-agent", "coder-agent", 400, { root }),
+    ]
+    const t = buildTransit(snapshot(ds), ds)
+    const opts = { orientation: "horizontal" as const, showIdle: false, meshAgents: new Set<string>(), agentName: (id: string) => id, allAgents: [] }
+    const train = t.trains.find((x) => x.agentId === "devops-agent")!
+
+    it("collapses the middle hops of a 4-hop chain behind a +n expander", () => {
+      expect(train.route).toHaveLength(4)
+      const net = layoutNetwork(t, opts)
+      const first = net.edges.find((e) => e.id === `ho:secretary-agent|coder-agent|${WEB}`)!
+      expect(first).toMatchObject({ hidden: 1, trainIds: [train.id], hop: { from: "secretary-agent", to: "coder-agent" } })
+      expect(net.nodes.some((n) => n.id === "st:idle-agent")).toBe(false)
+    })
+
+    it("draws every hop in order once expanded, horizontally and vertically", () => {
+      for (const orientation of ["horizontal", "vertical"] as const) {
+        const net = layoutNetwork(t, { ...opts, orientation, expanded: new Set([train.id]) })
+        const pos = (id: string) => { const n = net.nodes.find((x) => x.id === `st:${id}`)!; return orientation === "horizontal" ? n.x : n.y }
+        expect(pos("secretary-agent")).toBeLessThan(pos("idle-agent"))
+        expect(pos("idle-agent")).toBeLessThan(pos("coder-agent"))
+        expect(pos("coder-agent")).toBeLessThan(pos("devops-agent"))
+        expect(net.edges.filter((e) => e.hop).map((e) => e.id)).toContain(`ho:idle-agent|coder-agent|${WEB}`)
+        expect(net.edges.some((e) => e.hidden)).toBe(false)
+      }
+    })
+
+    it("tags every hop and feeder with its line, so focus can dim the others", () => {
+      const net = layoutNetwork(t, opts)
+      for (const e of net.edges) expect(e.lineId).toBe(WEB)
+    })
+  })
+
+  it("reads the root and callback markers off a stored event", async () => {
+    const { lineageOf } = await import("../src/daemon/activity-graph-lineage")
+    expect(lineageOf({ context: { channel: "a2a", initiator: { kind: "human", channel: "gitlab", sender: "sam", agentId: "coder-agent", chatId: "x" } } }))
+      .toEqual({ root: { kind: "human", channel: "gitlab", sender: "sam", agentId: "coder-agent" } })
+    expect(lineageOf({ context: { channel: "app", delegation: { taskId: "dlg-1", from: "devops-agent", status: "done" } } }))
+      .toEqual({ callback: { from: "devops-agent", status: "done" } })
+    expect(lineageOf({ context: { initiator: { kind: "robot", channel: "x" } } })).toEqual({})
+    expect(lineageOf({ object_kind: "merge_request" })).toEqual({})
   })
 })
