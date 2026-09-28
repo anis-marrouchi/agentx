@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.66.0](https://github.com/anis-marrouchi/agentx/compare/v0.65.0...v0.66.0) (2026-09-28)
+
+
+### Features
+
+* **app:** mesh announcements in the phone Alerts tab, with push ([#272](https://github.com/anis-marrouchi/agentx/issues/272)) ([27d0901](https://github.com/anis-marrouchi/agentx/commit/27d090177bac720bea66497d972cc5aaaf1814a8))
+* **app:** talk to several agents at once on the phone ([#270](https://github.com/anis-marrouchi/agentx/issues/270)) ([5bb6183](https://github.com/anis-marrouchi/agentx/commit/5bb6183465d57c7be8b7eb7d32557f80b37310da))
+* **voice:** ask mesh agents by name, mini orbs for parallel asks ([#269](https://github.com/anis-marrouchi/agentx/issues/269)) ([b427b62](https://github.com/anis-marrouchi/agentx/commit/b427b62b82c5115ed0617236cdf8e84b07dadf38))
+
 ## [0.65.0](https://github.com/anis-marrouchi/agentx/compare/v0.64.0...v0.65.0) (2026-09-28)
 
 
