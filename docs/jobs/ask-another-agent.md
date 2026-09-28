@@ -48,7 +48,16 @@ Agents delegate with the `agentx_task` or `agentx_send_agent` tools, or with a `
 
 The answer arrives later as a message that starts with `[agentx:delegation-result task=… from=… status=…]`. The status is `done`, `error`, `timeout` or `lost`. Each task id is delivered once; late or repeated answers are dropped.
 
-A request made from a shell can name its turn with the header `X-AgentX-Task: $AGENTX_TASK_ID`. Add `"async": false` to the request body to wait for the answer anyway, or `"async": true` to get the callback from a scheduled turn as well.
+The daemon must be able to tell which turn is asking. The tools do this for you. A request made from a shell names its turn with the header `X-AgentX-Task: $AGENTX_TASK_ID`, or with `callerChannel` and `callerChatId` in the body. The agent id alone is not enough, and such a request waits for its answer as before.
+
+Add `"async": false` to the request body to wait for the answer anyway. Add `"async": true` to get the callback from a turn no person started, such as a schedule. `"async": true` has no effect inside a delegation: a turn that is itself answering another agent, or a turn that carries a delegation result, always waits. This stops one callback from starting another.
+
+A `/mesh/task` request whose own `context` names a chat (`channel` and `chatId`) keeps its older behaviour. With `"async": true`, the helper's plain answer is posted to that chat, and no callback turn runs.
+
+Some requests are refused straight away with status `409`:
+
+- An agent asking itself.
+- A request that could never start, because every slot of the target agent is held by a turn that is waiting on the asking agent. For example, A asks B, B asks A, and A can only run one task at a time. This is checked on one machine only.
 
 ## Check it worked
 
@@ -67,4 +76,5 @@ A request made from a shell can name its turn with the header `X-AgentX-Task: $A
 - **The update never arrives:** open the daemon log and search for `[delegation`. A line ending in `no route to …` means the machine running your agent has no connection to that chat app; set the chat app up on that machine.
 - **You get "did not answer in time":** the helper took longer than `mesh.delegation.timeoutMinutes`. Raise it, or ask for a smaller piece of work.
 - **You get "was lost":** the machine restarted while the helper worked. Ask your agent to try again.
+- **`409` with "cannot delegate to itself" or "could never answer":** the request would wait forever. Answer from what the agent already has, or raise the target agent's `maxConcurrent`.
 - **The status list is empty:** only delegations since the last restart are listed, and only on the machine that runs the asking agent.
