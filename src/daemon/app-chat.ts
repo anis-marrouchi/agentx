@@ -33,6 +33,9 @@ export interface AppChatDeps {
   meshPeers: () => Promise<AppMeshPeer[]>
   /** The dashboard's allowlisted, token-carrying POST (as in app-fleet.ts). */
   nodePost: (nodeUrl: string, path: string, body: unknown) => Promise<NodeReply>
+  /** The token a mesh peer's daemon takes, for the files its agents
+   *  declared (app-files.ts). The primary daemon uses `daemon.token`. */
+  tokenFor?: (nodeUrl: string) => string | undefined
   /** How long a turn may run with no phone attached (default 30 min). */
   orphanLimitMs?: number
 }
@@ -196,12 +199,16 @@ async function startTurn(res: ServerResponse, body: Record<string, unknown>, dev
       out.error = `Stopped: the phone was away for more than ${Math.round((deps.orphanLimitMs ?? ORPHAN_LIMIT_MS) / 60_000)} minutes.`
       void cancelRuns(conv, deps, device.name)
     }
-    store.append(device.id, id, {
+    const files = store.appendWithFiles(device.id, id, {
       role: "assistant", content: out.text, status: out.status, at: Date.now(),
       ...(out.error ? { error: out.error } : {}), ...(out.ui ? { ui: out.ui } : {}), ...(out.tools.length ? { tools: out.tools } : {}),
+    }, out.files) ?? []
+    // The reply as saved: text without its agentx:ui block and file lines,
+    // plus the block parsed and the declared files under their new ids.
+    turn.broadcast("final", {
+      status: out.status, content: out.text,
+      ...(out.error ? { error: out.error } : {}), ...(out.ui ? { ui: out.ui } : {}), ...(files.length ? { files } : {}),
     })
-    // The reply as saved: text without its agentx:ui block, plus the block parsed.
-    turn.broadcast("final", { status: out.status, content: out.text, ...(out.error ? { error: out.error } : {}), ...(out.ui ? { ui: out.ui } : {}) })
   } finally {
     inflight.delete(id)
     turn.finish()

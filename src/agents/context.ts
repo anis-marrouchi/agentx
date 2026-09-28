@@ -158,6 +158,11 @@ export interface ContextInput {
   // resumed session reads newer events with agentx_events instead.
   eventDigest?: string
 
+  // How to show files on this channel (the phone app's <agentx-artifact>
+  // lines). FRESH sessions only (registry-gated): the resumed session
+  // already has it from its first turn.
+  attachHint?: string
+
   // Intent (graph classification — when absent, Intent layer falls back
   // to the legacy regex tag extractor).
   intent?: {
@@ -456,6 +461,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("events", 500),
       content: input.eventDigest,
       tags: ["events", "subscriptions"],
+    })
+  }
+
+  // 7f. How to attach files on this channel. Fresh sessions only.
+  if (input.attachHint) {
+    layers.push({
+      name: "attachments",
+      priority: 2.5,
+      maxTokens: budget("attachments", 250),
+      content: input.attachHint,
+      tags: ["channel", "attachments"],
     })
   }
 

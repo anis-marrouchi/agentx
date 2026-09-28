@@ -50,6 +50,7 @@ import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { abortReason, untilAborted } from "./until-aborted"
+import { APP_ATTACH_HINT } from "@/utils/artifact-sentinel"
 
 // --- Agent Registry: lifecycle management + concurrency control ---
 
@@ -2058,6 +2059,8 @@ export class AgentRegistry {
       rotationMemo,
       // Checked here, after the planner may have dropped the session.
       eventDigest: !resumeSessionId ? buildEventDigest(task.agentId, this.config.agents[task.agentId]?.subscriptions ?? state.def.subscriptions) : undefined,
+      // How to show a file on the phone: once, when the session starts.
+      attachHint: channel === "app" && !resumeSessionId ? APP_ATTACH_HINT : undefined,
       intent: intent
         ? {
             path: intent.path,

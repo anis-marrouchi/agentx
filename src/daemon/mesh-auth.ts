@@ -49,7 +49,10 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/voice/history" || path.startsWith("/voice/history/") ||
     // The phone app's voice: runs speech to text on this host and spends
     // its ElevenLabs quota (voice-io-api.ts).
-    path === "/voice/transcribe" || path === "/voice/speak"
+    path === "/voice/transcribe" || path === "/voice/speak" ||
+    // Files agents declared for the phone app: whatever an agent saved in
+    // its workspace (app-files-api.ts).
+    path === "/app-files"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a

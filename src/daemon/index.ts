@@ -66,6 +66,8 @@ import { setDefaultGovernance } from "@/intent/governance"
 import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
 import { setMesh } from "@/a2a/mesh-instance"
+import { extractArtifacts } from "@/utils/artifact-sentinel"
+import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -2577,6 +2579,13 @@ export class AgentXDaemon {
         return
       }
 
+      // A file an agent declared in a phone app answer, for the dashboard
+      // that holds the conversation. Gated by isMeshGatedPath above.
+      if (path === APP_FILES_PATH) {
+        handleAppFilesApi(req, res, url, { workspaceOf: (id) => this.registry.getAgent(id)?.workspace ?? null })
+        return
+      }
+
       // Recent frames from the screen buffer: pixels of this host's screen.
       // Loopback-only: the answer is file paths on this machine, useless to
       // a peer, and a request writes frames to disk. checkMeshAuth still
@@ -3378,26 +3387,12 @@ export class AgentXDaemon {
             this.json(res, 502, { error: resp.error }); return
           }
 
-          let reply = resp.content ?? ""
           let taskPayload: { summary: string } | undefined
-          const artifacts: Array<{ type: string; filename: string; mime: string }> = []
-
-          // Strip and parse all <agentx-artifact> sentinels.
-          const artifactRe = /<agentx-artifact>([\s\S]*?)<\/agentx-artifact>/gi
-          reply = reply.replace(artifactRe, (_full, inner) => {
-            try {
-              const parsed = JSON.parse(inner.trim())
-              if (parsed && typeof parsed.filename === "string" && typeof parsed.mime === "string") {
-                const mime: string = parsed.mime
-                const type = mime.startsWith("image/") ? "image"
-                  : mime === "application/pdf" ? "pdf"
-                  : mime.startsWith("text/") ? "text"
-                  : "file"
-                artifacts.push({ type, filename: parsed.filename, mime })
-              }
-            } catch { /* malformed — ignore */ }
-            return ""
-          }).trim()
+          // Strip and parse all <agentx-artifact> sentinels (shared with the
+          // phone app: utils/artifact-sentinel.ts).
+          const extracted = extractArtifacts(resp.content ?? "")
+          let reply = extracted.text.trim()
+          const artifacts = extracted.artifacts
 
           // Parse <agentx-task>{"summary":"…"}</agentx-task> sentinel from reply.
           const sentinelRe = /<agentx-task>([\s\S]*?)<\/agentx-task>/i

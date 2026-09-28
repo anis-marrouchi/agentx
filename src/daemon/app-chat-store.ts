@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import { randomBytes } from "crypto"
 import type { UiDirective } from "@/channels/ui-directive"
+import { ARTIFACT_LIMITS, artifactType, type DeclaredArtifact } from "@/utils/artifact-sentinel"
 
 // --- Phone app conversations (server side of the Chat history) ---
 //
@@ -20,7 +21,30 @@ export const LIMITS = {
   messagesPerConversation: 200,
   conversationsPerDevice: 100,
   toolsPerMessage: 50,
+  /** Files an answer may declare (utils/artifact-sentinel.ts). */
+  filesPerMessage: ARTIFACT_LIMITS.perMessage,
 } as const
+
+/** A file an answer declared, as the phone sees it. The path stays on the
+ *  computer; the phone only gets the id, which is random and unguessable. */
+export interface AppFileRef {
+  id: string
+  name: string
+  mime: string
+  kind: "image" | "audio" | "video" | "file"
+}
+
+/** A declared file resolved for serving: only for the phone that owns it. */
+export interface AppFileRecord extends AppFileRef {
+  /** As the agent declared it, relative to its workspace. */
+  path: string
+  conversationId: string
+  /** Where the agent ran: "local" or a mesh peer name. */
+  node: string
+  agent: string
+}
+
+const FILE_ID_RE = /^[a-f0-9]{32}$/
 
 export interface AppToolBadge {
   name: string
@@ -36,6 +60,8 @@ export interface AppChatMessage {
   error?: string
   ui?: UiDirective
   tools?: AppToolBadge[]
+  /** Files the answer declared (served by /api/app/files/:id). */
+  files?: AppFileRef[]
   at: number
 }
 
@@ -70,7 +96,14 @@ export class AppChatStore {
       CREATE TABLE IF NOT EXISTS app_chat_messages (
       id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id TEXT NOT NULL, role TEXT NOT NULL,
       content TEXT NOT NULL, status TEXT, error TEXT, ui TEXT, tools TEXT, at INTEGER NOT NULL);
-      CREATE INDEX IF NOT EXISTS app_chat_messages_conversation ON app_chat_messages(conversation_id, id);`)
+      CREATE INDEX IF NOT EXISTS app_chat_messages_conversation ON app_chat_messages(conversation_id, id);
+      CREATE TABLE IF NOT EXISTS app_chat_files (
+      id TEXT PRIMARY KEY, conversation_id TEXT NOT NULL, message_id INTEGER NOT NULL,
+      path TEXT NOT NULL, name TEXT NOT NULL, mime TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE INDEX IF NOT EXISTS app_chat_files_conversation ON app_chat_files(conversation_id);`)
+    // Databases from before answers could declare files lack the column.
+    const cols = db.prepare("PRAGMA table_info(app_chat_messages)").all() as Array<{ name: string }>
+    if (!cols.some((c) => c.name === "files")) db.exec("ALTER TABLE app_chat_messages ADD COLUMN files TEXT")
   }
 
   create(deviceId: string, init: Pick<AppConversation, "node" | "nodeName" | "agent" | "agentName">, firstMessage: string, now = Date.now()): AppConversation {
@@ -106,21 +139,54 @@ export class AppChatStore {
   }
 
   append(deviceId: string, id: string, m: AppChatMessage): boolean {
+    return this.appendWithFiles(deviceId, id, m) !== null
+  }
+
+  /** Saves a message and registers the files its answer declared, each
+   *  under a fresh random id. Returns what the phone may see of them, or
+   *  null when the conversation isn't this phone's. A declared path that
+   *  could never be served (its type, its length) is left out here. */
+  appendWithFiles(deviceId: string, id: string, m: AppChatMessage, declared: DeclaredArtifact[] = []): AppFileRef[] | null {
     const owner = this.db.prepare("SELECT 1 FROM app_chat_conversations WHERE id = ? AND device_id = ?").get(id, deviceId)
-    if (!owner) return false
+    if (!owner) return null
     const content = m.content.length > LIMITS.content
       ? m.content.slice(0, LIMITS.content) + "\n\n[Cut here: the full answer is in the agent's task history.]"
       : m.content
     const tools = m.tools?.slice(0, LIMITS.toolsPerMessage)
-    this.db.prepare(`INSERT INTO app_chat_messages (conversation_id, role, content, status, error, ui, tools, at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    const files: Array<AppFileRef & { path: string }> = []
+    for (const d of declared) {
+      if (files.length >= LIMITS.filesPerMessage) break
+      const path = d.filename.trim()
+      const type = artifactType(path)
+      if (!type || !path || path.length > ARTIFACT_LIMITS.pathChars || path.includes("\0")) continue
+      const name = (path.split(/[\\/]/).pop() || path).slice(0, 120)
+      files.push({ id: randomBytes(16).toString("hex"), name, mime: type.mime, kind: type.kind, path })
+    }
+    const refs: AppFileRef[] = files.map((f) => ({ id: f.id, name: f.name, mime: f.mime, kind: f.kind }))
+    const row = this.db.prepare(`INSERT INTO app_chat_messages (conversation_id, role, content, status, error, ui, tools, files, at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(id, m.role, content, m.status ?? null, m.error?.slice(0, 500) ?? null,
-        m.ui ? JSON.stringify(m.ui) : null, tools?.length ? JSON.stringify(tools) : null, m.at)
+        m.ui ? JSON.stringify(m.ui) : null, tools?.length ? JSON.stringify(tools) : null, refs.length ? JSON.stringify(refs) : null, m.at)
+    const insert = this.db.prepare(`INSERT INTO app_chat_files (id, conversation_id, message_id, path, name, mime, kind, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    for (const f of files) insert.run(f.id, id, Number(row.lastInsertRowid), f.path, f.name, f.mime, f.kind, m.at)
     this.db.prepare(`DELETE FROM app_chat_messages WHERE conversation_id = ? AND id NOT IN
       (SELECT id FROM app_chat_messages WHERE conversation_id = ? ORDER BY id DESC LIMIT ?)`)
       .run(id, id, LIMITS.messagesPerConversation)
+    // A file goes with the message that declared it.
+    this.db.prepare(`DELETE FROM app_chat_files WHERE conversation_id = ? AND message_id NOT IN
+      (SELECT id FROM app_chat_messages WHERE conversation_id = ?)`).run(id, id)
     this.db.prepare("UPDATE app_chat_conversations SET updated_at = ? WHERE id = ?").run(m.at, id)
-    return true
+    return refs
+  }
+
+  /** A declared file, only if its conversation belongs to `deviceId`. */
+  getFile(deviceId: string, fileId: string): AppFileRecord | null {
+    if (!FILE_ID_RE.test(fileId)) return null
+    const r = this.db.prepare(`SELECT f.*, c.node, c.agent FROM app_chat_files f
+      JOIN app_chat_conversations c ON c.id = f.conversation_id WHERE f.id = ? AND c.device_id = ?`).get(fileId, deviceId) as any
+    if (!r) return null
+    return { id: r.id, name: r.name, mime: r.mime, kind: r.kind, path: r.path, conversationId: r.conversation_id, node: r.node, agent: r.agent }
   }
 
   /** Keeps the newest conversations of one phone. */
@@ -128,6 +194,7 @@ export class AppChatStore {
     const old = this.db.prepare(`SELECT id FROM app_chat_conversations WHERE device_id = ?
       ORDER BY updated_at DESC, rowid DESC LIMIT -1 OFFSET ?`).all(deviceId, LIMITS.conversationsPerDevice) as Array<{ id: string }>
     for (const { id } of old) {
+      this.db.prepare("DELETE FROM app_chat_files WHERE conversation_id = ?").run(id)
       this.db.prepare("DELETE FROM app_chat_messages WHERE conversation_id = ?").run(id)
       this.db.prepare("DELETE FROM app_chat_conversations WHERE id = ?").run(id)
     }
@@ -146,12 +213,14 @@ function toMessage(r: any): AppChatMessage {
   const parse = (s: string | null) => { if (!s) return undefined; try { return JSON.parse(s) } catch { return undefined } }
   const ui = parse(r.ui)
   const tools = parse(r.tools)
+  const files = parse(r.files)
   return {
     role: r.role, content: r.content, at: r.at,
     ...(r.status ? { status: r.status } : {}),
     ...(r.error ? { error: r.error } : {}),
     ...(ui ? { ui } : {}),
     ...(tools ? { tools } : {}),
+    ...(files ? { files } : {}),
   }
 }
 
