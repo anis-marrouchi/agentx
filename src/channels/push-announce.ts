@@ -18,11 +18,9 @@ import type { PushPrefs } from "./push-prefs"
 //     feed's first-contact backfill and catch-up reads bring in,
 //   - anything older than `maxAgeMs`, so a peer that reconnects after a
 //     long outage doesn't fire a stack of stale notifications,
-//   - phones that turned "Notify me of announcements" off.
+//   - phones that turned "Notify me of announcements" off (push_prefs
+//     switch "announce").
 
-/** Preference name in push_prefs. Missing means on. */
-export const ANNOUNCE_PREF = "announce"
-export const ANNOUNCE_PREF_DEFAULT = true
 /** Longest announcement text in a notification body. */
 export const ANNOUNCE_PUSH_MAX = 200
 const SEEN_MAX = 1000
@@ -30,7 +28,7 @@ const SEEN_MAX = 1000
 export interface AnnouncePushDeps {
   bus: { subscribe(fn: EnvelopeListener): () => void }
   store: Pick<PushStore, "list">
-  prefs: Pick<PushPrefs, "get">
+  prefs: Pick<PushPrefs, "on">
   /** The PushAdapter's send; chatId is one phone's device id. */
   send: (msg: OutgoingMessage) => Promise<unknown>
   /** Events stamped before this are replays. Defaults to attach time. */
@@ -65,7 +63,7 @@ export function attachAnnouncePush(deps: AnnouncePushDeps): () => void {
     if (!Number.isFinite(at) || at < startedAt || at < now() - maxAgeMs) return
 
     const devices = [...new Set(deps.store.list().map((s) => s.deviceId))]
-      .filter((id) => deps.prefs.get(id, ANNOUNCE_PREF, ANNOUNCE_PREF_DEFAULT))
+      .filter((id) => deps.prefs.on(id, "announce"))
     if (devices.length === 0) return
     const text = `Announcement\n${announceBody(e)}`
     for (const chatId of devices) {

@@ -6,10 +6,11 @@ import { join } from "path"
 import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
 import { ANNOUNCE_LIST_MAX, ANNOUNCE_TEXT_MAX, toAnnouncements, type AppAnnounceDeps } from "../src/daemon/app-announce"
+import type { AppPushDeps } from "../src/daemon/app-push"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { PushStore } from "../src/channels/push-store"
 import { PushPrefs } from "../src/channels/push-prefs"
-import { ANNOUNCE_PREF, ANNOUNCE_PUSH_MAX, attachAnnouncePush } from "../src/channels/push-announce"
+import { ANNOUNCE_PUSH_MAX, attachAnnouncePush } from "../src/channels/push-announce"
 import { TypedEventBus } from "../src/events/bus"
 import type { OutgoingMessage } from "../src/channels/types"
 import { APP_ANNOUNCE_SCRIPT } from "../src/daemon/ui/pages/app-announce.client"
@@ -31,14 +32,16 @@ beforeAll(async () => {
   tokens = new TokenStore(dir)
   const db = openDb({ path: join(dir, "db.sqlite") })!
   store = new PushStore(db)
-  prefs = new PushPrefs(db)
+  prefs = store.prefs
   const announce: AppAnnounceDeps = {
     recent: async () => { if (recentFails) throw new Error("daemon down"); return events },
     prefs: () => (prefsOn ? prefs : null),
   }
+  // The switch is written through the shared prefs endpoint (app-push.ts).
+  const push: AppPushDeps = { store: () => (prefsOn ? store : null), publicKey: () => "BPUBLICKEY", keepRecent: 10, allowedHosts: [] }
   server = createServer(async (req, res) => {
     const path = new URL(req.url || "/", "http://x").pathname
-    const handled = await handleAppRequest(req, res, path, req.method || "GET", { tokens, announce })
+    const handled = await handleAppRequest(req, res, path, req.method || "GET", { tokens, announce, push })
     if (!handled) { res.writeHead(418); res.end() }
   })
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r))
@@ -71,7 +74,7 @@ describe("GET /api/app/announcements", () => {
 
   it("needs a paired phone, and not a token without the app scope", async () => {
     expect((await fetch(`${base}/api/app/announcements`)).status).toBe(401)
-    expect((await fetch(`${base}/api/app/announcements/notify`, { method: "POST", body: "{\"on\":false}" })).status).toBe(401)
+    expect((await fetch(`${base}/api/app/announcements`, { method: "POST" })).status).toBe(401)
     const { token } = tokens.create({ name: "dash", scopes: ["dashboard:read"] })
     expect((await fetch(`${base}/api/app/announcements`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(401)
   })
@@ -102,24 +105,36 @@ describe("GET /api/app/announcements", () => {
   })
 })
 
-describe("notify toggle", () => {
+describe("notify switch (one prefs store with the chat-finish switch)", () => {
   beforeEach(() => { prefsOn = true })
 
-  it("defaults to on and is kept per phone", async () => {
+  it("defaults to on, is kept per phone, and leaves chatFinish alone", async () => {
     const a = phone("C")
     const b = phone("D")
     expect((await (await a.call("GET", "/api/app/announcements")).json()).notify).toBe(true)
-    expect(await (await a.call("POST", "/api/app/announcements/notify", { on: false })).json()).toEqual({ ok: true, notify: false })
+    expect(await (await a.call("GET", "/api/app/push")).json()).toMatchObject({ chatFinish: true, announce: true })
+    expect(await (await a.call("POST", "/api/app/push/prefs", { announce: false })).json()).toEqual({ ok: true, announce: false })
     expect((await (await a.call("GET", "/api/app/announcements")).json()).notify).toBe(false)
+    expect(await (await a.call("GET", "/api/app/push")).json()).toMatchObject({ chatFinish: true, announce: false })
     expect((await (await b.call("GET", "/api/app/announcements")).json()).notify).toBe(true)
-    expect(prefs.get(a.id, ANNOUNCE_PREF, true)).toBe(false)
+    expect(prefs.on(a.id, "announce")).toBe(false)
+    expect(store.chatFinishOn(a.id)).toBe(true)
+  })
+
+  it("sets both switches in one call", async () => {
+    const a = phone("F")
+    expect(await (await a.call("POST", "/api/app/push/prefs", { chatFinish: false, announce: false })).json())
+      .toEqual({ ok: true, chatFinish: false, announce: false })
+    expect(prefs.all(a.id)).toEqual({ chatFinish: false, announce: false })
   })
 
   it("refuses a bad body, and is unavailable where push isn't hosted", async () => {
     const a = phone("E")
-    expect((await a.call("POST", "/api/app/announcements/notify", { on: "yes" })).status).toBe(400)
+    expect((await a.call("POST", "/api/app/push/prefs", { announce: "yes" })).status).toBe(400)
+    expect((await a.call("POST", "/api/app/push/prefs", {})).status).toBe(400)
+    expect((await fetch(`${base}/api/app/push/prefs`, { method: "POST", body: "{\"announce\":false}" })).status).toBe(401)
     prefsOn = false
-    expect((await a.call("POST", "/api/app/announcements/notify", { on: true })).status).toBe(503)
+    expect((await a.call("POST", "/api/app/push/prefs", { announce: true })).status).toBe(503)
     expect(await (await a.call("GET", "/api/app/announcements")).json()).toMatchObject({ notify: false, notifyAvailable: false })
   })
 })
@@ -176,7 +191,7 @@ describe("attachAnnouncePush", () => {
 
   it("respects the per-phone toggle", async () => {
     const { prefs: p, cleanup } = setup(["tok_a", "tok_b"])
-    p.set("tok_b", ANNOUNCE_PREF, false)
+    p.set("tok_b", "announce", false)
     bus.ingest(peer("p3", now) as any)
     expect(sent.map((m) => m.chatId)).toEqual(["tok_a"])
     cleanup()

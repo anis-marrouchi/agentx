@@ -4,21 +4,19 @@ import type { DaemonConfig } from "./config"
 import { PushPrefs } from "@/channels/push-prefs"
 import { openDb } from "@/storage/sqlite"
 import { dashboardTokenForNode } from "./mesh-auth"
-import { ANNOUNCE_PREF, ANNOUNCE_PREF_DEFAULT } from "@/channels/push-announce"
-import { readJson } from "./app-fleet"
 
 // --- Phone app: mesh announcements (/api/app/announcements*) (#268) ---
 //
 // Runs behind the device-token check in app-routes.ts.
 //
-//   GET  /api/app/announcements         recent announcements, newest first,
-//                                       plus this phone's notify setting
-//   POST /api/app/announcements/notify  { on: boolean } for this phone
+//   GET /api/app/announcements   recent announcements, newest first,
+//                                plus this phone's notify switch
 //
 // The list comes from the primary daemon's /events/recent?kind=announce,
 // which already holds peers' announcements (the peer feed). Only short
-// fields leave: text, who, node, time. The setting lives in push_prefs,
-// next to the phone's push subscription.
+// fields leave: text, who, node, time. The switch is the "announce" row in
+// push_prefs, set through POST /api/app/push/prefs { announce } like the
+// other notification switches (app-push.ts).
 
 export const ANNOUNCE_LIST_MAX = 50
 export const ANNOUNCE_TEXT_MAX = 280
@@ -47,11 +45,9 @@ export async function handleAppAnnounce(
   device: TokenRecord,
   deps: AppAnnounceDeps,
 ): Promise<boolean> {
-  if (path !== "/api/app/announcements" && path !== "/api/app/announcements/notify") return false
-  const prefs = deps.prefs()
-  const notify = () => (prefs ? prefs.get(device.id, ANNOUNCE_PREF, ANNOUNCE_PREF_DEFAULT) : false)
-
-  if (method === "GET" && path === "/api/app/announcements") {
+  if (path !== "/api/app/announcements") return false
+  if (method === "GET") {
+    const prefs = deps.prefs()
     let items: AppAnnouncement[] = []
     let error: string | null = null
     try {
@@ -59,15 +55,7 @@ export async function handleAppAnnounce(
     } catch (e: any) {
       error = String(e?.message || "unreachable").slice(0, 200)
     }
-    return json(res, 200, { items, error, notify: notify(), notifyAvailable: !!prefs })
-  }
-  if (method === "POST" && path === "/api/app/announcements/notify") {
-    if (!prefs) return json(res, 503, { error: "Notifications are not set up on this computer." })
-    let body: Record<string, any>
-    try { body = await readJson(req) } catch (e: any) { return json(res, 400, { error: e.message }) }
-    if (typeof body.on !== "boolean") return json(res, 400, { error: "on must be true or false" })
-    prefs.set(device.id, ANNOUNCE_PREF, body.on)
-    return json(res, 200, { ok: true, notify: body.on })
+    return json(res, 200, { items, error, notify: prefs ? prefs.on(device.id, "announce") : false, notifyAvailable: !!prefs })
   }
   return json(res, 404, { error: "not found" })
 }

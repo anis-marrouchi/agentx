@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import type { TokenRecord } from "./token-store"
 import type { PushStore } from "@/channels/push-store"
+import { PUSH_PREFS, type PushPrefName } from "@/channels/push-prefs"
 import { readJson } from "./app-fleet"
 
 // --- Phone app: notifications (/api/app/push*, /api/app/alerts) ---
@@ -47,8 +48,8 @@ export async function handleAppPush(
       // Only rows made with the current key count, so a phone subscribed
       // before `push-keys --force` sees 0 and subscribes again.
       subscriptions: store && publicKey ? store.list(device.id).filter((s) => s.publicKey === publicKey).length : 0,
-      // Per phone: a notification when a chat answer finishes elsewhere.
-      chatFinish: store ? store.chatFinishOn(device.id) : true,
+      // Per-phone switches (push-prefs.ts): chatFinish, announce.
+      ...(store ? store.prefs.all(device.id) : prefDefaults()),
     })
   }
   if (method === "GET" && path === "/api/app/alerts") {
@@ -62,9 +63,18 @@ export async function handleAppPush(
   let body: Record<string, any>
   try { body = await readJson(req) } catch (e: any) { return json(res, 400, { error: e.message }) }
   if (path === "/api/app/push/prefs") {
-    if (typeof body.chatFinish !== "boolean") return json(res, 400, { error: "chatFinish must be true or false" })
-    store.setChatFinish(device.id, body.chatFinish)
-    return json(res, 200, { ok: true, chatFinish: body.chatFinish })
+    // Any of the switches, each true or false; answers with those it set.
+    const changes = (Object.keys(PUSH_PREFS) as PushPrefName[]).filter((n) => body[PUSH_PREFS[n].field] !== undefined)
+    const fields = changes.map((n) => PUSH_PREFS[n].field).join(", ")
+    const all = Object.values(PUSH_PREFS).map((p) => p.field).join(" or ")
+    if (changes.length === 0) return json(res, 400, { error: `send ${all}, true or false` })
+    if (changes.some((n) => typeof body[PUSH_PREFS[n].field] !== "boolean")) return json(res, 400, { error: `${fields} must be true or false` })
+    const out: Record<string, boolean> = {}
+    for (const n of changes) {
+      store.prefs.set(device.id, n, body[PUSH_PREFS[n].field])
+      out[PUSH_PREFS[n].field] = body[PUSH_PREFS[n].field]
+    }
+    return json(res, 200, { ok: true, ...out })
   }
   const endpoint = validEndpoint(body.endpoint, deps.allowedHosts)
   if (!endpoint) {
@@ -91,6 +101,12 @@ export async function handleAppPush(
   }
   store.subscribe({ endpoint, p256dh, auth, deviceId: device.id, deviceName: device.name, publicKey: publicKey! })
   return json(res, 200, { ok: true })
+}
+
+function prefDefaults(): Record<string, boolean> {
+  const out: Record<string, boolean> = {}
+  for (const p of Object.values(PUSH_PREFS)) out[p.field] = p.default
+  return out
 }
 
 /** The endpoint if it is https on an allowed push-service host (or a

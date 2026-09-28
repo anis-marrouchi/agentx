@@ -39,10 +39,12 @@ export const APP_ANNOUNCE_SCRIPT = `
   sw.id = 'an-notify';
   sw.setAttribute('role', 'switch');
   sw.setAttribute('aria-checked', 'false');
-  sw.setAttribute('aria-label', 'Notify me of announcements');
+  sw.setAttribute('aria-labelledby', 'an-notify-label');
   sw.appendChild(el('span'));
-  var row = el('div', 'fx-row');
-  var label = el('span', 'fx-muted', 'Notify me of announcements');
+  // Same look as the chat-finish switch above it (.al-finish).
+  var row = el('div', 'fx-row al-finish');
+  var label = el('p', null, 'Notify me of announcements');
+  label.appendChild(el('small', null, 'A notification for each new one'));
   label.id = 'an-notify-label';
   row.appendChild(label);
   row.appendChild(sw);
@@ -103,7 +105,7 @@ export const APP_ANNOUNCE_SCRIPT = `
     var on = sw.getAttribute('aria-checked') !== 'true';
     setSwitch(on);
     err.textContent = '';
-    api('POST', '/api/app/announcements/notify', { on: on })
+    api('POST', '/api/app/push/prefs', { announce: on })
       .catch(function (e) { setSwitch(!on); err.textContent = e.message; })
       .then(function () { busy = false; });
   });
