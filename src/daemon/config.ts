@@ -598,6 +598,15 @@ const channelsConfigSchema = z.object({
       /** Hard cap so a forgotten bot doesn't run forever. */
       maxCallMinutes: z.number().int().min(1).max(240).default(30),
     }).default({}),
+    /** The phone app's Share camera (#325). The phone asks for this size and
+     *  rate; the browser picks the nearest the camera supports. The share
+     *  stops by itself after maxSeconds. */
+    camera: z.object({
+      width: z.number().int().min(160).max(3840).default(1280),
+      height: z.number().int().min(120).max(2160).default(720),
+      frameRate: z.number().int().min(1).max(60).default(15),
+      maxSeconds: z.number().int().min(10).max(7200).default(600),
+    }).default({}),
   }).default({}),
 })
 

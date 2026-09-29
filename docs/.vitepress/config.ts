@@ -12,7 +12,7 @@ const groups = [
     { text: "Live", link: "/dashboard/live" }, { text: "Operations", link: "/dashboard/operations" },
     { text: "Activity", link: "/dashboard/activity" }, { text: "Workflows", link: "/dashboard/workflows" },
     { text: "Settings", link: "/dashboard/settings" },
-    { text: "In-page chat", link: "/dashboard/chat" }, { text: "AgentX Voice guide", link: "/guides/agentx-voice" }, { text: "Desktop assistant", link: "/dashboard/voice" }, { text: "Calls from your agents", link: "/dashboard/calls" }, { text: "Phone app", link: "/dashboard/mobile-app" }, { text: "Phone app: Chat", link: "/dashboard/mobile-chat" }, { text: "Phone app: Fleet and Activity", link: "/dashboard/mobile-fleet" }, { text: "Phone app: Notifications", link: "/dashboard/mobile-alerts" },
+    { text: "In-page chat", link: "/dashboard/chat" }, { text: "AgentX Voice guide", link: "/guides/agentx-voice" }, { text: "Desktop assistant", link: "/dashboard/voice" }, { text: "Calls from your agents", link: "/dashboard/calls" }, { text: "Phone app", link: "/dashboard/mobile-app" }, { text: "Phone app: Chat", link: "/dashboard/mobile-chat" }, { text: "Phone app: Fleet and Activity", link: "/dashboard/mobile-fleet" }, { text: "Phone app: Notifications", link: "/dashboard/mobile-alerts" }, { text: "Phone app: Share camera", link: "/dashboard/mobile-camera" },
     { text: "Terminal UI (OpenCode)", link: "/dashboard/tui" },
   ] },
   { text: "Automations", items: [

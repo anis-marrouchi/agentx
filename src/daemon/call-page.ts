@@ -72,6 +72,10 @@ export const CALL_PAGE_HTML = `<!doctype html>
   if (qs.get("to")) $("to").value = qs.get("to");
   $("callId").value = qs.get("callId") || Math.random().toString(36).slice(2, 10);
   const botName = qs.get("bot") || null;  // e.g. ?bot=atlas → invite server-side bot
+  // ?watch=1: watch a phone's shared camera (#325). No camera or mic is
+  // opened here, and this page always sends the offer: the phone only
+  // answers, so its share waits as long as the owner takes to tap the link.
+  const watchOnly = qs.get("watch") === "1";
 
   const norm = (s) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
@@ -201,13 +205,19 @@ export const CALL_PAGE_HTML = `<!doctype html>
     log("joining call " + callId + " with peer=" + to + (botName ? " + bot=" + botName : ""));
 
     let localStream;
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
-    } catch (err) {
-      log("getUserMedia failed: " + err.message, "err");
-      return;
+    if (watchOnly) {
+      localStream = new MediaStream();
+      $("local").parentElement.hidden = true;
+      document.querySelector("main").style.gridTemplateColumns = "1fr";
+    } else {
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+      } catch (err) {
+        log("getUserMedia failed: " + err.message, "err");
+        return;
+      }
+      $("local").srcObject = localStream;
     }
-    $("local").srcObject = localStream;
 
     state = { cfg, localStream, callId, primary: to, peers: new Map(), es: null };
 
@@ -230,10 +240,15 @@ export const CALL_PAGE_HTML = `<!doctype html>
     // Deterministic caller role between us and the human peer. If we're
     // smaller, we offer; otherwise we wait for the offer (handled in
     // handleInboundSignal).
-    const isCaller = norm(cfg.localName) < norm(to);
+    const isCaller = watchOnly || norm(cfg.localName) < norm(to);
     log(isCaller ? "role: caller (will offer to " + to + ")" : "role: callee (waiting for offer from " + to + ")");
     if (isCaller) {
-      await sendSignal({ kind: "ring", callId, from: cfg.localName, to });
+      if (watchOnly) {
+        primaryPc.addTransceiver("video", { direction: "recvonly" });
+        primaryPc.addTransceiver("audio", { direction: "recvonly" });
+      } else {
+        await sendSignal({ kind: "ring", callId, from: cfg.localName, to });
+      }
       try {
         const offer = await primaryPc.createOffer();
         await primaryPc.setLocalDescription(offer);
@@ -271,6 +286,8 @@ export const CALL_PAGE_HTML = `<!doctype html>
     try { state.es.close(); } catch {}
     try { state.localStream.getTracks().forEach(t => t.stop()); } catch {}
     $("local").srcObject = null;
+    $("local").parentElement.hidden = false;
+    document.querySelector("main").style.gridTemplateColumns = "";
     $("remote").srcObject = null;
     $("joinBtn").disabled = false;
     $("hangupBtn").disabled = true;

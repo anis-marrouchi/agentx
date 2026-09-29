@@ -48,6 +48,7 @@ import { AppChatStore } from "./app-chat-store"
 import { appPresence, type AppChatDeps, type AppMeshPeer } from "./app-chat"
 import { AppCallbackPuller, type CallbackEvent, type CallbackReplyBody } from "./app-chat-callbacks"
 import type { AppVoiceDeps } from "./app-voice"
+import type { AppCameraDeps } from "./app-camera"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
 import type { AppFleetDeps, ApprovalItem, NodeApprovals } from "./app-fleet"
@@ -198,7 +199,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
 
   // Phone app. First, above every proxy and the loopback-trusting gates
   // below: /app and /api/app/* always need a device token (app-routes.ts).
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config) })) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -2360,6 +2361,11 @@ function appVoiceDeps(config: DaemonConfig): AppVoiceDeps {
     },
     daemon: { url, token: dashboardTokenForNode(config.dashboard, url) },
   }
+}
+
+function appCameraDeps(config: DaemonConfig): AppCameraDeps {
+  const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  return { daemon: { url, token: dashboardTokenForNode(config.dashboard, url) }, nodeName: config.node.name }
 }
 
 function toApprovalItem(i: InboxItem): ApprovalItem {
