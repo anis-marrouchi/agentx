@@ -1000,6 +1000,57 @@ export const approvalsConfigSchema = z.object({
   }).default({}),
 }).default({})
 
+const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM, 24-hour")
+
+/** One watched WhatsApp chat (src/wacli/rules.ts). Every match field that
+ *  is set must match; at least one is required. */
+export const wacliRuleSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,40}$/, "rule id must be a lowercase slug"),
+  /** A chat: a phone number or a JID (…@s.whatsapp.net, …@g.us). */
+  chat: z.string().min(1).optional(),
+  /** Who wrote it, in any chat: a phone number or a JID. */
+  sender: z.string().min(1).optional(),
+  /** A group, by its JID (…@g.us) or its exact name. */
+  group: z.string().min(1).optional(),
+  /** The agent that triages what this rule catches. */
+  agent: z.string().min(1),
+  /** Extra instructions for this chat: what counts as a request, where the
+   *  tracker is, what language to draft in. */
+  prompt: z.string().max(4000).optional(),
+  /** No owner notification and no auto-acknowledgement in this window;
+   *  triage still runs and drafts still wait in Approvals. */
+  quietHours: z.object({
+    start: hhmm,
+    end: hhmm,
+    /** IANA timezone. Unset: this machine's. */
+    timezone: z.string().optional(),
+  }).optional(),
+  /** Send `ack` drafts without asking. Off unless set here, per rule. */
+  autoAck: z.boolean().default(false),
+  enabled: z.boolean().default(true),
+}).refine((r) => !!(r.chat || r.sender || r.group), "a rule needs chat, sender or group")
+
+/** WhatsApp triage (src/wacli). `wacli sync --webhook` posts each message
+ *  to POST /webhook/wacli; a message from a watched chat goes to an agent,
+ *  which classifies it. Nothing is sent to a contact without approval. */
+export const wacliConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** The --webhook-secret given to wacli. Prefer secretEnv. */
+  secret: z.string().optional(),
+  /** Environment variable holding the secret, when `secret` is unset. */
+  secretEnv: z.string().regex(/^[A-Z_][A-Z0-9_]*$/).default("WACLI_WEBHOOK_SECRET"),
+  /** Messages from one chat within this many seconds become one task. */
+  batchSeconds: z.number().int().min(0).max(600).default(30),
+  /** wacli binary. Unset: found on PATH (and Homebrew's bin). */
+  binary: z.string().optional(),
+  /** wacli --account, for a named account. */
+  account: z.string().optional(),
+  /** Download images and voice notes so the agent can read them. Needs
+   *  `wacli sync --download-media` or network access for wacli. */
+  media: z.boolean().default(true),
+  rules: z.array(wacliRuleSchema).default([]),
+}).default({})
+
 export const daemonConfigSchema = z.object({
   node: z.object({
     id: z.string(),
@@ -1016,6 +1067,7 @@ export const daemonConfigSchema = z.object({
   notifications: notificationsSchema,
   calls: callsSchema,
   approvals: approvalsConfigSchema,
+  wacli: wacliConfigSchema,
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({
     /** Wait this long for runs to finish before cutting them off (they are

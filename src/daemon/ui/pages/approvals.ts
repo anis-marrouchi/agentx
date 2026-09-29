@@ -11,6 +11,7 @@
 // literal.
 
 import { renderShell, type TopbarPeer } from ".."
+import { WACLI_SECTION_CSS, WACLI_SECTION_HTML, WACLI_SECTION_SCRIPT } from "./wacli-section"
 
 export interface ApprovalsPageOpts {
   peers?: TopbarPeer[]
@@ -56,6 +57,7 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
       <div><button type="submit" class="ax-btn ax-btn--primary">Save settings</button></div>
     </form>
   </details>
+${WACLI_SECTION_HTML}
 </div>`
 
   return renderShell({
@@ -94,6 +96,7 @@ const APPROVALS_CSS = `
 .apv__rec b { color: var(--ax-ok); font-weight: 600; }
 .apv__exp { display: inline-block; font-size: 12px; margin: 0 0 8px; padding: 2px 8px; border-radius: var(--ax-radius-pill); background: var(--ax-amber-t); color: var(--ax-amber-ink); }
 .apv__exp.is-soon { background: var(--ax-red-t); color: var(--ax-red-ink); }
+.apv__send { margin: 0 0 10px; padding: 8px 12px; border-left: 3px solid var(--ax-accent); white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; }
 .apv__detail { font-size: 12px; color: var(--ax-text-2); margin: 0 0 10px; }
 .apv__detail summary { cursor: pointer; color: var(--ax-muted); }
 .apv__detail p { margin: 6px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
@@ -112,14 +115,14 @@ const APPROVALS_CSS = `
 .apv__form { display: grid; gap: 10px; margin-top: 12px; max-width: 460px; }
 .apv__form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ax-text-2); }
 .apv__form label.apv__check { flex-direction: row; align-items: center; gap: 8px; }
-.apv__form input[type=number], .apv__form input[type=time], .apv__form input[type=text] {
+.apv__form input[type=number], .apv__form input[type=time], .apv__form input[type=text], .apv__form textarea {
   font: inherit; font-size: 14px; padding: 8px 10px; border-radius: var(--ax-radius-sm);
   border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-text);
 }
 @media (max-width: 560px) {
   .apv__acts .ax-btn { flex: 1 1 0; }
 }
-`
+${WACLI_SECTION_CSS}`
 
 const APPROVALS_SCRIPT = `
 (function(){
@@ -193,6 +196,7 @@ function item(i){
     + '<h2 class="apv__title">' + esc(i.title) + '</h2>'
     + '<p class="apv__ask">' + esc(i.ask) + '</p>'
     + (i.recommend ? '<p class="apv__rec"><b>Recommends:</b> ' + esc(i.recommend) + '</p>' : '')
+    + (i.message ? '<blockquote class="apv__send">' + esc(i.message) + '</blockquote>' : '')
     + (i.expires ? '<p class="apv__exp' + (soon ? ' is-soon' : '') + '" title="' + esc(new Date(i.expires).toLocaleString()) + '">Expires ' + esc(rel(i.expires)) + ', then: ' + esc(i.if_silent) + '</p>' : '')
     + '<details class="apv__detail"><summary>Details</summary>' + more.join('') + '</details>'
     + '<div class="apv__acts">'
@@ -269,6 +273,7 @@ $('apv-form').addEventListener('submit', async function(ev){
   } catch (e) { say('Settings not saved: ' + e.message, 'err'); }
 });
 
+${WACLI_SECTION_SCRIPT}
 load();
 setInterval(function(){ if (document.visibilityState === 'visible' && !document.querySelector('.apv__item:focus-within')) load(); }, 60000);
 })();

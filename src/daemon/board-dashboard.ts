@@ -18,6 +18,7 @@ import { handleWizardGet, handleWizardPost, handleStartDaemonPost, wizardState }
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
+import { handleWacliPanelApi } from "./wacli-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
@@ -670,6 +671,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     await handleApprovalsPanelApi(req, res, path, url)
     return
   }
+  if (await handleWacliPanelApi(req, res, path)) return
   if (path.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, path)
     return

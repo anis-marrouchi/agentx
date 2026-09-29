@@ -50,6 +50,9 @@ import { ResumeCoordinator } from "@/agents/resume/coordinator"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { createWacliService, runWacliAction, wacliSecret } from "@/wacli/daemon"
+import type { WacliService } from "@/wacli/service"
+import { handleWacliWebhook, WACLI_WEBHOOK_PATH } from "@/wacli/webhook"
 import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
 import {
@@ -196,6 +199,8 @@ export class AgentXDaemon {
   private _assistant?: AssistantStore
   /** Agents ringing the owner (src/calls); needs SQLite. */
   private calls?: CallService
+  /** WhatsApp triage (src/wacli). Needs SQLite for dedup. */
+  private wacli?: WacliService
   private assistantStore(): AssistantStore | undefined { return this._assistant }
 
   /** Workflow health for the monitor. Cached for a minute: the dashboard
@@ -507,6 +512,19 @@ export class AgentXDaemon {
         this.sessionMonitor.start()
         this._assistant = new AssistantStore(db)
         this.calls = this.createCallService(new CallStore(db))
+        this.wacli = createWacliService({
+          db,
+          root: process.cwd(),
+          config: () => this.config,
+          hasAgent: (id) => !!this.registry.getAgent(id),
+          execute: async (agentId, message, chatId) => {
+            const r = await this.registry.execute({ agentId, message, context: { channel: "wacli", chatId, sender: "WhatsApp" } })
+            return { content: r.content, error: r.error }
+          },
+          notifyOwner: (title, message, from) => this.notifyOwner({ title, message, from }),
+          log: (m) => this.log(m),
+        })
+        if (this.config.wacli.enabled) this.wacli.start()
         this.log(`  SQLite: ${db.name}`)
         // Procedure miner's on-task trigger — counts recurring activity
         // patterns after each successful task (no-op unless
@@ -1051,6 +1069,7 @@ export class AgentXDaemon {
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
     if (this.approvalsTimer) clearInterval(this.approvalsTimer)
     this.stopReminders?.()
+    this.wacli?.stop()
 
     if (this.reloadTimer) clearTimeout(this.reloadTimer)
     if (this.configWatcher) {
@@ -1525,6 +1544,14 @@ export class AgentXDaemon {
       }
     }
 
+    // 8c. WhatsApp triage reads its rules live; turning it on picks up
+    //     batches that were waiting.
+    if (JSON.stringify(this.config.wacli) !== JSON.stringify(next.wacli)) {
+      if (next.wacli.enabled && !this.config.wacli.enabled) this.wacli?.start()
+      if (!next.wacli.enabled) this.wacli?.stop()
+      applied.push(`wacli(${next.wacli.rules.length} rules)`)
+    }
+
     // 9. Swap in the new config so read-only endpoints (GET /crons etc.)
     //    reflect it, and router send-side paths see fresh channel config.
     const screenChanged = JSON.stringify(this.config.screen) !== JSON.stringify(next.screen)
@@ -1581,6 +1608,8 @@ export class AgentXDaemon {
           sendDigest: async (d, text) => {
             await this.router.sendOutbound({ channel: d.channel, chatId: d.chatId, accountId: d.accountId, text })
           },
+          // An approved WhatsApp draft (src/wacli) goes out through wacli.
+          runAction: (action) => runWacliAction(action, this.config.wacli),
           log: this.log,
         })
       } catch (e: any) {
@@ -2625,6 +2654,26 @@ export class AgentXDaemon {
     })
   }
 
+  /** Tell the owner, as `agentx notify` does: Focus holds a non-urgent
+   *  notice; the push goes through the router with its title as the first
+   *  line, and the Mac shows a banner. */
+  private async notifyOwner({ title, message, urgent, from }: { title: string; message: string; urgent?: boolean; from: string }): Promise<void> {
+    await notify({ title, message, urgent, from, priority: urgent ? 5 : 4 }, async (m) => {
+      // A push that fails must not take the Mac banner with it.
+      try {
+        await this.router.sendOutbound({
+          channel: m.channel ?? defaultNotifyChannel(this.config),
+          chatId: m.chatId ?? "default",
+          text: `${m.title}\n${m.message}`,
+          priority: m.priority,
+          agentId: from,
+        } as any)
+      } catch (e: any) {
+        this.log(`[notify] push for "${m.title}" failed: ${e?.message ?? e}`)
+      }
+    }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+  }
+
   /** Calls from agents to the owner (#321). The notice path is notify's:
    *  Focus holds a non-urgent one; the push goes through the router with
    *  its title as the first line, as `agentx notify` sends it. */
@@ -2634,22 +2683,7 @@ export class AgentXDaemon {
       config: () => this.config.calls,
       agentName: (id) => this.config.agents[id] ? (this.config.agents[id].name || id) : null,
       isRunningTurn: (id, p) => !!this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId }),
-      alert: async ({ title, message, urgent, from }) => {
-        await notify({ title, message, urgent, from, priority: urgent ? 5 : 4 }, async (m) => {
-          // A push that fails must not take the Mac banner with it.
-          try {
-            await this.router.sendOutbound({
-              channel: m.channel ?? defaultNotifyChannel(this.config),
-              chatId: m.chatId ?? "default",
-              text: `${m.title}\n${m.message}`,
-              priority: m.priority,
-              agentId: from,
-            } as any)
-          } catch (e: any) {
-            this.log(`[calls] push for "${m.title}" failed: ${e?.message ?? e}`)
-          }
-        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
-      },
+      alert: (n) => this.notifyOwner(n),
       // Same chat id as /ask, so the agent summarises the call it just had.
       summarize: async (call) => {
         const r = await this.registry.execute({
@@ -3828,6 +3862,17 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.json(res, 500, { error: "hook failed", message: String(e?.message || e) }); return
         }
+      }
+      // WhatsApp triage (#328): wacli signs each message; checked in the
+      // handler. Before the generic route, which would take "wacli" for an
+      // agent id.
+      if (path === WACLI_WEBHOOK_PATH) {
+        await handleWacliWebhook(req, res, {
+          receive: this.wacli && this.config.wacli.enabled ? (m) => this.wacli!.receive(m) : null,
+          secret: () => wacliSecret(this.config.wacli),
+          log: (m) => this.log(m),
+        })
+        return
       }
       if (req.method === "POST" && path.startsWith("/webhook/")) {
         // GitHub channel adapter: intercept webhooks with X-GitHub-Event header
