@@ -950,6 +950,11 @@ export async function executeClaudeCodeStreaming(
       // Close stdin so Claude CLI doesn't wait 3s for input (see executeClaudeCode).
       stdin: "ignore",
     })
+    // Settled by the terminal `result` event. The answer is complete at
+    // that point; what follows is the CLI's own teardown (SessionEnd hook,
+    // MCP servers), which the persistent path never waited for either.
+    let markResultSeen: () => void = () => {}
+    const resultSeen = new Promise<void>((r) => { markResultSeen = r })
 
     // Operator cancellation. SIGTERM → SIGKILL escalation after 3s; we mark
     // the run as cancelled so the post-await result-mapping below surfaces a
@@ -1029,6 +1034,7 @@ export async function executeClaudeCodeStreaming(
             }
 
             // "result" event contains final text (or an API error, when is_error).
+            if (event.type === "result") markResultSeen()
             if (event.type === "result" && event.result) {
               if (event.is_error && typeof event.result === "string") {
                 streamApiError = event.result
@@ -1083,7 +1089,7 @@ export async function executeClaudeCodeStreaming(
       })
     }
 
-    const result = await proc
+    const result = await settleAfterResult(proc, resultSeen)
 
     // Flush any partial UTF-8 sequence still buffered in the decoder.
     // The stream-json output normally ends with a newline so this is a
@@ -1851,6 +1857,29 @@ export async function executeOrchestrator(
  * Returns null when the registry can't allocate a slot (cap exceeded,
  * binary not installed, etc.) — caller falls back to spawn-per-task.
  */
+/** Grace the CLI gets to exit on its own after its terminal event before
+ *  the reply proceeds without it. */
+const POST_RESULT_EXIT_GRACE_MS = 1_000
+
+/**
+ * Resolve with the process result when it exits, or with a synthetic clean
+ * exit once the terminal event has been seen and the grace has passed. The
+ * child keeps running unattended in the latter case; it exits on its own.
+ */
+async function settleAfterResult(proc: PromiseLike<any>, resultSeen: Promise<void>): Promise<any> {
+  const exited = Promise.resolve(proc).then((r) => ({ kind: "exit" as const, r }))
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const graced = resultSeen.then(() => new Promise<{ kind: "grace" }>((res) => {
+    timer = setTimeout(() => res({ kind: "grace" }), POST_RESULT_EXIT_GRACE_MS)
+    timer.unref?.()
+  }))
+  const first = await Promise.race([exited, graced])
+  if (timer) clearTimeout(timer)
+  if (first.kind === "exit") return first.r
+  exited.catch(() => {})
+  return { exitCode: 0, stdout: "", stderr: "", detachedAfterResult: true }
+}
+
 async function executeClaudeCodePersistent(
   agent: AgentDef,
   task: AgentTask,
