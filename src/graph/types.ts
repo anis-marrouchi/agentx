@@ -69,7 +69,8 @@ export const graphNodeSchema = z.object({
 })
 export type GraphNode = z.infer<typeof graphNodeSchema>
 
-export const classificationSourceSchema = z.enum(["llm", "user", "cache"])
+/** "seat": the intent-path decision seat picked an existing path. */
+export const classificationSourceSchema = z.enum(["llm", "user", "cache", "seat"])
 export type ClassificationSource = z.infer<typeof classificationSourceSchema>
 
 export const classificationStatusSchema = z.enum(["pending", "approved", "rejected"])
@@ -81,6 +82,9 @@ export const classificationSchema = z.object({
   agentId: z.string().optional(),
   channel: z.string().optional(),
   sender: z.string().optional(),
+  /** The conversation the message belongs to. Lets a tool running inside
+   *  that conversation find the path its request was filed under. */
+  chatId: z.string().optional(),
   /** Node ids from root to leaf, one per level. Shorter-than-full paths are
    *  allowed if the classifier was only confident down to a certain depth. */
   path: z.array(nodeIdSchema),
