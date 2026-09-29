@@ -43,7 +43,7 @@ import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
 import { TokenStore } from "./token-store"
 import { defaultNotifyChannel } from "@/notify/push-settings"
-import { localAlert, localSettings } from "@/notify"
+import { localAlert, localSettings, notify } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
@@ -112,6 +112,9 @@ import { detectSttHost, findFfmpeg } from "@/voice/transcribe"
 import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-api"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
+import { handleCalls, isCallsPath } from "@/daemon/calls-api"
+import { CallService, SUMMARY_PROMPT } from "@/calls/service"
+import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { clipSpeech } from "@/voice/mesh-voice"
 import { toSpeakable } from "@/voice/speakable"
@@ -190,6 +193,8 @@ export class AgentXDaemon {
   private wfHealth?: { at: number; rows: ReturnType<typeof workflowHealth> }
   /** Shares the daemon's SQLite handle; absent when running without one. */
   private _assistant?: AssistantStore
+  /** Agents ringing the owner (src/calls); needs SQLite. */
+  private calls?: CallService
   private assistantStore(): AssistantStore | undefined { return this._assistant }
 
   /** Workflow health for the monitor. Cached for a minute: the dashboard
@@ -500,6 +505,7 @@ export class AgentXDaemon {
         this.sessionMonitor = new SessionMonitor(db)
         this.sessionMonitor.start()
         this._assistant = new AssistantStore(db)
+        this.calls = this.createCallService(new CallStore(db))
         this.log(`  SQLite: ${db.name}`)
         // Procedure miner's on-task trigger — counts recurring activity
         // patterns after each successful task (no-op unless
@@ -2617,6 +2623,48 @@ export class AgentXDaemon {
     })
   }
 
+  /** Calls from agents to the owner (#321). The notice path is notify's:
+   *  Focus holds a non-urgent one; the push goes through the router with
+   *  its title as the first line, as `agentx notify` sends it. */
+  private createCallService(store: CallStore): CallService {
+    const calls = new CallService({
+      store,
+      config: () => this.config.calls,
+      agentName: (id) => this.config.agents[id] ? (this.config.agents[id].name || id) : null,
+      alert: async ({ title, message, urgent, from }) => {
+        await notify({ title, message, urgent, from, priority: urgent ? 5 : 4 }, async (m) => {
+          await this.router.sendOutbound({
+            channel: m.channel ?? defaultNotifyChannel(this.config),
+            chatId: m.chatId ?? "default",
+            text: `${m.title}\n${m.message}`,
+            priority: m.priority,
+            agentId: from,
+          } as any)
+        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+      },
+      // Same chat id as /ask, so the agent summarises the call it just had.
+      summarize: async (call) => {
+        const r = await this.registry.execute({
+          agentId: call.agentId,
+          message: SUMMARY_PROMPT,
+          context: { channel: "voice", sender: "Voice", chatId: `voice:${call.agentId}` },
+        })
+        return r.error ? null : (r.content ?? null)
+      },
+      file: (call, summary) => {
+        const store = this.assistantStore()
+        if (!store) return
+        const thread = store.createThread(call.agentId, null, `Call: ${call.reason}`)
+        const seq = store.appendTurn(thread.id, `Call: ${call.reason}`)
+        store.resolve(thread.id, seq, summary, "done")
+      },
+      log: (m) => this.log(m),
+    })
+    // Missed and call-back times pass with or without the widget polling.
+    setInterval(() => { void calls.sweep().catch(() => {}) }, 5_000).unref()
+    return calls
+  }
+
   /**
    * Serve the minimal browser call page. Static HTML; no framework.
    * The page does getUserMedia, RTCPeerConnection, and POSTs/listens signals.
@@ -2716,6 +2764,14 @@ export class AgentXDaemon {
         const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body)
         // With wait, the client may have given up; the line still plays.
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
+        return
+      }
+      // Agents ringing the owner. Gated by isMeshGatedPath before this point.
+      if (isCallsPath(path)) {
+        if (!this.calls) { this.json(res, 503, { error: "calls require SQLite" }); return }
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const reply = await handleCalls(this.calls, () => this.config.calls, req.method || "GET", path, url.searchParams, body)
+        this.json(res, reply.status, reply.body)
         return
       }
       // Past voice exchanges, read back from the voice channel's task

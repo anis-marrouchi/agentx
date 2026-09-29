@@ -54,7 +54,10 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/voice/transcribe" || path === "/voice/speak" ||
     // Files agents declared for the phone app: whatever an agent saved in
     // its workspace (app-files-api.ts).
-    path === "/app-files"
+    path === "/app-files" ||
+    // Calls agents place to the owner (calls-api.ts): the reasons are
+    // agent-written text, and a call makes this host ring and speak.
+    path === "/calls" || path.startsWith("/calls/")
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a

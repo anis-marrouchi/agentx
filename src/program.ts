@@ -19,6 +19,7 @@ import { look as lookCmd } from "@/commands/look"
 import { screen as screenCmd } from "@/commands/screen"
 import { paste as pasteCmd } from "@/commands/paste"
 import { notify as notifyCmd } from "@/commands/notify"
+import { call as callCmd } from "@/commands/call"
 import { decide as decideCmd } from "@/commands/decide"
 import { teach as teachCmd } from "@/commands/teach"
 import { talk as talkCmd, narrate as narrateCmd } from "@/commands/talk"
@@ -101,6 +102,7 @@ export async function buildProgram(): Promise<Command> {
     screenCmd,                   // computer use: capture at the right moment
     pasteCmd,                    // clipboard, reshaped for where it lands
     notifyCmd,                   // tell the operator, unless they are in Focus
+    callCmd,                     // an agent rings the operator for a live voice call
     decideCmd,                   // typed decisions, for agents
     teachCmd,                    // talk and point, at the same time
     talkCmd, narrateCmd,         // agents talking out loud; narrated work
