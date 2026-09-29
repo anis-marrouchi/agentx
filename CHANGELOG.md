@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.69.2](https://github.com/anis-marrouchi/agentx/compare/v0.69.1...v0.69.2) (2026-09-29)
+
+
+### Bug Fixes
+
+* **app:** phone orb keeps a square canvas on 2x screens ([#298](https://github.com/anis-marrouchi/agentx/issues/298)) ([#299](https://github.com/anis-marrouchi/agentx/issues/299)) ([889eb9f](https://github.com/anis-marrouchi/agentx/commit/889eb9f32718cb22065a84e909a316c5bc397cf7))
+
+
+### Performance Improvements
+
+* **daemon:** stop the classifier and delegation check from blocking the event loop ([#301](https://github.com/anis-marrouchi/agentx/issues/301)) ([7b9d15c](https://github.com/anis-marrouchi/agentx/commit/7b9d15cab1e570a72b3c1b2349d81ff800bc29cf))
+
 ## [0.69.1](https://github.com/anis-marrouchi/agentx/compare/v0.69.0...v0.69.1) (2026-09-28)
 
 
