@@ -884,6 +884,28 @@ const decisionsConfigSchema = z.object({
   }).default({}),
 }).default({})
 
+/** Agents ringing the owner for a live voice call (src/calls). */
+export const callsSchema = z.object({
+  /** Agents allowed to call: ids, or "*" for every agent on this node.
+   *  Empty: nobody can call until the owner allows it. */
+  allow: z.array(z.string()).default([]),
+  /** Most calls one agent may place in an hour. */
+  maxPerHour: z.number().int().min(1).max(60).default(3),
+  /** How long a call rings before it counts as missed. */
+  ringSeconds: z.number().int().min(10).max(300).default(45),
+  /** An answered call nobody hung up (widget quit or crashed, the Mac
+   *  slept, `agentx call answer` without a conversation) ends after this,
+   *  so the agent can call again. */
+  maxCallMinutes: z.number().int().min(1).max(240).default(30),
+  /** Ring sound: a name from /System/Library/Sounds, without the extension. */
+  ringSound: z.string().regex(/^[\w -]+$/).default("Submarine"),
+  /** After hang-up, ask the agent for a short summary and file it in the
+   *  dashboard's conversation history. */
+  summary: z.boolean().default(true),
+}).default({})
+
+export type CallsConfig = z.infer<typeof callsSchema>
+
 const notificationsSchema = z.object({
   /** Send notification when task takes longer than this (seconds). 0 = disabled. */
   longTaskThreshold: z.number().default(30),
@@ -992,6 +1014,7 @@ export const daemonConfigSchema = z.object({
   crons: z.record(z.string(), cronJobSchema).default({}),
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
+  calls: callsSchema,
   approvals: approvalsConfigSchema,
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({

@@ -86,6 +86,19 @@ Unset, a remote agent's intro comes from its agent card and it gets a
 system voice (and an ElevenLabs voice, for the `elevenlabs` provider) that no
 local agent and no other remote uses.
 
+## Incoming calls
+
+An agent the owner allowed (`calls.allow`) can ring from inside its own run:
+`agentx call request --reason "…"`, or the MCP tool `agentx_call_owner`. `Calls.swift` polls
+`/calls/ringing` every two seconds (the poll is also how the daemon knows the
+widget is running; without it the daemon falls back to `agentx notify`). A
+ringing call summons the pill, pulses the orb in the caller's colours, loops
+`calls.ringSound`, and shows Answer, Later (5 / 15 / 30 min) and Decline.
+Answer sends the daemon's opener through `/ask`, so the agent speaks first,
+then the hands-free loop runs with the caller as the agent until Hang up,
+"bye", or closing the pill. Decisions are in `CallModel.swift`, tested in
+`Tests/Calls`. See [the calls guide](../../docs/dashboard/calls.md).
+
 ## The pill and its orb
 
 The pill (`Panel.swift`) is the one floating widget. Its head is a 36 pt
