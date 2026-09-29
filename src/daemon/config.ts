@@ -1036,6 +1036,13 @@ export const daemonConfigSchema = z.object({
     /** The remindctl binary, when it isn't on the daemon's PATH. */
     command: z.string().min(1).default("remindctl"),
   }).default({}),
+  /** `agentx demo`, read from the agentx.json in the folder it runs from. */
+  demo: z.object({
+    /** Seconds each startup step (node /health, dashboard /live, mesh
+     *  discovery) may take. Unset: AGENTX_DEMO_STARTUP_TIMEOUT, else 60 s
+     *  scaled up by the load average (src/commands/demo-startup.ts). */
+    startupTimeoutSeconds: z.number().int().positive().max(3600).optional(),
+  }).default({}),
   /** The in-process event bus (src/events). `ringSize` bounds how many
    *  recent events GET /events/recent can return. */
   events: z.object({
