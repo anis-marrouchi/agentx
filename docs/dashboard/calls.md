@@ -4,6 +4,8 @@ An agent that needs you directly can **ring you**. The call shows up on the [des
 
 Nobody can call you until you allow them. Calls that aren't urgent don't ring during Focus. Each agent can call only a few times an hour.
 
+The same permission lets an agent ask to **see** through your phone camera. That request shows on the phone, not on the desktop assistant. See [Share your phone camera](mobile-camera.md#when-an-agent-asks-to-see).
+
 ## Before you start
 
 - The [desktop assistant](voice.md) is installed and running on your Mac.

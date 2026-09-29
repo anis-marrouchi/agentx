@@ -390,6 +390,25 @@ const telegramAccountSchema = z.object({
   pollInbound: z.boolean().default(true),
 })
 
+/** An agent watching the phone camera (#325 phase 2, src/camera/watch.ts). */
+export const cameraBotSchema = z.object({
+  /** Seconds between frames the agent gets by itself. 0: only when asked
+   *  ("Look now" on the phone, or the agent's own `agentx camera look`).
+   *  Each frame handed over by itself is a turn of the agent, so keep
+   *  this high or off. */
+  frameIntervalSeconds: z.number().int().min(0).max(3600).default(0),
+  /** The agent's watch ends after this many minutes, whatever the phone does. */
+  maxSessionMinutes: z.number().int().min(1).max(240).default(10),
+  /** Frames are shrunk so their longer side is at most this many pixels
+   *  before the agent sees them. */
+  maxFrameEdge: z.number().int().min(160).max(3840).default(1024),
+  /** Keep the frame files in the agent's workspace after the share ends.
+   *  Off: every frame is deleted when the share ends. */
+  keepFrames: z.boolean().default(false),
+}).default({})
+
+export type CameraBotConfig = z.infer<typeof cameraBotSchema>
+
 const channelsConfigSchema = z.object({
   telegram: z.object({
     enabled: z.boolean().default(false),
@@ -611,6 +630,10 @@ const channelsConfigSchema = z.object({
       height: z.number().int().min(120).max(2160).default(720),
       frameRate: z.number().int().min(1).max(60).default(15),
       maxSeconds: z.number().int().min(10).max(7200).default(600),
+      /** An agent watching the phone camera. The bot keeps only the newest
+       *  frame; the agent gets one when asked, and every
+       *  frameIntervalSeconds when that is set. */
+      bot: cameraBotSchema,
     }).default({}),
   }).default({}),
 })

@@ -1,11 +1,11 @@
 // --- Phone app: Share camera (#325) ---
 //
-// The camera button in the app's header opens a sheet: pick the machine to
-// show the camera on, tap Start. The owner taps every time; nothing opens the
-// camera by itself. While it is live a red bar with a Stop button stays on
-// screen, and the share stops when the owner taps Stop, when the viewer hangs
-// up, when the app goes to the background, or after channels.webrtc.camera
-// .maxSeconds.
+// The camera button in the app's header opens a sheet: pick the machine, or
+// the agent, to show the camera to, tap Start. The owner taps every time;
+// nothing opens the camera by itself. While it is live a red bar with a
+// Stop button stays on screen, and the share stops when the owner taps
+// Stop, when the viewer hangs up, when the app goes to the background, or
+// after the time limit.
 //
 // Signalling goes through /api/app/camera/* (app-camera.ts) to the daemon's
 // WebRTC broker and on to the chosen machine, which notifies its owner with a
@@ -13,8 +13,15 @@
 // answers, so the share waits as long as the owner takes to open the link.
 // Video only: the microphone is never opened.
 //
+// With an agent as the destination (phase 2) the daemon's bot is the viewer.
+// It keeps only the newest frame; Look now hands one to the agent with an
+// optional question, and its answer shows on the sheet. Answers to frames
+// the agent got by itself (frameIntervalSeconds) are picked up by a poll.
+//
 // This string lives inside a TypeScript template literal: no backslashes,
 // no dollar-brace and no backticks in it, or the inlined script breaks.
+
+export { CAMERA_CSS } from "./app-camera.css"
 
 export const CAMERA_BUTTON = `<button type="button" id="cam-btn" class="icon-btn" aria-label="Share camera" aria-haspopup="dialog">📷</button>`
 
@@ -29,49 +36,21 @@ export const CAMERA_BODY = `
   <div class="cam-panel">
     <h2 id="cam-title">Share camera</h2>
     <p id="cam-msg" class="cam-msg" role="status">Loading your machines…</p>
-    <label class="cam-field" id="cam-pick" hidden>Show it on
+    <label class="cam-field" id="cam-pick" hidden>Show it to
       <select id="cam-peer"></select>
+    </label>
+    <div id="cam-reply" class="cam-reply" role="log" aria-live="polite" hidden></div>
+    <label class="cam-field" id="cam-ask" hidden>Ask the agent something (optional)
+      <input id="cam-note" type="text" maxlength="300" autocomplete="off" placeholder="What is this cable for?">
     </label>
     <div class="cam-row">
       <button type="button" id="cam-start" class="cam-primary" hidden>Start camera</button>
+      <button type="button" id="cam-look" class="cam-primary" hidden>Look now</button>
       <button type="button" id="cam-flip" class="cam-secondary" hidden>Flip camera</button>
       <button type="button" id="cam-close" class="cam-secondary">Close</button>
     </div>
   </div>
 </div>`
-
-export const CAMERA_CSS = `
-.cam { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; background: var(--ax-bg); }
-.cam[hidden] { display: none; }
-.cam-live {
-  display: flex; align-items: center; gap: 10px;
-  padding: calc(10px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) 10px calc(16px + env(safe-area-inset-left));
-  background: var(--ax-red); color: #fff; font-weight: 700;
-}
-.cam-live[hidden] { display: none; }
-.cam-dot { width: 12px; height: 12px; border-radius: 50%; background: #fff; flex: none; }
-#cam-live-text { flex: 1; }
-.cam-stop {
-  min-height: 44px; min-width: 88px; border: 2px solid #fff; border-radius: var(--ax-radius-pill);
-  background: transparent; color: #fff; font: inherit; font-weight: 700; cursor: pointer;
-}
-.cam-video { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #000; }
-.cam-video[hidden] { display: none; }
-.cam-panel { padding: 16px calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left)); }
-.cam:not(.is-live) .cam-panel { padding-top: calc(16px + env(safe-area-inset-top)); }
-.cam-panel h2 { font-size: 20px; margin: 0 0 8px; }
-.cam-msg { margin: 0 0 12px; color: var(--ax-text-2); line-height: 1.5; }
-.cam-msg.bad { color: var(--ax-red-ink); }
-.cam-field[hidden] { display: none; }
-.cam-field { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; font-weight: 600; }
-.cam-field select { min-height: 44px; font: inherit; border-radius: var(--ax-radius-sm); border: var(--ax-border-w) solid var(--ax-border); background: var(--ax-surface-2); color: var(--ax-text); padding: 0 10px; }
-.cam-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.cam-primary, .cam-secondary {
-  min-height: 48px; padding: 0 18px; border-radius: var(--ax-radius-pill); font: inherit; font-weight: 600; cursor: pointer;
-  border: var(--ax-border-w) solid var(--ax-border); background: var(--ax-surface-2); color: var(--ax-text);
-}
-.cam-primary { background: var(--ax-accent); border-color: var(--ax-accent); color: #fff; }
-`
 
 export const CAMERA_SCRIPT = `
 (function () {
@@ -82,47 +61,63 @@ export const CAMERA_SCRIPT = `
   var pick = document.getElementById('cam-pick');
   var peerSel = document.getElementById('cam-peer');
   var startBtn = document.getElementById('cam-start');
+  var lookBtn = document.getElementById('cam-look');
   var flipBtn = document.getElementById('cam-flip');
   var closeBtn = document.getElementById('cam-close');
   var live = document.getElementById('cam-live');
   var liveText = document.getElementById('cam-live-text');
   var video = document.getElementById('cam-video');
+  var replyBox = document.getElementById('cam-reply');
+  var ask = document.getElementById('cam-ask');
+  var note = document.getElementById('cam-note');
   var cfg = null;
-  var s = null; // the live share: { callId, peer, stream, pc, es, facing, until, timer, tick }
+  var s = null; // the live share: { callId, peer, agent, stream, pc, es, facing, until, timer, tick, poll, shown }
 
   function norm(x) { return String(x || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function say(text, bad) { msg.textContent = text; msg.className = 'cam-msg' + (bad ? ' bad' : ''); }
-  // keepalive lets the hangup leave while the page unloads (pagehide).
-  function post(body, keepalive) {
-    return fetch('/api/app/camera/signal', {
-      method: 'POST', credentials: 'same-origin', keepalive: !!keepalive,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+  function api(method, path, body, keepalive) {
+    return fetch(path, {
+      method: method, credentials: 'same-origin', keepalive: !!keepalive,
+      headers: body ? { 'Content-Type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
     }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; }); });
   }
+  // keepalive lets the hangup leave while the page unloads (pagehide).
+  function post(body, keepalive) { return api('POST', '/api/app/camera/signal', body, keepalive); }
+  function agentOf(value) { return value && value.indexOf('bot:') === 0 ? value.slice(4) : null; }
+  function agentName(id) {
+    var a = cfg && cfg.agents ? cfg.agents.filter(function (x) { return x.id === id; })[0] : null;
+    return a ? a.name : id;
+  }
 
-  function open() {
+  // then() runs once the destinations are listed (the Show bar uses it).
+  function open(then) {
     sheet.hidden = false;
     closeBtn.focus();
     if (s) return;
     say('Loading your machines…');
     pick.hidden = true; startBtn.hidden = true;
-    fetch('/api/app/camera/config', { credentials: 'same-origin' }).then(function (r) {
-      return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; });
-    }).then(function (c) {
+    api('GET', '/api/app/camera/config').then(function (c) {
       cfg = c;
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.RTCPeerConnection) {
         say('This browser cannot share its camera here. Open the app over https (tailscale serve).', true); return;
       }
-      if (!c.peers.length) { say('No other machine to show it on. Add a mesh peer, then try again.', true); return; }
+      var agents = c.agents || [];
+      if (!c.peers.length && !agents.length) { say('No other machine or agent to show it to. Add a mesh peer, then try again.', true); return; }
       peerSel.innerHTML = '';
       c.peers.forEach(function (p) {
         var o = document.createElement('option');
         o.value = p.name; o.textContent = p.name;
         peerSel.appendChild(o);
       });
+      agents.forEach(function (a) {
+        var o = document.createElement('option');
+        o.value = 'bot:' + a.id; o.textContent = 'Agent: ' + a.name;
+        peerSel.appendChild(o);
+      });
       pick.hidden = false; startBtn.hidden = false;
-      say('The camera opens only when you tap Start. The other machine gets a link to watch.');
+      say('The camera opens only when you tap Start. A machine gets a link to watch; an agent looks when you tap Look now.');
+      if (then) then();
     }).catch(function (e) { say(e.message || 'Could not load your machines.', true); });
   }
 
@@ -132,21 +127,30 @@ export const CAMERA_SCRIPT = `
     btn.focus();
   }
 
-  function start() {
-    if (s || !cfg) return;
-    var peer = peerSel.value;
-    var cam = cfg.camera || null;
-    var maxMs = ((cam && cam.maxSeconds) || 600) * 1000;
+  function newCallId() {
     var ids = new Uint8Array(8);
     crypto.getRandomValues(ids);
-    var callId = 'cam-' + Array.prototype.map.call(ids, function (b) { return (b % 36).toString(36); }).join('');
+    return 'cam-' + Array.prototype.map.call(ids, function (b) { return (b % 36).toString(36); }).join('');
+  }
+
+  // preset comes from the Show bar: the ask's id and its agent.
+  function start(preset) {
+    if (s || !cfg) return;
+    var peer = preset && preset.peer ? preset.peer : peerSel.value;
+    var agent = agentOf(peer);
+    var cam = cfg.camera || null;
+    var maxMs = ((cam && cam.maxSeconds) || 600) * 1000;
+    // An agent's watch has its own limit; the shorter one shows.
+    if (agent && cam && cam.bot && cam.bot.maxSessionMinutes) maxMs = Math.min(maxMs, cam.bot.maxSessionMinutes * 60000);
+    var callId = preset && preset.callId ? preset.callId : newCallId();
     startBtn.disabled = true;
     say('Opening the camera…');
     navigator.mediaDevices.getUserMedia(cameraConstraints(cam, 'environment')).then(function (stream) {
-      s = { callId: callId, peer: peer, stream: stream, facing: 'environment', until: Date.now() + maxMs, pc: null, es: null };
+      s = { callId: callId, peer: peer, agent: agent, stream: stream, facing: 'environment', until: Date.now() + maxMs, pc: null, es: null, shown: 0 };
       video.srcObject = stream; video.hidden = false;
       sheet.classList.add('is-live');
       live.hidden = false; flipBtn.hidden = false; startBtn.hidden = true; pick.hidden = true; closeBtn.hidden = true;
+      if (agent) { lookBtn.hidden = false; ask.hidden = false; replyBox.hidden = true; replyBox.innerHTML = ''; }
       document.title = '● Camera live · AgentX';
       paintLive();
       s.tick = setInterval(paintLive, 1000);
@@ -160,9 +164,10 @@ export const CAMERA_SCRIPT = `
     });
   }
 
+  function who() { return s.agent ? agentName(s.agent) : s.peer; }
   function paintLive() {
     if (!s) return;
-    liveText.textContent = 'Camera live on ' + s.peer + ' · ' + shareClock(s.until - Date.now());
+    liveText.textContent = (s.agent ? agentName(s.agent) + ' is watching' : 'Camera live on ' + s.peer) + ' · ' + shareClock(s.until - Date.now());
   }
 
   function connect() {
@@ -178,8 +183,11 @@ export const CAMERA_SCRIPT = `
     };
     pc.onconnectionstatechange = function () {
       if (!s) return;
-      if (pc.connectionState === 'connected') say(s.peer + ' is watching. Tap Stop to end.');
-      if (pc.connectionState === 'failed') stop('The connection to ' + s.peer + ' failed. Check both are on the tailnet, or add a TURN server.');
+      if (pc.connectionState === 'connected') {
+        say(s.agent ? who() + ' can see the camera. Tap Look now to ask what it sees.' : who() + ' is watching. Tap Stop to end.');
+        if (s.agent && !s.poll) s.poll = setInterval(pollReplies, 5000);
+      }
+      if (pc.connectionState === 'failed') stop('The connection to ' + who() + ' failed. Check both are on the tailnet, or add a TURN server.');
     };
     var es = new EventSource('/api/app/camera/events?callId=' + encodeURIComponent(s.callId));
     s.es = es;
@@ -192,14 +200,15 @@ export const CAMERA_SCRIPT = `
     es.addEventListener('ready', function () {
       if (rang || !s) return;
       rang = true;
+      // For an agent the ring starts its bot, which offers at once.
       post({ kind: 'ring', callId: s.callId, to: s.peer }).then(function () {
-        if (s) say('Waiting for ' + s.peer + ' to open the link it was sent…');
-      }).catch(function (e) { stop('Could not reach ' + (s ? s.peer : 'the machine') + ': ' + e.message); });
+        if (s) say(s.agent ? 'Connecting to ' + who() + '…' : 'Waiting for ' + s.peer + ' to open the link it was sent…');
+      }).catch(function (e) { stop('Could not reach ' + (s ? who() : 'the machine') + ': ' + e.message); });
     });
     es.addEventListener('signal', function (evt) {
       var sig; try { sig = JSON.parse(evt.data); } catch (e) { return; }
       if (!s || sig.callId !== s.callId || norm(sig.from) !== norm(s.peer)) return;
-      if (sig.kind === 'hangup') { stop(s.peer + ' stopped watching.'); return; }
+      if (sig.kind === 'hangup') { stop(who() + ' stopped watching.'); return; }
       if (sig.kind === 'offer') {
         pc.setRemoteDescription({ type: 'offer', sdp: sig.sdp }).then(function () {
           return pc.createAnswer();
@@ -212,6 +221,43 @@ export const CAMERA_SCRIPT = `
         pc.addIceCandidate(sig.candidate).catch(function () {});
       }
     });
+  }
+
+  // The owner asks the agent what it sees: one turn, its answer on the sheet.
+  function look() {
+    if (!s || !s.agent || lookBtn.disabled) return;
+    var text = note.value.trim();
+    lookBtn.disabled = true;
+    say('Asking ' + who() + '…');
+    api('POST', '/api/app/camera/look', { callId: s.callId, note: text }).then(function (r) {
+      if (!s) return;
+      note.value = '';
+      showReply(r.reply);
+      say('Tap Look now again for a fresh look.');
+    }).catch(function (e) { if (s) say(e.message || 'No answer.', true); })
+      .then(function () { lookBtn.disabled = false; });
+  }
+
+  function showReply(r) {
+    if (!r || !r.text) return;
+    s.shown = Math.max(s.shown || 0, r.at || 0);
+    var item = document.createElement('div');
+    var head = document.createElement('strong');
+    head.textContent = who() + (r.note ? ' · ' + r.note : '') + ' · ' + new Date(r.at || Date.now()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    var body = document.createElement('span');
+    body.textContent = r.text;
+    item.appendChild(head); item.appendChild(body);
+    replyBox.insertBefore(item, replyBox.firstChild);
+    replyBox.hidden = false;
+  }
+
+  // Answers to frames the agent got by itself (frameIntervalSeconds).
+  function pollReplies() {
+    if (!s || !s.agent || document.visibilityState !== 'visible') return;
+    api('GET', '/api/app/camera/watch?callId=' + encodeURIComponent(s.callId)).then(function (r) {
+      if (!s || !r.watch) return;
+      (r.watch.replies || []).forEach(function (rep) { if (rep.at > (s.shown || 0)) showReply(rep); });
+    }).catch(function () {});
   }
 
   function flip() {
@@ -235,7 +281,7 @@ export const CAMERA_SCRIPT = `
     if (!s) return;
     var was = s;
     s = null;
-    clearInterval(was.tick); clearTimeout(was.timer);
+    clearInterval(was.tick); clearTimeout(was.timer); clearInterval(was.poll);
     post({ kind: 'hangup', callId: was.callId, to: was.peer }, true).catch(function () {});
     try { if (was.es) was.es.close(); } catch (e) {}
     try { if (was.pc) was.pc.close(); } catch (e) {}
@@ -243,15 +289,30 @@ export const CAMERA_SCRIPT = `
     video.srcObject = null; video.hidden = true;
     sheet.classList.remove('is-live');
     live.hidden = true; flipBtn.hidden = true; closeBtn.hidden = false;
+    lookBtn.hidden = true; lookBtn.disabled = false; ask.hidden = true;
     startBtn.hidden = false; startBtn.disabled = false; pick.hidden = false;
     document.title = 'AgentX';
     say(reason || 'Camera stopped.');
   }
 
-  btn.addEventListener('click', open);
+  btn.addEventListener('click', function () { open(); });
   closeBtn.addEventListener('click', close);
-  startBtn.addEventListener('click', start);
+  startBtn.addEventListener('click', function () { start(); });
+  // The owner tapped Show on an agent's ask: open the camera for that
+  // agent, under the ask's id, so the daemon ties the share to the ask.
+  document.addEventListener('ax-camera', function (ev) {
+    var d = ev.detail || {};
+    if (d.type !== 'show' || !d.agentId || !d.callId || s) return;
+    var preset = { peer: 'bot:' + d.agentId, callId: d.callId };
+    open(function () {
+      peerSel.value = preset.peer;
+      if (d.reason) note.value = d.reason;
+      start(preset);
+    });
+  });
+  lookBtn.addEventListener('click', look);
   flipBtn.addEventListener('click', flip);
+  note.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); look(); } });
   document.getElementById('cam-stop').addEventListener('click', function () { stop('Camera stopped.'); });
   sheet.addEventListener('keydown', function (ev) { if (ev.key === 'Escape') close(); });
   // No capture in the background: leaving the app ends the share.

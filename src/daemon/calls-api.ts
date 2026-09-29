@@ -1,6 +1,7 @@
 // Calls an agent places to the owner, over HTTP (src/calls, #321).
 //
-//   POST /calls                 {agentId, reason, urgency?: "urgent"}
+//   POST /calls                 {agentId, reason, urgency?: "urgent",
+//                               kind?: "camera"}
 //                               with X-AgentX-Task, or X-AgentX-Channel +
 //                               X-AgentX-Chat: a running turn of agentId
 //                               201 ringing {call, rang}; 202 held as a
@@ -8,9 +9,12 @@
 //                               403 no such running turn, or not in
 //                               calls.allow; 409 one already in
 //                               progress; 429 over calls.maxPerHour
-//   GET  /calls?status=&limit=  newest first; status is a comma list
-//   GET  /calls/ringing         the widget's poll: {calls, ringSound,
-//                               ringSeconds}. Polling marks the widget alive.
+//   GET  /calls?status=&kind=&limit=  newest first; status is a comma list
+//   GET  /calls/ringing         the widget's poll: voice calls {calls,
+//                               ringSound, ringSeconds}. Polling marks the
+//                               widget alive.
+//   GET  /calls/asking          the phone app's poll: camera asks waiting
+//                               for the owner {calls, ringSeconds}
 //   GET  /calls/:id
 //   POST /calls/:id/answer      200 {call, opener}: the widget sends the
 //                               opener through /ask so the agent speaks first
@@ -50,14 +54,21 @@ export async function handleCalls(
     if (method !== "GET") return { status: 405, body: { error: "GET or POST" } }
     await calls.sweep()
     const status = (query.get("status") || "").split(",").filter((s): s is CallStatus => STATUSES.includes(s as CallStatus))
+    const kindParam = query.get("kind")
+    const kind = kindParam === "voice" || kindParam === "camera" ? kindParam : undefined
     const limit = parseInt(query.get("limit") || "", 10)
-    return { status: 200, body: { calls: calls.list({ status, limit: Number.isFinite(limit) ? limit : undefined }) } }
+    return { status: 200, body: { calls: calls.list({ status, kind, limit: Number.isFinite(limit) ? limit : undefined }) } }
   }
 
   if (path === "/calls/ringing") {
     if (method !== "GET") return { status: 405, body: { error: "GET" } }
     const cfg = config()
     return { status: 200, body: { calls: await calls.ringing(), ringSound: cfg.ringSound, ringSeconds: cfg.ringSeconds } }
+  }
+
+  if (path === "/calls/asking") {
+    if (method !== "GET") return { status: 405, body: { error: "GET" } }
+    return { status: 200, body: { calls: await calls.asking(), ringSeconds: config().ringSeconds } }
   }
 
   // Call ids are plain ASCII ("call-1a2b3c4d"): no decoding needed.

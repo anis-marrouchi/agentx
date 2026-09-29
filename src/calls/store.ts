@@ -1,19 +1,29 @@
 // --- Calls an agent placed to the owner, kept in SQLite ---
 //
 // One row per call, so a missed call is still there after a restart and
-// the dashboard can list them. Nothing else reads this table.
+// the dashboard can list them. Nothing else reads this table. A camera
+// ask (#325 phase 3: "show me") is a call of kind "camera": same
+// allowlist, same hourly limit, same lifecycle, answered on the phone
+// instead of the voice widget.
 
 import type Database from "better-sqlite3"
 
 export type CallStatus = "ringing" | "answered" | "ended" | "declined" | "missed" | "later"
 export type CallUrgency = "normal" | "urgent"
+/** "voice": a live voice call on the widget. "camera": the agent asks to see through the phone camera. */
+export type CallKind = "voice" | "camera"
 
 export interface Call {
   id: string
   agentId: string
+  kind: CallKind
   reason: string
   urgency: CallUrgency
   status: CallStatus
+  /** The channel and chat the asking turn ran in, so what the agent sees
+   *  is answered there; null when the turn had none (a task run). */
+  channel: string | null
+  chatId: string | null
   /** When the agent asked, ms since the epoch. */
   createdAt: number
   /** When it last started ringing: at the request, or when "later" came due. */
@@ -31,9 +41,9 @@ export interface Call {
 /** Calls still in progress: an agent has at most one of these. */
 export const LIVE: CallStatus[] = ["ringing", "answered", "later"]
 
-const COLUMNS = `id, agent_id AS agentId, reason, urgency, status, created_at AS createdAt,
+const COLUMNS = `id, agent_id AS agentId, kind, reason, urgency, status, created_at AS createdAt,
   ringing_since AS ringingSince, answered_at AS answeredAt, ended_at AS endedAt,
-  ring_again_at AS ringAgainAt, note, summary`
+  ring_again_at AS ringAgainAt, note, summary, channel, chat_id AS chatId`
 
 export class CallStore {
   constructor(private db: Database.Database) {
@@ -43,12 +53,19 @@ export class CallStore {
       ringing_since INTEGER, answered_at INTEGER, ended_at INTEGER,
       ring_again_at INTEGER, note TEXT, summary TEXT);
       CREATE INDEX IF NOT EXISTS calls_recent ON calls(created_at DESC);`)
+    // Columns added since the table first shipped (#325 phase 3). A row
+    // from before is a voice call from a turn whose chat was not kept.
+    const have = new Set((db.prepare("PRAGMA table_info(calls)").all() as Array<{ name: string }>).map((c) => c.name))
+    if (!have.has("kind")) db.exec("ALTER TABLE calls ADD COLUMN kind TEXT NOT NULL DEFAULT 'voice'")
+    if (!have.has("channel")) db.exec("ALTER TABLE calls ADD COLUMN channel TEXT")
+    if (!have.has("chat_id")) db.exec("ALTER TABLE calls ADD COLUMN chat_id TEXT")
   }
 
   insert(call: Call): void {
-    this.db.prepare(`INSERT INTO calls VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
-      call.id, call.agentId, call.reason, call.urgency, call.status, call.createdAt,
-      call.ringingSince, call.answeredAt, call.endedAt, call.ringAgainAt, call.note, call.summary)
+    this.db.prepare(`INSERT INTO calls (id, agent_id, kind, reason, urgency, status, created_at, ringing_since,
+      answered_at, ended_at, ring_again_at, note, summary, channel, chat_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      call.id, call.agentId, call.kind, call.reason, call.urgency, call.status, call.createdAt,
+      call.ringingSince, call.answeredAt, call.endedAt, call.ringAgainAt, call.note, call.summary, call.channel, call.chatId)
   }
 
   get(id: string): Call | undefined {
@@ -86,15 +103,19 @@ export class CallStore {
     return changed ? this.get(id) : undefined
   }
 
-  /** Newest first; only these statuses when given. */
-  list(opts: { status?: CallStatus[]; limit?: number } = {}): Call[] {
+  /** Newest first; only these statuses, and only this kind, when given. */
+  list(opts: { status?: CallStatus[]; kind?: CallKind; limit?: number } = {}): Call[] {
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200)
+    const where: string[] = []
+    const args: unknown[] = []
     if (opts.status?.length) {
-      const marks = opts.status.map(() => "?").join(",")
-      return this.db.prepare(`SELECT ${COLUMNS} FROM calls WHERE status IN (${marks})
-        ORDER BY created_at DESC, rowid DESC LIMIT ?`).all(...opts.status, limit) as Call[]
+      where.push(`status IN (${opts.status.map(() => "?").join(",")})`)
+      args.push(...opts.status)
     }
-    return this.db.prepare(`SELECT ${COLUMNS} FROM calls ORDER BY created_at DESC, rowid DESC LIMIT ?`).all(limit) as Call[]
+    if (opts.kind) { where.push("kind=?"); args.push(opts.kind) }
+    const filter = where.length ? `WHERE ${where.join(" AND ")}` : ""
+    return this.db.prepare(`SELECT ${COLUMNS} FROM calls ${filter} ORDER BY created_at DESC, rowid DESC LIMIT ?`)
+      .all(...args, limit) as Call[]
   }
 
   /** Calls this agent placed after `since` (ms), for the hourly limit. */

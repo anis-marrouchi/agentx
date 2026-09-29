@@ -57,7 +57,11 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/app-files" ||
     // Calls agents place to the owner (calls-api.ts): the reasons are
     // agent-written text, and a call makes this host ring and speak.
-    path === "/calls" || path.startsWith("/calls/")
+    path === "/calls" || path.startsWith("/calls/") ||
+    // An agent watching the phone camera (camera-api.ts): a look runs the
+    // agent's turn, and a snapshot writes a picture of the owner's
+    // surroundings to disk.
+    path === "/webrtc/camera" || path.startsWith("/webrtc/camera/")
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a

@@ -13,6 +13,11 @@ import { normalizeName as normal } from "@/channels/webrtc-signal"
 //
 // The phone always signals as this node: `from` is set here, never taken
 // from the request, so a phone can't speak for another machine.
+//
+// A destination `bot:<agentId>` is an agent on this node watching (#325
+// phase 2). Its ring starts the agent's bot through /webrtc/camera/watch;
+// the rest of the signalling reaches the bot through the same broker, in
+// process. /api/app/camera/look asks that agent what it sees.
 
 export interface AppCameraDeps {
   daemon: DaemonTarget
@@ -47,7 +52,10 @@ export async function handleAppCamera(
       // The phone shows its camera on another machine; this node is where it
       // signals from, so it is not a destination.
       const peers = (Array.isArray(cfg.peers) ? cfg.peers : []).filter((p: any) => normal(String(p?.name ?? "")) !== self)
-      return json(res, 200, { node: deps.nodeName, iceServers: cfg.iceServers ?? [], peers, camera: cfg.camera ?? null })
+      const agents = (Array.isArray(cfg.agents) ? cfg.agents : [])
+        .filter((a: any) => a && typeof a.id === "string")
+        .map((a: any) => ({ id: a.id, name: typeof a.name === "string" && a.name ? a.name : a.id }))
+      return json(res, 200, { node: deps.nodeName, iceServers: cfg.iceServers ?? [], peers, agents, camera: cfg.camera ?? null })
     } catch {
       return json(res, 502, { error: "Could not reach AgentX on this computer." })
     }
@@ -61,6 +69,13 @@ export async function handleAppCamera(
     try { body = JSON.parse(raw.toString("utf8") || "{}") } catch { return json(res, 400, { error: "expected JSON" }) }
     const signal = cameraSignal(body, deps.nodeName)
     if (typeof signal === "string") return json(res, 400, { error: signal })
+    // The owner tapped Start with an agent as the destination: its bot
+    // joins now and offers; the phone answers through the broker.
+    const agentId = watchingAgent(signal.to as string)
+    if (agentId && signal.kind === "ring") {
+      const r = await relay(base, auth, "POST", "/webrtc/camera/watch", { callId: signal.callId, agentId })
+      return json(res, r.status, r.status < 300 ? { ok: true, watch: r.body.watch } : { error: r.body.error })
+    }
     try {
       const r = await fetch(`${base}/webrtc/signal/out`, {
         method: "POST",
@@ -82,7 +97,71 @@ export async function handleAppCamera(
     return pipeEvents(req, res, `${base}/webrtc/events?callId=${encodeURIComponent(callId)}&as=${encodeURIComponent(deps.nodeName)}`, auth)
   }
 
+  // The owner asks the watching agent what it sees. One turn of the agent.
+  if (path === "/api/app/camera/look") {
+    if (method !== "POST") return json(res, 405, { error: "POST" })
+    const raw = await readRaw(req, 4096)
+    if (!raw) return json(res, 413, { error: "note too long" })
+    let body: any
+    try { body = JSON.parse(raw.toString("utf8") || "{}") } catch { return json(res, 400, { error: "expected JSON" }) }
+    const callId = String(body?.callId ?? "")
+    if (!CALL_ID.test(callId)) return json(res, 400, { error: "callId is required" })
+    const note = typeof body?.note === "string" ? body.note : ""
+    const r = await relay(base, auth, "POST", `/webrtc/camera/watch/${encodeURIComponent(callId)}/look`, { note }, 180_000)
+    return json(res, r.status, r.status < 300 ? { reply: r.body.reply, frame: r.body.frame } : { error: r.body.error })
+  }
+
+  // Camera asks waiting for the owner (#325 phase 3): the app polls this
+  // and shows a Show / Decline bar. Show answers the ask, then the phone
+  // starts a share with the ask's id and the agent as the destination.
+  if (path === "/api/app/camera/asks") {
+    if (method !== "GET") return json(res, 405, { error: "GET" })
+    const r = await relay(base, auth, "GET", "/calls/asking")
+    if (r.status >= 300) return json(res, r.status, { error: r.body.error })
+    const asks = (Array.isArray(r.body.calls) ? r.body.calls : []).map((c: any) => ({ id: c.id, agentId: c.agentId, reason: c.reason, createdAt: c.createdAt }))
+    return json(res, 200, { asks, ringSeconds: r.body.ringSeconds ?? null })
+  }
+  const askAction = /^\/api\/app\/camera\/asks\/([A-Za-z0-9_-]{4,64})\/(answer|decline)$/.exec(path)
+  if (askAction) {
+    if (method !== "POST") return json(res, 405, { error: "POST" })
+    const r = await relay(base, auth, "POST", `/calls/${askAction[1]}/${askAction[2]}`, {})
+    return json(res, r.status, r.status < 300 ? { call: r.body.call } : { error: r.body.error })
+  }
+
+  // What the watching agent has answered so far (frames it got by itself).
+  if (path === "/api/app/camera/watch") {
+    if (method !== "GET") return json(res, 405, { error: "GET" })
+    const callId = new URL(req.url || "/", "http://x").searchParams.get("callId") || ""
+    if (!CALL_ID.test(callId)) return json(res, 400, { error: "callId is required" })
+    const r = await relay(base, auth, "GET", `/webrtc/camera/watch/${encodeURIComponent(callId)}`)
+    return json(res, r.status, r.status < 300 ? { watch: r.body.watch } : { error: r.body.error })
+  }
+
   return json(res, 404, { error: "not found" })
+}
+
+/** The agent id in a `bot:<agentId>` destination, or null for a machine. */
+export function watchingAgent(to: string): string | null {
+  const m = /^bot:([A-Za-z0-9_.-]{1,80})$/.exec(to)
+  return m ? m[1] : null
+}
+
+/** One request to the daemon, with its status and JSON body. A daemon that
+ *  cannot be reached answers 502 in the same shape. */
+async function relay(base: string, auth: Record<string, string>, method: string, path: string, body?: unknown, timeoutMs = 15_000): Promise<{ status: number; body: any }> {
+  try {
+    const r = await fetch(`${base}${path}`, {
+      method,
+      headers: { "Content-Type": "application/json", ...auth },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
+    })
+    const out = await r.json().catch(() => ({})) as any
+    if (r.status === 404 && typeof out?.error === "string" && /channels\.webrtc\.enabled/.test(out.error)) return { status: 503, body: out }
+    return { status: r.ok ? r.status : r.status >= 500 ? 502 : r.status, body: r.ok ? out : { error: out?.error || `AgentX answered HTTP ${r.status}.` } }
+  } catch {
+    return { status: 502, body: { error: "Could not reach AgentX on this computer." } }
+  }
 }
 
 /** The signal to relay, or why it was refused. */
@@ -92,7 +171,8 @@ export function cameraSignal(body: any, nodeName: string): Record<string, unknow
   const callId = String(body?.callId ?? "")
   if (!CALL_ID.test(callId)) return "callId must be 4 to 64 letters, digits, - or _"
   const to = typeof body?.to === "string" ? body.to.trim() : ""
-  if (!to || to.length > 100) return "to must name a machine"
+  if (!to || to.length > 100) return "to must name a machine or an agent"
+  if (to.startsWith("bot:") && !watchingAgent(to)) return "to must be bot:<agent id> for an agent"
   if (normal(to) === normal(nodeName)) return "pick another machine; this phone signals from this one"
   const signal: Record<string, unknown> = { kind, callId, from: nodeName, to }
   if (kind === "offer" || kind === "answer") {

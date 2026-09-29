@@ -14,11 +14,17 @@
 //   4. Focus: a non-urgent call does not ring. It becomes a missed call,
 //      and its notice goes through notify, which holds it until Focus
 //      ends. Urgent calls ring through, as `notify --urgent` does.
+//
+// A camera ask (#325 phase 3, kind "camera") goes through the same checks
+// and the same table. It never rings the widget: the notice goes to the
+// phone through notify, and the phone app polls `asking()` to show a
+// Show / Decline bar. Answering it is the owner tapping Show; the camera
+// opens only then, and the share ends the ask (see camera-api.ts).
 
 import { randomUUID } from "crypto"
 import { focusLabel, readFocus, type FocusState } from "@/notify/focus"
 import type { CallsConfig } from "@/daemon/config"
-import { LIVE, type Call, type CallStore, type CallUrgency } from "./store"
+import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency } from "./store"
 
 export const REASON_MAX = 200
 /** The widget polls every 2 s; missing this long means it is not running. */
@@ -55,6 +61,10 @@ export interface CallDeps {
   agentName: (agentId: string) => string | null
   /** True when `proof` names a running turn of `agentId`. */
   isRunningTurn: (agentId: string, proof: CallerProof) => boolean
+  /** The channel and chat of that running turn, when it has one, so a
+   *  camera ask is answered where it was asked. Unset: only a proof that
+   *  names them itself is kept. */
+  turnSession?: (agentId: string, proof: CallerProof) => { channel?: string; chatId?: string } | null
   /** Tell the owner through notify. `urgent` passes Focus, like notify --urgent. */
   alert: (notice: { title: string; message: string; urgent: boolean; from: string }) => Promise<void>
   /** Ask the agent, in its voice session, to summarise the call. */
@@ -86,11 +96,14 @@ export class CallService {
   private now(): number { return this.deps.now?.() ?? Date.now() }
   private name(agentId: string): string { return this.deps.agentName(agentId) ?? agentId }
 
-  /** An agent asks for a call. 201 ringing, 202 held as missed (Focus). */
-  async request(input: { agentId?: unknown; reason?: unknown; urgency?: unknown }, proof: CallerProof = {}): Promise<CallResult & { rang?: "widget" | "notify" | false }> {
+  /** An agent asks for a call, or to see (kind "camera"). 201 ringing,
+   *  202 held as missed (Focus). */
+  async request(input: { agentId?: unknown; reason?: unknown; urgency?: unknown; kind?: unknown }, proof: CallerProof = {}): Promise<CallResult & { rang?: "widget" | "notify" | false }> {
     const agentId = String(input.agentId ?? "").trim()
     const reason = String(input.reason ?? "").replace(/\s+/g, " ").trim()
     const urgency: CallUrgency = input.urgency === "urgent" ? "urgent" : "normal"
+    const kind: CallKind = input.kind === "camera" ? "camera" : "voice"
+    if (input.kind !== undefined && input.kind !== "voice" && input.kind !== "camera") return { ok: false, status: 400, error: "kind must be voice or camera" }
     if (!agentId || !reason) return { ok: false, status: 400, error: "Required: agentId and reason" }
     if (reason.length > REASON_MAX) return { ok: false, status: 413, error: `reason is over ${REASON_MAX} characters; keep it to one line` }
     if (this.deps.agentName(agentId) === null) return { ok: false, status: 404, error: `Unknown agent: ${agentId}` }
@@ -100,7 +113,8 @@ export class CallService {
 
     const cfg = this.deps.config()
     if (!cfg.allow.includes("*") && !cfg.allow.includes(agentId)) {
-      return { ok: false, status: 403, error: `${agentId} may not call the owner. Add it to calls.allow in agentx.json (or: agentx call allow ${agentId}).` }
+      const verb = kind === "camera" ? "may not ask to see through the owner's camera" : "may not call the owner"
+      return { ok: false, status: 403, error: `${agentId} ${verb}. Add it to calls.allow in agentx.json (or: agentx call allow ${agentId}).` }
     }
     await this.sweep()
     if (this.deps.store.list({ status: LIVE, limit: 200 }).some((c) => c.agentId === agentId)) {
@@ -111,12 +125,17 @@ export class CallService {
       return { ok: false, status: 429, error: `${agentId} has placed ${cfg.maxPerHour} calls in the last hour (calls.maxPerHour)` }
     }
 
+    // Where the ask came from, for kind "camera": the turn's own chat, or
+    // the one the proof names. A task run has neither.
+    const session: { channel?: string; chatId?: string } = kind === "camera" ? (this.deps.turnSession?.(agentId, proof) ?? proof) : {}
     const call: Call = {
-      id: `call-${randomUUID().slice(0, 8)}`, agentId, reason, urgency, status: "ringing", createdAt: now,
+      id: `call-${randomUUID().slice(0, 8)}`, agentId, kind, reason, urgency, status: "ringing", createdAt: now,
       ringingSince: now, answeredAt: null, endedAt: null, ringAgainAt: null, note: null, summary: null,
+      channel: session.channel && session.chatId ? session.channel : null,
+      chatId: session.channel && session.chatId ? session.chatId : null,
     }
     this.deps.store.insert(call)
-    this.deps.log?.(`[calls] ${agentId} asks for a call (${urgency}): ${reason}`)
+    this.deps.log?.(`[calls] ${agentId} asks ${kind === "camera" ? "to see" : "for a call"} (${urgency}): ${reason}`)
     const rang = await this.ring(call)
     const saved = this.deps.store.get(call.id)!
     return { ok: true, call: saved, rang }
@@ -127,8 +146,14 @@ export class CallService {
     const focus = (this.deps.focus ?? readFocus)()
     if (focus.active && call.urgency !== "urgent") {
       if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: focusLabel(focus) })) return false
-      await this.notice(call, `Missed call from ${this.name(call.agentId)}`)
+      await this.notice(call, this.missedTitle(call))
       return false
+    }
+    // A camera ask is answered on the phone, never on the widget.
+    if (call.kind === "camera") {
+      await this.notice(call, `${this.name(call.agentId)} wants to see through your camera`,
+        `Open the phone app and tap Show within ${this.deps.config().ringSeconds} s.`)
+      return "notify"
     }
     if (this.widgetAlive()) return "widget"
     await this.notice(call, `${this.name(call.agentId)} is calling`,
@@ -147,16 +172,27 @@ export class CallService {
     }
   }
 
+  private missedTitle(call: Call): string {
+    return call.kind === "camera" ? `${this.name(call.agentId)} asked to see through your camera` : `Missed call from ${this.name(call.agentId)}`
+  }
+
   /** True when the widget polled recently. */
   widgetAlive(): boolean {
     return this.now() - this.widgetSeenAt < WIDGET_FRESH_MS
   }
 
-  /** The widget's poll: calls ringing now, oldest first. Marks it alive. */
+  /** The widget's poll: voice calls ringing now, oldest first. Marks it alive. */
   async ringing(): Promise<Call[]> {
     this.widgetSeenAt = this.now()
     await this.sweep()
-    return this.deps.store.list({ status: ["ringing"], limit: 20 }).reverse()
+    return this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 }).reverse()
+  }
+
+  /** The phone app's poll: camera asks waiting for the owner, oldest first.
+   *  Does not count as the widget being up. */
+  async asking(): Promise<Call[]> {
+    await this.sweep()
+    return this.deps.store.list({ status: ["ringing"], kind: "camera", limit: 20 }).reverse()
   }
 
   /** Unanswered calls become missed; "later" calls that came due ring
@@ -171,7 +207,7 @@ export class CallService {
       if (call.status === "ringing" && call.ringingSince !== null && now - call.ringingSince >= ringFor) {
         if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: "not answered" })) continue
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} missed`)
-        await this.notice(call, `Missed call from ${this.name(call.agentId)}`)
+        await this.notice(call, this.missedTitle(call))
       } else if (call.status === "answered" && call.answeredAt !== null && now - call.answeredAt >= talkFor) {
         if (!this.deps.store.transition(call.id, "answered", { status: "ended", endedAt: now, note: "no hang-up" })) continue
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} ended: no hang-up in ${this.deps.config().maxCallMinutes} min`)
@@ -182,14 +218,15 @@ export class CallService {
     }
   }
 
-  /** The owner picked up. Returns the call and the opener for /ask. */
+  /** The owner picked up, or tapped Show. Returns the call and, for a
+   *  voice call, the opener for /ask. */
   answer(id: string): CallResult & { opener?: string } {
     const call = this.deps.store.get(id)
     if (!call) return unknown(id)
     const answered = this.deps.store.transition(id, "ringing", { status: "answered", answeredAt: this.now(), ringingSince: null })
     if (!answered) return { ok: false, status: 409, error: `call is ${this.deps.store.get(id)?.status}, not ringing` }
     this.deps.log?.(`[calls] ${id} answered (${call.agentId})`)
-    return { ok: true, call: answered, opener: openerPrompt(answered) }
+    return answered.kind === "camera" ? { ok: true, call: answered } : { ok: true, call: answered, opener: openerPrompt(answered) }
   }
 
   decline(id: string): CallResult {
@@ -220,7 +257,8 @@ export class CallService {
     if (!ended) return { ok: false, status: 409, error: `call is ${call.status}, not answered` }
     this.deps.log?.(`[calls] ${id} ended (${call.agentId})`)
     const summarize = this.deps.summarize
-    if (!this.deps.config().summary || !summarize) return { ok: true, call: ended }
+    // What the agent saw is already its answer; only a voice call is summarised.
+    if (ended.kind === "camera" || !this.deps.config().summary || !summarize) return { ok: true, call: ended }
     const summarized = (async () => {
       try {
         const text = (await summarize(ended))?.trim()
@@ -232,6 +270,16 @@ export class CallService {
       }
     })()
     return { ok: true, call: ended, summarized }
+  }
+
+  /** A camera ask ends when the share ends; no summary. Only an answered
+   *  ask ends this way, so a stop before Show leaves it ringing. */
+  endCamera(id: string, note?: string): boolean {
+    const call = this.deps.store.get(id)
+    if (!call || call.kind !== "camera") return false
+    const ended = this.deps.store.transition(id, "answered", { status: "ended", endedAt: this.now(), note: note ?? null })
+    if (ended) this.deps.log?.(`[calls] ${id} ended (${call.agentId}): ${note ?? "share over"}`)
+    return !!ended
   }
 
   get(id: string): Call | undefined { return this.deps.store.get(id) }
