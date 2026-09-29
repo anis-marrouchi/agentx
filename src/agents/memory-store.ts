@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs"
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, statSync } from "fs"
 import { resolve } from "path"
 import { buildIndexCached, scoreAll } from "../memory/bm25"
 import { FactLedger } from "@/wiki/facts/ledger"
@@ -76,15 +76,25 @@ export class MemoryStore {
     return true
   }
 
+  /** Parsed facts per file, valid while the file's mtime and size hold.
+   *  The store is read on every turn and the file only grows, so without
+   *  this each task re-parsed a hundred-kilobyte log on the event loop. */
+  private parsedCache = new Map<string, { mtimeMs: number; size: number; facts: MemoryFact[] }>()
+
   getAll(agentId: string): MemoryFact[] {
     const file = this.filePath(agentId)
     if (!existsSync(file)) return []
 
     try {
+      const { mtimeMs, size } = statSync(file)
+      const hit = this.parsedCache.get(file)
+      if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.facts.slice()
       const lines = readFileSync(file, "utf-8").split("\n").filter(l => l.trim())
-      return lines.map(l => {
+      const facts = lines.map(l => {
         try { return JSON.parse(l) as MemoryFact } catch { return null }
       }).filter((m): m is MemoryFact => m !== null)
+      this.parsedCache.set(file, { mtimeMs, size, facts })
+      return facts.slice()
     } catch {
       return []
     }

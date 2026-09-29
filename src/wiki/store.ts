@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync } from "fs"
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, readdirSync, statSync, type Stats } from "fs"
 import { resolve, join, relative, dirname } from "path"
 import { isWikiArticleType } from "./types"
 import type { WikiArticle, WikiArticleMeta, WikiEntry, WikiIndex, WikiAccess } from "./types"
@@ -368,19 +368,35 @@ export class WikiStore {
   /**
    * List all articles accessible to an agent.
    */
+  /** Catalog per agent, valid while no article file changed. The walk is
+   *  repeated (names, mtimes, sizes) but the frontmatter parse of every
+   *  article is not; on a wiki of ten thousand files that parse was the
+   *  cost of every fresh session. */
+  private listCache = new Map<string, { signature: string; articles: WikiArticle[] }>()
+
   listArticles(agentId: string): WikiArticle[] {
-    const articles: WikiArticle[] = []
-    this.walkDir(this.baseDir, (filePath) => {
+    const relPaths: string[] = []
+    const sig: string[] = []
+    this.walkDir(this.baseDir, (filePath, stat) => {
       if (!filePath.endsWith(".md")) return
       const relPath = relative(this.baseDir, filePath)
       if (relPath.startsWith("raw/") || relPath.startsWith("_")) return
+      relPaths.push(relPath)
+      sig.push(`${relPath}:${stat?.mtimeMs ?? "?"}:${stat?.size ?? "?"}`)
+    })
+    const signature = sig.join("|")
+    const hit = this.listCache.get(agentId)
+    if (hit && hit.signature === signature) return hit.articles.slice()
 
+    const articles: WikiArticle[] = []
+    for (const relPath of relPaths) {
       const article = this.readArticle(relPath)
       if (article && this.canRead(article.meta, agentId)) {
         articles.push(article)
       }
-    })
-    return articles
+    }
+    this.listCache.set(agentId, { signature, articles })
+    return articles.slice()
   }
 
   /**
@@ -1144,7 +1160,7 @@ We use GitLab for version control.
     return `/wiki absorb\n\nThere are ${unabsorbed.length} unprocessed entries. Read each, understand what it means, and create or update wiki articles.\n\n${entrySummaries}`
   }
 
-  private walkDir(dir: string, callback: (filePath: string) => void): void {
+  private walkDir(dir: string, callback: (filePath: string, stat?: Stats) => void): void {
     if (!existsSync(dir)) return
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry)
@@ -1152,7 +1168,7 @@ We use GitLab for version control.
       if (stat.isDirectory()) {
         this.walkDir(full, callback)
       } else {
-        callback(full)
+        callback(full, stat)
       }
     }
   }

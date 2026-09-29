@@ -1,8 +1,13 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs"
 import { resolve, relative } from "path"
 import { lintWorkflow, workflowSchema, type Workflow } from "./types"
 import { parseYamlWorkflow, WorkflowYamlError } from "./yaml"
 import { renderWorkflowYamlPreservingComments } from "./yaml-roundtrip"
+
+/** Parsed workflow lists per directory, keyed on a signature of the
+ *  directory's file names, mtimes and sizes. Module-level because the
+ *  store itself is rebuilt on every message. */
+const listCache = new Map<string, { signature: string; workflows: Workflow[] }>()
 
 // --- WorkflowStore (V2) ---
 //
@@ -76,13 +81,26 @@ export class WorkflowStore {
   list(): Workflow[] {
     if (!existsSync(this.baseDir)) return []
     const byId = new Map<string, string[]>()
+    const sig: string[] = []
     for (const entry of readdirSync(this.baseDir, { withFileTypes: true })) {
       if (!entry.isFile() || !this.isWorkflowFile(entry.name)) continue
       const id = this.idFromFilename(entry.name)
       const list = byId.get(id) ?? []
       list.push(entry.name)
       byId.set(id, list)
+      try {
+        const st = statSync(resolve(this.baseDir, entry.name))
+        sig.push(`${entry.name}:${st.mtimeMs}:${st.size}`)
+      } catch {
+        sig.push(`${entry.name}:?`)
+      }
     }
+    // The router and the registry both list workflows on every message,
+    // and the store is rebuilt per call. Parsing is the expensive part,
+    // so it is keyed on the directory's names, mtimes and sizes.
+    const signature = sig.sort().join("|")
+    const cached = listCache.get(this.baseDir)
+    if (cached && cached.signature === signature) return cached.workflows.slice()
     const out: Workflow[] = []
     for (const [, files] of byId) {
       // Skip ambiguous ids — list() must never pick a winner silently.
@@ -95,7 +113,9 @@ export class WorkflowStore {
         // intentional: skip malformed
       }
     }
-    return out.sort((a, b) => a.id.localeCompare(b.id))
+    const workflows = out.sort((a, b) => a.id.localeCompare(b.id))
+    listCache.set(this.baseDir, { signature, workflows })
+    return workflows.slice()
   }
 
   validateAll(): Array<WorkflowValidation | { id: string; path: string; issues: string[]; isValid: false }> {

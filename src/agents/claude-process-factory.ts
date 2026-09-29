@@ -114,30 +114,30 @@ class ClaudeProcessHandle implements ProcessHandle {
 
   constructor(
     public readonly key: ProcessKey,
-    private spawnOpts: SpawnOptions,
+    public readonly opts: SpawnOptions,
     private factoryOpts: ClaudeProcessFactoryOptions,
   ) {
     const binary = factoryOpts.binary ?? "claude"
-    const args = this.buildArgs(spawnOpts)
+    const args = this.buildArgs(opts)
     const log = factoryOpts.log ?? (() => {})
 
     this.child = spawn(binary, args, {
-      cwd: spawnOpts.workspace,
-      env: claudeBillingEnv(persistentCallerEnv({ ...process.env }, key), spawnOpts.billing),
+      cwd: opts.workspace,
+      env: claudeBillingEnv(persistentCallerEnv({ ...process.env }, key), opts.billing),
       stdio: ["pipe", "pipe", "pipe"],
     }) as ChildProcessWithoutNullStreams
 
     this.snap = {
       key,
       pid: this.child.pid ?? null,
-      claudeSessionId: spawnOpts.resumeSessionId ?? null,
+      claudeSessionId: opts.resumeSessionId ?? null,
       state: "warm-cold",
       spawnedAt: Date.now(),
       lastTurnAt: Date.now(),
       turnCount: 0,
       lastInputTokens: 0,
       pendingTaskId: null,
-      claudeMdHash: readClaudeMdHashSafe(spawnOpts.workspace),
+      claudeMdHash: readClaudeMdHashSafe(opts.workspace),
     }
 
     this.child.stdout.setEncoding("utf8")

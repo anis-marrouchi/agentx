@@ -113,6 +113,10 @@ export interface TurnEvent {
 
 export interface ProcessHandle {
   readonly key: ProcessKey
+  /** The options the process was spawned with. `acquire` compares them
+   *  with the next turn's to notice a model change. Optional so fakes
+   *  and older factories keep working. */
+  readonly opts?: SpawnOptions
   state(): ProcessState
   snapshot(): ProcessSnapshot
   /**
@@ -140,6 +144,34 @@ export interface ProcessHandle {
 export interface ProcessFactory {
   /** Spawn (or fake) a process bound to `key` with `opts`. */
   spawn(key: ProcessKey, opts: SpawnOptions): ProcessHandle
+}
+
+/**
+ * Why a live handle cannot serve the next turn, or null when it can.
+ * A busy handle is always reused: the in-flight turn must not be cut,
+ * and the registry queues same-chat turns behind it anyway.
+ */
+export function staleHandleReason(handle: ProcessHandle, opts: SpawnOptions): string | null {
+  const state = handle.state()
+  if (state === "busy") return null
+  const snap = handle.snapshot()
+  const prevModel = handle.opts?.model
+  if (prevModel && opts.model && prevModel !== opts.model) {
+    return `model changed (${prevModel} -> ${opts.model})`
+  }
+  if (opts.resumeSessionId) {
+    if (snap.claudeSessionId && snap.claudeSessionId !== opts.resumeSessionId) {
+      return `session changed (${snap.claudeSessionId.slice(0, 8)} -> ${opts.resumeSessionId.slice(0, 8)})`
+    }
+    return null
+  }
+  // Claude reported a session id and the caller now passes none: the
+  // session store was cleared by a rotation (stale, tier-2, max-turns,
+  // continuity, planner). A process that never reported an id is reused;
+  // the id is the only signal that distinguishes a rotation from a
+  // caller that simply has nothing stored.
+  if (snap.claudeSessionId) return "session rotated"
+  return null
 }
 
 /**
@@ -246,8 +278,20 @@ export class ProcessRegistry {
     const ks = processKeyToString(key)
     const existing = this.handles.get(ks)
     if (existing && existing.state() !== "dead") {
-      existing.claim?.()
-      return existing
+      const stale = staleHandleReason(existing, opts)
+      if (!stale) {
+        existing.claim?.()
+        return existing
+      }
+      // The warm process no longer matches what the caller asked for:
+      // a rotation cleared the session, --resume points elsewhere, or
+      // routing picked another model. Reusing it used to inject the
+      // fresh-session context on top of the old one and silently keep
+      // the old model. Respawn instead.
+      this.handles.delete(ks)
+      this.handleWorkspace.delete(ks)
+      this.cfg.log(`[process-registry] respawning ${ks}: ${stale}`)
+      void existing.kill(stale).catch(() => {})
     }
 
     // Make room if at cap.

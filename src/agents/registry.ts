@@ -1,6 +1,7 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine } from "./routing"
 import { askSeat } from "@/decisions/seat"
+import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
   SESSION_CONTINUITY_SEAT,
   continuityState,
@@ -33,6 +34,11 @@ import { getDefaultLedger } from "@/intent/instance"
 import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
 import type { ReferenceIndex } from "./references/types"
 import { getEventBus } from "@/events/bus"
+
+/** How long the pipeline waits for the intent classification before
+ *  workflow matching (cache hits only) and before the wiki entry stamp. */
+const INTENT_WAIT_BEFORE_MATCH_MS = 250
+const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
 import { getAttachRegistry } from "@/attach"
@@ -854,6 +860,9 @@ export class AgentRegistry {
         incumbent: { continues: "yes", needsHistory: "yes" },
         links: [{ kind: "session", id: `${task.agentId}:${channel}:${chatId}` }],
         features: { agent: task.agentId, channel },
+        // Pre-spawn: a slow answer is worth less than the seconds it
+        // costs. The backend default (30s) was the cap before this.
+        timeoutMs: PRE_SPAWN_SEAT_TIMEOUT_MS,
       },
     )
     if (!result || result.mode !== "active") return false
@@ -1239,6 +1248,33 @@ export class AgentRegistry {
     // when the agent has the flag.
     const toolUsesByName = new Map<string, number>()
 
+    // Persist each pipeline stage's wall time on the trace as a step named
+    // "pipeline" with the stage as action. task_trace_steps.ms was NULL
+    // for every row before this, so the pre-spawn cost could only be read
+    // back from the daemon log.
+    const recordPipelineStep = (stage: string, startedAt: number, status: "ok" | "error") => {
+      try {
+        getEventBus().emit("task:step", {
+          taskId: traceTaskId,
+          agentId: task.agentId,
+          name: "pipeline",
+          action: stage,
+          status,
+          ms: Date.now() - startedAt,
+          at: new Date().toISOString(),
+        } as any)
+      } catch { /* observability never breaks the run */ }
+    }
+    // Spawn-to-first-event: the one number that separates CLI startup from
+    // model latency inside the "agent" stage.
+    let agentStartedAt = 0
+    let firstEventSeen = false
+    const noteFirstEvent = () => {
+      if (firstEventSeen) return
+      firstEventSeen = true
+      if (agentStartedAt) recordPipelineStep("first-event", agentStartedAt, "ok")
+    }
+
     let onEvent: ((event: any) => void) | undefined
     if (onDelta) {
       // Caller's onDelta still fires only for assistant text (unchanged).
@@ -1246,6 +1282,7 @@ export class AgentRegistry {
       // — this is what makes the modal feel like a live terminal.
       const formatter = makeStreamEventFormatter()
       onEvent = (event: any) => {
+        noteFirstEvent()
         const formatted = formatter(event)
         if (formatted) pushToBuffer(formatted)
         // Per-step trace capture (improvement plan #2). Fire one
@@ -1262,6 +1299,7 @@ export class AgentRegistry {
       // Even without a dashboard subscriber, we want trace steps for
       // /traces/:id. Build a minimal onEvent that ONLY emits steps.
       onEvent = (event: any) => {
+        noteFirstEvent()
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
         if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
@@ -1310,8 +1348,15 @@ export class AgentRegistry {
       if (abortController.signal.aborted) return Promise.reject(abortReason(abortController.signal))
       traceStep(name)
       // Spawning the agent (or handing off to a workflow) ends the pre-spawn phase.
-      if (name === "agent" || name === "workflow-auto-run") clearPreSpawnDeadline()
-      return untilAborted(work(), abortController.signal, graceMs)
+      if (name === "agent" || name === "workflow-auto-run") {
+        clearPreSpawnDeadline()
+        agentStartedAt = Date.now()
+      }
+      const startedAt = Date.now()
+      return untilAborted(work(), abortController.signal, graceMs).then(
+        (value) => { recordPipelineStep(name, startedAt, "ok"); return value },
+        (err) => { recordPipelineStep(name, startedAt, "error"); throw err },
+      )
     }
 
     // Give back everything the run holds. Idempotent: the `finally` below
@@ -1488,20 +1533,45 @@ export class AgentRegistry {
     // re-classifying its own prompts would recurse forever. Any classifier
     // failure (bad LLM output, schema rejection, network error) must never
     // propagate — the main task still has to run.
+    //
+    // The classification runs alongside the rest of the pipeline instead
+    // of ahead of it. Measured at ~19s p50 per task (a fresh CLI spawn on
+    // every cache miss) while nothing before the spawn needs the answer:
+    // workflow matching and the context block take whatever has resolved,
+    // and the wiki entry stamp at the end waits for it.
     let intent: ClassifyResult | undefined
+    let intentPending: Promise<void> | undefined
     const classifier = this.classifier
     if (classifier && channel !== "a2a" && !isCodexCli) {
-      try {
-        intent = (await step("classify", () => classifier.classify({
+      traceStep("classify")
+      const classifyStartedAt = Date.now()
+      intentPending = classifier
+        .classify({
           text: task.message,
           channel,
           sender: task.context?.sender,
           agentId: task.agentId,
-        }))) || undefined
-      } catch (e: any) {
-        this.log(`[classifier] classify failed for ${task.agentId}: ${e?.message || e}`)
-      }
+        })
+        .then(
+          (r) => { intent = r || undefined; recordPipelineStep("classify", classifyStartedAt, "ok") },
+          (e: any) => {
+            this.log(`[classifier] classify failed for ${task.agentId}: ${e?.message || e}`)
+            recordPipelineStep("classify", classifyStartedAt, "error")
+          },
+        )
     }
+    /** Wait at most `maxMs` for the classification. Cache hits settle in
+     *  a tick; an LLM miss keeps running and is picked up later. */
+    const awaitIntent = async (maxMs: number): Promise<void> => {
+      if (!intentPending) return
+      let timer: ReturnType<typeof setTimeout> | undefined
+      await Promise.race([
+        intentPending,
+        new Promise<void>((r) => { timer = setTimeout(r, maxMs); timer.unref?.() }),
+      ])
+      if (timer) clearTimeout(timer)
+    }
+    await awaitIntent(INTENT_WAIT_BEFORE_MATCH_MS)
 
     const wfMatching = this.config.workflows?.matching
     // Decision-only here: compute whether auto-run should fire. We don't fire
@@ -2507,6 +2577,9 @@ export class AgentRegistry {
           responseLength: response.content.length,
         })
         if (wikiCapture.capture) {
+          // The entry carries the classifier's path; by now the turn has
+          // run for seconds to minutes, so this rarely waits at all.
+          await awaitIntent(INTENT_WAIT_BEFORE_ENTRY_MS)
           try {
             const entryId = `${task.agentId}-${Date.now().toString(36)}`
             this.wikiHub.getSharedStore().addEntry({

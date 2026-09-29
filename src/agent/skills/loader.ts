@@ -11,7 +11,28 @@ import { skillFrontmatterSchema } from "./types"
 const SKILL_DIRS = [".skills", ".claude/skills", "skills"]
 const SKILL_FILE = "SKILL.md"
 
+/** Skills change when someone edits a workspace, not between two turns
+ *  of the same task. A short cache spares every turn a recursive glob
+ *  plus a YAML parse per skill; the loader saw 90s outliers under load. */
+const SKILL_CACHE_TTL_MS = 60_000
+const skillCache = new Map<string, { at: number; skills: Skill[] }>()
+
+/** Drop cached skill lists (tests, `agentx teach`, workspace rewrites). */
+export function clearSkillCache(cwd?: string): void {
+  if (cwd) skillCache.delete(path.resolve(cwd))
+  else skillCache.clear()
+}
+
 export async function loadLocalSkills(cwd: string): Promise<Skill[]> {
+  const cacheKey = path.resolve(cwd)
+  const hit = skillCache.get(cacheKey)
+  if (hit && Date.now() - hit.at < SKILL_CACHE_TTL_MS) return hit.skills.slice()
+  const skills = await scanLocalSkills(cwd)
+  skillCache.set(cacheKey, { at: Date.now(), skills })
+  return skills.slice()
+}
+
+async function scanLocalSkills(cwd: string): Promise<Skill[]> {
   const skills: Skill[] = []
 
   for (const dir of SKILL_DIRS) {

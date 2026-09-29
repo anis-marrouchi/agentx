@@ -25,7 +25,7 @@ export interface BehavioralPattern {
 }
 
 const MAX_PATTERNS = 50
-const EXTRACTION_MODEL = "claude-haiku-4-20250514"
+const EXTRACTION_MODEL = "claude-haiku-4-5-20251001"
 
 const PATTERN_EXTRACTION_PROMPT = `You are a behavioral pattern extractor. Given a conversation between a user and an AI agent, extract behavioral patterns — lessons about HOW to approach tasks, not facts about the world.
 

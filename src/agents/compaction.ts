@@ -13,7 +13,7 @@ import { buildFingerprint, detectDrift, saveFingerprint, loadFingerprint, type D
 // 3. Uses cheaper model (Haiku) for summarization
 // 4. Preserves recent messages verbatim, compacts older ones
 
-const COMPACTION_MODEL = "claude-haiku-4-20250514"
+const COMPACTION_MODEL = "claude-haiku-4-5-20251001"
 const MAX_HISTORY_CHARS = 60_000
 // Start compacting when stored history exceeds this. Bumped 10K → 50K
 // because the original threshold tripped on trivial multi-message bursts

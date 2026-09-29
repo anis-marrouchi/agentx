@@ -1,4 +1,5 @@
 import { askSeat } from "@/decisions/seat"
+import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
   TASK_TIER_SEAT,
   taskTierQuestions,
@@ -146,6 +147,9 @@ export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
         // The incumbent is "always flagship", which is what this has to beat.
         incumbent: { needsFlagship: 1 },
         features: { agent: opts.agent, channel: opts.channel ?? "unknown" },
+        // Pre-spawn: without this the backend default (30s) bounded the
+        // wait, and the step was seen taking minutes under load.
+        timeoutMs: PRE_SPAWN_SEAT_TIMEOUT_MS,
       },
     )
   } catch {
