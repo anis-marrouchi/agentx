@@ -48,8 +48,8 @@ export interface AgenticQueryOptions {
   /** Intent-graph path the question's request was classified under.
    *  Articles on the same branch rank higher in candidate selection. */
   messagePath?: string[]
-  /** Weight of the branch match against the text match, 0–1. Default 0.6
-   *  (`graph.retrievalWeights.graph`). */
+  /** Boost a full branch match gives a text match: t·(1 + w·g). Default
+   *  0.6 (`graph.retrievalWeights.graph`). */
   graphWeight?: number
 }
 
@@ -286,15 +286,18 @@ async function selectCandidatesViaSeat(
   }
 }
 
-/** Weight of the intent-graph branch match against the text match when
- *  shortlisting catalog candidates. Mirrors `graph.retrievalWeights.graph`. */
+/** How much a full intent-graph branch match boosts an article's text
+ *  score when shortlisting catalog candidates (`graph.retrievalWeights.graph`). */
 export const DEFAULT_GRAPH_WEIGHT = 0.6
 
 /**
  * Order the catalog pool for a question: text match (BM25 over title, tags
- * and wikilinks, scaled to 0–1) plus, when the request was classified,
- * how much of the intent-graph path each article shares with it. Articles
- * the text match never scored keep their catalog order at the end.
+ * and wikilinks, scaled to 0–1), boosted by how much of the intent-graph
+ * path each article shares with the request: t·(1 + w·g). The boost only
+ * scales a text match, so a branch full of articles that never matched
+ * the question cannot push a real match out of the shortlist; among
+ * those, the branch match sets the order. Articles neither signal scored
+ * keep their catalog order at the end.
  *
  * Exported for tests; the seat and the CLI selector both consume the order.
  */
@@ -314,9 +317,9 @@ export function rankCatalogPool(
   const combined = pool.map((a, i) => {
     const t = text.get(i) ?? 0
     const g = useGraph && a.graphPath?.length ? ancestryScore(messagePath!, a.graphPath) : 0
-    return { i, score: useGraph ? (1 - graphWeight) * t + graphWeight * g : t, scored: text.has(i) || g > 0 }
+    return { i, g, score: t * (1 + graphWeight * g), scored: text.has(i) || g > 0 }
   })
-  const ranked = combined.filter((c) => c.scored).sort((x, y) => y.score - x.score || x.i - y.i).map((c) => c.i)
+  const ranked = combined.filter((c) => c.scored).sort((x, y) => y.score - x.score || y.g - x.g || x.i - y.i).map((c) => c.i)
   for (let i = 0; i < pool.length; i++) if (!ranked.includes(i)) ranked.push(i)
   return ranked
 }
