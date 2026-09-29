@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.72.0](https://github.com/anis-marrouchi/agentx/compare/v0.71.0...v0.72.0) (2026-09-29)
+
+
+### Features
+
+* **app:** share the phone camera with another mesh node ([#325](https://github.com/anis-marrouchi/agentx/issues/325) phase 1) ([#327](https://github.com/anis-marrouchi/agentx/issues/327)) ([435c68f](https://github.com/anis-marrouchi/agentx/commit/435c68f4f41c4d54c0aa9064ed87a2ec90052a28))
+
+
+### Bug Fixes
+
+* **tui:** start OpenCode's server before its screen so the console opens on a busy machine ([#323](https://github.com/anis-marrouchi/agentx/issues/323)) ([0fd8b18](https://github.com/anis-marrouchi/agentx/commit/0fd8b1890f0e19a0443894193863fb86334483bd))
+* **voice:** tell the owner when a configured voice is missing, and fall back well ([#320](https://github.com/anis-marrouchi/agentx/issues/320)) ([4eaf6bc](https://github.com/anis-marrouchi/agentx/commit/4eaf6bc9df0be98c15fa369b66692b4441b57d1f))
+
 ## [0.71.0](https://github.com/anis-marrouchi/agentx/compare/v0.70.1...v0.71.0) (2026-09-29)
 
 
