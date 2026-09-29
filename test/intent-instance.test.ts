@@ -29,7 +29,7 @@ describe("getDefaultLedger", () => {
   it("constructs a ledger lazily on first call", () => {
     const ledger = getDefaultLedger({ path: path.join(tmp, "ledger.sqlite") })
     expect(ledger).toBeInstanceOf(IntentLedger)
-    expect(ledger.schemaVersion()).toBe(2)
+    expect(ledger.schemaVersion()).toBe(3)
     ledger.close()
   })
 
