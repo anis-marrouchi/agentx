@@ -1698,6 +1698,7 @@ export class MessageRouter {
           try {
             const response = await this.mesh.sendTask(peer.peer, msg.text, skill.id, {
               context: this.buildMeshContext(msg, chatId),
+              replyVia: { messageId: msg.id, accountId: msg.accountId },
             })
 
             clearInterval(typingTimer)
@@ -1768,6 +1769,7 @@ export class MessageRouter {
       try {
         const response = await this.mesh.sendTask(peer.peer, msg.text, agentId, {
           context: this.buildMeshContext(msg, chatId),
+          replyVia: { messageId: msg.id, accountId: msg.accountId },
         })
         clearInterval(typingTimer)
         this.clearMeshFailure(msg.channel, chatId)
@@ -1966,6 +1968,7 @@ export class MessageRouter {
     try {
       const response = await this.mesh.sendTask(peerName, msg.text, agentId, {
         context: this.buildMeshContext(msg, chatId),
+        replyVia: { messageId: msg.id, accountId: msg.accountId },
       })
       const duration = Date.now() - start
       clearInterval(typingTimer)

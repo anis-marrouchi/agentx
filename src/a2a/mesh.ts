@@ -311,6 +311,9 @@ export class A2AMesh {
        *  channelMeta — i.e., the globex/umbrella confusion incident on
        *  2026-04-29 issue #709. Shape matches AgentTask.context. */
       context?: Record<string, unknown>
+      /** The message being forwarded, so the receiver can post its answer
+       *  back through this node after a restart cut the forward off (#311). */
+      replyVia?: { messageId?: string; accountId?: string }
     } = {},
   ): Promise<string> {
     const state = this.peers.get(peerName)
@@ -365,6 +368,7 @@ export class A2AMesh {
           // Optional for back-compat — older callers continue to work, with
           // the receiver defaulting channel/chatId as before.
           ...(opts.context ? { context: opts.context } : {}),
+          ...(opts.replyVia ? { replyVia: { node: this.config.node.name, ...opts.replyVia } } : {}),
           ...root,
         }),
         signal: controller.signal,
@@ -627,6 +631,8 @@ export class A2AMesh {
     healthy: boolean
     skills: AgentSkill[]
     channels: string[]
+    /** The node's own name, from its agent card. */
+    node?: string
     lastCheck?: Date
   }> {
     return Array.from(this.peers.entries()).map(([name, state]) => ({
@@ -637,6 +643,7 @@ export class A2AMesh {
       channels: Array.isArray((state.agentCard as any)?.channels)
         ? ((state.agentCard as any).channels as unknown[]).map((c) => String(c))
         : [],
+      node: typeof state.agentCard?.name === "string" ? state.agentCard.name : undefined,
       lastCheck: state.lastCheck,
     }))
   }

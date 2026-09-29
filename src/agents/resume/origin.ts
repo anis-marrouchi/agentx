@@ -6,6 +6,9 @@
 //
 //   router  — a chat message (Telegram, WhatsApp, GitLab, GitHub…). Resumed
 //             through the router, so the answer lands in the original chat.
+//   mesh    — a chat message another node received and forwarded here
+//             (e.g. a GitLab webhook on the server, run on the Mac). Re-run
+//             here; the answer goes back through that node's adapter.
 //   direct  — anything else (voice, agent-to-agent, webhooks, API). Re-run
 //             with the same message and context; nothing delivers its answer,
 //             so it is only resumed for channels the operator opts in.
@@ -25,7 +28,22 @@ export interface DirectOrigin {
   autonomy?: string
 }
 
-export type RunOrigin = RouterOrigin | DirectOrigin
+export interface MeshOrigin {
+  kind: "mesh"
+  /** Node that received the message and forwarded it; absent from older
+   *  senders, in which case any healthy peer hosting the channel is used. */
+  node?: string
+  channel: string
+  chatId: string
+  /** Posts as this agent on the forwarding node, like a live reply. */
+  agentId?: string
+  /** The incoming message id, so the answer threads like a live reply. */
+  replyTo?: string
+  accountId?: string
+  context?: Record<string, unknown>
+}
+
+export type RunOrigin = RouterOrigin | MeshOrigin | DirectOrigin
 
 /** Bigger than this is not stored: the run is reported instead of resumed. */
 export const MAX_ORIGIN_BYTES = 32_000
@@ -45,6 +63,7 @@ export function parseOrigin(json: string | null | undefined): RunOrigin | null {
   try {
     const o = JSON.parse(json)
     if (o?.kind === "router" && typeof o.adapter === "string" && o.message && typeof o.message === "object") return o
+    if (o?.kind === "mesh" && typeof o.channel === "string" && typeof o.chatId === "string") return o
     if (o?.kind === "direct") return o
   } catch { /* corrupt → not resumable */ }
   return null
