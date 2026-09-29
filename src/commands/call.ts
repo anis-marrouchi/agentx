@@ -16,7 +16,8 @@ import { callerHeaders } from "@/calls/service"
 
 const DAEMON = process.env.AGENTX_DAEMON_URL ?? "http://127.0.0.1:18800"
 
-async function daemon(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<any> {
+/** One request to the daemon's mesh-gated routes; `agentx camera` shares it. */
+export async function daemon(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<any> {
   const token = process.env.MESH_TOKEN
   const res = await fetch(`${DAEMON}${path}`, {
     method,

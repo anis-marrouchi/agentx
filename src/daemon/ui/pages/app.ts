@@ -39,6 +39,7 @@ import { formatPairInput, mayBounce, parsePairScan } from "./app-pair-logic"
 import { SCAN_BODY, SCAN_CSS, SCAN_SCRIPT } from "./app-scan.client"
 import { markdownToHtml } from "@/utils/markdown-html"
 import { CAMERA_BODY, CAMERA_BUTTON, CAMERA_CSS, CAMERA_SCRIPT } from "./app-camera.client"
+import { CAMERA_ASKS_BODY, CAMERA_ASKS_CSS, CAMERA_ASKS_SCRIPT } from "./app-camera-asks.client"
 import { cameraConstraints, shareClock } from "./app-camera-logic"
 
 export { APP_SERVICE_WORKER } from "./app-sw"
@@ -81,7 +82,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -91,6 +92,7 @@ export function renderAppPage(): string {
   <div class="bar-btns">${CAMERA_BUTTON}<button type="button" id="theme" class="icon-btn" aria-label="Switch to light theme">◐</button></div>
 </header>
 <p id="offline" class="offline" role="status" hidden>Offline. Showing the saved app; live data needs a connection.</p>
+${CAMERA_ASKS_BODY}
 <main>${panels}</main>
 <nav class="tabs" role="tablist" aria-label="Sections">${tabs}</nav>
 ${CAMERA_BODY}
@@ -102,6 +104,7 @@ ${CAMERA_BODY}
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
 <script>${APP_CHAT_STRIP_SCRIPT}</script>
 <script>${injectFns({ cameraConstraints, shareClock })}${CAMERA_SCRIPT}</script>
+<script>${CAMERA_ASKS_SCRIPT}</script>
 </body>
 </html>`
 }

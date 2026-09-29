@@ -543,6 +543,31 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_camera_ask",
+    description:
+      "Ask the owner to show you their phone camera, when you need to see something (a rack, a cable, a document). " +
+      "The ask shows on their phone; the camera opens only if they tap Show. Same allowlist and hourly limit as calls (calls.allow). " +
+      "Once they share, call agentx_camera_look for the newest picture. Returns whether the owner was told, or why not.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        reason: { type: "string", description: "What you want to see, in one line (at most 200 characters)." },
+        urgency: { type: "string", enum: ["normal", "urgent"], description: "Default normal: held during Focus." },
+      },
+      required: ["reason"],
+    },
+  },
+  {
+    name: "agentx_camera_look",
+    description:
+      "The newest picture from the owner's phone camera while they share it with you, saved as a PNG. " +
+      "Open the returned path with your Read tool to look at it. Fails when no share is live for you.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
     name: "agentx_health",
     description:
       "Get the daemon health status including node info, agents, crons, mesh peers, and uptime.",
@@ -1182,6 +1207,36 @@ async function handleToolCall(
         : data.rang === "notify" ? "The desktop widget is not running, so the owner got a notification instead."
         : `It did not ring (${data.call?.note ?? "held"}); the owner sees it as a missed call.`
       return { content: [{ type: "text", text: `Call ${data.call?.id} placed. ${how}` }] }
+    }
+
+    case "agentx_camera_ask": {
+      const agentId = process.env.AGENTX_AGENT_ID
+      if (!agentId) return { content: [{ type: "text", text: "Not asked: only an agent's own run can ask to see (AGENTX_AGENT_ID is not set)." }] }
+      const res = await fetch(`${daemonUrl()}/calls`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({ agentId, reason: args.reason, urgency: args.urgency, kind: "camera" }),
+      })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Not asked: ${data?.error || `HTTP ${res.status}`}` }] }
+      const how = data.rang
+        ? "The owner's phone was told. If they tap Show, the camera opens and you can call agentx_camera_look; you will not be told when, so look when they say they are ready, or try in a moment."
+        : `It did not reach them now (${data.call?.note ?? "held"}); they see it as a missed ask.`
+      return { content: [{ type: "text", text: `Ask ${data.call?.id} placed. ${how}` }] }
+    }
+
+    case "agentx_camera_look": {
+      const agentId = process.env.AGENTX_AGENT_ID
+      if (!agentId) return { content: [{ type: "text", text: "No picture: only an agent's own run can look (AGENTX_AGENT_ID is not set)." }] }
+      const res = await fetch(`${daemonUrl()}/webrtc/camera/look`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({ agentId }),
+      })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `No picture: ${data?.error || `HTTP ${res.status}`}` }] }
+      const f = data.frame
+      return { content: [{ type: "text", text: `The newest frame (${f.width}x${f.height}, taken ${new Date(f.takenAt).toLocaleTimeString()}) is at:\n${f.path}\nOpen it with your Read tool.` }] }
     }
 
     case "agentx_health": {

@@ -2721,6 +2721,11 @@ export class AgentXDaemon {
       config: () => this.config.calls,
       agentName: (id) => this.config.agents[id] ? (this.config.agents[id].name || id) : null,
       isRunningTurn: (id, p) => !!this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId }),
+      // A camera ask (#325) is answered in the chat the asking turn ran in.
+      turnSession: (id, p) => {
+        const run = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
+        return run ? { channel: run.context.channel, chatId: run.context.chatId } : null
+      },
       alert: async ({ title, message, urgent, from }) => {
         await notify({ title, message, urgent, from, priority: urgent ? 5 : 4 }, async (m) => {
           // A push that fails must not take the Mac banner with it.
@@ -2810,6 +2815,10 @@ export class AgentXDaemon {
         const thread = store.createThread(watch.agentId, null, title)
         const seq = store.appendTurn(thread.id, title)
         store.resolve(thread.id, seq, reply.text, "done")
+      },
+      // A share that answered a camera ask ends the ask with it.
+      onEnded: (watch, reason) => {
+        if (watch.callRecordId) this.calls?.endCamera(watch.callRecordId, reason)
       },
       toRgba: (frame) => {
         const native = nativeI420ToRgba()
@@ -2942,6 +2951,7 @@ export class AgentXDaemon {
         const reply = await handleCamera({
           watch: this.cameraWatch,
           isRunningTurn: (id, p) => !!this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId }),
+          calls: this.calls,
         }, req.method || "GET", path, body, proof)
         this.json(res, reply.status, reply.body)
         return

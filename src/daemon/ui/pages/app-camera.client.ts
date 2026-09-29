@@ -90,7 +90,8 @@ export const CAMERA_SCRIPT = `
     return a ? a.name : id;
   }
 
-  function open() {
+  // then() runs once the destinations are listed (the Show bar uses it).
+  function open(then) {
     sheet.hidden = false;
     closeBtn.focus();
     if (s) return;
@@ -116,6 +117,7 @@ export const CAMERA_SCRIPT = `
       });
       pick.hidden = false; startBtn.hidden = false;
       say('The camera opens only when you tap Start. A machine gets a link to watch; an agent looks when you tap Look now.');
+      if (then) then();
     }).catch(function (e) { say(e.message || 'Could not load your machines.', true); });
   }
 
@@ -131,15 +133,16 @@ export const CAMERA_SCRIPT = `
     return 'cam-' + Array.prototype.map.call(ids, function (b) { return (b % 36).toString(36); }).join('');
   }
 
-  function start() {
+  // preset comes from the Show bar: the ask's id and its agent.
+  function start(preset) {
     if (s || !cfg) return;
-    var peer = peerSel.value;
+    var peer = preset && preset.peer ? preset.peer : peerSel.value;
     var agent = agentOf(peer);
     var cam = cfg.camera || null;
     var maxMs = ((cam && cam.maxSeconds) || 600) * 1000;
     // An agent's watch has its own limit; the shorter one shows.
     if (agent && cam && cam.bot && cam.bot.maxSessionMinutes) maxMs = Math.min(maxMs, cam.bot.maxSessionMinutes * 60000);
-    var callId = newCallId();
+    var callId = preset && preset.callId ? preset.callId : newCallId();
     startBtn.disabled = true;
     say('Opening the camera…');
     navigator.mediaDevices.getUserMedia(cameraConstraints(cam, 'environment')).then(function (stream) {
@@ -292,9 +295,21 @@ export const CAMERA_SCRIPT = `
     say(reason || 'Camera stopped.');
   }
 
-  btn.addEventListener('click', open);
+  btn.addEventListener('click', function () { open(); });
   closeBtn.addEventListener('click', close);
-  startBtn.addEventListener('click', start);
+  startBtn.addEventListener('click', function () { start(); });
+  // The owner tapped Show on an agent's ask: open the camera for that
+  // agent, under the ask's id, so the daemon ties the share to the ask.
+  document.addEventListener('ax-camera', function (ev) {
+    var d = ev.detail || {};
+    if (d.type !== 'show' || !d.agentId || !d.callId || s) return;
+    var preset = { peer: 'bot:' + d.agentId, callId: d.callId };
+    open(function () {
+      peerSel.value = preset.peer;
+      if (d.reason) note.value = d.reason;
+      start(preset);
+    });
+  });
   lookBtn.addEventListener('click', look);
   flipBtn.addEventListener('click', flip);
   note.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); look(); } });

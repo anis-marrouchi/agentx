@@ -111,6 +111,23 @@ export async function handleAppCamera(
     return json(res, r.status, r.status < 300 ? { reply: r.body.reply, frame: r.body.frame } : { error: r.body.error })
   }
 
+  // Camera asks waiting for the owner (#325 phase 3): the app polls this
+  // and shows a Show / Decline bar. Show answers the ask, then the phone
+  // starts a share with the ask's id and the agent as the destination.
+  if (path === "/api/app/camera/asks") {
+    if (method !== "GET") return json(res, 405, { error: "GET" })
+    const r = await relay(base, auth, "GET", "/calls/asking")
+    if (r.status >= 300) return json(res, r.status, { error: r.body.error })
+    const asks = (Array.isArray(r.body.calls) ? r.body.calls : []).map((c: any) => ({ id: c.id, agentId: c.agentId, reason: c.reason, createdAt: c.createdAt }))
+    return json(res, 200, { asks, ringSeconds: r.body.ringSeconds ?? null })
+  }
+  const askAction = /^\/api\/app\/camera\/asks\/([A-Za-z0-9_-]{4,64})\/(answer|decline)$/.exec(path)
+  if (askAction) {
+    if (method !== "POST") return json(res, 405, { error: "POST" })
+    const r = await relay(base, auth, "POST", `/calls/${askAction[1]}/${askAction[2]}`, {})
+    return json(res, r.status, r.status < 300 ? { call: r.body.call } : { error: r.body.error })
+  }
+
   // What the watching agent has answered so far (frames it got by itself).
   if (path === "/api/app/camera/watch") {
     if (method !== "GET") return json(res, 405, { error: "GET" })

@@ -3,7 +3,12 @@
 //   POST /webrtc/camera/watch           {callId, agentId}: the agent's bot joins
 //                                       the share; the phone answers its offer.
 //                                       201 {watch}; 404 unknown agent; 409 the
-//                                       agent already watches one
+//                                       agent already watches one. When callId
+//                                       is a camera ask (phase 3), the owner
+//                                       must have answered it (tapped Show),
+//                                       it must be that agent's, and the watch
+//                                       runs in the chat the ask came from;
+//                                       403 / 409 otherwise
 //   GET  /webrtc/camera/watch           {active: [watch]}
 //   GET  /webrtc/camera/watch/:id       {watch}: frames so far and the replies
 //   POST /webrtc/camera/watch/:id/look  {note?}: the owner asks what the agent
@@ -20,14 +25,16 @@
 // All of it is mesh-gated (isMeshGatedPath): a look runs an agent's turn,
 // and a snapshot writes a picture of the owner's surroundings to disk.
 
-import type { CameraWatchManager } from "@/camera/watch"
-import type { CallerProof } from "@/calls/service"
+import { defaultSession, type CameraWatchManager, type TurnSession } from "@/camera/watch"
+import type { CallerProof, CallService } from "@/calls/service"
 import type { Reply } from "@/daemon/voice-talk-api"
 
 export interface CameraApiDeps {
   watch: CameraWatchManager
   /** True when `proof` names a running turn of `agentId`. */
   isRunningTurn: (agentId: string, proof: CallerProof) => boolean
+  /** Camera asks (phase 3), when this node has SQLite. */
+  calls?: Pick<CallService, "get">
 }
 
 export function isCameraPath(path: string): boolean {
@@ -46,7 +53,22 @@ export async function handleCamera(
   if (path === "/webrtc/camera/watch") {
     if (method === "GET") return { status: 200, body: { active: watch.active() } }
     if (method !== "POST") return { status: 405, body: { error: "GET or POST" } }
-    const r = await watch.start({ callId: body.callId, agentId: body.agentId })
+    const callId = String(body.callId ?? "")
+    const agentId = String(body.agentId ?? "").trim()
+    // A share that answers a camera ask carries the ask's id. The ask must
+    // be answered (the owner's tap) and be this agent's, and the watch
+    // runs where the agent asked from.
+    let session: TurnSession | undefined
+    let callRecordId: string | undefined
+    const ask = deps.calls?.get(callId)
+    if (ask) {
+      if (ask.kind !== "camera") return { status: 409, body: { error: `${callId} is a voice call, not a camera ask` } }
+      if (ask.agentId !== agentId) return { status: 403, body: { error: `${callId} was asked by ${ask.agentId}, not ${agentId || "(none)"}` } }
+      if (ask.status !== "answered") return { status: 409, body: { error: `the owner has not accepted ${callId} (it is ${ask.status})` } }
+      session = ask.channel && ask.chatId ? { channel: ask.channel, chatId: ask.chatId, sender: "Camera" } : defaultSession(agentId)
+      callRecordId = ask.id
+    }
+    const r = await watch.start({ callId, agentId, session, callRecordId })
     return r.ok ? { status: 201, body: { watch: r.watch } } : { status: r.status, body: { error: r.error } }
   }
 
