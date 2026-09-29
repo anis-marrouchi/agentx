@@ -95,7 +95,11 @@ agentx desktop start
 | `agentx call request --reason "…"` | From inside an agent's run: ring the owner for a live voice call (`--urgent`); see [Calls from your agents](../dashboard/calls.md) |
 | `agentx call list` | Recent calls (`--status missed`, `--limit`, `--json`) |
 | `agentx call answer <id>`, `agentx call decline <id>`, `agentx call hangup <id>`, `agentx call later <id> [minutes]` | Act on a call from the terminal |
-| `agentx call allow <agent>`, `agentx call disallow <agent>` | Who may call you (`calls.allow`; `"*"` for every agent) |
+| `agentx call allow <agent>`, `agentx call disallow <agent>` | Who may call you (`calls.allow`; `"*"` for every agent). The same list lets an agent ask to see through your phone camera |
+| `agentx camera ask --reason "…"` | From inside an agent's run: ask you to show the phone camera (`--urgent`); see [Share your phone camera](../dashboard/mobile-camera.md#when-an-agent-asks-to-see) |
+| `agentx camera look` | From inside an agent's run, while you share: the newest picture, saved as a PNG the agent opens |
+| `agentx camera list`, `agentx camera watching` | Recent camera asks (`--status`, `--limit`, `--json`); agents watching a camera right now |
+| `agentx camera decline <id>`, `agentx camera stop <id>` | Turn down an ask; end a live watch from the terminal |
 | `agentx notifications show` | Notification routing, the local banner and sound, phone app and ntfy status, and on a Mac whether AgentX Helper may post banners |
 | `agentx notifications local` | `--banner`, `--sound`, `--sound-name`, `--volume`, `--icon` for the Mac banner and sound |
 | `agentx notifications push` | `--subject`, `--relay-to`, `--enable`/`--disable` for notifications on the [phone app](../dashboard/mobile-alerts.md) |

@@ -148,13 +148,13 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 
 ## `calls`
 
-Agents ringing you for a live voice call on the desktop assistant. See [Calls from your agents](/dashboard/calls).
+Agents ringing you for a live voice call on the desktop assistant. See [Calls from your agents](/dashboard/calls). The same settings cover an agent asking to see through your phone camera ([Share your phone camera](/dashboard/mobile-camera#when-an-agent-asks-to-see)): a camera ask counts as a call here.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `calls.allow` | string[] | `[]` | Agents that may call you: ids, or `"*"` for every agent. Empty: nobody. |
-| `calls.maxPerHour` | number (1–60) | `3` | Most calls one agent may place in an hour. |
-| `calls.ringSeconds` | number (10–300) | `45` | Seconds a call rings before it counts as missed. |
+| `calls.allow` | string[] | `[]` | Agents that may call you, or ask to see: ids, or `"*"` for every agent. Empty: nobody. |
+| `calls.maxPerHour` | number (1–60) | `3` | Most calls and camera asks one agent may place in an hour, together. |
+| `calls.ringSeconds` | number (10–300) | `45` | Seconds a call rings, or a camera ask waits on the phone, before it counts as missed. |
 | `calls.maxCallMinutes` | number (1–240) | `30` | An answered call nobody hung up ends after this many minutes (the widget quit or crashed, the Mac slept), so the agent can call again. |
 | `calls.ringSound` | string | `"Submarine"` | The ring: a sound from `/System/Library/Sounds`, without the extension. |
 | `calls.summary` | boolean | `true` | After hang-up, the agent writes a short summary, filed in the dashboard's Ask history. |
