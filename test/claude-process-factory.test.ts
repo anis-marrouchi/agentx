@@ -3,7 +3,7 @@ import { execSync } from "child_process"
 import { chmodSync, mkdtempSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { ClaudeProcessFactory, TurnDeadlineExceeded } from "../src/agents/claude-process-factory"
+import { ClaudeProcessFactory, TurnDeadlineExceeded, TurnInterrupted } from "../src/agents/claude-process-factory"
 import type { ProcessKey, SpawnOptions } from "../src/agents/process-registry"
 
 // These tests spawn a REAL `claude -p` subprocess. Skipped automatically
@@ -174,5 +174,24 @@ describe("ClaudeProcessFactory — turn deadline", () => {
     await expect(run()).rejects.toBeInstanceOf(TurnDeadlineExceeded)
     await new Promise(r => setTimeout(r, 300))
     expect(handle.state()).toBe("dead")
+  })
+
+  // A daemon restart kills the process mid-turn, long before its budget.
+  // kill() wakes the turn before the child has exited; that used to read
+  // as the turn's own deadline and reported "timed out after 90m".
+  it("reports a mid-turn kill as an interruption with its reason, not a timeout", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-silent-claude-"))
+    const binary = join(dir, "claude")
+    writeFileSync(binary, "#!/bin/sh\nexec cat >/dev/null\n")
+    chmodSync(binary, 0o755)
+    const handle = new ClaudeProcessFactory({ binary }).spawn(KEY, OPTS())
+
+    const run = async () => { for await (const _ of handle.runTurn({ message: "hi", taskId: "t", deadlineMs: 60_000 })) { /* none */ } }
+    const turn = run()
+    setTimeout(() => { void handle.kill("registry-stop") }, 100)
+    const err = await turn.then(() => null, (e) => e)
+    expect(err).toBeInstanceOf(TurnInterrupted)
+    expect(err).not.toBeInstanceOf(TurnDeadlineExceeded)
+    expect((err as TurnInterrupted).reason).toBe("registry-stop")
   })
 })
