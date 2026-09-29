@@ -2633,13 +2633,18 @@ export class AgentXDaemon {
       agentName: (id) => this.config.agents[id] ? (this.config.agents[id].name || id) : null,
       alert: async ({ title, message, urgent, from }) => {
         await notify({ title, message, urgent, from, priority: urgent ? 5 : 4 }, async (m) => {
-          await this.router.sendOutbound({
-            channel: m.channel ?? defaultNotifyChannel(this.config),
-            chatId: m.chatId ?? "default",
-            text: `${m.title}\n${m.message}`,
-            priority: m.priority,
-            agentId: from,
-          } as any)
+          // A push that fails must not take the Mac banner with it.
+          try {
+            await this.router.sendOutbound({
+              channel: m.channel ?? defaultNotifyChannel(this.config),
+              chatId: m.chatId ?? "default",
+              text: `${m.title}\n${m.message}`,
+              priority: m.priority,
+              agentId: from,
+            } as any)
+          } catch (e: any) {
+            this.log(`[calls] push for "${m.title}" failed: ${e?.message ?? e}`)
+          }
         }, { alert: localAlert(localSettings(this.config.notifications.local)) })
       },
       // Same chat id as /ask, so the agent summarises the call it just had.
