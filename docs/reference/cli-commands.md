@@ -2993,6 +2993,63 @@ Show WhatsApp channel + ingest status.
 
 No flags.
 
+### `agentx whatsapp triage status`
+
+Show WhatsApp triage settings, watch rules, and whether the webhook secret is set in this shell. See [Watch a WhatsApp chat](../jobs/watch-whatsapp.md).
+
+No flags.
+
+### `agentx whatsapp triage on`
+
+Turn WhatsApp triage on.
+
+No flags.
+
+### `agentx whatsapp triage off`
+
+Turn WhatsApp triage off.
+
+No flags.
+
+### `agentx whatsapp triage log`
+
+The latest triage results: chat, class, summary, and the draft's approval key.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--limit <n>` | `20` | How many. |
+
+### `agentx whatsapp triage rule add <id>`
+
+Watch a chat (or people) and send its messages to an agent.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <agent>` | required | The agent that triages. |
+| `--chat <jid>` | — | A chat to watch: phone number, contact JID or group JID (repeatable). |
+| `--sender <jid>` | — | Only messages from this person (repeatable). |
+| `--prompt <text>` | — | Extra instructions for the agent. |
+| `--quiet <range>` | — | No notifications in this window, e.g. 22:00-07:00. |
+| `--auto-ack` | — | Send short acknowledgements without asking (also needs allowAutoAck). |
+
+### `agentx whatsapp triage rule remove <id>`
+
+Delete a watch rule.
+
+No flags.
+
+### `agentx whatsapp triage rule enable <id>`
+
+Enable a watch rule.
+
+No flags.
+
+### `agentx whatsapp triage rule disable <id>`
+
+Disable a watch rule.
+
+No flags.
+
 ## demo (advanced)
 
 `agentx demo`: Zero-key demo: three daemons, a real A2A mesh, a scripted scenario. **Advanced.**

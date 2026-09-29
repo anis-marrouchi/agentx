@@ -2,7 +2,7 @@
 
 Agents sometimes need your yes or no before they go ahead: publishing a draft, merging a change, running a new schedule. **Approvals** is one list of everything waiting for you, most urgent first. You can answer from the dashboard (it works on a phone) or from the terminal.
 
-The list brings together four kinds of request:
+The list brings together five kinds of request:
 
 | Kind | What it is | Yes does | No does |
 |---|---|---|---|
@@ -10,6 +10,7 @@ The list brings together four kinds of request:
 | **Schedule** | A schedule an agent asked to create or remove ([schedules from chat](../automations/schedules-from-chat.md)) | Turns it on, or removes it | Drops the request, or keeps the schedule |
 | **Memory fact** | Something an agent learned from an outside source ([review what agents learn](../jobs/agent-memory.md)) | Lets the agent use it | Keeps it out for good |
 | **Wiki lesson** | A lesson proposed for the shared wiki | Writes the article | Declines it |
+| **WhatsApp reply** | A reply an agent drafted for a watched WhatsApp chat ([watch a WhatsApp chat](../jobs/watch-whatsapp.md)) | Sends it through wacli | Drops the draft; nothing is sent |
 
 Answering here is the same as answering with the older commands (`agentx schedule approve`, `agentx memory facts approve`, `agentx wiki proposals approve`). They keep working, and both ways stay in step.
 
@@ -49,7 +50,7 @@ On a phone the buttons fill the width of the card:
 
 *Fictional demo data. No real agents, people or messages.*
 
-To see only one kind, click **Cards**, **Schedules**, **Memory** or **Wiki** at the top. With several machines connected, choose the machine in the top bar's machine menu to see its list.
+To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki** or **WhatsApp** at the top. With several machines connected, choose the machine in the top bar's machine menu to see its list.
 
 ## Answer from the terminal
 

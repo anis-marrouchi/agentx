@@ -606,6 +606,28 @@ const ADMIN_PAGE_BODY = `
       <input id="w-desc" placeholder="Globex main project webhooks" />
       <div class="actions"><button class="primary" onclick="addWebhook()">Add webhook</button><div id="w-msg" class="msg"></div></div>
     </div>
+    <div class="add-form" id="wa-triage">
+      <h3>WhatsApp triage</h3>
+      <p class="hint" style="margin:0 0 10px">Messages from watched WhatsApp chats go to an agent, which sorts them and drafts replies. Nothing is sent to the contact until you approve it in Approvals. Needs <code>wacli sync --webhook</code>; see the guide "Watch a WhatsApp chat".</p>
+      <div id="wa-status" class="ax-stack"></div>
+      <div id="wa-rules" class="ax-stack"></div>
+      <h3 style="margin-top:14px">Add a watch rule</h3>
+      <div class="rowf">
+        <div><label>Rule id<span class="hint">(lowercase)</span></label><input id="wa-id" placeholder="test-contact" /></div>
+        <div><label>Agent</label><select id="wa-agent"></select></div>
+      </div>
+      <div class="rowf">
+        <div><label>Chats<span class="hint">(phone numbers or JIDs, comma-separated)</span></label><input id="wa-chats" placeholder="+1 555 000 1111" /></div>
+        <div><label>Only from<span class="hint">(optional, people in those chats)</span></label><input id="wa-senders" placeholder="" /></div>
+      </div>
+      <label>Instructions for the agent<span class="hint">(optional)</span></label>
+      <textarea id="wa-prompt" rows="3" placeholder="Who this contact is, where issues go, how to reply."></textarea>
+      <div class="rowf">
+        <div><label>Quiet from<span class="hint">(optional)</span></label><input id="wa-quiet-start" placeholder="22:00" /></div>
+        <div><label>Quiet until</label><input id="wa-quiet-end" placeholder="07:00" /></div>
+      </div>
+      <div class="actions"><button class="primary" onclick="addWatchRule()">Add watch rule</button><div id="wa-msg" class="msg"></div></div>
+    </div>
   </section>
 
   <section id="tab-mesh" class="tab">
@@ -1154,6 +1176,7 @@ async function refresh() {
     renderChannels();
     renderCrons();
     renderWebhooks();
+    renderWaTriage();
     renderMesh();
     renderBusiness();
     wireBusinessHandlers();
@@ -1305,6 +1328,65 @@ async function deleteWebhookAction(id) {
 async function toggleWebhook(id, enabled) {
   try { await req('PATCH', '/api/admin/webhooks', { id, patch: { enabled } }); refresh(); }
   catch (e) { showMsg($('global-msg'), 'err', e.message); }
+}
+
+function renderWaTriage() {
+  const t = state.whatsappTriage || { enabled: false, rules: [] };
+  const url = (state.daemonUrl || '').replace(/\\/+$/, '') + '/webhook/wacli';
+  $('wa-status').innerHTML =
+    '<div>Triage is <b>' + (t.enabled ? 'on' : 'off') + '</b> ' +
+      '<button class="ax-btn" onclick="setWaTriage(' + (t.enabled ? 'false' : 'true') + ')">' + (t.enabled ? 'Turn off' : 'Turn on') + '</button></div>' +
+    '<div class="hint">Webhook URL for wacli: <code>' + escapeHtml(url) + '</code></div>' +
+    '<div class="hint">Secret (' + escapeHtml(t.secretEnv || 'WACLI_WEBHOOK_SECRET') + '): ' + (t.secretSet ? 'set' : '<b>not set</b>. Every message is refused until it is.') + '</div>' +
+    (t.error ? '<div class="msg err" style="display:block">' + escapeHtml(t.error) + '</div>' : '');
+  $('wa-rules').innerHTML = (t.rules || []).length === 0
+    ? '<div class="hint">No watch rules yet.</div>'
+    : t.rules.map((r) =>
+        '<div class="ax-card" style="padding:10px 12px">' +
+          '<b>' + escapeHtml(r.id) + '</b> → ' + escapeHtml(r.agent) + (r.enabled ? '' : ' <span class="hint">(off)</span>') +
+          (r.quietHours ? ' <span class="hint">quiet ' + escapeHtml(r.quietHours.start) + '–' + escapeHtml(r.quietHours.end) + '</span>' : '') +
+          '<div class="hint">' + escapeHtml([].concat(r.chats || [], r.senders || []).join(', ')) + '</div>' +
+          '<button class="ax-btn" onclick="toggleWatchRule(\\'' + escapeHtml(r.id) + '\\', ' + (r.enabled ? 'false' : 'true') + ')">' + (r.enabled ? 'Disable' : 'Enable') + '</button> ' +
+          '<button class="ax-btn ax-btn--danger" onclick="deleteWatchRule(\\'' + escapeHtml(r.id) + '\\')">Delete</button>' +
+        '</div>').join('');
+  const sel = $('wa-agent');
+  const cur = sel.value;
+  sel.innerHTML = state.agents.map((a) => '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name) + ' (' + escapeHtml(a.id) + ')</option>').join('');
+  if (cur) sel.value = cur;
+}
+
+async function setWaTriage(enabled) {
+  try { await req('POST', '/api/admin/whatsapp-triage', { enabled }); refresh(); }
+  catch (e) { showMsg($('wa-msg'), 'err', e.message); }
+}
+
+async function addWatchRule() {
+  const body = {
+    id: $('wa-id').value.trim(),
+    agent: $('wa-agent').value,
+    chats: $('wa-chats').value,
+    senders: $('wa-senders').value,
+    prompt: $('wa-prompt').value,
+    quietStart: $('wa-quiet-start').value.trim(),
+    quietEnd: $('wa-quiet-end').value.trim(),
+  };
+  try {
+    const r = await req('POST', '/api/admin/whatsapp-triage/rules', body);
+    showMsg($('wa-msg'), 'ok', r.summary);
+    ['wa-id', 'wa-chats', 'wa-senders', 'wa-prompt', 'wa-quiet-start', 'wa-quiet-end'].forEach((id) => { $(id).value = ''; });
+    refresh();
+  } catch (e) { showMsg($('wa-msg'), 'err', e.message); }
+}
+
+async function toggleWatchRule(id, enabled) {
+  try { await req('PATCH', '/api/admin/whatsapp-triage/rules', { id, patch: { enabled } }); refresh(); }
+  catch (e) { showMsg($('wa-msg'), 'err', e.message); }
+}
+
+async function deleteWatchRule(id) {
+  if (!confirm('Delete watch rule "' + id + '"?')) return;
+  try { await req('DELETE', '/api/admin/whatsapp-triage/rules', { id }); refresh(); }
+  catch (e) { showMsg($('wa-msg'), 'err', e.message); }
 }
 
 function renderMesh() {

@@ -1,7 +1,8 @@
 // --- Approvals page (/approvals) ---
 //
 // One inbox for every decision waiting for the operator: decision cards
-// agents raise, schedule requests, held memory facts, wiki proposals. Each
+// agents raise, schedule requests, held memory facts, wiki proposals,
+// WhatsApp reply drafts. Each
 // item answers "what is it, what is asked, what does the agent advise, and
 // what happens if I say nothing", with Yes / No / Later.
 //
@@ -35,6 +36,7 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
       <button type="button" class="ax-chip apv__f" data-kind="schedule" aria-pressed="false">Schedules <span id="n-schedule"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="memory" aria-pressed="false">Memory <span id="n-memory"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="wiki" aria-pressed="false">Wiki <span id="n-wiki"></span></button>
+      <button type="button" class="ax-chip apv__f" data-kind="whatsapp" aria-pressed="false">WhatsApp <span id="n-whatsapp"></span></button>
     </div>
   </header>
 
@@ -124,7 +126,7 @@ const APPROVALS_CSS = `
 const APPROVALS_SCRIPT = `
 (function(){
 var state = { items: [], snoozed: 0, kind: '', showAll: false };
-var LABEL = { card: 'Card', schedule: 'Schedule', memory: 'Memory fact', wiki: 'Wiki lesson' };
+var LABEL = { card: 'Card', schedule: 'Schedule', memory: 'Memory fact', wiki: 'Wiki lesson', whatsapp: 'WhatsApp reply' };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 function headers(json){
@@ -157,7 +159,7 @@ async function load(){
 }
 
 function counts(){
-  var c = { card: 0, schedule: 0, memory: 0, wiki: 0 };
+  var c = { card: 0, schedule: 0, memory: 0, wiki: 0, whatsapp: 0 };
   state.items.forEach(function(i){ c[i.kind] = (c[i.kind] || 0) + 1; });
   $('n-all').textContent = state.items.length;
   Object.keys(c).forEach(function(k){ $('n-' + k).textContent = c[k]; });

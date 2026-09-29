@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSyn
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
+import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
 import { TokenStore } from "./token-store"
 import { loadDaemonConfig } from "./config"
 import { localSettings, patchLocal } from "@/notify/local"
@@ -91,6 +92,11 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/webhooks": () => addWebhook(body),
       "PATCH /api/admin/webhooks": () => editWebhook(body),
       "DELETE /api/admin/webhooks": () => deleteWebhook(body),
+      // Watched WhatsApp chats — mirrors `agentx whatsapp triage`.
+      "POST /api/admin/whatsapp-triage": () => updateWhatsappTriage(body),
+      "POST /api/admin/whatsapp-triage/rules": () => addWatchRule(body),
+      "PATCH /api/admin/whatsapp-triage/rules": () => editWatchRule(body),
+      "DELETE /api/admin/whatsapp-triage/rules": () => deleteWatchRule(body),
       "POST /api/admin/mesh/peers": () => addMeshPeer(body),
       "DELETE /api/admin/mesh/peers": () => deleteMeshPeer(body),
       "POST /api/admin/mesh/toggle": () => toggleMesh(body),
@@ -349,7 +355,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), actions }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), actions }
 }
 
 // ========================================================================

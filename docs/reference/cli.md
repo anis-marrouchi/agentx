@@ -51,7 +51,7 @@ These are callable but hidden from `agentx --help` (its footer names them all). 
 | `db` | Read-only views of the operational database |
 | `skill`, `hook`, `plugin`, `actions`, `references`, `rag` | Extensions: skills, hooks, plugins, reusable actions, the references registry, search indexes |
 | `business`, `backlog`, `plan` | The business layer: org chart and projects, a local backlog, day/week/month plans |
-| `whatsapp` | WhatsApp chats and contacts, and ingesting them into the wiki |
+| `whatsapp` | WhatsApp chats and contacts, ingesting them into the wiki, and triage of watched chats |
 | `retention` | Prune old workspace state |
 | `migrate` | Import configuration from another tool |
 | `exec` | Run one task through an agent and exit, for scripts |
