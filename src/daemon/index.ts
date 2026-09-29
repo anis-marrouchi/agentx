@@ -25,6 +25,10 @@ import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { GitLabAdapter } from "@/channels/gitlab"
 import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
 import { WebRtcSignalBroker, ringNotice, type WebRtcSignal } from "@/channels/webrtc-signal"
+import { WebRtcBot, nativeI420ToRgba } from "@/channels/webrtc-bot"
+import { CameraWatchManager } from "@/camera/watch"
+import { i420ToRgba } from "@/camera/frame-image"
+import { handleCamera, isCameraPath } from "@/daemon/camera-api"
 import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
@@ -192,6 +196,8 @@ export class AgentXDaemon {
   private github?: GitHubAdapter
   private webrtc?: WebRtcSignalBroker
   private botManager?: BotManager
+  /** Agents watching the phone camera (#325); needs channels.webrtc. */
+  private cameraWatch?: CameraWatchManager
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
   private workflowRuns?: WorkflowRunStore
@@ -1053,6 +1059,10 @@ export class AgentXDaemon {
       if (this.botManager) {
         this.botManager.shutdown()
       }
+    } catch {}
+
+    try {
+      this.cameraWatch?.shutdown()
     } catch {}
 
     try {
@@ -2044,7 +2054,8 @@ export class AgentXDaemon {
         })
         this.log(`  WebRTC bot: enabled (whisper=${botCfg.whisperBackend}, default-agent=${botCfg.defaultAgentId || "(none)"}, transcript=${botCfg.transcriptChannel ? `${botCfg.transcriptChannel.channel}:${botCfg.transcriptChannel.chatId}` : "(none)"})`)
       }
-      this.log(`  WebRTC signaling: enabled (stun=${wrtcCfg.stunServers.length}, turn=${wrtcCfg.turnServers.length}, allowedCallers=${wrtcCfg.allowedCallers.length || "all"}, ringNotify=${wrtcCfg.ringNotify.length}, bot=${wrtcCfg.bot.enabled ? "on" : "off"})`)
+      this.cameraWatch = this.createCameraWatch()
+      this.log(`  WebRTC signaling: enabled (stun=${wrtcCfg.stunServers.length}, turn=${wrtcCfg.turnServers.length}, allowedCallers=${wrtcCfg.allowedCallers.length || "all"}, ringNotify=${wrtcCfg.ringNotify.length}, bot=${wrtcCfg.bot.enabled ? "on" : "off"}, camera-bot frames=${wrtcCfg.camera.bot.frameIntervalSeconds ? `every ${wrtcCfg.camera.bot.frameIntervalSeconds}s` : "on demand"})`)
     }
 
     // Workflow engine — register hook subscribers BEFORE startAll so a
@@ -2750,6 +2761,67 @@ export class AgentXDaemon {
     return calls
   }
 
+  /** Agents watching the phone camera (#325 phase 2). The bot joins the
+   *  share as `bot:<agentId>` and always offers, since the phone only
+   *  answers. A frame the agent gets by itself is answered where the
+   *  share's session lives: a chat channel, or the dashboard's Ask
+   *  history for the voice session a share the owner started runs in. */
+  private createCameraWatch(): CameraWatchManager {
+    const wrtcCfg = this.config.channels.webrtc
+    const iceServers: RTCIceServer[] = [
+      ...wrtcCfg.stunServers.map((urls) => ({ urls })),
+      ...wrtcCfg.turnServers,
+    ]
+    return new CameraWatchManager({
+      config: () => this.config.channels.webrtc.camera.bot,
+      startBot: async ({ callId, agentId, onFrame, onClosed }) => {
+        const bot = new WebRtcBot({
+          callId,
+          botName: `bot:${agentId}`,
+          target: this.config.node.name,
+          iceServers,
+          broker: this.webrtc!,
+          log: this.log,
+          onVideoFrame: onFrame,
+          alwaysOffer: true,
+          onClosed,
+        })
+        await bot.start()
+        return { close: (reason) => bot.close(reason) }
+      },
+      workspaceOf: (id) => this.registry.getAgent(id)?.workspace ?? null,
+      agentName: (id) => this.config.agents[id] ? (this.config.agents[id].name || id) : null,
+      turn: async ({ agentId, message, session }) => {
+        const r = await this.registry.execute({
+          agentId, message,
+          context: { channel: session.channel, sender: session.sender, chatId: session.chatId },
+        })
+        return r.error ? null : (r.content ?? null)
+      },
+      deliver: async (watch, reply) => {
+        const { channel, chatId } = watch.session
+        if (channel !== "voice") {
+          await this.router.sendOutbound({ channel, chatId, text: reply.text, parseMode: "plain", agentId: watch.agentId } as any)
+          return
+        }
+        const store = this.assistantStore()
+        if (!store) return
+        const title = `Camera: ${watch.agentName} looked`
+        const thread = store.createThread(watch.agentId, null, title)
+        const seq = store.appendTurn(thread.id, title)
+        store.resolve(thread.id, seq, reply.text, "done")
+      },
+      toRgba: (frame) => {
+        const native = nativeI420ToRgba()
+        if (!native) return i420ToRgba(frame)
+        const rgba = { width: frame.width, height: frame.height, data: new Uint8ClampedArray(frame.width * frame.height * 4) }
+        native(frame, rgba)
+        return rgba
+      },
+      log: (m) => this.log(m),
+    })
+  }
+
   /**
    * Serve the minimal browser call page. Static HTML; no framework.
    * The page does getUserMedia, RTCPeerConnection, and POSTs/listens signals.
@@ -2858,6 +2930,19 @@ export class AgentXDaemon {
         const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
         const proof = { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") }
         const reply = await handleCalls(this.calls, () => this.config.calls, req.method || "GET", path, url.searchParams, body, proof)
+        this.json(res, reply.status, reply.body)
+        return
+      }
+      // An agent watching the phone camera. Gated by isMeshGatedPath before this point.
+      if (isCameraPath(path)) {
+        if (!this.cameraWatch) { this.json(res, 404, { error: "Calls are off on this computer. Set channels.webrtc.enabled to true in agentx.json." }); return }
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
+        const proof = { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") }
+        const reply = await handleCamera({
+          watch: this.cameraWatch,
+          isRunningTurn: (id, p) => !!this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId }),
+        }, req.method || "GET", path, body, proof)
         this.json(res, reply.status, reply.body)
         return
       }
@@ -5850,6 +5935,8 @@ export class AgentXDaemon {
             ],
             peers: this.mesh?.directory().map(p => ({ name: p.peer, healthy: p.healthy })) || [],
             camera: wrtc.camera,
+            // Agents the phone may show its camera to (#325 phase 2).
+            agents: this.registry.list().map((a) => ({ id: a.id, name: a.name })),
           })
           break
         }
@@ -6058,6 +6145,10 @@ export class AgentXDaemon {
               "POST /webrtc/signal  — remote-peer-originated signal, fanned out to local browser",
               "POST /webrtc/bot/invite { callId, target, agentId }  — spawn a transcribing bot peer for a call",
               "GET  /webrtc/bots  — active bot sessions",
+              "POST /webrtc/camera/watch { callId, agentId }  — an agent watches the phone camera share",
+              "GET  /webrtc/camera/watch  — agents watching a camera now",
+              "POST /webrtc/camera/watch/:id/look { note? }  — ask the watching agent what it sees",
+              "POST /webrtc/camera/look { agentId }  — from an agent's run: the newest frame as a PNG path",
             ],
           })
       }

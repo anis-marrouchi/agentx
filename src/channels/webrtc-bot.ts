@@ -10,9 +10,11 @@ import type { WebRtcSignalBroker, WebRtcSignal } from "./webrtc-signal"
 // in-process broker.subscribeInternal callback, and instead of POSTing to
 // /webrtc/signal/out it calls broker.handleOutgoing directly.
 //
-// v1 scope: receive-only audio. The bot does not produce media — it adds an
-// audio receiver via setLocalDescription/createOffer with offerToReceiveAudio,
-// and consumes inbound audio frames through RTCAudioSink (PCM Int16Array).
+// Receive-only. The bot does not produce media — it adds receivers via
+// createOffer({ offerToReceiveAudio/Video }) and consumes inbound audio
+// through RTCAudioSink (PCM Int16Array) and, when asked, inbound video
+// through RTCVideoSink (I420 frames; #325). Which tracks it takes follows
+// which callbacks it was given.
 //
 // `@roamhq/wrtc` is loaded lazily on first bot start so daemons that don't
 // run WebRTC (e.g. headless production servers without the native binary
@@ -22,7 +24,16 @@ import type { WebRtcSignalBroker, WebRtcSignal } from "./webrtc-signal"
 
 let wrtcModule: any | null = null
 
-async function loadWrtc(): Promise<{ RTCPeerConnection: any; RTCAudioSink: any }> {
+interface WrtcModule {
+  RTCPeerConnection: any
+  RTCAudioSink: any
+  /** Missing on a build without video support; video tracks are then ignored. */
+  RTCVideoSink?: any
+  /** Native I420 → RGBA, when the build has it. */
+  i420ToRgba?: (i420: { width: number; height: number; data: Uint8Array | Uint8ClampedArray }, rgba: { width: number; height: number; data: Uint8ClampedArray }) => void
+}
+
+async function loadWrtc(): Promise<WrtcModule> {
   if (wrtcModule) return wrtcModule
   let mod: any
   try {
@@ -42,8 +53,19 @@ async function loadWrtc(): Promise<{ RTCPeerConnection: any; RTCAudioSink: any }
   if (!RTCPeerConnection || !RTCAudioSink) {
     throw new Error(`@roamhq/wrtc loaded but missing expected exports (RTCPeerConnection / nonstandard.RTCAudioSink)`)
   }
-  wrtcModule = { RTCPeerConnection, RTCAudioSink }
-  return wrtcModule
+  wrtcModule = {
+    RTCPeerConnection, RTCAudioSink,
+    RTCVideoSink: pkg.nonstandard?.RTCVideoSink,
+    i420ToRgba: typeof pkg.nonstandard?.i420ToRgba === "function" ? pkg.nonstandard.i420ToRgba : undefined,
+  }
+  return wrtcModule as WrtcModule
+}
+
+/** The native I420 → RGBA converter, once the module is loaded; null
+ *  before that or on a build without it. Callers fall back to the pure
+ *  JavaScript one in src/camera/frame-image.ts. */
+export function nativeI420ToRgba(): WrtcModule["i420ToRgba"] | null {
+  return wrtcModule?.i420ToRgba ?? null
 }
 
 export interface AudioFrame {
@@ -51,6 +73,18 @@ export interface AudioFrame {
   samples: Int16Array
   sampleRate: number
   channelCount: number
+  /** Timestamp (ms since epoch) when the frame was received. */
+  receivedAt: number
+}
+
+export interface VideoFrame {
+  width: number
+  height: number
+  /** I420 planes: luma, then the two half-size chroma planes. The buffer
+   *  belongs to this frame; the sink allocates a new one per frame. */
+  data: Uint8Array
+  /** Degrees clockwise to turn the picture upright, as the sender set it. */
+  rotation: number
   /** Timestamp (ms since epoch) when the frame was received. */
   receivedAt: number
 }
@@ -67,8 +101,17 @@ export interface WebRtcBotOptions {
   iceServers: RTCIceServer[]
   broker: WebRtcSignalBroker
   log: (...args: unknown[]) => void
-  /** Fired for each remote audio buffer. Bot consumes only — no echo back. */
-  onAudioFrame: (frame: AudioFrame) => void
+  /** Fired for each remote audio buffer. Bot consumes only — no echo back.
+   *  Without it the bot asks for no audio. */
+  onAudioFrame?: (frame: AudioFrame) => void
+  /** Fired for each decoded remote video frame (#325). Without it video
+   *  tracks are ignored. Keep only what you need: a camera sends many
+   *  frames a second (see src/camera/sampler.ts). */
+  onVideoFrame?: (frame: VideoFrame) => void
+  /** Offer regardless of the deterministic-caller rule. A phone sharing
+   *  its camera only ever answers (app-camera.client.ts), so the bot
+   *  watching it must be the one to offer. */
+  alwaysOffer?: boolean
   /** Fired when the remote ends the call (hangup signal received) or when
    *  the connection enters a terminal state. Idempotent. */
   onClosed?: (reason: string) => void
@@ -99,12 +142,15 @@ export class WebRtcBot {
     this.pc.ontrack = (ev: any) => {
       if (this.closed) return
       const track = ev.track
-      if (track.kind !== "audio") {
-        log(`[bot:${botName}] non-audio track received (kind=${track.kind}) — ignored in v1`)
-        return
+      if (track.kind === "audio" && this.opts.onAudioFrame) {
+        log(`[bot:${botName}] audio track received from ${target}`)
+        this.tapAudio(track)
+      } else if (track.kind === "video" && this.opts.onVideoFrame) {
+        log(`[bot:${botName}] video track received from ${target}`)
+        this.tapVideo(track)
+      } else {
+        log(`[bot:${botName}] ${track.kind} track received — not asked for, ignored`)
       }
-      log(`[bot:${botName}] audio track received from ${target}`)
-      this.tapAudio(track)
     }
 
     this.pc.onicecandidate = (ev: any) => {
@@ -136,11 +182,14 @@ export class WebRtcBot {
     await this.send({ kind: "ring", callId, from: botName, to: target })
 
     // Deterministic caller role: smaller normalized name offers.
-    const isCaller = norm(botName) < norm(target)
+    const isCaller = this.opts.alwaysOffer || norm(botName) < norm(target)
     if (isCaller) {
-      // We need to RECEIVE audio from the human; make the receiver explicit.
-      // @roamhq/wrtc honors createOffer({ offerToReceiveAudio: true }).
-      const offer = await this.pc.createOffer({ offerToReceiveAudio: true, offerToReceiveVideo: false })
+      // We need to RECEIVE from the human; make the receivers explicit.
+      // @roamhq/wrtc honors createOffer({ offerToReceiveAudio/Video }).
+      const offer = await this.pc.createOffer({
+        offerToReceiveAudio: !!this.opts.onAudioFrame,
+        offerToReceiveVideo: !!this.opts.onVideoFrame,
+      })
       await this.pc.setLocalDescription(offer)
       await this.send({ kind: "offer", callId, from: botName, to: target, sdp: offer.sdp })
       log(`[bot:${botName}] role=caller, offer sent to ${target}`)
@@ -192,10 +241,34 @@ export class WebRtcBot {
     const sink = new RTCAudioSink(track)
     sink.ondata = (data: { samples: Int16Array; sampleRate: number; channelCount: number }) => {
       if (this.closed) return
-      this.opts.onAudioFrame({
+      this.opts.onAudioFrame?.({
         samples: data.samples,
         sampleRate: data.sampleRate,
         channelCount: data.channelCount,
+        receivedAt: Date.now(),
+      })
+    }
+    this.sinks.add({ stop: () => { try { sink.stop() } catch { /* */ } } })
+  }
+
+  /** Wire RTCVideoSink to the inbound track and forward each decoded frame
+   *  upstream. Same timing guarantee as tapAudio. A build without
+   *  RTCVideoSink logs once and leaves the track alone. */
+  private tapVideo(track: any): void {
+    if (!wrtcModule) throw new Error("WebRtcBot.tapVideo called before loadWrtc — bug")
+    const { RTCVideoSink } = wrtcModule
+    if (!RTCVideoSink) {
+      this.opts.log(`[bot:${this.opts.botName}] this @roamhq/wrtc build has no RTCVideoSink — video ignored`)
+      return
+    }
+    const sink = new RTCVideoSink(track)
+    sink.onframe = ({ frame }: { frame: { width: number; height: number; data: Uint8Array; rotation?: number } }) => {
+      if (this.closed) return
+      this.opts.onVideoFrame?.({
+        width: frame.width,
+        height: frame.height,
+        data: frame.data,
+        rotation: frame.rotation ?? 0,
         receivedAt: Date.now(),
       })
     }

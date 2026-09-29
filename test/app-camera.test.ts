@@ -91,6 +91,7 @@ describe("app camera routes", () => {
       node: NODE,
       iceServers: [{ urls: "stun:example" }],
       peers: [{ name: "Node-B", healthy: true }],
+      agents: [],
       camera: { width: 640, height: 480, frameRate: 10, maxSeconds: 60 },
     })
     expect(seen[0]).toMatchObject({ path: "/webrtc/config", auth: `Bearer ${DAEMON_TOKEN}` })
