@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   renameSync,
+  statSync,
 } from "fs"
 import { resolve, dirname } from "path"
 import { createHash } from "crypto"
@@ -12,6 +13,7 @@ import {
   graphSchemaSchema,
   nodesFileSchema,
   indexFileSchema,
+  fingerprintEntrySchema,
   classificationSchema,
   type GraphSchema,
   type GraphNode,
@@ -35,6 +37,10 @@ export interface GraphStoreOptions {
 export class GraphStore {
   readonly baseDir: string
   private log: (...args: unknown[]) => void
+  /** Parsed nodes/index files, keyed by path. The classifier reads both
+   *  several times per message and they grow without bound, so re-reading
+   *  and re-validating them each time blocked the daemon for seconds. */
+  private parsed = new Map<string, { mtimeMs: number; size: number; data: unknown }>()
 
   constructor(opts: GraphStoreOptions = {}) {
     this.baseDir = opts.baseDir ?? resolve(process.cwd(), ".agentx/graph")
@@ -123,12 +129,14 @@ export class GraphStore {
       this.saveNodes(seeded)
       return seeded
     }
-    const raw = readFileSync(p, "utf-8")
-    const parsed = nodesFileSchema.safeParse(JSON.parse(raw))
-    if (!parsed.success) {
-      throw new Error(`Invalid ${p}: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
-    }
-    return parsed.data
+    // A copy, so callers can edit it before saveNodes without touching the cache.
+    return structuredClone(this.readParsed(p, (raw) => {
+      const parsed = nodesFileSchema.safeParse(JSON.parse(raw))
+      if (!parsed.success) {
+        throw new Error(`Invalid ${p}: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
+      }
+      return parsed.data
+    }))
   }
 
   saveNodes(file: NodesFile): void {
@@ -136,7 +144,27 @@ export class GraphStore {
     if (!parsed.success) {
       throw new Error(`Refusing to save invalid nodes file: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
     }
-    safeWriteJson(this.nodesPath(), parsed.data)
+    this.writeParsed(this.nodesPath(), parsed.data)
+  }
+
+  /** The parsed file, re-read only when its mtime or size changes, so a
+   *  write from another process (CLI, dashboard) is still picked up. */
+  private readParsed<T>(p: string, parse: (raw: string) => T): T {
+    const { mtimeMs, size } = statSync(p)
+    const hit = this.parsed.get(p)
+    if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.data as T
+    const data = parse(readFileSync(p, "utf-8"))
+    this.parsed.set(p, { mtimeMs, size, data })
+    return data
+  }
+
+  /** Write the file and keep the parsed copy, so the writer never re-reads
+   *  what it just wrote. `data` must not be mutated afterwards. */
+  private writeParsed(p: string, data: unknown): void {
+    this.parsed.delete(p)
+    safeWriteJson(p, data)
+    const { mtimeMs, size } = statSync(p)
+    this.parsed.set(p, { mtimeMs, size, data })
   }
 
   /** Validate a node against the schema AND uniqueness within the nodes file. */
@@ -443,14 +471,7 @@ export class GraphStore {
   }
 
   loadIndex(): IndexFile {
-    const p = this.indexPath()
-    if (!existsSync(p)) return { version: 1, entries: {} }
-    const raw = readFileSync(p, "utf-8")
-    const parsed = indexFileSchema.safeParse(JSON.parse(raw))
-    if (!parsed.success) {
-      throw new Error(`Invalid ${p}: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
-    }
-    return parsed.data
+    return structuredClone(this.index())
   }
 
   saveIndex(file: IndexFile): void {
@@ -458,21 +479,41 @@ export class GraphStore {
     if (!parsed.success) {
       throw new Error(`Refusing to save invalid index: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
     }
-    safeWriteJson(this.indexPath(), parsed.data)
+    this.writeParsed(this.indexPath(), parsed.data)
+  }
+
+  /** The cached index. Read-only: copy before handing it to a caller. */
+  private index(): IndexFile {
+    const p = this.indexPath()
+    if (!existsSync(p)) return { version: 1, entries: {} }
+    return this.readParsed(p, (raw) => {
+      const parsed = indexFileSchema.safeParse(JSON.parse(raw))
+      if (!parsed.success) {
+        throw new Error(`Invalid ${p}: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
+      }
+      return parsed.data
+    })
   }
 
   getFingerprint(fp: string): FingerprintEntry | undefined {
-    return this.loadIndex().entries[fp]
+    const entry = this.index().entries[fp]
+    return entry && structuredClone(entry)
   }
 
   setFingerprint(fp: string, entry: Omit<FingerprintEntry, "fingerprint" | "updatedAt">): void {
-    const file = this.loadIndex()
-    file.entries[fp] = {
+    // Validate only the new entry: the rest of the index was validated when
+    // it was read, and re-checking thousands of entries per message is the
+    // cost this cache exists to avoid.
+    const parsed = fingerprintEntrySchema.safeParse({
       ...entry,
       fingerprint: fp,
       updatedAt: new Date().toISOString(),
+    })
+    if (!parsed.success) {
+      throw new Error(`Refusing to save invalid index entry: ${parsed.error.issues.map((i) => i.message).join("; ")}`)
     }
-    this.saveIndex(file)
+    const current = this.index()
+    this.writeParsed(this.indexPath(), { ...current, entries: { ...current.entries, [fp]: parsed.data } })
   }
 
   /** Update the axes on an existing node. Schema-validates the result. */
