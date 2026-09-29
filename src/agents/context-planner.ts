@@ -112,7 +112,7 @@ export async function planContext(input: PlanContextInput): Promise<ContextPlan 
           { role: "system", content: PLANNER_PROMPT },
           { role: "user", content: userPrompt },
         ],
-        { model: PLANNER_MODEL, maxTokens: 256 },
+        { model: PLANNER_MODEL, maxTokens: 256, abortSignal: ac.signal },
       )
       planJson = extractJson(result.content)
     } finally {

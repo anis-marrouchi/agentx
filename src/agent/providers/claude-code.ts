@@ -11,6 +11,7 @@ import type {
 } from "./types"
 import { resolveToken, loadAuthConfig } from "@/utils/auth-store"
 import { execa } from "execa"
+import { tmpdir } from "os"
 import { getLegacyTools } from "../tools/definitions"
 
 // --- Claude Code provider: uses Claude CLI (subscription) or direct API (API key) ---
@@ -26,6 +27,43 @@ const CLI_MODEL_ALIASES: Record<string, string> = {
 }
 
 type AuthCredential = { type: "oauth"; token: string } | { type: "api-key"; token: string }
+
+/** Flags that turn `claude -p` into a plain text generator. Interactive
+ *  startup (plugins, hooks, MCP servers, settings, session files) is what
+ *  made a one-line classification cost ~20s per task. */
+export const BARE_CLI_ARGS: readonly string[] = [
+  "--tools", "",
+  "--strict-mcp-config",
+  "--mcp-config", '{"mcpServers":{}}',
+  "--settings", '{"disableAllHooks":true}',
+  "--no-session-persistence",
+  "--setting-sources", "",
+]
+
+/** Argument list for a non-streaming `claude -p` generate call. Exported
+ *  so the flag set is unit-testable without spawning anything. */
+export function buildCliGenerateArgs(input: {
+  model: string
+  systemPrompt?: string
+  prompt: string
+  bare?: boolean
+}): string[] {
+  const args = [
+    "-p",
+    "--output-format", "json",
+    "--model", input.model,
+    "--dangerously-skip-permissions",
+  ]
+  if (input.bare) args.push(...BARE_CLI_ARGS)
+  if (input.systemPrompt) {
+    // Bare calls replace the CLI's default (tool-oriented) system prompt
+    // outright; agentic calls only append to it.
+    args.push(input.bare ? "--system-prompt" : "--append-system-prompt", input.systemPrompt)
+  }
+  // Prompt goes as the last positional argument
+  args.push(input.prompt)
+  return args
+}
 
 interface AnthropicResponse {
   id: string
@@ -173,19 +211,12 @@ export class ClaudeCodeProvider implements AgentProvider {
     const userMsgs = messages.filter((m) => m.role === "user")
     const prompt = userMsgs.map((m) => m.content).join("\n\n")
 
-    const args = [
-      "-p",
-      "--output-format", "json",
-      "--model", cliModel,
-      "--dangerously-skip-permissions",
-    ]
-
-    if (systemMsg) {
-      args.push("--append-system-prompt", systemMsg.content)
-    }
-
-    // Prompt goes as the last positional argument
-    args.push(prompt)
+    const args = buildCliGenerateArgs({
+      model: cliModel,
+      systemPrompt: systemMsg?.content,
+      prompt,
+      bare: options?.bare === true,
+    })
 
     // Clear ANTHROPIC_API_KEY to force CLI to use subscription auth
     const env = { ...process.env }
@@ -198,6 +229,12 @@ export class ClaudeCodeProvider implements AgentProvider {
       reject: false,
       timeout: 300_000,
       stdin: "ignore",
+      // A bare call has no workspace: a neutral cwd keeps the daemon's own
+      // CLAUDE.md and project settings out of a classifier prompt.
+      ...(options?.bare ? { cwd: tmpdir() } : {}),
+      // Callers' timeouts (classifier 30s, planner 8s) were dead code
+      // until the signal reached the subprocess.
+      ...(options?.abortSignal ? { signal: options.abortSignal } : {}),
     })
 
     if (result.exitCode !== 0) {

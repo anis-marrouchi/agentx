@@ -410,7 +410,7 @@ export class Classifier {
           },
           { role: "user", content: userPrompt },
         ],
-        { model: this.classifierModel, maxTokens: 800 },
+        { model: this.classifierModel, maxTokens: 800, abortSignal: ac.signal, bare: true },
       )
       return res.content || ""
     } finally {

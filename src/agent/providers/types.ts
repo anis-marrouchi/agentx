@@ -32,6 +32,11 @@ export interface ProviderOptions {
    *  marks the task aborted in the registry; the underlying request
    *  can hang for hours waiting for the model to finish thinking. */
   abortSignal?: AbortSignal
+  /** Plain text generation only: no tools, no MCP servers, no hooks, no
+   *  user/project settings, no session persistence. Helper calls
+   *  (classifier, summaries, extraction) set this so a CLI-backed provider
+   *  skips the full interactive startup instead of paying it per call. */
+  bare?: boolean
   /** Force the model to call one specific tool, making its whole reply the
    *  tool's structured `input`. Anthropic renders this as
    *  `tool_choice: {type:"tool", name}`; OpenAI as
