@@ -49,10 +49,15 @@ export const tui = new Command()
         }),
       }
       console.error(chalk.dim(`Opening ${openCode.version} with AgentX model ${agentId}.`))
-      const child = spawn("opencode", ["--standalone"], { stdio: "inherit", env })
-      await new Promise<void>((done, reject) => {
-        child.once("error", reject)
-        child.once("exit", code => code === 0 ? done() : reject(new Error(`OpenCode exited with code ${code ?? "unknown"}`)))
+      const { openCodeProcessPool } = await import("@/agents/opencode-process")
+      const { launchOpenCode } = await import("@/tui/opencode-launch")
+      await launchOpenCode({
+        agentId,
+        env,
+        cwd: process.cwd(),
+        pool: openCodeProcessPool,
+        spawnImpl: spawn,
+        log: (line) => console.error(chalk.dim(line)),
       })
       return
     }

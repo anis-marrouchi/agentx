@@ -22,7 +22,7 @@ Start with the [terminal prerequisites and installation steps](../requirements.m
 
 Without `--agent`, the first agent the daemon lists is used. From a source checkout, replace `agentx` with `node dist/cli.js`. The command must run in an interactive terminal window.
 
-AgentX passes OpenCode its settings for this one session only (it starts `opencode --standalone`). Your saved OpenCode settings are not changed.
+AgentX passes OpenCode its settings for this one session only. It first starts a private OpenCode server, waits until that server reports it is ready, and then opens the OpenCode screen connected to it. When the screen closes, the server is stopped. If the server cannot be started, AgentX opens OpenCode in standalone mode instead. Your saved OpenCode settings are not changed.
 
 ![OpenCode started by agentx tui --agent cx: a question and the agent's reply, with "Build · AgentX CX" under the reply showing the AgentX agent is the model](/screenshots/tui/opencode-agent.png)
 
@@ -60,3 +60,4 @@ To set up AgentX models inside OpenCode yourself, see the [integration README](h
 - **`Unknown AgentX agent: …`:** the id after `--agent` doesn't match any agent. Check the ids in the dashboard's **Settings › Agents**.
 - **`No AgentX agents returned by …`:** the daemon has no agents, or you connected to the wrong address. Check `agentx daemon status` and `--node`.
 - **`OpenCode exited with code …`:** OpenCode itself failed. Run `opencode` on its own to see its error.
+- **OpenCode shows an empty screen for a few seconds and then closes:** its screen gave up waiting for its own server. If the terminal also printed `OpenCode server not started (…)`, AgentX fell back to standalone mode, which has the old timeout; the reason in brackets says why the server could not start. Otherwise update AgentX: older releases always used standalone mode.
