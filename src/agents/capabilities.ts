@@ -112,11 +112,14 @@ export function delegationChainDepth(
 ): number {
   if (!project || !subject) return 0
   const since = Date.now() - windowMs
+  // CROSS JOIN pins the join order: start from the slot's few events, then
+  // their decisions (idx_intent_decisions_event_outcome). Left to itself the
+  // planner starts from every dispatched decision in the ledger.
   const rows = ledger.db
     .prepare(`
       SELECT DISTINCT d.agent_id
-      FROM intent_decisions d
-      JOIN intent_events e ON e.id = d.event_id
+      FROM intent_events e
+      CROSS JOIN intent_decisions d ON d.event_id = e.id
       WHERE e.project = ? AND e.subject = ?
         AND d.outcome = 'dispatched'
         AND d.agent_id IS NOT NULL
@@ -146,6 +149,9 @@ export function withinDelegationBudget(
   if (!agent) return false
   const max = agent.maxDelegationDepth
   if (max <= 0) return false   // explicitly disabled
+  // No slot, no chain: this dispatch is depth 1. Returning here also skips
+  // a ledger lookup that can never match (`= NULL`) yet still scans.
+  if (!project || !subject) return 1 <= max
   // Count distinct upstream agents on this slot. We treat the chain
   // as "everyone who's already been on it" — if dispatching to
   // agentId would exceed max, refuse.
@@ -157,8 +163,8 @@ export function withinDelegationBudget(
   const alreadyOnChain = ledger.db
     .prepare(`
       SELECT 1
-      FROM intent_decisions d
-      JOIN intent_events e ON e.id = d.event_id
+      FROM intent_events e
+      CROSS JOIN intent_decisions d ON d.event_id = e.id
       WHERE e.project = ? AND e.subject = ?
         AND d.agent_id = ?
         AND d.outcome = 'dispatched'

@@ -470,6 +470,7 @@ function runMigrations(db: Database.Database): void {
 
   if (current < 1) migrationV1(db)
   if (current < 2) migrationV2(db)
+  if (current < 3) migrationV3(db)
 }
 
 function migrationV1(db: Database.Database): void {
@@ -559,6 +560,19 @@ function migrationV2(db: Database.Database): void {
       ON intent_divergences (decided_by, ts);
   `)
   db.prepare("INSERT INTO schema_version (v) VALUES (2)").run()
+}
+
+function migrationV3(db: Database.Database): void {
+  // Per-slot chain lookups (src/agents/capabilities.ts) start from the
+  // events on one (project, subject) and need that slot's decisions by
+  // event. The primary key leads with event_id but ends in decided_by, so
+  // without this index SQLite prefers idx_intent_decisions_outcome and walks
+  // every dispatched decision in the ledger, on every inbound message.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_intent_decisions_event_outcome
+      ON intent_decisions (event_id, outcome, decided_at);
+  `)
+  db.prepare("INSERT INTO schema_version (v) VALUES (3)").run()
 }
 
 // existsSync is imported for symmetry with src/storage/sqlite.ts; the

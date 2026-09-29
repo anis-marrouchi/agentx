@@ -31,10 +31,11 @@ describe("IntentLedger schema", () => {
 
   it("reports the current schema version after first open", () => {
     const ledger = open()
-    // Bumped to 2 in commit 5 with the intent_divergences table. Any new
-    // migration appends to runMigrations and bumps this number — never
-    // mutate an existing migration body.
-    expect(ledger.schemaVersion()).toBe(2)
+    // Bumped to 2 in commit 5 with the intent_divergences table, and to 3
+    // with the per-event decision index. Any new migration appends to
+    // runMigrations and bumps this number — never mutate an existing
+    // migration body.
+    expect(ledger.schemaVersion()).toBe(3)
     ledger.close()
   })
 
@@ -44,7 +45,7 @@ describe("IntentLedger schema", () => {
     const a = open()
     a.close()
     const b = open()
-    expect(b.schemaVersion()).toBe(2)
+    expect(b.schemaVersion()).toBe(3)
     b.close()
   })
 
@@ -103,6 +104,30 @@ describe("IntentLedger schema", () => {
     expect(indices).toContain("idx_intent_events_subject")
     expect(indices).toContain("idx_intent_events_source_event_id")
     ledger.close()
+  })
+
+  it("indexes decisions by (event_id, outcome, decided_at) for per-slot lookups", () => {
+    const ledger = open()
+    const cols = (ledger.db
+      .prepare("SELECT name FROM pragma_index_info('idx_intent_decisions_event_outcome') ORDER BY seqno")
+      .all() as Array<{ name: string }>)
+      .map((r) => r.name)
+    expect(cols).toEqual(["event_id", "outcome", "decided_at"])
+    ledger.close()
+  })
+
+  it("upgrades a version-2 ledger to version 3 in place", () => {
+    const a = open()
+    a.db.exec("DROP INDEX idx_intent_decisions_event_outcome; DELETE FROM schema_version WHERE v = 3")
+    expect(a.schemaVersion()).toBe(2)
+    a.close()
+    const b = open()
+    expect(b.schemaVersion()).toBe(3)
+    const found = b.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='idx_intent_decisions_event_outcome'")
+      .get()
+    expect(found).toBeTruthy()
+    b.close()
   })
 
   it("foreign keys are enforced — decision without event must fail", () => {

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -173,6 +173,35 @@ describe("Phase 8 — delegation budget (chain-depth check)", () => {
 
   it("withinDelegationBudget: missing agent → false (defensive)", () => {
     expect(withinDelegationBudget(ledger, undefined, "ghost", "p1", "s1")).toBe(false)
+  })
+
+  it("withinDelegationBudget: null project or subject allows without querying the ledger", () => {
+    // `= NULL` never matches, so the lookup could only ever scan and miss.
+    // It runs on every inbound message, so it must not touch the ledger.
+    record("agent-a")
+    const prepare = vi.spyOn(ledger.db, "prepare")
+    const a = agent({ maxDelegationDepth: 1 })
+    expect(withinDelegationBudget(ledger, a, "agent-a", null, "s1")).toBe(true)
+    expect(withinDelegationBudget(ledger, a, "agent-a", "p1", null)).toBe(true)
+    expect(prepare).not.toHaveBeenCalled()
+    prepare.mockRestore()
+  })
+
+  it("chain lookups start from the slot, not from every dispatched decision", () => {
+    record("agent-a")
+    const prepare = vi.spyOn(ledger.db, "prepare")
+    withinDelegationBudget(ledger, agent({ maxDelegationDepth: 5 }), "agent-b", "p1", "s1")
+    const sqls = prepare.mock.calls.map((c) => c[0] as string)
+    prepare.mockRestore()
+    expect(sqls).toHaveLength(2)
+    for (const sql of sqls) {
+      const plan = (ledger.db
+        .prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .all("p1", "s1", sql.includes("agent_id = ?") ? "agent-b" : Date.now()) as Array<{ detail: string }>)
+        .map((r) => r.detail)
+      expect(plan[0]).toMatch(/SEARCH e USING INDEX idx_intent_events_subject/)
+      expect(plan[1]).toMatch(/SEARCH d USING (COVERING )?INDEX idx_intent_decisions_event_outcome/)
+    }
   })
 })
 
