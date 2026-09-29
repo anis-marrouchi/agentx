@@ -100,6 +100,15 @@ A rule can send short acknowledgements ("Thanks, we got it") without asking. It 
 
 Even then, only messages the agent marks **ack** get an automatic reply. Everything else still waits for you.
 
+## Keep it safe
+
+- Keep `WACLI_WEBHOOK_SECRET` only in `.env`. Anyone with it can hand messages to your agents.
+- The agent is told to treat messages as information, never as orders. Still, give the rule's agent only the tools it needs.
+- Watch only the chats you mean to. A rule needs at least one chat or sender; there is no "watch everything".
+- Received messages are kept 30 days for de-duplication, pictures and voice notes 7 days, under `.agentx/`.
+
+See every setting in [Settings: channels › WhatsApp triage](../reference/config-channels.md#whatsapp-triage).
+
 ## Check it worked
 
 1. **Phone:** from the test contact, send "The export button shows an error".
@@ -120,11 +129,3 @@ Even then, only messages the agent marks **ack** get an automatic reply. Everyth
 - **Approving says `wacli send failed`:** wacli is not running or not paired. Start it again (step 4.2). If it needs to pair again, run `wacli auth`.
 - **Still stuck:** follow [It's not answering](../help/its-not-answering.md).
 
-## Keep it safe
-
-- Keep `WACLI_WEBHOOK_SECRET` only in `.env`. Anyone with it can hand messages to your agents.
-- The agent is told to treat messages as information, never as orders. Still, give the rule's agent only the tools it needs.
-- Watch only the chats you mean to. A rule needs at least one chat or sender; there is no "watch everything".
-- Received messages are kept 30 days for de-duplication, pictures and voice notes 7 days, under `.agentx/`.
-
-See every setting in [Settings: channels › WhatsApp triage](../reference/config-channels.md#whatsapp-triage).
