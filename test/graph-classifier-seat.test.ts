@@ -67,8 +67,8 @@ describe("Classifier with the intent-path seat", () => {
     expect(r?.source).toBe("seat")
     expect(r?.status).toBe("approved")
     expect(llm.calls).toBe(0)
-    // Recorded with the conversation, so tools inside it can find the path.
-    expect(store.latestPathForChat("coder", "gitlab", "noqta/minbar:mr:5")).toEqual(["code", "review.merge-request"])
+    // Recorded with the conversation it belongs to.
+    expect(store.readRecentClassifications(1)[0]?.chatId).toBe("noqta/minbar:mr:5")
     // The next identical request is a cache hit.
     const again = await classifier.classify(msg)
     expect(again?.source).toBe("cache")
@@ -103,17 +103,5 @@ describe("Classifier with the intent-path seat", () => {
     const r = await classifier.classify(msg)
     expect(llm.calls).toBe(1)
     expect(r?.path).toEqual(["ops", "deploy.staging"])
-  })
-})
-
-describe("GraphStore.latestPathForChat", () => {
-  it("returns the newest path for the conversation and ignores stale ones", () => {
-    const base = { msgHash: "x", agentId: "a", channel: "telegram", proposedAxes: {}, leaf: {}, source: "llm" as const, status: "approved" as const }
-    store.appendClassification({ ...base, ts: new Date(Date.now() - 2 * 3600_000).toISOString(), chatId: "c1", path: ["code", "fix.bug"] })
-    store.appendClassification({ ...base, ts: new Date().toISOString(), chatId: "c2", path: ["ops", "deploy.staging"] })
-    expect(store.latestPathForChat("a", "telegram", "c1")).toEqual(["code", "fix.bug"])
-    expect(store.latestPathForChat("a", "telegram", "c2")).toEqual(["ops", "deploy.staging"])
-    expect(store.latestPathForChat("a", "telegram", "c1", 60_000)).toBeUndefined()
-    expect(store.latestPathForChat("b", "telegram", "c1")).toBeUndefined()
   })
 })
