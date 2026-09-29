@@ -26,6 +26,8 @@ final class Panel: NSPanel {
     /// Busy agents shown in the mini row; 0 hides it.
     private(set) var busyCount = 0
     private let closeButton = NSButton()
+    /// Answer, Later and Decline while an agent rings; Hang up during the call.
+    let callBar = CallBar(frame: NSRect(x: 0, y: 15, width: 0, height: 24))
     /// The orb, the words and the close button: the pill itself, which
     /// stays where it is while the widget grows into an answer.
     let row = RowView(frame: NSRect(origin: .zero, size: Panel.size))
@@ -138,6 +140,10 @@ final class Panel: NSPanel {
         /// follow it at all in a noisy room.
         case saying(String)
         case error(String)
+        /// An agent is calling: the words already name it and its reason.
+        case ringing(String)
+        /// In a call, between turns: a click talks.
+        case onCall
 
         var text: String {
             switch self {
@@ -149,6 +155,8 @@ final class Panel: NSPanel {
             // "·" is the system's own separator glyph.
             case .working(let what, let secs): return "\(what)  ·  \(secs)s"
             case .error(let m): return m
+            case .ringing(let text): return text
+            case .onCall: return "On call · click to talk"
             }
         }
         var color: NSColor {
@@ -162,6 +170,8 @@ final class Panel: NSPanel {
             case .thinking, .working: return Brand.primaryBright
             case .speaking, .saying: return Brand.accentDeep
             case .error: return Brand.alert
+            case .ringing: return Brand.accent
+            case .onCall: return Brand.accentDeep
             }
         }
 
@@ -173,10 +183,11 @@ final class Panel: NSPanel {
         /// Idle and errors hold it still.
         var orbPhase: OrbModel.Phase {
             switch self {
-            case .idle, .error: return .idle
+            case .idle, .error, .onCall: return .idle
             case .listening: return .listening
             case .thinking, .working: return .thinking
-            case .speaking, .saying: return .speaking
+            // Ringing pulses, so the pill is seen as well as heard.
+            case .speaking, .saying, .ringing: return .speaking
             }
         }
     }
@@ -247,6 +258,7 @@ final class Panel: NSPanel {
         row.addSubview(closeButton)
         miniOrbs.isHidden = true
         row.addSubview(miniOrbs)
+        row.addSubview(callBar)
         surface.layoutContent = { [weak self] bounds in self?.layoutContent(bounds) }
         MainActor.assumeIsolated { layoutContent(surface.bounds) }
         surface.addTrackingArea(NSTrackingArea(rect: .zero,
@@ -279,7 +291,11 @@ final class Panel: NSPanel {
         // the words give up that room while they show.
         let miniWidth = busyCount > 0 ? MiniOrbsHost.width(busyCount) : 0
         miniOrbs.frame = NSRect(x: bounds.width - 28 - miniWidth, y: (h - 24) / 2, width: miniWidth, height: 24)
-        let clipWidth = bounds.width - 88 - (miniWidth > 0 ? miniWidth + 4 : 0)
+        // The call buttons sit left of those, and the words give way again.
+        let callWidth = CallBar.width(callBar.mode)
+        let callX = bounds.width - 28 - (miniWidth > 0 ? miniWidth + 4 : 0) - callWidth
+        callBar.frame = NSRect(x: callX, y: (h - 24) / 2, width: callWidth, height: 24)
+        let clipWidth = bounds.width - 88 - (miniWidth > 0 ? miniWidth + 4 : 0) - (callWidth > 0 ? callWidth + 4 : 0)
         if let clip, clip.frame.width != clipWidth {
             clip.frame.size.width = clipWidth
             // Text that scrolled may fit now, and the other way round.
@@ -433,6 +449,14 @@ final class Panel: NSPanel {
         onRender?(state)
     }
 
+    /// The call buttons for this moment of a call; `.hidden` outside one.
+    @MainActor
+    func showCall(_ mode: CallBar.Mode) {
+        guard mode != callBar.mode else { return }
+        callBar.show(mode)
+        if let content = contentView { layoutContent(content.bounds) }
+    }
+
     /// The mini orbs: one per busy agent, or none to hide the row. The
     /// pill stays on screen while the row shows, even when idle.
     @MainActor
@@ -456,6 +480,7 @@ final class Panel: NSPanel {
         let name = agentName()
         if name.isEmpty { return state.text }
         if case .error = state { return state.text }
+        if case .ringing = state { return state.text }
         return "\(name) · \(state.text)"
     }
 

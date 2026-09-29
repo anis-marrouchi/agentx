@@ -122,6 +122,8 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         case .thinking, .working: ("ellipsis.circle", "Thinking")
         case .speaking, .saying: ("speaker.wave.2.fill", "Speaking")
         case .error: ("exclamationmark.triangle", "Error")
+        case .ringing: ("phone.arrow.down.left.fill", "Incoming call")
+        case .onCall: ("phone.fill", "On a call")
         }
         guard item.button?.toolTip != "AgentX Voice — \(label)" else { return }
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "AgentX Voice: \(label)")
