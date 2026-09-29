@@ -94,7 +94,7 @@ agentx desktop start
 | `agentx notify "<message>"` | Notify the phone app and show a Mac banner, held during Focus; `--proof` captures the banner; see [Get notified](../jobs/notifications.md) |
 | `agentx call request --reason "…"` | Ring the owner for a live voice call (`--agent`, `--urgent`); see [Calls from your agents](../dashboard/calls.md) |
 | `agentx call list` | Recent calls (`--status missed`, `--limit`, `--json`) |
-| `agentx call answer\|decline\|hangup <id>`, `agentx call later <id> [minutes]` | Act on a call from the terminal |
+| `agentx call answer <id>`, `agentx call decline <id>`, `agentx call hangup <id>`, `agentx call later <id> [minutes]` | Act on a call from the terminal |
 | `agentx call allow <agent>`, `agentx call disallow <agent>` | Who may call you (`calls.allow`; `"*"` for every agent) |
 | `agentx notifications show` | Notification routing, the local banner and sound, phone app and ntfy status, and on a Mac whether AgentX Helper may post banners |
 | `agentx notifications local` | `--banner`, `--sound`, `--sound-name`, `--volume`, `--icon` for the Mac banner and sound |
