@@ -127,6 +127,7 @@ Each item in `agents.<id>.integrations` declares one service. Secrets never go i
 |---|---|---|---|
 | `voice.provider` | `"system"` \| `"elevenlabs"` | — | Speech engine for this agent. Unset uses the global `voice.provider`. |
 | `voice.system` | string \| map of string | — | macOS voice name, `system` for the OS default, or one voice per language such as `{ "en": "Samantha" }`. Unset picks a free voice. |
+| `voice.fallbacks` | string[] | — | Voices to try in order when `voice.system` is not installed. Unset picks the best installed voice of the same language and gender. |
 | `voice.elevenlabsVoiceId` | string | — | ElevenLabs voice id. |
 | `voice.gender` | `"female"` \| `"male"` \| `"neutral"` | — | Guides which voice is picked when none is set. |
 | `voice.style` | string | — | A few words on manner, such as "warm, calm". |

@@ -64,7 +64,7 @@ export function renderAdminPage(opts: AdminPageOpts = {}): string {
   ]).replace(
     "<div class=\"ax-health-strip\">",
     `<div class="ax-health-strip" id="ax-health">`,
-  )
+  ) + `<div class="ax-wit" id="ax-voice-missing" style="display:none"><span class="ax-wit__icon">!</span><div></div></div>`
 
   return renderShell({
     title: "AgentX · Settings",
@@ -85,6 +85,37 @@ export function renderAdminPage(opts: AdminPageOpts = {}): string {
 const ADMIN_HEALTH_SCRIPT = `
 (function(){
   function fmt(n) { return n == null ? '—' : String(n); }
+  async function voiceMissing() {
+    try {
+      const headers = {};
+      if (window.AX_LOCAL_TOKEN) headers['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
+      const r = await fetch('/api/admin/voice-health', { headers });
+      if (!r.ok) return [];
+      const body = await r.json();
+      return Array.isArray(body.missing) ? body.missing : [];
+    } catch (e) { return []; }
+  }
+  // Built with textContent: voice names and agent ids come from config.
+  function showVoiceMissing(missing) {
+    const box = document.getElementById('ax-voice-missing');
+    if (!box) return;
+    box.style.display = missing.length ? '' : 'none';
+    const text = box.querySelector('div');
+    text.textContent = '';
+    if (!missing.length) return;
+    const head = document.createElement('strong');
+    head.textContent = missing.length === 1 ? 'A configured voice is not installed' : missing.length + ' configured voices are not installed';
+    text.appendChild(head);
+    for (const m of missing) {
+      const line = document.createElement('div');
+      const who = (m.agents || []).map(function(a){ return m.speaksWith && m.speaksWith[a] ? a + ' (now ' + m.speaksWith[a] + ')' : a; }).join(', ');
+      line.textContent = m.voice + ': ' + who;
+      text.appendChild(line);
+    }
+    const hint = document.createElement('div');
+    hint.textContent = 'Reinstall in System Settings › Accessibility › Spoken Content › System voice › Manage Voices. Agents switch back on their own.';
+    text.appendChild(hint);
+  }
   async function refresh() {
     try {
       const headers = { 'Content-Type': 'application/json' };
@@ -112,8 +143,10 @@ const ADMIN_HEALTH_SCRIPT = `
         };
         setCard(0, agents.length, agents.length > 0 ? 'ok' : 'off');
         setCard(1, enabled + '/' + channelDefs.length, enabled > 0 ? 'ok' : 'off');
-        // "Needs attention" is a placeholder until we surface real warnings.
-        setCard(2, 0, 'off');
+        // "Needs attention": configured voices that are not installed.
+        const missing = await voiceMissing();
+        setCard(2, missing.length, missing.length ? 'warn' : 'off');
+        showVoiceMissing(missing);
         const tokenCount = Array.isArray(cfg.tokens) ? cfg.tokens.length : 0;
         setCard(3, tokenCount, tokenCount > 0 ? 'ok' : 'off');
       }

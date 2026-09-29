@@ -7,6 +7,7 @@ import { OS_DEFAULT, label, languageVoices, localSystemVoices } from "@/voice/ag
 import { candidates, findVoice, listSystemVoices, type SystemVoice } from "@/voice/system-voices"
 import { ORB_PALETTES, ORB_PALETTE_IDS, agentPalette } from "@/voice/orb-palettes"
 import { presenceLook } from "@/voice/presence"
+import { findMissingVoices, REINSTALL_HINT, voiceDisplayName } from "@/voice/voice-health"
 import { CARD_LIMITS, applyVoiceSettings, checkVoiceSettings, type VoiceSettingsPatch } from "@/daemon/voice-settings-api"
 
 // --- agentx voice: which voice each agent speaks with ---
@@ -126,6 +127,13 @@ voice
         console.log(chalk.dim("  System Voice → Manage Voices, then download a Premium or Enhanced voice."))
       }
     }
+    const missing = config ? findMissingVoices(config, installed) : []
+    if (missing.length) {
+      console.log(chalk.bold.yellow("\n  Not installed\n"))
+      for (const m of missing) console.log(`  ${voiceDisplayName(m.voice).padEnd(24)} ${chalk.cyan(m.agents.join(", "))}`)
+      console.log(chalk.dim(`\n  Reinstall in ${REINSTALL_HINT}.`))
+      console.log(chalk.dim("  Until then each agent speaks with the voice shown below; a running daemon switches back on its own."))
+    }
     if (config) {
       console.log(chalk.bold("\n  Agents\n"))
       for (const [id, a] of Object.entries(config.agents)) {
@@ -137,7 +145,9 @@ voice
         const what = provider === "elevenlabs"
           ? `elevenlabs ${a.voice?.elevenlabsVoiceId ?? chalk.dim("(default voice)")}`
           : `system     ${name(voices.get(id))}${langs ? chalk.dim(" · ") + langs : ""}`
-        console.log(`  ${id.padEnd(24)} ${what}${a.voice?.gender ? chalk.dim(` (${a.voice.gender})`) : ""}`)
+        const gone = missing.filter((m) => m.agents.includes(id)).map((m) => voiceDisplayName(m.voice))
+        const note = gone.length ? chalk.yellow(` — stands in for ${gone.join(", ")} (not installed)`) : ""
+        console.log(`  ${id.padEnd(24)} ${what}${a.voice?.gender ? chalk.dim(` (${a.voice.gender})`) : ""}${note}`)
       }
     }
     console.log()

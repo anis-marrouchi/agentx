@@ -16,6 +16,7 @@ import { GitLabWorkSource } from "@/business/work-pool"
 import { SORTABLE_JS } from "./vendor/sortable"
 import { handleWizardGet, handleWizardPost, handleStartDaemonPost, wizardState } from "./setup-wizard"
 import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-panel"
+import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
@@ -665,6 +666,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   }
   if (method === "GET" && path === "/api/admin/config") {
     await handleAdminConfigGet(req, res)
+    return
+  }
+  // Configured voices macOS took away, as the daemon last found them
+  // (src/voice/voice-health.ts); after the token gate above.
+  if (method === "GET" && path === "/api/admin/voice-health") {
+    sendJson(res, 200, readVoiceHealth() ?? { checkedAt: null, missing: [] })
     return
   }
   if (path.startsWith("/api/admin/approvals")) {

@@ -166,6 +166,10 @@ const voiceSchema = z.object({
   /** See systemVoiceSchema. Unset: one is assigned, of the agent's
    *  gender when set, different from every other agent's. */
   system: systemVoiceSchema.optional(),
+  /** Voices to try, in order, when `system` names one that is not
+   *  installed (e.g. ["Ava (Premium)", "Allison"]). Unset, or none
+   *  installed: the best installed voice of its language and gender. */
+  fallbacks: z.array(z.string().min(1)).optional(),
   elevenlabsVoiceId: z.string().optional(),
   gender: z.enum(["female", "male", "neutral"]).optional(),
   /** A few words on manner, e.g. "warm, upbeat, a little playful". */

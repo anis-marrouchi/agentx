@@ -72,10 +72,13 @@ export function parseVoiceList(out: string): SystemVoice[] {
 // runs is picked up within REFRESH_MS without stalling a spoken turn.
 
 const REFRESH_MS = 10 * 60 * 1000
+/** While a configured voice is missing, look again this often, so a
+ *  reinstalled voice is picked up without a restart. */
+export const MISSING_REFRESH_MS = 60 * 1000
 let cached: { at: number; voices: SystemVoice[] } | null = null
 let refreshing = false
 
-export function listSystemVoices(now = Date.now()): SystemVoice[] {
+export function listSystemVoices(now = Date.now(), maxAgeMs = REFRESH_MS): SystemVoice[] {
   if (process.platform !== "darwin") return []
   if (!cached) {
     try {
@@ -84,7 +87,7 @@ export function listSystemVoices(now = Date.now()): SystemVoice[] {
       voiceLog(`[voice] could not list system voices: ${String(e?.message ?? e).split("\n")[0]}`)
       cached = { at: now, voices: listSiriVoices() }
     }
-  } else if (now - cached.at > REFRESH_MS && !refreshing) {
+  } else if (now - cached.at > maxAgeMs && !refreshing) {
     refreshing = true
     execFile("osascript", ["-l", "JavaScript", "-e", JXA], { timeout: 10_000 }, (err, out) => {
       refreshing = false
@@ -108,6 +111,20 @@ export function warnOnce(key: string, msg: string): void {
   voiceLog(msg)
 }
 
+/** Warn again about these problems the next time they happen: a voice
+ *  that came back and then went missing again is news. */
+export function forgetWarnings(match: (key: string) => boolean): void {
+  for (const k of warned) if (match(k)) warned.delete(k)
+}
+
+/** Called when a configured voice is found missing while choosing one to
+ *  speak with, so the daemon can tell the owner (./voice-health.ts). */
+let onMissing: (name: string) => void = () => {}
+export function setMissingVoiceHook(fn: (name: string) => void): void { onMissing = fn }
+export function reportMissing(name: string): void {
+  try { onMissing(name) } catch (e: any) { warnOnce("missing-hook", `[voice] missing-voice check failed: ${e?.message ?? e}`) }
+}
+
 // --- Choosing voices ---
 
 const QUALITY = { premium: 3, enhanced: 2, standard: 1 } as const
@@ -123,6 +140,31 @@ export function rank(v: SystemVoice): number {
 }
 
 const language = (locale: string) => locale.toLowerCase().split(/[-_]/)[0]
+
+/** The current macOS voices (com.apple.voice.*), as opposed to Eloquence,
+ *  the classic voices and the novelties. */
+const modern = (v: SystemVoice) => v.id.startsWith("com.apple.voice.")
+
+/**
+ * What stands in for a configured voice that is not installed: in its
+ * language, of its gender when known, of the best quality there is
+ * (premium, then enhanced, then standard). Eloquence and the classic
+ * voices only when no current macOS voice speaks the language. Among the
+ * best, a voice no one in `taken` uses yet. Null when nothing installed
+ * speaks the language.
+ */
+export function fallbackVoice(installed: SystemVoice[], locale: string, gender: Gender | undefined, taken: Set<string> = new Set()): SystemVoice | null {
+  let pool = candidates(installed.filter((v) => !v.siri && language(v.locale) === language(locale)), locale)
+  if (pool.some(modern)) pool = pool.filter(modern)
+  if (gender === "female" || gender === "male") {
+    const same = pool.filter((v) => v.gender === gender)
+    if (same.length) pool = same
+  }
+  if (!pool.length) return null
+  const best = pool.filter((v) => v.quality === pool[0].quality)
+  const used = new Set([...taken].map((n) => n.toLowerCase()))
+  return best.find((v) => !used.has(v.name.toLowerCase())) ?? best[0]
+}
 
 /** Voices in the configured language (e.g. "en", "fr-FR"), best first; all
  *  of them if none match, so a mislabelled locale still speaks. */
@@ -154,7 +196,9 @@ export function findVoice(name: string, installed: SystemVoice[], locale = "en")
     const base = q.slice(SIRI_PREFIX.length).trim().toLowerCase()
     const siri = candidates(installed.filter((v) => v.siri && v.name.toLowerCase() === base), locale)[0]
     if (siri || !base) return siri ?? null
-    const standIn = findVoice(base, installed, locale)
+    // Only a stand-in in the same language: "siri:nora" must not become
+    // the Norwegian Nora.
+    const standIn = findVoice(base, installed.filter((v) => language(v.locale) === language(locale)), locale)
     if (standIn) warnOnce(`siri:${base}`, `[voice] Siri voice "${base}" is not installed; speaking with ${standIn.name} (${standIn.locale}) instead.`)
     return standIn
   }

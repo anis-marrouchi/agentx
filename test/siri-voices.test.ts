@@ -173,12 +173,17 @@ if [ -n "$f" ]; then cat "$f" >> "${stub}/text"; else cat >> "${stub}/text"; fi
 [ "$SAY_SLEEP" = hang ] && exec sleep 1000
 sleep "\${SAY_SLEEP:-0}"; echo end >> "${stub}/log"`)
     writeFileSync(join(stub, "pref"), ORIGINAL)
+    // The downloaded Siri voices: Aaron and Marie, not Nora.
+    for (const [a, loc, name] of [["1.asset", "en_US", "aaron"], ["2.asset", "fr_FR", "marie"]]) {
+      mkdirSync(join(stub, "assets", a), { recursive: true })
+      writeFileSync(join(stub, "assets", a, "Info.plist"), `bplist00\u0000${spec(loc, name)}\u0000`)
+    }
   })
   afterEach(() => { rmSync(home, { recursive: true, force: true }); rmSync(stub, { recursive: true, force: true }) })
 
   const run = (args: string[], env: Record<string, string> = {}, text: string | null = "hello") => {
     const p = spawn("/bin/sh", [script, ...args], {
-      env: { ...process.env, HOME: home, TMPDIR: stub, PATH: `${join(stub, "bin")}:/usr/bin:/bin`, ...env },
+      env: { ...process.env, HOME: home, TMPDIR: stub, PATH: `${join(stub, "bin")}:/usr/bin:/bin`, AGENTX_SIRI_ASSET_DIRS: join(stub, "assets"), ...env },
       stdio: ["pipe", "ignore", "pipe"],
     })
     // A script that exits before reading (a refused id, --stop) closes the
@@ -245,6 +250,29 @@ sleep "\${SAY_SLEEP:-0}"; echo end >> "${stub}/log"`)
     expect(await run([MARIE]).done).toBe(0)
     expect(sayLog()[0]).toContain("marie")
     expect(pref()).toBe(ORIGINAL)
+  })
+
+  it("--restore puts back the choice a killed line left switched, without speaking", async () => {
+    writeFileSync(join(home, ".agentx", "voice", "siri-saved.plist"), ORIGINAL)
+    writeFileSync(join(stub, "pref"), "ARRAY en stuck-on-aaron")
+    expect(await run(["--restore"], {}, "").done).toBe(0)
+    expect(pref()).toBe(ORIGINAL)
+    expect(sayLog()).toEqual([])
+    expect(existsSync(join(home, ".agentx", "voice", "siri-saved.plist"))).toBe(false)
+    expect(existsSync(lock())).toBe(false)
+  })
+
+  it("--restore with nothing saved leaves the user's choice alone", async () => {
+    expect(await run(["--restore"], {}, "").done).toBe(0)
+    expect(pref()).toBe(ORIGINAL)
+  })
+
+  it("never switches to a Siri voice macOS purged: speaks the OS default, pref untouched", async () => {
+    const nora = "com.apple.ttsbundle.gryphon-neural_nora_en-US_premium"
+    expect(await run([nora]).done).toBe(0)
+    expect(sayLog()).toEqual([`start ${ORIGINAL}`, "end"])
+    expect(pref()).toBe(ORIGINAL)
+    expect(existsSync(join(home, ".agentx", "voice", "siri-saved.plist"))).toBe(false)
   })
 
   it("off macOS, speaks without touching the pref", async () => {

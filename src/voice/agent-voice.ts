@@ -9,7 +9,8 @@
 import type { DaemonConfig } from "@/daemon/config"
 import type { TalkSpeaker } from "./talk"
 import type { VoiceRef } from "./speaker"
-import { castVoices, candidates, findVoice, listSystemVoices, warnOnce, type CastEntry, type SystemVoice } from "./system-voices"
+import { castVoices, candidates, fallbackVoice, findVoice, listSystemVoices, reportMissing, warnOnce, type CastEntry, type SystemVoice } from "./system-voices"
+import { parseSiriId, siriGender, SIRI_PREFIX } from "./siri"
 import { detectLanguage } from "./language"
 
 type AgentConfig = DaemonConfig["agents"][string]
@@ -93,12 +94,27 @@ export const label = (v: SystemVoice) =>
 export function checkedVoice(owner: string, name: string | undefined, installed: SystemVoice[], locale: string): SystemVoice | null {
   if (!name || !installed.length) return null
   const v = findVoice(name, installed, locale)
-  if (!v) warnOnce(`${owner}:${name}`, `[voice] ${owner}: system voice "${name}" is not installed; using the next choice. Run \`agentx voice list\` to see installed voices.`)
+  if (!v) {
+    warnOnce(`${owner}:${name}`, `[voice] ${owner}: system voice "${name}" is not installed; using the next choice. Run \`agentx voice list\` to see installed voices.`)
+    reportMissing(name)
+  }
   return v
 }
 
-/** Someone to cast: their configured voice and gender, if any. */
-export interface VoiceWish { id: string; system?: SystemChoice; gender?: SystemVoice["gender"] }
+/** What a configured name tells about the voice it meant, even when that
+ *  voice is gone: its language and gender. */
+export function voiceTraits(name: string, locale: string): { locale: string; gender: SystemVoice["gender"] } {
+  const q = name.trim()
+  if (q.toLowerCase().startsWith(SIRI_PREFIX)) return { locale, gender: siriGender(q.slice(SIRI_PREFIX.length).trim()) }
+  const siri = parseSiriId(q)
+  if (siri) return { locale: siri.locale, gender: siriGender(siri.name) }
+  const system = /^com\.apple\.voice\.[a-z]+\.([a-z]{2}-[A-Z]{2})\./.exec(q)
+  return { locale: system?.[1] ?? locale, gender: null }
+}
+
+/** Someone to cast: their configured voice and gender, if any, and what
+ *  to speak with when that voice is not installed. */
+export interface VoiceWish { id: string; system?: SystemChoice; gender?: SystemVoice["gender"]; fallbacks?: string[] }
 
 const language = (locale: string) => locale.toLowerCase().split(/[-_]/)[0]
 
@@ -129,16 +145,36 @@ export function castSystemVoices(wishes: VoiceWish[], settings: VoiceSettings, i
   const out = new Map<string, SystemVoice | null>()
   const open: CastEntry[] = []
   const fallback = configured("voice.system", nameFor(settings.system, locale), installed, locale)
+  const inUse = () => new Set([...taken, ...[...out.values()].flatMap((v) => (v ? [v.name] : []))])
   for (const w of wishes) {
-    const own = configured(w.id, nameFor(w.system, locale), installed, locale)
-    const pick = own !== undefined ? own : fallback !== undefined && fitsGender(fallback, w.gender) ? fallback : undefined
+    const name = nameFor(w.system, locale)
+    const own = configured(w.id, name, installed, locale)
+    const pick = own !== undefined ? own
+      : name !== undefined && installed.length ? standIn(w, name, locale, fallback, installed, inUse())
+      : fallback !== undefined && fitsGender(fallback, w.gender) ? fallback : undefined
     if (pick !== undefined) out.set(w.id, pick)
     else open.push({ id: w.id, gender: w.gender ?? null })
   }
-  const names = new Set([...taken, ...[...out.values()].flatMap((v) => (v ? [v.name] : []))])
+  const names = inUse()
   // Siri voices switch a pref the user owns, so only an agent that names one gets one.
   for (const [id, v] of castVoices(open, candidates(installed.filter((v) => !v.siri), locale), names)) out.set(id, v)
   return out
+}
+
+/**
+ * What speaks for an agent whose configured voice is not installed: the
+ * first installed name in its `fallbacks`, else the global default when
+ * it suits the agent's gender, else the best installed voice in the
+ * missing voice's language and of its gender (fallbackVoice).
+ */
+function standIn(w: VoiceWish, name: string, locale: string, fallback: SystemVoice | null | undefined, installed: SystemVoice[], taken: Set<string>): SystemVoice | null | undefined {
+  for (const f of w.fallbacks ?? []) {
+    const v = configured(`${w.id}.fallbacks`, f, installed, locale)
+    if (v !== undefined) return v
+  }
+  if (fallback !== undefined && fitsGender(fallback, w.gender)) return fallback
+  const traits = voiceTraits(name, locale)
+  return fallbackVoice(installed, traits.locale, w.gender ?? traits.gender, taken) ?? undefined
 }
 
 /**
@@ -155,7 +191,9 @@ export function languageVoices(
   const add = (who: string, list: SystemChoice | undefined, suits: (v: SystemVoice | null) => boolean) => {
     if (!list || typeof list === "string") return
     for (const [lang, name] of Object.entries(list)) {
-      const v = configured(`${who}.${lang}`, name, installed, lang)
+      let v = configured(`${who}.${lang}`, name, installed, lang)
+      // Missing: the best installed voice in that language stands in.
+      if (v === undefined && installed.length) v = fallbackVoice(installed, lang, gender ?? voiceTraits(name, lang).gender) ?? undefined
       if (v !== undefined && suits(v)) out[language(lang)] = v
     }
   }
@@ -176,7 +214,7 @@ export function voiceForText(v: AgentVoice, text?: string | null): AgentVoice {
 /** Every local agent's system voice, assigned in config order, so adding
  *  an agent at the end never changes anyone else's voice. */
 export function localSystemVoices(agents: Agents, settings: VoiceSettings = {}, installed: SystemVoice[] = listSystemVoices()): Map<string, SystemVoice | null> {
-  const wishes = Object.entries(agents).map(([id, a]) => ({ id, system: a.voice?.system, gender: a.voice?.gender }))
+  const wishes = Object.entries(agents).map(([id, a]) => ({ id, system: a.voice?.system, gender: a.voice?.gender, fallbacks: a.voice?.fallbacks }))
   return castSystemVoices(wishes, settings, installed)
 }
 
