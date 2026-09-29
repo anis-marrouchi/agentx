@@ -92,9 +92,10 @@ export const CAMERA_SCRIPT = `
 
   function norm(x) { return String(x || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function say(text, bad) { msg.textContent = text; msg.className = 'cam-msg' + (bad ? ' bad' : ''); }
-  function post(body) {
+  // keepalive lets the hangup leave while the page unloads (pagehide).
+  function post(body, keepalive) {
     return fetch('/api/app/camera/signal', {
-      method: 'POST', credentials: 'same-origin',
+      method: 'POST', credentials: 'same-origin', keepalive: !!keepalive,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     }).then(function (r) { return r.json().then(function (j) { if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status)); return j; }); });
@@ -182,6 +183,11 @@ export const CAMERA_SCRIPT = `
     };
     var es = new EventSource('/api/app/camera/events?callId=' + encodeURIComponent(s.callId));
     s.es = es;
+    // EventSource retries network drops by itself; an HTTP error (token revoked,
+    // calls turned off) closes it for good, so nothing more can arrive.
+    es.onerror = function () {
+      if (s && s.es === es && es.readyState === EventSource.CLOSED) stop('Lost the link to this computer, so the camera stopped.');
+    };
     var rang = false;
     es.addEventListener('ready', function () {
       if (rang || !s) return;
@@ -230,7 +236,7 @@ export const CAMERA_SCRIPT = `
     var was = s;
     s = null;
     clearInterval(was.tick); clearTimeout(was.timer);
-    post({ kind: 'hangup', callId: was.callId, to: was.peer }).catch(function () {});
+    post({ kind: 'hangup', callId: was.callId, to: was.peer }, true).catch(function () {});
     try { if (was.es) was.es.close(); } catch (e) {}
     try { if (was.pc) was.pc.close(); } catch (e) {}
     was.stream.getTracks().forEach(function (t) { t.stop(); });

@@ -186,7 +186,7 @@ describe("phone side", () => {
     expect(html).toContain('id="cam-stop"')
     expect(() => new Function(CAMERA_SCRIPT)).not.toThrow()
     // Every way a share ends is wired: Stop, the viewer, the background, the limit.
-    for (const s of ["cam-stop", "'hangup'", "visibilitychange", "maxSeconds"]) expect(CAMERA_SCRIPT).toContain(s)
+    for (const s of ["cam-stop", "'hangup'", "visibilitychange", "maxSeconds", "keepalive", "EventSource.CLOSED"]) expect(CAMERA_SCRIPT).toContain(s)
   })
 })
 
