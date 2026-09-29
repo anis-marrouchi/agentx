@@ -1,4 +1,5 @@
 import type { Resumer } from "./coordinator"
+import { queuedMarker } from "@/agents/queued"
 import type { MeshOrigin } from "./origin"
 
 // --- Resume a run another node forwarded here (#311) ---
@@ -102,4 +103,14 @@ export function meshOriginFromTask(body: Record<string, unknown>, agentId: strin
     accountId: str(via.accountId),
     context: ctx,
   }
+}
+
+/** The /task answer for a forwarded run a shutdown cut off. It resumes on
+ *  boot and answers through the forwarding node, so tell that node it was
+ *  accepted (the queued marker, mode "resuming") instead of an error: its
+ *  router then posts no ❌ and no "Nothing is retrying" notice, which would
+ *  be false and invite a second run. Anything else passes through. */
+export function forwardedTaskAnswer<R extends { error?: string; errorKind?: string }>(response: R, origin: MeshOrigin | undefined): R {
+  if (!origin || response.errorKind !== "interrupted") return response
+  return { ...response, error: queuedMarker("resuming", 1) }
 }

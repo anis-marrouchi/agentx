@@ -7,7 +7,8 @@ import { recordTraceStart, takeInterruptedRuns, type InterruptedRun } from "../s
 import { DEFAULT_RESUME_SETTINGS, planResume } from "../src/agents/resume/policy"
 import { parseOrigin, serializeOrigin, type MeshOrigin } from "../src/agents/resume/origin"
 import { RESUMED_TEXT, ResumeCoordinator } from "../src/agents/resume/coordinator"
-import { createMeshResumer, findReplyPeer, meshOriginFromTask, type MeshPeerRef } from "../src/agents/resume/mesh-resumer"
+import { createMeshResumer, findReplyPeer, forwardedTaskAnswer, meshOriginFromTask, type MeshPeerRef } from "../src/agents/resume/mesh-resumer"
+import { MessageRouter } from "../src/channels/router"
 
 // #311 — a GitLab task clawd-server forwarded to the Mac, cut off by a
 // restart on the Mac, is resumed there and answered through clawd-server.
@@ -122,5 +123,37 @@ describe("mesh resumer", () => {
     expect(outcomes[0].decision).toBe("resume-failed")
     expect(execute).not.toHaveBeenCalled()
     expect(notify).toHaveBeenCalledWith(expect.stringContaining("no healthy mesh peer"))
+  })
+})
+
+describe("the forwarding node while the receiver restarts", () => {
+  const interrupted = { content: "", error: "AgentX restarted", errorKind: "interrupted" }
+
+  it("answers a cut-off forward as accepted, and leaves everything else alone", () => {
+    expect(forwardedTaskAnswer(interrupted, origin).error).toBe("__queued__:resuming:1")
+    expect(forwardedTaskAnswer(interrupted, undefined)).toBe(interrupted)
+    const failed = { content: "", error: "Claude Code timed out" }
+    expect(forwardedTaskAnswer(failed, origin)).toBe(failed)
+  })
+
+  it("posts no ❌ and no \"Nothing is retrying\" notice", async () => {
+    // What mesh.sendTask throws for the receiver's 500 { error } answer.
+    const thrown = `Peer "mac" /task error: 500: ${forwardedTaskAnswer(interrupted, origin).error}`
+    const adapter = { name: "gitlab", send: vi.fn(async () => "note-1"), react: vi.fn(), sendTyping: vi.fn() }
+    const router = new MessageRouter({ getAgent: () => undefined } as any, { channels: {} } as any, undefined, () => {})
+    router.setMesh({
+      directory: () => [{ peer: "mac", peerUrl: "u", healthy: true, skills: [{ id: "coder-agent", name: "coder-agent" }], channels: [] }],
+      findAgentPeer: (id: string) => (id === "coder-agent" ? { peer: "mac", healthy: true } : undefined),
+      sendTask: vi.fn(async () => { throw new Error(thrown) }),
+      onPeerChange: () => {},
+    } as any)
+    const msg = {
+      id: "note-9", channel: "gitlab", accountId: "noqta", text: "@coder review this MR",
+      sender: { id: "u1", name: "Sam Example", isBot: false }, group: { id: "mtgl:mr:77", name: "mtgl" },
+    } as any
+    await (router as any).processResolvedMessage(adapter, msg, "coder-agent", "mtgl:mr:77")
+
+    expect(adapter.react.mock.calls.filter((c: any[]) => c.includes("❌"))).toHaveLength(0)
+    expect(adapter.send).not.toHaveBeenCalled()
   })
 })

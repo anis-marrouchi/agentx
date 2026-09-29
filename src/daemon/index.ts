@@ -47,7 +47,7 @@ import { localAlert, localSettings } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
-import { createMeshResumer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
+import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { startRemindersPoller } from "@/reminders/daemon"
@@ -5130,7 +5130,10 @@ export class AgentXDaemon {
             break
           }
 
-          const response = await withRoot(taskRoot, () => this.registry.execute(
+          // A forwarded chat message: after a restart its answer goes
+          // back through the forwarding node (#311).
+          const origin = meshOriginFromTask(body, agentId)
+          const response = forwardedTaskAnswer(await withRoot(taskRoot, () => this.registry.execute(
             {
               agentId,
               message: body.message as string,
@@ -5141,13 +5144,11 @@ export class AgentXDaemon {
               // A Mac speaking for this agent sends only a few voice fields;
               // the instruction itself is built here.
               systemPromptAppend: remoteVoiceAppend(body.context),
-              // A forwarded chat message: after a restart its answer goes
-              // back through the forwarding node (#311).
-              origin: meshOriginFromTask(body, agentId),
+              origin,
               onStart: track.onStart,
             },
             () => {},
-          )).finally(track.end)
+          )).finally(track.end), origin)
           this.json(res, response.error ? 500 : 200, response)
           break
         }
