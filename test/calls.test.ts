@@ -57,7 +57,7 @@ describe("config", () => {
   it("defaults to nobody allowed", () => {
     const d = callsSchema.parse(undefined)
     expect(d.allow).toEqual([])
-    expect(d).toMatchObject({ maxPerHour: 3, ringSeconds: 45, ringSound: "Submarine", summary: true })
+    expect(d).toMatchObject({ maxPerHour: 3, ringSeconds: 45, maxCallMinutes: 30, ringSound: "Submarine", summary: true })
   })
 
   it("setCaller adds and removes an agent in calls.allow", () => {
@@ -226,6 +226,19 @@ describe("lifecycle", () => {
     const again = await calls.ringing()
     expect(again.map((c) => c.id)).toEqual([call.id])
     expect(again[0].ringingSince).toBe(now)
+  })
+
+  it("an answered call nobody hangs up ends, and the agent can call again", async () => {
+    const call = await ringingCall()
+    expect(calls.answer(call.id).ok).toBe(true)
+    now += (cfg.maxCallMinutes - 1) * 60_000
+    await calls.sweep()
+    expect(await place({ agentId: "writer", reason: "again" })).toMatchObject({ ok: false, status: 409 })
+    now += 60_000
+    await calls.sweep()
+    expect(calls.get(call.id)).toMatchObject({ status: "ended", note: "no hang-up", endedAt: now })
+    expect((await place({ agentId: "writer", reason: "again" })).ok).toBe(true)
+    expect(filed).toEqual([])
   })
 
   it("decline ends a ringing call", async () => {

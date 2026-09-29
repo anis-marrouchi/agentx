@@ -62,6 +62,7 @@ All settings are under `calls` in `agentx.json`:
 | `calls.allow` | `[]` | Agents that may call you: ids, or `"*"` for all. Empty means nobody. |
 | `calls.maxPerHour` | `3` | Most calls one agent may place in an hour. |
 | `calls.ringSeconds` | `45` | How long a call rings before it counts as missed. |
+| `calls.maxCallMinutes` | `30` | An answered call that was never hung up ends after this many minutes, for example when the desktop assistant quit or the Mac slept. Until then the agent can't call again. |
 | `calls.ringSound` | `"Submarine"` | The ring: a sound name from `/System/Library/Sounds`, without `.aiff`. |
 | `calls.summary` | `true` | After you hang up, ask the agent for a short summary. |
 
@@ -85,7 +86,7 @@ For example:
 - **`may not call the owner`**: the agent isn't allowed yet. Run `agentx call allow <agent>` in the folder that holds `agentx.json`.
 - **`No running turn of <agent> placed this call`**: the call didn't come from inside that agent's run, for example from a terminal. Ask the agent to call you instead.
 - **`has placed 3 calls in the last hour`**: the agent hit `calls.maxPerHour`. Wait, or raise the limit.
-- **`already has a call in progress`**: answer, decline or hang up that call first. `agentx call list` shows it, and `agentx call decline <id>` ends it.
+- **`already has a call in progress`**: answer, decline or hang up that call first. An answered call that was never hung up ends by itself after `calls.maxCallMinutes`. `agentx call list` shows it, and `agentx call decline <id>` ends it.
 - **The command says `sent a notification instead`**: the desktop assistant isn't running. Start it with `agentx desktop start`.
 - **The command says `not rung`**: you are in Focus, or the widget's hold switch is on, and the call wasn't urgent. It is listed as a missed call.
 - **No ring sound**: check that `calls.ringSound` names a sound in `/System/Library/Sounds`, and that the Mac isn't muted.

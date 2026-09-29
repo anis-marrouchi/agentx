@@ -159,17 +159,22 @@ export class CallService {
     return this.deps.store.list({ status: ["ringing"], limit: 20 }).reverse()
   }
 
-  /** Unanswered calls become missed; "later" calls that came due ring again. */
+  /** Unanswered calls become missed; "later" calls that came due ring
+   *  again; answered calls nobody hung up end after calls.maxCallMinutes. */
   async sweep(): Promise<void> {
     const now = this.now()
     const ringFor = this.deps.config().ringSeconds * 1000
-    for (const call of this.deps.store.list({ status: ["ringing", "later"], limit: 200 })) {
+    const talkFor = this.deps.config().maxCallMinutes * 60_000
+    for (const call of this.deps.store.list({ status: ["ringing", "later", "answered"], limit: 200 })) {
       // The list was read before any await below: each move re-checks the
       // status in the store, so a call answered meanwhile is left alone.
       if (call.status === "ringing" && call.ringingSince !== null && now - call.ringingSince >= ringFor) {
         if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: "not answered" })) continue
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} missed`)
         await this.notice(call, `Missed call from ${this.name(call.agentId)}`)
+      } else if (call.status === "answered" && call.answeredAt !== null && now - call.answeredAt >= talkFor) {
+        if (!this.deps.store.transition(call.id, "answered", { status: "ended", endedAt: now, note: "no hang-up" })) continue
+        this.deps.log?.(`[calls] ${call.id} from ${call.agentId} ended: no hang-up in ${this.deps.config().maxCallMinutes} min`)
       } else if (call.status === "later" && call.ringAgainAt !== null && now >= call.ringAgainAt) {
         const again = this.deps.store.transition(call.id, "later", { status: "ringing", ringingSince: now, ringAgainAt: null })
         if (again) await this.ring(again)

@@ -893,6 +893,10 @@ export const callsSchema = z.object({
   maxPerHour: z.number().int().min(1).max(60).default(3),
   /** How long a call rings before it counts as missed. */
   ringSeconds: z.number().int().min(10).max(300).default(45),
+  /** An answered call nobody hung up (widget quit or crashed, the Mac
+   *  slept, `agentx call answer` without a conversation) ends after this,
+   *  so the agent can call again. */
+  maxCallMinutes: z.number().int().min(1).max(240).default(30),
   /** Ring sound: a name from /System/Library/Sounds, without the extension. */
   ringSound: z.string().regex(/^[\w -]+$/).default("Submarine"),
   /** After hang-up, ask the agent for a short summary and file it in the

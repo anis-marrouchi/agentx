@@ -155,6 +155,7 @@ Agents ringing you for a live voice call on the desktop assistant. See [Calls fr
 | `calls.allow` | string[] | `[]` | Agents that may call you: ids, or `"*"` for every agent. Empty: nobody. |
 | `calls.maxPerHour` | number (1–60) | `3` | Most calls one agent may place in an hour. |
 | `calls.ringSeconds` | number (10–300) | `45` | Seconds a call rings before it counts as missed. |
+| `calls.maxCallMinutes` | number (1–240) | `30` | An answered call nobody hung up ends after this many minutes (the widget quit or crashed, the Mac slept), so the agent can call again. |
 | `calls.ringSound` | string | `"Submarine"` | The ring: a sound from `/System/Library/Sounds`, without the extension. |
 | `calls.summary` | boolean | `true` | After hang-up, the agent writes a short summary, filed in the dashboard's Ask history. |
 
