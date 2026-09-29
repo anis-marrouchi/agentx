@@ -1049,6 +1049,12 @@ export class MessageRouter {
         this.log(`Task cancelled for ${agentName} — suppressing channel error echo`)
         return
       }
+      // Stopped by a daemon restart: the next boot resumes it or reports
+      // it, so an "Error:" here would only be a false failure.
+      if (response.errorKind === "interrupted") {
+        this.log(`Task interrupted for ${agentName} (${response.error}) — resume handles the reply after restart`)
+        return
+      }
 
       this.log(`Agent error: ${response.error}`)
       const errorText = `Error: ${response.error}`

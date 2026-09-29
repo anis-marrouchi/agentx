@@ -74,7 +74,7 @@ import { prepareOutbox } from "@/utils/app-outbox"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
-import { describeShutdown, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest } from "@/daemon/shutdown"
+import { INTERRUPT_SETTLE_MS, describeShutdown, drainLimitMs, interruptionReason, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest, type ShutdownRequest } from "@/daemon/shutdown"
 import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type ServiceInfo } from "@/daemon/restart"
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS } from "@/daemon/restart-api"
@@ -888,9 +888,10 @@ export class AgentXDaemon {
     const shutdown = async (signal: string) => {
       if (this.shuttingDown) return
       this.shuttingDown = true
+      this.shutdownRequest = takeShutdownRequest(resolve(process.cwd(), ".agentx"))
       this.log("\n  " + describeShutdown({
         signal,
-        request: takeShutdownRequest(resolve(process.cwd(), ".agentx")),
+        request: this.shutdownRequest,
         manager: serviceManager(),
         inflight: this.registry.getActiveTaskCount() + this.router.getActiveMeshForwardCount(),
         uptimeSec: process.uptime(),
@@ -942,11 +943,16 @@ export class AgentXDaemon {
     // killing them mid-flight. The inflight log handles messages that hadn't
     // started yet — drain handles ones already executing.
     //
-    // Drain ceiling: AGENTX_DRAIN_TIMEOUT_MS (default 300_000 = 5 min). Keep
+    // Drain ceiling: shutdown.drainTimeoutSeconds, else AGENTX_DRAIN_TIMEOUT_MS,
+    // else 5 min; longer if an agent still running asks for more. Keep
     // systemd's TimeoutStopSec ≥ this + ~30s margin or systemd will SIGKILL
     // mid-drain.
     try {
-      const drainTimeoutMs = parseInt(process.env.AGENTX_DRAIN_TIMEOUT_MS || "300000", 10)
+      const drainTimeoutMs = drainLimitMs({
+        configSeconds: this.config.shutdown?.drainTimeoutSeconds,
+        env: process.env,
+        agentSeconds: this.registry.runningAgentDrainSeconds(),
+      })
       const drainStart = Date.now()
       const inflightCount = () => this.registry.getActiveTaskCount() + this.router.getActiveMeshForwardCount()
       let active = inflightCount()
@@ -961,6 +967,16 @@ export class AgentXDaemon {
           this.log(`  Drain complete (${elapsedMs}ms)`)
         } else {
           this.log(`  Drain timeout after ${elapsedMs}ms — ${active} task(s) still in flight (local=${this.registry.getActiveTaskCount()}, mesh-forwards=${this.router.getActiveMeshForwardCount()}), exiting anyway`)
+          // Stop the rest ourselves, before their processes are torn down
+          // below, so each reports a restart (not a timeout of its own) and
+          // stays in flight for resume on the next boot.
+          const reason = interruptionReason({ drainMs: drainTimeoutMs, request: this.shutdownRequest })
+          const stopped = this.registry.interruptRunning(reason)
+          const settleStart = Date.now()
+          while (this.registry.getActiveTaskCount() > 0 && Date.now() - settleStart < INTERRUPT_SETTLE_MS) {
+            await new Promise(r => setTimeout(r, 200))
+          }
+          this.log(`  Interrupted ${stopped} run(s): ${reason}`)
         }
       }
     } catch (e: any) {
@@ -1088,6 +1104,8 @@ export class AgentXDaemon {
   private midnightTimer?: ReturnType<typeof setTimeout>
   /** Set on the first stop signal: new work is refused while tasks drain. */
   private shuttingDown = false
+  /** Who asked for the current stop, when it said so. */
+  private shutdownRequest: ShutdownRequest | null = null
   /** Runs the previous daemon left in flight (agents/resume). */
   private interruptedRuns: InterruptedRun[] = []
   private bootTimes: number[] = []

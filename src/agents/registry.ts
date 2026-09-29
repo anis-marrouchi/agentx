@@ -584,6 +584,8 @@ export class AgentRegistry {
    *  to drop the orphan cancelled turn from history so the Update reads as an
    *  edit, not a bare follow-up. */
   private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
+  /** Runs a daemon shutdown stopped, with the reason each one reports. */
+  private interruptedRuns: Map<string, string> = new Map()
   /** The context each running task was started with, by RunningTask id.
    *  Kept apart from RunningTask because /agents serialises that, and a
    *  context can carry a whole conversation history. Read by A2A
@@ -956,6 +958,13 @@ export class AgentRegistry {
       response = await this.executeInternal(task, onDelta, onThinking, onEvent)
     } catch (e: any) {
       response = { content: "", error: e?.message ?? String(e) }
+    }
+    // Cut off by a daemon shutdown, at whatever step: report the restart,
+    // not how the step read the kill.
+    const interruptedBy = task.runningTaskId ? this.interruptedRuns.get(task.runningTaskId) : undefined
+    if (interruptedBy) {
+      this.interruptedRuns.delete(task.runningTaskId!)
+      response = { ...response, content: "", error: interruptedBy, errorKind: "interrupted" }
     }
     // A run that threw or was cancelled before its own cleanup ran.
     if (task.runningTaskId) this.runReleases.get(task.runningTaskId)?.(response)
@@ -2382,6 +2391,15 @@ export class AgentRegistry {
         }
       }
 
+      // Stopped by a daemon shutdown: say so, whatever the runtime made of
+      // the kill, and leave the trace in flight so the next boot resumes it.
+      const interruptedBy = this.interruptedRuns.get(runningTask.id)
+      if (interruptedBy) {
+        response.content = ""
+        response.error = interruptedBy
+        response.errorKind = "interrupted"
+      }
+
       finalResponse = response
 
       // Split this request's tokens into tier1/tier2 buckets so subscribers
@@ -2396,6 +2414,7 @@ export class AgentRegistry {
         chatId,
         durationMs: Date.now() - taskStartedAt,
         error: response.error || undefined,
+        interrupted: interruptedBy ? true : undefined,
         inputTokens: split?.inputTokens,
         outputTokens: split?.outputTokens,
         cacheReadTokens: split?.cacheReadTokens,
@@ -2599,6 +2618,14 @@ export class AgentRegistry {
     let total = 0
     for (const s of this.agents.values()) total += s.activeTasks
     return total
+  }
+
+  /** drainTimeoutSeconds of each agent with a run in flight (undefined when
+   *  unset), so a stop can wait as long as the longest of them asks. */
+  runningAgentDrainSeconds(): Array<number | undefined> {
+    const out: Array<number | undefined> = []
+    for (const s of this.agents.values()) if (s.activeTasks > 0) out.push(s.def.drainTimeoutSeconds)
+    return out
   }
 
   list(): Array<{
@@ -2812,7 +2839,7 @@ export class AgentRegistry {
     const chatId = ctx?.chatId
     if (!channel || !chatId) return
     // Operator-cancelled / queued-marker — nothing to deliver
-    if (resp.errorKind === "cancelled") return
+    if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted") return
     if (isQueued(resp.error)) return
     const text = resp.error
       ? `Error: ${resp.error}`
@@ -2885,6 +2912,23 @@ export class AgentRegistry {
     } catch { /* AbortController.abort never throws on modern Node, but defend */ }
     this.log(`[${entry.agentId}] task ${taskId} cancelled — ${reason}`)
     return { agentId: entry.agentId, channel: entry.channel, chatId: entry.chatId }
+  }
+
+  /**
+   * Daemon shutdown: stop every run still going once the drain limit is
+   * spent. Each one ends as `interrupted` with `reason` rather than as a
+   * failure of its own, and its trace stays in flight for resume on boot.
+   * Returns how many runs it stopped.
+   */
+  interruptRunning(reason: string): number {
+    let n = 0
+    for (const [taskId, e] of this.taskAborts) {
+      this.interruptedRuns.set(taskId, reason)
+      try { e.controller.abort(new Error(reason)) } catch { /* */ }
+      this.log(`[${e.agentId}] task ${taskId} interrupted — ${reason}`)
+      n++
+    }
+    return n
   }
 
   /** Stop every in-flight run of `agentId` in one chat. Used when a streaming

@@ -272,6 +272,10 @@ const agentConfigSchema = z.object({
    *  its record marked `timeout` with the step it was stuck in. Applies to
    *  every run, whatever started it. */
   preSpawnTimeoutSec: z.number().int().min(10).max(3600).default(300),
+  /** How long a daemon stop waits for this agent's runs before cutting
+   *  them off, when that is longer than shutdown.drainTimeoutSeconds. For
+   *  agents whose runs are long (renders, builds). */
+  drainTimeoutSeconds: z.number().int().min(0).max(86_400).optional(),
   permissionMode: z.string().default("default"),
   /** How this agent's `claude` CLI is billed (claude-code tier). Default
    *  "subscription": the shared OAuth login, ANTHROPIC_API_KEY stripped.
@@ -989,6 +993,14 @@ export const daemonConfigSchema = z.object({
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
   approvals: approvalsConfigSchema,
+  /** How a daemon stop treats runs still in flight. */
+  shutdown: z.object({
+    /** Wait this long for runs to finish before cutting them off (they are
+     *  then resumed or reported after the restart). Unset: the
+     *  AGENTX_DRAIN_TIMEOUT_MS env var, else 300 s. Keep the service
+     *  manager's stop timeout above it, or it kills the daemon mid-wait. */
+    drainTimeoutSeconds: z.number().int().min(0).max(86_400).optional(),
+  }).default({}),
   /** What happens to runs a restart cuts off (agents/resume). Chat messages
    *  are resumed in their chat; scheduled jobs never are (the next run
    *  covers them); everything else is reported unless its channel is in

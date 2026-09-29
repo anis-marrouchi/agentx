@@ -6,7 +6,7 @@ import { tmpdir } from "os"
 import { resolve } from "path"
 import { installCliSignalExit } from "../src/utils/signal-exit"
 import {
-  SHUTDOWN_REQUEST_FILE, describeShutdown, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest,
+  SHUTDOWN_REQUEST_FILE, describeShutdown, drainLimitMs, interruptionReason, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest,
 } from "../src/daemon/shutdown"
 
 function fakeProcess() {
@@ -119,5 +119,27 @@ describe("shutdown reason", () => {
       .toBe("Shutdown: SIGTERM requested by agentx daemon stop (pid 7); 2 task(s) in flight; up 2.0h")
     expect(describeShutdown({ signal: "SIGINT", request: null, manager: null, inflight: 0, uptimeSec: 90 }))
       .toBe("Shutdown: SIGINT sender unknown; 0 task(s) in flight; up 2m")
+  })
+})
+
+describe("drain limit", () => {
+  it("defaults to 5 minutes, then the env var, then the config setting", () => {
+    expect(drainLimitMs({ env: {}, agentSeconds: [] })).toBe(300_000)
+    expect(drainLimitMs({ env: { AGENTX_DRAIN_TIMEOUT_MS: "120000" }, agentSeconds: [] })).toBe(120_000)
+    expect(drainLimitMs({ configSeconds: 900, env: { AGENTX_DRAIN_TIMEOUT_MS: "120000" }, agentSeconds: [] })).toBe(900_000)
+  })
+
+  it("waits as long as the longest limit among the agents still running", () => {
+    expect(drainLimitMs({ configSeconds: 300, env: {}, agentSeconds: [undefined, 1800, 600] })).toBe(1_800_000)
+    // An agent can ask for more time, never for less.
+    expect(drainLimitMs({ configSeconds: 300, env: {}, agentSeconds: [60] })).toBe(300_000)
+  })
+})
+
+describe("interruption reason", () => {
+  it("names the restart and the drain limit, never a time limit to raise", () => {
+    expect(interruptionReason({ drainMs: 300_000, request: { by: "restart-when-idle", pid: 1, at: "" } }))
+      .toBe("killed by daemon restart (drain limit 300s, requested by restart-when-idle)")
+    expect(interruptionReason({ drainMs: 90_000, request: null })).toBe("killed by daemon restart (drain limit 90s)")
   })
 })

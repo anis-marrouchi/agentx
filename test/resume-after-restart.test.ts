@@ -10,6 +10,8 @@ import { parseOrigin, serializeOrigin, MAX_ORIGIN_BYTES, type RunOrigin } from "
 import { RESUMED_TEXT, ResumeCoordinator } from "../src/agents/resume/coordinator"
 import { MessageRouter } from "../src/channels/router"
 import type { IncomingMessage } from "../src/channels/types"
+import { attachSqliteSubscribers } from "../src/storage/subscribers"
+import { getEventBus } from "../src/events/bus"
 
 let tmp: string
 beforeEach(() => { closeDb(); tmp = mkdtempSync(path.join(tmpdir(), "agentx-resume-")) })
@@ -60,6 +62,23 @@ describe("run journal", () => {
     const db = openTmp()
     recordTraceStart(db, { agentId: "ops-agent", resumeAttempt: 1, resumedFrom: "t1" }, "t2")
     expect(takeInterruptedRuns(db, NOW)[0]).toMatchObject({ taskId: "t2", resumeAttempt: 1 })
+  })
+
+  // #297: a run the drain limit cut off ends before the daemon exits. Its
+  // end must not close the trace, or the next boot never resumes it.
+  it("keeps a run a shutdown interrupted open for the next boot", () => {
+    const db = openTmp()
+    const detach = attachSqliteSubscribers(db)
+    try {
+      recordTraceStart(db, { agentId: "ops-agent", channel: "telegram", chatId: "42" }, "t1")
+      recordTraceStart(db, { agentId: "ops-agent", channel: "telegram", chatId: "43" }, "t2")
+      const done = { agentId: "ops-agent", channel: "telegram", durationMs: 1, at: new Date(NOW).toISOString() }
+      getEventBus().emit("task:completed", { ...done, taskId: "t1", chatId: "42", error: "killed by daemon restart (drain limit 300s)", interrupted: true })
+      getEventBus().emit("task:completed", { ...done, taskId: "t2", chatId: "43", error: "real failure" })
+    } finally {
+      detach()
+    }
+    expect(takeInterruptedRuns(db, NOW).map((r) => r.taskId)).toEqual(["t1"])
   })
 })
 

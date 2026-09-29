@@ -72,6 +72,14 @@ export class TurnDeadlineExceeded extends Error {
   }
 }
 
+/** The process was killed mid-turn by something other than the turn's own
+ *  deadline: a daemon shutdown, an eviction, an operator kill. */
+export class TurnInterrupted extends Error {
+  constructor(readonly reason: string) {
+    super(`claude process stopped mid-turn (${reason})`)
+  }
+}
+
 /** Who this warm process serves, for the tools it launches (the agentx MCP
  *  server reads these to name the caller of a delegation, #277). A warm
  *  process is keyed by (agent, channel, chatId), so these never go stale;
@@ -206,7 +214,9 @@ class ClaudeProcessHandle implements ProcessHandle {
         const remaining = deadline - Date.now()
         if (remaining <= 0) throw timedOut()
         const evt = await this.nextEvent(remaining)
-        // nextEvent yields null both on EOF and on its own timeout.
+        // nextEvent yields null on EOF, on its own timeout, and when kill()
+        // wakes it before the child has exited. Only the timeout is ours.
+        if (evt === null && this.killReason) throw new TurnInterrupted(this.killReason)
         if (evt === null && !this.exited) throw timedOut()
         if (evt === null) {
           throw new Error(`claude process exited mid-turn (code=${this.exitCode}, reason=${this.snap.deadReason ?? "?"})`)

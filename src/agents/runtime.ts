@@ -8,6 +8,9 @@ import { join } from "path"
 import { tmpdir } from "os"
 import { friendlyModelError, renderFriendlyError, type FriendlyError } from "./error-map"
 
+/** An exit 143 this close to the time limit is the limit's own SIGTERM. */
+const SIGTERM_TIMEOUT_SLACK_MS = 5_000
+
 /** Small helper: render a raw error string into both the operator-facing
  *  one-line message and the typed kind discriminator. Call sites that hit
  *  `renderFriendlyError(friendlyModelError(...))` should use this so the
@@ -25,7 +28,7 @@ import type { AgentDef } from "@/daemon/config"
 import type { SeededMessage } from "@/channels/types"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
-import { TurnDeadlineExceeded } from "./claude-process-factory"
+import { TurnDeadlineExceeded, TurnInterrupted } from "./claude-process-factory"
 import { effectiveMcpConfig } from "./codegraph-bootstrap"
 import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonomy"
 import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
@@ -834,10 +837,19 @@ export async function executeClaudeCode(
     }
 
     if (!stdout && exitCode !== 0) {
-      // exit 143 = 128+SIGTERM → our own `timeout` killed the process. Surface
-      // that as a recognizable "timed out after Xm" message so operators can
-      // bump agent.maxExecutionMinutes instead of guessing at an opaque 143.
+      // exit 143 = 128+SIGTERM. It is our own `timeout` only when the run
+      // actually reached it; earlier, something else stopped the process
+      // (a daemon shutdown), and raising maxExecutionMinutes would not help.
       let errMsg: string
+      const ranMs = Date.now() - start
+      if (exitCode === 143 && ranMs < timeoutMs - SIGTERM_TIMEOUT_SLACK_MS) {
+        return {
+          content: "",
+          error: `Claude Code was stopped (SIGTERM) after ${Math.round(ranMs / 1000)}s, before its ${Math.round(timeoutMs / 60_000)}m time limit`,
+          errorKind: "interrupted",
+          duration: ranMs,
+        }
+      }
       if (exitCode === 143) {
         errMsg = `Claude Code timed out after ${Math.round(timeoutMs / 60_000)}m (SIGTERM). Bump agent.maxExecutionMinutes for "${agent.name || "this agent"}" if tasks need longer.`
       } else if (exitCode === "ENOENT" || /ENOENT|spawn claude/i.test(stderr || "")) {
@@ -2012,6 +2024,11 @@ async function executeClaudeCodePersistent(
       registry.release(key, { kill: true, reason: "pre-turn failure" })
       if (abortSignal) abortSignal.removeEventListener("abort", onAbort)
       return null
+    } else if (e instanceof TurnInterrupted) {
+      // Killed from outside the turn (daemon shutdown, eviction). Not a
+      // timeout: raising maxExecutionMinutes would not have saved it.
+      finalError = `Claude Code was stopped mid-turn (${e.reason}), before its time limit`
+      finalErrorKind = "interrupted"
     } else if (e instanceof TurnDeadlineExceeded) {
       const env = buildErrorEnvelope(`Claude Code timed out after ${Math.round(e.budgetMs / 60_000)}m. Bump agent.maxExecutionMinutes for "${agent.name || task.agentId}" if tasks need longer.`)
       finalError = env.error

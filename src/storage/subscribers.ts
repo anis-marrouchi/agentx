@@ -158,8 +158,9 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     const status = p.error ? "error" : "ok"
 
     // Finalize the trace row — same status/tokens task_history records,
-    // plus duration computed inside the UPDATE.
-    if (traceTaskId) {
+    // plus duration computed inside the UPDATE. A run a shutdown stopped
+    // stays in flight: the next boot takes it as interrupted and resumes it.
+    if (traceTaskId && !p.interrupted) {
       try {
         recordTraceEnd(db, traceTaskId, {
           status: p.error ? "error" : "ok",

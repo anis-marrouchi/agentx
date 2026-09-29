@@ -72,6 +72,32 @@ export function describeShutdown(input: {
   return `Shutdown: ${input.signal} ${who}; ${input.inflight} task(s) in flight; up ${up}`
 }
 
+const DEFAULT_DRAIN_MS = 300_000
+/** After the drain limit, how long interrupted runs get to record their end
+ *  before their processes are torn down. */
+export const INTERRUPT_SETTLE_MS = 10_000
+
+/** How long a stop waits for runs in flight. The config setting wins over
+ *  the older AGENTX_DRAIN_TIMEOUT_MS; an agent still running may ask for
+ *  more (its own drainTimeoutSeconds), never for less. */
+export function drainLimitMs(input: {
+  configSeconds?: number
+  env: NodeJS.ProcessEnv
+  agentSeconds: Array<number | undefined>
+}): number {
+  const fromEnv = parseInt(input.env.AGENTX_DRAIN_TIMEOUT_MS || "", 10)
+  const base = input.configSeconds !== undefined
+    ? input.configSeconds * 1000
+    : Number.isFinite(fromEnv) && fromEnv >= 0 ? fromEnv : DEFAULT_DRAIN_MS
+  return Math.max(base, ...input.agentSeconds.map((s) => (s ?? 0) * 1000))
+}
+
+/** What a run the drain limit cut off reports as its error. */
+export function interruptionReason(input: { drainMs: number; request: ShutdownRequest | null }): string {
+  const by = input.request ? `, requested by ${input.request.by}` : ""
+  return `killed by daemon restart (drain limit ${Math.round(input.drainMs / 1000)}s${by})`
+}
+
 const NEW_WORK_PATHS = new Set([
   "/task", "/ask", "/mesh/task", "/mesh/inbox/send", "/workflow/event",
   "/talk", "/narration", "/teach/live", "/v1/chat/completions",
