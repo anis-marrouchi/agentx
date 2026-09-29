@@ -146,6 +146,17 @@ export function stopAllSpeakers(script: string | null = siriSayScript()): void {
   } catch { /* nothing to stop */ }
 }
 
+/** Put back the Spoken Content voice a line killed outright (SIGKILL, a
+ *  crash) left switched, instead of waiting for the next line to do it.
+ *  Takes the shared lock like any line. Never throws. */
+export function restoreSpokenVoice(script: string | null = siriSayScript()): void {
+  if (!script) return
+  try {
+    const p = spawn("/bin/sh", [script, "--restore"], { stdio: "ignore" })
+    p.on("error", () => {})
+  } catch { /* the next line restores it */ }
+}
+
 /** The shared script's path on a Mac that can switch voices, written if
  *  needed; null elsewhere, or when it cannot be written (plain `say` still
  *  speaks). Nothing is written on a host that cannot switch. */

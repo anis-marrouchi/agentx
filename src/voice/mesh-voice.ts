@@ -260,7 +260,7 @@ export class MeshVoices {
     const taken = new Set([...localSystemVoices(agents, settings, installed).values()].flatMap((v) => (v ? [v.name] : [])))
     const wishes = this.list().sort((a, b) => a.id.localeCompare(b.id)).map((a) => {
       const cfg = this.cfgFor(a)
-      return { id: a.id, system: cfg?.system, gender: cfg?.gender ?? genderFromCard(a.description) }
+      return { id: a.id, system: cfg?.system, gender: cfg?.gender ?? genderFromCard(a.description), fallbacks: cfg?.fallbacks }
     })
     const out = castSystemVoices(wishes, settings, installed, taken)
     const extra = this.shadowed()
@@ -268,7 +268,7 @@ export class MeshVoices {
     for (const v of out.values()) if (v) taken.add(v.name)
     const more = extra.sort((a, b) => a.key.localeCompare(b.key)).map((a) => {
       const cfg = this.cfgFor(a)
-      return { id: a.key, system: cfg?.system, gender: cfg?.gender ?? genderFromCard(a.description) }
+      return { id: a.key, system: cfg?.system, gender: cfg?.gender ?? genderFromCard(a.description), fallbacks: cfg?.fallbacks }
     })
     for (const [k, v] of castSystemVoices(more, settings, installed, taken)) out.set(k, v)
     return out

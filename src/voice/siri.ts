@@ -74,6 +74,15 @@ const GENDER: Record<string, SystemVoice["gender"]> = {
   nora: "female", simone: "female", marie: "female", soha: "female", martha: "female", catherine: "female", helena: "female", nicky: "female",
 }
 
+/** A Siri voice's gender, known even when its asset is gone. */
+export const siriGender = (name: string): SystemVoice["gender"] => GENDER[name.toLowerCase()] ?? null
+
+/** Name and locale from a Siri voice id, e.g. "nora" and "en-US". */
+export function parseSiriId(id: string): { name: string; locale: string } | null {
+  const m = /^com\.apple\.ttsbundle\.gryphon-neural_([a-z]+)_([a-z]{2}-[A-Z]{2})_premium$/.exec(id)
+  return m ? { name: m[1], locale: m[2] } : null
+}
+
 /** A voice asset's specifier, e.g. "com.apple.siri.tts.voice.en_US.aaron.neural.premium-en_US-iPhone".
  *  Codenames ("fr-FR-D") are not voices System Settings offers, so they are skipped. */
 const SPECIFIER = /com\.apple\.siri\.tts\.voice\.([a-z]{2})_([A-Z]{2})\.([a-z]+)\.neural\.premium/g
@@ -124,11 +133,13 @@ export const SIRI_SAY = `#!/bin/sh
 #                                the OS default for it; any other id is
 #                                passed to say -v.
 #   siri-say.sh --stop           silence the line speaking, drop the queue.
+#   siri-say.sh --restore        put back a voice a killed line left switched.
 #   AGENTX_SAY_RATE=<words a minute> sets the speed; unset, say's own.
 D=com.apple.Accessibility K=SpokenContentDefaultVoiceSelectionsByLanguage
 dir="$HOME/.agentx/voice" lock="$HOME/.agentx/voice/siri.lock" saved="$HOME/.agentx/voice/siri-saved.plist"
 stops="$dir/stop"
 read_s=\${AGENTX_SAY_READ_S:-5} stale_s=\${AGENTX_SAY_STALE_S:-30} max_s=\${AGENTX_SAY_MAX_S:-300}
+assets=\${AGENTX_SIRI_ASSET_DIRS:-"${ASSET_DIRS.join(" ")}"}
 if [ "$1" = --stop ]; then
   mkdir -p "$dir" || exit 1
   # Queued lines see this change and drop. The owner's trap stops say,
@@ -138,12 +149,15 @@ if [ "$1" = --stop ]; then
   [ -n "$owner" ] && kill "$owner" 2>/dev/null
   exit 0
 fi
+mode=speak
+[ "$1" = --restore ] && { mode=restore; set --; }
 case "$1" in com.apple.ttsbundle.gryphon-neural_*) siri=$1 voice= ;; *) siri= voice=$1 ;; esac
 rate=\${AGENTX_SAY_RATE:-}
 case "$rate" in *[!0-9]*) rate= ;; esac
 case "$siri" in *[!A-Za-z0-9._-]*) echo "bad voice id" >&2; exit 2;; esac
 # Not macOS, or no pref tools: speak as is and never touch a pref.
 if [ "$(uname)" != Darwin ] || ! command -v defaults >/dev/null || ! command -v plutil >/dev/null; then
+  [ "$mode" = restore ] && exit 0
   if [ -n "$voice" ]; then exec say \${rate:+-r "$rate"} -v "$voice"; else exec say \${rate:+-r "$rate"}; fi
 fi
 mkdir -p "$dir" || exit 1
@@ -162,8 +176,19 @@ finish() {
   restore; rm -rf "$lock"; rm -f "$txt"; exit "$1"
 }
 drop() { rm -f "$txt"; exit 75; }
+# A Siri voice whose asset macOS purged: switching to it makes the OS
+# speak a fallback of its own (Eloquence Flo), so leave the pref alone.
+if [ -n "$siri" ]; then
+  s=\${siri#com.apple.ttsbundle.gryphon-neural_} ; name=\${s%%_*} ; s=\${s#*_} ; loc=$(printf %s "\${s%%_*}" | tr - _)
+  found=
+  for a in $assets; do
+    grep -aqs "com.apple.siri.tts.voice.$loc.$name.neural.premium" "$a"/*/Info.plist && { found=1; break; }
+  done
+  [ -z "$found" ] && { echo "Siri voice $siri is not installed; speaking with the OS default" >&2; siri=; }
+fi
 # The whole text first, before the lock: a writer that never closes stdin
 # must not hold up every other speaker.
+[ "$mode" = restore ] && exec 0</dev/null
 exec 3<&0 0</dev/null
 cat <&3 > "$txt" & cat_pid=$!
 exec 3<&-
@@ -188,6 +213,7 @@ done
 echo $$ > "$lock/pid"
 trap 'finish 143' TERM INT HUP
 stopped && finish 75
+[ "$mode" = restore ] && finish 0
 restore
 if [ -n "$siri" ]; then
   lang=$(defaults read -g AppleLanguages 2>/dev/null | sed -n '2s/^[^A-Za-z]*\\([A-Za-z]*\\).*/\\1/p')

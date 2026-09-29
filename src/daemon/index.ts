@@ -43,7 +43,7 @@ import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
 import { TokenStore } from "./token-store"
 import { defaultNotifyChannel } from "@/notify/push-settings"
-import { localAlert, localSettings } from "@/notify"
+import { localAlert, localSettings, notify, type Sender } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
@@ -106,8 +106,9 @@ import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
 import { checkPayloadWithConfirmation, checkAutonomyPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
-import { setVoiceLog } from "@/voice/system-voices"
-import { elevenLabsKey, siriSayScript } from "@/voice/speaker"
+import { MISSING_REFRESH_MS, setMissingVoiceHook, setVoiceLog } from "@/voice/system-voices"
+import { elevenLabsKey, restoreSpokenVoice, siriSayScript } from "@/voice/speaker"
+import { VoiceHealth } from "@/voice/voice-health"
 import { detectSttHost, findFfmpeg } from "@/voice/transcribe"
 import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-api"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
@@ -236,6 +237,7 @@ export class AgentXDaemon {
   private screenBuffer?: ScreenBuffer
   /** Voice for agents on mesh peers: see src/daemon/voice-mesh-proxy.ts. */
   private voiceMesh!: VoiceMeshProxy
+  private voiceHealth?: VoiceHealth
   /** Persistent-claude process registry. Null when no agent has
    *  persistentProcess: true (legacy spawn-per-task path). */
   private sessionMonitor?: SessionMonitor
@@ -610,23 +612,36 @@ export class AgentXDaemon {
     // watcher the hold queue is a hole rather than a delay — nothing else
     // ever takes a message back out of it.
     attachFocusWatcher(
-      async ({ title, message, priority, channel, chatId }) => {
-        // Each held digest goes back where it was addressed (byDestination
-        // gives entries from before addresses were stored ntfy).
-        await this.router.sendOutbound({
-          channel: channel ?? defaultNotifyChannel(this.config),
-          chatId: chatId ?? "default",
-          text: message,
-          title,
-          priority,
-          agentId: this.config.node.defaultAgent,
-        } as any)
-      },
+      this.ownerSender(),
       (m) => this.log(m),
       // Read the settings per flush so a dashboard change applies without
       // a restart.
       { alert: (title, message) => localAlert(localSettings(this.config.notifications.local))(title, message) },
     )
+
+    // Configured voices macOS took away (it purges downloaded voices when
+    // the disk is low): tell the owner once per voice, and look again
+    // every minute so a reinstalled one is used without a restart.
+    if (process.platform === "darwin") {
+      restoreSpokenVoice()
+      this.voiceHealth = new VoiceHealth({
+        notify: async (title, message) => {
+          // Push and ntfy take the title from the first line of the text.
+          const send = this.ownerSender()
+          await notify({ title, message, from: "voice" }, (m) => send({ ...m, message: `${m.title}\n${m.message}` }), {
+            alert: (t, m) => localAlert(localSettings(this.config.notifications.local))(t, m),
+          })
+        },
+        log: (m) => this.log(m),
+      })
+      const checkVoices = () => {
+        const installed = listSystemVoices(Date.now(), this.voiceHealth?.hasMissing() ? MISSING_REFRESH_MS : undefined)
+        void this.voiceHealth?.check(this.config, installed).catch((e: any) => this.log(`[voice] voice check failed: ${e?.message ?? e}`))
+      }
+      setMissingVoiceHook(checkVoices)
+      checkVoices()
+      setInterval(checkVoices, MISSING_REFRESH_MS).unref()
+    }
 
     // The opt-in in-memory screen buffer (screen.buffer), for agents that
     // arrive after the moment they needed to see.
@@ -1067,6 +1082,23 @@ export class AgentXDaemon {
   }
 
   /** In-flight work the drain waits for: local agent tasks + mesh forwards. */
+  /** Deliver a notice to the owner through the channel router: the
+   *  address it was given, else notifications.channel (push or ntfy). */
+  private ownerSender(): Sender {
+    return async ({ title, message, priority, channel, chatId }) => {
+      // Each held digest goes back where it was addressed (byDestination
+      // gives entries from before addresses were stored ntfy).
+      await this.router.sendOutbound({
+        channel: channel ?? defaultNotifyChannel(this.config),
+        chatId: chatId ?? "default",
+        text: message,
+        title,
+        priority,
+        agentId: this.config.node.defaultAgent,
+      } as any)
+    }
+  }
+
   private inflightCounts(): { local: number; meshForwards: number; total: number } {
     const local = this.registry.getActiveTaskCount()
     const meshForwards = this.router.getActiveMeshForwardCount()
