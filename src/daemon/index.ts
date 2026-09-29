@@ -619,30 +619,6 @@ export class AgentXDaemon {
       { alert: (title, message) => localAlert(localSettings(this.config.notifications.local))(title, message) },
     )
 
-    // Configured voices macOS took away (it purges downloaded voices when
-    // the disk is low): tell the owner once per voice, and look again
-    // every minute so a reinstalled one is used without a restart.
-    if (process.platform === "darwin") {
-      restoreSpokenVoice()
-      this.voiceHealth = new VoiceHealth({
-        notify: async (title, message) => {
-          // Push and ntfy take the title from the first line of the text.
-          const send = this.ownerSender()
-          await notify({ title, message, from: "voice" }, (m) => send({ ...m, message: `${m.title}\n${m.message}` }), {
-            alert: (t, m) => localAlert(localSettings(this.config.notifications.local))(t, m),
-          })
-        },
-        log: (m) => this.log(m),
-      })
-      const checkVoices = () => {
-        const installed = listSystemVoices(Date.now(), this.voiceHealth?.hasMissing() ? MISSING_REFRESH_MS : undefined)
-        void this.voiceHealth?.check(this.config, installed).catch((e: any) => this.log(`[voice] voice check failed: ${e?.message ?? e}`))
-      }
-      setMissingVoiceHook(checkVoices)
-      checkVoices()
-      setInterval(checkVoices, MISSING_REFRESH_MS).unref()
-    }
-
     // The opt-in in-memory screen buffer (screen.buffer), for agents that
     // arrive after the moment they needed to see.
     sweepStaleDumps()
@@ -715,6 +691,31 @@ export class AgentXDaemon {
           this.log(`  Plugin channel "${ch.name}" failed to start: ${e?.message ?? e}`)
         }
       }
+    }
+
+    // Configured voices macOS took away (it purges downloaded voices when
+    // the disk is low): tell the owner once per voice, and look again
+    // every minute so a reinstalled one is used without a restart. After
+    // the channels start, so the first notice has somewhere to go.
+    if (process.platform === "darwin") {
+      restoreSpokenVoice()
+      this.voiceHealth = new VoiceHealth({
+        notify: async (title, message) => {
+          // Push and ntfy take the title from the first line of the text.
+          const send = this.ownerSender()
+          await notify({ title, message, from: "voice" }, (m) => send({ ...m, message: `${m.title}\n${m.message}` }), {
+            alert: (t, m) => localAlert(localSettings(this.config.notifications.local))(t, m),
+          })
+        },
+        log: (m) => this.log(m),
+      })
+      const checkVoices = () => {
+        const installed = listSystemVoices(Date.now(), this.voiceHealth?.hasMissing() ? MISSING_REFRESH_MS : undefined)
+        void this.voiceHealth?.check(this.config, installed).catch((e: any) => this.log(`[voice] voice check failed: ${e?.message ?? e}`))
+      }
+      setMissingVoiceHook(checkVoices)
+      checkVoices()
+      setInterval(checkVoices, MISSING_REFRESH_MS).unref()
     }
 
     // 2. Start cron scheduler
