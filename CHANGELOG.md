@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.73.0](https://github.com/anis-marrouchi/agentx/compare/v0.72.0...v0.73.0) (2026-09-29)
+
+
+### Features
+
+* **whatsapp:** triage watched WhatsApp chats, replies only on approval ([#331](https://github.com/anis-marrouchi/agentx/issues/331)) ([ff36dda](https://github.com/anis-marrouchi/agentx/commit/ff36ddaeba809cd20b9539312ce8681305946dfc))
+
 ## [0.72.0](https://github.com/anis-marrouchi/agentx/compare/v0.71.0...v0.72.0) (2026-09-29)
 
 
