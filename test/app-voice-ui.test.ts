@@ -85,6 +85,14 @@ describe("the orb", () => {
     expect(frames.length).toBeLessThanOrEqual(n) // no next frame requested
   })
 
+  it("keeps a square bitmap at 2x, where a fresh 300x150 canvas already has the right width", () => {
+    const { O, canvas, frames } = loadOrb(false)
+    canvas.width = 300; canvas.height = 150
+    O.create(canvas).show("thinking")
+    frames.shift()!(1000)
+    expect([canvas.width, canvas.height]).toEqual([300, 300])
+  })
+
   it("is a still picture per state with Reduce Motion", () => {
     const { O, canvas, frames, ops } = loadOrb(true)
     const orb = O.create(canvas)

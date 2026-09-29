@@ -73,8 +73,9 @@ window.AXOrb = (function () {
     }
 
     function draw(t) {
-      var dpr = window.devicePixelRatio || 1, css = canvas.clientWidth || 150;
-      if (canvas.width !== Math.round(css * dpr)) { canvas.width = canvas.height = Math.round(css * dpr); }
+      var dpr = window.devicePixelRatio || 1, css = canvas.clientWidth || 150, px = Math.round(css * dpr);
+      // Both sides: a canvas starts at 300x150, so at 2x the width alone already matches.
+      if (canvas.width !== px || canvas.height !== px) { canvas.width = canvas.height = px; }
       // The 96-point orb in a 160-point frame: room for the widest glow (74).
       var W = canvas.width, k = W / 160;
       ctx.setTransform(k, 0, 0, k, W / 2, W / 2);
