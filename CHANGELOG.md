@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.70.1](https://github.com/anis-marrouchi/agentx/compare/v0.70.0...v0.70.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **demo:** configurable, load-aware startup limit ([#316](https://github.com/anis-marrouchi/agentx/issues/316)) ([84de480](https://github.com/anis-marrouchi/agentx/commit/84de480bbead58a127565236af16fb3907cc849b)), closes [#315](https://github.com/anis-marrouchi/agentx/issues/315)
+* **resume:** answer forwarded chat runs through the node that received them ([#313](https://github.com/anis-marrouchi/agentx/issues/313)) ([e454a42](https://github.com/anis-marrouchi/agentx/commit/e454a424a0c7352b2cbb5218acddf0ad59f6e477))
+* **wiki:** keep text matches ahead of branch matches and read the path from the running turn ([#314](https://github.com/anis-marrouchi/agentx/issues/314)) ([238a998](https://github.com/anis-marrouchi/agentx/commit/238a998178a3bb768c24df8df8bed43e7f01eefa))
+
 ## [0.70.0](https://github.com/anis-marrouchi/agentx/compare/v0.69.4...v0.70.0) (2026-09-29)
 
 
