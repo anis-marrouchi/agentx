@@ -64,6 +64,48 @@ Ingest reads contact and group details (and, if you choose, recent messages) int
 | `channels.whatsapp.ingest.throttle.maxChatsPerSweep` | number (≥1) | `25` | Most chats read in one pass. |
 | `channels.whatsapp.ingest.retentionDays` | number (≥0) | `0` | Delete stored raw entries older than this many days. `0` keeps them. |
 
+## WhatsApp triage
+
+Watched WhatsApp chats, read by an agent that sorts each message and drafts replies for your approval. Messages come from `wacli sync --webhook` to `POST /webhook/wacli`, not from the WhatsApp channel above; the two are independent. Set up with [Watch a WhatsApp chat](../jobs/watch-whatsapp.md), the **WhatsApp triage** block in **Settings › Webhooks**, or `agentx whatsapp triage`.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `whatsappTriage.enabled` | boolean | `false` | Turns triage on. Off, the webhook answers `404`. |
+| `whatsappTriage.secretEnv` | string | `"WACLI_WEBHOOK_SECRET"` | Environment variable holding the secret given to `wacli sync --webhook-secret`. Unset, every message is refused (`503`). |
+| `whatsappTriage.batchSeconds` | number (0–600) | `20` | Messages from one chat within this many seconds go to the agent as one task. |
+| `whatsappTriage.timezone` | string | this computer's | Time zone for quiet hours, for example `Europe/Paris`. |
+| `whatsappTriage.allowAutoAck` | boolean | `false` | Second switch for rules with `autoAck`. Both must be on. |
+| `whatsappTriage.describeMedia` | boolean | `true` | Download pictures for the agent to look at, and transcribe voice notes when speech to text is set up (`voice.stt`). |
+| `whatsappTriage.wacli.bin` | string | `"wacli"` | The wacli program, or its full path. |
+| `whatsappTriage.wacli.account` | string | — | `wacli --account` name, when several accounts are paired. |
+| `whatsappTriage.wacli.store` | string | — | `wacli --store` folder. |
+| `whatsappTriage.rules` | list | `[]` | Watch rules. The first enabled match wins. A message no rule matches is dropped and not stored. |
+| `id` | string | required | Short name: lowercase letters, digits, `-` and `_`. |
+| `enabled` | boolean | `true` | Turns the rule on or off. |
+| `chats` | list of strings | `[]` | Chats to watch: a contact's JID (`15550001111@s.whatsapp.net`), a group's JID (`…@g.us`), or a phone number. |
+| `senders` | list of strings | `[]` | Only messages from these people, in any chat the rule covers. A rule needs at least one chat or sender. |
+| `agent` | string | required | Agent on this computer that triages the messages. |
+| `prompt` | string (≤4000) | — | Extra instructions: who the contact is, where issues go, how to reply. |
+| `quietHours.start`, `quietHours.end` | `"HH:MM"` | — | No notifications in this window. It may cross midnight. Triage and drafts still happen. |
+| `autoAck` | boolean | `false` | Send the agent's reply to messages it marks `ack` without asking. Needs `allowAutoAck` too. |
+
+Every other reply waits in **Approvals** as a `whatsapp:` item and is sent only when you say yes.
+
+```json
+"whatsappTriage": {
+  "enabled": true,
+  "rules": [
+    {
+      "id": "test-contact",
+      "agent": "helper",
+      "chats": ["+1 555 000 1111"],
+      "prompt": "Open bug reports in the tracker project example/app.",
+      "quietHours": { "start": "22:00", "end": "07:00" }
+    }
+  ]
+}
+```
+
 ## GitLab
 
 AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge requests ([watch GitLab](/jobs/watch-gitlab)).
