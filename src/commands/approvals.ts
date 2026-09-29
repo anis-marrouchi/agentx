@@ -13,13 +13,14 @@ import { parseDestination, readApprovalSettings, updateApprovalSettings, type Ap
 // `agentx wiki proposals approve` keep working and stay in step.
 
 export const approvals = new Command("approvals")
-  .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals)")
+  .description("one inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, WhatsApp replies)")
 
 const KIND_LABEL: Record<InboxItem["kind"], string> = {
   card: "card",
   schedule: "schedule",
   memory: "memory",
   wiki: "wiki",
+  whatsapp: "whatsapp",
 }
 
 function ctx() {

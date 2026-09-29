@@ -109,6 +109,9 @@ import { extractUiDirective } from "@/channels/ui-directive"
 import { MISSING_REFRESH_MS, setMissingVoiceHook, setVoiceLog } from "@/voice/system-voices"
 import { elevenLabsKey, restoreSpokenVoice, siriSayScript } from "@/voice/speaker"
 import { VoiceHealth } from "@/voice/voice-health"
+import { createTriageService } from "@/whatsapp-triage/daemon"
+import { handleWacliWebhook, WACLI_WEBHOOK_PATH } from "@/whatsapp-triage/http"
+import type { TriageService } from "@/whatsapp-triage/service"
 import { detectSttHost, findFfmpeg } from "@/voice/transcribe"
 import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-api"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
@@ -197,6 +200,8 @@ export class AgentXDaemon {
   private _assistant?: AssistantStore
   /** Agents ringing the owner (src/calls); needs SQLite. */
   private calls?: CallService
+  /** Watched WhatsApp chats (src/whatsapp-triage). Null without SQLite. */
+  private waTriage: TriageService | null = null
   private assistantStore(): AssistantStore | undefined { return this._assistant }
 
   /** Workflow health for the monitor. Cached for a minute: the dashboard
@@ -509,6 +514,7 @@ export class AgentXDaemon {
         this.sessionMonitor.start()
         this._assistant = new AssistantStore(db)
         this.calls = this.createCallService(new CallStore(db))
+        this.waTriage = this.createWhatsappTriage(db)
         this.log(`  SQLite: ${db.name}`)
         // Procedure miner's on-task trigger — counts recurring activity
         // patterns after each successful task (no-op unless
@@ -761,6 +767,9 @@ export class AgentXDaemon {
     this.scheduleMidnightHook()
     this.startApprovalsSweep()
     this.startReminders()
+    // Messages received before the last stop but never handed to an agent.
+    const waQueued = this.waTriage?.resume() ?? 0
+    if (waQueued) this.log(`  WhatsApp triage: ${waQueued} queued message(s) picked up`)
     try {
       const yesterday = new Date(Date.now() - 86400_000).toISOString().slice(0, 10)
       const appended = this.registry.getTokenTracker().catchUpTokenCosts(yesterday)
@@ -1067,6 +1076,7 @@ export class AgentXDaemon {
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
     if (this.approvalsTimer) clearInterval(this.approvalsTimer)
     this.stopReminders?.()
+    this.waTriage?.stop()
 
     if (this.reloadTimer) clearTimeout(this.reloadTimer)
     if (this.configWatcher) {
@@ -2657,6 +2667,30 @@ export class AgentXDaemon {
     })
   }
 
+  /** Watched WhatsApp chats: the rule's agent triages each burst; the
+   *  owner hears about action items the way `agentx notify` tells them. */
+  private createWhatsappTriage(db: NonNullable<ReturnType<typeof openDb>>): TriageService {
+    return createTriageService({
+      db,
+      root: process.cwd(),
+      config: () => this.config.whatsappTriage,
+      stt: () => this.config.voice.stt,
+      execute: (task) => this.registry.execute(task as any),
+      notify: async ({ title, message, from }) => {
+        await notify({ title, message, from, priority: 4 }, async (m) => {
+          await this.router.sendOutbound({
+            channel: m.channel ?? defaultNotifyChannel(this.config),
+            chatId: m.chatId ?? "default",
+            text: `${m.title}\n${m.message}`,
+            priority: m.priority,
+            agentId: from,
+          } as any)
+        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+      },
+      log: (m) => this.log(m),
+    })
+  }
+
   /** Calls from agents to the owner (#321). The notice path is notify's:
    *  Focus holds a non-urgent one; the push goes through the router with
    *  its title as the first line, as `agentx notify` sends it. */
@@ -3860,6 +3894,16 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.json(res, 500, { error: "hook failed", message: String(e?.message || e) }); return
         }
+      }
+      // wacli's signed message feed for watched WhatsApp chats. Before the
+      // generic route, which would read "wacli" as an agent id.
+      if (req.method === "POST" && path === WACLI_WEBHOOK_PATH) {
+        await handleWacliWebhook(req, res, {
+          config: () => this.config.whatsappTriage,
+          service: () => this.waTriage,
+          log: (m) => this.log(m),
+        })
+        return
       }
       if (req.method === "POST" && path.startsWith("/webhook/")) {
         // GitHub channel adapter: intercept webhooks with X-GitHub-Event header

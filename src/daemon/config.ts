@@ -6,6 +6,7 @@ import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { ORB_PALETTE_IDS } from "@/voice/orb-palettes"
+import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -1028,6 +1029,8 @@ export const daemonConfigSchema = z.object({
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
   calls: callsSchema,
+  /** Watched WhatsApp chats triaged by an agent (src/whatsapp-triage). */
+  whatsappTriage: whatsappTriageSchema,
   approvals: approvalsConfigSchema,
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({

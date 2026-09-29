@@ -4,6 +4,7 @@ import { MemoryStore } from "@/agents/memory-store"
 import { approveSchedule, formatFireTime, humanizeCron, nextFireTime, rejectSchedule } from "@/crons/schedule-ops"
 import { listProposals, readProposal, type PromotionProposal } from "@/wiki/proposals"
 import { approveProposal, rejectProposal } from "@/wiki/promote"
+import { decideDraft, listDrafts, readDraft, type SendReply } from "@/whatsapp-triage/drafts"
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
 
@@ -17,13 +18,15 @@ import { readInboxState, snooze } from "./state"
 //   schedule  schedules an agent asked to create or delete (crons/schedule-ops)
 //   memory    facts from outside sources held before agents may use them
 //   wiki      lessons proposed for the shared wiki (wiki/proposals, wiki/promote)
+//   whatsapp  replies an agent drafted for a watched WhatsApp chat
+//             (whatsapp-triage/drafts); yes sends it through wacli
 //
 // Only operator surfaces call decide(): the `agentx approvals` CLI and the
 // dashboard's /api/admin/approvals. The daemon's agent-facing API and the
 // MCP tool can create cards and read, never decide.
 
-export type ApprovalKind = "card" | "schedule" | "memory" | "wiki"
-export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki"]
+export type ApprovalKind = "card" | "schedule" | "memory" | "wiki" | "whatsapp"
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki", "whatsapp"]
 
 export type InboxAction = "yes" | "no" | "later"
 
@@ -59,6 +62,8 @@ export interface InboxContext {
   /** Hot-reload the daemon after a schedule decision. Default true. */
   reload?: boolean
   now?: number
+  /** Sends an approved WhatsApp reply. Default: wacli. Tests swap it. */
+  sendWhatsApp?: SendReply
 }
 
 export const DETAIL_MAX = 280
@@ -193,11 +198,28 @@ function wikiItems(ctx: InboxContext): InboxItem[] {
   })
 }
 
+function whatsappItems(ctx: InboxContext): InboxItem[] {
+  return listDrafts(ctx.root, "pending").map((d) => ({
+    key: `whatsapp:${d.id}`,
+    kind: "whatsapp" as const,
+    title: `WhatsApp reply to ${d.chat_name || d.to}`,
+    // The whole draft: the owner approves exactly what will be sent.
+    ask: `Send this to ${d.chat_name || d.to}? "${d.text}"`,
+    yes: "send it on WhatsApp",
+    no: "drop the draft",
+    raised_by: d.agent,
+    created_at: d.created_at,
+    detail: clip(`${d.triage}: ${d.summary}`),
+    more: "agentx whatsapp triage log",
+  }))
+}
+
 const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
   card: cardItems,
   schedule: scheduleItems,
   memory: memoryItems,
   wiki: wikiItems,
+  whatsapp: whatsappItems,
 }
 
 // ── Read model ───────────────────────────────────────────────────────
@@ -271,6 +293,7 @@ function stillPending(ctx: InboxContext, kind: ApprovalKind, ref: string): boole
   switch (kind) {
     case "card": return readCard(ctx.root, ref)?.status === "pending"
     case "wiki": return readProposal(wikiDirFor(ctx), ref)?.status === "pending"
+    case "whatsapp": return readDraft(ctx.root, ref)?.status === "pending"
     default: return SOURCES[kind](ctx).some((i) => i.key === `${kind}:${ref}`)
   }
 }
@@ -322,6 +345,11 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
         : rejectProposal(dir, ref, { by, reason: opts.note, now })
       if (!r.ok) return r
       return { ok: true, message: yes ? `${r.proposal.article.path} written to the shared wiki` : `${key} rejected` }
+    }
+    case "whatsapp": {
+      const r = await decideDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, send: ctx.sendWhatsApp })
+      if (!r.ok) return r
+      return { ok: true, message: yes ? `${key}: sent to ${r.draft.chat_name || r.draft.to}` : `${key}: dropped, nothing sent` }
     }
   }
 }
