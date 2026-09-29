@@ -72,6 +72,14 @@ final class App: NSObject, NSApplicationDelegate {
     /// would hear the next answer as the listener's words.
     private var openAsides = 0
 
+    // An agent ringing the owner (#321).
+    private let callWatcher = CallWatcher()
+    private let ringer = Ringer()
+    /// The call ringing on the pill now.
+    private var ringingCall: IncomingCall?
+    /// The call in progress: every turn goes to its agent until hang-up.
+    private var activeCall: IncomingCall?
+
     /// /ask, counted in flight for the menu while it thinks.
     private func ask(_ heard: String, agent: String) async throws -> AgentClient.Answer {
         track(agent, 1)
@@ -198,6 +206,7 @@ final class App: NSObject, NSApplicationDelegate {
     /// shortcut is asking, a by-name answer being spoken, else the agent
     /// our turn is asking, else the target.
     private var shownAgent: String {
+        if let call = ringingCall ?? activeCall { return call.agentId }
         if let forcedAgent, recorder.isRecording { return forcedAgent }
         if let asideSpeaker { return asideSpeaker }
         return busy && !turnAgent.isEmpty ? turnAgent : Config.effectiveAgentID
@@ -216,6 +225,9 @@ final class App: NSObject, NSApplicationDelegate {
     /// next talk key brings the pill back.
     private func dismissPill() {
         Log.info("pill: dismissed")
+        // Closing the pill declines a ringing call and ends one in progress.
+        if ringingCall != nil { endRinging { await CallClient.decline($0) } }
+        if activeCall != nil { hangUp() }
         panel.dismiss()
         if recorder.isRecording {
             stopPolling()
@@ -348,6 +360,13 @@ final class App: NSObject, NSApplicationDelegate {
 
         statusMenu.onStop = { [weak self] in self?.stopSpeaking() }
 
+        panel.callBar.onAnswer = { [weak self] in self?.answerCall() }
+        panel.callBar.onDecline = { [weak self] in self?.endRinging { await CallClient.decline($0) } }
+        panel.callBar.onLater = { [weak self] minutes in self?.endRinging { await CallClient.later($0, minutes: minutes) } }
+        panel.callBar.onHangUp = { [weak self] in self?.hangUp() }
+        callWatcher.onPoll = { [weak self] state in self?.polled(state) }
+        callWatcher.start()
+
         // The target does not wait for the microphone: the menu shows it
         // either way.
         Task { @MainActor in
@@ -380,6 +399,8 @@ final class App: NSObject, NSApplicationDelegate {
     private let followUpPatience: TimeInterval = 4.0
     /// How long a clicked session waits for you to start talking.
     private let clickPatience: TimeInterval = 8.0
+    /// In a call the other side waits longer for an answer.
+    private let callPatience: TimeInterval = 10.0
 
     private var listenPoll: Timer?
     private var openedAt = Date()
@@ -398,7 +419,7 @@ final class App: NSObject, NSApplicationDelegate {
             return
         }
         openedAt = Date()
-        patience = followUp ? followUpPatience : clickPatience
+        patience = followUp ? (activeCall == nil ? followUpPatience : callPatience) : clickPatience
         silentClose = followUp
         asideSpeaker = nil
         panel.render(.listening)
@@ -428,7 +449,7 @@ final class App: NSObject, NSApplicationDelegate {
         if Date().timeIntervalSince(openedAt) >= patience {
             stopPolling()
             _ = recorder.stop()
-            panel.render(silentClose ? .idle : .error("Didn't catch that"))
+            panel.render(silentClose ? rest : .error("Didn't catch that"))
             if !silentClose { resetSoon() }
         }
     }
@@ -459,7 +480,7 @@ final class App: NSObject, NSApplicationDelegate {
         asideSpeaker = nil
         lastSpokeAt = Date()
         Task { await Speech.stopAll() }
-        if !recorder.isRecording { panel.render(.idle) }
+        if !recorder.isRecording { panel.render(rest) }
     }
 
     private func startListening() {
@@ -527,6 +548,13 @@ final class App: NSObject, NSApplicationDelegate {
                 return
             }
             Log.info("heard: \(heard)")
+            if activeCall != nil && CallModel.isHangUp(heard) {
+                _ = await door.value
+                await AgentClient.resume()
+                if !midTurn { busy = false }
+                hangUp()
+                return
+            }
             let hushed = await door.value
             // Always through the door, even with nothing hushed: the
             // listener's turn is over, so the daemon's queue plays on.
@@ -540,6 +568,7 @@ final class App: NSObject, NSApplicationDelegate {
             // stays. An agent's own shortcut already said who.
             let agent: String
             if let forced { agent = forced }
+            else if let call = activeCall { agent = call.agentId }
             else {
                 // Any agent on the mesh, by name. One on another node is
                 // remembered, so the pill and the menu can name and colour it.
@@ -797,6 +826,81 @@ final class App: NSObject, NSApplicationDelegate {
         }
     }
 
+    // --- Calls (#321) ---
+    //
+    // An agent rings: the pill shows who and why, rings, and offers Answer,
+    // Later and Decline. Answering sends the daemon's opener through /ask,
+    // so the agent speaks first; then the usual hands-free loop runs with
+    // the caller as the agent until hang-up.
+
+    /// At rest: waiting for the next words in a call, else idle.
+    private var rest: Panel.State { activeCall == nil ? .idle : .onCall }
+
+    private func polled(_ state: RingingCalls) {
+        let free = activeCall == nil && !busy && !recorder.isRecording
+        switch CallModel.action(ringing: ringingCall?.id, calls: state.calls, canRing: free) {
+        case .none:
+            return
+        case .stop:
+            Log.info("call: stopped ringing")
+            ringer.stop()
+            ringingCall = nil
+            panel.showCall(.hidden)
+            panel.render(.idle)
+        case .ring(let call):
+            Log.info("call: \(call.agentId) is calling: \(call.reason)")
+            ringingCall = call
+            panel.summon()
+            panel.showCall(.ringing)
+            panel.render(.ringing(CallModel.ringingText(name: statusMenu.name(of: call.agentId), reason: call.reason)))
+            ringer.start(sound: state.ringSound)
+        }
+    }
+
+    /// Decline or later: the ring stops and the pill goes back to rest.
+    private func endRinging(_ send: @escaping (String) async -> Void) {
+        guard let call = ringingCall else { return }
+        ringer.stop()
+        ringingCall = nil
+        panel.showCall(.hidden)
+        panel.render(.idle)
+        Task { await send(call.id) }
+    }
+
+    private func answerCall() {
+        // A turn of our own is still running: keep ringing until it ends.
+        guard let call = ringingCall, !busy else { return }
+        if recorder.isRecording { stopPolling(); _ = recorder.stop() }
+        ringer.stop()
+        ringingCall = nil
+        busy = true
+        panel.render(.thinking)
+        Task { @MainActor in
+            guard let opener = await CallClient.answer(call.id) else {
+                busy = false
+                panel.showCall(.hidden)
+                panel.render(.error("The call ended"))
+                resetSoon()
+                return
+            }
+            Log.info("call: answered \(call.id)")
+            activeCall = call
+            panel.showCall(.connected)
+            await runTurn(opener, agent: call.agentId)
+        }
+    }
+
+    /// Hang up: the button, "bye", or closing the pill during a call.
+    private func hangUp() {
+        guard let call = activeCall else { return }
+        Log.info("call: hung up \(call.id)")
+        activeCall = nil
+        panel.showCall(.hidden)
+        if recorder.isRecording { stopPolling(); _ = recorder.stop() }
+        stopSpeaking()
+        Task { await CallClient.hangUp(call.id) }
+    }
+
     private func short(_ s: String) -> String {
         s.count > 40 ? String(s.prefix(38)) + "…" : s
     }
@@ -805,7 +909,7 @@ final class App: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, !self.recorder.isRecording, !self.busy else { return }
-                self.panel.render(.idle)
+                self.panel.render(self.rest)
             }
         }
     }

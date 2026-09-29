@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "fs"
 import { describeQueue } from "@/daemon/voice-queue-api"
 import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
+import { callerHeaders } from "@/calls/service"
 
 // --- MCP Server: expose agentx as a Model Context Protocol server ---
 // This allows Claude Code, Cursor, Windsurf, and any MCP client to use
@@ -523,6 +524,22 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {},
+    },
+  },
+  {
+    name: "agentx_call_owner",
+    description:
+      "Ring the owner for a live voice call on their desktop widget, when you need them directly and a message will not do. " +
+      "When they answer you speak first, so give the reason in one line. Only agents the owner allowed (calls.allow) can call; " +
+      "a few calls an hour at most. urgency 'urgent' rings through Focus: use it only for something that cannot wait. " +
+      "Returns how it rang, or why it did not.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        reason: { type: "string", description: "Why you are calling, in one line (at most 200 characters)." },
+        urgency: { type: "string", enum: ["normal", "urgent"], description: "Default normal: held as a missed call during Focus." },
+      },
+      required: ["reason"],
     },
   },
   {
@@ -1148,6 +1165,23 @@ async function handleToolCall(
       const res = await fetch(`${daemonUrl()}/voice/queue`)
       if (!res.ok) return { content: [{ type: "text", text: `Could not read the speaking queue: HTTP ${res.status}` }] }
       return { content: [{ type: "text", text: describeQueue(await res.json() as QueueView) }] }
+    }
+
+    case "agentx_call_owner": {
+      // The daemon checks this against a running turn of the agent.
+      const agentId = process.env.AGENTX_AGENT_ID
+      if (!agentId) return { content: [{ type: "text", text: "Call not placed: only an agent's own run can call (AGENTX_AGENT_ID is not set)." }] }
+      const res = await fetch(`${daemonUrl()}/calls`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({ agentId, reason: args.reason, urgency: args.urgency }),
+      })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Call not placed: ${data?.error || `HTTP ${res.status}`}` }] }
+      const how = data.rang === "widget" ? "It is ringing on the owner's desktop widget. When they answer you will be asked to open the conversation."
+        : data.rang === "notify" ? "The desktop widget is not running, so the owner got a notification instead."
+        : `It did not ring (${data.call?.note ?? "held"}); the owner sees it as a missed call.`
+      return { content: [{ type: "text", text: `Call ${data.call?.id} placed. ${how}` }] }
     }
 
     case "agentx_health": {

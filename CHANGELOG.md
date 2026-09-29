@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.71.0](https://github.com/anis-marrouchi/agentx/compare/v0.70.1...v0.71.0) (2026-09-29)
+
+
+### Features
+
+* **calls:** agents ring the owner for a live voice call ([#322](https://github.com/anis-marrouchi/agentx/issues/322)) ([8a7df51](https://github.com/anis-marrouchi/agentx/commit/8a7df51874115574e08d850526b669d518c3cbc1))
+
 ## [0.70.1](https://github.com/anis-marrouchi/agentx/compare/v0.70.0...v0.70.1) (2026-09-29)
 
 

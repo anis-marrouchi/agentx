@@ -20,6 +20,7 @@ The npm package is `agentix-cli`; the executable is `agentx`. Run `agentx <comma
 | Issue API tokens for peers and integrations | `agentx token create`, `agentx token list`, `agentx token revoke` |
 | Check a risky command against the guardrails | `agentx guard test`, `agentx guard log` |
 | Ask a typed question and get a calibrated answer | `agentx decide` |
+| Let agents ring you for a voice call | `agentx call allow <agent>`, `agentx call list` |
 | Pick each agent's voice | `agentx voice list`, `agentx voice set` |
 | Shell tab-completion | `agentx completion` |
 | Expose MCP over stdio | `agentx serve --stdio` |
@@ -91,6 +92,10 @@ agentx desktop start
 | `agentx config set <path> <value>` | Change a field; inspect the reload/restart result |
 | `agentx doctor` | Check local installation and prerequisites |
 | `agentx notify "<message>"` | Notify the phone app and show a Mac banner, held during Focus; `--proof` captures the banner; see [Get notified](../jobs/notifications.md) |
+| `agentx call request --reason "…"` | From inside an agent's run: ring the owner for a live voice call (`--urgent`); see [Calls from your agents](../dashboard/calls.md) |
+| `agentx call list` | Recent calls (`--status missed`, `--limit`, `--json`) |
+| `agentx call answer <id>`, `agentx call decline <id>`, `agentx call hangup <id>`, `agentx call later <id> [minutes]` | Act on a call from the terminal |
+| `agentx call allow <agent>`, `agentx call disallow <agent>` | Who may call you (`calls.allow`; `"*"` for every agent) |
 | `agentx notifications show` | Notification routing, the local banner and sound, phone app and ntfy status, and on a Mac whether AgentX Helper may post banners |
 | `agentx notifications local` | `--banner`, `--sound`, `--sound-name`, `--volume`, `--icon` for the Mac banner and sound |
 | `agentx notifications push` | `--subject`, `--relay-to`, `--enable`/`--disable` for notifications on the [phone app](../dashboard/mobile-alerts.md) |
