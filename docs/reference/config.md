@@ -27,6 +27,7 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `dashboard` | Browser bind address, port and `daemonUrl` |
 | `mesh` | Peer URLs and authentication |
 | `approvals` | How long decision cards wait, what "later" means, and the daily digest ([Approvals](/dashboard/approvals#settings)) |
+| `wacli` | WhatsApp triage: which chats an agent watches, and the webhook secret ([Triage WhatsApp messages](/jobs/whatsapp-triage)) |
 
 Every field, with its type, default and what it does, is listed on four pages:
 
@@ -34,7 +35,7 @@ Every field, with its type, default and what it does, is listed on four pages:
 |---|---|
 | [Agents and runtime](./config-agents.md) | `node`, `providers`, `agents`, `session`, `processPool`, `plugins` |
 | [Channels](./config-channels.md) | `channels`: Telegram, WhatsApp, GitLab, GitHub, phone app notifications, ntfy, browser calls |
-| [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `shutdown`, `resume` |
+| [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `wacli`, `shutdown`, `resume` |
 | [Dashboard, mesh and optional layers](./config-operations.md) | `dashboard`, `mesh`, `meshVoices`, `voice`, `screen`, `business`, `boards`, `graph`, `decisions` |
 
 These pages are checked against the schema in `src/daemon/config.ts`. If your installed version differs, that file is the final word.

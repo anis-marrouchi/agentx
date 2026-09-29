@@ -455,6 +455,62 @@ Show or change expiry, "later" and digest settings (approvals in agentx.json).
 | `--digest-timezone <zone>` | — | IANA timezone for --digest-time; "local" for this machine's. |
 | `--digest-to <channel:chatId>` | — | Where the digest goes; "default" for notifications.destination. |
 
+## wacli
+
+`agentx wacli`: WhatsApp triage: watch chosen chats, let an agent sort what arrives (nothing is sent without your yes). See [Triage WhatsApp messages](/jobs/whatsapp-triage).
+
+### `agentx wacli status`
+
+Show whether triage is on, the secret, and the watch rules.
+
+### `agentx wacli settings`
+
+Change triage settings (wacli in agentx.json).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--enable` | — | Turn triage on. |
+| `--disable` | — | Turn triage off. |
+| `--batch-seconds <n>` | — | Messages from one chat this close together become one task. |
+| `--secret-env <NAME>` | — | Environment variable holding the webhook secret. |
+| `--media <on\|off>` | — | Download images and voice notes for the agent. |
+| `--binary <path>` | — | wacli binary; "default" to find it on PATH. |
+| `--account <name>` | — | wacli --account; "default" for the default store. |
+
+### `agentx wacli rules list`
+
+List watch rules.
+
+### `agentx wacli rules add <id>`
+
+Watch a chat, sender or group (replaces a rule with the same id).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | required | The agent that triages these messages. |
+| `--chat <number-or-jid>` | — | A chat: phone number or JID. |
+| `--sender <number-or-jid>` | — | Who wrote it, in any chat. |
+| `--group <name-or-jid>` | — | A group, by exact name or JID. |
+| `--prompt <text>` | — | Instructions for this chat, e.g. where the tracker is. |
+| `--quiet <HH:MM-HH:MM>` | — | No notifications and no auto-acknowledgement in this window. |
+| `--timezone <zone>` | — | IANA timezone for --quiet; default this machine's. |
+| `--auto-ack` | — | Send acknowledgement drafts without asking (off unless given). |
+| `--off` | — | Save the rule turned off. |
+
+### `agentx wacli rules remove <id>`
+
+Stop watching.
+
+### `agentx wacli test`
+
+Post a signed test message to the running daemon, as wacli would.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--chat <number-or-jid>` | required | The chat it seems to come from (a watched one). |
+| `--text <text>` | `Test message from agentx wacli test: please reply 'received'.` | The message. |
+| `--name <name>` | `Test contact` | The chat's name. |
+
 ## attach
 
 `agentx attach`: Wear an agentx agent identity in this Claude Code session.

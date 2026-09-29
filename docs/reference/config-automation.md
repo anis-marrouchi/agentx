@@ -178,6 +178,30 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.digest.destination.chatId` | string | required | The chat on that channel. |
 | `approvals.digest.destination.accountId` | string | — | Which account on that channel. |
 
+## `wacli`
+
+WhatsApp triage: messages from chosen chats, posted by `wacli sync --webhook`, sorted by an agent. Nothing is sent to a contact without your yes. See [Triage WhatsApp messages](/jobs/whatsapp-triage).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `wacli.enabled` | boolean | `false` | Accepts messages at `POST /webhook/wacli`. Off: that address answers `404`. |
+| `wacli.secret` | string | — | The `--webhook-secret` given to wacli. Prefer `secretEnv`. |
+| `wacli.secretEnv` | string | `"WACLI_WEBHOOK_SECRET"` | Environment variable holding the secret when `secret` is unset. With no secret, every request gets `401`. |
+| `wacli.batchSeconds` | number (0–600) | `30` | Messages from one chat this close together become one task. A burst waits at most five windows. |
+| `wacli.binary` | string | — | The `wacli` program, or its full path when the daemon can't find it. |
+| `wacli.account` | string | — | A named wacli account (`wacli --account`). |
+| `wacli.media` | boolean | `true` | Downloads images for the agent to open, and turns voice notes into text with `voice.stt`. Needs `wacli sync --download-media`. |
+| `wacli.rules` | list | `[]` | The watched chats. A message no rule matches is dropped and not stored. The first matching rule wins. |
+| `wacli.rules[].id` | string | required | A short lowercase name. |
+| `wacli.rules[].chat` | string | — | A chat: a phone number or a JID (`…@s.whatsapp.net`, `…@g.us`). |
+| `wacli.rules[].sender` | string | — | Who wrote it, in any chat: a phone number or a JID. |
+| `wacli.rules[].group` | string | — | A group, by its JID or its exact name. A rule needs at least one of `chat`, `sender` or `group`; every one that is set must match. |
+| `wacli.rules[].agent` | string | required | The agent that sorts these messages. |
+| `wacli.rules[].prompt` | string | — | Instructions for this chat: what counts as a request, where the tracker is, which language to reply in. |
+| `wacli.rules[].quietHours` | object | — | `{ "start": "22:00", "end": "07:00", "timezone": "Europe/Paris" }`. No notifications and no automatic acknowledgements in this window; drafts still wait in Approvals. `timezone` unset: this machine's. |
+| `wacli.rules[].autoAck` | boolean | `false` | Sends the agent's draft for an `ack` message without asking. Only when set on the rule. |
+| `wacli.rules[].enabled` | boolean | `true` | Turns the rule off without deleting it. |
+
 ## `shutdown`
 
 How a daemon stop treats tasks that are still running. See [restart without losing work](/jobs/restart-safely#change-how-long-it-waits).

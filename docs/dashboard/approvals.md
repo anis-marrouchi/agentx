@@ -31,6 +31,10 @@ When you answer, or when a card expires, the agent that asked gets a message wit
 
 Only you can answer. Agents can raise cards and read the list, but nothing they can reach approves anything.
 
+### WhatsApp replies
+
+A card titled **WhatsApp reply to …** holds a reply an agent drafted for a watched WhatsApp chat (see [Triage WhatsApp messages](../jobs/whatsapp-triage.md)). The exact text is shown on the card. **Yes** sends it through wacli within a minute, once; **No** sends nothing. When it expires, nothing is sent, whatever the card says. The chats themselves are set up under **WhatsApp triage: watched chats** at the bottom of the page.
+
 ## Answer from the dashboard
 
 1. **Browser:** open the dashboard and click the **Approvals** tab (or go to `/approvals`).
