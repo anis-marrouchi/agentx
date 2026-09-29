@@ -1256,7 +1256,20 @@ async function handleToolCall(
       }
       const store = hub.getAgentWiki(agentId)
       const maxHops = typeof args.max_hops === "number" ? Math.min(3, Math.max(0, args.max_hops)) : 2
-      const result = await agenticQuery(question, store, agentId, { maxHops })
+      // The request this tool serves was classified into the intent graph
+      // on its way in. Articles on the same branch rank higher; without
+      // this the graph weight of the retrieval score multiplied zero.
+      let messagePath: string[] | undefined
+      const caller = callerFields()
+      const callerAgent = process.env.AGENTX_AGENT_ID
+      if (callerAgent && caller.callerChannel && caller.callerChatId) {
+        try {
+          const { GraphStore } = await import("@/graph")
+          const graph = new GraphStore({ baseDir: resolve(process.cwd(), ".agentx/graph"), log: () => undefined })
+          messagePath = graph.latestPathForChat(callerAgent, caller.callerChannel, caller.callerChatId)
+        } catch { /* no graph: plain retrieval */ }
+      }
+      const result = await agenticQuery(question, store, agentId, { maxHops, messagePath })
       if (result.status !== "ok") {
         return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
       }
