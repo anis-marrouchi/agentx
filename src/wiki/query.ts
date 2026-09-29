@@ -1,6 +1,7 @@
 import { readFileSync, existsSync } from "fs"
 import { buildIndex, scoreAll } from "@/memory/bm25"
 import { askSeat } from "@/decisions/seat"
+import { ancestryScore } from "@/graph"
 import {
   DEFAULT_SHORTLIST,
   WIKI_RERANK_SEAT,
@@ -44,6 +45,12 @@ export interface AgenticQueryOptions {
   timeoutMs?: number
   /** Logger — defaults to console.error. */
   log?: (...args: unknown[]) => void
+  /** Intent-graph path the question's request was classified under.
+   *  Articles on the same branch rank higher in candidate selection. */
+  messagePath?: string[]
+  /** Weight of the branch match against the text match, 0–1. Default 0.6
+   *  (`graph.retrievalWeights.graph`). */
+  graphWeight?: number
 }
 
 export interface AgenticQueryResult {
@@ -83,6 +90,8 @@ export async function agenticQuery(
   const maxArticles = opts.maxArticles ?? 8
   const timeoutMs = opts.timeoutMs ?? 60_000
   const log = opts.log ?? console.error.bind(console, "[wiki-query]")
+  const messagePath = opts.messagePath?.length ? opts.messagePath : undefined
+  const graphWeight = opts.graphWeight ?? DEFAULT_GRAPH_WEIGHT
 
   // --- Step 1: Load the catalog ---
   const catalogPath = resolve(store.baseDir, "_index.md")
@@ -96,13 +105,13 @@ export async function agenticQuery(
   let candidates: Array<{ title: string; path: string }> = []
   let selectorOutput = ""
   try {
-    const viaSeat = await selectCandidatesViaSeat(question, store, requesterId, maxCandidates)
+    const viaSeat = await selectCandidatesViaSeat(question, store, requesterId, maxCandidates, messagePath, graphWeight)
     if (viaSeat) {
       candidates = viaSeat
       selectorOutput = `[wiki-rerank seat] ${viaSeat.map((c) => c.title).join(" | ")}`
     } else {
       selectorOutput = await runClaude(
-        buildSelectorPrompt(question, catalog, maxCandidates),
+        buildSelectorPrompt(question, catalog, maxCandidates, messagePath),
         selectorModel,
         timeoutMs,
       )
@@ -234,28 +243,26 @@ async function selectCandidatesViaSeat(
   store: WikiStore,
   requesterId: string | undefined,
   maxCandidates: number,
+  messagePath?: string[],
+  graphWeight: number = DEFAULT_GRAPH_WEIGHT,
 ): Promise<Array<{ title: string; path: string }> | null> {
   try {
     const index = store.rebuildIndex()
     const pool = (index.articles ?? []).filter((a) => a.path && !a.path.includes("/_versions/"))
     if (pool.length < 2) return null
 
-    const docs = pool.map((a) =>
-      [a.title, (a.tags ?? []).join(" "), (a.related ?? []).join(" ")].join(" "),
-    )
-    const scored = scoreAll(question, buildIndex(docs)).map((r) => r.docIndex)
-    for (let i = 0; i < pool.length; i++) if (!scored.includes(i)) scored.push(i)
-    const shortlist = scored.slice(0, DEFAULT_SHORTLIST)
+    const shortlist = rankCatalogPool(question, pool, messagePath, graphWeight).slice(0, DEFAULT_SHORTLIST)
 
     const candidates: RerankCandidate[] = shortlist.map((i) => ({
       id: `k${i}`,
       title: pool[i].title || pool[i].path,
       tags: pool[i].tags,
-      // The catalog has no body — a title, its type and its wikilinks are
-      // exactly what the CLI selector was given to choose on.
+      // The catalog has no body — a title, its type, its wikilinks and its
+      // branch of the intent graph are what the selector chooses on.
       excerpt: [
         pool[i].type ? `type: ${pool[i].type}` : "",
         (pool[i].related ?? []).length ? `related: ${(pool[i].related ?? []).join(", ")}` : "",
+        (pool[i].graphPath ?? []).length ? `graph: ${(pool[i].graphPath ?? []).join(" › ")}` : "",
       ].filter(Boolean).join(" · "),
     }))
 
@@ -279,13 +286,51 @@ async function selectCandidatesViaSeat(
   }
 }
 
-function buildSelectorPrompt(question: string, catalog: string, maxCandidates: number): string {
+/** Weight of the intent-graph branch match against the text match when
+ *  shortlisting catalog candidates. Mirrors `graph.retrievalWeights.graph`. */
+export const DEFAULT_GRAPH_WEIGHT = 0.6
+
+/**
+ * Order the catalog pool for a question: text match (BM25 over title, tags
+ * and wikilinks, scaled to 0–1) plus, when the request was classified,
+ * how much of the intent-graph path each article shares with it. Articles
+ * the text match never scored keep their catalog order at the end.
+ *
+ * Exported for tests; the seat and the CLI selector both consume the order.
+ */
+export function rankCatalogPool(
+  question: string,
+  pool: Array<{ title: string; tags?: string[]; related?: string[]; graphPath?: string[] }>,
+  messagePath?: string[],
+  graphWeight: number = DEFAULT_GRAPH_WEIGHT,
+): number[] {
+  const docs = pool.map((a) =>
+    [a.title, (a.tags ?? []).join(" "), (a.related ?? []).join(" ")].join(" "),
+  )
+  const bm25 = scoreAll(question, buildIndex(docs))
+  const maxBm25 = bm25.reduce((m, r) => Math.max(m, r.score), 0)
+  const text = new Map(bm25.map((r) => [r.docIndex, maxBm25 > 0 ? r.score / maxBm25 : 0]))
+  const useGraph = !!messagePath?.length
+  const combined = pool.map((a, i) => {
+    const t = text.get(i) ?? 0
+    const g = useGraph && a.graphPath?.length ? ancestryScore(messagePath!, a.graphPath) : 0
+    return { i, score: useGraph ? (1 - graphWeight) * t + graphWeight * g : t, scored: text.has(i) || g > 0 }
+  })
+  const ranked = combined.filter((c) => c.scored).sort((x, y) => y.score - x.score || x.i - y.i).map((c) => c.i)
+  for (let i = 0; i < pool.length; i++) if (!ranked.includes(i)) ranked.push(i)
+  return ranked
+}
+
+function buildSelectorPrompt(question: string, catalog: string, maxCandidates: number, messagePath?: string[]): string {
+  const branch = messagePath?.length
+    ? `\n## Intent\n\nThe request was classified under the intent-graph path "${messagePath.join(" › ")}". Prefer articles filed under the same branch when their titles are equally plausible.\n`
+    : ""
   return `You are picking candidate articles from a wiki catalog to answer a question. You do NOT answer the question. You pick which articles the answer is likely to come from.
 
 ## Question
 
 ${question}
-
+${branch}
 ## Catalog (_index.md — articles grouped by type, with wikilink previews)
 
 ${catalog}

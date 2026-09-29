@@ -94,6 +94,8 @@ export interface WikiIndex {
     backlinks: number
     sources?: string[]
     lastUpdated?: string
+    /** Intent-graph path the article's sources were classified under. */
+    graphPath?: string[]
   }>
   lastRebuilt: string
 }

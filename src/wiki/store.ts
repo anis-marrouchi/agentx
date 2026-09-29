@@ -626,6 +626,7 @@ export class WikiStore {
         backlinks: backlinks.get(article.meta.title) || 0,
         sources: article.meta.sources,
         lastUpdated: article.meta.lastUpdated,
+        graphPath: article.meta.graphPath,
       })
     })
 

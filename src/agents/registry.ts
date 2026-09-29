@@ -1550,6 +1550,7 @@ export class AgentRegistry {
           text: task.message,
           channel,
           sender: task.context?.sender,
+          chatId,
           agentId: task.agentId,
         })
         .then(

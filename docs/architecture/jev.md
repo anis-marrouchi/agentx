@@ -31,6 +31,7 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `request-gate` | Would this new request benefit from Jev preprocessing? |
 | `request-context` | Which optional pieces of context should this request receive? |
 | `session-continuity` | Does this turn need the earlier conversation, or can the session start fresh early? |
+| `intent-path` | Which intent-graph category, then which verb within it, does this message belong to? Replaces the model call the classifier makes on a cache miss. |
 
 More seats exist in `src/decisions/seats/`; the table lists the ones this page refers to.
 

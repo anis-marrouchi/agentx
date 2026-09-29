@@ -7,6 +7,17 @@ import {
   type Classification,
 } from "./types"
 import { createProvider, type ProviderName, type AgentProvider } from "@/agent/providers"
+import { getSeatMode } from "@/decisions/seat"
+import { INTENT_PATH_SEAT, proposePathViaSeat } from "@/decisions/seats/intent-path"
+
+/** A path for a cache miss, with where it came from. */
+interface Proposal {
+  path: string[]
+  proposedAxes: Record<string, Record<string, string>>
+  confidence?: number
+  leaf: { input?: string; output?: string }
+  source: "llm" | "seat"
+}
 
 // --- Intent Knowledge Graph classifier ---
 //
@@ -23,6 +34,9 @@ export interface ClassifyInput {
   text: string
   channel?: string
   sender?: string
+  /** Conversation id; stored on the classification so `agentx_wiki_query`
+   *  can look up the path of the request it is serving. */
+  chatId?: string
   /** Agent that will RECEIVE the message after classification. When this
    *  equals `draftAgent`, classification is skipped to prevent a deadlock —
    *  the classifier's sub-task would otherwise queue behind the in-progress
@@ -40,7 +54,7 @@ export interface ClassifyResult {
   /** Axis values asserted by the classifier. Keyed by node id. */
   axes: Record<string, Record<string, string>>
   leaf: { input?: string; output?: string }
-  source: "cache" | "llm"
+  source: "cache" | "llm" | "seat"
   status: "pending" | "approved"
   confidence?: number
 }
@@ -127,6 +141,7 @@ export class Classifier {
         agentId: input.agentId,
         channel: input.channel,
         sender: input.sender,
+        chatId: input.chatId,
         path: cached.path,
         proposedAxes: {},
         leaf: cached.leaf,
@@ -152,10 +167,7 @@ export class Classifier {
     //    `graph.enabled` is the only gate now.
     const schema = this.store.loadSchema()
     const nodes = this.store.loadNodes().nodes
-    const proposal = await this.proposePath(input, schema, nodes).catch((e) => {
-      this.log("LLM proposal failed:", e?.message || e)
-      return null
-    })
+    const proposal = await this.propose(input, schema, nodes)
     if (!proposal) return null
 
     // 3. Validate + persist as pending. Any NEW node the LLM proposed is
@@ -169,10 +181,11 @@ export class Classifier {
       agentId: input.agentId,
       channel: input.channel,
       sender: input.sender,
+      chatId: input.chatId,
       path,
       proposedAxes,
       leaf,
-      source: "llm",
+      source: proposal.source,
       status: "pending",
       confidence,
       preview: input.text.slice(0, 200),
@@ -235,10 +248,50 @@ export class Classifier {
       pathLabel: pathLabel(path, this.store.loadNodes().nodes),
       axes: proposedAxes,
       leaf,
-      source: "llm",
+      source: proposal.source,
       status,
       confidence,
     }
+  }
+
+  /**
+   * Where a cache miss gets its path from, by the intent-path seat's mode:
+   *
+   *   off     the LLM, as before
+   *   shadow  the LLM decides; the seat runs afterwards with the LLM's path
+   *           as incumbent, so agreement is measured before it can act
+   *   active  the seat decides when both stages clear their thresholds;
+   *           the LLM only answers what the seat could not
+   *
+   * The seat reuses existing nodes only, so a seat proposal never adds to
+   * the taxonomy; the LLM keeps that role in every mode.
+   */
+  private async propose(
+    input: ClassifyInput,
+    schema: GraphSchema,
+    nodes: GraphNode[],
+  ): Promise<Proposal | null> {
+    const mode = getSeatMode(INTENT_PATH_SEAT)
+    const seatInput = { message: input.text, channel: input.channel, sender: input.sender, agent: input.agentId }
+
+    if (mode === "active") {
+      const viaSeat = await proposePathViaSeat(seatInput, nodes).catch((e) => {
+        this.log("intent-path seat failed:", e?.message || e)
+        return null
+      })
+      if (viaSeat?.confident) {
+        return { path: viaSeat.path, proposedAxes: {}, leaf: {}, confidence: viaSeat.confidence, source: "seat" }
+      }
+    }
+
+    const viaLlm = await this.proposePath(input, schema, nodes).catch((e) => {
+      this.log("LLM proposal failed:", e?.message || e)
+      return null
+    })
+    if (mode === "shadow" && viaLlm) {
+      void proposePathViaSeat(seatInput, nodes, { incumbent: viaLlm.path }).catch(() => {})
+    }
+    return viaLlm ? { ...viaLlm, source: "llm" } : null
   }
 
   /** Direct call to Anthropic to propose a path. Pure I/O; no side effects.
