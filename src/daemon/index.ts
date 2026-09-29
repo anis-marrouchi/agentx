@@ -47,6 +47,7 @@ import { localAlert, localSettings } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
+import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { startRemindersPoller } from "@/reminders/daemon"
@@ -1135,6 +1136,27 @@ export class AgentXDaemon {
           }).catch((e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
         },
       })
+      coordinator.register("mesh", createMeshResumer({
+        peers: () => this.mesh?.directory() ?? [],
+        send: async (peer, body) => {
+          const r = await fetch(`${peer.peerUrl}/channel/send`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(15000),
+          })
+          if (!r.ok) throw new Error(`peer ${peer.peer} /channel/send -> ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`)
+        },
+        execute: ({ agentId, message, origin, attempt, resumedFrom }) => this.registry.execute({
+          message,
+          agentId,
+          context: origin.context as any,
+          origin,
+          resumeAttempt: attempt,
+          resumedFrom,
+        }),
+        log: this.log,
+      }))
       const dest = this.config.notifications?.destination
       const outcomes = await coordinator.run({
         db: this.db,
@@ -5108,7 +5130,10 @@ export class AgentXDaemon {
             break
           }
 
-          const response = await withRoot(taskRoot, () => this.registry.execute(
+          // A forwarded chat message: after a restart its answer goes
+          // back through the forwarding node (#311).
+          const origin = meshOriginFromTask(body, agentId)
+          const response = forwardedTaskAnswer(await withRoot(taskRoot, () => this.registry.execute(
             {
               agentId,
               message: body.message as string,
@@ -5119,10 +5144,11 @@ export class AgentXDaemon {
               // A Mac speaking for this agent sends only a few voice fields;
               // the instruction itself is built here.
               systemPromptAppend: remoteVoiceAppend(body.context),
+              origin,
               onStart: track.onStart,
             },
             () => {},
-          )).finally(track.end)
+          )).finally(track.end), origin)
           this.json(res, response.error ? 500 : 200, response)
           break
         }
@@ -6134,9 +6160,11 @@ export class AgentXDaemon {
         parseMode: typeof body.parseMode === "string" ? body.parseMode : undefined,
         replyTo: typeof body.replyTo === "string" ? body.replyTo : undefined,
         buttons: Array.isArray(body.buttons) ? body.buttons : undefined,
+        // Posts as this agent (GitLab/GitHub identity), like a live reply.
+        agentId: typeof body.agentId === "string" ? body.agentId : undefined,
         // Set by a push relay, so a relay never forwards a relayed message.
         relayed: body.relayed === true ? true : undefined,
-      } as any)
+      } as any, { recordInSession: false })
       this.json(res, 200, { ok: true, messageId: messageId ?? null })
     } catch (e: any) {
       this.log(`[mesh] /channel/send "${channel}" failed: ${e.message}`)

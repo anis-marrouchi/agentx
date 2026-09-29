@@ -162,6 +162,7 @@ Some work still gets cut off: a task that runs longer than the wait, a crash, or
 | The task came from | What happens |
 |---|---|
 | A chat (Telegram, WhatsApp, GitLab, GitHub, Slack…) in the last 30 minutes | It's picked up again. The chat gets a short note first: "AgentX restarted while working on this. Picking it up again." The answer arrives in the same chat. |
+| A chat another node received and passed to this one (a GitLab event that arrives on your server, for an agent that lives on your Mac) | It's picked up again, and the note and the answer are posted through the node that received it. Both nodes need this version; if that node is down, you get the "didn't resume" message instead. |
 | A scheduled job | Nothing. The next scheduled run does the work. |
 | A workflow step | Reported. The workflow decides whether to retry. |
 | Anything else (voice, one agent asking another, webhooks, the API) | Reported, because nothing would deliver the answer. |

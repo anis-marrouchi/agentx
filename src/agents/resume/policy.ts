@@ -14,6 +14,7 @@ import { parseOrigin, type RunOrigin } from "./origin"
 //   report  too old — older than maxAgeMinutes
 //   report  no way back in — no recorded origin (older builds, or too big)
 //   report  channel opted out, or a direct run on a channel not opted in
+//           (a mesh run is not direct: the forwarding node delivers it)
 //   resume  otherwise
 //
 // "report" means: don't run it again, tell the chat it came from (or the
