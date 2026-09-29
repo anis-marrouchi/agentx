@@ -85,6 +85,9 @@ export const classificationSchema = z.object({
   /** The conversation the message belongs to. Lets a tool running inside
    *  that conversation find the path its request was filed under. */
   chatId: z.string().optional(),
+  /** The run that carried the message (`AGENTX_TASK_ID`). Tools read the
+   *  path by this id, so a turn never borrows the previous turn's path. */
+  taskId: z.string().optional(),
   /** Node ids from root to leaf, one per level. Shorter-than-full paths are
    *  allowed if the classifier was only confident down to a certain depth. */
   path: z.array(nodeIdSchema),

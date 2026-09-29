@@ -1551,6 +1551,7 @@ export class AgentRegistry {
           channel,
           sender: task.context?.sender,
           chatId,
+          taskId: task.runningTaskId,
           agentId: task.agentId,
         })
         .then(

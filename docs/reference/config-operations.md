@@ -240,7 +240,7 @@ Each entry in `columns`:
 
 The intent graph sorts requests into a fixed tree of topics and helps wiki search. It is off by default.
 
-When a request is not already in the graph's cache, the classifier asks the `intent-path` decision seat first if that seat is `active` under `decisions.seats`, and only falls back to `graph.classifierModel` when the seat has no confident answer. In `shadow` the model still decides and the seat's answer is recorded next to it, so `agentx decisions stats` shows how often the two agree before the seat takes over. The path a request was filed under also steers the wiki: `agentx_wiki_query` ranks articles on the same branch higher (`graph.retrievalWeights.graph`).
+When a request is not already in the graph's cache, the classifier asks the `intent-path` decision seat first if that seat is `active` under `decisions.seats`, and only falls back to `graph.classifierModel` when the seat has no confident answer. In `shadow` the model still decides and the seat's answer is recorded next to it, so `agentx decisions stats` shows how often the two agree before the seat takes over. The path a request was filed under also steers the wiki: `agentx_wiki_query` ranks articles on the same branch higher. The boost only applies to articles that already match the question's words, so a strong text match is never pushed aside by same-topic articles that do not match; `graph.retrievalWeights.graph` sets its size. Only the current request's topic counts: if the tool runs before that request has been classified, the search uses words alone.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -251,8 +251,8 @@ When a request is not already in the graph's cache, the classifier asks the `int
 | `graph.autoApproveStructure` | `"strict"` \| `"extend-leaves"` \| `"any"` | `"extend-leaves"` | Which classifications skip review. `strict`: none. `extend-leaves`: those that reuse existing topics or add one new topic at the deepest level. `any`: all. |
 | `graph.autoApproveConfidence` | number (0–1) | `1` | Classifications at or above this confidence also skip review. `1` turns this off. |
 | `graph.classifierModel` | string | `"claude-haiku-4-5-20251001"` | Model used to classify. |
-| `graph.retrievalWeights.graph` | number | `0.6` | Weight of topic match in wiki search. |
-| `graph.retrievalWeights.bm25` | number | `0.4` | Weight of text match in wiki search. |
+| `graph.retrievalWeights.graph` | number | `0.6` | How much a matching topic boosts a text match in `agentx_wiki_query`. `0.6` raises the score of an article on exactly the same topic by 60%. |
+| `graph.retrievalWeights.bm25` | number | `0.4` | Not used by `agentx_wiki_query`. |
 
 ## decisions
 

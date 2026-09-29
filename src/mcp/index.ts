@@ -161,6 +161,21 @@ export function callerFields(env: NodeJS.ProcessEnv = process.env): Record<strin
   return out
 }
 
+/** `graph.retrievalWeights.graph` from the agentx.json the daemon booted
+ *  from, or undefined for the built-in default. Read raw, like node.bind
+ *  above: a schema failure elsewhere must not cost the wiki its ranking. */
+export function configuredGraphWeight(cwd: string = process.cwd()): number | undefined {
+  for (const rel of ["agentx.json", ".agentx/config.json"]) {
+    try {
+      const path = resolve(cwd, rel)
+      if (!existsSync(path)) continue
+      const w = JSON.parse(readFileSync(path, "utf-8"))?.graph?.retrievalWeights?.graph
+      return typeof w === "number" && w >= 0 ? w : undefined
+    } catch { /* unreadable or unparseable — try the next candidate */ }
+  }
+  return undefined
+}
+
 /** Test seams. `_reset…` drops the memoized value so a caller can change
  *  env/cwd; `_resolve…` exposes the uncached resolution itself. */
 export function _resetDaemonUrlForTesting(): void {
@@ -1258,18 +1273,20 @@ async function handleToolCall(
       const maxHops = typeof args.max_hops === "number" ? Math.min(3, Math.max(0, args.max_hops)) : 2
       // The request this tool serves was classified into the intent graph
       // on its way in. Articles on the same branch rank higher; without
-      // this the graph weight of the retrieval score multiplied zero.
+      // this the graph weight of the retrieval score multiplied zero. Only
+      // this turn's classification counts, found by its task id.
       let messagePath: string[] | undefined
       const caller = callerFields()
       const callerAgent = process.env.AGENTX_AGENT_ID
-      if (callerAgent && caller.callerChannel && caller.callerChatId) {
+      if (callerAgent && caller.callerChannel && caller.callerChatId && caller.callerTaskId) {
         try {
           const { GraphStore } = await import("@/graph")
           const graph = new GraphStore({ baseDir: resolve(process.cwd(), ".agentx/graph"), log: () => undefined })
-          messagePath = graph.latestPathForChat(callerAgent, caller.callerChannel, caller.callerChatId)
+          messagePath = graph.latestPathForChat(callerAgent, caller.callerChannel, caller.callerChatId, caller.callerTaskId)
         } catch { /* no graph: plain retrieval */ }
       }
-      const result = await agenticQuery(question, store, agentId, { maxHops, messagePath })
+      const graphWeight = messagePath ? configuredGraphWeight() : undefined
+      const result = await agenticQuery(question, store, agentId, { maxHops, messagePath, graphWeight })
       if (result.status !== "ok") {
         return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
       }

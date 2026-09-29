@@ -54,7 +54,7 @@ const seat = (mode: "off" | "shadow" | "active", answers: Record<string, { proba
   registerDecisionBackend("mock", () => createMockDecisionBackend({ answers }))
   configureDecisions({ enabled: true, seats: { [INTENT_PATH_SEAT]: { mode, backend: "mock" } } })
 }
-const msg = { text: "please review MR !5 on noqta/minbar", channel: "gitlab", agentId: "coder", chatId: "noqta/minbar:mr:5" }
+const msg = { text: "please review MR !5 on noqta/minbar", channel: "gitlab", agentId: "coder", chatId: "noqta/minbar:mr:5", taskId: "t1" }
 
 describe("Classifier with the intent-path seat", () => {
   it("active: the seat's confident answer is the classification and the model is not asked", async () => {
@@ -68,7 +68,7 @@ describe("Classifier with the intent-path seat", () => {
     expect(r?.status).toBe("approved")
     expect(llm.calls).toBe(0)
     // Recorded with the conversation, so tools inside it can find the path.
-    expect(store.latestPathForChat("coder", "gitlab", "noqta/minbar:mr:5")).toEqual(["code", "review.merge-request"])
+    expect(store.latestPathForChat("coder", "gitlab", "noqta/minbar:mr:5", "t1")).toEqual(["code", "review.merge-request"])
     // The next identical request is a cache hit.
     const again = await classifier.classify(msg)
     expect(again?.source).toBe("cache")
@@ -107,13 +107,21 @@ describe("Classifier with the intent-path seat", () => {
 })
 
 describe("GraphStore.latestPathForChat", () => {
-  it("returns the newest path for the conversation and ignores stale ones", () => {
-    const base = { msgHash: "x", agentId: "a", channel: "telegram", proposedAxes: {}, leaf: {}, source: "llm" as const, status: "approved" as const }
-    store.appendClassification({ ...base, ts: new Date(Date.now() - 2 * 3600_000).toISOString(), chatId: "c1", path: ["code", "fix.bug"] })
-    store.appendClassification({ ...base, ts: new Date().toISOString(), chatId: "c2", path: ["ops", "deploy.staging"] })
-    expect(store.latestPathForChat("a", "telegram", "c1")).toEqual(["code", "fix.bug"])
-    expect(store.latestPathForChat("a", "telegram", "c2")).toEqual(["ops", "deploy.staging"])
-    expect(store.latestPathForChat("a", "telegram", "c1", 60_000)).toBeUndefined()
-    expect(store.latestPathForChat("b", "telegram", "c1")).toBeUndefined()
+  const base = { msgHash: "x", agentId: "a", channel: "telegram", proposedAxes: {}, leaf: {}, source: "llm" as const, status: "approved" as const }
+
+  it("returns the turn's path and ignores stale ones", () => {
+    store.appendClassification({ ...base, ts: new Date(Date.now() - 2 * 3600_000).toISOString(), chatId: "c1", taskId: "t1", path: ["code", "fix.bug"] })
+    store.appendClassification({ ...base, ts: new Date().toISOString(), chatId: "c2", taskId: "t2", path: ["ops", "deploy.staging"] })
+    expect(store.latestPathForChat("a", "telegram", "c1", "t1")).toEqual(["code", "fix.bug"])
+    expect(store.latestPathForChat("a", "telegram", "c2", "t2")).toEqual(["ops", "deploy.staging"])
+    expect(store.latestPathForChat("a", "telegram", "c1", "t1", 60_000)).toBeUndefined()
+    expect(store.latestPathForChat("b", "telegram", "c1", "t1")).toBeUndefined()
+  })
+
+  // #310: classification runs alongside the turn. Before it lands, the
+  // previous request in the same chat must not lend its path.
+  it("returns undefined when this task has no classification yet", () => {
+    store.appendClassification({ ...base, ts: new Date().toISOString(), chatId: "c1", taskId: "t-prev", path: ["code", "fix.bug"] })
+    expect(store.latestPathForChat("a", "telegram", "c1", "t-now")).toBeUndefined()
   })
 })

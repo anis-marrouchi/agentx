@@ -37,6 +37,9 @@ export interface ClassifyInput {
   /** Conversation id; stored on the classification so `agentx_wiki_query`
    *  can look up the path of the request it is serving. */
   chatId?: string
+  /** Run id exported to the agent as `AGENTX_TASK_ID`; stored with the
+   *  classification so a tool finds this turn's path, not the last one. */
+  taskId?: string
   /** Agent that will RECEIVE the message after classification. When this
    *  equals `draftAgent`, classification is skipped to prevent a deadlock —
    *  the classifier's sub-task would otherwise queue behind the in-progress
@@ -142,6 +145,7 @@ export class Classifier {
         channel: input.channel,
         sender: input.sender,
         chatId: input.chatId,
+        taskId: input.taskId,
         path: cached.path,
         proposedAxes: {},
         leaf: cached.leaf,
@@ -182,6 +186,7 @@ export class Classifier {
       channel: input.channel,
       sender: input.sender,
       chatId: input.chatId,
+      taskId: input.taskId,
       path,
       proposedAxes,
       leaf,

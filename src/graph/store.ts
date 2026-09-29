@@ -454,16 +454,16 @@ export class GraphStore {
   }
 
   /**
-   * The path the most recent classification in a conversation was filed
-   * under, or undefined. Used by tools running inside that conversation
-   * (`agentx_wiki_query`) to bias retrieval toward articles on the same
-   * branch. Bounded by age so a stale label from a day-old thread does not
-   * steer an unrelated question.
+   * The path the running turn `taskId` was filed under, or undefined. Used
+   * by tools running inside that turn (`agentx_wiki_query`) to bias
+   * retrieval toward articles on the same branch. Classification runs
+   * alongside the turn, so it may not have landed yet: then there is no
+   * path, rather than the previous request's. Bounded by age as well.
    */
-  latestPathForChat(agentId: string, channel: string, chatId: string, maxAgeMs = 6 * 60 * 60 * 1000): string[] | undefined {
+  latestPathForChat(agentId: string, channel: string, chatId: string, taskId: string, maxAgeMs = 6 * 60 * 60 * 1000): string[] | undefined {
     const since = Date.now() - maxAgeMs
     for (const c of this.readRecentClassifications(300)) {
-      if (c.agentId !== agentId || c.channel !== channel || c.chatId !== chatId) continue
+      if (c.agentId !== agentId || c.channel !== channel || c.chatId !== chatId || c.taskId !== taskId) continue
       if (Date.parse(c.ts) < since) return undefined
       return c.path.length ? c.path.slice() : undefined
     }
