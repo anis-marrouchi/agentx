@@ -1568,6 +1568,11 @@ export class AgentXDaemon {
       }
     }
 
+    // 8c. WhatsApp triage reads this.config on every message; just report it.
+    if (JSON.stringify(this.config.whatsappTriage) !== JSON.stringify(next.whatsappTriage)) {
+      applied.push(`whatsappTriage(${next.whatsappTriage.rules.length} rule(s))`)
+    }
+
     // 9. Swap in the new config so read-only endpoints (GET /crons etc.)
     //    reflect it, and router send-side paths see fresh channel config.
     const screenChanged = JSON.stringify(this.config.screen) !== JSON.stringify(next.screen)

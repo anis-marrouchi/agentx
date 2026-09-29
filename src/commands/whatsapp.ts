@@ -1,6 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { loadDaemonConfig } from "@/daemon/config"
+import { triage } from "@/commands/whatsapp-triage"
 
 // --- agentx whatsapp: list & ingest WhatsApp data into the wiki ---
 //
@@ -12,6 +13,8 @@ import { loadDaemonConfig } from "@/daemon/config"
 export const whatsapp = new Command()
   .name("whatsapp")
   .description("list WhatsApp chats/contacts and ingest them into the wiki as a data source")
+
+whatsapp.addCommand(triage)
 
 whatsapp
   .command("list-chats")
