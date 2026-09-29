@@ -328,6 +328,14 @@ Each entry in `decisions.seats.<seat>`:
 }
 ```
 
+## demo
+
+How long `agentx demo` waits while it starts. The demo reads this from the `agentx.json` in the folder you run it from. It needs no config file, so this is only for machines where it starts slowly.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `demo.startupTimeoutSeconds` | number (1–3600) | — | Seconds each startup step may take: each node answering `/health`, the dashboard answering `/live`, the nodes finding each other. Unset: `AGENTX_DEMO_STARTUP_TIMEOUT`, else 60, raised when the machine is busy (the 1-minute load average above the CPU count), up to 300. The `--startup-timeout` flag overrides both. |
+
 ## Check it worked
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
@@ -339,4 +347,5 @@ Each entry in `decisions.seats.<seat>`:
 - **`config check` names a field:** fix the value to match the type in the tables above. Ids for boards and columns must be lowercase.
 - **Dashboard changes don't show:** the dashboard is its own process. Restart it after changing `dashboard` settings.
 - **A mesh peer shows as down:** check its `url` and `token`, then raise `mesh.healthCheck.timeout` if the link is slow.
+- **`agentx demo` says `Timed out waiting for …`:** the machine is too busy for the startup limit. Run it again with `--startup-timeout 300`, or set `demo.startupTimeoutSeconds`. The line `Startup limit: …` at the top shows the value in use and where it came from.
 - **A backend key is empty at runtime:** the variable named in `apiKeyEnv` is missing from `.env`. Add it, then restart the daemon.

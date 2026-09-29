@@ -17,6 +17,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, openSync, 
 import { resolve, join } from "path"
 import { randomBytes } from "crypto"
 import { demoReportWorkflow } from "./demo-workflow"
+import { configStartupTimeout, resolveStartupTimeout } from "./demo-startup"
 
 interface NodeSpec {
   dir: string
@@ -152,9 +153,14 @@ async function waitFor(desc: string, fn: () => Promise<boolean>, timeoutMs: numb
   const start = Date.now()
   while (Date.now() - start < timeoutMs) {
     try { if (await fn()) return } catch { /* not ready */ }
-    await new Promise((r) => setTimeout(r, 500))
+    await new Promise((r) => setTimeout(r, 250))
   }
-  throw new Error(`Timed out waiting for ${desc} (${Math.round(timeoutMs / 1000)}s)`)
+  throw new Error(`Timed out waiting for ${desc} (${timeoutMs / 1000}s) — raise it with --startup-timeout <seconds>`)
+}
+
+/** One probe; a daemon that accepts but never answers must not outlast the limit. */
+function probe(url: string): Promise<Response> {
+  return fetch(url, { signal: AbortSignal.timeout(5000) })
 }
 
 async function post(port: number, path: string, body: object): Promise<any> {
@@ -183,9 +189,22 @@ export const demo = new Command()
   .option("--no-open", "don't open the dashboard in a browser")
   .option("--reuse", "resume an existing .agentx-demo instead of starting fresh (implies --keep)")
   .option("--bind <host>", "dashboard bind address", "127.0.0.1")
+  .option("--startup-timeout <seconds>", "seconds each startup step may take (default: 60, longer when the machine is loaded)")
   .action(async (opts) => {
     const basePort = parseInt(opts.basePort, 10)
     const root = resolve(process.cwd(), ".agentx-demo")
+    let startup: { seconds: number; source: string }
+    try {
+      startup = resolveStartupTimeout({
+        flag: opts.startupTimeout,
+        env: process.env.AGENTX_DEMO_STARTUP_TIMEOUT,
+        config: configStartupTimeout(process.cwd()),
+      })
+    } catch (e: any) {
+      console.error(chalk.red(e.message))
+      process.exit(1)
+    }
+    const startupMs = startup.seconds * 1000
     const specs = buildSpecs(root, basePort)
     const tokenFile = join(root, "mesh-token")
     // A resumed demo keeps its history, so a container restart or a lesson
@@ -214,6 +233,7 @@ export const demo = new Command()
     console.log(chalk.bold("  agentx demo — one message, three machines (simulated on loopback)"))
     console.log(chalk.yellow("  Canned model responses. Real daemons, real A2A mesh, real ledger."))
     console.log(chalk.dim("  Run `agentx setup` to wire real agents.\n"))
+    console.log(chalk.dim(`  Startup limit: ${startup.seconds}s per step (${startup.source})`))
 
     let tearingDown = false
     const teardown = (code: number) => {
@@ -252,16 +272,16 @@ export const demo = new Command()
         console.log(chalk.dim(`  ▸ ${spec.name} starting on 127.0.0.1:${spec.port} (log: ${join(spec.dir, "daemon.log")})`))
       }
 
-      for (const spec of specs) {
-        await waitFor(`${spec.name} /health`, async () => {
-          const r = await fetch(`http://127.0.0.1:${spec.port}/health`)
-          return r.ok
-        }, 30_000)
-      }
-      console.log(chalk.green("  ✓ three daemons up"))
+      const waitHealthy = (spec: NodeSpec) => waitFor(`${spec.name} /health`, async () => {
+        const r = await probe(`http://127.0.0.1:${spec.port}/health`)
+        return r.ok
+      }, startupMs)
 
       // One dashboard process, attached to laptop-paris — it discovers the
-      // other two nodes over the mesh, so /live shows the whole fleet.
+      // other two nodes over the mesh, so /live shows the whole fleet. It
+      // boots while the other two daemons still are; laptop-paris must be
+      // up first, as the dashboard shares its database.
+      await waitHealthy(specs[0])
       const dashPort = specs[0].port + 10
       {
         const logFd = openSync(join(specs[0].dir, "board.log"), "a")
@@ -272,18 +292,21 @@ export const demo = new Command()
         })
         children.push(child)
       }
+      for (const spec of specs.slice(1)) await waitHealthy(spec)
+      console.log(chalk.green("  ✓ three daemons up"))
+
       await waitFor("dashboard /live", async () => {
-        const r = await fetch(`http://127.0.0.1:${dashPort}/live`)
+        const r = await probe(`http://127.0.0.1:${dashPort}/live`)
         return r.ok
-      }, 30_000)
+      }, startupMs)
       console.log(chalk.green("  ✓ dashboard up"))
 
       await waitFor("mesh discovery (laptop sees both peers)", async () => {
-        const r = await fetch(`http://127.0.0.1:${specs[0].port}/health`)
+        const r = await probe(`http://127.0.0.1:${specs[0].port}/health`)
         const h: any = await r.json()
         const healthy = (h.mesh || []).filter((p: any) => p.healthy && p.skills?.length)
         return healthy.length >= 2
-      }, 30_000)
+      }, startupMs)
       // Note: on loopback the daemon's mesh-auth gate exempts callers by
       // design, so don't claim token *verification* here — tokens are sent
       // and the gate is exercised only on non-loopback deployments.

@@ -3005,6 +3005,7 @@ No flags.
 | `--no-open` | — | Don't open the dashboard in a browser. |
 | `--reuse` | — | Resume an existing .agentx-demo instead of starting fresh (implies --keep). |
 | `--bind <host>` | `127.0.0.1` | Dashboard bind address. |
+| `--startup-timeout <seconds>` | — | Seconds each startup step may take. Unset: `AGENTX_DEMO_STARTUP_TIMEOUT`, then [`demo.startupTimeoutSeconds`](./config-operations.md#demo), else 60 (longer when the machine is busy, up to 300). |
 
 ## exec (advanced)
 
