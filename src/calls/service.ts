@@ -101,7 +101,7 @@ export class CallService {
   private async ring(call: Call): Promise<"widget" | "notify" | false> {
     const focus = (this.deps.focus ?? readFocus)()
     if (focus.active && call.urgency !== "urgent") {
-      this.deps.store.update(call.id, { status: "missed", ringingSince: null, note: focusLabel(focus) })
+      if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: focusLabel(focus) })) return false
       await this.notice(call, `Missed call from ${this.name(call.agentId)}`)
       return false
     }
@@ -139,13 +139,15 @@ export class CallService {
     const now = this.now()
     const ringFor = this.deps.config().ringSeconds * 1000
     for (const call of this.deps.store.list({ status: ["ringing", "later"], limit: 200 })) {
+      // The list was read before any await below: each move re-checks the
+      // status in the store, so a call answered meanwhile is left alone.
       if (call.status === "ringing" && call.ringingSince !== null && now - call.ringingSince >= ringFor) {
-        this.deps.store.update(call.id, { status: "missed", ringingSince: null, note: "not answered" })
+        if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: "not answered" })) continue
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} missed`)
         await this.notice(call, `Missed call from ${this.name(call.agentId)}`)
       } else if (call.status === "later" && call.ringAgainAt !== null && now >= call.ringAgainAt) {
-        const again = this.deps.store.update(call.id, { status: "ringing", ringingSince: now, ringAgainAt: null })!
-        await this.ring(again)
+        const again = this.deps.store.transition(call.id, "later", { status: "ringing", ringingSince: now, ringAgainAt: null })
+        if (again) await this.ring(again)
       }
     }
   }
@@ -154,8 +156,8 @@ export class CallService {
   answer(id: string): CallResult & { opener?: string } {
     const call = this.deps.store.get(id)
     if (!call) return unknown(id)
-    if (call.status !== "ringing") return { ok: false, status: 409, error: `call is ${call.status}, not ringing` }
-    const answered = this.deps.store.update(id, { status: "answered", answeredAt: this.now(), ringingSince: null })!
+    const answered = this.deps.store.transition(id, "ringing", { status: "answered", answeredAt: this.now(), ringingSince: null })
+    if (!answered) return { ok: false, status: 409, error: `call is ${this.deps.store.get(id)?.status}, not ringing` }
     this.deps.log?.(`[calls] ${id} answered (${call.agentId})`)
     return { ok: true, call: answered, opener: openerPrompt(answered) }
   }
@@ -163,20 +165,20 @@ export class CallService {
   decline(id: string): CallResult {
     const call = this.deps.store.get(id)
     if (!call) return unknown(id)
-    if (call.status !== "ringing" && call.status !== "later") return { ok: false, status: 409, error: `call is ${call.status}` }
-    return { ok: true, call: this.deps.store.update(id, { status: "declined", endedAt: this.now(), ringingSince: null, ringAgainAt: null })! }
+    const declined = this.deps.store.transition(id, ["ringing", "later"], { status: "declined", endedAt: this.now(), ringingSince: null, ringAgainAt: null })
+    return declined ? { ok: true, call: declined } : { ok: false, status: 409, error: `call is ${this.deps.store.get(id)?.status}` }
   }
 
   /** "Call back in N min": it rings again then. */
   later(id: string, minutes?: unknown): CallResult {
     const call = this.deps.store.get(id)
     if (!call) return unknown(id)
-    if (call.status !== "ringing") return { ok: false, status: 409, error: `call is ${call.status}, not ringing` }
     const n = minutes === undefined ? LATER_DEFAULT_MINUTES : Number(minutes)
     if (!Number.isInteger(n) || n < 1 || n > LATER_MAX_MINUTES) {
       return { ok: false, status: 400, error: `minutes must be a whole number from 1 to ${LATER_MAX_MINUTES}` }
     }
-    return { ok: true, call: this.deps.store.update(id, { status: "later", ringingSince: null, ringAgainAt: this.now() + n * 60_000 })! }
+    const later = this.deps.store.transition(id, "ringing", { status: "later", ringingSince: null, ringAgainAt: this.now() + n * 60_000 })
+    return later ? { ok: true, call: later } : { ok: false, status: 409, error: `call is ${this.deps.store.get(id)?.status}, not ringing` }
   }
 
   /** End an answered call. The summary is written in the background;
@@ -184,8 +186,8 @@ export class CallService {
   hangup(id: string): CallResult & { summarized?: Promise<void> } {
     const call = this.deps.store.get(id)
     if (!call) return unknown(id)
-    if (call.status !== "answered") return { ok: false, status: 409, error: `call is ${call.status}, not answered` }
-    const ended = this.deps.store.update(id, { status: "ended", endedAt: this.now() })!
+    const ended = this.deps.store.transition(id, "answered", { status: "ended", endedAt: this.now() })
+    if (!ended) return { ok: false, status: 409, error: `call is ${call.status}, not answered` }
     this.deps.log?.(`[calls] ${id} ended (${call.agentId})`)
     const summarize = this.deps.summarize
     if (!this.deps.config().summary || !summarize) return { ok: true, call: ended }

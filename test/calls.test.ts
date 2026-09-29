@@ -19,6 +19,8 @@ let cfg: CallsConfig
 let notices: Array<{ title: string; message: string; urgent: boolean; from: string }>
 let filed: Array<{ call: Call; summary: string }>
 let summaryText: string | null
+/** Notices wait on this, to hold a sweep mid-way. */
+let gate: Promise<void>
 let calls: CallService
 
 beforeEach(() => {
@@ -28,11 +30,12 @@ beforeEach(() => {
   notices = []
   filed = []
   summaryText = "We agreed to ship on Friday."
+  gate = Promise.resolve()
   const deps: CallDeps = {
     store: new CallStore(new Database(":memory:")),
     config: () => cfg,
     agentName: (id) => ({ writer: "Writer", ops: "Ops" } as Record<string, string>)[id] ?? null,
-    alert: async (n) => { notices.push(n) },
+    alert: async (n) => { notices.push(n); await gate },
     summarize: async () => summaryText,
     file: (call, summary) => { filed.push({ call, summary }) },
     focus: () => focus,
@@ -177,6 +180,34 @@ describe("lifecycle", () => {
     expect(await calls.ringing()).toEqual([])
     expect(calls.get(call.id)).toMatchObject({ status: "missed", note: "not answered" })
     expect(notices.at(-1)).toMatchObject({ title: "Missed call from Writer" })
+  })
+
+  it("a call answered while a sweep is mid-way stays answered", async () => {
+    cfg = { ...cfg, allow: ["*"] }
+    await widgetUp()
+    const a = await calls.request({ agentId: "writer", reason: "first" })
+    const b = await calls.request({ agentId: "ops", reason: "second" })
+    if (!a.ok || !b.ok) throw new Error("not placed")
+    now += cfg.ringSeconds * 1000
+    let release!: () => void
+    gate = new Promise((r) => { release = r })
+    // The sweep read both as overdue, marked the newest missed, and now
+    // waits on its notice; the owner picks up the other one meanwhile.
+    const sweeping = calls.sweep()
+    await new Promise((r) => setTimeout(r, 0))
+    expect(calls.answer(a.call.id).ok).toBe(true)
+    release()
+    await sweeping
+    expect(calls.get(a.call.id)?.status).toBe("answered")
+    expect(calls.get(b.call.id)?.status).toBe("missed")
+    expect(notices.filter((n) => n.title.startsWith("Missed"))).toHaveLength(1)
+  })
+
+  it("two sweeps at once send one missed notice", async () => {
+    await ringingCall()
+    now += cfg.ringSeconds * 1000
+    await Promise.all([calls.sweep(), calls.sweep(), calls.ringing()])
+    expect(notices.filter((n) => n.title.startsWith("Missed"))).toHaveLength(1)
   })
 
   it("later rings again when due", async () => {

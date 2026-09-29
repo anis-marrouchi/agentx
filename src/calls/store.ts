@@ -69,6 +69,23 @@ export class CallStore {
     return this.get(id)
   }
 
+  /** Change a call only if it is still `from`: the check and the write are
+   *  one statement, so two sweeps, or a sweep and the owner answering,
+   *  cannot both move the same call. Undefined when it had moved on. */
+  transition(id: string, from: CallStatus | CallStatus[], patch: Partial<Omit<Call, "id" | "agentId" | "createdAt">>): Call | undefined {
+    const statuses = Array.isArray(from) ? from : [from]
+    const cols: Record<string, string> = {
+      status: "status", ringingSince: "ringing_since", answeredAt: "answered_at", endedAt: "ended_at",
+      ringAgainAt: "ring_again_at", note: "note", summary: "summary",
+    }
+    const keys = Object.keys(patch).filter((k) => k in cols)
+    const set = keys.map((k) => `${cols[k]}=?`).join(", ")
+    const marks = statuses.map(() => "?").join(",")
+    const changed = this.db.prepare(`UPDATE calls SET ${set} WHERE id=? AND status IN (${marks})`)
+      .run(...keys.map((k) => (patch as any)[k] ?? null), id, ...statuses).changes
+    return changed ? this.get(id) : undefined
+  }
+
   /** Newest first; only these statuses when given. */
   list(opts: { status?: CallStatus[]; limit?: number } = {}): Call[] {
     const limit = Math.min(Math.max(opts.limit ?? 50, 1), 200)

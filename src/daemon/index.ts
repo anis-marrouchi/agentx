@@ -183,6 +183,7 @@ export class AgentXDaemon {
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
+  private callSweep?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
   private webrtc?: WebRtcSignalBroker
@@ -1057,6 +1058,7 @@ export class AgentXDaemon {
     }
 
     if (this.attachSweep) clearInterval(this.attachSweep)
+    if (this.callSweep) clearInterval(this.callSweep)
 
     if (this.httpServer) {
       this.httpServer.close()
@@ -2666,7 +2668,8 @@ export class AgentXDaemon {
       log: (m) => this.log(m),
     })
     // Missed and call-back times pass with or without the widget polling.
-    setInterval(() => { void calls.sweep().catch(() => {}) }, 5_000).unref()
+    this.callSweep = setInterval(() => { void calls.sweep().catch(() => {}) }, 5_000)
+    this.callSweep.unref()
     return calls
   }
 
