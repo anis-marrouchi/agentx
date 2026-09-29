@@ -160,7 +160,8 @@ export class VoiceHealth {
       const missing: MissingVoice[] = found.map((m) => ({ ...m, since: before.get(m.voice)?.since ?? now.toISOString(), ...(before.get(m.voice)?.notifiedAt ? { notifiedAt: before.get(m.voice)!.notifiedAt } : {}) }))
       const back = [...before.keys()].filter((v) => !found.some((m) => m.voice === v))
       for (const v of back) this.deps.log(`[voice] ${voiceDisplayName(v)} is installed again; its agents speak with it again`)
-      if (back.length) forgetWarnings((k) => back.some((v) => k.endsWith(`:${v}`)))
+      // Keys are "<owner>:<name>", and findVoice's Siri stand-in warns as the name itself.
+      if (back.length) forgetWarnings((k) => back.some((v) => k === v || k.endsWith(`:${v}`)))
       const untold = missing.filter((m) => !m.notifiedAt)
       if (untold.length) {
         const { title, message } = missingNotice(untold)
@@ -175,7 +176,8 @@ export class VoiceHealth {
       }
       this.missingNow = missing.length > 0
       const state = { checkedAt: now.toISOString(), missing }
-      writeVoiceHealth(file, state)
+      // Only on a change: this runs every minute, often on a nearly full disk.
+      if (!existsSync(file) || JSON.stringify(missing) !== JSON.stringify([...before.values()])) writeVoiceHealth(file, state)
       return state
     } finally {
       this.running = false

@@ -161,6 +161,28 @@ describe("VoiceHealth", () => {
     expect(sent).toHaveLength(1)
   })
 
+  it("warns about the Siri stand-in again after the voice came back and went missing again", async () => {
+    // Samantha, not Nora: only a same-language voice of that name stands in (and warns).
+    const siri = { agents: agents({ secretary: { system: "siri:samantha" } }), voice: {} }
+    const samantha = parseSiriAssets(["com.apple.siri.tts.voice.en_US.samantha.neural.premium-en_US-iPhone"])
+    const standIn = () => log.filter((l) => l.includes('Siri voice "samantha" is not installed')).length
+    const h = health()
+    await h.check(siri, PURGED)
+    const first = standIn()
+    await h.check(siri, [...PURGED, ...samantha])
+    await h.check(siri, PURGED)
+    expect(standIn()).toBe(first + 1)
+  })
+
+  it("rewrites the state file only when it changed", async () => {
+    const h = health()
+    await h.check(cfg, PURGED, new Date("2026-09-29T10:00:00Z"))
+    await h.check(cfg, PURGED, new Date("2026-09-29T10:01:00Z"))
+    expect(readVoiceHealth(file)?.checkedAt).toBe("2026-09-29T10:00:00.000Z")
+    await h.check(cfg, RESTORED, new Date("2026-09-29T10:02:00Z"))
+    expect(readVoiceHealth(file)).toMatchObject({ checkedAt: "2026-09-29T10:02:00.000Z", missing: [] })
+  })
+
   it("does nothing without a voice list", async () => {
     expect(await health().check(cfg, [])).toBeNull()
     expect(readVoiceHealth(file)).toBeNull()

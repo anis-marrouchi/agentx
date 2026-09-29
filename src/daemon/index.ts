@@ -1082,7 +1082,6 @@ export class AgentXDaemon {
     process.exit(this.exitCode)
   }
 
-  /** In-flight work the drain waits for: local agent tasks + mesh forwards. */
   /** Deliver a notice to the owner through the channel router: the
    *  address it was given, else notifications.channel (push or ntfy). */
   private ownerSender(): Sender {
@@ -1100,6 +1099,7 @@ export class AgentXDaemon {
     }
   }
 
+  /** In-flight work the drain waits for: local agent tasks + mesh forwards. */
   private inflightCounts(): { local: number; meshForwards: number; total: number } {
     const local = this.registry.getActiveTaskCount()
     const meshForwards = this.router.getActiveMeshForwardCount()
