@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.75.0](https://github.com/anis-marrouchi/agentx/compare/v0.74.0...v0.75.0) (2026-09-29)
+
+
+### Features
+
+* **camera:** an agent watches the phone camera and asks to see ([#325](https://github.com/anis-marrouchi/agentx/issues/325) phases 2 and 3) ([#335](https://github.com/anis-marrouchi/agentx/issues/335)) ([e687679](https://github.com/anis-marrouchi/agentx/commit/e68767980879da1d03d07126bc2b7fea807434b6))
+
 ## [0.74.0](https://github.com/anis-marrouchi/agentx/compare/v0.73.0...v0.74.0) (2026-09-29)
 
 
