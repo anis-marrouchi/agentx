@@ -103,6 +103,9 @@ export interface RunningTask {
   /** The step the run is in right now (classify, compact, agent, …). A run
    *  that hangs shows here where it stopped. */
   step?: string
+  /** Intent-graph path this request was classified under, once known.
+   *  Classification runs alongside the turn, so it is absent until then. */
+  intentPath?: string[]
 }
 
 type TaskOutputSubscriber = (chunk: string) => void
@@ -1554,7 +1557,11 @@ export class AgentRegistry {
           agentId: task.agentId,
         })
         .then(
-          (r) => { intent = r || undefined; recordPipelineStep("classify", classifyStartedAt, "ok") },
+          (r) => {
+            intent = r || undefined
+            if (intent?.path?.length) runningTask.intentPath = intent.path.slice()
+            recordPipelineStep("classify", classifyStartedAt, "ok")
+          },
           (e: any) => {
             this.log(`[classifier] classify failed for ${task.agentId}: ${e?.message || e}`)
             recordPipelineStep("classify", classifyStartedAt, "error")
@@ -2970,6 +2977,24 @@ export class AgentRegistry {
   /** True while `agentId` has a turn running on this chat. */
   isChatBusy(agentId: string, channel: string, chatId: string): boolean {
     return this.messageQueue.isBusy(agentId, channel, chatId)
+  }
+
+  /**
+   * The intent path of the turn running right now for this conversation,
+   * or undefined while it is not classified yet (or nothing is running).
+   * Tools launched by that turn ask for it through GET /agents/:id/intent-path;
+   * reading the classification log instead would hand them the previous
+   * request's path, since this turn's classification may still be in flight.
+   */
+  runningIntentPath(agentId: string, channel: string, chatId: string): string[] | undefined {
+    const state = this.agents.get(agentId)
+    if (!state) return undefined
+    let latest: RunningTask | undefined
+    for (const r of state.runningTasks) {
+      if (r.channel !== channel || r.chatId !== chatId) continue
+      if (!latest || r.startedAt > latest.startedAt) latest = r
+    }
+    return latest?.intentPath?.slice()
   }
 
   /**

@@ -161,6 +161,29 @@ export function callerFields(env: NodeJS.ProcessEnv = process.env): Record<strin
   return out
 }
 
+/** The intent-graph path of the turn this process belongs to, from the
+ *  daemon, with the configured retrieval weight. Undefined outside a
+ *  running turn, before it is classified, or when the daemon is away. */
+async function runningIntentPath(): Promise<{ path?: string[]; graphWeight?: number } | undefined> {
+  const agent = process.env.AGENTX_AGENT_ID
+  const caller = callerFields()
+  if (!agent || !caller.callerChannel || !caller.callerChatId) return undefined
+  try {
+    const q = new URLSearchParams({ channel: caller.callerChannel, chatId: caller.callerChatId })
+    const res = await fetch(`${daemonUrl()}/agents/${encodeURIComponent(agent)}/intent-path?${q}`, {
+      signal: AbortSignal.timeout(2000),
+    })
+    if (!res.ok) return undefined
+    const body = (await res.json()) as { path?: string[] | null; graphWeight?: number }
+    return {
+      ...(Array.isArray(body.path) && body.path.length ? { path: body.path } : {}),
+      ...(typeof body.graphWeight === "number" ? { graphWeight: body.graphWeight } : {}),
+    }
+  } catch {
+    return undefined
+  }
+}
+
 /** Test seams. `_reset…` drops the memoized value so a caller can change
  *  env/cwd; `_resolve…` exposes the uncached resolution itself. */
 export function _resetDaemonUrlForTesting(): void {
@@ -1258,18 +1281,17 @@ async function handleToolCall(
       const maxHops = typeof args.max_hops === "number" ? Math.min(3, Math.max(0, args.max_hops)) : 2
       // The request this tool serves was classified into the intent graph
       // on its way in. Articles on the same branch rank higher; without
-      // this the graph weight of the retrieval score multiplied zero.
-      let messagePath: string[] | undefined
-      const caller = callerFields()
-      const callerAgent = process.env.AGENTX_AGENT_ID
-      if (callerAgent && caller.callerChannel && caller.callerChatId) {
-        try {
-          const { GraphStore } = await import("@/graph")
-          const graph = new GraphStore({ baseDir: resolve(process.cwd(), ".agentx/graph"), log: () => undefined })
-          messagePath = graph.latestPathForChat(callerAgent, caller.callerChannel, caller.callerChatId)
-        } catch { /* no graph: plain retrieval */ }
-      }
-      const result = await agenticQuery(question, store, agentId, { maxHops, messagePath })
+      // this the graph weight of the retrieval score multiplied zero. The
+      // daemon answers for the turn that is running now, or with nothing
+      // while that turn's classification is still in flight: reading the
+      // classification log here would hand back the previous request's
+      // path, since classification runs alongside the turn.
+      const branch = await runningIntentPath()
+      const result = await agenticQuery(question, store, agentId, {
+        maxHops,
+        messagePath: branch?.path,
+        ...(branch?.graphWeight !== undefined ? { graphWeight: branch.graphWeight } : {}),
+      })
       if (result.status !== "ok") {
         return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
       }

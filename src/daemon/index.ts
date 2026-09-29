@@ -4059,6 +4059,26 @@ export class AgentXDaemon {
       // Operator switch: turn one schedule on or off, then hot-reload crons.
       //   POST /crons/:id/enabled   body: { enabled: boolean }
       // 200 → { ok, id, enabled, changed }   404 unknown id   409 awaiting approval
+      // The intent-graph path of the turn running now in a conversation.
+      //   GET /agents/:id/intent-path?channel=&chatId=
+      // 200 → { path: string[] | null, graphWeight }
+      // `path` is null while nothing runs there or the running turn is not
+      // classified yet. Tools the turn launched (agentx_wiki_query) read it
+      // from here rather than from the classification log, which would
+      // still hold the previous request's path.
+      const intentPathMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/intent-path$/)
+      if (intentPathMatch) {
+        const channel = url.searchParams.get("channel") || ""
+        const chatId = url.searchParams.get("chatId") || ""
+        if (!channel || !chatId) { this.json(res, 400, { error: "channel and chatId are required" }); return }
+        const agentId = decodeURIComponent(intentPathMatch[1])
+        this.json(res, 200, {
+          path: this.registry.runningIntentPath(agentId, channel, chatId) ?? null,
+          graphWeight: this.config.graph?.retrievalWeights?.graph ?? 0.6,
+        })
+        return
+      }
+
       const cronEnabledMatch = req.method === "POST" && path.match(/^\/crons\/([^/]+)\/enabled$/)
       if (cronEnabledMatch) {
         const body = await readJsonBody(req).catch(() => ({})) as { enabled?: unknown }

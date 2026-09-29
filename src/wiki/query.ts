@@ -291,10 +291,19 @@ async function selectCandidatesViaSeat(
 export const DEFAULT_GRAPH_WEIGHT = 0.6
 
 /**
- * Order the catalog pool for a question: text match (BM25 over title, tags
- * and wikilinks, scaled to 0–1) plus, when the request was classified,
- * how much of the intent-graph path each article shares with it. Articles
- * the text match never scored keep their catalog order at the end.
+ * Order the catalog pool for a question. Three bands, never mixed:
+ *
+ *   1. articles the text match scored, ordered by `text * (1 + w * branch)`
+ *      when the request was classified: the branch reorders text matches
+ *      but cannot lift an unrelated article above one;
+ *   2. articles on the request's branch that the text never matched, by
+ *      how much of the path they share;
+ *   3. the rest, in catalog order.
+ *
+ * Band 1 comes first in full because the shortlist the reranker sees is
+ * finite (DEFAULT_SHORTLIST): a busy category holds more same-branch
+ * articles than that, and a blended score let them push the article that
+ * actually answers the question out of the list.
  *
  * Exported for tests; the seat and the CLI selector both consume the order.
  */
@@ -311,12 +320,19 @@ export function rankCatalogPool(
   const maxBm25 = bm25.reduce((m, r) => Math.max(m, r.score), 0)
   const text = new Map(bm25.map((r) => [r.docIndex, maxBm25 > 0 ? r.score / maxBm25 : 0]))
   const useGraph = !!messagePath?.length
-  const combined = pool.map((a, i) => {
-    const t = text.get(i) ?? 0
-    const g = useGraph && a.graphPath?.length ? ancestryScore(messagePath!, a.graphPath) : 0
-    return { i, score: useGraph ? (1 - graphWeight) * t + graphWeight * g : t, scored: text.has(i) || g > 0 }
-  })
-  const ranked = combined.filter((c) => c.scored).sort((x, y) => y.score - x.score || x.i - y.i).map((c) => c.i)
+  const branch = (a: { graphPath?: string[] }) =>
+    useGraph && a.graphPath?.length ? ancestryScore(messagePath!, a.graphPath) : 0
+
+  const byScore = (x: { i: number; score: number }, y: { i: number; score: number }) => y.score - x.score || x.i - y.i
+  const matched = pool
+    .map((a, i) => ({ i, score: (text.get(i) ?? 0) * (1 + graphWeight * branch(a)) }))
+    .filter((c) => text.has(c.i))
+    .sort(byScore)
+  const branchOnly = pool
+    .map((a, i) => ({ i, score: branch(a) }))
+    .filter((c) => !text.has(c.i) && c.score > 0)
+    .sort(byScore)
+  const ranked = [...matched, ...branchOnly].map((c) => c.i)
   for (let i = 0; i < pool.length; i++) if (!ranked.includes(i)) ranked.push(i)
   return ranked
 }
