@@ -57,3 +57,19 @@ export function recordBoot(agentxDir: string, now = Date.now()): number[] {
   } catch { /* best effort: without history the brake just can't trip */ }
   return boots
 }
+
+/** What the calling agent is told when a cut-off agent-to-agent run has
+ *  been re-run: the request it made, and the answer. Bounded, so a long
+ *  answer cannot blow up the caller's turn. */
+export function resumedAnswerText(
+  run: Pick<InterruptedRun, "agentId" | "originalMessage">,
+  response: { content?: string; error?: string },
+  maxChars = 12_000,
+): string {
+  const asked = (run.originalMessage ?? "").replace(/\s+/g, " ").trim().slice(0, 300) || "(no message recorded)"
+  const head = `[AgentX resume] Your earlier request to ${run.agentId} was cut off by a daemon restart and has been run again.`
+  if (response.error) return `${head}\nIt failed this time: ${response.error}\nThe request was: ${asked}`
+  const answer = (response.content ?? "").trim()
+  const body = answer.length > maxChars ? `${answer.slice(0, maxChars)}\n[answer cut at ${maxChars} characters]` : answer
+  return `${head}\nThe request was: ${asked}\n\nIts answer:\n${body || "(empty)"}`
+}

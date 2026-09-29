@@ -1,5 +1,5 @@
 import type { InterruptedRun } from "@/storage/traces"
-import { parseOrigin, type RunOrigin } from "./origin"
+import { callerAgentOf, parseOrigin, type RunOrigin } from "./origin"
 
 // --- What to do with each run a restart cut off ---
 //
@@ -14,7 +14,9 @@ import { parseOrigin, type RunOrigin } from "./origin"
 //   report  too old — older than maxAgeMinutes
 //   report  no way back in — no recorded origin (older builds, or too big)
 //   report  channel opted out, or a direct run on a channel not opted in
-//           (a mesh run is not direct: the forwarding node delivers it)
+//           (a mesh run is not direct: the forwarding node delivers it;
+//           an agent-to-agent run that names its calling agent is not
+//           either: the answer goes to that agent as a new turn)
 //   resume  otherwise
 //
 // "report" means: don't run it again, tell the chat it came from (or the
@@ -83,6 +85,8 @@ export function planResume(
     if (settings.reportOnlyChannels.map((c) => c.toLowerCase()).includes(ch)) {
       return { run, action: "report", origin, reason: `channel "${ch}" is set to report only` }
     }
+    const caller = callerAgentOf(origin)
+    if (caller) return { run, action: "resume", origin, reason: `cut off by a restart; the answer goes to ${caller}` }
     if (origin.kind === "direct" && !settings.directChannels.map((c) => c.toLowerCase()).includes(ch)) {
       return { run, action: "report", origin, reason: `nothing would deliver its answer (channel "${ch || "none"}")` }
     }
