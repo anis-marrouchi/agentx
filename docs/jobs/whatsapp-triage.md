@@ -84,7 +84,7 @@ Everything is in the `wacli` section of `agentx.json`; see the [settings referen
 - **Batch window** (`batchSeconds`, default 30): messages from one chat that arrive this close together become one task, so a burst of five short messages is read once.
 - **Read images and voice notes** (`media`, default on): images are opened by the agent; voice notes are turned into text when this computer has speech to text (see [voice](/dashboard/voice)).
 - **Send acknowledgements without asking** (`autoAck`, per rule, default off): for an `ack` message, the agent's short reply goes out without waiting for you. Leave it off unless you trust the agent with that chat. It never applies during quiet hours.
-- **Quiet hours**: no notifications and no automatic acknowledgements in this window. Messages are still sorted and drafts still wait in Approvals.
+- **Quiet hours** (`quietHours`, per rule): no notifications and no automatic acknowledgements in this window. Messages are still sorted and drafts still wait in Approvals.
 
 ## Check it worked
 
