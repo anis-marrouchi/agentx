@@ -46,6 +46,8 @@ export interface InboxItem {
   created_at: string
   /** A short excerpt of what is being decided. */
   detail?: string
+  /** The exact text a yes sends, shown whole. */
+  message?: string
   /** The source's own command for the full record. */
   more?: string
   snoozed_until?: string
@@ -85,13 +87,15 @@ function cardItems(ctx: InboxContext): InboxItem[] {
 }
 
 function cardItem(c: DecisionCard): InboxItem {
+  const sends = c.action?.kind === "wacli.send"
   return {
     key: `card:${c.id}`,
     kind: "card",
     title: c.title,
     ask: c.ask,
-    yes: `tell ${c.raised_by} yes`,
-    no: `tell ${c.raised_by} no`,
+    yes: sends ? `send this on WhatsApp${c.action!.label ? ` to ${c.action!.label}` : ""}` : `tell ${c.raised_by} yes`,
+    no: sends ? "send nothing" : `tell ${c.raised_by} no`,
+    ...(sends ? { message: c.action!.message } : {}),
     recommend: c.recommend,
     if_silent: c.if_silent,
     expires: c.expires,
@@ -298,7 +302,9 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
   switch (kind) {
     case "card": {
       const r = decideCard(ctx.root, ref, yes ? "yes" : "no", { by, note: opts.note, now })
-      return r.ok ? { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}` } : r
+      if (!r.ok) return r
+      if (r.card.action) return { ok: true, message: `${key}: ${yes ? "the reply goes out within a minute" : "nothing will be sent"}` }
+      return { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}` }
     }
     case "schedule": {
       const r = await (yes ? approveSchedule : rejectSchedule)(ref, { configPath: configPathFor(ctx), reload: ctx.reload })

@@ -21,6 +21,29 @@ export const IF_SILENT_VALUES: readonly IfSilent[] = ["discard", "keep", "pause"
 export type CardStatus = "pending" | "decided" | "expired"
 export type Verdict = "yes" | "no"
 
+/**
+ * Something the daemon does once, only when the operator says yes (never
+ * on expiry, whatever `if_silent` says). Daemon code attaches it (see
+ * src/wacli); `POST /approvals` and the MCP tool can't, so an agent can't
+ * raise a card that acts on its own.
+ */
+export interface CardAction {
+  kind: "wacli.send"
+  /** Chat JID. */
+  to: string
+  message: string
+  /** WhatsApp message id to quote. */
+  replyTo?: string
+  /** Who it goes to, in words, for the operator. */
+  label?: string
+}
+
+export interface ActionResult {
+  at: string
+  ok: boolean
+  error?: string
+}
+
 /** Where the agent was asked, so the verdict can be taken back there. */
 export interface ReplyTarget {
   channel: string
@@ -51,6 +74,9 @@ export interface DecisionCard {
   note?: string
   /** Set once the raising agent has been told the result. */
   agent_notified_at?: string
+  action?: CardAction
+  /** Set when the action was run, before it runs: it never runs twice. */
+  action_result?: ActionResult
 }
 
 export const CARD_LIMITS = {
@@ -211,11 +237,12 @@ export function buildCard(
   }
 }
 
-/** Validate, enforce the per-agent cap, and save. */
+/** Validate, enforce the per-agent cap, and save. `action` is for daemon
+ *  code only; the API and the MCP tool never pass it. */
 export function createCard(
   root: string,
   input: CardInput,
-  opts: { now?: number; settings?: CardSettings } = {},
+  opts: { now?: number; settings?: CardSettings; action?: CardAction } = {},
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const built = buildCard(input, opts)
   if (!built.ok) return built
@@ -223,8 +250,9 @@ export function createCard(
   if (open >= CARD_LIMITS.pendingPerAgent) {
     return { ok: false, error: `${built.card.raised_by} already has ${open} cards waiting; wait for decisions before raising more` }
   }
-  saveCard(root, built.card)
-  return built
+  const card = opts.action ? { ...built.card, action: opts.action } : built.card
+  saveCard(root, card)
+  return { ok: true, card }
 }
 
 /** Record the operator's answer. Refuses anything no longer pending. */
@@ -279,6 +307,13 @@ export function markAgentNotified(root: string, id: string, now: number = Date.n
   saveCard(root, { ...card, agent_notified_at: new Date(now).toISOString() })
 }
 
+function actionOutcome(card: DecisionCard): string {
+  const r = card.action_result
+  if (card.status !== "decided" || card.verdict !== "yes") return "Nothing was sent."
+  if (!r) return "The reply hasn't been sent yet."
+  return r.ok ? "The reply was sent." : `Sending the reply failed: ${r.error ?? "unknown error"}. Nothing else was tried.`
+}
+
 /** What the raising agent is told. Plain text, one short message. */
 export function verdictMessage(card: DecisionCard): string {
   const result = card.status === "decided"
@@ -289,6 +324,7 @@ export function verdictMessage(card: DecisionCard): string {
     `Question: ${card.ask}`,
     result,
   ]
+  if (card.action) lines.push(actionOutcome(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)

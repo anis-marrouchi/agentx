@@ -37,6 +37,7 @@ function printItem(item: InboxItem): void {
   if (item.recommend) console.log(`    ${chalk.green("Recommends:")} ${item.recommend}`)
   if (item.expires) console.log(chalk.yellow(`    Expires ${when(item.expires)}; then: ${item.if_silent}`))
   if (item.detail) console.log(chalk.dim(`    ${item.detail}`))
+  if (item.message) console.log(`    ${chalk.cyan("Sends:")} ${item.message.replace(/\n/g, "\n    ")}`)
   if (item.source) console.log(chalk.dim(`    ${item.source}`))
   console.log(chalk.dim(`    yes: ${item.yes} · no: ${item.no}${item.more ? ` · more: ${item.more}` : ""}`))
 }

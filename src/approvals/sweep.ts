@@ -1,4 +1,5 @@
-import { cardsAwaitingAgentNotice, expireCards, markAgentNotified, verdictMessage, type DecisionCard } from "./cards"
+import { cardsAwaitingAction, runCardAction } from "./actions"
+import { cardsAwaitingAgentNotice, expireCards, markAgentNotified, verdictMessage, type CardAction, type DecisionCard } from "./cards"
 import { listInbox, type InboxContext, type InboxItem } from "./inbox"
 import { readInboxState, recordDigest } from "./state"
 
@@ -6,10 +7,12 @@ import { readInboxState, recordDigest } from "./state"
 //
 // Runs every minute inside the daemon:
 //   1. Expiry: a pending card past `expires` gets its `if_silent` applied.
-//   2. Tell the agent: every decided or expired card is sent to the agent
+//   2. Actions: a card the operator said yes to runs its action once
+//      (a WhatsApp reply, src/wacli). Never on expiry.
+//   3. Tell the agent: every decided or expired card is sent to the agent
 //      that raised it, once. Decisions made in the CLI or the dashboard
 //      (other processes) reach the agent through here too.
-//   3. Digest: at most one message a day to the operator, with the count
+//   4. Digest: at most one message a day to the operator, with the count
 //      and the most urgent item. Never one message per card.
 //
 // Every step is isolated: a failure is logged and the next step runs.
@@ -37,6 +40,8 @@ export interface SweepDeps {
   tellAgent?: (agentId: string, text: string, card: DecisionCard) => Promise<void>
   /** True when the agent exists on this node. */
   hasAgent?: (agentId: string) => boolean
+  /** Carry out a card's action. Unset: actions wait. */
+  runAction?: (action: CardAction, card: DecisionCard) => Promise<void>
   sendDigest?: (dest: { channel: string; chatId: string; accountId?: string }, text: string) => Promise<void>
   /** Where the operator opens the inbox, for the digest. */
   dashboardUrl?: string
@@ -45,6 +50,7 @@ export interface SweepDeps {
 
 export interface SweepResult {
   expired: number
+  actions: number
   notified: number
   digest: "sent" | "not-due" | "empty" | "no-destination" | "disabled" | "failed"
 }
@@ -81,7 +87,7 @@ export function digestText(items: InboxItem[], dashboardUrl?: string): string {
 export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
   const { ctx, settings, log } = deps
   const now = ctx.now ?? Date.now()
-  const result: SweepResult = { expired: 0, notified: 0, digest: "not-due" }
+  const result: SweepResult = { expired: 0, actions: 0, notified: 0, digest: "not-due" }
 
   try {
     for (const card of expireCards(ctx.root, now)) {
@@ -92,8 +98,23 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
     log(`[approvals] expiry failed: ${e?.message ?? e}`)
   }
 
+  if (deps.runAction) {
+    const run = deps.runAction
+    try {
+      for (const card of cardsAwaitingAction(ctx.root)) {
+        const r = await runCardAction(ctx.root, card, (a) => run(a, card))
+        result.actions++
+        log(`[approvals] ${card.id}: ${card.action!.kind} ${r.ok ? "done" : `failed: ${r.error}`}`)
+      }
+    } catch (e: any) {
+      log(`[approvals] actions failed: ${e?.message ?? e}`)
+    }
+  }
+
   try {
     for (const card of cardsAwaitingAgentNotice(ctx.root)) {
+      // Approved while this sweep ran: the agent hears after the action runs.
+      if (card.action && card.verdict === "yes" && !card.action_result && deps.runAction) continue
       // Marked first: a turn that hangs or crashes must not tell it twice.
       markAgentNotified(ctx.root, card.id, now)
       if (!settings.notifyAgent || !deps.tellAgent) continue
