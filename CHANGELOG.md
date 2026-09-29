@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.69.1](https://github.com/anis-marrouchi/agentx/compare/v0.69.0...v0.69.1) (2026-09-28)
+
+
+### Bug Fixes
+
+* **wiki:** an agent cannot dismiss or answer a fact disagreement ([#295](https://github.com/anis-marrouchi/agentx/issues/295)) ([5026c0f](https://github.com/anis-marrouchi/agentx/commit/5026c0f47b3fd180c821bae08379ce3f86bae1bf))
+* **wiki:** only a person confirms facts; harden ledger lock and reads ([#293](https://github.com/anis-marrouchi/agentx/issues/293)) ([1680eb1](https://github.com/anis-marrouchi/agentx/commit/1680eb1ec1d3f3147224211a23430df2de4954aa)), closes [#273](https://github.com/anis-marrouchi/agentx/issues/273)
+
 ## [0.69.0](https://github.com/anis-marrouchi/agentx/compare/v0.68.1...v0.69.0) (2026-09-28)
 
 
