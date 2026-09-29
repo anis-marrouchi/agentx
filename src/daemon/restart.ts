@@ -211,14 +211,78 @@ export async function waitForIdle(o: IdleWaitOptions): Promise<IdleWaitResult> {
 export type OnTimeout = "restart" | "abort"
 
 export interface RestartRequestState {
-  state: "none" | "pending" | "restarting"
+  /** "deferred": held until `until`, then it becomes a pending idle wait. */
+  state: "none" | "deferred" | "pending" | "restarting"
   requestedBy?: string
   requestedAt?: string
   /** When the wait ends (ISO). */
   deadline?: string
+  /** When a deferred request starts its idle wait (ISO). */
+  until?: string
   onTimeout?: OnTimeout
   /** How the last request ended, when it did not restart. */
   last?: { outcome: "cancelled" | "timeout-aborted"; at: string }
+}
+
+// ── Restart policy (shutdown.restart) ──────────────────────────────────
+//
+// A deploy script that asks for "restart when idle" with onTimeout
+// "restart" restarts over running work once the wait runs out. The policy
+// lets the operator forbid that, hold requests from anyone but named
+// requesters, and give the held requests a daily time at which they run,
+// idle-only. It replaces the external guard scripts operators wrote for it.
+
+export interface RestartPolicy {
+  /** Regular expression on the request's `by`. Unset: everyone. */
+  allowBy?: string
+  /** Local time "HH:MM" at which held requests start their idle wait. */
+  window?: string
+  /** How long that idle wait lasts before it gives up. */
+  windowWaitMinutes: number
+  /** Every request becomes idle-only: onTimeout "restart" is turned into "abort". */
+  forbidOnTimeoutRestart: boolean
+}
+
+export type PolicyDecision =
+  | { action: "allow"; onTimeout: OnTimeout; forced: boolean }
+  | { action: "defer"; onTimeout: "abort"; untilMs: number; timeoutMs: number; reason: string }
+  | { action: "refuse"; reason: string }
+
+/** The next occurrence of local time "HH:MM" strictly after `now` (ms). */
+export function nextWindowMs(window: string, now: number): number {
+  const m = window.match(/^(\d{1,2}):(\d{2})$/)
+  if (!m) throw new Error(`window must be HH:MM, got ${JSON.stringify(window)}`)
+  const at = new Date(now)
+  at.setHours(Number(m[1]), Number(m[2]), 0, 0)
+  if (at.getTime() <= now) at.setDate(at.getDate() + 1)
+  return at.getTime()
+}
+
+export function applyRestartPolicy(
+  req: { by: string; onTimeout: OnTimeout },
+  policy: RestartPolicy | undefined,
+  now: number,
+): PolicyDecision {
+  if (!policy) return { action: "allow", onTimeout: req.onTimeout, forced: false }
+  const forced = policy.forbidOnTimeoutRestart && req.onTimeout === "restart"
+  const onTimeout: OnTimeout = forced ? "abort" : req.onTimeout
+  if (policy.allowBy) {
+    let allowed: boolean
+    try { allowed = new RegExp(policy.allowBy).test(req.by) } catch { allowed = false }
+    if (!allowed) {
+      if (policy.window) {
+        return {
+          action: "defer",
+          onTimeout: "abort",
+          untilMs: nextWindowMs(policy.window, now),
+          timeoutMs: policy.windowWaitMinutes * 60_000,
+          reason: `restart requests by "${req.by}" are held until ${policy.window}; allowed now: /${policy.allowBy}/`,
+        }
+      }
+      return { action: "refuse", reason: `restart requests by "${req.by}" are not allowed; allowed: /${policy.allowBy}/` }
+    }
+  }
+  return { action: "allow", onTimeout, forced }
 }
 
 export interface IdleRestartDeps {
@@ -246,16 +310,45 @@ export class IdleRestartScheduler {
 
   schedule(req: { requestedBy: string; timeoutMs: number; onTimeout: OnTimeout }): RestartRequestState {
     if (this.s.state !== "none") return this.state()
+    this.startPending(req)
+    this.startTimer()
+    return this.state()
+  }
+
+  /** Hold a request until `untilMs`, then run it as an idle wait of
+   *  `timeoutMs` that gives up rather than restarting over work. */
+  defer(req: { requestedBy: string; untilMs: number; timeoutMs: number; onTimeout: OnTimeout }): RestartRequestState {
+    if (this.s.state !== "none") return this.state()
+    const at = this.now()
+    this.deferred = req
+    this.s = {
+      state: "deferred",
+      requestedBy: req.requestedBy,
+      requestedAt: new Date(at).toISOString(),
+      until: new Date(req.untilMs).toISOString(),
+      onTimeout: req.onTimeout,
+    }
+    this.startTimer()
+    return this.state()
+  }
+
+  private deferred?: { requestedBy: string; untilMs: number; timeoutMs: number; onTimeout: OnTimeout }
+
+  private startPending(req: { requestedBy: string; timeoutMs: number; onTimeout: OnTimeout }): void {
     const at = this.now()
     this.deadlineMs = at + Math.max(0, req.timeoutMs)
     this.zeros = 0
     this.s = {
       state: "pending",
       requestedBy: req.requestedBy,
-      requestedAt: new Date(at).toISOString(),
+      requestedAt: this.s.requestedAt ?? new Date(at).toISOString(),
       deadline: new Date(this.deadlineMs).toISOString(),
       onTimeout: req.onTimeout,
     }
+  }
+
+  private startTimer(): void {
+    if (this.timer !== null) return
     const every = this.deps.intervalMs ?? 2000
     const set = this.deps.setInterval ?? ((fn: () => void, ms: number) => {
       const h = setInterval(fn, ms)
@@ -263,18 +356,25 @@ export class IdleRestartScheduler {
       return h
     })
     this.timer = set(() => this.tick(), every)
-    return this.state()
   }
 
   cancel(): boolean {
-    if (this.s.state !== "pending") return false
+    if (this.s.state !== "pending" && this.s.state !== "deferred") return false
     this.stopTimer()
+    this.deferred = undefined
     this.s = { state: "none", last: { outcome: "cancelled", at: new Date(this.now()).toISOString() } }
     return true
   }
 
   /** One check. Exposed for tests; the timer calls it. */
   tick(): void {
+    if (this.s.state === "deferred") {
+      const d = this.deferred
+      if (!d || this.now() < d.untilMs) return
+      this.deferred = undefined
+      this.startPending(d)
+      return
+    }
     if (this.s.state !== "pending") return
     const n = this.deps.inflight()
     this.zeros = n === 0 ? this.zeros + 1 : 0

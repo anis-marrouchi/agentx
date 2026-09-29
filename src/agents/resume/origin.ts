@@ -45,6 +45,23 @@ export interface MeshOrigin {
 
 export type RunOrigin = RouterOrigin | MeshOrigin | DirectOrigin
 
+/** Marks a turn the resume step itself starts on a calling agent (a notice
+ *  or a re-run's answer). Such a turn is never "delivered" again. */
+export const RESUME_DELIVERY_FLAG = "resumeDelivery"
+
+/** The agent that asked for a direct agent-to-agent run, when the run's
+ *  context names one (`sender: "agent:<id>"`), or null. The answer of such
+ *  a run can be delivered: as a new turn on that agent. */
+export function callerAgentOf(origin: RunOrigin | null): string | null {
+  if (!origin || origin.kind !== "direct" || !origin.context) return null
+  if (origin.context[RESUME_DELIVERY_FLAG]) return null
+  const channel = String(origin.context.channel ?? "").toLowerCase().split("@")[0]
+  if (channel !== "a2a") return null
+  const sender = String(origin.context.sender ?? "")
+  const m = sender.match(/^agent:([^\s]+)$/)
+  return m ? m[1] : null
+}
+
 /** Bigger than this is not stored: the run is reported instead of resumed. */
 export const MAX_ORIGIN_BYTES = 32_000
 
