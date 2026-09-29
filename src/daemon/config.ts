@@ -1039,6 +1039,21 @@ export const daemonConfigSchema = z.object({
      *  AGENTX_DRAIN_TIMEOUT_MS env var, else 300 s. Keep the service
      *  manager's stop timeout above it, or it kills the daemon mid-wait. */
     drainTimeoutSeconds: z.number().int().min(0).max(86_400).optional(),
+    /** Who may ask for "restart when idle", and what happens to the others.
+     *  Unset: any caller may, and onTimeout "restart" is honoured. */
+    restart: z.object({
+      /** Regular expression matched against the request's `by`. Requests
+       *  from anyone else are held until `window`, or refused when there
+       *  is no window. */
+      allowBy: z.string().optional(),
+      /** Local time "HH:MM" at which held requests start an idle-only wait. */
+      window: z.string().regex(/^\d{1,2}:\d{2}$/, "window must be HH:MM").optional(),
+      /** How long that wait lasts before it gives up. */
+      windowWaitMinutes: z.number().int().min(1).max(1440).default(180),
+      /** Turn every request into an idle-only one: a wait that runs out
+       *  gives up instead of restarting over running work. */
+      forbidOnTimeoutRestart: z.boolean().default(false),
+    }).default({}),
   }).default({}),
   /** What happens to runs a restart cuts off (agents/resume). Chat messages
    *  are resumed in their chat; scheduled jobs never are (the next run

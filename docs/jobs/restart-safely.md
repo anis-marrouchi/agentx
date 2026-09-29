@@ -155,6 +155,27 @@ A task still running when the wait ends is stopped. It reports `killed by daemon
 
 <!-- No screenshot: every step is a terminal command or a settings file. -->
 
+## Hold restart requests, or give them a daily time
+
+A deploy script can ask for "restart when idle" and, after the wait, restart anyway. If your agents do long work, such as rendering a video, that wait cuts it off. You can make AgentX refuse that, and hold requests from anyone but named requesters until a quiet hour:
+
+1. **Terminal:** in the folder with `agentx.json`, allow only the requesters you name (a regular expression matched against the request's `by`), and pick the daily time at which everyone else's request runs:
+   ```sh
+   agentx config set shutdown.restart.allowBy '^(operator|restart-window)'
+   agentx config set shutdown.restart.window 03:00
+   ```
+2. **Terminal:** make every request idle-only, so a wait that runs out gives up instead of restarting:
+   ```sh
+   agentx config set shutdown.restart.forbidOnTimeoutRestart true
+   ```
+3. Restart AgentX once (at a quiet moment) so it reads the new settings.
+
+From then on, a request from a deploy script gets the reply `state: "deferred"` with the time it will run, and the dashboard shows it as waiting. At that time AgentX waits up to `windowWaitMinutes` (3 hours by default) for a moment with no task running, then restarts; if that moment never comes, it gives up and nothing is cut off. A request from a requester you named runs at once, as before. Without a `window`, held requests are refused with HTTP 403.
+
+Every reply to `POST /daemon/restart`, and `GET /daemon/restart`, now lists the tasks a restart would cut off, with the agent, the chat, the step and how long each has been running, so a deploy script can decide for itself.
+
+<!-- No screenshot: every step is a terminal command or a settings file. -->
+
 ## Work that gets cut off anyway
 
 Some work still gets cut off: a task that runs longer than the wait, a crash, or a machine that loses power. When AgentX starts again, it looks at every task that was cut off and decides what to do with each one:
@@ -165,7 +186,8 @@ Some work still gets cut off: a task that runs longer than the wait, a crash, or
 | A chat another node received and passed to this one (a GitLab event that arrives on your server, for an agent that lives on your Mac) | It's picked up again, and the note and the answer are posted through the node that received it. Both nodes need this version; if that node is down, you get the "didn't resume" message instead. |
 | A scheduled job | Nothing. The next scheduled run does the work. |
 | A workflow step | Reported. The workflow decides whether to retry. |
-| Anything else (voice, one agent asking another, webhooks, the API) | Reported, because nothing would deliver the answer. |
+| One agent asking another, when the run knows which agent asked | It's picked up again, and the answer is handed to the agent that asked, as a new turn, with a note saying the work was cut off and run again. That agent then decides what to do with it. |
+| Anything else (voice, webhooks, the API) | Reported, because nothing would deliver the answer. |
 | Anything older than 30 minutes | Reported. |
 
 "Reported" means the task isn't run again. Its chat gets a note saying so, or, when there's no chat, you get one message listing them (at `notifications.destination`).

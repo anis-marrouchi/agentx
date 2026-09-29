@@ -185,6 +185,10 @@ How a daemon stop treats tasks that are still running. See [restart without losi
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `shutdown.drainTimeoutSeconds` | number (0–86400) | — | How long a stop waits for running tasks before stopping them. Unset: `AGENTX_DRAIN_TIMEOUT_MS` from `.env`, else 300. An agent's own `drainTimeoutSeconds` can make the wait longer. Keep the service's stop time above it. |
+| `shutdown.restart.allowBy` | string (regular expression) | — | Who may ask for "restart when idle" right away, matched against the request's `by` (for example `^(operator\|restart-window)`). Requests from anyone else are held until `window`, or refused when there is no window. Unset: anyone. |
+| `shutdown.restart.window` | string `HH:MM` (local time) | — | When held requests start their wait for an idle moment. |
+| `shutdown.restart.windowWaitMinutes` | number (1–1440) | `180` | How long that wait lasts before it gives up without restarting. |
+| `shutdown.restart.forbidOnTimeoutRestart` | boolean | `false` | Turns every request into an idle-only one: a wait that runs out gives up instead of restarting over running work. |
 
 ## `resume`
 
@@ -196,7 +200,7 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.maxAgeMinutes` | number (1 or more) | `30` | Work older than this is reported, not picked up. |
 | `resume.maxAttempts` | number | `1` | How many times a run is picked up again if it keeps getting cut off. |
 | `resume.reportOnlyChannels` | list of strings | `[]` | Channels whose runs are only reported, even from a chat. |
-| `resume.directChannels` | list of strings | `[]` | Other channels (voice, agent-to-agent, webhooks) whose runs are picked up again. Their answer is not delivered anywhere. |
+| `resume.directChannels` | list of strings | `[]` | Other channels (voice, webhooks, the API) whose runs are picked up again. Their answer is not delivered anywhere. An agent-to-agent run that names the agent which asked is always picked up: its answer goes to that agent. |
 | `resume.crashLoop` | object | `{}` | Stops picking up work when the daemon keeps restarting. |
 | `resume.crashLoop.restarts` | number (1 or more) | `3` | This many restarts… |
 | `resume.crashLoop.windowMinutes` | number | `10` | …within this many minutes pauses picking up work. |

@@ -47,6 +47,8 @@ import { localAlert, localSettings, notify, type Sender } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
+import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
+import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
@@ -78,7 +80,7 @@ import { handleMemoryApi } from "@/daemon/memory-api"
 import { INTERRUPT_SETTLE_MS, describeShutdown, drainLimitMs, interruptionReason, serviceManager, startsNewWork, takeShutdownRequest, writeShutdownRequest, type ShutdownRequest } from "@/daemon/shutdown"
 import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type ServiceInfo } from "@/daemon/restart"
 import { detectService, readRespawn } from "@/daemon/restart-host"
-import { handleRestartApi, RESTART_API_PATHS } from "@/daemon/restart-api"
+import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
@@ -1118,6 +1120,25 @@ export class AgentXDaemon {
   }
 
   /** In-flight work the drain waits for: local agent tasks + mesh forwards. */
+  /** The runs in flight, oldest first: what a restart would cut off. */
+  private runningSummaries(): RunningSummary[] {
+    const now = Date.now()
+    const out: RunningSummary[] = []
+    for (const agent of this.registry.list()) {
+      for (const r of agent.runningTasks) {
+        out.push({
+          agentId: agent.id,
+          taskId: r.id,
+          channel: r.channel,
+          chatId: r.chatId,
+          step: r.step,
+          ageSeconds: Math.max(0, Math.round((now - r.startedAt.getTime()) / 1000)),
+        })
+      }
+    }
+    return out.sort((a, b) => b.ageSeconds - a.ageSeconds)
+  }
+
   private inflightCounts(): { local: number; meshForwards: number; total: number } {
     const local = this.registry.getActiveTaskCount()
     const meshForwards = this.router.getActiveMeshForwardCount()
@@ -1170,12 +1191,24 @@ export class AgentXDaemon {
     try {
       const coordinator = new ResumeCoordinator()
       coordinator.register("router", this.router.createResumer())
+      // A turn on the agent that asked for a cut-off agent-to-agent run:
+      // the notice that it was cut off, or the re-run's answer. Marked so
+      // that, if this turn is cut off too, it is reported and never
+      // bounced back (see callerAgentOf).
+      const tellCaller = (caller: string, fromAgent: string, text: string) =>
+        this.registry.execute({
+          message: text,
+          agentId: caller,
+          context: { channel: "a2a", sender: `agent:${fromAgent}`, chatId: fromAgent, [RESUME_DELIVERY_FLAG]: true } as any,
+        }).catch((e: any) => this.log(`[resume] couldn't tell ${caller}: ${e?.message ?? e}`))
       coordinator.register("direct", {
-        // Non-chat runs, only for channels opted in via resume.directChannels.
-        // Nothing delivers their answer; it stays in the agent's session.
+        // Non-chat runs, only for channels opted in via resume.directChannels,
+        // where nothing delivers their answer; and agent-to-agent runs that
+        // name their calling agent, whose answer becomes a turn on that agent.
         resume: async ({ origin, note, attempt, run }) => {
           if (origin.kind !== "direct") throw new Error("not a direct run")
-          void this.registry.execute({
+          const caller = callerAgentOf(origin)
+          const rerun = this.registry.execute({
             message: `${note}\n${run.originalMessage ?? ""}`,
             agentId: run.agentId,
             context: origin.context as any,
@@ -1184,7 +1217,21 @@ export class AgentXDaemon {
             origin,
             resumeAttempt: attempt,
             resumedFrom: run.taskId,
-          }).catch((e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
+          })
+          if (!caller) {
+            void rerun.catch((e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
+            return
+          }
+          void rerun.then(
+            (response) => tellCaller(caller, run.agentId, resumedAnswerText(run, response)),
+            (e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`),
+          )
+        },
+        tell: async (origin, text) => {
+          const caller = callerAgentOf(origin)
+          if (!caller) throw new Error("no chat to tell")
+          const from = origin.kind === "direct" ? String(origin.context?.chatId ?? "an agent") : "an agent"
+          await tellCaller(caller, from, `[AgentX resume] ${text}`)
         },
       })
       coordinator.register("mesh", createMeshResumer({
@@ -4341,6 +4388,8 @@ export class AgentXDaemon {
         const reply = handleRestartApi(req.method || "GET", path, body, {
           scheduler: this.idleRestart,
           inflight: () => this.inflightCounts(),
+          running: () => this.runningSummaries(),
+          policy: this.config.shutdown?.restart,
           service: () => this.restartService(),
           pid: process.pid,
           cwd: process.cwd(),
@@ -4348,7 +4397,7 @@ export class AgentXDaemon {
         })
         if (req.method === "POST" && reply.status < 300) {
           const st = this.idleRestart.state()
-          this.log(`  Restart when idle: ${path.endsWith("/cancel") ? "cancelled" : `${st.state} (requested by ${st.requestedBy}, until ${st.deadline}, then ${st.onTimeout})`}`)
+          this.log(`  Restart when idle: ${path.endsWith("/cancel") ? "cancelled" : `${st.state} (requested by ${st.requestedBy}, until ${st.state === "deferred" ? st.until : st.deadline}, then ${st.onTimeout})`}`)
         }
         this.json(res, reply.status, reply.body)
         return
