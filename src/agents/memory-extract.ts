@@ -6,7 +6,7 @@ import { containsSecret, trustForChannel } from "./memory-trust"
 // Fire-and-forget after each agent response.
 // Extracts memorable facts and writes them to the persistent store.
 
-const EXTRACTION_MODEL = "claude-haiku-4-20250514"
+const EXTRACTION_MODEL = "claude-haiku-4-5-20251001"
 
 const EXTRACTION_PROMPT = `You are a memory extraction system for an AI agent. Given a conversation exchange, extract facts worth remembering for future conversations across different chat sessions.
 
