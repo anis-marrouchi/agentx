@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.69.4](https://github.com/anis-marrouchi/agentx/compare/v0.69.3...v0.69.4) (2026-09-29)
+
+
+### Performance Improvements
+
+* take the intent classifier off the critical path and cut per-turn overhead ([#305](https://github.com/anis-marrouchi/agentx/issues/305)) ([b87628d](https://github.com/anis-marrouchi/agentx/commit/b87628dee6edada4d278fb8d46667766422141cc))
+
 ## [0.69.3](https://github.com/anis-marrouchi/agentx/compare/v0.69.2...v0.69.3) (2026-09-29)
 
 
