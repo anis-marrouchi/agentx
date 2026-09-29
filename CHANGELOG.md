@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.70.0](https://github.com/anis-marrouchi/agentx/compare/v0.69.4...v0.70.0) (2026-09-29)
+
+
+### Features
+
+* **decisions:** classify intents through a Jev seat and route the path into wiki retrieval ([#308](https://github.com/anis-marrouchi/agentx/issues/308)) ([3ec60c9](https://github.com/anis-marrouchi/agentx/commit/3ec60c977243549400c3454c317fb112f09f8309))
+
 ## [0.69.4](https://github.com/anis-marrouchi/agentx/compare/v0.69.3...v0.69.4) (2026-09-29)
 
 
