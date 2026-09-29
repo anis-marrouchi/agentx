@@ -2683,13 +2683,18 @@ export class AgentXDaemon {
       execute: (task) => this.registry.execute(task as any),
       notify: async ({ title, message, from }) => {
         await notify({ title, message, from, priority: 4 }, async (m) => {
-          await this.router.sendOutbound({
-            channel: m.channel ?? defaultNotifyChannel(this.config),
-            chatId: m.chatId ?? "default",
-            text: `${m.title}\n${m.message}`,
-            priority: m.priority,
-            agentId: from,
-          } as any)
+          // A push that fails must not take the Mac banner with it.
+          try {
+            await this.router.sendOutbound({
+              channel: m.channel ?? defaultNotifyChannel(this.config),
+              chatId: m.chatId ?? "default",
+              text: `${m.title}\n${m.message}`,
+              priority: m.priority,
+              agentId: from,
+            } as any)
+          } catch (e: any) {
+            this.log(`[whatsapp-triage] push for "${m.title}" failed: ${e?.message ?? e}`)
+          }
         }, { alert: localAlert(localSettings(this.config.notifications.local)) })
       },
       log: (m) => this.log(m),

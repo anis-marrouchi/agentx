@@ -123,7 +123,7 @@ export class TriageService {
     const res = await this.deps.execute({
       agentId: rule.agent,
       message: buildPrompt(rule, messages, notes),
-      context: { channel: "whatsapp-triage", sender: `whatsapp:${base.chat}`, chatId: `whatsapp-triage:${rule.id}:${base.chat}` },
+      context: { channel: "whatsapp-triage", sender: `whatsapp:${base.chat}`, chatId: `${rule.id}:${base.chat}` },
     }).catch((e: any) => ({ content: "", error: String(e?.message ?? e) }))
     store.finish(keys)
 
