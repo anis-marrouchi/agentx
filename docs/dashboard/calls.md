@@ -44,7 +44,7 @@ After you hang up, the agent writes a two-to-three-sentence summary. It appears 
 
 Agents call through the `agentx_call_owner` tool, which AgentX gives them. Inside an agent's run, `agentx call request --reason "…"` does the same (add `--urgent` for something that can't wait).
 
-A call counts only when it comes from a turn of that agent that is running now. AgentX checks this against the runs it started, so an agent can't simply type another agent's name to get through your allowlist. It also means you can't place a call from your own terminal. To try it out, ask an agent to call you, as below.
+A call counts only when it comes from a turn of that agent that is running now. AgentX checks this against the runs it started, so an agent can't simply type another agent's name to get through your allowlist. This stops an agent from naming another by mistake. It isn't a security boundary between agents on the same Mac: every local agent runs as your user and can also edit `calls.allow`. It also means you can't place a call from your own terminal. To try it out, ask an agent to call you, as below.
 
 ## Focus, missed calls and limits
 
