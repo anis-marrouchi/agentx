@@ -131,13 +131,27 @@ If AgentX runs as a service that the system starts for you, the system decides h
 
 ## Change how long it waits
 
-The daemon waits up to 5 minutes. To change that, set `AGENTX_DRAIN_TIMEOUT_MS` (in milliseconds) in the `.env` file next to `agentx.json`:
+The daemon waits up to 5 minutes for running tasks. To change that for every agent:
 
-```sh
-AGENTX_DRAIN_TIMEOUT_MS=600000   # 10 minutes
-```
+1. **Terminal:** in the folder with `agentx.json`, set the wait in seconds:
+   ```sh
+   agentx config set shutdown.drainTimeoutSeconds 600
+   ```
+2. Raise the service's stop time to at least a minute longer (`TimeoutStopSec` or `ExitTimeOut`, [as above](#give-a-background-service-enough-time)), or the system will force AgentX closed first.
 
-Keep the service's stop time at least a minute longer than this, or the system will force AgentX closed first.
+Some agents do work that takes much longer, such as rendering a video. You can give only those agents more time, and keep the short wait for the rest:
+
+1. **Terminal:** set the agent's own wait, in seconds (here for an agent named `editor`):
+   ```sh
+   agentx config set agents.editor.drainTimeoutSeconds 1800
+   ```
+2. Raise the service's stop time above the longest of these waits.
+
+A stop then waits as long as the longest wait among the agents that are still busy. An agent's own wait can make a stop longer, never shorter.
+
+The older `AGENTX_DRAIN_TIMEOUT_MS` setting (in milliseconds, in the `.env` file next to `agentx.json`) still works. It is used only when `shutdown.drainTimeoutSeconds` is not set.
+
+A task still running when the wait ends is stopped. It reports `killed by daemon restart (drain limit …s, requested by …)`, not a time limit of its own, and nothing is posted to its chat. When AgentX starts again, the task is picked up again or reported, as described below.
 
 <!-- No screenshot: every step is a terminal command or a settings file. -->
 
@@ -238,7 +252,8 @@ A restart by systemd or launchd shows `from systemd` or `from launchd (…)` in 
 - **The restart button gives `401` for another node:** the dashboard needs that node's mesh token in `dashboard.daemons`.
 - **Tasks still fail right away on a Linux service:** check `systemctl show -p KillMode agentx`. It must say `mixed`.
 - **The log shows no `Shutdown:` line at all:** the system forced AgentX closed before it could start. Raise `TimeoutStopSec` or `ExitTimeOut` as above.
-- **`Drain timeout after … task(s) still in flight`:** a task took longer than the limit and was stopped. Raise `AGENTX_DRAIN_TIMEOUT_MS`, and the service's stop time with it.
+- **`Drain timeout after … task(s) still in flight`:** a task took longer than the wait and was stopped. The next line, `Interrupted … run(s): killed by daemon restart (…)`, says which limit applied and who asked for the restart. Raise `shutdown.drainTimeoutSeconds`, or the busy agent's own `drainTimeoutSeconds`, and the service's stop time with it.
+- **A task says `timed out after 90m` although it ran for a few minutes:** the daemon that ran it is older than this fix. After an update, a task a restart cuts off says `killed by daemon restart` instead.
 - **`stop` says the daemon is still finishing tasks:** wait, then check with `agentx daemon status` before starting it again.
 - **Another tool got `503 daemon is restarting`:** it asked for new work during a restart. It can try again a little later.
 - **A chat task wasn't picked up:** the log line starting `[resume]` says why. The usual reasons are that it was older than 30 minutes, it was already a second attempt, or there were several restarts in a row.

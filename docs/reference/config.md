@@ -15,6 +15,7 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `crons` | Timed prompts or commands, timezone, failure behavior and an optional `fireToken` ([fire a routine](/jobs/fire-a-routine)) |
 | `services` | Named services with trigger patterns and allowed contacts |
 | `notifications` | Where AgentX pings you about finished, failed or long tasks ([get notified](/jobs/notifications)) |
+| `shutdown` | How long a stop waits for running tasks ([restart without losing work](/jobs/restart-safely#change-how-long-it-waits)) |
 | `resume` | What happens to work a restart cut off ([restart without losing work](/jobs/restart-safely)) |
 | `voice`, `meshVoices` | How agents speak aloud ([desktop assistant](/dashboard/voice)) |
 | `workflows` | Whether the workflow engine is enabled, where definitions live, and the editor mode |
@@ -33,7 +34,7 @@ Every field, with its type, default and what it does, is listed on four pages:
 |---|---|
 | [Agents and runtime](./config-agents.md) | `node`, `providers`, `agents`, `session`, `processPool`, `plugins` |
 | [Channels](./config-channels.md) | `channels`: Telegram, WhatsApp, GitLab, GitHub, phone app notifications, ntfy, browser calls |
-| [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `resume` |
+| [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `shutdown`, `resume` |
 | [Dashboard, mesh and optional layers](./config-operations.md) | `dashboard`, `mesh`, `meshVoices`, `voice`, `screen`, `business`, `boards`, `graph`, `decisions` |
 
 These pages are checked against the schema in `src/daemon/config.ts`. If your installed version differs, that file is the final word.

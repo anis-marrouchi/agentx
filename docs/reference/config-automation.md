@@ -165,6 +165,14 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.digest.destination.chatId` | string | required | The chat on that channel. |
 | `approvals.digest.destination.accountId` | string | — | Which account on that channel. |
 
+## `shutdown`
+
+How a daemon stop treats tasks that are still running. See [restart without losing work](/jobs/restart-safely#change-how-long-it-waits).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `shutdown.drainTimeoutSeconds` | number (0–86400) | — | How long a stop waits for running tasks before stopping them. Unset: `AGENTX_DRAIN_TIMEOUT_MS` from `.env`, else 300. An agent's own `drainTimeoutSeconds` can make the wait longer. Keep the service's stop time above it. |
+
 ## `resume`
 
 What happens to work a restart cut off. Chat messages are picked up again in their chat; scheduled jobs never are, because their next run covers them. See [restart without losing work](/jobs/restart-safely).

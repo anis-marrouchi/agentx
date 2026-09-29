@@ -16,7 +16,7 @@ import { join } from "path"
 const hang = vi.hoisted(() => ({ on: false, skills: false }))
 // When set, stands in for the agent process: settles after `agentMs`.
 // `until` (epoch ms), when set, overrides it with an absolute end time.
-const spawn = vi.hoisted(() => ({ agentMs: 0, until: 0, calls: 0 }))
+const spawn = vi.hoisted(() => ({ agentMs: 0, until: 0, calls: 0, reapOnAbort: false }))
 vi.mock("../src/agents/runtime", async (importOriginal) => {
   const real: any = await importOriginal()
   return {
@@ -25,7 +25,16 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
       if (!spawn.agentMs) return real.executeTask(...args)
       spawn.calls++
       const ms = spawn.until ? Math.max(0, spawn.until - Date.now()) : spawn.agentMs
-      return new Promise((res) => setTimeout(() => res({ content: "done", duration: 1 }), ms))
+      // Like the real runtime: an abort reaps the process and the run
+      // returns at once, reading the kill however it reads it.
+      const signal: AbortSignal | undefined = args[7]
+      return new Promise((res) => {
+        const t = setTimeout(() => res({ content: "done", duration: 1 }), ms)
+        if (spawn.reapOnAbort) signal?.addEventListener("abort", () => {
+          clearTimeout(t)
+          res({ content: "", error: "Claude Code timed out after 90m.", errorKind: "timeout", duration: 1 })
+        }, { once: true })
+      })
     },
   }
 })
@@ -52,6 +61,7 @@ vi.mock("../src/workflows", async (importOriginal) => {
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { untilAborted } from "../src/agents/until-aborted"
+import { getEventBus } from "../src/events/bus"
 import { CronScheduler, AGENT_RUN_TIMEOUT_FLOOR, agentRunTimeout } from "../src/crons/scheduler"
 
 let dir: string
@@ -124,6 +134,49 @@ describe("a run stuck before spawn", () => {
     expect(res.error).toMatch(/timed out/)
     expect(agentState(r).runningTasks).toEqual([])
     expect(agentState(r).active).toBe(0)
+  })
+})
+
+describe("a run a daemon shutdown cuts off (#297)", () => {
+  const REASON = "killed by daemon restart (drain limit 300s)"
+
+  it("reports the restart, not a timeout, and stays open for resume", async () => {
+    spawn.agentMs = 60_000
+    spawn.reapOnAbort = true
+    hang.on = false
+    const completed: any[] = []
+    const onCompleted = (p: any) => { completed.push(p) }
+    getEventBus().on("task:completed", onCompleted)
+    try {
+      const r = registry()
+      const { started, run } = startRun(r)
+      await started
+      await vi.waitFor(() => expect(agentState(r).runningTasks[0]?.step).toBe("agent"))
+      expect(r.runningAgentDrainSeconds()).toEqual([undefined])
+
+      expect(r.interruptRunning(REASON)).toBe(1)
+      const res = await run
+      expect(res.errorKind).toBe("interrupted")
+      expect(res.error).toBe(REASON)
+      // The trace subscriber leaves an interrupted run in flight for resume.
+      expect(completed.at(-1)).toMatchObject({ agentId: "ops", interrupted: true })
+      expect(agentState(r).active).toBe(0)
+    } finally {
+      getEventBus().off("task:completed", onCompleted)
+      spawn.agentMs = 0
+      spawn.reapOnAbort = false
+    }
+  })
+
+  it("reports the restart when it is cut off before spawn", async () => {
+    const r = registry()
+    const { started, run } = startRun(r)
+    await started
+    await vi.waitFor(() => expect(agentState(r).runningTasks[0].step).toBe("request-gate"))
+    r.interruptRunning(REASON)
+    const res = await run
+    expect(res.errorKind).toBe("interrupted")
+    expect(res.error).toBe(REASON)
   })
 })
 

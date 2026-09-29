@@ -136,6 +136,9 @@ export interface AgentXEvents {
     chatId: string
     durationMs: number
     error?: string
+    /** A daemon shutdown stopped the run. Its trace stays in flight so the
+     *  next boot can resume it. */
+    interrupted?: boolean
     inputTokens?: number
     outputTokens?: number
     cacheReadTokens?: number
