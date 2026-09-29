@@ -23,7 +23,7 @@ export interface RgbaImage {
   data: Uint8ClampedArray
 }
 
-const clamp = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : v) | 0
+const clamp = (v: number): number => (v < 0 ? 0 : v > 255 ? 255 : Math.round(v))
 
 /** BT.601 limited-range conversion, the same maths libyuv uses for I420. */
 export function i420ToRgba(frame: I420Frame): RgbaImage {

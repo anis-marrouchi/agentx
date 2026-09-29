@@ -22,6 +22,8 @@ let summaryText: string | null
 /** Notices wait on this, to hold a sweep mid-way. */
 let gate: Promise<void>
 let calls: CallService
+/** The chat a task-proved turn runs in, when the test sets one. */
+let turnChat: { channel: string; chatId: string } | null
 
 beforeEach(() => {
   now = 1_000_000
@@ -31,12 +33,14 @@ beforeEach(() => {
   filed = []
   summaryText = "We agreed to ship on Friday."
   gate = Promise.resolve()
+  turnChat = null
   const deps: CallDeps = {
     store: new CallStore(new Database(":memory:")),
     config: () => cfg,
     agentName: (id) => ({ writer: "Writer", ops: "Ops" } as Record<string, string>)[id] ?? null,
     // Each agent has one running turn: task `task-<id>`, or chat voice:<id>.
     isRunningTurn: (id, p) => p.taskId ? p.taskId === `task-${id}` : p.channel === "voice" && p.chatId === `voice:${id}`,
+    turnSession: (id, p) => p.taskId === `task-${id}` ? turnChat : null,
     alert: async (n) => { notices.push(n); await gate },
     summarize: async () => summaryText,
     file: (call, summary) => { filed.push({ call, summary }) },
@@ -273,6 +277,133 @@ describe("caller identity", () => {
     expect(callerHeaders({ AGENTX_TASK_ID: "t1", AGENTX_CHANNEL: "voice", AGENTX_CHAT_ID: "c" })).toEqual({ "X-AgentX-Task": "t1" })
     expect(callerHeaders({ AGENTX_CHANNEL: "voice", AGENTX_CHAT_ID: "c" })).toEqual({ "X-AgentX-Channel": "voice", "X-AgentX-Chat": "c" })
     expect(callerHeaders({ AGENTX_CHANNEL: "voice" })).toEqual({})
+  })
+})
+
+// A camera ask (#325 phase 3) is a call of kind "camera": the same checks,
+// answered on the phone instead of the widget.
+describe("camera asks", () => {
+  const see = (input: { agentId: string; reason: string; urgency?: string }, proof: { taskId?: string; channel?: string; chatId?: string } = { taskId: `task-${input.agentId}` }) =>
+    calls.request({ ...input, kind: "camera" }, proof)
+
+  it("tells the phone, never the widget, and is answered on the phone", async () => {
+    await widgetUp()
+    const r = await see({ agentId: "writer", reason: "Show me the rack" })
+    expect(r.ok && r.rang).toBe("notify")
+    if (!r.ok) return
+    expect(r.call).toMatchObject({ kind: "camera", status: "ringing", reason: "Show me the rack", channel: null, chatId: null })
+    expect(notices).toEqual([expect.objectContaining({ title: "Writer wants to see through your camera", from: "writer", urgent: false })])
+    expect(notices[0].message).toMatch(/tap Show/)
+    expect(await calls.ringing()).toEqual([])                      // the widget's poll: voice only
+    expect((await calls.asking()).map((c) => c.id)).toEqual([r.call.id])
+    const answered = calls.answer(r.call.id)
+    expect(answered.ok && answered.call.status).toBe("answered")
+    expect(answered.ok && answered.opener).toBeUndefined()         // nothing to say first
+  })
+
+  it("asking() does not count as the widget being up", async () => {
+    await calls.asking()
+    const r = await place({ agentId: "writer", reason: "voice" })
+    expect(r.ok && r.rang).toBe("notify")
+  })
+
+  it("uses the same allowlist, rate limit, one-in-progress rule and running-turn proof as calls", async () => {
+    expect(await see({ agentId: "ops", reason: "hi" })).toMatchObject({ ok: false, status: 403, error: /may not ask to see/ })
+    expect(await see({ agentId: "writer", reason: "hi" }, {})).toMatchObject({ ok: false, status: 403 })
+    expect(await see({ agentId: "writer", reason: "hi" }, { taskId: "task-ops" })).toMatchObject({ ok: false, status: 403 })
+    expect(await calls.request({ agentId: "writer", reason: "hi", kind: "video" }, { taskId: "task-writer" })).toMatchObject({ ok: false, status: 400 })
+    const first = await see({ agentId: "writer", reason: "one" })
+    expect(first.ok).toBe(true)
+    expect(await see({ agentId: "writer", reason: "two" })).toMatchObject({ ok: false, status: 409 })
+    expect(await place({ agentId: "writer", reason: "a voice call meanwhile" })).toMatchObject({ ok: false, status: 409 })
+    if (first.ok) calls.decline(first.call.id)
+    for (let i = 0; i < 2; i++) {
+      const r = await see({ agentId: "writer", reason: `ask ${i}` })
+      if (r.ok) calls.decline(r.call.id)
+    }
+    expect(await see({ agentId: "writer", reason: "fourth this hour" })).toMatchObject({ ok: false, status: 429 })
+    expect(await place({ agentId: "writer", reason: "voice, same hour" })).toMatchObject({ ok: false, status: 429 })
+  })
+
+  it("keeps the chat the agent asked from, so the answer goes back there", async () => {
+    turnChat = { channel: "telegram", chatId: "chat-9" }
+    const byTask = await see({ agentId: "writer", reason: "the invoice" })
+    expect(byTask.ok && byTask.call).toMatchObject({ channel: "telegram", chatId: "chat-9" })
+    if (byTask.ok) calls.decline(byTask.call.id)
+    const warm = await see({ agentId: "writer", reason: "the cable" }, { channel: "voice", chatId: "voice:writer" })
+    expect(warm.ok && warm.call).toMatchObject({ channel: "voice", chatId: "voice:writer" })
+    // A voice call keeps no chat: nothing is answered there afterwards.
+    if (warm.ok) calls.decline(warm.call.id)
+    const voice = await place({ agentId: "writer", reason: "talk" })
+    expect(voice.ok && voice.call).toMatchObject({ kind: "voice", channel: null, chatId: null })
+  })
+
+  it("is held as missed in Focus, and missed when nobody taps Show", async () => {
+    focus = ON
+    const held = await see({ agentId: "writer", reason: "later" })
+    expect(held.ok && held.rang).toBe(false)
+    expect(held.ok && held.call).toMatchObject({ status: "missed", note: "in work" })
+    expect(notices.at(-1)).toMatchObject({ title: "Writer asked to see through your camera" })
+    focus = OFF
+    const asked = await see({ agentId: "writer", reason: "now" })
+    if (!asked.ok) throw new Error(asked.error)
+    now += cfg.ringSeconds * 1000
+    expect(await calls.asking()).toEqual([])
+    expect(calls.get(asked.call.id)).toMatchObject({ status: "missed", note: "not answered" })
+    expect(notices.at(-1)).toMatchObject({ title: "Writer asked to see through your camera" })
+  })
+
+  it("ends with the share, without a summary", async () => {
+    const r = await see({ agentId: "writer", reason: "rack" })
+    if (!r.ok) throw new Error(r.error)
+    expect(calls.endCamera(r.call.id, "phone stopped")).toBe(false)   // not answered yet: still asking
+    calls.answer(r.call.id)
+    expect(calls.endCamera(r.call.id, "phone stopped")).toBe(true)
+    expect(calls.get(r.call.id)).toMatchObject({ status: "ended", note: "phone stopped", summary: null })
+    expect(filed).toEqual([])
+    expect(calls.endCamera(r.call.id)).toBe(false)
+    // hangup on an answered camera ask ends it too, and files nothing.
+    const again = await see({ agentId: "writer", reason: "again" })
+    if (!again.ok) throw new Error(again.error)
+    calls.answer(again.call.id)
+    const h = calls.hangup(again.call.id)
+    expect(h.ok && h.summarized).toBeUndefined()
+    expect(filed).toEqual([])
+    const voice = await place({ agentId: "writer", reason: "talk" })
+    expect(calls.endCamera(voice.ok ? voice.call.id : "x")).toBe(false)
+  })
+
+  it("the store migrates a table from before camera asks", () => {
+    const db = new Database(":memory:")
+    db.exec(`CREATE TABLE calls (id TEXT PRIMARY KEY, agent_id TEXT NOT NULL, reason TEXT NOT NULL,
+      urgency TEXT NOT NULL, status TEXT NOT NULL, created_at INTEGER NOT NULL, ringing_since INTEGER,
+      answered_at INTEGER, ended_at INTEGER, ring_again_at INTEGER, note TEXT, summary TEXT)`)
+    db.prepare("INSERT INTO calls VALUES ('call-old', 'writer', 'old one', 'normal', 'ended', 5, NULL, 6, 7, NULL, NULL, 'done')").run()
+    const store = new CallStore(db)
+    expect(store.get("call-old")).toMatchObject({ kind: "voice", channel: null, chatId: null, summary: "done" })
+    expect(store.list({ kind: "camera" })).toEqual([])
+    expect(store.list({ kind: "voice" }).map((c) => c.id)).toEqual(["call-old"])
+    new CallStore(db)   // a second open changes nothing
+    expect(store.list()).toHaveLength(1)
+  })
+
+  it("routes: kind on POST, ?kind= on GET, and the phone's /calls/asking", async () => {
+    const post = (body: Record<string, unknown>) => handleCalls(calls, () => cfg, "POST", "/calls", new URLSearchParams(), body, { taskId: `task-${body.agentId}` })
+    const placed = await post({ agentId: "writer", reason: "the rack", kind: "camera" })
+    expect(placed.status).toBe(201)
+    const id = (placed.body as any).call.id
+    const asking = await handleCalls(calls, () => cfg, "GET", "/calls/asking", new URLSearchParams(), {})
+    expect(asking).toMatchObject({ status: 200, body: { ringSeconds: 45 } })
+    expect((asking.body as any).calls.map((c: Call) => c.id)).toEqual([id])
+    const ringing = await handleCalls(calls, () => cfg, "GET", "/calls/ringing", new URLSearchParams(), {})
+    expect((ringing.body as any).calls).toEqual([])
+    const listed = await handleCalls(calls, () => cfg, "GET", "/calls", new URLSearchParams("kind=camera&status=ringing"), {})
+    expect((listed.body as any).calls.map((c: Call) => c.id)).toEqual([id])
+    const voices = await handleCalls(calls, () => cfg, "GET", "/calls", new URLSearchParams("kind=voice"), {})
+    expect((voices.body as any).calls).toEqual([])
+    const answered = await handleCalls(calls, () => cfg, "POST", `/calls/${id}/answer`, new URLSearchParams(), {})
+    expect(answered.status).toBe(200)
+    expect((answered.body as any).opener).toBeUndefined()
   })
 })
 

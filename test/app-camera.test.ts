@@ -5,9 +5,10 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
-import { cameraSignal } from "../src/daemon/app-camera"
+import { cameraSignal, watchingAgent } from "../src/daemon/app-camera"
 import { cameraConstraints, shareClock } from "../src/daemon/ui/pages/app-camera-logic"
 import { CAMERA_SCRIPT } from "../src/daemon/ui/pages/app-camera.client"
+import { CAMERA_ASKS_SCRIPT } from "../src/daemon/ui/pages/app-camera-asks.client"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
 import { CALL_PAGE_HTML } from "../src/daemon/call-page"
 import { ringNotice } from "../src/channels/webrtc-signal"
@@ -151,6 +152,115 @@ describe("app camera routes", () => {
     expect(await r.text()).toBe('event: ready\ndata: {}\n\nevent: signal\ndata: {"kind":"offer"}\n\n')
     expect(seen[0]).toMatchObject({ path: "/webrtc/events?callId=cam-abcd1234&as=Node-A", auth: `Bearer ${DAEMON_TOKEN}` })
     expect((await fetch(`${base}/api/app/camera/events?callId=../x`, asPhone())).status).toBe(400)
+  })
+})
+
+// An agent as the destination (#325 phases 2 and 3): the ring starts its
+// bot, Look now asks it, and the Show bar answers its asks.
+describe("app camera routes for an agent", () => {
+  const post = (path: string, body: unknown) => fetch(base + path, asPhone({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }))
+
+  it("config lists the agents the phone may show its camera to", async () => {
+    reply = (_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ localName: NODE, iceServers: [], peers: [], agents: [{ id: "writer", name: "Writer" }, { id: "ops" }, { bad: 1 }], camera: null }))
+    }
+    const r = await fetch(`${base}/api/app/camera/config`, asPhone())
+    expect((await r.json()).agents).toEqual([{ id: "writer", name: "Writer" }, { id: "ops", name: "ops" }])
+  })
+
+  it("a ring to an agent starts its watch instead of being relayed", async () => {
+    reply = (_req, res) => { res.writeHead(201, { "Content-Type": "application/json" }); res.end('{"watch":{"callId":"cam-abcd1234","agentId":"writer"}}') }
+    const r = await signal({ kind: "ring", callId: "cam-abcd1234", to: "bot:writer" })
+    expect(r.status).toBe(201)
+    expect(await r.json()).toEqual({ ok: true, watch: { callId: "cam-abcd1234", agentId: "writer" } })
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ method: "POST", path: "/webrtc/camera/watch", auth: `Bearer ${DAEMON_TOKEN}` })
+    expect(JSON.parse(seen[0].body)).toEqual({ callId: "cam-abcd1234", agentId: "writer" })
+  })
+
+  it("the answer and ICE for an agent go through the broker as this node", async () => {
+    await signal({ kind: "answer", callId: "cam-abcd1234", to: "bot:writer", sdp: "v=0" })
+    expect(seen[0].path).toBe("/webrtc/signal/out")
+    expect(JSON.parse(seen[0].body)).toEqual({ kind: "answer", callId: "cam-abcd1234", from: NODE, to: "bot:writer", sdp: "v=0" })
+    expect((await signal({ kind: "ring", callId: "cam-abcd1234", to: "bot:" })).status).toBe(400)
+    expect((await signal({ kind: "ring", callId: "cam-abcd1234", to: "bot:a b" })).status).toBe(400)
+  })
+
+  it("passes on why the agent cannot watch", async () => {
+    reply = (_req, res) => { res.writeHead(409, { "Content-Type": "application/json" }); res.end('{"error":"writer is already watching a camera; stop that share first"}') }
+    const r = await signal({ kind: "ring", callId: "cam-abcd1234", to: "bot:writer" })
+    expect(r.status).toBe(409)
+    expect((await r.json()).error).toMatch(/already watching/)
+  })
+
+  it("Look now asks the watching agent and returns its answer", async () => {
+    reply = (_req, res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"reply":{"at":5,"note":"what?","text":"A rack.","frame":"frame-000003.png"},"frame":{"width":10,"height":5,"takenAt":4,"seq":3}}') }
+    const r = await post("/api/app/camera/look", { callId: "cam-abcd1234", note: "what?" })
+    expect(r.status).toBe(200)
+    expect(await r.json()).toEqual({ reply: { at: 5, note: "what?", text: "A rack.", frame: "frame-000003.png" }, frame: { width: 10, height: 5, takenAt: 4, seq: 3 } })
+    expect(seen[0]).toMatchObject({ method: "POST", path: "/webrtc/camera/watch/cam-abcd1234/look", auth: `Bearer ${DAEMON_TOKEN}` })
+    expect(JSON.parse(seen[0].body)).toEqual({ note: "what?" })
+    expect((await post("/api/app/camera/look", { callId: "../x" })).status).toBe(400)
+    reply = (_req, res) => { res.writeHead(409, { "Content-Type": "application/json" }); res.end('{"error":"no picture has arrived from the phone yet"}') }
+    expect((await post("/api/app/camera/look", { callId: "cam-abcd1234" })).status).toBe(409)
+  })
+
+  it("reads the watch back, for answers the agent gave by itself", async () => {
+    reply = (_req, res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"watch":{"callId":"cam-abcd1234","replies":[]}}') }
+    const r = await fetch(`${base}/api/app/camera/watch?callId=cam-abcd1234`, asPhone())
+    expect(await r.json()).toEqual({ watch: { callId: "cam-abcd1234", replies: [] } })
+    expect(seen[0].path).toBe("/webrtc/camera/watch/cam-abcd1234")
+    expect((await fetch(`${base}/api/app/camera/watch?callId=x`, asPhone())).status).toBe(400)
+  })
+
+  it("lists the asks waiting for the owner, and answers or declines one", async () => {
+    reply = (_req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end('{"calls":[{"id":"call-aaaa1111","agentId":"writer","kind":"camera","reason":"Show me the rack","createdAt":9,"channel":"telegram","chatId":"c"}],"ringSeconds":45}')
+    }
+    const r = await fetch(`${base}/api/app/camera/asks`, asPhone())
+    expect(await r.json()).toEqual({ asks: [{ id: "call-aaaa1111", agentId: "writer", reason: "Show me the rack", createdAt: 9 }], ringSeconds: 45 })
+    expect(seen[0]).toMatchObject({ method: "GET", path: "/calls/asking", auth: `Bearer ${DAEMON_TOKEN}` })
+
+    reply = (_req, res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"call":{"id":"call-aaaa1111","status":"answered"}}') }
+    const answered = await post("/api/app/camera/asks/call-aaaa1111/answer", {})
+    expect(await answered.json()).toEqual({ call: { id: "call-aaaa1111", status: "answered" } })
+    expect(seen[1]).toMatchObject({ method: "POST", path: "/calls/call-aaaa1111/answer" })
+    await post("/api/app/camera/asks/call-aaaa1111/decline", {})
+    expect(seen[2].path).toBe("/calls/call-aaaa1111/decline")
+    expect((await post("/api/app/camera/asks/call-aaaa1111/hangup", {})).status).toBe(404)
+    expect((await post("/api/app/camera/asks/../x/answer", {})).status).toBe(404)
+    expect(seen).toHaveLength(3)
+  })
+
+  it("a daemon refusal reaches the phone as its own status", async () => {
+    reply = (_req, res) => { res.writeHead(409, { "Content-Type": "application/json" }); res.end('{"error":"call is answered, not ringing"}') }
+    const r = await post("/api/app/camera/asks/call-aaaa1111/answer", {})
+    expect(r.status).toBe(409)
+    expect((await r.json()).error).toMatch(/not ringing/)
+  })
+
+  it("watchingAgent reads a bot destination", () => {
+    expect(watchingAgent("bot:writer")).toBe("writer")
+    expect(watchingAgent("bot:my-agent.v2")).toBe("my-agent.v2")
+    expect(watchingAgent("Node-B")).toBeNull()
+    expect(watchingAgent("bot:")).toBeNull()
+    expect(watchingAgent("bot:a/b")).toBeNull()
+  })
+
+  it("the phone scripts parse and are wired: Look now, the Show bar, one event between them", () => {
+    const html = renderAppPage()
+    expect(html).toContain('id="cam-look"')
+    expect(html).toContain('id="cam-ask-bar"')
+    expect(html).toContain('id="cam-ask-show"')
+    expect(() => new Function(CAMERA_ASKS_SCRIPT)).not.toThrow()
+    expect(CAMERA_ASKS_SCRIPT).toContain("/api/app/camera/asks")
+    expect(CAMERA_ASKS_SCRIPT).toContain("'ax-camera'")
+    expect(CAMERA_SCRIPT).toContain("'ax-camera'")
+    expect(CAMERA_SCRIPT).toContain("/api/app/camera/look")
+    // An agent's watch has its own time limit; the phone shows the shorter one.
+    expect(CAMERA_SCRIPT).toContain("maxSessionMinutes")
   })
 })
 
