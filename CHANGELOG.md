@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.69.3](https://github.com/anis-marrouchi/agentx/compare/v0.69.2...v0.69.3) (2026-09-29)
+
+
+### Bug Fixes
+
+* **daemon:** a task a restart cuts off reports the restart and resumes ([#303](https://github.com/anis-marrouchi/agentx/issues/303)) ([51073b7](https://github.com/anis-marrouchi/agentx/commit/51073b78419413d78dc9bb68c1456f88da7ba7d7))
+
 ## [0.69.2](https://github.com/anis-marrouchi/agentx/compare/v0.69.1...v0.69.2) (2026-09-29)
 
 
