@@ -92,7 +92,7 @@ agentx desktop start
 | `agentx config set <path> <value>` | Change a field; inspect the reload/restart result |
 | `agentx doctor` | Check local installation and prerequisites |
 | `agentx notify "<message>"` | Notify the phone app and show a Mac banner, held during Focus; `--proof` captures the banner; see [Get notified](../jobs/notifications.md) |
-| `agentx call request --reason "…"` | Ring the owner for a live voice call (`--agent`, `--urgent`); see [Calls from your agents](../dashboard/calls.md) |
+| `agentx call request --reason "…"` | From inside an agent's run: ring the owner for a live voice call (`--urgent`); see [Calls from your agents](../dashboard/calls.md) |
 | `agentx call list` | Recent calls (`--status missed`, `--limit`, `--json`) |
 | `agentx call answer <id>`, `agentx call decline <id>`, `agentx call hangup <id>`, `agentx call later <id> [minutes]` | Act on a call from the terminal |
 | `agentx call allow <agent>`, `agentx call disallow <agent>` | Who may call you (`calls.allow`; `"*"` for every agent) |

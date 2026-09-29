@@ -42,13 +42,9 @@ After you hang up, the agent writes a two-to-three-sentence summary. It appears 
 
 ## How an agent places a call
 
-Agents call through the `agentx_call_owner` tool, which AgentX gives them. You can also place a call yourself to try it out:
+Agents call through the `agentx_call_owner` tool, which AgentX gives them. Inside an agent's run, `agentx call request --reason "…"` does the same (add `--urgent` for something that can't wait).
 
-```sh
-agentx call request --agent writer --reason "Which launch date should I put in the post?"
-```
-
-Add `--urgent` for something that can't wait. Inside an agent's own run, `--agent` can be left out.
+A call counts only when it comes from a turn of that agent that is running now. AgentX checks this against the runs it started, so an agent can't simply type another agent's name to get through your allowlist. It also means you can't place a call from your own terminal. To try it out, ask an agent to call you, as below.
 
 ## Focus, missed calls and limits
 
@@ -78,7 +74,7 @@ For example:
 ## Check it worked
 
 1. **Terminal:** run `agentx call allow writer` (use your agent's id).
-2. **Terminal:** run `agentx call request --agent writer --reason "Test call"`. It prints `ringing on AgentX Voice`.
+2. **Terminal:** run `agentx daemon send writer "Call me with agentx_call_owner, reason: Test call"`. The agent replies that the call is ringing on AgentX Voice.
 3. **Mac:** the pill rings and shows **Writer is calling · Test call**.
 4. **Mac:** click the green **Answer** button. The agent says why it called.
 5. **Mac:** say "bye". The call ends.
@@ -87,6 +83,7 @@ For example:
 ## If something is wrong
 
 - **`may not call the owner`**: the agent isn't allowed yet. Run `agentx call allow <agent>` in the folder that holds `agentx.json`.
+- **`No running turn of <agent> placed this call`**: the call didn't come from inside that agent's run, for example from a terminal. Ask the agent to call you instead.
 - **`has placed 3 calls in the last hour`**: the agent hit `calls.maxPerHour`. Wait, or raise the limit.
 - **`already has a call in progress`**: answer, decline or hang up that call first. `agentx call list` shows it, and `agentx call decline <id>` ends it.
 - **The command says `sent a notification instead`**: the desktop assistant isn't running. Start it with `agentx desktop start`.

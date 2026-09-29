@@ -2633,6 +2633,7 @@ export class AgentXDaemon {
       store,
       config: () => this.config.calls,
       agentName: (id) => this.config.agents[id] ? (this.config.agents[id].name || id) : null,
+      isRunningTurn: (id, p) => !!this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId }),
       alert: async ({ title, message, urgent, from }) => {
         await notify({ title, message, urgent, from, priority: urgent ? 5 : 4 }, async (m) => {
           // A push that fails must not take the Mac banner with it.
@@ -2778,7 +2779,9 @@ export class AgentXDaemon {
       if (isCallsPath(path)) {
         if (!this.calls) { this.json(res, 503, { error: "calls require SQLite" }); return }
         const body = req.method === "POST" ? await readBody(req) : {}
-        const reply = await handleCalls(this.calls, () => this.config.calls, req.method || "GET", path, url.searchParams, body)
+        const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
+        const proof = { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") }
+        const reply = await handleCalls(this.calls, () => this.config.calls, req.method || "GET", path, url.searchParams, body, proof)
         this.json(res, reply.status, reply.body)
         return
       }

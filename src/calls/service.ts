@@ -6,6 +6,8 @@
 // its reason. When the widget is not running, `notify` stands in.
 //
 // Checked before anything rings, in this order:
+//   0. the caller is that agent: a turn of it is running now, named by its
+//      task id or by its channel and chat (see CallerProof),
 //   1. the owner allows this agent (calls.allow; empty allows nobody),
 //   2. the agent has no other call in progress,
 //   3. it is under calls.maxPerHour,
@@ -28,11 +30,31 @@ export type CallResult =
   | { ok: true; call: Call }
   | { ok: false; status: number; error: string }
 
+/** What the request says about the turn placing it: the run's
+ *  AGENTX_TASK_ID, or, for a warm process that has none, its
+ *  AGENTX_CHANNEL and AGENTX_CHAT_ID. Loopback is not an identity. */
+export interface CallerProof {
+  taskId?: string
+  channel?: string
+  chatId?: string
+}
+
+/** The proof headers for a call placed from inside an agent's run. */
+export function callerHeaders(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
+  if (env.AGENTX_TASK_ID) return { "X-AgentX-Task": env.AGENTX_TASK_ID }
+  if (env.AGENTX_CHANNEL && env.AGENTX_CHAT_ID) {
+    return { "X-AgentX-Channel": env.AGENTX_CHANNEL, "X-AgentX-Chat": env.AGENTX_CHAT_ID }
+  }
+  return {}
+}
+
 export interface CallDeps {
   store: CallStore
   config: () => CallsConfig
   /** The agent's display name, or null when there is no such agent here. */
   agentName: (agentId: string) => string | null
+  /** True when `proof` names a running turn of `agentId`. */
+  isRunningTurn: (agentId: string, proof: CallerProof) => boolean
   /** Tell the owner through notify. `urgent` passes Focus, like notify --urgent. */
   alert: (notice: { title: string; message: string; urgent: boolean; from: string }) => Promise<void>
   /** Ask the agent, in its voice session, to summarise the call. */
@@ -65,13 +87,16 @@ export class CallService {
   private name(agentId: string): string { return this.deps.agentName(agentId) ?? agentId }
 
   /** An agent asks for a call. 201 ringing, 202 held as missed (Focus). */
-  async request(input: { agentId?: unknown; reason?: unknown; urgency?: unknown }): Promise<CallResult & { rang?: "widget" | "notify" | false }> {
+  async request(input: { agentId?: unknown; reason?: unknown; urgency?: unknown }, proof: CallerProof = {}): Promise<CallResult & { rang?: "widget" | "notify" | false }> {
     const agentId = String(input.agentId ?? "").trim()
     const reason = String(input.reason ?? "").replace(/\s+/g, " ").trim()
     const urgency: CallUrgency = input.urgency === "urgent" ? "urgent" : "normal"
     if (!agentId || !reason) return { ok: false, status: 400, error: "Required: agentId and reason" }
     if (reason.length > REASON_MAX) return { ok: false, status: 413, error: `reason is over ${REASON_MAX} characters; keep it to one line` }
     if (this.deps.agentName(agentId) === null) return { ok: false, status: 404, error: `Unknown agent: ${agentId}` }
+    if (!this.deps.isRunningTurn(agentId, proof)) {
+      return { ok: false, status: 403, error: `No running turn of ${agentId} placed this call. An agent calls from inside its own run.` }
+    }
 
     const cfg = this.deps.config()
     if (!cfg.allow.includes("*") && !cfg.allow.includes(agentId)) {

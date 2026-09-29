@@ -2,10 +2,11 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { mutateAgentxConfig } from "@/daemon/config-mutate"
 import type { Call } from "@/calls/store"
+import { callerHeaders } from "@/calls/service"
 
 // --- `agentx call` — an agent rings the owner (#321) ---
 //
-//   agentx call request --reason "…" [--urgent] [--agent id]
+//   agentx call request --reason "…" [--urgent]   (inside an agent's run)
 //   agentx call list [--status missed]
 //   agentx call answer|decline|hangup <id>, agentx call later <id> [min]
 //   agentx call allow <agent|*>, agentx call disallow <agent|*>
@@ -15,11 +16,11 @@ import type { Call } from "@/calls/store"
 
 const DAEMON = process.env.AGENTX_DAEMON_URL ?? "http://127.0.0.1:18800"
 
-async function daemon(method: string, path: string, body?: unknown): Promise<any> {
+async function daemon(method: string, path: string, body?: unknown, extra: Record<string, string> = {}): Promise<any> {
   const token = process.env.MESH_TOKEN
   const res = await fetch(`${DAEMON}${path}`, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra },
     body: body === undefined ? undefined : JSON.stringify(body),
   }).catch((e) => { throw new Error(`daemon not reachable at ${DAEMON}: ${e?.message ?? e}`) })
   const data = await res.json().catch(() => ({})) as any
@@ -52,15 +53,14 @@ async function run(fn: () => Promise<void> | void): Promise<void> {
 }
 
 const request = new Command("request")
-  .description("ask the owner for a live voice call (rings AgentX Voice)")
+  .description("ask the owner for a live voice call (rings AgentX Voice); runs inside an agent's turn")
   .requiredOption("--reason <text>", "why, in one line: said aloud when they answer")
-  .option("--agent <id>", "who is calling (default: $AGENTX_AGENT_ID)")
   .option("--urgent", "ring even during Focus")
   .option("--json", "print the call as JSON")
   .action((opts) => run(async () => {
-    const agentId = opts.agent || process.env.AGENTX_AGENT_ID
-    if (!agentId) throw new Error("no agent: pass --agent <id> (or run inside an agent, which sets AGENTX_AGENT_ID)")
-    const r = await daemon("POST", "/calls", { agentId, reason: opts.reason, urgency: opts.urgent ? "urgent" : "normal" })
+    const agentId = process.env.AGENTX_AGENT_ID
+    if (!agentId) throw new Error("no agent: calls are placed from inside an agent's run, which sets AGENTX_AGENT_ID")
+    const r = await daemon("POST", "/calls", { agentId, reason: opts.reason, urgency: opts.urgent ? "urgent" : "normal" }, callerHeaders())
     if (opts.json) { console.log(JSON.stringify(r, null, 2)); return }
     const how = r.rang === "widget" ? "ringing on AgentX Voice"
       : r.rang === "notify" ? "AgentX Voice is not running; sent a notification instead"

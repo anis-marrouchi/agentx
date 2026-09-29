@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import Database from "better-sqlite3"
 import { CallStore, type Call } from "../src/calls/store"
-import { CallService, WIDGET_FRESH_MS, openerPrompt, SUMMARY_PROMPT, type CallDeps } from "../src/calls/service"
+import { CallService, WIDGET_FRESH_MS, openerPrompt, SUMMARY_PROMPT, callerHeaders, type CallDeps } from "../src/calls/service"
 import { handleCalls, isCallsPath } from "../src/daemon/calls-api"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 import { callsSchema, type CallsConfig } from "../src/daemon/config"
@@ -35,6 +35,8 @@ beforeEach(() => {
     store: new CallStore(new Database(":memory:")),
     config: () => cfg,
     agentName: (id) => ({ writer: "Writer", ops: "Ops" } as Record<string, string>)[id] ?? null,
+    // Each agent has one running turn: task `task-<id>`, or chat voice:<id>.
+    isRunningTurn: (id, p) => p.taskId ? p.taskId === `task-${id}` : p.channel === "voice" && p.chatId === `voice:${id}`,
     alert: async (n) => { notices.push(n); await gate },
     summarize: async () => summaryText,
     file: (call, summary) => { filed.push({ call, summary }) },
@@ -43,6 +45,10 @@ beforeEach(() => {
   }
   calls = new CallService(deps)
 })
+
+/** A call placed from inside the agent's own running turn. */
+const place = (input: { agentId: string; reason: string; urgency?: string }) =>
+  calls.request(input, { taskId: `task-${input.agentId}` })
 
 /** The widget polls, so it counts as running. */
 async function widgetUp() { await calls.ringing() }
@@ -67,7 +73,7 @@ describe("config", () => {
 describe("request", () => {
   it("rings on the widget when it is polling", async () => {
     await widgetUp()
-    const r = await calls.request({ agentId: "writer", reason: "  The deploy\n needs you  " })
+    const r = await place({ agentId: "writer", reason: "  The deploy\n needs you  " })
     expect(r.ok && r.rang).toBe("widget")
     if (!r.ok) return
     expect(r.call).toMatchObject({ agentId: "writer", reason: "The deploy needs you", status: "ringing", urgency: "normal" })
@@ -78,45 +84,45 @@ describe("request", () => {
   it("falls back to notify when the widget is not running", async () => {
     await widgetUp()
     now += WIDGET_FRESH_MS
-    const r = await calls.request({ agentId: "writer", reason: "Need a decision" })
+    const r = await place({ agentId: "writer", reason: "Need a decision" })
     expect(r.ok && r.rang).toBe("notify")
     expect(notices).toEqual([expect.objectContaining({ title: "Writer is calling", urgent: false, from: "writer" })])
     expect(notices[0].message).toMatch(/^Need a decision\n/)
   })
 
   it("refuses an agent the owner did not allow", async () => {
-    const r = await calls.request({ agentId: "ops", reason: "hi" })
+    const r = await place({ agentId: "ops", reason: "hi" })
     expect(r).toMatchObject({ ok: false, status: 403 })
     cfg = { ...cfg, allow: ["*"] }
-    expect((await calls.request({ agentId: "ops", reason: "hi" })).ok).toBe(true)
+    expect((await place({ agentId: "ops", reason: "hi" })).ok).toBe(true)
   })
 
   it("rejects bad input and unknown agents", async () => {
-    expect(await calls.request({ agentId: "writer", reason: " " })).toMatchObject({ status: 400 })
-    expect(await calls.request({ agentId: "writer", reason: "x".repeat(201) })).toMatchObject({ status: 413 })
+    expect(await place({ agentId: "writer", reason: " " })).toMatchObject({ status: 400 })
+    expect(await place({ agentId: "writer", reason: "x".repeat(201) })).toMatchObject({ status: 413 })
     cfg = { ...cfg, allow: ["*"] }
-    expect(await calls.request({ agentId: "ghost", reason: "hi" })).toMatchObject({ status: 404 })
+    expect(await place({ agentId: "ghost", reason: "hi" })).toMatchObject({ status: 404 })
   })
 
   it("allows one call in progress per agent", async () => {
-    await calls.request({ agentId: "writer", reason: "one" })
-    expect(await calls.request({ agentId: "writer", reason: "two" })).toMatchObject({ ok: false, status: 409 })
+    await place({ agentId: "writer", reason: "one" })
+    expect(await place({ agentId: "writer", reason: "two" })).toMatchObject({ ok: false, status: 409 })
   })
 
   it("rate-limits each agent per hour", async () => {
     for (let i = 0; i < 3; i++) {
-      const r = await calls.request({ agentId: "writer", reason: `call ${i}` })
+      const r = await place({ agentId: "writer", reason: `call ${i}` })
       if (r.ok) calls.decline(r.call.id)
     }
-    expect(await calls.request({ agentId: "writer", reason: "fourth" })).toMatchObject({ ok: false, status: 429 })
+    expect(await place({ agentId: "writer", reason: "fourth" })).toMatchObject({ ok: false, status: 429 })
     now += 3_600_000
-    expect((await calls.request({ agentId: "writer", reason: "next hour" })).ok).toBe(true)
+    expect((await place({ agentId: "writer", reason: "next hour" })).ok).toBe(true)
   })
 
   it("holds a non-urgent call during Focus as missed, through notify", async () => {
     focus = ON
     await widgetUp()
-    const r = await calls.request({ agentId: "writer", reason: "Can wait" })
+    const r = await place({ agentId: "writer", reason: "Can wait" })
     expect(r.ok && r.rang).toBe(false)
     if (!r.ok) return
     expect(r.call).toMatchObject({ status: "missed", note: "in work" })
@@ -127,7 +133,7 @@ describe("request", () => {
   it("rings an urgent call through Focus", async () => {
     focus = ON
     await widgetUp()
-    const r = await calls.request({ agentId: "writer", reason: "Prod is down", urgency: "urgent" })
+    const r = await place({ agentId: "writer", reason: "Prod is down", urgency: "urgent" })
     expect(r.ok && r.rang).toBe("widget")
   })
 })
@@ -135,7 +141,7 @@ describe("request", () => {
 describe("lifecycle", () => {
   async function ringingCall(): Promise<Call> {
     await widgetUp()
-    const r = await calls.request({ agentId: "writer", reason: "Pick a launch date" })
+    const r = await place({ agentId: "writer", reason: "Pick a launch date" })
     if (!r.ok) throw new Error(r.error)
     return r.call
   }
@@ -185,8 +191,8 @@ describe("lifecycle", () => {
   it("a call answered while a sweep is mid-way stays answered", async () => {
     cfg = { ...cfg, allow: ["*"] }
     await widgetUp()
-    const a = await calls.request({ agentId: "writer", reason: "first" })
-    const b = await calls.request({ agentId: "ops", reason: "second" })
+    const a = await place({ agentId: "writer", reason: "first" })
+    const b = await place({ agentId: "ops", reason: "second" })
     if (!a.ok || !b.ok) throw new Error("not placed")
     now += cfg.ringSeconds * 1000
     let release!: () => void
@@ -229,9 +235,38 @@ describe("lifecycle", () => {
   })
 })
 
+describe("caller identity", () => {
+  it("refuses an allowed agent's id with no running turn of it", async () => {
+    expect(await calls.request({ agentId: "writer", reason: "hi" })).toMatchObject({ ok: false, status: 403 })
+    // ops (not allowed) naming writer, with its own task id
+    expect(await calls.request({ agentId: "writer", reason: "hi", urgency: "urgent" }, { taskId: "task-ops" }))
+      .toMatchObject({ ok: false, status: 403 })
+    expect(await calls.request({ agentId: "writer", reason: "hi" }, { channel: "voice", chatId: "voice:ops" }))
+      .toMatchObject({ ok: false, status: 403 })
+    expect(calls.list()).toHaveLength(0)
+    expect(notices).toHaveLength(0)
+  })
+
+  it("accepts a warm process by its channel and chat", async () => {
+    expect((await calls.request({ agentId: "writer", reason: "hi" }, { channel: "voice", chatId: "voice:writer" })).ok).toBe(true)
+  })
+
+  it("the route refuses a request without proof", async () => {
+    const r = await handleCalls(calls, () => cfg, "POST", "/calls", new URLSearchParams(), { agentId: "writer", reason: "hi" })
+    expect(r.status).toBe(403)
+  })
+
+  it("callerHeaders prefers the task id, else channel and chat", () => {
+    expect(callerHeaders({ AGENTX_TASK_ID: "t1", AGENTX_CHANNEL: "voice", AGENTX_CHAT_ID: "c" })).toEqual({ "X-AgentX-Task": "t1" })
+    expect(callerHeaders({ AGENTX_CHANNEL: "voice", AGENTX_CHAT_ID: "c" })).toEqual({ "X-AgentX-Channel": "voice", "X-AgentX-Chat": "c" })
+    expect(callerHeaders({ AGENTX_CHANNEL: "voice" })).toEqual({})
+  })
+})
+
 describe("routes", () => {
   const get = (path: string, q = "") => handleCalls(calls, () => cfg, "GET", path, new URLSearchParams(q), {})
-  const post = (path: string, body: Record<string, unknown> = {}) => handleCalls(calls, () => cfg, "POST", path, new URLSearchParams(), body)
+  const post = (path: string, body: Record<string, unknown> = {}) =>
+    handleCalls(calls, () => cfg, "POST", path, new URLSearchParams(), body, { taskId: `task-${body.agentId}` })
 
   it("are all mesh-gated", () => {
     for (const p of ["/calls", "/calls/ringing", "/calls/call-1/answer"]) {

@@ -9,6 +9,7 @@ import { existsSync, readFileSync } from "fs"
 import { describeQueue } from "@/daemon/voice-queue-api"
 import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
+import { callerHeaders } from "@/calls/service"
 
 // --- MCP Server: expose agentx as a Model Context Protocol server ---
 // This allows Claude Code, Cursor, Windsurf, and any MCP client to use
@@ -537,7 +538,6 @@ const TOOLS = [
       properties: {
         reason: { type: "string", description: "Why you are calling, in one line (at most 200 characters)." },
         urgency: { type: "string", enum: ["normal", "urgent"], description: "Default normal: held as a missed call during Focus." },
-        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
       },
       required: ["reason"],
     },
@@ -1168,11 +1168,12 @@ async function handleToolCall(
     }
 
     case "agentx_call_owner": {
-      const agentId = process.env.AGENTX_AGENT_ID || String(args.callerAgentId || "")
-      if (!agentId) return { content: [{ type: "text", text: "No caller: pass callerAgentId." }] }
+      // The daemon checks this against a running turn of the agent.
+      const agentId = process.env.AGENTX_AGENT_ID
+      if (!agentId) return { content: [{ type: "text", text: "Call not placed: only an agent's own run can call (AGENTX_AGENT_ID is not set)." }] }
       const res = await fetch(`${daemonUrl()}/calls`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
         body: JSON.stringify({ agentId, reason: args.reason, urgency: args.urgency }),
       })
       const data = await res.json().catch(() => ({})) as any

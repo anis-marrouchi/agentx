@@ -1,9 +1,12 @@
 // Calls an agent places to the owner, over HTTP (src/calls, #321).
 //
 //   POST /calls                 {agentId, reason, urgency?: "urgent"}
+//                               with X-AgentX-Task, or X-AgentX-Channel +
+//                               X-AgentX-Chat: a running turn of agentId
 //                               201 ringing {call, rang}; 202 held as a
 //                               missed call (Focus) {call, rang: false};
-//                               403 not in calls.allow; 409 one already in
+//                               403 no such running turn, or not in
+//                               calls.allow; 409 one already in
 //                               progress; 429 over calls.maxPerHour
 //   GET  /calls?status=&limit=  newest first; status is a comma list
 //   GET  /calls/ringing         the widget's poll: {calls, ringSound,
@@ -18,7 +21,7 @@
 // All of it is mesh-gated (isMeshGatedPath): reasons are agent-written text,
 // and placing or answering a call makes this host ring and speak.
 
-import type { CallService } from "@/calls/service"
+import type { CallerProof, CallService } from "@/calls/service"
 import type { CallStatus } from "@/calls/store"
 import type { CallsConfig } from "@/daemon/config"
 import type { Reply } from "@/daemon/voice-talk-api"
@@ -36,10 +39,11 @@ export async function handleCalls(
   path: string,
   query: URLSearchParams,
   body: Record<string, unknown>,
+  proof: CallerProof = {},
 ): Promise<Reply> {
   if (path === "/calls") {
     if (method === "POST") {
-      const r = await calls.request(body)
+      const r = await calls.request(body, proof)
       if (!r.ok) return { status: r.status, body: { error: r.error } }
       return { status: r.rang === false ? 202 : 201, body: { call: r.call, rang: r.rang } }
     }

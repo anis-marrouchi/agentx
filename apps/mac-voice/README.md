@@ -88,8 +88,8 @@ local agent and no other remote uses.
 
 ## Incoming calls
 
-An agent the owner allowed (`calls.allow`) can ring: `agentx call request
---reason "…"`, or the MCP tool `agentx_call_owner`. `Calls.swift` polls
+An agent the owner allowed (`calls.allow`) can ring from inside its own run:
+`agentx call request --reason "…"`, or the MCP tool `agentx_call_owner`. `Calls.swift` polls
 `/calls/ringing` every two seconds (the poll is also how the daemon knows the
 widget is running; without it the daemon falls back to `agentx notify`). A
 ringing call summons the pill, pulses the orb in the caller's colours, loops
