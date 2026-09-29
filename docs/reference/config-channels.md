@@ -165,6 +165,10 @@ WebRTC lets people call an agent from a browser.
 | `chatId` | string | required | Chat to notify. |
 | `accountId` | string | — | Which account of that channel sends it. |
 | `channels.webrtc.callUrlBase` | string | — | Address used in the join link. Defaults to `http://` plus `node.bind`; set it when people reach the daemon by another name. |
+| `channels.webrtc.camera.width` | number (160–3840) | `1280` | Picture width the phone app asks for when it [shares its camera](../dashboard/mobile-camera.md). The phone uses the nearest size its camera supports. |
+| `channels.webrtc.camera.height` | number (120–2160) | `720` | Picture height the phone asks for. |
+| `channels.webrtc.camera.frameRate` | number (1–60) | `15` | Frames per second the phone asks for. |
+| `channels.webrtc.camera.maxSeconds` | number (10–7200) | `600` | The phone stops sharing its camera after this many seconds. |
 
 ### Call bot
 

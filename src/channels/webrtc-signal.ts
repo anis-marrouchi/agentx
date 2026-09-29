@@ -70,6 +70,16 @@ export interface RingHandler {
   (signal: WebRtcSignal): void | Promise<void>
 }
 
+/** The "someone is calling" message a ring sends to ringNotify targets. A
+ *  phone sharing its camera (#325) gets a watch-only link: that page opens
+ *  no camera or microphone and sends the offer itself. */
+export function ringNotice(signal: WebRtcSignal, urlBase: string): string {
+  const link = `${urlBase}/call?to=${encodeURIComponent(signal.from)}&callId=${encodeURIComponent(signal.callId)}`
+  return signal.reason === "camera"
+    ? `📷 ${signal.from} is sharing a phone camera — tap to watch: ${link}&watch=1`
+    : `📞 ${signal.from} is calling — tap to join: ${link}`
+}
+
 /** Dedup window for ring notifications. A single call shouldn't ping the
  *  callee's channels twice, but two distinct calls on the same day must
  *  each notify. Five minutes comfortably covers retry-after-missed-call

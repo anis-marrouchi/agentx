@@ -24,7 +24,7 @@ import { TelegramAdapter } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { GitLabAdapter } from "@/channels/gitlab"
 import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
-import { WebRtcSignalBroker, type WebRtcSignal } from "@/channels/webrtc-signal"
+import { WebRtcSignalBroker, ringNotice, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { CALL_PAGE_HTML } from "./call-page"
 import { BotManager } from "./bot-manager"
 import { CronScheduler } from "@/crons/scheduler"
@@ -1944,8 +1944,7 @@ export class AgentXDaemon {
       if (wrtcCfg.ringNotify.length > 0) {
         const urlBase = wrtcCfg.callUrlBase || `http://${this.config.node.bind}`
         this.webrtc.setRingHandler(async (signal) => {
-          const link = `${urlBase}/call?to=${encodeURIComponent(signal.from)}&callId=${encodeURIComponent(signal.callId)}`
-          const text = `📞 ${signal.from} is calling — tap to join: ${link}`
+          const text = ringNotice(signal, urlBase)
           for (const target of wrtcCfg.ringNotify) {
             try {
               await this.router.sendOutbound({
@@ -5763,6 +5762,7 @@ export class AgentXDaemon {
               ...wrtc.turnServers,
             ],
             peers: this.mesh?.directory().map(p => ({ name: p.peer, healthy: p.healthy })) || [],
+            camera: wrtc.camera,
           })
           break
         }
