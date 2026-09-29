@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.74.0](https://github.com/anis-marrouchi/agentx/compare/v0.73.0...v0.74.0) (2026-09-29)
+
+
+### Features
+
+* **daemon:** restart policy in config, the runs a restart would cut, and resumed agent-to-agent work ([#333](https://github.com/anis-marrouchi/agentx/issues/333)) ([966e753](https://github.com/anis-marrouchi/agentx/commit/966e753cf6563306da52dd9edf6223b1c486b7ee))
+
 ## [0.73.0](https://github.com/anis-marrouchi/agentx/compare/v0.72.0...v0.73.0) (2026-09-29)
 
 
