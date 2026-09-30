@@ -1,6 +1,7 @@
 import { cardsAwaitingAgentNotice, expireCards, markAgentNotified, verdictMessage, type DecisionCard } from "./cards"
 import { listInbox, type InboxContext, type InboxItem } from "./inbox"
 import { readInboxState, recordDigest } from "./state"
+import type { PopupRunnerSettings } from "./popup-runner"
 
 // --- The daemon's approvals sweep ---
 //
@@ -26,6 +27,8 @@ export interface ApprovalSettings {
     timezone?: string
     destination?: { channel: string; chatId: string; accountId?: string }
   }
+  /** Optional so older callers and tests keep compiling; the config always sets it. */
+  popup?: PopupRunnerSettings
 }
 
 export interface SweepDeps {

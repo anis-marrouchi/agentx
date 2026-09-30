@@ -177,6 +177,13 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.digest.destination.channel` | string | required | Channel for the reminder. |
 | `approvals.digest.destination.chatId` | string | required | The chat on that channel. |
 | `approvals.digest.destination.accountId` | string | — | Which account on that channel. |
+| `approvals.popup` | object | `{}` | A popup on this Mac for new decision cards. macOS only. See [Answer from a popup on your Mac](/dashboard/approvals#answer-from-a-popup-on-your-mac). |
+| `approvals.popup.enabled` | boolean | `false` | Shows new cards in a popup. |
+| `approvals.popup.speak` | boolean | `true` | Speaks one short line when the popup opens. |
+| `approvals.popup.voice` | string | — | A macOS voice for the spoken line. Unset: the system voice. |
+| `approvals.popup.sound` | string | `"Glass"` | A sound from `/System/Library/Sounds`; `""` for none. |
+| `approvals.popup.volume` | number (0 to 1) | `0.4` | Sound volume. |
+| `approvals.popup.timeoutSeconds` | number (10 to 3600) | `600` | How long the popup waits for an answer. After that the card stays in the inbox. |
 
 ## `shutdown`
 

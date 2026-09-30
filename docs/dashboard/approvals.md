@@ -65,6 +65,42 @@ To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki** or **
    ```
    Use `reject` for no, or `later` to put it off. Add `--note "text"` to pass a note to the agent with your answer.
 
+## Answer from a popup on your Mac
+
+An agent can offer you ready-made answers on a card, for example three free times for a meeting, together with a suggested message. With the popup switched on, your Mac shows the card by itself as soon as it arrives: a soft sound, one short spoken line, then a small window.
+
+1. Pick one of the choices and click **Next**.
+2. Read the suggested message. It already contains your pick. Change the wording if you like.
+3. Click **Send**. The agent that asked is told your pick and the exact message, and it does the sending.
+
+Nothing is sent until you click **Send**. **Cancel**, **Not now**, or leaving the window alone keeps the card waiting in Approvals, where you can still answer it later. A card without choices shows its question with **Yes**, **No** and **Not now**.
+
+The popup behaves like your other notifications:
+
+- **Focus is respected.** While a Focus mode (Do Not Disturb) or the widget's hold is on, nothing pops up. The card appears within a minute after Focus ends.
+- **One at a time,** oldest first. Each card pops up once.
+- **Cards you put off with Later** pop up when they come back. Cards older than a day don't pop up, so switching the popup on doesn't replay a backlog.
+
+To switch it on:
+
+1. **Terminal:** turn the popup on:
+   ```sh
+   agentx approvals settings --popup on
+   ```
+2. **Terminal:** optionally choose the sound and voice, or silence the spoken line:
+   ```sh
+   agentx approvals settings --popup-sound Glass --popup-voice Samantha
+   agentx approvals settings --popup-speak off
+   ```
+   `say -v '?'` lists the voices on your Mac. Use `--popup-sound none` for no sound.
+3. **Terminal:** run `agentx approvals settings` to see what is set.
+
+To show one card in the popup yourself, for example to try it:
+
+1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
+
+You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. On the dashboard, a card with choices lists them under **Choices**. Answer it in the popup or in the terminal, because **Yes** alone doesn't say which one you picked.
+
 ## Get one reminder a day
 
 Once a day AgentX sends you one message: how many decisions are waiting, and the most urgent one. It never sends one message per card. It goes to the same place as your other notifications (`notifications.destination`, see [Get notified](../jobs/notifications.md)) unless you choose another.
@@ -93,7 +129,8 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
   "maxExpiryDays": 30,
   "laterHours": 24,
   "notifyAgent": true,
-  "digest": { "enabled": true, "time": "09:00" }
+  "digest": { "enabled": true, "time": "09:00" },
+  "popup": { "enabled": false, "speak": true, "sound": "Glass", "volume": 0.4, "timeoutSeconds": 600 }
 }
 ```
 
@@ -107,6 +144,12 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
 | `digest.time` | When, as 24-hour `HH:MM` | `--digest-time` |
 | `digest.timezone` | Time zone for `time`, such as `Europe/Paris`. Unset: this machine's | `--digest-timezone` |
 | `digest.destination` | Where it goes: `{ "channel": "…", "chatId": "…" }`. Unset: `notifications.destination` | `--digest-to channel:chatId` |
+| `popup.enabled` | Show new cards in a popup on this Mac | `--popup on\|off` |
+| `popup.speak` | Speak one short line when it opens | `--popup-speak on\|off` |
+| `popup.voice` | macOS voice for that line. Unset: the system voice | `--popup-voice` |
+| `popup.sound` | System sound, such as `Glass`. `""` for none | `--popup-sound` |
+| `popup.volume` | Sound volume, 0 to 1 | — |
+| `popup.timeoutSeconds` | How long the popup waits before it closes; the card stays waiting | `--popup-timeout` |
 
 ## For agents: raise a card
 
@@ -119,7 +162,26 @@ Agents raise cards with the `agentx_approval` tool. They don't need anything set
      --if-silent discard --expires 2d
    ```
 
-The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires` and `source`, plus `raised_by` (the agent id). `GET /approvals` lists what is waiting. Answering is refused on that API on purpose.
+A card can also offer ready-made answers. The popup and `agentx approvals approve --choice` use them:
+
+| Field | Meaning |
+|---|---|
+| `choices` | Up to 5 short answers to pick from, such as three free times |
+| `draft` | A suggested message you can edit. `{choice}` is replaced by your pick |
+| `say` | The short line the popup speaks. Default: the title |
+
+For example, with two choices and a message:
+
+```sh
+agentx approvals request --agent helper --title "New meeting date" \
+  --ask "Which time should I offer?" --recommend "Thursday: you are free all afternoon" \
+  --if-silent discard --choice "Thursday 14:00" --choice "Friday 10:00" \
+  --draft "Hello, would {choice} suit you for our meeting?" --say "A client needs a new meeting date"
+```
+
+When you answer yes, the agent's result message includes **Chosen:** and the approved message. The agent sends exactly that text.
+
+The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires`, `source`, `choices`, `draft` and `say`, plus `raised_by` (the agent id). `GET /approvals` lists what is waiting. Answering is refused on that API on purpose.
 
 ## Check it worked
 
@@ -129,6 +191,13 @@ The daemon also accepts cards over its local API, `POST /approvals` with the fie
 4. **Browser:** within a minute, the **Activity** tab shows a short run for that agent on the `approvals` channel. That is the agent reading your answer.
 5. **Terminal:** `agentx approvals list` says `nothing waiting`.
 
+For the popup (Mac):
+
+1. **Terminal:** run `agentx approvals settings --popup on`.
+2. **Terminal:** raise the meeting card from [For agents: raise a card](#for-agents-raise-a-card).
+3. **Mac:** within a minute you hear a sound and the spoken line, and the list of times appears. Pick one, click **Next**, then **Send**.
+4. **Terminal:** `agentx approvals list` no longer shows the card, and the agent's run on the `approvals` channel starts with your pick.
+
 ## If something is wrong
 
 - **The Approvals tab shows nothing, but `agentx schedule list` shows a request:** the dashboard reads the folder it was started in. Start `agentx board serve` from the same folder as the daemon.
@@ -137,4 +206,7 @@ The daemon also accepts cards over its local API, `POST /approvals` with the fie
 - **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
+- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>` to show it again. The daemon log has a line starting `[approvals] popup`.
+- **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
+- **"This card offers choices: pick one":** you clicked **Yes** on the dashboard for a card with choices. Answer it in the popup, or with `agentx approvals approve <key> --choice <n>`.
 - **The agent never heard the result:** check `notifyAgent` is on, and that the agent still exists on this machine. The daemon log line starting `[approvals]` says what happened.

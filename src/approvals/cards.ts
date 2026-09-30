@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { answerLines, buildChoices, resolveAnswer, type CardChoices } from "./choices"
 
 // --- Decision cards: what an agent asks the operator ---
 //
@@ -28,7 +29,7 @@ export interface ReplyTarget {
   accountId?: string
 }
 
-export interface DecisionCard {
+export interface DecisionCard extends CardChoices {
   id: string
   title: string
   ask: string
@@ -49,6 +50,10 @@ export interface DecisionCard {
   decided_by?: string
   decided_at?: string
   note?: string
+  /** The option the operator picked, when the card offered choices. */
+  choice?: string
+  /** The message the operator approved, after any edit. */
+  text?: string
   /** Set once the raising agent has been told the result. */
   agent_notified_at?: string
 }
@@ -157,6 +162,9 @@ export interface CardInput {
   source?: unknown
   raised_by?: unknown
   reply?: unknown
+  choices?: unknown
+  draft?: unknown
+  say?: unknown
 }
 
 /** Validate what an agent sent and build a pending card. Never saves. */
@@ -188,6 +196,8 @@ export function buildCard(
   if (source && /^[a-z][a-z0-9+.-]*:/i.test(source) && !/^https?:\/\//i.test(source)) {
     return { ok: false, error: "source must be an http(s) link or a plain reference" }
   }
+  const extras = buildChoices(input)
+  if (!extras.ok) return extras
   let reply: ReplyTarget | undefined
   const r = input.reply as Record<string, unknown> | undefined
   if (r && typeof r === "object" && oneLine(r.channel) && oneLine(r.chatId)) {
@@ -206,6 +216,7 @@ export function buildCard(
       raised_by: raisedBy,
       created_at: new Date(now).toISOString(),
       ...(reply ? { reply } : {}),
+      ...extras.value,
       status: "pending",
     },
   }
@@ -232,11 +243,13 @@ export function decideCard(
   root: string,
   id: string,
   verdict: Verdict,
-  opts: { by?: string; note?: string; now?: number } = {},
+  opts: { by?: string; note?: string; now?: number; choice?: string | number; text?: string } = {},
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const card = readCard(root, id)
   if (!card) return { ok: false, error: `no card "${id}"` }
   if (card.status !== "pending") return { ok: false, error: `card "${id}" is already ${card.status}` }
+  const answer = resolveAnswer(card, verdict, opts)
+  if (!answer.ok) return answer
   const note = oneLine(opts.note).slice(0, CARD_LIMITS.note)
   const decided: DecisionCard = {
     ...card,
@@ -245,6 +258,8 @@ export function decideCard(
     decided_by: opts.by ?? "operator",
     decided_at: new Date(opts.now ?? Date.now()).toISOString(),
     ...(note ? { note } : {}),
+    ...(answer.choice ? { choice: answer.choice } : {}),
+    ...(answer.text ? { text: answer.text } : {}),
   }
   saveCard(root, decided)
   return { ok: true, card: decided }
@@ -289,6 +304,7 @@ export function verdictMessage(card: DecisionCard): string {
     `Question: ${card.ask}`,
     result,
   ]
+  if (card.status === "decided" && card.verdict === "yes") lines.push(...answerLines(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)

@@ -29,6 +29,13 @@ export interface ApprovalSettingsPatch {
   digestTime?: string
   digestTimezone?: string | null
   destination?: { channel: string; chatId: string; accountId?: string } | null
+  popupEnabled?: boolean
+  popupSpeak?: boolean
+  /** null clears it (back to the system voice). */
+  popupVoice?: string | null
+  /** "" for no sound. */
+  popupSound?: string
+  popupTimeoutSeconds?: number
 }
 
 /** "channel:chatId". Everything after the first ":" is the chat id, which may contain ":" itself. */
@@ -55,6 +62,13 @@ export async function updateApprovalSettings(
     else if (patch.digestTimezone !== undefined) d.timezone = patch.digestTimezone
     if (patch.destination === null) delete d.destination
     else if (patch.destination !== undefined) d.destination = patch.destination
+    const p = (a.popup ??= {})
+    if (patch.popupEnabled !== undefined) p.enabled = patch.popupEnabled
+    if (patch.popupSpeak !== undefined) p.speak = patch.popupSpeak
+    if (patch.popupVoice === null) delete p.voice
+    else if (patch.popupVoice !== undefined) p.voice = patch.popupVoice
+    if (patch.popupSound !== undefined) p.sound = patch.popupSound
+    if (patch.popupTimeoutSeconds !== undefined) p.timeoutSeconds = patch.popupTimeoutSeconds
     const days = a.defaultExpiryDays ?? 3
     const max = a.maxExpiryDays ?? 30
     if (days > max) throw new Error(`defaultExpiryDays (${days}) can't be more than maxExpiryDays (${max})`)
