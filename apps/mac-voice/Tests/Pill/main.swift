@@ -81,5 +81,16 @@ let moved = up.frame.offsetBy(dx: -300, dy: 200)
 check(PillPlacement.collapsed(from: moved, size: pill, above: true, alignRight: true)
         == low.offsetBy(dx: -300, dy: 200), "dragged while open: the pill collapses where it was dragged")
 
+// --- "Show floating pill" in the menu ---
+
+check(PillMenu.isChecked(showPill: true, visible: true), "setting on, pill on screen: checked")
+check(!PillMenu.isChecked(showPill: true, visible: false), "setting on but the pill was closed: not checked")
+check(!PillMenu.isChecked(showPill: false, visible: true), "setting off: not checked, even mid-answer")
+check(PillMenu.click(showPill: true, visible: false) == true,
+      "the pill was closed: one click keeps the setting on and brings it back")
+check(PillMenu.click(showPill: false, visible: false) == true, "setting off: a click turns it on")
+check(PillMenu.click(showPill: false, visible: true) == true, "setting off mid-answer: a click turns it on")
+check(PillMenu.click(showPill: true, visible: true) == false, "checked: a click turns it off")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")
