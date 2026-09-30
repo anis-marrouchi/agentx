@@ -115,9 +115,9 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 |---|---|
 | **Stop speaking** | Silences every voice (see [Stop every voice at once](#stop-every-voice-at-once)) |
 | **Hold notifications** | Holds agent notifications until you turn it off |
-| **Show floating pill** | Keeps the [pill](#the-pill-and-its-orb) on screen when idle. Off by default: the pill appears only while listening or answering |
+| **Show floating pill** | Keeps the [pill](#the-pill-and-its-orb) on screen when idle. Off by default: the pill appears only while listening or answering. Unticked while the pill is hidden, so one click brings it back |
 | **Animated orb** | Lets the orb in the pill move with your voice and the answer. On by default. Turn it off for an orb that stands still |
-| **Hide pill** | Hides the pill and stops the voice, like its close button. The next **Option–Space** brings it back |
+| **Hide pill** | Hides the pill and stops the voice, like its close button. The next **Option–Space** or **Show floating pill** brings it back |
 | **Reset position** | Puts the pill back in the bottom-right corner of the screen |
 | **Settings…** | Opens the [settings window](#settings-window): voices, shortcuts and speech to text |
 | **Dashboard…** | Opens the dashboard's [Settings](./settings.md) page |
@@ -847,7 +847,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **A shortcut does nothing:** another app already uses it. The app log (`~/Library/Logs/agentx-desktop.err.log`) says `is taken by another app`. Pick another one in **Settings…**.
 - **A preview is silent:** another line is playing first, or the voice is ElevenLabs without a key. Check `curl -s http://127.0.0.1:18800/voice/queue`.
 - **Launch at login is greyed out:** `agentx desktop install` starts the app at login. **Terminal:** run `agentx desktop stop` to stop it.
-- **The pill doesn't appear:** it was hidden with **×**, **Esc** or **Hide pill**. Hold **Option–Space** to bring it back. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
+- **The pill doesn't appear:** it was hidden with **×**, **Esc** or **Hide pill**. Hold **Option–Space**, or choose **Show floating pill** in the menu, to bring it back. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
 - **The pill is off screen or in an odd place:** click the AgentX icon in the menu bar and choose **Reset position**.
 - **Esc does nothing:** the pill only hears **Esc** after you click it. Click the pill first, or use its **×** button.
 - **The orb is the wrong colour:** pick a palette with `agentx voice palette <agent-id> <palette>` or in **Settings…**, or set `presence.color` for that agent as `#RRGGBB`. The app reads colours and palettes when you open its menu, so open it once after a change. An orb in plain shades of one colour means the daemon is older than the palettes: update it.
