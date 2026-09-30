@@ -32,3 +32,31 @@ export function abortReason(signal: AbortSignal): Error {
   if (reason instanceof Error) return reason
   return new Error(typeof reason === "string" ? reason : "task cancelled")
 }
+
+/** Thrown by `withBudget` when a pre-spawn step runs past its own limit.
+ *  The step's caller decides what the run does without that step. */
+export class StepBudgetExceeded extends Error {
+  constructor(readonly step: string, readonly budgetMs: number) {
+    super(`step "${step}" exceeded its ${Math.round(budgetMs / 1000)}s budget`)
+    this.name = "StepBudgetExceeded"
+  }
+}
+
+/**
+ * Race `work` against a per-step limit. The run's pre-spawn deadline
+ * (minutes) was the only bound on preparation steps, so a step whose own
+ * timeout failed to fire, such as a request that never settled, held the
+ * whole run until that deadline and the message was dropped. The work
+ * keeps running in the background when it loses; nothing waits for it.
+ */
+export function withBudget<T>(work: Promise<T>, budgetMs: number, step: string): Promise<T> {
+  if (!(budgetMs > 0)) return work
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new StepBudgetExceeded(step, budgetMs)), budgetMs)
+    timer.unref?.()
+    work.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (error) => { clearTimeout(timer); reject(error) },
+    )
+  })
+}

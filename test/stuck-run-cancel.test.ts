@@ -208,7 +208,11 @@ describe("the pre-spawn deadline (#183)", () => {
     const id = await started
     const res = await run
 
-    expect(res.error).toMatch(/timed out before spawn after 0s in step "request-gate"/)
+    // The run is tried once more (#340); the second stall is reported in
+    // plain words that still name the step, never the internal error.
+    expect(res.error).toMatch(/couldn't get started.*step "request-gate".*send it again/)
+    expect(res.errorKind).toBe("interrupted")
+    expect(logs.some((l) => /timed out before spawn after 0s in step "request-gate"; retrying the run once/.test(l))).toBe(true)
     expect(agentState(r).runningTasks).toEqual([])
     expect(agentState(r).active).toBe(0)
     expect(r.cancelRunningTask(id)).toBeNull()

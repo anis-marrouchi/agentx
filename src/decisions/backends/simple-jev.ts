@@ -122,7 +122,10 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
         const apiKey = resolveKey(opts.apiKeyEnv, opts.apiKeyFile)
         if (apiKey) headers.Authorization = `Bearer ${apiKey}`
 
-        const res = await doFetch(`${baseUrl}${path}`, {
+        // The signal is also raced explicitly: a request that ignores its
+        // abort (seen in production as a seat call that neither answered
+        // nor failed for five minutes, #340) must still settle on time.
+        const res = await raceSignal(doFetch(`${baseUrl}${path}`, {
           method: "POST",
           headers,
           body: JSON.stringify({
@@ -131,14 +134,14 @@ export function createSimpleJevBackend(opts: SimpleJevOptions = {}): DecisionBac
             questions: withInstructions(request.questions),
           }),
           signal,
-        })
+        }), signal)
 
         if (!res.ok) {
           const detail = await res.text().catch(() => "")
           throw new Error(`${name} ${res.status}: ${detail.slice(0, 300)}`)
         }
 
-        const body = (await res.json()) as {
+        const body = (await raceSignal(res.json(), signal)) as {
           model?: string
           answers?: unknown
           usage?: { input_tokens?: number; output_tokens?: number }
@@ -252,6 +255,20 @@ function assertChoiceCardinality(questions: Questions, max: number): void {
       )
     }
   }
+}
+
+/** Settle `work` with the signal's reason as soon as it aborts, whether or
+ *  not the work honours the signal itself. */
+function raceSignal<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(signal.reason ?? new Error("aborted"))
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("aborted"))
+    signal.addEventListener("abort", onAbort, { once: true })
+    work.then(
+      (v) => { signal.removeEventListener("abort", onAbort); resolve(v) },
+      (e) => { signal.removeEventListener("abort", onAbort); reject(e) },
+    )
+  })
 }
 
 function deadline(
