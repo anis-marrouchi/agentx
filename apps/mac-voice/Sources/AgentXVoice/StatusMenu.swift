@@ -47,7 +47,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onHidePill: (() -> Void)?
     /// Put the pill back in the bottom-right corner.
     var onResetPosition: (() -> Void)?
-    /// Whether the pill is on screen, for "Hide pill".
+    /// Whether the pill is on screen, for "Hide pill" and "Show floating pill".
     var pillVisible: () -> Bool = { false }
     var onSettings: (() -> Void)?
 
@@ -238,7 +238,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         hold.state = Hold.isOn ? .on : .off
         menu.addItem(hold)
         let pill = action("Show floating pill", #selector(togglePill), key: "")
-        pill.state = Config.showPill ? .on : .off
+        pill.state = PillMenu.isChecked(showPill: Config.showPill, visible: pillVisible()) ? .on : .off
         menu.addItem(pill)
         let orb = action("Animated orb", #selector(toggleOrb), key: "")
         orb.state = Config.animatedOrb ? .on : .off
@@ -293,7 +293,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     }
 
     @objc private func togglePill() {
-        Config.showPill.toggle()
+        Config.showPill = PillMenu.click(showPill: Config.showPill, visible: pillVisible())
         onPillChanged?(Config.showPill)
     }
 

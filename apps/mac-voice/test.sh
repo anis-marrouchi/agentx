@@ -12,7 +12,8 @@ swiftc -O -o "$out/orb-tests" Sources/AgentXVoice/OrbMath.swift Tests/Orb/main.s
 swiftc -O -o "$out/settings-tests" Sources/AgentXVoice/HotkeySpec.swift Sources/AgentXVoice/VoiceSettings.swift \
   Tests/Settings/main.swift -target arm64-apple-macosx14.0
 "$out/settings-tests"
-swiftc -O -o "$out/pill-tests" Sources/AgentXVoice/PillPlacement.swift Tests/Pill/main.swift \
+swiftc -O -o "$out/pill-tests" Sources/AgentXVoice/PillPlacement.swift Sources/AgentXVoice/PillMenu.swift \
+  Tests/Pill/main.swift \
   -target arm64-apple-macosx14.0
 "$out/pill-tests"
 swiftc -O -o "$out/pill-busy-tests" Sources/AgentXVoice/PillBusy.swift Tests/PillBusy/main.swift \

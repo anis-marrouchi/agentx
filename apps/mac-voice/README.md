@@ -116,7 +116,7 @@ Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
 launch and when screens change it is clamped onto a connected screen, and
 "Reset position" puts it back bottom-right. The close button (on hover), Esc
 after a click, and "Hide pill" hide it and stop speech until the next talk
-key. An answer worth reading grows the pill itself (`PanelAnswer.swift`,
+key or "Show floating pill", which is unchecked while the pill is closed. An answer worth reading grows the pill itself (`PanelAnswer.swift`,
 `AnswerView.swift`): up or down from its row, whichever has more room, then
 back to the same place `voice.card.timeout` seconds after it is spoken (not
 while hovered), at most `voice.card.maxHeight` tall. `PillPlacement.swift`
