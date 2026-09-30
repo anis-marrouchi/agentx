@@ -61,7 +61,7 @@ The same checks are on the dashboard.
 ## If something is wrong
 
 - **`command not found: agentx`:** AgentX isn't installed on this machine's path. In a source checkout, use `node dist/cli.js doctor`. Otherwise see [Install](../install.md).
-- **`Node.js … AgentX requires Node 22.x`:** install Node.js 22, then run doctor again.
+- **`Node.js … AgentX requires Node 22.19 or newer, up to Node 26`:** install Node.js 22, then run doctor again.
 - **`agentx.json is not valid JSON`:** the detail line names the position of the mistake. Fix it, or restore the latest backup: each save from the dashboard leaves a copy named `agentx.json.bak.<number>` in the same folder.
 - **`Daemon not reachable (not running?)`:** the daemon isn't running or can't be reached. Start it with `agentx daemon start --detach`, or add `--no-running` if it's stopped on purpose.
 - **Everything passes but messages still get no reply:** follow [It's not answering](./its-not-answering.md).

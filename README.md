@@ -48,7 +48,7 @@ Releases ship often; see the [changelog](CHANGELOG.md) for what changed. Our pri
 
 ## See it without an account
 
-With Node.js 22.x, run:
+With Node.js 22.19 or newer (tested on 22, 24, 25 and 26), run:
 
 ```sh
 npx agentix-cli demo
@@ -74,7 +74,7 @@ The Workflows editor has a chat control. Describe the timing, source, and destin
 
 ## Install
 
-A technical teammate needs a terminal for installation, model setup, and starting the services. The web wizard handles the rest of the initial setup; daily inspection is in the browser. AgentX requires **Node.js 22.x**.
+A technical teammate needs a terminal for installation, model setup, and starting the services. The web wizard handles the rest of the initial setup; daily inspection is in the browser. AgentX requires **Node.js 22.19 or newer, up to 26**.
 
 ```sh
 git clone https://github.com/anis-marrouchi/agentx.git

@@ -41,7 +41,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"   # must satisfy engines (>=22 <23); engine-strict refuses otherwise
+          node-version: "22"   # must satisfy engines (>=22.19.0 <27); engine-strict refuses otherwise
           cache: pnpm
 
       - name: Rewrite git+ssh deps to https

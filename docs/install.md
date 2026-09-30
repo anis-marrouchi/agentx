@@ -78,7 +78,7 @@ Opening the setup page doesn't start the daemon; one of the two options in step 
 
 ## Install from npm
 
-The npm package is called `agentix-cli`; the command it installs is `agentx`. It needs Node.js 22 (Node 20 is too old).
+The npm package is called `agentix-cli`; the command it installs is `agentx`. It needs Node.js 22.19 or newer, up to 26 (Node 20 is too old).
 
 1. **Terminal:** install it:
    ```sh
