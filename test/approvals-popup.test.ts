@@ -144,7 +144,7 @@ describe("the dialog", () => {
     }
     return { run, calls }
   }
-  const S: PopupSettings = { speak: true, sound: "", volume: 0.4, timeoutSeconds: 60 }
+  const S: PopupSettings = { style: "dialog", speak: true, sound: "", volume: 0.4, timeoutSeconds: 60 }
 
   it("choice, then edit, then Send", async () => {
     const c = raise({ choices: SLOTS, draft: "How about {choice}?", say: "Pick a date" })

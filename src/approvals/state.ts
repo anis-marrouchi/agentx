@@ -17,6 +17,8 @@ export interface InboxState {
   lastDigest?: string
   /** Inbox key → ISO time the Mac popup showed it. Shown once, not every minute. */
   popped?: Record<string, string>
+  /** ISO time of the last check-in: every card waiting then may show again. */
+  passAt?: string
 }
 
 function stateFile(root: string): string {
@@ -30,6 +32,7 @@ export function readInboxState(root: string): InboxState {
       snoozed: raw && typeof raw.snoozed === "object" && raw.snoozed ? raw.snoozed : {},
       ...(typeof raw?.lastDigest === "string" ? { lastDigest: raw.lastDigest } : {}),
       ...(raw?.popped && typeof raw.popped === "object" ? { popped: raw.popped } : {}),
+      ...(typeof raw?.passAt === "string" ? { passAt: raw.passAt } : {}),
     }
   } catch {
     return { snoozed: {} }
@@ -66,4 +69,9 @@ export function recordPopped(root: string, key: string, waiting: string[], now: 
   for (const [k, v] of Object.entries(state.popped ?? {})) if (keep.has(k)) popped[k] = v
   popped[key] = new Date(now).toISOString()
   writeInboxState(root, { ...state, popped })
+}
+
+/** A check-in: every waiting card may show once more, whatever its age. */
+export function recordPass(root: string, now: number = Date.now()): void {
+  writeInboxState(root, { ...readInboxState(root), popped: {}, passAt: new Date(now).toISOString() })
 }

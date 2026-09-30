@@ -1,0 +1,123 @@
+import { mkdtempSync, rmSync, writeFileSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { CHOICE_LIMITS } from "./choices"
+import { renderCardPage, type CardPageOptions } from "./card-page"
+import type { DecisionCard } from "./cards"
+import type { PopupAnswer, Run } from "./popup"
+
+// --- The Mac card window ---
+//
+// A small floating panel with a WKWebView in it, opened by osascript's
+// JavaScript (JXA) bridge to AppKit. No app to build or install: the script
+// below ships with the package, like the osascript dialogs it replaces.
+//
+// The page (card-page.ts) is written to a private temp file and loaded from
+// disk; it can't reach the network. The panel sits at the top right of the
+// main screen, floats over other windows, fits its height to the page, and
+// closes on an answer, on its close button, or after `seconds`.
+//
+// The script prints the page's answer. Nothing here decides: popup-runner.ts
+// records the answer, and only after parseAnswer has checked it against the
+// card once more.
+
+export const CARD_WIDTH = 440
+
+export const WINDOW_JXA = `
+ObjC.import("Cocoa"); ObjC.import("WebKit")
+function run(argv) {
+  var path = argv[0], w = Number(argv[1]), h = 420, secs = Number(argv[2]), capture = argv[3] || ""
+  var app = $.NSApplication.sharedApplication
+  app.setActivationPolicy($.NSApplicationActivationPolicyAccessory)
+  var vis = $.NSScreen.mainScreen.visibleFrame
+  var top = vis.origin.y + vis.size.height - 18, right = vis.origin.x + vis.size.width - 18
+  var mask = $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskFullSizeContentView
+  var win = $.NSPanel.alloc.initWithContentRectStyleMaskBackingDefer($.NSMakeRect(right - w, top - h, w, h), mask, $.NSBackingStoreBuffered, false)
+  win.titlebarAppearsTransparent = true
+  win.titleVisibility = $.NSWindowTitleHidden
+  win.movableByWindowBackground = true
+  win.level = $.NSFloatingWindowLevel
+  win.releasedWhenClosed = false
+  win.collectionBehavior = $.NSWindowCollectionBehaviorCanJoinAllSpaces
+  win.standardWindowButton($.NSWindowMiniaturizeButton).hidden = true
+  win.standardWindowButton($.NSWindowZoomButton).hidden = true
+  var cfg = $.WKWebViewConfiguration.alloc.init
+  cfg.mediaTypesRequiringUserActionForPlayback = 0
+  var web = $.WKWebView.alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, w, h), cfg)
+  web.autoresizingMask = $.NSViewWidthSizable | $.NSViewHeightSizable
+  win.contentView = web
+  var url = $.NSURL.fileURLWithPath(path)
+  web.loadFileURLAllowingReadAccessToURL(url, url.URLByDeletingLastPathComponent)
+  win.makeKeyAndOrderFront(null)
+  app.activateIgnoringOtherApps(true)
+  var end = Date.now() + secs * 1000, sized = 0, shot = false, seen = ""
+  while (Date.now() < end) {
+    var ev = app.nextEventMatchingMaskUntilDateInModeDequeue($.NSEventMaskAny, $.NSDate.dateWithTimeIntervalSinceNow(0.05), $.NSDefaultRunLoopMode, true)
+    if (ev && !ev.isNil()) app.sendEvent(ev)
+    if (!win.isVisible) return ""
+    var t = web.title.js || ""
+    if (t.indexOf("agentx:answer:") === 0) { win.close; return t.slice(14) }
+    if (t !== seen && t.indexOf("agentx:size:") === 0) {
+      seen = t
+      var want = Math.min(Number(t.slice(12)) + 2, vis.size.height - 36)
+      if (want > 80) { win.setFrameDisplayAnimate($.NSMakeRect(right - w, top - want, w, want), true, true); sized = Date.now() }
+    }
+    if (capture && !shot && sized && Date.now() - sized > 900) {
+      shot = true
+      var sa = Application.currentApplication(); sa.includeStandardAdditions = true
+      sa.doShellScript("/usr/sbin/screencapture -x -o -l " + win.windowNumber + " " + quoted(capture))
+      end = Math.min(end, Date.now() + 300)
+    }
+  }
+  win.close
+  return ""
+}
+function quoted(s) { return "'" + String(s).replace(/'/g, "'\\\\''") + "'" }
+`
+
+export interface CardWindowSettings extends CardPageOptions {
+  timeoutSeconds: number
+  /** Tests and docs: save a PNG of the window once it has opened. */
+  capture?: string
+}
+
+/** The page's answer, checked against the card. Anything odd is a dismiss. */
+export function parseAnswer(stdout: string, card: DecisionCard): PopupAnswer {
+  const line = stdout.trim().split("\n").pop() ?? ""
+  let raw: any
+  try { raw = JSON.parse(line) } catch { return { action: "dismiss" } }
+  if (raw?.action === "no") return { action: "no" }
+  if (raw?.action !== "yes") return { action: "dismiss" }
+  const choices = card.choices ?? []
+  let choice: string | undefined
+  if (choices.length) {
+    if (typeof raw.choice !== "string" || !choices.includes(raw.choice)) return { action: "dismiss" }
+    choice = raw.choice
+  }
+  let text: string | undefined
+  if (card.draft) {
+    text = typeof raw.text === "string" ? raw.text.replace(/\r\n?/g, "\n").trim() : ""
+    // An emptied box is not an approval of nothing.
+    if (!text || text.length > CHOICE_LIMITS.text) return { action: "dismiss" }
+  }
+  return { action: "yes", ...(choice ? { choice } : {}), ...(text ? { text } : {}) }
+}
+
+/**
+ * Show the card in the window. Returns null when the window couldn't open,
+ * so the caller can fall back to the plain dialogs.
+ */
+export async function showCardWindow(card: DecisionCard, settings: CardWindowSettings, exec: Run): Promise<PopupAnswer | null> {
+  const seconds = Math.max(10, Math.round(settings.timeoutSeconds))
+  const dir = mkdtempSync(join(tmpdir(), "agentx-card-"))
+  try {
+    const page = join(dir, "card.html")
+    writeFileSync(page, renderCardPage(card, settings), { mode: 0o600 })
+    const args = ["-l", "JavaScript", "-e", WINDOW_JXA, page, String(CARD_WIDTH), String(seconds), ...(settings.capture ? [settings.capture] : [])]
+    const r = await exec("/usr/bin/osascript", args, (seconds + 10) * 1000)
+    if (!r.ok) return null
+    return parseAnswer(r.stdout, card)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
+}

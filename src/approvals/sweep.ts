@@ -2,6 +2,7 @@ import { cardsAwaitingAgentNotice, expireCards, markAgentNotified, verdictMessag
 import { listInbox, type InboxContext, type InboxItem } from "./inbox"
 import { readInboxState, recordDigest } from "./state"
 import type { PopupRunnerSettings } from "./popup-runner"
+import type { CheckinSettings } from "./checkin"
 
 // --- The daemon's approvals sweep ---
 //
@@ -29,6 +30,7 @@ export interface ApprovalSettings {
   }
   /** Optional so older callers and tests keep compiling; the config always sets it. */
   popup?: PopupRunnerSettings
+  checkin?: CheckinSettings
 }
 
 export interface SweepDeps {

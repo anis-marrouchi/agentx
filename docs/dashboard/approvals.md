@@ -65,21 +65,27 @@ To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki** or **
    ```
    Use `reject` for no, or `later` to put it off. Add `--note "text"` to pass a note to the agent with your answer.
 
-## Answer from a popup on your Mac
+## Answer from a card on your Mac
 
-An agent can offer you ready-made answers on a card, for example three free times for a meeting, together with a suggested message. With the popup switched on, your Mac shows the card by itself as soon as it arrives: a soft sound, one short spoken line, then a small window.
+With the popup switched on, your Mac shows a waiting card by itself: a soft chime, one short spoken line, and a small window at the top right of the screen. It follows your light or dark mode.
 
-1. Pick one of the choices and click **Next**.
-2. Read the suggested message. It already contains your pick. Change the wording if you like.
-3. Click **Send**. The agent that asked is told your pick and the exact message, and it does the sending.
+![The Mac card: context, question, three meeting times, and the suggested message in Arabic](/screenshots/approvals/mac-card.png)
 
-Nothing is sent until you click **Send**. **Cancel**, **Not now**, or leaving the window alone keeps the card waiting in Approvals, where you can still answer it later. A card without choices shows its question with **Yes**, **No** and **Not now**.
+The card shows who is asking, the background (**context**), the question, the agent's recommendation, the ready-made answers, and the suggested message.
+
+1. Click an answer, or press its number (**1** to **4**). The message below fills in with your pick.
+2. Read the message and change the wording if you like. **Edited** shows next to it once you have. If you then pick another answer, your edits stay and only the pick in the text changes.
+3. Click **Send**, or press **⌘↩**. The agent that asked is told your pick and the exact message, and it does the sending.
+
+Nothing is sent until you click **Send**. **Not now** (or **Esc**), the close button, or leaving the window alone keeps the card waiting in Approvals, where you can still answer it later. A card without a message shows **Yes** (or **Choose**, when it offers answers), **No** and **Not now**.
+
+The card's window is a plain web page shown by macOS itself. There is no app to install. The page can't load anything from the network. If the window can't open, you get the plain macOS dialogs instead: pick an answer and click **Next**, then **Send**. Set `popup.style` to `"dialog"` to always use the dialogs.
 
 The popup behaves like your other notifications:
 
 - **Focus is respected.** While a Focus mode (Do Not Disturb) or the widget's hold is on, nothing pops up. The card appears within a minute after Focus ends.
-- **One at a time,** oldest first. Each card pops up once.
-- **Cards you put off with Later** pop up when they come back. Cards older than a day don't pop up, so switching the popup on doesn't replay a backlog.
+- **One at a time,** oldest first. Each new card pops up once, and again at each [check-in](#check-ins-a-few-times-a-day).
+- **Cards you put off with Later** pop up when they come back. Cards older than a day don't pop up by themselves, so switching the popup on doesn't replay a backlog. Check-ins bring them back.
 
 To switch it on:
 
@@ -87,19 +93,57 @@ To switch it on:
    ```sh
    agentx approvals settings --popup on
    ```
-2. **Terminal:** optionally choose the sound and voice, or silence the spoken line:
+2. **Terminal:** optionally choose the sound, the voice and the colours, or silence the spoken line:
    ```sh
-   agentx approvals settings --popup-sound Glass --popup-voice Samantha
+   agentx approvals settings --popup-sound Glass --popup-voice Samantha --popup-theme dark
    agentx approvals settings --popup-speak off
    ```
-   `say -v '?'` lists the voices on your Mac. Use `--popup-sound none` for no sound.
+   `--popup-sound chime` is the card's own soft chime (the default). Any name from `/System/Library/Sounds` also works, and `none` is silence. `say -v '?'` lists the voices on your Mac.
 3. **Terminal:** run `agentx approvals settings` to see what is set.
 
-To show one card in the popup yourself, for example to try it:
+To see the card without raising one:
+
+1. **Terminal:** run `agentx approvals popup --sample`. It shows the sample above; your click is printed and nothing is recorded.
+
+To show one real card now:
 
 1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
 
-You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. On the dashboard, a card with choices lists them under **Choices**. Answer it in the popup or in the terminal, because **Yes** alone doesn't say which one you picked.
+You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. On the dashboard, a card with choices lists them under **Choices**. Answer it on the Mac or in the terminal, because **Yes** alone doesn't say which one you picked.
+
+## Check-ins: a few times a day
+
+Check-ins go through what is open for you on a schedule, and put each item that needs you on a Mac card. They are off until you switch them on, and they need the popup on too.
+
+At each check-in the daemon:
+
+1. **Brings back waiting cards.** Every card still waiting shows once more, oldest first, one at a time.
+2. **Looks at your open reminders** in Apple Reminders. A normal check-in takes the ones due in the next 24 hours or overdue. The daily check-in takes every open one, dated or not.
+3. **Asks the agent that owns each reminder to write its card.** The owner is the agent named in the reminder's `agentx:` line (reminders agents create through the mac-pim skill have one). For other reminders, it is the agent you choose with `checkin.agent`. The agent does the homework, such as finding free times in your calendar, and writes the context, the question, two to four answers and a suggested message. It may also say the reminder doesn't need you. It sends nothing. That rule is an instruction in its prompt, not a lock: while it writes the card the agent has its usual tools, the same trust as the [reminders poller](../automations/reminders.md).
+4. **Your click goes back to that agent.** It is told your pick, the exact message and the reminder, does what you chose, and ticks the reminder off.
+
+A reminder has one card at a time. If you answer it, the agent says it doesn't need you, or writing the card fails, and the reminder is still open, it comes back at the next daily check-in. Each check-in asks at most five agents (`checkin.maxAsksPerPass`), whatever they answer, so a long list of reminders is spread over several check-ins. Reminders that the [reminders poller](../automations/reminders.md) has already handed to an agent are left to that agent.
+
+The default times are 09:00 for the daily check-in, then 11:00, 14:00 and 17:00. If the Mac was asleep or the daemon was off, a missed time is not replayed: the next one runs as usual, and the daily check-in runs once the Mac is back.
+
+To switch check-ins on:
+
+1. **Terminal:** switch the popup and check-ins on, and choose the agent for reminders no agent owns:
+   ```sh
+   agentx approvals settings --popup on --checkin on --checkin-agent secretary-agent
+   ```
+2. **Terminal:** optionally change the times and the lists:
+   ```sh
+   agentx approvals settings --checkin-daily 08:30 --checkin-times 10:00,12:30,15:00,18:00
+   agentx approvals settings --checkin-lists "Reminders,Work"
+   ```
+3. **Terminal:** run a check-in now to see it work. `--daily` takes every open reminder:
+   ```sh
+   agentx approvals checkin --daily
+   ```
+   The agents need a minute or two to write the cards. `agentx approvals list` shows them as they arrive, and the Mac card opens for each.
+
+The first time, macOS asks whether AgentX may use Reminders. Click **OK**. The daemon reads Reminders with `remindctl` (`brew install steipete/tap/remindctl`), the same tool as the mac-pim skill.
 
 ## Get one reminder a day
 
@@ -130,7 +174,11 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
   "laterHours": 24,
   "notifyAgent": true,
   "digest": { "enabled": true, "time": "09:00" },
-  "popup": { "enabled": false, "speak": true, "sound": "Glass", "volume": 0.4, "timeoutSeconds": 600 }
+  "popup": { "enabled": false, "style": "card", "theme": "system", "speak": true, "sound": "chime", "volume": 0.4, "timeoutSeconds": 600 },
+  "checkin": {
+    "enabled": false, "dailyAt": "09:00", "times": ["11:00", "14:00", "17:00"], "lists": ["Reminders"],
+    "dueWithinHours": 24, "maxAsksPerPass": 5, "composeTimeoutSeconds": 300
+  }
 }
 ```
 
@@ -144,12 +192,23 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
 | `digest.time` | When, as 24-hour `HH:MM` | `--digest-time` |
 | `digest.timezone` | Time zone for `time`, such as `Europe/Paris`. Unset: this machine's | `--digest-timezone` |
 | `digest.destination` | Where it goes: `{ "channel": "…", "chatId": "…" }`. Unset: `notifications.destination` | `--digest-to channel:chatId` |
-| `popup.enabled` | Show new cards in a popup on this Mac | `--popup on\|off` |
+| `popup.enabled` | Show waiting cards on this Mac | `--popup on\|off` |
+| `popup.style` | `"card"`: the web card. `"dialog"`: plain macOS dialogs | `--popup-style` |
+| `popup.theme` | `"system"`, `"light"` or `"dark"` | `--popup-theme` |
 | `popup.speak` | Speak one short line when it opens | `--popup-speak on\|off` |
 | `popup.voice` | macOS voice for that line. Unset: the system voice | `--popup-voice` |
-| `popup.sound` | System sound, such as `Glass`. `""` for none | `--popup-sound` |
+| `popup.sound` | `"chime"`, a system sound such as `Glass`, or `""` for none | `--popup-sound` |
 | `popup.volume` | Sound volume, 0 to 1 | — |
 | `popup.timeoutSeconds` | How long the popup waits before it closes; the card stays waiting | `--popup-timeout` |
+| `checkin.enabled` | Run check-ins | `--checkin on\|off` |
+| `checkin.dailyAt` | The daily check-in, 24-hour `HH:MM` | `--checkin-daily` |
+| `checkin.times` | The other check-ins | `--checkin-times 11:00,14:00` |
+| `checkin.timezone` | Time zone for the times. Unset: this machine's | — |
+| `checkin.lists` | Your Reminders lists to look at | `--checkin-lists` |
+| `checkin.agent` | The agent that writes cards for reminders no agent owns. Unset: those reminders are skipped | `--checkin-agent` |
+| `checkin.dueWithinHours` | A normal check-in takes reminders due within this many hours | — |
+| `checkin.maxAsksPerPass` | Most agents one check-in asks to write a card, whatever they answer | — |
+| `checkin.composeTimeoutSeconds` | How long an agent may take to write one card | — |
 
 ## For agents: raise a card
 
@@ -169,6 +228,7 @@ A card can also offer ready-made answers. The popup and `agentx approvals approv
 | `choices` | Up to 5 short answers to pick from, such as three free times |
 | `draft` | A suggested message you can edit. `{choice}` is replaced by your pick |
 | `say` | The short line the popup speaks. Default: the title |
+| `context` | A few lines of background shown above the question, such as what the other person wrote (up to 600 characters) |
 
 For example, with two choices and a message:
 
@@ -176,12 +236,13 @@ For example, with two choices and a message:
 agentx approvals request --agent helper --title "New meeting date" \
   --ask "Which time should I offer?" --recommend "Thursday: you are free all afternoon" \
   --if-silent discard --choice "Thursday 14:00" --choice "Friday 10:00" \
-  --draft "Hello, would {choice} suit you for our meeting?" --say "A client needs a new meeting date"
+  --draft "Hello, would {choice} suit you for our meeting?" --say "A client needs a new meeting date" \
+  --context "The client asked to move Tuesday's meeting"
 ```
 
 When you answer yes, the agent's result message includes **Chosen:** and the approved message. The agent sends exactly that text.
 
-The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires`, `source`, `choices`, `draft` and `say`, plus `raised_by` (the agent id). `GET /approvals` lists what is waiting. Answering is refused on that API on purpose.
+The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires`, `source`, `choices`, `draft`, `say` and `context`, plus `raised_by` (the agent id). `GET /approvals` lists what is waiting. `POST /approvals/checkin` starts a check-in. Answering is refused on that API on purpose.
 
 ## Check it worked
 
@@ -195,8 +256,15 @@ For the popup (Mac):
 
 1. **Terminal:** run `agentx approvals settings --popup on`.
 2. **Terminal:** raise the meeting card from [For agents: raise a card](#for-agents-raise-a-card).
-3. **Mac:** within a minute you hear a sound and the spoken line, and the list of times appears. Pick one, click **Next**, then **Send**.
+3. **Mac:** within a minute you hear the chime and the spoken line, and the card opens at the top right of the screen. Click a time. The message fills in with it. Click **Send**.
 4. **Terminal:** `agentx approvals list` no longer shows the card, and the agent's run on the `approvals` channel starts with your pick.
+
+For check-ins (Mac):
+
+1. **Mac:** in Reminders, add a reminder due today to your `Reminders` list, such as "Reply to the client about the meeting".
+2. **Terminal:** run `agentx approvals checkin`.
+3. **Terminal:** within a few minutes, `agentx approvals list` shows a card from your `checkin.agent` for that reminder, and the Mac card opens for it.
+4. **Terminal:** the daemon log has a line starting `[checkin] check pass:` with the number of cards raised.
 
 ## If something is wrong
 
@@ -207,6 +275,9 @@ For the popup (Mac):
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
 - **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>` to show it again. The daemon log has a line starting `[approvals] popup`.
+- **The card window never opens, but the plain dialogs do:** the web window couldn't start, so AgentX fell back to the dialogs. Run `agentx approvals popup --sample` in a terminal to see the error. To keep the dialogs, set `--popup-style dialog`.
+- **Check-ins raise no cards:** check that `agentx approvals settings` shows **Check-ins on**, that `remindctl show today` lists your reminders, and that `checkin.agent` names an agent from `agentx agent list`. The daemon log lines starting `[checkin]` say what happened to each reminder: "no agent owns it", "couldn't compose a card", or the pass totals.
+- **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
 - **"This card offers choices: pick one":** you clicked **Yes** on the dashboard for a card with choices. Answer it in the popup, or with `agentx approvals approve <key> --choice <n>`.
 - **The agent never heard the result:** check `notifyAgent` is on, and that the agent still exists on this machine. The daemon log line starting `[approvals]` says what happened.

@@ -1039,15 +1039,44 @@ export const approvalsConfigSchema = z.object({
    *  ready-made choices. Held during Focus. macOS only. */
   popup: z.object({
     enabled: z.boolean().default(false),
+    /** "card": a small web window; "dialog": plain macOS dialogs. */
+    style: z.enum(["card", "dialog"]).default("card"),
+    /** The card's colours; "system" follows light or dark mode. */
+    theme: z.enum(["system", "light", "dark"]).default("system"),
     /** Speak a short line when it opens. */
     speak: z.boolean().default(true),
     /** A macOS voice name for `say -v`. Unset: the system voice. */
     voice: z.string().regex(/^[\w .()-]+$/, "a voice name, as `say -v '?'` lists them").optional(),
-    /** A system sound from /System/Library/Sounds; "" for none. */
-    sound: z.string().regex(/^[\w -]*$/, "a sound name, like Glass").default("Glass"),
+    /** "chime" (a soft chime played by the card), a system sound from
+     *  /System/Library/Sounds like Glass, or "" for none. */
+    sound: z.string().regex(/^[\w -]*$/, "a sound name, like chime or Glass").default("chime"),
     volume: z.number().min(0).max(1).default(0.4),
     /** Seconds the popup waits for an answer; then the card stays in the inbox. */
     timeoutSeconds: z.number().int().min(10).max(3600).default(600),
+  }).default({}),
+  /** Check-ins (src/approvals/checkin.ts): a few times a day, waiting cards
+   *  come back to the Mac card and the operator's open Apple Reminders get
+   *  a card written by the agent that owns them. macOS only. */
+  checkin: z.object({
+    enabled: z.boolean().default(false),
+    /** Local times of a normal pass: reminders due soon, and waiting cards. */
+    times: z.array(z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM, 24-hour")).default(["11:00", "14:00", "17:00"]),
+    /** Local time of the daily pass: every open reminder. */
+    dailyAt: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM, 24-hour").default("09:00"),
+    /** IANA timezone for the times. Unset: this machine's. */
+    timezone: z.string().refine((tz) => {
+      try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true } catch { return false }
+    }, "unknown timezone").optional(),
+    /** The operator's Reminders lists to look at. */
+    lists: z.array(z.string().min(1)).default(["Reminders"]),
+    /** Agent that writes cards for reminders without an agentx trailer. */
+    agent: z.string().min(1).optional(),
+    /** A normal pass takes reminders due within this many hours, or overdue. */
+    dueWithinHours: z.number().positive().max(24 * 30).default(24),
+    /** Most agents one pass asks to write a card, whatever they answer. */
+    maxAsksPerPass: z.number().int().min(1).max(20).default(5),
+    /** How long an agent may take to write one card. */
+    composeTimeoutSeconds: z.number().int().min(30).max(3600).default(300),
   }).default({}),
 }).default({})
 

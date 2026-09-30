@@ -36,6 +36,14 @@ export interface ApprovalSettingsPatch {
   /** "" for no sound. */
   popupSound?: string
   popupTimeoutSeconds?: number
+  popupStyle?: "card" | "dialog"
+  popupTheme?: "system" | "light" | "dark"
+  checkinEnabled?: boolean
+  checkinTimes?: string[]
+  checkinDailyAt?: string
+  checkinLists?: string[]
+  /** null clears it. */
+  checkinAgent?: string | null
 }
 
 /** "channel:chatId". Everything after the first ":" is the chat id, which may contain ":" itself. */
@@ -69,6 +77,15 @@ export async function updateApprovalSettings(
     else if (patch.popupVoice !== undefined) p.voice = patch.popupVoice
     if (patch.popupSound !== undefined) p.sound = patch.popupSound
     if (patch.popupTimeoutSeconds !== undefined) p.timeoutSeconds = patch.popupTimeoutSeconds
+    if (patch.popupStyle !== undefined) p.style = patch.popupStyle
+    if (patch.popupTheme !== undefined) p.theme = patch.popupTheme
+    const c = (a.checkin ??= {})
+    if (patch.checkinEnabled !== undefined) c.enabled = patch.checkinEnabled
+    if (patch.checkinTimes !== undefined) c.times = patch.checkinTimes
+    if (patch.checkinDailyAt !== undefined) c.dailyAt = patch.checkinDailyAt
+    if (patch.checkinLists !== undefined) c.lists = patch.checkinLists
+    if (patch.checkinAgent === null) delete c.agent
+    else if (patch.checkinAgent !== undefined) c.agent = patch.checkinAgent
     const days = a.defaultExpiryDays ?? 3
     const max = a.maxExpiryDays ?? 30
     if (days > max) throw new Error(`defaultExpiryDays (${days}) can't be more than maxExpiryDays (${max})`)

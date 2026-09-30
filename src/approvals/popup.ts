@@ -1,18 +1,21 @@
 import { execFile } from "child_process"
 import { soundPath } from "@/notify/local"
 import { draftFor } from "./choices"
+import { showCardWindow } from "./card-window"
 import type { DecisionCard } from "./cards"
 
 // --- The Mac popup: answer a decision card in one click ---
 //
-// A soft sound, one short spoken line, then a native dialog:
+// A soft sound, one short spoken line, then the card: a small web window
+// (card-window.ts, style "card", the default) or native dialogs (style
+// "dialog", and the fallback when the window can't open):
 //
 //   card with choices   a list to pick from, then (with a draft) the
 //                       suggested message in an editable box: Send or Cancel
 //   card with a draft   the message in an editable box: Send, No or Not now
 //   plain card          the question: Yes, No or Not now
 //
-// It is plain osascript, like `agentx notify`'s fallback banner. Every
+// The dialogs are plain osascript, like `agentx notify`'s fallback banner. Every
 // piece of card text travels as argv, never spliced into the script, so a
 // quote in a title cannot turn into AppleScript.
 //
@@ -27,11 +30,15 @@ export type PopupAnswer =
   | { action: "dismiss" }
 
 export interface PopupSettings {
+  /** "card": the web card window; "dialog": native dialogs. Default "card". */
+  style?: "card" | "dialog"
+  /** The card's colours. Default: follow the system. */
+  theme?: "system" | "light" | "dark"
   /** Speak `say` (or the title) aloud. */
   speak: boolean
   /** A macOS voice for `say -v`. Unset: the system voice. */
   voice?: string
-  /** A system sound name; "" for none. */
+  /** "chime" (a soft chime, played by the card), a system sound name, or "" for none. */
   sound: string
   volume: number
   /** How long the popup stays up before it gives up. */
@@ -60,9 +67,11 @@ export function spokenLine(card: Pick<DecisionCard, "say" | "title">): string {
   return line.length > SAY_MAX ? line.slice(0, SAY_MAX) : line
 }
 
-/** The chime, then the spoken line. Never fatal. */
-async function cue(card: DecisionCard, s: PopupSettings, exec: Run): Promise<void> {
-  const path = s.sound ? soundPath(s.sound) : null
+/** The sound, then the spoken line. Never fatal. The card window plays
+ *  "chime" itself; the dialogs have no chime, so they get Glass. */
+async function cue(card: DecisionCard, s: PopupSettings, exec: Run, inCard: boolean): Promise<void> {
+  const name = s.sound === "chime" ? (inCard ? "" : "Glass") : s.sound
+  const path = name ? soundPath(name) : null
   if (path) await exec("/usr/bin/afplay", ["-v", String(Math.min(1, Math.max(0, s.volume))), path], CUE_TIMEOUT_MS)
   if (s.speak) {
     const voice = s.voice && /^[\w .()-]+$/.test(s.voice) ? ["-v", s.voice] : []
@@ -123,15 +132,38 @@ function promptFor(card: DecisionCard): string {
   return [card.ask, card.recommend ? `Recommended: ${card.recommend}` : "", `From ${card.raised_by}`].filter(Boolean).join("\n\n")
 }
 
+export interface ShowOptions {
+  run?: Run
+  /** The agent's display name, e.g. "Yasmine". */
+  from?: string
+  /** Docs and tests: save a PNG of the card window. */
+  capture?: string
+  /** Previews: start with this option (1-based) picked. */
+  pick?: number
+}
+
 /** Show one card and return what the operator did. */
-export async function showPopup(card: DecisionCard, settings: PopupSettings, deps: { run?: Run } = {}): Promise<PopupAnswer> {
+export async function showPopup(card: DecisionCard, settings: PopupSettings, deps: ShowOptions = {}): Promise<PopupAnswer> {
   const exec = deps.run ?? run
+  const inCard = (settings.style ?? "card") === "card"
+  // The spoken line runs beside the window, so the card is on screen while it speaks.
+  const spoken = cue(card, settings, exec, inCard).catch(() => undefined)
+  if (inCard) {
+    const answer = await showCardWindow(card, {
+      timeoutSeconds: settings.timeoutSeconds, sound: settings.sound, volume: settings.volume,
+      theme: settings.theme, from: deps.from, capture: deps.capture, pick: deps.pick,
+    }, exec).catch(() => null)
+    if (answer) return answer
+  }
+  await spoken
+  return showDialogs(card, settings, exec)
+}
+
+async function showDialogs(card: DecisionCard, settings: PopupSettings, exec: Run): Promise<PopupAnswer> {
   const seconds = Math.max(10, Math.round(settings.timeoutSeconds))
   // A little past giving-up, so osascript can close its own dialog first.
   const limit = (seconds + 5) * 1000
   const title = `${card.raised_by}: ${card.title}`
-
-  await cue(card, settings, exec).catch(() => undefined)
 
   let choice: string | undefined
   if (card.choices?.length) {

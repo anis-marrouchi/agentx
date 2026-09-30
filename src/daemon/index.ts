@@ -57,6 +57,9 @@ import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/ag
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { popNext } from "@/approvals/popup-runner"
+import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
+import { remindctlSource } from "@/reminders/source"
+import { claimFile } from "@/reminders/store"
 import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
 import {
@@ -1691,8 +1694,13 @@ export class AgentXDaemon {
         })
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts).
-        void popNext({ ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log })
-          .catch((e: any) => this.log(`[approvals] popup failed: ${e?.message ?? e}`))
+        void popNext({
+          ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log,
+          agentName: (id) => this.registry.getAgent(id)?.name,
+        }).catch((e: any) => this.log(`[approvals] popup failed: ${e?.message ?? e}`))
+        // Check-ins ask agents to write cards, which takes minutes: beside
+        // the sweep too (src/approvals/checkin.ts).
+        void this.runCheckin().catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`))
       } catch (e: any) {
         this.log(`[approvals] sweep failed: ${e?.message ?? e}`)
       } finally {
@@ -1701,6 +1709,28 @@ export class AgentXDaemon {
     }
     this.approvalsTimer = setInterval(() => { void tick() }, 60_000)
     this.approvalsTimer.unref?.()
+  }
+
+  /** A check-in pass when one is due, or `force` now. macOS only. */
+  runCheckin(force?: PassKind) {
+    if (process.platform !== "darwin") return Promise.resolve(null)
+    const deps: CheckinDeps = {
+      root: process.cwd(),
+      settings: this.config.approvals.checkin,
+      cardSettings: this.config.approvals,
+      source: remindctlSource(this.config.reminders.command),
+      ...(this.config.reminders.enabled ? { claimsPath: claimFile(process.cwd()) } : {}),
+      hasAgent: (id) => !!this.registry.getAgent(id),
+      // "reminder" waits for a free slot instead of queueing (registry.ts),
+      // so the answer comes back here.
+      ask: async (agentId, message, r) => {
+        const res = await this.registry.execute({ agentId, message, context: { channel: "reminder", chatId: `checkin:${r.id}`, sender: "approvals" } })
+        if (res.error) throw new Error(res.error)
+        return res.content ?? ""
+      },
+      log: this.log,
+    }
+    return checkinTick(deps, force)
   }
 
   private stopReminders?: (() => void) | null
@@ -3131,6 +3161,9 @@ export class AgentXDaemon {
           ctx: { root: process.cwd() },
           settings: this.config.approvals,
           hasAgent: (id) => !!this.registry.getAgent(id),
+          ...(process.platform === "darwin" ? {
+            runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
+          } : {}),
         })
         this.json(res, reply.status, reply.body)
         return

@@ -65,6 +65,7 @@ export async function runApprovalTool(args: Record<string, unknown>, deps: Appro
     choices: args.choices,
     draft: args.draft,
     say: args.say,
+    context: args.context,
     raised_by: caller.agentId,
     ...(reply ? { reply } : {}),
   }

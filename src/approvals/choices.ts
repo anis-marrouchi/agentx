@@ -1,7 +1,8 @@
 // --- Ready-made answers on a decision card ---
 //
-// A card can offer a few choices (say, three free meeting slots) and a
-// suggested message the operator may edit before it goes. The operator's
+// A card can offer a few choices (say, three free meeting slots), a
+// suggested message the operator may edit before it goes, and a short
+// context (what the other person said) shown above the question. The operator's
 // pick and the final text are stored on the card and handed to the agent
 // that raised it; the agent does the sending. Nothing here sends anything.
 //
@@ -13,6 +14,7 @@ export const CHOICE_LIMITS = {
   label: 120,
   draft: 2000,
   say: 160,
+  context: 600,
   /** The operator's final text, after editing. */
   text: 4000,
 } as const
@@ -24,6 +26,8 @@ export interface CardChoices {
   choices?: string[]
   draft?: string
   say?: string
+  /** A few lines of background, shown above the question. */
+  context?: string
 }
 
 function oneLine(v: unknown): string {
@@ -36,7 +40,7 @@ function block(v: unknown): string {
 }
 
 /** Validate what an agent sent. Empty input gives an empty object. */
-export function buildChoices(input: { choices?: unknown; draft?: unknown; say?: unknown }): { ok: true; value: CardChoices } | { ok: false; error: string } {
+export function buildChoices(input: { choices?: unknown; draft?: unknown; say?: unknown; context?: unknown }): { ok: true; value: CardChoices } | { ok: false; error: string } {
   const value: CardChoices = {}
   if (input.choices !== undefined && input.choices !== null) {
     if (!Array.isArray(input.choices)) return { ok: false, error: "choices must be a list of short labels" }
@@ -56,6 +60,11 @@ export function buildChoices(input: { choices?: unknown; draft?: unknown; say?: 
   if (say) {
     if (say.length > CHOICE_LIMITS.say) return { ok: false, error: `say is longer than ${CHOICE_LIMITS.say} characters` }
     value.say = say
+  }
+  const context = block(input.context)
+  if (context) {
+    if (context.length > CHOICE_LIMITS.context) return { ok: false, error: `context is longer than ${CHOICE_LIMITS.context} characters` }
+    value.context = context
   }
   return { ok: true, value }
 }
