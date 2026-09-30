@@ -1035,6 +1035,20 @@ export const approvalsConfigSchema = z.object({
       accountId: z.string().optional(),
     }).optional(),
   }).default({}),
+  /** A popup on this Mac for new decision cards: sound, a spoken line,
+   *  ready-made choices. Held during Focus. macOS only. */
+  popup: z.object({
+    enabled: z.boolean().default(false),
+    /** Speak a short line when it opens. */
+    speak: z.boolean().default(true),
+    /** A macOS voice name for `say -v`. Unset: the system voice. */
+    voice: z.string().regex(/^[\w .()-]+$/, "a voice name, as `say -v '?'` lists them").optional(),
+    /** A system sound from /System/Library/Sounds; "" for none. */
+    sound: z.string().regex(/^[\w -]*$/, "a sound name, like Glass").default("Glass"),
+    volume: z.number().min(0).max(1).default(0.4),
+    /** Seconds the popup waits for an answer; then the card stays in the inbox. */
+    timeoutSeconds: z.number().int().min(10).max(3600).default(600),
+  }).default({}),
 }).default({})
 
 export const daemonConfigSchema = z.object({

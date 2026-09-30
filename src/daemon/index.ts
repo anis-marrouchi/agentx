@@ -56,6 +56,7 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { popNext } from "@/approvals/popup-runner"
 import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
 import {
@@ -1688,6 +1689,10 @@ export class AgentXDaemon {
           },
           log: this.log,
         })
+        // The Mac popup waits on a person, so it runs beside the sweep,
+        // never inside it (src/approvals/popup-runner.ts).
+        void popNext({ ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log })
+          .catch((e: any) => this.log(`[approvals] popup failed: ${e?.message ?? e}`))
       } catch (e: any) {
         this.log(`[approvals] sweep failed: ${e?.message ?? e}`)
       } finally {

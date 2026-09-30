@@ -147,11 +147,12 @@ One list of every decision waiting for you: [Approvals](../dashboard/approvals.m
 | Command | What it does |
 |---|---|
 | `agentx approvals list [--all] [--json]` | What is waiting, most urgent first; `--all` includes items put off |
-| `agentx approvals approve <key> [--note] [--force]` | Say yes; `--force` approves a wiki lesson whose article changed since |
+| `agentx approvals approve <key> [--note] [--force] [--choice] [--text]` | Say yes; `--force` approves a wiki lesson whose article changed since; `--choice` and `--text` answer a card that offers choices |
 | `agentx approvals reject <key> [--note]` | Say no |
 | `agentx approvals later <key> [--hours]` | Put an item off (default 24 hours) |
-| `agentx approvals request --agent … --title … --ask … --recommend … --if-silent …` | Raise a decision card yourself, for example to test |
-| `agentx approvals settings [options]` | Show or change expiry, "later" and the daily digest |
+| `agentx approvals request --agent … --title … --ask … --recommend … --if-silent … [--choice …] [--draft] [--say]` | Raise a decision card yourself, for example to test |
+| `agentx approvals popup <key>` | Show one card in the Mac popup now and record your answer (macOS) |
+| `agentx approvals settings [options]` | Show or change expiry, "later", the daily digest and the Mac popup |
 
 ## Agent memory
 

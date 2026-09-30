@@ -1,6 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
-import { createCard, IF_SILENT_VALUES } from "@/approvals/cards"
+import { createCard, IF_SILENT_VALUES, readCard } from "@/approvals/cards"
+import { showPopup } from "@/approvals/popup"
 import { decide, listInbox, type InboxAction, type InboxItem } from "@/approvals/inbox"
 import { parseDestination, readApprovalSettings, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
 
@@ -36,6 +37,7 @@ function printItem(item: InboxItem): void {
   console.log(`    ${chalk.bold(item.title)}`)
   console.log(`    ${item.ask}`)
   if (item.recommend) console.log(`    ${chalk.green("Recommends:")} ${item.recommend}`)
+  item.choices?.forEach((c, i) => console.log(`    ${chalk.magenta(`${i + 1}.`)} ${c}`))
   if (item.expires) console.log(chalk.yellow(`    Expires ${when(item.expires)}; then: ${item.if_silent}`))
   if (item.detail) console.log(chalk.dim(`    ${item.detail}`))
   if (item.source) console.log(chalk.dim(`    ${item.source}`))
@@ -61,13 +63,13 @@ approvals
     console.log(chalk.dim(`  ${listing.items.length} waiting${listing.snoozed ? `, ${listing.snoozed} put off (--all)` : ""}. Answer with: agentx approvals approve|reject|later <key>`))
   })
 
-async function answer(key: string, action: InboxAction, opts: { force?: boolean; note?: string; hours?: string }): Promise<void> {
+async function answer(key: string, action: InboxAction, opts: { force?: boolean; note?: string; hours?: string; choice?: string; text?: string }): Promise<void> {
   const settings = readApprovalSettings()
   const hours = opts.hours ? Number(opts.hours) : settings.laterHours
   if (action === "later" && !(hours > 0)) {
     console.error(chalk.red("  --hours must be a positive number")); process.exitCode = 1; return
   }
-  const r = await decide(ctx(), key, action, { force: opts.force, note: opts.note, laterHours: hours })
+  const r = await decide(ctx(), key, action, { force: opts.force, note: opts.note, laterHours: hours, choice: opts.choice, text: opts.text })
   if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
   console.log(chalk.green(`  ✓ ${r.message}`))
 }
@@ -79,6 +81,8 @@ approvals
   .argument("<key>", "item key from `agentx approvals list`, e.g. card:2026-01-05-publish-draft-ab12")
   .option("--force", "wiki: approve even if the article changed since the proposal")
   .option("--note <text>", "cards: a note passed to the agent with your answer")
+  .option("--choice <n>", "cards with choices: which one, by number or label")
+  .option("--text <message>", "cards with a suggested message: the message as you want it sent")
   .action((key: string, opts) => answer(key, "yes", opts))
 
 approvals
@@ -106,15 +110,39 @@ approvals
   .requiredOption("--if-silent <value>", `what applies if nobody answers: ${IF_SILENT_VALUES.join(", ")}`)
   .option("--expires <when>", "ISO date or time, or like 12h / 3d (default: approvals.defaultExpiryDays)")
   .option("--source <link>", "link to the draft, PR or issue")
-  .action((opts: { agent: string; title: string; ask: string; recommend: string; ifSilent: string; expires?: string; source?: string }) => {
+  .option("--choice <label>", "a ready-made answer; repeat for up to 5", (v: string, all: string[] = []) => [...all, v])
+  .option("--draft <message>", "a suggested message; {choice} is replaced by the pick")
+  .option("--say <line>", "the short line the Mac popup speaks (default: the title)")
+  .action((opts: { agent: string; title: string; ask: string; recommend: string; ifSilent: string; expires?: string; source?: string; choice?: string[]; draft?: string; say?: string }) => {
     const settings = readApprovalSettings()
     const r = createCard(process.cwd(), {
       raised_by: opts.agent, title: opts.title, ask: opts.ask, recommend: opts.recommend,
       if_silent: opts.ifSilent, expires: opts.expires, source: opts.source,
+      choices: opts.choice, draft: opts.draft, say: opts.say,
     }, { settings })
     if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
     console.log(chalk.green(`  ✓ card:${r.card.id} raised; expires ${when(r.card.expires)}, then: ${r.card.if_silent}`))
   })
+
+approvals
+  .command("popup")
+  .description("show a card in the Mac popup now, and record your answer (macOS)")
+  .argument("<key>", "card key from `agentx approvals list`, e.g. card:2026-01-05-new-meeting-date-ab12")
+  .action(async (key: string) => {
+    const id = key.startsWith("card:") ? key.slice(5) : key
+    const card = readCard(process.cwd(), id)
+    if (!card || card.status !== "pending") { console.error(chalk.red(`  no card waiting for "${key}"`)); process.exitCode = 1; return }
+    if (process.platform !== "darwin") { console.error(chalk.red("  the popup needs macOS")); process.exitCode = 1; return }
+    const answer = await showPopup(card, readApprovalSettings().popup!)
+    if (answer.action === "dismiss") { console.log(chalk.dim("  not answered; the card is still waiting")); return }
+    await recordPopupAnswer(`card:${id}`, answer)
+  })
+
+async function recordPopupAnswer(key: string, a: { action: "yes" | "no"; choice?: string; text?: string }): Promise<void> {
+  const r = await decide(ctx(), key, a.action, { by: "operator (popup)", choice: a.choice, text: a.text })
+  if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
+  console.log(chalk.green(`  ✓ ${r.message}`))
+}
 
 approvals
   .command("settings")
@@ -127,6 +155,11 @@ approvals
   .option("--digest-time <HH:MM>", "when the digest goes out, 24-hour local time")
   .option("--digest-timezone <zone>", "IANA timezone for --digest-time; \"local\" for this machine's")
   .option("--digest-to <channel:chatId>", "where the digest goes; \"default\" for notifications.destination")
+  .option("--popup <on|off>", "Mac popup for new cards (macOS)")
+  .option("--popup-speak <on|off>", "the popup speaks a short line")
+  .option("--popup-voice <name>", "voice for the spoken line; \"default\" for the system voice")
+  .option("--popup-sound <name>", "system sound, like Glass; \"none\" for silence")
+  .option("--popup-timeout <seconds>", "how long the popup waits for you")
   .action(async (opts: Record<string, string | undefined>) => {
     const patch: ApprovalSettingsPatch = {}
     const num = (flag: string, v: string | undefined) => {
@@ -147,6 +180,11 @@ approvals
       patch.laterHours = num("--later-hours", opts.laterHours)
       patch.notifyAgent = onOff("--notify-agent", opts.notifyAgent)
       patch.digestEnabled = onOff("--digest", opts.digest)
+      patch.popupEnabled = onOff("--popup", opts.popup)
+      patch.popupSpeak = onOff("--popup-speak", opts.popupSpeak)
+      if (opts.popupVoice !== undefined) patch.popupVoice = opts.popupVoice === "default" ? null : opts.popupVoice
+      if (opts.popupSound !== undefined) patch.popupSound = opts.popupSound === "none" ? "" : opts.popupSound
+      patch.popupTimeoutSeconds = num("--popup-timeout", opts.popupTimeout)
       if (opts.digestTime !== undefined) patch.digestTime = opts.digestTime
       if (opts.digestTimezone !== undefined) patch.digestTimezone = opts.digestTimezone === "local" ? null : opts.digestTimezone
       if (opts.digestTo !== undefined) {
@@ -173,4 +211,6 @@ approvals
     console.log(`  Tell the agent          ${s.notifyAgent ? "on" : "off"}`)
     console.log(`  Daily digest            ${s.digest.enabled ? `on, at ${s.digest.time}${s.digest.timezone ? ` (${s.digest.timezone})` : " (this machine's time)"}` : "off"}`)
     console.log(`  Digest goes to          ${dest ? `${dest.channel} ${dest.chatId}` : "notifications.destination"}`)
+    const p = s.popup!
+    console.log(`  Mac popup               ${p.enabled ? `on: sound ${p.sound || "none"}, ${p.speak ? `speaks${p.voice ? ` (${p.voice})` : ""}` : "silent"}, waits ${p.timeoutSeconds}s` : "off"}`)
   })

@@ -1,4 +1,5 @@
 import { resolveScheduleCaller } from "@/crons/schedule-tool"
+import { answerLines } from "./choices"
 
 // --- Agent-facing `agentx_approval` tool ---
 //
@@ -38,7 +39,10 @@ export async function runApprovalTool(args: Record<string, unknown>, deps: Appro
       const c = data.card
       if (caller && c.raised_by !== caller.agentId) return `Error: card "${id}" was raised by another agent.`
       if (c.status === "pending") return `Card ${c.id} is still waiting for the operator. It expires ${c.expires}; then "${c.if_silent}" applies.`
-      if (c.status === "decided") return `Card ${c.id}: the operator said ${String(c.verdict).toUpperCase()}.${c.note ? ` Note: ${c.note}` : ""}`
+      if (c.status === "decided") {
+        const picked = c.verdict === "yes" ? answerLines(c).join("\n") : ""
+        return `Card ${c.id}: the operator said ${String(c.verdict).toUpperCase()}.${c.note ? ` Note: ${c.note}` : ""}${picked ? `\n${picked}` : ""}`
+      }
       return `Card ${c.id} expired unanswered; the default applied: ${c.outcome ?? c.if_silent}.`
     } catch (e: any) {
       return `Error: couldn't reach the daemon (${e?.message ?? e}).`
@@ -58,6 +62,9 @@ export async function runApprovalTool(args: Record<string, unknown>, deps: Appro
     if_silent: args.if_silent,
     expires: args.expires,
     source: args.source,
+    choices: args.choices,
+    draft: args.draft,
+    say: args.say,
     raised_by: caller.agentId,
     ...(reply ? { reply } : {}),
   }

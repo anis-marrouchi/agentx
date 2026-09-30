@@ -195,6 +195,7 @@ function item(i){
     + '<h2 class="apv__title">' + esc(i.title) + '</h2>'
     + '<p class="apv__ask">' + esc(i.ask) + '</p>'
     + (i.recommend ? '<p class="apv__rec"><b>Recommends:</b> ' + esc(i.recommend) + '</p>' : '')
+    + (i.choices ? '<p class="apv__rec"><b>Choices</b> (pick one in the Mac popup or with <code>agentx approvals approve --choice</code>):</p><ol>' + i.choices.map(function(c){ return '<li>' + esc(c) + '</li>'; }).join('') + '</ol>' : '')
     + (i.expires ? '<p class="apv__exp' + (soon ? ' is-soon' : '') + '" title="' + esc(new Date(i.expires).toLocaleString()) + '">Expires ' + esc(rel(i.expires)) + ', then: ' + esc(i.if_silent) + '</p>' : '')
     + '<details class="apv__detail"><summary>Details</summary>' + more.join('') + '</details>'
     + '<div class="apv__acts">'

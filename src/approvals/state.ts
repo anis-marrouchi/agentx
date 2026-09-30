@@ -7,13 +7,16 @@ import { approvalsDir } from "./cards"
 // Not a decision store. Every decision stays with its source (the card
 // file, the schedule in agentx.json, the memory fact, the wiki proposal).
 // This file only remembers which inbox items the operator put off until
-// when, and the last day a digest went out.
+// when, the last day a digest went out, and which cards the Mac popup
+// has already shown.
 
 export interface InboxState {
   /** Inbox key → ISO time it comes back. */
   snoozed: Record<string, string>
   /** Local date (YYYY-MM-DD) of the last digest sent. */
   lastDigest?: string
+  /** Inbox key → ISO time the Mac popup showed it. Shown once, not every minute. */
+  popped?: Record<string, string>
 }
 
 function stateFile(root: string): string {
@@ -26,6 +29,7 @@ export function readInboxState(root: string): InboxState {
     return {
       snoozed: raw && typeof raw.snoozed === "object" && raw.snoozed ? raw.snoozed : {},
       ...(typeof raw?.lastDigest === "string" ? { lastDigest: raw.lastDigest } : {}),
+      ...(raw?.popped && typeof raw.popped === "object" ? { popped: raw.popped } : {}),
     }
   } catch {
     return { snoozed: {} }
@@ -51,4 +55,15 @@ export function snooze(root: string, key: string, until: Date, now: number = Dat
 
 export function recordDigest(root: string, localDate: string): void {
   writeInboxState(root, { ...readInboxState(root), lastDigest: localDate })
+}
+
+/** Record that the popup showed `key`. Forgets keys no longer waiting,
+ *  so the file stays as small as the inbox. */
+export function recordPopped(root: string, key: string, waiting: string[], now: number = Date.now()): void {
+  const state = readInboxState(root)
+  const keep = new Set(waiting)
+  const popped: Record<string, string> = {}
+  for (const [k, v] of Object.entries(state.popped ?? {})) if (keep.has(k)) popped[k] = v
+  popped[key] = new Date(now).toISOString()
+  writeInboxState(root, { ...state, popped })
 }

@@ -51,6 +51,8 @@ export interface InboxItem {
   detail?: string
   /** The source's own command for the full record. */
   more?: string
+  /** Cards: the ready-made answers on offer; yes must pick one. */
+  choices?: string[]
   snoozed_until?: string
 }
 
@@ -103,6 +105,8 @@ function cardItem(c: DecisionCard): InboxItem {
     ...(c.source ? { source: c.source } : {}),
     raised_by: c.raised_by,
     created_at: c.created_at,
+    ...(c.choices ? { choices: c.choices, more: `agentx approvals popup card:${c.id}` } : {}),
+    ...(c.draft ? { detail: clip(`Suggested message: ${c.draft}`) } : {}),
   }
 }
 
@@ -275,6 +279,10 @@ export interface DecideOptions {
   /** "later": how long to put it off. */
   laterHours?: number
   by?: string
+  /** Cards with choices: which one (1-based number or the label). */
+  choice?: string | number
+  /** Cards with a draft: the message as the operator edited it. */
+  text?: string
 }
 
 export type DecideResult = { ok: true; message: string } | { ok: false; error: string }
@@ -320,8 +328,9 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
   const yes = action === "yes"
   switch (kind) {
     case "card": {
-      const r = decideCard(ctx.root, ref, yes ? "yes" : "no", { by, note: opts.note, now })
-      return r.ok ? { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}` } : r
+      const r = decideCard(ctx.root, ref, yes ? "yes" : "no", { by, note: opts.note, now, choice: opts.choice, text: opts.text })
+      if (!r.ok) return r
+      return { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}${r.card.choice ? ` (${r.card.choice})` : ""}` }
     }
     case "schedule": {
       const r = await (yes ? approveSchedule : rejectSchedule)(ref, { configPath: configPathFor(ctx), reload: ctx.reload })

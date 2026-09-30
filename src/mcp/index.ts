@@ -651,6 +651,7 @@ const TOOLS = [
       "Lead with your recommendation. Every card expires: say what should happen if nobody answers (if_silent). " +
       "You get a message with the result when it is decided or expires. You cannot approve anything with this tool. " +
       "Actions: create (default), status. " +
+      "To offer ready-made answers, add choices (and optionally a draft message); the operator's pick and final text come back with the result. " +
       "Example: {title:'Publish the launch post draft', ask:'Publish the draft on Monday?', recommend:'Yes: it is reviewed and the date is agreed', if_silent:'discard', expires:'2d', source:'https://example.com/drafts/42'}.",
     inputSchema: {
       type: "object" as const,
@@ -662,6 +663,9 @@ const TOOLS = [
         if_silent: { type: "string", enum: ["discard", "keep", "pause", "approve"], description: "create: what applies if nobody answers before it expires." },
         expires: { type: "string", description: "create: when the default applies. ISO date/time, or relative like '12h' or '3d'. Default: the node's setting (3 days)." },
         source: { type: "string", description: "create: link to the draft, PR or issue." },
+        choices: { type: "array", items: { type: "string" }, description: "create, optional: 1-5 ready-made answers the operator picks from (e.g. three free meeting slots). A yes then carries the pick." },
+        draft: { type: "string", description: "create, optional: a suggested message the operator may edit before approving. {choice} is replaced by the pick. On yes you get the final text: send exactly that." },
+        say: { type: "string", description: "create, optional: one short line the Mac popup speaks (max 160 characters). Default: the title." },
         id: { type: "string", description: "status: the card id you got from create." },
         channel: { type: "string", description: "Current chat's channel, from your task context, so the result can mention it." },
         chatId: { type: "string", description: "Current chat id, from your task context." },
