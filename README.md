@@ -13,17 +13,30 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-22.x-brightgreen)](package.json)
 
-[See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
+[Watch it](#watch-it) · [See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
 
 </div>
 
 AgentX routes messages and scheduled jobs to AI agents you host. Connect Telegram, WhatsApp, GitLab, GitHub, or a webhook. Give each agent a clear job. Watch the result in a browser dashboard.
 
+## Watch it
+
+Short videos show AgentX running, one task each. Click the picture to open the **Learn AgentX** playlist on YouTube.
+
+[![Learn AgentX playlist on YouTube](https://img.youtube.com/vi/J_QC6QCsSBs/hqdefault.jpg)](https://www.youtube.com/playlist?list=PLWyRWfXkYvlw)
+
+- [01: Run AI agents on your own machine, no account](https://youtu.be/J_QC6QCsSBs)
+- [02: Install AgentX and check it with doctor](https://youtu.be/arOqm5bB1Lw)
+- [Phone part 1: Install the AgentX phone app and pair it](https://youtu.be/i4BNYlI9ntA)
+- [Phone part 2: Chat with your AI agents from a phone](https://youtu.be/ofX__nC53ZQ)
+- [Desktop part 1: Install the AgentX desktop widget on a Mac](https://youtu.be/XwTJjaTt5WE)
+- [Desktop part 2: The floating widget, the pill and the orb](https://youtu.be/catRqT5LoyY)
+
 ## Current state: usable, experimental, not yet stable
 
 AgentX works and can be used today, but it is still an **experimental project, not a stable release**. There is plenty to polish and fix, especially the **Settings experience and configuration flows**. Expect rough edges and changes as people try it in real environments.
 
-The current source release is **0.28.0**. Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
+Releases ship often; see the [changelog](CHANGELOG.md) for what changed. Our priority is to learn from actual use: what works, what breaks, and what is confusing to set up or operate.
 
 **Still missing: role-based access control (RBAC) at both mesh and agent levels.** We want to define who can access shared nodes and agents, delegate work, and perform particular actions. This would open up more possibilities for shared teams and multi-user deployments. Existing mesh authentication and tool permissions do not provide this complete role model; RBAC is planned work, not an available feature.
 
@@ -35,11 +48,13 @@ The current source release is **0.28.0**. Our priority is to learn from actual u
 
 ## See it without an account
 
-From a built source checkout with Node.js 22.x, run:
+With Node.js 22.x, run:
 
 ```sh
-node dist/cli.js demo
+npx agentix-cli demo
 ```
+
+No clone, account, or API key is needed. The first run downloads the package, which takes a minute or two. From a built source checkout, `node dist/cli.js demo` does the same.
 
 The demo starts three local AgentX daemons and sends a task between them. Routing, network calls, and the event record are real. Model responses are scripted, so the demo makes no billable model calls. The terminal prints the dashboard addresses. [What to expect](docs/see-it-first.md).
 
@@ -86,7 +101,7 @@ node dist/cli.js daemon start --detach
 node dist/cli.js daemon status
 ```
 
-The npm package is `agentix-cli`; the installed executable is `agentx`. **Published version 0.27.0 has an installation error:** its postinstall script is missing from the package. Version 0.28.0 includes the fix; use 0.28.0 or newer, or build from source/Docker. Follow the [installation guide](docs/install.md) for details.
+The npm package is `agentix-cli`; the installed executable is `agentx`. Follow the [installation guide](docs/install.md) for details.
 
 ## One machine is enough to start
 
