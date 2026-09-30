@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.75.2](https://github.com/anis-marrouchi/agentx/compare/v0.75.1...v0.75.2) (2026-09-30)
+
+
+### Bug Fixes
+
+* **agents:** bound every preparation step, retry a run the pre-spawn deadline stops, and close its trace ([#341](https://github.com/anis-marrouchi/agentx/issues/341)) ([724fb7a](https://github.com/anis-marrouchi/agentx/commit/724fb7a540af603436b732f2b4435a9005f0053a)), closes [#340](https://github.com/anis-marrouchi/agentx/issues/340)
+
 ## [0.75.1](https://github.com/anis-marrouchi/agentx/compare/v0.75.0...v0.75.1) (2026-09-30)
 
 
