@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.76.0](https://github.com/anis-marrouchi/agentx/compare/v0.75.3...v0.76.0) (2026-09-30)
+
+
+### Features
+
+* **approvals:** Mac popup to answer decision cards in one click ([#348](https://github.com/anis-marrouchi/agentx/issues/348)) ([f085eec](https://github.com/anis-marrouchi/agentx/commit/f085eec7cd6fa78bebbf90acda22601e395eab1a)), closes [#347](https://github.com/anis-marrouchi/agentx/issues/347)
+
 ## [0.75.3](https://github.com/anis-marrouchi/agentx/compare/v0.75.2...v0.75.3) (2026-09-30)
 
 
