@@ -120,14 +120,21 @@ export function runReminderChecks(
       })
 }
 
+// Keep in step with package.json "engines": undici 8 needs 22.19, and
+// better-sqlite3 ships prebuilt binaries up to Node 26.
+export function nodeVersionSupported(version: string): boolean {
+  const [major, minor] = version.split(".").map(Number)
+  return (major === 22 && minor >= 19) || (major >= 23 && major <= 26)
+}
+
 async function runEnvChecks(checks: Check[]): Promise<void> {
-  const nodeMajor = Number(process.versions.node.split(".")[0])
+  const supported = nodeVersionSupported(process.versions.node)
   checks.push({
-    severity: nodeMajor == 22 ? "ok" : "fail",
+    severity: supported ? "ok" : "fail",
     group: "Environment",
     title: `Node.js ${process.versions.node}`,
-    detail: nodeMajor == 22 ? undefined : "AgentX requires Node 22.x.",
-    fix: nodeMajor == 22 ? undefined : "Install Node 22 (nvm install 22 && nvm use 22)",
+    detail: supported ? undefined : "AgentX requires Node 22.19 or newer, up to Node 26.",
+    fix: supported ? undefined : "Install Node 22 (nvm install 22 && nvm use 22)",
   })
 
   const which = (bin: string): string | null => {

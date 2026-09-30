@@ -16,7 +16,7 @@ Include your version, OS, installation method, exact reproduction steps, expecte
 
 | Component | Current requirement / scope |
 | --- | --- |
-| Runtime | Node.js 22.x; other major versions are outside the supported range |
+| Runtime | Node.js 22.19 to 26.x; other versions are outside the supported range |
 | Source development | pnpm 10; see CONTRIBUTING.md |
 | npm | Package `agentix-cli`, executable `agentx`; use 0.28.0 or later (0.27.0 has broken packaging) |
 | Linux and macOS | Primary CLI environments; package smoke workflow records what has actually passed |

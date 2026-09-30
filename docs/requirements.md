@@ -38,7 +38,7 @@ Choose **one** installation path. Docker runs the daemon and dashboard in contai
 
 ### Option B: run from source
 
-1. Install **Node.js 22.x** from [Node.js downloads](https://nodejs.org/en/download). Select version 22 explicitly; the website may offer a newer version by default.
+1. Install **Node.js 22.19 or newer, up to 26**, from [Node.js downloads](https://nodejs.org/en/download). Node 22 is what the maintainers run day to day.
 2. **Terminal:** install pnpm 10 (the package manager AgentX is built with) and check both versions:
 
    ```sh
@@ -260,7 +260,7 @@ There is no measured universal RAM or disk minimum for AgentX yet. Local speech 
 ## If something is wrong
 
 - **`docker version` shows no server:** Docker Desktop isn't running. Start it and try again.
-- **`node --version` doesn't start with `v22`:** install Node.js 22 explicitly. AgentX doesn't run on other versions.
+- **`node --version` is below `v22.19` or above `v26`:** install Node.js 22. AgentX doesn't run on other versions.
 - **Installing reports a native compilation error:** install the [node-gyp platform prerequisites](https://github.com/nodejs/node-gyp#installation), then install again.
 - **An app is missing from System Settings › Privacy & Security:** use the feature once so the app asks for access, then look again.
 - **`ffmpeg was not found` during `agentx desktop install`:** finish the FFmpeg step under local Whisper, then run the install again.
