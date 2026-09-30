@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.75.3](https://github.com/anis-marrouchi/agentx/compare/v0.75.2...v0.75.3) (2026-09-30)
+
+
+### Bug Fixes
+
+* **install:** accept Node 22.19 through 26, not only 22.x ([#344](https://github.com/anis-marrouchi/agentx/issues/344)) ([2d6fc33](https://github.com/anis-marrouchi/agentx/commit/2d6fc33a656e4dd0e06091692b3be19452649fca))
+
 ## [0.75.2](https://github.com/anis-marrouchi/agentx/compare/v0.75.1...v0.75.2) (2026-09-30)
 
 
