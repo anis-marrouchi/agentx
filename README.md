@@ -13,11 +13,24 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-22.x-brightgreen)](package.json)
 
-[See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
+[Watch it](#watch-it) · [See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
 
 </div>
 
 AgentX routes messages and scheduled jobs to AI agents you host. Connect Telegram, WhatsApp, GitLab, GitHub, or a webhook. Give each agent a clear job. Watch the result in a browser dashboard.
+
+## Watch it
+
+Short videos show AgentX running, one task each. Click the picture to open the **Learn AgentX** playlist on YouTube.
+
+[![Learn AgentX playlist on YouTube](https://img.youtube.com/vi/J_QC6QCsSBs/hqdefault.jpg)](https://www.youtube.com/playlist?list=PLWyRWfXkYvlw)
+
+- [01: Run AI agents on your own machine, no account](https://youtu.be/J_QC6QCsSBs)
+- [02: Install AgentX and check it with doctor](https://youtu.be/arOqm5bB1Lw)
+- [Phone part 1: Install the AgentX phone app and pair it](https://youtu.be/i4BNYlI9ntA)
+- [Phone part 2: Chat with your AI agents from a phone](https://youtu.be/ofX__nC53ZQ)
+- [Desktop part 1: Install the AgentX desktop widget on a Mac](https://youtu.be/XwTJjaTt5WE)
+- [Desktop part 2: The floating widget, the pill and the orb](https://youtu.be/catRqT5LoyY)
 
 ## Current state: usable, experimental, not yet stable
 
