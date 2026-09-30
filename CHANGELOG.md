@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.75.1](https://github.com/anis-marrouchi/agentx/compare/v0.75.0...v0.75.1) (2026-09-30)
+
+
+### Bug Fixes
+
+* **mac-voice:** bring the closed pill back in one click ([#338](https://github.com/anis-marrouchi/agentx/issues/338)) ([6b557f3](https://github.com/anis-marrouchi/agentx/commit/6b557f35ed563c2a5897e8931b024cf9ec3c3bd4))
+
 ## [0.75.0](https://github.com/anis-marrouchi/agentx/compare/v0.74.0...v0.75.0) (2026-09-29)
 
 
