@@ -177,13 +177,25 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.digest.destination.channel` | string | required | Channel for the reminder. |
 | `approvals.digest.destination.chatId` | string | required | The chat on that channel. |
 | `approvals.digest.destination.accountId` | string | — | Which account on that channel. |
-| `approvals.popup` | object | `{}` | A popup on this Mac for new decision cards. macOS only. See [Answer from a popup on your Mac](/dashboard/approvals#answer-from-a-popup-on-your-mac). |
-| `approvals.popup.enabled` | boolean | `false` | Shows new cards in a popup. |
-| `approvals.popup.speak` | boolean | `true` | Speaks one short line when the popup opens. |
+| `approvals.popup` | object | `{}` | Shows waiting cards on this Mac. macOS only. See [Answer from a card on your Mac](/dashboard/approvals#answer-from-a-card-on-your-mac). |
+| `approvals.popup.enabled` | boolean | `false` | Shows waiting cards on this Mac. |
+| `approvals.popup.style` | `"card"` \| `"dialog"` | `"card"` | `"card"`: the web card window. `"dialog"`: plain macOS dialogs, also the fallback when the window can't open. |
+| `approvals.popup.theme` | `"system"` \| `"light"` \| `"dark"` | `"system"` | The card's colours. `"system"` follows light or dark mode. |
+| `approvals.popup.speak` | boolean | `true` | Speaks one short line when the card opens. |
 | `approvals.popup.voice` | string | — | A macOS voice for the spoken line. Unset: the system voice. |
-| `approvals.popup.sound` | string | `"Glass"` | A sound from `/System/Library/Sounds`; `""` for none. |
+| `approvals.popup.sound` | string | `"chime"` | `"chime"` (the card's soft chime), a sound from `/System/Library/Sounds` such as `"Glass"`, or `""` for none. |
 | `approvals.popup.volume` | number (0 to 1) | `0.4` | Sound volume. |
-| `approvals.popup.timeoutSeconds` | number (10 to 3600) | `600` | How long the popup waits for an answer. After that the card stays in the inbox. |
+| `approvals.popup.timeoutSeconds` | number (10 to 3600) | `600` | How long the card waits for an answer. After that the card stays in the inbox. |
+| `approvals.checkin` | object | `{}` | Check-ins: waiting cards and your open Apple Reminders on the Mac card, a few times a day. macOS only. See [Check-ins](/dashboard/approvals#check-ins-a-few-times-a-day). |
+| `approvals.checkin.enabled` | boolean | `false` | Runs check-ins. |
+| `approvals.checkin.dailyAt` | string (`HH:MM`) | `"09:00"` | The daily check-in: every open reminder. |
+| `approvals.checkin.times` | string[] (`HH:MM`) | `["11:00", "14:00", "17:00"]` | The other check-ins: reminders due soon. |
+| `approvals.checkin.timezone` | string | — | IANA time zone for the times. Unset: this machine's. |
+| `approvals.checkin.lists` | string[] | `["Reminders"]` | Your Reminders lists to look at. |
+| `approvals.checkin.agent` | string | — | The agent that writes cards for reminders without an `agentx:` line. Unset: those reminders are skipped. |
+| `approvals.checkin.dueWithinHours` | number | `24` | A normal check-in takes reminders due within this many hours, or overdue. |
+| `approvals.checkin.maxCardsPerPass` | number (1 to 20) | `5` | Most cards one check-in raises. |
+| `approvals.checkin.composeTimeoutSeconds` | number (30 to 3600) | `300` | How long an agent may take to write one card. |
 
 ## `shutdown`
 

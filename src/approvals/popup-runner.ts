@@ -16,7 +16,9 @@ import { readInboxState, recordPopped } from "./state"
 //     rule as `agentx notify`: held, never dropped;
 //   - cards put off with "later" wait until they come back;
 //   - cards older than a day don't pop, so switching the popup on doesn't
-//     replay a backlog one dialog at a time.
+//     replay a backlog one dialog at a time;
+//   - a check-in (checkin.ts) puts every card waiting at that moment back
+//     in line, old or not, and each shows once more.
 
 export interface PopupRunnerSettings extends PopupSettings {
   enabled: boolean
@@ -31,7 +33,9 @@ export interface PopupRunnerDeps {
   settings: PopupRunnerSettings
   log: (msg: string) => void
   focus?: () => FocusState
-  show?: (card: DecisionCard, settings: PopupSettings) => Promise<PopupAnswer>
+  show?: (card: DecisionCard, settings: PopupSettings, opts: { from?: string }) => Promise<PopupAnswer>
+  /** An agent's display name, for the card. */
+  agentName?: (agentId: string) => string | undefined
   platform?: NodeJS.Platform
 }
 
@@ -42,14 +46,16 @@ let showing = false
 /** The next card to show, or null. */
 export function nextCardToPop(ctx: InboxContext): DecisionCard | null {
   const now = ctx.now ?? Date.now()
-  const { popped = {}, snoozed } = readInboxState(ctx.root)
+  const { popped = {}, snoozed, passAt } = readInboxState(ctx.root)
+  const pass = passAt ? Date.parse(passAt) : NaN
   for (const card of listCards(ctx.root, "pending")) {
     const key = `card:${card.id}`
     if (popped[key]) continue
     const until = snoozed[key]
     if (until && Date.parse(until) > now) continue
     if (Date.parse(card.expires) <= now) continue
-    if (now - Date.parse(card.created_at) > POPUP_MAX_AGE_MS) continue
+    const created = Date.parse(card.created_at)
+    if (now - created > POPUP_MAX_AGE_MS && !(created <= pass)) continue
     return card
   }
   return null
@@ -71,7 +77,7 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
     const waiting = listCards(ctx.root, "pending").map((c) => `card:${c.id}`)
     recordPopped(ctx.root, key, waiting, ctx.now)
     log(`[approvals] popup: showing ${key} from ${card.raised_by}`)
-    const answer = await (deps.show ?? showPopup)(card, settings)
+    const answer = await (deps.show ?? showPopup)(card, settings, { from: deps.agentName?.(card.raised_by) })
     if (answer.action === "dismiss") {
       log(`[approvals] popup: ${key} left waiting (${focusLabel(focus)} when shown)`)
       return "shown"

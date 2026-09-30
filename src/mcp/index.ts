@@ -666,6 +666,7 @@ const TOOLS = [
         choices: { type: "array", items: { type: "string" }, description: "create, optional: 1-5 ready-made answers the operator picks from (e.g. three free meeting slots). A yes then carries the pick." },
         draft: { type: "string", description: "create, optional: a suggested message the operator may edit before approving. {choice} is replaced by the pick. On yes you get the final text: send exactly that." },
         say: { type: "string", description: "create, optional: one short line the Mac popup speaks (max 160 characters). Default: the title." },
+        context: { type: "string", description: "create, optional: a few lines of background shown above the question, e.g. what the other person said (max 600 characters)." },
         id: { type: "string", description: "status: the card id you got from create." },
         channel: { type: "string", description: "Current chat's channel, from your task context, so the result can mention it." },
         chatId: { type: "string", description: "Current chat id, from your task context." },

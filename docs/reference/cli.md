@@ -150,9 +150,11 @@ One list of every decision waiting for you: [Approvals](../dashboard/approvals.m
 | `agentx approvals approve <key> [--note] [--force] [--choice] [--text]` | Say yes; `--force` approves a wiki lesson whose article changed since; `--choice` and `--text` answer a card that offers choices |
 | `agentx approvals reject <key> [--note]` | Say no |
 | `agentx approvals later <key> [--hours]` | Put an item off (default 24 hours) |
-| `agentx approvals request --agent … --title … --ask … --recommend … --if-silent … [--choice …] [--draft] [--say]` | Raise a decision card yourself, for example to test |
-| `agentx approvals popup <key>` | Show one card in the Mac popup now and record your answer (macOS) |
-| `agentx approvals settings [options]` | Show or change expiry, "later", the daily digest and the Mac popup |
+| `agentx approvals request --agent … --title … --ask … --recommend … --if-silent … [--choice …] [--draft] [--say] [--context]` | Raise a decision card yourself, for example to test |
+| `agentx approvals popup <key>` | Show one card on the Mac now and record your answer (macOS) |
+| `agentx approvals popup --sample [--theme] [--capture file.png]` | Show a sample card; nothing is recorded |
+| `agentx approvals checkin [--daily]` | Run a check-in now: waiting cards come back, open reminders get cards (daemon, macOS) |
+| `agentx approvals settings [options]` | Show or change expiry, "later", the daily digest, the Mac card and check-ins |
 
 ## Agent memory
 

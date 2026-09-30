@@ -8,6 +8,8 @@ import { listInbox, type InboxContext } from "./inbox"
 //   POST /approvals        raise a decision card
 //   GET  /approvals        read the inbox, in bounded summary form
 //   GET  /approvals/:id    read one of the cards (to check its result)
+//   POST /approvals/checkin start a check-in now ({"daily": true} for the
+//                          full pass). It only asks agents to write cards.
 // Deciding is refused here on purpose. The operator decides with the
 // `agentx approvals` CLI or the dashboard's Approvals page.
 //
@@ -24,6 +26,8 @@ export interface ApprovalsApiDeps {
   settings: CardSettings
   /** True when the agent exists on this node. */
   hasAgent: (agentId: string) => boolean
+  /** Start a check-in pass in the background (checkin.ts). */
+  runCheckin?: (kind: "daily" | "check") => void
 }
 
 export interface ApiReply {
@@ -64,6 +68,13 @@ export function handleApprovalsApi(
       return { status: 201, body: { card: r.card } }
     }
     return { status: 405, body: { error: "Method not allowed" } }
+  }
+
+  if (path === "/approvals/checkin" && m === "POST") {
+    if (!deps.runCheckin) return { status: 503, body: { error: "check-ins need macOS" } }
+    const kind = body?.daily === true ? "daily" : "check"
+    deps.runCheckin(kind)
+    return { status: 202, body: { started: kind } }
   }
 
   const one = path.match(/^\/approvals\/([^/]+)$/)

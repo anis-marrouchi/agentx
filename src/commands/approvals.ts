@@ -1,7 +1,7 @@
 import { Command } from "commander"
 import chalk from "chalk"
-import { createCard, IF_SILENT_VALUES, readCard } from "@/approvals/cards"
-import { showPopup } from "@/approvals/popup"
+import { createCard, IF_SILENT_VALUES } from "@/approvals/cards"
+import { registerCardCommands } from "./approvals-card"
 import { decide, listInbox, type InboxAction, type InboxItem } from "@/approvals/inbox"
 import { parseDestination, readApprovalSettings, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
 
@@ -113,36 +113,19 @@ approvals
   .option("--choice <label>", "a ready-made answer; repeat for up to 5", (v: string, all: string[] = []) => [...all, v])
   .option("--draft <message>", "a suggested message; {choice} is replaced by the pick")
   .option("--say <line>", "the short line the Mac popup speaks (default: the title)")
-  .action((opts: { agent: string; title: string; ask: string; recommend: string; ifSilent: string; expires?: string; source?: string; choice?: string[]; draft?: string; say?: string }) => {
+  .option("--context <text>", "a few lines of background, shown above the question")
+  .action((opts: { agent: string; title: string; ask: string; recommend: string; ifSilent: string; expires?: string; source?: string; choice?: string[]; draft?: string; say?: string; context?: string }) => {
     const settings = readApprovalSettings()
     const r = createCard(process.cwd(), {
       raised_by: opts.agent, title: opts.title, ask: opts.ask, recommend: opts.recommend,
       if_silent: opts.ifSilent, expires: opts.expires, source: opts.source,
-      choices: opts.choice, draft: opts.draft, say: opts.say,
+      choices: opts.choice, draft: opts.draft, say: opts.say, context: opts.context,
     }, { settings })
     if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
     console.log(chalk.green(`  ✓ card:${r.card.id} raised; expires ${when(r.card.expires)}, then: ${r.card.if_silent}`))
   })
 
-approvals
-  .command("popup")
-  .description("show a card in the Mac popup now, and record your answer (macOS)")
-  .argument("<key>", "card key from `agentx approvals list`, e.g. card:2026-01-05-new-meeting-date-ab12")
-  .action(async (key: string) => {
-    const id = key.startsWith("card:") ? key.slice(5) : key
-    const card = readCard(process.cwd(), id)
-    if (!card || card.status !== "pending") { console.error(chalk.red(`  no card waiting for "${key}"`)); process.exitCode = 1; return }
-    if (process.platform !== "darwin") { console.error(chalk.red("  the popup needs macOS")); process.exitCode = 1; return }
-    const answer = await showPopup(card, readApprovalSettings().popup!)
-    if (answer.action === "dismiss") { console.log(chalk.dim("  not answered; the card is still waiting")); return }
-    await recordPopupAnswer(`card:${id}`, answer)
-  })
-
-async function recordPopupAnswer(key: string, a: { action: "yes" | "no"; choice?: string; text?: string }): Promise<void> {
-  const r = await decide(ctx(), key, a.action, { by: "operator (popup)", choice: a.choice, text: a.text })
-  if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
-  console.log(chalk.green(`  ✓ ${r.message}`))
-}
+registerCardCommands(approvals)
 
 approvals
   .command("settings")
@@ -160,6 +143,13 @@ approvals
   .option("--popup-voice <name>", "voice for the spoken line; \"default\" for the system voice")
   .option("--popup-sound <name>", "system sound, like Glass; \"none\" for silence")
   .option("--popup-timeout <seconds>", "how long the popup waits for you")
+  .option("--popup-style <card|dialog>", "the web card, or plain macOS dialogs")
+  .option("--popup-theme <system|light|dark>", "the card's colours")
+  .option("--checkin <on|off>", "check-ins: waiting cards and open reminders, a few times a day (macOS)")
+  .option("--checkin-times <HH:MM,...>", "local times of the normal passes")
+  .option("--checkin-daily <HH:MM>", "local time of the daily pass")
+  .option("--checkin-lists <list,...>", "your Reminders lists to look at")
+  .option("--checkin-agent <id>", "agent that writes cards for reminders no agent owns; \"none\" to clear")
   .action(async (opts: Record<string, string | undefined>) => {
     const patch: ApprovalSettingsPatch = {}
     const num = (flag: string, v: string | undefined) => {
@@ -185,6 +175,14 @@ approvals
       if (opts.popupVoice !== undefined) patch.popupVoice = opts.popupVoice === "default" ? null : opts.popupVoice
       if (opts.popupSound !== undefined) patch.popupSound = opts.popupSound === "none" ? "" : opts.popupSound
       patch.popupTimeoutSeconds = num("--popup-timeout", opts.popupTimeout)
+      if (opts.popupStyle !== undefined) patch.popupStyle = opts.popupStyle as ApprovalSettingsPatch["popupStyle"]
+      if (opts.popupTheme !== undefined) patch.popupTheme = opts.popupTheme as ApprovalSettingsPatch["popupTheme"]
+      patch.checkinEnabled = onOff("--checkin", opts.checkin)
+      const list = (v: string | undefined) => v?.split(",").map((x) => x.trim()).filter(Boolean)
+      patch.checkinTimes = list(opts.checkinTimes)
+      if (opts.checkinDaily !== undefined) patch.checkinDailyAt = opts.checkinDaily
+      patch.checkinLists = list(opts.checkinLists)
+      if (opts.checkinAgent !== undefined) patch.checkinAgent = opts.checkinAgent === "none" ? null : opts.checkinAgent
       if (opts.digestTime !== undefined) patch.digestTime = opts.digestTime
       if (opts.digestTimezone !== undefined) patch.digestTimezone = opts.digestTimezone === "local" ? null : opts.digestTimezone
       if (opts.digestTo !== undefined) {
@@ -212,5 +210,7 @@ approvals
     console.log(`  Daily digest            ${s.digest.enabled ? `on, at ${s.digest.time}${s.digest.timezone ? ` (${s.digest.timezone})` : " (this machine's time)"}` : "off"}`)
     console.log(`  Digest goes to          ${dest ? `${dest.channel} ${dest.chatId}` : "notifications.destination"}`)
     const p = s.popup!
-    console.log(`  Mac popup               ${p.enabled ? `on: sound ${p.sound || "none"}, ${p.speak ? `speaks${p.voice ? ` (${p.voice})` : ""}` : "silent"}, waits ${p.timeoutSeconds}s` : "off"}`)
+    console.log(`  Mac popup               ${p.enabled ? `on: ${p.style}, sound ${p.sound || "none"}, ${p.speak ? `speaks${p.voice ? ` (${p.voice})` : ""}` : "silent"}, waits ${p.timeoutSeconds}s` : "off"}`)
+    const c = s.checkin!
+    console.log(`  Check-ins               ${c.enabled ? `on: daily ${c.dailyAt}, then ${c.times.join(", ")}; lists ${c.lists.join(", ")}; agent ${c.agent ?? "none"}` : "off"}`)
   })

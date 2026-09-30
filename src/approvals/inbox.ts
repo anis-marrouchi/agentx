@@ -106,7 +106,7 @@ function cardItem(c: DecisionCard): InboxItem {
     raised_by: c.raised_by,
     created_at: c.created_at,
     ...(c.choices ? { choices: c.choices, more: `agentx approvals popup card:${c.id}` } : {}),
-    ...(c.draft ? { detail: clip(`Suggested message: ${c.draft}`) } : {}),
+    ...(c.context || c.draft ? { detail: clip([c.context, c.draft ? `Suggested message: ${c.draft}` : ""].filter(Boolean).join(" · ")) } : {}),
   }
 }
 

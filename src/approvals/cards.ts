@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { answerLines, buildChoices, resolveAnswer, type CardChoices } from "./choices"
+import { originLines, type CardOrigin } from "./origin"
 
 // --- Decision cards: what an agent asks the operator ---
 //
@@ -56,6 +57,8 @@ export interface DecisionCard extends CardChoices {
   text?: string
   /** Set once the raising agent has been told the result. */
   agent_notified_at?: string
+  /** What the card is about, when the daemon raised it (origin.ts). */
+  origin?: CardOrigin
 }
 
 export const CARD_LIMITS = {
@@ -165,12 +168,13 @@ export interface CardInput {
   choices?: unknown
   draft?: unknown
   say?: unknown
+  context?: unknown
 }
 
 /** Validate what an agent sent and build a pending card. Never saves. */
 export function buildCard(
   input: CardInput,
-  opts: { now?: number; settings?: CardSettings } = {},
+  opts: { now?: number; settings?: CardSettings; origin?: CardOrigin } = {},
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const now = opts.now ?? Date.now()
   const settings = opts.settings ?? DEFAULT_CARD_SETTINGS
@@ -217,6 +221,8 @@ export function buildCard(
       created_at: new Date(now).toISOString(),
       ...(reply ? { reply } : {}),
       ...extras.value,
+      // Set by the daemon only (check-ins), never from what an agent sent.
+      ...(opts.origin ? { origin: opts.origin } : {}),
       status: "pending",
     },
   }
@@ -226,7 +232,7 @@ export function buildCard(
 export function createCard(
   root: string,
   input: CardInput,
-  opts: { now?: number; settings?: CardSettings } = {},
+  opts: { now?: number; settings?: CardSettings; origin?: CardOrigin } = {},
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const built = buildCard(input, opts)
   if (!built.ok) return built
@@ -307,6 +313,7 @@ export function verdictMessage(card: DecisionCard): string {
   if (card.status === "decided" && card.verdict === "yes") lines.push(...answerLines(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
   if (card.source) lines.push(`Source: ${card.source}`)
+  if (card.origin) lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)
   lines.push("Act on this result now. Do not raise the same card again.")
   return lines.join("\n")
