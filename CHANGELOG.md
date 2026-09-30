@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.77.0](https://github.com/anis-marrouchi/agentx/compare/v0.76.0...v0.77.0) (2026-09-30)
+
+
+### Features
+
+* **approvals:** web card on the Mac and scheduled check-ins for reminders ([#351](https://github.com/anis-marrouchi/agentx/issues/351)) ([7f328bb](https://github.com/anis-marrouchi/agentx/commit/7f328bb7f72a3dff0ffc42a0b93628c96dbcdc9a))
+
 ## [0.76.0](https://github.com/anis-marrouchi/agentx/compare/v0.75.3...v0.76.0) (2026-09-30)
 
 
