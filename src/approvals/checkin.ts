@@ -20,9 +20,10 @@ import { localClock } from "./sweep"
 // The operator's answer goes back to that agent through the approvals
 // sweep, like any card. Nothing here sends anything to anyone.
 //
-// A reminder gets one card at a time. After an answer, or after the agent
-// said it doesn't need the operator, it comes back at the next daily pass
-// if it is still open. Reminders the reminders poller has claimed belong
+// A reminder gets one card at a time. After an answer, after the agent
+// said it doesn't need the operator, or after a failed attempt, it comes
+// back at the next daily pass if it is still open. A pass asks at most
+// `maxAsksPerPass` agents, whatever they answer: each ask is a full turn. Reminders the reminders poller has claimed belong
 // to their agent and are left alone.
 
 export interface CheckinSettings {
@@ -36,7 +37,8 @@ export interface CheckinSettings {
   /** Owner of reminders without an `agentx:` trailer. Unset: they are skipped. */
   agent?: string
   dueWithinHours: number
-  maxCardsPerPass: number
+  /** Most agent turns one pass starts, cards or not. */
+  maxAsksPerPass: number
   composeTimeoutSeconds: number
 }
 
@@ -87,9 +89,9 @@ function isEligible(r: Reminder, state: CheckinState, kind: PassKind, s: Checkin
     if (!(due <= now + s.dueWithinHours * 3_600_000)) return false
   }
   const rec = state.items[r.id]
-  if (!rec || rec.status === "failed") return true
+  if (!rec) return true
   if (rec.status === "carded" && rec.card && readCard(root, rec.card)?.status === "pending") return false
-  // Answered or not needed: back once a day while it stays open.
+  // Answered, not needed or failed: back once a day while it stays open.
   return kind === "daily" && localClock(Date.parse(rec.at), s.timezone).date !== localClock(now, s.timezone).date
 }
 
@@ -99,7 +101,7 @@ function withTimeout<T>(p: Promise<T>, seconds: number): Promise<T> {
   return Promise.race([p, late]).finally(() => clearTimeout(timer))
 }
 
-/** One pass. Never throws; failures are logged and retried next pass. */
+/** One pass. Never throws; failures are logged and retried at the next daily pass. */
 export async function runCheckinPass(deps: CheckinDeps, kind: PassKind): Promise<PassResult> {
   const { root, settings: s, log } = deps
   const now = deps.now ?? Date.now()
@@ -122,8 +124,9 @@ export async function runCheckinPass(deps: CheckinDeps, kind: PassKind): Promise
     .sort((a, b) => due(a) - due(b))
   result.looked = open.length
 
+  let asks = 0
   for (const r of todo) {
-    if (result.carded.length >= s.maxCardsPerPass) break
+    if (asks >= s.maxAsksPerPass) break
     const trailer = parseTrailer(r.notes)
     const owner = [trailer?.agent, s.agent].find((a) => a && deps.hasAgent(a))
     if (!owner) {
@@ -132,6 +135,7 @@ export async function runCheckinPass(deps: CheckinDeps, kind: PassKind): Promise
     }
     const at = new Date(now).toISOString()
     const nowText = new Date(now).toLocaleString("en-GB", { timeZone: s.timezone, dateStyle: "full", timeStyle: "short" })
+    asks++
     try {
       const reply = await withTimeout(deps.ask(owner, composePrompt(r, trailer, nowText), r), s.composeTimeoutSeconds)
       const composed = parseCompose(reply)

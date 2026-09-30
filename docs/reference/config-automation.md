@@ -194,7 +194,7 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.checkin.lists` | string[] | `["Reminders"]` | Your Reminders lists to look at. |
 | `approvals.checkin.agent` | string | — | The agent that writes cards for reminders without an `agentx:` line. Unset: those reminders are skipped. |
 | `approvals.checkin.dueWithinHours` | number | `24` | A normal check-in takes reminders due within this many hours, or overdue. |
-| `approvals.checkin.maxCardsPerPass` | number (1 to 20) | `5` | Most cards one check-in raises. |
+| `approvals.checkin.maxAsksPerPass` | number (1 to 20) | `5` | Most agents one check-in asks to write a card, whatever they answer. |
 | `approvals.checkin.composeTimeoutSeconds` | number (30 to 3600) | `300` | How long an agent may take to write one card. |
 
 ## `shutdown`

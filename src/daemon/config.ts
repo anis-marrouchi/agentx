@@ -1073,8 +1073,8 @@ export const approvalsConfigSchema = z.object({
     agent: z.string().min(1).optional(),
     /** A normal pass takes reminders due within this many hours, or overdue. */
     dueWithinHours: z.number().positive().max(24 * 30).default(24),
-    /** Most cards one pass raises. */
-    maxCardsPerPass: z.number().int().min(1).max(20).default(5),
+    /** Most agents one pass asks to write a card, whatever they answer. */
+    maxAsksPerPass: z.number().int().min(1).max(20).default(5),
     /** How long an agent may take to write one card. */
     composeTimeoutSeconds: z.number().int().min(30).max(3600).default(300),
   }).default({}),

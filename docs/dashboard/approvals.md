@@ -119,10 +119,10 @@ At each check-in the daemon:
 
 1. **Brings back waiting cards.** Every card still waiting shows once more, oldest first, one at a time.
 2. **Looks at your open reminders** in Apple Reminders. A normal check-in takes the ones due in the next 24 hours or overdue. The daily check-in takes every open one, dated or not.
-3. **Asks the agent that owns each reminder to write its card.** The owner is the agent named in the reminder's `agentx:` line (reminders agents create through the mac-pim skill have one). For other reminders, it is the agent you choose with `checkin.agent`. The agent does the homework, such as finding free times in your calendar, and writes the context, the question, two to four answers and a suggested message. It may also say the reminder doesn't need you. It sends nothing.
+3. **Asks the agent that owns each reminder to write its card.** The owner is the agent named in the reminder's `agentx:` line (reminders agents create through the mac-pim skill have one). For other reminders, it is the agent you choose with `checkin.agent`. The agent does the homework, such as finding free times in your calendar, and writes the context, the question, two to four answers and a suggested message. It may also say the reminder doesn't need you. It sends nothing. That rule is an instruction in its prompt, not a lock: while it writes the card the agent has its usual tools, the same trust as the [reminders poller](../automations/reminders.md).
 4. **Your click goes back to that agent.** It is told your pick, the exact message and the reminder, does what you chose, and ticks the reminder off.
 
-A reminder has one card at a time. If you answer it, or the agent says it doesn't need you, and the reminder is still open, it comes back at the next daily check-in. At most five cards are raised per check-in (`checkin.maxCardsPerPass`). Reminders that the [reminders poller](../automations/reminders.md) has already handed to an agent are left to that agent.
+A reminder has one card at a time. If you answer it, the agent says it doesn't need you, or writing the card fails, and the reminder is still open, it comes back at the next daily check-in. Each check-in asks at most five agents (`checkin.maxAsksPerPass`), whatever they answer, so a long list of reminders is spread over several check-ins. Reminders that the [reminders poller](../automations/reminders.md) has already handed to an agent are left to that agent.
 
 The default times are 09:00 for the daily check-in, then 11:00, 14:00 and 17:00. If the Mac was asleep or the daemon was off, a missed time is not replayed: the next one runs as usual, and the daily check-in runs once the Mac is back.
 
@@ -177,7 +177,7 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
   "popup": { "enabled": false, "style": "card", "theme": "system", "speak": true, "sound": "chime", "volume": 0.4, "timeoutSeconds": 600 },
   "checkin": {
     "enabled": false, "dailyAt": "09:00", "times": ["11:00", "14:00", "17:00"], "lists": ["Reminders"],
-    "dueWithinHours": 24, "maxCardsPerPass": 5, "composeTimeoutSeconds": 300
+    "dueWithinHours": 24, "maxAsksPerPass": 5, "composeTimeoutSeconds": 300
   }
 }
 ```
@@ -207,7 +207,7 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
 | `checkin.lists` | Your Reminders lists to look at | `--checkin-lists` |
 | `checkin.agent` | The agent that writes cards for reminders no agent owns. Unset: those reminders are skipped | `--checkin-agent` |
 | `checkin.dueWithinHours` | A normal check-in takes reminders due within this many hours | — |
-| `checkin.maxCardsPerPass` | Most cards one check-in raises | — |
+| `checkin.maxAsksPerPass` | Most agents one check-in asks to write a card, whatever they answer | — |
 | `checkin.composeTimeoutSeconds` | How long an agent may take to write one card | — |
 
 ## For agents: raise a card

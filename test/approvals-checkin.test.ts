@@ -27,7 +27,7 @@ const NOW = Date.parse("2026-09-30T10:30:00.000Z")
 
 const SETTINGS: CheckinSettings = {
   enabled: true, times: ["11:00", "14:00", "17:00"], dailyAt: "09:00", timezone: "UTC",
-  lists: ["Reminders"], agent: "secretary", dueWithinHours: 24, maxCardsPerPass: 5, composeTimeoutSeconds: 60,
+  lists: ["Reminders"], agent: "secretary", dueWithinHours: 24, maxAsksPerPass: 5, composeTimeoutSeconds: 60,
 }
 
 let root: string
@@ -145,7 +145,7 @@ describe("a pass", () => {
     expect(tomorrow.asked.map((a) => a.message.includes("Reminder b"))).toEqual([true])
   })
 
-  it("leaves claimed and ownerless reminders alone, and retries failures", async () => {
+  it("leaves claimed and ownerless reminders alone", async () => {
     const claims = join(root, ".agentx", "reminders", "claims.json")
     mkdirSync(dirname(claims), { recursive: true })
     writeFileSync(claims, JSON.stringify({ c: { agent: "helper", status: "claimed", at: new Date(NOW).toISOString() } }))
@@ -156,18 +156,39 @@ describe("a pass", () => {
     expect(asked).toHaveLength(0)
     expect(res.carded).toEqual([])
     expect(logs.join("\n")).toContain("no agent owns it")
-    const failing = deps([r("y", { dueDate: due })], "not json")
-    expect((await runCheckinPass(failing.d, "check")).failed).toBe(1)
-    expect(readCheckinState(root).items.y.status).toBe("failed")
-    const retry = deps([r("y", { dueDate: due })])
-    expect((await runCheckinPass(retry.d, "check")).carded).toHaveLength(1)
   })
 
-  it("stops at maxCardsPerPass, soonest due first", async () => {
+  it("retries a failed reminder only at the next daily pass", async () => {
+    const items = [r("y", { dueDate: "2026-09-30T12:00:00Z" })]
+    const failing = deps(items, "not json")
+    expect((await runCheckinPass(failing.d, "check")).failed).toBe(1)
+    expect(readCheckinState(root).items.y.status).toBe("failed")
+    // Not at the later check-ins of the same day, nor at that day's daily pass.
+    const later = deps(items)
+    expect((await runCheckinPass({ ...later.d, now: NOW + 3 * HOUR }, "check")).carded).toHaveLength(0)
+    expect((await runCheckinPass({ ...later.d, now: NOW + 4 * HOUR }, "daily")).carded).toHaveLength(0)
+    expect(later.asked).toHaveLength(0)
+    const tomorrow = deps(items)
+    expect((await runCheckinPass({ ...tomorrow.d, now: NOW + 24 * HOUR }, "daily")).carded).toHaveLength(1)
+  })
+
+  it("stops at maxAsksPerPass, soonest due first", async () => {
     const items = ["3", "1", "2"].map((n) => r(n, { dueDate: `2026-09-30T1${n}:00:00Z` }))
-    const { d } = deps(items, CARD_JSON, { settings: { ...SETTINGS, maxCardsPerPass: 2 } })
+    const { d } = deps(items, CARD_JSON, { settings: { ...SETTINGS, maxAsksPerPass: 2 } })
     await runCheckinPass(d, "check")
     expect(Object.keys(readCheckinState(root).items).sort()).toEqual(["1", "2"])
+  })
+
+  it("counts every ask toward maxAsksPerPass, not only the cards", async () => {
+    const items = ["1", "2", "3", "4"].map((n) => r(n, { dueDate: `2026-09-30T1${n}:00:00Z` }))
+    // 1 is not needed, 2 fails, 3 would be a card: the cap of 2 stops before it.
+    const reply = (_agent: string, message: string) =>
+      message.includes("Reminder 1") ? '{"needs_operator": false, "why": "done"}' : message.includes("Reminder 2") ? "not json" : CARD_JSON
+    const { d, asked } = deps(items, CARD_JSON, { settings: { ...SETTINGS, maxAsksPerPass: 2 } })
+    d.ask = async (agent, message) => { asked.push({ agent, message }); return reply(agent, message) }
+    const res = await runCheckinPass(d, "daily")
+    expect(asked).toHaveLength(2)
+    expect(res).toMatchObject({ carded: [], skipped: 1, failed: 1 })
   })
 
   it("puts every waiting card back in line for the Mac card, old or not", async () => {
@@ -206,6 +227,6 @@ describe("the tick and the trigger", () => {
 
   it("is off by default", () => {
     const c = daemonConfigSchema.parse({ node: { id: "n", name: "n" } }).approvals.checkin
-    expect(c).toMatchObject({ enabled: false, dailyAt: "09:00", lists: ["Reminders"], maxCardsPerPass: 5 })
+    expect(c).toMatchObject({ enabled: false, dailyAt: "09:00", lists: ["Reminders"], maxAsksPerPass: 5 })
   })
 })
