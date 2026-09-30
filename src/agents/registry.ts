@@ -56,7 +56,23 @@ import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
-import { abortReason, untilAborted } from "./until-aborted"
+import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
+
+/** Own limit for each preparation step, in ms. The run's pre-spawn
+ *  deadline is minutes; these are seconds, and a best-effort step that
+ *  loses its race is skipped rather than holding the run (#340). Steps
+ *  not listed run under the pre-spawn deadline alone. */
+const STEP_BUDGET_MS: Record<string, number> = {
+  "request-gate": 5_000,
+  "seed-history": 30_000,
+  skills: 10_000,
+  rotate: 8_000,
+  compact: 30_000,
+  references: 10_000,
+  "plan-context": 12_000,
+  "select-context": 5_000,
+  "route-model": 5_000,
+}
 import { appAttachHint } from "@/utils/artifact-sentinel"
 import { prepareOutbox } from "@/utils/app-outbox"
 
@@ -980,6 +996,23 @@ export class AgentRegistry {
     }
     // A run that threw or was cancelled before its own cleanup ran.
     if (task.runningTaskId) this.runReleases.get(task.runningTaskId)?.(response)
+    // The preparation steps hit the pre-spawn deadline: the message was
+    // never handed to a model. With the slot released, run it once more
+    // from the start; a second stall is reported in plain words, not with
+    // the internal error (#340).
+    const preSpawn = !interruptedBy && response.error && /^timed out before spawn after/.test(response.error)
+    if (preSpawn && !task.preSpawnRetry) {
+      this.log(`[${task.agentId}] ${response.error}; retrying the run once`)
+      return this.execute({ ...task, preSpawnRetry: 1, runningTaskId: undefined, onStart: undefined }, onDelta, onThinking, onEvent)
+    }
+    if (preSpawn) {
+      const step = response.error!.match(/in step "([^"]+)"/)?.[1] ?? "start"
+      response = {
+        ...response,
+        error: `I couldn't get started on this: preparing the run stalled twice (step "${step}"). Please send it again.`,
+        errorKind: "interrupted",
+      }
+    }
     if (task.intentRef) {
       try {
         // A queued answer is an accepted message, not a failure (#282).
@@ -1356,10 +1389,27 @@ export class AgentRegistry {
         agentStartedAt = Date.now()
       }
       const startedAt = Date.now()
-      return untilAborted(work(), abortController.signal, graceMs).then(
+      const bounded = withBudget(work(), STEP_BUDGET_MS[name] ?? 0, name)
+      return untilAborted(bounded, abortController.signal, graceMs).then(
         (value) => { recordPipelineStep(name, startedAt, "ok"); return value },
-        (err) => { recordPipelineStep(name, startedAt, "error"); throw err },
+        (err) => {
+          recordPipelineStep(name, startedAt, "error")
+          if (err instanceof StepBudgetExceeded) {
+            this.log(`[${task.agentId}] ${err.message}; continuing without it ${runTag()}`)
+          }
+          throw err
+        },
       )
+    }
+    /** A step the run can do without: past its budget, `fallback` stands
+     *  in and the run goes on. Other failures still propagate. */
+    const budgeted = async <T>(name: string, work: () => Promise<T>, fallback: () => T, graceMs = 0): Promise<T> => {
+      try {
+        return await step(name, work, graceMs)
+      } catch (err) {
+        if (err instanceof StepBudgetExceeded) return fallback()
+        throw err
+      }
     }
 
     // Give back everything the run holds. Idempotent: the `finally` below
@@ -1472,7 +1522,11 @@ export class AgentRegistry {
     // Build conversation history for session continuity
     const channel = task.context?.channel || "api"
     const { evaluateRequest, selectRequestContext } = await import("./request-planner")
-    const requestGate = await step("request-gate", () => evaluateRequest(task.message, task.agentId, channel))
+    const requestGate = await budgeted(
+      "request-gate",
+      () => evaluateRequest(task.message, task.agentId, channel),
+      (): Awaited<ReturnType<typeof evaluateRequest>> => ({ active: false, preprocess: false }),
+    )
     if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
     const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
     const senderName = task.context?.sender || "User"
@@ -1497,7 +1551,7 @@ export class AgentRegistry {
     // doesn't start blind. No-op for warm sessions, non-channel callers
     // (cron/api/a2a), or channels without a seedHistory implementation.
     if (!task.freshSession) {
-      await step("seed-history", () => this.sessions.seedIfEmpty(task.agentId, channel, chatId, task.seedHistory))
+      await budgeted("seed-history", () => this.sessions.seedIfEmpty(task.agentId, channel, chatId, task.seedHistory), () => undefined)
     }
 
     // Shadow seats read the agent's last reply before this message joins it.
@@ -1723,9 +1777,9 @@ export class AgentRegistry {
     // side is how the original rotation incident happened.
     if (resumeSessionId && state.def.tier === "claude-code") {
       const sessionId = resumeSessionId
-      const rotatedEarly = await step("rotate", () => this.maybeRotateForContinuity(
+      const rotatedEarly = await budgeted("rotate", () => this.maybeRotateForContinuity(
         task, state, channel, chatId, sessionId,
-      ))
+      ), () => false)
       if (rotatedEarly) resumeSessionId = undefined
     }
 
@@ -2189,7 +2243,7 @@ export class AgentRegistry {
     }
 
     const selectedContext = requestGate.active && requestGate.preprocess
-      ? await step("select-context", () => selectRequestContext(contextInput))
+      ? await budgeted("select-context", () => selectRequestContext(contextInput), () => ({ input: contextInput, excluded: [] as string[] }))
       : { input: contextInput, excluded: [] }
     if (selectedContext.excluded.length) this.log(`[${task.agentId}] request-context excluded: ${selectedContext.excluded.join(", ")}`)
 
@@ -2288,6 +2342,9 @@ export class AgentRegistry {
     }
 
     let finalResponse: AgentResponse | undefined
+    // Set once the run emitted its own task:completed; the finally below
+    // emits one for a run that ended before reaching it.
+    let completedEmitted = false
     // turn-progress shadow seat: watches the tool steps of this turn.
     const turnWatch = startTurnWatch({
       agent: task.agentId, request: task.message, taskId: traceTaskId,
@@ -2485,6 +2542,7 @@ export class AgentRegistry {
       // threshold that TokenTracker.record() applies — extracted as a
       // helper so the two sites can never drift.
       const split = response.usage ? splitTaskUsageByTier(response.usage) : undefined
+      completedEmitted = true
       getEventBus().emit("task:completed", {
         taskId: traceTaskId,
         agentId: task.agentId,
@@ -2686,6 +2744,24 @@ export class AgentRegistry {
       return finalResponse
     } finally {
       turnWatch.stop()
+      // A run that threw before its completion event (a pre-spawn abort, a
+      // cancel, an unexpected error) still closes its trace; otherwise the
+      // row stayed "in-flight" and the next boot resumed it as cut-off work
+      // (#340). A shutdown interruption keeps it open on purpose.
+      if (!completedEmitted) {
+        try {
+          getEventBus().emit("task:completed", {
+            taskId: traceTaskId,
+            agentId: task.agentId,
+            channel: qChannel,
+            chatId: qChatId,
+            durationMs: Date.now() - runningTask.startedAt.getTime(),
+            error: finalResponse?.error || (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+            interrupted: this.interruptedRuns.has(runningTask.id) ? true : undefined,
+            at: new Date().toISOString(),
+          } as any)
+        } catch { /* observability never breaks the run */ }
+      }
       releaseRun(finalResponse)
     }
   }

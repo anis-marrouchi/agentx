@@ -138,6 +138,9 @@ export interface AgentTask {
   /** Set on a run that resumes one cut off by a restart. */
   resumeAttempt?: number
   resumedFrom?: string
+  /** Set on the one automatic retry of a run whose preparation steps hit
+   *  the pre-spawn deadline (#340). A retry that hits it again is reported. */
+  preSpawnRetry?: number
   /** Improvement plan #8 — when true, the dispatcher discards any
    *  cached session for this (agent, channel, chatId) before
    *  executing: the claudeSessionId is cleared (no --resume) and
