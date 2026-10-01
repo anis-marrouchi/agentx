@@ -59,6 +59,7 @@ import { runApprovalsSweep } from "@/approvals/sweep"
 import type { DecisionCard } from "@/approvals/cards"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { runRequestsSweep } from "@/requests/sweep"
+import { PICKUP_CHANNEL } from "@/requests/tracker"
 import { handleRequestsApi } from "@/requests/daemon-api"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
@@ -1769,6 +1770,16 @@ export class AgentXDaemon {
             if (process.platform !== "darwin") throw e
           }
         }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+      },
+      hasAgent: (id) => !!this.registry.getAgent(id),
+      // Fire and forget: the check never waits on a model. The run is
+      // linked to the request by its chat id, so a failure brings it back.
+      tellAgent: async (agentId, text, r) => {
+        void this.registry.execute({
+          agentId,
+          message: text,
+          context: { channel: PICKUP_CHANNEL, chatId: r.id, sender: "operator" },
+        }).catch((e: any) => this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`))
       },
       log: this.log,
     })

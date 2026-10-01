@@ -10,7 +10,9 @@ import type { RequestSettings } from "./tracker"
 //   2. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
 //      sent at all is tried again at the next check.
-//   3. Retention: closed requests older than `retentionDays` are deleted.
+//   3. Pick-ups: a request the owner said to pick up again is handed back
+//      to its agent as a new turn, once.
+//   4. Retention: closed requests older than `retentionDays` are deleted.
 //      Open requests never age out.
 //
 // Every step is isolated: a failure is logged and the next step runs.
@@ -20,6 +22,10 @@ export interface RequestSweepDeps {
   settings: RequestSettings
   /** Tell the owner, through the daemon's notify path. */
   notify?: (title: string, message: string, request: RequestRecord) => Promise<void>
+  /** Start a turn on the agent for a request the owner said to pick up
+   *  again. Fire and forget: the check never waits on a model. */
+  tellAgent?: (agentId: string, text: string, request: RequestRecord) => Promise<void>
+  hasAgent?: (agentId: string) => boolean
   log: (msg: string) => void
   now?: number
 }
@@ -28,6 +34,20 @@ export interface RequestSweepResult {
   quiet: number
   notified: number
   pruned: number
+  pickedUp: number
+}
+
+/** What the agent is told when the owner says "pick it up again". */
+export function pickupText(r: RequestRecord): string {
+  return [
+    `[agentx:request-pickup id=${r.id}]`,
+    `The owner asked you to pick this request up again. It was given to you on ${r.channel} (chat ${r.chatId}) on ${new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")} UTC and was not finished.`,
+    "",
+    "What they asked:",
+    r.text,
+    "",
+    `Do the work now. Report to them in that chat. When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
+  ].join("\n")
 }
 
 const HOUR = 3_600_000
@@ -45,8 +65,26 @@ export function attentionText(r: RequestRecord): string {
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { quiet: 0, notified: 0, pruned: 0 }
+  const result: RequestSweepResult = { quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
   if (!settings.enabled) return result
+
+  try {
+    // takePickups clears the mark first: a turn that hangs or fails is not started twice.
+    for (const r of store.takePickups()) {
+      if (!deps.tellAgent || (deps.hasAgent && !deps.hasAgent(r.agentId))) {
+        store.needsAttention(r.id, `Could not hand it back: agent "${r.agentId}" is not on this node`, now)
+        continue
+      }
+      try {
+        await deps.tellAgent(r.agentId, pickupText(r), r)
+        result.pickedUp++
+      } catch (e: any) {
+        store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${e?.message ?? e}`, now)
+      }
+    }
+  } catch (e: any) {
+    log(`[requests] pick-ups failed: ${e?.message ?? e}`)
+  }
 
   try {
     const hours = settings.staleAfterHours

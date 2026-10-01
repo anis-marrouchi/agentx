@@ -26,6 +26,9 @@ export interface RequestSettings {
   retentionDays: number
 }
 
+/** Channel of the turn that hands a request back to its agent. */
+export const PICKUP_CHANNEL = "requests"
+
 /** This node's own surfaces: only its operator can reach them. */
 export const OPERATOR_CHANNELS: ReadonlySet<string> = new Set(["voice", "app", "dashboard", "webrtc"])
 
@@ -121,6 +124,13 @@ export class RequestTracker {
         if (earlier.state === "candidate") this.store.touch(earlier.id, now)
         else this.store.progress(earlier.id, now)
         this.live.set(key, { requestId: earlier.id, runId: p.taskId! })
+        return
+      }
+      // The turn the daemon starts when the owner says "pick it up again".
+      const pickup = p.channel === PICKUP_CHANNEL ? this.store.get(p.chatId) : null
+      if (pickup && pickup.agentId === p.agentId) {
+        this.store.link(pickup.id, "run", p.taskId!, now)
+        this.store.touch(pickup.id, now)
         return
       }
       if (!p.humanRoot || !isOwnerTurn(this.settings(), p.channel, p.sender)) return

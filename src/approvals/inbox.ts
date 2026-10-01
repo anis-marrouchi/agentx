@@ -7,6 +7,8 @@ import { approveProposal, rejectProposal } from "@/wiki/promote"
 import { decideDraft, listDrafts, readDraft, type SendReply } from "@/whatsapp-triage/drafts"
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
+import { openDb } from "@/storage/sqlite"
+import { RequestStore } from "@/requests/store"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -20,13 +22,16 @@ import { readInboxState, snooze } from "./state"
 //   wiki      lessons proposed for the shared wiki (wiki/proposals, wiki/promote)
 //   whatsapp  replies an agent drafted for a watched WhatsApp chat
 //             (whatsapp-triage/drafts); yes sends it through wacli
+//   request   something you asked for that failed, timed out, was cut off
+//             or went quiet (requests/store); yes hands it back to its
+//             agent, no drops it
 //
 // Only operator surfaces call decide(): the `agentx approvals` CLI and the
 // dashboard's /api/admin/approvals. The daemon's agent-facing API and the
 // MCP tool can create cards and read, never decide.
 
-export type ApprovalKind = "card" | "schedule" | "memory" | "wiki" | "whatsapp"
-export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki", "whatsapp"]
+export type ApprovalKind = "card" | "schedule" | "memory" | "wiki" | "whatsapp" | "request"
+export const APPROVAL_KINDS: readonly ApprovalKind[] = ["card", "schedule", "memory", "wiki", "whatsapp", "request"]
 
 export type InboxAction = "yes" | "no" | "later"
 
@@ -66,6 +71,9 @@ export interface InboxContext {
   now?: number
   /** Sends an approved WhatsApp reply. Default: wacli. Tests swap it. */
   sendWhatsApp?: SendReply
+  /** Open requests. Default: .agentx/db.sqlite when `root` is the folder
+   *  this process runs from. Tests pass their own. */
+  requests?: RequestStore
 }
 
 export const DETAIL_MAX = 280
@@ -218,12 +226,44 @@ function whatsappItems(ctx: InboxContext): InboxItem[] {
   }))
 }
 
+/** The requests store, or null when there is no database to read. */
+function requestStoreFor(ctx: InboxContext): RequestStore | null {
+  if (ctx.requests) return ctx.requests
+  // openDb is per process and opens the file under the working directory.
+  // A folder with no database yet has no requests: do not create one.
+  if (resolve(ctx.root) !== process.cwd() || !existsSync(resolve(ctx.root, ".agentx", "db.sqlite"))) return null
+  const db = openDb({ quiet: true })
+  if (!db) return null
+  let store = requestStores.get(db)
+  if (!store) requestStores.set(db, store = new RequestStore(db))
+  return store
+}
+const requestStores = new WeakMap<object, RequestStore>()
+
+function requestItems(ctx: InboxContext): InboxItem[] {
+  const store = requestStoreFor(ctx)
+  if (!store) return []
+  return store.listByState("needs_attention").map((r) => ({
+    key: `request:${r.id}`,
+    kind: "request" as const,
+    title: `Request not finished: ${clip(r.text, 80)}`,
+    ask: `Ask ${r.agentId} to pick it up again?`,
+    yes: `hand it back to ${r.agentId}`,
+    no: "drop the request",
+    raised_by: r.agentId,
+    created_at: new Date(r.createdAt).toISOString(),
+    detail: clip(`${r.attentionReason ?? "It needs attention"}. Asked on ${r.channel}: ${r.text}`),
+    more: `agentx requests show ${r.id}`,
+  }))
+}
+
 const SOURCES: Record<ApprovalKind, (ctx: InboxContext) => InboxItem[]> = {
   card: cardItems,
   schedule: scheduleItems,
   memory: memoryItems,
   wiki: wikiItems,
   whatsapp: whatsappItems,
+  request: requestItems,
 }
 
 // ── Read model ───────────────────────────────────────────────────────
@@ -359,6 +399,17 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
       const r = await decideDraft(ctx.root, ref, yes ? "yes" : "no", { by, now, send: ctx.sendWhatsApp })
       if (!r.ok) return r
       return { ok: true, message: yes ? `${key}: sent to ${r.draft.chat_name || r.draft.to}` : `${key}: dropped, nothing sent` }
+    }
+    case "request": {
+      const store = requestStoreFor(ctx)
+      const r = store?.get(ref)
+      if (!store || !r || r.state !== "needs_attention") return { ok: false, error: `nothing waiting for "${key}"` }
+      if (yes) {
+        store.requestPickup(ref, now)
+        return { ok: true, message: `${key}: ${r.agentId} will be asked to pick it up again` }
+      }
+      store.close(ref, "dropped", opts.note?.trim() || `dropped by ${by}`, now)
+      return { ok: true, message: `${key}: dropped` }
     }
   }
 }
