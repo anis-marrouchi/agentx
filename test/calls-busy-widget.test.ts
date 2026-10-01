@@ -61,8 +61,8 @@ describe("a call while the widget is busy", () => {
     expect(titles()).toEqual(["Writer is calling"])
     expect(notices[0].message).toMatch(/^Pick a launch date\n.*busy/)
 
-    // Free: the widget shows it, and the ring time runs from here.
-    await poll(cfg.ringSeconds * 1000 - POLL_MS, { showing: call.id })
+    // Free: the ring time runs from the poll where the widget first shows it.
+    await poll(cfg.ringSeconds * 1000, { showing: call.id })
     expect(calls.get(call.id)?.status).toBe("ringing")
     await poll(POLL_MS, { showing: call.id })
     expect(calls.get(call.id)).toMatchObject({ status: "missed", note: "not answered" })
@@ -76,6 +76,17 @@ describe("a call while the widget is busy", () => {
     await poll(cfg.ringSeconds * 1000, { busy: true })
     expect(calls.get(call.id)).toMatchObject({ status: "missed", note: "widget busy" })
     expect(titles()).toEqual(["Writer is calling", "Missed call from Writer"])
+  })
+
+  it("rings for the full ring time when the widget is free after the longest wait", async () => {
+    const call = await place("writer")
+    await poll(BUSY_WAIT_MAX_MS + cfg.ringSeconds * 1000 - POLL_MS, { busy: true })
+    expect(calls.get(call.id)?.status).toBe("ringing")
+
+    await poll(cfg.ringSeconds * 1000, { showing: call.id })
+    expect(calls.get(call.id)?.status).toBe("ringing")
+    await poll(POLL_MS, { showing: call.id })
+    expect(calls.get(call.id)).toMatchObject({ status: "missed", note: "not answered" })
   })
 
   it("the call the widget is showing keeps its ring time; a second caller waits", async () => {

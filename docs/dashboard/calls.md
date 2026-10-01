@@ -52,7 +52,7 @@ A call counts only when it comes from a turn of that agent that is running now. 
 
 - **Focus (Do Not Disturb), or the widget's hold switch:** a call that isn't urgent doesn't ring. It is recorded as a missed call, and you get a notice once Focus ends. Urgent calls ring anyway, the same way `agentx notify --urgent` does.
 - **The desktop assistant isn't running:** you get a notification instead, with the caller and the reason. If you open the desktop assistant while the call is still ringing, the pill rings.
-- **The desktop assistant is busy:** while it runs a turn of yours, records, or is in another call, a new call can't ring. It waits, and you get a notification at once with the caller and the reason. The pill rings as soon as it is free, and the ring time starts then. A call waits 10 minutes at most; after that it counts as missed, with the note `widget busy`. This needs a desktop assistant built from this version: run `agentx desktop install` after an update.
+- **The desktop assistant is busy:** while it runs a turn of yours, records, or is in another call, a new call can't ring. It waits, and you get a notification at once with the caller and the reason. The pill rings as soon as it is free, and the ring time starts then. A call waits 10 minutes at most. If the desktop assistant is still busy then, the ring time runs out and the call counts as missed, with the note `widget busy`. This needs a desktop assistant built from this version: run `agentx desktop install` after an update.
 - **Missed calls:** run `agentx call list --status missed`.
 - **Limits:** one call in progress per agent, and at most `calls.maxPerHour` calls per agent in an hour (3 by default).
 

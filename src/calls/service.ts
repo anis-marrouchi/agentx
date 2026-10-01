@@ -205,13 +205,17 @@ export class CallService {
 
   /** A busy widget cannot ring: the ring time of each call it is not
    *  showing starts over at every poll, for BUSY_WAIT_MAX_MS at most, and
-   *  the owner is told once that the call waits. */
+   *  the owner is told once that the call waits. It starts over once more
+   *  when the widget first shows a call that waited. */
   private async hold(widget: WidgetState): Promise<void> {
     const now = this.now()
     const live = this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 })
     for (const id of this.waiting.keys()) if (!live.some((c) => c.id === id)) this.waiting.delete(id)
     for (const call of live) {
-      if (call.id === widget.showing) { this.waiting.delete(call.id); continue }
+      if (call.id === widget.showing) {
+        if (this.waiting.delete(call.id)) this.deps.store.transition(call.id, "ringing", { ringingSince: now })
+        continue
+      }
       if (!widget.busy) continue
       const since = this.waiting.get(call.id)
       if (since !== undefined && now - since >= BUSY_WAIT_MAX_MS) continue

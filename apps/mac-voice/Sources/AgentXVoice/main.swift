@@ -77,6 +77,9 @@ final class App: NSObject, NSApplicationDelegate {
     private let ringer = Ringer()
     /// The call ringing on the pill now.
     private var ringingCall: IncomingCall?
+    /// The call being answered, until the daemon has the answer: a poll
+    /// sent meanwhile still says the pill is showing it (#408).
+    private var answeringCall: String?
     /// The call in progress: every turn goes to its agent until hang-up.
     private var activeCall: IncomingCall?
 
@@ -367,7 +370,7 @@ final class App: NSObject, NSApplicationDelegate {
         callWatcher.onPoll = { [weak self] state in self?.polled(state) }
         callWatcher.query = { [weak self] in
             guard let self else { return "" }
-            return CallModel.pollQuery(ringing: self.ringingCall?.id, canRing: self.canRing)
+            return CallModel.pollQuery(ringing: self.ringingCall?.id ?? self.answeringCall, canRing: self.canRing)
         }
         callWatcher.start()
 
@@ -879,10 +882,13 @@ final class App: NSObject, NSApplicationDelegate {
         if recorder.isRecording { stopPolling(); _ = recorder.stop() }
         ringer.stop()
         ringingCall = nil
+        answeringCall = call.id
         busy = true
         panel.render(.thinking)
         Task { @MainActor in
-            guard let opener = await CallClient.answer(call.id) else {
+            let answer = await CallClient.answer(call.id)
+            answeringCall = nil
+            guard let opener = answer else {
                 busy = false
                 panel.showCall(.hidden)
                 panel.render(.error("The call ended"))
