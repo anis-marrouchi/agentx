@@ -3,6 +3,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { CHOICE_LIMITS } from "./choices"
 import { renderCardPage, type CardPageOptions } from "./card-page"
+import { CARD_PAD } from "./card-page-style"
 import type { DecisionCard } from "./cards"
 import type { PopupAnswer, Run } from "./popup"
 
@@ -13,9 +14,12 @@ import type { PopupAnswer, Run } from "./popup"
 // below ships with the package, like the osascript dialogs it replaces.
 //
 // The page (card-page.ts) is written to a private temp file and loaded from
-// disk; it can't reach the network. The panel sits at the top right of the
-// main screen, floats over other windows, fits its height to the page, and
-// closes on an answer, on its close button, or after `seconds`.
+// disk; it can't reach the network. The panel is see-through: the page
+// draws the card, its round corners and its shadow, so the panel is wider
+// and taller than the card by CARD_PAD. It has no buttons of its own. The
+// card sits at the top right of the main screen, floats over other windows,
+// fits its height to the page, can be dragged by its top edge, and closes
+// on an answer or after `seconds`.
 //
 // The script prints the page's answer. Nothing here decides: popup-runner.ts
 // records the answer, and only after parseAnswer has checked it against the
@@ -26,11 +30,11 @@ export const CARD_WIDTH = 440
 export const WINDOW_JXA = `
 ObjC.import("Cocoa"); ObjC.import("WebKit")
 function run(argv) {
-  var path = argv[0], w = Number(argv[1]), h = 420, secs = Number(argv[2]), capture = argv[3] || ""
+  var path = argv[0], side = ${CARD_PAD.side}, w = Number(argv[1]) + 2 * side, h = 420, secs = Number(argv[2]), capture = argv[3] || ""
   var app = $.NSApplication.sharedApplication
   app.setActivationPolicy($.NSApplicationActivationPolicyAccessory)
   var vis = $.NSScreen.mainScreen.visibleFrame
-  var top = vis.origin.y + vis.size.height - 18, right = vis.origin.x + vis.size.width - 18
+  var top = vis.origin.y + vis.size.height - 4, right = vis.origin.x + vis.size.width - 14 + side
   var mask = $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskFullSizeContentView
   var win = $.NSPanel.alloc.initWithContentRectStyleMaskBackingDefer($.NSMakeRect(right - w, top - h, w, h), mask, $.NSBackingStoreBuffered, false)
   win.titlebarAppearsTransparent = true
@@ -39,12 +43,15 @@ function run(argv) {
   win.level = $.NSFloatingWindowLevel
   win.releasedWhenClosed = false
   win.collectionBehavior = $.NSWindowCollectionBehaviorCanJoinAllSpaces
-  win.standardWindowButton($.NSWindowMiniaturizeButton).hidden = true
-  win.standardWindowButton($.NSWindowZoomButton).hidden = true
+  win.opaque = false
+  win.backgroundColor = $.NSColor.clearColor
+  win.hasShadow = false
+  ;[$.NSWindowCloseButton, $.NSWindowMiniaturizeButton, $.NSWindowZoomButton].forEach(function (b) { win.standardWindowButton(b).hidden = true })
   var cfg = $.WKWebViewConfiguration.alloc.init
   cfg.mediaTypesRequiringUserActionForPlayback = 0
   var web = $.WKWebView.alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, w, h), cfg)
   web.autoresizingMask = $.NSViewWidthSizable | $.NSViewHeightSizable
+  web.setValueForKey(false, "drawsBackground")
   win.contentView = web
   var url = $.NSURL.fileURLWithPath(path)
   web.loadFileURLAllowingReadAccessToURL(url, url.URLByDeletingLastPathComponent)
@@ -59,7 +66,7 @@ function run(argv) {
     if (t.indexOf("agentx:answer:") === 0) { win.close; return t.slice(14) }
     if (t !== seen && t.indexOf("agentx:size:") === 0) {
       seen = t
-      var want = Math.min(Number(t.slice(12)) + 2, vis.size.height - 36)
+      var want = Math.min(Number(t.slice(12)), vis.size.height - 8)
       if (want > 80) { win.setFrameDisplayAnimate($.NSMakeRect(right - w, top - want, w, want), true, true); sized = Date.now() }
     }
     if (capture && !shot && sized && Date.now() - sized > 900) {
@@ -112,7 +119,7 @@ export async function showCardWindow(card: DecisionCard, settings: CardWindowSet
   const dir = mkdtempSync(join(tmpdir(), "agentx-card-"))
   try {
     const page = join(dir, "card.html")
-    writeFileSync(page, renderCardPage(card, settings), { mode: 0o600 })
+    writeFileSync(page, renderCardPage(card, { ...settings, still: !!settings.capture }), { mode: 0o600 })
     const args = ["-l", "JavaScript", "-e", WINDOW_JXA, page, String(CARD_WIDTH), String(seconds), ...(settings.capture ? [settings.capture] : [])]
     const r = await exec("/usr/bin/osascript", args, (seconds + 10) * 1000)
     if (!r.ok) return null

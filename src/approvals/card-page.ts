@@ -1,5 +1,4 @@
 import { randomBytes } from "crypto"
-import { AX_TOKENS_CSS } from "@/daemon/ui/tokens"
 import { esc } from "@/daemon/ui/util"
 import { CARD_CSS } from "./card-page-style"
 import { CHOICE_PLACEHOLDER } from "./choices"
@@ -20,7 +19,7 @@ import type { DecisionCard } from "./cards"
 // offer.
 
 export interface CardPageOptions {
-  /** Shown instead of the agent id, e.g. "Yasmine". */
+  /** Shown instead of the agent id, e.g. "Sam". */
   from?: string
   /** "chime" plays a soft two-note chime in the page; anything else: silent here. */
   sound?: string
@@ -29,36 +28,72 @@ export interface CardPageOptions {
   now?: number
   /** Previews and screenshots: start with this option (1-based) picked. */
   pick?: number
+  /** Screenshots: no slide-in, so the picture never catches the card half faded. */
+  still?: boolean
 }
 
-function ago(iso: string, now: number): string {
-  const min = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000))
-  if (!Number.isFinite(min)) return ""
-  if (min < 1) return "just now"
-  if (min < 60) return `${min} min ago`
-  const h = Math.round(min / 60)
-  return h < 48 ? `${h} h ago` : `${Math.round(h / 24)} days ago`
-}
+const time = (d: Date) => d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+const day = (d: Date) => `${d.getDate()} ${d.toLocaleDateString("en-US", { month: "short" })}`
 
-function when(iso: string): string {
+/** "since 09:41" for a card raised today, "since 28 Sep" for an older one. */
+function since(iso: string, now: number): string {
   const d = new Date(iso)
-  return d.toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })
+  if (Number.isNaN(d.getTime())) return ""
+  return `since ${d.toDateString() === new Date(now).toDateString() ? time(d) : day(d)}`
+}
+
+/** "Thu 14:00" inside the coming week, "Thu 8 Oct 14:00" past it. */
+function when(iso: string, now: number): string {
+  const d = new Date(iso)
+  const soon = d.getTime() - now < 6 * 86_400_000
+  return [d.toLocaleDateString("en-US", { weekday: "short" }), ...(soon ? [] : [day(d)]), time(d)].join(" ")
+}
+
+function initials(name: string): string {
+  const words = name.trim().split(/[\s_-]+/).filter(Boolean)
+  return (words.length > 1 ? words[0][0] + words[1][0] : name.trim().slice(0, 1)).toUpperCase()
+}
+
+/**
+ * The option the recommendation names, and the reason that is left. The
+ * card stores its advice as one line ("Thursday 10:00: your calendar is
+ * free"); when that line names an option, the card marks that option and
+ * starts with it picked. No match: nothing is picked, the line shows whole.
+ */
+export function recommended(card: Pick<DecisionCard, "recommend" | "choices">): { index: number; why: string } {
+  const text = (card.recommend ?? "").trim()
+  const low = text.toLowerCase()
+  let index = -1
+  ;(card.choices ?? []).forEach((c, i) => {
+    if (low.includes(c.toLowerCase()) && (index < 0 || c.length > card.choices![index].length)) index = i
+  })
+  if (index < 0) return { index, why: text }
+  const label = card.choices![index]
+  if (!low.startsWith(label.toLowerCase())) return { index, why: text }
+  const why = text.slice(label.length).replace(/^[\s:,.;–—-]+/, "")
+  return { index, why: why.slice(0, 1).toUpperCase() + why.slice(1) }
 }
 
 function primaryLabel(card: DecisionCard): string {
   return card.draft ? "Send" : card.choices?.length ? "Choose" : "Yes"
 }
 
+const ICON = (path: string) =>
+  `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`
+const CLOCK = ICON('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')
+const LOCK = ICON('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')
+
 export function renderCardPage(card: DecisionCard, opts: CardPageOptions = {}): string {
   const now = opts.now ?? Date.now()
   const from = opts.from || card.raised_by
   const nonce = randomBytes(12).toString("base64")
   const choices = card.choices ?? []
-  const kind = card.origin?.kind === "reminder" ? "Reminder" : "Decision"
-  const sub = [from === card.raised_by ? "" : card.raised_by, ago(card.created_at, now)].filter(Boolean).join(" · ")
+  const reminder = card.origin?.kind === "reminder"
+  const rec = recommended(card)
   const options = choices.map((c, i) =>
-    `<button class="opt" role="radio" aria-checked="false" data-i="${i}"><span class="n">${i + 1}</span><span>${esc(c)}</span></button>`,
+    `<button class="opt" role="radio" aria-checked="false" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c)}</span>${i === rec.index ? '<i class="dot"></i>' : ""}</button>`,
   ).join("")
+  const recLabel = card.recommend ? `<span class="rec"><i class="dot"></i>${esc(from)} recommends</span>` : ""
   const data = {
     choices,
     draft: card.draft ?? "",
@@ -66,30 +101,32 @@ export function renderCardPage(card: DecisionCard, opts: CardPageOptions = {}): 
     chime: opts.sound === "chime",
     volume: Math.min(1, Math.max(0, opts.volume ?? 0.4)),
     theme: opts.theme ?? "system",
-    pick: opts.pick && opts.pick <= choices.length ? opts.pick - 1 : -1,
+    // A pick asked for (previews) wins; else the card opens on the recommended option.
+    pick: opts.pick && opts.pick <= choices.length ? opts.pick - 1 : rec.index,
   }
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'">
 <title>AgentX</title>
-<style>${AX_TOKENS_CSS}${CARD_CSS}</style></head>
-<body><main class="card">
-<div class="head"><div class="avatar">${esc(from.slice(0, 1).toUpperCase())}</div>
-<div class="who"><b>${esc(from)}</b><span>${esc(sub)}</span></div>
-<span class="kind">${kind}</span></div>
+<style>${CARD_CSS}</style></head>
+<body><div class="wrap"><main class="card${opts.still ? " still" : ""}"><div class="body">
+<div class="head"><span class="avatar">${esc(initials(from))}</span>
+<div class="who"><b>${esc(from)}</b><span>${esc(since(card.created_at, now))}</span></div>
+<span class="kind${reminder ? "" : " decision"}">${reminder ? "Reminder" : "Decision"}</span></div>
 <h1 dir="auto">${esc(card.title)}</h1>
 ${card.context ? `<p class="context" dir="auto">${esc(card.context)}</p>` : ""}
 <p class="ask" dir="auto">${esc(card.ask)}</p>
-${card.recommend ? `<p class="recommend" dir="auto"><b>Recommended:</b> ${esc(card.recommend)}</p>` : ""}
+${options || recLabel ? `<div class="label-row">${options ? '<span class="label">Pick one</span>' : ""}${recLabel}</div>` : ""}
 ${options ? `<div class="options" role="radiogroup">${options}</div>` : ""}
-${card.draft ? `<div class="label-row"><span class="label">Message</span><span class="edited" id="edited">Edited</span></div>
-<textarea id="text" dir="auto" spellcheck="true"></textarea>` : ""}
-<p class="expires">If you don't answer by ${esc(when(card.expires))}: ${esc(card.if_silent)}.</p>
-<div class="foot"><button class="btn ghost later" id="later">Not now<kbd>esc</kbd></button>
+${rec.why ? `<p class="why" dir="auto">${esc(rec.why)}</p>` : ""}
+${card.draft ? `<div class="label-row" id="msg"><span class="label">Message</span><span class="edited"><i class="dot"></i>Edited</span><button class="reset" id="reset">Reset</button></div>
+<textarea id="text" dir="auto" rows="2" spellcheck="true"></textarea>` : ""}
+<div class="notes"><div>${CLOCK}<span>If you don't answer by ${esc(when(card.expires, now))}: ${esc(card.if_silent)}.</span></div>
+<div>${LOCK}<span>Nothing goes out until you click.</span></div></div>
+</div><div class="foot"><button class="btn later" id="later">Not now<kbd>esc</kbd></button>
 <button class="btn" id="no">No</button>
 <button class="btn primary" id="yes">${primaryLabel(card)}<kbd>⌘↩</kbd></button></div>
-<p class="note">Nothing goes out until you click. ${esc(from)} does the rest.</p>
-</main>
+</main></div>
 <script type="application/json" id="data">${JSON.stringify(data).replace(/</g, "\\u003c")}</script>
 <script nonce="${nonce}">${CARD_SCRIPT}</script>
 </body></html>`
@@ -104,13 +141,14 @@ const CARD_SCRIPT = `
   if (dark) root.setAttribute("data-theme", "dark");
   var opts = [].slice.call(document.querySelectorAll(".opt"));
   var box = document.getElementById("text");
-  var edited = document.getElementById("edited");
+  var msg = document.getElementById("msg");
   var yes = document.getElementById("yes");
   var pick = -1, touched = false, done = false;
 
   function fill(i) { return d.draft.split(d.placeholder).join(i >= 0 ? d.choices[i] : "").trim(); }
   function send(a) { if (done) return; done = true; document.title = "agentx:answer:" + JSON.stringify(a); }
-  function fit() { document.title = "agentx:size:" + Math.ceil(document.querySelector(".card").getBoundingClientRect().height); }
+  function fit() { document.title = "agentx:size:" + Math.ceil(document.querySelector(".wrap").getBoundingClientRect().height); }
+  function mark() { touched = box.value.trim() !== fill(pick); msg.classList.toggle("touched", touched); }
   function update() {
     opts.forEach(function (o, i) { o.setAttribute("aria-checked", String(i === pick)); });
     yes.disabled = (d.choices.length > 0 && pick < 0) || (box && !box.value.trim());
@@ -121,7 +159,7 @@ const CARD_SCRIPT = `
     if (box && touched && pick >= 0) box.value = box.value.split(d.choices[pick]).join(d.choices[i]);
     else if (box) box.value = fill(i);
     pick = i;
-    if (box) { grow(); touched = box.value.trim() !== fill(i); edited.classList.toggle("on", touched); }
+    if (box) { grow(); mark(); }
     update();
     if (box) box.focus();
   }
@@ -130,7 +168,8 @@ const CARD_SCRIPT = `
     box.value = d.choices.length ? "" : fill(-1);
     box.placeholder = d.choices.length ? "Pick an option above" : "";
     grow();
-    box.addEventListener("input", function () { grow(); touched = box.value.trim() !== fill(pick); edited.classList.toggle("on", touched); update(); });
+    box.addEventListener("input", function () { grow(); mark(); update(); });
+    document.getElementById("reset").addEventListener("click", function () { box.value = fill(pick); grow(); mark(); update(); box.focus(); });
   }
   yes.addEventListener("click", function () {
     if (yes.disabled) return;

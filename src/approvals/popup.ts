@@ -134,7 +134,7 @@ function promptFor(card: DecisionCard): string {
 
 export interface ShowOptions {
   run?: Run
-  /** The agent's display name, e.g. "Yasmine". */
+  /** The agent's display name, e.g. "Sam". */
   from?: string
   /** Docs and tests: save a PNG of the card window. */
   capture?: string

@@ -67,19 +67,19 @@ To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki** or **
 
 ## Answer from a card on your Mac
 
-With the popup switched on, your Mac shows a waiting card by itself: a soft chime, one short spoken line, and a small window at the top right of the screen. It follows your light or dark mode.
+With the popup switched on, your Mac shows a waiting card by itself: a soft chime, one short spoken line, and a small card at the top right of the screen. It follows your light or dark mode.
 
-![The Mac card: context, question, three meeting times, and the suggested message in Arabic](/screenshots/approvals/mac-card.png)
+![The Mac card: who is asking, the question, three meeting times with the recommended one picked, and the suggested message](/screenshots/approvals/mac-card.png)
 
-The card shows who is asking, the background (**context**), the question, the agent's recommendation, the ready-made answers, and the suggested message.
+The card shows who is asking, the background (**context**), the question, the ready-made answers, and the suggested message. When the agent's recommendation names one of the answers, that answer carries a dot and is already picked when the card opens, with the agent's reason under the answers.
 
-1. Click an answer, or press its number (**1** to **4**). The message below fills in with your pick.
-2. Read the message and change the wording if you like. **Edited** shows next to it once you have. If you then pick another answer, your edits stay and only the pick in the text changes.
+1. Click an answer, or press its number (**1** to **5**). The message below fills in with your pick.
+2. Read the message and change the wording if you like. **Edited** shows next to it once you have, with **Reset** to put the suggested message back. If you pick another answer after editing, your edits stay and only the pick in the text changes.
 3. Click **Send**, or press **⌘↩**. The agent that asked is told your pick and the exact message, and it does the sending.
 
-Nothing is sent until you click **Send**. **Not now** (or **Esc**), the close button, or leaving the window alone keeps the card waiting in Approvals, where you can still answer it later. A card without a message shows **Yes** (or **Choose**, when it offers answers), **No** and **Not now**.
+Nothing is sent until you click **Send**. **Not now** (or **Esc**), or leaving the card alone, keeps the card waiting in Approvals, where you can still answer it later. A card without a message shows **Yes** (or **Choose**, when it offers answers), **No** and **Not now**.
 
-The card's window is a plain web page shown by macOS itself. There is no app to install. The page can't load anything from the network. If the window can't open, you get the plain macOS dialogs instead: pick an answer and click **Next**, then **Send**. Set `popup.style` to `"dialog"` to always use the dialogs.
+The card is a plain web page shown by macOS itself. There is no app to install. The page can't load anything from the network, so it uses the Geist typeface when your Mac has it installed and the system typeface otherwise. Drag the card by its top edge to move it. If the window can't open, you get the plain macOS dialogs instead: pick an answer and click **Next**, then **Send**. Set `popup.style` to `"dialog"` to always use the dialogs.
 
 The popup behaves like your other notifications:
 
