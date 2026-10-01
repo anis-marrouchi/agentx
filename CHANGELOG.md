@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.79.3](https://github.com/anis-marrouchi/agentx/compare/v0.79.2...v0.79.3) (2026-10-01)
+
+
+### Bug Fixes
+
+* **approvals:** Mac card stays up, takes the first click, sends long messages ([#373](https://github.com/anis-marrouchi/agentx/issues/373)) ([b73b65f](https://github.com/anis-marrouchi/agentx/commit/b73b65ff0b2647429661e01906038ae4c22d303a))
+
 ## [0.79.2](https://github.com/anis-marrouchi/agentx/compare/v0.79.1...v0.79.2) (2026-10-01)
 
 
