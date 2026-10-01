@@ -58,6 +58,9 @@ export const AGENT_CHANNELS: ReadonlySet<string> = new Set([
   "a2a", "mcp", "mesh", "api",
   "cron", "workflow", "events", "reminder", "heartbeat",
   "system", "internal", "business",
+  // A guest mesh's turn (#380): another organisation asks, this node's
+  // agent acts. Not a person of this node.
+  "guest",
 ])
 
 const AGENT_SENDER_PREFIXES = ["agent:", "cron:", "workflow:", "mesh:", "system:", "internal:"]

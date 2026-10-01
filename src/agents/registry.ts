@@ -1141,7 +1141,9 @@ export class AgentRegistry {
       // and has no adapter either, so it waits the same way. Agent-to-agent
       // runs ("a2a", "mcp") are awaited by the delegating agent or by a
       // delegation callback (#277), and have no adapter to flush to.
-      if (qChannel === "api" || qChannel === "app" || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || restricted) {
+      // A guest mesh's turn ("guest") is answered over its open request
+      // too, and has no adapter to flush a queued reply to.
+      if (qChannel === "api" || qChannel === "app" || qChannel === "a2a" || qChannel === "mcp" || qChannel === "reminder" || qChannel === "events" || qChannel === "guest" || restricted) {
         const start = Date.now()
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500

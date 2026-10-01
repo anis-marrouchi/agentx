@@ -32,6 +32,7 @@ import { handleActivityGraphApi, handleActivityGraphStream, handleActivityGraphD
 import { handleAgentPageGet, handleAgentApi } from "./agent-panel"
 import { renderLivePage } from "./ui/pages/live"
 import { renderMeshPage } from "./ui/pages/mesh"
+import { renderGuestsPage } from "./ui/pages/guests"
 import { fetchMeshAnalytics, fetchMeshDay, proxyNodeAnalytics, type NodeTarget } from "./mesh-analytics-api"
 import { renderBoardsPage } from "./ui/pages/boards"
 import { renderGlossaryPage } from "./ui/pages/glossary"
@@ -380,6 +381,28 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/mesh") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  // Guest meshes (#380): the host's panel, with its data proxied to the
+  // daemon's /mesh/guests (loopback-trusted there, like the other panels).
+  if (method === "GET" && path === "/guests") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderGuestsPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  if ((method === "GET" && path === "/api/guests") || (method === "POST" && /^\/api\/guests\/[^/]+\/(pause|resume|end|update)$/.test(path))) {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const body = method === "POST" ? await readJson(req).catch(() => ({})) : undefined
+      const r = await fetch(`${daemonUrl}${path.replace(/^\/api\/guests/, "/mesh/guests")}`, {
+        method, headers, ...(body !== undefined ? { body: JSON.stringify(body ?? {}) } : {}),
+      })
+      sendJson(res, r.status, await r.json().catch(() => ({ error: `HTTP ${r.status}` })))
+    } catch (e: any) {
+      sendJson(res, 502, { error: "daemon unreachable", message: e.message || String(e) })
+    }
     return
   }
   if (method === "GET" && path === "/glossary") {
