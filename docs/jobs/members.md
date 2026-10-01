@@ -36,7 +36,7 @@ The dashboard trusts anything that reaches it from your own computer, so only th
    { "action": "accept", "src": ["autogroup:shared"], "dst": ["100.101.102.103:443"] }
    ```
 
-   Until this is in place, a shared user can reach every port of the computer, including the daemon on 18800 and the dashboard on 4202. Check it from the teammate's machine before you rely on it: see [Check it worked](#check-it-worked).
+   Until this is in place, a shared user can reach everything on this computer that listens on its Tailscale address: remote login, file sharing, a development server, and the daemon or the dashboard if you set `node.bind` or `dashboard.bind` to `0.0.0.0`. Check it from the teammate's machine before you rely on it: see [Check it worked](#check-it-worked).
 
 ## Invite
 
@@ -104,14 +104,22 @@ Every invite, pairing, approval, refusal, sign-in and removal is written to `.ag
 1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`.
 2. **Their browser:** **My work** shows a request they made on their channel, with the right state.
 3. **Their browser:** opening `https://<your computer>/` or `/app` shows nothing of yours: only `/member` answers.
-4. **Their terminal:** the other ports do not answer. Both of these must fail to connect:
+4. **The access rule holds:** a port other than 443 does not answer the teammate. The daemon (18800) and the dashboard (4202) listen on your own computer only, so they refuse a teammate even with no rule at all and prove nothing here. Open a test port for a minute instead.
+
+   **Terminal (yours):** serve an empty folder on port 8099, and confirm it answers on your Tailscale address:
 
    ```sh
-   curl -m 5 http://<your computer>:4202/
-   curl -m 5 http://<your computer>:18800/health
+   mkdir -p /tmp/agentx-port-check && cd /tmp/agentx-port-check && python3 -m http.server 8099
+   curl -m 5 http://$(tailscale ip -4):8099/    # in a second terminal: prints a short page
    ```
 
-   If either answers, your access rules still let shared users past port 443. Fix them before the teammate keeps the page.
+   **Their terminal:**
+
+   ```sh
+   curl -m 5 http://<your computer>:8099/
+   ```
+
+   It must fail to connect. If it prints the page, your access rules still let shared users past port 443: fix them before the teammate keeps the page. Stop the test server with Ctrl+C either way. If your computer's firewall blocks incoming connections, turn it off for this one check, or the port stays silent whatever the rule says.
 
 ## If something is wrong
 
