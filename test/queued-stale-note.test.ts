@@ -20,6 +20,7 @@ vi.mock("../src/agents/request-planner", async (importOriginal) => {
 import { AgentRegistry } from "../src/agents/registry"
 import { MessageQueue, STALE_QUEUE_NOTE_AFTER_MS, staleQueueNote } from "../src/agents/message-queue"
 import { isQueued } from "../src/agents/queued"
+import { getEventBus } from "../src/events/bus"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 describe("staleQueueNote", () => {
@@ -99,6 +100,39 @@ describe("registry flush of a queued channel message", () => {
     pendingOf(r)[0].timestamp = Date.now() - ageMs
     return flushedMessage(r, first)
   }
+
+  it("announces a queued message on the event bus, with who sent it (request status, #383)", async () => {
+    const seen: any[] = []
+    const listen = (p: any) => { seen.push(p) }
+    getEventBus().on("task:queued", listen)
+    const r = new AgentRegistry(config(), () => {})
+    await busy(r)
+    const queued = await r.execute({ message: "second", agentId: "ops", context: { ...ctx, senderId: "77" } })
+    getEventBus().off("task:queued", listen)
+    expect(isQueued(queued.error)).toBe(true)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", humanRoot: true, sender: { name: "Sam", id: "77" } })
+  })
+
+  it("announces the end of a flushed turn that never started (request status, #383)", async () => {
+    const seen: any[] = []
+    const listen = (p: any) => { seen.push(p) }
+    getEventBus().on("task:queue-ended", listen)
+    const r = new AgentRegistry(config(), () => {})
+    const first = await busy(r)
+    const before = Date.now()
+    await r.execute({ message: "second", agentId: "ops", context: ctx })
+    // The flushed turn stops at the rate limit, before it starts.
+    ;(r as any).rateLimiter.acquire = async () => ({ ok: false, reason: "rate limit" })
+    r.cancelRunningTask(first.id, "done")
+    await first.run
+    for (let i = 0; i < 100 && seen.length === 0; i++) await new Promise((res) => setTimeout(res, 20))
+    getEventBus().off("task:queue-ended", listen)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1" })
+    expect(seen[0].flushedAt).toBeGreaterThanOrEqual(before)
+    expect((r as any).agents.get("ops").runningTasks).toHaveLength(0)
+  })
 
   it("prepends the note when the message waited past the threshold", async () => {
     const message = await flushOne(10 * 60_000)

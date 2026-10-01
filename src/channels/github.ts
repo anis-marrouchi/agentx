@@ -2,6 +2,7 @@ import type { ChannelAdapter, IncomingMessage, OutgoingMessage, ChannelMeta } fr
 import { createHmac, createSign } from "crypto"
 import { readFileSync } from "fs"
 import { debug } from "@/observability/debug"
+import { isStatusComment } from "@/requests/status"
 import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEcho, mappedForgeUsernames, markBody, ownEchoOf, stripAgentxMarkers } from "./outbound-marker"
 
 // --- GitHub webhook channel adapter ---
@@ -190,6 +191,7 @@ export class GitHubAdapter implements ChannelAdapter {
   private sentCommentIds: Set<string> = new Set()
   private log: (...args: unknown[]) => void
   private sendCommentForwarder?: (node: string, repo: string, issueNumber: number, agentId: string, text: string) => Promise<string>
+  private editCommentForwarder?: (node: string, chatId: string, commentId: string, agentId: string, text: string) => Promise<boolean>
   /** Per-project rules — when set, gates webhook dispatch by action/labels/
    *  state/author and resolves a runbook path for the agent. Optional;
    *  unset = legacy hardcoded actionable arrays. */
@@ -205,6 +207,11 @@ export class GitHubAdapter implements ChannelAdapter {
 
   setSendCommentForwarder(fn: (node: string, repo: string, issueNumber: number, agentId: string, text: string) => Promise<string>): void {
     this.sendCommentForwarder = fn
+  }
+
+  /** How an edit reaches the peer that holds a token for the repo (#383). */
+  setEditCommentForwarder(fn: (node: string, chatId: string, commentId: string, agentId: string, text: string) => Promise<boolean>): void {
+    this.editCommentForwarder = fn
   }
 
   /** Inject the project rules store. Called once at daemon boot. */
@@ -337,6 +344,48 @@ export class GitHubAdapter implements ChannelAdapter {
         break
       default:
         this.log(`Unhandled GitHub event: ${event}`)
+    }
+  }
+
+  /**
+   * Replace the text of a comment an agent posted earlier (request status,
+   * #383). Same token order as send; forwarded to the agent's peer only
+   * when this node has no token for the repo. `localOnly` is set on that
+   * peer, so a forward is never forwarded again. GitHub's "edited" event
+   * for the comment starts nothing: only "created" is handled.
+   */
+  async editComment(chatId: string, commentId: string, text: string, agentId?: string, localOnly = false): Promise<boolean> {
+    const parts = chatId.split(":")
+    if (parts.length < 3 || !/^\d+$/.test(commentId)) return false
+    const repo = parts.slice(0, -2).join(":")
+    const agentLabel = agentId || "unknown"
+    const token = this.getAgentToken(agentId) || await this.getTokenForRepo(repo)
+    if (!token) {
+      const node = this.config.agentMappings?.find(m => m.agentId === agentId)?.node
+      if (localOnly || !node || !this.editCommentForwarder) return false
+      try {
+        return await this.editCommentForwarder(node, chatId, commentId, agentLabel, text)
+      } catch (e: any) {
+        this.log(`GitHub edit forward to "${node}" failed: ${e.message}`)
+        return false
+      }
+    }
+    try {
+      const res = await fetch(`https://api.github.com/repos/${repo}/issues/comments/${commentId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          Accept: "application/vnd.github+json",
+          "User-Agent": "AgentX",
+        },
+        body: JSON.stringify({ body: markBody(`${this.appPrivateKey ? "" : agentHeader(agentLabel)}${text}`, agentLabel) }),
+      })
+      if (!res.ok) this.log(`GitHub edit error: ${res.status} ${(await res.text()).slice(0, 200)}`)
+      return res.ok
+    } catch (e: any) {
+      this.log(`GitHub edit error: ${e.message}`)
+      return false
     }
   }
 
@@ -497,6 +546,11 @@ export class GitHubAdapter implements ChannelAdapter {
     const sourceAgent = trusted ? ownEchoOf(comment.body, this.resolveAgent(repo)) : null
     if (sourceAgent) {
       this.log(`AgentX comment from ${sourceAgent}, skipping its own echo (comment ${comment.id})`)
+      return
+    }
+    // A request-status comment is never a hand-off, whichever agent signed it (#383).
+    if (trusted && isStatusComment(comment.body)) {
+      this.log(`AgentX status comment, skipping (comment ${comment.id})`)
       return
     }
 
