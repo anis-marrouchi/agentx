@@ -2890,7 +2890,29 @@ No flags.
 
 ### `agentx people remove <id>`
 
-Remove a person. Their past runs keep the id; new messages from them are unknown.
+Remove a person. Their past runs keep the id; new messages from them are unknown; every machine of theirs stops at once.
+
+No flags.
+
+### `agentx people invite <id>`
+
+A one-time code that pairs one of this person's machines with their own work page (`/member`). Refuses to run while `tailscale serve` publishes the whole dashboard. See [Invite a teammate to their work page](/jobs/members).
+
+| Flag | Description |
+|---|---|
+| `--url <origin>` | Address the person opens, e.g. `https://my-mac.tailnet-name.ts.net` (default: this computer's Tailscale name) |
+
+### `agentx people devices [id]`
+
+The machines paired to people's work pages: state, where from, first and last use. With an id, one person's machines.
+
+| Flag | Description |
+|---|---|
+| `--json` | Machine-readable output |
+
+### `agentx people revoke-device <tokenId>`
+
+End one machine's access at once. The id is in `agentx people devices`.
 
 No flags.
 

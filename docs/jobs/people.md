@@ -43,6 +43,8 @@ With one owner listed, your messages on those channels count as yours for [open 
 
 Each identity belongs to one person. Giving the same login or number to a second person is refused.
 
+A listed teammate can also get a small window of their own, **My work**, that shows what they asked for and where it stands: see [Invite a teammate to their work page](./members.md).
+
 ## See what a person asked for
 
 1. **Terminal:** run `agentx people show sara`.

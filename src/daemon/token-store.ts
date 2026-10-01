@@ -20,6 +20,9 @@ import { resolve, dirname } from "path"
 //   mesh:peer        — cross-node mesh (forward-compatible — not enforced yet)
 //   app              — the phone app (/app, /api/app/*) and nothing else;
 //                      minted per device by `agentx app pair`
+//   member:<person>  — one teammate's own work page (/member, /api/member/*)
+//                      and nothing else; minted per machine by
+//                      `agentx people invite` (#385)
 
 export const TOKEN_PREFIX = "agx_live_"
 const DEFAULT_FILE = ".agentx/tokens.json"
@@ -151,7 +154,8 @@ function isValidScope(s: string): boolean {
     s === "agent:*" ||
     /^agent:[a-z0-9][a-z0-9_-]*$/.test(s) ||
     s === "mesh:peer" ||
-    s === "app"
+    s === "app" ||
+    /^member:[a-z0-9][a-z0-9_-]{0,39}$/.test(s)
   )
 }
 

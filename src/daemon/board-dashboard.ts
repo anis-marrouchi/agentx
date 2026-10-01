@@ -10,6 +10,8 @@ import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
 import { loadOperatorKey } from "@/requests/operator"
+import { handleMemberRequest } from "./member-routes"
+import { forgeLink } from "@/members/work"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
 import { deriveStage, transitionDiff } from "@/boards/config"
 import type { WorkSource, WorkItem } from "@/business/work-pool"
@@ -201,6 +203,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
 
   // Phone app. First, above every proxy and the loopback-trusting gates
   // below: /app and /api/app/* always need a device token (app-routes.ts).
+  // A teammate's own work page: /member and /api/member/* (member-routes.ts).
+  // Same rule as the phone app: a machine's own key or nothing.
+  if (await handleMemberRequest(req, res, path, method, {
+    nodeName: ctx.config.node?.name, root: process.cwd(), people: () => ctx.config.people,
+    db: () => openDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
+  })) return
   if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config) })) return
 
   // Count which dashboard pages operators actually open. Page paths only —

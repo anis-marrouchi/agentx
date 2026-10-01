@@ -127,7 +127,7 @@ export function pairingLines(p: { code: string; origin: string; deviceId: string
 }
 
 /** https://<this machine's MagicDNS name>, the address `tailscale serve` uses. */
-function tailscaleOrigin(): string {
+export function tailscaleOrigin(): string {
   let status: any
   try {
     status = JSON.parse(execFileSync("tailscale", ["status", "--json"], { encoding: "utf-8", timeout: 5000 }))
@@ -164,7 +164,7 @@ export function exposedDashboardMounts(status: any, port: number): string[] {
 }
 
 /** `tailscale serve status --json`, or null when Tailscale isn't available. */
-function tailscaleServeStatus(): any {
+export function tailscaleServeStatus(): any {
   try {
     return JSON.parse(execFileSync("tailscale", ["serve", "status", "--json"], { encoding: "utf-8", timeout: 5000 }) || "{}")
   } catch {
@@ -172,7 +172,7 @@ function tailscaleServeStatus(): any {
   }
 }
 
-function dashboardPort(): number {
+export function dashboardPort(): number {
   try {
     return loadDaemonConfig().dashboard.port || 4202
   } catch {
