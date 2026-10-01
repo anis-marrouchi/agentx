@@ -56,6 +56,8 @@ import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
+import { isHumanFacingTurn } from "@/a2a/initiator"
+import { senderOf } from "@/requests/tracker"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -1583,6 +1585,8 @@ export class AgentRegistry {
       }),
       resumeAttempt: task.resumeAttempt ?? 0,
       resumedFrom: task.resumedFrom,
+      sender: senderOf(task.context),
+      humanRoot: isHumanFacingTurn(task.context as any),
     })
 
     // Classify the message through the intent graph when enabled. Skip for
@@ -2550,6 +2554,7 @@ export class AgentRegistry {
         chatId,
         durationMs: Date.now() - taskStartedAt,
         error: response.error || undefined,
+        errorKind: response.error ? response.errorKind : undefined,
         interrupted: interruptedBy ? true : undefined,
         inputTokens: split?.inputTokens,
         outputTokens: split?.outputTokens,
@@ -2757,6 +2762,7 @@ export class AgentRegistry {
             chatId: qChatId,
             durationMs: Date.now() - runningTask.startedAt.getTime(),
             error: finalResponse?.error || (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+            errorKind: finalResponse?.errorKind,
             interrupted: this.interruptedRuns.has(runningTask.id) ? true : undefined,
             at: new Date().toISOString(),
           } as any)

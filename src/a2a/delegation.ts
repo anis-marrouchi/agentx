@@ -110,6 +110,10 @@ export interface DelegationDeps {
     outcome: "done" | "error"
   }): Promise<void>
   log(msg: string): void
+  /** Told when a delegation starts and how it ends (open requests, #356).
+   *  Errors thrown here are the listener's to handle. */
+  onStarted?(record: DelegationRecord): void
+  onDone?(record: DelegationRecord, result: DelegationResult): void
   /** Upper bound for one delegation, start to answer. */
   timeoutMs: number
   /** Default true: a person-started delegation goes async on its own. */
@@ -250,6 +254,7 @@ export class DelegationManager {
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt })
     this.append({ type: "start", ts: record.startedAt, ...record })
+    try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
 
     const calleeContext: Record<string, unknown> = {
       channel: "a2a",
@@ -314,6 +319,7 @@ export class DelegationManager {
     const entry = this.recent.find((r) => r.id === id)
     if (entry) { entry.status = result.status; entry.endedAt = this.now() }
     this.deps.log(`[delegation ${id}] ${rec.callee} ${result.status} after ${Math.round((this.now() - rec.startedAt) / 1000)}s`)
+    try { this.deps.onDone?.(rec, result) } catch { /* a listener never stops a callback */ }
 
     const key = `${rec.caller}\u0000${rec.origin.channel}\u0000${rec.origin.chatId}`
     const prev = this.chains.get(key) ?? Promise.resolve()

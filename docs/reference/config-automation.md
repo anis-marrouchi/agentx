@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: scheduled jobs, services, incoming webhooks, workflows, learned procedures, notifications, approvals, resuming after a restart and due reminders. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: scheduled jobs, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, resuming after a restart and due reminders. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -196,6 +196,35 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.checkin.dueWithinHours` | number | `24` | A normal check-in takes reminders due within this many hours, or overdue. |
 | `approvals.checkin.maxAsksPerPass` | number (1 to 20) | `5` | Most agents one check-in asks to write a card, whatever they answer. |
 | `approvals.checkin.composeTimeoutSeconds` | number (30 to 3600) | `300` | How long an agent may take to write one card, counted from the start of its turn. The turn is stopped at the limit. |
+
+## `requests`
+
+Open requests: what you asked an agent for is recorded and followed until it is done, declined or dropped. Off by default.
+
+When it is on, AgentX notes every message you send to an agent. A message the agent simply answers leaves nothing behind. A request is kept open when its work goes on after the answer, or goes wrong:
+
+- The agent handed the work to another agent.
+- The run failed or hit its time limit.
+- A restart cut the run off.
+
+An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you, and nothing closes by getting old.
+
+You cannot list or close requests yet; that arrives in the next part of this work. Until then, a request the agent handed to another agent comes back to you after `staleAfterHours` even when its work succeeded, and it stays open.
+
+To turn it on:
+
+1. Open `agentx.json`.
+2. Add `"requests": { "enabled": true }`.
+3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your sender id or username to `from`, for example `"from": ["telegram:123456789", "github:your-login"]`.
+4. Save the file. The running daemon picks the change up; no restart is needed.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `requests.enabled` | boolean | `false` | Records and follows your requests. |
+| `requests.channels` | list of strings | `[]` | Channels to record on. Empty: every channel a person writes on (`telegram`, `whatsapp`, `slack`, `discord`, `gitlab`, `github`, `app`, `voice`, `dashboard`, `webrtc`). |
+| `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: a sender id or username, alone or as `channel:id`. Display names are not matched, because anyone can choose one. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
+| `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
+| `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
 
 ## `shutdown`
 

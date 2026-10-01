@@ -1011,6 +1011,23 @@ const screenSchema = z.object({
 
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and
  *  when the operator hears about what is waiting. */
+export const requestsConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Channels to capture on. Empty: every channel a person writes on
+   *  (telegram, whatsapp, slack, discord, gitlab, github, app, voice,
+   *  dashboard, webrtc). */
+  channels: z.array(z.string().min(1)).default([]),
+  /** Who counts as the owner on channels other people can reach: sender
+   *  ids or usernames, optionally scoped as "channel:id". Display names
+   *  are not matched. Empty: only this node's own surfaces (voice, app,
+   *  dashboard, webrtc) are captured. */
+  from: z.array(z.string().min(1)).default([]),
+  /** An open request with no activity for this long comes back to the owner. */
+  staleAfterHours: z.number().positive().max(24 * 365).default(24),
+  /** Closed requests are deleted after this many days. Open ones never are. */
+  retentionDays: z.number().positive().max(3650).default(90),
+}).default({})
+
 export const approvalsConfigSchema = z.object({
   /** A card without an `expires` gets this many days. */
   defaultExpiryDays: z.number().positive().max(365).default(3),
@@ -1145,6 +1162,10 @@ export const daemonConfigSchema = z.object({
       windowMinutes: z.number().positive().default(10),
     }).default({}),
   }).default({}),
+  /** Open requests (src/requests, #356): what a person asked an agent for
+   *  is recorded and followed until it is done, declined or dropped. Off
+   *  by default. */
+  requests: requestsConfigSchema,
   /** Hand due Apple Reminders back to the agent that created them
    *  (src/reminders). macOS only; reads reminders whose notes end with the
    *  mac-pim skill's `agentx: agent=<id>` trailer. */
