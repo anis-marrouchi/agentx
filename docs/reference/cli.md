@@ -108,6 +108,19 @@ agentx desktop start
 
 Do not share `config show` output without checking it for credentials. Starting a daemon does not start the separate browser dashboard.
 
+## People
+
+The humans who talk to your agents, one person per human whatever channel they use: [Tell agents who is who](../jobs/people.md).
+
+| Command | What it does |
+|---|---|
+| `agentx people list [--json]` | Everyone, with their channel identities |
+| `agentx people add <id> --name … [--role] [--identity channel:id]` | Add a person; `--identity` can be given several times |
+| `agentx people link <id> <channel:id>` | Add a login, Telegram id or WhatsApp number to a person |
+| `agentx people unlink <id> <channel:id>` | Take one away |
+| `agentx people remove <id>` | Remove a person; their past tasks keep the id |
+| `agentx people show <id> [--limit] [--json]` | One person and what they asked for, on every channel |
+
 ## Talk to an agent
 
 ```sh
