@@ -1,6 +1,7 @@
 import type { Reminder } from "@/reminders/source"
 import type { ReminderTrailer } from "@/reminders/trailer"
-import type { CardInput } from "./cards"
+import { CARD_LIMITS, type CardInput } from "./cards"
+import { CHOICE_LIMITS } from "./choices"
 
 // --- Asking the owning agent what a reminder's card should say ---
 //
@@ -38,6 +39,7 @@ export function composePrompt(r: Reminder, trailer: ReminderTrailer | null, nowT
     ' "choices": ["2 to 4 short options, e.g. free slots or reply choices"],',
     ' "draft": "the message you would send; {choice} is replaced by their pick", "say": "one short spoken line",',
     ' "if_silent": "keep", "expires": "2d"}',
+    `Limits, in characters: context ${CHOICE_LIMITS.context}, ask ${CARD_LIMITS.ask}, recommend ${CARD_LIMITS.recommend}, each choice ${CHOICE_LIMITS.label}, say ${CHOICE_LIMITS.say}. A longer field loses the card.`,
     "choices and draft are optional; leave choices out for a plain yes/no. Write the draft in the language of the person it goes to.",
     'When it does not need them (already done, not theirs, not time yet): {"needs_operator": false, "why": "one line"}',
     "",
@@ -54,6 +56,19 @@ function lastObject(text: string): unknown {
   return undefined
 }
 
+/** An over-long context ends at the last sentence that fits, not with a lost card. */
+export function fitContext(context: unknown, max: number = CHOICE_LIMITS.context): unknown {
+  if (typeof context !== "string") return context
+  const text = context.replace(/\r\n?/g, "\n").trim()
+  if (text.length <= max) return text
+  const head = text.slice(0, max)
+  // A sentence end is followed by a space or a line break in the full text.
+  const ends = [...head.matchAll(/[.!?…。؟](?=\s)|\n/g)]
+  const last = ends.pop()
+  if (last && last.index! > 0) return head.slice(0, last.index! + (last[0] === "\n" ? 0 : 1)).trimEnd()
+  return head.slice(0, max - 1).replace(/\s+\S*$/, "") + "…"
+}
+
 export function parseCompose(reply: string | undefined): ComposeResult {
   const raw = reply ? lastObject(reply) : undefined
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { kind: "error", error: "the reply has no JSON object" }
@@ -66,7 +81,7 @@ export function parseCompose(reply: string | undefined): ComposeResult {
   return {
     kind: "card",
     input: {
-      title: o.title, ask: o.ask, recommend: o.recommend, context: o.context,
+      title: o.title, ask: o.ask, recommend: o.recommend, context: fitContext(o.context),
       choices: o.choices, draft: o.draft, say: o.say,
       if_silent: o.if_silent ?? "keep", expires: o.expires,
     },

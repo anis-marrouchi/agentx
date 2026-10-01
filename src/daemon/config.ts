@@ -1076,7 +1076,8 @@ export const approvalsConfigSchema = z.object({
     dueWithinHours: z.number().positive().max(24 * 30).default(24),
     /** Most agents one pass asks to write a card, whatever they answer. */
     maxAsksPerPass: z.number().int().min(1).max(20).default(5),
-    /** How long an agent may take to write one card. */
+    /** How long an agent may take to write one card, counted from the start
+     *  of its turn. The turn is stopped at the limit. */
     composeTimeoutSeconds: z.number().int().min(30).max(3600).default(300),
   }).default({}),
 }).default({})

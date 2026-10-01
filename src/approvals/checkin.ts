@@ -20,9 +20,11 @@ import { localClock } from "./sweep"
 // The operator's answer goes back to that agent through the approvals
 // sweep, like any card. Nothing here sends anything to anyone.
 //
-// A reminder gets one card at a time. After an answer, after the agent
-// said it doesn't need the operator, or after a failed attempt, it comes
-// back at the next daily pass if it is still open. A pass asks at most
+// A reminder gets one card at a time. After an answer, or after the agent
+// said it doesn't need the operator, it comes back at the next daily pass
+// if it is still open. A failed attempt is tried once more at the next
+// pass, then at the next daily pass. A pass that ends with failures and no
+// card tells the operator once (`notify`). A pass asks at most
 // `maxAsksPerPass` agents, whatever they answer: each ask is a full turn. Reminders the reminders poller has claimed belong
 // to their agent and are left alone.
 
@@ -39,8 +41,14 @@ export interface CheckinSettings {
   dueWithinHours: number
   /** Most agent turns one pass starts, cards or not. */
   maxAsksPerPass: number
+  /** How long the agent's turn may take. Waiting for a free seat is not counted. */
   composeTimeoutSeconds: number
 }
+
+/** Failed attempts a reminder gets in one day: the first, and one more at the next pass. */
+export const CHECKIN_TRIES_PER_DAY = 2
+/** Backstop for the wait on a busy agent's seat. The registry gives up first, at 25 minutes. */
+const SEAT_WAIT_SECONDS = 26 * 60
 
 export type PassKind = "daily" | "check"
 
@@ -52,8 +60,11 @@ export interface CheckinDeps {
   /** The reminders poller's claims file, when it runs. */
   claimsPath?: string
   hasAgent: (agentId: string) => boolean
-  /** One turn on the agent; resolves to its final text. */
+  /** One turn on the agent; resolves to its final text. It waits for a
+   *  free seat, and ends its own turn after `composeTimeoutSeconds`. */
   ask: (agentId: string, message: string, reminder: Reminder) => Promise<string>
+  /** Tells the operator. Unset: the log only. */
+  notify?: (title: string, message: string) => Promise<void>
   log: (msg: string) => void
   now?: number
 }
@@ -64,6 +75,8 @@ export interface PassResult {
   carded: string[]
   skipped: number
   failed: number
+  /** The reminders that failed, each with the reason. */
+  failures: { title: string; why: string }[]
 }
 
 const toMinutes = (hhmm: string) => { const [h, m] = hhmm.split(":").map(Number); return h * 60 + m }
@@ -91,9 +104,12 @@ function isEligible(r: Reminder, state: CheckinState, kind: PassKind, s: Checkin
   const rec = state.items[r.id]
   if (!rec) return true
   if (rec.status === "carded" && rec.card && readCard(root, rec.card)?.status === "pending") return false
-  // Answered, not needed or failed: back once a day while it stays open.
-  return kind === "daily" && localClock(Date.parse(rec.at), s.timezone).date !== localClock(now, s.timezone).date
+  if (rec.status === "failed" && (rec.tries ?? CHECKIN_TRIES_PER_DAY) < CHECKIN_TRIES_PER_DAY) return true
+  // Answered, not needed or failed twice: back once a day while it stays open.
+  return kind === "daily" && !sameDay(rec.at, now, s)
 }
+
+const sameDay = (at: string, now: number, s: CheckinSettings) => localClock(Date.parse(at), s.timezone).date === localClock(now, s.timezone).date
 
 function withTimeout<T>(p: Promise<T>, seconds: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout>
@@ -101,11 +117,11 @@ function withTimeout<T>(p: Promise<T>, seconds: number): Promise<T> {
   return Promise.race([p, late]).finally(() => clearTimeout(timer))
 }
 
-/** One pass. Never throws; failures are logged and retried at the next daily pass. */
+/** One pass. Never throws; failures are logged and retried (see isEligible). */
 export async function runCheckinPass(deps: CheckinDeps, kind: PassKind): Promise<PassResult> {
   const { root, settings: s, log } = deps
   const now = deps.now ?? Date.now()
-  const result: PassResult = { kind, looked: 0, carded: [], skipped: 0, failed: 0 }
+  const result: PassResult = { kind, looked: 0, carded: [], skipped: 0, failed: 0, failures: [] }
   recordPass(root, now)
 
   const open: Reminder[] = []
@@ -137,7 +153,7 @@ export async function runCheckinPass(deps: CheckinDeps, kind: PassKind): Promise
     const nowText = new Date(now).toLocaleString("en-GB", { timeZone: s.timezone, dateStyle: "full", timeStyle: "short" })
     asks++
     try {
-      const reply = await withTimeout(deps.ask(owner, composePrompt(r, trailer, nowText), r), s.composeTimeoutSeconds)
+      const reply = await withTimeout(deps.ask(owner, composePrompt(r, trailer, nowText), r), s.composeTimeoutSeconds + SEAT_WAIT_SECONDS)
       const composed = parseCompose(reply)
       if (composed.kind === "skip") {
         state.items[r.id] = { status: "skipped", owner, at, ...(composed.why ? { why: composed.why } : {}) }
@@ -154,8 +170,12 @@ export async function runCheckinPass(deps: CheckinDeps, kind: PassKind): Promise
       result.carded.push(made.card.id)
       log(`[checkin] "${r.title}": card:${made.card.id} raised for ${owner}`)
     } catch (e: any) {
-      state.items[r.id] = { status: "failed", owner, at, why: String(e?.message ?? e).slice(0, 200) }
+      const before = state.items[r.id]
+      const tries = before?.status === "failed" && sameDay(before.at, now, s) ? (before.tries ?? 1) + 1 : 1
+      const why = String(e?.message ?? e).slice(0, 200)
+      state.items[r.id] = { status: "failed", owner, at, why, tries }
       result.failed++
+      result.failures.push({ title: r.title, why })
       log(`[checkin] "${r.title}": ${owner} couldn't compose a card: ${e?.message ?? e}`)
     } finally {
       // Saved after each item: a pass cut short keeps what it did.
@@ -186,6 +206,12 @@ export async function checkinTick(deps: CheckinDeps, force?: PassKind): Promise<
     }
     const r = await runCheckinPass(deps, due.kind)
     deps.log(`[checkin] ${r.kind} pass: ${r.looked} open, ${r.carded.length} card(s), ${r.skipped} not needed, ${r.failed} failed`)
+    // Failures and no card: the operator would otherwise see nothing at all.
+    if (r.failed && !r.carded.length && deps.notify) {
+      const lines = r.failures.map((f) => `"${f.title}": ${f.why}`)
+      await deps.notify(`Check-in: no card for ${r.failed} reminder${r.failed === 1 ? "" : "s"}`, lines.join("\n"))
+        .catch((e: any) => deps.log(`[checkin] couldn't tell the operator: ${e?.message ?? e}`))
+    }
     return r
   } finally {
     running = false

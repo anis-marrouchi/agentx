@@ -13,7 +13,7 @@ export type ItemStatus =
   | "carded"
   /** The agent said it doesn't need the operator. Asked again next day. */
   | "skipped"
-  /** Composing failed; tried again at the next daily pass. */
+  /** Composing failed; tried once more at the next pass, then at the next daily pass. */
   | "failed"
 
 export interface ItemRecord {
@@ -23,6 +23,8 @@ export interface ItemRecord {
   at: string
   card?: string
   why?: string
+  /** Failed attempts on the day of `at`. */
+  tries?: number
 }
 
 export interface CheckinState {
