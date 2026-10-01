@@ -895,6 +895,201 @@ mesh
     }
   })
 
+// ==================== agentx mesh guests / join (#380) ====================
+//
+// Host side: open part of this mesh to another organisation and keep it
+// in hand. Guest side: join a host with its code and ask its agent.
+
+const guestDaemonBase = (node?: string): string => {
+  let base = node || ""
+  if (!base) { try { base = loadDaemonConfig().dashboard?.daemonUrl || "" } catch { /* default below */ } }
+  return (base || "http://localhost:18800").replace(/\/+$/, "")
+}
+
+async function guestControl(id: string, action: "pause" | "resume" | "end" | "update", body: Record<string, unknown> = {}): Promise<void> {
+  const base = guestDaemonBase()
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (process.env.MESH_TOKEN) headers["Authorization"] = `Bearer ${process.env.MESH_TOKEN}`
+  try {
+    const res = await fetch(`${base}/mesh/guests/${encodeURIComponent(id)}/${action}`, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(15_000) })
+    const data = await res.json().catch(() => ({})) as { error?: string; grant?: any; stopped?: number }
+    if (!res.ok) { console.log(chalk.red(`  ${data.error || `HTTP ${res.status}`}`)); process.exit(1) }
+    const g = data.grant
+    console.log(chalk.green(`  ✓ ${g?.name ?? id}: ${g?.state}${data.stopped ? `, ${data.stopped} running turn(s) stopped` : ""}`))
+  } catch (e: any) {
+    console.log(chalk.red(`  Could not reach the daemon at ${base}: ${e?.message || e}. The daemon must be running: it stops the guest's running turns.`))
+    process.exit(1)
+  }
+}
+
+const guests = mesh.command("guests").description("other organisations let into part of this mesh: open, watch, pause, widen, narrow, end")
+
+guests
+  .command("invite")
+  .description("open a grant to a guest mesh and print the one-time code it joins with")
+  .requiredOption("--name <name>", "what you call it, e.g. \"Support session for company X\"")
+  .requiredOption("--guest <name>", "the other organisation's name")
+  .requiredOption("--agent <id>", "the agent of this node that works for them")
+  .option("--folders <list>", "folders that agent may touch for them, comma-separated")
+  .option("--skills <list>", "skills it may use for them, comma-separated")
+  .option("--commands <list>", "commands it may run for them, comma-separated")
+  .option("--level <level>", "report (read only) | propose (no merge, deploy or delete) | act", "propose")
+  .option("--days <n>", "how long the grant lasts (1 to 365)", "7")
+  .option("--url <origin>", "the address the guest reaches this node on (default: dashboard.daemonUrl)")
+  .action(async (opts: { name: string; guest: string; agent: string; folders?: string; skills?: string; commands?: string; level: string; days: string; url?: string }) => {
+    const { TokenStore } = await import("@/daemon/token-store")
+    const { PairCodeStore, formatCode } = await import("@/daemon/pair-codes")
+    const { GuestStore } = await import("@/guests/store")
+    const { inviteGuest } = await import("@/guests/grants")
+    const config = loadDaemonConfig()
+    const r = inviteGuest({ tokens: new TokenStore(), codes: new PairCodeStore(), guests: new GuestStore(), hasAgent: (id) => !!config.agents[id] }, {
+      name: opts.name, guest: opts.guest, agentId: opts.agent, folders: opts.folders?.split(","), skills: opts.skills?.split(","),
+      commands: opts.commands?.split(","), level: opts.level, days: Number(opts.days),
+    })
+    if (!r.ok) { console.log(chalk.red(`  ${r.error}`)); process.exit(1) }
+    const origin = (opts.url || guestDaemonBase()).replace(/\/+$/, "")
+    console.log()
+    console.log(`  Grant ${chalk.bold(r.grant.name)} for ${chalk.bold(r.grant.guest)}: ${r.grant.agentId}, ${r.grant.level}, until ${r.grant.expiresAt.slice(0, 10)}`)
+    console.log(chalk.dim(`  id ${r.grant.id} · folders: ${r.grant.folders.join(", ") || "none"} · skills: ${r.grant.skills.join(", ") || "none"} · commands: ${r.grant.commands.join(", ") || "none"}`))
+    console.log()
+    console.log(`  Send the guest this address and code. The code works once, for 10 minutes:`)
+    console.log()
+    console.log(`     ${chalk.cyan(origin)}`)
+    console.log(`     ${chalk.bold(formatCode(r.code))}`)
+    console.log()
+    console.log(`  They run: ${chalk.cyan(`agentx mesh join ${origin} --code ${formatCode(r.code)} --name <what-they-call-you>`)}`)
+    console.log(`  When they join, a card "Guest mesh: ${r.grant.guest} wants to join" asks you to approve it.`)
+    console.log()
+  })
+
+guests
+  .command("list", { isDefault: true })
+  .alias("ls")
+  .description("every grant: state, guest, agent, level, end date, usage")
+  .option("--json", "machine-readable output")
+  .action(async (opts: { json?: boolean }) => {
+    const { GuestStore } = await import("@/guests/store")
+    const grants = new GuestStore().grants().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    if (opts.json) { console.log(JSON.stringify(grants, null, 2)); return }
+    if (!grants.length) { console.log(chalk.dim("\n  No guest grants. Open one: agentx mesh guests invite --name … --guest … --agent …\n")); return }
+    console.log()
+    for (const g of grants) {
+      const state = g.state === "active" ? chalk.green("active") : g.state === "pending" ? chalk.yellow(g.guestNode ? "waiting for your approval" : "not joined yet") : g.state === "paused" ? chalk.yellow("paused") : chalk.red(`ended${g.endedReason ? `: ${g.endedReason}` : ""}`)
+      console.log(`  ${chalk.cyan(g.id)}  ${chalk.bold(g.name)}  ${g.guest} → ${g.agentId}  ${g.level}  ${state}`)
+      console.log(chalk.dim(`    until ${g.expiresAt.slice(0, 10)} · ${g.usage.turns} turn(s), ${g.usage.tokens} tokens${g.usage.lastAt ? ` · last ${g.usage.lastAt.slice(0, 16).replace("T", " ")} UTC` : ""}${g.guestNode?.name ? ` · node ${g.guestNode.name}` : ""}`))
+    }
+    console.log()
+  })
+
+guests
+  .command("show <id>")
+  .description("one grant, what it opens and what the guest did")
+  .action(async (id: string) => {
+    const { GuestStore } = await import("@/guests/store")
+    const store = new GuestStore()
+    const g = store.get(id)
+    if (!g) { console.log(chalk.red(`  No grant "${id}". See \`agentx mesh guests\`.`)); process.exit(1) }
+    console.log()
+    console.log(`  ${chalk.bold(g.name)} (${g.id}) · ${g.state}`)
+    console.log(`  guest: ${g.guest}${g.guestNode ? ` · node ${g.guestNode.name ?? g.guestNode.id ?? "?"} at ${g.guestNode.address ?? "?"}` : ""}`)
+    console.log(`  agent: ${g.agentId} · level: ${g.level} · until ${g.expiresAt.slice(0, 10)}`)
+    console.log(`  folders: ${g.folders.join(", ") || "none"}\n  skills: ${g.skills.join(", ") || "none"}\n  commands: ${g.commands.join(", ") || "none"}`)
+    console.log(`  usage: ${g.usage.turns} turn(s), ${g.usage.tokens} tokens`)
+    console.log(`\n  Trail (newest first)`)
+    for (const e of store.events(id, 30)) console.log(chalk.dim(`    ${e.at.slice(0, 19).replace("T", " ")}  ${e.event}${e.detail ? `  ${e.detail}` : ""}${e.address ? `  from ${e.address}` : ""}`))
+    console.log()
+  })
+
+guests.command("pause <id>").description("stop the guest at once; running turns are cancelled. Resume later").action((id: string) => guestControl(id, "pause"))
+guests.command("resume <id>").description("let a paused guest work again").action((id: string) => guestControl(id, "resume"))
+guests.command("end <id>").description("end the grant for good; its key stops at once").action((id: string) => guestControl(id, "end"))
+guests
+  .command("set <id>")
+  .description("widen or narrow a grant while it is in use")
+  .option("--folders <list>", "folders, comma-separated (\"none\" clears)")
+  .option("--skills <list>", "skills, comma-separated (\"none\" clears)")
+  .option("--commands <list>", "commands, comma-separated (\"none\" clears)")
+  .option("--level <level>", "report | propose | act")
+  .option("--days <n>", "new length, counted from now")
+  .action((id: string, opts: { folders?: string; skills?: string; commands?: string; level?: string; days?: string }) => {
+    const clear = (v?: string) => (v === undefined ? undefined : v.toLowerCase() === "none" ? [] : v.split(","))
+    const body: Record<string, unknown> = {}
+    if (opts.folders !== undefined) body.folders = clear(opts.folders)
+    if (opts.skills !== undefined) body.skills = clear(opts.skills)
+    if (opts.commands !== undefined) body.commands = clear(opts.commands)
+    if (opts.level !== undefined) body.level = opts.level
+    if (opts.days !== undefined) body.days = Number(opts.days)
+    if (!Object.keys(body).length) { console.log(chalk.red("  Nothing to change: pass --folders, --skills, --commands, --level or --days.")); process.exit(1) }
+    return guestControl(id, "update", body)
+  })
+
+mesh
+  .command("join <url>")
+  .description("join another organisation's mesh as a guest, with the code its owner sent you")
+  .requiredOption("--code <code>", "the one-time code from the host")
+  .requiredOption("--name <name>", "what you call the host, e.g. company-x")
+  .action(async (url: string, opts: { code: string; name: string }) => {
+    const { GuestHostStore } = await import("@/guests/hosts")
+    const base = url.replace(/\/+$/, "")
+    let node: { id?: string; name?: string } = {}
+    try { const c = loadDaemonConfig(); node = { id: c.node?.id, name: c.node?.name } } catch { /* fine */ }
+    try {
+      const res = await fetch(`${base}/mesh/guest/join`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: opts.code, node }), signal: AbortSignal.timeout(15_000),
+      })
+      const data = await res.json().catch(() => ({})) as Record<string, any>
+      if (!res.ok) { console.log(chalk.red(`  Join refused (${res.status}): ${data.error || "unknown error"}`)); process.exit(1) }
+      new GuestHostStore().add({
+        name: opts.name, url: base, token: String(data.token), grant: String(data.grant), agentId: String(data.agentId),
+        expiresAt: String(data.expiresAt), joinedAt: new Date().toISOString(),
+      })
+      console.log(chalk.green(`\n  ✓ Joined ${opts.name} as a guest: grant "${data.name}", agent ${data.agentId}, ${data.level}, until ${String(data.expiresAt).slice(0, 10)}.`))
+      console.log(chalk.dim(`  The host's owner has to approve the join once. Check with: agentx mesh hosts`))
+      console.log(chalk.dim(`  Then ask: agentx mesh ask ${opts.name} "<message>", or from an agent: POST /mesh/task { peer: "${opts.name}", message }\n`))
+    } catch (e: any) {
+      console.log(chalk.red(`  Could not reach ${base}: ${e?.message || e}`))
+      process.exit(1)
+    }
+  })
+
+mesh
+  .command("hosts")
+  .description("the meshes this node has joined as a guest, and where each grant stands")
+  .action(async () => {
+    const { GuestHostStore, hostStatus } = await import("@/guests/hosts")
+    const hosts = new GuestHostStore().hosts()
+    if (!hosts.length) { console.log(chalk.dim("\n  Not a guest anywhere. Join with: agentx mesh join <url> --code … --name …\n")); return }
+    console.log()
+    for (const h of hosts) {
+      const s = await hostStatus(h)
+      const state = s.ok ? (s.grant.state === "active" ? chalk.green("active") : chalk.yellow(String(s.grant.state))) : s.status === 403 ? chalk.yellow(s.error) : chalk.red(s.error)
+      console.log(`  ${chalk.cyan(h.name)}  ${chalk.dim(h.url)}  ${h.agentId}  until ${h.expiresAt.slice(0, 10)}  ${state}`)
+    }
+    console.log()
+  })
+
+mesh
+  .command("ask <host> <message...>")
+  .description("ask the host's agent something, inside the grant")
+  .action(async (host: string, words: string[]) => {
+    const { GuestHostStore, askHost } = await import("@/guests/hosts")
+    const h = new GuestHostStore().get(host)
+    if (!h) { console.log(chalk.red(`  No host "${host}". See \`agentx mesh hosts\`.`)); process.exit(1) }
+    const r = await askHost(h, words.join(" "))
+    if (r.error) { console.log(chalk.red(`  ${r.error}`)); process.exit(1) }
+    console.log(`\n${r.content}\n`)
+  })
+
+mesh
+  .command("leave <host>")
+  .description("forget a host you joined as a guest (the host can also end it on its side)")
+  .action(async (host: string) => {
+    const { GuestHostStore } = await import("@/guests/hosts")
+    if (!new GuestHostStore().remove(host)) { console.log(chalk.red(`  No host "${host}".`)); process.exit(1) }
+    console.log(chalk.green(`  ✓ Left ${host}`))
+  })
+
 // ==================== agentx skill ====================
 
 export const skillCmd = new Command()

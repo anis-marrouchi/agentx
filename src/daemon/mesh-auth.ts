@@ -62,7 +62,10 @@ export function isMeshGatedPath(path: string): boolean {
     // An agent watching the phone camera (camera-api.ts): a look runs the
     // agent's turn, and a snapshot writes a picture of the owner's
     // surroundings to disk.
-    path === "/webrtc/camera" || path.startsWith("/webrtc/camera/")
+    path === "/webrtc/camera" || path.startsWith("/webrtc/camera/") ||
+    // The host's panel of guest meshes (guests/daemon-api.ts): names the
+    // other organisations let in, what they may reach and what they did.
+    path === "/mesh/guests" || path.startsWith("/mesh/guests/")
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
@@ -77,6 +80,8 @@ export function isControlPost(path: string): boolean {
     // AgentX Voice's settings window: rewrites agentx.json, and speaks.
     path === "/voice/settings" || path === "/voice/preview" ||
     /^\/api\/tasks\/[^/]+\/(cancel|followup)$/.test(path) ||
+    // Pausing, widening, narrowing or ending a guest mesh's grant.
+    /^\/mesh\/guests\/[^/]+\/(pause|resume|end|update)$/.test(path) ||
     /^\/crons\/[^/]+\/enabled$/.test(path)
 }
 

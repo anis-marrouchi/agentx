@@ -23,6 +23,9 @@ import { resolve, dirname } from "path"
 //   member:<person>  — one teammate's own work page (/member, /api/member/*)
 //                      and nothing else; minted per machine by
 //                      `agentx people invite` (#385)
+//   guest:<grant>    — a guest mesh's key: /mesh/guest/* inside that grant
+//                      and nothing else; minted by `agentx mesh guests
+//                      invite` (#380)
 
 export const TOKEN_PREFIX = "agx_live_"
 const DEFAULT_FILE = ".agentx/tokens.json"
@@ -155,7 +158,8 @@ function isValidScope(s: string): boolean {
     /^agent:[a-z0-9][a-z0-9_-]*$/.test(s) ||
     s === "mesh:peer" ||
     s === "app" ||
-    /^member:[a-z0-9][a-z0-9_-]{0,39}$/.test(s)
+    /^member:[a-z0-9][a-z0-9_-]{0,39}$/.test(s) ||
+    /^guest:g-[a-z0-9]+-[a-z0-9]+$/.test(s)
   )
 }
 

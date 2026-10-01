@@ -53,6 +53,8 @@ Each entry in `mesh.peers`:
 | `name` | string | required | The peer's name. |
 | `token` | string | — | Bearer token sent to that peer. Use an `${ENV_VAR}` reference. |
 
+Guest meshes (another organisation let into part of this one) are not in `agentx.json`: the host keeps its grants in `.agentx/guests.json` and their trail in `.agentx/guests-log.jsonl`; the guest keeps the hosts it joined in `.agentx/guest-hosts.json`. All three are readable by your user only. See [Let another organisation into part of your mesh](/jobs/guest-mesh).
+
 Each entry in `mesh.inboxes`:
 
 | Key | Type | Default | What it does |
