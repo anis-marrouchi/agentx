@@ -1205,8 +1205,10 @@ export const daemonConfigSchema = z.object({
     allowUnmeasured: z.boolean().default(false),
     /** Longest answer said aloud, in characters. A longer one stops at
      *  its last whole sentence inside this and says the rest is on
-     *  screen; the written answer is always shown whole. */
-    spokenMaxChars: z.number().int().min(100).max(1500).default(SPOKEN_MAX_CHARS),
+     *  screen; the written answer is always shown whole. The minimum
+     *  keeps a cut answer over the 280 characters the Mac pill opens
+     *  at (AnswerView.isWorthShowing), so "on screen" stays true. */
+    spokenMaxChars: z.number().int().min(300).max(1500).default(SPOKEN_MAX_CHARS),
     /** The on-device engine behind "local" and every fallback:
      *  mlx-whisper (Python, all languages) or Parakeet (Core ML, 25
      *  European languages, no Arabic; 483 MB downloaded on first use into

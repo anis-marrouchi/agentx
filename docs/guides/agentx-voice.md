@@ -302,7 +302,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.stt` | `"auto"` | Speech to text: `"auto"`, `"elevenlabs"` or `"local"` |
 | `voice.localStt` | `"mlx-whisper"` | The engine on this Mac: `"mlx-whisper"` or `"parakeet"` |
 | `voice.endOfTurn` | `"vad"` | How a hands-free turn ends: `"vad"` (voice detection) or `"volume"` |
-| `voice.spokenMaxChars` | `500` | Longest answer read aloud, in characters, `100` to `1500`. A longer answer stops at the end of a sentence and says the rest is on screen. The written answer is always shown whole |
+| `voice.spokenMaxChars` | `500` | Longest answer read aloud, in characters, `300` to `1500`. A longer answer stops at the end of a sentence and says the rest is on screen. The written answer is always shown whole |
 | `voice.hotkeys.talk` | `"opt+space"` | Hold to talk |
 | `voice.hotkeys.stop` | `"cmd+opt+period"` | Stop every voice |
 | `voice.hotkeys.paste` | `"cmd+opt+v"` | Smart paste |

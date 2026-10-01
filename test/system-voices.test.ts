@@ -194,6 +194,14 @@ describe("config", () => {
     })
   })
 
+  // A cut answer says "The rest is on screen": the Mac pill opens only
+  // for a written answer over 280 characters, so the cap stays above it.
+  it("refuses a spoken cap the Mac pill would not open for", () => {
+    const voice = (spokenMaxChars: number) => daemonConfigSchema.safeParse({ node: { id: "n", name: "n" }, voice: { spokenMaxChars } }).success
+    expect(voice(299)).toBe(false)
+    expect(voice(300)).toBe(true)
+  })
+
   it("accepts a per-agent provider and system voice", () => {
     const parsed = daemonConfigSchema.parse({
       node: { id: "n", name: "n" },
