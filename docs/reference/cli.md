@@ -127,7 +127,7 @@ agentx attach as helper
 | `agentx workflow show <id>` | Inspect a workflow |
 | `agentx workflow validate <file>` | Validate before importing or running |
 | `agentx workflow add <file>` | Import a definition |
-| `agentx workflow run <id-or-file>` | Execute a workflow; may perform external actions |
+| `agentx workflow run <id-or-file>` | Execute the named workflow; may perform external actions. Fails if the workflow is not active |
 | `agentx workflow runs [id]` | Inspect runs |
 | `agentx workflow trace <id>` | Inspect execution details |
 | `agentx workflow cancel <runId>` | Request cancellation |
