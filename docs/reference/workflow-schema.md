@@ -52,7 +52,7 @@ An `agent` node needs a registered `agentId`. It can also set `timeoutMinutes`. 
 
 | Type | What it does |
 |---|---|
-| `trigger.manual`, `trigger.channel`, `trigger.cron`, `trigger.hook`, `trigger.form` | Starts a run: by hand, from a channel message, on a schedule, on an `on:*` event, or from a form |
+| `trigger.manual`, `trigger.channel`, `trigger.cron`, `trigger.hook`, `trigger.form`, `trigger.poll` | Starts a run: by hand, from a channel message, on a schedule, on an `on:*` event, from a form, or for each new item a command prints |
 | `agent` | Runs an agent with a prompt and passes its answer on |
 | `classify` | Picks one label with a confidence; the port named after the label fires, or `unsure` |
 | `transform` | Picks or reshapes values from earlier steps |
@@ -98,6 +98,43 @@ This check can't catch two routines that trigger each other, such as a generator
 
 A note and an update on the same MR count toward the same limit. Every loop-guard skip still claims the event, unless the trigger sets `passthrough`. That way the adapter's fallback (the project's default agent, or the legacy @-mention path) doesn't wake the agent instead. Every skip is logged as `[workflows] <id> skipping <event> (<reason>)`. The counters are held in memory, so a daemon restart resets them.
 
+## Poll trigger
+
+A `trigger.poll` node runs a registered action on an interval and starts one run for each new item it prints. Use it when the source can't call AgentX, such as a local store or an API with no webhook.
+
+```yaml
+- id: trigger
+  type: trigger.poll
+  config:
+    actionId: wacli-new-messages
+    everySeconds: 60
+    key: msgId
+    filter:
+      - { kind: matches, params: { path: text, regex: "^\\s*@[Hh]akim\\b" } }
+      - { kind: equals, params: { path: fromMe, value: false } }
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `actionId` | required | A registered action in `.agentx/actions/`. It takes no inputs and prints one JSON object per line |
+| `everySeconds` | `60` | Seconds between polls, from 5 to 86400. The next poll is timed from the end of the last one |
+| `key` | `id` | The field that identifies an item. A dotted path such as `message.id` works |
+| `filter` | none | Conditions of the same kinds as `branch` (`equals`, `contains`, `matches`, `exists`), with paths relative to the item. All must match |
+| `maxPerPoll` | `20` | The most runs one poll starts. The rest wait for the next poll |
+
+The item becomes the trigger payload, so later steps read its fields as <code v-pre>{{trigger.msgId}}</code> or <code v-pre>{{trigger.text}}</code>. Item fields come from outside AgentX; treat them as untrusted in later steps.
+
+AgentX keeps the seen keys in `<workflows dir>/_poll/<workflow id>.json`, so they survive a restart, and the action needs no state of its own: it can list the latest items each time. The rules:
+
+- The first poll only records what is already there. It starts no runs. The same happens after you change `actionId` or `key`.
+- A key is recorded before its run starts, so an item starts at most one run, even if the daemon stops mid-poll.
+- An item the filter rejects is recorded too. Loosening the filter later does not replay old items.
+- A poll with nothing new starts nothing and leaves no run record.
+- If the action fails, times out, or prints more than 32 KB, the poll is logged as `[workflows] <id> poll failed` and tried again at the next interval. It never starts a run.
+- Only an `active` workflow polls. The daemon re-reads the workflow files every 30 seconds and on `POST /reload`, so a saved, enabled or disabled workflow needs no restart.
+
+`examples/workflows/wacli-mention.yaml` and `examples/actions/wacli-new-messages.json` show the full case: answer WhatsApp messages that start with a mention, read from the `wacli` store.
+
 The editor's assistant can propose a workflow from a request. **Apply to canvas replaces the current graph.** Review the agent, input, destination, and error path before saving. The complete implementation is in `src/workflows/types.ts` and `src/workflows/nodes/`.
 
 <!-- No screenshot needed: this is the machine-readable counterpart to the illustrated automation guide. -->
@@ -112,5 +149,6 @@ The editor's assistant can propose a workflow from a request. **Apply to canvas 
 
 - **The workflow never fires:** check `state` is `active` (not only `status`) and that the daemon has `workflows.enabled: true`.
 - **An `agent` step fails:** its `agentId` must match an agent in `agentx.json`.
+- **A poll trigger starts nothing:** look for `[workflows] <id> poll` in `agentx daemon logs`. `poll baseline` means the first poll recorded the existing items; `poll failed` shows the action's error; `poll skipped` means lines were not a JSON object with the `key` field.
 - **An event trigger doesn't fire:** look for `[workflows] <id> skipping` in `agentx daemon logs`; a filter or loop guard dropped the event.
 - **A run stops partway:** `agentx workflow trace <runId>` shows which step failed and why.

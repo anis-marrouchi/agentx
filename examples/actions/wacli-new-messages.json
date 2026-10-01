@@ -1,0 +1,9 @@
+{
+  "id": "wacli-new-messages",
+  "title": "wacli: latest messages of one chat (#360)",
+  "description": "Print the 15 latest messages of one WhatsApp chat from the local wacli store, oldest first, one JSON object per line: msgId, text (first 500 characters), fromMe, sender, chatJid, at. Reactions are left out. Needs wacli (kept live by `wacli sync --follow`) and jq. Used by the poll trigger of examples/workflows/wacli-mention.yaml.",
+  "kind": "shell",
+  "timeoutMs": 30000,
+  "inputs": [],
+  "command": "wacli messages list --chat <CHAT_JID> --limit 15 --json | jq -c '(.data.messages // .data // .) | reverse | .[] | select((.ReactionToID // \"\") == \"\") | {msgId: .MsgID, text: ((.Text // \"\")[0:500]), fromMe: .FromMe, sender: .SenderName, chatJid: .ChatJID, at: .Timestamp}'"
+}
