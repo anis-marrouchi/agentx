@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.79.0](https://github.com/anis-marrouchi/agentx/compare/v0.78.0...v0.79.0) (2026-10-01)
+
+
+### Features
+
+* **workflows:** poll trigger that starts a run per new item ([#362](https://github.com/anis-marrouchi/agentx/issues/362)) ([fc873f9](https://github.com/anis-marrouchi/agentx/commit/fc873f9b682df4c664a925bf268c0f173be7e10c))
+
+
+### Bug Fixes
+
+* **voice:** end a long spoken answer on a sentence and say there is more ([#358](https://github.com/anis-marrouchi/agentx/issues/358)) ([73935d3](https://github.com/anis-marrouchi/agentx/commit/73935d3c0b49b08f0854672b93fce693f76ff70a))
+* **workflows:** manual run starts the workflow named in the URL ([#361](https://github.com/anis-marrouchi/agentx/issues/361)) ([9c3b076](https://github.com/anis-marrouchi/agentx/commit/9c3b07645f30ac7e4c8b8a33ede0ca497e282ba4))
+
 ## [0.78.0](https://github.com/anis-marrouchi/agentx/compare/v0.77.0...v0.78.0) (2026-10-01)
 
 
