@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.83.0](https://github.com/anis-marrouchi/agentx/compare/v0.82.0...v0.83.0) (2026-10-01)
+
+
+### Features
+
+* **mesh:** let another organisation into part of a mesh, under the host's live control ([#419](https://github.com/anis-marrouchi/agentx/issues/419)) ([89e9a05](https://github.com/anis-marrouchi/agentx/commit/89e9a057ff84f68d2461e63f36975098e501f922)), closes [#380](https://github.com/anis-marrouchi/agentx/issues/380)
+* **people:** limit a person to named agents, and keep their trail 90 days ([#415](https://github.com/anis-marrouchi/agentx/issues/415)) ([ef8115d](https://github.com/anis-marrouchi/agentx/commit/ef8115d2f76c0e2332e88f7a7769dc75655a6db0))
+
 ## [0.82.0](https://github.com/anis-marrouchi/agentx/compare/v0.81.1...v0.82.0) (2026-10-01)
 
 
