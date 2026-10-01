@@ -16,7 +16,7 @@ export interface ApprovalToolDeps {
   env?: NodeJS.ProcessEnv
 }
 
-const NON_CHAT_CHANNELS = new Set(["cron", "heartbeat", "api", "a2a", "mesh", "approvals"])
+const NON_CHAT_CHANNELS = new Set(["cron", "heartbeat", "api", "a2a", "mesh", "approvals", "requests"])
 
 function str(v: unknown): string {
   return typeof v === "string" ? v.trim() : ""

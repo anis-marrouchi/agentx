@@ -2,7 +2,7 @@
 
 Agents sometimes need your yes or no before they go ahead: publishing a draft, merging a change, running a new schedule. **Approvals** is one list of everything waiting for you, most urgent first. You can answer from the dashboard (it works on a phone) or from the terminal.
 
-The list brings together five kinds of request:
+The list brings together six kinds of item:
 
 | Kind | What it is | Yes does | No does |
 |---|---|---|---|
@@ -11,6 +11,7 @@ The list brings together five kinds of request:
 | **Memory fact** | Something an agent learned from an outside source ([review what agents learn](../jobs/agent-memory.md)) | Lets the agent use it | Keeps it out for good |
 | **Wiki lesson** | A lesson proposed for the shared wiki | Writes the article | Declines it |
 | **WhatsApp reply** | A reply an agent drafted for a watched WhatsApp chat ([watch a WhatsApp chat](../jobs/watch-whatsapp.md)) | Sends it through wacli | Drops the draft; nothing is sent |
+| **Request** | Something you asked an agent for that failed, ran out of time, was cut off or went quiet ([keep track of what you asked for](../jobs/open-requests.md)) | Hands it back to the agent | Drops the request |
 
 Answering here is the same as answering with the older commands (`agentx schedule approve`, `agentx memory facts approve`, `agentx wiki proposals approve`). They keep working, and both ways stay in step.
 
@@ -111,6 +112,16 @@ To show one real card now:
 1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
 
 You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. On the dashboard, a card with choices lists them under **Choices**. Answer it on the Mac or in the terminal, because **Yes** alone doesn't say which one you picked.
+
+## Requests that are not finished
+
+When [open requests](../jobs/open-requests.md) are on, a request you gave an agent that failed, ran out of time, was cut off or went quiet shows in the inbox as a **Request**:
+
+- **Yes** hands it back to the agent. Within a minute the agent gets the request again, in your words, and works on it.
+- **No** drops the request. A note you add is kept as the reason.
+- **Later** puts it off, like any other item.
+
+Under the inbox, **Open requests** lists everything you asked for that is not finished, oldest first, whatever its state. To close one as finished, paste a link to the evidence and press **Done**. **Drop** removes one you no longer want. **Settings: open requests** below the list turns the feature on and sets who counts as you, the channels, the quiet time and how long closed requests are kept.
 
 ## Check-ins: a few times a day
 

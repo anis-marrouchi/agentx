@@ -114,6 +114,9 @@ export interface DelegationDeps {
    *  Errors thrown here are the listener's to handle. */
   onStarted?(record: DelegationRecord): void
   onDone?(record: DelegationRecord, result: DelegationResult): void
+  /** A line added to the callback message, e.g. how to close the open
+   *  request this delegation belongs to. */
+  callbackNote?(record: DelegationRecord, result: DelegationResult): string | undefined
   /** Upper bound for one delegation, start to answer. */
   timeoutMs: number
   /** Default true: a person-started delegation goes async on its own. */
@@ -380,7 +383,10 @@ export class DelegationManager {
     }
     let resp: { content: string; error?: string }
     try {
-      resp = await this.deps.injectTurn({ agentId: rec.caller, message: buildCallbackMessage(rec, result), context })
+      let note: string | undefined
+      try { note = this.deps.callbackNote?.(rec, result) } catch { /* a listener never stops a callback */ }
+      const message = note ? `${buildCallbackMessage(rec, result)}\n\n${note}` : buildCallbackMessage(rec, result)
+      resp = await this.deps.injectTurn({ agentId: rec.caller, message, context })
     } catch (e: any) {
       resp = { content: "", error: e?.message ?? String(e) }
     }

@@ -22,6 +22,7 @@ const KIND_LABEL: Record<InboxItem["kind"], string> = {
   memory: "memory",
   wiki: "wiki",
   whatsapp: "whatsapp",
+  request: "request",
 }
 
 function ctx() {

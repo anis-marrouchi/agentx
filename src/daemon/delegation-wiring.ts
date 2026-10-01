@@ -263,6 +263,7 @@ export interface DelegationWiring {
   /** Open requests (#356) follow delegations through these. */
   onStarted?: DelegationDeps["onStarted"]
   onDone?: DelegationDeps["onDone"]
+  callbackNote?: DelegationDeps["callbackNote"]
 }
 
 export function createDelegations(w: DelegationWiring): DelegationManager {
@@ -279,6 +280,7 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     log: w.log,
     onStarted: w.onStarted,
     onDone: w.onDone,
+    callbackNote: w.callbackNote,
     runLocal: (callee, message, context, opts) => w.registry.execute({
       agentId: callee,
       message,
