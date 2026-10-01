@@ -19,6 +19,9 @@ import { getEventBus } from "../src/events/bus"
 import { agentAllowed, personRefusal, type Person } from "../src/people/people"
 import { rootInitiatorOf } from "../src/a2a/initiator"
 import { MemberStore } from "../src/members/store"
+import { getAttachRegistry } from "../src/attach"
+import { MessageRouter } from "../src/channels/router"
+import { createDelegations, CallbackReplies } from "../src/daemon/delegation-wiring"
 
 const sara: Person = { id: "sara", name: "Sara B", role: "member", identities: ["telegram:4242"], agents: ["coder"] }
 const omar: Person = { id: "omar", name: "Omar K", role: "member", identities: ["telegram:7"] }
@@ -29,6 +32,12 @@ describe("per-agent permission", () => {
     expect(agentAllowed({ agents: [] }, "devops")).toBe(true)
     expect(agentAllowed(sara, "coder")).toBe(true)
     expect(agentAllowed(sara, "devops")).toBe(false)
+  })
+
+  it("never limits an owner, whose own surfaces must reach every agent", () => {
+    const boss: Person = { id: "boss", name: "Boss", role: "owner", identities: ["telegram:1"], agents: ["coder"] }
+    expect(agentAllowed(boss, "devops")).toBe(true)
+    expect(personRefusal([boss], "devops", { channel: "telegram", senderId: "1" })).toBeNull()
   })
 
   it("answers a refused turn with what the person can reach, and nothing for others", () => {
@@ -50,10 +59,11 @@ describe("per-agent permission", () => {
     expect(personRefusal([sara], "coder", hop)).toBeNull()
   })
 
-  it("is a setting on the person, with agent ids only", () => {
+  it("is a setting on the person, taking any agent id the agents setting takes", () => {
     expect(personSchema.parse({ id: "sara", name: "Sara" }).agents).toEqual([])
     expect(personSchema.parse({ id: "sara", name: "Sara", agents: ["coder", "pm-agent"] }).agents).toEqual(["coder", "pm-agent"])
-    expect(personSchema.safeParse({ id: "sara", name: "Sara", agents: ["Not An Id"] }).success).toBe(false)
+    expect(personSchema.parse({ id: "sara", name: "Sara", agents: ["Ops.Agent"] }).agents).toEqual(["Ops.Agent"])
+    expect(personSchema.safeParse({ id: "sara", name: "Sara", agents: [""] }).success).toBe(false)
   })
 })
 
@@ -90,6 +100,78 @@ describe("through the registry", () => {
     expect(run.calls).toBe(1)
     expect(started).toEqual(["coder"])
   }, 15_000)
+
+  const fromSara = { channel: "telegram", chatId: "c1", sender: "Sara", senderId: "4242" }
+
+  it("refuses before an attached session is offered the message", async () => {
+    const offer = vi.spyOn(getAttachRegistry(), "offer").mockReturnValue(Promise.resolve({ kind: "answered", text: "deployed", sessionId: "sess-1" }) as any)
+    try {
+      const refused = await registry.execute({ agentId: "devops", message: "deploy it", context: { ...fromSara } })
+      expect(refused.content).toContain("not devops")
+      expect(offer).not.toHaveBeenCalled()
+    } finally { offer.mockRestore() }
+  })
+
+  it("refuses an agent on a mesh peer instead of forwarding it", async () => {
+    const sendTask = vi.fn(async () => "answer from atlas")
+    registry.setMeshFallback({
+      findPeerWithSkill: () => undefined,
+      sendTask,
+      directory: () => [{ peer: "clawd", healthy: true, skills: [{ id: "atlas" }] }],
+    })
+    const refused = await registry.execute({ agentId: "atlas", message: "hello", context: { ...fromSara } })
+    expect(refused.content).toContain("not atlas")
+    expect(sendTask).not.toHaveBeenCalled()
+    // Someone with no limit still gets through to the peer.
+    const ok = await registry.execute({ agentId: "atlas", message: "hello", context: { channel: "telegram", chatId: "c2", sender: "Omar", senderId: "7" } })
+    expect(ok.content).toBe("answer from atlas")
+  })
+
+  it("refuses in the channel router, by agent id and by named peer, before the message leaves", async () => {
+    const sendTask = vi.fn(async () => "answer from atlas")
+    const adapter: any = { name: "telegram", send: vi.fn(async () => "m1"), react: vi.fn(), sendTyping: vi.fn() }
+    const router = new MessageRouter(registry, { channels: {} } as any, undefined, () => {})
+    router.setMesh({
+      directory: () => [{ peer: "clawd", peerUrl: "u", healthy: true, skills: [{ id: "atlas", name: "Atlas" }], channels: [] }],
+      findAgentPeer: () => ({ peer: "clawd", healthy: true }),
+      sendTask,
+      onPeerChange: () => {},
+    } as any)
+    const msg = { id: "m0", channel: "telegram", accountId: "default", sender: { id: "4242", name: "Sara" }, text: "atlas, deploy it" } as any
+    expect(await (router as any).handleViaMeshByAgentId(adapter, msg, "atlas")).toBe(true)
+    expect(await (router as any).handleViaMeshByPeer(adapter, msg, "atlas", "clawd")).toBe(true)
+    expect(await (router as any).handleViaMesh(adapter, msg)).toBe(true)
+    expect(sendTask).not.toHaveBeenCalled()
+    expect(adapter.send).toHaveBeenCalledTimes(3)
+    for (const [out] of adapter.send.mock.calls) expect(out.text).toContain("not atlas")
+    // Someone with no limit is forwarded as before.
+    await (router as any).handleViaMeshByAgentId(adapter, { ...msg, sender: { id: "7", name: "Omar" } }, "atlas")
+    expect(sendTask).toHaveBeenCalledTimes(1)
+  })
+
+  it("refuses a delegation to a peer agent for work the person started", async () => {
+    const peerCalls: string[] = []
+    const mgr = createDelegations({
+      config: daemonConfigSchema.parse({ node: { id: "n", name: "n" } }),
+      registry,
+      router: { getChannel: () => undefined, sendOutbound: async () => {} } as any,
+      mesh: () => ({ sendTask: async (_p: string, _t: string, agent: string) => { peerCalls.push(agent); return "peer answer" } }) as any,
+      log: () => {},
+      replies: new CallbackReplies(),
+      baseDir: dir,
+    })
+    try {
+      mgr.start({ caller: { agentId: "coder", taskId: "run-1", context: { ...fromSara, person: "sara" } }, callee: "atlas", peer: "clawd", message: "deploy it" })
+      await new Promise((r) => setTimeout(r, 20))
+      expect(peerCalls).toEqual([])
+      expect(new MemberStore(dir).events("sara")).toMatchObject([{ event: "agent-refused", detail: "atlas" }])
+    } finally { mgr.stop() }
+  })
+
+  it("keeps each refusal in the person's trail", async () => {
+    await registry.execute({ agentId: "devops", message: "deploy it", context: { ...fromSara } })
+    expect(new MemberStore(dir).events("sara")).toMatchObject([{ person: "sara", event: "agent-refused", detail: "devops" }])
+  })
 })
 
 describe("the per-person log's retention", () => {

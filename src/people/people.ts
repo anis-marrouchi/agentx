@@ -128,21 +128,28 @@ export function personOfTurn(people: Person[], ctx: InitiatorContext | undefined
 // a person with no list reaches every agent, and an unknown sender is
 // not limited here (channels decide who they answer at all). The limit
 // follows the person through a delegation too: work they started cannot
-// reach an agent they may not talk to.
+// reach an agent they may not talk to. An owner is never limited: their
+// own surfaces (voice, app, dashboard) must keep reaching every agent.
 
 /** May this person reach `agentId`? */
-export function agentAllowed(person: Pick<Person, "agents">, agentId: string): boolean {
+export function agentAllowed(person: Pick<Person, "agents" | "role">, agentId: string): boolean {
   const list = person.agents ?? []
-  return list.length === 0 || list.includes(agentId)
+  return person.role === "owner" || list.length === 0 || list.includes(agentId)
 }
 
-/** The note a refused turn answers with, or null when the turn may run.
- *  Names what the person can reach instead, so the refusal is not a dead end. */
-export function personRefusal(people: Person[], agentId: string, ctx: InitiatorContext | undefined | null): string | null {
+/** Who a refused turn belongs to and the note it is answered with, or null
+ *  when the turn may run. The note names what the person can reach instead,
+ *  so the refusal is not a dead end. */
+export function refusedPerson(people: Person[], agentId: string, ctx: InitiatorContext | undefined | null): { person: Person; note: string } | null {
   const ref = personOfTurn(people, ctx)
   if (!ref) return null
   const person = people.find((p) => p.id === ref.id)
   if (!person || agentAllowed(person, agentId)) return null
   const list = (person.agents ?? []).join(", ")
-  return `${person.name}, you can reach ${list} here, not ${agentId}. Ask the owner if you need ${agentId}.`
+  return { person, note: `${person.name}, you can reach ${list} here, not ${agentId}. Ask the owner if you need ${agentId}.` }
+}
+
+/** The note alone. */
+export function personRefusal(people: Person[], agentId: string, ctx: InitiatorContext | undefined | null): string | null {
+  return refusedPerson(people, agentId, ctx)?.note ?? null
 }

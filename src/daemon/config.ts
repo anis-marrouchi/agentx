@@ -1040,7 +1040,7 @@ export const personSchema = z.object({
    *  WhatsApp number. Display names are not matched. */
   identities: z.array(z.string().regex(/^[A-Za-z][\w-]*:\S.*$/, "write it as channel:id")).default([]),
   /** The agents this person may reach, by id. Empty: every agent (#379). */
-  agents: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]*$/, "an agent id")).default([]),
+  agents: z.array(z.string().min(1)).default([]),
 })
 
 export const peopleConfigSchema = z.array(personSchema).default([]).superRefine((people, ctx) => {

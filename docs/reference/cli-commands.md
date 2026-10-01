@@ -2936,11 +2936,11 @@ Add a person.
 | `--name <name>` | required | Their name. |
 | `--role <role>` | `member` | owner \| member \| guest. |
 | `--identity <channel:id>` | — | A login, a Telegram id or a WhatsApp number (repeatable). |
-| `--agent <id>` | An agent this person may reach; repeat for several. None: every agent |
+| `--agent <id>` | — | An agent this person may reach; repeat for several. None: every agent. Not for an owner. |
 
 ### `agentx people allow <id> <agents...>`
 
-Limit a person to these agents (ids, space-separated). `all` lifts the limit. A message to any other agent is answered with a note and no run starts.
+Limit a person to these agents (ids, space-separated). `all` lifts the limit. A message to any other agent is answered with a note and no run starts. An owner cannot be limited. An id that is not an agent on this machine is saved with a warning: keep it only if the agent runs on another node.
 
 No flags.
 

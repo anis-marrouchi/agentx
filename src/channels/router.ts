@@ -1668,6 +1668,18 @@ export class MessageRouter {
     }
   }
 
+  /** People permissions (#379): a limited person is answered here, before
+   *  the message leaves for a peer, which cannot check it (person ids are
+   *  per machine). True when refused. */
+  private async refusedForPerson(adapter: ChannelAdapter, msg: IncomingMessage, agentId: string): Promise<boolean> {
+    const chatId = msg.group?.id || msg.sender.id
+    const refusal = this.registry.refusalFor(agentId, this.buildMeshContext(msg, chatId))
+    if (!refusal) return false
+    await this.adapterSend(adapter, { channel: msg.channel, chatId, text: refusal, replyTo: msg.id, accountId: msg.accountId, agentId })
+    this.resolveIntent(msg, "completed", Date.now(), refusal)
+    return true
+  }
+
   private async handleViaMesh(
     adapter: ChannelAdapter,
     msg: IncomingMessage,
@@ -1686,6 +1698,7 @@ export class MessageRouter {
           textLower.includes(skill.id.toLowerCase()) ||
           textLower.includes(skill.name.toLowerCase())
         ) {
+          if (await this.refusedForPerson(adapter, msg, skill.id)) return true
           this.log(`Mesh routing [${msg.channel}/${msg.sender.name}] -> peer "${peer.peer}" agent "${skill.id}"`)
 
           const chatId = msg.group?.id || msg.sender.id
@@ -1748,6 +1761,7 @@ export class MessageRouter {
     agentId: string,
   ): Promise<boolean> {
     if (!this.mesh) return false
+    if (await this.refusedForPerson(adapter, msg, agentId)) return true
 
     const directory = this.mesh.directory()
 
@@ -1949,6 +1963,7 @@ export class MessageRouter {
     peerName: string,
   ): Promise<boolean> {
     if (!this.mesh) return false
+    if (await this.refusedForPerson(adapter, msg, agentId)) return true
 
     const directory = this.mesh.directory()
     const peer = directory.find(p => p.peer === peerName)

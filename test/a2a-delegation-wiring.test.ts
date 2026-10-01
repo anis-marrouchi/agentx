@@ -183,6 +183,7 @@ describe("createDelegations wiring", () => {
         return task.agentId === "front" ? { content: "Here is what came back." } : { content: "worker answer" }
       },
       cancelRunningTask: () => null,
+      refusalFor: () => null,
       isChatBusy: () => false,
       getSessionStore: () => ({ addAgentMessage: (...a: any[]) => recorded.push(a) }),
     }
