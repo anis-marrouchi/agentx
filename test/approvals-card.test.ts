@@ -205,6 +205,13 @@ describe("the window", () => {
     expect(WINDOW_JXA).not.toContain("$.WKWebView.alloc")
   })
 
+  it("asks for its events with a number, so clicks, drags and keys reach it", () => {
+    // JXA gives the AppKit constant as text; the loop then never gets an event.
+    expect(WINDOW_JXA).not.toContain("$.NSEventMaskAny")
+    expect(WINDOW_JXA).toContain("var anyEvent = Number.MAX_SAFE_INTEGER")
+    expect(WINDOW_JXA).toContain("app.nextEventMatchingMaskUntilDateInModeDequeue(anyEvent, ")
+  })
+
   it("is dragged by its header, and stays where it was put", () => {
     // The web view takes every press, so the window takes a header press first.
     expect(WINDOW_JXA).toContain("if (onGrip(ev)) win.performWindowDragWithEvent(ev); else app.sendEvent(ev)")
