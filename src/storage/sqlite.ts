@@ -644,6 +644,13 @@ export const PERSON_COLUMNS: Array<[string, string]> = [["person", "TEXT"]]
 export function ensureColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {
   const have = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name))
   for (const [name, type] of columns) {
-    if (!have.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+    if (have.has(name)) continue
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+    } catch (e: any) {
+      // Two processes starting on one database: the slower one read the
+      // table before the faster one added the column. Already there is fine.
+      if (!/duplicate column name/i.test(String(e?.message))) throw e
+    }
   }
 }
