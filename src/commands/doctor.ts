@@ -9,6 +9,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 import { findOnPath, plistPathEnv } from "@/desktop/install"
 import { localSettings } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
+import { nodeVersionSupported } from "@/utils/node-version"
 
 // --- agentx doctor ---
 //
@@ -118,13 +119,6 @@ export function runReminderChecks(
         detail: "The daemon reads Apple Reminders through remindctl.",
         fix: "brew install steipete/tap/remindctl, or set reminders.command to its full path.",
       })
-}
-
-// Keep in step with package.json "engines": undici 8 needs 22.19, and
-// better-sqlite3 ships prebuilt binaries up to Node 26.
-export function nodeVersionSupported(version: string): boolean {
-  const [major, minor] = version.split(".").map(Number)
-  return (major === 22 && minor >= 19) || (major >= 23 && major <= 26)
 }
 
 async function runEnvChecks(checks: Check[]): Promise<void> {

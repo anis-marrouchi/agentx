@@ -1,19 +1,23 @@
 #!/usr/bin/env node
-import { buildProgram } from "@/program"
-import { installCliSignalExit } from "@/utils/signal-exit"
+import { unsupportedNodeMessage } from "@/utils/node-version"
+
+// Static imports load before any code here runs, and a dependency fails to
+// load on an old Node. So the check comes first and the rest is imported after.
+const refusal = unsupportedNodeMessage(process.versions.node)
+if (refusal) {
+  console.error(refusal)
+  process.exit(1)
+}
+
+const { buildProgram } = await import("@/program")
+const { installCliSignalExit } = await import("@/utils/signal-exit")
 
 installCliSignalExit()
 
-async function main() {
-  const program = await buildProgram()
+const program = await buildProgram()
 
-  const args = process.argv.slice(2)
-  if (args.length === 0) {
-    program.outputHelp()
-    return
-  }
-
+if (process.argv.slice(2).length === 0) {
+  program.outputHelp()
+} else {
   program.parse()
 }
-
-main()
