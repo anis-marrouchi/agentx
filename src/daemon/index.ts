@@ -3341,8 +3341,9 @@ export class AgentXDaemon {
         // card names.
         if (reply.status === 201) {
           const card = (reply.body as { card: DecisionCard }).card
-          this.requests?.tracker.cardRaised(card, this.provenTurn(card.raised_by, this.callerProof(req)))
-          this.status?.board.cardRaised(card)
+          const turn = this.provenTurn(card.raised_by, this.callerProof(req))
+          this.requests?.tracker.cardRaised(card, turn)
+          this.status?.board.cardRaised(card, turn)
         }
         this.json(res, reply.status, reply.body)
         return

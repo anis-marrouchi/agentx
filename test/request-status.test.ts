@@ -341,9 +341,9 @@ describe("waiting on someone", () => {
   })
 
   it("waits on the owner when the agent raises a decision card, and goes on when it is answered", async () => {
-    const card = { id: "c1", raised_by: "coder", ask: "Deploy now?", reply: { channel: "gitlab", chatId: CHAT } }
+    const card = { id: "c1", raised_by: "coder", ask: "Deploy now?" }
     start("t1")
-    board.cardRaised(card)
+    board.cardRaised(card, { channel: "gitlab", chatId: CHAT })
     await board.idle()
     expect(last().text).toContain("**Waiting on an answer from the owner** since")
     expect(last().text).not.toContain("Deploy now?")
@@ -355,10 +355,18 @@ describe("waiting on someone", () => {
 
   it("times out when the card expires without an answer", () => {
     start("t1")
-    board.cardRaised({ id: "c1", raised_by: "coder", reply: { channel: "gitlab", chatId: CHAT } })
+    board.cardRaised({ id: "c1", raised_by: "coder" }, { channel: "gitlab", chatId: CHAT })
     end("t1")
     board.cardResolved({ id: "c1", status: "expired", if_silent: "hold" })
     expect(state("req-t1")).toBe("timed_out")
+  })
+
+  it("ignores the chat a card names when the call proves no turn there", () => {
+    start("t1")
+    const named = { id: "c1", raised_by: "coder", reply: { channel: "gitlab", chatId: CHAT } }
+    board.cardRaised(named, null)
+    board.cardRaised(named, { channel: "gitlab", chatId: "group/other:issue:9" })
+    expect(state("req-t1")).toBe("working")
   })
 
   it("does not attach a hand-off made from another chat", () => {

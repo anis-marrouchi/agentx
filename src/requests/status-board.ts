@@ -166,11 +166,12 @@ export class StatusBoard {
   }
 
   /** The agent raised a decision card from the turn of a request: the
-   *  work waits on the owner's answer. */
-  cardRaised(card: { id: string; raised_by: string; reply?: { channel: string; chatId: string } }): void {
-    if (!card.reply) return
+   *  work waits on the owner's answer. `turn` is the running turn the call
+   *  proved, never the chat the card names. */
+  cardRaised(card: { id: string; raised_by: string }, turn: { channel: string; chatId: string } | null): void {
+    if (!turn) return
     this.guard("card", () => {
-      const row = this.store.inChat(card.raised_by, card.reply!.channel, card.reply!.chatId, "live")
+      const row = this.store.inChat(card.raised_by, turn.channel, turn.chatId, "live")
       if (!row) return
       this.store.ref(row.id, "card", card.id)
       this.change(row.id, { state: "waiting", waitingOn: "an answer from the owner", pending: row.pending + 1 })
