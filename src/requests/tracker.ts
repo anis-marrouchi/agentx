@@ -95,6 +95,15 @@ export class RequestTracker {
     try { fn() } catch (e: any) { this.log(`[requests] ${what} failed: ${e?.message ?? e}`) }
   }
 
+  /** A turn from a person listed in `people` with the owner role (#384),
+   *  on a channel other people can reach. `from` keeps working beside it. */
+  private isListedOwner(p: AgentXEvents["task:started"]): boolean {
+    const ch = base(p.channel)
+    const channels = this.settings().channels
+    if (channels.length && !channels.map(base).includes(ch)) return false
+    return p.person?.role === "owner" && !OPERATOR_CHANNELS.has(ch)
+  }
+
   taskStarted(p: AgentXEvents["task:started"]): void {
     if (!this.settings().enabled || !p.taskId) return
     this.guard("capture", () => {
@@ -108,11 +117,12 @@ export class RequestTracker {
         this.live.set(key, { requestId: earlier.id, runId: p.taskId! })
         return
       }
-      if (!p.humanRoot || !isOwnerTurn(this.settings(), p.channel, p.sender)) return
+      if (!p.humanRoot || !(isOwnerTurn(this.settings(), p.channel, p.sender) || this.isListedOwner(p))) return
       this.live.set(key, { requestId: `req-${p.taskId}`, runId: p.taskId! })
       this.store.addCandidate({
         id: `req-${p.taskId}`, runId: p.taskId!, channel: p.channel, chatId: p.chatId,
         sender: p.sender?.name ?? p.sender?.username ?? p.sender?.id ?? null,
+        person: p.person?.id ?? null,
         agentId: p.agentId, text: p.fullMessage ?? p.messagePreview, now,
       })
     })

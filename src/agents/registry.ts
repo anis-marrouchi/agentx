@@ -58,6 +58,7 @@ import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { senderOf } from "@/requests/tracker"
+import { personOfTurn } from "@/people/people"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -1237,6 +1238,13 @@ export class AgentRegistry {
     }
     state.runningTasks.push(runningTask)
     task.runningTaskId = runningTask.id
+    // Who started this chain (people, #384). Stamped on the context so a
+    // delegation from this turn carries it in its root.
+    const person = personOfTurn(this.config.people, task.context as any)
+    if (task.context) {
+      if (person) task.context.person = person.id
+      else delete task.context.person
+    }
     this.runningContexts.set(runningTask.id, task.context ?? {})
     if (task.onStart) { try { task.onStart(runningTask.id) } catch { /* caller bug must not break the run */ } }
 
@@ -1586,6 +1594,7 @@ export class AgentRegistry {
       resumeAttempt: task.resumeAttempt ?? 0,
       resumedFrom: task.resumedFrom,
       sender: senderOf(task.context),
+      ...(person ? { person } : {}),
       humanRoot: isHumanFacingTurn(task.context as any),
     })
 
