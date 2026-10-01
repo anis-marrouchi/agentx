@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.78.0](https://github.com/anis-marrouchi/agentx/compare/v0.77.0...v0.78.0) (2026-10-01)
+
+
+### Features
+
+* **approvals:** Mac card follows the Answer Card design ([#354](https://github.com/anis-marrouchi/agentx/issues/354)) ([79cb743](https://github.com/anis-marrouchi/agentx/commit/79cb743e6f8bcd23b8c5376eee883c0595889c6e))
+
 ## [0.77.0](https://github.com/anis-marrouchi/agentx/compare/v0.76.0...v0.77.0) (2026-09-30)
 
 
