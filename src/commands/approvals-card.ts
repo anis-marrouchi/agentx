@@ -30,7 +30,7 @@ export function registerCardCommands(approvals: Command): void {
       const settings = { ...readApprovalSettings().popup! }
       if (opts.theme === "system" || opts.theme === "light" || opts.theme === "dark") settings.theme = opts.theme
       if (opts.timeout) settings.timeoutSeconds = Number(opts.timeout)
-      const answer = await showPopup(card, settings, { from: opts.sample ? "Yasmine" : undefined, capture: opts.capture, pick: Number(opts.pick) || undefined })
+      const answer = await showPopup(card, settings, { from: opts.sample ? "Assistant" : undefined, capture: opts.capture, pick: Number(opts.pick) || undefined })
       if (opts.capture) console.log(chalk.dim(`  picture saved to ${opts.capture}`))
       if (opts.sample) { console.log(`  answer (not recorded): ${JSON.stringify(answer)}`); return }
       if (answer.action === "dismiss") { console.log(chalk.dim("  not answered; the card is still waiting")); return }

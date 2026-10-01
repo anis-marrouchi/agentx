@@ -34,7 +34,7 @@ export function composePrompt(r: Reminder, trailer: ReminderTrailer | null, nowT
     "",
     "Reply with ONLY one JSON object, no other text. When it needs them:",
     '{"needs_operator": true, "title": "short, under 80 characters", "context": "what they need to know, a few lines",',
-    ' "ask": "the question", "recommend": "your advice and why, one line",',
+    ' "ask": "the question", "recommend": "your advice and why, one line; with choices, start with the exact option you advise",',
     ' "choices": ["2 to 4 short options, e.g. free slots or reply choices"],',
     ' "draft": "the message you would send; {choice} is replaced by their pick", "say": "one short spoken line",',
     ' "if_silent": "keep", "expires": "2d"}',

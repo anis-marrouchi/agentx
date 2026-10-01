@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { createCard, type DecisionCard } from "../src/approvals/cards"
-import { renderCardPage } from "../src/approvals/card-page"
+import { recommended, renderCardPage } from "../src/approvals/card-page"
 import { parseAnswer, showCardWindow, WINDOW_JXA } from "../src/approvals/card-window"
 import { showPopup, type PopupSettings, type Run } from "../src/approvals/popup"
 import { sampleCard } from "../src/approvals/sample-card"
@@ -45,8 +45,9 @@ describe("the card page", () => {
   })
 
   it("shows the parts that are there, and the sender's name", () => {
-    const plain = renderCardPage(raise(), { now: NOW, from: "Yasmine" })
-    expect(plain).toContain("Yasmine")
+    const plain = renderCardPage(raise(), { now: NOW, from: "Robin" })
+    expect(plain).toContain("Robin recommends")
+    expect(plain).toContain('class="kind decision"')
     expect(plain).not.toContain('class="options"')
     expect(plain).not.toContain("<textarea")
     expect(plain).toContain(">Yes<kbd>")
@@ -62,7 +63,64 @@ describe("the card page", () => {
     const html = renderCardPage(sampleCard(NOW), { now: NOW })
     expect(html).toContain(">Reminder<")
     expect(html).toMatch(/<textarea id="text" dir="auto"/)
-    expect(html).toContain("12 min ago")
+    expect(html).toMatch(/since \d\d:\d\d</)
+    expect(html).toMatch(/If you don't answer by [A-Z][a-z]{2} \d\d:\d\d: keep\./)
+    const old = renderCardPage({ ...sampleCard(NOW), created_at: "2026-09-27T12:00:00.000Z", expires: "2026-10-20T12:00:00.000Z" }, { now: NOW })
+    expect(old).toContain("since 27 Sep<")
+    expect(old).toMatch(/by Tue 20 Oct \d\d:\d\d: keep/)
+  })
+
+  it("carries its own colours, not the dashboard's", () => {
+    const html = renderCardPage(sampleCard(NOW), { now: NOW })
+    expect(html).toContain("--ac-paper")
+    expect(html).not.toContain("--ax-")
+  })
+
+  it("marks the option the recommendation names and opens on it", () => {
+    const data = (html: string) => JSON.parse(/<script type="application\/json" id="data">(.*?)<\/script>/s.exec(html)![1])
+    const named = raise({ choices: ["Thu", "Thu 10:00", "Sun"], recommend: "thu 10:00: the room is free", draft: "Ok for {choice}" })
+    expect(recommended(named)).toEqual({ index: 1, why: "The room is free" })
+    const html = renderCardPage(named, { now: NOW })
+    expect(html).toMatch(/data-i="1"><span class="n">2<\/span><span class="t">Thu 10:00<\/span><i class="dot">/)
+    expect(html.match(/<i class="dot"><\/i><\/button>/g)).toHaveLength(1)
+    expect(html).toContain('<p class="why" dir="auto">The room is free</p>')
+    expect(data(html).pick).toBe(1)
+    // A pick asked for wins over the recommendation.
+    expect(data(renderCardPage(named, { now: NOW, pick: 3 })).pick).toBe(2)
+    // Advice that names no option: nothing is picked, the line shows whole.
+    const unnamed = raise({ choices: ["Thu", "Sun"], recommend: "Whichever is sooner" })
+    expect(recommended(unnamed)).toEqual({ index: -1, why: "Whichever is sooner" })
+    expect(data(renderCardPage(unnamed, { now: NOW })).pick).toBe(-1)
+    expect(recommended(raise({ choices: ["Thu", "Sun"], recommend: "Sun" }))).toEqual({ index: 1, why: "" })
+  })
+
+  it("picks only the option the advice starts with", () => {
+    const index = (choices: string[], recommend: string) => recommended({ choices, recommend }).index
+    expect(index(["Yes", "No"], "No: yesterday's numbers were off")).toBe(1)
+    expect(index(["Approve", "Reject"], "Reject. Do not approve until the tests pass")).toBe(1)
+    expect(index(["Thursday", "Thursday 14:00"], "Thursday 14:00 - the room is free")).toBe(1)
+    // An option that is only mentioned, or only the start of a longer word, is not the advice.
+    expect(index(["Send", "Hold"], "Hold off; do not send yet")).toBe(-1)
+    expect(index(["Thursday", "Sunday"], "Not Thursday, he is travelling; Sunday is safer")).toBe(-1)
+    expect(index(["Yes", "No"], "I do not know enough to advise")).toBe(-1)
+    expect(index(["Yes", "No"], "No strong view, yes is fine")).toBe(-1)
+    expect(index(["Sun", "Mon"], "Sunday is no good, take Mon")).toBe(-1)
+    expect(index(["Thu 1", "Sun"], "Thu 10:00 is better")).toBe(-1)
+    expect(recommended({ choices: ["Yes", "No"], recommend: "Not yet" })).toEqual({ index: -1, why: "Not yet" })
+    // A separator glued to the next word or number does not end the option.
+    expect(index(["Yes", "No"], "No-one objected, so yes")).toBe(-1)
+    expect(index(["Send", "Hold"], "Send-off is Friday, hold until then")).toBe(-1)
+    expect(index(["Thu 10", "Thu 14"], "Thu 10:30 would be better than either")).toBe(-1)
+    expect(index(["1", "2"], "1.5 hours is enough")).toBe(-1)
+    expect(recommended({ choices: ["Yes", "No"], recommend: "No." })).toEqual({ index: 1, why: "" })
+  })
+
+  it("leaves the message box unfocused on the opening pick, so the number keys still pick", () => {
+    const html = renderCardPage(raise({ choices: ["Thursday", "Sun"], draft: "Ok for {choice}" }), { now: NOW })
+    expect(html).toContain("if (d.pick >= 0) choose(d.pick, true)")
+    expect(html).toContain("if (box && !quiet) box.focus()")
+    // The digit that picks is not also typed into the message.
+    expect(html).toContain("{ e.preventDefault(); choose(+e.key - 1); }")
   })
 
   it("plays the chime only when asked", () => {
@@ -103,7 +161,18 @@ describe("the window", () => {
     expect(await showCardWindow(raise(), { timeoutSeconds: 60 }, run)).toEqual({ action: "no" })
     expect(seen.slice(0, 4)).toEqual(["/usr/bin/osascript", "-l", "JavaScript", "-e"])
     expect(seen[4]).toBe(WINDOW_JXA)
+    // The window is see-through: the page draws the card and its shadow.
+    expect(WINDOW_JXA).toContain("NSColor.clearColor")
     expect(existsSync(page)).toBe(false)
+  })
+
+  it("holds the card still for a picture", async () => {
+    const pages: string[] = []
+    const run: Run = async (_f, args) => { pages.push(readFileSync(args[4], "utf-8")); return { ok: true, stdout: "" } }
+    await showCardWindow(raise(), { timeoutSeconds: 60 }, run)
+    await showCardWindow(raise(), { timeoutSeconds: 60, capture: join(root, "card.png") }, run)
+    expect(pages[0]).toContain('<main class="card">')
+    expect(pages[1]).toContain('<main class="card still">')
   })
 
   it("falls back to the dialogs when the window can't open", async () => {
