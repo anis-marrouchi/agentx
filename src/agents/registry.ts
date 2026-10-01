@@ -1590,7 +1590,6 @@ export class AgentRegistry {
       humanRoot: isHumanFacingTurn(task.context as any),
       pickup: isPickup(task.context),
       operator: isOperatorTurn(task.context),
-      askedText: task.askedText,
     })
 
     // Classify the message through the intent graph when enabled. Skip for

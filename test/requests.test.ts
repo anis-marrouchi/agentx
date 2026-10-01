@@ -87,12 +87,11 @@ describe("who counts as the owner", () => {
     expect(isOwnerTurn({ channels: [], from: [] }, "voice", { name: "Owner" }, true)).toBe(true)
   })
 
-  it("records a dashboard turn only with the daemon's mark, and with the words the owner typed (#401)", () => {
-    const wrapped = "You are answering a question from the AgentX dashboard.\n\nTHEIR QUESTION:\nship the fix"
-    start("t1", { channel: "dashboard", chatId: "assistant", sender: { name: "operator" }, fullMessage: wrapped })
+  it("records a dashboard turn only with the daemon's mark", () => {
+    start("t1", { channel: "dashboard", chatId: "assistant", sender: { name: "operator" } })
     expect(db.prepare("SELECT COUNT(*) AS n FROM requests").get()).toEqual({ n: 0 })
-    start("t2", { channel: "dashboard", chatId: "assistant", sender: { name: "operator" }, fullMessage: wrapped, operator: true, askedText: "ship the fix" })
-    expect(store.get("req-t2")).toMatchObject({ channel: "dashboard", text: "ship the fix" })
+    start("t2", { channel: "dashboard", chatId: "assistant", sender: { name: "operator" }, operator: true })
+    expect(store.get("req-t2")).toMatchObject({ channel: "dashboard", text: "build the report and deploy it" })
   })
 
   it("takes nobody on a public channel when the from list is empty", () => {

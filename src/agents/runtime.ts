@@ -83,10 +83,6 @@ export interface AgentTask {
    *  message that has to queue again keeps it, so the note is added once
    *  and reports the whole wait (#282). */
   queuedAt?: number
-  /** What the person typed, when `message` wraps it in a prompt (the
-   *  dashboard's assistant adds the screen and the thread). The run gets
-   *  `message`; an open request is recorded with this (#401). */
-  askedText?: string
   /** Correlator threaded by the workflow engine. When the engine dispatches
    *  an agent as part of a state transition, this carries the run id so
    *  post:response can re-enter the engine with an agentResult condition. */

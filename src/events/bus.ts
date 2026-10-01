@@ -101,9 +101,6 @@ export interface AgentXEvents {
      *  node's own surfaces (requests/operator): it started the turn itself,
      *  or the /task caller showed the operator key (#393). */
     operator?: boolean
-    /** What the person typed, when `fullMessage` wraps it in a prompt (the
-     *  dashboard's assistant). The request is recorded with this (#401). */
-    askedText?: string
   }
 
   /** A single step inside an in-flight task — typically a tool call or

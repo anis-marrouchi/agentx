@@ -3792,10 +3792,7 @@ export class AgentXDaemon {
             try {
               const resp = await this.registry.execute({
                 agentId, message: prompt,
-                // The owner typed in this node's dashboard: the turn is theirs
-                // (#393), and a request made here is recorded with their
-                // words, not the prompt around them (#401).
-                askedText: message,
+                // The owner typed in this node's dashboard: the turn is theirs (#393).
                 context: operatorContext({ channel: "dashboard", chatId: "assistant", sender: "operator" }) as any,
               })
               store.resolve(thread!.id, seq, resp.error ? String(resp.error) : (resp.content ?? ""),

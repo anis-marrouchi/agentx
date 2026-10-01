@@ -94,4 +94,3 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **`a finished request needs --evidence <link>`:** add the link to the proof. A request cannot be closed as done without it.
 - **A message from the phone app is not recorded:** the dashboard must run from the install folder, the one that holds `agentx.json`, so it can read `.agentx/operator.key`. Start it there. A message sent through the phone app to an agent on another computer is not recorded on that computer either.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.
-- **A request made in the dashboard shows the prompt around your words:** it was recorded by an older version. Requests made now show what you typed.
