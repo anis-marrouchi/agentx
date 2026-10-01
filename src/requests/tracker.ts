@@ -131,6 +131,8 @@ export class RequestTracker {
       if (pickup && pickup.agentId === p.agentId) {
         this.store.link(pickup.id, "run", p.taskId!, now)
         this.store.touch(pickup.id, now)
+        // Live like any other turn of the request: what it hands on or asks is linked.
+        this.live.set(key, { requestId: pickup.id, runId: p.taskId! })
         return
       }
       if (!p.humanRoot || !isOwnerTurn(this.settings(), p.channel, p.sender)) return
@@ -212,15 +214,17 @@ export class RequestTracker {
 
   /** A linked card was answered or expired. An answer, or an expiry whose
    *  default is "approve", lets the work go on. Any other expiry means the
-   *  answer never came: the request needs attention. It does not close. */
+   *  answer never came: the request needs attention, whatever an earlier
+   *  card's answer moved it to. It does not close. */
   cardResolved(card: { id: string; status: string; ask: string; if_silent?: string; outcome?: string }): void {
     this.guard("card result", () => {
       const req = this.store.byLink("card", card.id)
-      if (!req || req.state !== "waiting_owner") return
+      if (!req) return
       const now = this.now()
       const applied = card.outcome ?? card.if_silent
-      if (card.status === "decided" || applied === "approve") this.store.progress(req.id, now)
-      else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
+      if (card.status === "decided" || applied === "approve") {
+        if (req.state === "waiting_owner") this.store.progress(req.id, now)
+      } else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
         this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)
       }
     })
@@ -238,7 +242,8 @@ export class RequestTracker {
     }
   }
 
-  /** What the boot-time resume step did with a run the restart cut off. */
+  /** What the boot-time resume step did with a run the restart cut off.
+   *  "already-claimed" is left alone: the process that claimed it decides. */
   resumeOutcome(o: { taskId: string; decision: string; reason: string }): void {
     this.guard("restart", () => {
       const req = this.store.byLink("run", o.taskId)
@@ -247,7 +252,7 @@ export class RequestTracker {
       if (o.decision === "resumed") {
         if (req.state === "candidate") this.store.touch(req.id, now)
         else this.store.progress(req.id, now)
-      } else if (o.decision === "reported" || o.decision === "resume-failed") {
+      } else if (o.decision === "reported" || o.decision === "resume-failed" || o.decision === "skipped") {
         if (this.store.needsAttention(req.id, `Cut off by a restart and not picked up again (${clip(o.reason)})`, now)) {
           this.log(`[requests] ${req.id} needs attention: run ${o.taskId} cut off by a restart`)
         }

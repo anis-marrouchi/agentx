@@ -273,6 +273,19 @@ describe("restart", () => {
     })
   })
 
+  it("raises a run the boot step skips, with the reason, and leaves one another process claimed", () => {
+    start("t1")
+    end("t1", { error: "daemon stopping", interrupted: true })
+    tracker.resumeOutcome({ taskId: "t1", decision: "already-claimed", reason: "another process claimed it" })
+    expect(store.get("req-t1")?.state).toBe("candidate")
+
+    tracker.resumeOutcome({ taskId: "t1", decision: "skipped", reason: "scheduled job: the next scheduled run covers it" })
+    expect(store.get("req-t1")).toMatchObject({
+      state: "needs_attention",
+      attentionReason: "Cut off by a restart and not picked up again (scheduled job: the next scheduled run covers it)",
+    })
+  })
+
   it("leaves nothing behind when a plain turn is resumed and then just answers", () => {
     start("t1")
     end("t1", { interrupted: true, error: "daemon stopping" })
@@ -451,6 +464,21 @@ describe("waiting on the owner", () => {
     const told: string[] = []
     await runRequestsSweep({ store, settings, log: () => {}, now: clock, notify: async (_t, m) => { told.push(m) } })
     expect(told).toHaveLength(1)
+  })
+
+  it("needs attention when a second card expires after the first was answered", () => {
+    start("t1")
+    tracker.cardRaised(card())
+    tracker.cardRaised(card({ id: "card-2", ask: "Which server?" }))
+    end("t1")
+    tracker.cardResolved(card({ status: "decided", verdict: "yes" }))
+    expect(store.get("req-t1")?.state).toBe("in_progress")
+
+    tracker.cardResolved(card({ id: "card-2", ask: "Which server?", status: "expired", outcome: "discard" }))
+    expect(store.get("req-t1")).toMatchObject({
+      state: "needs_attention",
+      attentionReason: 'Your answer did not come before the card expired (Which server?); "discard" was applied',
+    })
   })
 
   it("stays in progress when the card's default on expiry is approve", () => {

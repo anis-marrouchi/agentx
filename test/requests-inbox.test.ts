@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
-import { RequestStore } from "../src/requests/store"
+import { RequestStore, ensureRequestTables } from "../src/requests/store"
 import { RequestTracker, PICKUP_CHANNEL, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep, pickupText, pickupEnded } from "../src/requests/sweep"
 import { writeFileSync, readFileSync } from "fs"
@@ -155,6 +155,72 @@ describe("requests in the Approvals inbox", () => {
     failed("t1")
     tracker.taskStarted({ agentId: "devops", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false } as any)
     expect(store.byLink("run", "t9")).toBeNull()
+  })
+
+  it("links work a pick-up turn hands to another agent, while that turn runs", () => {
+    failed("t1")
+    store.requestPickup("req-t1", clock)
+    const turn = { agentId: "coder", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false }
+    const handOn = (id: string) => tracker.delegationStarted({ id, caller: "coder", callee: "devops", origin: { channel: PICKUP_CHANNEL, chatId: "req-t1" } })
+
+    tracker.taskStarted(turn as any)
+    handOn("d1")
+    expect(store.byLink("delegation", "d1")?.id).toBe("req-t1")
+    expect(store.get("req-t1")?.state).toBe("waiting_other")
+
+    tracker.taskCompleted({ ...turn, durationMs: 1 } as any)
+    handOn("d2")
+    expect(store.byLink("delegation", "d2")).toBeNull()
+  })
+
+  it("keeps a yes written while the pick-ups are being read for the next read", () => {
+    failed("t1"); failed("t2")
+    store.requestPickup("req-t1", clock)
+    // The dashboard is another process: its yes lands right after the read's first statement.
+    const other = new Database(path.join(tmp, "db.sqlite"))
+    const dashboard = new RequestStore(other)
+    let landed = false
+    const racing = new Proxy(db, {
+      get(target, prop) {
+        if (prop !== "prepare") {
+          const v = (target as any)[prop]
+          return typeof v === "function" ? v.bind(target) : v
+        }
+        return (sql: string) => {
+          const st = target.prepare(sql)
+          if (landed || !sql.includes("pickup_at")) return st
+          const all = st.all.bind(st)
+          st.all = ((...args: unknown[]) => {
+            const rows = all(...args)
+            landed = true
+            dashboard.requestPickup("req-t2", clock)
+            return rows
+          }) as typeof st.all
+          return st
+        }
+      },
+    })
+    const daemon = new RequestStore(racing)
+
+    expect(daemon.takePickups().map((r) => r.id)).toEqual(["req-t1"])
+    expect(landed).toBe(true)
+    expect(daemon.takePickups().map((r) => r.id)).toEqual(["req-t2"])
+    expect(daemon.takePickups()).toEqual([])
+    other.close()
+  })
+
+  it("does not fail when another process added the pick-up column first", () => {
+    // What the slower of two starting processes sees: no column yet, then the ALTER finds it.
+    const stale = new Proxy(db, {
+      get(target, prop) {
+        if (prop === "prepare") return (sql: string) => (sql.startsWith("PRAGMA table_info") ? { all: () => [] } : target.prepare(sql))
+        const v = (target as any)[prop]
+        return typeof v === "function" ? v.bind(target) : v
+      },
+    })
+    expect(() => ensureRequestTables(stale)).not.toThrow()
+    failed("t1")
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
   })
 
   it("adds the pick-up column to a database created by the first version", () => {
