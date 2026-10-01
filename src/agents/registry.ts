@@ -10,7 +10,7 @@ import {
   type ContinuityInput,
   type SessionContinuityAnswers,
 } from "@/decisions/seats/session-continuity"
-import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
+import { executeTask, warmProcessChat, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests } from "./sessions"
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
@@ -1118,8 +1118,7 @@ export class AgentRegistry {
     }
 
     // Build session key for queue management
-    const qChannel = task.context?.channel || "api"
-    const qChatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
+    const { channel: qChannel, chatId: qChatId } = warmProcessChat(task.context)
     // Held from a voice wait ending until the chat is marked running.
     let voiceClaim: string | undefined
 
@@ -1560,7 +1559,7 @@ export class AgentRegistry {
       (): Awaited<ReturnType<typeof evaluateRequest>> => ({ active: false, preprocess: false }),
     )
     if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
-    const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
+    const chatId = qChatId
     const senderName = task.context?.sender || "User"
     const isCodexCli = state.def.tier === "codex-cli"
 
@@ -3073,7 +3072,12 @@ export class AgentRegistry {
     if (by.taskId) {
       run = state.runningTasks.find((r) => r.id === by.taskId)
     } else if (by.channel && by.chatId) {
-      const matches = state.runningTasks.filter((r) => r.channel === by.channel && r.chatId === by.chatId)
+      // Compared as a warm process names it, so a run with no chat is
+      // found by the fallback pair its process sends (#410).
+      const matches = state.runningTasks.filter((r) => {
+        const chat = warmProcessChat(r)
+        return chat.channel === by.channel && chat.chatId === by.chatId
+      })
       run = matches.length === 1 ? matches[0] : undefined
     }
     if (!run) return null

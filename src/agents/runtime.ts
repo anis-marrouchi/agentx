@@ -510,6 +510,17 @@ export function withCallerEnv(env: NodeJS.ProcessEnv, task: AgentTask): NodeJS.P
   return env
 }
 
+/** The channel and chat a warm process is keyed by, and so the pair it
+ *  sends as proof of its running turn. A run with no chat falls back to
+ *  its sender, then to "default". The registry matches a running turn
+ *  against this same pair (#410): one derivation, or the two drift. */
+export function warmProcessChat(context: { channel?: string; chatId?: string; group?: string; sender?: string } = {}): { channel: string; chatId: string } {
+  return {
+    channel: context.channel || "api",
+    chatId: context.chatId || context.group || context.sender || "default",
+  }
+}
+
 function buildOpenCodeEnv(agent: AgentDef, task: AgentTask): NodeJS.ProcessEnv {
   const env = buildRuntimeEnv(agent, task)
   let config: Record<string, any> = {}
@@ -1902,8 +1913,7 @@ async function executeClaudeCodePersistent(
   if (!registry) return null
 
   const start = Date.now()
-  const channel = task.context?.channel || "api"
-  const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
+  const { channel, chatId } = warmProcessChat(task.context)
   const key: ProcessKey = { agentId: task.agentId, channel, chatId }
 
   // Improvement plan #8 — caller-driven session reset for the

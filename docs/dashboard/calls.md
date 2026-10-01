@@ -87,7 +87,7 @@ For example:
 ## If something is wrong
 
 - **`may not call the owner`**: the agent isn't allowed yet. Run `agentx call allow <agent>` in the folder that holds `agentx.json`.
-- **`No running turn of <agent> placed this call`**: the call didn't come from inside that agent's run, for example from a terminal. Ask the agent to call you instead.
+- **`No running turn of <agent> placed this call`**: the call didn't come from inside that agent's run, for example from a terminal. Ask the agent to call you instead. On version 0.81.0 or earlier, a run started with `agentx daemon send` or `POST /task` and no chat was refused the same way: update AgentX.
 - **`has placed 3 calls in the last hour`**: the agent hit `calls.maxPerHour`. Wait, or raise the limit.
 - **`already has a call in progress`**: answer, decline or hang up that call first. An answered call that was never hung up ends by itself after `calls.maxCallMinutes`. `agentx call list` shows it, and `agentx call decline <id>` ends it.
 - **The command says `sent a notification instead`**: the desktop assistant isn't running. Start it with `agentx desktop start`.
