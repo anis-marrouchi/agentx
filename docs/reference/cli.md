@@ -153,6 +153,15 @@ agentx attach as helper
 
 Start with the [visual workflow guide](../tutorials/first-workflow.md) before enabling a live automation.
 
+## Request status
+
+One comment per request in a GitLab or GitHub thread, kept up to date by AgentX: [`requestStatus`](./config-automation.md#requeststatus).
+
+| Command | What it does |
+|---|---|
+| `agentx request-status` | Which channels show request status |
+| `agentx request-status <gitlab\|github> <on\|off>` | Turn it on or off for one channel |
+
 ## Approvals
 
 One list of every decision waiting for you: [Approvals](../dashboard/approvals.md).

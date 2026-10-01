@@ -61,6 +61,7 @@ import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { pickupContext } from "@/requests/tracker"
 import { handleRequestsApi, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
+import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { remindctlSource } from "@/reminders/source"
@@ -494,8 +495,11 @@ export class AgentXDaemon {
       replies: this.callbackReplies,
       recordDispatch: (agentId, context, message, senderAgentId) =>
         this.recordInboundDispatch(agentId, context, message, senderAgentId),
-      onStarted: (rec) => this.requests?.tracker.delegationStarted(rec),
-      onDone: (rec, result) => this.requests?.tracker.delegationDone(rec, result.status, result.text),
+      onStarted: (rec) => { this.requests?.tracker.delegationStarted(rec); this.status?.board.delegationStarted(rec) },
+      onDone: (rec, result) => {
+        this.requests?.tracker.delegationDone(rec, result.status, result.text)
+        this.status?.board.delegationDone(rec, result.status)
+      },
       callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
     })
 
@@ -533,6 +537,22 @@ export class AgentXDaemon {
           this.requests = attachRequests(db, () => this.config.requests, this.log)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
+        }
+        // Request status where the request was made (#383). Attached the
+        // same way; it does nothing for a channel that is not listed in
+        // `requestStatus.channels`.
+        try {
+          this.status = attachStatus(db, () => ({ channels: this.config.requestStatus.channels, retentionDays: this.config.requests.retentionDays }), {
+            post: async (row, text) =>
+              (await this.router.getChannel(row.channel)?.send({ channel: row.channel, chatId: row.chatId, text, agentId: row.agentId })) || "",
+            edit: async (row, ref, text) => {
+              const adapter = this.router.getChannel(row.channel) as { editComment?: GitLabAdapter["editComment"] } | undefined
+              return adapter?.editComment ? adapter.editComment(row.chatId, ref, text, row.agentId) : false
+            },
+            log: this.log,
+          })
+        } catch (e: any) {
+          this.log(`  Request status: not available (${e?.message ?? e})`)
         }
         // Typed-decision seats. Registering a backend is lazy and opening
         // the shadow store is cheap, but neither happens unless the
@@ -1301,7 +1321,10 @@ export class AgentXDaemon {
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
           : undefined,
       })
-      for (const o of outcomes) this.requests?.tracker.resumeOutcome(o)
+      for (const o of outcomes) {
+        this.requests?.tracker.resumeOutcome(o)
+        this.status?.board.resumeOutcome(o)
+      }
       const count = (d: string) => outcomes.filter((o) => o.decision === d).length
       this.log(`  Resume: ${count("resumed")} resumed, ${count("reported")} reported, ${count("skipped")} skipped, ${count("resume-failed")} failed`)
     } catch (e: any) {
@@ -1695,6 +1718,25 @@ export class AgentXDaemon {
   /** Open requests (src/requests); null when the database is unavailable. */
   private requests: AttachedRequests | null = null
   private requestsSweeping = false
+  private status: AttachedStatus | null = null
+
+  /** Send a status-comment edit to the peer that holds the agent's token. */
+  private forwardCommentEdit(channel: "gitlab" | "github") {
+    return async (node: string, chatId: string, commentId: string, agentId: string, text: string): Promise<boolean> => {
+      const peer = this.mesh?.directory().find(p => p.peer === node && p.healthy)
+      if (!peer) {
+        this.log(`[${channel}] edit-comment forward: peer "${node}" not found or unhealthy`)
+        return false
+      }
+      const r = await fetch(`${peer.peerUrl}/channel/edit-comment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+        body: JSON.stringify({ channel, chatId, commentId, agentId, text }),
+      })
+      const data = await r.json().catch(() => ({})) as { ok?: boolean }
+      return r.ok && data.ok === true
+    }
+  }
   private approvalsTimer?: ReturnType<typeof setInterval>
   private approvalsSweeping = false
 
@@ -1711,7 +1753,7 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
           hasAgent: (id) => !!this.registry.getAgent(id),
-          onCardResult: (card) => this.requests?.tracker.cardResolved(card),
+          onCardResult: (card) => { this.requests?.tracker.cardResolved(card); this.status?.board.cardResolved(card) },
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
           tellAgent: async (agentId, text, card) => {
@@ -1736,6 +1778,7 @@ export class AgentXDaemon {
             .catch((e: any) => this.log(`[requests] sweep failed: ${e?.message ?? e}`))
             .finally(() => { this.requestsSweeping = false })
         }
+        this.status?.board.sweep()
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts).
         void popNext({
@@ -1978,6 +2021,7 @@ export class AgentXDaemon {
         this.log,
         this.hooks,
       )
+      gitlab.setStatusComments(() => this.config.requestStatus.channels.some((c) => c.toLowerCase() === "gitlab"))
       // Wire up mesh reaction forwarder — for agents hosted on remote peers
       if (this.mesh) {
         // Generic cross-mesh mention resolution — when an @-mention doesn't
@@ -1987,6 +2031,7 @@ export class AgentXDaemon {
         // becomes reachable via @-mention without operators having to mirror
         // an `agentMappings` entry on every node.
         gitlab.setMesh(this.mesh)
+        gitlab.setEditCommentForwarder(this.forwardCommentEdit("gitlab"))
         gitlab.setReactForwarder(async (node, project, noteableType, noteableIid, noteId, agentId, name) => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
           if (!peer) {
@@ -2076,6 +2121,7 @@ export class AgentXDaemon {
       )
       // Wire mesh comment forwarder for remote agents
       if (this.mesh) {
+        this.github.setEditCommentForwarder(this.forwardCommentEdit("github"))
         this.github.setSendCommentForwarder(async (node, repo, issueNumber, agentId, text): Promise<string> => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
           if (!peer) {
@@ -3055,6 +3101,7 @@ export class AgentXDaemon {
     "/gitlab/react",
     "/gitlab/send-note",
     "/gitlab/log-time",
+    "/channel/edit-comment",
     "/github/send-comment",
   ])
 
@@ -3301,7 +3348,9 @@ export class AgentXDaemon {
         // card names.
         if (reply.status === 201) {
           const card = (reply.body as { card: DecisionCard }).card
-          this.requests?.tracker.cardRaised(card, this.provenTurn(card.raised_by, this.callerProof(req)))
+          const turn = this.provenTurn(card.raised_by, this.callerProof(req))
+          this.requests?.tracker.cardRaised(card, turn)
+          this.status?.board.cardRaised(card, turn)
         }
         this.json(res, reply.status, reply.body)
         return
@@ -5101,6 +5150,19 @@ export class AgentXDaemon {
             this.log(`[gitlab/log-time] FETCH ERROR: ${e.message}`)
             this.json(res, 500, { error: e.message })
           }
+          break
+        }
+
+        case "POST /channel/edit-comment": {
+          // Forwarded from a mesh peer: edit a note or comment with the
+          // local agent token, the one that wrote it (#383).
+          const { channel, chatId, commentId, agentId, text } = await readBody(req) as any
+          const adapter = channel === "gitlab" || channel === "github"
+            ? this.router.getChannel(channel) as { editComment?: GitLabAdapter["editComment"] } | undefined
+            : undefined
+          if (!adapter?.editComment) { this.json(res, 404, { error: "no such channel on this node" }); break }
+          const ok = await adapter.editComment(String(chatId ?? ""), String(commentId ?? ""), String(text ?? ""), agentId, true)
+          this.json(res, 200, { ok })
           break
         }
 

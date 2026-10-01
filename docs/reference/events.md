@@ -22,7 +22,7 @@ Everything the daemon does is published as an event on one in-process bus. Examp
 | `kind` | `type` values | `ref` |
 |---|---|---|
 | `message` | `message:matched`, `message:dropped` | channel message ID |
-| `agent` | `task:started`, `task:step`, `task:completed`, `session:rotated` | trace ID |
+| `agent` | `task:queued`, `task:queue-ended`, `task:started`, `task:step`, `task:completed`, `session:rotated` | trace ID (none for `task:queued` and `task:queue-ended`: the message has no run of its own) |
 | `run` | `created`, `ok`, `failed`, `paused`, `resumed`, `skipped`, `completed`, `timeout` | workflow run ID |
 | `task` | `created`, `submitted`, `canceled` (workflow user tasks) | user task ID |
 | `signal` | `emitted` | — |

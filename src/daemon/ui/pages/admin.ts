@@ -2724,7 +2724,8 @@ function renderGitLabPane() {
       '<input id="gl-port" type="number" min="1" max="65535" value="' + (g.webhookPort || 18810) + '" />' +
       '<div class="actions"><button class="primary" onclick="configureGitLab()">' + (configured ? 'Save' : 'Connect') + '</button><div id="gl-msg" class="msg"></div></div>' +
       '<div class="hint-block">Per-project routes and per-agent tokens stay in the <b>Advanced</b> tab (raw JSON). Webhooks from GitLab are also registered in the <b>Webhooks</b> tab with source=<code>gitlab</code>.</div>' +
-    '</div>';
+    '</div>' + requestStatusCard('gitlab', 'GitLab');
+  wireRequestStatus('gitlab');
   const t = $('gl-toggle');
   if (t) t.addEventListener('change', async (e) => {
     try { await req('POST', '/api/admin/channels/gitlab/toggle', { enabled: e.target.checked }); refresh(); }
@@ -2759,7 +2760,23 @@ function renderGitHubPane() {
   $('ch-github').innerHTML =
     '<div class="hint-block" style="margin-bottom:14px">GitHub doesn&rsquo;t need a bot adapter — it speaks webhooks. Register one in the <b>Webhooks</b> tab with <code>source=github</code>, bind it to an agent, then paste the generated URL into the repo&rsquo;s <i>Settings → Webhooks</i>.</div>' +
     '<div class="list">' + hookList + '</div>' +
-    '<div class="actions"><button class="primary" onclick="jumpToWebhooks()">Add a GitHub webhook →</button></div>';
+    '<div class="actions"><button class="primary" onclick="jumpToWebhooks()">Add a GitHub webhook →</button></div>' +
+    requestStatusCard('github', 'GitHub');
+  wireRequestStatus('github');
+}
+// Request status (#383): one comment per request, kept up to date by AgentX.
+function requestStatusCard(channel, label) {
+  const on = (state.requestStatus || []).includes(channel);
+  return '<div class="row-card" style="margin-top:12px"><div class="info"><h3>Request status</h3>' +
+    '<div class="meta">When someone asks an agent for work on ' + label + ', AgentX posts one comment with the state of that request (queued, working, waiting, done, failed, timed out, cut off by a restart) and edits it as the work moves.</div></div>' +
+    '<label class="toggle-switch" style="margin:0"><input type="checkbox" id="rs-' + channel + '"' + (on ? ' checked' : '') + ' /> <span>On</span></label></div>';
+}
+function wireRequestStatus(channel) {
+  const t = $('rs-' + channel);
+  if (t) t.addEventListener('change', async (e) => {
+    try { await req('POST', '/api/admin/channels/request-status', { channel: channel, enabled: e.target.checked }); refresh(); }
+    catch (err) { showMsg($('global-msg'), 'err', err.message); e.target.checked = !e.target.checked; }
+  });
 }
 function jumpToWebhooks() {
   for (const btn of document.querySelectorAll('nav.tabs button')) {

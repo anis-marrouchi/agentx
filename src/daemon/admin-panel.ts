@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, rmSync, mkdirSync, copyFileSyn
 import { resolve } from "path"
 import type { IncomingMessage, ServerResponse } from "http"
 import { mutateAgentxConfig } from "./config-mutate"
+import { statusChannelsOf, toggleRequestStatus } from "@/requests/status-settings"
 import { addWatchRule, deleteWatchRule, editWatchRule, updateWhatsappTriage, whatsappTriageSettings } from "./whatsapp-triage-admin"
 import { TokenStore } from "./token-store"
 import { loadDaemonConfig } from "./config"
@@ -76,6 +77,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       "POST /api/admin/channels/discord/toggle": () => toggleDiscord(body),
       "POST /api/admin/channels/gitlab": () => configureGitLab(body),
       "POST /api/admin/channels/gitlab/toggle": () => toggleGitLab(body),
+      "POST /api/admin/channels/request-status": () => toggleRequestStatus(body),
       "GET /api/admin/channels/whatsapp/state": () => proxyDaemonJson("/whatsapp/state"),
       // WebRTC bot history — active calls + ring buffer of recently-completed
       // sessions. Lives on the daemon (BotManager owns it); the dashboard
@@ -355,7 +357,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), actions }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), actions }
 }
 
 // ========================================================================
