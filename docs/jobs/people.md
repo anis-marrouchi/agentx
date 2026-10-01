@@ -14,6 +14,7 @@ Nothing changes until you add someone. With an empty list, what you do on your o
 | name | Their name as you want to read it. |
 | role | `owner`, `member` or `guest`. Today the role is a label; only `owner` has an effect (see below). Access rules per role come later. |
 | identities | Where they write from, each as `channel:id`: `gitlab:sara.b`, `github:sara-b`, `telegram:123456789`, `whatsapp:21620123456`. |
+| agents | The agents this person may reach, by id. Empty, the default: every agent. See [Limit which agents a person can reach](#limit-which-agents-a-person-can-reach). |
 
 Which value to use on each channel:
 
@@ -51,6 +52,19 @@ A listed teammate can also get a small window of their own, **My work**, that sh
 2. You see the person, their open requests if you use them, and their latest tasks with the time, channel, agent and first words. GitLab and WhatsApp tasks appear in the same list.
 
 Add `--limit 50` for a longer list, or `--json` for a script.
+
+## Limit which agents a person can reach
+
+By default a listed person can write to any agent, like before. To limit them:
+
+1. **Terminal:** run `agentx people allow sara coder-agent pm-agent`. Use the agent ids from `agentx agents`.
+2. From then on a message from Sara to any other agent is answered with one line: *Sara B, you can reach coder-agent, pm-agent here, not devops-agent. Ask the owner if you need devops-agent.* No run starts, nothing is queued.
+3. The limit follows her work: an agent working for her cannot hand it to an agent she may not reach either.
+4. To lift it, run `agentx people allow sara all`.
+
+You can also set it when adding someone: `agentx people add sara --name "Sara B" --agent coder-agent`.
+
+Unknown senders are not limited here; each channel decides whether it answers them at all. Limits per tool and per skill are not built yet.
 
 ## Change or remove
 
