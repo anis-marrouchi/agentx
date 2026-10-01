@@ -213,7 +213,7 @@ export class RequestStore {
     ).all().map(toRecord)
   }
 
-  markNotified(id: string, now: number): void {
+  markNotified(id: string, now: number | null): void {
     this.db.prepare("UPDATE requests SET notified_at = ? WHERE id = ?").run(now, id)
   }
 

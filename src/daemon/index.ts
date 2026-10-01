@@ -1763,6 +1763,8 @@ export class AgentXDaemon {
             } as any)
           } catch (e: any) {
             this.log(`[requests] push for ${r.id} failed: ${e?.message ?? e}`)
+            // No Mac banner to fall back on: nothing reached the owner.
+            if (process.platform !== "darwin") throw e
           }
         }, { alert: localAlert(localSettings(this.config.notifications.local)) })
       },

@@ -10,7 +10,7 @@ import { runRequestTool, describeOpen } from "../src/requests/tool"
 import { readRequestSettings, updateRequestSettings } from "../src/requests/settings"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 
-const settings: RequestSettings = { enabled: true, channels: [], from: ["4242"], staleAfterHours: 24, retentionDays: 90 }
+const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
 
 let tmp: string
 let db: Database.Database
@@ -173,6 +173,7 @@ describe("settings", () => {
     expect(readRequestSettings(configPath)).toMatchObject({ enabled: true, staleAfterHours: 12, retentionDays: 90 })
     const bad = await updateRequestSettings({ staleAfterHours: -1 }, { configPath, reload: false })
     expect(bad.success).toBe(false)
+    expect((await updateRequestSettings({ from: ["no-channel"] }, { configPath, reload: false })).success).toBe(false)
     expect(readRequestSettings(configPath).staleAfterHours).toBe(12)
   })
 })

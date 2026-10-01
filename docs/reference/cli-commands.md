@@ -496,7 +496,7 @@ Show or change the requests settings (requests in agentx.json).
 | Flag | Default | What it does |
 |---|---|---|
 | `--enabled <on\|off>` | — | Record and follow your requests. |
-| `--from <id,...>` | — | Who counts as you on channels other people can reach: sender ids or usernames, alone or as channel:id; "none" to clear. |
+| `--from <id,...>` | — | Who counts as you on channels other people can reach, as channel:id (your sender id or username there); "none" to clear. |
 | `--channels <name,...>` | — | Channels to record on; "all" for every channel a person writes on. |
 | `--stale-hours <n>` | — | Hours without activity before an open request comes back to you. |
 | `--retention-days <n>` | — | Days a closed request is kept. |

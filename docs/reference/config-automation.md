@@ -215,14 +215,14 @@ To turn it on by hand:
 
 1. Open `agentx.json`.
 2. Add `"requests": { "enabled": true }`.
-3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your sender id or username to `from`, for example `"from": ["telegram:123456789", "github:your-login"]`. Use the `channel:id` form: an id on its own matches that id on every channel.
+3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your sender id or username on that channel to `from`, as `channel:id`. For example `"from": ["telegram:123456789", "github:your-login"]`.
 4. Save the file. The running daemon picks the change up; no restart is needed.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `requests.enabled` | boolean | `false` | Records and follows your requests. |
 | `requests.channels` | list of strings | `[]` | Channels to record on. Empty: every channel a person writes on (`telegram`, `whatsapp`, `slack`, `discord`, `gitlab`, `github`, `app`, `voice`, `dashboard`, `webrtc`). |
-| `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: a sender id or username, alone or as `channel:id`. Display names are not matched, because anyone can choose one. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
+| `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your sender id or username on that channel, as `channel:id`. An entry only applies to its own channel. Display names are not matched, because anyone can choose one. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
 | `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
 

@@ -1017,11 +1017,11 @@ export const requestsConfigSchema = z.object({
    *  (telegram, whatsapp, slack, discord, gitlab, github, app, voice,
    *  dashboard, webrtc). */
   channels: z.array(z.string().min(1)).default([]),
-  /** Who counts as the owner on channels other people can reach: sender
-   *  ids or usernames, optionally scoped as "channel:id". Display names
-   *  are not matched. Empty: only this node's own surfaces (voice, app,
-   *  dashboard, webrtc) are captured. */
-  from: z.array(z.string().min(1)).default([]),
+  /** Who counts as the owner on channels other people can reach, as
+   *  "channel:id" with the sender id or username on that channel. Display
+   *  names are not matched. Empty: only this node's own surfaces (voice,
+   *  app, dashboard, webrtc) are captured. */
+  from: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:id, for example telegram:123456789")).default([]),
   /** An open request with no activity for this long comes back to the owner. */
   staleAfterHours: z.number().positive().max(24 * 365).default(24),
   /** Closed requests are deleted after this many days. Open ones never are. */

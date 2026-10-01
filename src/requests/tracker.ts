@@ -46,14 +46,14 @@ export function isOwnerTurn(
   // Trusted by channel name: a caller of the daemon's own API can claim one.
   // The worst it gets is a wrong record and a notice, never access.
   if (OPERATOR_CHANNELS.has(ch)) return !DAEMON_SENDERS.has((sender?.name ?? "").toLowerCase())
-  // Display names are not matched: anyone can pick one.
+  // Display names are not matched: anyone can pick one. Entries are
+  // "channel:id": an id means nothing outside its own channel.
   const ids = [sender?.id, sender?.username].filter((v): v is string => !!v).map((v) => v.toLowerCase().replace(/^@/, ""))
   if (!ids.length) return false
   return settings.from.some((entry) => {
     const e = entry.trim().toLowerCase()
     const i = e.indexOf(":")
-    const scoped = i > 0 && e.slice(0, i) === ch ? e.slice(i + 1) : null
-    return ids.includes((scoped ?? e).replace(/^@/, ""))
+    return i > 0 && e.slice(0, i) === ch && ids.includes(e.slice(i + 1).replace(/^@/, ""))
   })
 }
 
@@ -107,15 +107,19 @@ export class RequestTracker {
   }
 
   taskStarted(p: AgentXEvents["task:started"]): void {
-    if (!this.settings().enabled || !p.taskId) return
+    if (!p.taskId) return
     this.guard("capture", () => {
+      if (!this.settings().enabled) return
       const now = this.now()
       // A run that continues one a restart cut off belongs to its request.
       const earlier = p.resumedFrom ? this.store.byLink("run", p.resumedFrom) : null
       const key = chatKey(p.agentId, p.channel, p.chatId)
       if (earlier) {
         this.store.link(earlier.id, "run", p.taskId!, now)
-        this.store.progress(earlier.id, now)
+        // A candidate stays one: if the resumed turn just answers and
+        // ends, nothing is left to follow.
+        if (earlier.state === "candidate") this.store.touch(earlier.id, now)
+        else this.store.progress(earlier.id, now)
         this.live.set(key, { requestId: earlier.id, runId: p.taskId! })
         return
       }
@@ -153,8 +157,8 @@ export class RequestTracker {
   }
 
   delegationStarted(d: DelegationSignal): void {
-    if (!this.settings().enabled) return
     this.guard("delegation start", () => {
+      if (!this.settings().enabled) return
       const turn = this.live.get(chatKey(d.caller, d.origin.channel, d.origin.chatId))
       if (!turn) return
       const now = this.now()
@@ -185,8 +189,9 @@ export class RequestTracker {
    *  request now waits on the owner, with the card's question. The card's
    *  own reminders (inbox, Mac card, check-ins, digest) do the reminding. */
   cardRaised(card: { id: string; raised_by: string; ask: string; reply?: { channel: string; chatId: string } }): void {
-    if (!this.settings().enabled || !card.reply) return
+    if (!card.reply) return
     this.guard("card", () => {
+      if (!this.settings().enabled) return
       const requestId = this.live.get(chatKey(card.raised_by, card.reply!.channel, card.reply!.chatId))?.requestId
       if (!requestId) return
       const now = this.now()
@@ -217,8 +222,10 @@ export class RequestTracker {
       const req = this.store.byLink("run", o.taskId)
       if (!req) return
       const now = this.now()
-      if (o.decision === "resumed") this.store.progress(req.id, now)
-      else if (o.decision === "reported" || o.decision === "resume-failed") {
+      if (o.decision === "resumed") {
+        if (req.state === "candidate") this.store.touch(req.id, now)
+        else this.store.progress(req.id, now)
+      } else if (o.decision === "reported" || o.decision === "resume-failed") {
         if (this.store.needsAttention(req.id, `Cut off by a restart and not picked up again (${clip(o.reason)})`, now)) {
           this.log(`[requests] ${req.id} needs attention: run ${o.taskId} cut off by a restart`)
         }

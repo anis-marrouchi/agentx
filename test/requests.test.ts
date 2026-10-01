@@ -12,7 +12,7 @@ import { attachRequests } from "../src/requests/attach"
 import { getEventBus } from "../src/events/bus"
 
 const HOUR = 3_600_000
-const ON: RequestSettings = { enabled: true, channels: [], from: ["4242"], staleAfterHours: 24, retentionDays: 90 }
+const ON: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
 
 let tmp: string
 let db: Database.Database
@@ -83,20 +83,29 @@ describe("who counts as the owner", () => {
     expect(isOwnerTurn({ channels: [], from: [] }, "github", { id: "1", username: "anyone" })).toBe(false)
   })
 
-  it("matches a sender id or username, plain or scoped to a channel, never a display name", () => {
-    const s = { channels: [], from: ["4242", "github:Octo", "@handle"] }
+  it("matches a sender id or username on its own channel only, never a display name", () => {
+    const s = { channels: [], from: ["telegram:4242", "github:Octo", "telegram:@handle"] }
     expect(isOwnerTurn(s, "telegram", { id: "4242" })).toBe(true)
     expect(isOwnerTurn(s, "github", { username: "octo" })).toBe(true)
-    expect(isOwnerTurn(s, "gitlab", { username: "octo" })).toBe(false)
     expect(isOwnerTurn(s, "telegram", { username: "Handle" })).toBe(true)
+    // The same id or login on another channel is another person.
+    expect(isOwnerTurn(s, "gitlab", { username: "octo" })).toBe(false)
+    expect(isOwnerTurn(s, "whatsapp", { id: "4242" })).toBe(false)
     expect(isOwnerTurn(s, "telegram", { id: "9" })).toBe(false)
+    // An entry for another channel is never compared as a plain string.
+    expect(isOwnerTurn(s, "gitlab", { id: "github:octo" })).toBe(false)
     expect(senderOf({ sender: "4242", senderId: "9" })).toEqual({ name: "4242", id: "9", username: undefined })
     expect(isOwnerTurn(s, "telegram", senderOf({ sender: "4242", senderId: "9" }))).toBe(false)
   })
 
+  it("accepts only channel:id entries in the settings", () => {
+    expect(requestsConfigSchema.safeParse({ from: ["marrouchi"] }).success).toBe(false)
+    expect(requestsConfigSchema.safeParse({ from: ["gitlab:marrouchi"] }).success).toBe(true)
+  })
+
   it("keeps to the listed channels when there are any", () => {
-    expect(isOwnerTurn({ channels: ["telegram"], from: ["4242"] }, "voice", undefined)).toBe(false)
-    expect(isOwnerTurn({ channels: ["telegram"], from: ["4242"] }, "telegram@bot2", { id: "4242" })).toBe(true)
+    expect(isOwnerTurn({ channels: ["telegram"], from: ["telegram:4242"] }, "voice", undefined)).toBe(false)
+    expect(isOwnerTurn({ channels: ["telegram"], from: ["telegram:4242"] }, "telegram@bot2", { id: "4242" })).toBe(true)
   })
 })
 
@@ -237,15 +246,35 @@ describe("restart", () => {
     })
   })
 
-  it("stays one request when the run is resumed, and closes nothing on its clean end", () => {
+  it("leaves nothing behind when a plain turn is resumed and then just answers", () => {
     start("t1")
     end("t1", { interrupted: true, error: "daemon stopping" })
     tracker.resumeOutcome({ taskId: "t1", decision: "resumed", reason: "cut off by a restart" })
     start("t2", { resumedFrom: "t1" })
     expect(store.byLink("run", "t2")?.id).toBe("req-t1")
     end("t2")
+    expect(store.get("req-t1")).toBeNull()
+    expect(store.listOpen()).toEqual([])
+  })
+
+  it("stays one open request when a resumed run had already handed work on", () => {
+    start("t1")
+    tracker.delegationStarted(dlg("dlg-1"))
+    end("t1", { interrupted: true, error: "daemon stopping" })
+    tracker.resumeOutcome({ taskId: "t1", decision: "resumed", reason: "cut off by a restart" })
+    start("t2", { resumedFrom: "t1" })
+    end("t2")
+    expect(store.listOpen().map((r) => r.id)).toEqual(["req-t1"])
     expect(store.get("req-t1")?.state).toBe("in_progress")
-    expect(store.listOpen()).toHaveLength(1)
+  })
+
+  it("raises a resumed turn that fails", () => {
+    start("t1")
+    end("t1", { interrupted: true, error: "daemon stopping" })
+    tracker.resumeOutcome({ taskId: "t1", decision: "resumed", reason: "cut off by a restart" })
+    start("t2", { resumedFrom: "t1" })
+    end("t2", { error: "model overloaded" })
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", attentionReason: "coder failed: model overloaded" })
   })
 
   it("comes back when the resumed run fails too", () => {
@@ -291,11 +320,12 @@ describe("the minute check", () => {
     expect(store.get("req-t1")?.state).toBe("needs_attention")
   })
 
-  it("does not tell twice when the notice itself throws", async () => {
+  it("tries again at the next check when the notice could not be sent, then stops", async () => {
     start("t1")
     end("t1", { error: "boom" })
     await sweep({ notify: async () => { throw new Error("push down") } })
-    expect(logs.join("\n")).toContain("couldn't tell the owner about req-t1")
+    expect(logs.join("\n")).toContain("couldn't tell the owner about req-t1, will try again")
+    expect((await sweep()).told).toHaveLength(1)
     expect((await sweep()).told).toEqual([])
   })
 
