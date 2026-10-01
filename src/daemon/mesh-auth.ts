@@ -40,6 +40,7 @@ export function isMeshGatedPath(path: string): boolean {
     // Approvals list held memory facts and draft wiki articles, and a card
     // written from off-box would ask the operator in an agent's name.
     path === "/approvals" || path.startsWith("/approvals/") ||
+    path === "/requests" || path.startsWith("/requests/") ||
     // Recent events name agents, chats and errors across the node.
     path === "/events/recent" || /^\/agents\/[^/]+\/events$/.test(path) ||
     // Delegations name which agents are working for which others.

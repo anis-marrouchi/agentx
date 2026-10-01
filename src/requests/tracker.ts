@@ -29,25 +29,31 @@ export interface RequestSettings {
 /** This node's own surfaces: only its operator can reach them. */
 export const OPERATOR_CHANNELS: ReadonlySet<string> = new Set(["voice", "app", "dashboard", "webrtc"])
 
+/** Senders the daemon itself uses on those surfaces. Their turns are not
+ *  something the owner asked for (a camera frame, say). */
+const DAEMON_SENDERS: ReadonlySet<string> = new Set(["camera"])
+
 const base = (channel: string) => channel.toLowerCase().split("@")[0]
 
 /** Does a turn on this channel from this sender count as the owner's? */
 export function isOwnerTurn(
   settings: Pick<RequestSettings, "channels" | "from">,
   channel: string,
-  sender: { id?: string; username?: string } | undefined,
+  sender: { name?: string; id?: string; username?: string } | undefined,
 ): boolean {
   const ch = base(channel)
   if (settings.channels.length && !settings.channels.map(base).includes(ch)) return false
-  if (OPERATOR_CHANNELS.has(ch)) return true
-  // Display names are not matched: anyone can pick one.
+  // Trusted by channel name: a caller of the daemon's own API can claim one.
+  // The worst it gets is a wrong record and a notice, never access.
+  if (OPERATOR_CHANNELS.has(ch)) return !DAEMON_SENDERS.has((sender?.name ?? "").toLowerCase())
+  // Display names are not matched: anyone can pick one. Entries are
+  // "channel:id": an id means nothing outside its own channel.
   const ids = [sender?.id, sender?.username].filter((v): v is string => !!v).map((v) => v.toLowerCase().replace(/^@/, ""))
   if (!ids.length) return false
   return settings.from.some((entry) => {
     const e = entry.trim().toLowerCase()
     const i = e.indexOf(":")
-    const scoped = i > 0 && e.slice(0, i) === ch ? e.slice(i + 1) : null
-    return ids.includes((scoped ?? e).replace(/^@/, ""))
+    return i > 0 && e.slice(0, i) === ch && ids.includes(e.slice(i + 1).replace(/^@/, ""))
   })
 }
 
@@ -104,16 +110,25 @@ export class RequestTracker {
     return p.person?.role === "owner" && !OPERATOR_CHANNELS.has(ch)
   }
 
+  /** The request of the turn this agent is running in this chat, if any. */
+  liveRequestId(agentId: string, channel: string, chatId: string): string | null {
+    return this.live.get(chatKey(agentId, channel, chatId))?.requestId ?? null
+  }
+
   taskStarted(p: AgentXEvents["task:started"]): void {
-    if (!this.settings().enabled || !p.taskId) return
+    if (!p.taskId) return
     this.guard("capture", () => {
+      if (!this.settings().enabled) return
       const now = this.now()
       // A run that continues one a restart cut off belongs to its request.
       const earlier = p.resumedFrom ? this.store.byLink("run", p.resumedFrom) : null
       const key = chatKey(p.agentId, p.channel, p.chatId)
       if (earlier) {
         this.store.link(earlier.id, "run", p.taskId!, now)
-        this.store.progress(earlier.id, now)
+        // A candidate stays one: if the resumed turn just answers and
+        // ends, nothing is left to follow.
+        if (earlier.state === "candidate") this.store.touch(earlier.id, now)
+        else this.store.progress(earlier.id, now)
         this.live.set(key, { requestId: earlier.id, runId: p.taskId! })
         return
       }
@@ -152,8 +167,8 @@ export class RequestTracker {
   }
 
   delegationStarted(d: DelegationSignal): void {
-    if (!this.settings().enabled) return
     this.guard("delegation start", () => {
+      if (!this.settings().enabled) return
       const turn = this.live.get(chatKey(d.caller, d.origin.channel, d.origin.chatId))
       if (!turn) return
       const now = this.now()
@@ -180,14 +195,47 @@ export class RequestTracker {
     })
   }
 
+  /** The agent raised a decision card from the turn of a request: the
+   *  request now waits on the owner, with the card's question. The card's
+   *  own reminders (inbox, Mac card, check-ins, digest) do the reminding. */
+  cardRaised(card: { id: string; raised_by: string; ask: string; reply?: { channel: string; chatId: string } }): void {
+    if (!card.reply) return
+    this.guard("card", () => {
+      if (!this.settings().enabled) return
+      const requestId = this.live.get(chatKey(card.raised_by, card.reply!.channel, card.reply!.chatId))?.requestId
+      if (!requestId) return
+      const now = this.now()
+      this.store.link(requestId, "card", card.id, now)
+      this.store.waitOnOwner(requestId, card.ask, now)
+    })
+  }
+
+  /** A linked card was answered or expired. An answer, or an expiry whose
+   *  default is "approve", lets the work go on. Any other expiry means the
+   *  answer never came: the request needs attention. It does not close. */
+  cardResolved(card: { id: string; status: string; ask: string; if_silent?: string; outcome?: string }): void {
+    this.guard("card result", () => {
+      const req = this.store.byLink("card", card.id)
+      if (!req || req.state !== "waiting_owner") return
+      const now = this.now()
+      const applied = card.outcome ?? card.if_silent
+      if (card.status === "decided" || applied === "approve") this.store.progress(req.id, now)
+      else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
+        this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)
+      }
+    })
+  }
+
   /** What the boot-time resume step did with a run the restart cut off. */
   resumeOutcome(o: { taskId: string; decision: string; reason: string }): void {
     this.guard("restart", () => {
       const req = this.store.byLink("run", o.taskId)
       if (!req) return
       const now = this.now()
-      if (o.decision === "resumed") this.store.progress(req.id, now)
-      else if (o.decision === "reported" || o.decision === "resume-failed") {
+      if (o.decision === "resumed") {
+        if (req.state === "candidate") this.store.touch(req.id, now)
+        else this.store.progress(req.id, now)
+      } else if (o.decision === "reported" || o.decision === "resume-failed") {
         if (this.store.needsAttention(req.id, `Cut off by a restart and not picked up again (${clip(o.reason)})`, now)) {
           this.log(`[requests] ${req.id} needs attention: run ${o.taskId} cut off by a restart`)
         }

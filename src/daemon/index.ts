@@ -56,8 +56,10 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import type { DecisionCard } from "@/approvals/cards"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { runRequestsSweep } from "@/requests/sweep"
+import { handleRequestsApi } from "@/requests/daemon-api"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { remindctlSource } from "@/reminders/source"
@@ -1683,6 +1685,7 @@ export class AgentXDaemon {
 
   /** Open requests (src/requests); null when the database is unavailable. */
   private requests: AttachedRequests | null = null
+  private requestsSweeping = false
   private approvalsTimer?: ReturnType<typeof setInterval>
   private approvalsSweeping = false
 
@@ -1699,6 +1702,7 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
           hasAgent: (id) => !!this.registry.getAgent(id),
+          onCardResult: (card) => this.requests?.tracker.cardResolved(card),
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
           tellAgent: async (agentId, text, card) => {
@@ -1713,7 +1717,16 @@ export class AgentXDaemon {
           },
           log: this.log,
         })
-        if (this.requests) await this.sweepRequests(this.requests)
+        // Beside the sweep, never inside it: a notice that hangs must not
+        // hold the approvals sweep.
+        if (this.requests && !this.requestsSweeping) {
+          this.requestsSweeping = true
+          // A notice that never returns must not stop every later check.
+          const limit = new Promise<void>((_, reject) => { setTimeout(() => reject(new Error("timed out after 5 min")), 300_000).unref?.() })
+          void Promise.race([this.sweepRequests(this.requests), limit])
+            .catch((e: any) => this.log(`[requests] sweep failed: ${e?.message ?? e}`))
+            .finally(() => { this.requestsSweeping = false })
+        }
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts).
         void popNext({
@@ -1752,6 +1765,8 @@ export class AgentXDaemon {
             } as any)
           } catch (e: any) {
             this.log(`[requests] push for ${r.id} failed: ${e?.message ?? e}`)
+            // No Mac banner to fall back on: nothing reached the owner.
+            if (process.platform !== "darwin") throw e
           }
         }, { alert: localAlert(localSettings(this.config.notifications.local)) })
       },
@@ -3240,6 +3255,31 @@ export class AgentXDaemon {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
         })
+        // A card raised from the turn of an open request makes it wait on the owner.
+        if (reply.status === 201) this.requests?.tracker.cardRaised((reply.body as { card: DecisionCard }).card)
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // Open requests, agent side: read the list, say what is happening
+      // with a request. Dropping is refused here (owner surfaces only).
+      if (path === "/requests" || path.startsWith("/requests/")) {
+        if (!this.requests) { this.json(res, 503, { error: "requests need the database" }); return }
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
+        const reply = handleRequestsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, {
+          store: this.requests.store,
+          tracker: this.requests.tracker,
+          enabled: this.config.requests.enabled,
+          hasAgent: (id) => !!this.registry.getAgent(id),
+          runningTurn: (id, p) => {
+            const turn = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
+            if (!turn) return null
+            // The same channel and chat the registry files the run under.
+            const c = turn.context
+            return { channel: String(c.channel || "api"), chatId: String(c.chatId || c.group || c.sender || "default") }
+          },
+        }, { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") })
         this.json(res, reply.status, reply.body)
         return
       }
