@@ -57,7 +57,7 @@ import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
-import { senderOf } from "@/requests/tracker"
+import { isPickup, senderOf } from "@/requests/tracker"
 import { personOfTurn } from "@/people/people"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 
@@ -1602,6 +1602,7 @@ export class AgentRegistry {
       sender: senderOf(task.context),
       ...(person ? { person } : {}),
       humanRoot: isHumanFacingTurn(task.context as any),
+      pickup: isPickup(task.context),
     })
 
     // Classify the message through the intent graph when enabled. Skip for

@@ -59,8 +59,8 @@ import { runApprovalsSweep } from "@/approvals/sweep"
 import type { DecisionCard } from "@/approvals/cards"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
-import { PICKUP_CHANNEL } from "@/requests/tracker"
-import { handleRequestsApi } from "@/requests/daemon-api"
+import { pickupContext } from "@/requests/tracker"
+import { handleRequestsApi, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { remindctlSource } from "@/reminders/source"
@@ -1788,7 +1788,7 @@ export class AgentXDaemon {
         void this.registry.execute({
           agentId,
           message: text,
-          context: { channel: PICKUP_CHANNEL, chatId: r.id, sender: "operator" },
+          context: pickupContext(r.id),
         }).then((res) => {
           if (pickupEnded(requests.store, r, res, Date.now())) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
         }).catch((e: any) => {
@@ -3091,6 +3091,21 @@ export class AgentXDaemon {
     return false
   }
 
+  /** The running turn a call names, as its X-AgentX-* headers give it. */
+  private callerProof(req: IncomingMessage): RequestCallerProof {
+    const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
+    return { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") }
+  }
+
+  /** The channel and chat of the running turn of `agentId` that `proof`
+   *  names, as the registry files the run. Null when it names none. */
+  private provenTurn(agentId: string, proof: RequestCallerProof): { channel: string; chatId: string } | null {
+    const turn = this.registry.findRunningTurn(agentId, proof.taskId ? { taskId: proof.taskId } : { channel: proof.channel, chatId: proof.chatId })
+    if (!turn) return null
+    const c = turn.context
+    return { channel: String(c.channel || "api"), chatId: String(c.chatId || c.group || c.sender || "default") }
+  }
+
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
     const path = url.pathname
@@ -3281,8 +3296,13 @@ export class AgentXDaemon {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
         })
-        // A card raised from the turn of an open request makes it wait on the owner.
-        if (reply.status === 201) this.requests?.tracker.cardRaised((reply.body as { card: DecisionCard }).card)
+        // A card raised from the turn of an open request makes it wait on
+        // the owner. The turn is the one the call proves, not the one the
+        // card names.
+        if (reply.status === 201) {
+          const card = (reply.body as { card: DecisionCard }).card
+          this.requests?.tracker.cardRaised(card, this.provenTurn(card.raised_by, this.callerProof(req)))
+        }
         this.json(res, reply.status, reply.body)
         return
       }
@@ -3292,20 +3312,13 @@ export class AgentXDaemon {
       if (path === "/requests" || path.startsWith("/requests/")) {
         if (!this.requests) { this.json(res, 503, { error: "requests need the database" }); return }
         const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
-        const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
         const reply = handleRequestsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, {
           store: this.requests.store,
           tracker: this.requests.tracker,
           enabled: this.config.requests.enabled,
           hasAgent: (id) => !!this.registry.getAgent(id),
-          runningTurn: (id, p) => {
-            const turn = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
-            if (!turn) return null
-            // The same channel and chat the registry files the run under.
-            const c = turn.context
-            return { channel: String(c.channel || "api"), chatId: String(c.chatId || c.group || c.sender || "default") }
-          },
-        }, { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") })
+          runningTurn: (id, p) => this.provenTurn(id, p),
+        }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return
       }
