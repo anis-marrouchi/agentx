@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.79.4](https://github.com/anis-marrouchi/agentx/compare/v0.79.3...v0.79.4) (2026-10-01)
+
+
+### Bug Fixes
+
+* **approvals:** Mac card receives clicks, drags and keys ([#377](https://github.com/anis-marrouchi/agentx/issues/377)) ([1fe271d](https://github.com/anis-marrouchi/agentx/commit/1fe271dc16cdcc590d3cec3a28edc9e72d5c837b)), closes [#369](https://github.com/anis-marrouchi/agentx/issues/369)
+
 ## [0.79.3](https://github.com/anis-marrouchi/agentx/compare/v0.79.2...v0.79.3) (2026-10-01)
 
 
