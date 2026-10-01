@@ -98,7 +98,7 @@ requests
   .command("settings")
   .description("show or change the requests settings")
   .option("--enabled <on|off>", "record and follow your requests")
-  .option("--from <id,...>", "who counts as you on channels other people can reach, as channel:id (your sender id or username there); \"none\" to clear")
+  .option("--from <id,...>", "who counts as you on channels other people can reach, as channel:id (your login on GitLab and GitHub, your sender id elsewhere); \"none\" to clear")
   .option("--channels <name,...>", "channels to record on; \"all\" for every channel a person writes on")
   .option("--stale-hours <n>", "hours without activity before an open request comes back to you")
   .option("--retention-days <n>", "days a closed request is kept")

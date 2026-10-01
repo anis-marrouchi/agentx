@@ -369,6 +369,9 @@ describe("agents can raise and read, never decide", () => {
     // The runtime's identity wins over whatever the model claims.
     expect(sent.raised_by).toBe("alpha")
     expect(sent.reply).toEqual({ channel: "telegram", chatId: "2000" })
+    // The call names the run it comes from, so the daemon can tell whose turn raised it.
+    expect(new Headers(calls[0].init!.headers).get("x-agentx-channel")).toBe("telegram")
+    expect(new Headers(calls[0].init!.headers).get("x-agentx-chat")).toBe("2000")
     const id = /card (\S+) is/.exec(text)![1]
     expect(await runApprovalTool({ action: "status", id }, { daemonUrl: "http://127.0.0.1:1", fetch: fakeFetch, env })).toMatch(/still waiting/)
     expect(await runApprovalTool({ action: "approve", id }, { daemonUrl: "http://127.0.0.1:1", fetch: fakeFetch, env })).toMatch(/unknown action/)

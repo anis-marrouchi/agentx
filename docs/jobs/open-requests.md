@@ -34,7 +34,7 @@ In the dashboard: open **Approvals**, scroll to **Open requests**, open **Settin
 1. **Terminal:** go to the folder that holds `agentx.json`.
 2. **Terminal:** run `agentx requests settings --enabled on`.
 3. Messages you speak to the Mac, type in the phone app or type in the dashboard now count as yours.
-4. To count your messages on Telegram, WhatsApp, Slack, Discord, GitLab or GitHub too, give your sender id or username on that channel: `agentx requests settings --from telegram:123456789,github:your-login`. Display names are not accepted, because anyone can choose one. Each entry is `channel:id` and only applies to that channel.
+4. To count your messages on Telegram, WhatsApp, Slack, Discord, GitLab or GitHub too, give your id on that channel: `agentx requests settings --from telegram:123456789,github:your-login`. On GitLab and GitHub it is your login, on Telegram your numeric id, on WhatsApp your number. Telegram usernames and display names are not accepted, because the person chooses them. Each entry is `channel:id` and only applies to that channel.
 
 Other people's messages are never recorded.
 
