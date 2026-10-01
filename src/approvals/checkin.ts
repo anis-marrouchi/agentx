@@ -47,8 +47,9 @@ export interface CheckinSettings {
 
 /** Failed attempts a reminder gets in one day: the first, and one more at the next pass. */
 export const CHECKIN_TRIES_PER_DAY = 2
-/** Backstop for the wait on a busy agent's seat. The registry gives up first, at 25 minutes. */
-const SEAT_WAIT_SECONDS = 26 * 60
+/** Backstop for the wait before the turn starts. The registry gives up first:
+ *  25 minutes for a busy agent's seat, then 5 for the rate limit. */
+const SEAT_WAIT_SECONDS = 31 * 60
 
 export type PassKind = "daily" | "check"
 

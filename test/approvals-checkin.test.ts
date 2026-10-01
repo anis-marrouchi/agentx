@@ -184,13 +184,15 @@ describe("a pass", () => {
   })
 
   it("a busy agent is waited for: the time limit is on the turn, not the seat", async () => {
-    // The seat frees after six minutes, past composeTimeoutSeconds (60).
+    // The longest wait the registry allows before a turn (25 minutes for the
+    // seat, 5 for the rate limit), then a turn, far past composeTimeoutSeconds (60).
+    const wait = 30.5 * 60_000
     vi.useFakeTimers()
     try {
       const { d } = deps([r("y", { dueDate: "2026-09-30T12:00:00Z" })])
-      d.ask = () => new Promise((resolve) => setTimeout(() => resolve(CARD_JSON), 6 * 60_000))
+      d.ask = () => new Promise((resolve) => setTimeout(() => resolve(CARD_JSON), wait))
       const pass = runCheckinPass(d, "check")
-      await vi.advanceTimersByTimeAsync(6 * 60_000)
+      await vi.advanceTimersByTimeAsync(wait)
       expect((await pass).carded).toHaveLength(1)
     } finally {
       vi.useRealTimers()
@@ -205,10 +207,12 @@ describe("a pass", () => {
     expect(res.failed).toBe(0)
     const context = readCard(root, res.carded[0])!.context!
     expect(context.length).toBeLessThanOrEqual(600)
-    expect(context.endsWith("goes on.")).toBe(true)
+    expect(context.endsWith("goes on. …")).toBe(true)
     // No sentence end to cut at: the last whole word, and a mark that it was cut.
     expect(fitContext("word ".repeat(200))).toMatch(/word…$/)
     expect((fitContext("word ".repeat(200)) as string).length).toBeLessThanOrEqual(600)
+    // A sentence end too early to keep much: the last whole word instead.
+    expect(fitContext("Hi. " + "word ".repeat(200))).toMatch(/^Hi\. word .* word…$/)
     expect(fitContext("short")).toBe("short")
   })
 

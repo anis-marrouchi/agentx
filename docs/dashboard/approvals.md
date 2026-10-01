@@ -124,7 +124,7 @@ At each check-in the daemon:
 
 A reminder has one card at a time. If you answer it or the agent says it doesn't need you, and the reminder is still open, it comes back at the next daily check-in.
 
-If writing the card fails, the next check-in tries once more. After a second failure the reminder waits for the next daily check-in. A busy agent is not a failure: the check-in waits for it to be free, up to 25 minutes. A background that runs past 600 characters is cut at the end of a sentence. When a check-in ends with failures and no card, you get one notification that names the reminders and the reason for each.
+If writing the card fails, the next check-in tries once more. After a second failure the reminder waits for the next daily check-in. A busy agent is not a failure: the check-in waits for it to be free, up to 25 minutes. A background that runs past 600 characters is cut at the end of a sentence and ends with "…". When a check-in ends with failures and no card, you get one notification that names the reminders and the reason for each.
 
 Each check-in asks at most five agents (`checkin.maxAsksPerPass`), whatever they answer, so a long list of reminders is spread over several check-ins. Reminders that the [reminders poller](../automations/reminders.md) has already handed to an agent are left to that agent.
 

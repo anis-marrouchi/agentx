@@ -56,17 +56,20 @@ function lastObject(text: string): unknown {
   return undefined
 }
 
-/** An over-long context ends at the last sentence that fits, not with a lost card. */
+/** An over-long context ends at the last sentence that fits, not with a lost
+ *  card. "…" marks the cut. */
 export function fitContext(context: unknown, max: number = CHOICE_LIMITS.context): unknown {
   if (typeof context !== "string") return context
   const text = context.replace(/\r\n?/g, "\n").trim()
   if (text.length <= max) return text
-  const head = text.slice(0, max)
+  // Room for " …" after the sentence.
+  const head = text.slice(0, max - 2)
   // A sentence end is followed by a space or a line break in the full text.
   const ends = [...head.matchAll(/[.!?…。؟](?=\s)|\n/g)]
   const last = ends.pop()
-  if (last && last.index! > 0) return head.slice(0, last.index! + (last[0] === "\n" ? 0 : 1)).trimEnd()
-  return head.slice(0, max - 1).replace(/\s+\S*$/, "") + "…"
+  // A sentence end in the first half would drop most of the text: cut at a word.
+  if (last && last.index! >= max / 2) return head.slice(0, last.index! + (last[0] === "\n" ? 0 : 1)).trimEnd() + " …"
+  return text.slice(0, max - 1).replace(/\s+\S*$/, "") + "…"
 }
 
 export function parseCompose(reply: string | undefined): ComposeResult {
