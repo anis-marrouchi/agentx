@@ -54,7 +54,11 @@ If the teammate's Tailscale login is on their person entry as `tailscale:<login>
 1. **Their machine:** install Tailscale and accept the share.
 2. **Their browser:** open the address, for example `https://your-mac.tailnet-name.ts.net/member`.
 3. The page asks for a name for the machine and the code. They type both and press **Pair**.
+
+   ![The "Pair this machine" page with a field for the machine's name and one for the code](/screenshots/members/pair.png)
 4. The page says **Waiting for the owner**.
+
+   ![The "Waiting for the owner" page](/screenshots/members/waiting.png)
 
 ## Approve the machine
 
@@ -69,6 +73,8 @@ The page lists, for that person only:
 - **Open**: each request with the agent, its state (in progress, waiting on the owner, waiting on another agent, stuck), how long it has been open, and where it was asked. A GitLab or GitHub thread is a link.
 - **Finished in the last 7 days**, with the link to what was delivered.
 - **Latest turns** they started.
+
+![The My work page: three open requests with their state, one finished request, and the install hint](/screenshots/members/my-work.png)
 
 It refreshes every 30 seconds. Opened without a connection, it shows what was last loaded and says it is offline.
 
