@@ -11,7 +11,7 @@ You need a copy of the AgentX source code that has been built, and Node.js 22. S
    ```sh
    node dist/cli.js demo
    ```
-3. Wait for the line `Dashboard: http://127.0.0.1:18931/live`. The demo opens it in your browser.
+3. Wait for the line `Dashboard: http://127.0.0.1:18931/live`. The demo opens it in your browser. On a machine with no browser, such as a server, it prints `Couldn't open a browser. Visit http://127.0.0.1:18931/live` and carries on.
 4. **Browser:** watch the **Live** tab. The task moves from one machine to another.
 5. **Terminal:** press Enter to play the scenario again, or Ctrl-C to stop the demo.
 
@@ -69,5 +69,5 @@ Next: [follow the annotated workflow walkthrough](tutorials/first-workflow.md), 
 
 - **`Cannot find module … dist/cli.js`:** the source hasn't been built. Run `pnpm install`, then `pnpm build`.
 - **The demo won't start because a port is busy:** another demo is already running, perhaps in another terminal. Stop that one with Ctrl-C, or start this one elsewhere with `node dist/cli.js demo --base-port 19021` (the dashboard is then on the base port plus 10).
-- **Node.js version errors:** AgentX needs Node.js 22. Check with `node --version`.
+- **`AgentX needs Node.js 22.19 or newer, up to 26`:** the command stopped because this Node.js is too old or too new. Install Node.js 22, check with `node --version`, and run it again.
 - **The Docker demo shows old data:** run `docker compose -f docker-compose.demo.yml down -v` to start fresh.
