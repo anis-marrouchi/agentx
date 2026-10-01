@@ -119,7 +119,7 @@ describe("the people setting", () => {
   })
 
   it("defaults a person to member with no identities", () => {
-    expect(peopleConfigSchema.parse([{ id: "sara", name: "Sara" }])).toEqual([{ id: "sara", name: "Sara", role: "member", identities: [] }])
+    expect(peopleConfigSchema.parse([{ id: "sara", name: "Sara" }])).toEqual([{ id: "sara", name: "Sara", role: "member", identities: [], agents: [] }])
   })
 
   it("refuses a person listed twice, a shared identity and an identity with no channel", () => {

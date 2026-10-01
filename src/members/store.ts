@@ -59,7 +59,14 @@ export class MemberStore {
   private file: string
   private logFile: string
 
-  constructor(baseDir: string = process.cwd(), private now: () => number = Date.now) {
+  private prunedAt = 0
+
+  constructor(
+    baseDir: string = process.cwd(),
+    private now: () => number = Date.now,
+    /** Days a log line is kept (members.logRetentionDays). */
+    private retentionDays = 90,
+  ) {
     this.file = resolve(baseDir, DEVICES_FILE)
     this.logFile = resolve(baseDir, LOG_FILE)
   }
@@ -92,9 +99,28 @@ export class MemberStore {
   /** Append one event. Never throws: the log must not break a sign-in. */
   log(event: Omit<MemberEvent, "at">): void {
     try {
+      this.prune()
       mkdirSync(dirname(this.logFile), { recursive: true })
       appendFileSync(this.logFile, JSON.stringify({ at: new Date(this.now()).toISOString(), ...event }) + "\n", { mode: 0o600 })
     } catch { /* the device record is the source of truth; the log is a trail */ }
+  }
+
+  /** Drops lines older than the retention, at most once an hour. */
+  prune(force = false): number {
+    const now = this.now()
+    if (!force && now - this.prunedAt < 3_600_000) return 0
+    this.prunedAt = now
+    if (!existsSync(this.logFile)) return 0
+    const cutoff = now - this.retentionDays * 86_400_000
+    const lines = readFileSync(this.logFile, "utf-8").split("\n").filter(Boolean)
+    const kept = lines.filter((line) => {
+      try { return Date.parse(JSON.parse(line).at) >= cutoff } catch { return false }
+    })
+    if (kept.length === lines.length) return 0
+    const tmp = `${this.logFile}.${process.pid}.${randomBytes(4).toString("hex")}.tmp`
+    writeFileSync(tmp, kept.length ? kept.join("\n") + "\n" : "", { encoding: "utf-8", mode: 0o600 })
+    renameSync(tmp, this.logFile)
+    return lines.length - kept.length
   }
 
   /** The latest events, newest first; `personId` narrows them to one person. */
