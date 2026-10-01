@@ -166,6 +166,13 @@ describe("agentx app pair: tailscale serve guard", () => {
     expect(exposedDashboardMounts(status, 4202)).toEqual([])
   })
 
+  it("accepts the member page's two paths, alone or next to the app's", () => {
+    const member = { "/member": "http://127.0.0.1:4202/member", "/api/member": "http://127.0.0.1:4202/api/member" }
+    expect(exposedDashboardMounts(web(member), 4202)).toEqual([])
+    expect(exposedDashboardMounts(web({ ...member, "/app": "http://127.0.0.1:4202/app", "/api/app/": "http://127.0.0.1:4202/api/app" }), 4202)).toEqual([])
+    expect(exposedDashboardMounts(web({ ...member, "/members": "http://127.0.0.1:4202/members" }), 4202)).toEqual(["mac.tail1.ts.net:443/members"])
+  })
+
   it("ignores other local services and a missing tailscale", () => {
     expect(exposedDashboardMounts(web({ "/": "http://localhost:3000" }), 4202)).toEqual([])
     expect(exposedDashboardMounts(null, 4202)).toEqual([])

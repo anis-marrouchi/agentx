@@ -29,7 +29,7 @@ appCmd
         throw new Error([
           `tailscale serve publishes the whole dashboard, not only the phone app: ${exposed.join(", ")}`,
           `  Anyone on your tailnet can open it without a key. Serve only the app paths instead:`,
-          `    tailscale serve reset`,
+          `    tailscale serve reset   (removes every served path; add the /member lines back if you use them)`,
           `    tailscale serve --bg --set-path /app http://127.0.0.1:${dashboardPort()}/app`,
           `    tailscale serve --bg --set-path /api/app http://127.0.0.1:${dashboardPort()}/api/app`,
         ].join("\n"))
@@ -139,12 +139,13 @@ export function tailscaleOrigin(): string {
   return `https://${name}`
 }
 
-/** Mount paths the phone needs; everything else stays off the tailnet. */
-const APP_MOUNTS = new Set(["/app", "/api/app"])
+/** Mount paths the phone and a teammate's work page need; both check a
+ *  machine's own key on every request. Everything else stays off the tailnet. */
+const APP_MOUNTS = new Set(["/app", "/api/app", "/member", "/api/member"])
 
 /**
  * Lists `tailscale serve` mounts (host + path) that proxy to the dashboard
- * port outside the app paths. `tailscale serve 4202` mounts "/", which
+ * port outside the app and member paths. `tailscale serve 4202` mounts "/", which
  * publishes every dashboard page and API to the tailnet, and serve proxies
  * from 127.0.0.1, so the dashboard's loopback trust lets those requests in.
  */

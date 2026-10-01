@@ -315,7 +315,9 @@ const WORK_SCRIPT = `
     var note = '';
     if (r.state === 'waiting_owner' && r.question) note = '<p class="note"><b>The owner is asked:</b> ' + esc(r.question) + '</p>';
     else if (r.state === 'needs_attention' && r.attentionReason) note = '<p class="note">' + esc(r.attentionReason) + '</p>';
-    else if (closed && r.evidence) note = '<p class="note"><a href="' + esc(r.evidence) + '" target="_blank" rel="noopener noreferrer">What was delivered</a></p>';
+    else if (closed && r.evidence) note = /^https?:\\/\\//i.test(r.evidence)
+      ? '<p class="note"><a href="' + esc(r.evidence) + '" target="_blank" rel="noopener noreferrer">What was delivered</a></p>'
+      : '<p class="note"><b>What was delivered:</b> ' + esc(r.evidence) + '</p>';
     var age = closed ? 'closed ' + ageText(r.closedAt || r.updatedAt, now) + ' ago' : 'for ' + ageText(r.createdAt, now);
     return '<li class="item"><p class="text">' + esc(r.text) + '</p>' +
       '<p class="meta"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span>' + esc(r.agentId) + '</span><span>' + age + '</span><span>asked on ' + where(r) + '</span></p>' + note + '</li>';

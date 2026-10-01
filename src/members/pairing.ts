@@ -23,7 +23,10 @@ import { MemberStore, type MemberDevice } from "./store"
 //                      (tailscale serve sets Tailscale-User-Login on what it
 //                      proxies), the person must have that login among their
 //                      identities as `tailscale:<login>`; a mismatch is
-//                      refused and logged, and the code is spent.
+//                      refused and logged, and the code is spent. Only a
+//                      request that arrives from this computer (where the
+//                      proxy runs) is believed: anyone else could set the
+//                      header themselves.
 
 export const MEMBER_SCOPE_PREFIX = "member:"
 /** How long a machine's key lives before the person must pair again. */
@@ -88,11 +91,43 @@ export type PairResult =
 export const NETWORK_MISMATCH = "The private network says someone else is connecting from this machine. Ask the owner for a new code."
 export const TOO_MANY_WAITING = "Too many machines are waiting for the owner's answer. Try again later."
 
-/** The login the private network reports for this request, if it does. */
-export function networkLogin(req: Pick<IncomingMessage, "headers">): string | null {
-  const v = req.headers[NETWORK_LOGIN_HEADER]
-  const s = (Array.isArray(v) ? v[0] : v || "").trim().toLowerCase()
-  return s ? s.slice(0, 120) : null
+type ProxiedRequest = Pick<IncomingMessage, "headers"> & { socket?: { remoteAddress?: string } | null }
+
+const header = (req: ProxiedRequest, name: string): string => {
+  const v = req.headers[name]
+  return (Array.isArray(v) ? v[0] : v || "").trim()
+}
+
+/** True when the request comes from this computer, which is where
+ *  `tailscale serve` proxies from. A local process can still pretend. */
+export function viaLocalProxy(req: ProxiedRequest): boolean {
+  const a = req.socket?.remoteAddress || ""
+  return a === "127.0.0.1" || a === "::1" || a === "::ffff:127.0.0.1"
+}
+
+/** The login the private network reports for this request, if it does.
+ *  A header on a request that did not come through the local proxy is the
+ *  sender's own word, so it is ignored. */
+export function networkLogin(req: ProxiedRequest): string | null {
+  if (!viaLocalProxy(req)) return null
+  const s = header(req, NETWORK_LOGIN_HEADER).toLowerCase()
+  return s ? s.slice(0, 80) : null
+}
+
+/** Where the request came from: the address the local proxy reports
+ *  (X-Forwarded-For) when there is one, else the socket's. Behind
+ *  `tailscale serve` the socket is always this computer. */
+export function clientAddress(req: ProxiedRequest): string {
+  const socket = req.socket?.remoteAddress || "unknown"
+  if (!viaLocalProxy(req)) return socket
+  const first = header(req, "x-forwarded-for").split(",")[0].trim()
+  return /^[0-9a-fA-F:.]{2,45}$/.test(first) ? first : socket
+}
+
+/** A machine name as typed on the unpaired machine: letters, digits and a
+ *  few marks only, so it cannot pass for part of the question the owner reads. */
+export function machineName(v: unknown): string {
+  return typeof v === "string" ? v.replace(/[^\p{L}\p{N} ._'()-]/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60) : ""
 }
 
 /** The person's logins on the private network, from `tailscale:<login>` identities. */
@@ -106,7 +141,7 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
   const started = Date.now()
   const now = deps.now ?? Date.now
   const log = deps.log ?? ((line: string) => console.log(line))
-  const client = req.socket?.remoteAddress || "unknown"
+  const client = clientAddress(req)
   const wait = deps.limiter.retryAfter(client)
   if (wait > 0) {
     log(`[member] pair-code refused from ${client}: locked out for ${wait}s more`)
@@ -117,7 +152,7 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
   try {
     const body = await readJson(req, 2048)
     code = body.code
-    machine = typeof body.machine === "string" ? body.machine.replace(/\s+/g, " ").trim().slice(0, 60) : ""
+    machine = machineName(body.machine)
   } catch { /* counts as a wrong code */ }
   const redeemed = deps.codes.redeem(code)
   const verified = redeemed ? verifyMemberToken(redeemed.token, deps.tokens) : null
@@ -145,10 +180,12 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
     return { status: 403, body: { error: NETWORK_MISMATCH } }
   }
   const name = machine || "Unnamed machine"
+  // Cut so the card's 300-character question always fits.
+  const who = person.name.slice(0, 40)
   const card = createCard(deps.root, {
-    title: `New machine for ${person.name}`,
-    ask: `Let "${name}" at ${client}${login ? `, signed in to the network as ${login},` : ""} see ${person.name}'s own work?`,
-    recommend: `Yes if ${person.name} told you they just paired this machine. No if you did not expect it.`,
+    title: `New machine for ${who}`,
+    ask: `From ${client}, ${login ? `network login ${login}` : "no network login reported"}. Machine name, as typed there: "${name}". Let it see ${who}'s own work?`,
+    recommend: `Yes if ${who} told you they just paired this machine. No if you did not expect it.`,
     if_silent: "discard",
     raised_by: PAIRING_CARD_BY,
   }, { now: now() })
@@ -177,7 +214,7 @@ export const WAITING = "waiting for the owner to approve this machine"
 
 /** Whether `token` opens the member page right now. Reads the owner's
  *  answer on the pairing card the first time it is there. */
-export function memberAccess(token: string | null, deps: Pick<MemberDeps, "tokens" | "members" | "root" | "now" | "log">, address?: string): AccessResult {
+export function memberAccess(token: string | null, deps: Pick<MemberDeps, "tokens" | "members" | "root" | "now" | "log"> & { people?: MemberDeps["people"] }, address?: string): AccessResult {
   const now = deps.now ?? Date.now
   const log = deps.log ?? ((line: string) => console.log(line))
   const verified = verifyMemberToken(token, deps.tokens)
@@ -185,6 +222,12 @@ export function memberAccess(token: string | null, deps: Pick<MemberDeps, "token
   const { rec, personId } = verified
   let device = deps.members.byToken(rec.id)
   if (!device || device.state === "removed" || device.personId !== personId) return { ok: false, status: 401, error: NOT_PAIRED }
+  // Taken off the people list by any road (the command, the file): the key ends.
+  if (deps.people && !deps.people().some((p) => p.id === personId)) {
+    removeDevice(deps, rec.id, "person no longer listed")
+    log(`[member] ${personId}: "${device.name}" ended: person no longer listed`)
+    return { ok: false, status: 401, error: NOT_PAIRED }
+  }
   if (device.state === "pending") {
     const card = device.cardId ? readCard(deps.root, device.cardId) : null
     const answer = !card ? null : card.status === "decided" ? card.verdict : card.status === "expired" ? "no" : null

@@ -6,7 +6,8 @@ import { PairAttemptLimiter } from "./app-pair-code"
 import { RejectLog, credentialState, rejectFields } from "./app-auth-log"
 import { appIconPng } from "./app-icon"
 import { MemberStore } from "@/members/store"
-import { memberAccess, pairMemberMachine } from "@/members/pairing"
+import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
+import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor } from "@/members/work"
 import type { Person } from "@/people/people"
 import {
@@ -59,6 +60,13 @@ function rejectLogFor(ctx: MemberRouteCtx): RejectLog {
   return found
 }
 
+/** The people list as agentx.json holds it now. The dashboard keeps the
+ *  config it started with, and a person added since then must still pair;
+ *  one removed since then must stop. */
+export function currentPeople(atStart: Person[], load: () => { people: Person[] } = loadDaemonConfig): Person[] {
+  try { return load().people } catch { return atStart }
+}
+
 /** Handles the request and returns true if `path` belongs to the member page. */
 export async function handleMemberRequest(
   req: IncomingMessage,
@@ -94,8 +102,7 @@ export async function handleMemberRequest(
     return sendJson(res, result.status, result.body)
   }
 
-  const address = req.socket?.remoteAddress || undefined
-  const access = memberAccess(memberToken(req), deps, address)
+  const access = memberAccess(memberToken(req), deps, clientAddress(req))
   if (!access.ok) {
     if (access.status === 401) {
       const sent = bearer(req)

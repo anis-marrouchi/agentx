@@ -146,7 +146,7 @@ people
         throw new Error([
           `tailscale serve publishes the whole dashboard, not only the member page: ${exposed.join(", ")}`,
           `  Anyone you share this computer with could open it. Serve only the member paths instead:`,
-          `    tailscale serve reset`,
+          `    tailscale serve reset   (removes every served path; add the phone app's /app lines back if you use it)`,
           `    tailscale serve --bg --set-path /member http://127.0.0.1:${port}/member`,
           `    tailscale serve --bg --set-path /api/member http://127.0.0.1:${port}/api/member`,
         ].join("\n"))
