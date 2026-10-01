@@ -59,7 +59,7 @@ By default a listed person can write to any agent, like before. To limit them:
 
 1. **Terminal:** run `agentx people allow sara coder-agent pm-agent`. Use the agent ids from `agentx agents`.
 2. From then on a message from Sara to any other agent is answered with one line: *Sara B, you can reach coder-agent, pm-agent here, not devops-agent. Ask the owner if you need devops-agent.* No run starts, nothing is queued. This holds for an agent on another node too: the message is refused here and never leaves.
-3. The limit follows her work: an agent working for her cannot hand it to an agent she may not reach either, on this node or on another. The agent that asked is told why, and the refusal is in her trail.
+3. The limit follows her work: an agent working for her cannot hand it to an agent she may not reach either, on this node or on another. The agent that asked is told why, and the refusal is in her trail. A hand-off to another node that names no agent is refused as well, since that node would pick the agent.
 4. To lift it, run `agentx people allow sara all`.
 
 You can also set it when adding someone: `agentx people add sara --name "Sara B" --agent coder-agent`.
@@ -71,7 +71,8 @@ What the limit does not cover:
 - An owner is never limited; `agentx people allow` refuses one.
 - Unknown senders are not limited here; each channel decides whether it answers them at all.
 - A workflow's agent steps run whoever triggered the workflow.
-- Work handed on from another node: once an allowed agent on a peer has her work, that peer applies its own people list, not this one.
+- Work handed on from another node: once an allowed agent on a peer has her work, that peer applies its own people list, not this one. It can do so only when it knows the work is hers: a message forwarded from a channel carries who wrote it; a hand-off between agents that waits for its answer does not, and the peer then applies no limit.
+- An agent answered by your own Claude Code session ([Work from your Claude Code session](/jobs/claude-code-session)): when your session takes her message for an allowed agent, what it then asks of other agents is not checked. You are at that terminal; you decide.
 - A request to the daemon's API that does not name the turn it comes from (a script calling `/task` directly) is not tied to a person.
 - The command warns when an id is not an agent on this machine. Check the spelling: a mistyped id leaves the person able to reach nothing.
 - With several nodes, each node reads its own people list. Give a person the same `id` and the same limit on every node they write to.
