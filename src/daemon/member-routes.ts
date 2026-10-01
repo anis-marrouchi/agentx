@@ -60,11 +60,15 @@ function rejectLogFor(ctx: MemberRouteCtx): RejectLog {
   return found
 }
 
+let lastRead: Person[] | null = null
+
 /** The people list as agentx.json holds it now. The dashboard keeps the
  *  config it started with, and a person added since then must still pair;
- *  one removed since then must stop. */
+ *  one removed since then must stop. While the file cannot be read (a
+ *  half-saved edit), the last list that was read stands: falling back to
+ *  the start-time list would end the keys of everyone added since. */
 export function currentPeople(atStart: Person[], load: () => { people: Person[] } = loadDaemonConfig): Person[] {
-  try { return load().people } catch { return atStart }
+  try { return (lastRead = load().people) } catch { return lastRead ?? atStart }
 }
 
 /** Handles the request and returns true if `path` belongs to the member page. */

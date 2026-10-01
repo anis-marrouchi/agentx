@@ -278,10 +278,30 @@ describe("the people list is read when the request comes", () => {
     expect((await fetch(`${base}/api/member/work`, { headers: { cookie } })).status).toBe(401)
   })
 
-  it("reads agentx.json again, and keeps the start-time list if it cannot be read", () => {
+  it("reads agentx.json again, and keeps the last list it read while the file cannot be read", () => {
     const lina: Person = { id: "lina", name: "Lina M", role: "member", identities: [] }
     expect(currentPeople(LISTED, () => ({ people: [...LISTED, lina] })).map((p) => p.id)).toEqual(["sara", "omar", "lina"])
-    expect(currentPeople(LISTED, () => { throw new Error("half-written file") })).toBe(LISTED)
+    expect(currentPeople(LISTED, () => { throw new Error("half-written file") }).map((p) => p.id)).toEqual(["sara", "omar", "lina"])
+  })
+
+  it("keeps the key of a person added after the start while agentx.json is half-saved (#416)", async () => {
+    const lina: Person = { id: "lina", name: "Lina M", role: "member", identities: [] }
+    const atStart = [...LISTED]
+    let file: () => { people: Person[] } = () => ({ people: [...LISTED, lina] })
+    const people = () => currentPeople(atStart, () => file())
+    const inv = inviteMember({ tokens, codes, members, people }, "lina")
+    if (!inv.ok) throw new Error(inv.error)
+    const token = codes.redeem(inv.code)!.token
+    members.add({ tokenId: inv.tokenId, personId: "lina", name: "PC", state: "active", createdAt: new Date().toISOString() })
+    const deps = { tokens, members, root: dir, people, log }
+    expect(memberAccess(token, deps).ok).toBe(true)
+    file = () => { throw new Error("half-written file") }
+    expect(memberAccess(token, deps).ok).toBe(true)
+    expect(tokens.list().find((t) => t.id === inv.tokenId)?.revokedAt).toBeFalsy()
+    // Taken off the list in a file that reads: the key ends.
+    file = () => ({ people: LISTED })
+    expect(memberAccess(token, deps).ok).toBe(false)
+    expect(members.byToken(inv.tokenId)?.state).toBe("removed")
   })
 })
 
