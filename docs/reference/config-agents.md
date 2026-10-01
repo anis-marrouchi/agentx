@@ -145,6 +145,24 @@ Each item in `agents.<id>.integrations` declares one service. Secrets never go i
 | `presence.label` | string | the agent's name | Name shown under the cursor. |
 | `presence.allowActions` | boolean | — | Lets the agent click and type for you. Without it, "act" falls back to "teach". |
 
+## people
+
+The humans who talk to your agents, one entry per person. A task started by a listed person is stamped with their `id` on every channel. Empty by default: your own machine's surfaces are recorded as the built-in person `owner` and other senders are unknown. Steps and examples: [Tell agents who is who](../jobs/people.md).
+
+```json
+"people": [
+  { "id": "anis", "name": "Anis", "role": "owner", "identities": ["telegram:123456789", "github:your-login"] },
+  { "id": "sara", "name": "Sara", "identities": ["gitlab:sara.b", "whatsapp:21620123456"] }
+]
+```
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `people[].id` | string | required | Short name you choose: lower-case letters, digits, `-` and `_`, up to 40 characters. Each id appears once. `owner` is kept for a person with the owner role. |
+| `people[].name` | string | required | The person's name, for you to read. |
+| `people[].role` | `owner`, `member` or `guest` | `member` | A label for now. A single `owner` is also the person at this machine's own surfaces (voice, phone app, dashboard), and their turns on other channels count as yours for `requests`. |
+| `people[].identities` | list of strings | `[]` | Where the person writes from, each as `channel:id`: a GitLab or GitHub login, a Telegram id or username, a WhatsApp number. Display names are not matched. An identity belongs to one person only. |
+
 ## session
 
 When a conversation's memory is rotated or treated as stale.

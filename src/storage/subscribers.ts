@@ -26,12 +26,12 @@ function prepare(db: Database.Database): Stmts {
         id, agent_id, channel, chat_id, status, message_preview, error,
         duration_ms, input_tokens, output_tokens,
         cache_read_tokens, cache_create_tokens,
-        started_at, finished_at
+        started_at, finished_at, person
       ) VALUES (
         @id, @agent_id, @channel, @chat_id, @status, @message_preview, @error,
         @duration_ms, @input_tokens, @output_tokens,
         @cache_read_tokens, @cache_create_tokens,
-        @started_at, @finished_at
+        @started_at, @finished_at, @person
       )
     `),
     upsertUsageDaily: db.prepare(`
@@ -76,6 +76,7 @@ interface PendingTask {
   chatId: string
   startedAt: string
   messagePreview: string
+  person: string | null
 }
 
 /**
@@ -105,6 +106,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
       chatId: p.chatId,
       startedAt: p.at,
       messagePreview: p.messagePreview,
+      person: p.person?.id ?? null,
     })
 
     // Improvement plan #2 — open a trace row at start so per-step capture
@@ -135,6 +137,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           resumeOrigin: p.resumeOrigin ?? null,
           resumeAttempt: p.resumeAttempt ?? 0,
           resumedFrom: p.resumedFrom ?? null,
+          person: p.person?.id ?? null,
         },
         p.taskId,
       )
@@ -194,6 +197,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
         chat_id: p.chatId,
         status,
         message_preview: start?.messagePreview ?? null,
+        person: start?.person ?? null,
         error: p.error ?? null,
         duration_ms: p.durationMs,
         input_tokens: p.inputTokens ?? null,

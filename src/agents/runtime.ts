@@ -175,6 +175,9 @@ export interface AgentTask {
     senderId?: string
     /** Platform username (e.g. @username) */
     senderUsername?: string
+    /** The known person who started this chain (people, #384). Set by the
+     *  registry when the turn starts; a value sent by a caller is replaced. */
+    person?: string
     group?: string
     /** Stable chat ID for session keying (e.g. "project:issue:123" for GitLab) */
     chatId?: string

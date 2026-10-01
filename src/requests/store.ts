@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3"
+import { ensureColumns, PERSON_COLUMNS } from "@/storage/sqlite"
 
 // --- Open requests: what a person asked for that is not finished (#356) ---
 //
@@ -26,6 +27,8 @@ export interface RequestRecord {
   channel: string
   chatId: string
   sender: string | null
+  /** The known person who asked (people, #384), when the sender is one. */
+  person: string | null
   agentId: string
   /** The request in the person's words. */
   text: string
@@ -81,6 +84,7 @@ export function ensureRequestTables(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_request_links_request ON request_links(request_id);
   `)
+  ensureColumns(db, "requests", PERSON_COLUMNS)
   // Added after the first version: a database that already has the table
   // gets the column here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -102,7 +106,7 @@ export function hasRequestTables(db: Database.Database): boolean {
 
 function toRecord(r: any): RequestRecord {
   return {
-    id: r.id, state: r.state, channel: r.channel, chatId: r.chat_id, sender: r.sender ?? null,
+    id: r.id, state: r.state, channel: r.channel, chatId: r.chat_id, sender: r.sender ?? null, person: r.person ?? null,
     agentId: r.agent_id, text: r.text, createdAt: r.created_at, updatedAt: r.updated_at,
     attentionReason: r.attention_reason ?? null, notifiedAt: r.notified_at ?? null,
     question: r.question ?? null, closedAt: r.closed_at ?? null,
@@ -121,12 +125,12 @@ export class RequestStore {
   /** Note a turn a person started. Linked to its run. */
   addCandidate(input: {
     id: string; runId: string; channel: string; chatId: string; sender?: string | null
-    agentId: string; text: string; now: number
+    person?: string | null; agentId: string; text: string; now: number
   }): void {
     this.db.prepare(
-      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at)
-       VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(input.id, input.channel, input.chatId, input.sender ?? null, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now)
+      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, person, agent_id, text, created_at, updated_at)
+       VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(input.id, input.channel, input.chatId, input.sender ?? null, input.person ?? null, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now)
     this.link(input.id, "run", input.runId, input.now)
   }
 

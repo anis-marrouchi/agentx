@@ -31,6 +31,7 @@ import { rag as ragCmd } from "@/commands/rag"
 import { backlog } from "@/commands/backlog"
 import { schedule } from "@/commands/schedule"
 import { approvals } from "@/commands/approvals"
+import { people } from "@/commands/people"
 import { requests } from "@/commands/requests"
 import { connect } from "@/commands/connect"
 import { usage } from "@/commands/usage"
@@ -156,7 +157,7 @@ const ADVANCED = [
   // Observability + forensics
   ledgerCmd, decisionsCmd, traceCmd, processCmd, watch, eventsCmd, dbCmd,
   // Fleet + extension
-  mesh, a2a, skillCmd, pluginCmd, hook, actionsCmd,
+  mesh, a2a, skillCmd, pluginCmd, hook, actionsCmd, people,
   // Scheduling internals (`schedule` is the friendly front door)
   cron,
   // Housekeeping

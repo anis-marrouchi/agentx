@@ -94,6 +94,9 @@ export interface AgentXEvents {
     resumedFrom?: string
     /** Who sent the message, when the channel knows (requests, #356). */
     sender?: { name?: string; id?: string; username?: string }
+    /** The known person who started this chain (people, #384). Absent for
+     *  an unknown sender and for turns software starts. */
+    person?: { id: string; role?: "owner" | "member" | "guest" }
     /** True for the turn that talks to the person: not a delegated hop,
      *  not a callback (a2a/initiator isHumanFacingTurn). */
     humanRoot?: boolean
