@@ -130,7 +130,6 @@ import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
-import { clipSpeech } from "@/voice/mesh-voice"
 import { toSpeakable } from "@/voice/speakable"
 import { meshAddressables, resolveAddress } from "@/voice/address"
 import { presenceLook } from "@/voice/presence"
@@ -3049,7 +3048,7 @@ export class AgentXDaemon {
           voiceOf: (id) => agents[id]
             ? voiceRef(resolveAgentVoice(id, agents, this.config.voice))
             : this.voiceMesh.voices.speaker(id, false)?.voice ?? null,
-          speakable: toSpeakable,
+          speakable: (text) => toSpeakable(text, this.config.voice.spokenMaxChars),
         }, req.method || "GET", path, url.searchParams)
         this.json(res, reply.status, reply.body)
         return
@@ -3061,6 +3060,7 @@ export class AgentXDaemon {
           stt: () => this.config.voice.stt,
           host: () => detectSttHost(elevenLabsKey()),
           allowUnmeasured: () => this.config.voice.allowUnmeasured,
+          spokenMaxChars: () => this.config.voice.spokenMaxChars,
           nodeName: this.config.node?.name,
           elevenLabsKey,
           voiceOf: (id, peer) => resolveVoice(id, peer, this.config, this.voiceMesh.voices),
@@ -5689,7 +5689,7 @@ export class AgentXDaemon {
             const reply = await this.voiceMesh.ask(agentId, message, voice, introduce)
             const { cleanText, ui } = extractUiDirective(reply.content)
             if (!reply.error) this.voiceIntros.spoke(session, agentId)
-            const spoken = reply.error ? null : clipSpeech(toSpeakable(cleanText))
+            const spoken = reply.error ? null : toSpeakable(cleanText, this.config.voice.spokenMaxChars)
             this.json(res, reply.error ? 502 : 200, {
               agentId, voice: voiceForText(voice, spoken), presence: null,
               text: spoken,
@@ -5751,7 +5751,7 @@ export class AgentXDaemon {
           // rather than in each client, for the same reason /ask owns the
           // voice prompt: two parsers drift.
           const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
-          const speakable = toSpeakable(withoutDirective)
+          const speakable = toSpeakable(withoutDirective, this.config.voice.spokenMaxChars)
           if (!response.error) this.voiceIntros.spoke(session, agentId)
           if (!response.error && presence?.seat === "active" && presence.mode === "talk") {
             this.voiceTalk.presence.showTalk(agentId, speakable, presence.persist)

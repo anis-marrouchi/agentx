@@ -89,7 +89,7 @@ If you say nothing for a few seconds, the microphone closes and the pill says **
 
 ### Read the answer in the pill
 
-Most answers are only spoken. When an answer has a link, a picture, or much more text than was read aloud, the pill grows to show it. The orb and its row stay where they were, and the answer opens above them when the pill is low on the screen, or below them when it is high.
+Most answers are only spoken. A long answer is read aloud up to the end of a sentence, about 500 characters in, and ends with "The rest is on screen." When an answer has a link, a picture, or much more text than was read aloud, the pill grows to show it. The orb and its row stay where they were, and the answer opens above them when the pill is low on the screen, or below them when it is high.
 
 ![The pill grown into an answer, light mode: a release checklist with a list, two links and a Release page button above the pill's own row with the orb](/screenshots/voice/answer-open-light.png)
 
@@ -302,6 +302,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.stt` | `"auto"` | Speech to text: `"auto"`, `"elevenlabs"` or `"local"` |
 | `voice.localStt` | `"mlx-whisper"` | The engine on this Mac: `"mlx-whisper"` or `"parakeet"` |
 | `voice.endOfTurn` | `"vad"` | How a hands-free turn ends: `"vad"` (voice detection) or `"volume"` |
+| `voice.spokenMaxChars` | `500` | Longest answer read aloud, in characters, `300` to `1500`. A longer answer stops at the end of a sentence and says the rest is on screen. The written answer is always shown whole |
 | `voice.hotkeys.talk` | `"opt+space"` | Hold to talk |
 | `voice.hotkeys.stop` | `"cmd+opt+period"` | Stop every voice |
 | `voice.hotkeys.paste` | `"cmd+opt+v"` | Smart paste |
@@ -399,6 +400,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **The pill says "Too short — hold while speaking":** you let go before saying anything. Keep holding **Option–Space** until you have finished.
 - **Parakeet is picked but answers are still slow:** it is still downloading (483 MB) or loading for the first time; Whisper answers meanwhile. Parakeet has no Arabic: for Arabic, set **On-this-Mac engine** back to Whisper. See [Switch to Parakeet](../dashboard/voice.md#switch-to-parakeet).
 - **No sound from the answer:** check the Mac's volume and output device. Then check an agent isn't waiting behind another: **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue`. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`. An ElevenLabs agent without a key uses a Mac voice, or stays silent when `voice.fallback` is `"none"`.
+- **An answer stops before the end:** a long answer is read aloud only up to `voice.spokenMaxChars` and then says "The rest is on screen": read the rest in the pill. If it stopped without that phrase, the daemon's log says why. **Terminal:** run `agentx daemon logs` and look for the lines that start with `[voice] answer`. Each one names how the line ended: `finished`, `paused` (you spoke or pressed the talk shortcut), `skipped`, `stopped`, `watchdog` (it ran far past its length) or `failed`.
 - **The answer closes before you finish reading it:** keep the pointer over it, or raise **Keep the answer open** on the [General tab](#general-tab).
 - **The pill doesn't show:** it was closed with **×**, **Esc** or **Hide pill**. Hold **Option–Space** to bring it back. If it is off screen, choose **Reset position** in the menu.
 - **Option–Space does nothing:** another app already uses that shortcut. Pick another **Talk (hold)** shortcut in **Settings… › General**. The app log, `~/Library/Logs/agentx-desktop.err.log`, says `is taken by another app`.

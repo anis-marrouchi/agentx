@@ -188,10 +188,18 @@ describe("config", () => {
   it("defaults to free system voices with a system fallback", () => {
     const parsed = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
     expect(parsed.voice).toEqual({
-      provider: "system", fallback: "system", locale: "en", stt: "auto", allowUnmeasured: false, localStt: "mlx-whisper", endOfTurn: "vad",
+      provider: "system", fallback: "system", locale: "en", stt: "auto", allowUnmeasured: false, spokenMaxChars: 500, localStt: "mlx-whisper", endOfTurn: "vad",
       hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
       card: { timeout: 30, maxHeight: 320 },
     })
+  })
+
+  // A cut answer says "The rest is on screen": the Mac pill opens only
+  // for a written answer over 280 characters, so the cap stays above it.
+  it("refuses a spoken cap the Mac pill would not open for", () => {
+    const voice = (spokenMaxChars: number) => daemonConfigSchema.safeParse({ node: { id: "n", name: "n" }, voice: { spokenMaxChars } }).success
+    expect(voice(299)).toBe(false)
+    expect(voice(300)).toBe(true)
   })
 
   it("accepts a per-agent provider and system voice", () => {

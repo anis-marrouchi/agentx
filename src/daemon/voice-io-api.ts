@@ -25,7 +25,6 @@ import type { DaemonConfig } from "./config"
 // Audio is never logged and never kept: a recording lives in a private temp
 // folder for the length of the request and is deleted after it.
 
-export const SPEAK_MAX_CHARS = 1500
 const SPEAK_BODY_MAX = 64 * 1024
 /** Transcriptions running at once on this host; more wait for none, they
  *  get 429. Whisper is heavy, and one phone rarely needs two. */
@@ -48,6 +47,8 @@ export interface VoiceIoDeps {
   measure?: (file: string, ffmpeg: string | null) => Promise<number | null>
   /** voice.allowUnmeasured: take recordings this host can't measure. */
   allowUnmeasured?: () => boolean
+  /** voice.spokenMaxChars: the longest answer said aloud. */
+  spokenMaxChars?: () => number
   /** This node's name, for the phone's setup hint. */
   nodeName?: string
   synth?: (key: string, voice: VoiceRef, text: string) => Promise<Buffer>
@@ -143,7 +144,7 @@ async function speak(req: IncomingMessage, res: ServerResponse, deps: VoiceIoDep
   const agent = typeof body?.agent === "string" ? body.agent : ""
   const peer = typeof body?.peer === "string" && body.peer ? body.peer : undefined
   if (!agent) return json(res, 400, { error: "agent is required" })
-  const text = speakableAnswer(typeof body?.text === "string" ? body.text : "")
+  const text = speakableAnswer(typeof body?.text === "string" ? body.text : "", deps.spokenMaxChars?.())
   if (!text) return json(res, 422, { error: "Nothing in this answer can be said aloud." })
 
   const voice = deps.voiceOf(agent, peer)
@@ -167,10 +168,10 @@ async function speak(req: IncomingMessage, res: ServerResponse, deps: VoiceIoDep
 
 /** An answer as it is said: no agentx:ui block, no declared files, no
  *  pictures, no markdown, capped. Pictures and files are only ever shown. */
-export function speakableAnswer(text: string): string {
+export function speakableAnswer(text: string, max?: number): string {
   const clean = extractUiDirective(extractArtifacts(text).text).cleanText
     .replace(/!\[[^\]\n]*\]\([^)\n]*\)/g, "")
-  return toSpeakable(clean, SPEAK_MAX_CHARS)
+  return toSpeakable(clean, max)
 }
 
 /** One answer as mp3, in the agent's ElevenLabs voice. */

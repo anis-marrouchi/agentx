@@ -85,6 +85,10 @@ export class VoiceTalkService {
   ) {
     this.speech = deps.speech ?? new SpeechOut()
     if (deps.onQueue) this.speech.events.onChange = deps.onQueue
+    // Every end of a spoken line, with its reason: a line that stops early
+    // is otherwise indistinguishable from one that was short (#357).
+    this.speech.events.onStopped = (u, reason, ms) =>
+      this.log(`[voice] ${u.kind ?? "line"}${u.agentId ? ` (${u.agentId})` : ""} ${reason} after ${(ms / 1000).toFixed(1)}s, ${u.text.length} chars`)
     this.model = deps.model ?? ((system) => createLineModel({ system }))
     this.remote = deps.remote ?? (() => undefined)
     this.stopSpeakers = deps.stopSpeakers ?? (() => stopAllSpeakers())

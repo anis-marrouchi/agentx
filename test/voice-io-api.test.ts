@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "http"
 import { existsSync, readFileSync } from "fs"
-import { handleVoiceIo, speakableAnswer, SPEAK_MAX_CHARS, MAX_TRANSCRIBING, type VoiceIoDeps } from "../src/daemon/voice-io-api"
+import { handleVoiceIo, speakableAnswer, MAX_TRANSCRIBING, type VoiceIoDeps } from "../src/daemon/voice-io-api"
 import { AUDIO_LIMITS, audioExt, checkDurationHeader, sttEngines, sttSetupHint, type SttHost } from "../src/voice/transcribe"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 import type { VoiceRef } from "../src/voice/speaker"
@@ -227,9 +227,8 @@ describe("POST /voice/speak", () => {
   it("drops the agentx:ui block and markdown, and caps what is said", () => {
     const text = `# Title\n\nHello *there*.\n\n${FENCE}agentx:ui\n{"buttons":[{"label":"Go","url":"https://example.com"}]}\n${FENCE}`
     expect(speakableAnswer(text)).toBe("Title. Hello there.")
-    const long = speakableAnswer("word ".repeat(2000))
-    expect(long.length).toBeLessThanOrEqual(SPEAK_MAX_CHARS + 3)
-    expect(long.endsWith("...")).toBe(true)
+    const long = speakableAnswer("One short sentence here. ".repeat(100), 200)
+    expect(long).toBe("One short sentence here. ".repeat(8).trim() + " The rest is on screen.")
   })
 
   it("hands the cleaned text back for the phone's own voice when ElevenLabs can't speak", async () => {

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { EventEmitter } from "events"
 import type { ChildProcess } from "child_process"
 import {
-  MeshVoices, PREMADE_VOICES, assignVoices, clipSpeech, genderFromCard, loadVoicePool, parseVoiceSwitch,
+  MeshVoices, PREMADE_VOICES, assignVoices, genderFromCard, loadVoicePool, parseVoiceSwitch,
   type MeshDirectory, type PoolVoice,
 } from "../src/voice/mesh-voice"
 import { DEFAULT_VOICE_ID, VoiceIntroTracker, remoteVoiceAppend } from "../src/voice/agent-voice"
@@ -65,11 +65,6 @@ describe("card-derived voice details", () => {
     expect(genderFromCard("You are Atlas. She handles ops.")).toBe("female")
     expect(genderFromCard("You are Omar; his job is billing.")).toBe("male")
     expect(genderFromCard("You are Main Agent on clawd-server for Noqta.")).toBeNull()
-  })
-
-  it("clips a long reply to its first sentences for speech", () => {
-    expect(clipSpeech("One. Two! Three? Four. Five.")).toBe("One. Two! Three?")
-    expect(clipSpeech("No full stop")).toBe("No full stop")
   })
 })
 
