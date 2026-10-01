@@ -10,9 +10,12 @@
 //                               calls.allow; 409 one already in
 //                               progress; 429 over calls.maxPerHour
 //   GET  /calls?status=&kind=&limit=  newest first; status is a comma list
-//   GET  /calls/ringing         the widget's poll: voice calls {calls,
+//   GET  /calls/ringing?busy=1&showing=<id>
+//                               the widget's poll: voice calls {calls,
 //                               ringSound, ringSeconds}. Polling marks the
-//                               widget alive.
+//                               widget alive. busy: it cannot ring a new
+//                               call now; showing: the call ringing on it.
+//                               A call it is not showing waits while busy.
 //   GET  /calls/asking          the phone app's poll: camera asks waiting
 //                               for the owner {calls, ringSeconds}
 //   GET  /calls/:id
@@ -63,7 +66,7 @@ export async function handleCalls(
   if (path === "/calls/ringing") {
     if (method !== "GET") return { status: 405, body: { error: "GET" } }
     const cfg = config()
-    return { status: 200, body: { calls: await calls.ringing(), ringSound: cfg.ringSound, ringSeconds: cfg.ringSeconds } }
+    return { status: 200, body: { calls: await calls.ringing({ busy: query.get("busy") === "1", showing: query.get("showing") || undefined }), ringSound: cfg.ringSound, ringSeconds: cfg.ringSeconds } }
   }
 
   if (path === "/calls/asking") {
