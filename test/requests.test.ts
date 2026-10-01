@@ -74,6 +74,11 @@ describe("who counts as the owner", () => {
     for (const ch of ["voice", "app", "dashboard", "webrtc"]) expect(isOwnerTurn({ channels: [], from: [] }, ch, undefined)).toBe(true)
   })
 
+  it("skips turns the daemon itself starts on those surfaces", () => {
+    expect(isOwnerTurn({ channels: [], from: [] }, "voice", { name: "Camera" })).toBe(false)
+    expect(isOwnerTurn({ channels: [], from: [] }, "voice", { name: "Owner" })).toBe(true)
+  })
+
   it("takes nobody on a public channel when the from list is empty", () => {
     expect(isOwnerTurn({ channels: [], from: [] }, "github", { id: "1", username: "anyone" })).toBe(false)
   })

@@ -1685,6 +1685,7 @@ export class AgentXDaemon {
 
   /** Open requests (src/requests); null when the database is unavailable. */
   private requests: AttachedRequests | null = null
+  private requestsSweeping = false
   private approvalsTimer?: ReturnType<typeof setInterval>
   private approvalsSweeping = false
 
@@ -1716,7 +1717,14 @@ export class AgentXDaemon {
           },
           log: this.log,
         })
-        if (this.requests) await this.sweepRequests(this.requests)
+        // Beside the sweep, never inside it: a notice that hangs must not
+        // hold the approvals sweep.
+        if (this.requests && !this.requestsSweeping) {
+          this.requestsSweeping = true
+          void this.sweepRequests(this.requests)
+            .catch((e: any) => this.log(`[requests] sweep failed: ${e?.message ?? e}`))
+            .finally(() => { this.requestsSweeping = false })
+        }
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts).
         void popNext({

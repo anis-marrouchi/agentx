@@ -215,7 +215,7 @@ To turn it on by hand:
 
 1. Open `agentx.json`.
 2. Add `"requests": { "enabled": true }`.
-3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your sender id or username to `from`, for example `"from": ["telegram:123456789", "github:your-login"]`.
+3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your sender id or username to `from`, for example `"from": ["telegram:123456789", "github:your-login"]`. Use the `channel:id` form: an id on its own matches that id on every channel.
 4. Save the file. The running daemon picks the change up; no restart is needed.
 
 | Key | Type | Default | What it does |

@@ -29,17 +29,23 @@ export interface RequestSettings {
 /** This node's own surfaces: only its operator can reach them. */
 export const OPERATOR_CHANNELS: ReadonlySet<string> = new Set(["voice", "app", "dashboard", "webrtc"])
 
+/** Senders the daemon itself uses on those surfaces. Their turns are not
+ *  something the owner asked for (a camera frame, say). */
+const DAEMON_SENDERS: ReadonlySet<string> = new Set(["camera"])
+
 const base = (channel: string) => channel.toLowerCase().split("@")[0]
 
 /** Does a turn on this channel from this sender count as the owner's? */
 export function isOwnerTurn(
   settings: Pick<RequestSettings, "channels" | "from">,
   channel: string,
-  sender: { id?: string; username?: string } | undefined,
+  sender: { name?: string; id?: string; username?: string } | undefined,
 ): boolean {
   const ch = base(channel)
   if (settings.channels.length && !settings.channels.map(base).includes(ch)) return false
-  if (OPERATOR_CHANNELS.has(ch)) return true
+  // Trusted by channel name: a caller of the daemon's own API can claim one.
+  // The worst it gets is a wrong record and a notice, never access.
+  if (OPERATOR_CHANNELS.has(ch)) return !DAEMON_SENDERS.has((sender?.name ?? "").toLowerCase())
   // Display names are not matched: anyone can pick one.
   const ids = [sender?.id, sender?.username].filter((v): v is string => !!v).map((v) => v.toLowerCase().replace(/^@/, ""))
   if (!ids.length) return false
