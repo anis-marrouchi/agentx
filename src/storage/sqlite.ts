@@ -425,6 +425,8 @@ function runMigrations(db: Database.Database): void {
   // table itself makes these columns appear on every database.
   ensureColumns(db, "task_traces", RESUME_COLUMNS)
   ensureColumns(db, "task_traces", LESSON_IMPACT_COLUMNS)
+  ensureColumns(db, "task_traces", PERSON_COLUMNS)
+  ensureColumns(db, "task_history", PERSON_COLUMNS)
 }
 
 /** Schema version check for tests. */
@@ -634,10 +636,21 @@ const LESSON_IMPACT_COLUMNS: Array<[string, string]> = [
   ["injected_context", "TEXT"],
 ]
 
+/** People (#384): the id of the known person who started the run. NULL for
+ *  an unknown sender, for turns software starts, and on older rows. */
+export const PERSON_COLUMNS: Array<[string, string]> = [["person", "TEXT"]]
+
 /** Add any of `columns` the table lacks. Idempotent. */
 export function ensureColumns(db: Database.Database, table: string, columns: Array<[string, string]>): void {
   const have = new Set((db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((c) => c.name))
   for (const [name, type] of columns) {
-    if (!have.has(name)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+    if (have.has(name)) continue
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`)
+    } catch (e: any) {
+      // Two processes starting on one database: the slower one read the
+      // table before the faster one added the column. Already there is fine.
+      if (!/duplicate column name/i.test(String(e?.message))) throw e
+    }
   }
 }

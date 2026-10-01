@@ -8,6 +8,7 @@ import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { ORB_PALETTE_IDS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
+import { peopleProblem } from "@/people/people"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -1028,6 +1029,23 @@ export const requestsConfigSchema = z.object({
   retentionDays: z.number().positive().max(3650).default(90),
 }).default({})
 
+/** People (src/people, #384): the humans who talk to the agents, one entry
+ *  per person whatever channel they use. Empty: this machine's owner is the
+ *  only known person and nothing else changes. */
+export const personSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, "lower-case letters, digits, - and _"),
+  name: z.string().min(1).max(80),
+  role: z.enum(["owner", "member", "guest"]).default("member"),
+  /** "channel:id": a GitLab or GitHub login, a Telegram id or username, a
+   *  WhatsApp number. Display names are not matched. */
+  identities: z.array(z.string().regex(/^[A-Za-z][\w-]*:\S.*$/, "write it as channel:id")).default([]),
+})
+
+export const peopleConfigSchema = z.array(personSchema).default([]).superRefine((people, ctx) => {
+  const problem = peopleProblem(people)
+  if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem })
+})
+
 export const requestStatusConfigSchema = z.object({
   /** Channels that show it. On gitlab and github: one comment per request,
    *  kept up to date by the daemon. Empty: off. */
@@ -1172,6 +1190,7 @@ export const daemonConfigSchema = z.object({
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */
   requests: requestsConfigSchema,
+  people: peopleConfigSchema,
   /** Request status where the request was made (src/requests/status-board,
    *  #383): each person sees the state of their own request in the place
    *  they asked. Off by default. */

@@ -1633,6 +1633,13 @@ export class AgentXDaemon {
       }
     }
 
+    // People (#384): the registry stamps each turn from its own config
+    // reference, which the agents branch above swaps only on an agents edit.
+    if (JSON.stringify(this.config.people) !== JSON.stringify(next.people)) {
+      this.registry.setPeople(next.people)
+      applied.push(`people(${next.people.length})`)
+    }
+
     if (!meshHandled) restartRequired.push("mesh")
     if (JSON.stringify(this.config.node) !== JSON.stringify(next.node)) {
       restartRequired.push("node")

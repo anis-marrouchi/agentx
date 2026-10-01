@@ -2854,6 +2854,55 @@ List registered built-in actions, or run one with --input.
 | `--json` | — | Raw JSON output (omit chrome). |
 | `--schema` | — | Show the action's input/output schema instead of running it. |
 
+## people (advanced)
+
+`agentx people`: The humans who talk to your agents: one person per human, whatever channel they use. **Advanced.**
+
+### `agentx people list`
+
+Everyone, with their channel identities.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--json` | — | Machine-readable output. |
+
+### `agentx people add <id>`
+
+Add a person.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--name <name>` | required | Their name. |
+| `--role <role>` | `member` | owner \| member \| guest. |
+| `--identity <channel:id>` | — | A login, a Telegram id or a WhatsApp number (repeatable). |
+
+### `agentx people link <id> <identity>`
+
+Add a channel identity to a person, written channel:id (gitlab:sara, whatsapp:21620123456).
+
+No flags.
+
+### `agentx people unlink <id> <identity>`
+
+Take a channel identity away from a person.
+
+No flags.
+
+### `agentx people remove <id>`
+
+Remove a person. Their past runs keep the id; new messages from them are unknown.
+
+No flags.
+
+### `agentx people show <id>`
+
+One person and what they asked for, on every channel.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--limit <n>` | `20` | How many runs to list. |
+| `--json` | — | Machine-readable output. |
+
 ## cron (advanced)
 
 `agentx cron`: Manage cron jobs — add, list, enable, disable. **Advanced.**

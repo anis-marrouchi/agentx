@@ -35,6 +35,7 @@ const groups = [
     { text: "Review what agents learn", link: "/jobs/agent-memory" },
     { text: "Capture the screen at the right moment", link: "/jobs/screen-capture" },
     { text: "Work from your Claude Code session", link: "/jobs/claude-code-session" },
+    { text: "Tell agents who is who", link: "/jobs/people" },
   ] },
   { text: "When something goes wrong", items: [
     { text: "It's not answering", link: "/help/its-not-answering" }, { text: "Run a health check", link: "/help/doctor" },
