@@ -30,6 +30,8 @@ export interface RootInitiator {
   sender?: string
   /** The agent that was talking to the person when the chain started. */
   agentId?: string
+  /** The known person behind the root turn (people, #384). */
+  person?: string
 }
 
 /** The subset of AgentTask.context this module reads. */
@@ -39,6 +41,7 @@ export interface InitiatorContext {
   sender?: string
   initiator?: unknown
   delegation?: unknown
+  person?: unknown
   [k: string]: unknown
 }
 
@@ -68,6 +71,7 @@ function validRoot(v: unknown): RootInitiator | null {
   if (typeof o.chatId === "string") root.chatId = o.chatId.slice(0, 200)
   if (typeof o.sender === "string") root.sender = o.sender.slice(0, 120)
   if (typeof o.agentId === "string") root.agentId = o.agentId.slice(0, 80)
+  if (typeof o.person === "string" && o.person) root.person = o.person.slice(0, 40)
   return root
 }
 
@@ -104,6 +108,7 @@ export function rootInitiatorOf(ctx: InitiatorContext | undefined | null, agentI
   if (ctx?.chatId) root.chatId = String(ctx.chatId)
   if (ctx?.sender) root.sender = String(ctx.sender)
   if (agentId) root.agentId = agentId
+  if (typeof ctx?.person === "string" && ctx.person) root.person = ctx.person
   return root
 }
 
