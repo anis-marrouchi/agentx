@@ -28,6 +28,7 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `mesh` | Peer URLs and authentication |
 | `approvals` | How long decision cards wait, what "later" means, and the daily digest ([Approvals](/dashboard/approvals#settings)) |
 | `requests` | Records what you asked agents for and follows it until it is closed; off by default ([Configuration: automation](./config-automation.md#requests)) |
+| `requestStatus` | Shows each person the state of their request in the GitLab or GitHub thread where they asked; off by default ([Configuration: automation](./config-automation.md#requeststatus)) |
 
 Every field, with its type, default and what it does, is listed on four pages:
 
@@ -35,7 +36,7 @@ Every field, with its type, default and what it does, is listed on four pages:
 |---|---|
 | [Agents and runtime](./config-agents.md) | `node`, `providers`, `agents`, `session`, `processPool`, `plugins` |
 | [Channels](./config-channels.md) | `channels`: Telegram, WhatsApp, GitLab, GitHub, phone app notifications, ntfy, browser calls |
-| [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `requests`, `shutdown`, `resume` |
+| [Automation](./config-automation.md) | `crons`, `services`, `webhooks`, `workflows`, `procedures`, `notifications`, `approvals`, `requests`, `requestStatus`, `shutdown`, `resume` |
 | [Dashboard, mesh and optional layers](./config-operations.md) | `dashboard`, `mesh`, `meshVoices`, `voice`, `screen`, `business`, `boards`, `graph`, `decisions` |
 
 These pages are checked against the schema in `src/daemon/config.ts`. If your installed version differs, that file is the final word.

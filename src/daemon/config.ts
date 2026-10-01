@@ -1028,6 +1028,12 @@ export const requestsConfigSchema = z.object({
   retentionDays: z.number().positive().max(3650).default(90),
 }).default({})
 
+export const requestStatusConfigSchema = z.object({
+  /** Channels that show it. On gitlab and github: one comment per request,
+   *  kept up to date by the daemon. Empty: off. */
+  channels: z.array(z.string().min(1)).default([]),
+}).default({})
+
 export const approvalsConfigSchema = z.object({
   /** A card without an `expires` gets this many days. */
   defaultExpiryDays: z.number().positive().max(365).default(3),
@@ -1166,6 +1172,10 @@ export const daemonConfigSchema = z.object({
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */
   requests: requestsConfigSchema,
+  /** Request status where the request was made (src/requests/status-board,
+   *  #383): each person sees the state of their own request in the place
+   *  they asked. Off by default. */
+  requestStatus: requestStatusConfigSchema,
   /** Hand due Apple Reminders back to the agent that created them
    *  (src/reminders). macOS only; reads reminders whose notes end with the
    *  mac-pim skill's `agentx: agent=<id>` trailer. */

@@ -37,6 +37,16 @@ A **Business** tab (org chart, projects, and which chat belongs to which client)
 
 A configured card does not mean the connection is live: the card shows **live** only when the channel is switched on.
 
+## Show request status in GitLab or GitHub
+
+People who ask an agent for work in an issue or a merge request can see the state of that request in the same thread: queued, working, waiting, done, failed, timed out, or cut off by a restart. AgentX posts one comment per request and edits it. It is off until you turn it on.
+
+1. **Browser:** in **Settings**, select **Channels**.
+2. Select **GitLab** or **GitHub**.
+3. Under **Request status**, switch **On**.
+
+What the comment shows, and what it never shows, is listed under [`requestStatus`](../reference/config-automation.md#requeststatus).
+
 ## Create an access token
 
 ![The Tokens tab](/screenshots/settings-tokens.png)

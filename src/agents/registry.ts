@@ -1185,6 +1185,10 @@ export class AgentRegistry {
 
         if (queued) {
           const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
+          getEventBus().emit("task:queued", {
+            agentId: task.agentId, channel: qChannel, chatId: qChatId, at: new Date().toISOString(),
+            sender: senderOf(task.context), humanRoot: isHumanFacingTurn(task.context as any),
+          })
           this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId} at=${new Date().toISOString()}`)
           return {
             content: "",

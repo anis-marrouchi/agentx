@@ -32,6 +32,7 @@ import { backlog } from "@/commands/backlog"
 import { schedule } from "@/commands/schedule"
 import { approvals } from "@/commands/approvals"
 import { requests } from "@/commands/requests"
+import { requestStatus } from "@/commands/request-status"
 import { connect } from "@/commands/connect"
 import { usage } from "@/commands/usage"
 import { board } from "@/commands/board"
@@ -98,6 +99,7 @@ export async function buildProgram(): Promise<Command> {
     agent, channel, schedule,    // configure the things that carry work
     approvals,                   // decisions waiting for you
     requests,                    // what you asked for that is not finished
+    requestStatus,               // a request's state, where it was made
     attachCmd, monitorCmd, tui,  // connect editor sessions and terminal UI
     guardCmd,                    // safety
     pointCmd,                    // computer use: point, never click

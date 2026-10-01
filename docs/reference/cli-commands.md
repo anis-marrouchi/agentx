@@ -501,6 +501,14 @@ Show or change the requests settings (requests in agentx.json).
 | `--stale-hours <n>` | — | Hours without activity before an open request comes back to you. |
 | `--retention-days <n>` | — | Days a closed request is kept. |
 
+## request-status
+
+`agentx request-status [channel] [state]`: Show each person the state of their request in the thread where they asked (GitLab, GitHub).
+
+With no arguments it lists the channels and whether each is on. With a channel (`gitlab` or `github`) and `on` or `off` it changes `requestStatus.channels` in `agentx.json` and the running daemon picks the change up. See [`requestStatus`](./config-automation.md#requeststatus).
+
+No flags.
+
 ## attach
 
 `agentx attach`: Wear an agentx agent identity in this Claude Code session.

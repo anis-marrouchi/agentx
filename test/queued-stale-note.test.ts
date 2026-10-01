@@ -20,6 +20,7 @@ vi.mock("../src/agents/request-planner", async (importOriginal) => {
 import { AgentRegistry } from "../src/agents/registry"
 import { MessageQueue, STALE_QUEUE_NOTE_AFTER_MS, staleQueueNote } from "../src/agents/message-queue"
 import { isQueued } from "../src/agents/queued"
+import { getEventBus } from "../src/events/bus"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 describe("staleQueueNote", () => {
@@ -99,6 +100,19 @@ describe("registry flush of a queued channel message", () => {
     pendingOf(r)[0].timestamp = Date.now() - ageMs
     return flushedMessage(r, first)
   }
+
+  it("announces a queued message on the event bus, with who sent it (request status, #383)", async () => {
+    const seen: any[] = []
+    const listen = (p: any) => { seen.push(p) }
+    getEventBus().on("task:queued", listen)
+    const r = new AgentRegistry(config(), () => {})
+    await busy(r)
+    const queued = await r.execute({ message: "second", agentId: "ops", context: { ...ctx, senderId: "77" } })
+    getEventBus().off("task:queued", listen)
+    expect(isQueued(queued.error)).toBe(true)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", humanRoot: true, sender: { name: "Sam", id: "77" } })
+  })
 
   it("prepends the note when the message waited past the threshold", async () => {
     const message = await flushOne(10 * 60_000)
