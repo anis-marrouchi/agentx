@@ -59,8 +59,9 @@ function initials(name: string): string {
  * card stores its advice as one line ("Thursday 10:00: your calendar is
  * free"); when that line starts with an option, the card marks that option
  * and starts with it picked. The option must be the whole start: the line
- * ends there, or a separator follows ("No: ..." names No; "Not yet" and
- * "No strong view" name nothing). An option only mentioned further on is
+ * ends there, or a separator and a space follow ("No: ..." names No; "Not
+ * yet", "No strong view" and "No-one" name nothing, and "Thu 10" is not
+ * named by "Thu 10:30"). An option only mentioned further on is
  * not the advice ("do not approve"). No match: nothing is picked, the line
  * shows whole.
  */
@@ -70,7 +71,7 @@ export function recommended(card: Pick<DecisionCard, "recommend" | "choices">): 
   const choices = card.choices ?? []
   let index = -1
   choices.forEach((c, i) => {
-    if (!low.startsWith(c.toLowerCase()) || !/^\s*($|[:,.;–—-])/.test(text.slice(c.length))) return
+    if (!low.startsWith(c.toLowerCase()) || !/^\s*($|[:,.;–—-](\s|$))/.test(text.slice(c.length))) return
     if (index < 0 || c.length > choices[index].length) index = i
   })
   if (index < 0) return { index, why: text }

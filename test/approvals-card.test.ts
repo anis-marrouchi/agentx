@@ -107,6 +107,12 @@ describe("the card page", () => {
     expect(index(["Sun", "Mon"], "Sunday is no good, take Mon")).toBe(-1)
     expect(index(["Thu 1", "Sun"], "Thu 10:00 is better")).toBe(-1)
     expect(recommended({ choices: ["Yes", "No"], recommend: "Not yet" })).toEqual({ index: -1, why: "Not yet" })
+    // A separator glued to the next word or number does not end the option.
+    expect(index(["Yes", "No"], "No-one objected, so yes")).toBe(-1)
+    expect(index(["Send", "Hold"], "Send-off is Friday, hold until then")).toBe(-1)
+    expect(index(["Thu 10", "Thu 14"], "Thu 10:30 would be better than either")).toBe(-1)
+    expect(index(["1", "2"], "1.5 hours is enough")).toBe(-1)
+    expect(recommended({ choices: ["Yes", "No"], recommend: "No." })).toEqual({ index: 1, why: "" })
   })
 
   it("leaves the message box unfocused on the opening pick, so the number keys still pick", () => {
