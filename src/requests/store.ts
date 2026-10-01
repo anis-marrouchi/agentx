@@ -87,6 +87,12 @@ export function ensureRequestTables(db: Database.Database): void {
   if (!cols.some((c) => c.name === "pickup_at")) db.exec("ALTER TABLE requests ADD COLUMN pickup_at INTEGER")
 }
 
+/** For readers: a database without the table has no requests, and reading
+ *  it must not create one. */
+export function hasRequestTables(db: Database.Database): boolean {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'requests'").get()
+}
+
 function toRecord(r: any): RequestRecord {
   return {
     id: r.id, state: r.state, channel: r.channel, chatId: r.chat_id, sender: r.sender ?? null,
