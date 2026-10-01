@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.81.0](https://github.com/anis-marrouchi/agentx/compare/v0.80.1...v0.81.0) (2026-10-01)
+
+
+### Features
+
+* **people:** one identity per human across channels ([#389](https://github.com/anis-marrouchi/agentx/issues/389)) ([23c9604](https://github.com/anis-marrouchi/agentx/commit/23c96049768872b815676c59508997ee2f8b0c19))
+* **requests:** show a request's state in the thread where it was made ([#391](https://github.com/anis-marrouchi/agentx/issues/391)) ([2daf0ff](https://github.com/anis-marrouchi/agentx/commit/2daf0ff3f187a22347d599d4d44e14f49d88d0ea))
+
+
+### Bug Fixes
+
+* **demo:** carry on without a browser opener; refuse an unsupported Node.js in one line ([#406](https://github.com/anis-marrouchi/agentx/issues/406)) ([75ad79a](https://github.com/anis-marrouchi/agentx/commit/75ad79a51cfcb0a56c216fde8fa25c0d3dba7a19))
+* **requests:** queued hand-back, owner proof, and the agentx tool for every agent ([#404](https://github.com/anis-marrouchi/agentx/issues/404)) ([47dfc38](https://github.com/anis-marrouchi/agentx/commit/47dfc38909d24655cf5761ff245abbfbe960c4c3))
+
 ## [0.80.1](https://github.com/anis-marrouchi/agentx/compare/v0.80.0...v0.80.1) (2026-10-01)
 
 
