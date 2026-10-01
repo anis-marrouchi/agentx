@@ -29,6 +29,8 @@ When a request needs attention you are told once, through your normal [notificat
 
 ## Turn it on
 
+In the dashboard: open **Approvals**, scroll to **Open requests**, open **Settings: open requests**, tick **Record and follow my requests** and save. Or from the terminal:
+
 1. **Terminal:** go to the folder that holds `agentx.json`.
 2. **Terminal:** run `agentx requests settings --enabled on`.
 3. Messages you speak to the Mac, type in the phone app or type in the dashboard now count as yours.
@@ -42,14 +44,24 @@ Other people's messages are never recorded.
 2. You see every open request, oldest first, with when and where you asked, the agent, your words and the state.
 3. For one request and what is linked to it, run `agentx requests show <id>`.
 
+In the dashboard, the same list is under **Approvals**, in **Open requests**.
+
 You can also ask any agent "what is still open?". It reads the same list.
+
+## When a request needs attention
+
+You are told once. After that it waits in the [Approvals inbox](../dashboard/approvals.md#requests-that-are-not-finished) as a **Request**, and counts in the daily digest:
+
+- **Yes** (or `agentx approvals approve request:<id>`) hands it back to the agent, which gets your request again and works on it. If that fails too, it comes back.
+- **No** (or `agentx approvals reject request:<id>`) drops it.
+- **Later** puts it off.
 
 ## Close a request
 
-- **It is finished:** `agentx requests done <id> --evidence <link>`. The link is the proof: a pull request, an issue, a message, a deploy.
+- **It is finished:** `agentx requests done <id> --evidence <link>`. The link is the proof: a pull request, an issue, a message, a deploy. In the dashboard, paste the link next to the request and press **Done**.
 - **You no longer want it:** `agentx requests drop <id>`. Add `--reason "…"` to say why.
 
-Agents close their own requests as done or declined. Only you can drop one.
+Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
 
 ## Change the settings
 

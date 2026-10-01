@@ -12,6 +12,7 @@
 // literal.
 
 import { renderShell, type TopbarPeer } from ".."
+import { REQUESTS_CSS, REQUESTS_HTML, REQUESTS_SCRIPT } from "./approvals-requests"
 
 export interface ApprovalsPageOpts {
   peers?: TopbarPeer[]
@@ -37,6 +38,7 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
       <button type="button" class="ax-chip apv__f" data-kind="memory" aria-pressed="false">Memory <span id="n-memory"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="wiki" aria-pressed="false">Wiki <span id="n-wiki"></span></button>
       <button type="button" class="ax-chip apv__f" data-kind="whatsapp" aria-pressed="false">WhatsApp <span id="n-whatsapp"></span></button>
+      <button type="button" class="ax-chip apv__f" data-kind="request" aria-pressed="false">Requests <span id="n-request"></span></button>
     </div>
   </header>
 
@@ -44,6 +46,8 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
   <div id="apv-errors"></div>
   <ol id="apv-list" class="apv__list" aria-label="Waiting for you"></ol>
   <p id="apv-snoozed" class="apv__foot"></p>
+
+${REQUESTS_HTML}
 
   <details class="apv__settings" id="apv-settings">
     <summary>Settings: expiry, later, daily digest</summary>
@@ -67,8 +71,8 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
     body,
-    css: APPROVALS_CSS,
-    scripts: `${tokenScript}<script>${APPROVALS_SCRIPT}</script>`,
+    css: APPROVALS_CSS + REQUESTS_CSS,
+    scripts: `${tokenScript}<script>${APPROVALS_SCRIPT}</script><script>${REQUESTS_SCRIPT}</script>`,
   })
 }
 
@@ -126,7 +130,7 @@ const APPROVALS_CSS = `
 const APPROVALS_SCRIPT = `
 (function(){
 var state = { items: [], snoozed: 0, kind: '', showAll: false, popup: false };
-var LABEL = { card: 'Card', schedule: 'Schedule', memory: 'Memory fact', wiki: 'Wiki lesson', whatsapp: 'WhatsApp reply' };
+var LABEL = { card: 'Card', schedule: 'Schedule', memory: 'Memory fact', wiki: 'Wiki lesson', whatsapp: 'WhatsApp reply', request: 'Request' };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
 function headers(json){
@@ -160,7 +164,7 @@ async function load(){
 }
 
 function counts(){
-  var c = { card: 0, schedule: 0, memory: 0, wiki: 0, whatsapp: 0 };
+  var c = { card: 0, schedule: 0, memory: 0, wiki: 0, whatsapp: 0, request: 0 };
   state.items.forEach(function(i){ c[i.kind] = (c[i.kind] || 0) + 1; });
   $('n-all').textContent = state.items.length;
   Object.keys(c).forEach(function(k){ $('n-' + k).textContent = c[k]; });

@@ -1,5 +1,5 @@
 import type { AgentXEvents } from "@/events/bus"
-import type { RequestStore } from "./store"
+import { OPEN_STATES, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
 //
@@ -25,6 +25,9 @@ export interface RequestSettings {
   staleAfterHours: number
   retentionDays: number
 }
+
+/** Channel of the turn that hands a request back to its agent. */
+export const PICKUP_CHANNEL = "requests"
 
 /** This node's own surfaces: only its operator can reach them. */
 export const OPERATOR_CHANNELS: ReadonlySet<string> = new Set(["voice", "app", "dashboard", "webrtc"])
@@ -123,6 +126,13 @@ export class RequestTracker {
         this.live.set(key, { requestId: earlier.id, runId: p.taskId! })
         return
       }
+      // The turn the daemon starts when the owner says "pick it up again".
+      const pickup = p.channel === PICKUP_CHANNEL ? this.store.get(p.chatId) : null
+      if (pickup && pickup.agentId === p.agentId) {
+        this.store.link(pickup.id, "run", p.taskId!, now)
+        this.store.touch(pickup.id, now)
+        return
+      }
       if (!p.humanRoot || !isOwnerTurn(this.settings(), p.channel, p.sender)) return
       this.live.set(key, { requestId: `req-${p.taskId}`, runId: p.taskId! })
       this.store.addCandidate({
@@ -214,6 +224,18 @@ export class RequestTracker {
         this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)
       }
     })
+  }
+
+  /** Added to the turn that brings a delegated answer back: the request
+   *  stays on the owner's list until the agent closes it. */
+  closingNote(delegationId: string): string | undefined {
+    try {
+      const req = this.store.byLink("delegation", delegationId)
+      if (!req || !OPEN_STATES.includes(req.state as OpenState)) return undefined
+      return `This is part of the owner's open request ${req.id}. It stays on their list until it is closed. If it is finished now, close it with agentx_request: {action:"done", id:"${req.id}", evidence:"<link to the proof>"}. If you will not do it, use decline with the reason. If work goes on, leave it open.`
+    } catch {
+      return undefined
+    }
   }
 
   /** What the boot-time resume step did with a run the restart cut off. */

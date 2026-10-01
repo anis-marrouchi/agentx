@@ -390,7 +390,7 @@ No flags.
 
 ## approvals
 
-`agentx approvals`: One inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals).
+`agentx approvals`: One inbox for every decision waiting for you (cards, schedules, memory facts, wiki proposals, requests that are not finished).
 
 ### `agentx approvals list`
 

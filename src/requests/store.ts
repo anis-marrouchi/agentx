@@ -81,6 +81,10 @@ export function ensureRequestTables(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_request_links_request ON request_links(request_id);
   `)
+  // Added after the first version: a database that already has the table
+  // gets the column here.
+  const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === "pickup_at")) db.exec("ALTER TABLE requests ADD COLUMN pickup_at INTEGER")
 }
 
 function toRecord(r: any): RequestRecord {
@@ -206,6 +210,28 @@ export class RequestStore {
 
   markNotified(id: string, now: number | null): void {
     this.db.prepare("UPDATE requests SET notified_at = ? WHERE id = ?").run(now, id)
+  }
+
+  /** Requests in one state, oldest first. */
+  listByState(state: RequestState): RequestRecord[] {
+    return this.db.prepare("SELECT * FROM requests WHERE state = ? ORDER BY created_at, rowid").all(state).map(toRecord)
+  }
+
+  /** The owner said "pick it up again": back in progress, and the agent
+   *  is to be told at the next check. */
+  requestPickup(id: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?
+       WHERE id = ? AND state = 'needs_attention'`,
+    ).run(now, now, id).changes > 0
+  }
+
+  /** Requests whose agent has not been told to pick them up yet. Each is
+   *  returned once. */
+  takePickups(): RequestRecord[] {
+    const rows = this.db.prepare("SELECT * FROM requests WHERE pickup_at IS NOT NULL AND state = 'in_progress' ORDER BY created_at, rowid").all().map(toRecord)
+    this.db.prepare("UPDATE requests SET pickup_at = NULL WHERE pickup_at IS NOT NULL").run()
+    return rows
   }
 
   /** Delete closed requests older than `before`. Open ones never age out. */
