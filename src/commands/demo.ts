@@ -18,6 +18,7 @@ import { resolve, join } from "path"
 import { randomBytes } from "crypto"
 import { demoReportWorkflow } from "./demo-workflow"
 import { configStartupTimeout, resolveStartupTimeout } from "./demo-startup"
+import { openBrowser } from "@/utils/open-browser"
 
 interface NodeSpec {
   dir: string
@@ -317,10 +318,7 @@ export const demo = new Command()
       console.log(`  Dashboard:   ${chalk.cyan(liveUrl)}  (all three nodes via the mesh)`)
       console.log(chalk.dim(`  Daemon APIs: ${specs.map((s) => `127.0.0.1:${s.port}`).join(" · ")}`))
 
-      if (opts.open !== false) {
-        const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
-        try { spawn(opener, [liveUrl], { stdio: "ignore", detached: true }).unref() } catch { /* headless */ }
-      }
+      if (opts.open !== false) openBrowser(liveUrl)
 
       const playScenario = async () => {
         console.log()

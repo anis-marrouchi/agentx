@@ -2,6 +2,7 @@ import chalk from "chalk"
 import prompts from "prompts"
 import { applyConfigMutation, setAtPath, getAtPath } from "@/daemon/config-mutator"
 import { setDotEnv } from "@/utils/dotenv-mutator"
+import { openBrowser } from "@/utils/open-browser"
 
 // --- agentx connect telegram ---
 //
@@ -76,19 +77,13 @@ export async function connectTelegram(opts: ConnectTelegramOpts = {}): Promise<v
   console.log(chalk.dim(`  2. Copy the HTTP API token — looks like 123456789:ABCdef...`))
   console.log()
 
-  const { openBrowser } = await prompts({
+  const { wantsBrowser } = await prompts({
     type: "confirm",
-    name: "openBrowser",
+    name: "wantsBrowser",
     message: "Open BotFather in your browser?",
     initial: true,
   })
-  if (openBrowser) {
-    try {
-      const { spawn } = await import("child_process")
-      const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
-      spawn(opener, [BOTFATHER_URL], { stdio: "ignore", detached: true }).unref()
-    } catch { /* non-fatal */ }
-  }
+  if (wantsBrowser) openBrowser(BOTFATHER_URL)
 
   const { token } = await prompts({
     type: "password",
