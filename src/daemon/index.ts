@@ -117,7 +117,7 @@ import { resolveAutoRunInputs } from "@/workflows/inputs"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
-import { syncMcpToWorkspace, type McpServerMap } from "@/agents/agent-mcp"
+import { agentxToolServer, syncMcpToWorkspace, withAgentXToolServer, type McpServerMap } from "@/agents/agent-mcp"
 import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegraph-bootstrap"
 import { REMEMBER_SKILL_FILENAME, rememberSkillBody, upgradeRememberSkill } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
@@ -6541,7 +6541,10 @@ export class AgentXDaemon {
       // effectiveMcpConfig layers the codegraph server on top of any
       // operator-declared MCP servers when `def.codegraph === true`.
       // Operator entries still win on collision (see effectiveMcpConfig).
-      const mcp = effectiveMcpConfig(def)
+      // While requests are on, every agent also gets this install's own
+      // tool server, so it can say what it is doing with a request
+      // (agentx_request) without the workspace being set up by hand (#400).
+      const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled ? agentxToolServer() : null)
       try {
         const result = syncMcpToWorkspace(ws, mcp)
         switch (result) {

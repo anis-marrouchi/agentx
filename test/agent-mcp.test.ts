@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
-import { syncMcpToWorkspace, type McpServerMap } from "../src/agents/agent-mcp"
+import { agentxToolServer, syncMcpToWorkspace, withAgentXToolServer, type McpServerMap } from "../src/agents/agent-mcp"
 
 const ROOT = resolve(__dirname, "../.test-agent-mcp")
 
@@ -77,5 +77,26 @@ describe("syncMcpToWorkspace", () => {
     syncMcpToWorkspace(ws, cfg)
     const raw = readFileSync(resolve(ws, ".mcp.json"), "utf-8")
     expect(raw.endsWith("\n")).toBe(true)
+  })
+})
+
+describe("this install's own tool server (#400)", () => {
+  it("runs the CLI file the daemon runs from, pointed at the install folder", () => {
+    const stanza = agentxToolServer({ execPath: "/opt/node/bin/node", argv: ["/opt/node/bin/node", "/srv/agentx/dist/cli.js", "daemon", "start"], cwd: () => "/srv/install" })
+    expect(stanza).toEqual({ type: "stdio", command: "/opt/node/bin/node", args: ["/srv/agentx/dist/cli.js", "serve", "--stdio", "--cwd", "/srv/install"] })
+  })
+
+  it("falls back to the agentx command when the daemon was not started from a CLI file", () => {
+    const stanza = agentxToolServer({ execPath: "/opt/node/bin/node", argv: ["agentx"], cwd: () => "/srv/install" })
+    expect(stanza).toEqual({ type: "stdio", command: "agentx", args: ["serve", "--stdio", "--cwd", "/srv/install"] })
+  })
+
+  it("is added as agentx unless the operator declared one, or none is wanted", () => {
+    const server = agentxToolServer({ execPath: "node", argv: ["node", "/x/cli.js"], cwd: () => "/x" })
+    const own: McpServerMap = { agentx: { command: "mine" } }
+    expect(withAgentXToolServer({}, server)).toEqual({ agentx: server })
+    expect(withAgentXToolServer({ github: { command: "gh" } }, server)).toEqual({ github: { command: "gh" }, agentx: server })
+    expect(withAgentXToolServer(own, server)).toBe(own)
+    expect(withAgentXToolServer({ github: { command: "gh" } }, null)).toEqual({ github: { command: "gh" } })
   })
 })
