@@ -1,10 +1,10 @@
 import { Command } from "commander"
 import { existsSync } from "fs"
-import { resolve } from "path"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
 import { RequestStore, type RequestRecord } from "@/requests/store"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
+import { findConfigPath } from "@/daemon/config-mutator"
 
 // --- agentx requests — what you asked for that is not finished (#356) ---
 //
@@ -27,8 +27,11 @@ const STATE_LABEL: Record<string, string> = {
 
 function store(): RequestStore | null {
   // openDb creates the file: never do that in a folder that is not a node's.
-  const db = existsSync(resolve(process.cwd(), ".agentx", "db.sqlite")) ? openDb() : null
-  if (!db) { console.error(chalk.red("  no .agentx/db.sqlite here: run this from the folder that holds agentx.json, on a node whose daemon has started at least once")); process.exitCode = 1; return null }
+  // The database file does not prove it is one: the usage recorder creates
+  // it in a subfolder of an install before this runs. The config does.
+  if (!existsSync(findConfigPath())) { console.error(chalk.red("  no agentx.json here: run this from the install folder, the one that holds agentx.json")); process.exitCode = 1; return null }
+  const db = openDb()
+  if (!db) { process.exitCode = 1; return null }
   return new RequestStore(db)
 }
 
