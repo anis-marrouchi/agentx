@@ -1,4 +1,5 @@
 import { resolveScheduleCaller } from "@/crons/schedule-tool"
+import { callerHeaders } from "@/calls/service"
 import { answerLines } from "./choices"
 
 // --- Agent-facing `agentx_approval` tool ---
@@ -72,7 +73,9 @@ export async function runApprovalTool(args: Record<string, unknown>, deps: Appro
   try {
     const res = await doFetch(`${base}/approvals`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // The headers name this run: a card moves a request to "waiting on
+      // the owner" only when it comes from the turn of that request.
+      headers: { "Content-Type": "application/json", ...callerHeaders(deps.env ?? process.env) },
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10_000),
     })
