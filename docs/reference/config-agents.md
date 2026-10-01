@@ -162,6 +162,15 @@ The humans who talk to your agents, one entry per person. A task started by a li
 | `people[].name` | string | required | The person's name, for you to read. |
 | `people[].role` | `owner`, `member` or `guest` | `member` | A label for now. A single `owner` is also the person at this machine's own surfaces (voice, phone app, dashboard), and their turns on other channels count as yours for `requests`. |
 | `people[].identities` | list of strings | `[]` | Where the person writes from, each as `channel:id`: a GitLab or GitHub login, a Telegram id or username, a WhatsApp number. Display names are not matched. An identity belongs to one person only. |
+| `people[].agents` | list of strings | `[]` | The agents this person may reach, by id. Empty: every agent. A message to any other agent is answered with a note and no run starts. The limit follows the person's work through delegations. |
+
+## `members`
+
+Teammates' machines paired to their own work page ([Invite a teammate to their work page](/jobs/members)).
+
+| Setting | Type | Default | What it does |
+|---|---|---|---|
+| `members.logRetentionDays` | number | `90` | Days the per-person trail in `.agentx/members-log.jsonl` (invites, pairings, approvals, refusals, sign-ins, removals) is kept. Older lines are dropped, at most once an hour, when a new line is written. 1 to 3650. |
 
 ## session
 

@@ -1039,12 +1039,21 @@ export const personSchema = z.object({
   /** "channel:id": a GitLab or GitHub login, a Telegram id or username, a
    *  WhatsApp number. Display names are not matched. */
   identities: z.array(z.string().regex(/^[A-Za-z][\w-]*:\S.*$/, "write it as channel:id")).default([]),
+  /** The agents this person may reach, by id. Empty: every agent (#379). */
+  agents: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]*$/, "an agent id")).default([]),
 })
 
 export const peopleConfigSchema = z.array(personSchema).default([]).superRefine((people, ctx) => {
   const problem = peopleProblem(people)
   if (problem) ctx.addIssue({ code: z.ZodIssueCode.custom, message: problem })
 })
+
+/** Teammates' machines and their trail (src/members, #385, #379). */
+export const membersConfigSchema = z.object({
+  /** Days the per-person log (invites, pairings, sign-ins, refusals,
+   *  removals) is kept. Older lines are dropped. */
+  logRetentionDays: z.number().int().min(1).max(3650).default(90),
+}).default({})
 
 export const requestStatusConfigSchema = z.object({
   /** Channels that show it. On gitlab and github: one comment per request,
@@ -1191,6 +1200,7 @@ export const daemonConfigSchema = z.object({
    *  by default. */
   requests: requestsConfigSchema,
   people: peopleConfigSchema,
+  members: membersConfigSchema,
   /** Request status where the request was made (src/requests/status-board,
    *  #383): each person sees the state of their own request in the place
    *  they asked. Off by default. */

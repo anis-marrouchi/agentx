@@ -2875,6 +2875,13 @@ Add a person.
 | `--name <name>` | required | Their name. |
 | `--role <role>` | `member` | owner \| member \| guest. |
 | `--identity <channel:id>` | — | A login, a Telegram id or a WhatsApp number (repeatable). |
+| `--agent <id>` | An agent this person may reach; repeat for several. None: every agent |
+
+### `agentx people allow <id> <agents...>`
+
+Limit a person to these agents (ids, space-separated). `all` lifts the limit. A message to any other agent is answered with a note and no run starts.
+
+No flags.
 
 ### `agentx people link <id> <identity>`
 

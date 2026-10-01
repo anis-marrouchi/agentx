@@ -43,6 +43,6 @@ describe("config reload", () => {
     const result = await daemon.reload()
     expect(result.applied).toEqual(["people(1)"])
     expect(result.restartRequired).toEqual([])
-    expect(handed).toEqual([[{ id: "sara", name: "Sara", role: "member", identities: ["gitlab:sara.b"] }]])
+    expect(handed).toEqual([[{ id: "sara", name: "Sara", role: "member", identities: ["gitlab:sara.b"], agents: [] }]])
   })
 })

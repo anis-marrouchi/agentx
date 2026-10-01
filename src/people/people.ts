@@ -26,6 +26,8 @@ export interface Person {
   role: PersonRole
   /** "channel:id" entries: a login, a Telegram id, a WhatsApp number. */
   identities: string[]
+  /** The agents this person may reach. Empty: every agent (#379). */
+  agents?: string[]
 }
 
 /** The person a turn is stamped with. `role` is set only on a turn this
@@ -118,4 +120,29 @@ export function personOfTurn(people: Person[], ctx: InitiatorContext | undefined
   const str = (v: unknown) => (typeof v === "string" ? v : undefined)
   const person = resolvePerson(people, channel, { id: str(ctx.senderId), username: str(ctx.senderUsername) })
   return person ? { id: person.id, role: person.role } : null
+}
+
+// ── Permissions, first slice: per agent (#379) ───────────────────────────
+//
+// A listed person may be limited to named agents. The default is open:
+// a person with no list reaches every agent, and an unknown sender is
+// not limited here (channels decide who they answer at all). The limit
+// follows the person through a delegation too: work they started cannot
+// reach an agent they may not talk to.
+
+/** May this person reach `agentId`? */
+export function agentAllowed(person: Pick<Person, "agents">, agentId: string): boolean {
+  const list = person.agents ?? []
+  return list.length === 0 || list.includes(agentId)
+}
+
+/** The note a refused turn answers with, or null when the turn may run.
+ *  Names what the person can reach instead, so the refusal is not a dead end. */
+export function personRefusal(people: Person[], agentId: string, ctx: InitiatorContext | undefined | null): string | null {
+  const ref = personOfTurn(people, ctx)
+  if (!ref) return null
+  const person = people.find((p) => p.id === ref.id)
+  if (!person || agentAllowed(person, agentId)) return null
+  const list = (person.agents ?? []).join(", ")
+  return `${person.name}, you can reach ${list} here, not ${agentId}. Ask the owner if you need ${agentId}.`
 }

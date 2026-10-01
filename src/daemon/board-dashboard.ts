@@ -11,6 +11,7 @@ import type { DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
 import { loadOperatorKey } from "@/requests/operator"
 import { handleMemberRequest } from "./member-routes"
+import { MemberStore } from "@/members/store"
 import { forgeLink } from "@/members/work"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
 import { deriveStage, transitionDiff } from "@/boards/config"
@@ -207,6 +208,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Same rule as the phone app: a machine's own key or nothing.
   if (await handleMemberRequest(req, res, path, method, {
     nodeName: ctx.config.node?.name, root: process.cwd(), people: () => ctx.config.people,
+    members: membersStore(ctx.config.members.logRetentionDays),
     db: () => openDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
   if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config) })) return
@@ -2269,6 +2271,13 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
 /** What the phone app's Chat tab talks through (app-chat.ts): turns go to
  *  the primary daemon with its token, the picker reads the live snapshot,
  *  and conversations live in the same SQLite file as the push tables. */
+/** One member store per dashboard process, so its hourly log pruning holds. */
+let _members: MemberStore | null = null
+function membersStore(retentionDays: number): MemberStore {
+  if (!_members) _members = new MemberStore(process.cwd(), Date.now, retentionDays)
+  return _members
+}
+
 function appChatDeps(config: DaemonConfig): AppChatDeps {
   const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
   const token = dashboardTokenForNode(config.dashboard, url)

@@ -59,7 +59,7 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
-import { personOfTurn } from "@/people/people"
+import { personOfTurn, personRefusal } from "@/people/people"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -1115,6 +1115,15 @@ export class AgentRegistry {
         }
       }
       return { content: "", error: `Unknown agent: ${task.agentId}` }
+    }
+
+    // People permissions (#379): a listed person limited to named agents
+    // is answered with a note instead of a run, before anything is queued.
+    // The limit follows them through a delegation (the root's person).
+    const refusal = personRefusal(this.config.people, task.agentId, task.context as any)
+    if (refusal) {
+      this.log(`[${task.agentId}] refused: ${task.context?.person ?? personOfTurn(this.config.people, task.context as any)?.id} may not reach this agent (people[].agents)`)
+      return { content: refusal, duration: 0 }
     }
 
     // Build session key for queue management

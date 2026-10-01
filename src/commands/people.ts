@@ -31,6 +31,13 @@ export const people = new Command("people")
   .description("the humans who talk to your agents: one person per human, whatever channel they use")
 
 const ROLES = ["owner", "member", "guest"]
+
+/** The member store with this install's log retention. */
+function memberStore(): MemberStore {
+  let days = 90
+  try { days = loadDaemonConfig().members.logRetentionDays } catch { /* default */ }
+  return new MemberStore(process.cwd(), Date.now, days)
+}
 const collect = (v: string, prev: string[] = []): string[] => [...prev, v]
 
 async function mutate(change: (list: any[]) => string): Promise<void> {
@@ -59,7 +66,7 @@ function sameIdentity(a: string, b: string): boolean {
 }
 
 function printPerson(p: Person): void {
-  console.log(`  ${chalk.bold(p.id)}  ${p.name} ${chalk.dim(`· ${p.role}`)}`)
+  console.log(`  ${chalk.bold(p.id)}  ${p.name} ${chalk.dim(`· ${p.role}`)}${p.agents?.length ? chalk.dim(` · agents: ${p.agents.join(", ")}`) : ""}`)
   console.log(chalk.dim(p.identities.length ? `      ${p.identities.join(", ")}` : "      no identities yet: agentx people link " + p.id + " <channel:id>"))
 }
 
@@ -86,11 +93,24 @@ people
   .requiredOption("--name <name>", "their name")
   .option("--role <role>", `${ROLES.join(" | ")}`, "member")
   .option("--identity <channel:id>", "a login, a Telegram id or a WhatsApp number (repeatable)", collect, [])
-  .action(async (id: string, opts: { name: string; role: string; identity: string[] }) => {
+  .option("--agent <id>", "an agent this person may reach; repeat for several. None: every agent", collect, [])
+  .action(async (id: string, opts: { name: string; role: string; identity: string[]; agent: string[] }) => {
     await mutate((list) => {
       if (list.some((p: any) => p?.id === id)) throw new Error(`"${id}" is already listed. Add an identity with \`agentx people link ${id} <channel:id>\`.`)
-      list.push({ id, name: opts.name, role: opts.role, identities: opts.identity })
-      return `added ${id} (${opts.role})`
+      list.push({ id, name: opts.name, role: opts.role, identities: opts.identity, agents: opts.agent })
+      return `added ${id} (${opts.role})${opts.agent.length ? `, may reach ${opts.agent.join(", ")}` : ""}`
+    })
+  })
+
+people
+  .command("allow <id> <agents...>")
+  .description("limit a person to these agents (ids, space-separated). \"all\" lifts the limit")
+  .action(async (id: string, agents: string[]) => {
+    await mutate((list) => {
+      const person = find(list, id)
+      const lift = agents.length === 1 && agents[0].toLowerCase() === "all"
+      person.agents = lift ? [] : [...new Set(agents)]
+      return lift ? `${id} may reach every agent` : `${id} may reach ${person.agents.join(", ")} and no other agent`
     })
   })
 
@@ -129,7 +149,7 @@ people
       list.splice(list.findIndex((p: any) => p?.id === id), 1)
       return `removed ${id}`
     })
-    const ended = removePersonDevices({ tokens: new TokenStore(), members: new MemberStore() }, id)
+    const ended = removePersonDevices({ tokens: new TokenStore(), members: memberStore() }, id)
     if (ended.length) console.log(chalk.green(`✓ ended ${ended.length} machine(s) of ${id}: ${ended.map((d) => d.name).join(", ")}`))
     console.log(chalk.dim("  If you shared this computer with them on the private network, remove that share too."))
   })
@@ -154,7 +174,7 @@ people
       const origin = (opts.url ? String(opts.url) : tailscaleOrigin()).replace(/\/+$/, "")
       if (!/^https?:\/\/[^/]+$/.test(origin)) throw new Error(`--url must be an origin like https://host.example.ts.net, got: ${origin}`)
       const people = loadDaemonConfig().people
-      const r = inviteMember({ tokens: new TokenStore(), codes: new PairCodeStore(), members: new MemberStore(), people: () => people }, id)
+      const r = inviteMember({ tokens: new TokenStore(), codes: new PairCodeStore(), members: memberStore(), people: () => people }, id)
       if (!r.ok) throw new Error(r.error)
       console.log()
       console.log(`  Invite for ${chalk.bold(r.person.name)} (${r.person.id})`)
@@ -181,7 +201,7 @@ people
   .description("the machines paired to people's work pages: state, where from, first and last use")
   .option("--json", "machine-readable output")
   .action((id: string | undefined, opts: { json?: boolean }) => {
-    const devices = new MemberStore().devices(id)
+    const devices = memberStore().devices(id)
     if (opts.json) { console.log(JSON.stringify(devices, null, 2)); return }
     if (devices.length === 0) { console.log(chalk.dim(`\n  No machines${id ? ` for ${id}` : ""}. Run \`agentx people invite <id>\`.\n`)); return }
     console.log()
@@ -197,7 +217,7 @@ people
   .command("revoke-device <tokenId>")
   .description("end one machine's access at once")
   .action((tokenId: string) => {
-    const d = removeDevice({ tokens: new TokenStore(), members: new MemberStore() }, tokenId)
+    const d = removeDevice({ tokens: new TokenStore(), members: memberStore() }, tokenId)
     if (!d) { console.log(chalk.red(`  No machine with id ${tokenId}. See \`agentx people devices\`.`)); process.exit(1) }
     console.log(chalk.green(`\n  ✓ Ended ${tokenId} (${d.name}, ${d.personId})\n`))
   })
