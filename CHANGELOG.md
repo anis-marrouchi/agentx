@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.80.0](https://github.com/anis-marrouchi/agentx/compare/v0.79.4...v0.80.0) (2026-10-01)
+
+
+### Features
+
+* **requests:** open requests in the Approvals inbox and on its page ([#390](https://github.com/anis-marrouchi/agentx/issues/390)) ([5eff06b](https://github.com/anis-marrouchi/agentx/commit/5eff06bb35f339964dcff368b47bfeb92be66995))
+* **requests:** record owner requests and follow them until closed ([#382](https://github.com/anis-marrouchi/agentx/issues/382)) ([5163628](https://github.com/anis-marrouchi/agentx/commit/5163628ae011f954aad075e994bd9b4451da1b46))
+* **requests:** see and close open requests (tool, API, CLI) ([#388](https://github.com/anis-marrouchi/agentx/issues/388)) ([2f3f52f](https://github.com/anis-marrouchi/agentx/commit/2f3f52fb636c5cfbb2c7cebad3789e8623296d8e))
+
 ## [0.79.4](https://github.com/anis-marrouchi/agentx/compare/v0.79.3...v0.79.4) (2026-10-01)
 
 
