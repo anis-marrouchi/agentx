@@ -159,6 +159,18 @@ describe("capture", () => {
   })
 })
 
+describe("a turn whose message is a prompt wrapper", () => {
+  it("records what the person typed, not the wrapper (#401)", () => {
+    start("t1", {
+      channel: "dashboard", chatId: "assistant", sender: { name: "operator" },
+      messagePreview: "You are answering a question from the AgentX dashboard.",
+      fullMessage: "You are answering a question from the AgentX dashboard.\n\nTHEIR QUESTION:\nrestart the docs build",
+      requestText: "restart the docs build", operator: true,
+    })
+    expect(store.get("req-t1")!.text).toBe("restart the docs build")
+  })
+})
+
 describe("on the daemon's event bus", () => {
   it("follows the run events the registry emits, and stops when detached", () => {
     const attached = attachRequests(db, () => settings, () => {})

@@ -3792,6 +3792,8 @@ export class AgentXDaemon {
             try {
               const resp = await this.registry.execute({
                 agentId, message: prompt,
+                // The requests record keeps the sentence, not the wrapper (#401).
+                requestText: message,
                 // The owner typed in this node's dashboard: the turn is theirs (#393).
                 context: operatorContext({ channel: "dashboard", chatId: "assistant", sender: "operator" }) as any,
               })

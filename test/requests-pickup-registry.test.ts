@@ -60,6 +60,19 @@ const until = async (ok: () => boolean, ms = 10_000) => {
   }
 }
 
+describe("a wrapped prompt, through the registry", () => {
+  it("carries what the person typed on the turn's start event (#401)", async () => {
+    const started: Array<{ fullMessage?: string; requestText?: string }> = []
+    getEventBus().on("task:started", (p) => started.push(p))
+    await registry.execute({
+      agentId: "coder", message: "WRAPPER\n\nTHEIR QUESTION:\nrestart the docs build", requestText: "restart the docs build",
+      context: { channel: "dashboard", chatId: "assistant", sender: "operator" },
+    })
+    expect(started).toHaveLength(1)
+    expect(started[0]).toMatchObject({ fullMessage: "WRAPPER\n\nTHEIR QUESTION:\nrestart the docs build", requestText: "restart the docs build" })
+  }, 15_000)
+})
+
 describe("the pick-up turn, through the registry", () => {
   it("links the turn the daemon starts", async () => {
     const res = await registry.execute({ agentId: "coder", message: "pick it up again", context: pickupContext("req-1") })

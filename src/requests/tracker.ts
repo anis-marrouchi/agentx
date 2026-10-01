@@ -169,7 +169,7 @@ export class RequestTracker {
       this.store.addCandidate({
         id: `req-${p.taskId}`, runId: p.taskId!, channel: p.channel, chatId: p.chatId,
         sender: p.sender?.name ?? p.sender?.username ?? p.sender?.id ?? null,
-        agentId: p.agentId, text: p.fullMessage ?? p.messagePreview, now,
+        agentId: p.agentId, text: p.requestText ?? p.fullMessage ?? p.messagePreview, now,
       })
     })
   }

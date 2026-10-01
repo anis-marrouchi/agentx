@@ -89,6 +89,9 @@ export interface AgentTask {
   workflowRunId?: string
   /** Per-invocation model override (e.g. cron model). Falls back to agent.model. */
   model?: string
+  /** What the person typed, when `message` wraps it in a prompt of the
+   *  caller's own. The requests record keeps this text (#401). */
+  requestText?: string
   /** Cacheable text delivered to Claude via --append-system-prompt. Typically
    *  agent.systemPrompt + SOUL/IDENTITY/AGENTS.md. Passing stable content
    *  here (instead of in the user-message body) keeps it inside Claude's
