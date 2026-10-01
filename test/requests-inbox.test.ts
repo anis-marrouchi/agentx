@@ -43,7 +43,7 @@ const ctx = () => {
 
 /** A voice request whose run timed out. */
 function failed(taskId: string) {
-  tracker.taskStarted({ agentId: "coder", channel: "voice", chatId: "mac", taskId, messagePreview: "", fullMessage: "build the report and deploy it", at: "", humanRoot: true } as any)
+  tracker.taskStarted({ agentId: "coder", channel: "voice", chatId: "mac", taskId, messagePreview: "", fullMessage: "build the report and deploy it", at: "", humanRoot: true, operator: true } as any)
   tracker.taskCompleted({ agentId: "coder", channel: "voice", chatId: "mac", taskId, durationMs: 1, error: "Task timed out after 60 minutes", at: "" } as any)
 }
 
@@ -59,7 +59,7 @@ const sweep = (over: Record<string, unknown> = {}) => {
 describe("requests in the Approvals inbox", () => {
   it("lists only requests that need attention, with what happened", () => {
     failed("t1")
-    tracker.taskStarted({ agentId: "coder", channel: "voice", chatId: "mac", taskId: "t2", messagePreview: "", fullMessage: "still running", at: "", humanRoot: true } as any)
+    tracker.taskStarted({ agentId: "coder", channel: "voice", chatId: "mac", taskId: "t2", messagePreview: "", fullMessage: "still running", at: "", humanRoot: true, operator: true } as any)
     const { items, errors } = listInbox(ctx(), { kinds: ["request"] })
     expect(errors).toEqual([])
     expect(items).toHaveLength(1)
@@ -137,6 +137,19 @@ describe("requests in the Approvals inbox", () => {
     // A turn that ran and answered changes nothing here.
     store.progress("req-t1", clock)
     expect(pickupEnded(store, r, { }, clock)).toBe(false)
+    expect(store.get("req-t1")?.state).toBe("in_progress")
+  })
+
+  it("stays in progress when the hand-back was queued behind the agent's current turn (#392)", async () => {
+    failed("t1")
+    await decide(ctx(), "request:req-t1", "yes")
+    await sweep()
+    const r = store.get("req-t1")!
+    store.progress("req-t1", clock)
+    // What registry.execute answers for a busy chat: accepted, runs later.
+    expect(pickupEnded(store, r, { error: "__queued__:collect:1" }, clock)).toBe(false)
+    expect(store.get("req-t1")).toMatchObject({ state: "in_progress", attentionReason: null })
+    expect(pickupEnded(store, r, { error: 'Peer "p" /task error: 500: __queued__:followup:2' }, clock)).toBe(false)
     expect(store.get("req-t1")?.state).toBe("in_progress")
   })
 

@@ -1,3 +1,4 @@
+import { isQueued } from "@/agents/queued"
 import type { RequestRecord, RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
 
@@ -43,7 +44,11 @@ export interface RequestSweepResult {
  *  in progress until the quiet check. A request already raised keeps its
  *  first reason. */
 export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?: string } | undefined | null, now: number): boolean {
-  if (!res?.error) return false
+  // "__queued__" is not a failure: the agent is busy on this request's
+  // chat, the message was accepted, and the queue flush runs it when the
+  // current turn ends. That turn keeps the pick-up mark, so it is linked
+  // to the request then (#392).
+  if (!res?.error || isQueued(res.error)) return false
   return store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${res.error}`, now)
 }
 
