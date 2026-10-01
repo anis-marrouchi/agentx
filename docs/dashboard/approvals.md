@@ -71,7 +71,7 @@ With the popup switched on, your Mac shows a waiting card by itself: a soft chim
 
 ![The Mac card: who is asking, the question, three meeting times with the recommended one picked, and the suggested message](/screenshots/approvals/mac-card.png)
 
-The card shows who is asking, the background (**context**), the question, the ready-made answers, and the suggested message. When the agent's recommendation names one of the answers, that answer carries a dot and is already picked when the card opens, with the agent's reason under the answers.
+The card shows who is asking, the background (**context**), the question, the ready-made answers, and the suggested message. When the agent's recommendation starts with one of the answers, that answer carries a dot and is already picked when the card opens, with the agent's reason under the answers. A recommendation that starts any other way picks nothing and is shown whole.
 
 1. Click an answer, or press its number (**1** to **5**). The message below fills in with your pick.
 2. Read the message and change the wording if you like. **Edited** shows next to it once you have, with **Reset** to put the suggested message back. If you pick another answer after editing, your edits stay and only the pick in the text changes.

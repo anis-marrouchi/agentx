@@ -94,6 +94,29 @@ describe("the card page", () => {
     expect(recommended(raise({ choices: ["Thu", "Sun"], recommend: "Sun" }))).toEqual({ index: 1, why: "" })
   })
 
+  it("picks only the option the advice starts with", () => {
+    const index = (choices: string[], recommend: string) => recommended({ choices, recommend }).index
+    expect(index(["Yes", "No"], "No: yesterday's numbers were off")).toBe(1)
+    expect(index(["Approve", "Reject"], "Reject. Do not approve until the tests pass")).toBe(1)
+    expect(index(["Thursday", "Thursday 14:00"], "Thursday 14:00 - the room is free")).toBe(1)
+    // An option that is only mentioned, or only the start of a longer word, is not the advice.
+    expect(index(["Send", "Hold"], "Hold off; do not send yet")).toBe(-1)
+    expect(index(["Thursday", "Sunday"], "Not Thursday, he is travelling; Sunday is safer")).toBe(-1)
+    expect(index(["Yes", "No"], "I do not know enough to advise")).toBe(-1)
+    expect(index(["Yes", "No"], "No strong view, yes is fine")).toBe(-1)
+    expect(index(["Sun", "Mon"], "Sunday is no good, take Mon")).toBe(-1)
+    expect(index(["Thu 1", "Sun"], "Thu 10:00 is better")).toBe(-1)
+    expect(recommended({ choices: ["Yes", "No"], recommend: "Not yet" })).toEqual({ index: -1, why: "Not yet" })
+  })
+
+  it("leaves the message box unfocused on the opening pick, so the number keys still pick", () => {
+    const html = renderCardPage(raise({ choices: ["Thursday", "Sun"], draft: "Ok for {choice}" }), { now: NOW })
+    expect(html).toContain("if (d.pick >= 0) choose(d.pick, true)")
+    expect(html).toContain("if (box && !quiet) box.focus()")
+    // The digit that picks is not also typed into the message.
+    expect(html).toContain("{ e.preventDefault(); choose(+e.key - 1); }")
+  })
+
   it("plays the chime only when asked", () => {
     const data = (html: string) => JSON.parse(/<script type="application\/json" id="data">(.*?)<\/script>/s.exec(html)![1])
     expect(data(renderCardPage(raise(), { sound: "chime" })).chime).toBe(true)

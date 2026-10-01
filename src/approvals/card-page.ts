@@ -57,20 +57,24 @@ function initials(name: string): string {
 /**
  * The option the recommendation names, and the reason that is left. The
  * card stores its advice as one line ("Thursday 10:00: your calendar is
- * free"); when that line names an option, the card marks that option and
- * starts with it picked. No match: nothing is picked, the line shows whole.
+ * free"); when that line starts with an option, the card marks that option
+ * and starts with it picked. The option must be the whole start: the line
+ * ends there, or a separator follows ("No: ..." names No; "Not yet" and
+ * "No strong view" name nothing). An option only mentioned further on is
+ * not the advice ("do not approve"). No match: nothing is picked, the line
+ * shows whole.
  */
 export function recommended(card: Pick<DecisionCard, "recommend" | "choices">): { index: number; why: string } {
   const text = (card.recommend ?? "").trim()
   const low = text.toLowerCase()
+  const choices = card.choices ?? []
   let index = -1
-  ;(card.choices ?? []).forEach((c, i) => {
-    if (low.includes(c.toLowerCase()) && (index < 0 || c.length > card.choices![index].length)) index = i
+  choices.forEach((c, i) => {
+    if (!low.startsWith(c.toLowerCase()) || !/^\s*($|[:,.;–—-])/.test(text.slice(c.length))) return
+    if (index < 0 || c.length > choices[index].length) index = i
   })
   if (index < 0) return { index, why: text }
-  const label = card.choices![index]
-  if (!low.startsWith(label.toLowerCase())) return { index, why: text }
-  const why = text.slice(label.length).replace(/^[\s:,.;–—-]+/, "")
+  const why = text.slice(choices[index].length).replace(/^[\s:,.;–—-]+/, "")
   return { index, why: why.slice(0, 1).toUpperCase() + why.slice(1) }
 }
 
@@ -154,14 +158,15 @@ const CARD_SCRIPT = `
     yes.disabled = (d.choices.length > 0 && pick < 0) || (box && !box.value.trim());
   }
   function grow() { if (!box) return; box.style.height = "auto"; box.style.height = box.scrollHeight + 4 + "px"; }
-  function choose(i) {
+  // quiet: the pick made on open. The box is not focused, so the number keys still pick.
+  function choose(i, quiet) {
     // An edited message keeps the edits, with the old pick swapped for the new one.
     if (box && touched && pick >= 0) box.value = box.value.split(d.choices[pick]).join(d.choices[i]);
     else if (box) box.value = fill(i);
     pick = i;
     if (box) { grow(); mark(); }
     update();
-    if (box) box.focus();
+    if (box && !quiet) box.focus();
   }
   opts.forEach(function (o, i) { o.addEventListener("click", function () { choose(i); }); });
   if (box) {
@@ -183,9 +188,10 @@ const CARD_SCRIPT = `
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") return send({ action: "dismiss" });
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return yes.click(); }
-    if (document.activeElement !== box && /^[1-9]$/.test(e.key) && opts[+e.key - 1]) choose(+e.key - 1);
+    // preventDefault: choose() focuses the box, and the digit must not be typed into it.
+    if (document.activeElement !== box && /^[1-9]$/.test(e.key) && opts[+e.key - 1]) { e.preventDefault(); choose(+e.key - 1); }
   });
-  if (d.pick >= 0) choose(d.pick); else update();
+  if (d.pick >= 0) choose(d.pick, true); else update();
   requestAnimationFrame(fit);
   if (box) new ResizeObserver(fit).observe(box);
 
