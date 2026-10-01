@@ -260,7 +260,7 @@ There is no measured universal RAM or disk minimum for AgentX yet. Local speech 
 ## If something is wrong
 
 - **`docker version` shows no server:** Docker Desktop isn't running. Start it and try again.
-- **`node --version` is below `v22.19` or above `v26`:** install Node.js 22. AgentX doesn't run on other versions.
+- **`node --version` is below `v22.19` or above `v26`:** install Node.js 22. AgentX doesn't run on other versions: every `agentx` command stops with `AgentX needs Node.js 22.19 or newer, up to 26`.
 - **Installing reports a native compilation error:** install the [node-gyp platform prerequisites](https://github.com/nodejs/node-gyp#installation), then install again.
 - **An app is missing from System Settings › Privacy & Security:** use the feature once so the app asks for access, then look again.
 - **`ffmpeg was not found` during `agentx desktop install`:** finish the FFmpeg step under local Whisper, then run the install again.

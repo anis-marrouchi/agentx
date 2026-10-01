@@ -1,8 +1,8 @@
 import chalk from "chalk"
 import prompts from "prompts"
-import { spawn } from "child_process"
 import { applyConfigMutation, setAtPath } from "@/daemon/config-mutator"
 import { setDotEnv } from "@/utils/dotenv-mutator"
+import { openBrowser as openInBrowser } from "@/utils/open-browser"
 
 // --- agentx connect discord ---
 //
@@ -31,13 +31,6 @@ async function fetchMe(token: string): Promise<{ id: string; username: string; d
 export interface ConnectDiscordOpts {
   agent?: string
   configPath?: string
-}
-
-function openInBrowser(url: string): void {
-  try {
-    const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open"
-    spawn(opener, [url], { stdio: "ignore", detached: true }).unref()
-  } catch { /* non-fatal */ }
 }
 
 export async function connectDiscord(opts: ConnectDiscordOpts = {}): Promise<void> {
