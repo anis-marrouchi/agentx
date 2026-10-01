@@ -32,11 +32,14 @@ const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'ACTION_REQUIRED', 'STA
 /** The newest run of each check, as `gh pr checks` shows it: a run started
  *  again on the same commit replaces the one before it (#363). */
 function latestRuns(rollup) {
+  // An unfinished run with no start time (gh prints year 1) counts as the newest.
+  // Not seen live: queued runs carry a start time. Kept as a guard.
+  const started = (c) => (c.status && c.status !== 'COMPLETED' && !(c.startedAt > '0002') ? '9' : c.startedAt ?? '')
   const latest = new Map()
   for (const c of rollup) {
     const key = c.__typename === 'StatusContext' ? c.context : `${c.workflowName ?? ''}/${c.name}`
     const prev = latest.get(key)
-    if (!prev || (c.startedAt ?? '') >= (prev.startedAt ?? '')) latest.set(key, c)
+    if (!prev || started(c) >= started(prev)) latest.set(key, c)
   }
   return [...latest.values()]
 }
