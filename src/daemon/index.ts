@@ -1728,11 +1728,33 @@ export class AgentXDaemon {
       ...(this.config.reminders.enabled ? { claimsPath: claimFile(process.cwd()) } : {}),
       hasAgent: (id) => !!this.registry.getAgent(id),
       // "reminder" waits for a free slot instead of queueing (registry.ts),
-      // so the answer comes back here.
+      // so the answer comes back here. The time limit starts with the turn,
+      // not the wait, and ends the turn: a busy agent is not a failed card,
+      // and a late turn never runs for nothing (#365).
       ask: async (agentId, message, r) => {
-        const res = await this.registry.execute({ agentId, message, context: { channel: "reminder", chatId: `checkin:${r.id}`, sender: "approvals" } })
+        const res = await this.registry.execute({
+          agentId, message, timeoutMinutes: this.config.approvals.checkin.composeTimeoutSeconds / 60,
+          context: { channel: "reminder", chatId: `checkin:${r.id}`, sender: "approvals" },
+        })
         if (res.error) throw new Error(res.error)
         return res.content ?? ""
+      },
+      notify: async (title, message) => {
+        const from = this.config.approvals.checkin.agent
+        await notify({ title, message, from, priority: 4 }, async (m) => {
+          // A push that fails must not take the Mac banner with it.
+          try {
+            await this.router.sendOutbound({
+              channel: m.channel ?? defaultNotifyChannel(this.config),
+              chatId: m.chatId ?? "default",
+              text: `${m.title}\n${m.message}`,
+              priority: m.priority,
+              agentId: from,
+            } as any)
+          } catch (e: any) {
+            this.log(`[checkin] push for "${m.title}" failed: ${e?.message ?? e}`)
+          }
+        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
       },
       log: this.log,
     }

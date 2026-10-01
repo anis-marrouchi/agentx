@@ -1,10 +1,10 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs"
 import { tmpdir } from "os"
 import { dirname, join } from "path"
 import { createCard, decideCard, listCards, readCard, verdictMessage } from "../src/approvals/cards"
 import { checkinDue, checkinTick, runCheckinPass, type CheckinDeps, type CheckinSettings } from "../src/approvals/checkin"
-import { composePrompt, parseCompose } from "../src/approvals/checkin-compose"
+import { composePrompt, fitContext, parseCompose } from "../src/approvals/checkin-compose"
 import { readCheckinState } from "../src/approvals/checkin-state"
 import { handleApprovalsApi } from "../src/approvals/daemon-api"
 import { nextCardToPop } from "../src/approvals/popup-runner"
@@ -83,6 +83,7 @@ describe("composing", () => {
     expect(p).toContain("Notes: Call back about the quote")
     expect(p).toContain("It came from: whatsapp:216")
     expect(p).toContain("Do not message anyone")
+    expect(p).toContain("context 600, ask 300, recommend 300")
     expect(p).not.toContain("agentx: agent=")
   })
   it("reads the card from a reply with prose or fences around it", () => {
@@ -158,18 +159,61 @@ describe("a pass", () => {
     expect(logs.join("\n")).toContain("no agent owns it")
   })
 
-  it("retries a failed reminder only at the next daily pass", async () => {
+  it("retries a failed reminder once at the next pass, then at the next daily pass", async () => {
     const items = [r("y", { dueDate: "2026-09-30T12:00:00Z" })]
     const failing = deps(items, "not json")
     expect((await runCheckinPass(failing.d, "check")).failed).toBe(1)
-    expect(readCheckinState(root).items.y.status).toBe("failed")
-    // Not at the later check-ins of the same day, nor at that day's daily pass.
+    expect(readCheckinState(root).items.y).toMatchObject({ status: "failed", tries: 1 })
+    // The next pass tries once more.
+    expect((await runCheckinPass({ ...failing.d, now: NOW + 3 * HOUR }, "check")).failed).toBe(1)
+    expect(readCheckinState(root).items.y).toMatchObject({ status: "failed", tries: 2 })
+    expect(failing.asked).toHaveLength(2)
+    // Then not at the later check-ins of the same day, nor at that day's daily pass.
     const later = deps(items)
-    expect((await runCheckinPass({ ...later.d, now: NOW + 3 * HOUR }, "check")).carded).toHaveLength(0)
-    expect((await runCheckinPass({ ...later.d, now: NOW + 4 * HOUR }, "daily")).carded).toHaveLength(0)
+    expect((await runCheckinPass({ ...later.d, now: NOW + 4 * HOUR }, "check")).carded).toHaveLength(0)
+    expect((await runCheckinPass({ ...later.d, now: NOW + 5 * HOUR }, "daily")).carded).toHaveLength(0)
     expect(later.asked).toHaveLength(0)
     const tomorrow = deps(items)
     expect((await runCheckinPass({ ...tomorrow.d, now: NOW + 24 * HOUR }, "daily")).carded).toHaveLength(1)
+  })
+
+  it("a failure that works at the next pass becomes a card", async () => {
+    const items = [r("y", { dueDate: "2026-09-30T12:00:00Z" })]
+    await runCheckinPass(deps(items, "not json").d, "check")
+    expect((await runCheckinPass({ ...deps(items).d, now: NOW + 5 * 60_000 }, "daily")).carded).toHaveLength(1)
+  })
+
+  it("a busy agent is waited for: the time limit is on the turn, not the seat", async () => {
+    // The longest wait the registry allows before a turn (25 minutes for the
+    // seat, 5 for the rate limit), then a turn, far past composeTimeoutSeconds (60).
+    const wait = 30.5 * 60_000
+    vi.useFakeTimers()
+    try {
+      const { d } = deps([r("y", { dueDate: "2026-09-30T12:00:00Z" })])
+      d.ask = () => new Promise((resolve) => setTimeout(() => resolve(CARD_JSON), wait))
+      const pass = runCheckinPass(d, "check")
+      await vi.advanceTimersByTimeAsync(wait)
+      expect((await pass).carded).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("shortens an over-long context at a sentence end instead of losing the card", async () => {
+    const long = "First sentence. " + "Second sentence that goes on. ".repeat(30)
+    expect(long.length).toBeGreaterThan(600)
+    const { d } = deps([r("y", { dueDate: "2026-09-30T12:00:00Z" })], JSON.stringify({ ...JSON.parse(CARD_JSON), context: long }))
+    const res = await runCheckinPass(d, "check")
+    expect(res.failed).toBe(0)
+    const context = readCard(root, res.carded[0])!.context!
+    expect(context.length).toBeLessThanOrEqual(600)
+    expect(context.endsWith("goes on. …")).toBe(true)
+    // No sentence end to cut at: the last whole word, and a mark that it was cut.
+    expect(fitContext("word ".repeat(200))).toMatch(/word…$/)
+    expect((fitContext("word ".repeat(200)) as string).length).toBeLessThanOrEqual(600)
+    // A sentence end too early to keep much: the last whole word instead.
+    expect(fitContext("Hi. " + "word ".repeat(200))).toMatch(/^Hi\. word .* word…$/)
+    expect(fitContext("short")).toBe("short")
   })
 
   it("stops at maxAsksPerPass, soonest due first", async () => {
@@ -212,6 +256,19 @@ describe("the tick and the trigger", () => {
     expect(readCheckinState(root)).toMatchObject({ lastDaily: "2026-09-30", lastSlot: "2026-09-30 09:00" })
     expect(await checkinTick(d)).toBeNull()
     expect((await checkinTick(d, "check"))?.kind).toBe("check")
+  })
+  it("tells the operator once when a pass ends with failures and no card", async () => {
+    const items = [r("1", { dueDate: "2026-09-30T11:00:00Z" }), r("2", { dueDate: "2026-09-30T12:00:00Z" })]
+    const told: string[][] = []
+    const notify = async (title: string, message: string) => { told.push([title, message]) }
+    await checkinTick({ ...deps(items, "not json").d, notify }, "check")
+    expect(told).toEqual([["Check-in: no card for 2 reminders", '"Reminder 1": the reply has no JSON object\n"Reminder 2": the reply has no JSON object']])
+    // A card was raised, or nothing failed: no notice.
+    const mixed = deps(items)
+    mixed.d.ask = async (_a, message) => (message.includes("Reminder 1") ? "not json" : CARD_JSON)
+    await checkinTick({ ...mixed.d, notify, now: NOW + HOUR }, "check")
+    await checkinTick({ ...deps([]).d, notify, now: NOW + 2 * HOUR }, "check")
+    expect(told).toHaveLength(1)
   })
 
   it("POST /approvals/checkin starts a pass; deciding stays refused", () => {
