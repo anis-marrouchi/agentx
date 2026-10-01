@@ -46,6 +46,7 @@ import { attachSqliteSubscribers } from "@/storage/subscribers"
 import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
 import { TokenStore } from "./token-store"
+import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
 import { localAlert, localSettings, notify, type Sender } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
@@ -61,6 +62,10 @@ import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
 import { OPERATOR_HEADER, isOperatorTurn, loadOperatorKey, operatorContext, operatorKeyMatches } from "@/requests/operator"
+import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
+import { GuestStore } from "@/guests/store"
+import { GuestHostStore, askHost } from "@/guests/hosts"
+import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsApi, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
@@ -1723,6 +1728,9 @@ export class AgentXDaemon {
 
   /** Open requests (src/requests); null when the database is unavailable. */
   private requests: AttachedRequests | null = null
+  /** Guest meshes (#380): the grants this node opened, and the join limiter. */
+  private guestStore = new GuestStore(process.cwd())
+  private guestJoinLimiter = new PairAttemptLimiter()
   /** The secret this node's own surfaces present on /task to prove a turn
    *  is the owner's (requests/operator, #393). */
   private operatorKey: string | null = null
@@ -3160,6 +3168,23 @@ export class AgentXDaemon {
     if (operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER])) operatorContext(context)
   }
 
+  /** What the guest-mesh routes need from the daemon (guests/daemon-api.ts). */
+  private guestDeps(): GuestApiDeps {
+    const root = process.cwd()
+    return {
+      tokens: new TokenStore(root), codes: new PairCodeStore(root), guests: this.guestStore,
+      hasAgent: (id) => !!this.registry.getAgent(id), root, limiter: this.guestJoinLimiter, log: this.log,
+      run: async (t) => {
+        const r = await this.registry.execute({
+          agentId: t.agentId, message: t.message, context: t.context as any,
+          systemPromptAppend: t.systemPromptAppend, ...(t.autonomy ? { autonomy: t.autonomy } : {}),
+        })
+        return { content: r.content ?? "", error: r.error, tokensUsed: r.tokensUsed }
+      },
+      cancel: (grant) => this.registry.cancelChatTasks(grant.agentId, "guest", `guest:${grant.id}`, "guest grant paused or ended"),
+    }
+  }
+
   private callerProof(req: IncomingMessage): RequestCallerProof {
     const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
     return { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") }
@@ -3373,6 +3398,20 @@ export class AgentXDaemon {
           this.status?.board.cardRaised(card, turn)
         }
         this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // Guest meshes (#380): the guest's routes open with its own key only
+      // (never the mesh token, never loopback); the host's panel under
+      // /mesh/guests is gated like the other control routes above.
+      if (GUEST_PATHS.test(path) || GUESTS_PATHS.test(path)) {
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const auth = String(req.headers["authorization"] || "")
+        const reply = await handleGuestApi(req.method || "GET", path, body as Record<string, unknown> | undefined, {
+          token: auth.toLowerCase().startsWith("bearer ") ? auth.slice(7).trim() || null : null,
+          address: req.socket?.remoteAddress || "unknown",
+        }, this.guestDeps())
+        this.json(res, reply.status, reply.token ? { ...(reply.body as object), token: reply.token } : reply.body)
         return
       }
 
@@ -6022,6 +6061,15 @@ export class AgentXDaemon {
           const body = await readBody(req)
           if (!body.peer || !body.message) {
             this.json(res, 400, { error: "Missing: peer, message" })
+            return
+          }
+          // A host this node joined as a guest (#380): the message runs
+          // as a turn of the host's agent inside the grant, and only the
+          // answer comes back. No streaming, no callback: one request.
+          const host = new GuestHostStore(process.cwd()).get(String(body.peer))
+          if (host) {
+            const r = await askHost(host, String(body.message))
+            this.json(res, r.error ? 502 : 200, r.error ? { error: r.error, host: host.name } : { content: r.content, host: host.name, agentId: host.agentId })
             return
           }
           if (!this.mesh) {

@@ -37,6 +37,7 @@ const groups = [
     { text: "Work from your Claude Code session", link: "/jobs/claude-code-session" },
     { text: "Tell agents who is who", link: "/jobs/people" },
     { text: "Invite a teammate to their work page", link: "/jobs/members" },
+    { text: "Let another organisation into part of your mesh", link: "/jobs/guest-mesh" },
   ] },
   { text: "When something goes wrong", items: [
     { text: "It's not answering", link: "/help/its-not-answering" }, { text: "Run a health check", link: "/help/doctor" },

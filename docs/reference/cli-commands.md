@@ -2706,6 +2706,67 @@ Send a short note to every machine in the mesh (shown in event feeds). See [Anno
 
 `agentx skill`: Manage skills — add to agent(s), list. **Advanced.**
 
+### `agentx mesh guests invite`
+
+Open a grant to a guest mesh and print the one-time code it joins with. See [Let another organisation into part of your mesh](/jobs/guest-mesh).
+
+| Flag | Description |
+|---|---|
+| `--name <name>` | What you call it, e.g. "Support session for company X" (required) |
+| `--guest <name>` | The other organisation's name (required) |
+| `--agent <id>` | The agent of this node that works for them (required) |
+| `--folders <list>` | Folders that agent may touch for them, comma-separated |
+| `--skills <list>` | Skills it may use for them, comma-separated |
+| `--commands <list>` | Commands it may run for them, comma-separated |
+| `--level <level>` | `report` (read only), `propose` (no merge, deploy or delete) or `act` (default: `propose`) |
+| `--days <n>` | How long the grant lasts, 1 to 365 (default: `7`) |
+| `--url <origin>` | The address the guest reaches this node on (default: `dashboard.daemonUrl`) |
+
+### `agentx mesh guests [list]`
+
+Every grant: state, guest, agent, level, end date, usage. `--json` for machine-readable output.
+
+### `agentx mesh guests show <id>`
+
+One grant, what it opens and what the guest did.
+
+### `agentx mesh guests pause <id>` / `resume <id>` / `end <id>`
+
+Stop the guest at once (running turns are cancelled), let it work again, or end the grant for good. These go through the running daemon.
+
+### `agentx mesh guests set <id>`
+
+Widen or narrow a grant while it is in use.
+
+| Flag | Description |
+|---|---|
+| `--folders <list>` | Folders, comma-separated (`none` clears) |
+| `--skills <list>` | Skills, comma-separated (`none` clears) |
+| `--commands <list>` | Commands, comma-separated (`none` clears) |
+| `--level <level>` | `report`, `propose` or `act` |
+| `--days <n>` | New length, counted from now |
+
+### `agentx mesh join <url>`
+
+Join another organisation's mesh as a guest, with the code its owner sent you.
+
+| Flag | Description |
+|---|---|
+| `--code <code>` | The one-time code from the host (required) |
+| `--name <name>` | What you call the host, e.g. `company-x` (required) |
+
+### `agentx mesh hosts`
+
+The meshes this node has joined as a guest, and where each grant stands.
+
+### `agentx mesh ask <host> <message...>`
+
+Ask the host's agent something, inside the grant.
+
+### `agentx mesh leave <host>`
+
+Forget a host you joined as a guest.
+
 ### `agentx skill add <skillPath>`
 
 Add a skill to agent(s).
