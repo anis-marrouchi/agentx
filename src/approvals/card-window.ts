@@ -66,8 +66,11 @@ function run(argv) {
   win.makeKeyAndOrderFront(null)
   app.activateIgnoringOtherApps(true)
   var end = Date.now() + secs * 1000, sized = 0, shot = false, seen = "", asked = false, answer = null
+  // Every kind of event, as a number. JXA hands the AppKit constant for it over as text, and a
+  // loop asking with that gets no event at all: no click, no drag, no key.
+  var anyEvent = Number.MAX_SAFE_INTEGER
   while (Date.now() < end) {
-    var ev = app.nextEventMatchingMaskUntilDateInModeDequeue($.NSEventMaskAny, $.NSDate.dateWithTimeIntervalSinceNow(0.05), $.NSDefaultRunLoopMode, true)
+    var ev = app.nextEventMatchingMaskUntilDateInModeDequeue(anyEvent, $.NSDate.dateWithTimeIntervalSinceNow(0.05), $.NSDefaultRunLoopMode, true)
     if (ev && !ev.isNil()) {
       if (onGrip(ev)) win.performWindowDragWithEvent(ev); else app.sendEvent(ev)
     }
