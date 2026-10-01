@@ -91,7 +91,9 @@ local agent and no other remote uses.
 An agent the owner allowed (`calls.allow`) can ring from inside its own run:
 `agentx call request --reason "…"`, or the MCP tool `agentx_call_owner`. `Calls.swift` polls
 `/calls/ringing` every two seconds (the poll is also how the daemon knows the
-widget is running; without it the daemon falls back to `agentx notify`). A
+widget is running; without it the daemon falls back to `agentx notify`). The
+poll says `busy=1` while the pill cannot ring (a turn, the microphone, another
+call), so the daemon keeps a new call waiting instead of counting it missed. A
 ringing call summons the pill, pulses the orb in the caller's colours, loops
 `calls.ringSound`, and shows Answer, Later (5 / 15 / 30 min) and Decline.
 Answer sends the daemon's opener through `/ask`, so the agent speaks first,

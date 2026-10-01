@@ -39,6 +39,17 @@ enum CallModel {
         return .ring(first)
     }
 
+    /// What each poll tells the daemon (#408): `busy` when a new call
+    /// cannot ring here, `showing` with the call that is ringing. The
+    /// daemon keeps a call waiting while the widget is busy, so its ring
+    /// time runs only once it can ring.
+    static func pollQuery(ringing: String?, canRing: Bool) -> String {
+        var items: [String] = []
+        if ringing != nil || !canRing { items.append("busy=1") }
+        if let ringing { items.append("showing=\(ringing)") }
+        return items.isEmpty ? "" : "?" + items.joined(separator: "&")
+    }
+
     /// "Call back in…" choices, in minutes.
     static let laterChoices = [5, 15, 30]
 

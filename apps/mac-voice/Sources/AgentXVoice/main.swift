@@ -365,6 +365,10 @@ final class App: NSObject, NSApplicationDelegate {
         panel.callBar.onLater = { [weak self] minutes in self?.endRinging { await CallClient.later($0, minutes: minutes) } }
         panel.callBar.onHangUp = { [weak self] in self?.hangUp() }
         callWatcher.onPoll = { [weak self] state in self?.polled(state) }
+        callWatcher.query = { [weak self] in
+            guard let self else { return "" }
+            return CallModel.pollQuery(ringing: self.ringingCall?.id, canRing: self.canRing)
+        }
         callWatcher.start()
 
         // The target does not wait for the microphone: the menu shows it
@@ -836,9 +840,11 @@ final class App: NSObject, NSApplicationDelegate {
     /// At rest: waiting for the next words in a call, else idle.
     private var rest: Panel.State { activeCall == nil ? .idle : .onCall }
 
+    /// A new call can ring: no call in progress, no turn, microphone closed.
+    private var canRing: Bool { activeCall == nil && !busy && !recorder.isRecording }
+
     private func polled(_ state: RingingCalls) {
-        let free = activeCall == nil && !busy && !recorder.isRecording
-        switch CallModel.action(ringing: ringingCall?.id, calls: state.calls, canRing: free) {
+        switch CallModel.action(ringing: ringingCall?.id, calls: state.calls, canRing: canRing) {
         case .none:
             return
         case .stop:

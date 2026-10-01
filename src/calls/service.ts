@@ -3,7 +3,9 @@
 // An agent that needs the owner directly asks for a call. It rings on the
 // desktop widget (AgentX Voice), which polls `ringing()`. Answering starts
 // the widget's hands-free conversation with that agent, which opens with
-// its reason. When the widget is not running, `notify` stands in.
+// its reason. When the widget is not running, `notify` stands in. While
+// the widget is busy (a turn, the microphone, another call) the call waits
+// for it: its ring time does not run, and the owner is told once (#408).
 //
 // Checked before anything rings, in this order:
 //   0. the caller is that agent: a turn of it is running now, named by its
@@ -29,6 +31,8 @@ import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency } from
 export const REASON_MAX = 200
 /** The widget polls every 2 s; missing this long means it is not running. */
 export const WIDGET_FRESH_MS = 10_000
+/** The longest a call waits for a busy widget before its ring time runs. */
+export const BUSY_WAIT_MAX_MS = 10 * 60_000
 export const LATER_DEFAULT_MINUTES = 10
 export const LATER_MAX_MINUTES = 240
 
@@ -52,6 +56,14 @@ export function callerHeaders(env: NodeJS.ProcessEnv = process.env): Record<stri
     return { "X-AgentX-Channel": env.AGENTX_CHANNEL, "X-AgentX-Chat": env.AGENTX_CHAT_ID }
   }
   return {}
+}
+
+/** What the widget says with its poll. A widget from before #408 says nothing. */
+export interface WidgetState {
+  /** It cannot ring a new call now. */
+  busy?: boolean
+  /** The call ringing on it. */
+  showing?: string
 }
 
 export interface CallDeps {
@@ -90,6 +102,8 @@ export const SUMMARY_PROMPT =
 
 export class CallService {
   private widgetSeenAt = 0
+  /** Calls waiting for a busy widget, and since when. */
+  private waiting = new Map<string, number>()
 
   constructor(private deps: CallDeps) {}
 
@@ -182,10 +196,30 @@ export class CallService {
   }
 
   /** The widget's poll: voice calls ringing now, oldest first. Marks it alive. */
-  async ringing(): Promise<Call[]> {
+  async ringing(widget: WidgetState = {}): Promise<Call[]> {
     this.widgetSeenAt = this.now()
+    await this.hold(widget)
     await this.sweep()
     return this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 }).reverse()
+  }
+
+  /** A busy widget cannot ring: the ring time of each call it is not
+   *  showing starts over at every poll, for BUSY_WAIT_MAX_MS at most, and
+   *  the owner is told once that the call waits. */
+  private async hold(widget: WidgetState): Promise<void> {
+    const now = this.now()
+    const live = this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 })
+    for (const id of this.waiting.keys()) if (!live.some((c) => c.id === id)) this.waiting.delete(id)
+    for (const call of live) {
+      if (call.id === widget.showing) { this.waiting.delete(call.id); continue }
+      if (!widget.busy) continue
+      const since = this.waiting.get(call.id)
+      if (since !== undefined && now - since >= BUSY_WAIT_MAX_MS) continue
+      if (!this.deps.store.transition(call.id, "ringing", { ringingSince: now }) || since !== undefined) continue
+      this.waiting.set(call.id, now)
+      this.deps.log?.(`[calls] ${call.id} from ${call.agentId} waits: the widget is busy`)
+      await this.notice(call, `${this.name(call.agentId)} is calling`, "AgentX Voice is busy. The call rings when it is free.")
+    }
   }
 
   /** The phone app's poll: camera asks waiting for the owner, oldest first.
@@ -205,7 +239,7 @@ export class CallService {
       // The list was read before any await below: each move re-checks the
       // status in the store, so a call answered meanwhile is left alone.
       if (call.status === "ringing" && call.ringingSince !== null && now - call.ringingSince >= ringFor) {
-        if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: "not answered" })) continue
+        if (!this.deps.store.transition(call.id, "ringing", { status: "missed", ringingSince: null, note: this.waiting.has(call.id) ? "widget busy" : "not answered" })) continue
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} missed`)
         await this.notice(call, this.missedTitle(call))
       } else if (call.status === "answered" && call.answeredAt !== null && now - call.answeredAt >= talkFor) {

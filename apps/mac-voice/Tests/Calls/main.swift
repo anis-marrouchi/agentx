@@ -20,6 +20,13 @@ check(CallModel.action(ringing: "call-a", calls: [a, b], canRing: true) == .none
 check(CallModel.action(ringing: "call-a", calls: [b], canRing: true) == .stop, "gone from the daemon: stop")
 check(CallModel.action(ringing: "call-a", calls: [], canRing: false) == .stop, "missed while busy: stop")
 
+// --- What the poll tells the daemon (#408) ---
+
+check(CallModel.pollQuery(ringing: nil, canRing: true) == "", "free: the poll says nothing")
+check(CallModel.pollQuery(ringing: nil, canRing: false) == "?busy=1", "in a turn: busy, so a new call waits")
+check(CallModel.pollQuery(ringing: "call-a", canRing: true) == "?busy=1&showing=call-a", "ringing: busy for other calls, showing this one")
+check(CallModel.pollQuery(ringing: "call-a", canRing: false) == "?busy=1&showing=call-a", "ringing during a turn: still showing it")
+
 // --- Decoding the daemon's poll ---
 
 let json = #"{"calls":[{"id":"call-a","agentId":"writer","reason":"Pick a date","urgency":"normal","status":"ringing","createdAt":1}],"ringSound":"Submarine","ringSeconds":45}"#

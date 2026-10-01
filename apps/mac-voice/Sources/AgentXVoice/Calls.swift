@@ -5,9 +5,10 @@ import AppKit
 /// CallModel.swift; main.swift wires them to the conversation.
 enum CallClient {
     /// GET /calls/ringing, or nil when the daemon cannot be reached. The
-    /// poll is also how the daemon knows the widget is running.
-    static func ringing() async -> RingingCalls? {
-        guard let url = URL(string: "\(Config.daemonURL)/calls/ringing") else { return nil }
+    /// poll is also how the daemon knows the widget is running, and
+    /// `query` (CallModel.pollQuery) whether it can ring.
+    static func ringing(_ query: String = "") async -> RingingCalls? {
+        guard let url = URL(string: "\(Config.daemonURL)/calls/ringing\(query)") else { return nil }
         var req = URLRequest(url: url)
         req.timeoutInterval = 3
         guard let (data, response) = try? await URLSession.shared.data(for: req),
@@ -50,6 +51,8 @@ final class CallWatcher {
     private var polling = false
     /// Each poll that reached the daemon.
     var onPoll: ((RingingCalls) -> Void)?
+    /// What to tell the daemon with the next poll (CallModel.pollQuery).
+    var query: (() -> String)?
 
     func start() {
         timer?.invalidate()
@@ -63,7 +66,7 @@ final class CallWatcher {
         guard !polling else { return }
         polling = true
         defer { polling = false }
-        if let state = await CallClient.ringing() { onPoll?(state) }
+        if let state = await CallClient.ringing(query?() ?? "") { onPoll?(state) }
     }
 }
 
