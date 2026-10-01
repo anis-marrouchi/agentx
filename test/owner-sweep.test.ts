@@ -112,8 +112,8 @@ describe("owner sweep (#53)", () => {
     expect(ciState([run("FAILURE", "2026-10-01T08:50:27Z", "CI"), run("SUCCESS", "2026-10-01T08:50:49Z")]).state).toBe("failing")
   })
 
-  it("a rerun that is still queued replaces the finished run before it", () => {
-    // gh prints year 1 as the start time of a run that has not started.
+  it("an unfinished run with no start time counts as the newest", () => {
+    // gh prints year 1 for a missing time. Live queued runs carry a start time; this is a guard.
     const queued = { ...run("", "0001-01-01T00:00:00Z"), status: "QUEUED" }
     for (const before of ["SUCCESS", "FAILURE", "CANCELLED"]) {
       expect(ciState([run(before, "2026-10-01T08:50:27Z"), queued]).state).toBe("pending")
