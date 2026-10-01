@@ -3771,6 +3771,8 @@ export class AgentXDaemon {
             try {
               const resp = await this.registry.execute({
                 agentId, message: prompt,
+                // The requests record keeps the sentence, not the wrapper (#401).
+                requestText: message,
                 context: { channel: "dashboard", chatId: "assistant", sender: "operator" } as any,
               })
               store.resolve(thread!.id, seq, resp.error ? String(resp.error) : (resp.content ?? ""),

@@ -82,6 +82,9 @@ export interface AgentXEvents {
      *  re-fire the exact original task. Optional for back-compat with
      *  older emitters that only carried the preview. */
     fullMessage?: string
+    /** What the person typed, when the message wraps it in a prompt of
+     *  the caller's own (the dashboard's Ask an agent, #401). */
+    requestText?: string
     at: string
     taskId?: string
     /** Resume after restart (#103): how to re-enter the run (JSON), its

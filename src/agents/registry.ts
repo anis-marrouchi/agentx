@@ -1575,6 +1575,7 @@ export class AgentRegistry {
       chatId,
       messagePreview: (task.message || "").slice(0, 200),
       fullMessage: task.message || "",
+      requestText: task.requestText,
       at: new Date(taskStartedAt).toISOString(),
       taskId: traceTaskId,
       resumeOrigin: serializeOrigin(task.origin ?? {
