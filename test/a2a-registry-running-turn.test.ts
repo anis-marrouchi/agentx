@@ -112,6 +112,18 @@ describe("finding the caller's running turn", () => {
     await Promise.all([a.run, b.run])
   })
 
+  it("names no run when a chat and a sender give the same pair", async () => {
+    const r = new AgentRegistry(config(), () => {})
+    const a = start(r, "front", { channel: "api", chatId: "sam" })
+    const b = start(r, "front", { channel: "api", sender: "sam" })
+    const [aId, bId] = [await a.started, await b.started]
+    expect(r.findRunningTurn("front", { channel: "api", chatId: "sam" })).toBeNull()
+    expect(r.findRunningTurn("front", { taskId: bId })?.taskId).toBe(bId)
+    r.cancelRunningTask(aId, "done")
+    r.cancelRunningTask(bId, "done")
+    await Promise.all([a.run, b.run])
+  })
+
   it("refuses A -> B -> A at once when A's only slot is the turn waiting on B", async () => {
     const r = new AgentRegistry(config(), () => {})
     const waits = new SyncWaits()

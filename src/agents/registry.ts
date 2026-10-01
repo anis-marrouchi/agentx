@@ -1118,8 +1118,7 @@ export class AgentRegistry {
     }
 
     // Build session key for queue management
-    const qChannel = task.context?.channel || "api"
-    const qChatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
+    const { channel: qChannel, chatId: qChatId } = warmProcessChat(task.context)
     // Held from a voice wait ending until the chat is marked running.
     let voiceClaim: string | undefined
 
@@ -1560,7 +1559,7 @@ export class AgentRegistry {
       (): Awaited<ReturnType<typeof evaluateRequest>> => ({ active: false, preprocess: false }),
     )
     if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
-    const chatId = task.context?.chatId || task.context?.group || task.context?.sender || "default"
+    const chatId = qChatId
     const senderName = task.context?.sender || "User"
     const isCodexCli = state.def.tier === "codex-cli"
 
