@@ -4,7 +4,7 @@ The same human can reach your agents in several places: a GitLab comment in the 
 
 Once a person is listed, every task they start is stamped with their id, whatever channel they used. You can then see everything one person asked for in one place.
 
-Nothing changes until you add someone. With an empty list, what you do on your own machine (voice, the phone app, the dashboard) is recorded as the built-in person `owner`, and senders on other channels are unknown.
+Nothing changes until you add someone. With an empty list, what you do on your own machine (voice, the phone app, the dashboard) is recorded as the built-in person `owner`, and senders on other channels are unknown. Your own machine's surfaces vouch for you the way [open requests](./open-requests.md#turn-it-on) describes: a program that merely names one of those surfaces when it calls the daemon is not you.
 
 ## What a person is
 

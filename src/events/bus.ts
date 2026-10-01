@@ -106,6 +106,9 @@ export interface AgentXEvents {
      *  re-fire the exact original task. Optional for back-compat with
      *  older emitters that only carried the preview. */
     fullMessage?: string
+    /** What the person typed, when the message wraps it in a prompt of
+     *  the caller's own (the dashboard's Ask an agent, #401). */
+    requestText?: string
     at: string
     taskId?: string
     /** Resume after restart (#103): how to re-enter the run (JSON), its
@@ -124,6 +127,10 @@ export interface AgentXEvents {
     /** True for the turn the daemon starts to hand a request back to its
      *  agent (requests/tracker pickupContext). */
     pickup?: boolean
+    /** True when the daemon marked the turn as the owner's on one of this
+     *  node's own surfaces (requests/operator): it started the turn itself,
+     *  or the /task caller showed the operator key (#393). */
+    operator?: boolean
   }
 
   /** A single step inside an in-flight task — typically a tool call or

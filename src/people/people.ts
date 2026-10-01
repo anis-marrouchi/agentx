@@ -1,5 +1,6 @@
 import { classifyInitiator, propagatedRootOf, type InitiatorContext } from "@/a2a/initiator"
 import { OPERATOR_CHANNELS } from "@/requests/tracker"
+import { isOperatorTurn } from "@/requests/operator"
 
 // --- People: one identity per human, whatever channel they use (#384) ---
 //
@@ -110,7 +111,10 @@ export function personOfTurn(people: Person[], ctx: InitiatorContext | undefined
   if (root) return root.person ? { id: root.person } : null
   if (!ctx || classifyInitiator(ctx) !== "human") return null
   const channel = String(ctx.channel ?? "")
-  if (OPERATOR_CHANNELS.has(base(channel))) return operatorPerson(people)
+  // This node's own surfaces name the operator only when the daemon marked
+  // the turn as theirs (requests/operator, #393): a /task caller can name
+  // the channel, not the person.
+  if (OPERATOR_CHANNELS.has(base(channel))) return isOperatorTurn(ctx) ? operatorPerson(people) : null
   const str = (v: unknown) => (typeof v === "string" ? v : undefined)
   const person = resolvePerson(people, channel, { id: str(ctx.senderId), username: str(ctx.senderUsername) })
   return person ? { id: person.id, role: person.role } : null

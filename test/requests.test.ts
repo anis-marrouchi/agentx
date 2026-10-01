@@ -70,13 +70,28 @@ describe("settings", () => {
 })
 
 describe("who counts as the owner", () => {
-  it("takes this node's own surfaces without a from list", () => {
-    for (const ch of ["voice", "app", "dashboard", "webrtc"]) expect(isOwnerTurn({ channels: [], from: [] }, ch, undefined)).toBe(true)
+  it("takes this node's own surfaces without a from list, when the daemon marked the turn", () => {
+    for (const ch of ["voice", "app", "dashboard", "webrtc"]) expect(isOwnerTurn({ channels: [], from: [] }, ch, undefined, true)).toBe(true)
+  })
+
+  it("does not take those surfaces on the channel name alone (#393)", () => {
+    // What a caller of /task can claim: the channel, and any sender.
+    for (const ch of ["voice", "app", "dashboard", "webrtc"]) {
+      expect(isOwnerTurn({ channels: [], from: [] }, ch, undefined)).toBe(false)
+      expect(isOwnerTurn({ channels: [], from: [] }, ch, { name: "operator" }, false)).toBe(false)
+    }
   })
 
   it("skips turns the daemon itself starts on those surfaces", () => {
-    expect(isOwnerTurn({ channels: [], from: [] }, "voice", { name: "Camera" })).toBe(false)
-    expect(isOwnerTurn({ channels: [], from: [] }, "voice", { name: "Owner" })).toBe(true)
+    expect(isOwnerTurn({ channels: [], from: [] }, "voice", { name: "Camera" }, true)).toBe(false)
+    expect(isOwnerTurn({ channels: [], from: [] }, "voice", { name: "Owner" }, true)).toBe(true)
+  })
+
+  it("records a dashboard turn only with the daemon's mark", () => {
+    start("t1", { channel: "dashboard", chatId: "assistant", sender: { name: "operator" } })
+    expect(db.prepare("SELECT COUNT(*) AS n FROM requests").get()).toEqual({ n: 0 })
+    start("t2", { channel: "dashboard", chatId: "assistant", sender: { name: "operator" }, operator: true })
+    expect(store.get("req-t2")).toMatchObject({ channel: "dashboard", text: "build the report and deploy it" })
   })
 
   it("takes nobody on a public channel when the from list is empty", () => {
@@ -144,6 +159,18 @@ describe("capture", () => {
   })
 })
 
+describe("a turn whose message is a prompt wrapper", () => {
+  it("records what the person typed, not the wrapper (#401)", () => {
+    start("t1", {
+      channel: "dashboard", chatId: "assistant", sender: { name: "operator" },
+      messagePreview: "You are answering a question from the AgentX dashboard.",
+      fullMessage: "You are answering a question from the AgentX dashboard.\n\nTHEIR QUESTION:\nrestart the docs build",
+      requestText: "restart the docs build", operator: true,
+    })
+    expect(store.get("req-t1")!.text).toBe("restart the docs build")
+  })
+})
+
 describe("on the daemon's event bus", () => {
   it("follows the run events the registry emits, and stops when detached", () => {
     const attached = attachRequests(db, () => settings, () => {})
@@ -151,14 +178,14 @@ describe("on the daemon's event bus", () => {
     const at = new Date().toISOString()
     bus.emit("task:started", {
       agentId: "coder", channel: "voice", chatId: "mac", taskId: "bus-1", messagePreview: "ship it", fullMessage: "ship it",
-      at, humanRoot: true,
+      at, humanRoot: true, operator: true,
     })
     expect(attached.store.get("req-bus-1")?.state).toBe("candidate")
     bus.emit("task:completed", { agentId: "coder", channel: "voice", chatId: "mac", taskId: "bus-1", durationMs: 5, error: "Task timed out after 60 minutes", at })
     expect(attached.store.get("req-bus-1")?.state).toBe("needs_attention")
 
     attached.detach()
-    bus.emit("task:started", { agentId: "coder", channel: "voice", chatId: "mac", taskId: "bus-2", messagePreview: "x", at, humanRoot: true })
+    bus.emit("task:started", { agentId: "coder", channel: "voice", chatId: "mac", taskId: "bus-2", messagePreview: "x", at, humanRoot: true, operator: true })
     expect(attached.store.get("req-bus-2")).toBeNull()
   })
 })

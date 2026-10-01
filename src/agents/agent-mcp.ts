@@ -44,6 +44,26 @@ export type McpServerConfig = McpStdioServerConfig | McpHttpServerConfig
 
 export type McpServerMap = Record<string, McpServerConfig>
 
+/** This install's own MCP server (`agentx serve --stdio`), as a stanza an
+ *  agent's session can load: the node binary and CLI file this daemon runs
+ *  from, pointed at this install folder so the server finds the daemon. */
+export function agentxToolServer(
+  proc: { execPath: string; argv: string[]; cwd: () => string } = process,
+): McpStdioServerConfig {
+  const cli = proc.argv[1] ? resolve(proc.argv[1]) : ""
+  const viaNode = /\.[cm]?js$/.test(cli)
+  return viaNode
+    ? { type: "stdio", command: proc.execPath, args: [cli, "serve", "--stdio", "--cwd", proc.cwd()] }
+    : { type: "stdio", command: "agentx", args: ["serve", "--stdio", "--cwd", proc.cwd()] }
+}
+
+/** `mcp` with this install's tool server added as `agentx`, unless the
+ *  operator declared their own `agentx` entry or `server` is null. */
+export function withAgentXToolServer(mcp: McpServerMap, server: McpServerConfig | null): McpServerMap {
+  if (!server || mcp.agentx) return mcp
+  return { ...mcp, agentx: server }
+}
+
 export type SyncResult =
   | "installed"            // wrote a fresh .mcp.json (no prior file)
   | "updated"              // overwrote an agentx-managed file

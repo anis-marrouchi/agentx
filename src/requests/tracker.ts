@@ -65,12 +65,14 @@ export function isOwnerTurn(
   settings: Pick<RequestSettings, "channels" | "from">,
   channel: string,
   sender: { name?: string; id?: string; username?: string } | undefined,
+  /** The daemon marked the turn as the owner's (requests/operator). A
+   *  caller of /task can name any channel, so the name alone is not
+   *  enough on this node's own surfaces (#393). */
+  operator = false,
 ): boolean {
   const ch = base(channel)
   if (settings.channels.length && !settings.channels.map(base).includes(ch)) return false
-  // Trusted by channel name: a caller of the daemon's own API can claim one.
-  // The worst it gets is a wrong record and a notice, never access.
-  if (OPERATOR_CHANNELS.has(ch)) return !DAEMON_SENDERS.has((sender?.name ?? "").toLowerCase())
+  if (OPERATOR_CHANNELS.has(ch)) return operator && !DAEMON_SENDERS.has((sender?.name ?? "").toLowerCase())
   // Display names are not matched: anyone can pick one. Entries are
   // "channel:id": an id means nothing outside its own channel. One field
   // names the person: the login on a forge, the sender id elsewhere. A
@@ -171,13 +173,13 @@ export class RequestTracker {
         this.live.set(key, { requestId: pickup.id, runId: p.taskId! })
         return
       }
-      if (!p.humanRoot || !(isOwnerTurn(this.settings(), p.channel, p.sender) || this.isListedOwner(p))) return
+      if (!p.humanRoot || !(isOwnerTurn(this.settings(), p.channel, p.sender, p.operator === true) || this.isListedOwner(p))) return
       this.live.set(key, { requestId: `req-${p.taskId}`, runId: p.taskId! })
       this.store.addCandidate({
         id: `req-${p.taskId}`, runId: p.taskId!, channel: p.channel, chatId: p.chatId,
         sender: p.sender?.name ?? p.sender?.username ?? p.sender?.id ?? null,
         person: p.person?.id ?? null,
-        agentId: p.agentId, text: p.fullMessage ?? p.messagePreview, now,
+        agentId: p.agentId, text: p.requestText ?? p.fullMessage ?? p.messagePreview, now,
       })
     })
   }

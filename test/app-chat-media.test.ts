@@ -203,6 +203,15 @@ describe("phone chat turns: an unclosed tag (#256)", () => {
     return relayTurn({ url: "http://daemon" }, turn, new AbortController().signal, () => {})
   }
 
+  it("shows the operator key to the daemon when the dashboard has one (#393)", async () => {
+    const fetchMock = vi.fn(async () => sse([["done", { content: "ok" }]]))
+    vi.stubGlobal("fetch", fetchMock)
+    await relayTurn({ url: "http://daemon", operatorKey: "k".repeat(64) }, turn, new AbortController().signal, () => {})
+    expect((fetchMock.mock.calls[0] as any)[1].headers["X-AgentX-Operator"]).toBe("k".repeat(64))
+    await relayTurn({ url: "http://daemon" }, turn, new AbortController().signal, () => {})
+    expect((fetchMock.mock.calls[1] as any)[1].headers["X-AgentX-Operator"]).toBeUndefined()
+  })
+
   it("keeps the full text of a finished answer", async () => {
     const answer = "Use the <agentx-artifact> tag.\n\nThen send it."
     const out = await run([["text", { text: answer }], ["done", { content: answer }]])

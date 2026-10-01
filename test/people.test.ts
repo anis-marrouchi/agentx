@@ -13,6 +13,7 @@ import { attachSqliteSubscribers } from "../src/storage/subscribers"
 import { getEventBus } from "../src/events/bus"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
+import { operatorContext } from "../src/requests/operator"
 
 // People (#384): one identity per human across channels.
 
@@ -52,14 +53,20 @@ describe("matching a sender to a person", () => {
 
 describe("who a turn belongs to", () => {
   it("with no people listed, this machine's surfaces are the owner and other senders are unknown", () => {
-    expect(personOfTurn([], { channel: "voice", sender: "Anis" })).toEqual({ id: IMPLICIT_OWNER, role: "owner" })
-    expect(personOfTurn([], { channel: "dashboard" })).toEqual({ id: IMPLICIT_OWNER, role: "owner" })
+    expect(personOfTurn([], operatorContext({ channel: "voice", sender: "Anis" }))).toEqual({ id: IMPLICIT_OWNER, role: "owner" })
+    expect(personOfTurn([], operatorContext({ channel: "dashboard" }))).toEqual({ id: IMPLICIT_OWNER, role: "owner" })
     expect(personOfTurn([], { channel: "telegram", sender: "Anis", senderId: "4242" })).toBeNull()
+  })
+
+  it("names the owner on this machine's surfaces only for a turn the daemon marked (#393)", () => {
+    // What a caller of /task can send: the channel, and nothing the daemon vouches for.
+    expect(personOfTurn([], { channel: "dashboard" })).toBeNull()
+    expect(personOfTurn(PEOPLE, JSON.parse(JSON.stringify(operatorContext({ channel: "app", sender: "phone" }))))).toBeNull()
   })
 
   it("stamps the listed person, and the listed owner on this machine's surfaces", () => {
     expect(personOfTurn(PEOPLE, { channel: "gitlab", sender: "Sara B", senderId: "g/app:issue:7", senderUsername: "sara.b" })).toEqual({ id: "sara", role: "member" })
-    expect(personOfTurn(PEOPLE, { channel: "app", sender: "phone" })).toEqual({ id: "anis", role: "owner" })
+    expect(personOfTurn(PEOPLE, operatorContext({ channel: "app", sender: "phone" }))).toEqual({ id: "anis", role: "owner" })
   })
 
   it("does not match a display name", () => {
@@ -81,7 +88,7 @@ describe("who a turn belongs to", () => {
   it("cannot tell two owners apart on this machine's surfaces", () => {
     const two = [anis, { ...sara, role: "owner" as const }]
     expect(operatorPerson(two)).toBeNull()
-    expect(personOfTurn(two, { channel: "voice" })).toBeNull()
+    expect(personOfTurn(two, operatorContext({ channel: "voice" }))).toBeNull()
     expect(personOfTurn(two, { channel: "telegram", senderId: "4242" })?.id).toBe("anis")
   })
 

@@ -59,7 +59,8 @@ import { runApprovalsSweep } from "@/approvals/sweep"
 import type { DecisionCard } from "@/approvals/cards"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
-import { pickupContext } from "@/requests/tracker"
+import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
+import { OPERATOR_HEADER, isOperatorTurn, loadOperatorKey, operatorContext, operatorKeyMatches } from "@/requests/operator"
 import { handleRequestsApi, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
@@ -117,7 +118,7 @@ import { resolveAutoRunInputs } from "@/workflows/inputs"
 import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentMemory } from "@/agents/agent-memory"
 import { ContactDirectory } from "@/agents/contacts"
-import { syncMcpToWorkspace, type McpServerMap } from "@/agents/agent-mcp"
+import { agentxToolServer, syncMcpToWorkspace, withAgentXToolServer, type McpServerMap } from "@/agents/agent-mcp"
 import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegraph-bootstrap"
 import { REMEMBER_SKILL_FILENAME, rememberSkillBody, upgradeRememberSkill } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
@@ -851,6 +852,11 @@ export class AgentXDaemon {
     // customizations); replace-in-place for the CLAUDE.md sentinel
     // block and the explicit .agentx-memory.md file.
     this.installAgentMemorySurface()
+
+    // The key the dashboard process presents for the phone app's turns, so
+    // they count as the owner's (#393). Created once, readable by this user.
+    this.operatorKey = loadOperatorKey(process.cwd(), { create: true })
+    if (!this.operatorKey) this.log("  requests: could not create .agentx/operator.key — phone app turns will not be recorded as yours")
 
     // Sync each agent's MCP server config to <workspace>/.mcp.json.
     // Operator-owned files (no agentx marker) are skipped; only files
@@ -1717,6 +1723,9 @@ export class AgentXDaemon {
 
   /** Open requests (src/requests); null when the database is unavailable. */
   private requests: AttachedRequests | null = null
+  /** The secret this node's own surfaces present on /task to prove a turn
+   *  is the owner's (requests/operator, #393). */
+  private operatorKey: string | null = null
   private requestsSweeping = false
   private status: AttachedStatus | null = null
 
@@ -3139,6 +3148,18 @@ export class AgentXDaemon {
   }
 
   /** The running turn a call names, as its X-AgentX-* headers give it. */
+  /** Marks a /task context as the owner's when its channel is one of this
+   *  node's own surfaces and the caller showed the operator key: the
+   *  dashboard process does, for the phone app. Any other caller naming
+   *  such a channel gets an ordinary turn, never recorded as a request
+   *  of the owner (#393). */
+  private markOperatorTurn(context: unknown, req: IncomingMessage): void {
+    if (!context || typeof context !== "object" || isOperatorTurn(context)) return
+    const channel = String((context as Record<string, unknown>).channel ?? "").toLowerCase().split("@")[0]
+    if (!OPERATOR_CHANNELS.has(channel)) return
+    if (operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER])) operatorContext(context)
+  }
+
   private callerProof(req: IncomingMessage): RequestCallerProof {
     const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
     return { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") }
@@ -3827,7 +3848,10 @@ export class AgentXDaemon {
             try {
               const resp = await this.registry.execute({
                 agentId, message: prompt,
-                context: { channel: "dashboard", chatId: "assistant", sender: "operator" } as any,
+                // The requests record keeps the sentence, not the wrapper (#401).
+                requestText: message,
+                // The owner typed in this node's dashboard: the turn is theirs (#393).
+                context: operatorContext({ channel: "dashboard", chatId: "assistant", sender: "operator" }) as any,
               })
               store.resolve(thread!.id, seq, resp.error ? String(resp.error) : (resp.content ?? ""),
                 resp.error ? "error" : "done")
@@ -5503,6 +5527,7 @@ export class AgentXDaemon {
 
         case "POST /task": {
           const body = await readBody(req)
+          this.markOperatorTurn(body.context, req)
           const agentId = (body.agent as string) || this.config.node.defaultAgent
           if (!agentId || !body.message) {
             this.json(res, 400, { error: "Missing: message (and no defaultAgent configured)" })
@@ -5927,7 +5952,8 @@ export class AgentXDaemon {
             agentId,
             message,
             systemPromptAppend: `${VOICE_MODE_INSTRUCTION}\n${introInstruction(voice, introduce)}`,
-            context: { channel: "voice", sender: "Voice", chatId: `voice:${agentId}` },
+            // The owner spoke to this node: the turn is theirs (#393).
+            context: operatorContext({ channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
             intentRef,
           })
 
@@ -6583,7 +6609,10 @@ export class AgentXDaemon {
       // effectiveMcpConfig layers the codegraph server on top of any
       // operator-declared MCP servers when `def.codegraph === true`.
       // Operator entries still win on collision (see effectiveMcpConfig).
-      const mcp = effectiveMcpConfig(def)
+      // While requests are on, every agent also gets this install's own
+      // tool server, so it can say what it is doing with a request
+      // (agentx_request) without the workspace being set up by hand (#400).
+      const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled ? agentxToolServer() : null)
       try {
         const result = syncMcpToWorkspace(ws, mcp)
         switch (result) {

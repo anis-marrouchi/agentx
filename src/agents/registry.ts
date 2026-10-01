@@ -58,6 +58,7 @@ import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
+import { isOperatorTurn } from "@/requests/operator"
 import { personOfTurn } from "@/people/people"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 
@@ -1604,6 +1605,7 @@ export class AgentRegistry {
       chatId,
       messagePreview: (task.message || "").slice(0, 200),
       fullMessage: task.message || "",
+      requestText: task.requestText,
       at: new Date(taskStartedAt).toISOString(),
       taskId: traceTaskId,
       resumeOrigin: serializeOrigin(task.origin ?? {
@@ -1618,6 +1620,7 @@ export class AgentRegistry {
       ...(person ? { person } : {}),
       humanRoot: isHumanFacingTurn(task.context as any),
       pickup: isPickup(task.context),
+      operator: isOperatorTurn(task.context),
     })
 
     // Classify the message through the intent graph when enabled. Skip for

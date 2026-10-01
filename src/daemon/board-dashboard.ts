@@ -9,6 +9,7 @@ import { fileURLToPath } from "url"
 import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
+import { loadOperatorKey } from "@/requests/operator"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
 import { deriveStage, transitionDiff } from "@/boards/config"
 import type { WorkSource, WorkItem } from "@/business/work-pool"
@@ -2269,7 +2270,9 @@ function appChatDeps(config: DaemonConfig): AppChatDeps {
       const db = openDb()
       return db ? new AppChatStore(db) : null
     },
-    daemon: { url, token, name: config.node?.name },
+    // The operator key proves to the daemon that a phone turn is the
+    // owner's (#393). Read here, next to agentx.json; the daemon creates it.
+    daemon: { url, token, name: config.node?.name, operatorKey: loadOperatorKey(process.cwd()) ?? undefined },
     snapshot: () => buildLiveSnapshot(config),
     meshPeers: async () => {
       const r = await fetch(url + "/mesh", { headers: token ? { Authorization: `Bearer ${token}` } : {}, signal: AbortSignal.timeout(3000) })
