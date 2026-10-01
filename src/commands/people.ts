@@ -5,6 +5,11 @@ import { loadDaemonConfig } from "@/daemon/config"
 import { openDb } from "@/storage/sqlite"
 import { IMPLICIT_OWNER, splitIdentity, type Person } from "@/people/people"
 import { openRequestsOf, runsOf } from "@/people/activity"
+import { TokenStore } from "@/daemon/token-store"
+import { PairCodeStore, formatCode } from "@/daemon/pair-codes"
+import { MemberStore } from "@/members/store"
+import { inviteMember, removeDevice, removePersonDevices, MEMBER_KEY_DAYS } from "@/members/pairing"
+import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeStatus } from "./app"
 
 // --- agentx people: the humans who talk to your agents (#384) ---
 //
@@ -16,8 +21,11 @@ import { openRequestsOf, runsOf } from "@/people/activity"
 //   add <id> --name N [--role R] [--identity channel:id ...]
 //   link <id> <channel:id>                 add an identity to a person
 //   unlink <id> <channel:id>               take one away
-//   remove <id>
+//   remove <id>                            also ends every machine of theirs
 //   show <id> [--limit N]                  what they asked for, on every channel
+//   invite <id> [--url origin]             a one-time code for their own work page (#385)
+//   devices [id]                           their machines: state, first and last use
+//   revoke-device <tokenId>                end one machine at once
 
 export const people = new Command("people")
   .description("the humans who talk to your agents: one person per human, whatever channel they use")
@@ -114,13 +122,84 @@ people
 people
   .command("remove <id>")
   .alias("rm")
-  .description("remove a person. Their past runs keep the id; new messages from them are unknown")
+  .description("remove a person. Their past runs keep the id; new messages from them are unknown; every machine of theirs stops at once")
   .action(async (id: string) => {
     await mutate((list) => {
       find(list, id)
       list.splice(list.findIndex((p: any) => p?.id === id), 1)
       return `removed ${id}`
     })
+    const ended = removePersonDevices({ tokens: new TokenStore(), members: new MemberStore() }, id)
+    if (ended.length) console.log(chalk.green(`✓ ended ${ended.length} machine(s) of ${id}: ${ended.map((d) => d.name).join(", ")}`))
+    console.log(chalk.dim("  If you shared this computer with them on the private network, remove that share too."))
+  })
+
+people
+  .command("invite <id>")
+  .description("a one-time code that pairs one of this person's machines with their own work page (/member)")
+  .option("--url <origin>", "address the person opens, e.g. https://my-mac.tailnet-name.ts.net (default: this computer's Tailscale name)")
+  .action((id: string, opts: { url?: string }) => {
+    try {
+      const port = dashboardPort()
+      const exposed = exposedDashboardMounts(tailscaleServeStatus(), port)
+      if (exposed.length > 0) {
+        throw new Error([
+          `tailscale serve publishes the whole dashboard, not only the member page: ${exposed.join(", ")}`,
+          `  Anyone you share this computer with could open it. Serve only the member paths instead:`,
+          `    tailscale serve reset`,
+          `    tailscale serve --bg --set-path /member http://127.0.0.1:${port}/member`,
+          `    tailscale serve --bg --set-path /api/member http://127.0.0.1:${port}/api/member`,
+        ].join("\n"))
+      }
+      const origin = (opts.url ? String(opts.url) : tailscaleOrigin()).replace(/\/+$/, "")
+      if (!/^https?:\/\/[^/]+$/.test(origin)) throw new Error(`--url must be an origin like https://host.example.ts.net, got: ${origin}`)
+      const people = loadDaemonConfig().people
+      const r = inviteMember({ tokens: new TokenStore(), codes: new PairCodeStore(), members: new MemberStore(), people: () => people }, id)
+      if (!r.ok) throw new Error(r.error)
+      console.log()
+      console.log(`  Invite for ${chalk.bold(r.person.name)} (${r.person.id})`)
+      console.log()
+      console.log(`  1. Share this computer with them on your private network, if you have not yet:`)
+      console.log(chalk.dim(`     Tailscale admin console → Machines → this computer → Share → send them the link.`))
+      console.log(chalk.dim(`     Limit what shared users can reach to port 443 in your access rules (see the docs page "Invite a teammate").`))
+      console.log(`  2. Send them this address and code. The code works once, for 10 minutes:`)
+      console.log()
+      console.log(`     ${chalk.cyan(`${origin}/member`)}`)
+      console.log(`     ${chalk.bold(formatCode(r.code))}`)
+      console.log()
+      console.log(`  3. When they pair, a card "New machine for ${r.person.name}" asks you to approve that machine.`)
+      console.log(chalk.dim(`     Their key stops after ${MEMBER_KEY_DAYS} days; invite again then. Machine id: ${r.tokenId}`))
+      console.log()
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+people
+  .command("devices [id]")
+  .description("the machines paired to people's work pages: state, where from, first and last use")
+  .option("--json", "machine-readable output")
+  .action((id: string | undefined, opts: { json?: boolean }) => {
+    const devices = new MemberStore().devices(id)
+    if (opts.json) { console.log(JSON.stringify(devices, null, 2)); return }
+    if (devices.length === 0) { console.log(chalk.dim(`\n  No machines${id ? ` for ${id}` : ""}. Run \`agentx people invite <id>\`.\n`)); return }
+    console.log()
+    for (const d of devices) {
+      const state = d.state === "active" ? chalk.green("active") : d.state === "pending" ? chalk.yellow("waiting for your approval") : chalk.red(`removed${d.removedReason ? `: ${d.removedReason}` : ""}`)
+      console.log(`  ${chalk.cyan(d.tokenId)}  ${chalk.bold(d.personId)}  ${d.name}  ${state}`)
+      console.log(chalk.dim(`    paired: ${d.createdAt} from ${d.address ?? "?"}${d.network ? ` as ${d.network}` : ""}${d.lastSeenAt ? `  last used: ${d.lastSeenAt} from ${d.lastAddress ?? "?"}` : ""}`))
+    }
+    console.log()
+  })
+
+people
+  .command("revoke-device <tokenId>")
+  .description("end one machine's access at once")
+  .action((tokenId: string) => {
+    const d = removeDevice({ tokens: new TokenStore(), members: new MemberStore() }, tokenId)
+    if (!d) { console.log(chalk.red(`  No machine with id ${tokenId}. See \`agentx people devices\`.`)); process.exit(1) }
+    console.log(chalk.green(`\n  ✓ Ended ${tokenId} (${d.name}, ${d.personId})\n`))
   })
 
 const when = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
