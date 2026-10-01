@@ -58,7 +58,7 @@ import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import type { DecisionCard } from "@/approvals/cards"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
-import { runRequestsSweep } from "@/requests/sweep"
+import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { PICKUP_CHANNEL } from "@/requests/tracker"
 import { handleRequestsApi } from "@/requests/daemon-api"
 import { popNext } from "@/approvals/popup-runner"
@@ -1776,11 +1776,18 @@ export class AgentXDaemon {
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
       tellAgent: async (agentId, text, r) => {
+        // execute() does not reject: a turn that could not start comes
+        // back as { error } with no run events, so it is read here.
         void this.registry.execute({
           agentId,
           message: text,
           context: { channel: PICKUP_CHANNEL, chatId: r.id, sender: "operator" },
-        }).catch((e: any) => this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`))
+        }).then((res) => {
+          if (pickupEnded(requests.store, r, res, Date.now())) this.log(`[requests] ${r.id}: could not hand it back to ${agentId}: ${res.error}`)
+        }).catch((e: any) => {
+          pickupEnded(requests.store, r, { error: e?.message ?? String(e) }, Date.now())
+          this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`)
+        })
       },
       log: this.log,
     })

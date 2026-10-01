@@ -37,6 +37,16 @@ export interface RequestSweepResult {
   pickedUp: number
 }
 
+/** The pick-up turn ended. A turn that started is followed through its
+ *  run events; one that never started (agent busy, message dropped, rate
+ *  limit) reports only here, so the request comes back instead of sitting
+ *  in progress until the quiet check. A request already raised keeps its
+ *  first reason. */
+export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?: string } | undefined | null, now: number): boolean {
+  if (!res?.error) return false
+  return store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${res.error}`, now)
+}
+
 /** What the agent is told when the owner says "pick it up again". */
 export function pickupText(r: RequestRecord): string {
   return [

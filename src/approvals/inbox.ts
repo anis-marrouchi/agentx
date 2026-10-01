@@ -9,6 +9,7 @@ import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } fro
 import { readInboxState, snooze } from "./state"
 import { openDb } from "@/storage/sqlite"
 import { RequestStore } from "@/requests/store"
+import { readRequestSettings } from "@/requests/settings"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -405,6 +406,10 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
       const r = store?.get(ref)
       if (!store || !r || r.state !== "needs_attention") return { ok: false, error: `nothing waiting for "${key}"` }
       if (yes) {
+        // The hand-back runs in the daemon's requests check, which is off with the feature.
+        if (!readRequestSettings(configPathFor(ctx)).enabled) {
+          return { ok: false, error: "Requests are off, so nothing would hand it back. Turn them on (agentx requests settings --enabled on), or answer no to drop it." }
+        }
         store.requestPickup(ref, now)
         return { ok: true, message: `${key}: ${r.agentId} will be asked to pick it up again` }
       }

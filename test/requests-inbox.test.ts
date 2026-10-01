@@ -5,7 +5,8 @@ import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, PICKUP_CHANNEL, type RequestSettings } from "../src/requests/tracker"
-import { runRequestsSweep, pickupText } from "../src/requests/sweep"
+import { runRequestsSweep, pickupText, pickupEnded } from "../src/requests/sweep"
+import { writeFileSync, readFileSync } from "fs"
 import { decide, listInbox } from "../src/approvals/inbox"
 import { digestText } from "../src/approvals/sweep"
 
@@ -32,7 +33,13 @@ afterEach(() => {
   rmSync(tmp, { recursive: true, force: true })
 })
 
-const ctx = () => ({ root: tmp, requests: store, now: clock })
+/** Requests on, unless a test turns them off. */
+let on = true
+const ctx = () => {
+  const configPath = path.join(tmp, "inbox-agentx.json")
+  writeFileSync(configPath, JSON.stringify({ node: { id: "n", name: "n" }, agents: {}, requests: { enabled: on } }))
+  return { root: tmp, requests: store, now: clock, configPath }
+}
 
 /** A voice request whose run timed out. */
 function failed(taskId: string) {
@@ -105,6 +112,34 @@ describe("requests in the Approvals inbox", () => {
     expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", attentionReason: "coder failed: model overloaded", notifiedAt: null })
   })
 
+  it("refuses yes while requests are off, because nothing would hand it back", async () => {
+    failed("t1")
+    on = false
+    const r = await decide(ctx(), "request:req-t1", "yes")
+    on = true
+    expect(r.ok).toBe(false)
+    expect((r as any).error).toContain("Requests are off")
+    expect(store.get("req-t1")?.state).toBe("needs_attention")
+    expect(store.takePickups()).toEqual([])
+    // No still works: dropping needs no daemon.
+    on = false
+    expect((await decide(ctx(), "request:req-t1", "no")).ok).toBe(true)
+    on = true
+  })
+
+  it("comes back when the pick-up turn never starts (agent busy, message dropped)", async () => {
+    failed("t1")
+    await decide(ctx(), "request:req-t1", "yes")
+    await sweep()
+    const r = store.get("req-t1")!
+    expect(pickupEnded(store, r, { error: 'Agent "coder" is busy — message dropped' }, clock)).toBe(true)
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", attentionReason: 'Could not hand it back to coder: Agent "coder" is busy — message dropped', notifiedAt: null })
+    // A turn that ran and answered changes nothing here.
+    store.progress("req-t1", clock)
+    expect(pickupEnded(store, r, { }, clock)).toBe(false)
+    expect(store.get("req-t1")?.state).toBe("in_progress")
+  })
+
   it("comes back when the agent is gone or the turn cannot start", async () => {
     failed("t1")
     await decide(ctx(), "request:req-t1", "yes")
@@ -135,7 +170,6 @@ describe("requests in the Approvals inbox", () => {
   })
 })
 
-import { writeFileSync, readFileSync } from "fs"
 import { handleRequestsPanel } from "../src/daemon/requests-panel"
 import { renderApprovalsPage } from "../src/daemon/ui/pages/approvals"
 import { REQUESTS_SCRIPT } from "../src/daemon/ui/pages/approvals-requests"
