@@ -166,6 +166,12 @@ describe("the page's answer", () => {
     expect(WINDOW_JXA).toContain('evaluateJavaScriptCompletionHandler("window.agentxAnswer"')
     expect(WINDOW_JXA).not.toContain("t.slice(14)")
   })
+  it("stops sizing once an answer is sent, so a late resize cannot write over the signal", () => {
+    const html = renderCardPage(raise(), { now: NOW })
+    const fit = html.slice(html.indexOf("function fit()"), html.indexOf("function mark()"))
+    expect(fit.indexOf("if (done) return;")).toBeGreaterThan(-1)
+    expect(fit.indexOf("if (done) return;")).toBeLessThan(fit.indexOf("document.title"))
+  })
   it("says Not now and Escape were the operator's choice", () => {
     const html = renderCardPage(raise(), { now: NOW })
     expect(html.match(/send\(\{ action: "dismiss", why: "not now" \}\)/g)).toHaveLength(2)

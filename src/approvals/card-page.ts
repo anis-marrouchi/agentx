@@ -163,6 +163,8 @@ const CARD_SCRIPT = `
   function send(a) { if (done) return; done = true; window.agentxAnswer = JSON.stringify(a); document.title = "agentx:answer"; }
   // What the card needs, not what it has: in a window too short for it, its middle scrolls.
   function fit() {
+    // The title carries the answer signal once sent: a late resize must not write over it.
+    if (done) return;
     var wrap = document.querySelector(".wrap"), head = document.querySelector(".head"), foot = document.querySelector(".foot");
     document.title = "agentx:size:" + Math.ceil(wrap.offsetHeight - card.clientHeight + head.offsetHeight + body.scrollHeight + foot.offsetHeight);
   }
