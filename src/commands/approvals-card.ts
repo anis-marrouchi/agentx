@@ -33,7 +33,7 @@ export function registerCardCommands(approvals: Command): void {
       const answer = await showPopup(card, settings, { from: opts.sample ? "Assistant" : undefined, capture: opts.capture, pick: Number(opts.pick) || undefined })
       if (opts.capture) console.log(chalk.dim(`  picture saved to ${opts.capture}`))
       if (opts.sample) { console.log(`  answer (not recorded): ${JSON.stringify(answer)}`); return }
-      if (answer.action === "dismiss") { console.log(chalk.dim("  not answered; the card is still waiting")); return }
+      if (answer.action === "dismiss") { console.log(chalk.dim(`  not answered${answer.why ? ` (${answer.why})` : ""}; the card is still waiting`)); return }
       const r = await decide({ root: process.cwd() }, `card:${card.id}`, answer.action, {
         by: "operator (popup)", ...(answer.action === "yes" ? { choice: answer.choice, text: answer.text } : {}),
       })

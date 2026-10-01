@@ -125,7 +125,7 @@ const APPROVALS_CSS = `
 
 const APPROVALS_SCRIPT = `
 (function(){
-var state = { items: [], snoozed: 0, kind: '', showAll: false };
+var state = { items: [], snoozed: 0, kind: '', showAll: false, popup: false };
 var LABEL = { card: 'Card', schedule: 'Schedule', memory: 'Memory fact', wiki: 'Wiki lesson', whatsapp: 'WhatsApp reply' };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
@@ -152,6 +152,7 @@ async function load(){
     var d = await r.json();
     if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
     state.items = d.items || []; state.snoozed = d.snoozed || 0;
+    state.popup = !!(d.settings && d.settings.popup && d.settings.popup.enabled);
     $('apv-errors').innerHTML = (d.errors || []).map(function(e){ return '<p class="apv__err">Couldn&#39;t read ' + esc(e.kind) + ': ' + esc(e.error) + '. The list may be incomplete.</p>'; }).join('');
     render();
     if (d.settings) fillSettings(d.settings);
@@ -202,6 +203,7 @@ function item(i){
     + '<button type="button" class="ax-btn ax-btn--primary" data-act="yes">Yes</button>'
     + '<button type="button" class="ax-btn ax-btn--danger" data-act="no">No</button>'
     + '<button type="button" class="ax-btn ax-btn--ghost" data-act="later">Later</button>'
+    + (i.kind === 'card' && state.popup ? '<button type="button" class="ax-btn ax-btn--ghost" data-pop title="Show this card on the Mac again">Show on Mac</button>' : '')
     + '</div></li>';
 }
 
@@ -225,6 +227,17 @@ async function act(li, action){
   }
 }
 
+async function pop(li, b){
+  b.disabled = true;
+  try {
+    var r = await fetch('/api/admin/approvals/popup', { method: 'POST', headers: headers(true), body: JSON.stringify({ key: li.getAttribute('data-key') }) });
+    var d = await r.json();
+    if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
+    say(d.message, 'ok');
+  } catch (e) { say(e.message, 'err'); }
+  b.disabled = false;
+}
+
 function fillSettings(s){
   var f = $('apv-form');
   f.defaultExpiryDays.value = s.defaultExpiryDays;
@@ -241,6 +254,8 @@ document.addEventListener('click', function(ev){
   var t = ev.target;
   var b = t.closest && t.closest('button[data-act]');
   if (b) { act(b.closest('.apv__item'), b.getAttribute('data-act')); return; }
+  var p = t.closest && t.closest('button[data-pop]');
+  if (p) { pop(p.closest('.apv__item'), p); return; }
   var f = t.closest && t.closest('.apv__f');
   if (f) {
     state.kind = f.getAttribute('data-kind');

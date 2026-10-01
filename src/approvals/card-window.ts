@@ -3,9 +3,9 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { CHOICE_LIMITS } from "./choices"
 import { renderCardPage, type CardPageOptions } from "./card-page"
-import { CARD_PAD } from "./card-page-style"
+import { CARD_GRIP, CARD_PAD } from "./card-page-style"
 import type { DecisionCard } from "./cards"
-import type { PopupAnswer, Run } from "./popup"
+import { DISMISS_REASONS, type PopupAnswer, type Run } from "./popup"
 
 // --- The Mac card window ---
 //
@@ -18,21 +18,28 @@ import type { PopupAnswer, Run } from "./popup"
 // draws the card, its round corners and its shadow, so the panel is wider
 // and taller than the card by CARD_PAD. It has no buttons of its own. The
 // card sits at the top right of the main screen, floats over other windows,
-// fits its height to the page, can be dragged by its top edge, and closes
-// on an answer or after `seconds`.
+// fits its height to the page, and closes on an answer or after `seconds`.
+// The web view fills the panel and would take every press, so a press on
+// the card's header (CARD_GRIP) is handed to the window as a drag before
+// the page sees it. A resize keeps the card where it was dragged to. It stays up when another app is clicked
+// (a panel hides then, unless told not to), and it takes a click made while
+// another app is in front, so Send never needs a second click.
 //
-// The script prints the page's answer. Nothing here decides: popup-runner.ts
-// records the answer, and only after parseAnswer has checked it against the
-// card once more.
+// The script prints the page's answer, or why there was none. Nothing here
+// decides: popup-runner.ts records the answer, and only after parseAnswer
+// has checked it against the card once more.
 
 export const CARD_WIDTH = 440
 
 export const WINDOW_JXA = `
 ObjC.import("Cocoa"); ObjC.import("WebKit")
 function run(argv) {
-  var path = argv[0], side = ${CARD_PAD.side}, w = Number(argv[1]) + 2 * side, h = 420, secs = Number(argv[2]), capture = argv[3] || ""
+  var path = argv[0], side = ${CARD_PAD.side}, gripTop = ${CARD_PAD.top}, gripEnd = ${CARD_PAD.top + CARD_GRIP.height}, keep = ${CARD_GRIP.keep}, w = Number(argv[1]) + 2 * side, h = 420, secs = Number(argv[2]), capture = argv[3] || ""
   var app = $.NSApplication.sharedApplication
   app.setActivationPolicy($.NSApplicationActivationPolicyAccessory)
+  ObjC.registerSubclass({ name: "AgentXCardView", superclass: "WKWebView", methods: {
+    "acceptsFirstMouse:": { types: ["bool", ["id"]], implementation: function () { return true } },
+  } })
   var vis = $.NSScreen.mainScreen.visibleFrame
   var top = vis.origin.y + vis.size.height - 4, right = vis.origin.x + vis.size.width - 14 + side
   var mask = $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskFullSizeContentView
@@ -42,6 +49,7 @@ function run(argv) {
   win.movableByWindowBackground = true
   win.level = $.NSFloatingWindowLevel
   win.releasedWhenClosed = false
+  win.hidesOnDeactivate = false
   win.collectionBehavior = $.NSWindowCollectionBehaviorCanJoinAllSpaces
   win.opaque = false
   win.backgroundColor = $.NSColor.clearColor
@@ -49,7 +57,7 @@ function run(argv) {
   ;[$.NSWindowCloseButton, $.NSWindowMiniaturizeButton, $.NSWindowZoomButton].forEach(function (b) { win.standardWindowButton(b).hidden = true })
   var cfg = $.WKWebViewConfiguration.alloc.init
   cfg.mediaTypesRequiringUserActionForPlayback = 0
-  var web = $.WKWebView.alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, w, h), cfg)
+  var web = $.AgentXCardView.alloc.initWithFrameConfiguration($.NSMakeRect(0, 0, w, h), cfg)
   web.autoresizingMask = $.NSViewWidthSizable | $.NSViewHeightSizable
   web.setValueForKey(false, "drawsBackground")
   win.contentView = web
@@ -57,17 +65,24 @@ function run(argv) {
   web.loadFileURLAllowingReadAccessToURL(url, url.URLByDeletingLastPathComponent)
   win.makeKeyAndOrderFront(null)
   app.activateIgnoringOtherApps(true)
-  var end = Date.now() + secs * 1000, sized = 0, shot = false, seen = ""
+  var end = Date.now() + secs * 1000, sized = 0, shot = false, seen = "", asked = false, answer = null
   while (Date.now() < end) {
     var ev = app.nextEventMatchingMaskUntilDateInModeDequeue($.NSEventMaskAny, $.NSDate.dateWithTimeIntervalSinceNow(0.05), $.NSDefaultRunLoopMode, true)
-    if (ev && !ev.isNil()) app.sendEvent(ev)
-    if (!win.isVisible) return ""
+    if (ev && !ev.isNil()) {
+      if (onGrip(ev)) win.performWindowDragWithEvent(ev); else app.sendEvent(ev)
+    }
+    if (answer !== null) { win.close; return answer }
+    if (!win.isVisible) return gone("closed")
     var t = web.title.js || ""
-    if (t.indexOf("agentx:answer:") === 0) { win.close; return t.slice(14) }
+    if (t === "agentx:answer" && !asked) {
+      asked = true
+      web.evaluateJavaScriptCompletionHandler("window.agentxAnswer", function (r) { answer = String(ObjC.unwrap(r) || "") })
+    }
     if (t !== seen && t.indexOf("agentx:size:") === 0) {
       seen = t
       var want = Math.min(Number(t.slice(12)), vis.size.height - 8)
-      if (want > 80) { win.setFrameDisplayAnimate($.NSMakeRect(right - w, top - want, w, want), true, true); sized = Date.now() }
+      var f = win.frame
+      if (want > 80) { win.setFrameDisplayAnimate($.NSMakeRect(f.origin.x, f.origin.y + f.size.height - want, w, want), true, true); sized = Date.now() }
     }
     if (capture && !shot && sized && Date.now() - sized > 900) {
       shot = true
@@ -77,8 +92,14 @@ function run(argv) {
     }
   }
   win.close
-  return ""
+  return gone("timed out")
+  function onGrip(ev) {
+    if (ev.type != $.NSEventTypeLeftMouseDown || ev.windowNumber != win.windowNumber) return false
+    var p = ev.locationInWindow, down = win.frame.size.height - p.y
+    return down >= gripTop && down <= gripEnd && p.x >= side && p.x <= w - side - keep
+  }
 }
+function gone(why) { return JSON.stringify({ action: "dismiss", why: why }) }
 function quoted(s) { return "'" + String(s).replace(/'/g, "'\\\\''") + "'" }
 `
 
@@ -94,6 +115,7 @@ export function parseAnswer(stdout: string, card: DecisionCard): PopupAnswer {
   let raw: any
   try { raw = JSON.parse(line) } catch { return { action: "dismiss" } }
   if (raw?.action === "no") return { action: "no" }
+  if (raw?.action === "dismiss" && DISMISS_REASONS.includes(raw.why)) return { action: "dismiss", why: raw.why }
   if (raw?.action !== "yes") return { action: "dismiss" }
   const choices = card.choices ?? []
   let choice: string | undefined

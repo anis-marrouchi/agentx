@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { decide, listInbox, type InboxAction, type InboxContext } from "@/approvals/inbox"
+import { popAgain } from "@/approvals/popup-runner"
 import { parseDestination, readApprovalSettings, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
 import { renderApprovalsPage } from "./ui/pages/approvals"
 import type { TopbarPeer } from "./topbar"
@@ -15,6 +16,7 @@ import type { TopbarPeer } from "./topbar"
 //   GET  /approvals                        the page
 //   GET  /api/admin/approvals[?all=1]      inbox + settings
 //   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force? }
+//   POST /api/admin/approvals/popup        { key }: show the card on the Mac again
 //   POST /api/admin/approvals/settings     settings form
 
 const ACTIONS: readonly InboxAction[] = ["yes", "no", "later"]
@@ -90,6 +92,14 @@ export async function handleApprovalsPanelApi(
         laterHours: settings.laterHours,
         by: "operator (dashboard)",
       })
+      if (!r.ok) { sendJson(res, 409, { error: r.error }); return true }
+      sendJson(res, 200, { ok: true, message: r.message })
+      return true
+    }
+
+    if (method === "POST" && path === "/api/admin/approvals/popup") {
+      const body = await readJson(req)
+      const r = popAgain(ctx, typeof body.key === "string" ? body.key : "", !!readApprovalSettings(ctx.configPath).popup?.enabled)
       if (!r.ok) { sendJson(res, 409, { error: r.error }); return true }
       sendJson(res, 200, { ok: true, message: r.message })
       return true

@@ -7,8 +7,8 @@ import { approvalsDir } from "./cards"
 // Not a decision store. Every decision stays with its source (the card
 // file, the schedule in agentx.json, the memory fact, the wiki proposal).
 // This file only remembers which inbox items the operator put off until
-// when, the last day a digest went out, and which cards the Mac popup
-// has already shown.
+// when, the last day a digest went out, which cards the Mac popup has
+// already shown, and which ones the operator asked to see again.
 
 export interface InboxState {
   /** Inbox key → ISO time it comes back. */
@@ -19,6 +19,8 @@ export interface InboxState {
   popped?: Record<string, string>
   /** ISO time of the last check-in: every card waiting then may show again. */
   passAt?: string
+  /** Inbox keys the operator asked to see again in the Mac popup. */
+  wanted?: string[]
 }
 
 function stateFile(root: string): string {
@@ -33,6 +35,7 @@ export function readInboxState(root: string): InboxState {
       ...(typeof raw?.lastDigest === "string" ? { lastDigest: raw.lastDigest } : {}),
       ...(raw?.popped && typeof raw.popped === "object" ? { popped: raw.popped } : {}),
       ...(typeof raw?.passAt === "string" ? { passAt: raw.passAt } : {}),
+      ...(Array.isArray(raw?.wanted) ? { wanted: raw.wanted.filter((k: unknown) => typeof k === "string") } : {}),
     }
   } catch {
     return { snoozed: {} }
@@ -68,7 +71,15 @@ export function recordPopped(root: string, key: string, waiting: string[], now: 
   const popped: Record<string, string> = {}
   for (const [k, v] of Object.entries(state.popped ?? {})) if (keep.has(k)) popped[k] = v
   popped[key] = new Date(now).toISOString()
-  writeInboxState(root, { ...state, popped })
+  const wanted = (state.wanted ?? []).filter((k) => k !== key && keep.has(k))
+  writeInboxState(root, { ...state, popped, wanted })
+}
+
+/** The operator asked for `key` in the popup again: it shows on the next
+ *  minute, even if it was shown, put off, or is more than a day old. */
+export function recordWanted(root: string, key: string): void {
+  const state = readInboxState(root)
+  writeInboxState(root, { ...state, wanted: [...(state.wanted ?? []).filter((k) => k !== key), key] })
 }
 
 /** A check-in: every waiting card may show once more, whatever its age. */

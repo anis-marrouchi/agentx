@@ -6,7 +6,7 @@ import { createCard, decideCard, readCard, verdictMessage, type DecisionCard } f
 import { buildChoices, draftFor, resolveAnswer, CHOICE_LIMITS } from "../src/approvals/choices"
 import { decide, listInbox } from "../src/approvals/inbox"
 import { chooseArgs, dialogArgs, parseDialog, showPopup, spokenLine, type PopupSettings, type Run } from "../src/approvals/popup"
-import { nextCardToPop, popNext, type PopupRunnerSettings } from "../src/approvals/popup-runner"
+import { nextCardToPop, popAgain, popNext, type PopupRunnerSettings } from "../src/approvals/popup-runner"
 import { readInboxState, snooze } from "../src/approvals/state"
 import { daemonConfigSchema } from "../src/daemon/config"
 
@@ -245,5 +245,49 @@ describe("when the popup shows", () => {
     expect(nextCardToPop({ root, now: NOW })).toBeNull()
     expect(nextCardToPop({ root, now: NOW + 2 * HOUR })?.id).toBe(fresh.id)
     expect(old.id).toBeTruthy()
+  })
+
+  it("logs how a popup ended without an answer", async () => {
+    logs.length = 0
+    const c = raise()
+    await popNext(deps({ show: async () => ({ action: "dismiss" as const, why: "timed out" as const }) }))
+    expect(logs.at(-1)).toBe(`[approvals] popup: card:${c.id} left waiting: timed out (not in Focus when shown)`)
+  })
+
+  it("shows a card again when the operator asks, even shown, put off or old", async () => {
+    const old = raise({}, NOW - 30 * HOUR)
+    const c = raise({ title: "Shown once" })
+    const key = `card:${c.id}`
+    let shown: string[] = []
+    const show = async (card: DecisionCard) => { shown.push(card.id); return { action: "dismiss" as const } }
+    await popNext(deps({ show }))
+    snooze(root, key, new Date(NOW + HOUR), NOW)
+    expect(await popNext(deps({ show }))).toBe("none")
+
+    expect(popAgain({ root }, key, true)).toEqual({ ok: true, message: `${key} will show on the Mac within a minute` })
+    expect(await popNext(deps({ show }))).toBe("shown")
+    // Once per ask: it does not come back every minute.
+    expect(await popNext(deps({ show }))).toBe("none")
+    expect(readInboxState(root).wanted).toEqual([])
+
+    expect(popAgain({ root }, `card:${old.id}`, true).ok).toBe(true)
+    expect(await popNext(deps({ show }))).toBe("shown")
+    expect(shown).toEqual([c.id, c.id, old.id])
+  })
+
+  it("refuses to show again what is not a waiting card, or when the popup is off", () => {
+    const c = raise()
+    expect(popAgain({ root }, `card:${c.id}`, false)).toMatchObject({ ok: false, error: expect.stringContaining("popup is off") })
+    expect(popAgain({ root }, "card:../../etc/passwd", true).ok).toBe(false)
+    expect(popAgain({ root }, "wiki:some-page", true).ok).toBe(false)
+    decideCard(root, c.id, "no", { now: NOW })
+    expect(popAgain({ root }, `card:${c.id}`, true)).toEqual({ ok: false, error: `card:${c.id} is already decided` })
+    expect(readInboxState(root).wanted ?? []).toEqual([])
+  })
+
+  it("an expired card does not show, even when asked for", () => {
+    const c = raise()
+    expect(popAgain({ root }, `card:${c.id}`, true).ok).toBe(true)
+    expect(nextCardToPop({ root, now: Date.parse(c.expires) + 1 })).toBeNull()
   })
 })

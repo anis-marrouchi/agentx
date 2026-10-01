@@ -12,6 +12,12 @@
 
 export const CARD_PAD = { top: 8, side: 32, bottom: 60 } as const
 
+// The card's header is its handle: a press in the top CARD_GRIP.height of
+// the card drags the window (card-window.ts takes it before the page does).
+// The last CARD_GRIP.keep at the right stays with the page, for the button
+// that shrinks the card.
+export const CARD_GRIP = { height: 56, keep: 52 } as const
+
 export const CARD_CSS = `
 :root {
   --ac-paper: #fafaf9; --ac-soft: #f4f4f2; --ac-edge: #e9e9e6;
@@ -46,12 +52,24 @@ body {
 .card {
   background: var(--ac-paper); border: 1px solid var(--ac-rim); border-radius: 18px;
   box-shadow: var(--ac-shadow); overflow: hidden; animation: ac-in .26s cubic-bezier(.65,0,.35,1);
+  position: relative; display: flex; flex-direction: column; max-height: calc(100vh - ${CARD_PAD.top + CARD_PAD.bottom}px);
+}
+.card::before {
+  content: ""; position: absolute; top: 6px; left: 50%; width: 32px; height: 4px; margin-left: -16px;
+  border-radius: 2px; background: var(--ac-edge);
 }
 @keyframes ac-in { from { transform: translateY(14px); opacity: 0; } }
 .card.still { animation: none; }
 @media (prefers-reduced-motion: reduce) { .card { animation: none; } }
-.body { padding: 18px 20px 16px; }
-.head { display: flex; align-items: center; gap: 10px; }
+.head { flex: none; display: flex; align-items: center; gap: 10px; padding: 18px 20px 0; cursor: grab; }
+.body { padding: 14px 20px 16px; min-height: 0; overflow-y: auto; }
+.fold {
+  flex: none; width: 24px; height: 24px; display: grid; place-items: center; padding: 0; border-radius: 6px;
+  border: 1px solid var(--ac-edge); background: var(--ac-soft); color: var(--ac-subtle); cursor: pointer;
+}
+.fold:hover { color: var(--ac-text); border-color: var(--ac-subtle); }
+.folded .fold svg { transform: rotate(180deg); }
+.folded .body > :not(h1), .folded .foot { display: none; }
 .avatar {
   flex: none; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center;
   font-size: 14px; font-weight: 600; color: #fff;
@@ -69,7 +87,7 @@ body {
   color: var(--ac-blue); background: color-mix(in oklab, var(--ac-blue-2) 10%, var(--ac-paper));
   border-color: color-mix(in oklab, var(--ac-blue-2) 22%, var(--ac-edge));
 }
-h1 { margin: 14px 0 0; font-size: 18.5px; line-height: 1.3; font-weight: 540; letter-spacing: -.018em; text-wrap: balance; }
+h1 { margin: 0; font-size: 18.5px; line-height: 1.3; font-weight: 540; letter-spacing: -.018em; text-wrap: balance; }
 h1:dir(rtl) { letter-spacing: 0; }
 .context { margin: 6px 0 0; color: var(--ac-muted); white-space: pre-wrap; unicode-bidi: plaintext; text-wrap: pretty; }
 .ask { margin: 10px 0 0; font-weight: 500; unicode-bidi: plaintext; }
@@ -115,7 +133,7 @@ textarea:focus {
 .notes { margin-top: 14px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; line-height: 1.4; color: var(--ac-subtle); }
 .notes div { display: flex; gap: 7px; align-items: flex-start; }
 .notes svg { flex: none; margin-top: 1.5px; }
-.foot { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--ac-edge); background: var(--ac-soft); }
+.foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--ac-edge); background: var(--ac-soft); }
 .foot .later { margin-inline-end: auto; }
 button.btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 9px 14px; border-radius: 999px;
