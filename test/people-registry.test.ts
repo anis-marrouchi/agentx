@@ -70,6 +70,14 @@ describe("a turn is stamped with its person when it starts", () => {
     expect(turn.root.person).toBeUndefined()
   })
 
+  it("stamps from the new list after a config reload hands it over", async () => {
+    const r = new AgentRegistry(config([]), () => {})
+    const ctx = () => ({ channel: "gitlab", chatId: "g/app:issue:7", sender: "Sara B", senderUsername: "sara.b" })
+    expect((await stamped(r, ctx())).person).toBeUndefined()
+    r.setPeople(config(people).people)
+    expect((await stamped(r, ctx())).person).toBe("sara")
+  })
+
   it("changes nothing when no people are listed", async () => {
     const r = new AgentRegistry(config([]), () => {})
     const ctx = { channel: "telegram", chatId: "c1", sender: "Sam", senderId: "4242" }

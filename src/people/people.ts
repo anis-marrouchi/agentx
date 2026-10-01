@@ -27,8 +27,8 @@ export interface Person {
   identities: string[]
 }
 
-/** The person a turn is stamped with. `role` is missing when the id came
- *  from a mesh peer and is not in this node's list. */
+/** The person a turn is stamped with. `role` is set only on a turn this
+ *  node resolved itself; an id carried by a root has none. */
 export interface PersonRef {
   id: string
   role?: PersonRole
@@ -100,19 +100,14 @@ export function operatorPerson(people: Person[]): PersonRef | null {
   return owners.length === 1 ? { id: owners[0].id, role: "owner" } : null
 }
 
-function known(people: Person[], id: string): PersonRef {
-  const role = people.find((p) => p.id === id)?.role
-    ?? (id === IMPLICIT_OWNER && !people.some((p) => p.role === "owner") ? "owner" : undefined)
-  return role ? { id, role } : { id }
-}
-
 /** The person who started the chain this turn belongs to. A delegated hop
- *  takes it from the root it carries; a root turn is resolved here from the
- *  channel's own sender fields. `context.person` is never read: a caller of
- *  the daemon's API could set it. */
+ *  takes the id from the root it carries, with no role: a root is not
+ *  authenticated (a caller of the daemon's API or a mesh peer writes it), and
+ *  ids are per machine. A root turn is resolved here from the channel's own
+ *  sender fields. `context.person` is never read, for the same reason. */
 export function personOfTurn(people: Person[], ctx: InitiatorContext | undefined | null): PersonRef | null {
   const root = propagatedRootOf(ctx)
-  if (root) return root.person ? known(people, root.person) : null
+  if (root) return root.person ? { id: root.person } : null
   if (!ctx || classifyInitiator(ctx) !== "human") return null
   const channel = String(ctx.channel ?? "")
   if (OPERATOR_CHANNELS.has(base(channel))) return operatorPerson(people)

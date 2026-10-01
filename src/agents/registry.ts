@@ -727,6 +727,12 @@ export class AgentRegistry {
     this.config = next
   }
 
+  /** Swap the people list on a config reload (#384). Turns read it when
+   *  they start, so the next turn is stamped from the new list. */
+  setPeople(people: DaemonConfig["people"]): void {
+    this.config = { ...this.config, people }
+  }
+
   /**
    * If there's an active handover routing TO this agent for this (channel,
    * chatId) pair AND the operator's summary hasn't been consumed yet, pull
