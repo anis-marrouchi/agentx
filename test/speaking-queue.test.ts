@@ -152,6 +152,25 @@ describe("SpeechOut as the speaking queue", () => {
     expect(views.at(-1)).toMatchObject({ playing: null, waiting: [], recent: [{ text: "hi" }] })
   })
 
+  it("reports why every line that started stopped, once per play (#357)", async () => {
+    const { play, synth } = fakeAudio(20)
+    const ends: string[] = []
+    const events = { onStopped: (u: Utterance, reason: string) => { ends.push(`${u.text} ${reason}`) } }
+    const s = new SpeechOut(synth, play, events, (text) => (text === "hung" ? 5 : 60_000))
+    await s.say(line("one"))
+    const cut = s.say(line("two"))
+    await sleep(5)
+    s.pause()
+    s.resume()
+    await cut
+    void s.say(line("three"))
+    void s.say(line("never started"))
+    await sleep(5)
+    s.stop()
+    await s.say(line("hung"))
+    expect(ends).toEqual(["one finished", "two paused", "two finished", "three stopped", "hung watchdog"])
+  })
+
   it("keeps a cut line's audio for the replay after a pause, and deletes it once done", async () => {
     const dir = mkdtempSync(join(tmpdir(), "queue-"))
     const file = join(dir, "a.mp3")

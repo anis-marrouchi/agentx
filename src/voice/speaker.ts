@@ -56,9 +56,17 @@ export type Synth = (u: Utterance, signal: AbortSignal) => Promise<string | null
 /** Start playing; the returned process exits when playback ends. */
 export type Play = (file: string | null, u: Utterance) => ChildProcess
 
+/** Why a line that had started playing stopped: it played to the end,
+ *  its player failed, it ran past its bound, the listener spoke (pause),
+ *  or it was skipped, cancelled with its kind, or stopped with the queue. */
+export type SpeechEndReason = "finished" | "failed" | "watchdog" | "paused" | "skipped" | "cancelled" | "stopped"
+
 export interface SpeechEvents {
   onStart?: (u: Utterance, at: number) => void
   onEnd?: (u: Utterance, at: number, completed: boolean) => void
+  /** Every end of a line that had started, with its reason and how long
+   *  it had been playing. */
+  onStopped?: (u: Utterance, reason: SpeechEndReason, playedMs: number) => void
 }
 
 export function elevenLabsKey(): string | null {

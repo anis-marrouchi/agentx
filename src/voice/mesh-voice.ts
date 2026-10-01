@@ -122,13 +122,6 @@ function hash(s: string): number {
   return h >>> 0
 }
 
-/** A remote reply can be as long as a chat answer when its node predates
- *  the voice instruction: speak the first few sentences, show the rest. */
-export function clipSpeech(text: string, max = 3): string {
-  const sentences = text.match(/[^.!?]+[.!?]+(\s|$)|[^.!?]+$/g) ?? [text]
-  return sentences.slice(0, max).join("").trim()
-}
-
 const norm = (s: string) => s.toLowerCase().replace(/^the\s+/, "").replace(/[-_\s]+agent$|\s+agent$/, "").replace(/[-_]+/g, " ").trim()
 
 /** Remote agents as seen by the local daemon, and how each one sounds. */

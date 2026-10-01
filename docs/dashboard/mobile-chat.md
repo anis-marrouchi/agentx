@@ -217,6 +217,7 @@ To set up voice input:
 | Setting | What it does |
 |---|---|
 | `voice.stt` | `auto` (default), `elevenlabs` or `local`, as above |
+| `voice.spokenMaxChars` | Longest answer read aloud, in characters: `500` by default, `100` to `1500`. A longer answer stops at the end of a sentence and says the rest is on screen |
 | `voice.allowUnmeasured` | `false` (default) refuses phone recordings when the computer has no `ffmpeg`. `true` takes them anyway, with only the 2 MB limit (see below) |
 | `ELEVENLABS_API_KEY` | ElevenLabs key; read before `~/.elevenlabs/key` and `~/.agentx/elevenlabs-key.txt` |
 | `AGENTX_STT_MODEL` | ElevenLabs speech-to-text model, `scribe_v1` by default |

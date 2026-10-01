@@ -6,6 +6,7 @@ import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { ORB_PALETTE_IDS } from "@/voice/orb-palettes"
+import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 
 /**
@@ -1202,6 +1203,10 @@ export const daemonConfigSchema = z.object({
      *  recording's length: refused by default, since the 2 MB cap alone
      *  lets through ~40 minutes of low-bitrate audio. true accepts it. */
     allowUnmeasured: z.boolean().default(false),
+    /** Longest answer said aloud, in characters. A longer one stops at
+     *  its last whole sentence inside this and says the rest is on
+     *  screen; the written answer is always shown whole. */
+    spokenMaxChars: z.number().int().min(100).max(1500).default(SPOKEN_MAX_CHARS),
     /** The on-device engine behind "local" and every fallback:
      *  mlx-whisper (Python, all languages) or Parakeet (Core ML, 25
      *  European languages, no Arabic; 483 MB downloaded on first use into

@@ -13,7 +13,7 @@
 
 import type { ChildProcess } from "child_process"
 import { unlinkSync } from "fs"
-import { elevenLabsSynth, speakLimitMs, systemPlay, type Play, type SpeechEvents, type Synth, type Utterance, type VoiceRef } from "./speaker"
+import { elevenLabsSynth, speakLimitMs, systemPlay, type Play, type SpeechEndReason, type SpeechEvents, type Synth, type Utterance, type VoiceRef } from "./speaker"
 
 export type SpeechKind = "answer" | "narration" | "talk" | "lesson" | "line"
 
@@ -42,6 +42,8 @@ interface Entry {
   audio: Promise<Audio>
   ac: AbortController
   started: boolean
+  /** When the play in progress began; 0 while none is. */
+  playingSince: number
   done: (played: boolean) => void
 }
 
@@ -89,7 +91,7 @@ export class SpeechOut {
     // The catch keeps an early failure from being reported as unhandled
     // before this line's turn comes.
     const audio = this.synth(u, ac.signal).then((f) => ({ f }), (e) => ({ e }))
-    const entry: Entry = { item, u, audio, ac, started: false, done }
+    const entry: Entry = { item, u, audio, ac, started: false, playingSince: 0, done }
     if (front) this.waiting.unshift(entry)
     else {
       // A "high" agent's line goes ahead of waiting normal and low ones,
@@ -111,7 +113,7 @@ export class SpeechOut {
   /** Drop one line, playing or waiting; the rest keep their order. */
   skip(id: string): boolean {
     if (this.current?.item.id === id) {
-      this.drop(this.detach()!)
+      this.drop(this.detach("skipped")!)
       this.changed()
       this.next()
       return true
@@ -147,7 +149,7 @@ export class SpeechOut {
     this.holdTimer.unref?.()
     if (this.held) return
     this.held = true
-    const cut = this.detach()
+    const cut = this.detach("paused")
     if (cut) this.waiting.unshift(cut)
     this.changed()
   }
@@ -165,7 +167,7 @@ export class SpeechOut {
   /** Drop every line of one kind — a talk or lesson silencing itself. */
   cancel(kind: SpeechKind): void {
     let dropped = false
-    if (this.current?.item.kind === kind) { this.drop(this.detach()!); dropped = true }
+    if (this.current?.item.kind === kind) { this.drop(this.detach("cancelled")!); dropped = true }
     for (const e of this.waiting.filter((w) => w.item.kind === kind)) { this.drop(e); dropped = true }
     this.waiting = this.waiting.filter((w) => w.item.kind !== kind)
     if (!dropped) return
@@ -175,7 +177,7 @@ export class SpeechOut {
 
   /** Silence now: kill what is playing, drop everything, stop holding. */
   stop(): void {
-    const all = [this.detach(), ...this.waiting.splice(0)].filter((e): e is Entry => !!e)
+    const all = [this.detach("stopped"), ...this.waiting.splice(0)].filter((e): e is Entry => !!e)
     for (const e of all) this.drop(e)
     if (this.holdTimer) clearTimeout(this.holdTimer)
     this.holdTimer = null
@@ -201,15 +203,17 @@ export class SpeechOut {
   private playOne(e: Entry, file: string | null, run: number): void {
     const p = this.play(file, e.u)
     this.playing = p
+    e.playingSince = Date.now()
     if (!e.started) {
       e.started = true
       this.events.onStart?.(e.u, Date.now())
       e.u.onStart?.()
     }
     let ended = false
+    let overran = false
     // A player that never exits (a hung `say`) must not hold every later
     // line: past its bound it is killed and the line fails.
-    const watchdog = setTimeout(() => { if (!ended) p.kill() }, this.limitMs(e.u.text))
+    const watchdog = setTimeout(() => { if (!ended) { overran = true; p.kill() } }, this.limitMs(e.u.text))
     const end = (completed: boolean) => {
       if (ended) return
       ended = true
@@ -218,6 +222,7 @@ export class SpeechOut {
       // Paused, skipped or stopped meanwhile: whoever did it owns the line.
       if (run !== this.run) return
       this.events.onEnd?.(e.u, Date.now(), completed)
+      this.stopped(e, completed ? "finished" : overran ? "watchdog" : "failed")
       this.finish(e, completed)
     }
     // A player that cannot start (not installed) may never emit close.
@@ -233,8 +238,9 @@ export class SpeechOut {
     this.next()
   }
 
-  /** Take the current line off the speakers; returns it. */
-  private detach(): Entry | null {
+  /** Take the current line off the speakers; returns it. `reason` is why,
+   *  when it is cut rather than over. */
+  private detach(reason?: SpeechEndReason): Entry | null {
     const e = this.current
     if (!e) return null
     this.current = null
@@ -242,7 +248,16 @@ export class SpeechOut {
     const p = this.playing
     this.playing = null
     p?.kill()
+    if (reason) this.stopped(e, reason)
     return e
+  }
+
+  /** Report the end of a play in progress, once. */
+  private stopped(e: Entry, reason: SpeechEndReason): void {
+    if (!e.playingSince) return
+    const playedMs = Date.now() - e.playingSince
+    e.playingSince = 0
+    try { this.events.onStopped?.(e.u, reason, playedMs) } catch { /* a listener's failure is not the queue's */ }
   }
 
   /** Settle a line for good and delete its audio file. */
