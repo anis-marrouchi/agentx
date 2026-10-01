@@ -455,6 +455,52 @@ Show or change expiry, "later" and digest settings (approvals in agentx.json).
 | `--digest-timezone <zone>` | — | IANA timezone for --digest-time; "local" for this machine's. |
 | `--digest-to <channel:chatId>` | — | Where the digest goes; "default" for notifications.destination. |
 
+## requests
+
+`agentx requests`: What you asked agents for that is not finished, oldest first.
+
+### `agentx requests list`
+
+Open requests, oldest first.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--json` | — | Machine-readable output. |
+
+### `agentx requests show <id>`
+
+One request and the runs, delegations and cards linked to it.
+
+No flags.
+
+### `agentx requests done <id>`
+
+Close a request as finished, with a link to the evidence.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--evidence <link>` | — | Link to the proof: PR, issue, message, deploy. Required. |
+
+### `agentx requests drop <id>`
+
+Drop a request you no longer want.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--reason <text>` | — | Why it is dropped. |
+
+### `agentx requests settings`
+
+Show or change the requests settings (requests in agentx.json).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--enabled <on\|off>` | — | Record and follow your requests. |
+| `--from <id,...>` | — | Who counts as you on channels other people can reach: sender ids or usernames, alone or as channel:id; "none" to clear. |
+| `--channels <name,...>` | — | Channels to record on; "all" for every channel a person writes on. |
+| `--stale-hours <n>` | — | Hours without activity before an open request comes back to you. |
+| `--retention-days <n>` | — | Days a closed request is kept. |
+
 ## attach
 
 `agentx attach`: Wear an agentx agent identity in this Claude Code session.

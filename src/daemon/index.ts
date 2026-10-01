@@ -58,6 +58,7 @@ import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { runRequestsSweep } from "@/requests/sweep"
+import { handleRequestsApi } from "@/requests/daemon-api"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { remindctlSource } from "@/reminders/source"
@@ -3239,6 +3240,21 @@ export class AgentXDaemon {
           ...(process.platform === "darwin" ? {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
+        })
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // Open requests, agent side: read the list, say what is happening
+      // with a request. Dropping is refused here (owner surfaces only).
+      if (path === "/requests" || path.startsWith("/requests/")) {
+        if (!this.requests) { this.json(res, 503, { error: "requests need the database" }); return }
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleRequestsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, {
+          store: this.requests.store,
+          tracker: this.requests.tracker,
+          enabled: this.config.requests.enabled,
+          hasAgent: (id) => !!this.registry.getAgent(id),
         })
         this.json(res, reply.status, reply.body)
         return

@@ -209,9 +209,9 @@ When it is on, AgentX notes every message you send to an agent. A message the ag
 
 An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you, and nothing closes by getting old.
 
-You cannot list or close requests yet; that arrives in the next part of this work. Until then, a request the agent handed to another agent comes back to you after `staleAfterHours` even when its work succeeded, and it stays open.
+How to see, close and drop requests, step by step: [Keep track of what you asked for](/jobs/open-requests).
 
-To turn it on:
+To turn it on by hand:
 
 1. Open `agentx.json`.
 2. Add `"requests": { "enabled": true }`.

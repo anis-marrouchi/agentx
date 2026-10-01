@@ -675,6 +675,29 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_request",
+    description:
+      "Say what you are doing with a request the owner gave you, so it stays on their list of open requests until it is closed. " +
+      "Use accept when the work goes on after this turn; wait when the next step is the owner's answer (give the question); " +
+      "done when it is finished (give a link to the evidence: PR, issue, message, deploy); decline when you will not do it (give the reason). " +
+      "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
+      "Without an id, the action applies to the request of the chat you are in. You cannot drop a request; only the owner can. " +
+      "Example: {action:'done', evidence:'https://example.com/pull/42'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "list"], description: "list (default), accept, wait, done or decline." },
+        id: { type: "string", description: "The request id, when it is not the request of this chat." },
+        question: { type: "string", description: "wait: what you are asking the owner." },
+        evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
+        reason: { type: "string", description: "decline: why you will not do it." },
+        channel: { type: "string", description: "Current chat's channel, from your task context." },
+        chatId: { type: "string", description: "Current chat id, from your task context." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+    },
+  },
+  {
     name: "agentx_debug",
     description:
       "Toggle debug mode on the daemon. Enable verbose logging for specific categories (webhook, agent, channel, cron, mesh, context, memory, all) or disable it.",
@@ -1346,6 +1369,12 @@ async function handleToolCall(
     case "agentx_approval": {
       const { runApprovalTool } = await import("@/approvals/tool")
       const text = await runApprovalTool(args, { daemonUrl: daemonUrl() })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_request": {
+      const { runRequestTool } = await import("@/requests/tool")
+      const text = await runRequestTool(args, { daemonUrl: daemonUrl() })
       return { content: [{ type: "text", text }] }
     }
 

@@ -95,6 +95,11 @@ export class RequestTracker {
     try { fn() } catch (e: any) { this.log(`[requests] ${what} failed: ${e?.message ?? e}`) }
   }
 
+  /** The request of the turn this agent is running in this chat, if any. */
+  liveRequestId(agentId: string, channel: string, chatId: string): string | null {
+    return this.live.get(chatKey(agentId, channel, chatId))?.requestId ?? null
+  }
+
   taskStarted(p: AgentXEvents["task:started"]): void {
     if (!this.settings().enabled || !p.taskId) return
     this.guard("capture", () => {
