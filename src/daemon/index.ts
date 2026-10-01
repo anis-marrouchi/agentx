@@ -56,6 +56,8 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { attachRequests, type AttachedRequests } from "@/requests/attach"
+import { runRequestsSweep } from "@/requests/sweep"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { remindctlSource } from "@/reminders/source"
@@ -489,6 +491,8 @@ export class AgentXDaemon {
       replies: this.callbackReplies,
       recordDispatch: (agentId, context, message, senderAgentId) =>
         this.recordInboundDispatch(agentId, context, message, senderAgentId),
+      onStarted: (rec) => this.requests?.tracker.delegationStarted(rec),
+      onDone: (rec, result) => this.requests?.tracker.delegationDone(rec, result.status, result.text),
     })
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)
@@ -518,6 +522,14 @@ export class AgentXDaemon {
           try { cleanupOrphanedTraces(db) } catch { /* nothing more to do */ }
         }
         attachSqliteSubscribers(db)
+        // Open requests (#356). Attached whatever the setting says, so
+        // turning it on needs no restart; the tracker itself reads
+        // `requests.enabled` on every event and does nothing while it is off.
+        try {
+          this.requests = attachRequests(db, () => this.config.requests, this.log)
+        } catch (e: any) {
+          this.log(`  Requests: not available (${e?.message ?? e})`)
+        }
         // Typed-decision seats. Registering a backend is lazy and opening
         // the shadow store is cheap, but neither happens unless the
         // operator turned decisions on: every seat resolves to "off"
@@ -1285,6 +1297,7 @@ export class AgentXDaemon {
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
           : undefined,
       })
+      for (const o of outcomes) this.requests?.tracker.resumeOutcome(o)
       const count = (d: string) => outcomes.filter((o) => o.decision === d).length
       this.log(`  Resume: ${count("resumed")} resumed, ${count("reported")} reported, ${count("skipped")} skipped, ${count("resume-failed")} failed`)
     } catch (e: any) {
@@ -1668,6 +1681,8 @@ export class AgentXDaemon {
     return { applied, restartRequired }
   }
 
+  /** Open requests (src/requests); null when the database is unavailable. */
+  private requests: AttachedRequests | null = null
   private approvalsTimer?: ReturnType<typeof setInterval>
   private approvalsSweeping = false
 
@@ -1698,6 +1713,7 @@ export class AgentXDaemon {
           },
           log: this.log,
         })
+        if (this.requests) await this.sweepRequests(this.requests)
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts).
         void popNext({
@@ -1715,6 +1731,32 @@ export class AgentXDaemon {
     }
     this.approvalsTimer = setInterval(() => { void tick() }, 60_000)
     this.approvalsTimer.unref?.()
+  }
+
+  /** Requests that went quiet come back, each is raised once, and old
+   *  closed ones are deleted (src/requests/sweep.ts). */
+  private async sweepRequests(requests: AttachedRequests): Promise<void> {
+    await runRequestsSweep({
+      store: requests.store,
+      settings: this.config.requests,
+      notify: async (title, message, r) => {
+        await notify({ title, message, from: r.agentId, priority: 4 }, async (m) => {
+          // A push that fails must not take the Mac banner with it.
+          try {
+            await this.router.sendOutbound({
+              channel: m.channel ?? defaultNotifyChannel(this.config),
+              chatId: m.chatId ?? "default",
+              text: `${m.title}\n${m.message}`,
+              priority: m.priority,
+              agentId: r.agentId,
+            } as any)
+          } catch (e: any) {
+            this.log(`[requests] push for ${r.id} failed: ${e?.message ?? e}`)
+          }
+        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+      },
+      log: this.log,
+    })
   }
 
   /** A check-in pass when one is due, or `force` now. macOS only. */

@@ -89,6 +89,11 @@ export interface AgentXEvents {
     resumeOrigin?: string | null
     resumeAttempt?: number
     resumedFrom?: string
+    /** Who sent the message, when the channel knows (requests, #356). */
+    sender?: { name?: string; id?: string; username?: string }
+    /** True for the turn that talks to the person: not a delegated hop,
+     *  not a callback (a2a/initiator isHumanFacingTurn). */
+    humanRoot?: boolean
   }
 
   /** A single step inside an in-flight task — typically a tool call or
@@ -136,6 +141,8 @@ export interface AgentXEvents {
     chatId: string
     durationMs: number
     error?: string
+    /** The kind of error, when the runtime named one ("cancelled", …). */
+    errorKind?: string
     /** A daemon shutdown stopped the run. Its trace stays in flight so the
      *  next boot can resume it. */
     interrupted?: boolean

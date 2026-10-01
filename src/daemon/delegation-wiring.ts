@@ -19,7 +19,7 @@
 
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
-import { DelegationManager, type CallerTurn } from "@/a2a/delegation"
+import { DelegationManager, type CallerTurn, type DelegationDeps } from "@/a2a/delegation"
 import type { RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
@@ -260,6 +260,9 @@ export interface DelegationWiring {
    *  draw it as the answer returning to the caller (#267). */
   recordDispatch?: (agentId: string, context: Record<string, unknown>, message: string, senderAgentId: string) =>
     { eventId: string; decidedBy: string } | undefined
+  /** Open requests (#356) follow delegations through these. */
+  onStarted?: DelegationDeps["onStarted"]
+  onDone?: DelegationDeps["onDone"]
 }
 
 export function createDelegations(w: DelegationWiring): DelegationManager {
@@ -274,6 +277,8 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
     asyncWhenHuman: cfg.asyncWhenHuman,
     logPath: resolve(w.baseDir ?? process.cwd(), ".agentx/a2a/delegations.jsonl"),
     log: w.log,
+    onStarted: w.onStarted,
+    onDone: w.onDone,
     runLocal: (callee, message, context, opts) => w.registry.execute({
       agentId: callee,
       message,
