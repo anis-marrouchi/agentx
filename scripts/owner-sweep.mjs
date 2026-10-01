@@ -135,7 +135,8 @@ export function planSweep({ issues, prs }, state = {}, now = new Date(), opts = 
 
     const waitingOnHuman = ci.state === 'passing' && !pr.isDraft
     if (ci.state !== 'pending' && !waitingOnHuman && age(pr.updatedAt) > o.staleMinutes) {
-      propose(item, o.coordinator, 'nudge', `no activity for ${Math.round(age(pr.updatedAt))} min`, `pr#${n}:stale:${pr.updatedAt}`)
+      const rerun = ci.state === 'cancelled' ? '; a check was cancelled and needs a rerun' : ''
+      propose(item, o.coordinator, 'nudge', `no activity for ${Math.round(age(pr.updatedAt))} min${rerun}`, `pr#${n}:stale:${pr.updatedAt}`)
     }
   }
 

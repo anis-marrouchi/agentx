@@ -120,6 +120,7 @@ describe("owner sweep (#53)", () => {
     expect(fresh.state.ciFixes).toEqual({})
     const quiet = planSweep({ issues: [], prs: [pr({ isDraft: false, statusCheckRollup: rollup, updatedAt: minsAgo(45) })] }, {}, now)
     expect(steps(quiet)).toEqual(["secretary-agent nudge"])
+    expect(quiet.steps[0].why).toBe("no activity for 45 min; a check was cancelled and needs a rerun")
   })
 
   it("prints a verdict line the workflow branches on", () => {
