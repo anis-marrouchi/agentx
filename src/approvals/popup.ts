@@ -23,11 +23,14 @@ import type { DecisionCard } from "./cards"
 // runner records it through decideCard, and the agent that raised the card
 // does the sending when it hears the result.
 
+/** Why a popup ended without an answer, when the card window can tell. */
+export const DISMISS_REASONS = ["not now", "timed out", "closed"] as const
+
 export type PopupAnswer =
   | { action: "yes"; choice?: string; text?: string }
   | { action: "no" }
   /** Not now, Cancel, closed, or no answer in time: the card keeps waiting. */
-  | { action: "dismiss" }
+  | { action: "dismiss"; why?: (typeof DISMISS_REASONS)[number] }
 
 export interface PopupSettings {
   /** "card": the web card window; "dialog": native dialogs. Default "card". */

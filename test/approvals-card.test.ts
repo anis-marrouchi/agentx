@@ -15,6 +15,10 @@ import { daemonConfigSchema } from "../src/daemon/config"
 //     didn't offer, or an empty message, is a dismiss, never a yes
 //   - the page file is private and removed after
 //   - when the window can't open, the plain dialogs take over
+//   - the card stays up when another app is clicked and takes the first click
+//   - the answer does not travel in the page title, which WebKit cuts at 1,000
+//     characters
+//   - a popup that ends without an answer says why
 
 const NOW = Date.parse("2026-09-30T08:00:00.000Z")
 let root: string
@@ -146,6 +150,23 @@ describe("the page's answer", () => {
   it("a plain card's yes carries nothing", () => {
     expect(parseAnswer('{"action":"yes","choice":"x","text":"y"}', raise())).toEqual({ action: "yes" })
   })
+  it("keeps why a popup ended without an answer, from the known reasons only", () => {
+    for (const why of ["not now", "timed out", "closed"]) {
+      expect(parseAnswer(JSON.stringify({ action: "dismiss", why }), card())).toEqual({ action: "dismiss", why })
+    }
+    expect(parseAnswer('{"action":"dismiss","why":"<b>anything</b>"}', card())).toEqual({ action: "dismiss" })
+  })
+  it("leaves the answer out of the title, so a long message is not cut", () => {
+    const html = renderCardPage(raise({ draft: "x".repeat(1500) }), { now: NOW })
+    expect(html).toContain('window.agentxAnswer = JSON.stringify(a); document.title = "agentx:answer";')
+    expect(html).not.toContain('"agentx:answer:"')
+    expect(WINDOW_JXA).toContain('evaluateJavaScriptCompletionHandler("window.agentxAnswer"')
+    expect(WINDOW_JXA).not.toContain("t.slice(14)")
+  })
+  it("says Not now and Escape were the operator's choice", () => {
+    const html = renderCardPage(raise(), { now: NOW })
+    expect(html.match(/send\(\{ action: "dismiss", why: "not now" \}\)/g)).toHaveLength(2)
+  })
 })
 
 describe("the window", () => {
@@ -164,6 +185,22 @@ describe("the window", () => {
     // The window is see-through: the page draws the card and its shadow.
     expect(WINDOW_JXA).toContain("NSColor.clearColor")
     expect(existsSync(page)).toBe(false)
+  })
+
+  it("stays up when another app is clicked, and takes the first click", () => {
+    // A panel hides when its app stops being the active one, unless told not to.
+    expect(WINDOW_JXA).toContain("win.hidesOnDeactivate = false")
+    // A plain WKWebView drops a click made while another app is in front.
+    expect(WINDOW_JXA).toContain('"acceptsFirstMouse:": { types: ["bool", ["id"]], implementation: function () { return true } }')
+    expect(WINDOW_JXA).toContain("$.AgentXCardView.alloc.initWithFrameConfiguration")
+    expect(WINDOW_JXA).not.toContain("$.WKWebView.alloc")
+  })
+
+  it("says why the window ended without an answer", async () => {
+    expect(WINDOW_JXA).toContain('return gone("closed")')
+    expect(WINDOW_JXA).toContain('return gone("timed out")')
+    const run: Run = async () => ({ ok: true, stdout: '{"action":"dismiss","why":"timed out"}\n' })
+    expect(await showCardWindow(raise(), { timeoutSeconds: 60 }, run)).toEqual({ action: "dismiss", why: "timed out" })
   })
 
   it("holds the card still for a picture", async () => {

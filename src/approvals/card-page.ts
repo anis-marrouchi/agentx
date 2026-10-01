@@ -12,11 +12,13 @@ import type { DecisionCard } from "./cards"
 //
 // The page talks back through its title, which the window reads:
 //   agentx:size:<px>         the height it needs, so the window fits it
-//   agentx:answer:<json>     what the operator did; the window closes
-// The answer is {action:"yes", choice?, text?}, {action:"no"} or
-// {action:"dismiss"}. card-window.ts checks it against the card again, so
-// a page that misbehaves still can't approve something the card didn't
-// offer.
+//   agentx:answer            the operator answered; the window reads
+//                            window.agentxAnswer (JSON) and closes
+// The answer itself stays out of the title: WebKit cuts a title at 1,000
+// characters, which a message of a few paragraphs passes. It is
+// {action:"yes", choice?, text?}, {action:"no"} or {action:"dismiss"}.
+// card-window.ts checks it against the card again, so a page that
+// misbehaves still can't approve something the card didn't offer.
 
 export interface CardPageOptions {
   /** Shown instead of the agent id, e.g. "Sam". */
@@ -151,7 +153,7 @@ const CARD_SCRIPT = `
   var pick = -1, touched = false, done = false;
 
   function fill(i) { return d.draft.split(d.placeholder).join(i >= 0 ? d.choices[i] : "").trim(); }
-  function send(a) { if (done) return; done = true; document.title = "agentx:answer:" + JSON.stringify(a); }
+  function send(a) { if (done) return; done = true; window.agentxAnswer = JSON.stringify(a); document.title = "agentx:answer"; }
   function fit() { document.title = "agentx:size:" + Math.ceil(document.querySelector(".wrap").getBoundingClientRect().height); }
   function mark() { touched = box.value.trim() !== fill(pick); msg.classList.toggle("touched", touched); }
   function update() {
@@ -185,9 +187,9 @@ const CARD_SCRIPT = `
     send(a);
   });
   document.getElementById("no").addEventListener("click", function () { send({ action: "no" }); });
-  document.getElementById("later").addEventListener("click", function () { send({ action: "dismiss" }); });
+  document.getElementById("later").addEventListener("click", function () { send({ action: "dismiss", why: "not now" }); });
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") return send({ action: "dismiss" });
+    if (e.key === "Escape") return send({ action: "dismiss", why: "not now" });
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return yes.click(); }
     // preventDefault: choose() focuses the box, and the digit must not be typed into it.
     if (document.activeElement !== box && /^[1-9]$/.test(e.key) && opts[+e.key - 1]) { e.preventDefault(); choose(+e.key - 1); }
