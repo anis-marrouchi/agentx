@@ -92,4 +92,37 @@ describe("startManualWorkflowRun", () => {
     expect(r.body.error).toContain("disabled")
     expect(runs.list({})).toHaveLength(0)
   })
+
+  it("does not resume another workflow's run paused on the same entity", async () => {
+    store.save(workflowSchema.parse({
+      ...wf("approval", { type: "trigger.manual", config: {} }),
+      nodes: [
+        { id: "trigger", type: "trigger.manual", config: {} },
+        { id: "wait", type: "checkpoint", config: { name: "approve", resumeMatch: {} } },
+        { id: "done", type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "wait" }, { from: "wait", to: "done" }],
+    }))
+    const first = await run("approval", { payload: { entityId: "e1" } })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(runs.get(String(first.body.runId))?.status).toBe("paused")
+
+    const r = await run("whatsapp-digest", { payload: { entityId: "e1" } })
+    expect(r.status).toBe(409)
+    expect(r.body.runId).toBeUndefined()
+    expect(runs.get(String(first.body.runId))?.status).toBe("paused")
+    expect(runs.list({ workflowId: "whatsapp-digest" })).toHaveLength(0)
+  })
+
+  it("does not answer ok when another workflow's run is live on the same entity", async () => {
+    const other = runs.create({ workflowId: "deploy", initialPending: ["done"], entityRef: { backend: "manual", id: "c1" } })
+    expect(other.status).toBe("running")
+
+    const r = await run("whatsapp-digest", { payload: { chatId: "c1" } })
+    expect(r.status).toBe(409)
+    expect(runs.list({ workflowId: "whatsapp-digest" })).toHaveLength(0)
+
+    // The same workflow's own live run still takes the event (202).
+    expect((await run("deploy", { payload: { chatId: "c1" } })).status).toBe(202)
+  })
 })

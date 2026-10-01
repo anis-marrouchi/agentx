@@ -9,9 +9,10 @@ import type { TriggerEvent } from "@/workflows/dispatcher"
 // trigger match by `source` would hand the run to the highest-priority
 // workflow that declares `source: "manual"`, whichever id was asked for.
 //
-// Status codes: 200 run started · 202 handed to an existing run of this
-// entity · 400 no trigger node · 404 unknown · 409 not a manual trigger
-// (without force) / not active / nothing started.
+// Status codes: 200 run started · 202 handed to this workflow's existing
+// run of the entity · 400 no trigger node · 404 unknown · 409 not a
+// manual trigger (without force) / not active / nothing started (which
+// includes an entity that already has a run of another workflow).
 
 export interface ManualRunDeps {
   get(id: string): Workflow | null | undefined

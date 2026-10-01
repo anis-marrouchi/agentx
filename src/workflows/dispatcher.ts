@@ -310,6 +310,14 @@ export class WorkflowDispatcher {
   }): Promise<{ claimed: boolean; run: WorkflowRun | null }> {
     const wf = this.store.list().find((w) => w.id === args.workflowId)
     if (!wf) { this.log(`[workflows] dispatchWorkflow: workflow "${args.workflowId}" not found`); return { claimed: false, run: null } }
+    // Runs are indexed by entity only. A run of another workflow on this
+    // entity must not be resumed, or walked with this workflow's graph.
+    const activeRunId = this.runs.getActiveByEntity(args.entityRef)
+    const active = activeRunId ? this.runs.get(activeRunId) : null
+    if (active && active.workflowId !== wf.id) {
+      this.log(`[workflow:${wf.id}] entity ${args.entityRef.id} has run ${active.id} of workflow "${active.workflowId}" — not dispatching`)
+      return { claimed: false, run: null }
+    }
     const triggerNode = wf.nodes.find((n) => n.type.startsWith("trigger."))
     const cfg = (triggerNode?.config ?? {}) as { source?: string; filter?: Record<string, unknown> }
     const effective = {
