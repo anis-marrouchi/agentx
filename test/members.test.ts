@@ -234,7 +234,7 @@ describe("what the owner is told about a new machine", () => {
   })
 
   it("believes the proxy's headers only on a request from this computer", () => {
-    const sent = { "tailscale-user-login": "omar@example.com", "x-forwarded-for": "100.64.0.7, 10.0.0.1" }
+    const sent = { "tailscale-user-login": "omar@example.com", "x-forwarded-for": "10.0.0.1, 100.64.0.7" }
     expect(networkLogin(from("127.0.0.1", sent))).toBe("omar@example.com")
     expect(clientAddress(from("::1", sent))).toBe("100.64.0.7")
     expect(networkLogin(from("192.168.1.20", sent))).toBeNull()

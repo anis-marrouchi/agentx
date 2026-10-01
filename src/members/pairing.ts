@@ -116,12 +116,14 @@ export function networkLogin(req: ProxiedRequest): string | null {
 
 /** Where the request came from: the address the local proxy reports
  *  (X-Forwarded-For) when there is one, else the socket's. Behind
- *  `tailscale serve` the socket is always this computer. */
+ *  `tailscale serve` the socket is always this computer. The last entry is
+ *  the one the proxy itself saw; earlier ones are the sender's own word
+ *  when a proxy adds to the header instead of replacing it. */
 export function clientAddress(req: ProxiedRequest): string {
   const socket = req.socket?.remoteAddress || "unknown"
   if (!viaLocalProxy(req)) return socket
-  const first = header(req, "x-forwarded-for").split(",")[0].trim()
-  return /^[0-9a-fA-F:.]{2,45}$/.test(first) ? first : socket
+  const seen = header(req, "x-forwarded-for").split(",").pop()!.trim()
+  return /^[0-9a-fA-F:.]{2,45}$/.test(seen) ? seen : socket
 }
 
 /** A machine name as typed on the unpaired machine: letters, digits and a
