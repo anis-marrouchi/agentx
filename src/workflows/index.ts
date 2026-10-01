@@ -24,7 +24,7 @@ export {
   type EntityRef,
   type PausedAt,
 } from "./types"
-export { nextNodes, evaluateBranch, findNode, outgoingEdges, initialPendingFromTrigger, getByPath, type WalkInput, type WalkResult } from "./engine"
+export { nextNodes, evaluateBranch, findNode, outgoingEdges, initialPendingFromTrigger, getByPath, conditionMatches, type WalkInput, type WalkResult } from "./engine"
 export { WorkflowDispatcher, type DispatcherOptions, type MeshForwarder, type TriggerEvent } from "./dispatcher"
 export { NODE_HANDLERS, resolveHandler } from "./nodes/handlers"
 export type { NodeHandler, NodeContext, NodeResult, AgentExecuteRequest, AgentExecuteResponse } from "./nodes/types"
@@ -33,6 +33,7 @@ export type { NodeOutputSchema, OutputField, OutputFieldType } from "./nodes/sch
 export { render, renderParams } from "./template"
 export { createWorkflowHookHandlers } from "./hooks"
 export { startWorkflowTriggers, type CronTriggerOptions } from "./triggers"
+export { PollTriggers, pollConfigSchema, parsePollItems, type PollConfig, type PollTriggersOptions } from "./poll"
 export * as correlator from "./correlator"
 export { TimerService, timerRecordSchema, type TimerRecord, type TimerCallback, type TimerServiceOptions } from "./timers"
 export { SignalBus, matchesSignal, type SignalEmission, type SignalHandler } from "./signals"

@@ -732,6 +732,28 @@ function TriggerCronForm({ node, patchData }: FormProps) {
   )
 }
 
+function TriggerPollForm({ node, patchData }: FormProps) {
+  const cfg = node.config as { actionId?: string; everySeconds?: number; key?: string; filter?: unknown[] }
+  const filters = Array.isArray(cfg.filter) ? cfg.filter.length : 0
+  return (
+    <Section title="Poll">
+      <Field label="Which saved action" hint="Slug of a registered action (.agentx/actions/<id>.json). It must print one JSON object per line.">
+        <Input mono value={String(cfg.actionId ?? "")} onChange={(v) => patchData({ actionId: v })} placeholder="list-new-messages" />
+      </Field>
+      <Field label="Every (seconds)" hint="How often the action runs. 5 or more; defaults to 60.">
+        <NumInput value={cfg.everySeconds} onChange={(v) => patchData({ everySeconds: v })} placeholder="60" />
+      </Field>
+      <Field label="Item key" hint="Field that identifies an item, e.g. msgId. Each key starts one run, once.">
+        <Input mono value={String(cfg.key ?? "")} onChange={(v) => patchData({ key: v })} placeholder="id" />
+      </Field>
+      <div style={{ fontSize: 12, color: "var(--muted)", lineHeight: 1.5, marginTop: 4 }}>
+        The first poll only records what is already there. After that, each new item starts one run with its fields as <span className="mono">{"{{trigger.*}}"}</span>.
+        {" "}{filters > 0 ? `${filters} filter condition(s) set.` : "No filter."} Edit <span className="mono">filter</span> under Advanced.
+      </div>
+    </Section>
+  )
+}
+
 // Catalog of `on:*` hook events that workflow subscribers can listen to.
 // One source of truth for the hook-trigger autocomplete + per-event help.
 // Adding a new hook event means adding one entry here.
@@ -1703,6 +1725,7 @@ function RuleForm({ node, patchData }: FormProps) {
 const FORM_FOR_TYPE: Record<string, (p: FormProps) => ReactNode> = {
   "trigger.channel":    (p) => <TriggerChannelForm {...p} />,
   "trigger.cron":       (p) => <TriggerCronForm {...p} />,
+  "trigger.poll":       (p) => <TriggerPollForm {...p} />,
   "trigger.hook":       (p) => <TriggerHookForm {...p} />,
   "trigger.manual":     (p) => <TriggerManualForm {...p} />,
   "trigger.form":       (p) => <TriggerFormForm {...p} />,

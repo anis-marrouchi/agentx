@@ -59,7 +59,8 @@ export function evaluateBranch(node: WorkflowNode, context: Record<string, unkno
   return defaultPort
 }
 
-function conditionMatches(cond: Condition, context: Record<string, unknown>): boolean {
+/** One condition against a context. Also the `trigger.poll` item filter. */
+export function conditionMatches(cond: Condition, context: Record<string, unknown>): boolean {
   const p = (cond.params ?? {}) as Record<string, unknown>
   const path = String(p.path ?? "")
   const value = getByPath(context, path)

@@ -128,6 +128,8 @@ const NODE_CATALOG = `# V2 Node catalog
     config: { "source": "whatsapp-message" | "telegram-message" | "slack-message" | "discord-message" | "gitlab-issue" | "gitlab-pipeline", "filter": { "chat"?: "*", "project"?: "acme/web", "labels"?: ["x"] } }
 - \`trigger.cron\` — scheduled.           config: { "spec": "0 9 * * *", "timezone": "UTC" }
 - \`trigger.hook\` — subscribes to any on:* hook event. config: { "event": "on:gitlab-issue" }
+- \`trigger.poll\` — runs a registered action every N seconds; one run per NEW item it prints (one JSON object per line). The item is the trigger payload.
+    config: { "actionId": "my-list-action", "everySeconds": 60, "key": "id", "filter"?: [ { "kind": "matches", "params": { "path": "text", "regex": "^@bot" } } ] }
 - \`trigger.manual\` — kicked off by CLI or API. config: {}
 - \`trigger.form\` — human fills a form to start. config: { "form": FormSchema, "startableBy": "role:public" }
 

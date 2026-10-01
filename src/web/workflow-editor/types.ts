@@ -11,6 +11,7 @@ export type NodeType =
   | "trigger.cron"
   | "trigger.hook"
   | "trigger.form"
+  | "trigger.poll"
   | "agent"
   | "transform"
   | "classify"

@@ -27,6 +27,8 @@ export const nodeTypeSchema = z.enum([
   "trigger.cron",
   "trigger.hook",
   "trigger.form",
+  // Runs a registered action on an interval; one run per new item (poll.ts).
+  "trigger.poll",
   // Compute
   "agent",
   "transform",

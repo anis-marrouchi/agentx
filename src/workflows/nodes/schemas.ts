@@ -222,6 +222,12 @@ export const NODE_OUTPUTS: Record<NodeType, NodeOutputSchema> = {
       { path: "submittedBy", type: "string", description: "Actor id of the submitter." },
     ],
   },
+  "trigger.poll": {
+    summary: "Runs a registered action on an interval and starts one run per new item it prints (one JSON object per line). The item is the payload.",
+    fields: [
+      { path: "", type: "any", description: "The item's own fields, e.g. `{{trigger.msgId}}`, `{{trigger.text}}`. Whatever the poll command printed for this item." },
+    ],
+  },
   "agent":              { summary: "Agent response after executing the prompt template.", fields: AGENT_OUTPUT },
   "classify":           { summary: "A typed classification with a full probability distribution. Branches on its own result: the port named after the winning label fires, or `unsure` when nothing clears minConfidence.", fields: CLASSIFY_OUTPUT },
   "transform":          { summary: "Value picked from upstream context (path mode) or rendered template bundle (template mode).", fields: TRANSFORM_OUTPUT },

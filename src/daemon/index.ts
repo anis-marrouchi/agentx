@@ -98,6 +98,7 @@ import {
   RunStore as WorkflowRunStore,
   WorkflowDispatcher,
   WorkflowStore,
+  PollTriggers,
   startWorkflowTriggers,
   workflowSchema,
   type AgentExecuteRequest,
@@ -206,6 +207,7 @@ export class AgentXDaemon {
   private cameraWatch?: CameraWatchManager
   private workflowDispatcher?: WorkflowDispatcher
   private workflowStore?: WorkflowStore
+  private workflowPolls?: PollTriggers
   private workflowRuns?: WorkflowRunStore
   private wfHealth?: { at: number; rows: ReturnType<typeof workflowHealth> }
   /** Shares the daemon's SQLite handle; absent when running without one. */
@@ -967,6 +969,7 @@ export class AgentXDaemon {
     try {
       this.log("  Stopping crons (saving last run times)...")
       await this.cron.stop()
+      this.workflowPolls?.stop()
     } catch {}
 
     try {
@@ -1658,6 +1661,9 @@ export class AgentXDaemon {
     } else if (applied.length) {
       this.broadcastSSE("reload-complete", JSON.stringify({ applied }))
     }
+
+    // Workflow poll triggers — pick up saved, enabled or disabled workflows now.
+    this.workflowPolls?.sync()
 
     return { applied, restartRequired }
   }
@@ -2411,8 +2417,12 @@ export class AgentXDaemon {
       ],
     })
 
+    // trigger.poll: timers follow the workflow files (start, save, reload).
+    this.workflowPolls = new PollTriggers({ store, dispatcher, log: (m) => this.log(m) })
+    const pollTimers = this.workflowPolls.start()
+
     const count = store.list().length
-    this.log(`  Workflows: enabled (${count} definition${count === 1 ? "" : "s"} loaded from ${cfg.dir}, editor=${cfg.editor}, cron=${cronTimers}, hook=${hookSubscribers})`)
+    this.log(`  Workflows: enabled (${count} definition${count === 1 ? "" : "s"} loaded from ${cfg.dir}, editor=${cfg.editor}, cron=${cronTimers}, hook=${hookSubscribers}, poll=${pollTimers})`)
 
     // Static dispatch-graph analysis. v0 only logs — auto-quarantine + admin
     // surface land in follow-up turns. Surfacing the conflicts at boot already
