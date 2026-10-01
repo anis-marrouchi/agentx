@@ -13,7 +13,7 @@ import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
-import { resolvePermission, type AgentTask } from "@/agents/runtime"
+import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
 import { configureDecisions } from "@/decisions/seat"
@@ -3170,8 +3170,7 @@ export class AgentXDaemon {
   private provenTurn(agentId: string, proof: RequestCallerProof): { channel: string; chatId: string } | null {
     const turn = this.registry.findRunningTurn(agentId, proof.taskId ? { taskId: proof.taskId } : { channel: proof.channel, chatId: proof.chatId })
     if (!turn) return null
-    const c = turn.context
-    return { channel: String(c.channel || "api"), chatId: String(c.chatId || c.group || c.sender || "default") }
+    return warmProcessChat(turn.context)
   }
 
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {

@@ -10,7 +10,7 @@ import {
   type ContinuityInput,
   type SessionContinuityAnswers,
 } from "@/decisions/seats/session-continuity"
-import { executeTask, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
+import { executeTask, warmProcessChat, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests } from "./sessions"
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
@@ -3073,7 +3073,12 @@ export class AgentRegistry {
     if (by.taskId) {
       run = state.runningTasks.find((r) => r.id === by.taskId)
     } else if (by.channel && by.chatId) {
-      const matches = state.runningTasks.filter((r) => r.channel === by.channel && r.chatId === by.chatId)
+      // Compared as a warm process names it, so a run with no chat is
+      // found by the fallback pair its process sends (#410).
+      const matches = state.runningTasks.filter((r) => {
+        const chat = warmProcessChat(r)
+        return chat.channel === by.channel && chat.chatId === by.chatId
+      })
       run = matches.length === 1 ? matches[0] : undefined
     }
     if (!run) return null

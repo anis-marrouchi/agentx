@@ -18,6 +18,9 @@ vi.mock("../src/agents/request-planner", async (importOriginal) => {
 import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { cycleRefusal, SyncWaits } from "../src/daemon/delegation-wiring"
+import { warmProcessChat } from "../src/agents/runtime"
+import { persistentCallerEnv } from "../src/agents/claude-process-factory"
+import { callerHeaders } from "../src/calls/service"
 
 let dir: string
 const prevCwd = process.cwd()
@@ -74,6 +77,39 @@ describe("finding the caller's running turn", () => {
     await Promise.all([t.run, t2.run])
     expect(r.findRunningTurn("front", { taskId: id })).toBeNull()
     expect(r.isChatBusy("front", "telegram", "chat-1")).toBe(false)
+  })
+
+  // A warm process cannot name its task: the id changes every turn. It
+  // names the pair it was started with, so a run with no chat has to be
+  // found by that same pair (#410).
+  it("finds a run with no chat by the pair its warm process sends", async () => {
+    const r = new AgentRegistry(config(), () => {})
+    for (const ctx of [{}, { channel: "api" }, { channel: "api", sender: "curl" }, { channel: "gitlab", group: "g/p#1", sender: "sam" }]) {
+      const t = start(r, "front", ctx)
+      const id = await t.started
+      const proof = warmProcessChat(ctx)
+      expect(callerHeaders(persistentCallerEnv({}, { agentId: "front", ...proof })))
+        .toEqual({ "X-AgentX-Channel": proof.channel, "X-AgentX-Chat": proof.chatId })
+      expect(r.findRunningTurn("front", proof)?.taskId).toBe(id)
+      // Another channel or chat names nothing.
+      expect(r.findRunningTurn("front", { channel: "telegram", chatId: proof.chatId })).toBeNull()
+      expect(r.findRunningTurn("front", { channel: proof.channel, chatId: "other" })).toBeNull()
+      r.cancelRunningTask(id, "done")
+      await t.run
+      expect(r.findRunningTurn("front", proof)).toBeNull()
+    }
+  })
+
+  it("names no run when two runs share the warm process's pair", async () => {
+    const r = new AgentRegistry(config(), () => {})
+    const a = start(r, "front", {})
+    const b = start(r, "front", { channel: "api" })
+    const [aId, bId] = [await a.started, await b.started]
+    expect(r.findRunningTurn("front", warmProcessChat({}))).toBeNull()
+    expect(r.findRunningTurn("front", { taskId: aId })?.taskId).toBe(aId)
+    r.cancelRunningTask(aId, "done")
+    r.cancelRunningTask(bId, "done")
+    await Promise.all([a.run, b.run])
   })
 
   it("refuses A -> B -> A at once when A's only slot is the turn waiting on B", async () => {
