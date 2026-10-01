@@ -4,6 +4,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { createCard, type DecisionCard } from "../src/approvals/cards"
 import { recommended, renderCardPage } from "../src/approvals/card-page"
+import { CARD_GRIP, CARD_PAD } from "../src/approvals/card-page-style"
 import { parseAnswer, showCardWindow, WINDOW_JXA } from "../src/approvals/card-window"
 import { showPopup, type PopupSettings, type Run } from "../src/approvals/popup"
 import { sampleCard } from "../src/approvals/sample-card"
@@ -19,6 +20,8 @@ import { daemonConfigSchema } from "../src/daemon/config"
 //   - the answer does not travel in the page title, which WebKit cuts at 1,000
 //     characters
 //   - a popup that ends without an answer says why
+//   - the card can be moved by its header and shrunk to its title; one taller
+//     than the screen scrolls, with its buttons still in view
 
 const NOW = Date.parse("2026-09-30T08:00:00.000Z")
 let root: string
@@ -194,6 +197,31 @@ describe("the window", () => {
     expect(WINDOW_JXA).toContain('"acceptsFirstMouse:": { types: ["bool", ["id"]], implementation: function () { return true } }')
     expect(WINDOW_JXA).toContain("$.AgentXCardView.alloc.initWithFrameConfiguration")
     expect(WINDOW_JXA).not.toContain("$.WKWebView.alloc")
+  })
+
+  it("is dragged by its header, and stays where it was put", () => {
+    // The web view takes every press, so the window takes a header press first.
+    expect(WINDOW_JXA).toContain("if (onGrip(ev)) win.performWindowDragWithEvent(ev); else app.sendEvent(ev)")
+    expect(WINDOW_JXA).toContain(`gripTop = ${CARD_PAD.top}, gripEnd = ${CARD_PAD.top + CARD_GRIP.height}, keep = ${CARD_GRIP.keep}`)
+    // The shrink button sits in the header: its end of the header is left to the page.
+    expect(WINDOW_JXA).toContain("p.x <= w - side - keep")
+    // A new height keeps the top left corner the card has now, not the one it opened at.
+    expect(WINDOW_JXA).toContain("$.NSMakeRect(f.origin.x, f.origin.y + f.size.height - want, w, want)")
+    expect(WINDOW_JXA).not.toContain("$.NSMakeRect(right - w, top - want")
+  })
+
+  it("can be shrunk to its title, and scrolls when taller than the screen", () => {
+    const html = renderCardPage(raise({ draft: "Hello" }), { now: NOW })
+    // The header and the buttons stay put; only the middle scrolls.
+    expect(html).toMatch(/<main class="card">\s*<div class="head" title="Drag to move">/)
+    expect(html).toContain('<button class="fold" id="fold" title="Shrink" aria-label="Shrink the card" aria-expanded="true">')
+    expect(html).toContain(".folded .body > :not(h1), .folded .foot { display: none; }")
+    expect(html).toContain(`max-height: calc(100vh - ${CARD_PAD.top + CARD_PAD.bottom}px)`)
+    expect(html).toMatch(/\.body \{[^}]*overflow-y: auto/)
+    // The height asked for is the card's own, not the window's.
+    expect(html).toContain("head.offsetHeight + body.scrollHeight + foot.offsetHeight")
+    // Shrunk, the buttons are hidden: ⌘↩ and the number keys must not answer.
+    expect(html).toContain('if (card.classList.contains("folded")) return;')
   })
 
   it("says why the window ended without an answer", async () => {

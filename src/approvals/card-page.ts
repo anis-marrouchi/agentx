@@ -12,6 +12,8 @@ import type { DecisionCard } from "./cards"
 //
 // The page talks back through its title, which the window reads:
 //   agentx:size:<px>         the height it needs, so the window fits it
+//                            (less when shrunk to its title; when the window
+//                            can't be that tall, the middle of the card scrolls)
 //   agentx:answer            the operator answered; the window reads
 //                            window.agentxAnswer (JSON) and closes
 // The answer itself stays out of the title: WebKit cuts a title at 1,000
@@ -88,6 +90,7 @@ function primaryLabel(card: DecisionCard): string {
 const ICON = (path: string) =>
   `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`
 const CLOCK = ICON('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>')
+const FOLD = ICON('<path d="m6 15 6-6 6 6"/>')
 const LOCK = ICON('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>')
 
 export function renderCardPage(card: DecisionCard, opts: CardPageOptions = {}): string {
@@ -116,11 +119,12 @@ export function renderCardPage(card: DecisionCard, opts: CardPageOptions = {}): 
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${nonce}'">
 <title>AgentX</title>
 <style>${CARD_CSS}</style></head>
-<body><div class="wrap"><main class="card${opts.still ? " still" : ""}"><div class="body">
-<div class="head"><span class="avatar">${esc(initials(from))}</span>
+<body><div class="wrap"><main class="card${opts.still ? " still" : ""}">
+<div class="head" title="Drag to move"><span class="avatar">${esc(initials(from))}</span>
 <div class="who"><b>${esc(from)}</b><span>${esc(since(card.created_at, now))}</span></div>
-<span class="kind${reminder ? "" : " decision"}">${reminder ? "Reminder" : "Decision"}</span></div>
-<h1 dir="auto">${esc(card.title)}</h1>
+<span class="kind${reminder ? "" : " decision"}">${reminder ? "Reminder" : "Decision"}</span>
+<button class="fold" id="fold" title="Shrink" aria-label="Shrink the card" aria-expanded="true">${FOLD}</button></div>
+<div class="body"><h1 dir="auto">${esc(card.title)}</h1>
 ${card.context ? `<p class="context" dir="auto">${esc(card.context)}</p>` : ""}
 <p class="ask" dir="auto">${esc(card.ask)}</p>
 ${options || recLabel ? `<div class="label-row">${options ? '<span class="label">Pick one</span>' : ""}${recLabel}</div>` : ""}
@@ -150,11 +154,18 @@ const CARD_SCRIPT = `
   var box = document.getElementById("text");
   var msg = document.getElementById("msg");
   var yes = document.getElementById("yes");
+  var card = document.querySelector(".card");
+  var body = document.querySelector(".body");
+  var fold = document.getElementById("fold");
   var pick = -1, touched = false, done = false;
 
   function fill(i) { return d.draft.split(d.placeholder).join(i >= 0 ? d.choices[i] : "").trim(); }
   function send(a) { if (done) return; done = true; window.agentxAnswer = JSON.stringify(a); document.title = "agentx:answer"; }
-  function fit() { document.title = "agentx:size:" + Math.ceil(document.querySelector(".wrap").getBoundingClientRect().height); }
+  // What the card needs, not what it has: in a window too short for it, its middle scrolls.
+  function fit() {
+    var wrap = document.querySelector(".wrap"), head = document.querySelector(".head"), foot = document.querySelector(".foot");
+    document.title = "agentx:size:" + Math.ceil(wrap.offsetHeight - card.clientHeight + head.offsetHeight + body.scrollHeight + foot.offsetHeight);
+  }
   function mark() { touched = box.value.trim() !== fill(pick); msg.classList.toggle("touched", touched); }
   function update() {
     opts.forEach(function (o, i) { o.setAttribute("aria-checked", String(i === pick)); });
@@ -188,8 +199,16 @@ const CARD_SCRIPT = `
   });
   document.getElementById("no").addEventListener("click", function () { send({ action: "no" }); });
   document.getElementById("later").addEventListener("click", function () { send({ action: "dismiss", why: "not now" }); });
+  fold.addEventListener("click", function () {
+    var shrunk = card.classList.toggle("folded");
+    fold.setAttribute("aria-expanded", String(!shrunk));
+    fold.title = shrunk ? "Show all" : "Shrink";
+    fit();
+  });
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") return send({ action: "dismiss", why: "not now" });
+    // A shrunk card hides its buttons: no answer by key while they can't be seen.
+    if (card.classList.contains("folded")) return;
     if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); return yes.click(); }
     // preventDefault: choose() focuses the box, and the digit must not be typed into it.
     if (document.activeElement !== box && /^[1-9]$/.test(e.key) && opts[+e.key - 1]) { e.preventDefault(); choose(+e.key - 1); }
