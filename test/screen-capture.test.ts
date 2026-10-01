@@ -285,6 +285,24 @@ describe("ScreenBuffer — recent frames, in memory, opt-in", () => {
     expect(readdirSync(tmp)).toHaveLength(0)
   })
 
+  it("keeps frames it wrote while they are still inside the limit", async () => {
+    const tmp = mkdtempSync(join(tmpdir(), "agentx-buffer-test-"))
+    let now = Date.now()
+    const { spawn } = fakeHelper(({ stdin, stdout }) => {
+      stdin.on("data", () => stdout.write(JSON.stringify({ ok: true, frames: [], region: { x: 0, y: 0, w: 1, h: 1 } }) + "\n"))
+    })
+    const buf = new ScreenBuffer(() => helper, () => {}, { spawn, platform: "darwin", tmp, now: () => now })
+    buf.configure(on())
+    await buf.recent(1)
+    const first = readdirSync(tmp)
+    now += DUMP_TTL_MS - 60_000
+    await buf.recent(1)
+    const both = readdirSync(tmp)
+    expect(both).toHaveLength(2)
+    expect(both).toContain(first[0])
+    buf.stop()
+  })
+
   it("sweeps dumps a previous daemon left behind, and nothing else", () => {
     const tmp = mkdtempSync(join(tmpdir(), "agentx-sweep-test-"))
     mkdirSync(join(tmp, "agentx-screen-old"))
