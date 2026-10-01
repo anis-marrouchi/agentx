@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.79.2](https://github.com/anis-marrouchi/agentx/compare/v0.79.1...v0.79.2) (2026-10-01)
+
+
+### Bug Fixes
+
+* **approvals:** check-ins wait for a busy agent, retry once, and report failures ([#371](https://github.com/anis-marrouchi/agentx/issues/371)) ([c0a221a](https://github.com/anis-marrouchi/agentx/commit/c0a221ad8e21872654021dffb7f7907178b736d5))
+* **owner-sweep:** an unfinished run with no start time counts as the newest ([#368](https://github.com/anis-marrouchi/agentx/issues/368)) ([2079959](https://github.com/anis-marrouchi/agentx/commit/207995937bb92524627f8ce80847b8609f9df175))
+
 ## [0.79.1](https://github.com/anis-marrouchi/agentx/compare/v0.79.0...v0.79.1) (2026-10-01)
 
 
