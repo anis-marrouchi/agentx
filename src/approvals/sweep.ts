@@ -43,6 +43,8 @@ export interface SweepDeps {
   /** True when the agent exists on this node. */
   hasAgent?: (agentId: string) => boolean
   sendDigest?: (dest: { channel: string; chatId: string; accountId?: string }, text: string) => Promise<void>
+  /** Told about every decided or expired card, once (open requests, #356). */
+  onCardResult?: (card: DecisionCard) => void
   /** Where the operator opens the inbox, for the digest. */
   dashboardUrl?: string
   log: (msg: string) => void
@@ -101,6 +103,7 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
     for (const card of cardsAwaitingAgentNotice(ctx.root)) {
       // Marked first: a turn that hangs or crashes must not tell it twice.
       markAgentNotified(ctx.root, card.id, now)
+      try { deps.onCardResult?.(card) } catch (e: any) { log(`[approvals] ${card.id}: result listener failed: ${e?.message ?? e}`) }
       if (!settings.notifyAgent || !deps.tellAgent) continue
       if (deps.hasAgent && !deps.hasAgent(card.raised_by)) {
         log(`[approvals] ${card.id}: agent "${card.raised_by}" isn't on this node; result not delivered`)

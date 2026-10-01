@@ -209,20 +209,20 @@ When it is on, AgentX notes every message you send to an agent. A message the ag
 
 An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you, and nothing closes by getting old.
 
-You cannot list or close requests yet; that arrives in the next part of this work. Until then, a request the agent handed to another agent comes back to you after `staleAfterHours` even when its work succeeded, and it stays open.
+How to see, close and drop requests, step by step: [Keep track of what you asked for](/jobs/open-requests).
 
-To turn it on:
+To turn it on by hand:
 
 1. Open `agentx.json`.
 2. Add `"requests": { "enabled": true }`.
-3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your sender id or username to `from`, for example `"from": ["telegram:123456789", "github:your-login"]`.
+3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your sender id or username on that channel to `from`, as `channel:id`. For example `"from": ["telegram:123456789", "github:your-login"]`.
 4. Save the file. The running daemon picks the change up; no restart is needed.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `requests.enabled` | boolean | `false` | Records and follows your requests. |
 | `requests.channels` | list of strings | `[]` | Channels to record on. Empty: every channel a person writes on (`telegram`, `whatsapp`, `slack`, `discord`, `gitlab`, `github`, `app`, `voice`, `dashboard`, `webrtc`). |
-| `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: a sender id or username, alone or as `channel:id`. Display names are not matched, because anyone can choose one. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
+| `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your sender id or username on that channel, as `channel:id`. An entry only applies to its own channel. Display names are not matched, because anyone can choose one. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
 | `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
 

@@ -30,6 +30,7 @@ const groups = [
     { text: "When an agent asks another", link: "/jobs/ask-another-agent" },
     { text: "Fire a routine from outside", link: "/jobs/fire-a-routine" },
     { text: "Restart without losing work", link: "/jobs/restart-safely" },
+    { text: "Keep track of what you asked for", link: "/jobs/open-requests" },
     { text: "Dashboard on your own address", link: "/jobs/reverse-proxy" },
     { text: "Review what agents learn", link: "/jobs/agent-memory" },
     { text: "Capture the screen at the right moment", link: "/jobs/screen-capture" },

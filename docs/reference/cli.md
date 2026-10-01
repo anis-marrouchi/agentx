@@ -156,6 +156,18 @@ One list of every decision waiting for you: [Approvals](../dashboard/approvals.m
 | `agentx approvals checkin [--daily]` | Run a check-in now: waiting cards come back, open reminders get cards (daemon, macOS) |
 | `agentx approvals settings [options]` | Show or change expiry, "later", the daily digest, the Mac card and check-ins |
 
+## Open requests
+
+What you asked agents for that is not finished: [Keep track of what you asked for](../jobs/open-requests.md).
+
+| Command | What it does |
+|---|---|
+| `agentx requests list [--json]` | Open requests, oldest first |
+| `agentx requests show <id>` | One request and the runs, delegations and cards linked to it |
+| `agentx requests done <id> --evidence <link>` | Close a request as finished, with a link to the proof |
+| `agentx requests drop <id> [--reason]` | Drop a request you no longer want |
+| `agentx requests settings [options]` | Show or change who counts as you, the channels, the quiet time and how long closed requests are kept |
+
 ## Agent memory
 
 How to use these, step by step: [Review what your agents learn](../jobs/agent-memory.md).

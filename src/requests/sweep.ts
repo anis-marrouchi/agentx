@@ -8,7 +8,8 @@ import type { RequestSettings } from "./tracker"
 //      reported an end. A request waiting on the owner is left alone; its
 //      question is what reminds them.
 //   2. Tell once: every request that needs attention is sent to the owner
-//      one time. After that it is only listed.
+//      one time. After that it is only listed. A notice that could not be
+//      sent at all is tried again at the next check.
 //   3. Retention: closed requests older than `retentionDays` are deleted.
 //      Open requests never age out.
 //
@@ -61,14 +62,16 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
 
   try {
     for (const r of store.awaitingNotice()) {
-      // Marked first: a notice that hangs or throws must not be sent twice.
+      // Marked first: a notice that hangs must not be sent twice.
       store.markNotified(r.id, now)
       if (!deps.notify) continue
       try {
         await deps.notify("Request not finished", attentionText(r), r)
         result.notified++
       } catch (e: any) {
-        log(`[requests] couldn't tell the owner about ${r.id}: ${e?.message ?? e}`)
+        // Nothing reached the owner: try again at the next check.
+        store.markNotified(r.id, null)
+        log(`[requests] couldn't tell the owner about ${r.id}, will try again: ${e?.message ?? e}`)
       }
     }
   } catch (e: any) {
