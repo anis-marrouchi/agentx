@@ -676,6 +676,7 @@ export const NODE_HANDLERS: Record<string, NodeHandler> = {
   "trigger.cron":    triggerHandler,
   "trigger.hook":    triggerHandler,
   "trigger.form":    triggerFormHandler,
+  "trigger.poll":    triggerHandler,
   "agent":           agentHandler,
   // A branch in its own right: it fires the port named after the label
   // it picked, or `unsure`. No RESULT token, no separate branch node.

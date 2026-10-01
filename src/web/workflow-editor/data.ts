@@ -37,6 +37,7 @@ export const PALETTE: PaletteSection[] = [
     { id: "trigger.hook.n8n",         type: "trigger.hook",    label: "n8n hands work over", hint: "n8n calls this workflow — it keeps the connectors, you keep the agents", glyph: "g-trigger", icon: "hook" },
     { id: "trigger.hook",             type: "trigger.hook",    label: "Something calls in", hint: "Any service that can POST a webhook", glyph: "g-trigger", icon: "hook" },
     { id: "trigger.cron",             type: "trigger.cron",    label: "A time of day",    hint: "Runs on a schedule you set", glyph: "g-trigger", icon: "clock" },
+    { id: "trigger.poll",             type: "trigger.poll",    label: "Something new shows up", hint: "Checks a command every so often; runs once per new item", glyph: "g-trigger", icon: "clock" },
     { id: "trigger.manual",           type: "trigger.manual",  label: "You start it",     hint: "Only runs when you press run", glyph: "g-trigger", icon: "play" },
     { id: "trigger.form",             type: "trigger.form",    label: "Someone fills a form", hint: "A person submits a form to begin", glyph: "g-trigger", icon: "plus" },
   ]},
@@ -164,6 +165,7 @@ export function nodeSummary(type: string, cfg: Record<string, unknown>): string 
     case "trigger.channel": return str("source") ? `when ${str("source")} has activity` : ""
     case "trigger.cron":    return str("schedule") ? `at ${str("schedule")}` : ""
     case "trigger.hook":    return str("event") === "on:n8n" ? "when n8n calls" : str("event") ? `on ${str("event")}` : ""
+    case "trigger.poll":    return str("actionId") ? `new items from ${str("actionId")}` : ""
     case "trigger.form":    return str("formId") ? `form: ${str("formId")}` : ""
     case "agent": {
       const who = str("agentId") || str("agent")
