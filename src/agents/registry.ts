@@ -57,7 +57,7 @@ import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
-import { senderOf } from "@/requests/tracker"
+import { isPickup, senderOf } from "@/requests/tracker"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -1587,6 +1587,7 @@ export class AgentRegistry {
       resumedFrom: task.resumedFrom,
       sender: senderOf(task.context),
       humanRoot: isHumanFacingTurn(task.context as any),
+      pickup: isPickup(task.context),
     })
 
     // Classify the message through the intent graph when enabled. Skip for

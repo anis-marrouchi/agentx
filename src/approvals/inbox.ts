@@ -8,7 +8,7 @@ import { decideDraft, listDrafts, readDraft, type SendReply } from "@/whatsapp-t
 import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } from "./cards"
 import { readInboxState, snooze } from "./state"
 import { openDb } from "@/storage/sqlite"
-import { RequestStore } from "@/requests/store"
+import { RequestStore, hasRequestTables } from "@/requests/store"
 import { readRequestSettings } from "@/requests/settings"
 
 // --- The Approvals inbox: one list over every pending decision ---
@@ -236,6 +236,8 @@ export function requestStoreFor(ctx: InboxContext): RequestStore | null {
   const db = openDb({ quiet: true })
   if (!db) return null
   let store = requestStores.get(db)
+  // The daemon creates the tables. Without them there is nothing to read.
+  if (!store && !hasRequestTables(db)) return null
   if (!store) requestStores.set(db, store = new RequestStore(db))
   return store
 }

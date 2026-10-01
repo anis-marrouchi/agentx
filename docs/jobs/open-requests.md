@@ -34,7 +34,7 @@ In the dashboard: open **Approvals**, scroll to **Open requests**, open **Settin
 1. **Terminal:** go to the folder that holds `agentx.json`.
 2. **Terminal:** run `agentx requests settings --enabled on`.
 3. Messages you speak to the Mac, type in the phone app or type in the dashboard now count as yours.
-4. To count your messages on Telegram, WhatsApp, Slack, Discord, GitLab or GitHub too, give your sender id or username on that channel: `agentx requests settings --from telegram:123456789,github:your-login`. Display names are not accepted, because anyone can choose one. Each entry is `channel:id` and only applies to that channel.
+4. To count your messages on Telegram, WhatsApp, Slack, Discord, GitLab or GitHub too, give your id on that channel: `agentx requests settings --from telegram:123456789,github:your-login`. On GitLab and GitHub it is your login, on Telegram your numeric id, on WhatsApp your number. Telegram usernames and display names are not accepted, because the person chooses them. Each entry is `channel:id` and only applies to that channel.
 
 Other people's messages are never recorded.
 
@@ -69,7 +69,7 @@ Agents close their own requests as done or declined. When work an agent handed o
 |---|---|
 | `agentx requests settings` | Shows the settings. |
 | `agentx requests settings --enabled off` | Stops recording. Open requests stay on the list. |
-| `agentx requests settings --channels voice,app` | Records only on these channels. `all` goes back to every channel. |
+| `agentx requests settings --channels voice,app` | Records only on these channels. `all` goes back to every channel. A name that is not a channel a person writes on (a typo, say) is refused. |
 | `agentx requests settings --from none` | Clears the list of who counts as you. |
 | `agentx requests settings --stale-hours 48` | Hours without activity before a request comes back to you. Default 24. |
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
@@ -85,7 +85,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 
 ## If something is wrong
 
-- **`no .agentx/db.sqlite here`:** you are not in the folder that holds `agentx.json`, or AgentX has never been started there. Go to that folder and run the command again.
+- **`no agentx.json here`:** you are not in the install folder, the one that holds `agentx.json`. A folder inside it does not count. Go to that folder and run the command again.
 - **The list says `requests are off`:** run `agentx requests settings --enabled on`.
 - **A message you sent on Telegram or GitHub is not recorded:** your id on that channel is not in `from`. Add it with `--from`, as `channel:id`.
 - **A request you only got an answer to is not listed:** that is expected. A request is kept only when work goes on after the answer or goes wrong.

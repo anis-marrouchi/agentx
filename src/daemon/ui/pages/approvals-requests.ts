@@ -125,6 +125,8 @@ $('req-form').addEventListener('submit', async function(ev){
 });
 
 load();
+// A yes or no in the inbox above changes a request: do not wait for the timer.
+document.addEventListener('apv:decided', load);
 setInterval(function(){ if (document.visibilityState === 'visible' && !$('req-section').contains(document.activeElement)) load(); }, 60000);
 })();
 `

@@ -83,19 +83,29 @@ describe("who counts as the owner", () => {
     expect(isOwnerTurn({ channels: [], from: [] }, "github", { id: "1", username: "anyone" })).toBe(false)
   })
 
-  it("matches a sender id or username on its own channel only, never a display name", () => {
-    const s = { channels: [], from: ["telegram:4242", "github:Octo", "telegram:@handle"] }
+  it("matches the sender id, or the login on a forge, on its own channel only", () => {
+    const s = { channels: [], from: ["telegram:4242", "github:Octo", "gitlab:@sara", "whatsapp:+216 20 123 456"] }
     expect(isOwnerTurn(s, "telegram", { id: "4242" })).toBe(true)
-    expect(isOwnerTurn(s, "github", { username: "octo" })).toBe(true)
-    expect(isOwnerTurn(s, "telegram", { username: "Handle" })).toBe(true)
-    // The same id or login on another channel is another person.
+    expect(isOwnerTurn(s, "github", { id: "o/r:issue:1", username: "octo" })).toBe(true)
+    expect(isOwnerTurn(s, "gitlab", { id: "g/p:issue:1", username: "Sara" })).toBe(true)
+    expect(isOwnerTurn(s, "whatsapp", { id: "21620123456@s.whatsapp.net" })).toBe(true)
+    // An entry means nothing on another channel.
     expect(isOwnerTurn(s, "gitlab", { username: "octo" })).toBe(false)
     expect(isOwnerTurn(s, "whatsapp", { id: "4242" })).toBe(false)
     expect(isOwnerTurn(s, "telegram", { id: "9" })).toBe(false)
-    // An entry for another channel is never compared as a plain string.
     expect(isOwnerTurn(s, "gitlab", { id: "github:octo" })).toBe(false)
+    // A display name is never matched.
     expect(senderOf({ sender: "4242", senderId: "9" })).toEqual({ name: "4242", id: "9", username: undefined })
     expect(isOwnerTurn(s, "telegram", senderOf({ sender: "4242", senderId: "9" }))).toBe(false)
+  })
+
+  it("never matches a username beside an id: anyone could set theirs to the owner's id (#393)", () => {
+    const s = { channels: [], from: ["telegram:4242", "github:octo/repo:issue:7", "whatsapp:21620123456"] }
+    expect(isOwnerTurn(s, "telegram", { id: "9", username: "4242" })).toBe(false)
+    // On a forge the id is the thread: listing one must not make everyone on it the owner.
+    expect(isOwnerTurn(s, "github", { id: "octo/repo:issue:7", username: "anyone" })).toBe(false)
+    // On WhatsApp the username is the chat's number, not the sender's.
+    expect(isOwnerTurn(s, "whatsapp", { id: "21699999999", username: "21620123456" })).toBe(false)
   })
 
   it("accepts only channel:id entries in the settings", () => {
@@ -433,29 +443,41 @@ describe("waiting on the owner", () => {
     id: "card-1", raised_by: "coder", ask: "Deploy to production today?", if_silent: "discard",
     reply: { channel: "telegram", chatId: "chat-1" }, status: "pending", ...over,
   })
+  /** The running turn the call that raised the card proved. */
+  const turn = { channel: "telegram", chatId: "chat-1" }
 
   it("starts when the agent raises a decision card from the request's turn", () => {
     start("t1")
-    tracker.cardRaised(card())
+    tracker.cardRaised(card(), turn)
     end("t1")
     expect(store.get("req-t1")).toMatchObject({ state: "waiting_owner", question: "Deploy to production today?" })
     expect(store.byLink("card", "card-1")?.id).toBe("req-t1")
   })
 
   it("leaves a card raised outside a recorded turn alone", () => {
-    tracker.cardRaised(card())
-    tracker.cardRaised(card({ id: "card-2", reply: undefined }))
+    tracker.cardRaised(card(), turn)
     expect(store.byLink("card", "card-1")).toBeNull()
   })
 
+  it("leaves the request alone when the call proves no turn, whatever the card says (#393)", () => {
+    start("t1")
+    // Another caller writes coder's id and coder's chat on its card.
+    tracker.cardRaised(card(), null)
+    // A call that proves a turn in another chat reaches nothing in this one.
+    tracker.cardRaised(card({ id: "card-2" }), { channel: "telegram", chatId: "chat-2" })
+    expect(store.get("req-t1")?.state).toBe("candidate")
+    expect(store.byLink("card", "card-1")).toBeNull()
+    expect(store.byLink("card", "card-2")).toBeNull()
+  })
+
   it("goes on once the owner answers the card", () => {
-    start("t1"); tracker.cardRaised(card()); end("t1")
+    start("t1"); tracker.cardRaised(card(), turn); end("t1")
     tracker.cardResolved(card({ status: "decided", verdict: "yes" }))
     expect(store.get("req-t1")).toMatchObject({ state: "in_progress", question: null })
   })
 
   it("needs attention when the card expires unanswered; it does not close", async () => {
-    start("t1"); tracker.cardRaised(card()); end("t1")
+    start("t1"); tracker.cardRaised(card(), turn); end("t1")
     tracker.cardResolved(card({ status: "expired", outcome: "discard" }))
     expect(store.get("req-t1")).toMatchObject({
       state: "needs_attention",
@@ -468,8 +490,8 @@ describe("waiting on the owner", () => {
 
   it("needs attention when a second card expires after the first was answered", () => {
     start("t1")
-    tracker.cardRaised(card())
-    tracker.cardRaised(card({ id: "card-2", ask: "Which server?" }))
+    tracker.cardRaised(card(), turn)
+    tracker.cardRaised(card({ id: "card-2", ask: "Which server?" }), turn)
     end("t1")
     tracker.cardResolved(card({ status: "decided", verdict: "yes" }))
     expect(store.get("req-t1")?.state).toBe("in_progress")
@@ -482,7 +504,7 @@ describe("waiting on the owner", () => {
   })
 
   it("stays in progress when the card's default on expiry is approve", () => {
-    start("t1"); tracker.cardRaised(card({ if_silent: "approve" })); end("t1")
+    start("t1"); tracker.cardRaised(card({ if_silent: "approve" }), turn); end("t1")
     tracker.cardResolved(card({ status: "expired", outcome: "approve", if_silent: "approve" }))
     expect(store.get("req-t1")?.state).toBe("in_progress")
   })

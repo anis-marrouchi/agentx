@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore, ensureRequestTables } from "../src/requests/store"
-import { RequestTracker, PICKUP_CHANNEL, type RequestSettings } from "../src/requests/tracker"
+import { RequestTracker, PICKUP_CHANNEL, isPickup, pickupContext, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep, pickupText, pickupEnded } from "../src/requests/sweep"
 import { writeFileSync, readFileSync } from "fs"
 import { decide, listInbox } from "../src/approvals/inbox"
@@ -106,7 +106,7 @@ describe("requests in the Approvals inbox", () => {
     expect((await sweep()).turns).toEqual([])
 
     // The turn the daemon starts is followed like any other run of the request.
-    tracker.taskStarted({ agentId: "coder", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false } as any)
+    tracker.taskStarted({ agentId: "coder", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false, pickup: true } as any)
     expect(store.byLink("run", "t9")?.id).toBe("req-t1")
     tracker.taskCompleted({ agentId: "coder", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", durationMs: 1, error: "model overloaded", at: "" } as any)
     expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", attentionReason: "coder failed: model overloaded", notifiedAt: null })
@@ -153,14 +153,14 @@ describe("requests in the Approvals inbox", () => {
 
   it("does not let another agent's pick-up turn attach to the request", () => {
     failed("t1")
-    tracker.taskStarted({ agentId: "devops", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false } as any)
+    tracker.taskStarted({ agentId: "devops", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false, pickup: true } as any)
     expect(store.byLink("run", "t9")).toBeNull()
   })
 
   it("links work a pick-up turn hands to another agent, while that turn runs", () => {
     failed("t1")
     store.requestPickup("req-t1", clock)
-    const turn = { agentId: "coder", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false }
+    const turn = { agentId: "coder", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false, pickup: true }
     const handOn = (id: string) => tracker.delegationStarted({ id, caller: "coder", callee: "devops", origin: { channel: PICKUP_CHANNEL, chatId: "req-t1" } })
 
     tracker.taskStarted(turn as any)
@@ -221,6 +221,29 @@ describe("requests in the Approvals inbox", () => {
     expect(() => ensureRequestTables(stale)).not.toThrow()
     failed("t1")
     expect(store.requestPickup("req-t1", clock)).toBe(true)
+  })
+
+  it("links only the pick-up turn the daemon started, not one a caller names (#393)", () => {
+    failed("t1")
+    const before = store.get("req-t1")
+    clock += 5000
+    // POST /task with channel "requests" and the request id as the chat.
+    tracker.taskStarted({ agentId: "coder", channel: PICKUP_CHANNEL, chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", humanRoot: false } as any)
+    expect(store.byLink("run", "t9")).toBeNull()
+    // Its quiet clock is not reset either.
+    expect(store.get("req-t1")).toEqual(before)
+  })
+
+  it("marks the pick-up context in a way a request body cannot", () => {
+    const ctx = pickupContext("req-t1")
+    expect(ctx).toMatchObject({ channel: PICKUP_CHANNEL, chatId: "req-t1", sender: "operator" })
+    expect(isPickup(ctx)).toBe(true)
+    // The registry copies a context; the mark goes with it.
+    expect(isPickup({ ...ctx, initiator: {} })).toBe(true)
+    // Through JSON, as any HTTP caller's context arrives, it is gone.
+    expect(isPickup(JSON.parse(JSON.stringify(ctx)))).toBe(false)
+    expect(isPickup({ channel: PICKUP_CHANNEL, chatId: "req-t1", pickup: true, "Symbol(requests.pickup)": true })).toBe(false)
+    expect(isPickup(undefined)).toBe(false)
   })
 
   it("adds the pick-up column to a database created by the first version", () => {
