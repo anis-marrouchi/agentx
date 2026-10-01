@@ -19,7 +19,16 @@ export const LIST_LIMIT = 100
 export const OWNER_ONLY = "Only the owner drops a request: `agentx requests drop <id>`, or the Approvals page in the dashboard."
 
 /** Names the caller's running turn: its task id, or its channel and chat
- *  (the X-AgentX-Task / X-AgentX-Channel / X-AgentX-Chat headers). */
+ *  (the X-AgentX-Task / X-AgentX-Channel / X-AgentX-Chat headers).
+ *
+ *  Decision (#393, point 4): channel and chat stay accepted. A warm
+ *  process serves many turns and has no per-turn id (claude-process-factory
+ *  drops AGENTX_TASK_ID), so it has nothing else to show. What the pair
+ *  buys a local caller is bounded: the daemon still requires one running
+ *  turn of that agent on exactly that chat, and the actions are the
+ *  agent's own statements about its own request (accept, wait, done,
+ *  decline), never a drop. A per-process secret would close it; it is
+ *  not worth a new handshake while loopback callers are this node's own. */
 export interface CallerProof {
   taskId?: string
   channel?: string

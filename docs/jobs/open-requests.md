@@ -33,7 +33,7 @@ In the dashboard: open **Approvals**, scroll to **Open requests**, open **Settin
 
 1. **Terminal:** go to the folder that holds `agentx.json`.
 2. **Terminal:** run `agentx requests settings --enabled on`.
-3. Messages you speak to the Mac, type in the phone app or type in the dashboard now count as yours.
+3. Messages you speak to the Mac, type in the phone app or type in the dashboard now count as yours. They count because this computer's own surfaces vouch for them: the daemon marks the turns it starts itself, and the dashboard shows the daemon a key it keeps in `.agentx/operator.key`, next to `agentx.json`, for the phone app. A program that merely names one of those surfaces when it calls the daemon is not you.
 4. To count your messages on Telegram, WhatsApp, Slack, Discord, GitLab or GitHub too, give your id on that channel: `agentx requests settings --from telegram:123456789,github:your-login`. On GitLab and GitHub it is your login, on Telegram your numeric id, on WhatsApp your number. Telegram usernames and display names are not accepted, because the person chooses them. Each entry is `channel:id` and only applies to that channel.
 
 Other people's messages are never recorded.
@@ -52,7 +52,7 @@ You can also ask any agent "what is still open?". It reads the same list.
 
 You are told once. After that it waits in the [Approvals inbox](../dashboard/approvals.md#requests-that-are-not-finished) as a **Request**, and counts in the daily digest:
 
-- **Yes** (or `agentx approvals approve request:<id>`) hands it back to the agent, which gets your request again and works on it. If that fails too, it comes back.
+- **Yes** (or `agentx approvals approve request:<id>`) hands it back to the agent, which gets your request again and works on it. If the agent is still busy with the earlier attempt, your yes waits its turn and runs right after; the request stays in progress meanwhile. If the hand-back fails, it comes back.
 - **No** (or `agentx approvals reject request:<id>`) drops it.
 - **Later** puts it off.
 
@@ -91,3 +91,5 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A request you only got an answer to is not listed:** that is expected. A request is kept only when work goes on after the answer or goes wrong.
 - **A request came back as `No activity for 24 h`:** nobody closed it. Close it with `done` or `drop`, or ask the agent to carry on.
 - **`a finished request needs --evidence <link>`:** add the link to the proof. A request cannot be closed as done without it.
+- **A message from the phone app is not recorded:** the dashboard must run from the install folder, the one that holds `agentx.json`, so it can read `.agentx/operator.key`. Start it there. A message sent through the phone app to an agent on another computer is not recorded on that computer either.
+- **A request made in the dashboard shows the prompt around your words:** it was recorded by an older version. Requests made now show what you typed.

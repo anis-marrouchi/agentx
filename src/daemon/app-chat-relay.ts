@@ -12,7 +12,10 @@ import { ARTIFACT_LIMITS, extractArtifacts, plainAnswer, type DeclaredArtifact }
 // error). Every event is passed to the phone unchanged as it arrives; what
 // the turn produced is gathered on the side so it can be saved.
 
-export interface DaemonTarget { url: string; token?: string }
+/** The daemon a turn goes to. `operatorKey` is this install's operator
+ *  key (requests/operator): shown on /task, it makes the phone's turn count
+ *  as the owner's request (#393). */
+export interface DaemonTarget { url: string; token?: string; operatorKey?: string }
 
 export interface TurnRequest {
   /** "local" or the mesh peer's name. */
@@ -91,6 +94,7 @@ export async function relayTurn(
         "Content-Type": "application/json",
         Accept: "text/event-stream",
         ...(daemon.token ? { Authorization: `Bearer ${daemon.token}` } : {}),
+        ...(daemon.operatorKey ? { "X-AgentX-Operator": daemon.operatorKey } : {}),
       },
       body: JSON.stringify(body),
       signal,

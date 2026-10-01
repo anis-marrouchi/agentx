@@ -97,6 +97,13 @@ export interface AgentXEvents {
     /** True for the turn the daemon starts to hand a request back to its
      *  agent (requests/tracker pickupContext). */
     pickup?: boolean
+    /** True when the daemon marked the turn as the owner's on one of this
+     *  node's own surfaces (requests/operator): it started the turn itself,
+     *  or the /task caller showed the operator key (#393). */
+    operator?: boolean
+    /** What the person typed, when `fullMessage` wraps it in a prompt (the
+     *  dashboard's assistant). The request is recorded with this (#401). */
+    askedText?: string
   }
 
   /** A single step inside an in-flight task — typically a tool call or
