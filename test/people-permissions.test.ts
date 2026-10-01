@@ -21,7 +21,8 @@ import { rootInitiatorOf } from "../src/a2a/initiator"
 import { MemberStore } from "../src/members/store"
 import { getAttachRegistry } from "../src/attach"
 import { MessageRouter } from "../src/channels/router"
-import { createDelegations, CallbackReplies } from "../src/daemon/delegation-wiring"
+import { chainRootOf, createDelegations, CallbackReplies, hopRefusal, SyncWaits } from "../src/daemon/delegation-wiring"
+import { readFileSync } from "fs"
 
 const sara: Person = { id: "sara", name: "Sara B", role: "member", identities: ["telegram:4242"], agents: ["coder"] }
 const omar: Person = { id: "omar", name: "Omar K", role: "member", identities: ["telegram:7"] }
@@ -166,6 +167,38 @@ describe("through the registry", () => {
       expect(peerCalls).toEqual([])
       expect(new MemberStore(dir).events("sara")).toMatchObject([{ event: "agent-refused", detail: "atlas" }])
     } finally { mgr.stop() }
+  })
+
+  it("refuses a synchronous hand-off, and the hop after one, for work the person started", () => {
+    const waits = new SyncWaits()
+    // Sara's own turn on coder: the daemon stamped the person on it.
+    const first = { agentId: "coder", taskId: "run-1", context: { ...fromSara, person: "sara" } }
+    expect(hopRefusal("devops", first, registry, waits)).toContain("not devops")
+    expect(hopRefusal("coder", first, registry, waits)).toBeNull()
+    // A synchronous callee's context carries no root; the chain's root is
+    // kept with the wait, so the next hop is still her work.
+    waits.begin("run-1", "run-2", chainRootOf(first, waits))
+    const second = { agentId: "coder", taskId: "run-2", context: { channel: "a2a", sender: "agent:coder", chatId: "coder" } }
+    expect(hopRefusal("devops", second, registry, waits)).toContain("not devops")
+    waits.begin("run-2", "run-3", chainRootOf(second, waits))
+    expect(hopRefusal("atlas", { ...second, taskId: "run-3" }, registry, waits)).toContain("not atlas")
+    // Once the hop ends, the same agent's next turn is nobody's.
+    waits.end("run-2")
+    expect(hopRefusal("devops", second, registry, waits)).toBeNull()
+    // A caller the daemon cannot name is not checked, and an agent's own work is not limited.
+    expect(hopRefusal("devops", null, registry, waits)).toBeNull()
+    expect(hopRefusal("devops", { agentId: "coder", taskId: "run-9", context: { channel: "cron", chatId: "nightly" } }, registry, waits)).toBeNull()
+    expect(new MemberStore(dir).events("sara").map((e) => e.detail)).toEqual(["atlas", "devops", "devops"])
+  })
+
+  it("asks at the delegation gate and on /mesh/task, before any hop starts", () => {
+    const src = readFileSync(join(__dirname, "../src/daemon/index.ts"), "utf-8")
+    const gate = src.slice(src.indexOf("private delegationGate("), src.indexOf("private startCallback("))
+    expect(gate.indexOf("hopRefusal(target.callee, caller")).toBeGreaterThan(0)
+    expect(gate.indexOf("hopRefusal(")).toBeLessThan(gate.indexOf("this.startCallback("))
+    const meshTask = src.slice(src.indexOf('case "POST /mesh/task"'), src.indexOf("// Streaming pass-through"))
+    expect(meshTask.indexOf("hopRefusal(")).toBeGreaterThan(0)
+    expect(meshTask.indexOf("hopRefusal(")).toBeLessThan(meshTask.indexOf("askHost("))
   })
 
   it("keeps each refusal in the person's trail", async () => {

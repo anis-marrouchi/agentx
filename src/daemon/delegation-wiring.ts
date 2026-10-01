@@ -20,7 +20,7 @@
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
 import { DelegationManager, type CallerTurn, type DelegationDeps } from "@/a2a/delegation"
-import type { RootInitiator } from "@/a2a/initiator"
+import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { MessageRouter } from "@/channels/router"
@@ -149,13 +149,22 @@ export function resolveCallerTurn(
 export class SyncWaits {
   /** callee run id → the caller turn waiting on it */
   private waitingOn = new Map<string, string>()
+  /** callee run id → the root of the chain it works for. A synchronous
+   *  callee's own context carries no root, so the next hop asks here. */
+  private roots = new Map<string, RootInitiator>()
 
-  begin(callerTaskId: string, calleeRunId: string): void {
+  begin(callerTaskId: string, calleeRunId: string, root?: RootInitiator): void {
     this.waitingOn.set(calleeRunId, callerTaskId)
+    if (root) this.roots.set(calleeRunId, root)
   }
 
   end(calleeRunId: string): void {
     this.waitingOn.delete(calleeRunId)
+    this.roots.delete(calleeRunId)
+  }
+
+  rootOf(taskId: string | undefined): RootInitiator | undefined {
+    return taskId ? this.roots.get(taskId) : undefined
   }
 
   /** Every turn waiting on `taskId`, directly or through a chain. */
@@ -196,6 +205,27 @@ export function cycleRefusal(
       "Answer from what you have, or say what you need from it."
   }
   return null
+}
+
+/** The root of the chain a calling turn works for: the one a synchronous
+ *  hop was started under, else the turn's own. */
+export function chainRootOf(caller: CallerTurn, waits: SyncWaits): RootInitiator {
+  return waits.rootOf(caller.taskId) ?? rootInitiatorOf(caller.context, caller.agentId)
+}
+
+/**
+ * People permissions (#379) for an agent-to-agent request: the note when
+ * the person the calling turn works for may not reach `callee`, or null.
+ * Asked before any hop starts, synchronous or callback, on this node or to
+ * a peer. A caller the daemon cannot name is not checked.
+ */
+export function hopRefusal(
+  callee: string,
+  caller: CallerTurn | null,
+  registry: Pick<AgentRegistry, "refusalFor">,
+  waits: SyncWaits,
+): string | null {
+  return caller ? registry.refusalFor(callee, { initiator: chainRootOf(caller, waits) }) : null
 }
 
 /**
