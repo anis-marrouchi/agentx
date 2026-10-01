@@ -126,15 +126,6 @@ export class RequestStore {
     return row ? toRecord(row) : null
   }
 
-  /** The newest request of this agent in this chat that is not closed. */
-  latestInChat(agentId: string, channel: string, chatId: string): RequestRecord | null {
-    const row = this.db.prepare(
-      `SELECT * FROM requests WHERE agent_id = ? AND channel = ? AND chat_id = ?
-       AND state NOT IN (${placeholders(CLOSED_STATES.length)}) ORDER BY created_at DESC, rowid DESC LIMIT 1`,
-    ).get(agentId, channel, chatId, ...CLOSED_STATES)
-    return row ? toRecord(row) : null
-  }
-
   link(requestId: string, kind: LinkKind, ref: string, now: number): void {
     this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)").run(requestId, kind, ref, now)
   }

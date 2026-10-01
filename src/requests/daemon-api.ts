@@ -8,7 +8,9 @@ import type { RequestTracker } from "./tracker"
 //   GET  /requests        open requests, oldest first
 //   GET  /requests/:id    one request and what is linked to it
 //   POST /requests        an agent's own statement about its request:
-//                         accept, wait (on the owner), done, decline
+//                         accept, wait (on the owner), done, decline.
+//                         The call must prove it comes from a running turn
+//                         of that agent (CallerProof).
 // Dropping a request is the owner's alone: `agentx requests drop`, or the
 // dashboard.
 
@@ -16,11 +18,23 @@ export const LIST_LIMIT = 100
 
 export const OWNER_ONLY = "Only the owner drops a request: `agentx requests drop <id>`, or the Approvals page in the dashboard."
 
+/** Names the caller's running turn: its task id, or its channel and chat
+ *  (the X-AgentX-Task / X-AgentX-Channel / X-AgentX-Chat headers). */
+export interface CallerProof {
+  taskId?: string
+  channel?: string
+  chatId?: string
+}
+
 export interface RequestsApiDeps {
   store: RequestStore
   tracker: RequestTracker
   enabled: boolean
   hasAgent: (agentId: string) => boolean
+  /** The channel and chat of the running turn of `agentId` that `proof`
+   *  names, or null when it names none. A write is refused without one:
+   *  the agent id in the body alone proves nothing. */
+  runningTurn: (agentId: string, proof: CallerProof) => { channel: string; chatId: string } | null
   now?: number
 }
 
@@ -36,6 +50,7 @@ export function handleRequestsApi(
   path: string,
   body: Record<string, unknown> | undefined,
   deps: RequestsApiDeps,
+  proof: CallerProof = {},
 ): ApiReply {
   const m = method.toUpperCase()
   const { store } = deps
@@ -63,17 +78,22 @@ export function handleRequestsApi(
     const agentId = str(input.agentId)
     if (!agentId || !deps.hasAgent(agentId)) return { status: 400, body: { error: "agentId must be an agent on this node" } }
 
+    // The body says who is speaking; the proof must show a running turn
+    // of that agent. Without it, any local caller could close any request.
+    const turn = deps.runningTurn(agentId, proof)
+    if (!turn) return { status: 403, body: { error: `no running turn of "${agentId}" matches this call: use the agentx_request tool from inside your run` } }
+
+    // Without an id it is the request of the turn that is speaking, never
+    // an older one in the same chat that someone else's turn could reach.
     const id = str(input.id)
-    const channel = str(input.channel)
-    const chatId = str(input.chatId)
     let request: RequestRecord | null = null
     if (id) request = store.get(id)
-    else if (channel && chatId) {
-      const live = deps.tracker.liveRequestId(agentId, channel, chatId)
-      request = (live ? store.get(live) : null) ?? store.latestInChat(agentId, channel, chatId)
+    else {
+      const live = deps.tracker.liveRequestId(agentId, turn.channel, turn.chatId)
+      request = live ? store.get(live) : null
     }
     if (!request) {
-      return { status: 404, body: { error: id ? `no request "${id}"` : "No request is recorded for this chat. Only the owner's own messages are recorded." } }
+      return { status: 404, body: { error: id ? `no request "${id}"` : "This turn has no recorded request. Pass the id of the request you mean (list shows them); only the owner's own messages are recorded." } }
     }
     if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
     if (["done", "declined", "dropped"].includes(request.state)) {

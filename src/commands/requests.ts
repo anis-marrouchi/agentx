@@ -1,4 +1,6 @@
 import { Command } from "commander"
+import { existsSync } from "fs"
+import { resolve } from "path"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
 import { RequestStore, type RequestRecord } from "@/requests/store"
@@ -24,8 +26,9 @@ const STATE_LABEL: Record<string, string> = {
 }
 
 function store(): RequestStore | null {
-  const db = openDb()
-  if (!db) { console.error(chalk.red("  couldn't open .agentx/db.sqlite: run this from the folder that holds agentx.json")); process.exitCode = 1; return null }
+  // openDb creates the file: never do that in a folder that is not a node's.
+  const db = existsSync(resolve(process.cwd(), ".agentx", "db.sqlite")) ? openDb() : null
+  if (!db) { console.error(chalk.red("  no .agentx/db.sqlite here: run this from the folder that holds agentx.json, on a node whose daemon has started at least once")); process.exitCode = 1; return null }
   return new RequestStore(db)
 }
 

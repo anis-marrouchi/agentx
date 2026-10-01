@@ -1,4 +1,5 @@
 import { resolveScheduleCaller } from "@/crons/schedule-tool"
+import { callerHeaders } from "@/calls/service"
 
 // --- Agent-facing `agentx_request` tool (#356) ---
 //
@@ -54,13 +55,16 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       return `${data.count} open request${data.count === 1 ? "" : "s"}, oldest first.\n${describeOpen(data.items ?? [])}`
     }
 
-    const caller = resolveScheduleCaller(args, deps.env ?? process.env)
+    const env = deps.env ?? process.env
+    const caller = resolveScheduleCaller(args, env)
     if (!caller) return "Error: couldn't tell which agent you are. Pass callerAgentId."
     const res = await doFetch(`${base}/requests`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // The headers name this run: the daemon refuses a write that does
+      // not come from a running turn of the agent.
+      headers: { "Content-Type": "application/json", ...callerHeaders(env) },
       body: JSON.stringify({
-        action, agentId: caller.agentId, channel: caller.channel, chatId: caller.chatId,
+        action, agentId: caller.agentId,
         id: args.id, question: args.question, evidence: args.evidence, reason: args.reason,
       }),
       signal: AbortSignal.timeout(10_000),

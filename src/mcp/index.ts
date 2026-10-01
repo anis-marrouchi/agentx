@@ -681,13 +681,13 @@ const TOOLS = [
       "Use accept when the work goes on after this turn; wait when the next step is the owner's answer (give the question); " +
       "done when it is finished (give a link to the evidence: PR, issue, message, deploy); decline when you will not do it (give the reason). " +
       "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
-      "Without an id, the action applies to the request of the chat you are in. You cannot drop a request; only the owner can. " +
+      "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
       "Example: {action:'done', evidence:'https://example.com/pull/42'}.",
     inputSchema: {
       type: "object" as const,
       properties: {
         action: { type: "string", enum: ["accept", "wait", "done", "decline", "list"], description: "list (default), accept, wait, done or decline." },
-        id: { type: "string", description: "The request id, when it is not the request of this chat." },
+        id: { type: "string", description: "The request id, when it is not the request of this turn." },
         question: { type: "string", description: "wait: what you are asking the owner." },
         evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
         reason: { type: "string", description: "decline: why you will not do it." },

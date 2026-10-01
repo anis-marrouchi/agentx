@@ -73,7 +73,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 
 ## If something is wrong
 
-- **`couldn't open .agentx/db.sqlite`:** you are not in the folder that holds `agentx.json`. Go there and run the command again.
+- **`no .agentx/db.sqlite here`:** you are not in the folder that holds `agentx.json`, or AgentX has never been started there. Go to that folder and run the command again.
 - **The list says `requests are off`:** run `agentx requests settings --enabled on`.
 - **A message you sent on Telegram or GitHub is not recorded:** your id on that channel is not in `from`. Add it with `--from`, as `channel:id`.
 - **A request you only got an answer to is not listed:** that is expected. A request is kept only when work goes on after the answer or goes wrong.

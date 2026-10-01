@@ -1721,7 +1721,9 @@ export class AgentXDaemon {
         // hold the approvals sweep.
         if (this.requests && !this.requestsSweeping) {
           this.requestsSweeping = true
-          void this.sweepRequests(this.requests)
+          // A notice that never returns must not stop every later check.
+          const limit = new Promise<void>((_, reject) => { setTimeout(() => reject(new Error("timed out after 5 min")), 300_000).unref?.() })
+          void Promise.race([this.sweepRequests(this.requests), limit])
             .catch((e: any) => this.log(`[requests] sweep failed: ${e?.message ?? e}`))
             .finally(() => { this.requestsSweeping = false })
         }
@@ -3264,12 +3266,20 @@ export class AgentXDaemon {
       if (path === "/requests" || path.startsWith("/requests/")) {
         if (!this.requests) { this.json(res, 503, { error: "requests need the database" }); return }
         const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const h = (name: string) => { const v = req.headers[name]; return (Array.isArray(v) ? v[0] : v) || undefined }
         const reply = handleRequestsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, {
           store: this.requests.store,
           tracker: this.requests.tracker,
           enabled: this.config.requests.enabled,
           hasAgent: (id) => !!this.registry.getAgent(id),
-        })
+          runningTurn: (id, p) => {
+            const turn = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
+            if (!turn) return null
+            // The same channel and chat the registry files the run under.
+            const c = turn.context
+            return { channel: String(c.channel || "api"), chatId: String(c.chatId || c.group || c.sender || "default") }
+          },
+        }, { taskId: h("x-agentx-task"), channel: h("x-agentx-channel"), chatId: h("x-agentx-chat") })
         this.json(res, reply.status, reply.body)
         return
       }
