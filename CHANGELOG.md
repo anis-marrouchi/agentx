@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.82.0](https://github.com/anis-marrouchi/agentx/compare/v0.81.1...v0.82.0) (2026-10-01)
+
+
+### Features
+
+* **members:** invite a teammate to their own work page ([#413](https://github.com/anis-marrouchi/agentx/issues/413)) ([8bc7b9a](https://github.com/anis-marrouchi/agentx/commit/8bc7b9a8f515537e812fd1176c861a8556eaa848))
+
 ## [0.81.1](https://github.com/anis-marrouchi/agentx/compare/v0.81.0...v0.81.1) (2026-10-01)
 
 
