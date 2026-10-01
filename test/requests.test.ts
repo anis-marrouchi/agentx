@@ -211,6 +211,33 @@ describe("timeout", () => {
     expect(store.get("req-t1")?.attentionReason).toBe("The work handed to devops did not answer in time: No answer from devops after 30 minute(s).")
   })
 
+  it("reminds the agent to close the request when the delegated answer comes back", async () => {
+    start("t1")
+    const turns: string[] = []
+    const mgr = new DelegationManager({
+      timeoutMs: 60_000,
+      runLocal: () => Promise.resolve({ content: "deployed" }),
+      runPeer: () => Promise.resolve(""),
+      injectTurn: async (turn) => { turns.push(turn.message); return { content: "told" } },
+      isChatBusy: () => false,
+      canDeliver: () => true,
+      deliver: async () => {},
+      log: () => {},
+      onStarted: (rec) => tracker.delegationStarted(rec),
+      onDone: (rec, result) => tracker.delegationDone(rec, result.status, result.text),
+      callbackNote: (rec) => tracker.closingNote(rec.id),
+    })
+    mgr.start({ caller: { agentId: "coder", context: { channel: "telegram", chatId: "chat-1", sender: "Owner" } }, callee: "devops", message: "deploy it" })
+    end("t1")
+    await new Promise((r) => setTimeout(r, 10))
+    expect(turns).toHaveLength(1)
+    expect(turns[0]).toContain("open request req-t1")
+    expect(turns[0]).toContain('{action:"done", id:"req-t1"')
+    expect(tracker.closingNote("dlg-unknown")).toBeUndefined()
+    store.close("req-t1", "done", "https://example.test/x", clock)
+    expect(tracker.closingNote(store.links("req-t1").find((l) => l.kind === "delegation")!.ref)).toBeUndefined()
+  })
+
   it("is fed by the delegation manager itself", async () => {
     start("t1")
     const deps: DelegationDeps = {

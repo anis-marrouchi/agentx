@@ -134,3 +134,58 @@ describe("requests in the Approvals inbox", () => {
     old.close()
   })
 })
+
+import { writeFileSync, readFileSync } from "fs"
+import { handleRequestsPanel } from "../src/daemon/requests-panel"
+import { renderApprovalsPage } from "../src/daemon/ui/pages/approvals"
+import { REQUESTS_SCRIPT } from "../src/daemon/ui/pages/approvals-requests"
+
+describe("the dashboard's open requests", () => {
+  const panelCtx = () => {
+    const configPath = path.join(tmp, "agentx.json")
+    writeFileSync(configPath, JSON.stringify({ node: { id: "n", name: "n" }, agents: {} }))
+    return { root: tmp, requests: store, now: clock, configPath, reload: false }
+  }
+  const P = "/api/admin/approvals/requests"
+
+  it("lists open requests oldest first with the settings", async () => {
+    failed("t1")
+    clock += 1000
+    failed("t2")
+    const r = await handleRequestsPanel("GET", P, {}, panelCtx())
+    expect(r.status).toBe(200)
+    expect((r.body as any).items.map((i: any) => i.id)).toEqual(["req-t1", "req-t2"])
+    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90 })
+  })
+
+  it("closes as done only with evidence, and drops with a default reason", async () => {
+    failed("t1"); failed("t2")
+    const c = panelCtx()
+    expect((await handleRequestsPanel("POST", `${P}/close`, { id: "req-t1", action: "done" }, c)).status).toBe(400)
+    expect((await handleRequestsPanel("POST", `${P}/close`, { id: "req-t1", action: "done", evidence: "https://example.test/pr/4" }, c)).status).toBe(200)
+    expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/pr/4" })
+    expect((await handleRequestsPanel("POST", `${P}/close`, { id: "req-t1", action: "drop" }, c)).status).toBe(409)
+    expect((await handleRequestsPanel("POST", `${P}/close`, { id: "req-t2", action: "drop" }, c)).status).toBe(200)
+    expect(store.get("req-t2")).toMatchObject({ state: "dropped", closeReason: "dropped by the owner (dashboard)" })
+    expect((await handleRequestsPanel("POST", `${P}/close`, { id: "nope", action: "drop" }, c)).status).toBe(404)
+    expect((await handleRequestsPanel("POST", `${P}/close`, { id: "req-t2", action: "delete" }, c)).status).toBe(400)
+  })
+
+  it("saves every setting from the form and rejects a bad one", async () => {
+    const c = panelCtx()
+    const ok = await handleRequestsPanel("POST", `${P}/settings`, { enabled: true, from: "telegram:42, github:me", channels: "", staleAfterHours: 48, retentionDays: 30 }, c)
+    expect(ok.status).toBe(200)
+    expect((ok.body as any).settings).toEqual({ enabled: true, channels: [], from: ["telegram:42", "github:me"], staleAfterHours: 48, retentionDays: 30 })
+    expect(JSON.parse(readFileSync(c.configPath, "utf-8")).requests.enabled).toBe(true)
+    expect((await handleRequestsPanel("POST", `${P}/settings`, { from: "no-channel" }, c)).status).toBe(400)
+    expect(await handleRequestsPanel("POST", `${P}/settings`, { staleAfterHours: 0 }, c)).toEqual({ status: 400, body: { error: "staleAfterHours must be a positive number" } })
+  })
+
+  it("ships a page whose script parses and whose section is on the Approvals page", () => {
+    expect(() => new Function(REQUESTS_SCRIPT)).not.toThrow()
+    const html = renderApprovalsPage()
+    expect(html).toContain('id="req-section"')
+    expect(html).toContain('data-kind="request"')
+    expect(html).toContain("/api/admin/approvals/requests/close")
+  })
+})

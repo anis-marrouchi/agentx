@@ -227,7 +227,7 @@ function whatsappItems(ctx: InboxContext): InboxItem[] {
 }
 
 /** The requests store, or null when there is no database to read. */
-function requestStoreFor(ctx: InboxContext): RequestStore | null {
+export function requestStoreFor(ctx: InboxContext): RequestStore | null {
   if (ctx.requests) return ctx.requests
   // openDb is per process and opens the file under the working directory.
   // A folder with no database yet has no requests: do not create one.

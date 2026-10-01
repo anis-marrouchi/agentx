@@ -496,6 +496,7 @@ export class AgentXDaemon {
         this.recordInboundDispatch(agentId, context, message, senderAgentId),
       onStarted: (rec) => this.requests?.tracker.delegationStarted(rec),
       onDone: (rec, result) => this.requests?.tracker.delegationDone(rec, result.status, result.text),
+      callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
     })
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)

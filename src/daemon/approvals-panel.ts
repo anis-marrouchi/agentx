@@ -3,6 +3,7 @@ import { decide, listInbox, type InboxAction, type InboxContext } from "@/approv
 import { popAgain } from "@/approvals/popup-runner"
 import { parseDestination, readApprovalSettings, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
 import { renderApprovalsPage } from "./ui/pages/approvals"
+import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 import type { TopbarPeer } from "./topbar"
 
 // --- Dashboard side of the Approvals inbox ---
@@ -71,6 +72,12 @@ export async function handleApprovalsPanelApi(
   }
 
   try {
+    if (path.startsWith(REQUESTS_PANEL_PREFIX)) {
+      const r = await handleRequestsPanel(method, path, method === "POST" ? await readJson(req) : {}, ctx)
+      sendJson(res, r.status, r.body)
+      return true
+    }
+
     if (method === "GET" && path === "/api/admin/approvals") {
       const listing = listInbox(ctx, { includeSnoozed: url.searchParams.get("all") === "1" })
       sendJson(res, 200, { ...listing, settings: readApprovalSettings(ctx.configPath) })

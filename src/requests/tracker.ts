@@ -1,5 +1,5 @@
 import type { AgentXEvents } from "@/events/bus"
-import type { RequestStore } from "./store"
+import { OPEN_STATES, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
 //
@@ -224,6 +224,18 @@ export class RequestTracker {
         this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)
       }
     })
+  }
+
+  /** Added to the turn that brings a delegated answer back: the request
+   *  stays on the owner's list until the agent closes it. */
+  closingNote(delegationId: string): string | undefined {
+    try {
+      const req = this.store.byLink("delegation", delegationId)
+      if (!req || !OPEN_STATES.includes(req.state as OpenState)) return undefined
+      return `This is part of the owner's open request ${req.id}. It stays on their list until it is closed. If it is finished now, close it with agentx_request: {action:"done", id:"${req.id}", evidence:"<link to the proof>"}. If you will not do it, use decline with the reason. If work goes on, leave it open.`
+    } catch {
+      return undefined
+    }
   }
 
   /** What the boot-time resume step did with a run the restart cut off. */

@@ -12,6 +12,7 @@
 // literal.
 
 import { renderShell, type TopbarPeer } from ".."
+import { REQUESTS_CSS, REQUESTS_HTML, REQUESTS_SCRIPT } from "./approvals-requests"
 
 export interface ApprovalsPageOpts {
   peers?: TopbarPeer[]
@@ -46,6 +47,8 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
   <ol id="apv-list" class="apv__list" aria-label="Waiting for you"></ol>
   <p id="apv-snoozed" class="apv__foot"></p>
 
+${REQUESTS_HTML}
+
   <details class="apv__settings" id="apv-settings">
     <summary>Settings: expiry, later, daily digest</summary>
     <form id="apv-form" class="apv__form">
@@ -68,8 +71,8 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
     peers: opts.peers,
     currentPeerId: opts.currentPeerId,
     body,
-    css: APPROVALS_CSS,
-    scripts: `${tokenScript}<script>${APPROVALS_SCRIPT}</script>`,
+    css: APPROVALS_CSS + REQUESTS_CSS,
+    scripts: `${tokenScript}<script>${APPROVALS_SCRIPT}</script><script>${REQUESTS_SCRIPT}</script>`,
   })
 }
 
