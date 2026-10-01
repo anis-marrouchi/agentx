@@ -74,6 +74,18 @@ export interface AgentXEvents {
     humanRoot?: boolean
   }
 
+  /** The turn a queued message was handed to has ended, or the hand-over
+   *  failed. A request still queued from before `flushedAt` never started
+   *  (request status, #383). */
+  "task:queue-ended": {
+    agentId: string
+    channel: string
+    chatId: string
+    /** When the queue handed its messages over (ms). */
+    flushedAt: number
+    at: string
+  }
+
   /** A task is about to be dispatched to the agent runtime.
    *
    *  taskId is the ULID for the per-execution trace
@@ -382,6 +394,8 @@ function lifecycleEnvelope<E extends EventName>(event: E, payload: AgentXEvents[
       return { ...base, kind: "message", ref: p.msgId, summary: `${p.channel} ${p.chatId} dropped at ${p.decidingStage}: ${p.reason}` }
     case "task:queued":
       return { ...base, kind: "agent", summary: `queued on ${p.channel} ${p.chatId}` }
+    case "task:queue-ended":
+      return { ...base, kind: "agent", summary: `queued turn ended on ${p.channel} ${p.chatId}` }
     case "task:started":
       return { ...base, kind: "agent", summary: `started on ${p.channel} ${p.chatId}` }
     case "task:step":

@@ -15,6 +15,7 @@ import type { DelegationSignal } from "./tracker"
 //   - the turn fails / hits its time limit  → failed / timed out
 //   - the person stops it                   → stopped
 //   - a restart cut it and nothing resumed  → cut off by a restart
+//   - a queued message's turn never started → failed
 //
 // On GitLab and GitHub every change is written to one comment per request:
 // posted once, then edited. Nothing comes in for this; the daemon only
@@ -38,6 +39,12 @@ export interface StatusBoardDeps {
 /** Channels where the status is a comment the daemon keeps. Elsewhere the
  *  row is only recorded, for the person to ask about. */
 const COMMENT_CHANNELS: ReadonlySet<string> = new Set(["gitlab", "github"])
+/** The chats of those channels a comment can be posted to. A pipeline or
+ *  a push has no thread, so it gets no request. */
+const THREAD = /:(issue|merge_request|pull):\d+$/
+/** Failed writes in a row after which the minute check leaves a comment
+ *  alone. The next change of state still tries once. */
+const WRITE_TRIES = 5
 
 /** After a boot, how long a run the restart cut has to be picked up again. */
 const RESTART_GRACE_MS = 120_000
@@ -67,7 +74,8 @@ export class StatusBoard {
     }
   }
 
-  private on(channel: string): boolean {
+  private on(channel: string, chatId: string): boolean {
+    if (COMMENT_CHANNELS.has(base(channel)) && !THREAD.test(chatId)) return false
     return this.settings().channels.map(base).includes(base(channel))
   }
 
@@ -83,7 +91,7 @@ export class StatusBoard {
 
   queued(p: AgentXEvents["task:queued"]): void {
     this.guard("queued", () => {
-      if (!p.humanRoot || !this.on(p.channel)) return
+      if (!p.humanRoot || !this.on(p.channel, p.chatId)) return
       // Messages that wait together run as one turn: one request.
       if (this.store.inChat(p.agentId, p.channel, p.chatId, "queued")) return
       const id = `req-q-${randomUUID()}`
@@ -102,17 +110,30 @@ export class StatusBoard {
         if (!FINAL_STATES.includes(earlier.state)) this.change(earlier.id, { state: earlier.pending > 0 ? "waiting" : "working", turnLive: true })
         return
       }
-      if (!p.humanRoot || !this.on(p.channel)) return
+      if (!this.on(p.channel, p.chatId)) return
+      // Looked up before the humanRoot test: messages that waited together
+      // run as one turn with the last one's context, which may be an
+      // agent's comment.
       const waiting = this.store.inChat(p.agentId, p.channel, p.chatId, "queued")
       if (waiting) {
         this.store.ref(waiting.id, "run", p.taskId!)
         this.change(waiting.id, { state: "working", turnLive: true })
         return
       }
+      if (!p.humanRoot) return
       const id = `req-${p.taskId}`
       this.store.add({ id, channel: p.channel, chatId: p.chatId, agentId: p.agentId, senderId: p.sender?.id ?? p.sender?.username ?? null, state: "working", now: this.now() })
       this.store.ref(id, "run", p.taskId!)
       this.push(id)
+    })
+  }
+
+  /** The turn a queued message was handed to has ended. A request that
+   *  waited before the hand-over and is still queued never started. */
+  queueEnded(p: AgentXEvents["task:queue-ended"]): void {
+    this.guard("queue end", () => {
+      const row = this.store.inChat(p.agentId, p.channel, p.chatId, "queued")
+      if (row && row.createdAt <= p.flushedAt) this.change(row.id, { state: "failed" })
     })
   }
 
@@ -199,7 +220,7 @@ export class StatusBoard {
       this.orphans.clear()
     })
     this.guard("catch up", () => {
-      for (const r of this.store.changedSince(now - DAY)) if (r.shown !== statusText(r)) this.push(r.id)
+      for (const r of this.store.changedSince(now - DAY)) if (r.shown !== statusText(r) && r.writeFails < WRITE_TRIES) this.push(r.id)
     })
     this.guard("retention", () => { this.store.prune(now - this.settings().retentionDays * DAY) })
   }
@@ -212,7 +233,7 @@ export class StatusBoard {
   private push(id: string): void {
     const next = (this.writes.get(id) ?? Promise.resolve())
       .then(() => this.write(id))
-      .catch((e: any) => this.deps.log(`[status] comment for ${id} failed, will try again: ${e?.message ?? e}`))
+      .catch((e: any) => this.deps.log(`[status] comment for ${id} failed: ${e?.message ?? e}`))
       .finally(() => { if (this.writes.get(id) === next) this.writes.delete(id) })
     this.writes.set(id, next)
   }
@@ -222,11 +243,16 @@ export class StatusBoard {
     if (!row || !COMMENT_CHANNELS.has(base(row.channel))) return
     const text = statusText(row)
     if (text === row.shown) return
-    if (!row.commentRef) {
-      const ref = await this.deps.post(row, text)
-      if (ref) this.store.posted(id, ref, text)
-    } else if (await this.deps.edit(row, row.commentRef, text)) {
-      this.store.posted(id, row.commentRef, text)
+    let ref = ""
+    try {
+      if (!row.commentRef) ref = await this.deps.post(row, text)
+      else if (await this.deps.edit(row, row.commentRef, text)) ref = row.commentRef
+    } catch (e: any) {
+      this.deps.log(`[status] comment for ${id} failed: ${e?.message ?? e}`)
+    }
+    if (ref) { this.store.posted(id, ref, text); return }
+    if (this.store.writeFailed(id) === WRITE_TRIES) {
+      this.deps.log(`[status] comment for ${id} on ${row.channel} ${row.chatId} could not be written ${WRITE_TRIES} times; not retried until its state changes`)
     }
   }
 }
@@ -243,13 +269,16 @@ export function attachStatus(db: Database.Database, settings: () => StatusSettin
   const queued = board.queued.bind(board)
   const started = board.taskStarted.bind(board)
   const completed = board.taskCompleted.bind(board)
+  const queueEnded = board.queueEnded.bind(board)
   bus.on("task:queued", queued)
+  bus.on("task:queue-ended", queueEnded)
   bus.on("task:started", started)
   bus.on("task:completed", completed)
   return {
     board,
     detach: () => {
       bus.off("task:queued", queued)
+      bus.off("task:queue-ended", queueEnded)
       bus.off("task:started", started)
       bus.off("task:completed", completed)
     },

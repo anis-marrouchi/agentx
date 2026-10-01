@@ -1493,6 +1493,10 @@ export class AgentRegistry {
           // sees the reply. (Real symptom: operator hits Update on a
           // running task, the follow-up runs and produces a reply, but
           // nothing arrives in Telegram.)
+          const flushedAt = Date.now()
+          const ended = () => getEventBus().emit("task:queue-ended", {
+            agentId: task.agentId, channel: qChannel, chatId: qChatId, flushedAt, at: new Date().toISOString(),
+          })
           for (const qm of queued) {
             const ctx = (qm.originalContext as AgentTask["context"]) || {
               channel: qm.channel,
@@ -1508,13 +1512,20 @@ export class AgentRegistry {
               context: ctx,
               queuedAt: qm.queuedAt ?? qm.timestamp,
             })
-              .then((resp) => this.postQueuedResponseToChannel(task.agentId, ctx, resp))
+              .then((resp) => {
+                // Queued again behind another turn: it still waits.
+                if (!isQueued(resp.error)) ended()
+                return this.postQueuedResponseToChannel(task.agentId, ctx, resp)
+              }, (e) => { ended(); throw e })
               .catch((e) => {
                 this.log(`[${task.agentId}] queued message failed: ${e.message}`)
               })
           }
         })
         .catch((e) => {
+          getEventBus().emit("task:queue-ended", {
+            agentId: task.agentId, channel: qChannel, chatId: qChatId, flushedAt: Date.now(), at: new Date().toISOString(),
+          })
           this.log(`[${task.agentId}] queue flush failed: ${e.message}`)
         })
     }

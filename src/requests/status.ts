@@ -36,6 +36,8 @@ export interface StatusRow {
   commentRef: string | null
   /** The text that comment shows now. */
   shown: string | null
+  /** Writes of the comment that failed in a row. */
+  writeFails: number
   createdAt: number
   updatedAt: number
 }
@@ -47,6 +49,7 @@ function toRow(r: any): StatusRow {
     id: r.id, channel: r.channel, chatId: r.chat_id, agentId: r.agent_id, senderId: r.sender_id ?? null,
     state: r.state, waitingOn: r.waiting_on ?? null, since: r.since, pending: r.pending,
     turnLive: !!r.turn_live, commentRef: r.comment_ref ?? null, shown: r.shown ?? null,
+    writeFails: r.write_fails ?? 0,
     createdAt: r.created_at, updatedAt: r.updated_at,
   }
 }
@@ -69,6 +72,7 @@ export class StatusStore {
         turn_live INTEGER NOT NULL DEFAULT 0,
         comment_ref TEXT,
         shown TEXT,
+        write_fails INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -139,7 +143,13 @@ export class StatusStore {
   }
 
   posted(id: string, commentRef: string, shown: string): void {
-    this.db.prepare("UPDATE request_status SET comment_ref = ?, shown = ? WHERE id = ?").run(commentRef, shown, id)
+    this.db.prepare("UPDATE request_status SET comment_ref = ?, shown = ?, write_fails = 0 WHERE id = ?").run(commentRef, shown, id)
+  }
+
+  /** The comment could not be written. Returns the failures in a row. */
+  writeFailed(id: string): number {
+    this.db.prepare("UPDATE request_status SET write_fails = write_fails + 1 WHERE id = ?").run(id)
+    return this.get(id)?.writeFails ?? 0
   }
 
   /** Requests whose work has not ended. */

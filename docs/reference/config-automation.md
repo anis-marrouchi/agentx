@@ -239,12 +239,16 @@ When it is on for a channel, AgentX posts one comment for each request and edits
 | Waiting on *agent* | The agent handed the work to another agent and waits for its answer. |
 | Waiting on an answer from the owner | The agent raised a decision card and waits for it. The comment does not show the question. |
 | Done | The turn ended and nothing it handed out is still open. |
-| Failed | The turn, or work it handed out, ended with an error. |
+| Failed | The turn, or work it handed out, ended with an error. Also a queued message whose turn could not start. |
 | Timed out | The turn, or work it handed out, hit its time limit, or a decision card expired without an answer. |
 | Stopped | Someone stopped the run. |
 | Cut off by a restart | A restart stopped the run and it was not picked up again. Written after the daemon is back. |
 
 The comment names the agent that was asked, the state, the time (UTC) and, while waiting, the agent the work waits on. It never shows an error text, a file path, a machine name or anything about other requests.
+
+Every event that starts a turn in an issue, a merge request or a pull request gets a status comment: a comment from a person, and also an assignment or a newly opened issue or pull request. An event with no thread to comment on, such as a pipeline or a push, gets none.
+
+When the comment cannot be written (the token is refused, the issue was deleted), AgentX tries again once a minute and stops after five failed tries. It tries once more each time the state changes.
 
 While it is on for GitLab, an agent that is assigned an issue or a merge request is no longer asked to write its own acknowledgement comment: the status comment is the acknowledgement.
 

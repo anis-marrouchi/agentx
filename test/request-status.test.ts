@@ -26,15 +26,19 @@ let logs: string[]
 /** What reached the thread: every post and every edit, in order. */
 let wire: Array<{ op: "post" | "edit"; chatId: string; ref: string; text: string }>
 let failWrites: boolean
+/** Every call to post or edit, failed ones included. */
+let attempts: number
 
 const deps = () => ({
   post: async (row: { chatId: string }, text: string) => {
+    attempts++
     if (failWrites) return ""
     const ref = String(100 + wire.filter((w) => w.op === "post").length)
     wire.push({ op: "post", chatId: row.chatId, ref, text })
     return ref
   },
   edit: async (row: { chatId: string }, ref: string, text: string) => {
+    attempts++
     if (failWrites) return false
     wire.push({ op: "edit", chatId: row.chatId, ref, text })
     return true
@@ -54,6 +58,7 @@ beforeEach(() => {
   logs = []
   wire = []
   failWrites = false
+  attempts = 0
   board = boot()
 })
 
@@ -180,6 +185,52 @@ describe("one comment per request, edited", () => {
     expect(wire).toHaveLength(1)
     expect(last().op).toBe("post")
   })
+
+  it("stops trying a thread that refuses the comment, instead of every minute for a day", async () => {
+    failWrites = true
+    start("t1")
+    await board.idle()
+    for (let i = 0; i < 24 * 60; i++) { clock += MIN; board.sweep(); await board.idle() }
+    expect(attempts).toBe(5)
+    expect(logs.filter((l) => l.includes("could not be written 5 times"))).toHaveLength(1)
+  })
+
+  it("tries once more when the state changes, and counts from zero after a write that worked", async () => {
+    failWrites = true
+    start("t1")
+    await board.idle()
+    for (let i = 0; i < 10; i++) { clock += MIN; board.sweep(); await board.idle() }
+    expect(attempts).toBe(5)
+    failWrites = false
+    end("t1")
+    await board.idle()
+    expect(attempts).toBe(6)
+    expect(last().text).toContain("**Done** at")
+    expect(store.get("req-t1")?.writeFails).toBe(0)
+  })
+})
+
+describe("events with no thread to comment on", () => {
+  it.each([
+    ["gitlab", "acme/shop:pipeline:9912"],
+    ["github", "acme/shop:push:refs/heads/main"],
+  ])("opens no request for %s %s", async (channel, chatId) => {
+    start("t1", { channel, chatId })
+    board.queued({ agentId: "coder", channel, chatId, at: "", humanRoot: true })
+    await board.idle()
+    expect(store.open()).toEqual([])
+    expect(attempts).toBe(0)
+  })
+
+  it.each([
+    ["gitlab", "acme/shop:merge_request:12"],
+    ["github", "acme/shop:pull:391"],
+    ["github", "acme/shop:issue:3"],
+  ])("still opens one for %s %s", async (channel, chatId) => {
+    start("t1", { channel, chatId })
+    await board.idle()
+    expect(last().chatId).toBe(chatId)
+  })
 })
 
 describe("queued", () => {
@@ -204,6 +255,52 @@ describe("queued", () => {
     queue(); queue()
     await board.idle()
     expect(wire).toHaveLength(1)
+  })
+
+  it("leaves queued when the turn runs with an agent's comment as its last message", async () => {
+    queue()
+    await board.idle()
+    start("t9", { humanRoot: false })
+    await board.idle()
+    expect(state(store.byRef("run", "t9")!.id)).toBe("working")
+    expect(last().text).toContain("**Working** since")
+    // An agent's own turn with nothing queued behind it is still no request.
+    start("t10", { humanRoot: false, chatId: "acme/shop:issue:8" })
+    expect(store.byRef("run", "t10")).toBeNull()
+  })
+
+  const queueEnded = (flushedAt: number) => board.queueEnded({ agentId: "coder", channel: "gitlab", chatId: CHAT, flushedAt, at: "" })
+
+  it("fails when the turn it was handed to ended without starting", async () => {
+    queue()
+    await board.idle()
+    const id = store.open()[0].id
+    clock += 5 * MIN
+    queueEnded(clock)
+    await board.idle()
+    expect(state(id)).toBe("failed")
+    expect(last().text).toContain("**Failed** at 2026-10-01 14:05 UTC")
+    expect(store.open()).toEqual([])
+  })
+
+  it("stays queued when the turn that ended was handed over before this message waited", async () => {
+    const flushedAt = clock
+    start("t1")
+    clock += MIN
+    queue()
+    end("t1")
+    queueEnded(flushedAt)
+    await board.idle()
+    expect(store.open().map((r) => r.state)).toEqual(["queued"])
+  })
+
+  it("leaves a request alone when its turn did start", async () => {
+    queue()
+    const flushedAt = clock
+    start("t9")
+    queueEnded(flushedAt)
+    await board.idle()
+    expect(state(store.byRef("run", "t9")!.id)).toBe("working")
   })
 })
 
@@ -420,6 +517,17 @@ describe("on the daemon's event bus", () => {
     attached.detach()
     bus.emit("task:started", { agentId: "coder", channel: "github", chatId: "acme/shop:issue:3", taskId: "b2", messagePreview: "x", at, humanRoot: true })
     expect(attached.board.store.byRef("run", "b2")).toBeNull()
+  })
+
+  it("follows the end of a queued message's turn", async () => {
+    const attached = attachStatus(db, () => settings, deps())
+    const bus = getEventBus()
+    bus.emit("task:queued", { agentId: "coder", channel: "github", chatId: "acme/shop:issue:3", at: "", humanRoot: true })
+    bus.emit("task:queue-ended", { agentId: "coder", channel: "github", chatId: "acme/shop:issue:3", flushedAt: clock, at: "" })
+    await attached.board.idle()
+    attached.detach()
+    expect(attached.board.store.open()).toEqual([])
+    expect(last().text).toContain("**Failed** at")
   })
 })
 
