@@ -274,7 +274,9 @@ describe("ScreenBuffer — recent frames, in memory, opt-in", () => {
     await buf.recent(1)
     const first = readdirSync(tmp)
     expect(first).toHaveLength(1)
-    now += DUMP_TTL_MS + 1
+    // Age is measured from the folder's real mtime, which is later than `now`
+    // above, so step well past the limit rather than 1 ms over it.
+    now += DUMP_TTL_MS + 60_000
     await buf.recent(1)
     const second = readdirSync(tmp)
     expect(second).toHaveLength(1)
