@@ -90,6 +90,7 @@ import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type Servi
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
+import { startManualWorkflowRun } from "@/daemon/workflow-manual-run"
 import { setTopbarFeatures } from "@/daemon/topbar"
 import { resolveAgentCredential } from "@/integrations/resolve"
 import { HookRegistry, loadHooks } from "@/hooks"
@@ -6602,67 +6603,22 @@ export class AgentXDaemon {
   }
 
 
-  /** Manual run endpoint used by `agentx workflow run <id>`. Only workflows
-   *  whose trigger node is `trigger.manual` are runnable here — any other
-   *  source expects a live event and shouldn't race with a manual kick. */
+  /** Manual run endpoint used by `agentx workflow run <id>` — see
+   *  workflow-manual-run.ts. */
   private async handleWorkflowManualRun(req: IncomingMessage, res: ServerResponse, workflowId: string): Promise<void> {
     if (!this.workflowDispatcher || !this.workflowStore) {
       this.json(res, 503, { error: "workflow engine not enabled on this node" })
       return
     }
-    const wf = this.workflowStore.get(workflowId)
-    if (!wf) { this.json(res, 404, { error: `unknown workflow "${workflowId}"` }); return }
-    const triggerNode = wf.nodes.find((n) => n.type.startsWith("trigger."))
-    if (!triggerNode) { this.json(res, 400, { error: `workflow "${workflowId}" has no trigger node` }); return }
-
     let body: any
     try { body = await readJsonBody(req) } catch { body = {} }
-    const force = !!body?.force
-    const payload = body?.payload || {}
-
-    // By default we only allow running workflows whose trigger is
-    // `trigger.manual` — otherwise a manual kick would race against live
-    // channel events. `force: true` overrides this for testing: we
-    // synthesize a trigger event with the workflow's declared source so
-    // the dispatcher's filter still matches, and seed the provided payload
-    // into the trigger node's output bundle. Useful when the live channel
-    // is disconnected (WhatsApp not paired, Telegram 409 conflict) and
-    // you just want to exercise the graph.
-    if (triggerNode.type !== "trigger.manual" && !force) {
-      this.json(res, 409, {
-        error: `workflow "${workflowId}" trigger is "${triggerNode.type}"`,
-        hint: `pass { "force": true } to fire anyway with a synthesized event (for testing)`,
-      })
-      return
-    }
-
-    const cfg = (triggerNode.config ?? {}) as {
-      source?: string
-      filter?: { project?: string; repo?: string; chat?: string; labels?: string[] }
-    }
-    const source = force ? String(cfg.source ?? "manual") : "manual"
-    const entityId = String(payload.entityId || payload.chatId || `manual-${Date.now().toString(36)}`)
-    const entityRef = {
-      backend: force ? (cfg.source ? "channel" : "manual") : "manual",
-      id: entityId,
-    }
-    const eventId = `manual:${workflowId}:${entityId}:${Date.now()}`
     try {
-      const updated = await this.workflowDispatcher.dispatch({
-        trigger: force
-          ? {
-              source,
-              project: cfg.filter?.project,
-              repo: cfg.filter?.repo,
-              chat: cfg.filter?.chat,
-              labels: cfg.filter?.labels,
-            }
-          : { source: "manual" },
-        entityRef,
-        event: { id: eventId, payload },
-      })
-      const runId = updated.runs[0]?.id
-      this.json(res, runId ? 200 : 202, { ok: true, runId, entityRef, source, force })
+      const r = await startManualWorkflowRun(
+        { get: (id) => this.workflowStore!.get(id), dispatchWorkflow: (a) => this.workflowDispatcher!.dispatchWorkflow(a) },
+        workflowId,
+        body,
+      )
+      this.json(res, r.status, r.body)
     } catch (e: any) {
       this.log(`[workflows] manual run "${workflowId}" failed: ${e.message}`)
       this.json(res, 500, { error: e.message })

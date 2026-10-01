@@ -40,6 +40,8 @@ agentx workflow run demo-report --watch
 agentx workflow runs demo-report
 ```
 
+`agentx workflow run <id>` starts only the workflow you name. It stops with an error, and starts nothing, when the workflow is disabled or quarantined, or when the `entityId` or `chatId` in the input already has a run of another workflow that has not finished.
+
 The daemon must have `workflows.enabled: true`. These commands use `http://127.0.0.1:18800` by default; pass `--daemon <url>` when working against another endpoint where that option is available.
 
 ## Inputs and error handling

@@ -432,7 +432,7 @@ workflow
       if (!res.ok) {
         const text = await res.text()
         console.log(chalk.red(`  run failed (${res.status}): ${text.slice(0, 300)}`))
-        if (res.status === 409) console.log(chalk.dim(`  hint: pass --force to fire non-manual workflows for testing`))
+        if (res.status === 409 && text.includes(`"hint"`)) console.log(chalk.dim(`  hint: pass --force to fire non-manual workflows for testing`))
         process.exit(1)
       }
       const body = await res.json() as { runId?: string; source?: string; force?: boolean }
