@@ -12,6 +12,8 @@ import { runApprovalsSweep, digestDue, digestText, type ApprovalSettings } from 
 import { handleApprovalsApi, OPERATOR_ONLY } from "../src/approvals/daemon-api"
 import { runApprovalTool } from "../src/approvals/tool"
 import { handleApprovalsPanelApi } from "../src/daemon/approvals-panel"
+import { renderApprovalsPage } from "../src/daemon/ui/pages/approvals"
+import { readInboxState } from "../src/approvals/state"
 import { MemoryStore } from "../src/agents/memory-store"
 import { saveProposal, readProposal, type PromotionProposal } from "../src/wiki/proposals"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -408,6 +410,35 @@ describe("the dashboard (operator) API", () => {
 
     const again = await fetch(`${base}/api/admin/approvals/decide`, { method: "POST", body, headers: { "X-Requested-With": "agentx-board" } })
     expect(again.status).toBe(409)
+  })
+
+  it("puts a card back in line for the Mac popup, when the popup is on", async () => {
+    const c = createCard(root, card(), { now: NOW })
+    if (!c.ok) throw new Error(c.error)
+    const key = `card:${c.card.id}`
+    const post = (headers: Record<string, string>) => fetch(`${base}/api/admin/approvals/popup`, {
+      method: "POST", body: JSON.stringify({ key }), headers: { "Content-Type": "application/json", ...headers },
+    })
+    expect((await post({})).status).toBe(400)
+    // Off by default: nothing would show, so say so instead of queueing.
+    const off = await post({ "X-Requested-With": "agentx-board" })
+    expect(off.status).toBe(409)
+    expect(readInboxState(root).wanted ?? []).toEqual([])
+
+    const cfg = JSON.parse(readFileSync(configPath, "utf-8"))
+    writeFileSync(configPath, JSON.stringify({ ...cfg, approvals: { popup: { enabled: true } } }))
+    const ok = await post({ "X-Requested-With": "agentx-board" })
+    expect(ok.status).toBe(200)
+    expect(readInboxState(root).wanted).toEqual([key])
+    expect(readCard(root, c.card.id)?.status).toBe("pending")
+  })
+
+  it("the page offers Show on Mac for cards, and its script parses", () => {
+    const html = renderApprovalsPage()
+    const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((x) => x.includes("/api/admin/approvals")) ?? ""
+    expect(script).toContain("i.kind === 'card' && state.popup")
+    expect(script).toContain("/api/admin/approvals/popup")
+    expect(() => new Function(script)).not.toThrow()
   })
 
   it("saves settings through the config schema", async () => {

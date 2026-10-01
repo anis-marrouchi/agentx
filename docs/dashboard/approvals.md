@@ -37,6 +37,7 @@ Only you can answer. Agents can raise cards and read the list, but nothing they 
 1. **Browser:** open the dashboard and click the **Approvals** tab (or go to `/approvals`).
 2. **Browser:** read the card. Click **Details** to see the excerpt, the source link and exactly what yes and no will do.
 3. **Browser:** click **Yes**, **No** or **Later**. **Later** hides the item for a day; a card still expires on time.
+4. **Browser:** when the Mac popup is on, a card also has **Show on Mac**. Click it to bring the card back on the Mac after you closed it or its wait ran out. It shows within a minute.
 
 ![The Approvals tab with two decision cards and a schedule request](/screenshots/approvals/inbox.png)
 
@@ -79,7 +80,7 @@ The card shows who is asking, the background (**context**), the question, the re
 
 Nothing is sent until you click **Send**. **Not now** (or **Esc**), or leaving the card alone, keeps the card waiting in Approvals, where you can still answer it later. A card without a message shows **Yes** (or **Choose**, when it offers answers), **No** and **Not now**.
 
-The card is a plain web page shown by macOS itself. There is no app to install. The page can't load anything from the network, so it uses the Geist typeface when your Mac has it installed and the system typeface otherwise. Drag the card by its top edge to move it. If the window can't open, you get the plain macOS dialogs instead: pick an answer and click **Next**, then **Send**. Set `popup.style` to `"dialog"` to always use the dialogs.
+The card is a plain web page shown by macOS itself. There is no app to install. The page can't load anything from the network, so it uses the Geist typeface when your Mac has it installed and the system typeface otherwise. Drag the card by its top edge to move it. The card stays on screen when you click another app, until you answer it, click **Not now**, or its wait (`popup.timeoutSeconds`) runs out. If the window can't open, you get the plain macOS dialogs instead: pick an answer and click **Next**, then **Send**. Set `popup.style` to `"dialog"` to always use the dialogs.
 
 The popup behaves like your other notifications:
 
@@ -274,7 +275,8 @@ For check-ins (Mac):
 - **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
-- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>` to show it again. The daemon log has a line starting `[approvals] popup`.
+- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>`, or **Show on Mac** on the Approvals tab, to show it again. The daemon log has a line starting `[approvals] popup`.
+- **A card went away and you don't know why:** the daemon log says how each popup ended. `left waiting: not now` means **Not now** or **Esc**, `timed out` means the wait ran out, and `closed` means the window was closed. The card is still in Approvals in all three cases.
 - **The card window never opens, but the plain dialogs do:** the web window couldn't start, so AgentX fell back to the dialogs. Run `agentx approvals popup --sample` in a terminal to see the error. To keep the dialogs, set `--popup-style dialog`.
 - **Check-ins raise no cards:** check that `agentx approvals settings` shows **Check-ins on**, that `remindctl show today` lists your reminders, and that `checkin.agent` names an agent from `agentx agent list`. The daemon log lines starting `[checkin]` say what happened to each reminder: "no agent owns it", "couldn't compose a card", or the pass totals.
 - **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.

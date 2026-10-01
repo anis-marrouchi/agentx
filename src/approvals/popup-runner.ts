@@ -2,7 +2,7 @@ import { readFocus, focusLabel, type FocusState } from "@/notify/focus"
 import { listCards, readCard, type DecisionCard } from "./cards"
 import { decide, type InboxContext } from "./inbox"
 import { showPopup, type PopupAnswer, type PopupSettings } from "./popup"
-import { readInboxState, recordPopped } from "./state"
+import { readInboxState, recordPopped, recordWanted } from "./state"
 
 // --- When the Mac popup shows a card ---
 //
@@ -18,7 +18,13 @@ import { readInboxState, recordPopped } from "./state"
 //   - cards older than a day don't pop, so switching the popup on doesn't
 //     replay a backlog one dialog at a time;
 //   - a check-in (checkin.ts) puts every card waiting at that moment back
-//     in line, old or not, and each shows once more.
+//     in line, old or not, and each shows once more;
+//   - a card the operator asks for (Show on Mac on the Approvals page)
+//     goes first and shows again, whatever its age. `agentx approvals
+//     popup <key>` shows one from the terminal without waiting for this.
+//
+// Every popup ends with one log line saying how: the answer, "not now",
+// "timed out" or "closed".
 
 export interface PopupRunnerSettings extends PopupSettings {
   enabled: boolean
@@ -46,14 +52,16 @@ let showing = false
 /** The next card to show, or null. */
 export function nextCardToPop(ctx: InboxContext): DecisionCard | null {
   const now = ctx.now ?? Date.now()
-  const { popped = {}, snoozed, passAt } = readInboxState(ctx.root)
+  const { popped = {}, snoozed, passAt, wanted = [] } = readInboxState(ctx.root)
   const pass = passAt ? Date.parse(passAt) : NaN
-  for (const card of listCards(ctx.root, "pending")) {
+  const cards = listCards(ctx.root, "pending").filter((c) => Date.parse(c.expires) > now)
+  const asked = cards.find((c) => wanted.includes(`card:${c.id}`))
+  if (asked) return asked
+  for (const card of cards) {
     const key = `card:${card.id}`
     if (popped[key]) continue
     const until = snoozed[key]
     if (until && Date.parse(until) > now) continue
-    if (Date.parse(card.expires) <= now) continue
     const created = Date.parse(card.created_at)
     if (now - created > POPUP_MAX_AGE_MS && !(created <= pass)) continue
     return card
@@ -79,7 +87,7 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
     log(`[approvals] popup: showing ${key} from ${card.raised_by}`)
     const answer = await (deps.show ?? showPopup)(card, settings, { from: deps.agentName?.(card.raised_by) })
     if (answer.action === "dismiss") {
-      log(`[approvals] popup: ${key} left waiting (${focusLabel(focus)} when shown)`)
+      log(`[approvals] popup: ${key} left waiting: ${answer.why ?? "no answer"} (${focusLabel(focus)} when shown)`)
       return "shown"
     }
     // Answered somewhere else while the dialog was up: the first answer stands.
@@ -99,4 +107,14 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
   } finally {
     showing = false
   }
+}
+
+/** Put a waiting card back in line for the popup. The daemon shows it on its next minute. */
+export function popAgain(ctx: InboxContext, key: string, enabled: boolean): { ok: true; message: string } | { ok: false; error: string } {
+  if (!enabled) return { ok: false, error: "the Mac popup is off; turn it on with `agentx approvals settings --popup on`" }
+  const card = key.startsWith("card:") ? readCard(ctx.root, key.slice(5)) : null
+  if (!card) return { ok: false, error: `no card "${key}"; the popup shows decision cards only` }
+  if (card.status !== "pending") return { ok: false, error: `${key} is already ${card.status}` }
+  recordWanted(ctx.root, key)
+  return { ok: true, message: `${key} will show on the Mac within a minute` }
 }
