@@ -354,6 +354,49 @@ describe("waiting on the owner", () => {
     expect(store.get("req-t1")?.state).toBe("waiting_owner")
   })
 
+  const card = (over: Record<string, unknown> = {}) => ({
+    id: "card-1", raised_by: "coder", ask: "Deploy to production today?", if_silent: "discard",
+    reply: { channel: "telegram", chatId: "chat-1" }, status: "pending", ...over,
+  })
+
+  it("starts when the agent raises a decision card from the request's turn", () => {
+    start("t1")
+    tracker.cardRaised(card())
+    end("t1")
+    expect(store.get("req-t1")).toMatchObject({ state: "waiting_owner", question: "Deploy to production today?" })
+    expect(store.byLink("card", "card-1")?.id).toBe("req-t1")
+  })
+
+  it("leaves a card raised outside a recorded turn alone", () => {
+    tracker.cardRaised(card())
+    tracker.cardRaised(card({ id: "card-2", reply: undefined }))
+    expect(store.byLink("card", "card-1")).toBeNull()
+  })
+
+  it("goes on once the owner answers the card", () => {
+    start("t1"); tracker.cardRaised(card()); end("t1")
+    tracker.cardResolved(card({ status: "decided", verdict: "yes" }))
+    expect(store.get("req-t1")).toMatchObject({ state: "in_progress", question: null })
+  })
+
+  it("needs attention when the card expires unanswered; it does not close", async () => {
+    start("t1"); tracker.cardRaised(card()); end("t1")
+    tracker.cardResolved(card({ status: "expired", outcome: "discard" }))
+    expect(store.get("req-t1")).toMatchObject({
+      state: "needs_attention",
+      attentionReason: 'Your answer did not come before the card expired (Deploy to production today?); "discard" was applied',
+    })
+    const told: string[] = []
+    await runRequestsSweep({ store, settings, log: () => {}, now: clock, notify: async (_t, m) => { told.push(m) } })
+    expect(told).toHaveLength(1)
+  })
+
+  it("stays in progress when the card's default on expiry is approve", () => {
+    start("t1"); tracker.cardRaised(card({ if_silent: "approve" })); end("t1")
+    tracker.cardResolved(card({ status: "expired", outcome: "approve", if_silent: "approve" }))
+    expect(store.get("req-t1")?.state).toBe("in_progress")
+  })
+
   it("goes back to in progress once work continues, and the question is cleared", () => {
     start("t1")
     store.waitOnOwner("req-t1", "Which server?", clock)

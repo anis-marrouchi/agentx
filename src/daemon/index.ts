@@ -56,6 +56,7 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import type { DecisionCard } from "@/approvals/cards"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { runRequestsSweep } from "@/requests/sweep"
 import { handleRequestsApi } from "@/requests/daemon-api"
@@ -1700,6 +1701,7 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
           hasAgent: (id) => !!this.registry.getAgent(id),
+          onCardResult: (card) => this.requests?.tracker.cardResolved(card),
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
           tellAgent: async (agentId, text, card) => {
@@ -3241,6 +3243,8 @@ export class AgentXDaemon {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
         })
+        // A card raised from the turn of an open request makes it wait on the owner.
+        if (reply.status === 201) this.requests?.tracker.cardRaised((reply.body as { card: DecisionCard }).card)
         this.json(res, reply.status, reply.body)
         return
       }

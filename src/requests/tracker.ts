@@ -175,6 +175,36 @@ export class RequestTracker {
     })
   }
 
+  /** The agent raised a decision card from the turn of a request: the
+   *  request now waits on the owner, with the card's question. The card's
+   *  own reminders (inbox, Mac card, check-ins, digest) do the reminding. */
+  cardRaised(card: { id: string; raised_by: string; ask: string; reply?: { channel: string; chatId: string } }): void {
+    if (!this.settings().enabled || !card.reply) return
+    this.guard("card", () => {
+      const requestId = this.live.get(chatKey(card.raised_by, card.reply!.channel, card.reply!.chatId))?.requestId
+      if (!requestId) return
+      const now = this.now()
+      this.store.link(requestId, "card", card.id, now)
+      this.store.waitOnOwner(requestId, card.ask, now)
+    })
+  }
+
+  /** A linked card was answered or expired. An answer, or an expiry whose
+   *  default is "approve", lets the work go on. Any other expiry means the
+   *  answer never came: the request needs attention. It does not close. */
+  cardResolved(card: { id: string; status: string; ask: string; if_silent?: string; outcome?: string }): void {
+    this.guard("card result", () => {
+      const req = this.store.byLink("card", card.id)
+      if (!req || req.state !== "waiting_owner") return
+      const now = this.now()
+      const applied = card.outcome ?? card.if_silent
+      if (card.status === "decided" || applied === "approve") this.store.progress(req.id, now)
+      else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
+        this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)
+      }
+    })
+  }
+
   /** What the boot-time resume step did with a run the restart cut off. */
   resumeOutcome(o: { taskId: string; decision: string; reason: string }): void {
     this.guard("restart", () => {
