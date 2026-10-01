@@ -220,6 +220,7 @@ async function act(li, action){
     var d = await r.json();
     if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
     say(d.message, 'ok');
+    document.dispatchEvent(new Event('apv:decided'));
     li.classList.add('is-done');
     var next = li.nextElementSibling;
     state.items = state.items.filter(function(i){ return i.key !== key; });

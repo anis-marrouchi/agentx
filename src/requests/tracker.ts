@@ -19,8 +19,8 @@ export interface RequestSettings {
   enabled: boolean
   /** Channels to capture on. Empty: every channel a person writes on. */
   channels: string[]
-  /** Who counts as the owner on channels other people can reach: sender
-   *  ids or usernames, optionally "channel:id". */
+  /** Who counts as the owner on channels other people can reach, as
+   *  "channel:id": the login on a forge, the sender id elsewhere. */
   from: string[]
   staleAfterHours: number
   retentionDays: number
@@ -28,6 +28,20 @@ export interface RequestSettings {
 
 /** Channel of the turn that hands a request back to its agent. */
 export const PICKUP_CHANNEL = "requests"
+
+/** Marks the context of the pick-up turn the daemon starts. A symbol key
+ *  cannot arrive in a JSON body, so a caller of /task cannot set it. */
+const PICKUP_MARK = Symbol("requests.pickup")
+
+/** The context of the turn that hands request `requestId` back. */
+export function pickupContext(requestId: string): { channel: string; chatId: string; sender: string } {
+  return Object.assign({ channel: PICKUP_CHANNEL, chatId: requestId, sender: "operator" }, { [PICKUP_MARK]: true })
+}
+
+/** Did the daemon itself start this turn as a pick-up? */
+export function isPickup(ctx: object | undefined | null): boolean {
+  return !!ctx && (ctx as Record<symbol, unknown>)[PICKUP_MARK] === true
+}
 
 /** This node's own surfaces: only its operator can reach them. */
 export const OPERATOR_CHANNELS: ReadonlySet<string> = new Set(["voice", "app", "dashboard", "webrtc"])
@@ -37,6 +51,14 @@ export const OPERATOR_CHANNELS: ReadonlySet<string> = new Set(["voice", "app", "
 const DAEMON_SENDERS: ReadonlySet<string> = new Set(["camera"])
 
 const base = (channel: string) => channel.toLowerCase().split("@")[0]
+
+/** Channels whose sender `id` is the thread, not the person. */
+const FORGES: ReadonlySet<string> = new Set(["github", "gitlab"])
+
+/** One comparable form. WhatsApp numbers compare on digits, so
+ *  "+216 20 123 456" and "21620123456@s.whatsapp.net" are the same. */
+const comparable = (ch: string, v: string) =>
+  ch === "whatsapp" ? v.replace(/@.*$/, "").replace(/\D/g, "") : v.trim().toLowerCase().replace(/^@/, "")
 
 /** Does a turn on this channel from this sender count as the owner's? */
 export function isOwnerTurn(
@@ -50,13 +72,17 @@ export function isOwnerTurn(
   // The worst it gets is a wrong record and a notice, never access.
   if (OPERATOR_CHANNELS.has(ch)) return !DAEMON_SENDERS.has((sender?.name ?? "").toLowerCase())
   // Display names are not matched: anyone can pick one. Entries are
-  // "channel:id": an id means nothing outside its own channel.
-  const ids = [sender?.id, sender?.username].filter((v): v is string => !!v).map((v) => v.toLowerCase().replace(/^@/, ""))
-  if (!ids.length) return false
+  // "channel:id": an id means nothing outside its own channel. One field
+  // names the person: the login on a forge, the sender id elsewhere. A
+  // username is never matched beside an id: it is the person's to choose,
+  // so it could be set to someone else's id.
+  const raw = FORGES.has(ch) ? sender?.username : sender?.id
+  const who = raw ? comparable(ch, raw) : ""
+  if (!who) return false
   return settings.from.some((entry) => {
     const e = entry.trim().toLowerCase()
     const i = e.indexOf(":")
-    return i > 0 && e.slice(0, i) === ch && ids.includes(e.slice(i + 1).replace(/^@/, ""))
+    return i > 0 && e.slice(0, i) === ch && comparable(ch, e.slice(i + 1)) === who
   })
 }
 
@@ -127,10 +153,13 @@ export class RequestTracker {
         return
       }
       // The turn the daemon starts when the owner says "pick it up again".
-      const pickup = p.channel === PICKUP_CHANNEL ? this.store.get(p.chatId) : null
+      // Only the daemon's own: any caller of /task can name the channel.
+      const pickup = p.pickup && p.channel === PICKUP_CHANNEL ? this.store.get(p.chatId) : null
       if (pickup && pickup.agentId === p.agentId) {
         this.store.link(pickup.id, "run", p.taskId!, now)
         this.store.touch(pickup.id, now)
+        // Live like any other turn of the request: what it hands on or asks is linked.
+        this.live.set(key, { requestId: pickup.id, runId: p.taskId! })
         return
       }
       if (!p.humanRoot || !isOwnerTurn(this.settings(), p.channel, p.sender)) return
@@ -197,12 +226,14 @@ export class RequestTracker {
 
   /** The agent raised a decision card from the turn of a request: the
    *  request now waits on the owner, with the card's question. The card's
-   *  own reminders (inbox, Mac card, check-ins, digest) do the reminding. */
-  cardRaised(card: { id: string; raised_by: string; ask: string; reply?: { channel: string; chatId: string } }): void {
-    if (!card.reply) return
+   *  own reminders (inbox, Mac card, check-ins, digest) do the reminding.
+   *  `turn` is the running turn the call proved, never the chat the card
+   *  names: anyone can write another agent's id and chat on a card. */
+  cardRaised(card: { id: string; raised_by: string; ask: string }, turn: { channel: string; chatId: string } | null): void {
+    if (!turn) return
     this.guard("card", () => {
       if (!this.settings().enabled) return
-      const requestId = this.live.get(chatKey(card.raised_by, card.reply!.channel, card.reply!.chatId))?.requestId
+      const requestId = this.live.get(chatKey(card.raised_by, turn.channel, turn.chatId))?.requestId
       if (!requestId) return
       const now = this.now()
       this.store.link(requestId, "card", card.id, now)
@@ -212,15 +243,17 @@ export class RequestTracker {
 
   /** A linked card was answered or expired. An answer, or an expiry whose
    *  default is "approve", lets the work go on. Any other expiry means the
-   *  answer never came: the request needs attention. It does not close. */
+   *  answer never came: the request needs attention, whatever an earlier
+   *  card's answer moved it to. It does not close. */
   cardResolved(card: { id: string; status: string; ask: string; if_silent?: string; outcome?: string }): void {
     this.guard("card result", () => {
       const req = this.store.byLink("card", card.id)
-      if (!req || req.state !== "waiting_owner") return
+      if (!req) return
       const now = this.now()
       const applied = card.outcome ?? card.if_silent
-      if (card.status === "decided" || applied === "approve") this.store.progress(req.id, now)
-      else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
+      if (card.status === "decided" || applied === "approve") {
+        if (req.state === "waiting_owner") this.store.progress(req.id, now)
+      } else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
         this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)
       }
     })
@@ -238,7 +271,8 @@ export class RequestTracker {
     }
   }
 
-  /** What the boot-time resume step did with a run the restart cut off. */
+  /** What the boot-time resume step did with a run the restart cut off.
+   *  "already-claimed" is left alone: the process that claimed it decides. */
   resumeOutcome(o: { taskId: string; decision: string; reason: string }): void {
     this.guard("restart", () => {
       const req = this.store.byLink("run", o.taskId)
@@ -247,7 +281,7 @@ export class RequestTracker {
       if (o.decision === "resumed") {
         if (req.state === "candidate") this.store.touch(req.id, now)
         else this.store.progress(req.id, now)
-      } else if (o.decision === "reported" || o.decision === "resume-failed") {
+      } else if (o.decision === "reported" || o.decision === "resume-failed" || o.decision === "skipped") {
         if (this.store.needsAttention(req.id, `Cut off by a restart and not picked up again (${clip(o.reason)})`, now)) {
           this.log(`[requests] ${req.id} needs attention: run ${o.taskId} cut off by a restart`)
         }

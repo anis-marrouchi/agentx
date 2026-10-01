@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.80.1](https://github.com/anis-marrouchi/agentx/compare/v0.80.0...v0.80.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **requests:** close four rough edges in the CLI and the page ([#397](https://github.com/anis-marrouchi/agentx/issues/397)) ([db179c9](https://github.com/anis-marrouchi/agentx/commit/db179c9a717dcadc927e4dad1867fdc9ba50f9d2)), closes [#395](https://github.com/anis-marrouchi/agentx/issues/395)
+* **requests:** raise a request when its work stops, and never drop a yes ([#396](https://github.com/anis-marrouchi/agentx/issues/396)) ([ec48fcd](https://github.com/anis-marrouchi/agentx/commit/ec48fcd1724790f9041bd6432c1c27a8b42dfb85)), closes [#394](https://github.com/anis-marrouchi/agentx/issues/394)
+* **requests:** take the caller from proof, not from what the caller says ([#398](https://github.com/anis-marrouchi/agentx/issues/398)) ([5e0e53f](https://github.com/anis-marrouchi/agentx/commit/5e0e53fa1278fe55c9464d5e917528196b72dcfe)), closes [#393](https://github.com/anis-marrouchi/agentx/issues/393)
+
 ## [0.80.0](https://github.com/anis-marrouchi/agentx/compare/v0.79.4...v0.80.0) (2026-10-01)
 
 

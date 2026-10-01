@@ -118,6 +118,9 @@ export interface AgentXEvents {
     /** True for the turn that talks to the person: not a delegated hop,
      *  not a callback (a2a/initiator isHumanFacingTurn). */
     humanRoot?: boolean
+    /** True for the turn the daemon starts to hand a request back to its
+     *  agent (requests/tracker pickupContext). */
+    pickup?: boolean
   }
 
   /** A single step inside an in-flight task — typically a tool call or

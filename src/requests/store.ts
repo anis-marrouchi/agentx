@@ -84,7 +84,20 @@ export function ensureRequestTables(db: Database.Database): void {
   // Added after the first version: a database that already has the table
   // gets the column here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
-  if (!cols.some((c) => c.name === "pickup_at")) db.exec("ALTER TABLE requests ADD COLUMN pickup_at INTEGER")
+  if (!cols.some((c) => c.name === "pickup_at")) {
+    try {
+      db.exec("ALTER TABLE requests ADD COLUMN pickup_at INTEGER")
+    } catch (e: any) {
+      // Daemon and dashboard starting together: the other one added it first.
+      if (!/duplicate column name/i.test(String(e?.message))) throw e
+    }
+  }
+}
+
+/** For readers: a database without the table has no requests, and reading
+ *  it must not create one. */
+export function hasRequestTables(db: Database.Database): boolean {
+  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'requests'").get()
 }
 
 function toRecord(r: any): RequestRecord {
@@ -227,11 +240,13 @@ export class RequestStore {
   }
 
   /** Requests whose agent has not been told to pick them up yet. Each is
-   *  returned once. */
+   *  returned once. One statement: a mark the dashboard (another process)
+   *  writes meanwhile is either returned here or kept for the next read. */
   takePickups(): RequestRecord[] {
-    const rows = this.db.prepare("SELECT * FROM requests WHERE pickup_at IS NOT NULL AND state = 'in_progress' ORDER BY created_at, rowid").all().map(toRecord)
-    this.db.prepare("UPDATE requests SET pickup_at = NULL WHERE pickup_at IS NOT NULL").run()
-    return rows
+    return this.db.prepare("UPDATE requests SET pickup_at = NULL WHERE pickup_at IS NOT NULL RETURNING *").all()
+      .map(toRecord)
+      .filter((r) => r.state === "in_progress")
+      .sort((a, b) => a.createdAt - b.createdAt)
   }
 
   /** Delete closed requests older than `before`. Open ones never age out. */

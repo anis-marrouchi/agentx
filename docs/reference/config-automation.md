@@ -215,14 +215,14 @@ To turn it on by hand:
 
 1. Open `agentx.json`.
 2. Add `"requests": { "enabled": true }`.
-3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your sender id or username on that channel to `from`, as `channel:id`. For example `"from": ["telegram:123456789", "github:your-login"]`.
+3. To count your messages on a channel other people can also write on (Telegram, WhatsApp, Slack, Discord, GitLab, GitHub), add your id on that channel to `from`, as `channel:id`: your login on GitLab and GitHub, your numeric id on Telegram, your number on WhatsApp. For example `"from": ["telegram:123456789", "github:your-login"]`.
 4. Save the file. The running daemon picks the change up; no restart is needed.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `requests.enabled` | boolean | `false` | Records and follows your requests. |
 | `requests.channels` | list of strings | `[]` | Channels to record on. Empty: every channel a person writes on (`telegram`, `whatsapp`, `slack`, `discord`, `gitlab`, `github`, `app`, `voice`, `dashboard`, `webrtc`). |
-| `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your sender id or username on that channel, as `channel:id`. An entry only applies to its own channel. Display names are not matched, because anyone can choose one. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
+| `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your id on that channel, as `channel:id`. That is your login on GitLab and GitHub, and the sender id everywhere else (the numeric id on Telegram, the number on WhatsApp). An entry only applies to its own channel. Usernames beside an id and display names are not matched, because the person chooses them. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
 | `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
 
