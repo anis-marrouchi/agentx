@@ -130,7 +130,8 @@ AgentX keeps the seen keys in `<workflows dir>/_poll/<workflow id>.json`, so the
 - A key is recorded before its run starts, so an item starts at most one run, even if the daemon stops mid-poll.
 - An item the filter rejects is recorded too. Loosening the filter later does not replay old items.
 - A poll with nothing new starts nothing and leaves no run record.
-- If the action fails, times out, or prints more than 32 KB, the poll is logged as `[workflows] <id> poll failed` and tried again at the next interval. It never starts a run.
+- If the action fails, times out, or prints more than 32 KB, the poll is logged as `[workflows] <id> poll failed` and tried again at the next interval. It never starts a run. A failure that repeats with the same error is logged once, until a poll succeeds.
+- The action must exit non-zero when its source fails. An action that prints nothing and exits 0 on the first poll records an empty baseline, and the next good poll starts a run for every item it lists. In a shell pipe the exit code is the last command's, so check the source first: `out=$(my-source) || exit 1; printf '%s\n' "$out" | jq -c '.[]'`.
 - Only an `active` workflow polls. The daemon re-reads the workflow files every 30 seconds and on `POST /reload`, so a saved, enabled or disabled workflow needs no restart.
 
 `examples/workflows/wacli-mention.yaml` and `examples/actions/wacli-new-messages.json` show the full case: answer WhatsApp messages that start with a mention, read from the `wacli` store.

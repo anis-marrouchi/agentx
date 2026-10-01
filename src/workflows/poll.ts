@@ -1,3 +1,4 @@
+import { createHash } from "crypto"
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { z } from "zod"
@@ -22,6 +23,8 @@ import { conditionSchema, type Workflow } from "./types"
 //     baseline; old items start nothing.
 //   - A poll with nothing new dispatches nothing, so it leaves no run record.
 //   - A failing or timed-out command is logged and retried on the next tick.
+//     The action must exit non-zero when its source fails: an empty success
+//     on the first poll records an empty baseline.
 //
 // Timers follow the workflow files: sync() starts a timer for every active
 // trigger.poll workflow and stops the ones that are gone, disabled or
@@ -85,6 +88,16 @@ export function parsePollItems(output: string, keyPath: string): { items: Array<
   return { items, skipped }
 }
 
+/** Entity id of one item's run. The run index keeps only [a-zA-Z0-9._:#@-]
+ *  and the first 200 characters, so a key outside that is hashed: two keys
+ *  must never share an index entry. A plain key holds no "#", so it cannot
+ *  equal a hashed one. */
+export function pollEntityId(workflowId: string, key: string): string {
+  const plain = `${workflowId}:${key}`
+  if (/^[a-zA-Z0-9._:@-]+$/.test(key) && plain.length <= 200) return plain
+  return `${workflowId}:#${createHash("sha256").update(key).digest("hex").slice(0, 32)}`
+}
+
 export class PollTriggers {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
   /** Last warning per workflow, so a standing problem logs once, not every tick. */
@@ -142,9 +155,9 @@ export class PollTriggers {
 
     let result: ActionRunResult
     try { result = await this.runAction(cfg.actionId) }
-    catch (e: any) { this.opts.log(`[workflows] ${workflowId} poll failed: ${e.message}`); return 0 }
+    catch (e: any) { this.warnOnce(workflowId, `poll failed: ${e.message}`); return 0 }
     if (!result.ok) {
-      this.opts.log(`[workflows] ${workflowId} poll failed (status=${result.status ?? "?"}): ${(result.errors ?? "").slice(0, 200)}`)
+      this.warnOnce(workflowId, `poll failed (status=${result.status ?? "?"}): ${(result.errors ?? "").slice(0, 200)}`)
       return 0
     }
 
@@ -177,7 +190,7 @@ export class PollTriggers {
         const { run } = await this.opts.dispatcher.dispatchWorkflow({
           workflowId,
           trigger: { source: "poll" },
-          entityRef: { backend: "poll", id: `${workflowId}:${item.key}` },
+          entityRef: { backend: "poll", id: pollEntityId(workflowId, item.key) },
           event: { id: `poll:${workflowId}:${item.key}`, payload: item.value },
         })
         if (run) started++

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs"
+import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { PollTriggers, parsePollItems } from "../src/workflows/poll"
+import { PollTriggers, parsePollItems, pollEntityId } from "../src/workflows/poll"
 import { WorkflowStore } from "../src/workflows/store"
 import { RunStore } from "../src/workflows/run-store"
 import { WorkflowDispatcher } from "../src/workflows/dispatcher"
@@ -165,6 +165,19 @@ describe("trigger.poll", () => {
     expect(await t.polls.pollOnce("p")).toBe(1)
   })
 
+  it("a standing failure is logged once, and again after a good poll", async () => {
+    const t = boot(dir, [wf("p", { actionId: "list" })])
+    const failed = () => t.logs.filter((l) => l.includes("p poll failed")).length
+    t.cmd.ok = false
+    await t.polls.pollOnce("p"); await t.polls.pollOnce("p"); await t.polls.pollOnce("p")
+    expect(failed()).toBe(1)
+    t.cmd.ok = true
+    await t.polls.pollOnce("p")
+    t.cmd.ok = false
+    await t.polls.pollOnce("p")
+    expect(failed()).toBe(2)
+  })
+
   it("re-baselines when the key field or the action changes", async () => {
     const t = boot(dir, [wf("p", { actionId: "list", key: "id" })])
     t.cmd.output = lines({ id: "a", msgId: "x" })
@@ -215,6 +228,28 @@ describe("trigger.poll", () => {
     expect(t.cmd.calls).toBe(calls + 1)
   })
 
+  it("keys the run index cannot hold apart get a hashed entity id", () => {
+    expect(pollEntityId("p", "3EB0A1.b:c@d-e")).toBe("p:3EB0A1.b:c@d-e")
+    const url = `https://example.com/${"x".repeat(230)}`
+    const ids = ["a/b", "a b", "a_b", "#1", `${url}1`, `${url}2`].map((k) => pollEntityId("p", k))
+    expect(new Set(ids).size).toBe(ids.length)
+    for (const id of ids.filter((i) => i !== "p:a_b")) expect(id).toMatch(/^p:#[0-9a-f]{32}$/)
+  })
+
+  it("end to end: keys that differ only in characters the run index drops each start a run", async () => {
+    const store = new WorkflowStore({ baseDir: join(dir, "workflows") })
+    store.save(workflowSchema.parse(wf("u", { actionId: "list", key: "url" })))
+    const runs = new RunStore({ baseDir: join(dir, "workflows"), nodeId: "n" })
+    const dispatcher = new WorkflowDispatcher({ store, runs, nodeId: "n", channels: {}, agents: { execute: async () => ({ content: "" }) } })
+    let output = ""
+    const polls = new PollTriggers({ store, dispatcher, log: () => {}, runAction: async () => ({ ok: true, output, status: 0, durationMs: 1 }) })
+    await polls.pollOnce("u") // baseline
+    const long = `https://example.com/${"x".repeat(230)}`
+    output = lines({ url: "a/b" }, { url: "a b" }, { url: `${long}1` }, { url: `${long}2` })
+    expect(await polls.pollOnce("u")).toBe(4)
+    expect(runs.list({ workflowId: "u" })).toHaveLength(4)
+  })
+
   it("end to end: a real shell action, real stores, one run record per new item and none otherwise", async () => {
     const feed = join(dir, "feed.jsonl")
     writeFileSync(feed, lines({ msgId: "old", text: "@hakim before install" }) + "\n")
@@ -262,6 +297,31 @@ describe("examples: wacli mention (#360)", () => {
     const action = actionSchema.parse(JSON.parse(readFileSync(join(process.cwd(), "examples/actions/wacli-new-messages.json"), "utf-8")))
     expect(cfg.actionId).toBe(action.id)
     expect(cfg.key).toBe("msgId")
+  })
+
+  it("the action fails when wacli fails, so the first poll records no empty baseline", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-poll-wacli-"))
+    try {
+      // A wacli that fails, and a jq that would succeed on empty input.
+      writeFileSync(join(dir, "wacli"), "#!/bin/sh\necho 'store locked' >&2\nexit 3\n")
+      writeFileSync(join(dir, "jq"), "#!/bin/sh\ncat >/dev/null\n")
+      chmodSync(join(dir, "wacli"), 0o755); chmodSync(join(dir, "jq"), 0o755)
+      const raw = JSON.parse(readFileSync(join(process.cwd(), "examples/actions/wacli-new-messages.json"), "utf-8"))
+      const action = actionSchema.parse({ ...raw, command: raw.command.replace("<CHAT_JID>", "chat@g.us"), env: { PATH: `${dir}:/usr/bin:/bin` } })
+      expect((await runAction(action)).ok).toBe(false)
+
+      const logs: string[] = []
+      const workflows = [{ ...parsed, state: "active" }]
+      const dispatchWorkflow = vi.fn()
+      const polls = new PollTriggers({
+        store: { baseDir: dir, list: () => workflows, get: () => workflows[0] } as any,
+        dispatcher: { dispatchWorkflow } as any,
+        log: (m) => logs.push(m), runAction: () => runAction(action),
+      })
+      expect(await polls.pollOnce(parsed.id)).toBe(0)
+      expect(logs.some((l) => l.includes("poll failed"))).toBe(true)
+      expect(existsSync(join(dir, "_poll"))).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
   })
 
   it("its filter keeps only messages from the other side that start with the mention", () => {
