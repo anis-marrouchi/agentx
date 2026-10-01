@@ -140,7 +140,7 @@ describe("the forwarding node while the receiver restarts", () => {
     // What mesh.sendTask throws for the receiver's 500 { error } answer.
     const thrown = `Peer "mac" /task error: 500: ${forwardedTaskAnswer(interrupted, origin).error}`
     const adapter = { name: "gitlab", send: vi.fn(async () => "note-1"), react: vi.fn(), sendTyping: vi.fn() }
-    const router = new MessageRouter({ getAgent: () => undefined } as any, { channels: {} } as any, undefined, () => {})
+    const router = new MessageRouter({ getAgent: () => undefined, refusalFor: () => null } as any, { channels: {} } as any, undefined, () => {})
     router.setMesh({
       directory: () => [{ peer: "mac", peerUrl: "u", healthy: true, skills: [{ id: "coder-agent", name: "coder-agent" }], channels: [] }],
       findAgentPeer: (id: string) => (id === "coder-agent" ? { peer: "mac", healthy: true } : undefined),

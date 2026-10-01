@@ -291,6 +291,9 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),
     }),
     runPeer: (peer, callee, message, context, opts) => {
+      // The peer cannot check a person's limit (ids are per machine).
+      const refusal = w.registry.refusalFor(callee, context)
+      if (refusal) return Promise.resolve(refusal)
       const mesh = w.mesh()
       if (!mesh) return Promise.reject(new Error("mesh not enabled"))
       return mesh.sendTask(peer, message, callee, { context, senderAgentId: opts.senderAgentId, timeoutMs: opts.timeoutMs })

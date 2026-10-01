@@ -94,7 +94,7 @@ describe("MessageRouter — a queued answer from a peer is not a failure", () =>
     setLedgerForTesting(ledger)
     adapter = { name: "gitlab", send: vi.fn(async () => "note-1"), react: vi.fn(), sendTyping: vi.fn() }
     sendTask = vi.fn(async () => { throw new Error(QUEUED_ERR) })
-    router = new MessageRouter({ getAgent: () => undefined } as any, { channels: {} } as any, undefined, () => {})
+    router = new MessageRouter({ getAgent: () => undefined, refusalFor: () => null } as any, { channels: {} } as any, undefined, () => {})
     router.setMesh({
       directory: () => [{ peer: PEER, peerUrl: "u", healthy: true, skills: [{ id: AGENT, name: AGENT }], channels: [] }],
       findAgentPeer: (id: string) => (id === AGENT ? { peer: PEER, healthy: true } : undefined),

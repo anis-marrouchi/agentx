@@ -2271,11 +2271,12 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
 /** What the phone app's Chat tab talks through (app-chat.ts): turns go to
  *  the primary daemon with its token, the picker reads the live snapshot,
  *  and conversations live in the same SQLite file as the push tables. */
-/** One member store per dashboard process, so its hourly log pruning holds. */
-let _members: MemberStore | null = null
+/** One member store per dashboard process, so its hourly log pruning holds;
+ *  a new one when the retention setting changes. */
+let _members: { days: number; store: MemberStore } | null = null
 function membersStore(retentionDays: number): MemberStore {
-  if (!_members) _members = new MemberStore(process.cwd(), Date.now, retentionDays)
-  return _members
+  if (_members?.days !== retentionDays) _members = { days: retentionDays, store: new MemberStore(process.cwd(), Date.now, retentionDays) }
+  return _members!.store
 }
 
 function appChatDeps(config: DaemonConfig): AppChatDeps {

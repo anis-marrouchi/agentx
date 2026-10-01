@@ -111,7 +111,7 @@ describe("MessageRouter — deferred mesh delivery", () => {
       sent.push(text)
       return "on it"
     })
-    router = new MessageRouter({ getAgent: () => undefined } as any, { channels: {} } as any)
+    router = new MessageRouter({ getAgent: () => undefined, refusalFor: () => null } as any, { channels: {} } as any)
     const fakeMesh: any = {
       directory: () => [{ peer: PEER, peerUrl: "u", healthy: peerHealthy, skills: [{ id: AGENT }], channels: [] }],
       findAgentPeer: (id: string) => (id === AGENT ? { peer: PEER, healthy: peerHealthy } : undefined),

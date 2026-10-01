@@ -43,6 +43,9 @@ export interface MemberDevice {
 
 export type MemberEventKind =
   | "invited" | "paired" | "approved" | "refused" | "signed-in" | "removed" | "expired"
+  /** A message to an agent the person may not reach (people[].agents, #379);
+   *  `detail` is the agent. */
+  | "agent-refused"
 
 export interface MemberEvent {
   at: string
@@ -98,14 +101,17 @@ export class MemberStore {
 
   /** Append one event. Never throws: the log must not break a sign-in. */
   log(event: Omit<MemberEvent, "at">): void {
+    // On its own: a failed prune must not cost the new line.
+    try { this.prune() } catch { /* next write tries again */ }
     try {
-      this.prune()
       mkdirSync(dirname(this.logFile), { recursive: true })
       appendFileSync(this.logFile, JSON.stringify({ at: new Date(this.now()).toISOString(), ...event }) + "\n", { mode: 0o600 })
     } catch { /* the device record is the source of truth; the log is a trail */ }
   }
 
-  /** Drops lines older than the retention, at most once an hour. */
+  /** Drops lines older than the retention, at most once an hour. The daemon,
+   *  the dashboard and the CLI all append here with no lock: a line another
+   *  process writes between the read and the rename is lost. */
   prune(force = false): number {
     const now = this.now()
     if (!force && now - this.prunedAt < 3_600_000) return 0

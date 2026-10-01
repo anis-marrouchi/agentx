@@ -59,7 +59,8 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
-import { personOfTurn, personRefusal } from "@/people/people"
+import { personOfTurn, refusedPerson } from "@/people/people"
+import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -734,6 +735,24 @@ export class AgentRegistry {
     this.config = { ...this.config, people }
   }
 
+  /** People permissions (#379): the note a limited person is answered with
+   *  instead of reaching `agentId`, or null when the turn may go ahead. The
+   *  limit follows them through a delegation (the root's person). Every way
+   *  to an agent asks here before it starts: a run on this node, and the
+   *  router and delegation paths to a mesh peer, which cannot check for
+   *  itself (person ids are per machine). A refusal is kept in the
+   *  per-person trail. */
+  refusalFor(agentId: string, ctx: unknown): string | null {
+    const refused = refusedPerson(this.config.people, agentId, ctx as any)
+    if (!refused) return null
+    this.log(`[${agentId}] refused: ${refused.person.id} may not reach this agent (people[].agents)`)
+    const days = this.config.members.logRetentionDays
+    if (!this.memberLog || this.memberLog.days !== days) this.memberLog = { days, store: new MemberStore(process.cwd(), Date.now, days) }
+    this.memberLog.store.log({ person: refused.person.id, event: "agent-refused", detail: agentId })
+    return refused.note
+  }
+  private memberLog?: { days: number; store: MemberStore }
+
   /**
    * If there's an active handover routing TO this agent for this (channel,
    * chatId) pair AND the operator's summary hasn't been consumed yet, pull
@@ -1057,6 +1076,11 @@ export class AgentRegistry {
    * wrapper that adds intent-ledger resolution recording.
    */
   private async executeInternal(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, callerOnEvent?: (event: any) => void): Promise<AgentResponse> {
+    // People permissions (#379), before every way to the agent: an attached
+    // session, a mesh peer, the local queue.
+    const refusal = this.refusalFor(task.agentId, task.context)
+    if (refusal) return { content: refusal, duration: 0 }
+
     // Attach mode: a live Claude Code session may have claimed this identity.
     // If so it gets first refusal — but only for a bounded window. When the
     // human doesn't pick the message up we fall through to the normal spawn
@@ -1115,15 +1139,6 @@ export class AgentRegistry {
         }
       }
       return { content: "", error: `Unknown agent: ${task.agentId}` }
-    }
-
-    // People permissions (#379): a listed person limited to named agents
-    // is answered with a note instead of a run, before anything is queued.
-    // The limit follows them through a delegation (the root's person).
-    const refusal = personRefusal(this.config.people, task.agentId, task.context as any)
-    if (refusal) {
-      this.log(`[${task.agentId}] refused: ${task.context?.person ?? personOfTurn(this.config.people, task.context as any)?.id} may not reach this agent (people[].agents)`)
-      return { content: refusal, duration: 0 }
     }
 
     // Build session key for queue management

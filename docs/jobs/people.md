@@ -58,13 +58,22 @@ Add `--limit 50` for a longer list, or `--json` for a script.
 By default a listed person can write to any agent, like before. To limit them:
 
 1. **Terminal:** run `agentx people allow sara coder-agent pm-agent`. Use the agent ids from `agentx agents`.
-2. From then on a message from Sara to any other agent is answered with one line: *Sara B, you can reach coder-agent, pm-agent here, not devops-agent. Ask the owner if you need devops-agent.* No run starts, nothing is queued.
-3. The limit follows her work: an agent working for her cannot hand it to an agent she may not reach either.
+2. From then on a message from Sara to any other agent is answered with one line: *Sara B, you can reach coder-agent, pm-agent here, not devops-agent. Ask the owner if you need devops-agent.* No run starts, nothing is queued. This holds for an agent on another node too: the message is refused here and never leaves.
+3. The limit follows her work: an agent working for her cannot hand it to an agent she may not reach either, on this node or on another.
 4. To lift it, run `agentx people allow sara all`.
 
 You can also set it when adding someone: `agentx people add sara --name "Sara B" --agent coder-agent`.
 
-Unknown senders are not limited here; each channel decides whether it answers them at all. Limits per tool and per skill are not built yet.
+Each refused message is written to `.agentx/members-log.jsonl` with the person and the agent, and kept as long as the rest of that file ([Invite a teammate to their work page](/jobs/members)).
+
+What the limit does not cover:
+
+- An owner is never limited; `agentx people allow` refuses one.
+- Unknown senders are not limited here; each channel decides whether it answers them at all.
+- A workflow's agent steps run whoever triggered the workflow.
+- The command warns when an id is not an agent on this machine. Check the spelling: a mistyped id leaves the person able to reach nothing.
+- With several nodes, each node reads its own people list. Give a person the same `id` and the same limit on every node they write to.
+- Limits per tool and per skill are not built yet.
 
 ## Change or remove
 
