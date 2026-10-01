@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.79.1](https://github.com/anis-marrouchi/agentx/compare/v0.79.0...v0.79.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **owner-sweep:** cancelled duplicate check no longer counts as red CI ([#364](https://github.com/anis-marrouchi/agentx/issues/364)) ([60104fa](https://github.com/anis-marrouchi/agentx/commit/60104fa4f98365144d61d2126f1cf0410dad784a))
+
 ## [0.79.0](https://github.com/anis-marrouchi/agentx/compare/v0.78.0...v0.79.0) (2026-10-01)
 
 
