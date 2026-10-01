@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.81.1](https://github.com/anis-marrouchi/agentx/compare/v0.81.0...v0.81.1) (2026-10-01)
+
+
+### Bug Fixes
+
+* **calls:** find a /task run with no chat by the pair its warm process sends ([#411](https://github.com/anis-marrouchi/agentx/issues/411)) ([92aa53d](https://github.com/anis-marrouchi/agentx/commit/92aa53d7352780ae7339ca63c98a72f3d3c28185))
+* **calls:** keep a call waiting while the voice pill is busy ([#409](https://github.com/anis-marrouchi/agentx/issues/409)) ([88e4b35](https://github.com/anis-marrouchi/agentx/commit/88e4b3544684bae1cc2cc5db9a8040aeef887a7e))
+
 ## [0.81.0](https://github.com/anis-marrouchi/agentx/compare/v0.80.1...v0.81.0) (2026-10-01)
 
 
