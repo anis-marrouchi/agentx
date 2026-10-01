@@ -27,17 +27,33 @@ import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const MARKER_RE = /<!--\s*agentx:([a-z0-9_-]+)\s*-->/i
-const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'CANCELLED', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])
+const FAILED = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'ACTION_REQUIRED', 'STARTUP_FAILURE'])
 
-/** Collapse a statusCheckRollup into none | pending | failing | passing. */
+/** The newest run of each check, as `gh pr checks` shows it: a run started
+ *  again on the same commit replaces the one before it (#363). */
+function latestRuns(rollup) {
+  const latest = new Map()
+  for (const c of rollup) {
+    const key = c.__typename === 'StatusContext' ? c.context : `${c.workflowName ?? ''}/${c.name}`
+    const prev = latest.get(key)
+    if (!prev || (c.startedAt ?? '') >= (prev.startedAt ?? '')) latest.set(key, c)
+  }
+  return [...latest.values()]
+}
+
+/** Collapse a statusCheckRollup into none | pending | failing | cancelled |
+ *  passing. A cancelled check that nothing replaced is not red (there is
+ *  nothing to fix) and not green (it never finished). */
 export function ciState(rollup = []) {
   if (rollup.length === 0) return { state: 'none', failing: [] }
-  const failing = rollup.filter((c) => FAILED.has(c.conclusion ?? c.state))
+  const runs = latestRuns(rollup)
+  const failing = runs.filter((c) => FAILED.has(c.conclusion ?? c.state))
   if (failing.length) {
     return { state: 'failing', failing: failing.map((c) => ({ name: c.name ?? c.context, url: c.detailsUrl ?? c.targetUrl })) }
   }
-  const pending = rollup.some((c) => (c.__typename === 'StatusContext' ? c.state === 'PENDING' : c.status !== 'COMPLETED'))
-  return { state: pending ? 'pending' : 'passing', failing: [] }
+  const pending = runs.some((c) => (c.__typename === 'StatusContext' ? c.state === 'PENDING' : c.status !== 'COMPLETED'))
+  if (pending) return { state: 'pending', failing: [] }
+  return { state: runs.some((c) => c.conclusion === 'CANCELLED') ? 'cancelled' : 'passing', failing: [] }
 }
 
 const agentLabel = (item) => item.labels?.find((l) => /^agent:/i.test(l.name ?? ''))

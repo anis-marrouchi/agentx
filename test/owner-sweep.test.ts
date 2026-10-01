@@ -91,6 +91,37 @@ describe("owner sweep (#53)", () => {
     expect(ciState([{ __typename: "StatusContext", context: "ci/x", state: "ERROR", targetUrl: "t" }]).failing).toEqual([{ name: "ci/x", url: "t" }])
   })
 
+  // #363: the Docs gate started twice on one commit; the first run was
+  // cancelled and the second passed.
+  const run = (conclusion: string, startedAt: string, workflowName = "Docs gate") =>
+    ({ __typename: "CheckRun", name: "gate", workflowName, status: "COMPLETED", conclusion, startedAt, detailsUrl: `https://ci/${startedAt}` })
+
+  it("ignores a cancelled run that a newer run of the same check replaced", () => {
+    const rollup = [run("CANCELLED", "2026-10-01T08:50:27Z"), check("SUCCESS"), run("SUCCESS", "2026-10-01T08:50:49Z")]
+    expect(ciState(rollup).state).toBe("passing")
+    const r = planSweep({ issues: [], prs: [pr({ isDraft: false, statusCheckRollup: rollup })] }, {}, now)
+    expect(steps(r)).toEqual(["secretary-agent review-and-merge"])
+    expect(r.state.ciFixes).toEqual({})
+  })
+
+  it("reads the newest run of a check, whatever the order and whatever it replaced", () => {
+    expect(ciState([run("SUCCESS", "2026-10-01T08:50:49Z"), run("CANCELLED", "2026-10-01T08:50:27Z")]).state).toBe("passing")
+    expect(ciState([run("SUCCESS", "2026-10-01T08:50:27Z"), run("FAILURE", "2026-10-01T08:50:49Z")]).state).toBe("failing")
+    expect(ciState([run("FAILURE", "2026-10-01T08:50:27Z"), run("SUCCESS", "2026-10-01T08:50:49Z")]).state).toBe("passing")
+    // Same job name in another workflow is another check.
+    expect(ciState([run("FAILURE", "2026-10-01T08:50:27Z", "CI"), run("SUCCESS", "2026-10-01T08:50:49Z")]).state).toBe("failing")
+  })
+
+  it("a cancelled check with no newer run is neither red nor green", () => {
+    const rollup = [check("SUCCESS"), run("CANCELLED", "2026-10-01T08:50:27Z")]
+    expect(ciState(rollup)).toEqual({ state: "cancelled", failing: [] })
+    const fresh = planSweep({ issues: [], prs: [pr({ isDraft: false, statusCheckRollup: rollup })] }, {}, now)
+    expect(steps(fresh)).toEqual([])
+    expect(fresh.state.ciFixes).toEqual({})
+    const quiet = planSweep({ issues: [], prs: [pr({ isDraft: false, statusCheckRollup: rollup, updatedAt: minsAgo(45) })] }, {}, now)
+    expect(steps(quiet)).toEqual(["secretary-agent nudge"])
+  })
+
   it("prints a verdict line the workflow branches on", () => {
     expect(formatSteps([])).toBe("RESULT steps=0")
   })
