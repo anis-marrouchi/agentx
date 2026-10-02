@@ -55,12 +55,18 @@ struct PalettePicker: View {
 /// "Shown as": the orb, or the character that stands in for it (#458).
 struct LookSection: View {
     @Binding var look: String
+    /// Nil hides the control: the daemon is older than the reduced pill.
+    var startReduced: Binding<Bool>?
 
     var body: some View {
         Section {
             Picker("Shown as", selection: $look) {
                 Text("Orb").tag("orb")
                 Text("Character").tag("character")
+            }
+            if let startReduced {
+                Toggle("Start reduced to the orb", isOn: startReduced)
+                    .disabled(look == "character")
             }
         } header: {
             Text("Assistant")

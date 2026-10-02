@@ -56,6 +56,7 @@ export interface VoiceSettingsPatch {
     hotkeys?: { talk?: string; stop?: string; paste?: string }
     card?: { timeout?: number; maxHeight?: number }
     look?: VoiceLook
+    startReduced?: boolean
   }
   agents?: Record<string, AgentVoicePatch>
 }
@@ -78,6 +79,8 @@ export interface VoiceSettingsView {
     card: { timeout: number; maxHeight: number }
     /** What shows the assistant's state: the orb or the character. */
     look: VoiceLook
+    /** The pill starts reduced to its orb. */
+    startReduced: boolean
   }
   agents: Array<{
     id: string
@@ -123,6 +126,7 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       hotkeys: { ...DEFAULT_HOTKEYS, ...(v.hotkeys ?? {}) },
       card: { timeout: v.card.timeout, maxHeight: v.card.maxHeight },
       look: v.look,
+      startReduced: v.startReduced,
     },
     agents: Object.entries(config.agents).map(([id, a]) => {
       const av = a.voice ?? {}
@@ -170,12 +174,13 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   for (const k of Object.keys(patch)) if (k !== "general" && k !== "agents") err(k, `"${k}" is not a voice setting`)
 
   const g = patch.general ?? {}
-  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
+  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
   if (g.provider !== undefined && !["system", "elevenlabs"].includes(g.provider)) err("general.provider", "Voice provider must be system or elevenlabs")
   if (g.stt !== undefined && !["auto", "elevenlabs", "local"].includes(g.stt)) err("general.stt", "Speech to text must be auto, elevenlabs or local")
   if (g.localStt !== undefined && !["mlx-whisper", "parakeet"].includes(g.localStt)) err("general.localStt", "The engine on this Mac must be mlx-whisper or parakeet")
   if (g.endOfTurn !== undefined && !["vad", "volume"].includes(g.endOfTurn)) err("general.endOfTurn", "The end of a turn must be vad or volume")
   if (g.look !== undefined && !VOICE_LOOKS.includes(g.look)) err("general.look", `The assistant is shown as ${VOICE_LOOKS.join(" or ")}`)
+  if (g.startReduced !== undefined && typeof g.startReduced !== "boolean") err("general.startReduced", "Start reduced to the orb must be on or off")
   for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
     if (!["talk", "stop", "paste"].includes(k)) { err(`general.hotkeys.${k}`, `"${k}" is not a shortcut the window sets`); continue }
     const r = parseHotkey(String(value ?? ""))
@@ -239,6 +244,7 @@ export function applyVoiceSettings(raw: any, patch: VoiceSettingsPatch): void {
     if (g.localStt !== undefined) raw.voice.localStt = g.localStt
     if (g.endOfTurn !== undefined) raw.voice.endOfTurn = g.endOfTurn
     if (g.look !== undefined) raw.voice.look = g.look
+    if (g.startReduced !== undefined) raw.voice.startReduced = g.startReduced
     for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
       const r = parseHotkey(String(value))
       if (!r.ok) continue

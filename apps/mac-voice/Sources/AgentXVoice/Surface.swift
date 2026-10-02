@@ -50,6 +50,25 @@ final class Surface: NSVisualEffectView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError("not from a nib") }
 
+    /// The pill's own shape, or a circle `diameter` across for the pill
+    /// reduced to its orb. The stretchable mask cannot make a circle: its
+    /// corners would be wider than the view.
+    func shape(circle diameter: CGFloat?) {
+        guard let diameter else {
+            layer?.cornerRadius = Brand.Radius.lg
+            layer?.cornerCurve = .continuous
+            maskImage = Self.mask(radius: Brand.Radius.lg)
+            return
+        }
+        layer?.cornerRadius = diameter / 2
+        layer?.cornerCurve = .circular
+        maskImage = NSImage(size: NSSize(width: diameter, height: diameter), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
+    }
+
     override func resizeSubviews(withOldSize oldSize: NSSize) {
         super.resizeSubviews(withOldSize: oldSize)
         layoutContent?(bounds)

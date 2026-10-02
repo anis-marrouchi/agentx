@@ -45,15 +45,25 @@ enum Config {
     /// Where the pill was last dragged to (its bottom-left corner, in
     /// screen points). Nil: the default corner.
     static var pillOrigin: CGPoint? {
-        get {
-            guard let xy = UserDefaults.standard.array(forKey: "pillOrigin") as? [Double], xy.count == 2
-            else { return nil }
-            return CGPoint(x: xy[0], y: xy[1])
-        }
-        set {
-            if let p = newValue { UserDefaults.standard.set([Double(p.x), Double(p.y)], forKey: "pillOrigin") }
-            else { UserDefaults.standard.removeObject(forKey: "pillOrigin") }
-        }
+        get { point("pillOrigin") }
+        set { setPoint(newValue, "pillOrigin") }
+    }
+
+    /// Where the pill reduced to its orb was last dragged to. Nil: the
+    /// middle of the bottom edge. Kept apart from the pill's own place.
+    static var orbOrigin: CGPoint? {
+        get { point("orbOrigin") }
+        set { setPoint(newValue, "orbOrigin") }
+    }
+
+    private static func point(_ key: String) -> CGPoint? {
+        guard let xy = UserDefaults.standard.array(forKey: key) as? [Double], xy.count == 2 else { return nil }
+        return CGPoint(x: xy[0], y: xy[1])
+    }
+
+    private static func setPoint(_ p: CGPoint?, _ key: String) {
+        if let p { UserDefaults.standard.set([Double(p.x), Double(p.y)], forKey: key) }
+        else { UserDefaults.standard.removeObject(forKey: key) }
     }
 
     /// Where the character was last dragged to (the point under it, in
