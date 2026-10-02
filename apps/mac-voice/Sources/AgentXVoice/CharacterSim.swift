@@ -249,8 +249,10 @@ struct CharacterSim {
     /// The state alone, where it rests: for Reduce Motion, which shows a
     /// still picture that changes between states and never a loop.
     static func still(_ activity: M.Activity, home: Double) -> Frame {
-        // Its marks at full strength, so each state reads without motion.
-        Frame(pose: M.pose(M.mood(for: activity)), x: home, level: 1, voice: 1)
+        // Its marks at full strength, so each state reads without motion:
+        // the arcs of its voice only while it speaks.
+        let pose = M.pose(M.mood(for: activity))
+        return Frame(pose: pose, x: home, level: 1, voice: pose.speak)
     }
 
     private mutating func go(_ to: M.Mood, _ now: Double) {

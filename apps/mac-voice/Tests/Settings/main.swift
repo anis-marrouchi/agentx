@@ -128,5 +128,14 @@ check(strollPatch?["stroll"] as? Bool == true && strollPatch?.count == 1, "only 
 check((1...6).map { VoiceSettings.retryDelay(after: $0) } == [2, 4, 8, 16, 30, 30], "waits 2, 4, 8, 16 seconds, then every 30")
 check(VoiceSettings.retryDelay(after: 0) == 2 && VoiceSettings.retryDelay(after: 500) == 30, "never under 2 seconds, never over 30")
 
+// --- Read again while the app runs, so a change in the Terminal shows (#482) ---
+
+var asCharacter = saved
+asCharacter.general.look = "character"
+check(VoiceSettings.replaces(saved, held: nil, heldWhenAsked: nil), "the first read is taken")
+check(!VoiceSettings.replaces(saved, held: saved, heldWhenAsked: saved), "a read with nothing new changes nothing")
+check(VoiceSettings.replaces(asCharacter, held: saved, heldWhenAsked: saved), "a look changed outside the app is taken")
+check(!VoiceSettings.replaces(saved, held: asCharacter, heldWhenAsked: saved), "a read that started before a save here is dropped")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

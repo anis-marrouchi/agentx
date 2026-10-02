@@ -127,7 +127,9 @@ check(M.aside(x: 50, pointer: 60, clear: 150, range: range) == 210, "and the sam
 
 let fixed = CharacterSim.still(.thinking, home: home)
 check(fixed.pose == M.pose(.working) && fixed.x == home && fixed.dots.isEmpty, "with Reduce Motion it is the state alone, at home")
-check(fixed.level == 1 && fixed.voice == 1, "with its marks at full strength, so speaking and listening read without motion")
+check(fixed.level == 1 && CharacterSim.still(.speaking, home: home).voice == 1, "with its marks at full strength, so speaking and listening read without motion")
+check(fixed.voice == 0 && CharacterSim.still(.idle, home: home).voice == 0 && CharacterSim.still(.listening, home: home).voice == 0,
+      "and the arcs of its voice only while it speaks")
 
 // The pill is to the right of home: the range ends at home, so a pointer
 // coming along the edge from the left never pushes it onto the pill.

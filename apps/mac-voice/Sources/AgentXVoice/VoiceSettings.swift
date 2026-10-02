@@ -163,6 +163,17 @@ struct VoiceSettings: Codable, Equatable {
         min(30, pow(2, Double(max(1, failures))))
     }
 
+    /// Seconds between reads once the daemon has answered, so a change
+    /// made outside the app shows without a restart.
+    static let rereadDelay: Double = 5
+
+    /// Whether a read from the daemon replaces what the app holds: it
+    /// differs, and nothing was saved here while it was on its way. A read
+    /// that started before a save in the window carries the old settings.
+    static func replaces(_ read: VoiceSettings, held: VoiceSettings?, heldWhenAsked: VoiceSettings?) -> Bool {
+        held == heldWhenAsked && read != held
+    }
+
     /// The fields a preview speaks with: the draft's voice for one agent.
     func previewVoice(for id: String) -> [String: Any] {
         guard let v = agents.first(where: { $0.id == id })?.voice else { return [:] }
