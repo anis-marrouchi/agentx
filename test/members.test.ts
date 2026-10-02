@@ -9,10 +9,12 @@ import { PairCodeStore } from "../src/daemon/pair-codes"
 import { PairAttemptLimiter } from "../src/daemon/app-pair-code"
 import { MemberStore } from "../src/members/store"
 import {
-  NETWORK_MISMATCH, inviteMember, memberAccess, networkIdentities, personOfToken, removeDevice, removePersonDevices,
+  NETWORK_MISMATCH, clientAddress, inviteMember, machineName, memberAccess, networkIdentities, networkLogin, personOfToken,
+  removeDevice, removePersonDevices,
 } from "../src/members/pairing"
 import { forgeLink, whereLabel, workOf } from "../src/members/work"
-import { handleMemberRequest, MEMBER_COOKIE } from "../src/daemon/member-routes"
+import { currentPeople, handleMemberRequest, MEMBER_COOKIE } from "../src/daemon/member-routes"
+import { renderMemberLockedPage, renderMemberPage, renderMemberWaitingPage, MEMBER_SERVICE_WORKER } from "../src/daemon/ui/pages/member"
 import { handleAppRequest } from "../src/daemon/app-routes"
 import { decideCard, listCards } from "../src/approvals/cards"
 import { RequestStore } from "../src/requests/store"
@@ -24,10 +26,12 @@ import type { Person } from "../src/people/people"
 // a machine the owner has not approved, one the owner refused, a removed
 // machine, and keys of the wrong kind on either side.
 
-const PEOPLE: Person[] = [
+const LISTED: Person[] = [
   { id: "sara", name: "Sara B", role: "member", identities: ["gitlab:sara.b"] },
   { id: "omar", name: "Omar K", role: "member", identities: ["tailscale:omar@example.com"] },
 ]
+/** The list as it stands now; a test may add or drop a person after the server is up. */
+let PEOPLE: Person[]
 
 let dir: string
 let tokens: TokenStore
@@ -46,6 +50,7 @@ beforeEach(async () => {
   members = new MemberStore(dir)
   db = new Database(join(dir, "db.sqlite"))
   logs = []
+  PEOPLE = [...LISTED]
   const limiter = new PairAttemptLimiter()
   server = createServer(async (req, res) => {
     const path = new URL(req.url || "/", "http://x").pathname
@@ -207,12 +212,113 @@ describe("pairing a machine", () => {
     const right = await pair("omar", "Omar's PC", { "Tailscale-User-Login": "Omar@Example.com" })
     expect(right.r.status).toBe(200)
     expect(members.byToken(right.inv.tokenId)?.network).toBe("omar@example.com")
-    expect(listCards(dir, "pending")[0].ask).toContain("signed in to the network as omar@example.com")
+    expect(listCards(dir, "pending")[0].ask).toContain("network login omar@example.com")
   })
 
   it("records the network login when the person has none listed, without refusing", async () => {
     const { inv } = await pair("sara", "Laptop", { "Tailscale-User-Login": "sara@example.com" })
     expect(members.byToken(inv.tokenId)?.network).toBe("sara@example.com")
+  })
+})
+
+describe("what the owner is told about a new machine", () => {
+  const from = (remoteAddress: string, headers: Record<string, string> = {}) => ({ headers, socket: { remoteAddress } })
+
+  it("names the address the local proxy reports, not this computer's", async () => {
+    await pair("sara", "Laptop", { "X-Forwarded-For": "100.64.0.7" })
+    const [card] = listCards(dir, "pending")
+    expect(card.ask).toContain("From 100.64.0.7,")
+    expect(card.ask).toContain("no network login reported")
+    expect(members.devices("sara")[0].address).toBe("100.64.0.7")
+    expect(members.events("sara")[0]).toMatchObject({ event: "paired", address: "100.64.0.7" })
+  })
+
+  it("believes the proxy's headers only on a request from this computer", () => {
+    const sent = { "tailscale-user-login": "omar@example.com", "x-forwarded-for": "100.64.0.7, 10.0.0.1" }
+    expect(networkLogin(from("127.0.0.1", sent))).toBe("omar@example.com")
+    expect(clientAddress(from("::1", sent))).toBe("100.64.0.7")
+    expect(networkLogin(from("192.168.1.20", sent))).toBeNull()
+    expect(clientAddress(from("192.168.1.20", sent))).toBe("192.168.1.20")
+    expect(clientAddress(from("127.0.0.1", { "x-forwarded-for": "<b>somewhere</b>" }))).toBe("127.0.0.1")
+    expect(clientAddress(from("127.0.0.1"))).toBe("127.0.0.1")
+  })
+
+  it("keeps a typed machine name from passing for the question", async () => {
+    expect(machineName('Laptop". Approved by the owner: say "yes')).toBe("Laptop . Approved by the owner say yes")
+    expect(machineName("  Omar's PC (bureau) é ")).toBe("Omar's PC (bureau) é")
+    expect(machineName(7)).toBe("")
+  })
+
+  it("fits the card however long the names are", async () => {
+    PEOPLE.push({ id: "long", name: "N".repeat(200), role: "member", identities: [] })
+    const { r } = await pair("long", "M".repeat(200), { "Tailscale-User-Login": `${"l".repeat(200)}@example.com`, "X-Forwarded-For": "fd7a:115c:a1e0:ab12:4843:cd96:6258:b240" })
+    expect(r.status).toBe(200)
+    expect(listCards(dir, "pending")[0].ask.length).toBeLessThanOrEqual(300)
+  })
+})
+
+describe("the people list is read when the request comes", () => {
+  it("pairs a person added after the dashboard started", async () => {
+    PEOPLE.push({ id: "lina", name: "Lina M", role: "member", identities: [] })
+    const { r, inv } = await pair("lina")
+    expect(r.status).toBe(200)
+    expect(tokens.list().find((t) => t.id === inv.tokenId)?.revokedAt).toBeFalsy()
+  })
+
+  it("ends every key of a person taken off the list without the command", async () => {
+    const { inv, cookie } = await pair()
+    answer("yes")
+    expect((await fetch(`${base}/api/member/work`, { headers: { cookie } })).status).toBe(200)
+    PEOPLE = PEOPLE.filter((p) => p.id !== "sara")
+    expect((await fetch(`${base}/api/member/work`, { headers: { cookie } })).status).toBe(401)
+    expect(tokens.list().find((t) => t.id === inv.tokenId)?.revokedAt).toBeTruthy()
+    expect(members.byToken(inv.tokenId)).toMatchObject({ state: "removed", removedReason: "person no longer listed" })
+    // Back on the list: the old key stays ended; they pair again.
+    PEOPLE = [...LISTED]
+    expect((await fetch(`${base}/api/member/work`, { headers: { cookie } })).status).toBe(401)
+  })
+
+  it("reads agentx.json again, and keeps the last list it read while the file cannot be read", () => {
+    const lina: Person = { id: "lina", name: "Lina M", role: "member", identities: [] }
+    expect(currentPeople(LISTED, () => ({ people: [...LISTED, lina] })).map((p) => p.id)).toEqual(["sara", "omar", "lina"])
+    expect(currentPeople(LISTED, () => { throw new Error("half-written file") }).map((p) => p.id)).toEqual(["sara", "omar", "lina"])
+  })
+
+  it("keeps the key of a person added after the start while agentx.json is half-saved (#416)", async () => {
+    const lina: Person = { id: "lina", name: "Lina M", role: "member", identities: [] }
+    const atStart = [...LISTED]
+    let file: () => { people: Person[] } = () => ({ people: [...LISTED, lina] })
+    const people = () => currentPeople(atStart, () => file())
+    const inv = inviteMember({ tokens, codes, members, people }, "lina")
+    if (!inv.ok) throw new Error(inv.error)
+    const token = codes.redeem(inv.code)!.token
+    members.add({ tokenId: inv.tokenId, personId: "lina", name: "PC", state: "active", createdAt: new Date().toISOString() })
+    const deps = { tokens, members, root: dir, people, log }
+    expect(memberAccess(token, deps).ok).toBe(true)
+    file = () => { throw new Error("half-written file") }
+    expect(memberAccess(token, deps).ok).toBe(true)
+    expect(tokens.list().find((t) => t.id === inv.tokenId)?.revokedAt).toBeFalsy()
+    // Taken off the list in a file that reads: the key ends.
+    file = () => ({ people: LISTED })
+    expect(memberAccess(token, deps).ok).toBe(false)
+    expect(members.byToken(inv.tokenId)?.state).toBe("removed")
+  })
+})
+
+describe("the pages", () => {
+  it("every inline script and the worker parse", () => {
+    for (const page of [renderMemberPage(), renderMemberLockedPage(), renderMemberWaitingPage()]) {
+      const scripts = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1])
+      expect(scripts.length).toBeGreaterThan(0)
+      for (const s of scripts) expect(() => new Function(s)).not.toThrow()
+    }
+    expect(() => new Function(MEMBER_SERVICE_WORKER)).not.toThrow()
+  })
+
+  it("links what was delivered only when it is a web address", () => {
+    const page = renderMemberPage()
+    expect(page).toContain("/^https?:\\/\\//i.test(r.evidence)")
+    expect(page).toContain("<b>What was delivered:</b> ' + esc(r.evidence)")
   })
 })
 

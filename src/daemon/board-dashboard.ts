@@ -10,7 +10,7 @@ import { dirname, resolve } from "path"
 import type { DaemonConfig } from "./config"
 import { dashboardTokenForNode } from "./mesh-auth"
 import { loadOperatorKey } from "@/requests/operator"
-import { handleMemberRequest } from "./member-routes"
+import { currentPeople, handleMemberRequest } from "./member-routes"
 import { MemberStore } from "@/members/store"
 import { forgeLink } from "@/members/work"
 import type { BoardConfig, BoardColumn } from "@/boards/config"
@@ -208,7 +208,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // A teammate's own work page: /member and /api/member/* (member-routes.ts).
   // Same rule as the phone app: a machine's own key or nothing.
   if (await handleMemberRequest(req, res, path, method, {
-    nodeName: ctx.config.node?.name, root: process.cwd(), people: () => ctx.config.people,
+    nodeName: ctx.config.node?.name, root: process.cwd(), people: () => currentPeople(ctx.config.people),
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => openDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return

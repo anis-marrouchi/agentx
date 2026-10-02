@@ -26,13 +26,17 @@ The dashboard trusts anything that reaches it from your own computer, so only th
    ```
 
    If you also use the phone app, keep its two `/app` lines. Never run `tailscale serve --bg 4202`: that shares the whole dashboard.
-2. **Browser (Tailscale admin console):** in **Access controls**, limit what shared users can reach on this computer to port 443. For example:
+2. **Browser (Tailscale admin console):** in **Access controls**, make sure a shared user reaches this computer on port 443 and nothing else. Access rules only allow; none of them takes access away. So adding a rule is not enough while the default rule (`"src": ["*"], "dst": ["*:*"]`) is still there: `*` includes the people you share with, and they reach every port.
+
+   - Narrow the allow-all rule so it covers your own users only, for example `"src": ["autogroup:member"]`. If you have tagged devices that relied on `*`, give them their own rule first.
+   - Add one rule for shared users, with this computer's Tailscale address (from `tailscale ip -4`) and port 443:
 
    ```json
-   { "action": "accept", "src": ["autogroup:shared"], "dst": ["autogroup:self:443"] }
+   { "action": "accept", "src": ["autogroup:member"], "dst": ["*:*"] },
+   { "action": "accept", "src": ["autogroup:shared"], "dst": ["100.101.102.103:443"] }
    ```
 
-   Without this, a shared user can reach every port of the computer, including the daemon on 18800 and the dashboard on 4202.
+   Until this is in place, a shared user can reach everything on this computer that listens on its Tailscale address: remote login, file sharing, a development server, and the daemon or the dashboard if you set `node.bind` or `dashboard.bind` to `0.0.0.0`. Check it from the teammate's machine before you rely on it: see [Check it worked](#check-it-worked).
 
 ## Invite
 
@@ -62,7 +66,7 @@ If the teammate's Tailscale login is on their person entry as `tailscale:<login>
 
 ## Approve the machine
 
-1. A decision card **New machine for Sara B** arrives in your [Approvals inbox](../dashboard/approvals.md): the machine's name, where it came from, and the login the network reported.
+1. A decision card **New machine for Sara B** arrives in your [Approvals inbox](../dashboard/approvals.md): the Tailscale address it came from, the login the network reported, and the name the machine gave itself. The name is typed by whoever holds the code, so judge by the address and the login.
 2. Answer **Yes** if the teammate told you they just paired. **No** ends that key at once; a card nobody answers is treated as no after three days.
 3. **Their browser:** the waiting page turns into **My work** by itself.
 
@@ -100,13 +104,30 @@ Every invite, pairing, approval, refusal, sign-in and removal is written to `.ag
 1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`.
 2. **Their browser:** **My work** shows a request they made on their channel, with the right state.
 3. **Their browser:** opening `https://<your computer>/` or `/app` shows nothing of yours: only `/member` answers.
+4. **The access rule holds:** a port other than 443 does not answer the teammate. The daemon (18800) and the dashboard (4202) listen on your own computer only, so they refuse a teammate even with no rule at all and prove nothing here. Open a test port for a minute instead.
+
+   **Terminal (yours):** serve an empty folder on port 8099, and confirm it answers on your Tailscale address:
+
+   ```sh
+   mkdir -p /tmp/agentx-port-check && cd /tmp/agentx-port-check && python3 -m http.server 8099
+   curl -m 5 http://$(tailscale ip -4):8099/    # in a second terminal: prints a short page
+   ```
+
+   **Their terminal:**
+
+   ```sh
+   curl -m 5 http://<your computer>:8099/
+   ```
+
+   It must fail to connect. If it prints the page, your access rules still let shared users past port 443: fix them before the teammate keeps the page. Stop the test server with Ctrl+C either way. If your computer's firewall blocks incoming connections, turn it off for this one check, or the port stays silent whatever the rule says.
 
 ## If something is wrong
 
-- **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above.
+- **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above. The reset removes every served path, so add the phone app's two `/app` lines back if you use it.
 - **`Could not read this machine's Tailscale name`:** Tailscale is not running on your computer. Start it, or pass `--url https://<address>` to `agentx people invite`.
 - **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again.
 - **"The private network says someone else is connecting":** the login Tailscale reports for their machine is not among the person's `tailscale:` identities. Check with `agentx people show <id>` and fix the identity, or remove it to accept whatever login is reported.
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
 - **The page is empty:** request tracking is off (`agentx requests settings`), or the teammate's identity on that channel is not on their person entry, so their requests were not stamped with their id.
-- **The teammate can open other pages of yours:** your access rules let shared users reach more than port 443. Add the rule above.
+- **The teammate can open other pages or ports of yours:** your access rules let shared users reach more than port 443. Narrow the allow-all rule and add the shared-user rule above.
+- **A teammate added a moment ago cannot pair:** fixed after 0.82.0. On 0.82.0, restart the dashboard after `agentx people add`, then invite again.
