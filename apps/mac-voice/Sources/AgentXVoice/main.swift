@@ -50,6 +50,10 @@ final class App: NSObject, NSApplicationDelegate {
     /// Set when the door opens: what was speaking (and is now hushed), so
     /// the words spoken go to that activity rather than to /ask.
     private var talkCheck: Task<AgentClient.Hushed, Never>?
+    /// A lesson our last turn started may still be speaking: a click then
+    /// opens the door at once, like the key, so the microphone does not
+    /// take the lesson's voice for the listener's.
+    private var lessonOn = false
     /// Waiting for our answer to be spoken by the daemon's queue. The door
     /// lets go of it: the answer stays queued and plays after the turn.
     private var speaking: Task<Void, Never>?
@@ -445,6 +449,7 @@ final class App: NSObject, NSApplicationDelegate {
             panel.render(.error(error.localizedDescription))
             return
         }
+        if !followUp && lessonOn { talkCheck = Task { await AgentClient.hush() } }
         openedAt = Date()
         patience = followUp ? (activeCall == nil ? followUpPatience : callPatience) : clickPatience
         silentClose = followUp
@@ -476,6 +481,11 @@ final class App: NSObject, NSApplicationDelegate {
         if Date().timeIntervalSince(openedAt) >= patience {
             stopPolling()
             _ = recorder.stop()
+            // Nothing said after an early hush: let the queue play on.
+            if let door = talkCheck {
+                talkCheck = nil
+                Task { _ = await door.value; await AgentClient.resume() }
+            }
             panel.render(silentClose ? rest : .error("Didn't catch that"))
             if !silentClose { resetSoon() }
         }
@@ -583,6 +593,7 @@ final class App: NSObject, NSApplicationDelegate {
                 return
             }
             let hushed = await door.value
+            lessonOn = hushed.kind == "lesson"
             // Always through the door, even with nothing hushed: the
             // listener's turn is over, so the daemon's queue plays on.
             if await AgentClient.door(heard) {
@@ -761,7 +772,7 @@ final class App: NSObject, NSApplicationDelegate {
             busy = false
             // A live lesson now runs on screen and speaks for itself; an
             // open mic would hear the agent. Option-Space is the door.
-            if ["teach", "watch", "act"].contains(answer.presenceMode ?? "") { return }
+            if ["teach", "watch", "act"].contains(answer.presenceMode ?? "") { lessonOn = true; return }
             // Another agent's answer is still to come; an open mic would
             // take it for the listener's words.
             if openAsides > 0 { return }

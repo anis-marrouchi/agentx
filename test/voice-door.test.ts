@@ -16,8 +16,9 @@ const agents: any = {
 }
 
 class Lines implements LineModel {
-  constructor(private text: string, private ms = 5) {}
-  reply(_m: string, signal?: AbortSignal) {
+  constructor(private text: string, private ms = 5, private prompts: string[] = []) {}
+  reply(m: string, signal?: AbortSignal) {
+    this.prompts.push(m)
     const c = new Channel<string>()
     setTimeout(() => { c.push(this.text); c.end() }, this.ms)
     return c.read(signal)
@@ -68,29 +69,50 @@ describe("the door", () => {
     expect(svc.handle("POST", "/voice/door", {}).status).toBe(400)
   })
 
-  it("ends a live lesson: the screen is given back and the words go to the agent", async () => {
-    const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5))
+  it("holds a live lesson: the words that follow reach its next plan", async () => {
+    const prompts: string[] = []
+    const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5, prompts))
     svc.startLesson("secretary-agent", "open the merge request", "teach")
     await new Promise((r) => setTimeout(r, 30))
-    expect(hush(svc).body).toEqual({ active: false, kind: "lesson", agentId: "secretary-agent" })
+    expect(hush(svc).body).toEqual({ active: true, kind: "lesson", agentId: "secretary-agent" })
     expect(log).toContain("speech cancel lesson")
     expect(log).toContain("speech pause")
     expect(log).toContain("[door] hush → lesson (secretary-agent)")
-    expect(log).toContain("Secretary close")
-    expect(svc.live).toBeNull()
-    // Not a lesson that answers back: the client asks the agent.
-    expect(door(svc, "merge and deploy 40").status).toBe(409)
+    // Held, not ended: the screen is still the lesson's.
+    expect(log).not.toContain("Secretary close")
+    expect(svc.live).not.toBeNull()
+    const before = prompts.length
+    expect(door(svc, "it's not having any effect").body).toEqual({ active: true, kind: "lesson", handled: true })
+    await new Promise((r) => setTimeout(r, 30))
+    expect(svc.live).not.toBeNull()
+    expect(prompts.slice(before).join("\n")).toContain(`said: "it's not having any effect"`)
+    svc.close()
   })
 
-  it("a bare stop after the hush is already done, not a question for the agent", async () => {
+  it("a stop word after the hush ends the lesson, once", async () => {
     const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5))
     svc.startLesson("secretary-agent", "open the merge request", "teach")
     await new Promise((r) => setTimeout(r, 30))
     hush(svc)
-    expect(door(svc, "stop").body).toMatchObject({ handled: true, kind: "lesson", active: false })
-    expect(log).toContain('[door] "stop" → lesson (secretary-agent) already ended')
-    // Only once: the next "stop" is ordinary again.
+    expect(door(svc, "stop").body).toEqual({ active: false, kind: "lesson", handled: true })
+    expect(log).toContain('[door] "stop" → lesson (ended)')
+    expect(log).toContain("Secretary close")
+    expect(svc.live).toBeNull()
+    // The next "stop" is ordinary again.
     expect(door(svc, "stop").status).toBe(409)
+  })
+
+  it("stamps each lesson line with the time, and a step with its screen read and plan", async () => {
+    const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5))
+    svc.startLesson("secretary-agent", "open the merge request", "teach", "Safari")
+    await new Promise((r) => setTimeout(r, 30))
+    const stamp = String.raw`\[teach\] \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z`
+    expect(log.some((l) => new RegExp(`^${stamp} secretary-agent \\(teach\\): open the merge request$`).test(l))).toBe(true)
+    expect(log.some((l) => new RegExp(`^${stamp} 1\\. highlight "Reload": Let's reload\\. \\(screen \\d+ ms, plan \\d+ ms\\)$`).test(l))).toBe(true)
+    // On screen from the start, before the first plan is back.
+    expect(log.indexOf("Secretary say Looking at Safari…")).toBe(log.findIndex((l) => l.startsWith("Secretary say")))
+    svc.handle("POST", "/voice/stop", {})
+    expect(log.some((l) => new RegExp(`^${stamp} ended \\(stopped\\)$`).test(l))).toBe(true)
   })
 
   it("/voice/stop ends a lesson too", async () => {

@@ -219,6 +219,46 @@ describe("LiveTeach", () => {
     expect(s.model.closed).toBe(true)
     expect(s.log.at(-1)).toBe("close")
   })
+
+  it("a hush holds the lesson; words that follow are answered by the next step", async () => {
+    const s = setup("teach", [STEP1, "TARGET: none\nACTION: wait_for_user\nSAY: It's the plus-shaped button.", DONE], { speakMs: 200 })
+    const run = s.t.run()
+    await sleep(40)
+    s.t.hush()
+    expect(s.t.state).toBe("held")
+    await sleep(40)
+    // Nothing is planned or said while the listener speaks.
+    expect(s.model.prompts).toHaveLength(1)
+    s.t.door("it's not having any effect")
+    expect(s.t.state).toBe("running")
+    await run
+    expect(s.model.prompts[1]).toContain(`the user said: "it's not having any effect"`)
+    expect(s.said).toContain("It's the plus-shaped button.")
+  })
+
+  it("a hush no words follow ends the lesson", async () => {
+    const s = setup("teach", [STEP1, DONE], { speakMs: 200 })
+    const events: any[] = []
+    s.t.on((e) => events.push(e))
+    const run = s.t.run()
+    await sleep(40)
+    s.t.hush()
+    await run
+    expect(events.at(-1)).toEqual({ type: "end", reason: "no words after the hush" })
+    expect(s.model.prompts).toHaveLength(1)
+    expect(s.log.at(-1)).toBe("close")
+  })
+
+  it("shows it is looking from the start, and times the screen read and the plan of a step", async () => {
+    const s = setup("teach", [STEP1, DONE], { userActsAfter: 40 })
+    const events: any[] = []
+    s.t.on((e) => events.push(e))
+    await s.t.run()
+    expect(s.log[0]).toBe("bubble Looking at the screen…")
+    const step = events.find((e) => e.type === "step")
+    expect(step.readMs).toBeGreaterThanOrEqual(0)
+    expect(step.planMs).toBeGreaterThanOrEqual(2)
+  })
 })
 
 describe("LiveTeach: the screen changes between planning and acting", () => {
