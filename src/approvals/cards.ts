@@ -313,7 +313,7 @@ export function verdictMessage(card: DecisionCard): string {
   if (card.status === "decided" && card.verdict === "yes") lines.push(...answerLines(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
   if (card.source) lines.push(`Source: ${card.source}`)
-  if (card.origin) lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
+  if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)
   lines.push("Act on this result now. Do not raise the same card again.")
   return lines.join("\n")

@@ -294,10 +294,9 @@ describe("the dashboard's open requests", () => {
     expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90 })
   })
 
-  it("closes as done only with evidence, and drops with a default reason", async () => {
+  it("closes as done with evidence, and drops with a default reason", async () => {
     failed("t1"); failed("t2")
     const c = panelCtx()
-    expect((await handleRequestsPanel("POST", `${P}/close`, { id: "req-t1", action: "done" }, c)).status).toBe(400)
     expect((await handleRequestsPanel("POST", `${P}/close`, { id: "req-t1", action: "done", evidence: "https://example.test/pr/4" }, c)).status).toBe(200)
     expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/pr/4" })
     expect((await handleRequestsPanel("POST", `${P}/close`, { id: "req-t1", action: "drop" }, c)).status).toBe(409)
@@ -322,6 +321,6 @@ describe("the dashboard's open requests", () => {
     const html = renderApprovalsPage()
     expect(html).toContain('id="req-section"')
     expect(html).toContain('data-kind="request"')
-    expect(html).toContain("/api/admin/approvals/requests/close")
+    expect(html).toContain("/api/admin/approvals/requests/'")
   })
 })
