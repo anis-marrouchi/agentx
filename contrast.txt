@@ -1,0 +1,41 @@
+light
+  ok   15.27 (min 4.5)  body text on page
+  ok   16.10 (min 4.5)  body text on surface
+  ok   5.74 (min 4.5)  second text on page
+  ok   6.05 (min 4.5)  second text on surface
+  ok   5.41 (min 4.5)  link on page
+  ok   5.70 (min 4.5)  link on surface
+  ok   5.62 (min 4.5)  waiting word on page
+  ok   5.93 (min 4.5)  waiting word on surface
+  ok   7.43 (min 4.5)  stuck word on surface
+  ok   5.78 (min 4.5)  offline strip text
+  ok   5.70 (min 4.5)  button text (19px bold)
+  ok   5.44 (min 4.5)  code text on its chip
+  ok   3.78 (min 3)  attention border on page
+  ok   3.78 (min 3)  working dot on page
+  ok   5.93 (min 3)  waiting ring on surface
+  ok   3.86 (min 3)  stuck shape on surface
+  ok   3.90 (min 3)  done tick on page
+  ok   6.05 (min 3)  field border on surface
+  ok   3.78 (min 3)  focus ring on page
+dark
+  ok   16.27 (min 4.5)  body text on page
+  ok   14.35 (min 4.5)  body text on surface
+  ok   9.47 (min 4.5)  second text on page
+  ok   8.35 (min 4.5)  second text on surface
+  ok   7.29 (min 4.5)  link on page
+  ok   6.43 (min 4.5)  link on surface
+  ok   11.82 (min 4.5)  waiting word on page
+  ok   10.42 (min 4.5)  waiting word on surface
+  ok   7.04 (min 4.5)  stuck word on surface
+  ok   10.16 (min 4.5)  offline strip text
+  ok   5.70 (min 4.5)  button text (19px bold)
+  ok   7.04 (min 4.5)  code text on its chip
+  ok   7.29 (min 3)  attention border on page
+  ok   7.29 (min 3)  working dot on page
+  ok   10.42 (min 3)  waiting ring on surface
+  ok   5.76 (min 3)  stuck shape on surface
+  ok   10.02 (min 3)  done tick on page
+  ok   8.35 (min 3)  field border on surface
+  ok   7.29 (min 3)  focus ring on page
+all pairs pass

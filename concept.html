@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>My work · AgentX (concept for #443)</title>
+<!-- Concept only. Static sample data, no network calls. Tokens are copied
+     from src/daemon/ui/tokens.ts by build.mjs; the page adds no new token.
+     Open with ?page=work|empty|pair|waiting and &theme=dark. -->
+<script>(function(){var q=new URLSearchParams(location.search);document.documentElement.setAttribute('data-theme',q.get('theme')==='dark'?'dark':'light');document.documentElement.setAttribute('data-page',q.get('page')||'work')})()</script>
+<style>
+:root {
+  /* --- Brand (agentina) --------------------------------------------- */
+  --ax-blue: #2979FF;
+  --ax-blue-d: #1B5FD9;
+  --ax-blue-t: #E7F0FF;
+  --ax-blue-e: #A9CBFF;
+  --ax-green: #22B573;
+  --ax-green-d: #178F58;
+  --ax-green-e: #A9E8C9;
+  --ax-amber: #FFB300;
+  --ax-amber-e: #FFE08A;
+  --ax-amber-t: #FFFCF5;
+  --ax-red: #F23A3A;
+  --ax-red-t: #FEECEC;
+  --ax-red-e: #F9C1C1;
+
+  /* Ink steps. Amber and red are legible as FILLS, not as small text:
+     #FFB300 on white is ~1.8:1 and #F23A3A ~3.6:1, both under 4.5:1. Use
+     these wherever the colour carries words rather than area. */
+  --ax-amber-ink: #8a5a00;
+  --ax-red-ink: #a52020;
+
+  /* --- Surfaces + text ---------------------------------------------- */
+  --ax-bg: #f8f9fa;
+  --ax-bg-elev: #f1f3f4;
+  --ax-surface: #ffffff;
+  --ax-surface-2: #f8f9fa;
+  --ax-surface-3: #f1f3f4;
+  --ax-border: #e8eaed;
+  --ax-border-2: #dadce0;
+  --ax-text: #202124;
+  --ax-text-2: #5f6368;
+  --ax-muted: #9aa0a6;
+
+  /* --- Semantic ------------------------------------------------------ */
+  --ax-accent: var(--ax-blue);
+  --ax-accent-2: var(--ax-blue-d);
+  --ax-accent-t: var(--ax-blue-t);
+  --ax-ok: var(--ax-green);
+  --ax-warn: var(--ax-amber);
+  --ax-err: var(--ax-red);
+  --ax-info: var(--ax-blue);
+
+  /* --- Shape ---------------------------------------------------------
+     The offset shadow is the signature move: a solid, un-blurred drop in a
+     darker shade of the element's own colour. It reads as a physical edge
+     rather than a glow, and it is what stops flat 2px-bordered boxes from
+     looking like a wireframe. */
+  --ax-border-w: 2px;
+  --ax-radius: 16px;
+  --ax-radius-lg: 20px;
+  --ax-radius-sm: 12px;
+  --ax-radius-pill: 999px;
+  --ax-shadow: 0 3px 0 var(--ax-border);
+  --ax-shadow-lg: 0 4px 0 var(--ax-border-2);
+  --ax-shadow-accent: 0 4px 0 var(--ax-blue-d);
+  --ax-shadow-ok: 0 4px 0 var(--ax-green-d);
+
+  /* --- Spacing ------------------------------------------------------- */
+  /* Width of the ask-an-agent drawer. Lives here because pages reflow
+     around it; the drawer overwrites it on :root when resized. */
+  --ax-as-w: 420px;
+  --ax-pad: 16px;
+  --ax-pad-sm: 10px;
+  --ax-gap: 12px;
+
+  /* --- Type ---------------------------------------------------------- */
+  --ax-font: "Outfit", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --ax-mono: "Roboto Mono", ui-monospace, "SF Mono", Consolas, monospace;
+  --ax-fs: 14px;
+  --ax-fs-sm: 13px;
+  --ax-fs-xs: 12px;
+
+  /* Legacy aliases so older CSS blocks keep rendering until they're ported. */
+  --bg: var(--ax-bg);
+  --card: var(--ax-surface);
+  --node: var(--ax-bg-elev);
+  --border: var(--ax-border);
+  --text: var(--ax-text);
+  --muted: var(--ax-muted);
+  --accent: var(--ax-accent);
+  --yellow: var(--ax-warn);
+  --red: var(--ax-err);
+  --blue: var(--ax-info);
+  --gray: var(--ax-muted);
+  color-scheme: light;
+}
+
+/* Dark is not a tint of light — the brand colours are lifted toward their
+   tints so they keep contrast against a dark ground, and the offset shadow
+   goes DARKER than the surface instead of lighter. Same shape language,
+   inverted physics. */
+[data-theme="dark"] {
+  --ax-blue: #6BA5FF;
+  --ax-blue-d: #1B5FD9;
+  --ax-blue-t: #16233d;
+  --ax-blue-e: #2f4d7a;
+  --ax-green: #4ED89B;
+  --ax-green-d: #178F58;
+  --ax-green-e: #1e4a36;
+  --ax-amber: #FFC948;
+  --ax-amber-e: #4a3a12;
+  --ax-amber-t: #2a2313;
+  --ax-red: #FF6B6B;
+  --ax-red-t: #3a1c1c;
+  --ax-red-e: #6b2f2f;
+  --ax-amber-ink: #FFC948;
+  --ax-red-ink: #FF8A8A;
+
+  --ax-bg: #14161a;
+  --ax-bg-elev: #191c21;
+  --ax-surface: #1e2228;
+  --ax-surface-2: #23272e;
+  --ax-surface-3: #2a2f37;
+  --ax-border: #2f353e;
+  --ax-border-2: #3d444f;
+  --ax-text: #f1f3f4;
+  --ax-text-2: #b6bcc4;
+  --ax-muted: #858c96;
+
+  --ax-shadow: 0 3px 0 #0e1013;
+  --ax-shadow-lg: 0 4px 0 #0e1013;
+  --ax-shadow-accent: 0 4px 0 #14396e;
+  --ax-shadow-ok: 0 4px 0 #11402c;
+  color-scheme: dark;
+}
+
+/* Base element resets shared across every page. */
+* { box-sizing: border-box; }
+html, body {
+  margin: 0; min-height: 100vh;
+  background: var(--ax-bg); color: var(--ax-text);
+  font-family: var(--ax-font); font-size: var(--ax-fs);
+  -webkit-font-smoothing: antialiased;
+}
+pre, code, .ax-mono {
+  font-family: var(--ax-mono); font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+a { color: var(--ax-accent); text-decoration: none; font-weight: 600; }
+a:hover { color: var(--ax-accent-2); text-decoration: underline; }
+.ax-muted { color: var(--ax-muted); }
+.ax-accent { color: var(--ax-accent); }
+
+/* ── Page-local: only names for existing token values ── */
+:root { --link: var(--ax-blue-d); --ring: var(--ax-blue); --tick: var(--ax-green-d); }
+[data-theme="dark"] { --link: var(--ax-blue); --tick: var(--ax-green); }
+
+body { min-height: 100dvh; font-size: 16px; line-height: 1.5; -webkit-text-size-adjust: 100%; }
+h1, h2, p, ul, ol { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+a { color: var(--link); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+a:hover { color: var(--link); }
+:focus-visible { outline: 3px solid var(--ring); outline-offset: 2px; border-radius: 4px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+[data-page] .page { display: none; }
+[data-page="work"] #work, [data-page="empty"] #empty, [data-page="pair"] #pair, [data-page="waiting"] #waiting { display: block; }
+
+/* ── Top bar, shared by all three pages ── */
+.bar { display: flex; align-items: center; gap: 12px; padding: 14px 20px; background: var(--ax-surface); border-bottom: var(--ax-border-w) solid var(--ax-border); }
+.mark { flex: none; width: 36px; height: 36px; border-radius: 10px; background: var(--ax-blue); box-shadow: 0 3px 0 var(--ax-blue-d); position: relative; }
+.mark::after { content: ""; position: absolute; inset: 11px; border-radius: 50%; background: #fff; }
+.bar h1 { font-size: 20px; font-weight: 700; line-height: 1.2; }
+.who { font-size: 14px; color: var(--ax-text-2); }
+.bar .grow { flex: 1; min-width: 0; }
+.icon-btn { min-width: 44px; min-height: 44px; font-size: 20px; line-height: 1; border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-pill); background: var(--ax-surface); color: var(--ax-text); cursor: pointer; }
+
+.wrap { max-width: 760px; margin: 0 auto; padding: 24px 20px 48px; }
+.sum { font-size: 22px; font-weight: 600; line-height: 1.3; margin-bottom: 24px; text-wrap: balance; }
+.wrap h2 { font-size: 15px; font-weight: 700; color: var(--ax-text-2); margin: 32px 0 8px; }
+.wrap h2 .n { font-weight: 400; }
+
+/* ── The one loud thing: requests that need a person ── */
+.need { border: var(--ax-border-w) solid var(--ax-blue); border-radius: var(--ax-radius-lg); background: var(--ax-surface); box-shadow: 0 4px 0 var(--ax-blue-d); }
+.need h2 { margin: 0; padding: 14px 20px 0; color: var(--ax-text); font-size: 17px; }
+.need li { padding: 14px 20px 18px; }
+.need li + li { border-top: var(--ax-border-w) solid var(--ax-border); }
+.need .q { font-size: 19px; font-weight: 600; line-height: 1.35; margin: 6px 0 8px; overflow-wrap: anywhere; }
+.need .for { color: var(--ax-text-2); overflow-wrap: anywhere; }
+.need .for b { color: var(--ax-text); font-weight: 600; }
+
+/* ── State: a shape and a word, never colour alone ── */
+.state { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.state::before { content: ""; flex: none; width: 12px; height: 12px; border-radius: 50%; box-sizing: border-box; }
+.state.work::before { background: var(--ax-blue); }
+.state.wait { color: var(--ax-amber-ink); }
+.state.wait::before { border: 3px solid var(--ax-amber-ink); }
+.state.stuck { color: var(--ax-red-ink); }
+.state.stuck::before { border-radius: 2px; background: var(--ax-red); transform: rotate(45deg); }
+.state.done::before { background: var(--tick); clip-path: polygon(12% 52%, 0 66%, 38% 100%, 100% 22%, 86% 10%, 36% 70%); border-radius: 0; }
+.state.off { color: var(--ax-text-2); }
+.state.off::before { height: 3px; border-radius: 2px; background: var(--ax-muted); }
+
+/* ── Quiet rows: one list, ruled, no boxes ── */
+.rows { border-top: var(--ax-border-w) solid var(--ax-border); }
+.row { display: grid; grid-template-columns: 1fr; gap: 4px 20px; padding: 14px 0; border-bottom: var(--ax-border-w) solid var(--ax-border); }
+.row .text { overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; gap: 2px 18px; font-size: 14px; color: var(--ax-text-2); }
+.moved { font-variant-numeric: tabular-nums; }
+.note { font-size: 14px; overflow-wrap: anywhere; }
+@media (min-width: 640px) {
+  .row { grid-template-columns: 1fr 230px; }
+  .row .side { grid-column: 2; grid-row: 1 / span 3; display: grid; gap: 2px; align-content: start; justify-items: end; text-align: right; font-size: 14px; color: var(--ax-text-2); }
+}
+@media (max-width: 639px) {
+  .row .side { display: flex; flex-wrap: wrap; gap: 2px 18px; align-items: center; font-size: 14px; color: var(--ax-text-2); order: -1; }
+}
+
+details { margin-top: 32px; }
+summary { cursor: pointer; font-size: 15px; font-weight: 700; color: var(--ax-text-2); padding: 10px 0; min-height: 44px; }
+.foot { margin-top: 28px; font-size: 14px; color: var(--ax-text-2); }
+.strip { padding: 10px 20px; font-size: 14px; background: var(--ax-amber-t); color: var(--ax-amber-ink); border-bottom: var(--ax-border-w) solid var(--ax-amber-e); }
+
+/* ── Empty ── */
+.blank { margin-top: 8px; padding: 28px 24px; border: var(--ax-border-w) dashed var(--ax-border-2); border-radius: var(--ax-radius-lg); }
+.blank p + p { margin-top: 8px; color: var(--ax-text-2); }
+
+/* ── Pairing and waiting: same bar, one card, the three steps ── */
+.narrow { max-width: 480px; margin: 0 auto; padding: 28px 20px 48px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 24px; counter-reset: s; }
+.steps li { counter-increment: s; font-size: 14px; color: var(--ax-text-2); padding-top: 10px; border-top: 4px solid var(--ax-border-2); }
+.steps li::before { content: counter(s) ". "; }
+.steps li.done { border-color: var(--ax-blue); }
+.steps li.now { border-color: var(--ax-blue); color: var(--ax-text); font-weight: 700; }
+.card { padding: 24px; background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-lg); box-shadow: var(--ax-shadow-lg); }
+.card h2 { font-size: 24px; font-weight: 700; line-height: 1.2; margin-bottom: 8px; }
+.card p { color: var(--ax-text-2); }
+.form { display: grid; gap: 8px; margin-top: 20px; }
+.form label { font-weight: 600; margin-top: 8px; }
+.form input { width: 100%; min-height: 52px; padding: 10px 14px; font: inherit; font-size: 17px; color: var(--ax-text); background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-text-2); border-radius: var(--ax-radius-sm); }
+.form input.code { min-height: 64px; font: 600 26px/1.2 var(--ax-mono); letter-spacing: 0.12em; text-align: center; text-transform: uppercase; }
+.form button { margin-top: 16px; min-height: 56px; border: 0; border-radius: var(--ax-radius-pill); font: inherit; font-size: 19px; font-weight: 700; color: #fff; background: var(--ax-blue-d); box-shadow: 0 4px 0 #134aad; cursor: pointer; }
+.help { margin-top: 20px; font-size: 14px; color: var(--ax-text-2); }
+code { background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; font-size: 0.92em; }
+.pulse { display: inline-block; width: 12px; height: 12px; margin-right: 10px; border-radius: 50%; border: 3px solid var(--ax-amber-ink); box-sizing: border-box; animation: breathe 2.4s ease-in-out infinite; }
+@keyframes breathe { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .pulse { animation: none; } }
+</style>
+</head>
+<body>
+
+<!-- ═════════ My work ═════════ -->
+<div class="page" id="work">
+<header class="bar">
+  <span class="mark" aria-hidden="true"></span>
+  <div class="grow"><h1>My work</h1><p class="who">Sara B, on Work laptop</p></div>
+  <button type="button" class="icon-btn" aria-label="Switch theme">◐</button>
+</header>
+<main class="wrap">
+  <p class="sum">Two of your requests need a person. Two are moving.</p>
+
+  <section class="need" aria-labelledby="h-need">
+    <h2 id="h-need">Needs a person</h2>
+    <ul>
+      <li>
+        <span class="state wait">Waiting on the owner</span>
+        <p class="q">Which logo goes on the invoice, the blue one or the black one?</p>
+        <p class="for">For <b>Put our logo on the invoice template and send me a sample</b></p>
+        <p class="meta"><span>billing agent</span><span class="moved">asked 40 min ago</span><span>from <a href="#">WhatsApp</a></span></p>
+      </li>
+      <li>
+        <span class="state stuck">Stuck</span>
+        <p class="q">The export stopped twice: the sheet is locked by another user.</p>
+        <p class="for">For <b>Export September timesheets to the shared sheet</b></p>
+        <p class="meta"><span>ops agent</span><span class="moved">last moved 3 h 10 min ago</span><span>from <a href="#">gitlab kafaa/portal #152</a></span></p>
+      </li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-open">
+    <h2 id="h-open">Moving <span class="n">(2)</span></h2>
+    <ul class="rows">
+      <li class="row">
+        <p class="text">Draft the reply to the supplier about the late delivery, in French</p>
+        <p class="meta"><span>secretary agent</span><span>from <a href="#">Telegram</a></span></p>
+        <p class="side"><span class="state work">In progress</span><span class="moved">moved 4 min ago</span></p>
+      </li>
+      <li class="row">
+        <p class="text">Check why the staging login page shows the old banner https://v2.portal.example.tn/login?redirect=/dashboard/reports/2026/09</p>
+        <p class="meta"><span>coder agent</span><span>from <a href="#">github noqta/portal #88</a></span></p>
+        <p class="side"><span class="state wait">Waiting on another agent</span><span class="moved">moved 1 h 5 min ago</span></p>
+      </li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-recent">
+    <h2 id="h-recent">Finished in the last 7 days</h2>
+    <ul class="rows">
+      <li class="row">
+        <p class="text">Summarise yesterday's client call and list the open points</p>
+        <p class="note"><a href="#">What was delivered</a></p>
+        <p class="meta"><span>secretary agent</span><span>from <a href="#">WhatsApp</a></span></p>
+        <p class="side"><span class="state done">Done</span><span class="moved">closed 1 d 2 h ago</span></p>
+      </li>
+      <li class="row">
+        <p class="text">Book the meeting room for Thursday afternoon</p>
+        <p class="meta"><span>ops agent</span><span>from <a href="#">Telegram</a></span></p>
+        <p class="side"><span class="state off">Dropped</span><span class="moved">closed 3 d 6 h ago</span></p>
+      </li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-runs">
+    <h2 id="h-runs">Latest turns</h2>
+    <ul class="rows">
+      <li class="row"><p class="text">Draft the reply to the supplier about the late delivery, in French</p><p class="meta"><span>secretary agent</span><span>Telegram</span></p><p class="side"><span class="state work">Running</span><span class="moved">4 min ago</span></p></li>
+      <li class="row"><p class="text">Put our logo on the invoice template and send me a sample</p><p class="meta"><span>billing agent</span><span>WhatsApp</span></p><p class="side"><span class="state done">Finished</span><span class="moved">40 min ago</span></p></li>
+      <li class="row"><p class="text">Export September timesheets to the shared sheet</p><p class="meta"><span>ops agent</span><span>gitlab</span></p><p class="side"><span class="state stuck">Failed</span><span class="moved">3 h 10 min ago</span></p></li>
+    </ul>
+  </section>
+
+  <p class="foot">Updated 10:42:07. This page refreshes every 30 seconds.</p>
+</main>
+</div>
+
+<!-- ═════════ My work, nothing yet, and offline ═════════ -->
+<div class="page" id="empty">
+<header class="bar">
+  <span class="mark" aria-hidden="true"></span>
+  <div class="grow"><h1>My work</h1><p class="who">Sara B, on Work laptop</p></div>
+  <button type="button" class="icon-btn" aria-label="Switch theme">◐</button>
+</header>
+<p class="strip" role="status">Offline. This is what was last loaded; live state needs a connection.</p>
+<main class="wrap">
+  <p class="sum">Nothing open.</p>
+  <div class="blank">
+    <p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here while it is being worked on.</p>
+    <p>Requests that need you or the owner come first on this page.</p>
+  </div>
+  <p class="foot">Updated 10:42:07.</p>
+</main>
+</div>
+
+<!-- ═════════ Pair this machine ═════════ -->
+<div class="page" id="pair">
+<header class="bar"><span class="mark" aria-hidden="true"></span><div class="grow"><h1>My work</h1><p class="who">This machine is not paired yet</p></div></header>
+<main class="narrow">
+  <ol class="steps" aria-label="Steps"><li class="now" aria-current="step">Type the code</li><li>The owner says yes</li><li>Your work opens</li></ol>
+  <div class="card">
+    <h2>Pair this machine</h2>
+    <p>The owner sent you a pairing code. Type it with a name for this machine.</p>
+    <form class="form" onsubmit="return false">
+      <label for="machine">This machine's name</label>
+      <input id="machine" type="text" value="Work laptop" autocomplete="off">
+      <label for="code">Pairing code</label>
+      <input id="code" class="code" type="text" value="K7QM-2XRD" maxlength="9" autocomplete="one-time-code">
+      <button type="submit">Pair this machine</button>
+    </form>
+    <p class="help">No code? Ask the owner to run <code>agentx people invite &lt;you&gt;</code>. A code works once, for 10 minutes.</p>
+  </div>
+</main>
+</div>
+
+<!-- ═════════ Waiting for the owner ═════════ -->
+<div class="page" id="waiting">
+<header class="bar"><span class="mark" aria-hidden="true"></span><div class="grow"><h1>My work</h1><p class="who">Work laptop, paired</p></div></header>
+<main class="narrow">
+  <ol class="steps" aria-label="Steps"><li class="done"><span class="sr">Done: </span>Type the code</li><li class="now" aria-current="step">The owner says yes</li><li>Your work opens</li></ol>
+  <div class="card">
+    <h2><span class="pulse" aria-hidden="true"></span>Waiting for the owner</h2>
+    <p role="status">The owner has to approve this machine once. This page opens your work by itself when they do.</p>
+    <p class="help">If they say no, this page asks for a new code.</p>
+  </div>
+</main>
+</div>
+
+</body>
+</html>
