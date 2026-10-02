@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.83.2](https://github.com/anis-marrouchi/agentx/compare/v0.83.1...v0.83.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **requests:** a peer's vouch is believed only from another machine ([#424](https://github.com/anis-marrouchi/agentx/issues/424)) ([054ff35](https://github.com/anis-marrouchi/agentx/commit/054ff351a1003432c003d15a5d49d0b78f252af7))
+
 ## [0.83.1](https://github.com/anis-marrouchi/agentx/compare/v0.83.0...v0.83.1) (2026-10-02)
 
 
