@@ -80,6 +80,43 @@ enum PillPlacement {
                       width: size.width, height: size.height), visible).origin
     }
 
+    /// How close the middle of the character comes to the left edge of
+    /// its screen.
+    static let characterInset: CGFloat = 44
+
+    /// Where the character rests: the point under it, the screen it is
+    /// on, and the ends it may step aside to.
+    struct Spot: Equatable {
+        let place: CGPoint
+        let visible: CGRect
+        let ends: ClosedRange<CGFloat>
+    }
+
+    /// A place the character was dragged to (#502) made safe: on the
+    /// screen nearest to it, between the ends it may step aside to, with
+    /// `room` above it for its body and its bubble. Further than `room`
+    /// from every screen (its monitor was unplugged, or the saved value
+    /// is nonsense) or nil: under the right end of its bubble, the bubble
+    /// in the pill's default corner of `fallback`.
+    static func character(saved: CGPoint?, room: CGFloat, screens: [CGRect], fallback: CGRect) -> Spot {
+        var visible = fallback
+        var p = CGPoint(x: fallback.maxX, y: fallback.minY)
+        if let saved, saved.x.isFinite, saved.y.isFinite {
+            func far(_ r: CGRect) -> CGFloat {
+                hypot(max(r.minX - saved.x, 0, saved.x - r.maxX), max(r.minY - saved.y, 0, saved.y - r.maxY))
+            }
+            if let near = screens.min(by: { far($0) < far($1) }), far(near) <= room {
+                visible = near
+                p = saved
+            }
+        }
+        let left = visible.minX + characterInset
+        let right = max(visible.maxX - inset - bubbleReach, left)
+        return Spot(place: CGPoint(x: min(max(p.x, left), right),
+                                   y: min(max(p.y, visible.minY), max(visible.maxY - room, visible.minY))),
+                    visible: visible, ends: left...right)
+    }
+
     /// `frame` moved the least distance that puts it inside `bounds`. A
     /// frame larger than `bounds` keeps its top-left corner in view.
     static func inside(_ frame: CGRect, _ bounds: CGRect) -> CGRect {

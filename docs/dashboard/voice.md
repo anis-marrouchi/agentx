@@ -117,8 +117,8 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 | **Hold notifications** | Holds agent notifications until you turn it off |
 | **Show floating pill** | Keeps the [pill](#the-pill-and-its-orb) on screen when idle. Off by default: the pill appears only while listening or answering. Unticked while the pill is hidden, so one click brings it back |
 | **Animated orb** | Lets the orb in the pill move with your voice and the answer. On by default. Turn it off for an orb that stands still |
-| **Hide pill** | Hides the pill and stops the voice, like its close button. The next **Option–Space** or **Show floating pill** brings it back |
-| **Reset position** | Puts the pill back in the bottom-right corner of the screen |
+| **Hide pill** | Hides the pill and stops the voice, like its close button. The next **Option–Space** or **Show floating pill** brings it back. With the [character](#the-character) it reads **Hide character** and hides the character too, then **Show character** to bring it back |
+| **Reset position** | Puts the pill back in the bottom-right corner of the screen, or the character back where it rests by default |
 | **Settings…** | Opens the [settings window](#settings-window): voices, shortcuts and speech to text |
 | **Dashboard…** | Opens the dashboard's [Settings](./settings.md) page |
 | **History…** | Opens the [History window](#history-of-what-you-asked): past questions and answers, by day |
@@ -239,21 +239,42 @@ In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A c
 
 Good to know:
 
-- **It never interrupts:** it takes no clicks and no keys. A click where it hovers goes to the window behind it.
+- **It never interrupts:** it takes no keys, and a click where it hovers goes to the window behind it. Only a drag with **Command** held [moves it](#move-or-hide-the-character).
 - **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it.
 - **The pill is its speech bubble:** the pill shows the agent's name, the words, the answer and the call buttons as before, attached to the character. It has no orb of its own, and it appears and hides by the same rules as the pill: only while listening or answering, unless **Show floating pill** is ticked.
 - **It waits while you use the bubble:** while the pointer is on the bubble, the character stays where it is, so you can click a button or read the answer.
-- **The bubble can't be dragged:** it stays with the character. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
+- **The bubble can't be dragged by itself:** it stays with the character, so [move the character](#move-or-hide-the-character) and the bubble goes with it. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
 - **Colour:** it wears the palette of the agent that is answering, amber while notifications are held and red when something went wrong, like the orb.
 - **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked in the AgentX menu, it is a still picture that changes between states and stays in its place.
-- **Where it rests:** above the bottom edge of the screen with the menu bar, near the bottom-right corner, under the right end of its bubble.
+- **Where it rests:** above the bottom edge of the screen with the menu bar, near the bottom-right corner, under the right end of its bubble, until you move it.
+
+### Move or hide the character
+
+The character steps aside when the pointer comes close, so hold **Command** to make it wait. To move it:
+
+1. **Mac:** hold **Command** and move the pointer onto the character.
+2. **Mac:** press on it and drag it where you want it, on any screen. Its bubble goes with it.
+3. Let go. The character rests there, steps aside from there, and comes back to the same place the next time the app starts.
+
+To put it back where it rests by default:
+
+1. **Mac:** click the AgentX icon in the menu bar.
+2. **Mac:** choose **Reset position**.
+
+To hide the character and its bubble together, use any of the ways to [hide the pill](#hide-the-pill): the bubble's **×** button, **Esc** after a click on the bubble, or **Hide character** in the AgentX menu. The voice that is speaking stops too. Hold **Option–Space**, or choose **Show character** in the menu, to bring both back.
+
+Good to know:
+
+- **Its place is its own:** the character's place and the pill's place are kept apart, so moving one never moves the other when you switch looks.
+- **It stays on screen:** it goes no closer to the top of a screen than its bubble needs, and no further right than where it rests by default. If its screen is no longer connected, it comes back to the bottom-right corner of your main screen.
+- **Hidden until you ask:** a hidden character stays hidden, whatever an agent says meanwhile. It comes back with **Option–Space**, an agent's own shortcut, an incoming call, **Show character** or **Show floating pill**, and when the app starts again.
 
 ### Move the pill
 
 1. **Mac:** press anywhere on the pill (the orb and the words too) and drag it where you want it.
 2. Let go. The pill stays there, and it comes back to the same place the next time the app starts.
 
-While the [character](#the-character) shows, the pill is its speech bubble and can't be dragged, and **Reset position** does nothing.
+While the [character](#the-character) shows, the pill is its speech bubble: [move the character](#move-or-hide-the-character) instead, and **Reset position** puts the character back.
 
 If the pill was on a screen that is no longer connected, it comes back in the bottom-right corner of your main screen. To put it back in the corner yourself:
 
@@ -896,6 +917,8 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **Launch at login is greyed out:** `agentx desktop install` starts the app at login. **Terminal:** run `agentx desktop stop` to stop it.
 - **The pill doesn't appear:** it was hidden with **×**, **Esc** or **Hide pill**. Hold **Option–Space**, or choose **Show floating pill** in the menu, to bring it back. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
 - **The pill is off screen or in an odd place:** click the AgentX icon in the menu bar and choose **Reset position**.
+- **The character runs from the pointer and can't be dragged:** hold **Command** first. It then waits, and you can drag it. See [Move or hide the character](#move-or-hide-the-character).
+- **The character is gone:** it was hidden with its bubble. Hold **Option–Space**, or choose **Show character** in the menu.
 - **Esc does nothing:** the pill only hears **Esc** after you click it. Click the pill first, or use its **×** button.
 - **The orb is the wrong colour:** pick a palette with `agentx voice palette <agent-id> <palette>` or in **Settings…**, or set `presence.color` for that agent as `#RRGGBB`. The app reads colours and palettes when you open its menu, so open it once after a change. An orb in plain shades of one colour means the daemon is older than the palettes: update it.
 - **No answer text in the pill:** the answer had nothing the voice didn't already say. The pill only grows for a link, a picture, or more text than was spoken. If you closed the pill with **×** or **Esc**, the next answer doesn't open it either; hold **Option–Space** first.
