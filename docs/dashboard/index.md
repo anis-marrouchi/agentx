@@ -42,6 +42,8 @@ On every page, the right of the top bar shows the version of the daemon, its com
 
 When the AgentX files on disk were rebuilt or upgraded after the daemon started, the same place adds a **restart pending** badge. Hover over it to read why: the code on disk is newer than the running daemon. The daemon keeps running the old code until it restarts: use **Restart when idle** on the Live tab, or `agentx daemon restart --when-idle` in a terminal ([restart without losing work](../jobs/restart-safely.md#restart-from-the-dashboard)). The line refreshes every minute.
 
+The badge looks at the folder the daemon was started from. If you install each release into a new folder and then point the service at it, a release waiting in the new folder does not show the badge.
+
 This is the daemon the dashboard is attached to (`dashboard.daemonUrl`), not the machine picked under **Managing**. For the full picture, with the last restart and how often the daemon restarts, run [`agentx daemon status`](../reference/cli.md#see-what-the-daemon-is-running).
 
 ## Talk to your agents
