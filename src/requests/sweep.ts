@@ -49,6 +49,8 @@ export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?
   // current turn ends. That turn keeps the pick-up mark, so it is linked
   // to the request then (#392).
   if (!res?.error || isQueued(res.error)) return false
+  // The agent never read the owner's note: the next pick-up says it.
+  if (r.ownerNote && !r.noteSaid) store.setNoteSaid(r.id, false)
   return store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${res.error}`, now)
 }
 
@@ -61,7 +63,7 @@ export function pickupText(r: RequestRecord): string {
     "What they asked:",
     r.text,
     "",
-    ...(r.ownerNote ? ["What they say now:", r.ownerNote, ""] : []),
+    ...(r.ownerNote && !r.noteSaid ? ["What they say now:", r.ownerNote, ""] : []),
     `Do the work now. Report to them in that chat. When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
   ].join("\n")
 }
@@ -93,6 +95,8 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       }
       try {
         await deps.tellAgent(r.agentId, pickupText(r), r)
+        // Said once (#480): a later pick-up without new words does not repeat it.
+        if (r.ownerNote && !r.noteSaid) store.setNoteSaid(r.id, true)
         result.pickedUp++
       } catch (e: any) {
         store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${e?.message ?? e}`, now)
