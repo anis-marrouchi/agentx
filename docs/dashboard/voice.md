@@ -286,6 +286,8 @@ If the pill was on a screen that is no longer connected, it comes back in the bo
 
 The pill can be reduced to its orb alone: a small circle with no name, no words and no buttons.
 
+![The full pill at rest, reading HOLD ⌥SPACE beside its orb, and next to it the same pill reduced: a small circle holding only the orb](/screenshots/voice/pill-reduced-light.png)
+
 1. **Mac:** right-click the pill, or click the AgentX icon in the menu bar.
 2. **Mac:** choose **Reduce to orb**. The pill becomes a circle in the middle of the bottom edge of the screen.
 3. **Mac:** drag the orb where you want it and let go. It stays there, and comes back to the same place the next time the app starts. The orb and the full pill each keep their own place.
