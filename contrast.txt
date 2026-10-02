@@ -15,6 +15,10 @@ light
   ok   3.78 (min 3)  working dot on page
   ok   5.93 (min 3)  waiting ring on surface
   ok   3.86 (min 3)  stuck shape on surface
+  ok   4.11 (min 3)  free dot on surface
+  ok   3.90 (min 3)  free card border on page
+  ok   3.98 (min 3)  working dot on surface
+  ok   5.78 (min 3)  retry button border on strip
   ok   3.90 (min 3)  done tick on page
   ok   6.05 (min 3)  field border on surface
   ok   3.78 (min 3)  focus ring on page
@@ -35,6 +39,10 @@ dark
   ok   7.29 (min 3)  working dot on page
   ok   10.42 (min 3)  waiting ring on surface
   ok   5.76 (min 3)  stuck shape on surface
+  ok   8.84 (min 3)  free dot on surface
+  ok   10.02 (min 3)  free card border on page
+  ok   6.43 (min 3)  working dot on surface
+  ok   10.16 (min 3)  retry button border on strip
   ok   10.02 (min 3)  done tick on page
   ok   8.35 (min 3)  field border on surface
   ok   7.29 (min 3)  focus ring on page

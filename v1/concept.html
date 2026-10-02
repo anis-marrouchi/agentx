@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>My work · AgentX (concept for #443, version 2)</title>
+<title>My work · AgentX (concept for #443)</title>
 <!-- Concept only. Static sample data, no network calls. Tokens are copied
      from src/daemon/ui/tokens.ts by build.mjs; the page adds no new token.
      Open with ?page=work|empty|pair|waiting and &theme=dark. -->
@@ -223,25 +223,6 @@ summary { cursor: pointer; font-size: 15px; font-weight: 700; color: var(--ax-te
 .foot { margin-top: 28px; font-size: 14px; color: var(--ax-text-2); }
 .strip { padding: 10px 20px; font-size: 14px; background: var(--ax-amber-t); color: var(--ax-amber-ink); border-bottom: var(--ax-border-w) solid var(--ax-amber-e); }
 
-/* ── Agents: the first thing on the page. State is a shape, a colour and a word ── */
-.agents { display: grid; grid-template-columns: 1fr; gap: 12px; }
-@media (min-width: 640px) { .agents { grid-template-columns: 1fr 1fr; } }
-.agent { display: grid; gap: 6px; align-content: start; padding: 16px 18px 18px; background: var(--ax-surface); border: var(--ax-border-w) solid var(--ax-border-2); border-radius: var(--ax-radius-lg); }
-.agent .top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; }
-.agent .name { font-size: 17px; font-weight: 700; }
-.agent .state { font-size: 15px; }
-.agent .state::before { width: 14px; height: 14px; }
-.agent .what { overflow-wrap: anywhere; }
-.agent .hint { font-size: 14px; color: var(--ax-text-2); padding-top: 8px; border-top: var(--ax-border-w) solid var(--ax-border); margin-top: 4px; }
-.agent.free { border-color: var(--tick); }
-.agent.free .hint { color: var(--ax-text); font-weight: 600; }
-.state.free::before { background: var(--tick); }
-.state.work.live::before { background: var(--ax-blue); animation: halo 1.8s ease-out infinite; }
-@keyframes halo { 0% { box-shadow: 0 0 0 0 var(--ax-blue); } 100% { box-shadow: 0 0 0 7px transparent; } }
-@media (prefers-reduced-motion: reduce) { .state.work.live::before { animation: none; } }
-.strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
-.strip button { min-height: 36px; padding: 4px 16px; font: inherit; font-weight: 700; color: var(--ax-amber-ink); background: transparent; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius-pill); cursor: pointer; }
-
 /* ── Empty ── */
 .blank { margin-top: 8px; padding: 28px 24px; border: var(--ax-border-w) dashed var(--ax-border-2); border-radius: var(--ax-radius-lg); }
 .blank p + p { margin-top: 8px; color: var(--ax-text-2); }
@@ -278,39 +259,9 @@ code { background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; fo
   <button type="button" class="icon-btn" aria-label="Switch theme">◐</button>
 </header>
 <main class="wrap">
-  <p class="sum">coder agent is working on your task. secretary agent is free.</p>
+  <p class="sum">Two of your requests need a person. Two are moving.</p>
 
-  <section aria-labelledby="h-agents">
-    <h2 id="h-agents" style="margin-top:0">Your agents</h2>
-    <ul class="agents">
-      <li class="agent">
-        <p class="top"><span class="name">coder agent</span><span class="state work live">Working</span></p>
-        <p class="what">Check why the staging login page shows the old banner</p>
-        <p class="meta"><span>started by you</span><span class="moved">12 min ago</span><span>from <a href="#">GitLab acme/portal #88</a></span></p>
-        <p class="hint">Busy. A new message waits in line until this ends.</p>
-      </li>
-      <li class="agent free">
-        <p class="top"><span class="name">secretary agent</span><span class="state free">Free</span></p>
-        <p class="what">Finished: Draft the reply to the supplier about the late delivery</p>
-        <p class="meta"><span>started by you</span><span class="moved">finished 4 min ago</span><span>from <a href="#">Telegram</a></span></p>
-        <p class="hint">Free. Ready for your next message.</p>
-      </li>
-      <li class="agent">
-        <p class="top"><span class="name">ops agent</span><span class="state work live">Working</span></p>
-        <p class="what">Busy with someone else's task</p>
-        <p class="meta"><span>started by the owner</span><span class="moved">25 min ago</span></p>
-        <p class="hint">1 of yours is waiting in line behind it.</p>
-      </li>
-      <li class="agent">
-        <p class="top"><span class="name">billing agent</span><span class="state stuck">Blocked</span></p>
-        <p class="what">Stopped on: Export September timesheets to the shared sheet</p>
-        <p class="meta"><span>started by you</span><span class="moved">stopped 3 h 10 min ago</span></p>
-        <p class="hint">The sheet is locked by another user. It needs a person.</p>
-      </li>
-    </ul>
-  </section>
-
-  <section class="need" aria-labelledby="h-need" style="margin-top:32px">
+  <section class="need" aria-labelledby="h-need">
     <h2 id="h-need">Needs a person</h2>
     <ul>
       <li>
@@ -319,48 +270,58 @@ code { background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; fo
         <p class="for">For <b>Put our logo on the invoice template and send me a sample</b></p>
         <p class="meta"><span>billing agent</span><span class="moved">asked 40 min ago</span><span>from <a href="#">WhatsApp</a></span></p>
       </li>
+      <li>
+        <span class="state stuck">Stuck</span>
+        <p class="q">The export stopped twice: the sheet is locked by another user.</p>
+        <p class="for">For <b>Export September timesheets to the shared sheet</b></p>
+        <p class="meta"><span>ops agent</span><span class="moved">last moved 3 h 10 min ago</span><span>from <a href="#">gitlab kafaa/portal #152</a></span></p>
+      </li>
     </ul>
   </section>
 
-  <section aria-labelledby="h-tasks">
-    <h2 id="h-tasks">What you sent <span class="n">(last 7 days)</span></h2>
+  <section aria-labelledby="h-open">
+    <h2 id="h-open">Moving <span class="n">(2)</span></h2>
     <ul class="rows">
       <li class="row">
-        <p class="text">Check why the staging login page shows the old banner https://v2.portal.example.tn/login?redirect=/dashboard/reports/2026/09</p>
-        <p class="meta"><span>coder agent</span><span>from <a href="#">GitLab acme/portal #88</a></span></p>
-        <p class="side"><span class="state work">Running</span><span class="moved">started 12 min ago</span></p>
-      </li>
-      <li class="row">
-        <p class="text">Move the September export to the new folder when it is done</p>
-        <p class="meta"><span>ops agent</span><span>from <a href="#">Telegram</a></span></p>
-        <p class="side"><span class="state wait">In line</span><span class="moved">sent 6 min ago</span></p>
-      </li>
-      <li class="row">
         <p class="text">Draft the reply to the supplier about the late delivery, in French</p>
-        <p class="note"><a href="#">What was delivered</a></p>
         <p class="meta"><span>secretary agent</span><span>from <a href="#">Telegram</a></span></p>
-        <p class="side"><span class="state done">Finished</span><span class="moved">4 min ago</span></p>
+        <p class="side"><span class="state work">In progress</span><span class="moved">moved 4 min ago</span></p>
       </li>
       <li class="row">
-        <p class="text">Put our logo on the invoice template and send me a sample</p>
-        <p class="meta"><span>billing agent</span><span>from <a href="#">WhatsApp</a></span></p>
-        <p class="side"><span class="state wait">Waiting on the owner</span><span class="moved">40 min ago</span></p>
+        <p class="text">Check why the staging login page shows the old banner https://v2.portal.example.tn/login?redirect=/dashboard/reports/2026/09</p>
+        <p class="meta"><span>coder agent</span><span>from <a href="#">github noqta/portal #88</a></span></p>
+        <p class="side"><span class="state wait">Waiting on another agent</span><span class="moved">moved 1 h 5 min ago</span></p>
       </li>
-      <li class="row">
-        <p class="text">Export September timesheets to the shared sheet</p>
-        <p class="meta"><span>billing agent</span><span>from <a href="#">GitLab acme/portal #152</a></span></p>
-        <p class="side"><span class="state stuck">Stopped</span><span class="moved">3 h 10 min ago</span></p>
-      </li>
+    </ul>
+  </section>
+
+  <section aria-labelledby="h-recent">
+    <h2 id="h-recent">Finished in the last 7 days</h2>
+    <ul class="rows">
       <li class="row">
         <p class="text">Summarise yesterday's client call and list the open points</p>
         <p class="note"><a href="#">What was delivered</a></p>
         <p class="meta"><span>secretary agent</span><span>from <a href="#">WhatsApp</a></span></p>
-        <p class="side"><span class="state done">Finished</span><span class="moved">1 d 2 h ago</span></p>
+        <p class="side"><span class="state done">Done</span><span class="moved">closed 1 d 2 h ago</span></p>
+      </li>
+      <li class="row">
+        <p class="text">Book the meeting room for Thursday afternoon</p>
+        <p class="meta"><span>ops agent</span><span>from <a href="#">Telegram</a></span></p>
+        <p class="side"><span class="state off">Dropped</span><span class="moved">closed 3 d 6 h ago</span></p>
       </li>
     </ul>
   </section>
 
-  <p class="foot">Updated 10:42:07. This page refreshes by itself.</p>
+  <section aria-labelledby="h-runs">
+    <h2 id="h-runs">Latest turns</h2>
+    <ul class="rows">
+      <li class="row"><p class="text">Draft the reply to the supplier about the late delivery, in French</p><p class="meta"><span>secretary agent</span><span>Telegram</span></p><p class="side"><span class="state work">Running</span><span class="moved">4 min ago</span></p></li>
+      <li class="row"><p class="text">Put our logo on the invoice template and send me a sample</p><p class="meta"><span>billing agent</span><span>WhatsApp</span></p><p class="side"><span class="state done">Finished</span><span class="moved">40 min ago</span></p></li>
+      <li class="row"><p class="text">Export September timesheets to the shared sheet</p><p class="meta"><span>ops agent</span><span>gitlab</span></p><p class="side"><span class="state stuck">Failed</span><span class="moved">3 h 10 min ago</span></p></li>
+    </ul>
+  </section>
+
+  <p class="foot">Updated 10:42:07. This page refreshes every 30 seconds.</p>
 </main>
 </div>
 
@@ -371,19 +332,12 @@ code { background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; fo
   <div class="grow"><h1>My work</h1><p class="who">Sara B, on Work laptop</p></div>
   <button type="button" class="icon-btn" aria-label="Switch theme">◐</button>
 </header>
-<p class="strip" role="status"><span>Can't reach the server. This is what was last loaded. Trying again in 20 seconds.</span><button type="button">Try now</button></p>
+<p class="strip" role="status">Offline. This is what was last loaded; live state needs a connection.</p>
 <main class="wrap">
-  <p class="sum">Nothing sent yet.</p>
-  <section aria-labelledby="h-agents-e">
-    <h2 id="h-agents-e" style="margin-top:0">Your agents</h2>
-    <ul class="agents">
-      <li class="agent"><p class="top"><span class="name">coder agent</span><span class="state free">Free</span></p><p class="hint">Free when this page last loaded, at 10:42.</p></li>
-      <li class="agent"><p class="top"><span class="name">secretary agent</span><span class="state free">Free</span></p><p class="hint">Free when this page last loaded, at 10:42.</p></li>
-    </ul>
-  </section>
-  <div class="blank" style="margin-top:32px">
-    <p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here as soon as the agent starts on it.</p>
-    <p>You see when it is running, when it is finished, and when the agent is free again.</p>
+  <p class="sum">Nothing open.</p>
+  <div class="blank">
+    <p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here while it is being worked on.</p>
+    <p>Requests that need you or the owner come first on this page.</p>
   </div>
   <p class="foot">Updated 10:42:07.</p>
 </main>
