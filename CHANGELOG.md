@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.90.0](https://github.com/anis-marrouchi/agentx/compare/v0.89.0...v0.90.0) (2026-10-02)
+
+
+### Features
+
+* **agents:** scope plan holds to the model, lift them early or by hand, and show them ([#470](https://github.com/anis-marrouchi/agentx/issues/470)) ([cc7a1f0](https://github.com/anis-marrouchi/agentx/commit/cc7a1f0f18c2cb1c242bcaf19cb1318fcb4799f2))
+* **daemon:** show version, running since and last restart in daemon status, /health and the dashboard header ([#469](https://github.com/anis-marrouchi/agentx/issues/469)) ([d0f4330](https://github.com/anis-marrouchi/agentx/commit/d0f4330ce6086f39453e66b5383967b413d73a2c))
+
+
+### Bug Fixes
+
+* **agents:** do not hold cold dispatches while extra usage still serves ([#467](https://github.com/anis-marrouchi/agentx/issues/467)) ([2cc2ef4](https://github.com/anis-marrouchi/agentx/commit/2cc2ef42e9120b7a71a72f1a4777f68f8cbc6bf1)), closes [#466](https://github.com/anis-marrouchi/agentx/issues/466)
+* **agents:** gate cold dispatches on Claude Code's rate-limit signal, not a local count ([#463](https://github.com/anis-marrouchi/agentx/issues/463)) ([0d93881](https://github.com/anis-marrouchi/agentx/commit/0d938813b4c0b7120d9e99d986e053bfa5768849)), closes [#462](https://github.com/anis-marrouchi/agentx/issues/462)
+* **dashboard:** stop the member page's poll from freezing every page ([#451](https://github.com/anis-marrouchi/agentx/issues/451)) ([6891e52](https://github.com/anis-marrouchi/agentx/commit/6891e52f981815eef27e260ead5a8e4d72835c1d)), closes [#448](https://github.com/anis-marrouchi/agentx/issues/448)
+* **people:** keep a person's turns newest first when two start in the same millisecond ([#456](https://github.com/anis-marrouchi/agentx/issues/456)) ([a6f7e51](https://github.com/anis-marrouchi/agentx/commit/a6f7e510c7d6a14662c62e41359d124ddd40cfb0))
+
 ## [0.89.0](https://github.com/anis-marrouchi/agentx/compare/v0.88.0...v0.89.0) (2026-10-02)
 
 
