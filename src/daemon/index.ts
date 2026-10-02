@@ -145,6 +145,7 @@ import { detectSttHost, findFfmpeg } from "@/voice/transcribe"
 import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-api"
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
+import { handleGuide, isGuidePath } from "@/daemon/voice-guide-api"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
@@ -3268,6 +3269,15 @@ export class AgentXDaemon {
           : this.voiceMesh.voices.speaker(id, false)?.voice ?? null
         const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body)
         // With wait, the client may have given up; the line still plays.
+        if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
+        return
+      }
+      // The character shown something on this screen: same gate as speaking.
+      if (isGuidePath(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body)
+        // The app may have gone while it waited.
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }
