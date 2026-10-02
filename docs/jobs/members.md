@@ -30,6 +30,8 @@ The dashboard trusts anything that reaches it from your own computer, so only th
    ```
 
    If you also use the phone app, keep its two `/app` lines. Never run `tailscale serve --bg 4202`: that shares the whole dashboard.
+
+   The dashboard answers only addresses written in their plain form. An address with `.` or `..` parts, or with a backslash, gets "not found" on every page. So a published path cannot be used to reach another page, even behind a proxy other than `tailscale serve` that passes such addresses on unchanged.
 2. **Browser (Tailscale admin console):** in **Access controls**, make sure a shared user reaches this computer on port 443 and nothing else. Access rules only allow; none of them takes access away. So adding a rule is not enough while the default rule (`"src": ["*"], "dst": ["*:*"]`) is still there: `*` includes the people you share with, and they reach every port.
 
    - Narrow the allow-all rule so it covers your own users only, for example `"src": ["autogroup:member"]`. If you have tagged devices that relied on `*`, give them their own rule first.
@@ -140,4 +142,5 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
 - **The page is empty:** request tracking is off (`agentx requests settings`), or the teammate's identity on that channel is not on their person entry, so their requests were not stamped with their id.
 - **The teammate can open other pages or ports of yours:** your access rules let shared users reach more than port 443. Narrow the allow-all rule and add the shared-user rule above.
+- **A link to a dashboard page answers `{"error":"not found"}` although the page exists:** the address has `.` or `..` parts, or a backslash. Open the page from the dashboard's menu, or remove those parts from the address.
 - **A teammate added a moment ago cannot pair:** fixed after 0.82.0. On 0.82.0, restart the dashboard after `agentx people add`, then invite again.

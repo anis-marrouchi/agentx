@@ -24,8 +24,8 @@ import type { TopbarPeer } from "./topbar"
 //
 // A teammate's `tailscale serve` paths forward /member and /api/member
 // only, and those belong to member-routes.ts, so none of this is under
-// them. The address is also matched as it was sent, before dot segments are
-// folded: "/member/../people" never opens this page.
+// them. An address not sent in its normal form ("/member/../people") is
+// refused for every page before it gets here (board-dashboard.ts, #452).
 
 export const PEOPLE_API = "/api/admin/people"
 
@@ -99,9 +99,6 @@ export async function handlePeoplePanel(
 ): Promise<boolean> {
   if (path !== "/people" && path !== PEOPLE_API && !path.startsWith(`${PEOPLE_API}/`)) return false
   const method = (req.method || "GET").toUpperCase()
-  // `path` has dot segments folded; a proxy mounted on another path forwards
-  // the address as it was typed. Only the address itself opens this.
-  if ((req.url || "").split(/[?#]/)[0] !== path) { sendJson(res, 404, { error: "not found" }); return true }
 
   if (path === "/people") {
     if (method !== "GET") { sendJson(res, 405, { error: "GET only" }); return true }
