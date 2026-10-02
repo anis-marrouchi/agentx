@@ -165,6 +165,34 @@ describe("deciding on a card", () => {
     expect((await sweep())[0].text).toContain("What they say now:\nSend it today.")
   })
 
+  it("a reply is kept when the start fails with no wait (#485)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy." }, ctx())
+    // As the daemon does it: not awaited, the result read in `.then`.
+    const start = async () => ({ error: "rate limited" })
+    await runRequestsSweep({ store, settings, log: () => {}, now: clock, hasAgent: () => true, tellAgent: async (_a, _t, r) => {
+      void start().then((res) => { pickupEnded(store, r, res, clock) })
+    } })
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", noteSaid: false })
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    expect((await sweep())[0].text).toContain("What they say now:\nSkip the deploy.")
+  })
+
+  it("a late error from an older turn does not repeat a newer reply (#485)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy." }, ctx())
+    const sent: any[] = []
+    const tell = { store, settings, log: () => {}, now: clock, hasAgent: () => true, tellAgent: async (_a: string, _t: string, r: any) => { sent.push(r) } }
+    await runRequestsSweep(tell)
+    // The first turn is still running when the second reply is given.
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Send it today." }, ctx())
+    await runRequestsSweep(tell)
+    expect(pickupEnded(store, sent[0], { error: "timed out" }, clock)).toBe(true)
+    expect(store.get("req-t1")).toMatchObject({ ownerNote: "Send it today.", noteSaid: true })
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    expect((await sweep())[0].text).not.toContain("What they say now")
+  })
+
   it("a hand-off gives it to another agent, who is told and can be seen on the card", async () => {
     failed("t1")
     expect((await handleRequestsPanel("POST", `${P}/handoff`, { id: "req-t1", agentId: "nobody" }, ctx())).status).toBe(400)

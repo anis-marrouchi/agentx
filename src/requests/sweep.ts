@@ -50,7 +50,7 @@ export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?
   // to the request then (#392).
   if (!res?.error || isQueued(res.error)) return false
   // The agent never read the owner's note: the next pick-up says it.
-  if (r.ownerNote && !r.noteSaid) store.setNoteSaid(r.id, false)
+  if (r.ownerNote && !r.noteSaid) store.setNoteSaid(r.id, r.ownerNote, false)
   return store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${res.error}`, now)
 }
 
@@ -93,12 +93,16 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         store.needsAttention(r.id, `Could not hand it back: agent "${r.agentId}" is not on this node`, now)
         continue
       }
+      // Said once (#480): a later pick-up without new words does not repeat
+      // it. Marked before the call, so a start that fails at once takes the
+      // mark back after it is set, not before (#485).
+      const says = r.ownerNote && !r.noteSaid ? r.ownerNote : null
+      if (says) store.setNoteSaid(r.id, says, true)
       try {
         await deps.tellAgent(r.agentId, pickupText(r), r)
-        // Said once (#480): a later pick-up without new words does not repeat it.
-        if (r.ownerNote && !r.noteSaid) store.setNoteSaid(r.id, true)
         result.pickedUp++
       } catch (e: any) {
+        if (says) store.setNoteSaid(r.id, says, false)
         store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${e?.message ?? e}`, now)
       }
     }
