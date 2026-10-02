@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.94.0](https://github.com/anis-marrouchi/agentx/compare/v0.93.0...v0.94.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** drag the character with its bubble, and hide both ([#506](https://github.com/anis-marrouchi/agentx/issues/506)) ([6896599](https://github.com/anis-marrouchi/agentx/commit/68965996d6bf4d585c6a15c88c67ae3c259221c3))
+
+
+### Bug Fixes
+
+* **voice:** a hush holds a lesson; the words that follow reach it ([#507](https://github.com/anis-marrouchi/agentx/issues/507)) ([7d5e696](https://github.com/anis-marrouchi/agentx/commit/7d5e696a37ab8abeb46446f08a19bc7da6aa71d6))
+* **voice:** keep asking for the settings until the daemon answers ([#503](https://github.com/anis-marrouchi/agentx/issues/503)) ([2234609](https://github.com/anis-marrouchi/agentx/commit/22346094184aa68fa9315f4ffb1be831cd90f79f)), closes [#498](https://github.com/anis-marrouchi/agentx/issues/498)
+
 ## [0.93.0](https://github.com/anis-marrouchi/agentx/compare/v0.92.4...v0.93.0) (2026-10-02)
 
 
