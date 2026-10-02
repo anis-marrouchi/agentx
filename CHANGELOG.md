@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.84.0](https://github.com/anis-marrouchi/agentx/compare/v0.83.2...v0.84.0) (2026-10-02)
+
+
+### Features
+
+* **people:** deny a person named tools and skills, enforced on every call ([#427](https://github.com/anis-marrouchi/agentx/issues/427)) ([99a7c9d](https://github.com/anis-marrouchi/agentx/commit/99a7c9d486a2a97c5b6f8f2a0cf524e329319af6))
+
 ## [0.83.2](https://github.com/anis-marrouchi/agentx/compare/v0.83.1...v0.83.2) (2026-10-02)
 
 
