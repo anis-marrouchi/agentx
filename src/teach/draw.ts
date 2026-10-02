@@ -1,7 +1,7 @@
 import type { Presence, Rect } from "@/voice/presence"
 import type { LineModel } from "@/voice/talk-model"
 import type { TldrawApi } from "./tldraw-api"
-import { CANVAS, LineSplitter, MAX_ELEMENTS, parseDrawLine, type DrawEl, type PaletteEl } from "./draw-plan"
+import { CANVAS, LineSplitter, MAX_ELEMENTS, parseDrawLine, type DrawEl, type MoveEl, type PaletteEl } from "./draw-plan"
 
 // --- Drawing a planned illustration into tldraw offline, live ---
 //
@@ -84,7 +84,11 @@ export function drawSnippet(el: DrawEl, tag: string): string {
   const common = `const { createShapeId, toRichText } = await import('tldraw')
 const el = ${JSON.stringify(el)}
 const frames = 10, wait = () => new Promise((r) => setTimeout(r, ${Math.round(GROW_MS / 10)}))
-const ease = (t) => 1 - Math.pow(1 - t, 3)`
+const ease = (t) => 1 - Math.pow(1 - t, 3)
+const tilt = async (id, deg) => {
+  if (!deg) return
+  for (let i = 1; i <= frames; i++) { editor.rotateShapesBy([id], (deg * Math.PI / 180) / frames); await wait() }
+}`
   if (el.kind === "geo") return `${common}
 const id = createShapeId(${id(el.id)})
 editor.createShape({ id, type: 'geo', x: el.x, y: el.y, opacity: el.opacity, props: { geo: el.geo, w: 1, h: 1, color: el.color, fill: el.fill, dash: 'solid', size: 's' } })
@@ -94,6 +98,7 @@ for (let i = 1; i <= frames; i++) {
   await wait()
 }
 if (el.label) editor.updateShape({ id, type: 'geo', props: { richText: toRichText(el.label) } })
+await tilt(id, el.rot)
 return id`
   // A path traces itself along its length, then closes and fills. Points
   // are densified first: tldraw smooths a sparse freehand line into a blob.
@@ -116,12 +121,25 @@ for (let i = 1; i <= frames; i++) {
   await wait()
 }
 editor.updateShape({ id, type: 'draw', props: { segments: seg(dense.length), isComplete: true, isClosed: closed, fill: el.fill } })
+await tilt(id, el.rot)
 return id`
   if (el.kind === "text") return `${common}
 const id = createShapeId(${id(el.id)})
 editor.createShape({ id, type: 'text', x: el.x, y: el.y, props: { richText: toRichText(''), size: el.size, color: el.color, font: el.font } })
 for (let i = 1; i <= frames; i++) {
   editor.updateShape({ id, type: 'text', props: { richText: toRichText(el.text.slice(0, Math.ceil(el.text.length * i / frames))) } })
+  await wait()
+}
+return id`
+  if (el.kind === "move") return `${common}
+const id = createShapeId(${id(el.target)})
+const k = Math.pow(el.scale, 1 / frames)
+for (let i = 1; i <= frames; i++) {
+  const s = editor.getShape(id)
+  if (!s) return null
+  editor.updateShape({ id, type: s.type, x: s.x + el.dx / frames, y: s.y + el.dy / frames })
+  if (el.rot) editor.rotateShapesBy([id], (el.rot * Math.PI / 180) / frames)
+  if (el.scale !== 1) editor.resizeShape(id, { x: k, y: k }, { scaleOrigin: editor.getShapePageBounds(id).center })
   await wait()
 }
 return id`
@@ -137,11 +155,17 @@ function path(el: Exclude<DrawEl, PaletteEl>, placed: Map<string, { x: number; y
   if (el.kind === "path") { const p = el.pts, m = p[Math.floor(p.length / 2)]; return [pt(p[0][0], p[0][1]), pt(m[0], m[1])] }
   if (el.kind === "geo") return [pt(el.x, el.y), pt(el.x + el.w, el.y + el.h)]
   if (el.kind === "text") { const b = textBox(el); return [pt(b.x, b.y + b.h / 2), pt(b.x + b.w, b.y + b.h / 2)] }
+  if (el.kind === "move") { const a = placed.get(el.target)!, cx = a.x + a.w / 2, cy = a.y + a.h / 2; return [pt(cx, cy), pt(cx + el.dx, cy + el.dy)] }
   const a = placed.get(el.from)!, b = placed.get(el.to)!
   return [pt(a.x + a.w / 2, a.y + a.h / 2), pt(b.x + b.w / 2, b.y + b.h / 2)]
 }
 type Box = { x: number; y: number; w: number; h: number }
 const pt = (x: number, y: number): Box => ({ x, y, w: 0, h: 0 })
+/** A box after a move: shifted, and rescaled about its centre. */
+export function moved(b: Box, m: Pick<MoveEl, "dx" | "dy" | "scale">): Box {
+  const w = b.w * m.scale, h = b.h * m.scale
+  return { x: b.x + m.dx + (b.w - w) / 2, y: b.y + m.dy + (b.h - h) / 2, w, h }
+}
 
 export async function drawLive(goal: string, deps: DrawDeps, opts: DrawOpts, emit: (e: DrawEvent) => void = () => {}): Promise<DrawResult> {
   const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)))
@@ -195,6 +219,10 @@ export async function drawLive(goal: string, deps: DrawDeps, opts: DrawOpts, emi
       emit({ type: "error", error: `${el.id}: an end was not drawn` })
       continue
     }
+    if (el.kind === "move" && !placed.has(el.target)) {
+      emit({ type: "error", error: `${el.id}: ${el.target} was not drawn` })
+      continue
+    }
     const started = now()
     if (el.kind === "palette") {
       if (el.say) deps.presence.say(el.say)
@@ -215,7 +243,8 @@ export async function drawLive(goal: string, deps: DrawDeps, opts: DrawOpts, emi
       emit({ type: "error", error: `${el.id}: ${e?.message ?? e}` })
       continue
     }
-    placed.set(el.id, el.kind === "geo" ? el : el.kind === "text" ? textBox(el) : el.kind === "path" ? pathBox(el.pts) : pt(0, 0))
+    if (el.kind === "move") placed.set(el.target, moved(placed.get(el.target)!, el))
+    else placed.set(el.id, el.kind === "geo" ? el : el.kind === "text" ? textBox(el) : el.kind === "path" ? pathBox(el.pts) : pt(0, 0))
     steps++
     emit({ type: "drawn", n: steps, el, ms: now() - started })
     const left = (el.say ? stepMs : 0) - (now() - started)

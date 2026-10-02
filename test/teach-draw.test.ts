@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { parseDrawLine, LineSplitter, CANVAS } from "../src/teach/draw-plan"
-import { drawLive, drawSnippet, toScreen } from "../src/teach/draw"
+import { drawLive, drawSnippet, moved, toScreen } from "../src/teach/draw"
 import type { Presence, Rect } from "../src/voice/presence"
 
 const none = new Set<string>()
@@ -43,6 +43,20 @@ describe("draw plan lines", () => {
     expect(parseDrawLine('{"palette":{"blue":"#000000"}}', new Set(["palette"]))).toBeNull()
   })
 
+  it("reads a tilt on shapes and paths, clamped to ±90°", () => {
+    expect(parseDrawLine('{"id":"g","geo":"rectangle","x":1,"y":1,"w":10,"h":10,"rot":-20}', none)).toMatchObject({ rot: -20 })
+    expect(parseDrawLine('{"id":"p","path":[[0,0],[9,0],[5,8]],"rot":200}', none)).toMatchObject({ rot: 90 })
+    expect(parseDrawLine('{"id":"g","geo":"rectangle","x":1,"y":1,"w":10,"h":10}', none)).toMatchObject({ rot: 0 })
+  })
+
+  it("keeps a move only of a known element, and only when it changes something", () => {
+    const known = new Set(["camel", "palette"])
+    expect(parseDrawLine('{"id":"m","move":"camel","dx":-40,"scale":9}', known)).toMatchObject({ kind: "move", target: "camel", dx: -40, dy: 0, rot: 0, scale: 3 })
+    expect(parseDrawLine('{"id":"m","move":"boat","dx":10}', known)).toBeNull()
+    expect(parseDrawLine('{"id":"m","move":"palette","dx":10}', known)).toBeNull()
+    expect(parseDrawLine('{"id":"m","move":"camel","dx":0,"scale":1}', known)).toBeNull()
+  })
+
   it("splits streamed chunks into whole lines", () => {
     const s = new LineSplitter()
     expect(s.push('{"a":1}\n{"b"')).toEqual(['{"a":1}'])
@@ -65,8 +79,15 @@ describe("drawSnippet", () => {
       { kind: "arrow", id: "a", say: "", from: "g", to: "t", label: "", color: "black" },
       { kind: "path", id: "p", say: "", pts: [[0, 0], [10, 0], [5, 8]], color: "blue", fill: "fill", opacity: 0.5 },
       { kind: "palette", id: "palette", say: "", colors: { blue: "#1f5fa6" } },
+      { kind: "move", id: "m", say: "", target: "g", dx: 5, dy: 0, rot: 15, scale: 1.5 },
     ] as const
     for (const el of els) expect(() => new Function(`return (async () => { ${drawSnippet(el as any, "r")} })`)).not.toThrow()
+  })
+})
+
+describe("moved", () => {
+  it("shifts a box and rescales it about its centre", () => {
+    expect(moved({ x: 10, y: 10, w: 20, h: 40 }, { dx: 5, dy: -5, scale: 0.5 })).toEqual({ x: 20, y: 15, w: 10, h: 20 })
   })
 })
 
