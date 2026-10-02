@@ -2181,6 +2181,9 @@ export class AgentXDaemon {
           }
         })
       }
+      // A peer's own post comes back to the node with the webhook: its
+      // posting logins are ours too, or its agents answer themselves (#522).
+      if (this.mesh) this.github.setPeerPostingLogins(() => this.mesh!.directory().flatMap((p) => p.githubLogins))
       this.github.setProjectRules(this.projectRules)
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
@@ -6447,6 +6450,9 @@ export class AgentXDaemon {
             // when the workflow runs on a different node than the channel
             // adapter (e.g. workflow on macbook, whatsapp on peer-server).
             channels: this.router.getChannelNames(),
+            // The GitHub logins this node posts with, so the peer that
+            // receives the webhook knows an agent's comment as ours (#522).
+            githubLogins: this.github?.postingAccounts() ?? [],
             defaultInputModes: ["text"],
             defaultOutputModes: ["text"],
           })

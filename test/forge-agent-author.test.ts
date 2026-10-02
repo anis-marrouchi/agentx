@@ -210,6 +210,34 @@ describe("GitHub adapter — inbound", () => {
     expect(received).toHaveLength(0)
   })
 
+  // #522: a peer node posts the agent's reply with its own token; the
+  // webhook reaches this node, which posts with another account.
+  describe("an account a mesh peer posts with", () => {
+    const PEER_OWNER = "peer-owner"
+    beforeEach(() => { gh.setPeerPostingLogins(() => ["Peer-Owner"]) })
+
+    it("drops the handler's signed comment as its own echo", async () => {
+      await (gh as any).handleIssueComment(issueComment(agentComment("coder-agent", "Nothing new."), PEER_OWNER))
+      await settle()
+      expect(received).toHaveLength(0)
+    })
+
+    it("still routes what the person typed from that account", async () => {
+      await (gh as any).handleIssueComment(issueComment("@coder-agent please rebase", PEER_OWNER))
+      await settle()
+      expect(received).toHaveLength(1)
+      expect(received[0].sender).toMatchObject({ name: PEER_OWNER, username: PEER_OWNER })
+    })
+
+    it("still treats an account no node posts with as a person", async () => {
+      await (gh as any).handleIssueComment(issueComment(agentComment("coder-agent", "Nothing new."), OUTSIDER))
+      await settle()
+      expect(received).toHaveLength(1)
+      expect(received[0].sender.name).toBe(OUTSIDER)
+      expect(detectAgentxMarker(received[0].text)).toBeNull()
+    })
+  })
+
   it("does not drop an unattributed signature from another account", async () => {
     await (gh as any).handleIssueComment(issueComment(markBody("@coder-agent look", "unknown"), OUTSIDER))
     await settle()

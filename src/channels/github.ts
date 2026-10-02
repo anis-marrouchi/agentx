@@ -188,6 +188,9 @@ export class GitHubAdapter implements ChannelAdapter {
    *  Only their comments may carry an agent's signature (#282). Configured
    *  githubUsernames are read live from the config, see postsAs. */
   private postingLogins: Set<string> = new Set()
+  /** Logins the mesh peers post with (#522): a comment a peer posted with
+   *  its own token reaches the node that has the webhook. */
+  private peerPostingLogins?: () => string[]
   private sentCommentIds: Set<string> = new Set()
   private log: (...args: unknown[]) => void
   private sendCommentForwarder?: (node: string, repo: string, issueNumber: number, agentId: string, text: string) => Promise<string>
@@ -212,6 +215,16 @@ export class GitHubAdapter implements ChannelAdapter {
   /** How an edit reaches the peer that holds a token for the repo (#383). */
   setEditCommentForwarder(fn: (node: string, chatId: string, commentId: string, agentId: string, text: string) => Promise<boolean>): void {
     this.editCommentForwarder = fn
+  }
+
+  /** How this node learns the logins its mesh peers post with (#522). */
+  setPeerPostingLogins(fn: () => string[]): void {
+    this.peerPostingLogins = fn
+  }
+
+  /** The logins this node posts with, for its agent card: peers read them. */
+  postingAccounts(): string[] {
+    return [...this.postingLogins]
   }
 
   /** Inject the project rules store. Called once at daemon boot. */
@@ -829,11 +842,13 @@ export class GitHubAdapter implements ChannelAdapter {
     return undefined
   }
 
-  /** True for a login AgentX posts with (App bot, a PAT owner, or a
-   *  configured githubUsernames entry — the loop guard's list). */
+  /** True for a login AgentX posts with (App bot, a PAT owner, a
+   *  configured githubUsernames entry — the loop guard's list — or a
+   *  login a mesh peer posts with). */
   postsAs(login: string): boolean {
     const lc = login.toLowerCase()
     if (this.postingLogins.has(lc)) return true
+    if (this.peerPostingLogins?.().some((u) => u.toLowerCase() === lc)) return true
     return mappedForgeUsernames(this.config.agentMappings, "githubUsernames").some((u) => u.toLowerCase() === lc)
   }
 
