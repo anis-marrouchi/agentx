@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.86.0](https://github.com/anis-marrouchi/agentx/compare/v0.85.0...v0.86.0) (2026-10-02)
+
+
+### Features
+
+* **activity:** put who started the work first on the map, before the channel ([#434](https://github.com/anis-marrouchi/agentx/issues/434)) ([534468b](https://github.com/anis-marrouchi/agentx/commit/534468b2cf02f7731d304fa3b77f4a5abf97efd1))
+
 ## [0.85.0](https://github.com/anis-marrouchi/agentx/compare/v0.84.0...v0.85.0) (2026-10-02)
 
 
