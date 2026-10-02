@@ -366,8 +366,17 @@ final class App: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if recording { self.unregisterHotkeys() } else { self.registerHotkeys() }
         }
+        // At login the app can start before the daemon answers. Keep
+        // asking: one missed read left the orb and the built-in
+        // shortcuts until the app was restarted.
         Task { @MainActor in
-            if let saved = await AgentClient.settings() { apply(saved) }
+            var failures = 0
+            while true {
+                if let saved = await AgentClient.settings() { apply(saved); break }
+                failures += 1
+                if failures == 1 { Log.warn("settings: the daemon did not answer, asking again") }
+                try? await Task.sleep(for: .seconds(VoiceSettings.retryDelay(after: failures)))
+            }
         }
 
         // Turning the hold OFF is the moment anything that piled up
