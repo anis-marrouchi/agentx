@@ -95,6 +95,13 @@ describe("checkVoiceSettings", () => {
     expect(errors.map((e) => e.path)).toEqual(["general.localStt", "general.endOfTurn"])
   })
 
+  it("accepts the orb or the character as the look, and refuses anything else", () => {
+    expect(checkVoiceSettings({ general: { look: "character" } }, config())).toEqual([])
+    expect(checkVoiceSettings({ general: { look: "orb" } }, config())).toEqual([])
+    const errors = checkVoiceSettings({ general: { look: "mascot" } } as never, config())
+    expect(errors).toEqual([{ path: "general.look", message: "The assistant is shown as orb or character" }])
+  })
+
   it("refuses unknown settings instead of dropping them", () => {
     const errors = checkVoiceSettings({ agents: { writer: { volume: 3 } as never }, colour: 1 } as never, config())
     expect(errors.map((e) => e.path)).toEqual(expect.arrayContaining(["colour", "agents.writer.volume"]))
@@ -122,6 +129,13 @@ describe("applyVoiceSettings", () => {
     const raw: any = rawConfig()
     applyVoiceSettings(raw, { general: { localStt: "parakeet", endOfTurn: "volume" } })
     expect(raw.voice).toEqual({ localStt: "parakeet", endOfTurn: "volume" })
+  })
+
+  it("writes the look, and the orb is the look when none is written", () => {
+    const raw: any = rawConfig()
+    expect(voiceSettingsView(config(), []).general.look).toBe("orb")
+    applyVoiceSettings(raw, { general: { look: "character" } })
+    expect(raw.voice).toEqual({ look: "character" })
   })
 })
 
@@ -200,7 +214,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 } })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb" })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })

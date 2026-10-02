@@ -5,7 +5,7 @@ import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
-import { ORB_PALETTE_IDS } from "@/voice/orb-palettes"
+import { ORB_PALETTE_IDS, VOICE_LOOKS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
@@ -1295,6 +1295,10 @@ export const daemonConfigSchema = z.object({
       stop: hotkeySchema.default(DEFAULT_HOTKEYS.stop),
       paste: hotkeySchema.default(DEFAULT_HOTKEYS.paste),
     }).default({}),
+    /** What shows the assistant's state in AgentX Voice: the "orb" at
+     *  the pill's head, or the "character", the orb grown into a small
+     *  creature that hovers above the bottom edge of the screen. */
+    look: z.enum(VOICE_LOOKS).default("orb"),
     /** The answer text AgentX Voice shows inside its pill. */
     card: z.object({
       /** Seconds the answer stays open once it has been spoken; 0 keeps

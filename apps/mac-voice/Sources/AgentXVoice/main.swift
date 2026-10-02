@@ -18,6 +18,8 @@ import Carbon.HIToolbox
 final class App: NSObject, NSApplicationDelegate {
     private let panel = Panel()
     private let statusMenu = StatusMenu()
+    /// Stands in for the pill's orb when voice.look is "character".
+    private let character = Character()
     /// The agent whose by-name answer is on screen now, while no turn runs.
     private var asideSpeaker: String?
     private let recorder = Recorder()
@@ -199,6 +201,9 @@ final class App: NSObject, NSApplicationDelegate {
         let card = saved.general.card ?? .standard
         panel.cardTimeout = card.timeout
         panel.cardMaxHeight = card.maxHeight
+        let asCharacter = saved.general.look == "character"
+        panel.setShowsOrb(!asCharacter)
+        character.setShown(asCharacter)
         if settingsWindow.model.recording == nil { registerHotkeys() }
         // Colours may have changed.
         statusMenu.refresh()
@@ -307,6 +312,11 @@ final class App: NSObject, NSApplicationDelegate {
         panel.orb.setAnimated(Config.animatedOrb)
         panel.miniOrbs.setAnimated(Config.animatedOrb)
         panel.orb.levelSource = { [weak self] in self?.recorder.level ?? 0 }
+        character.setAnimated(Config.animatedOrb)
+        character.levelSource = { [weak self] in self?.recorder.level ?? 0 }
+        panel.onLook = { [weak self] state, tint, colors in
+            self?.character.show(state.activity, tint: tint, colors: colors)
+        }
         panel.onDismiss = { [weak self] in self?.dismissPill() }
         panel.agentPalette = { [weak self] in
             guard let self else { return nil }
@@ -319,6 +329,7 @@ final class App: NSObject, NSApplicationDelegate {
         statusMenu.onAnimatedOrbChanged = { [weak self] on in
             self?.panel.orb.setAnimated(on)
             self?.panel.miniOrbs.setAnimated(on)
+            self?.character.setAnimated(on)
         }
         panel.render(.idle)
         statusMenu.onPillChanged = { [weak self] on in
