@@ -15,7 +15,7 @@ import {
 } from "@/decisions/seats/ui-element"
 import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
 import { daemon } from "@/commands/call"
-import { GUIDE_MARKS } from "@/voice/guide"
+import { GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
 
 const run = promisify(execFile)
 
@@ -65,6 +65,10 @@ export const point = new Command()
   .action(async (request: string, opts) => {
     if (!(GUIDE_MARKS as readonly string[]).includes(opts.mark)) {
       console.log(chalk.red(`  --mark is one of: ${GUIDE_MARKS.join(", ")}`))
+      process.exit(1)
+    }
+    if (opts.hold !== undefined && !(Number(opts.hold) > 0 && Number(opts.hold) <= GUIDE_HOLD.max)) {
+      console.log(chalk.red(`  --hold is a number of seconds, up to ${GUIDE_HOLD.max}`))
       process.exit(1)
     }
     if (!existsSync(HELPER)) {
