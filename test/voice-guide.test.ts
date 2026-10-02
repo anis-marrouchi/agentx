@@ -187,3 +187,20 @@ describe("a lesson's pointer", () => {
     expect(host.onScreen).toEqual([])
   })
 })
+
+describe("agentx point --hold", () => {
+  it("refuses a hold that is not a number of seconds up to the most, before it reads the screen", async () => {
+    const { point } = await import("../src/commands/point")
+    const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => { throw new Error(`exit ${code}`) }) as never)
+    const said = vi.spyOn(console, "log").mockImplementation(() => {})
+    try {
+      for (const hold of ["abc", "0", "121"]) {
+        await expect(point.parseAsync(["the search field", "--hold", hold], { from: "user" })).rejects.toThrow("exit 1")
+      }
+      expect(said.mock.calls.every(([line]) => String(line).includes("--hold is a number of seconds, up to 120"))).toBe(true)
+    } finally {
+      exit.mockRestore()
+      said.mockRestore()
+    }
+  })
+})
