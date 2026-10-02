@@ -48,6 +48,8 @@ final class CharacterHost {
     /// read once a second while it may stroll and play mode is ticked.
     private var edges: [Double] = []
     private var edgesRead = 0.0
+    /// Its bubble holds something to use: no play with the pointer then.
+    var bubbleShows: (() -> Bool)?
 
     /// Where it was dragged to: the point under it. Nil: its corner.
     private var place = Config.characterPlace
@@ -232,7 +234,8 @@ final class CharacterHost {
             }
             frame = sim.step(to: now,
                              CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, strolls: strolls,
-                                                edges: edges, home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
+                                               edges: edges, shows: bubbleShows?() ?? false, plays: Config.playMode,
+                                               down: NSEvent.pressedMouseButtons & 1 != 0, home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: (rest.y - Self.ground).rounded())
         if window.frame.origin != origin { window.setFrameOrigin(origin) }

@@ -139,13 +139,26 @@ stomp, carry, rest); `PlayActs.swift` makes a different script for each seed
 never the same act twice) and holds the pieces that move: kicked letters and
 stomped words are cut from the picture, fall and stay on its bottom edge, and
 a carried word is put down after the walked line. Both are pure and tested in
-`Tests/Play`; `PlayStage.swift` owns
+`Tests/Play`. `PlayMotion.swift` is how it all moves (tested in
+`Tests/PlayMotion`): a jump crouches first, stretches in the air and lands
+squashed, a walk and a wipe start and stop, kicked letters leave one after
+the other, and what falls bounces once. `PlayStage.swift` owns
 the window over everything, the drawing and the exits; the picture goes up
 at once and the character waits on it while the text is read. Any key, click or
 scroll, the talk key, a change of Space, or the assistant starting to
 listen, speak or ring ends it. Nothing is sent to any app: eaten words are
 painted over on the picture, which lives in memory only and is dropped when
 play ends. Letters are a word's box cut in equal parts.
+
+With play mode ticked, the idle character also plays with the pointer
+(part of #505), in its own window on its own edge: `PointerPlay.swift`
+picks a game when the pointer moves in its sight (follow it, crouch and
+jump at it, run from it; a click makes it jump), then rests five to
+thirteen seconds. It only says where the character wants to be and how it
+crouches and hops; `CharacterSim` moves it with the spring it already
+has. Pure and tested in `Tests/PointerPlay`. The button is read with
+`NSEvent.pressedMouseButtons`, so no click is taken and no permission is
+needed.
 
 Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
 launch and when screens change it is clamped onto a connected screen, and

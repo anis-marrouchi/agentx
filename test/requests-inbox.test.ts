@@ -268,6 +268,10 @@ describe("requests in the Approvals inbox", () => {
     const s = new RequestStore(old)
     expect(s.requestPickup("req-old", 5)).toBe(true)
     expect(s.takePickups().map((r) => r.id)).toEqual(["req-old"])
+    // And the agent it was asked of, kept at a hand-off (#481).
+    expect(s.get("req-old")?.askedAgent).toBeNull()
+    expect(s.handOff("req-old", "writer", "", 6)).toBe(true)
+    expect(s.get("req-old")).toMatchObject({ agentId: "writer", askedAgent: "coder" })
     old.close()
   })
 })

@@ -207,6 +207,16 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   const path = url.pathname
   const method = (req.method || "GET").toUpperCase()
 
+  // Every route below matches `path`, which has dot segments folded and
+  // backslashes read as slashes. A proxy that publishes only some paths
+  // (a teammate's /member and /api/member, say) may forward the address as
+  // it was typed, so "/member/../approvals" would arrive here as
+  // "/approvals". Only an address sent in its normal form is served (#452).
+  if ((req.url || "/").split(/[?#]/)[0] !== path) {
+    sendJson(res, 404, { error: "not found" })
+    return
+  }
+
   // No CORS headers: every dashboard page calls this server on its own
   // origin (browser-origin.ts). A page on another origin, localhost on
   // another port included, can't read responses, can't pass a preflight,
