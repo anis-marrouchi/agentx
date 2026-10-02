@@ -280,7 +280,15 @@ To start reduced every time the app opens:
 1. **Mac:** open **Settings…** from the AgentX menu and go to the **General** tab.
 2. **Mac:** under **Assistant**, tick **Start reduced to the orb**, then choose **Save**.
 
-In `agentx.json` it is `voice.startReduced`: `false` (the default) or `true`. The app reads it when it starts.
+Or in the Terminal, from the folder with your `agentx.json`:
+
+```sh
+agentx voice start reduced   # start as the orb alone
+agentx voice start full      # start as the full pill
+agentx voice start           # which one is on now
+```
+
+In `agentx.json` it is `voice.startReduced`: `false` (the default) or `true`. The app reads it when it starts, so a change made in the Terminal or in the file shows the next time the app starts.
 
 ### Hide the pill
 

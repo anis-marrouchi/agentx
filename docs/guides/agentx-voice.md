@@ -379,6 +379,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 | `agentx voice set <agent> [voice]` | Sets an agent's voice: a Mac voice name, `siri:<name>` for a Siri voice, or `system` for the Mac's default. `--provider system\|elevenlabs`, `--lang en\|fr\|ar` for one language only, `--gender female\|male\|neutral`, `-c <path>` |
 | `agentx voice palette [agent] [palette]` | Lists the orb palettes and who uses which, or picks one for an agent. `default` goes back to the one nearest its colour. `-c <path>` |
 | `agentx voice look [orb\|character]` | Shows or changes what shows the assistant's state: the orb in the pill, or the character. `-c <path>` |
+| `agentx voice start [full\|reduced]` | Shows or changes how the pill is when the app starts: full, or [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb). `-c <path>` |
 | `agentx voice card` | Shows or changes the answer in the pill. `--timeout <seconds>` (0 to 600, 0 keeps it open), `--max-height <points>` (120 to 800), `-c <path>` |
 | `agentx narrate <agent> on\|off\|default` | Switches task narration for an agent. `--task` targets one task id instead |
 | `agentx talk <agentA> <agentB> <topic…>` | Two agents talk out loud. See [Talk mode](../dashboard/voice.md#talk-mode-two-agents-talk-out-loud) |
