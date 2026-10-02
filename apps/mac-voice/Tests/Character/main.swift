@@ -316,6 +316,18 @@ let arrived = meeting.xs.firstIndex { abs($0 - home - side * (60 - gap)) < 1 } ?
 check(meeting.xs.dropFirst(arrived).contains { abs($0 - home) < 1 }, "then it turns back, all the way to where it rests")
 check(meeting.frames.allSatisfy { $0.dots.isEmpty && $0.stars.isEmpty }, "still slowly: no trail, no stars")
 
+// A window side that turns up between it and home while it is out: it
+// still goes home, whether left alone or called back by work.
+for (activity, seconds, what) in [(M.Activity.idle, 120, "left alone"), (.speaking, 20, "while an agent speaks")] {
+    var away = CharacterSim()
+    _ = away.step(to: 0, Input(strolls: true, home: home, range: range))
+    var t = 0
+    while t < 110, abs(away.x - home) < 30 { _ = idle(&away, from: t, seconds: 1, strolls: true); t += 1 }
+    let between = (away.x + home) / 2
+    let back = idle(&away, from: t, seconds: seconds, strolls: true, activity: activity, edges: [between])
+    check(back.xs.contains { abs($0 - home) < 1 }, "a window side between it and home, \(what): it still walks home")
+}
+
 // The window list: the sides on its line, front to back.
 let band: ClosedRange<CGFloat> = 700...778
 check(Meets.edges(of: [CGRect(x: 200, y: 300, width: 400, height: 450)], band: band) == [200, 600], "a window on its line: both its sides")

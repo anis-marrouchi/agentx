@@ -246,7 +246,8 @@ struct CharacterSim {
             }
         }
         // Something in its way: it goes no further than just short of it.
-        if strollTo != strolled, let stop = M.stop(from: input.home + strolled, to: input.home + strollTo,
+        // Only on the way out: nothing keeps it from going home.
+        if strollTo != 0, strollTo != strolled, let stop = M.stop(from: input.home + strolled, to: input.home + strollTo,
                                             edges: input.edges, gap: 50 * unit + 10) {
             strollTo = stop.at - input.home
             met = stop.edge
