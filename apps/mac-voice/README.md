@@ -195,6 +195,11 @@ tested in `Tests/Hotkey`). Every registration is logged with its result.
 "Play on this page" needs Screen Recording, asked the first time it is
 chosen; the app must be quit and opened again after the grant.
 
+With play mode ticked and `voice.stroll` on, a stroll stops short of the
+side of a window that stands on the character's line (#539): `Meets.swift`
+reads the window list once a second (rectangles only, no picture, title or
+text, so no permission; tested in `Tests/Character`).
+
 ## Known limits
 
 - Push-to-talk only; no wake word. To cut a voice off, press ⌥Space (and

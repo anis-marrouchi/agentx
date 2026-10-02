@@ -297,6 +297,7 @@ Good to know:
 - **Work comes first:** when you talk or an agent answers, it walks back to where it rests. The pointer still sends it aside as before.
 - **It stops when it dozes:** after two minutes with nothing to do the character dozes where it rests, and a dozing character does not stroll.
 - **It stays on screen:** next to the edge of the screen it strolls to the other side.
+- **It stops at windows, in play mode:** with [**Play mode**](#play-on-the-page) also ticked, a stroll stops short of the side of a window that comes down to the character's line. It turns to look at it, then walks back. It reads only where the windows are, never what is in them, so no permission is asked.
 - **Not with a still character:** with **Animated orb** unticked or Reduce Motion on, the character does not move at all.
 - **Only with the character:** the setting has no effect while the orb is shown, and the tick box is greyed out.
 

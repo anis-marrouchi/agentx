@@ -193,10 +193,10 @@ check(abs(taken.x - putAt) < 1, "let go: it rests where it was put")
 
 /// Idle for `seconds` at 30 frames a second: every place it was, and the frames.
 func idle(_ sim: inout CharacterSim, from: Int, seconds: Int, strolls: Bool, activity: M.Activity = .idle,
-          home: Double = home, range: ClosedRange<Double> = range) -> (xs: [Double], frames: [CharacterSim.Frame]) {
+          edges: [Double] = [], home: Double = home, range: ClosedRange<Double> = range) -> (xs: [Double], frames: [CharacterSim.Frame]) {
     var xs: [Double] = [], frames: [CharacterSim.Frame] = []
     for i in (from * 30 + 1)...((from + seconds) * 30) {
-        frames.append(sim.step(to: Double(i) / 30, Input(activity: activity, strolls: strolls, home: home, range: range)))
+        frames.append(sim.step(to: Double(i) / 30, Input(activity: activity, strolls: strolls, edges: edges, home: home, range: range)))
         xs.append(sim.x)
     }
     return (xs, frames)
@@ -288,6 +288,41 @@ for _ in 1...(25 * 30) {
 }
 check(abs(resting - home) > CharacterSim.clear && bursts == 1 && abs(met.x - home) < 1,
       "the pointer where the stroll ends: it steps aside once and goes home")
+
+// --- What it meets on a stroll (#539): the side of a window on its line ---
+
+check(M.stop(from: 100, to: 200, edges: [160, 180], gap: 38).map { $0.edge == 160 && $0.at == 122 } ?? false,
+      "an edge in its way: it stops short of the nearest one")
+check(M.stop(from: 100, to: 0, edges: [40], gap: 38).map { $0.edge == 40 && $0.at == 78 } ?? false, "the same to the left")
+check(M.stop(from: 100, to: 200, edges: [120], gap: 38).map { $0.at == 100 } ?? false, "an edge right beside it: it stays, and never steps back")
+check(M.stop(from: 100, to: 200, edges: [60, 250], gap: 38) == nil, "an edge behind it or past where it is going is not in its way")
+check(M.stop(from: 100, to: 200, edges: [230], gap: 38).map { $0.at == 192 } ?? false, "one just past where it is going still keeps it off")
+
+// The same walk as `walker`, with a window side closer than it went.
+let reached = walk.xs.max(by: { abs($0 - home) < abs($1 - home) })!
+let side: Double = reached > home ? 1 : -1
+let sides = [home + side * 60]
+var meeter = CharacterSim()
+_ = meeter.step(to: 0, Input(strolls: true, home: home, range: range))
+let meeting = idle(&meeter, from: 0, seconds: 110, strolls: true, edges: sides)
+let gap = 50 * meeter.unit + 10
+check(furthest(walk.xs) > 60 - gap + 5, "(without the window it went further)")
+check(side * (meeting.xs.max(by: { abs($0 - home) < abs($1 - home) })! - home) > 5 && furthest(meeting.xs) <= 60 - gap + 1,
+      "a window side in its way: it walks up to it and stops short of it")
+let facing = meeting.frames.map { side * $0.face }.max() ?? 0
+check(facing > 0.6 && meeting.frames.contains { side * $0.face > 0.6 && abs($0.x - home - side * (60 - gap)) < 1 },
+      "there it turns to look at it")
+let arrived = meeting.xs.firstIndex { abs($0 - home - side * (60 - gap)) < 1 } ?? meeting.xs.count
+check(meeting.xs.dropFirst(arrived).contains { abs($0 - home) < 1 }, "then it turns back, all the way to where it rests")
+check(meeting.frames.allSatisfy { $0.dots.isEmpty && $0.stars.isEmpty }, "still slowly: no trail, no stars")
+
+// The window list: the sides on its line, front to back.
+let band: ClosedRange<CGFloat> = 700...778
+check(Meets.edges(of: [CGRect(x: 200, y: 300, width: 400, height: 450)], band: band) == [200, 600], "a window on its line: both its sides")
+check(Meets.edges(of: [CGRect(x: 200, y: 100, width: 400, height: 500)], band: band).isEmpty, "a window that ends above its line is not met")
+check(Meets.edges(of: [CGRect(x: 0, y: 0, width: 500, height: 800), CGRect(x: 200, y: 300, width: 400, height: 450)], band: band)
+        == [0, 500, 600], "a side behind another window is not met")
+check(Meets.edges(of: [CGRect(x: 300, y: 720, width: 40, height: 20)], band: band).isEmpty, "nor is a very small window")
 
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

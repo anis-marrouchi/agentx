@@ -44,6 +44,10 @@ final class CharacterHost {
     /// bubble is, or nil while it is hidden. Set by the app.
     var bubble: ((NSPoint, NSRect) -> NSRect?)?
     private var bubbleFrame: NSRect?
+    /// What stands on its line (#539): the sides of the windows there,
+    /// read once a second while it may stroll and play mode is ticked.
+    private var edges: [Double] = []
+    private var edgesRead = 0.0
 
     /// Where it was dragged to: the point under it. Nil: its corner.
     private var place = Config.characterPlace
@@ -219,9 +223,16 @@ final class CharacterHost {
             let held = carried != nil
                 || (bubbleFrame?.insetBy(dx: 0, dy: -PillPlacement.tail).contains(mouse) ?? false)
                 || (NSEvent.modifierFlags.contains(.command) && window.frame.contains(mouse))
-            frame = sim.step(to: ProcessInfo.processInfo.systemUptime,
+            let now = ProcessInfo.processInfo.systemUptime
+            if now - edgesRead >= 1 {
+                edgesRead = now
+                // The window list counts down from the top of the main screen.
+                let top = first.frame.maxY - rest.y
+                edges = strolls && Config.playMode ? Meets.edges(of: Meets.windows(), band: (top - Self.head)...top) : []
+            }
+            frame = sim.step(to: now,
                              CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, strolls: strolls,
-                                                home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
+                                                edges: edges, home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: (rest.y - Self.ground).rounded())
         if window.frame.origin != origin { window.setFrameOrigin(origin) }

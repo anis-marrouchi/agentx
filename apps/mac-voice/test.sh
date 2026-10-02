@@ -35,7 +35,7 @@ swiftc -O -o "$out/local-model-tests" Sources/AgentXVoice/ModelStore.swift Sourc
   Tests/LocalModels/main.swift -framework CoreML -target arm64-apple-macosx14.0
 "$out/local-model-tests"
 swiftc -O -o "$out/character-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/CharacterSim.swift \
-  Sources/AgentXVoice/OrbMath.swift Tests/Character/main.swift -target arm64-apple-macosx14.0
+  Sources/AgentXVoice/OrbMath.swift Sources/AgentXVoice/Meets.swift Tests/Character/main.swift -target arm64-apple-macosx14.0
 "$out/character-tests"
 swiftc -O -o "$out/play-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/PlayMath.swift \
   Sources/AgentXVoice/PlayActs.swift   Tests/Play/main.swift -target arm64-apple-macosx14.0
