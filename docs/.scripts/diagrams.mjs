@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Builds every diagram spec in docs/.scripts/diagrams/ into docs/public/diagrams/.
-// `--check` writes nothing and fails when a committed file is out of date.
+// `--check` writes nothing and fails when a committed file is out of date or has no spec.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { dirname, join, resolve } from "node:path"
@@ -31,7 +31,15 @@ for (const name of names) {
   }
 }
 
-if (stale.length) {
-  console.error(`Out of date: ${stale.join(", ")}. Run \`pnpm docs:diagrams\` and commit the result.`)
-  process.exitCode = 1
-} else console.log(`${check ? "Checked" : "Built"} ${names.length} diagram${names.length === 1 ? "" : "s"}.`)
+// A built file whose spec was renamed or removed would stay published.
+const orphans = check && existsSync(target)
+  ? readdirSync(target)
+    .filter(file => file.endsWith(".svg") && !names.includes(file.slice(0, -4)))
+    .sort()
+    .map(file => `docs/public/diagrams/${file}`)
+  : []
+
+if (stale.length) console.error(`Out of date: ${stale.join(", ")}. Run \`pnpm docs:diagrams\` and commit the result.`)
+if (orphans.length) console.error(`No spec for: ${orphans.join(", ")}. Delete the file, or add its spec in docs/.scripts/diagrams/.`)
+if (stale.length || orphans.length) process.exitCode = 1
+else console.log(`${check ? "Checked" : "Built"} ${names.length} diagram${names.length === 1 ? "" : "s"}.`)
