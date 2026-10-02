@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { createServer, request, type Server } from "http"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
@@ -14,10 +14,11 @@ import { PairCodeStore } from "../src/daemon/pair-codes"
 import { MemberStore } from "../src/members/store"
 import { inviteMember } from "../src/members/pairing"
 import { decideCard, listCards } from "../src/approvals/cards"
-import { requestsOf } from "../src/people/activity"
+import { requestsOf, runsOf } from "../src/people/activity"
 import { RequestStore } from "../src/requests/store"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { attachSqliteSubscribers } from "../src/storage/subscribers"
+import { recordTraceStart } from "../src/storage/traces"
 import { getEventBus } from "../src/events/bus"
 import { exposedDashboardMounts } from "../src/commands/app"
 import type { Person } from "../src/people/people"
@@ -200,6 +201,15 @@ describe("one person", () => {
     expect(body.runs.map((r: any) => [r.taskId, r.status])).toEqual([["T2", "in-flight"], ["T1", "ok"]])
     expect((await get("/api/admin/people/lina")).body.requests.map((r: any) => r.id)).toEqual(["lina-1"])
     expect((await get("/api/admin/people/anis")).body).toMatchObject({ requests: [], runs: [] })
+  })
+
+  it("keeps turns started in the same millisecond newest first", () => {
+    const db = openDb()!
+    const now = vi.spyOn(Date, "now").mockReturnValue(1_767_261_600_000)
+    try {
+      for (const taskId of ["T1", "T2", "T3"]) recordTraceStart(db, { agentId: "coder", channel: "gitlab", person: "sara" }, taskId)
+    } finally { now.mockRestore() }
+    expect(runsOf(db, "sara").map((r) => r.taskId)).toEqual(["T3", "T2", "T1"])
   })
 
   it("answers 404 for someone who is not listed", async () => {

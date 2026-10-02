@@ -16,6 +16,11 @@
 // refusal. Warm sessions always pass: they replay from prompt cache and a
 // real refusal comes straight back from Claude as the task error.
 //
+// One exception: on an account with extra usage switched on, Claude Code
+// keeps serving requests after a window is used up and still reports it as
+// rejected, with `isUsingOverage: true` (and `overageStatus` "allowed" or
+// "allowed_warning"). That is not a refusal, so it does not hold anything.
+//
 // The dispatch counters (last hour / last 5h) stay for observability and for
 // operators who want a hard local ceiling on top of the plan. Local caps are
 // opt-in: with no cap configured the counters never gate anything. Before
@@ -84,6 +89,8 @@ export interface RateLimitSignal {
   resetsAt?: number
   /** 0..1 share of the window used, when reported. */
   utilization?: number
+  /** True when the window is used up but extra usage is still serving requests. */
+  usingOverage?: boolean
   /** Wall-clock ms when this signal was observed. */
   seenAt: number
 }
@@ -124,7 +131,12 @@ export function parseRateLimitEvent(event: unknown, now: number = Date.now()): R
   const window = String(info.rateLimitType ?? info.rate_limit_type ?? "unknown")
   const resetsAt = asEpochMs(info.resetsAt ?? info.resets_at)
   const utilization = asNumber(info.utilization)
-  return { status, window, resetsAt, utilization, seenAt: now }
+  const overageStatus = info.overageStatus ?? info.overage_status
+  const usingOverage = status === "rejected" && (
+    (info.isUsingOverage ?? info.is_using_overage) === true
+    || overageStatus === "allowed" || overageStatus === "allowed_warning"
+  )
+  return { status, window, resetsAt, utilization, ...(usingOverage && { usingOverage }), seenAt: now }
 }
 
 /** Record the provider's view of the plan window. Non rate-limit events are ignored. */
@@ -135,10 +147,10 @@ export function recordRateLimitEvent(event: unknown, now: number = Date.now()): 
   return signal
 }
 
-/** The rejected window that still holds at `now`, if any. */
+/** The rejected window that still holds at `now`, if any. Extra usage still serving is not a hold. */
 export function activeProviderHold(now: number = Date.now()): RateLimitSignal | null {
   for (const s of providerSignals.values()) {
-    if (s.status !== "rejected") continue
+    if (s.status !== "rejected" || s.usingOverage) continue
     const until = s.resetsAt ?? s.seenAt + REJECTED_FALLBACK_HOLD_MS
     if (until > now) return s
   }

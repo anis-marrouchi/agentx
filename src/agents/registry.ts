@@ -2505,9 +2505,10 @@ export class AgentRegistry {
       //   (1) Overage gate — when Anthropic has disabled Max-plan extra usage
       //       at the org level. A cold dispatch's fresh cache-create spills
       //       past the regular allotment and gets rejected.
-      //   (2) Quota gate — when our own dispatch-budget counters say the
-      //       fleet has burned through the hourly or 5-hour cap. Warm
-      //       sessions still pass; cold dispatches are deferred.
+      //   (2) Quota gate — when Claude Code reports a plan window as
+      //       rejected (and extra usage is not serving), or when an opt-in
+      //       local dispatch cap is reached. Warm sessions still pass; cold
+      //       dispatches are deferred.
       // Warm sessions (resumeSessionId set) bypass both gates — prompt-cache
       // replay keeps them inside the regular allotment.
       //
