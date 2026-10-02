@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.89.0](https://github.com/anis-marrouchi/agentx/compare/v0.88.0...v0.89.0) (2026-10-02)
+
+
+### Features
+
+* **app:** swipe between tabs in the phone app ([#450](https://github.com/anis-marrouchi/agentx/issues/450)) ([2d56b6b](https://github.com/anis-marrouchi/agentx/commit/2d56b6b7d1226a7a8d7aa23dee5ca567916862a9)), closes [#444](https://github.com/anis-marrouchi/agentx/issues/444)
+
 ## [0.88.0](https://github.com/anis-marrouchi/agentx/compare/v0.87.0...v0.88.0) (2026-10-02)
 
 
