@@ -239,7 +239,7 @@ In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A c
 
 Good to know:
 
-- **It never interrupts:** it takes no keys, and a click where it hovers goes to the window behind it. Only a drag with **Command** held [moves it](#move-or-hide-the-character).
+- **It never interrupts:** it takes no keys, and a click where it hovers goes to the window behind it. Only a drag with **Command** held [moves it](#move-or-hide-the-character), and a [play on the page](#play-on-the-page) takes the first key or click to end.
 - **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it.
 - **The pill is its speech bubble:** the pill shows the agent's name, the words, the answer and the call buttons as before, attached to the character. It has no orb of its own, and it appears and hides by the same rules as the pill: only while listening or answering, unless **Show floating pill** is ticked.
 - **It waits while you use the bubble:** while the pointer is on the bubble, the character stays where it is, so you can click a button or read the answer.
@@ -268,6 +268,38 @@ Good to know:
 - **Its place is its own:** the character's place and the pill's place are kept apart, so moving one never moves the other when you switch looks.
 - **It stays on screen:** it goes no closer to the top of a screen than its bubble needs, and no further right than where it rests by default. If its screen is no longer connected, it comes back to the bottom-right corner of your main screen.
 - **Hidden until you ask:** a hidden character stays hidden, whatever an agent says meanwhile. It comes back with **Option–Space**, an agent's own shortcut, an incoming call, **Show character** or **Show floating pill**, and when the app starts again.
+
+### Play on the page
+
+The character can leave its place and play on a picture of your screen: it walks along a line of text, eats a few words and wipes a line. It is a short show, about ten seconds, and the real page is never touched. Play mode is off by default.
+
+To switch it on and start a play:
+
+1. **Mac:** click the AgentX icon in the menu bar and tick **Play mode**. A new row, **Play on this page**, shows in the menu. The tick is kept on this Mac, like **Animated orb**.
+2. **Mac:** choose **Play on this page**.
+3. **Mac:** the first time, macOS asks to let AgentX Voice record the screen and the pill says **Allow Screen Recording**. Open System Settings › Privacy & Security › Screen & System Audio Recording and switch on **AgentX Voice**. Then quit AgentX Voice from its menu, open it again and choose **Play on this page** once more.
+
+What happens:
+
+1. The app takes one picture of the screen the character is on and lays it over that screen. The character waits on it, with its three thinking dots, while the lines of text are read. The reading is done on the Mac by Apple's text recognition; nothing is uploaded.
+2. The character jumps onto the line nearest the middle of the screen and walks along it.
+3. It eats the first words of the next line under it, letter by letter.
+4. It wipes the third line with a cloth, rests, and the picture goes. The page is as it was.
+
+Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring.
+
+Good to know:
+
+- **Nothing real is changed:** no click, key or edit is sent to any app. The words that go are only painted over on the picture.
+- **The picture stays on the Mac:** it is kept in memory only, never written to disk, and dropped when play ends.
+- **When the row is greyed out:** **Play on this page** needs **Shown as** set to **Character**, the character on screen (not hidden), **Animated orb** ticked, **Reduce motion** off, and an idle assistant.
+- **It takes clicks and keys while it plays:** the picture covers the screen, so the first key or click ends the play and goes no further. Outside a play, the character still takes none.
+- **One screen:** it plays on the screen the character is on. Other screens stay live.
+- **A short wait before it starts:** reading the text takes one to a few seconds. The screen is already frozen during that time.
+- **No text, no play:** if no line of at least two words is found away from the top of the screen, the picture goes again and nothing plays.
+- **Letters are an estimate:** a word's box is cut into equal parts, so a letter can go a little early or late.
+- **Photos and gradients:** on a background that isn't one flat colour, the painted-over patch shows.
+- **It has no mouth:** eating shows as letters going at its front, with a small bite squash.
 
 ### Move the pill
 
@@ -929,6 +961,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **The answer closes too soon or stays too long:** change **Keep the answer open** on the General tab, or run `agentx voice card --timeout <seconds>`.
 - **`agentx voice palette` or `agentx voice card` says a value is refused:** the palette must be one of the seven names, the timeout 0 to 600 seconds and the height 120 to 800 points.
 - **The character doesn't show:** it shows after the app has read its settings. If the app starts before the daemon, as it can when you log in, it shows the orb first and asks again until the daemon answers: at most 30 seconds after the daemon is up. If you set `voice.look` in the Terminal or in `agentx.json`, quit AgentX Voice from its menu and open it again. Run `agentx voice look` to see which one is on.
+- **Play on this page is missing, greyed out, or the pill says Allow Screen Recording:** the row shows only while **Play mode** is ticked in the AgentX menu, and is greyed out unless the character is on screen, **Animated orb** is ticked, Reduce Motion is off and the assistant is idle. **Allow Screen Recording** in the pill, or a play on a picture without your windows, means the screen recording permission is missing: switch on **AgentX Voice** in System Settings › Privacy & Security › Screen & System Audio Recording, then quit AgentX Voice from its menu and open it again. See [Play on the page](#play-on-the-page).
 - **The orb doesn't move:** Reduce Motion is on, **Animated orb** is unticked in the AgentX menu, or the microphone permission is missing, so there is no voice level to follow.
 - **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the AgentX menu.
 - **An answer is late to play:** another line is ahead of it in the speaking queue. **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue` to see what is ahead. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`.
