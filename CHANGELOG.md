@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.92.3](https://github.com/anis-marrouchi/agentx/compare/v0.92.2...v0.92.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **members:** retry the name line and say offline only when the browser is ([#490](https://github.com/anis-marrouchi/agentx/issues/490)) ([6273baa](https://github.com/anis-marrouchi/agentx/commit/6273baa61a0592a14319995939e4879613894844)), closes [#489](https://github.com/anis-marrouchi/agentx/issues/489)
+
 ## [0.92.2](https://github.com/anis-marrouchi/agentx/compare/v0.92.1...v0.92.2) (2026-10-02)
 
 
