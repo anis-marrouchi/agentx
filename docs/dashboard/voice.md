@@ -211,6 +211,8 @@ The orb can be shown as a character instead: the same orb, grown into a small ro
 
 ![The character in its nine states, in the lagoon palette on a light background and the sunrise palette on a dark one: idle, noticing you, listening with rings beside it, a nod with stars, working with half-closed eyes and three dots, speaking, dozing, an agent calling, and waiting with a question mark](/screenshots/voice/character-states.png)
 
+![The character with its speech bubble above it and a small tail pointing down at it, in three states: listening with rings beside it, working with half-closed eyes and three dots while the bubble reads Reading files and 12 seconds, and speaking with arcs beside it while the bubble shows the words being said. Writer in the lagoon palette on a light background, Ops in the sunrise palette on a dark one](/screenshots/voice/character-bubble.png)
+
 | What you see | What it means |
 |---|---|
 | It hovers, breathes and blinks, and its eyes follow the pointer | The assistant is idle |
@@ -236,7 +238,7 @@ agentx voice look orb         # back to the orb
 agentx voice look             # which one is on now
 ```
 
-In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A change made in the Terminal or in the file shows the next time the app starts.
+In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A change made in the Terminal or in the file shows within a few seconds, while the app runs. The daemon must be running: the app reads the setting from it.
 
 Good to know:
 
@@ -269,6 +271,34 @@ Good to know:
 - **Its place is its own:** the character's place and the pill's place are kept apart, so moving one never moves the other when you switch looks.
 - **It stays on screen:** it goes no closer to the top of a screen than its bubble needs, and no further right than where it rests by default. If its screen is no longer connected, it comes back to the bottom-right corner of your main screen.
 - **Hidden until you ask:** a hidden character stays hidden, whatever an agent says meanwhile. It comes back with **Option–Space**, an agent's own shortcut, an incoming call, **Show character** or **Show floating pill**, and when the app starts again.
+
+### Let the character stroll
+
+By default the character moves only to get out of the pointer's way. It can also take a slow stroll when the assistant has nothing to do. This is off by default.
+
+To turn it on:
+
+1. **Mac:** open **Settings…** from the AgentX menu and go to the **General** tab.
+2. **Mac:** under **Assistant**, tick **Character strolls when idle**, then choose **Save**.
+
+Or in the Terminal, from the folder with your `agentx.json`:
+
+```sh
+agentx voice stroll on    # a slow stroll now and then
+agentx voice stroll off   # it stays where it rests
+agentx voice stroll       # which one is on now
+```
+
+In `agentx.json` it is `voice.stroll`: `false` (the default) or `true`. A change made in the Terminal or in the file is picked up within a few seconds, while the app runs.
+
+Good to know:
+
+- **What a stroll is:** after 25 to 55 seconds with nothing to do, the character walks slowly a little way to one side, at most 110 points, waits there a few seconds and walks back. It leaves no trail of dots.
+- **Work comes first:** when you talk or an agent answers, it walks back to where it rests. The pointer still sends it aside as before.
+- **It stops when it dozes:** after two minutes with nothing to do the character dozes where it rests, and a dozing character does not stroll.
+- **It stays on screen:** next to the edge of the screen it strolls to the other side.
+- **Not with a still character:** with **Animated orb** unticked or Reduce Motion on, the character does not move at all.
+- **Only with the character:** the setting has no effect while the orb is shown, and the tick box is greyed out.
 
 ### Play on the page
 
@@ -429,6 +459,7 @@ To hear a voice before you keep it:
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
 | **Start reduced to the orb** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb). Default off | `voice.startReduced` |
+| **Character strolls when idle** | The [character](#the-character) takes a [slow stroll](#let-the-character-stroll) when the assistant has nothing to do. Default off | `voice.stroll` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
 | **Tallest answer** | How tall the answer grows before it scrolls, 120 to 800 points | `voice.card.maxHeight` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |
@@ -1020,7 +1051,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **No answer text in the pill:** the answer had nothing the voice didn't already say. The pill only grows for a link, a picture, or more text than was spoken. If you closed the pill with **×** or **Esc**, the next answer doesn't open it either; hold **Option–Space** first.
 - **The answer closes too soon or stays too long:** change **Keep the answer open** on the General tab, or run `agentx voice card --timeout <seconds>`.
 - **`agentx voice palette` or `agentx voice card` says a value is refused:** the palette must be one of the seven names, the timeout 0 to 600 seconds and the height 120 to 800 points.
-- **The character doesn't show:** it shows after the app has read its settings. If the app starts before the daemon, as it can when you log in, it shows the orb first and asks again until the daemon answers: at most 30 seconds after the daemon is up. If you set `voice.look` in the Terminal or in `agentx.json`, quit AgentX Voice from its menu and open it again. Run `agentx voice look` to see which one is on.
+- **The character doesn't show:** it shows after the app has read its settings. If the app starts before the daemon, as it can when you log in, it shows the orb first and asks again until the daemon answers: at most 30 seconds after the daemon is up. A change to `voice.look` made in the Terminal or in `agentx.json` shows within a few seconds while the daemon runs. Run `agentx voice look` to see which one is on.
 - **Play on this page is missing, greyed out, or the pill says Allow Screen Recording:** the row shows only while **Play mode** is ticked in the AgentX menu, and is greyed out unless the character is on screen, **Animated orb** is ticked, Reduce Motion is off and the assistant is idle. **Allow Screen Recording** in the pill, or a play on a picture without your windows, means the screen recording permission is missing: switch on **AgentX Voice** in System Settings › Privacy & Security › Screen & System Audio Recording, then quit AgentX Voice from its menu and open it again. See [Play on the page](#play-on-the-page).
 - **The orb doesn't move:** Reduce Motion is on, **Animated orb** is unticked in the AgentX menu, or the microphone permission is missing, so there is no voice level to follow.
 - **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the AgentX menu.

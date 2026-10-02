@@ -32,13 +32,17 @@ struct VoiceSettings: Codable, Equatable {
         /// The pill starts reduced to its orb. Nil from a daemon older
         /// than the reduced pill.
         var startReduced: Bool?
+        /// The character takes a stroll when it has nothing to do. Nil
+        /// from a daemon older than the stroll.
+        var stroll: Bool?
 
         init(provider: String, fallback: String, stt: String, localStt: String = "mlx-whisper",
              endOfTurn: String = "vad", hotkeys: Hotkeys, card: Card? = nil, look: String? = nil,
-             startReduced: Bool? = nil) {
+             startReduced: Bool? = nil, stroll: Bool? = nil) {
             self.provider = provider; self.fallback = fallback; self.stt = stt
             self.localStt = localStt; self.endOfTurn = endOfTurn; self.hotkeys = hotkeys
             self.card = card; self.look = look; self.startReduced = startReduced
+            self.stroll = stroll
         }
 
         /// A daemon from before these fields leaves them out: the defaults.
@@ -53,6 +57,7 @@ struct VoiceSettings: Codable, Equatable {
             card = try c.decodeIfPresent(Card.self, forKey: .card)
             look = try c.decodeIfPresent(String.self, forKey: .look)
             startReduced = try c.decodeIfPresent(Bool.self, forKey: .startReduced)
+            stroll = try c.decodeIfPresent(Bool.self, forKey: .stroll)
         }
     }
     struct Voice: Codable, Equatable {
@@ -113,6 +118,7 @@ struct VoiceSettings: Codable, Equatable {
         if self.general.endOfTurn != old.general.endOfTurn { general["endOfTurn"] = self.general.endOfTurn }
         if let look = self.general.look, look != old.general.look { general["look"] = look }
         if let start = self.general.startReduced, start != old.general.startReduced { general["startReduced"] = start }
+        if let stroll = self.general.stroll, stroll != old.general.stroll { general["stroll"] = stroll }
         var keys: [String: Any] = [:]
         if self.general.hotkeys.talk != old.general.hotkeys.talk { keys["talk"] = self.general.hotkeys.talk }
         if self.general.hotkeys.stop != old.general.hotkeys.stop { keys["stop"] = self.general.hotkeys.stop }
@@ -155,6 +161,17 @@ struct VoiceSettings: Codable, Equatable {
     /// start that failed: 2, 4, 8, 16, then every 30.
     static func retryDelay(after failures: Int) -> Double {
         min(30, pow(2, Double(max(1, failures))))
+    }
+
+    /// Seconds between reads once the daemon has answered, so a change
+    /// made outside the app shows without a restart.
+    static let rereadDelay: Double = 5
+
+    /// Whether a read from the daemon replaces what the app holds: it
+    /// differs, and nothing was saved here while it was on its way. A read
+    /// that started before a save in the window carries the old settings.
+    static func replaces(_ read: VoiceSettings, held: VoiceSettings?, heldWhenAsked: VoiceSettings?) -> Bool {
+        held == heldWhenAsked && read != held
     }
 
     /// The fields a preview speaks with: the draft's voice for one agent.

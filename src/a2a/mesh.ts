@@ -640,6 +640,9 @@ export class A2AMesh {
     channels: string[]
     /** The node's own name, from its agent card. */
     node?: string
+    /** The GitHub logins the peer posts with, from its agent card (#522).
+     *  Kept while the peer is down: its earlier posts still arrive. */
+    githubLogins: string[]
     lastCheck?: Date
   }> {
     return Array.from(this.peers.entries()).map(([name, state]) => ({
@@ -651,6 +654,9 @@ export class A2AMesh {
         ? ((state.agentCard as any).channels as unknown[]).map((c) => String(c))
         : [],
       node: typeof state.agentCard?.name === "string" ? state.agentCard.name : undefined,
+      githubLogins: Array.isArray((state.agentCard as any)?.githubLogins)
+        ? ((state.agentCard as any).githubLogins as unknown[]).map((l) => String(l))
+        : [],
       lastCheck: state.lastCheck,
     }))
   }
