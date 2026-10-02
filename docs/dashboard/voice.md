@@ -338,6 +338,7 @@ Good to know:
 - **Letters are an estimate:** a word's box is cut into equal parts, so a letter can go a little early or late, and a kicked letter can carry a sliver of the one next to it.
 - **On a page with one line of text:** it walks that line and does one thing to it.
 - **Photos and gradients:** on a background that isn't one flat colour, the painted-over patch shows.
+- **It has no mouth:** eating shows as letters going at its front, with a small bite squash.
 
 ### Play with the pointer
 
@@ -360,7 +361,6 @@ Good to know:
 - **Along one edge:** it does not climb windows or walk on text here. It follows the pointer only left and right.
 - **The same games in the same order** each time the app starts.
 - **No play** with **Reduce motion** on, **Animated orb** unticked, or a sleeping character: the pointer has to come close to wake it first.
-- **It has no mouth:** eating shows as letters going at its front, with a small bite squash.
 
 ### Move the pill
 
