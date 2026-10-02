@@ -115,6 +115,28 @@ Every docs change follows these rules.
 - Keep reference pages concise and validate examples against the current code.
 - Run `pnpm docs:check` before submitting a documentation change.
 
+### Diagrams
+
+A page that describes a flow between two people or two machines opens with one diagram: who does what, in which order, and what happens when it fails. Every diagram shares one look (white ground, black text, the AgentX blue; steps appear in order, then stay), and that look lives in one file, `docs/.scripts/diagrams/kit.mjs`. Never draw one by hand or in another tool.
+
+To add a diagram (in a terminal, from the repo root):
+
+1. Copy `docs/.scripts/diagrams/teammate-join.mjs` to `docs/.scripts/diagrams/<name>.mjs`.
+2. Edit the copy: the title, the rows of steps, and the extras (`callout` for the exception, `window` for what the reader ends up seeing, `list` for what to do when it fails). Keep a step's title to two short lines and its note to two.
+3. Build it: `pnpm docs:diagrams`. It writes `docs/public/diagrams/<name>.svg`.
+4. Open the file in a browser and watch it build once. Check that no text leaves its card.
+5. Add it to the page, with a sentence of alt text that says what the picture shows: `![…](/diagrams/<name>.svg)`.
+6. Commit the spec and the built file together.
+
+The rules of the look:
+
+- Blue numbers are the reader of the page; black numbers are the other person. Say so in the legend.
+- Motion explains order and nothing else: steps rise in one after the other, a line draws from one row to the next, then each number pulses in turn. Nothing loops back to an empty picture. A reader who turned on reduced motion sees the finished diagram, still.
+- Colours come from `C` in the kit. A new colour or shape goes into the kit first, so every diagram gets it.
+- Neutral examples only, as on every page.
+
+`pnpm docs:check` fails when a built file no longer matches its spec, and names the file.
+
 ### Docs gate
 
 Every pull request runs the **Docs gate** check (`.github/workflows/docs-gate.yml`). It enforces the rules above without any AI: the same input always gives the same result. All paths, patterns and lists live in one file, `scripts/docs-gate.config.json`.

@@ -7,6 +7,10 @@ It works like the [phone app](../dashboard/mobile-app.md): one page served on yo
 - the code is made for one person from your [people list](./people.md), and the key it gives opens that person's own work only;
 - a new machine does nothing until you say yes to it on a decision card.
 
+The whole path, from your first step to the teammate's desktop:
+
+![How a teammate joins: you prepare in six steps, the teammate pairs in four, you say yes on a decision card, and the page becomes My work](/diagrams/teammate-join.svg)
+
 ## What you need
 
 - The teammate listed in [people](./people.md), with the identity they use on the channel they write on.

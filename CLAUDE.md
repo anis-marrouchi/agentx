@@ -32,6 +32,7 @@ Applies to every change under `docs/` and to any code change that adds or rename
 - Write for a non-technical reader. Use plain words, and explain a term the first time it appears (or avoid it).
 - Write procedures as numbered steps, one action per step. Label terminal and browser steps explicitly.
 - Show, don't only tell: add a screenshot wherever a step touches a screen (dashboard, System Settings, a phone app). Store them under `docs/public/screenshots/<page>/`.
+- A page about a flow between two people or machines opens with one diagram, built with the kit in `docs/.scripts/diagrams/` (`pnpm docs:diagrams`), never drawn by hand: [CONTRIBUTING.md › Diagrams](CONTRIBUTING.md#diagrams).
 - Document everything we ship. Every feature, setting, CLI command and integration has a page or section; no setting exists only in code. A change that adds or renames a setting or command updates the docs in the same PR.
 - End every page with a **Check it worked** section and an **If something is wrong** section.
 - Use neutral examples only: no real company, people, agent names, hosts, IPs or tokens. Take screenshots from a demo instance, never a live fleet.
