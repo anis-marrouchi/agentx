@@ -37,6 +37,9 @@ final class GuideWatcher {
     /// Show this, in AppKit coordinates, or go home.
     var onCommand: ((NSRect?, GuideMath.Mark) -> Void)?
 
+    /// (Re)start the wait. Called again when the character comes on screen
+    /// or leaves it, so a wait already open is ended: cancelling it closes
+    /// its socket, and the daemon stops counting a character as there.
     func start() {
         task?.cancel()
         task = Task { [weak self] in
@@ -63,6 +66,47 @@ final class GuideWatcher {
         away = rect != nil
         Log.info("guide: \(rect.map { "to \(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)) \(command.mark)" } ?? "home")")
         onCommand?(rect, GuideMath.Mark(rawValue: command.mark) ?? .box)
+    }
+}
+
+/// What the character was sent to show (#482): it stands beside it until
+/// it is sent home, taken hold of or hidden; its mark; its glide there and back.
+@MainActor
+final class CharacterGuide {
+    private(set) var showing: NSRect?
+    private let mark = GuideMark()
+    /// On its way up or down, to what it shows or back; and the last frame.
+    private var gliding = false
+    private var ticked = 0.0
+
+    func show(_ rect: NSRect, _ kind: GuideMath.Mark, color: NSColor, animated: Bool) {
+        showing = rect
+        gliding = true
+        mark.show(kind, around: rect, color: color, animated: animated)
+    }
+
+    /// Back to where it rests, gliding there unless it was taken hold of.
+    func end(glide: Bool = true) {
+        gliding = glide && showing != nil
+        showing = nil
+        mark.hide()
+    }
+
+    /// Where it stands beside what it shows, on that thing's screen.
+    func stand(screens: [NSScreen], body: CGFloat, tall: CGFloat) -> CGPoint? {
+        guard let showing, let first = screens.first else { return nil }
+        let middle = CGPoint(x: showing.midX, y: showing.midY)
+        return GuideMath.stand(beside: showing, in: (screens.first { $0.frame.contains(middle) } ?? first).visibleFrame,
+                               body: body, tall: tall, inset: PillPlacement.characterInset)
+    }
+
+    /// Its height this frame: sent somewhere or back, it glides up or down
+    /// to `y`; otherwise it is there at once.
+    func height(from: CGFloat, toward y: CGFloat, now: Double, still: Bool) -> CGFloat {
+        let h = gliding && !still ? GuideMath.glide(from, toward: y, dt: now - ticked) : y
+        gliding = h != y
+        ticked = now
+        return h
     }
 }
 
@@ -96,8 +140,10 @@ final class GuideMark {
     /// Draw `mark` around `rect`. Animated, it is drawn on once the
     /// character has had time to get there.
     func show(_ mark: GuideMath.Mark, around rect: NSRect, color: NSColor, animated: Bool) {
-        let outline = GuideMath.outline(mark, around: rect)
-        guard !outline.isNull else { return hide() }
+        // Kept to the screen it is on, whatever size it was sent.
+        let screen = NSScreen.screens.first { $0.frame.intersects(rect) }?.frame ?? .null
+        let outline = GuideMath.outline(mark, around: rect).intersection(screen)
+        guard !outline.isNull, !outline.isEmpty else { return hide() }
         let frame = outline.insetBy(dx: -Self.margin, dy: -Self.margin)
         window.setFrame(frame, display: false)
         let inner = CGRect(x: Self.margin, y: Self.margin, width: outline.width, height: outline.height)

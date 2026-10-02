@@ -512,6 +512,7 @@ final class App: NSObject, NSApplicationDelegate {
         guideWatcher.wanted = { [weak self] in self?.character.onScreen == true }
         guideWatcher.onCommand = { [weak self] rect, mark in self?.character.guide(to: rect, mark: mark) }
         guideWatcher.start()
+        character.onScreenChanged = { [weak self] in self?.guideWatcher.start() }
 
         // The target does not wait for the microphone: the menu shows it
         // either way.
