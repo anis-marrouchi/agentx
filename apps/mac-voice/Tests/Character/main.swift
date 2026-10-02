@@ -194,8 +194,8 @@ check(abs(taken.x - putAt) < 1, "let go: it rests where it was put")
 var sentOff = CharacterSim(unit: 0.56)
 for i in 1...30 { _ = sentOff.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), home: home, range: range)) }
 let there = home - 300
-for i in 31...75 { _ = sentOff.step(to: Double(i) / 30, Input(sent: true, home: there, range: range)) }
-check(abs(sentOff.x - there) < 12, "sent to show something: it goes at once, though it had just stepped aside")
+for i in 31...75 { _ = sentOff.step(to: Double(i) / 30, Input(held: true, sent: true, home: there, range: range)) }
+check(abs(sentOff.x - there) < 12, "sent to show something: it goes at once, though it had just stepped aside and the pointer is on its bubble")
 _ = sentOff.step(to: CharacterSim.dozeAfter + 60, Input(sent: true, home: there, range: range))
 check(sentOff.mood != .dozing, "and stays awake while it shows it")
 

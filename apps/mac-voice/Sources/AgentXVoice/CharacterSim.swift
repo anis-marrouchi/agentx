@@ -105,7 +105,10 @@ struct CharacterSim {
         // The pointer comes close: out of its way. Left alone: back home,
         // unless the pointer is resting there.
         let near = input.pointer.map { abs($0.x - x) < reach && abs($0.y) < tall } ?? false
-        if input.held {
+        if input.sent {
+            target = min(max(input.home, input.range.lowerBound), input.range.upperBound)
+            restSince = now
+        } else if input.held {
             target = x
             awayUntil = max(awayUntil, now + Self.awayFor)
         } else if near {
@@ -113,9 +116,6 @@ struct CharacterSim {
             awayUntil = now + Self.awayFor
             restSince = now
             steppedAside = true
-        } else if input.sent {
-            target = min(max(input.home, input.range.lowerBound), input.range.upperBound)
-            restSince = now
         } else if now >= awayUntil {
             let taken = input.pointer.map { abs($0.x - input.home) < Self.clear && abs($0.y) < tall } ?? false
             if !taken {
