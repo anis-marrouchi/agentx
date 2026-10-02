@@ -1,15 +1,26 @@
 import AppKit
 
 /// What play mode (#505) draws over the picture: the page's colour where
-/// words are gone, the cloth, and the character. The context is flipped,
+/// words are gone, the pieces that moved, the cloth, and the character. The context is flipped,
 /// in the picture's points.
 enum PlayDraw {
-    static func draw(_ frame: Play.Frame, in ctx: CGContext, stops: [NSColor]) {
+    static func draw(_ frame: Play.Frame, in ctx: CGContext, stops: [NSColor], picture: CGImage?, scale: CGFloat) {
         for gone in frame.gone {
             let c = gone.paper
             ctx.setFillColor(CGColor(srgbRed: CGFloat(c >> 16 & 0xFF) / 255, green: CGFloat(c >> 8 & 0xFF) / 255,
                                      blue: CGFloat(c & 0xFF) / 255, alpha: 1))
             ctx.fill(cg(gone.rect))
+        }
+        for piece in frame.pieces {
+            let from = cg(piece.from)
+            guard let part = picture?.cropping(to: from.applying(CGAffineTransform(scaleX: scale, y: scale))) else { continue }
+            ctx.saveGState()
+            ctx.translateBy(x: piece.at.x + from.width / 2, y: piece.at.y + from.height / 2)
+            ctx.rotate(by: piece.turn)
+            // The context is flipped; a picture is not.
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(part, in: CGRect(x: -from.width / 2, y: -from.height / 2, width: from.width, height: from.height))
+            ctx.restoreGState()
         }
         if let cloth = frame.cloth {
             let path = CGPath(roundedRect: cg(cloth), cornerWidth: 4, cornerHeight: 4, transform: nil)
@@ -73,6 +84,7 @@ final class PlayHost {
         backdrop.layer?.contents = picture
         let view = PlayView(frame: bounds)
         view.stops = stops
+        view.picture = picture
         view.shown = Play.Frame(at: foot, pose: CharacterMath.pose(.working))
         view.onInput = { [weak self] in self?.end("a key or a click") }
         backdrop.addSubview(view)
@@ -144,6 +156,8 @@ private final class PlayWindow: NSPanel {
 private final class PlayView: NSView {
     var shown = Play.Frame()
     var stops = CharacterDraw.stops(tint: Brand.accent, colors: nil)
+    /// The picture under it: moved pieces are cut from it.
+    var picture: CGImage?
     var onInput: (() -> Void)?
 
     override var isFlipped: Bool { true }
@@ -152,7 +166,8 @@ private final class PlayView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        PlayDraw.draw(shown, in: ctx, stops: stops)
+        PlayDraw.draw(shown, in: ctx, stops: stops, picture: picture,
+                      scale: CGFloat(picture?.width ?? 0) / max(bounds.width, 1))
     }
 
     override func keyDown(with event: NSEvent) { onInput?() }
