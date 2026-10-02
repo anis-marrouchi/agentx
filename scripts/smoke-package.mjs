@@ -8,7 +8,8 @@ const root = process.cwd()
 const temp = mkdtempSync(join(tmpdir(), 'agentx-package-smoke-'))
 function run(command, args, cwd = temp) {
   return execFileSync(command, args, { cwd, encoding: 'utf8', timeout: 300000, maxBuffer: 8 * 1024 * 1024,
-    env: { ...process.env, npm_config_cache: join(temp, 'cache'), npm_config_update_notifier: 'false' } })
+    // No git for npm: `npx agentix-cli` must install on images that have Node only (#461).
+    env: { ...process.env, npm_config_cache: join(temp, 'cache'), npm_config_update_notifier: 'false', npm_config_git: join(temp, 'no-git') } })
 }
 try {
   let spec = process.argv[2]
