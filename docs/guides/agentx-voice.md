@@ -306,6 +306,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.hotkeys.talk` | `"opt+space"` | Hold to talk |
 | `voice.hotkeys.stop` | `"cmd+opt+period"` | Stop every voice |
 | `voice.hotkeys.paste` | `"cmd+opt+v"` | Smart paste |
+| `voice.look` | `"orb"` | What shows the assistant's state: the `"orb"` in the pill, or the `"character"`, a small creature above the bottom edge of the screen. See [The character](../dashboard/voice.md#the-character) |
 | `voice.card.timeout` | `30` | Seconds an answer in the pill stays open once spoken, `0` to `600`. `0` keeps it open until you close it |
 | `voice.card.maxHeight` | `320` | Tallest the answer grows before it scrolls, in points, `120` to `800` |
 | `node.defaultAgent` | not set: the first agent | The agent that answers when none is ticked or pinned |
@@ -375,6 +376,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 | `agentx voice list` | Lists the Mac voices for your language. `--all` lists every language; `-c <path>` reads another `agentx.json` |
 | `agentx voice set <agent> [voice]` | Sets an agent's voice: a Mac voice name, `siri:<name>` for a Siri voice, or `system` for the Mac's default. `--provider system\|elevenlabs`, `--lang en\|fr\|ar` for one language only, `--gender female\|male\|neutral`, `-c <path>` |
 | `agentx voice palette [agent] [palette]` | Lists the orb palettes and who uses which, or picks one for an agent. `default` goes back to the one nearest its colour. `-c <path>` |
+| `agentx voice look [orb\|character]` | Shows or changes what shows the assistant's state: the orb in the pill, or the character. `-c <path>` |
 | `agentx voice card` | Shows or changes the answer in the pill. `--timeout <seconds>` (0 to 600, 0 keeps it open), `--max-height <points>` (120 to 800), `-c <path>` |
 | `agentx narrate <agent> on\|off\|default` | Switches task narration for an agent. `--task` targets one task id instead |
 | `agentx talk <agentA> <agentB> <topic…>` | Two agents talk out loud. See [Talk mode](../dashboard/voice.md#talk-mode-two-agents-talk-out-loud) |
