@@ -246,7 +246,7 @@ Good to know:
 - **It waits while you use the bubble:** while the pointer is on the bubble, the character stays where it is, so you can click a button or read the answer.
 - **The bubble can't be dragged by itself:** it stays with the character, so [move the character](#move-or-hide-the-character) and the bubble goes with it. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
 - **Colour:** it wears the palette of the agent that is answering, amber while notifications are held and red when something went wrong, like the orb.
-- **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked in the AgentX menu, it is a still picture that changes between states and stays in its place.
+- **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked in the AgentX menu, it is a still picture that changes between states and stays in its place. Each state keeps its marks: the rings while it listens, the dots while it works, and the arcs of its voice only while it speaks.
 - **Where it rests:** above the bottom edge of the screen with the menu bar, near the bottom-right corner, under the right end of its bubble, until you move it.
 
 ### Move or hide the character
