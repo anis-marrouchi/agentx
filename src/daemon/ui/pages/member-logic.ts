@@ -5,13 +5,14 @@
 // its own source, so it cannot call a sibling.
 
 /** What the strip under the title says, or null when the last load
- *  worked. "Offline" only when the browser itself has no network; a load
- *  that fails with the network up is the server not answering. `loaded`:
- *  the lists were filled at least once, so there is something to show. */
+ *  worked, whatever the browser says about its network (#496). "Offline"
+ *  only when the browser itself has no network; a load that fails with
+ *  the network up is the server not answering. `loaded`: the lists were
+ *  filled at least once, so there is something to show. */
 export function connectionNote(failed: boolean, browserOnline: boolean, retrySeconds: number, loaded: boolean): { text: string; retry: boolean } | null {
+  if (!failed) return null
   if (!browserOnline) return { text: "Offline. Showing what was last loaded; live state needs a connection.", retry: false }
-  if (failed) return { text: "Can't reach the server. " + (loaded ? "Showing what was last loaded. " : "") + "Trying again every " + retrySeconds + " seconds.", retry: true }
-  return null
+  return { text: "Can't reach the server. " + (loaded ? "Showing what was last loaded. " : "") + "Trying again every " + retrySeconds + " seconds.", retry: true }
 }
 
 /** A message preview as one plain sentence: markdown marks removed, line
