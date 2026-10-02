@@ -12,6 +12,7 @@ export interface PersonRun {
   chatId: string | null
   status: string
   startedAt: number
+  finishedAt: number | null
   messagePreview: string | null
 }
 
@@ -19,14 +20,14 @@ export interface PersonRun {
  *  left out: they carry the same person but are the agents' own work. */
 export function runsOf(db: Database.Database, personId: string, limit = 20): PersonRun[] {
   const rows = db.prepare(
-    `SELECT task_id, agent_id, channel, chat_id, status, started_at, message_preview
+    `SELECT task_id, agent_id, channel, chat_id, status, started_at, finished_at, message_preview
        FROM task_traces
       WHERE person = ? AND (channel IS NULL OR channel != 'a2a')
       ORDER BY started_at DESC, rowid DESC LIMIT ?`,
   ).all(personId, Math.max(1, Math.min(limit, 500))) as any[]
   return rows.map((r) => ({
     taskId: r.task_id, agentId: r.agent_id, channel: r.channel, chatId: r.chat_id,
-    status: r.status, startedAt: r.started_at, messagePreview: r.message_preview,
+    status: r.status, startedAt: r.started_at, finishedAt: r.finished_at ?? null, messagePreview: r.message_preview,
   }))
 }
 

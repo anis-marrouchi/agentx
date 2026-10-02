@@ -5,8 +5,8 @@ import { runsOf, type PersonRun } from "@/people/activity"
 // --- What one person sees on their work page (#386) ---
 //
 // Their own requests, open ones oldest first and the ones closed in the
-// last days, plus the turns they started. Nothing of anyone else's: every
-// query is keyed by the person stamped on the row.
+// last days, plus the turns they started in the last days (#443). Nothing
+// of anyone else's: every query is keyed by the person stamped on the row.
 
 export const RECENT_DAYS = 7
 
@@ -27,10 +27,16 @@ export interface WorkItem {
   where: { label: string; url: string | null }
 }
 
+/** A turn the person started, with the request it became, if any. */
+export interface SentItem extends PersonRun {
+  where: { label: string; url: string | null } | null
+  request: { state: string; evidence: string | null } | null
+}
+
 export interface PersonWork {
   open: WorkItem[]
   recent: WorkItem[]
-  runs: PersonRun[]
+  runs: SentItem[]
 }
 
 export type LinkFor = (channel: string, chatId: string) => string | null
@@ -87,7 +93,20 @@ export function workOf(db: Database.Database, personId: string, opts: { now?: nu
     `SELECT * FROM requests WHERE person = ? AND state IN (${CLOSED_STATES.map(() => "?").join(",")}) AND COALESCE(closed_at, updated_at) >= ?
       ORDER BY COALESCE(closed_at, updated_at) DESC LIMIT 50`,
   ).all(personId, ...CLOSED_STATES, now - RECENT_DAYS * 86_400_000) as any[]).map(toItem) : []
-  let runs: PersonRun[] = []
-  try { runs = runsOf(db, personId, 10) } catch { /* no task_traces yet */ }
+  let turns: PersonRun[] = []
+  try { turns = runsOf(db, personId, 50).filter((r) => r.startedAt >= now - RECENT_DAYS * 86_400_000) } catch { /* no task_traces yet */ }
+  const requestOf = new Map<string, { state: string; evidence: string | null }>()
+  if (ready && turns.length) {
+    const rows = db.prepare(
+      `SELECT l.ref, r.state, r.evidence FROM request_links l JOIN requests r ON r.id = l.request_id
+        WHERE l.kind = 'run' AND r.person = ? AND l.ref IN (${turns.map(() => "?").join(",")})`,
+    ).all(personId, ...turns.map((t) => t.taskId)) as Array<{ ref: string; state: string; evidence: string | null }>
+    for (const r of rows) requestOf.set(r.ref, { state: r.state, evidence: r.evidence ?? null })
+  }
+  const runs = turns.map((t): SentItem => ({
+    ...t,
+    where: t.channel ? { label: whereLabel(t.channel, t.chatId ?? ""), url: opts.linkFor?.(t.channel, t.chatId ?? "") ?? null } : null,
+    request: requestOf.get(t.taskId) ?? null,
+  }))
   return { open, recent, runs }
 }

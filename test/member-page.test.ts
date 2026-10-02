@@ -209,6 +209,42 @@ describe("previews of the latest turns", () => {
     const runs = [{ taskId: "t1", agentId: "coder", channel: "telegram", chatId: "c1", status: "ok", startedAt: Date.now(), messagePreview: "**Deploy** <b>now</b>" }]
     const p = openPage({ work: [{ status: 200, body: { open: [], recent: [], runs } }] })
     await p.settle()
-    expect(p.el("runs").innerHTML).toContain('<p class="text">Deploy &lt;b&gt;now&lt;/b&gt;</p>')
+    expect(p.el("sent").innerHTML).toContain('<p class="text">Deploy &lt;b&gt;now&lt;/b&gt;</p>')
+  })
+})
+
+describe("the agent cards and what needs a person (#443)", () => {
+  const now = Date.now()
+  const body = {
+    open: [{ id: "r1", state: "waiting_owner", agentId: "billing", text: "Put our **logo** on it", question: "Blue or black?", createdAt: now, updatedAt: now, where: { label: "WhatsApp", url: null } }],
+    recent: [],
+    runs: [{ taskId: "t1", agentId: "coder", channel: "telegram", chatId: "c1", status: "in-flight", startedAt: now, finishedAt: null, messagePreview: "Fix the banner", where: { label: "Telegram", url: null }, request: null }],
+    agents: [
+      { agentId: "coder", state: "working", by: "you", at: now, text: "Fix the banner", fullText: "Fix the banner on staging", where: { label: "Telegram", url: null } },
+      { agentId: "ops", state: "working", by: "owner", at: now, text: null, fullText: null, where: null },
+    ],
+  }
+
+  it("open the member's own task only, and put the owner's question first", async () => {
+    const p = openPage({ work: [{ status: 200, body }] })
+    await p.settle()
+    const cards = p.el("agents").innerHTML
+    expect(p.el("agents-box").hidden).toBe(false)
+    expect(cards.match(/class="more"/g)).toHaveLength(1)
+    expect(cards).toContain("Fix the banner on staging")
+    expect(cards).toContain("Busy with someone else&#39;s task")
+    expect(p.el("sum").textContent).toBe("coder is working on your task. ops is busy with someone else's task.")
+    expect(p.el("need").hidden).toBe(false)
+    expect(p.el("need-list").innerHTML).toContain('<p class="q">Blue or black?</p>')
+    expect(p.el("need-list").innerHTML).toContain("For <b>Put our logo on it</b>")
+    expect(p.el("sent").innerHTML).toContain(">Running<")
+  })
+
+  it("say the state is from the last load when a round fails", async () => {
+    const p = openPage({ work: [{ status: 200, body }, "fail"] })
+    await p.settle()
+    await p.fire(30_000)
+    expect(p.el("agents").innerHTML).toMatch(/Working when this page last loaded, at /)
+    expect(p.el("agents").innerHTML).not.toContain(" live")
   })
 })

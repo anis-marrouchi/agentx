@@ -317,8 +317,8 @@ describe("the pages", () => {
 
   it("links what was delivered only when it is a web address", () => {
     const page = renderMemberPage()
-    expect(page).toContain("/^https?:\\/\\//i.test(r.evidence)")
-    expect(page).toContain("<b>What was delivered:</b> ' + esc(r.evidence)")
+    expect(page).toContain("/^https?:\\/\\//i.test(ev)")
+    expect(page).toContain("<b>What was delivered:</b> ' + esc(ev)")
   })
 })
 

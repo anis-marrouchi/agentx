@@ -29,3 +29,42 @@ export function plainPreview(text: string | null | undefined): string {
     .replace(/\s+/g, " ")
     .trim()
 }
+
+/** What an agent's card says (#443), from an AgentCard of /api/member/work.
+ *  The state is always a word as well as a colour and a shape. Of a turn
+ *  someone else started there is no text to show, only that it is theirs. */
+export function agentLine(a: { state: string; by: string | null; text: string | null }): { label: string; tone: string; what: string | null; by: string | null; hint: string } {
+  const by = a.by === "you" ? "you" : a.by === "owner" ? "the owner" : a.by ? "someone else" : null
+  if (a.state === "working") {
+    if (a.by === "you") return { label: "Working", tone: "work", what: a.text, by, hint: "Busy. A new message waits in line until this ends." }
+    return { label: "Working", tone: "work", what: "Busy with someone else's task", by, hint: "A message you send now waits in line until this ends." }
+  }
+  if (a.state === "blocked") return { label: "Blocked", tone: "stuck", what: a.text ? "Stopped on: " + a.text : null, by, hint: "It stopped before finishing. It needs a person." }
+  return { label: "Free", tone: "free", what: a.by === "you" && a.text ? "Finished: " + a.text : null, by: a.by === "you" ? by : null, hint: "Free. Ready for your next message." }
+}
+
+/** How one of the person's turns reads in "What you sent" (#443). A
+ *  request the turn became speaks first: it knows when the owner is asked. */
+export function sentState(r: { status: string; request?: { state: string } | null }): { label: string; tone: string } {
+  const req = r.request ? r.request.state : ""
+  if (req === "waiting_owner") return { label: "Waiting on the owner", tone: "wait" }
+  if (req === "waiting_other") return { label: "Waiting on another agent", tone: "wait" }
+  if (req === "needs_attention") return { label: "Stuck", tone: "stuck" }
+  if (r.status === "in-flight") return { label: "Running", tone: "work" }
+  if (r.status === "ok") return { label: "Finished", tone: "done" }
+  if (r.status === "error" || r.status === "timeout") return { label: "Stopped", tone: "stuck" }
+  if (r.status === "canceled" || r.status === "cancelled") return { label: "Stopped", tone: "off" }
+  return { label: String(r.status || "").replace(/[_-]/g, " "), tone: "off" }
+}
+
+/** The one sentence at the top of the work page (#443). */
+export function summaryLine(agents: Array<{ agentId: string; state: string; by: string | null }>, sent: number): string {
+  if (!agents.length && !sent) return "Nothing sent yet."
+  const parts = agents.slice(0, 4).map(function (a) {
+    if (a.state === "working") return a.agentId + (a.by === "you" ? " is working on your task." : " is busy with someone else's task.")
+    if (a.state === "blocked") return a.agentId + " stopped on your task."
+    return a.agentId + " is free."
+  })
+  if (agents.length > 4) parts.push((agents.length - 4) + " more below.")
+  return parts.join(" ") || "Nothing running now."
+}
