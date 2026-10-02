@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { mkdtempSync, rmSync, statSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { isOperatorTurn, loadOperatorKey, operatorContext, operatorKeyMatches, operatorKeyPath, operatorVouch, peerVouches, OPERATOR_VOUCH_HEADER } from "../src/requests/operator"
+import { isOperatorTurn, isThisMachine, loadOperatorKey, operatorContext, operatorKeyMatches, operatorKeyPath, operatorVouch, ownerProven, peerVouches, OPERATOR_VOUCH_HEADER } from "../src/requests/operator"
 import { OPERATOR_CHANNELS } from "../src/requests/tracker"
 
 // A turn on this node's own surfaces counts as the owner's only when the
@@ -74,5 +74,38 @@ describe("a peer vouching for the owner (#407)", () => {
     expect(peerVouches(h("agx_live_peer_a", "yes"), peers)).toBe(false)
     expect(peerVouches(h("agx_live_peer_a", "1"), [])).toBe(false)
     expect(peerVouches(h("agx_live_peer_a", "1"), ["", undefined as any])).toBe(false)
+  })
+})
+
+// The rule POST /task applies, with the caller's address: the mesh token
+// is in every agent's environment, so a caller on this machine could
+// send the vouch itself.
+describe("who /task believes (#407)", () => {
+  const key = "k".repeat(64)
+  const node = { key, peerTokens: ["agx_live_peer_a"], operatorChannels: OPERATOR_CHANNELS, ownAddresses: ["100.64.0.2", "fe80::1%en0"] }
+  const vouch = { authorization: "Bearer agx_live_peer_a", [OPERATOR_VOUCH_HEADER]: "1" }
+  const app = { channel: "app" }
+
+  it("believes a peer's vouch from another machine", () => {
+    expect(ownerProven(app, { headers: vouch, remoteAddress: "100.64.0.7" }, node)).toBe(true)
+    expect(ownerProven(app, { headers: vouch, remoteAddress: "::ffff:100.64.0.7" }, node)).toBe(true)
+  })
+
+  it("never believes a vouch from this machine, whichever address it dials", () => {
+    for (const remoteAddress of ["127.0.0.1", "::1", "::ffff:127.0.0.1", "127.0.0.2", "100.64.0.2", "::ffff:100.64.0.2", "fe80::1", undefined, ""]) {
+      expect(ownerProven(app, { headers: vouch, remoteAddress }, node)).toBe(false)
+    }
+  })
+
+  it("still believes the operator key from this machine, and only on an owner surface", () => {
+    expect(ownerProven(app, { headers: { "x-agentx-operator": key }, remoteAddress: "127.0.0.1" }, node)).toBe(true)
+    expect(ownerProven({ channel: "telegram" }, { headers: { "x-agentx-operator": key }, remoteAddress: "127.0.0.1" }, node)).toBe(false)
+    expect(ownerProven({ channel: "telegram" }, { headers: vouch, remoteAddress: "100.64.0.7" }, node)).toBe(false)
+    expect(ownerProven(undefined, { headers: vouch, remoteAddress: "100.64.0.7" }, node)).toBe(false)
+  })
+
+  it("counts this machine's real addresses as local by default", () => {
+    expect(isThisMachine("127.0.0.1")).toBe(true)
+    expect(isThisMachine("203.0.113.9")).toBe(false)
   })
 })

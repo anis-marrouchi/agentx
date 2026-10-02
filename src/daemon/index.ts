@@ -61,7 +61,7 @@ import type { DecisionCard } from "@/approvals/cards"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
-import { OPERATOR_HEADER, isOperatorTurn, loadOperatorKey, operatorContext, operatorKeyMatches, operatorVouch, peerVouches } from "@/requests/operator"
+import { isOperatorTurn, loadOperatorKey, operatorContext, operatorVouch, ownerProven } from "@/requests/operator"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
 import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
@@ -3167,12 +3167,14 @@ export class AgentXDaemon {
    *  of the owner (#393). */
   private markOperatorTurn(context: unknown, req: IncomingMessage): void {
     if (!context || typeof context !== "object" || isOperatorTurn(context)) return
-    const channel = String((context as Record<string, unknown>).channel ?? "").toLowerCase().split("@")[0]
-    if (!OPERATOR_CHANNELS.has(channel)) return
-    if (operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER])) { operatorContext(context); return }
-    // A peer that checked its own operator key vouches for the owner
-    // (#407): believed only with one of this node's peer tokens.
-    if (peerVouches(req.headers, this.config.mesh.peers.map((p) => p.token ?? ""))) operatorContext(context)
+    // The operator key, or a peer on another machine that checked its own
+    // key and vouches with one of this node's peer tokens (#407).
+    const proven = ownerProven(context, { headers: req.headers, remoteAddress: req.socket?.remoteAddress }, {
+      key: this.operatorKey,
+      peerTokens: this.config.mesh.peers.map((p) => p.token ?? ""),
+      operatorChannels: OPERATOR_CHANNELS,
+    })
+    if (proven) operatorContext(context)
   }
 
   /** On a forward to a peer: did the owner's surface show this node's key? */
