@@ -1419,15 +1419,14 @@ export const daemonConfigSchema = z.object({
      *    and cross-chat are replaced by planner-selected bundles. Per-task
      *    overrides via AgentTask.contextStrategy for A/B benchmarking. */
     contextStrategy: z.enum(["layered", "planner"]).default("layered"),
-    /** Soft dispatch budget for claude-code-tier agents (shared OAuth pools
-     *  one counter across the fleet). Warms at 80% of the cap; short-circuits
-     *  cold dispatches (no warm Claude session) when exceeded. Warm sessions
-     *  are always allowed through. Defaults sized for Max 5×:
-     *   - maxClaudeCodeDispatchesPerHour: 80 (headroom under typical hourly cap)
-     *   - maxClaudeCodeDispatchesPer5h: 180 (headroom under ~225/5h tier)
-     *  Raise for Max 20×, lower if your workload stays under the cap naturally. */
-    maxClaudeCodeDispatchesPerHour: z.number().int().min(1).max(10_000).default(80),
-    maxClaudeCodeDispatchesPer5h: z.number().int().min(1).max(50_000).default(180),
+    /** Optional hard ceilings on new claude-code runs across the fleet (all
+     *  claude-code agents share one Claude subscription, so one counter).
+     *  The plan's own limit is read from Claude Code's rate_limit_event and
+     *  gates cold dispatches on its own; these caps sit on top for operators
+     *  who want a local ceiling. Unset or 0 = off. Warm sessions always go
+     *  through. Changing them applies on save, no restart. */
+    maxClaudeCodeDispatchesPerHour: z.number().int().min(0).max(10_000).optional(),
+    maxClaudeCodeDispatchesPer5h: z.number().int().min(0).max(50_000).optional(),
     /** How many requests BEFORE the immediate predecessor to show the
      *  session-continuity seat. 0 keeps today's two-message state exactly.
      *

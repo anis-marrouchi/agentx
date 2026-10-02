@@ -13,8 +13,8 @@
 // by app-chat.client.ts, Fleet and Activity by app-fleet.client.ts, Alerts
 // by app-alerts.client.ts; Chat is voice first (app-voice.client.ts, with
 // the orb in app-orb.client.ts); the header's Share camera is
-// app-camera.client.ts. A tab without content yet says so plainly — no
-// simulated data.
+// app-camera.client.ts; a sideways swipe changes tab (app-swipe.client.ts).
+// A tab without content yet says so plainly — no simulated data.
 
 import { AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
@@ -41,6 +41,8 @@ import { markdownToHtml } from "@/utils/markdown-html"
 import { CAMERA_BODY, CAMERA_BUTTON, CAMERA_CSS, CAMERA_SCRIPT } from "./app-camera.client"
 import { CAMERA_ASKS_BODY, CAMERA_ASKS_CSS, CAMERA_ASKS_SCRIPT } from "./app-camera-asks.client"
 import { cameraConstraints, shareClock } from "./app-camera-logic"
+import { APP_SWIPE_CSS, APP_SWIPE_SCRIPT } from "./app-swipe.client"
+import { swipeAxis, swipeLanding, swipeMayStart, swipeOffset } from "./app-swipe-logic"
 
 export { APP_SERVICE_WORKER } from "./app-sw"
 
@@ -82,7 +84,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -97,6 +99,7 @@ ${CAMERA_ASKS_BODY}
 <nav class="tabs" role="tablist" aria-label="Sections">${tabs}</nav>
 ${CAMERA_BODY}
 <script>${APP_SCRIPT}</script>
+<script>${injectFns({ swipeMayStart, swipeAxis, swipeOffset, swipeLanding })}${APP_SWIPE_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
 <script>${APP_ANNOUNCE_SCRIPT}</script>

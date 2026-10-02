@@ -48,7 +48,7 @@ import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
-import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
+import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
@@ -1396,6 +1396,8 @@ export class AgentRegistry {
         // SQLite subscriber persists it under traceTaskId.
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
+        // Claude Code's own view of the plan window; feeds the dispatch gate.
+        recordRateLimitEvent(event)
         // Caller-supplied event subscriber (HTTP SSE callers, etc.).
         // Fire after internal capture so a subscriber crash never breaks
         // our own bookkeeping.
@@ -1408,6 +1410,8 @@ export class AgentRegistry {
         noteFirstEvent()
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
+        // Claude Code's own view of the plan window; feeds the dispatch gate.
+        recordRateLimitEvent(event)
         if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
       }
     }
@@ -2501,9 +2505,10 @@ export class AgentRegistry {
       //   (1) Overage gate — when Anthropic has disabled Max-plan extra usage
       //       at the org level. A cold dispatch's fresh cache-create spills
       //       past the regular allotment and gets rejected.
-      //   (2) Quota gate — when our own dispatch-budget counters say the
-      //       fleet has burned through the hourly or 5-hour cap. Warm
-      //       sessions still pass; cold dispatches are deferred.
+      //   (2) Quota gate — when Claude Code reports a plan window as
+      //       rejected (and extra usage is not serving), or when an opt-in
+      //       local dispatch cap is reached. Warm sessions still pass; cold
+      //       dispatches are deferred.
       // Warm sessions (resumeSessionId set) bypass both gates — prompt-cache
       // replay keeps them inside the regular allotment.
       //

@@ -59,6 +59,9 @@ Removing the app from the home screen also removes its pairing.
 ## Use it
 
 - Tap a tab at the bottom to switch sections. With a keyboard, use the **Left** and **Right** arrow keys.
+- Swipe the page left or right to go to the next or the previous tab. The page follows your finger. At the first and the last tab it gives a little and stays.
+- A swipe that starts on something that scrolls sideways by itself scrolls that instead: the row of conversations, a wide code block or a wide table. A swipe that starts on the voice orb stays with the orb. Scrolling up or down never changes the tab.
+- If the phone is set to reduce motion, the page doesn't slide: the tab changes as soon as you lift your finger.
 - Tap **◐** in the top-right corner to switch between light and dark themes.
 - The app still opens without a connection. A yellow bar says it's offline, and live information returns when the phone reconnects.
 
