@@ -111,8 +111,10 @@ export const TOPBAR_CSS = `
 
 /* Running build: version, commit, running since; warns when the code on
  * disk has moved on. */
-.ax-build{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.ax-build{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
 .ax-build[hidden]{display:none}
+/* Two short lines, so the tabs keep their room on a laptop screen. */
+.ax-build__lines{display:flex;flex-direction:column;font-size:10px;line-height:1.3}
 .ax-build__stale{color:var(--ax-warn,var(--ax-accent));border:1px solid currentColor;
   border-radius:4px;padding:1px 6px}
 
@@ -325,13 +327,15 @@ export const TOPBAR_SCRIPT = `<script>
       fetch('/api/node/build').then(function(r){ return r.ok ? r.json() : null; }).then(function(b){
         if (!b || !b.version) return;
         el.textContent = '';
-        el.appendChild(span('ax-mono', b.version + (b.commit ? ' · ' + b.commit : '')));
+        var lines = span('ax-build__lines', '');
+        lines.appendChild(span('ax-mono', b.version + (b.commit ? ' · ' + b.commit : '')));
         var d = b.startedAt ? new Date(b.startedAt) : null;
         if (d && !isNaN(d.getTime())) {
-          el.appendChild(span('', 'since ' + d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })));
+          lines.appendChild(span('', 'since ' + d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })));
         }
+        el.appendChild(lines);
         if (b.diskNewer) {
-          var w = span('ax-build__stale', 'code on disk is newer, restart pending');
+          var w = span('ax-build__stale', 'restart pending');
           w.setAttribute('role', 'status');
           el.appendChild(w);
         }
