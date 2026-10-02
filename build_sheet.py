@@ -51,16 +51,18 @@ def eye(x, y, kind, gx=0, gy=0):
 
 
 def creature(cx, cy, palette="lagoon", eyes="open", gaze=(0, 0), tilt=0, sx=1.0, sy=1.0,
-             lift=0, extra="", feet=None, scale=1.0):
+             lift=0, extra="", legs=None, scale=1.0):
     """The creature standing on the ground line at cy + R."""
     ground = cy + R * scale
     shadow_w = 34 * scale * (1 - min(lift, 30) / 60)
     body_cy = -R * sy  # body sits on the ground, squash keeps the base there
     parts = [f'<ellipse cx="{cx}" cy="{ground+5}" rx="{shadow_w}" ry="{5*scale}" fill="#0F2233" opacity=".13"/>']
     parts.append(f'<g transform="translate({cx},{ground - lift}) scale({scale}) rotate({tilt})">')
-    if feet:  # two small feet for the walk frames
-        for fx, fy in feet:
-            parts.append(f'<ellipse cx="{fx}" cy="{fy}" rx="11" ry="6" fill="{PALETTES[palette][0]}"/>')
+    if legs:  # two short legs for the walk frames: far then near (hip x, foot x, foot height off the ground)
+        gy = lift / scale  # the ground, seen from the lifted body
+        for n, (hx, fx, up) in enumerate(legs):  # far leg first, one stop darker
+            parts.append(f'<path d="M{hx},-12 Q{hx},{gy-up-3} {fx},{gy-up-4} h8" fill="none" '
+                         f'stroke="{PALETTES[palette][n]}" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>')
     parts.append(f'<ellipse cx="0" cy="{body_cy}" rx="{R*sx+7}" ry="{R*sy+7}" '
                  f'fill="{PALETTES[palette][2]}" opacity=".30" filter="url(#glow)"/>')
     parts.append(f'<ellipse cx="0" cy="{body_cy}" rx="{R*sx}" ry="{R*sy}" fill="url(#g-{palette})"/>')
@@ -123,17 +125,17 @@ cell(8, "Needs your answer", "tilts its head and waits, never interrupts", tilt=
      extra_fn=lambda x, y: (f'<circle cx="{x+62}" cy="{y-62}" r="15" fill="#fff" stroke="{P[0]}" stroke-width="2.5"/>'
                             f'<text x="{x+62}" y="{y-55}" text-anchor="middle" font-size="20" font-weight="700" fill="{P[0]}">?</text>'))
 
-# Walk cycle: four frames, feet alternate, body bobs and leans forward.
-walk_y = 1065
+# Walk cycle: four frames, legs alternate, body bobs and leans forward.
+walk_y = 1058
 walk = []
-frames = [dict(feet=[(-20, -3), (16, -9)], lift=6, tilt=4, sx=.98, sy=1.02),
-          dict(feet=[(-8, -5), (8, -5)], lift=11, tilt=2, sx=.96, sy=1.05),
-          dict(feet=[(-16, -9), (20, -3)], lift=6, tilt=4, sx=.98, sy=1.02),
-          dict(feet=[(-8, -5), (8, -5)], lift=2, tilt=1, sx=1.04, sy=.95)]
+frames = [dict(legs=[(-6, -32, 0), (7, 24, 0)], lift=12, tilt=4, sx=.98, sy=1.02),
+          dict(legs=[(-6, 2, 9), (7, 4, 0)], lift=17, tilt=2, sx=.96, sy=1.05),
+          dict(legs=[(-6, 24, 0), (7, -32, 0)], lift=12, tilt=4, sx=.98, sy=1.02),
+          dict(legs=[(-6, 4, 0), (7, 2, 9)], lift=17, tilt=2, sx=.96, sy=1.05)]
 for i, f in enumerate(frames):
     x = 180 + i * 180
     walk.append(creature(x, walk_y, gaze=(4, 0), scale=.8, **f))
-    walk.append(f'<text x="{x}" y="{walk_y+72}" text-anchor="middle" font-size="13" fill="#555">frame {i+1}</text>')
+    walk.append(f'<text x="{x}" y="{walk_y+72}" text-anchor="middle" font-size="13" fill="#555">{["stride","pass","stride","pass"][i]}</text>')
 walk.append(f'<path d="M100,{walk_y+45} H800" stroke="#D9DEE3" stroke-width="2"/>')
 walk.append(creature(1000, walk_y, gaze=(-4, 2), eyes="half", scale=.8, sx=1.02, sy=.97, tilt=-3))
 walk.append(f'<text x="1000" y="{walk_y+72}" text-anchor="middle" font-size="13" fill="#555">steps aside for the pointer</text>')
