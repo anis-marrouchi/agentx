@@ -50,6 +50,10 @@ export interface RequestRecord {
   ownerNote: string | null
   /** That note was given to the agent in a pick-up: it is not said again. */
   noteSaid: boolean
+  /** The agent it was asked of, once the owner handed it on. The chat it
+   *  was asked in is that agent's: another agent may not be able to write
+   *  there (#481). Null: never handed on. */
+  askedAgent: string | null
 }
 
 export const TEXT_MAX = 4000
@@ -92,7 +96,7 @@ export function ensureRequestTables(db: Database.Database): void {
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
-  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"]]) {
+  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -116,6 +120,7 @@ function toRecord(r: any): RequestRecord {
     attentionReason: r.attention_reason ?? null, notifiedAt: r.notified_at ?? null,
     question: r.question ?? null, closedAt: r.closed_at ?? null,
     evidence: r.evidence ?? null, closeReason: r.close_reason ?? null, ownerNote: r.owner_note ?? null, noteSaid: !!r.note_said,
+    askedAgent: r.asked_agent ?? null,
   }
 }
 
@@ -267,11 +272,12 @@ export class RequestStore {
 
   /** The owner replied, or handed it to an agent (the same or another):
    *  that agent has it, in progress, and is told at the next check. Any
-   *  open request, not only one that needs attention. */
+   *  open request, not only one that needs attention. The agent it was
+   *  asked of is kept from the first time: channel and chat stay its own. */
   handOff(id: string, agentId: string, note: string, now: number): boolean {
     return this.db.prepare(
       `UPDATE requests SET agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
-         question = NULL, pickup_at = ?, owner_note = ?, note_said = NULL
+         question = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)
        WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
     ).run(agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
   }
