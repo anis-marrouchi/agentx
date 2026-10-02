@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.95.0](https://github.com/anis-marrouchi/agentx/compare/v0.94.1...v0.95.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** the character plays on a frozen picture of the screen ([#514](https://github.com/anis-marrouchi/agentx/issues/514)) ([c11d3ab](https://github.com/anis-marrouchi/agentx/commit/c11d3abf32ef9e0b15b34b23736cd028fbcf22ab))
+
+
+### Bug Fixes
+
+* **voice:** an empty TEXT line in a lesson plan is no text ([#515](https://github.com/anis-marrouchi/agentx/issues/515)) ([871c1db](https://github.com/anis-marrouchi/agentx/commit/871c1db221e7ca9f76332ad40f35779090f10a74)), closes [#512](https://github.com/anis-marrouchi/agentx/issues/512)
+* **voice:** no pointer after a plain spoken answer ([#517](https://github.com/anis-marrouchi/agentx/issues/517)) ([db9639c](https://github.com/anis-marrouchi/agentx/commit/db9639cf77ac394ea17c2c4b834246998ae2c670)), closes [#508](https://github.com/anis-marrouchi/agentx/issues/508)
+
 ## [0.94.1](https://github.com/anis-marrouchi/agentx/compare/v0.94.0...v0.94.1) (2026-10-02)
 
 
