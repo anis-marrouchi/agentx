@@ -52,7 +52,7 @@ export function leavesApp(keys: string): boolean {
 
 /** Read the planner's reply; anything malformed becomes a spoken wait. */
 export function parsePlan(reply: string, ids: Set<number>): Plan {
-  const field = (k: string) => new RegExp(`^\\s*${k}\\s*:\\s*(.*)$`, "im").exec(reply)?.[1]?.trim() ?? ""
+  const field = (k: string) => new RegExp(`^[ \\t]*${k}[ \\t]*:[ \\t]*(.*)$`, "im").exec(reply)?.[1]?.trim() ?? ""
   const id = Number.parseInt(field("TARGET"), 10)
   const action = field("ACTION").toLowerCase().replace(/\s+/g, "_") as StepAction
   const text = field("TEXT")
@@ -60,7 +60,7 @@ export function parsePlan(reply: string, ids: Set<number>): Plan {
     target: Number.isFinite(id) && ids.has(id) ? id : null,
     action: ACTIONS.includes(action) ? action : "wait_for_user",
     text: text && !/^(none|n\/a|-)$/i.test(text) ? text : null,
-    say: speakable(field("SAY")) || speakable(reply.replace(/^\s*(TARGET|ACTION|TEXT)\s*:.*$/gim, "")),
+    say: speakable(field("SAY")) || speakable(reply.replace(/^\s*(TARGET|ACTION|TEXT)\s*:.*$|^[ \t]*SAY[ \t]*:/gim, "")),
   }
 }
 
