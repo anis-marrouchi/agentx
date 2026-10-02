@@ -148,7 +148,10 @@ stomp, carry, rest); `PlayActs.swift` makes a different script for each seed
 never the same act twice) and holds the pieces that move: kicked letters and
 stomped words are cut from the picture, fall and stay on its bottom edge, and
 a carried word is put down after the walked line. Both are pure and tested in
-`Tests/Play`; `PlayStage.swift` owns
+`Tests/Play`. `PlayMotion.swift` is how it all moves (tested in
+`Tests/PlayMotion`): a jump crouches first, stretches in the air and lands
+squashed, a walk and a wipe start and stop, kicked letters leave one after
+the other, and what falls bounces once. `PlayStage.swift` owns
 the window over everything, the drawing and the exits; the picture goes up
 at once and the character waits on it while the text is read. Any key, click or
 scroll, the talk key, a change of Space, or the assistant starting to
