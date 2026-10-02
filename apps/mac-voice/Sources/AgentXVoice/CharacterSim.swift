@@ -38,6 +38,8 @@ struct CharacterSim {
         /// -1 turned left, 0 facing you, 1 turned right.
         var face = 0.0
         var level = 0.0
+        /// 0…1: the rise and fall of its own voice while speaking.
+        var voice = 0.0
         /// Seconds since it appeared, for the marks' own loops.
         var t = 0.0
         var dots: [Mark] = []
@@ -185,14 +187,15 @@ struct CharacterSim {
         }
         if now >= nextBlink { pose.open *= 1 - sin(.pi * (now - nextBlink) / Self.blink) }
 
-        return Frame(pose: pose, x: x, face: face, level: input.level, t: t,
+        return Frame(pose: pose, x: x, face: face, level: input.level, voice: voice, t: t,
                      dots: dots.compactMap { dot(at: now, $0) }, stars: bursts.flatMap { stars(at: now, $0) })
     }
 
     /// The state alone, where it rests: for Reduce Motion, which shows a
     /// still picture that changes between states and never a loop.
     static func still(_ activity: M.Activity, home: Double) -> Frame {
-        Frame(pose: M.pose(M.mood(for: activity)), x: home)
+        // Its marks at full strength, so each state reads without motion.
+        Frame(pose: M.pose(M.mood(for: activity)), x: home, level: 1, voice: 1)
     }
 
     private mutating func go(_ to: M.Mood, _ now: Double) {
@@ -209,6 +212,8 @@ struct CharacterSim {
     private static let blink = 0.2
     private static let dotLife = 0.8
     private static let starLife = 0.9
+    /// A dot this far from the body has faded out: its window ends soon after.
+    static let dotReach = 200.0
 
     /// A dot left behind: born at the body, it drifts up, shrinks and fades.
     private func dot(at now: Double, _ d: Dot) -> Mark? {
@@ -217,7 +222,7 @@ struct CharacterSim {
         let r = (3.4 + 4.4 * M.rnd(d.n)) * pow(1 - a, 0.8) * min(a / 0.12, 1)
         return Mark(x: d.x - d.way * (30 + 16 * a) * unit,
                     y: d.h - (10 + (M.rnd(d.n, 1) - 0.5) * 26 - 16 * a * M.rnd(d.n, 2)) * unit,
-                    r: r, alpha: 0.8 * (1 - a), turn: 0, shade: 2 + d.n % 2)
+                    r: r, alpha: 0.8 * (1 - a) * min(max((Self.dotReach - abs(d.x - x)) / 60, 0), 1), turn: 0, shade: 2 + d.n % 2)
     }
 
     /// A small burst of stars: they fly out over the top, turn, and fade.

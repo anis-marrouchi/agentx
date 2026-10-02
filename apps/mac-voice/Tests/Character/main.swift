@@ -127,6 +127,22 @@ check(M.aside(x: 50, pointer: 60, clear: 150, range: range) == 210, "and the sam
 
 let fixed = CharacterSim.still(.thinking, home: home)
 check(fixed.pose == M.pose(.working) && fixed.x == home && fixed.dots.isEmpty, "with Reduce Motion it is the state alone, at home")
+check(fixed.level == 1 && fixed.voice == 1, "with its marks at full strength, so speaking and listening read without motion")
+
+// The pill is to the right of home: the range ends at home, so a pointer
+// coming along the edge from the left never pushes it onto the pill.
+var pushed = CharacterSim()
+let short = 44.0...home
+_ = pushed.step(to: 0, Input(home: home, range: short))
+var furthest = home, faint = true
+for i in 1...360 {
+    let px = min(700 + Double(i) * 200 / 30, home + 110)
+    let f = pushed.step(to: Double(i) / 30, Input(pointer: (x: px, y: 50), home: home, range: short))
+    furthest = max(furthest, pushed.x)
+    for d in f.dots where abs(d.x - f.x) > CharacterSim.dotReach && d.alpha > 0 { faint = false }
+}
+check(furthest <= home + 3 && pushed.x < home - 100, "a slow pointer along the edge never pushes it past home, onto the pill: it goes the other way")
+check(faint, "a dot left far behind on a long glide has faded before its window ends")
 
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

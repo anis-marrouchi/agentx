@@ -373,8 +373,10 @@ private struct GeneralTab: View {
                     Text("Shortcuts change as soon as you save. If one does nothing, another app already uses it.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                LookSection(look: Binding(get: { model.draft?.general.look ?? "orb" },
-                                          set: { model.draft?.general.look = $0 }))
+                if draft.general.look != nil {
+                    LookSection(look: Binding(get: { model.draft?.general.look ?? "orb" },
+                                              set: { model.draft?.general.look = $0 }))
+                }
                 if draft.general.card != nil {
                     AnswerCardSection(card: Binding(get: { model.draft?.general.card ?? .standard },
                                                     set: { model.draft?.general.card = $0 }))

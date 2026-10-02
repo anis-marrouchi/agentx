@@ -19,7 +19,7 @@ final class App: NSObject, NSApplicationDelegate {
     private let panel = Panel()
     private let statusMenu = StatusMenu()
     /// Stands in for the pill's orb when voice.look is "character".
-    private let character = Character()
+    private let character = CharacterHost()
     /// The agent whose by-name answer is on screen now, while no turn runs.
     private var asideSpeaker: String?
     private let recorder = Recorder()

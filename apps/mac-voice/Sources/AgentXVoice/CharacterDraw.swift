@@ -160,7 +160,7 @@ enum CharacterDraw {
         // Listening: the rings follow your voice.
         arcs(3, side: -1, x: -78, y: middle, strength: CGFloat(pose.hear * (0.45 + 0.55 * frame.level)), rate: 1.7, c[2])
         // Speaking: its own voice goes out the other way.
-        arcs(3, side: 1, x: 74, y: middle - 8, strength: CGFloat(pose.speak * OrbMath.speakingEnvelope(at: t)), rate: 2.1, c[2])
+        arcs(3, side: 1, x: 74, y: middle - 8, strength: CGFloat(frame.voice), rate: 2.1, c[2])
         // An agent is calling: it rings on both sides.
         arcs(2, side: 1, x: 76, y: middle - 20, strength: CGFloat(pose.ring), rate: 2.4, c[1])
         arcs(2, side: -1, x: -76, y: middle - 20, strength: CGFloat(pose.ring), rate: 2.4, c[1])

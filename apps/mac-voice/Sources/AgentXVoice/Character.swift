@@ -11,7 +11,7 @@ import AppKit
 /// "Animated orb" off in the menu, it is a still picture that changes
 /// between states and stays where it rests.
 @MainActor
-final class Character {
+final class CharacterHost {
     /// The body's width in points, and the room around it for its marks
     /// and for the dots it leaves behind.
     private static let diameter: CGFloat = 56
@@ -20,8 +20,8 @@ final class Character {
     private static let ground: CGFloat = 8
 
     private let window: NSPanel
-    private let view = CharacterView(frame: NSRect(origin: .zero, size: Character.size))
-    private var sim = CharacterSim(unit: Double(Character.diameter) / 100)
+    private let view = CharacterView(frame: NSRect(origin: .zero, size: CharacterHost.size))
+    private var sim = CharacterSim(unit: Double(CharacterHost.diameter) / 100)
     private var timer: Timer?
     private var motionObserver: NSObjectProtocol?
 
@@ -101,9 +101,11 @@ final class Character {
         // The screen with the menu bar, less the menu bar and the Dock.
         guard let screen = NSScreen.screens.first else { return }
         let visible = screen.visibleFrame
-        let range = Double(visible.minX + 44)...Double(max(visible.maxX - 44, visible.minX + 44))
-        // Beside the pill's own corner, so they read as one.
-        let home = min(max(Double(visible.maxX - PillPlacement.inset - Panel.size.width - 52), range.lowerBound), range.upperBound)
+        // It rests beside the pill's own corner, so they read as one, and
+        // goes no further right: stepping aside never puts it on the pill.
+        let left = Double(visible.minX + 44)
+        let home = max(Double(visible.maxX - PillPlacement.inset - Panel.size.width - 52), left)
+        let range = left...home
 
         let frame: CharacterSim.Frame
         if timer == nil {

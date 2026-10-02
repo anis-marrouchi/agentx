@@ -72,7 +72,7 @@ check(saved.previewVoice(for: "writer")["system"] as? String == "Ava", "and send
 
 // --- Palettes and the answer card (#211) ---
 
-check(saved.general.card == nil && saved.palettes == nil && saved.agents[0].palette == nil,
+check(saved.general.look == nil && saved.general.card == nil && saved.palettes == nil && saved.agents[0].palette == nil,
       "a daemon without palettes or card settings still decodes")
 
 let newer = """

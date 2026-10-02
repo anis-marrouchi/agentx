@@ -115,7 +115,7 @@ timer stopped; Reduce Motion, or "Animated orb" off in the menu
 (UserDefaults `animatedOrb`), makes it still.
 
 With `voice.look` set to `"character"` (#458), the pill has no orb and the
-character stands in for it (`Character.swift`): the orb grown into a small
+character stands in for it (`CharacterHost` in `Character.swift`): the orb grown into a small
 creature in the same palette, in a click-through window of its own above
 the bottom edge of the main screen. A state is a small set of numbers
 (`CharacterMath.swift`), so every change is a blend, eyes first and body
