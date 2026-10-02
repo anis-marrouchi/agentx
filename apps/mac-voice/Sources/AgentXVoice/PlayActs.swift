@@ -47,18 +47,22 @@ extension PlayMath {
     static let gravity = 1400.0
     static let lift = 0.35
 
-    /// Where a thrown piece is `seconds` after it left. It stops on the
-    /// bottom of the picture and at its sides.
+    /// Where a thrown piece is `seconds` after it left. It bounces once
+    /// on the bottom of the picture and lies still, and stops at its sides.
     static func thrown(_ source: Rect, v: Point, spin: Double, rise: Double, after seconds: Double,
                        width: Double, height: Double) -> Piece {
         let floor = max(height - source.h - rise, source.y)
         let landing = (-v.y + (v.y * v.y + 2 * gravity * (floor - source.y)).squareRoot()) / gravity
         let s = min(max(seconds, 0), landing)
-        let x = min(max(source.x + v.x * s, 0), max(width - source.w, 0))
+        // How fast it comes down, and the bounce that makes: a third as
+        // fast, sideways too.
+        let hit = v.y + gravity * landing
+        let more = min(max(seconds - landing, 0), PlayMotion.bounceTime(speed: hit, gravity: gravity))
+        let x = min(max(source.x + v.x * (s + more / 3), 0), max(width - source.w, 0))
         // It turns about as fast as `spin`, and lands flat: the right way
         // up or upside down.
         let flat = (spin * landing / .pi).rounded() * .pi
-        return Piece(from: source, at: Point(x: x, y: source.y + v.y * s + gravity * s * s / 2), turn: landing > 0 ? flat * s / landing : 0)
+        return Piece(from: source, at: Point(x: x, y: source.y + v.y * s + gravity * s * s / 2 - PlayMotion.bounce(more, speed: hit, gravity: gravity)), turn: landing > 0 ? flat * s / landing : 0)
     }
 
     /// What it can do to a line.
@@ -128,6 +132,16 @@ extension Play {
                 let q = M.ease(f.t < until ? M.span(f.t, cut.start, cut.start + P.lift) : M.span(f.t, until, until + P.lift))
                 f.pieces.append(P.Piece(from: cut.source, at: P.Point(x: a.x + (b.x - a.x) * q, y: a.y + (b.y - a.y) * q), paper: cut.paper))
             }
+        }
+    }
+
+    /// How far along a move it is: a jump crouches first and lands at the
+    /// end, a walk and a wipe start and stop, the rest keep one pace.
+    func body(_ m: Move, at t: Double) -> PlayMotion.Body {
+        switch m.kind {
+        case .jump, .carry: return PlayMotion.jump(t - m.start, of: m.duration)
+        case .walk, .wipe: return PlayMotion.glide(t - m.start, of: m.duration)
+        default: return PlayMotion.Body(travel: M.span(t, m.start, m.end))
         }
     }
 

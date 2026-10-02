@@ -38,5 +38,9 @@ swiftc -O -o "$out/character-tests" Sources/AgentXVoice/CharacterMath.swift Sour
   Sources/AgentXVoice/OrbMath.swift Tests/Character/main.swift -target arm64-apple-macosx14.0
 "$out/character-tests"
 swiftc -O -o "$out/play-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/PlayMath.swift \
-  Sources/AgentXVoice/PlayActs.swift   Tests/Play/main.swift -target arm64-apple-macosx14.0
+  Sources/AgentXVoice/PlayActs.swift Sources/AgentXVoice/PlayMotion.swift Tests/Play/main.swift \
+  -target arm64-apple-macosx14.0
 "$out/play-tests"
+swiftc -O -o "$out/play-motion-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/PlayMotion.swift \
+  Tests/PlayMotion/main.swift -target arm64-apple-macosx14.0
+"$out/play-motion-tests"
