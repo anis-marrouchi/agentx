@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.98.1](https://github.com/anis-marrouchi/agentx/compare/v0.98.0...v0.98.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **dashboard:** refuse an address not sent in normal form, for every page ([#452](https://github.com/anis-marrouchi/agentx/issues/452)) ([#545](https://github.com/anis-marrouchi/agentx/issues/545)) ([baccb95](https://github.com/anis-marrouchi/agentx/commit/baccb95350a389dfc233b339eecef3b9a7921b0d))
+
 ## [0.98.0](https://github.com/anis-marrouchi/agentx/compare/v0.97.0...v0.98.0) (2026-10-02)
 
 
