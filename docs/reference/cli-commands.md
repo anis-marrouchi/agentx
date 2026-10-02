@@ -2944,6 +2944,12 @@ Limit a person to these agents (ids, space-separated). `all` lifts the limit. A 
 
 No flags.
 
+### `agentx people deny <id> <level> <names...>`
+
+Stop a person's work using these tools or skills. `<level>` is `tools` or `skills`. Names match without case; `*` is a wildcard (quote it). `none` lifts the limit for that level. Every tool call of their runs is checked and a denied one is blocked. An owner cannot be limited. Example: `agentx people deny sara tools Bash "mcp__mail__*"`.
+
+No flags.
+
 ### `agentx people link <id> <identity>`
 
 Add a channel identity to a person, written channel:id (gitlab:sara, whatsapp:21620123456).

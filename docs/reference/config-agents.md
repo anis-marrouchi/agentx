@@ -163,6 +163,8 @@ The humans who talk to your agents, one entry per person. A task started by a li
 | `people[].role` | `owner`, `member` or `guest` | `member` | A label for now. A single `owner` is also the person at this machine's own surfaces (voice, phone app, dashboard), and their turns on other channels count as yours for `requests`. |
 | `people[].identities` | list of strings | `[]` | Where the person writes from, each as `channel:id`: a GitLab or GitHub login, a Telegram id or username, a WhatsApp number. Display names are not matched. An identity belongs to one person only. |
 | `people[].agents` | list of strings | `[]` | The agents this person may reach, by id. Empty: every agent. A message to any other agent, on this node or on another, is answered with a note and no run starts. The limit follows the person's work through delegations. Ignored for an `owner`. |
+| `people[].deny.tools` | list of strings | `[]` | Tools this person's work may not use, such as `Bash`, `WebFetch` or `mcp__mail__*`. Names match without case; `*` is a wildcard. Every tool call of their runs is checked, and a denied one is blocked. Needs a `claude-code` agent; another tier refuses their messages. Follows delegations. Ignored for an `owner`. |
+| `people[].deny.skills` | list of strings | `[]` | Skills this person's work may not load, by name. A denied skill is not offered to the agent for their messages, and loading it is blocked. Same rules as `deny.tools`. |
 
 ## `members`
 
