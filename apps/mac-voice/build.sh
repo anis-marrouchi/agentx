@@ -18,7 +18,7 @@ rm -rf build && mkdir -p "$BIN" "$APP/Contents/Resources"
 swiftc -O \
   -o "$BIN/AgentXVoice" \
   Sources/AgentXVoice/*.swift \
-  -framework AppKit -framework AVFoundation -framework Carbon -framework CoreML -framework SwiftUI \
+  -framework AppKit -framework AVFoundation -framework Carbon -framework CoreML -framework SwiftUI -framework Vision \
   -target arm64-apple-macosx14.0
 
 # The on-device models from a terminal: fetch them, transcribe a file, see

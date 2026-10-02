@@ -35,6 +35,13 @@ enum Config {
         set { UserDefaults.standard.set(newValue, forKey: "animatedOrb") }
     }
 
+    /// "Play mode" in the menu (#505): the character may play on a frozen
+    /// picture of the screen when asked. Off by default.
+    static var playMode: Bool {
+        get { UserDefaults.standard.bool(forKey: "playMode") }
+        set { UserDefaults.standard.set(newValue, forKey: "playMode") }
+    }
+
     /// Where the pill was last dragged to (its bottom-left corner, in
     /// screen points). Nil: the default corner.
     static var pillOrigin: CGPoint? {

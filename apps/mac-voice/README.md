@@ -129,6 +129,20 @@ the frame with Core Graphics. Both are free of AppKit windows and tested in
 `Tests/Character`. Reduce Motion or "Animated orb" off stops its frames: a
 still picture per state, and ten checks a second for the ⌘-drag.
 
+Play mode (part of #505, off by default; UserDefaults `playMode`, ticked as
+"Play mode" in the menu) adds "Play on this page": the character plays a short script on
+a frozen picture of the screen it is on, then the picture goes. `PlayRead.swift`
+takes the picture and reads its lines of text with Vision, on the Mac;
+`PlayMath.swift` lays the script out in time (jump onto the line nearest the
+middle, walk it, eat the first words of the next line letter by letter, wipe
+the third, rest), pure and tested in `Tests/Play`; `PlayStage.swift` owns
+the window over everything, the drawing and the exits; the picture goes up
+at once and the character waits on it while the text is read. Any key, click or
+scroll, the talk key, a change of Space, or the assistant starting to
+listen, speak or ring ends it. Nothing is sent to any app: eaten words are
+painted over on the picture, which lives in memory only and is dropped when
+play ends. Letters are a word's box cut in equal parts.
+
 Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
 launch and when screens change it is clamped onto a connected screen, and
 "Reset position" puts it back bottom-right. The close button (on hover), Esc
@@ -167,11 +181,15 @@ the models, transcribes WAVs and shows where a turn would end;
 
 ## Permissions
 
-Microphone only. The hotkey uses Carbon's `RegisterEventHotKey`, which
-needs no Accessibility permission — an `NSEvent` global monitor would have.
+Microphone only, unless play mode is used. The hotkey uses Carbon's
+`RegisterEventHotKey`, which needs no Accessibility permission — an
+`NSEvent` global monitor would have.
 Each shortcut has its own handler, which must pass on a press that is not
 its own or the shortcuts registered before it go dead (`Hotkey.swift`,
 tested in `Tests/Hotkey`). Every registration is logged with its result.
+
+"Play on this page" needs Screen Recording, asked the first time it is
+chosen; the app must be quit and opened again after the grant.
 
 ## Known limits
 
