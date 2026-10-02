@@ -150,7 +150,8 @@ final class App: NSObject, NSApplicationDelegate {
             text.flatMap(HotkeySpec.init) ?? HotkeySpec(fallback)!
         }
         let register = { (key: Hotkey, spec: HotkeySpec, what: String) in
-            if !key.register(spec) { Log.warn("shortcut \(spec.text ?? "?") for \(what) is taken by another app") }
+            if key.register(spec) { Log.info("shortcut \(spec.text ?? "?") for \(what): registered") }
+            else { Log.warn("shortcut \(spec.text ?? "?") for \(what) is taken by another app") }
         }
 
         // Hold to talk; release sends.

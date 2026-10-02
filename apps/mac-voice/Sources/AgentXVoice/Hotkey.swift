@@ -11,10 +11,10 @@ import Carbon.HIToolbox
 /// ⌥Space and not ⌃Space: control-space is bound to input-source switching
 /// on many Macs, and silently stealing it is a bad first impression.
 ///
-/// Each instance carries its own `id` and IGNORES events for any other.
-/// That is not decoration: every installed handler is called for EVERY
-/// registered hotkey, so a second binding without this filter makes both
-/// actions fire on either key.
+/// Each instance carries its own `id` and PASSES ON events for any other.
+/// That is not decoration: a press of any registered hotkey goes to the
+/// handler installed last, and reaches the one before it only when that
+/// handler says the event was not its own.
 final class Hotkey {
     private var ref: EventHotKeyRef?
     private var handler: EventHandlerRef?
@@ -62,7 +62,10 @@ final class Hotkey {
                 event, EventParamName(kEventParamDirectObject),
                 EventParamType(typeEventHotKeyID), nil,
                 MemoryLayout<EventHotKeyID>.size, nil, &fired)
-            if status == noErr, fired.id != me.id { return noErr }
+            // Not ours: say so. `noErr` means "handled" and ends the event
+            // there, so the key registered last answered and every key
+            // before it, the talk key first, was dead (#511).
+            if status == noErr, fired.id != me.id { return OSStatus(eventNotHandledErr) }
 
             let kind = GetEventKind(event)
             DispatchQueue.main.async {
