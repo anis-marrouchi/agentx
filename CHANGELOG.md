@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.91.1](https://github.com/anis-marrouchi/agentx/compare/v0.91.0...v0.91.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **demo:** install without git by moving baileys to 7.0.0-rc14 ([#472](https://github.com/anis-marrouchi/agentx/issues/472)) ([7d2ccc1](https://github.com/anis-marrouchi/agentx/commit/7d2ccc1b9fe7f5c8503224d280f730a9330bd366)), closes [#461](https://github.com/anis-marrouchi/agentx/issues/461)
+
 ## [0.91.0](https://github.com/anis-marrouchi/agentx/compare/v0.90.0...v0.91.0) (2026-10-02)
 
 
