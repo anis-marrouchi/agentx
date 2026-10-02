@@ -160,6 +160,8 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 | `tokenFile` | string | — | File holding this agent's token. |
 | `node` | string | — | Mesh node the agent lives on. |
 
+An agent never answers its own comment. On a mesh, each computer tells its peers which GitHub accounts it posts with, so the computer that receives the webhook also knows a comment that another computer posted for an agent. This needs no setting; both computers must run a version that has it.
+
 ## push
 
 Sends notifications to the AgentX [phone app](../dashboard/mobile-alerts.md). It only sends; it does not receive messages. One computer hosts the phone app and sends; every other computer sets `relayTo` and passes its notifications to that one over the mesh.
