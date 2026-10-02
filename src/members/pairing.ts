@@ -214,6 +214,18 @@ export type AccessResult =
 export const NOT_PAIRED = "this machine is not paired"
 export const WAITING = "waiting for the owner to approve this machine"
 
+/** The owner's answer on a pairing card: a card nobody answered in time is a
+ *  no, and one still waiting is null. */
+export function cardAnswer(card: ReturnType<typeof readCard>): "yes" | "no" | null {
+  return !card ? null : card.status === "decided" ? (card.verdict ?? null) : card.status === "expired" ? "no" : null
+}
+
+/** A waiting machine's answer, read without changing anything. The record
+ *  itself turns active or removed the next time that machine calls. */
+export function pendingAnswer(root: string, device: Pick<MemberDevice, "state" | "cardId">): "yes" | "no" | null {
+  return device.state === "pending" && device.cardId ? cardAnswer(readCard(root, device.cardId)) : null
+}
+
 /** Whether `token` opens the member page right now. Reads the owner's
  *  answer on the pairing card the first time it is there. */
 export function memberAccess(token: string | null, deps: Pick<MemberDeps, "tokens" | "members" | "root" | "now" | "log"> & { people?: MemberDeps["people"] }, address?: string): AccessResult {
@@ -232,7 +244,7 @@ export function memberAccess(token: string | null, deps: Pick<MemberDeps, "token
   }
   if (device.state === "pending") {
     const card = device.cardId ? readCard(deps.root, device.cardId) : null
-    const answer = !card ? null : card.status === "decided" ? card.verdict : card.status === "expired" ? "no" : null
+    const answer = cardAnswer(card)
     if (answer === "yes") {
       device = deps.members.update(rec.id, { state: "active", approvedAt: new Date(now()).toISOString() }) ?? device
       deps.members.log({ person: personId, device: rec.id, event: "approved", detail: card?.decided_by })

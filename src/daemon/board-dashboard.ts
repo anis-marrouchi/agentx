@@ -23,6 +23,7 @@ import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-pa
 import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
+import { handlePeoplePanel } from "./people-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
@@ -168,6 +169,7 @@ const DASHBOARD_PAGES = new Set([
   "/admin",
   "/admin/graph",
   "/approvals",
+  "/people",
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
@@ -712,6 +714,12 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     await handleApprovalsPanelApi(req, res, path, url)
     return
   }
+  // People (#441): the page and its /api/admin/people data, after the token
+  // gate above. The people list is read per request, like the member page.
+  if (await handlePeoplePanel(req, res, path, {
+    people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
+    root: process.cwd(), db: () => openDb(), peers: buildTopbarPeers(ctx.config), localToken: ctx.token,
+  })) return
   if (path.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, path)
     return

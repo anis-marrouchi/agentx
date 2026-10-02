@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3"
-import { OPEN_STATES } from "@/requests/store"
+import { CLOSED_STATES, OPEN_STATES } from "@/requests/store"
 
 // --- What a person asked for, across every channel (#384) ---
 //
@@ -39,17 +39,33 @@ export interface PersonRequest {
   createdAt: number
 }
 
+/** Whether requests carry the person stamp. False when requests were
+ *  never turned on. */
+function requestsReady(db: Database.Database): boolean {
+  const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'requests'").get()
+  if (!has) return false
+  const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
+  return cols.some((c) => c.name === "person")
+}
+
+function requestsIn(db: Database.Database, personId: string, states: readonly string[], tail: string, ...args: number[]): PersonRequest[] {
+  if (!requestsReady(db)) return []
+  const rows = db.prepare(
+    `SELECT id, state, channel, agent_id, text, created_at FROM requests
+      WHERE person = ? AND state IN (${states.map(() => "?").join(",")})
+      ${tail}`,
+  ).all(personId, ...states, ...args) as any[]
+  return rows.map((r) => ({ id: r.id, state: r.state, channel: r.channel, agentId: r.agent_id, text: r.text, createdAt: r.created_at }))
+}
+
 /** A person's requests that are still open (#356), oldest first. Empty
  *  when requests were never turned on. */
 export function openRequestsOf(db: Database.Database, personId: string): PersonRequest[] {
-  const has = db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'requests'").get()
-  if (!has) return []
-  const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
-  if (!cols.some((c) => c.name === "person")) return []
-  const rows = db.prepare(
-    `SELECT id, state, channel, agent_id, text, created_at FROM requests
-      WHERE person = ? AND state IN (${OPEN_STATES.map(() => "?").join(",")})
-      ORDER BY created_at`,
-  ).all(personId, ...OPEN_STATES) as any[]
-  return rows.map((r) => ({ id: r.id, state: r.state, channel: r.channel, agentId: r.agent_id, text: r.text, createdAt: r.created_at }))
+  return requestsIn(db, personId, OPEN_STATES, "ORDER BY created_at")
+}
+
+/** A person's requests, open and closed, each with the state it is in now,
+ *  newest first. Candidates are left out: nothing confirmed them yet. */
+export function requestsOf(db: Database.Database, personId: string, limit = 50): PersonRequest[] {
+  return requestsIn(db, personId, [...OPEN_STATES, ...CLOSED_STATES], "ORDER BY created_at DESC, rowid DESC LIMIT ?", Math.max(1, Math.min(limit, 500)))
 }
