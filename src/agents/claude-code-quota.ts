@@ -1,37 +1,43 @@
-// --- Claude Max-plan dispatch budget ---
+// --- Claude subscription dispatch gate ---
 //
-// Anthropic enforces soft per-window caps on Max-plan message/request counts
-// (the published ballpark is ~45/5h for Pro, ~225/5h for Max 5×, ~900/5h for
-// Max 20×; hourly caps exist too). When the fleet burns through these, new
-// cold dispatches start failing with "out of extra usage" (overage gate,
-// handled separately) or silently degraded responses.
+// All claude-code-tier agents share one Claude subscription (one OAuth), so
+// their usage pools together. Anthropic enforces rolling windows (5 hours,
+// 7 days) on that pool, measured by utilization, not by message count.
+// Claude Code reports the state of those windows on every turn as a
+// `rate_limit_event` in its stream-json output:
 //
-// This module tracks dispatch timestamps across ALL claude-code-tier agents
-// (they share one OAuth, so their usage pools together) in a simple ring
-// buffer and exposes:
+//   { type: "rate_limit_event",
+//     rate_limit_info: { status: "allowed" | "allowed_warning" | "rejected",
+//                        resetsAt: <unix seconds>, rateLimitType: "five_hour" | … } }
+//
+// That event is the source of truth here. When Claude Code says a window is
+// rejected, cold dispatches (no warm session) are held until the reported
+// reset time, so scheduled jobs don't burn subprocesses reproducing the same
+// refusal. Warm sessions always pass: they replay from prompt cache and a
+// real refusal comes straight back from Claude as the task error.
+//
+// The dispatch counters (last hour / last 5h) stay for observability and for
+// operators who want a hard local ceiling on top of the plan. Local caps are
+// opt-in: with no cap configured the counters never gate anything. Before
+// this, a default local cap sized for a "225 messages per 5h" guess held back
+// every cron and bot-to-bot call on a busy morning while Anthropic was still
+// accepting requests.
 //
 //   recordClaudeCodeDispatch()  — call when a dispatch is about to fire
-//   getClaudeCodeUsage()        — counts in the last hour / last 5h
-//   preflightQuotaGate(…)       — optional short-circuit for cold dispatches
-//                                  when usage is past the configured ceiling
-//
-// Values are deliberately conservative defaults (Max 5× ballpark). Tune via
-// setDispatchBudget() from DaemonConfig at daemon startup. When thresholds
-// are `undefined` the gate is a no-op and only the counters track (pure
-// observability, no behavior change).
+//   recordRateLimitEvent(ev)    — call for every stream-json event; ignores others
+//   getClaudeCodeUsage()        — counters + the last provider signal
+//   preflightQuotaGate(…)       — short-circuit for cold dispatches
 
 export interface DispatchBudget {
-  /** Soft hourly cap. Logs a warning at warnRatio, gates cold dispatches at 100%. */
+  /** Optional hard hourly ceiling on new claude-code runs. Unset or 0 = off. */
   maxPerHour?: number
-  /** Soft rolling-5-hour cap. Same semantics as maxPerHour. */
+  /** Optional hard rolling-5-hour ceiling. Unset or 0 = off. */
   maxPer5h?: number
-  /** Warn when usage >= warnRatio × max (default 0.8). */
+  /** Warn when usage >= warnRatio × a configured cap (default 0.8). */
   warnRatio?: number
 }
 
 const DEFAULT_BUDGET: Required<Pick<DispatchBudget, "warnRatio">> & DispatchBudget = {
-  // No hard defaults — opt-in by config. Keep warnRatio so usage logs still
-  // emit at 80% when the operator DOES set a cap.
   warnRatio: 0.8,
 }
 
@@ -47,7 +53,12 @@ export function setDispatchBudget(next: DispatchBudget | undefined): void {
   budget = { ...DEFAULT_BUDGET, ...(next || {}) }
 }
 
-export function clearDispatchHistory(): void { timestamps.length = 0 }
+export function getDispatchBudget(): DispatchBudget { return { ...budget } }
+
+export function clearDispatchHistory(): void {
+  timestamps.length = 0
+  providerSignals.clear()
+}
 
 function prune(now: number): void {
   const cutoff = now - FIVE_H_MS
@@ -61,6 +72,85 @@ export function recordClaudeCodeDispatch(now: number = Date.now()): void {
   timestamps.push(now)
 }
 
+// --- Provider signal (Claude Code rate_limit_event) ---
+
+export type RateLimitStatus = "allowed" | "allowed_warning" | "rejected"
+
+export interface RateLimitSignal {
+  status: RateLimitStatus
+  /** Window name as Claude Code reports it ("five_hour", "seven_day", …). */
+  window: string
+  /** Wall-clock ms when the window resets, when reported. */
+  resetsAt?: number
+  /** 0..1 share of the window used, when reported. */
+  utilization?: number
+  /** Wall-clock ms when this signal was observed. */
+  seenAt: number
+}
+
+/** Latest signal per window. A newer event for the same window replaces it. */
+const providerSignals = new Map<string, RateLimitSignal>()
+
+/** A rejected signal with no reset time is trusted for this long. */
+const REJECTED_FALLBACK_HOLD_MS = 15 * 60 * 1000
+
+function asNumber(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v)) return v
+  if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v)
+  return undefined
+}
+
+/** Claude Code reports resetsAt in unix seconds; accept ms too. */
+function asEpochMs(v: unknown): number | undefined {
+  const n = asNumber(v)
+  if (n === undefined || n <= 0) return undefined
+  return n < 1e12 ? n * 1000 : n
+}
+
+/**
+ * Parse a stream-json event. Returns the signal when the event is a
+ * rate_limit_event with a recognisable status, otherwise null. Field names
+ * follow Claude Code's camelCase; snake_case variants are accepted so a
+ * CLI update doesn't silently blind the gate.
+ */
+export function parseRateLimitEvent(event: unknown, now: number = Date.now()): RateLimitSignal | null {
+  if (!event || typeof event !== "object") return null
+  const e = event as Record<string, unknown>
+  if (e.type !== "rate_limit_event") return null
+  const info = (e.rate_limit_info ?? e.rateLimitInfo) as Record<string, unknown> | undefined
+  if (!info || typeof info !== "object") return null
+  const status = info.status
+  if (status !== "allowed" && status !== "allowed_warning" && status !== "rejected") return null
+  const window = String(info.rateLimitType ?? info.rate_limit_type ?? "unknown")
+  const resetsAt = asEpochMs(info.resetsAt ?? info.resets_at)
+  const utilization = asNumber(info.utilization)
+  return { status, window, resetsAt, utilization, seenAt: now }
+}
+
+/** Record the provider's view of the plan window. Non rate-limit events are ignored. */
+export function recordRateLimitEvent(event: unknown, now: number = Date.now()): RateLimitSignal | null {
+  const signal = parseRateLimitEvent(event, now)
+  if (!signal) return null
+  providerSignals.set(signal.window, signal)
+  return signal
+}
+
+/** The rejected window that still holds at `now`, if any. */
+export function activeProviderHold(now: number = Date.now()): RateLimitSignal | null {
+  for (const s of providerSignals.values()) {
+    if (s.status !== "rejected") continue
+    const until = s.resetsAt ?? s.seenAt + REJECTED_FALLBACK_HOLD_MS
+    if (until > now) return s
+  }
+  return null
+}
+
+export function getProviderSignals(): RateLimitSignal[] {
+  return [...providerSignals.values()].sort((a, b) => b.seenAt - a.seenAt)
+}
+
+// --- Usage view ---
+
 export interface ClaudeCodeUsage {
   lastHour: number
   last5h: number
@@ -68,7 +158,11 @@ export interface ClaudeCodeUsage {
   maxPer5h?: number
   hourlyRatio?: number   // usage/max in [0,1] when max is set
   fiveHourRatio?: number // usage/max in [0,1] when max is set
+  /** Latest signal per window from Claude Code, newest first. */
+  provider: RateLimitSignal[]
 }
+
+function capOn(v: number | undefined): v is number { return typeof v === "number" && v > 0 }
 
 export function getClaudeCodeUsage(now: number = Date.now()): ClaudeCodeUsage {
   prune(now)
@@ -82,48 +176,77 @@ export function getClaudeCodeUsage(now: number = Date.now()): ClaudeCodeUsage {
   const out: ClaudeCodeUsage = {
     lastHour,
     last5h,
-    maxPerHour: budget.maxPerHour,
-    maxPer5h: budget.maxPer5h,
+    maxPerHour: capOn(budget.maxPerHour) ? budget.maxPerHour : undefined,
+    maxPer5h: capOn(budget.maxPer5h) ? budget.maxPer5h : undefined,
+    provider: getProviderSignals(),
   }
-  if (budget.maxPerHour && budget.maxPerHour > 0) out.hourlyRatio = lastHour / budget.maxPerHour
-  if (budget.maxPer5h && budget.maxPer5h > 0) out.fiveHourRatio = last5h / budget.maxPer5h
+  if (out.maxPerHour) out.hourlyRatio = lastHour / out.maxPerHour
+  if (out.maxPer5h) out.fiveHourRatio = last5h / out.maxPer5h
   return out
 }
 
+// --- Gate ---
+
+export interface QuotaGateAbort {
+  abort: true
+  reason: "provider_rate_limit" | "hourly_cap" | "five_hour_cap"
+  message: string
+  usage: ClaudeCodeUsage
+}
+
+function windowLabel(window: string): string {
+  return window.replace(/_/g, " ")
+}
+
+function resetLabel(resetsAt: number | undefined, now: number): string {
+  if (!resetsAt) return "shortly"
+  const mins = Math.max(1, Math.round((resetsAt - now) / 60_000))
+  return `in about ${mins} min (${new Date(resetsAt).toISOString()})`
+}
+
 /**
- * Returns null when dispatch is allowed; returns an abort struct when usage
- * is past 100% of a configured cap. Warm sessions are always allowed through
- * (they replay via cache_read and are cheap) — only cold dispatches get
- * gated, same philosophy as preflightOverageGate.
+ * Returns null when dispatch is allowed; returns an abort struct when the
+ * provider reports the plan window as rejected, or when usage is past a
+ * configured local cap. Warm sessions are always allowed through — they
+ * replay via cache_read and are cheap — so only cold dispatches get gated,
+ * same philosophy as preflightOverageGate.
  *
- * The function DOES NOT mutate state (does not increment counters). Call
- * `recordClaudeCodeDispatch()` separately once the caller commits to the
- * dispatch.
+ * The function DOES NOT mutate state. Call `recordClaudeCodeDispatch()`
+ * separately once the caller commits to the dispatch.
  */
-export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.now()):
-  | { abort: true; reason: string; message: string; usage: ClaudeCodeUsage }
-  | null {
+export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.now()): QuotaGateAbort | null {
   const usage = getClaudeCodeUsage(now)
   if (hasWarmSession) return null
-  if (budget.maxPerHour && usage.lastHour >= budget.maxPerHour) {
+  const hold = activeProviderHold(now)
+  if (hold) {
+    return {
+      abort: true,
+      reason: "provider_rate_limit",
+      message:
+        `Claude plan limit reached: Claude Code reports the ${windowLabel(hold.window)} window as rejected. ` +
+        `Cold dispatches are held until it resets ${resetLabel(hold.resetsAt, now)}; open conversations still go through.`,
+      usage,
+    }
+  }
+  if (usage.maxPerHour && usage.lastHour >= usage.maxPerHour) {
     return {
       abort: true,
       reason: "hourly_cap",
       message:
-        `Claude-code fleet dispatch-budget hit: ${usage.lastHour}/${budget.maxPerHour} in the last hour. ` +
-        `Cold dispatches are being held back to preserve warm-session headroom. ` +
-        `Raise agents.budget.maxPerHour in DaemonConfig if this is a false positive.`,
+        `Local dispatch cap reached: ${usage.lastHour}/${usage.maxPerHour} claude-code runs in the last hour. ` +
+        `Cold dispatches are held; open conversations still go through. ` +
+        `Raise or remove session.maxClaudeCodeDispatchesPerHour in agentx.json (applies on save).`,
       usage,
     }
   }
-  if (budget.maxPer5h && usage.last5h >= budget.maxPer5h) {
+  if (usage.maxPer5h && usage.last5h >= usage.maxPer5h) {
     return {
       abort: true,
       reason: "five_hour_cap",
       message:
-        `Claude-code fleet dispatch-budget hit: ${usage.last5h}/${budget.maxPer5h} in the last 5h. ` +
-        `Cold dispatches are being held back to preserve warm-session headroom. ` +
-        `Raise agents.budget.maxPer5h in DaemonConfig if this is a false positive.`,
+        `Local dispatch cap reached: ${usage.last5h}/${usage.maxPer5h} claude-code runs in the last 5h. ` +
+        `Cold dispatches are held; open conversations still go through. ` +
+        `Raise or remove session.maxClaudeCodeDispatchesPer5h in agentx.json (applies on save).`,
       usage,
     }
   }
@@ -131,18 +254,23 @@ export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.n
 }
 
 /**
- * Returns a warning string when usage has crossed the warnRatio threshold,
- * otherwise null. Caller should log and clear the ratcheting state (we don't
- * suppress duplicates here — suppression is a caller concern).
+ * Returns a warning string when the provider reports a window near its
+ * limit, or when usage has crossed warnRatio of a configured local cap.
+ * Otherwise null. Suppression of repeats is a caller concern.
  */
 export function warnIfNearingCap(now: number = Date.now()): string | null {
   const usage = getClaudeCodeUsage(now)
+  const nearing = usage.provider.find((s) => s.status === "allowed_warning")
+  if (nearing) {
+    const pct = nearing.utilization !== undefined ? ` (${Math.round(nearing.utilization * 100)}% used)` : ""
+    return `claude plan ${windowLabel(nearing.window)} window nearing its limit${pct}, resets ${resetLabel(nearing.resetsAt, now)}`
+  }
   const ratio = budget.warnRatio ?? 0.8
   if (usage.hourlyRatio !== undefined && usage.hourlyRatio >= ratio && usage.hourlyRatio < 1) {
-    return `claude-code hourly usage ${usage.lastHour}/${usage.maxPerHour} (${Math.round(usage.hourlyRatio * 100)}% of cap)`
+    return `claude-code hourly usage ${usage.lastHour}/${usage.maxPerHour} (${Math.round(usage.hourlyRatio * 100)}% of local cap)`
   }
   if (usage.fiveHourRatio !== undefined && usage.fiveHourRatio >= ratio && usage.fiveHourRatio < 1) {
-    return `claude-code 5h usage ${usage.last5h}/${usage.maxPer5h} (${Math.round(usage.fiveHourRatio * 100)}% of cap)`
+    return `claude-code 5h usage ${usage.last5h}/${usage.maxPer5h} (${Math.round(usage.fiveHourRatio * 100)}% of local cap)`
   }
   return null
 }

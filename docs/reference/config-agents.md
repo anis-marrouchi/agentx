@@ -184,8 +184,8 @@ When a conversation's memory is rotated or treated as stale.
 | `session.maxTurnsPerSession` | number (2–200) | `40` | Turns after which the conversation is rotated to a new session. |
 | `session.tierTwoThresholdTokens` | number (50000–200000) | `180000` | Context size, in tokens, at which the conversation is rotated. |
 | `session.contextStrategy` | `"layered"` \| `"planner"` | `"layered"` | How context is built: all layers every turn, or a small model picks what to retrieve first. |
-| `session.maxClaudeCodeDispatchesPerHour` | number (1–10000) | `80` | Soft hourly cap on new `claude-code` runs across the machine. Warm sessions still go through. |
-| `session.maxClaudeCodeDispatchesPer5h` | number (1–50000) | `180` | The same cap over five hours. |
+| `session.maxClaudeCodeDispatchesPerHour` | number (0–10000) | unset (off) | Optional local ceiling on new `claude-code` runs across the machine in one hour. The plan's own limit is read from Claude Code and needs no setting. Warm sessions still go through. Applies on save. |
+| `session.maxClaudeCodeDispatchesPer5h` | number (0–50000) | unset (off) | The same optional ceiling over five hours. |
 | `session.continuityStateTurns` | number (0–5) | `0` | Extra earlier requests shown to the session-continuity decision. `0` keeps the default two messages. |
 
 ## processPool

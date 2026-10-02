@@ -96,9 +96,22 @@ Example output (shortened):
 
 Counting only happens inside an AgentX folder (one with `agentx.json` or `.agentx`). Setting the environment variable `AGENTX_NO_TELEMETRY` turns it off.
 
-## Limit how often Claude Code agents start
+## When the Claude plan runs out
 
-If your agents use Claude Code with a subscription, AgentX limits how many fresh Claude Code sessions it starts, so a busy day doesn't use up your plan. A conversation that is already open always goes through. Two settings in `agentx.json` control this:
+If your agents use Claude Code with a subscription, the plan has a rolling five-hour and a seven-day limit. Claude Code tells AgentX on every turn how full those windows are. When Claude Code reports a window as **rejected**, AgentX stops starting fresh Claude Code sessions until the window resets, so scheduled jobs do not fail one after another with the same refusal. A conversation that is already open always goes through.
+
+While the hold is on, a scheduled job or an agent-to-agent call fails with a message like this, and the log shows when the hold ends:
+
+```
+Claude plan limit reached: Claude Code reports the five hour window as rejected.
+Cold dispatches are held until it resets in about 38 min (…); open conversations still go through.
+```
+
+Nothing to configure. The hold lifts by itself at the reset time, or sooner if Claude Code reports the window as allowed again.
+
+## Put a local ceiling on fresh Claude Code sessions
+
+On top of the plan limit, you can cap how many fresh Claude Code sessions AgentX starts across all its agents. This is off unless you set it. Two settings in `agentx.json` control it:
 
 ```json
 "session": {
@@ -107,7 +120,7 @@ If your agents use Claude Code with a subscription, AgentX limits how many fresh
 }
 ```
 
-The values shown are the defaults. Lower them to spend less; raise them if you have a larger plan. Restart the daemon after changing them.
+Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a change when you save the file; no restart is needed. When a cap is reached, fresh sessions are held and the error names the setting to raise.
 
 ## Check it worked
 
@@ -125,4 +138,6 @@ The values shown are the defaults. Lower them to spend less; raise them if you h
 - **`No tasks recorded yet`:** no agent has run yet on this machine. Send an agent a message first.
 - **The Cost page is empty:** it only counts work done since AgentX started recording on this machine. Pick **All** to see everything it has.
 - **The numbers don't match your bill:** your bill also covers use outside AgentX, and providers may round or group charges differently. Use the provider's figure.
+- **`Claude plan limit reached: Claude Code reports the … window as rejected`:** the subscription's rolling window is full. Wait for the reset time in the message; open conversations keep working. If this happens every day, consider a larger plan or fewer scheduled jobs.
+- **`Local dispatch cap reached: …`:** you set `session.maxClaudeCodeDispatchesPerHour` or `session.maxClaudeCodeDispatchesPer5h` and the fleet reached it. Raise the setting or remove it; the change applies when you save `agentx.json`.
 - **Spending is higher than expected:** check **Settings** › **Schedules** for jobs that run very often, and lower their frequency.
