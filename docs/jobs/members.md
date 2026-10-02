@@ -1,6 +1,6 @@
 # Invite a teammate to their work page
 
-A teammate who asks your agents for things on GitLab, Telegram or WhatsApp has no dashboard. They cannot see whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, a list of what they asked for and where it stands. Nothing else of yours is reachable from it.
+A teammate who asks your agents for things on GitLab, Telegram or WhatsApp has no dashboard. They cannot see whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see only that an agent is busy with it, never what it is.
 
 It works like the [phone app](../dashboard/mobile-app.md): one page served on your private network, a one-time code to pair, a key per machine. Two things are stricter, because a teammate is not you:
 
@@ -76,13 +76,14 @@ If the teammate's Tailscale login is on their person entry as `tailscale:<login>
 
 ## My work
 
-The page lists, for that person only:
+The page shows, for that person only:
 
-- **Open**: each request with the agent, its state (in progress, waiting on the owner, waiting on another agent, stuck), how long it has been open, and where it was asked. A GitLab or GitHub thread is a link.
-- **Finished in the last 7 days**, with the link to what was delivered.
-- **Latest turns** they started.
+- **One sentence** at the top: which of their agents is working on their task, and which is free.
+- **Your agents**: one card per agent they use (the agents you allowed them, or else the ones they talked to in the last 7 days). Each says **Working**, **Free** or **Blocked** in words, with a colour and a shape. A card on their own task shows what they asked, when, and where; **Show this request** opens it in place. A card busy with someone else's task says only that, and whether you or someone else started it.
+- **Needs a person**: present only when one of their requests waits on your answer or is stuck, with the question you were asked.
+- **What you sent** in the last 7 days: every turn they started, with its agent, where it was asked and its state (running, finished, waiting on the owner, stopped). A finished request links to what was delivered. A GitLab or GitHub thread is a link.
 
-![The My work page: three open requests with their state, one finished request, and the install hint](/screenshots/members/my-work.png)
+![The My work page: the summary sentence, two agent cards, a question waiting on the owner, and the list of what was sent](/screenshots/members/my-work.png)
 
 It refreshes every 30 seconds. Opened without a connection, it shows what was last loaded and says it is offline. When the connection is up but your computer does not answer, the page says it can't reach the server, tries again every 20 seconds, and shows a **Try now** button. Either notice goes away as soon as a load works.
 
@@ -113,7 +114,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`. The **People** tab of the dashboard shows it as **Active** too.
 2. **Their browser:** **My work** shows a request they made on their channel, with the right state.
-3. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers.
+3. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers. On **My work**, a card busy with your task shows no text of it.
 4. **The access rule holds:** a port other than 443 does not answer the teammate. The daemon (18800) and the dashboard (4202) listen on your own computer only, so they refuse a teammate even with no rule at all and prove nothing here. Open a test port for a minute instead.
 
    **Terminal (yours):** serve an empty folder on port 8099, and confirm it answers on your Tailscale address:
