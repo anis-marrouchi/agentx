@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.88.0](https://github.com/anis-marrouchi/agentx/compare/v0.87.0...v0.88.0) (2026-10-02)
+
+
+### Features
+
+* **dashboard:** add a People page with paired machines and activity ([#446](https://github.com/anis-marrouchi/agentx/issues/446)) ([8b2a70d](https://github.com/anis-marrouchi/agentx/commit/8b2a70de54fc074495142ec91f6560f356a323c6))
+
 ## [0.87.0](https://github.com/anis-marrouchi/agentx/compare/v0.86.0...v0.87.0) (2026-10-02)
 
 
