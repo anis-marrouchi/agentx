@@ -167,14 +167,21 @@ describe("the swipe script", () => {
   })
 
   it("springs back after a short slow pull and keeps the scroll position", () => {
-    const p = page()
-    p.touch("touchstart", 300, 400)
-    p.touch("touchmove", 250, 400)
-    p.touch("touchend", 0, 0)
-    expect(p.panels[0].style.transform).toBe("translateX(0px)")
-    p.settle()
-    expect(p.clicks).toEqual([])
-    expect(p.main.scrollTop).toBe(120)
+    // Its own clock: on the real one the three events land a millisecond
+    // apart on a busy machine, and 50 px in 1 ms reads as a flick.
+    const now = Date.now
+    let t = 1000
+    Date.now = () => t
+    try {
+      const p = page()
+      p.touch("touchstart", 300, 400)
+      t += 300; p.touch("touchmove", 250, 400)
+      t += 300; p.touch("touchend", 0, 0)
+      expect(p.panels[0].style.transform).toBe("translateX(0px)")
+      p.settle()
+      expect(p.clicks).toEqual([])
+      expect(p.main.scrollTop).toBe(120)
+    } finally { Date.now = now }
   })
 
   it("lands on the neighbour after a short quick flick, not after a pull that rests", () => {
