@@ -55,6 +55,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     /// Bring a hidden character back, and let its bubble show again.
     var onShowCharacter: (() -> Void)?
     var onSettings: (() -> Void)?
+    /// Play mode (#505): whether a play can start now, and start one.
+    var playReady: () -> Bool = { false }
+    var onPlay: (() -> Void)?
 
     override init() {
         super.init()
@@ -248,6 +251,14 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let orb = action("Animated orb", #selector(toggleOrb), key: "")
         orb.state = Config.animatedOrb ? .on : .off
         menu.addItem(orb)
+        let mode = action("Play mode", #selector(togglePlayMode), key: "")
+        mode.state = Config.playMode ? .on : .off
+        menu.addItem(mode)
+        if Config.playMode {
+            let play = action("Play on this page", #selector(startPlay), key: "")
+            play.isEnabled = playReady()
+            menu.addItem(play)
+        }
         // The character hides with its bubble, and has no bubble at rest.
         switch characterVisible() {
         case true?: menu.addItem(action("Hide character", #selector(hidePill), key: ""))
@@ -312,6 +323,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         Config.animatedOrb.toggle()
         onAnimatedOrbChanged?(Config.animatedOrb)
     }
+
+    @objc private func togglePlayMode() { Config.playMode.toggle() }
+    @objc private func startPlay() { onPlay?() }
 
     @objc private func hidePill() { onHidePill?() }
     @objc private func showCharacter() { onShowCharacter?() }

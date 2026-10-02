@@ -20,6 +20,8 @@ final class App: NSObject, NSApplicationDelegate {
     private let statusMenu = StatusMenu()
     /// Stands in for the pill's orb when voice.look is "character".
     private let character = CharacterHost()
+    /// The character playing on a frozen picture of the screen (#505).
+    private let play = PlayHost()
     /// The agent whose by-name answer is on screen now, while no turn runs.
     private var asideSpeaker: String?
     private let recorder = Recorder()
@@ -215,6 +217,48 @@ final class App: NSObject, NSApplicationDelegate {
         Log.info("settings: talk \(saved.general.hotkeys.talk), speech to text \(saved.general.stt)")
     }
 
+    /// A play can start: the character shows and may move, and the
+    /// assistant has nothing to say or hear.
+    private var canPlay: Bool {
+        character.onScreen == true && Config.animatedOrb
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            && !busy && !recorder.isRecording && !play.running
+    }
+
+    /// "Play on this page" (#505): one picture of the character's screen, the
+    /// lines of text read on it, and the character plays the built-in
+    /// script on the picture. The page itself is never touched.
+    private func startPlay() {
+        let foot = character.foot
+        guard canPlay, let screen = NSScreen.screens.first(where: { $0.frame.contains(foot) }) ?? NSScreen.screens.first
+        else { return }
+        guard PlayRead.allowed else {
+            PlayRead.ask()
+            Log.warn("play: no Screen Recording permission; allow AgentX Voice in System Settings, then quit and reopen it")
+            panel.render(.error("Allow Screen Recording"))
+            resetSoon()
+            return
+        }
+        let stops = character.stops, size = screen.frame.size
+        let start = PlayMath.Point(x: foot.x - screen.frame.minX, y: screen.frame.maxY - foot.y)
+        // Off its edge, so it is not in the picture twice.
+        character.setShown(false)
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard let picture = PlayRead.picture(of: screen), !busy, !recorder.isRecording else {
+                character.setShown(settings?.general.look == "character")
+                return
+            }
+            play.start(picture: picture, on: screen, stops: stops, at: start)
+            let asked = ProcessInfo.processInfo.systemUptime
+            let lines = await Task.detached { PlayRead.lines(in: picture, size: size) }.value
+            Log.info("play: \(lines.count) lines read in \(Int((ProcessInfo.processInfo.systemUptime - asked) * 1000)) ms")
+            let steps = PlayMath.demo(lines, width: size.width, height: size.height)
+            if steps.isEmpty { play.end("no line of text to play on") }
+            else { play.play(Play(lines: lines, steps: steps, start: start)) }
+        }
+    }
+
     /// Who the pill names and whose colour its orb wears: the agent a
     /// shortcut is asking, a by-name answer being spoken, else the agent
     /// our turn is asking, else the target.
@@ -336,6 +380,14 @@ final class App: NSObject, NSApplicationDelegate {
         }
         panel.onLook = { [weak self] state, tint, colors in
             self?.character.show(state.activity, tint: tint, colors: colors)
+            // The assistant has something to show: play gives way.
+            if state.activity != .idle { self?.play.end("the assistant is busy") }
+        }
+        statusMenu.playReady = { [weak self] in self?.canPlay ?? false }
+        statusMenu.onPlay = { [weak self] in self?.startPlay() }
+        play.onEnd = { [weak self] in
+            guard let self else { return }
+            self.character.setShown(self.settings?.general.look == "character")
         }
         panel.onShown = { [weak self] in self?.character.redraw() }
         panel.onDismiss = { [weak self] in self?.dismissPill() }
@@ -547,6 +599,7 @@ final class App: NSObject, NSApplicationDelegate {
         // A held key overrides any hands-free window that is open, so the
         // two ways of talking never fight over the microphone.
         stopPolling()
+        play.end("the talk key")
         guard !recorder.isRecording else { return }
         // A dismissed pill comes back with the talk key.
         summonPill()

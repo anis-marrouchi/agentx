@@ -51,6 +51,10 @@ final class CharacterHost {
     private var rest = CGPoint.zero
     /// Its body on screen: where it can be taken hold of.
     private var body = NSRect.zero
+    /// Its colours, and the point under it in screen points: play mode
+    /// (#505) takes it from there.
+    var stops: [NSColor] { view.stops }
+    var foot: NSPoint { NSPoint(x: CGFloat(sim.x), y: rest.y) }
     /// Carried by the pointer: where the pointer took hold, and where it
     /// stood then, which is not where it rests once it has stepped aside.
     private var carried: (from: NSPoint, rest: CGPoint)?
