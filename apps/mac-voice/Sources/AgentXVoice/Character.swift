@@ -121,6 +121,9 @@ final class CharacterHost {
         redraw()
     }
 
+    /// `voice.stroll`: a slow walk now and then while it has nothing to do.
+    var strolls = false
+
     /// "Animated orb" in the menu.
     func setAnimated(_ on: Bool) {
         guard animated != on else { return }
@@ -249,7 +252,7 @@ final class CharacterHost {
                 || (bubbleFrame?.insetBy(dx: 0, dy: -PillPlacement.tail).contains(mouse) ?? false)
                 || (NSEvent.modifierFlags.contains(.command) && window.frame.contains(mouse))
             frame = sim.step(to: now,
-                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, sent: showing != nil,
+                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, sent: showing != nil, strolls: strolls,
                                                 home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: (rest.y - Self.ground).rounded())

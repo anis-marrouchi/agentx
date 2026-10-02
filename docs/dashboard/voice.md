@@ -273,6 +273,34 @@ Good to know:
 - **It stays on screen:** it goes no closer to the top of a screen than its bubble needs, and no further right than where it rests by default. If its screen is no longer connected, it comes back to the bottom-right corner of your main screen.
 - **Hidden until you ask:** a hidden character stays hidden, whatever an agent says meanwhile. It comes back with **Option–Space**, an agent's own shortcut, an incoming call, **Show character** or **Show floating pill**, and when the app starts again.
 
+### Let the character stroll
+
+By default the character moves only to get out of the pointer's way. It can also take a slow stroll when the assistant has nothing to do. This is off by default.
+
+To turn it on:
+
+1. **Mac:** open **Settings…** from the AgentX menu and go to the **General** tab.
+2. **Mac:** under **Assistant**, tick **Character strolls when idle**, then choose **Save**.
+
+Or in the Terminal, from the folder with your `agentx.json`:
+
+```sh
+agentx voice stroll on    # a slow stroll now and then
+agentx voice stroll off   # it stays where it rests
+agentx voice stroll       # which one is on now
+```
+
+In `agentx.json` it is `voice.stroll`: `false` (the default) or `true`. A change made in the Terminal or in the file is picked up within a few seconds, while the app runs.
+
+Good to know:
+
+- **What a stroll is:** after 25 to 55 seconds with nothing to do, the character walks slowly a little way to one side, at most 110 points, waits there a few seconds and walks back. It leaves no trail of dots.
+- **Work comes first:** when you talk or an agent answers, it walks back to where it rests. The pointer still sends it aside as before.
+- **It stops when it dozes:** after two minutes with nothing to do the character dozes where it rests, and a dozing character does not stroll.
+- **It stays on screen:** next to the edge of the screen it strolls to the other side.
+- **Not with a still character:** with **Animated orb** unticked or Reduce Motion on, the character does not move at all.
+- **Only with the character:** the setting has no effect while the orb is shown, and the tick box is greyed out.
+
 ### The character shows you something
 
 An agent can send the character to something on your screen. The character leaves its place, flies beside the thing, and marks it with a box, an oval or an underline. Then it goes back to where it rests. This needs **Shown as** set to **Character** and the character on screen.
@@ -307,7 +335,7 @@ Good to know:
 
 ### Play on the page
 
-The character can leave its place and play on a picture of your screen: it walks along a line of text, eats a few words and wipes a line. It is a short show, about ten seconds, and the real page is never touched. Play mode is off by default.
+The character can leave its place and play on a picture of your screen: it walks along a line of text, then eats words, wipes a line, kicks a word to pieces, stomps a line down or carries a word away. Each play is different. It is a short show, about ten seconds, and the real page is never touched. Play mode is off by default.
 
 To switch it on and start a play:
 
@@ -318,9 +346,16 @@ To switch it on and start a play:
 What happens:
 
 1. The app takes one picture of the screen the character is on and lays it over that screen. The character waits on it, with its three thinking dots, while the lines of text are read. The reading is done on the Mac by Apple's text recognition; nothing is uploaded.
-2. The character jumps onto the line nearest the middle of the screen and walks along it.
-3. It eats the first words of the next line under it, letter by letter.
-4. It wipes the third line with a cloth, rests, and the picture goes. The page is as it was.
+2. The character jumps onto one of the lines near the middle of the screen and walks along it.
+3. It goes to up to four other lines and does one thing to each, never the same thing twice in a play:
+   - **Eat:** it eats up to three words, letter by letter.
+   - **Wipe:** it wipes the line with a cloth.
+   - **Kick:** it kicks a word. The letters fly off and pile up at the bottom of the screen.
+   - **Stomp:** it hops on the line until the words drop one by one, then falls after them.
+   - **Carry:** it lifts a word over its head and puts it down at the end of the line it walked.
+4. It rests, and the picture goes. The page is as it was.
+
+Which lines, which words and in what order change with every play.
 
 Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring.
 
@@ -333,7 +368,8 @@ Good to know:
 - **One screen:** it plays on the screen the character is on. Other screens stay live.
 - **A short wait before it starts:** reading the text takes one to a few seconds. The screen is already frozen during that time.
 - **No text, no play:** if no line of at least two words is found away from the top of the screen, the picture goes again and nothing plays.
-- **Letters are an estimate:** a word's box is cut into equal parts, so a letter can go a little early or late.
+- **Letters are an estimate:** a word's box is cut into equal parts, so a letter can go a little early or late, and a kicked letter can carry a sliver of the one next to it.
+- **On a page with one line of text:** it walks that line and does one thing to it.
 - **Photos and gradients:** on a background that isn't one flat colour, the painted-over patch shows.
 - **It has no mouth:** eating shows as letters going at its front, with a small bite squash.
 
@@ -454,6 +490,7 @@ To hear a voice before you keep it:
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
 | **Start reduced to the orb** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb). Default off | `voice.startReduced` |
+| **Character strolls when idle** | The [character](#the-character) takes a [slow stroll](#let-the-character-stroll) when the assistant has nothing to do. Default off | `voice.stroll` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
 | **Tallest answer** | How tall the answer grows before it scrolls, 120 to 800 points | `voice.card.maxHeight` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |
