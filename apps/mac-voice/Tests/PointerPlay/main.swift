@@ -176,5 +176,24 @@ for n in 0..<12 {
 check(worst.lift < 22 && worst.stretch < 0.09 && worst.x < 480 / fps + 0.01,
       "in twelve games with a circling pointer, no hop, crouch or step is a snap")
 
+// Out on a stroll (#482) when a game starts: the stroll is over, and
+// left alone after the game it goes home.
+var (roamer, wt) = rested()
+while wt < 110, abs(roamer.x - home) < 30 {
+    wt += 1 / fps
+    _ = roamer.step(to: wt, Input(strolls: true, plays: true, home: home, range: range))
+}
+check(abs(roamer.x - home) >= 30, "(it is out on a stroll)")
+while wt < 140, roamer.play.games == 0 {
+    wt += 1 / fps
+    _ = roamer.step(to: wt, Input(pointer: (roamer.x + 150 + 20 * sin(wt * 9), 60), strolls: true, plays: true, home: home, range: range))
+}
+check(roamer.play.games == 1, "(a game starts while it is out)")
+for _ in 0..<Int(8 * fps) {
+    wt += 1 / fps
+    _ = roamer.step(to: wt, Input(strolls: true, plays: true, home: home, range: range))
+}
+check(abs(roamer.x - home) < 2, "a game ends a stroll: left alone it goes home")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

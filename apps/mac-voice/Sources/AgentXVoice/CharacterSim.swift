@@ -134,6 +134,8 @@ struct CharacterSim {
             target = to
             awayUntil = now + 1
             restSince = now
+            // A game ends a stroll, as stepping aside does.
+            strolled = 0; strollTo = 0; strollNext = nil
         } else if near {
             target = M.aside(x: x, pointer: input.pointer!.x, clear: Self.clear, range: input.range)
             awayUntil = now + Self.awayFor
