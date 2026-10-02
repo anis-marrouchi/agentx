@@ -54,6 +54,9 @@ export class CliLineModel implements LineModel {
   constructor(opts: LineModelOpts, binary = "claude") {
     const env = stripAnthropicApiKey({ ...process.env })
     delete env.CLAUDECODE
+    // No thinking before a spoken line: the CLI's default spent 4 to 14 s
+    // of a lesson step on it (#500). The api backend never thinks either.
+    env.MAX_THINKING_TOKENS = "0"
     this.child = spawn(binary, [
       "-p", "--model", opts.model ?? TALK_MODEL,
       "--input-format", "stream-json", "--output-format", "stream-json",

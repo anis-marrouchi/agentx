@@ -13,13 +13,14 @@
 // meanwhile means the plan is about a screen that is gone.
 //
 // It is a voice session like a talk: hush() and door() are what
-// Option-Space calls, and "stop" ends it.
+// Option-Space calls. A hush holds it while the listener speaks, their
+// words are answered by the next step, and "stop" ends it.
 
 import type { LineModel } from "./talk-model"
 import type { VoiceRef } from "./speaker"
 import type { SpeechOut } from "./speaking-queue"
 import type { Presence, Rect } from "./presence"
-import { DEFAULT_LISTENER } from "./talk"
+import { DEFAULT_LISTENER, isStop } from "./talk"
 import { bubbleText, findControl, leavesApp, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
 
 export { leavesApp, parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
@@ -67,7 +68,7 @@ export interface LiveTeachOpts {
 }
 
 export type TeachEvent =
-  | { type: "step"; n: number; action: StepAction; target: string | null; say: string }
+  | { type: "step"; n: number; action: StepAction; target: string | null; say: string; readMs?: number; planMs?: number }
   | { type: "changed"; n: number; changed: boolean }
   | { type: "acted"; n: number; error: string | null }
   | { type: "replanned"; n: number; reason: string }
@@ -83,8 +84,6 @@ type Stale = { stale: string }
 
 /** A read costs about 0.1 s, so a done step is noticed within a second. */
 const POLL_MS = 400
-
-const STOP = /^\s*(stop|stop talking|that'?s enough|end( the lesson)?|enough)[\s.!]*$/i
 
 export class LiveTeach {
   readonly id = `teach-${Date.now().toString(36)}`
@@ -104,6 +103,8 @@ export class LiveTeach {
   private wake: (() => void) | null = null
   private listeners: Array<(e: TeachEvent) => void> = []
   private readonly listener: string
+  /** How long the last screen read and plan took, for the step's log line. */
+  private took = { readMs: 0, planMs: 0 }
 
   constructor(private opts: LiveTeachOpts, private deps: TeachDeps) {
     this.listener = opts.listener ?? DEFAULT_LISTENER
@@ -113,7 +114,7 @@ export class LiveTeach {
 
   door(text: string): void {
     if (this.state === "ended") return
-    if (STOP.test(text)) return this.stop("stopped by the listener")
+    if (isStop(text)) return this.stop("stopped by the listener")
     this.silence()
     this.doorQueue.push(text.trim())
     this.state = "running"
@@ -142,14 +143,19 @@ export class LiveTeach {
   async run(): Promise<void> {
     const max = this.opts.maxSteps ?? 12
     let replans = 0
+    // Seen from the first second: the first plan takes a few seconds.
+    this.deps.presence.say(`Looking at ${this.opts.app ?? "the screen"}…`)
     try {
       while (!this.is("ended") && this.step < max) {
         await this.waitOutHush()
         if (this.is("ended")) break
+        const t0 = Date.now()
         const screen = await this.onLessonApp()
         if (!screen) continue
+        const t1 = Date.now()
         const plan = await this.plan(screen)
         if (!plan) continue // interrupted while planning: plan again with what was said
+        this.took = { readMs: t1 - t0, planMs: Date.now() - t1 }
         const fresh = await this.recheck(plan, screen)
         const outcome = "stale" in fresh ? fresh : await this.perform(++this.step, plan, fresh)
         if (outcome === "done" || outcome === "stopped") break
@@ -257,7 +263,7 @@ export class LiveTeach {
     const action: StepAction =
       plan.action === "key" ? (mayAct && plan.text ? "key" : rect ? "highlight" : "wait_for_user")
       : (plan.action === "click" || plan.action === "type") && (!mayAct || !rect) ? "highlight" : plan.action
-    this.emit({ type: "step", n, action, target: label || null, say: plan.say })
+    this.emit({ type: "step", n, action, target: label || null, say: plan.say, ...this.took })
 
     const { presence, speech } = this.deps
     if (rect) presence.moveTo(rect, { highlight: action !== "point" })
@@ -365,10 +371,12 @@ export class LiveTeach {
     try { return screenSignature(await this.deps.readScreen()) } catch { return null }
   }
 
+  /** Held while the listener speaks. Their words come through door(); a
+   *  hush nothing follows was the listener taking the screen back. */
   private async waitOutHush(): Promise<void> {
-    const deadline = Date.now() + (this.opts.holdMs ?? 20_000)
+    const deadline = Date.now() + (this.opts.holdMs ?? 60_000)
     while (this.is("held") && Date.now() < deadline) await Promise.race([this.poked(), this.sleep(deadline - Date.now())])
-    if (this.is("held")) this.state = "running"
+    if (this.is("held")) this.stop("no words after the hush")
   }
 
   private silence(): void {

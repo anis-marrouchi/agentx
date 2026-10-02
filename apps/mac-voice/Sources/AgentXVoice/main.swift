@@ -52,6 +52,10 @@ final class App: NSObject, NSApplicationDelegate {
     /// Set when the door opens: what was speaking (and is now hushed), so
     /// the words spoken go to that activity rather than to /ask.
     private var talkCheck: Task<AgentClient.Hushed, Never>?
+    /// A lesson our last turn started may still be speaking: a click then
+    /// opens the door at once, like the key, so the microphone does not
+    /// take the lesson's voice for the listener's.
+    private var lessonOn = false
     /// Waiting for our answer to be spoken by the daemon's queue. The door
     /// lets go of it: the answer stays queued and plays after the turn.
     private var speaking: Task<Void, Never>?
@@ -206,10 +210,11 @@ final class App: NSObject, NSApplicationDelegate {
         let asCharacter = saved.general.look == "character"
         panel.setShowsOrb(!asCharacter)
         character.setShown(asCharacter)
+        if !asCharacter { panel.detach() }
         // voice.startReduced is how the assistant starts: read once.
         if !startApplied {
             startApplied = true
-            if saved.general.startReduced == true { panel.summon(); panel.setReduced(true) }
+            if saved.general.startReduced == true, !asCharacter { panel.summon(); panel.setReduced(true) }
         }
         if settingsWindow.model.recording == nil { registerHotkeys() }
         // Colours may have changed.
@@ -235,15 +240,16 @@ final class App: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(url)
     }
 
-    /// Close, Esc or "Hide pill": the pill goes and the voice stops, the
-    /// same stop as ⌘⌥. An open microphone closes without sending. The
-    /// next talk key brings the pill back.
+    /// Close, Esc or "Hide pill": the pill goes, the character with it,
+    /// and the voice stops, the same stop as ⌘⌥. An open microphone closes
+    /// without sending. The next talk key brings them back.
     private func dismissPill() {
         Log.info("pill: dismissed")
         // Closing the pill declines a ringing call and ends one in progress.
         if ringingCall != nil { endRinging { await CallClient.decline($0) } }
         if activeCall != nil { hangUp() }
         panel.dismiss()
+        character.setHidden(true)
         if recorder.isRecording {
             stopPolling()
             _ = recorder.stop()
@@ -251,6 +257,13 @@ final class App: NSObject, NSApplicationDelegate {
             talkCheck = nil
         }
         stopSpeaking()
+    }
+
+    /// The talk key, a call or the menu: a hidden pill may show again,
+    /// and a hidden character is back.
+    private func summonPill() {
+        character.setHidden(false)
+        panel.summon()
     }
 
     /// ⌘⌥V. Everything except the hotkey lives in `agentx paste`.
@@ -321,9 +334,17 @@ final class App: NSObject, NSApplicationDelegate {
         panel.orb.levelSource = { [weak self] in self?.recorder.level ?? 0 }
         character.setAnimated(Config.animatedOrb)
         character.levelSource = { [weak self] in self?.recorder.level ?? 0 }
+        // The pill is the character's speech bubble: it goes where the
+        // character goes.
+        character.bubble = { [weak self] head, visible in
+            guard let panel = self?.panel else { return nil }
+            panel.attach(head: head, visible: visible)
+            return panel.isVisible ? panel.frame : nil
+        }
         panel.onLook = { [weak self] state, tint, colors in
             self?.character.show(state.activity, tint: tint, colors: colors)
         }
+        panel.onShown = { [weak self] in self?.character.redraw() }
         panel.onDismiss = { [weak self] in self?.dismissPill() }
         panel.agentPalette = { [weak self] in
             guard let self else { return nil }
@@ -332,7 +353,6 @@ final class App: NSObject, NSApplicationDelegate {
         panel.answer.onOpenChat = { [weak self] in self?.openChat() }
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
-        statusMenu.onResetPosition = { [weak self] in self?.panel.resetPosition() }
         statusMenu.pillReduced = { [weak self] in self?.panel.reduced ?? false }
         statusMenu.canReduce = { [weak self] in PillMenu.canReduce(showsOrb: self?.panel.showsOrb ?? true) }
         statusMenu.onReduce = { [weak self] on in
@@ -341,6 +361,13 @@ final class App: NSObject, NSApplicationDelegate {
             // Asking for the orb brings back a pill that was dismissed.
             if on { self.panel.summon() }
             self.panel.setReduced(on)
+        }
+        statusMenu.characterVisible = { [weak self] in self?.character.onScreen }
+        statusMenu.onShowCharacter = { [weak self] in self?.summonPill() }
+        // Each does nothing with the other's look.
+        statusMenu.onResetPosition = { [weak self] in
+            self?.panel.resetPosition()
+            self?.character.resetPosition()
         }
         statusMenu.onAnimatedOrbChanged = { [weak self] on in
             self?.panel.orb.setAnimated(on)
@@ -352,7 +379,7 @@ final class App: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.panel.alwaysVisible = on
             // Asking for the pill brings back one that was dismissed.
-            if on { self.panel.summon() }
+            if on { self.summonPill() }
             if !self.busy && !self.recorder.isRecording { self.panel.render(.idle) }
         }
         statusMenu.onTargetChanged = { [weak self] id in
@@ -373,8 +400,17 @@ final class App: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if recording { self.unregisterHotkeys() } else { self.registerHotkeys() }
         }
+        // At login the app can start before the daemon answers. Keep
+        // asking: one missed read left the orb and the built-in
+        // shortcuts until the app was restarted.
         Task { @MainActor in
-            if let saved = await AgentClient.settings() { apply(saved) }
+            var failures = 0
+            while true {
+                if let saved = await AgentClient.settings() { apply(saved); break }
+                failures += 1
+                if failures == 1 { Log.warn("settings: the daemon did not answer, asking again") }
+                try? await Task.sleep(for: .seconds(VoiceSettings.retryDelay(after: failures)))
+            }
         }
 
         // Turning the hold OFF is the moment anything that piled up
@@ -452,6 +488,7 @@ final class App: NSObject, NSApplicationDelegate {
             panel.render(.error(error.localizedDescription))
             return
         }
+        if !followUp && lessonOn { talkCheck = Task { await AgentClient.hush() } }
         openedAt = Date()
         patience = followUp ? (activeCall == nil ? followUpPatience : callPatience) : clickPatience
         silentClose = followUp
@@ -483,6 +520,11 @@ final class App: NSObject, NSApplicationDelegate {
         if Date().timeIntervalSince(openedAt) >= patience {
             stopPolling()
             _ = recorder.stop()
+            // Nothing said after an early hush: let the queue play on.
+            if let door = talkCheck {
+                talkCheck = nil
+                Task { _ = await door.value; await AgentClient.resume() }
+            }
             panel.render(silentClose ? rest : .error("Didn't catch that"))
             if !silentClose { resetSoon() }
         }
@@ -523,7 +565,7 @@ final class App: NSObject, NSApplicationDelegate {
         stopPolling()
         guard !recorder.isRecording else { return }
         // A dismissed pill comes back with the talk key.
-        panel.summon()
+        summonPill()
         // Option-Space is the door to everything spoken, always: our own
         // answer or step line stops now, and the daemon hushes any talk,
         // lesson or narration, remembering which it was. Even mid-turn —
@@ -590,6 +632,7 @@ final class App: NSObject, NSApplicationDelegate {
                 return
             }
             let hushed = await door.value
+            lessonOn = hushed.kind == "lesson"
             // Always through the door, even with nothing hushed: the
             // listener's turn is over, so the daemon's queue plays on.
             if await AgentClient.door(heard) {
@@ -768,7 +811,7 @@ final class App: NSObject, NSApplicationDelegate {
             busy = false
             // A live lesson now runs on screen and speaks for itself; an
             // open mic would hear the agent. Option-Space is the door.
-            if ["teach", "watch", "act"].contains(answer.presenceMode ?? "") { return }
+            if ["teach", "watch", "act"].contains(answer.presenceMode ?? "") { lessonOn = true; return }
             // Another agent's answer is still to come; an open mic would
             // take it for the listener's words.
             if openAsides > 0 { return }
@@ -886,7 +929,7 @@ final class App: NSObject, NSApplicationDelegate {
         case .ring(let call):
             Log.info("call: \(call.agentId) is calling: \(call.reason)")
             ringingCall = call
-            panel.summon()
+            summonPill()
             panel.showCall(.ringing)
             panel.render(.ringing(CallModel.ringingText(name: statusMenu.name(of: call.agentId), reason: call.reason)))
             ringer.start(sound: state.ringSound)

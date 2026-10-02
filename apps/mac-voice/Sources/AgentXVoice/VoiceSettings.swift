@@ -151,6 +151,12 @@ struct VoiceSettings: Codable, Equatable {
         return out
     }
 
+    /// Seconds to wait before asking the daemon again after a read at
+    /// start that failed: 2, 4, 8, 16, then every 30.
+    static func retryDelay(after failures: Int) -> Double {
+        min(30, pow(2, Double(max(1, failures))))
+    }
+
     /// The fields a preview speaks with: the draft's voice for one agent.
     func previewVoice(for id: String) -> [String: Any] {
         guard let v = agents.first(where: { $0.id == id })?.voice else { return [:] }

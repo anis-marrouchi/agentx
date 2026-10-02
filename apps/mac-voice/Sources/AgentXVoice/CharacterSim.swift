@@ -17,6 +17,9 @@ struct CharacterSim {
         /// The pointer: along the edge, and its height above it. Nil when
         /// it is on another screen.
         var pointer: (x: Double, y: Double)?
+        /// The pointer is on its speech bubble: it stays where it is, so
+        /// the bubble is not pulled from under the pointer.
+        var held = false
         /// Where it rests, and how far it may go.
         var home = 0.0
         var range: ClosedRange<Double> = 0...0
@@ -98,14 +101,17 @@ struct CharacterSim {
 
         // The pointer comes close: out of its way. Left alone: back home,
         // unless the pointer is resting there.
-        let near = input.pointer.map { abs($0.x - x) < reach && $0.y < tall } ?? false
-        if near {
+        let near = input.pointer.map { abs($0.x - x) < reach && abs($0.y) < tall } ?? false
+        if input.held {
+            target = x
+            awayUntil = max(awayUntil, now + Self.awayFor)
+        } else if near {
             target = M.aside(x: x, pointer: input.pointer!.x, clear: Self.clear, range: input.range)
             awayUntil = now + Self.awayFor
             restSince = now
             steppedAside = true
         } else if now >= awayUntil {
-            let taken = input.pointer.map { abs($0.x - input.home) < Self.clear && $0.y < tall } ?? false
+            let taken = input.pointer.map { abs($0.x - input.home) < Self.clear && abs($0.y) < tall } ?? false
             if !taken {
                 if target != input.home { steppedAside = false }
                 target = min(max(input.home, input.range.lowerBound), input.range.upperBound)
@@ -189,6 +195,11 @@ struct CharacterSim {
 
         return Frame(pose: pose, x: x, face: face, level: input.level, voice: voice, t: t,
                      dots: dots.compactMap { dot(at: now, $0) }, stars: bursts.flatMap { stars(at: now, $0) })
+    }
+
+    /// Carried by the pointer (#502): it is where it is put, at once.
+    mutating func carry(to place: Double) {
+        x = place; target = place; speed = 0
     }
 
     /// The state alone, where it rests: for Reduce Motion, which shows a

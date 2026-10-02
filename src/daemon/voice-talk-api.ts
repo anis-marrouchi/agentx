@@ -9,7 +9,8 @@
 //   POST /voice/hush  the door (Option-Space): whatever is speaking stops —
 //                     a talk, a lesson, narration, a spoken answer — and the
 //                     speaking queue holds: its cut line plays again after
-//                     the listener's turn. Returns what was speaking:
+//                     the listener's turn. A talk or lesson is held, not
+//                     ended: it waits for the words. Returns what was speaking:
 //                     {active, kind, agentId}; kind "queue" for a queued line.
 //   POST /voice/stop  the same silence, for a hotkey, menu, Siri or a
 //                     Shortcut; the queue is emptied, nothing waits.
@@ -67,9 +68,6 @@ export class VoiceTalkService {
   private session: VoiceSession | null = null
   /** The narrated task the last hush silenced, until the listener speaks. */
   private hushed: { taskId: string; agentId: string } | null = null
-  /** The lesson the last hush ended, until the listener speaks: a bare
-   *  "stop" is then already done, anything else goes to the agent. */
-  private ended: LiveTeach | null = null
   /** The last hush held queued lines: a bare "stop" then drops them. */
   private heldQueue = false
   private model: (system: string) => LineModel
@@ -132,9 +130,8 @@ export class VoiceTalkService {
         talk?.stop("stopped")
         this.speech.stop()
         this.hushed = null
-        this.ended = null
         this.heldQueue = false
-        return reply
+        return { status: reply.status, body: { ...(reply.body as object), active: false } }
       }
       case "POST /talk/door":
       case "POST /voice/door": {
@@ -162,17 +159,12 @@ export class VoiceTalkService {
   }
 
   /** The door opens: everything this daemon is saying stops at once. A
-   *  lesson ends here, so the words that follow reach the agent: it holds
-   *  the screen, and a listener who interrupts it wants it gone, not a
-   *  lesson that answers back. A talk between agents only pauses, and so
-   *  does the speaking queue. */
+   *  talk or lesson only pauses, and so does the speaking queue: the words
+   *  that follow are for it, and only "stop" or /voice/stop ends it. A
+   *  lesson no words follow ends by itself (see LiveTeach.waitOutHush). */
   hush(): Reply {
     const live = this.live
-    this.ended = null
-    if (live instanceof LiveTeach) {
-      live.stop("stopped by the listener")
-      this.ended = live
-    } else live?.hush()
+    live?.hush()
     const queued = this.speech.view()
     const line = queued.playing ?? queued.waiting[0] ?? null
     this.speech.pause()
@@ -191,20 +183,14 @@ export class VoiceTalkService {
   door(text: string): Reply {
     const live = this.live
     const narrated = this.hushed
-    const ended = this.ended
     const heldQueue = this.heldQueue
     this.hushed = null
-    this.ended = null
     this.heldQueue = false
     this.narrator.release()
     const stop = isStop(text)
     if (stop) this.speech.stop()
     else this.speech.resume()
     const quote = `"${text.slice(0, 80)}"`
-    if (ended && stop) {
-      this.log(`[door] ${quote} → lesson (${ended.agentId}) already ended`)
-      return { status: 200, body: { active: false, kind: "lesson", handled: true } }
-    }
     if (live) {
       live.door(text)
       this.log(`[door] ${quote} → ${this.kind(live)}${live.state === "ended" ? " (ended)" : ""}`)
@@ -239,16 +225,22 @@ export class VoiceTalkService {
   startLesson(agentId: string, goal: string, mode: TeachMode, app?: string): Reply {
     if (this.live) return { status: 409, body: { error: "A talk or lesson is already running", ...this.view(this.live) } }
     const lesson = this.presence.lesson(agentId, goal, mode, this.speech, this.model, app)
+    // The daemon log has no times of its own, and a lesson that shows
+    // nothing for 40 s needs them: each line is stamped, and a step says
+    // how long its screen read and its plan took.
+    const log = (msg: string) => this.log(`[teach] ${new Date().toISOString()} ${msg}`)
     lesson.on((e) => {
-      if (e.type === "step") this.log(`[teach] ${e.n}. ${e.action}${e.target ? ` "${e.target.slice(0, 60)}"` : ""}: ${e.say}`)
-      else if (e.type === "acted" && e.error) this.log(`[teach] action refused: ${e.error}`)
-      else if (e.type === "replanned") this.log(`[teach] replanning: ${e.reason}`)
-      else if (e.type === "error") this.log(`[teach] error: ${e.error}`)
-      else if (e.type === "end") this.log(`[teach] ended (${e.reason})`)
+      if (e.type === "step") {
+        const took = e.planMs === undefined ? "" : ` (screen ${e.readMs} ms, plan ${e.planMs} ms)`
+        log(`${e.n}. ${e.action}${e.target ? ` "${e.target.slice(0, 60)}"` : ""}: ${e.say}${took}`)
+      } else if (e.type === "acted" && e.error) log(`action refused: ${e.error}`)
+      else if (e.type === "replanned") log(`replanning: ${e.reason}`)
+      else if (e.type === "error") log(`error: ${e.error}`)
+      else if (e.type === "end") log(`ended (${e.reason})`)
     })
     this.session = lesson
     void lesson.run()
-    this.log(`[teach] ${agentId} (${mode}): ${goal.slice(0, 100)}`)
+    log(`${agentId} (${mode}): ${goal.slice(0, 100)}`)
     return { status: 201, body: this.view(lesson) }
   }
 

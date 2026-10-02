@@ -59,6 +59,21 @@ enum Config {
         else { UserDefaults.standard.removeObject(forKey: key) }
     }
 
+    /// Where the character was last dragged to (the point under it, in
+    /// screen points). Its own key, so the pill's place is kept for the
+    /// orb look. Nil: under its bubble's default corner.
+    static var characterPlace: CGPoint? {
+        get {
+            guard let xy = UserDefaults.standard.array(forKey: "characterPlace") as? [Double], xy.count == 2
+            else { return nil }
+            return CGPoint(x: xy[0], y: xy[1])
+        }
+        set {
+            if let p = newValue { UserDefaults.standard.set([Double(p.x), Double(p.y)], forKey: "characterPlace") }
+            else { UserDefaults.standard.removeObject(forKey: "characterPlace") }
+        }
+    }
+
     /// The agent actually answering: `agentID`, else `chosenAgentID`, else
     /// the daemon's default (AgentClient.resolveAgent). Progress follows it.
     @MainActor static var effectiveAgentID: String = ""

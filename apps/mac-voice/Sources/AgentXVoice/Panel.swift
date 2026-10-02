@@ -113,10 +113,17 @@ final class Panel: NSPanel {
 
     /// Told what the orb is shown, so the character can show the same.
     var onLook: ((State, NSColor, [NSColor]?) -> Void)?
+    /// Told when it comes on screen or leaves it, so a still character
+    /// draws its bubble's tail again.
+    var onShown: (() -> Void)?
 
     /// Off while the character stands in for the orb (Character.swift):
     /// the words start where the orb was.
     private(set) var showsOrb = true
+
+    /// Set while the pill is the character's speech bubble: where the
+    /// character's head is, and the screen it is on.
+    private(set) var bubble: (head: NSPoint, visible: NSRect)?
 
     /// Told of every state rendered, so the menu-bar icon can follow.
     var onRender: ((State) -> Void)?
@@ -352,6 +359,10 @@ final class Panel: NSPanel {
     @MainActor
     func restorePosition() {
         collapse(animated: false)
+        if let bubble {
+            place(PillPlacement.bubble(size: frame.size, head: bubble.head, visible: bubble.visible))
+            return
+        }
         let screens = NSScreen.screens.map(\.visibleFrame)
         let fallback = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
         place(PillPlacement.clamp(saved: reduced ? Config.orbOrigin : Config.pillOrigin, size: frame.size,
@@ -361,8 +372,11 @@ final class Panel: NSPanel {
 
     /// Back to where it first sat (the pill: the bottom-right corner; the
     /// orb: the middle of the bottom edge), forgetting where it was dragged.
+    /// Not while it is the character's bubble: nothing would move, and
+    /// the place kept for the orb look would be lost.
     @MainActor
     func resetPosition() {
+        guard bubble == nil else { return }
         if reduced { Config.orbOrigin = nil } else { Config.pillOrigin = nil }
         restorePosition()
     }
@@ -386,6 +400,31 @@ final class Panel: NSPanel {
         invalidateShadow()
         render(current)
         onReduced?(on)
+    }
+
+    /// The character's speech bubble (#491): the pill sits above `head`,
+    /// the top of the character, and goes where it goes, grown or not. It
+    /// is not dragged by itself, and the place it was dragged to as a
+    /// pill is kept for the orb look.
+    @MainActor
+    func attach(head: NSPoint, visible: NSRect) {
+        bubble = (head, visible)
+        isMovableByWindowBackground = false
+        // Growing or collapsing: it catches up on the next frame.
+        guard placing == 0 else { return }
+        let to = PillPlacement.bubble(size: Self.size, head: head, visible: visible)
+        let from = collapsedFrame().origin
+        let moved = PillPlacement.inside(frame.offsetBy(dx: to.x - from.x, dy: to.y - from.y), visible)
+        if moved.origin != frame.origin { place(moved.origin) }
+    }
+
+    /// The orb look again: a pill of its own, back where it was left.
+    @MainActor
+    func detach() {
+        guard bubble != nil else { return }
+        bubble = nil
+        isMovableByWindowBackground = true
+        restorePosition()
     }
 
     @MainActor
@@ -444,7 +483,7 @@ final class Panel: NSPanel {
     func show() {
         orb.setOnScreen(showsOrb)
         miniOrbs.setOnScreen(!miniOrbs.isHidden)
-        if !isVisible { orderFrontRegardless() }
+        if !isVisible { orderFrontRegardless(); onShown?() }
     }
 
     @MainActor
@@ -452,7 +491,7 @@ final class Panel: NSPanel {
         closeButton.isHidden = true
         orb.setOnScreen(false)
         miniOrbs.setOnScreen(false)
-        if isVisible { orderOut(nil) }
+        if isVisible { orderOut(nil); onShown?() }
     }
 
     @objc private func closeClicked() { onDismiss?() }
@@ -508,7 +547,6 @@ final class Panel: NSPanel {
         default: colors = agentPalette()
         }
         orb.show(state.orbPhase, tint: tint, colors: colors)
-        onLook?(state, tint, colors)
 
         if state.isMeta {
             stopMarquee()
@@ -525,6 +563,9 @@ final class Panel: NSPanel {
         // so does a pill with agents still busy in its mini orbs.
         // Reduced, the orb is the assistant's place on screen: it stays, idle or not.
         if dismissed || (state.isMeta && !alwaysVisible && !expanded && busyCount == 0 && !reduced) { hide() } else { show() }
+        // After showing or hiding: a still character draws its bubble's
+        // tail only while the bubble is on screen.
+        onLook?(state, tint, colors)
         armCollapse()
         onRender?(state)
     }

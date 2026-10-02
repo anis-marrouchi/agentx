@@ -54,6 +54,11 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var canReduce: () -> Bool = { true }
     /// Reduce the pill to its orb (true), or open it again.
     var onReduce: ((Bool) -> Void)?
+    /// The character look: whether the character is on screen. Nil with
+    /// the orb look.
+    var characterVisible: () -> Bool? = { nil }
+    /// Bring a hidden character back, and let its bubble show again.
+    var onShowCharacter: (() -> Void)?
     var onSettings: (() -> Void)?
 
     override init() {
@@ -251,9 +256,15 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let orb = action("Animated orb", #selector(toggleOrb), key: "")
         orb.state = Config.animatedOrb ? .on : .off
         menu.addItem(orb)
-        let hide = action("Hide pill", #selector(hidePill), key: "")
-        hide.isEnabled = pillVisible()
-        menu.addItem(hide)
+        // The character hides with its bubble, and has no bubble at rest.
+        switch characterVisible() {
+        case true?: menu.addItem(action("Hide character", #selector(hidePill), key: ""))
+        case false?: menu.addItem(action("Show character", #selector(showCharacter), key: ""))
+        case nil:
+            let hide = action("Hide pill", #selector(hidePill), key: "")
+            hide.isEnabled = pillVisible()
+            menu.addItem(hide)
+        }
         menu.addItem(action("Reset position", #selector(resetPosition), key: ""))
 
         menu.addItem(.separator())
@@ -312,6 +323,7 @@ final class StatusMenu: NSObject, NSMenuDelegate {
 
     @objc private func toggleReduce() { onReduce?(!pillReduced()) }
     @objc private func hidePill() { onHidePill?() }
+    @objc private func showCharacter() { onShowCharacter?() }
     @objc private func resetPosition() { onResetPosition?() }
 
     @objc private func openSettings() { onSettings?() }

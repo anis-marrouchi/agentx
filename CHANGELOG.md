@@ -2,6 +2,54 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.94.0](https://github.com/anis-marrouchi/agentx/compare/v0.93.0...v0.94.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** drag the character with its bubble, and hide both ([#506](https://github.com/anis-marrouchi/agentx/issues/506)) ([6896599](https://github.com/anis-marrouchi/agentx/commit/68965996d6bf4d585c6a15c88c67ae3c259221c3))
+
+
+### Bug Fixes
+
+* **voice:** a hush holds a lesson; the words that follow reach it ([#507](https://github.com/anis-marrouchi/agentx/issues/507)) ([7d5e696](https://github.com/anis-marrouchi/agentx/commit/7d5e696a37ab8abeb46446f08a19bc7da6aa71d6))
+* **voice:** keep asking for the settings until the daemon answers ([#503](https://github.com/anis-marrouchi/agentx/issues/503)) ([2234609](https://github.com/anis-marrouchi/agentx/commit/22346094184aa68fa9315f4ffb1be831cd90f79f)), closes [#498](https://github.com/anis-marrouchi/agentx/issues/498)
+
+## [0.93.0](https://github.com/anis-marrouchi/agentx/compare/v0.92.4...v0.93.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** the pill is the character's speech bubble ([#494](https://github.com/anis-marrouchi/agentx/issues/494)) ([850c6ae](https://github.com/anis-marrouchi/agentx/commit/850c6ae67d2db5030053842fd02e714438a3db0a))
+
+## [0.92.4](https://github.com/anis-marrouchi/agentx/compare/v0.92.3...v0.92.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* **members:** hide the connection strip after a load that worked ([#497](https://github.com/anis-marrouchi/agentx/issues/497)) ([c5c2a53](https://github.com/anis-marrouchi/agentx/commit/c5c2a5393e7c8383c13012c11e3bb6254a92b7dd)), closes [#496](https://github.com/anis-marrouchi/agentx/issues/496)
+
+## [0.92.3](https://github.com/anis-marrouchi/agentx/compare/v0.92.2...v0.92.3) (2026-10-02)
+
+
+### Bug Fixes
+
+* **members:** retry the name line and say offline only when the browser is ([#490](https://github.com/anis-marrouchi/agentx/issues/490)) ([6273baa](https://github.com/anis-marrouchi/agentx/commit/6273baa61a0592a14319995939e4879613894844)), closes [#489](https://github.com/anis-marrouchi/agentx/issues/489)
+
+## [0.92.2](https://github.com/anis-marrouchi/agentx/compare/v0.92.1...v0.92.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* **requests:** tie the said-mark to the pick-up that set it ([#486](https://github.com/anis-marrouchi/agentx/issues/486)) ([df66b50](https://github.com/anis-marrouchi/agentx/commit/df66b5002d73506b1d457dcc236b37fe7d6858cb)), closes [#485](https://github.com/anis-marrouchi/agentx/issues/485)
+
+## [0.92.1](https://github.com/anis-marrouchi/agentx/compare/v0.92.0...v0.92.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **requests:** do not repeat an old owner reply on a later pick-up ([#483](https://github.com/anis-marrouchi/agentx/issues/483)) ([d77fcfe](https://github.com/anis-marrouchi/agentx/commit/d77fcfefbe2e77bc2812b4ed96af8fa3a8d81226))
+
 ## [0.92.0](https://github.com/anis-marrouchi/agentx/compare/v0.91.1...v0.92.0) (2026-10-02)
 
 

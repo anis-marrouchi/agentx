@@ -24,6 +24,7 @@ export function teachSystemPrompt(persona: string, listener: string): string {
       "When it helps, say what they will see next ('you'll see a LUT option in that menu'), then stop. " +
       "Contractions are fine (you'll, that's, I'd). No greetings, no praise or filler (perfect, great, excellent, good), no 'now let's' or 'let me', no step numbers, never 'simply' or 'just'. " +
       `If ${listener} asks a question, answer that question in the SAY and point if pointing helps; do not jump ahead to other steps. ` +
+      `If ${listener} asks to stop or to wait, ACTION is done or wait_for_user: never click, type or key. ` +
       "If asked to choose, choose: 'I'd go with X', with one reason taken from what is on screen. Do not list options. " +
       `In teach mode, after pointing, use wait_for_user and let ${listener} do it; do not narrate the next step early. ` +
       "Never end with a yes/no question. Never claim something happened unless the screen shows it. " +

@@ -111,5 +111,10 @@ startsSmall.general.startReduced = true
 let startPatch = startsSmall.patch(from: withStart)["general"] as? [String: Any]
 check(startPatch?["startReduced"] as? Bool == true && startPatch?.count == 1, "only the start setting is sent when it changes")
 
+// --- The read at start, asked again until the daemon answers ---
+
+check((1...6).map { VoiceSettings.retryDelay(after: $0) } == [2, 4, 8, 16, 30, 30], "waits 2, 4, 8, 16 seconds, then every 30")
+check(VoiceSettings.retryDelay(after: 0) == 2 && VoiceSettings.retryDelay(after: 500) == 30, "never under 2 seconds, never over 30")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")
