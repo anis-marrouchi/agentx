@@ -92,5 +92,25 @@ check(PillMenu.click(showPill: false, visible: false) == true, "setting off: a c
 check(PillMenu.click(showPill: false, visible: true) == true, "setting off mid-answer: a click turns it on")
 check(PillMenu.click(showPill: true, visible: true) == false, "checked: a click turns it off")
 
+// --- The pill reduced to its orb (#457) ---
+
+let orb = PillPlacement.orbSize
+let rest = PillPlacement.orbOrigin(size: orb, visible: laptop)
+check(orb.width == orb.height, "the reduced pill is a circle")
+check(rest == CGPoint(x: 756 - 27, y: 80 + 24), "the orb first sits in the middle of the bottom edge, clear of the Dock")
+check(PillPlacement.clamp(saved: nil, size: orb, screens: [laptop], fallback: laptop, rest: PillPlacement.orbOrigin) == rest,
+      "no saved place: the orb's own default, not the pill's corner")
+let dropped = CGPoint(x: 40, y: 700)
+check(PillPlacement.clamp(saved: dropped, size: orb, screens: [laptop, monitor], fallback: laptop, rest: PillPlacement.orbOrigin) == dropped,
+      "the orb stays where it was dropped")
+check(PillPlacement.clamp(saved: onMonitor, size: orb, screens: [laptop], fallback: laptop, rest: PillPlacement.orbOrigin) == rest,
+      "its monitor unplugged: back to the bottom of the main screen")
+check(PillPlacement.clamp(saved: CGPoint(x: 1500, y: 60), size: orb, screens: [laptop], fallback: laptop, rest: PillPlacement.orbOrigin)
+        == CGPoint(x: 1512 - 54, y: 80), "dropped half off the screen: moved fully onto it")
+check(PillMenu.reduceTitle(reduced: false) == "Reduce to orb" && PillMenu.reduceTitle(reduced: true) == "Show full pill",
+      "one menu item reduces the pill and brings it back")
+check(PillMenu.canReduce(showsOrb: true) && !PillMenu.canReduce(showsOrb: false),
+      "nothing to reduce to while the character stands in for the orb")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

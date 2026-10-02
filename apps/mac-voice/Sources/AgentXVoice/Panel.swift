@@ -36,6 +36,12 @@ final class Panel: NSPanel {
     let separator = NSBox()
     /// Hidden by close, Esc or the menu until the next talk key.
     var dismissed = false
+    /// Reduced to the orb alone (#457): a small circle with no words and no
+    /// buttons, dragged and remembered apart from the pill. A click, a
+    /// call or an answer to read opens the full pill again.
+    private(set) var reduced = false
+    /// Told when the pill reduces or opens.
+    var onReduced: ((Bool) -> Void)?
     /// Above zero while the app moves or resizes the pill, so only a drag
     /// is remembered.
     var placing = 0
@@ -129,7 +135,10 @@ final class Panel: NSPanel {
             let now = NSEvent.mouseLocation
             let moved = hypot(now.x - start.x, now.y - start.y)
             let onRow = convertToScreen(row.convert(row.bounds, to: nil)).contains(start)
-            if moved < 4 && onRow { onClick?() }
+            // Reduced, a click opens the pill; it does not start talking.
+            if moved < 4 && onRow {
+                if reduced { MainActor.assumeIsolated { setReduced(false) } } else { onClick?() }
+            }
         }
         super.mouseUp(with: event)
     }
@@ -191,6 +200,14 @@ final class Panel: NSPanel {
             case .speaking, .saying: return .speaking
             case .ringing: return .ringing
             case .onCall: return .waiting
+            }
+        }
+
+        /// A call must not be missed behind an orb: it opens the full pill.
+        var opensFullPill: Bool {
+            switch self {
+            case .ringing, .onCall: return true
+            default: return false
             }
         }
 
@@ -305,6 +322,9 @@ final class Panel: NSPanel {
         let answerHeight = max(0, bounds.height - h)
         let above = growth.above
         row.frame = NSRect(x: 0, y: above ? 0 : answerHeight, width: bounds.width, height: h)
+        // Reduced, the orb is all there is: in the middle of its circle.
+        orb.frame.origin.x = reduced ? (bounds.width - Self.orbFrame) / 2 : 28 - Self.orbFrame / 2
+        if reduced { return }
         closeButton.frame.origin.x = bounds.width - 28
         // The mini orbs sit between the words and the close button, and
         // the words give up that room while they show.
@@ -334,14 +354,38 @@ final class Panel: NSPanel {
         collapse(animated: false)
         let screens = NSScreen.screens.map(\.visibleFrame)
         let fallback = (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero
-        place(PillPlacement.clamp(saved: Config.pillOrigin, size: frame.size, screens: screens, fallback: fallback))
+        place(PillPlacement.clamp(saved: reduced ? Config.orbOrigin : Config.pillOrigin, size: frame.size,
+                                  screens: screens, fallback: fallback,
+                                  rest: reduced ? PillPlacement.orbOrigin : PillPlacement.defaultOrigin))
     }
 
-    /// Back to the bottom-right corner, forgetting where it was dragged.
+    /// Back to where it first sat (the pill: the bottom-right corner; the
+    /// orb: the middle of the bottom edge), forgetting where it was dragged.
     @MainActor
     func resetPosition() {
-        Config.pillOrigin = nil
+        if reduced { Config.orbOrigin = nil } else { Config.pillOrigin = nil }
         restorePosition()
+    }
+
+    /// Reduce the pill to its orb, or open it again. The two forms keep
+    /// their own places. Nothing to reduce to while the character stands
+    /// in for the orb.
+    @MainActor
+    func setReduced(_ on: Bool) {
+        guard reduced != on, !on || PillMenu.canReduce(showsOrb: showsOrb) else { return }
+        collapse(animated: false)
+        reduced = on
+        clip?.isHidden = on
+        closeButton.isHidden = true
+        miniOrbs.isHidden = on || busyCount == 0
+        (contentView as? Surface)?.shape(circle: on ? PillPlacement.orbSize.height : nil)
+        placing += 1
+        setContentSize(on ? PillPlacement.orbSize : Self.size)
+        placing -= 1
+        restorePosition()
+        invalidateShadow()
+        render(current)
+        onReduced?(on)
     }
 
     @MainActor
@@ -357,6 +401,7 @@ final class Panel: NSPanel {
     @objc private func moved() {
         MainActor.assumeIsolated {
             guard placing == 0 else { return }
+            if reduced { Config.orbOrigin = frame.origin; return }
             Config.pillOrigin = expanded ? collapsedFrame().origin : frame.origin
         }
     }
@@ -388,6 +433,7 @@ final class Panel: NSPanel {
     @MainActor
     func setShowsOrb(_ on: Bool) {
         guard showsOrb != on else { return }
+        if !on { setReduced(false) }
         showsOrb = on
         orb.isHidden = !on
         orb.setOnScreen(on && isVisible)
@@ -412,7 +458,7 @@ final class Panel: NSPanel {
     @objc private func closeClicked() { onDismiss?() }
 
     override func mouseEntered(with event: NSEvent) {
-        closeButton.isHidden = false
+        closeButton.isHidden = reduced
         hovering = true
         MainActor.assumeIsolated { armCollapse() }
     }
@@ -445,6 +491,7 @@ final class Panel: NSPanel {
     /// corruption that traps somewhere unrelated an hour later.
     @MainActor
     func render(_ state: State) {
+        if reduced && state.opensFullPill { setReduced(false) }
         current = state
         // The agent's colour, except where the state is the message: an
         // error, or notifications held.
@@ -476,7 +523,8 @@ final class Panel: NSPanel {
 
         // Grown into an answer, it stays until it collapses, idle or not;
         // so does a pill with agents still busy in its mini orbs.
-        if dismissed || (state.isMeta && !alwaysVisible && !expanded && busyCount == 0) { hide() } else { show() }
+        // Reduced, the orb is the assistant's place on screen: it stays, idle or not.
+        if dismissed || (state.isMeta && !alwaysVisible && !expanded && busyCount == 0 && !reduced) { hide() } else { show() }
         armCollapse()
         onRender?(state)
     }
@@ -485,6 +533,7 @@ final class Panel: NSPanel {
     @MainActor
     func showCall(_ mode: CallBar.Mode) {
         guard mode != callBar.mode else { return }
+        if mode != .hidden { setReduced(false) }
         callBar.show(mode)
         if let content = contentView { layoutContent(content.bounds) }
     }
@@ -495,7 +544,7 @@ final class Panel: NSPanel {
     func showBusy(_ orbs: [MiniOrbsModel.Orb], more: Int) {
         let count = orbs.isEmpty ? 0 : orbs.count + more
         miniOrbs.show(orbs, more: more)
-        miniOrbs.isHidden = count == 0
+        miniOrbs.isHidden = count == 0 || reduced
         if count != busyCount {
             busyCount = count
             if let content = contentView { layoutContent(content.bounds) }

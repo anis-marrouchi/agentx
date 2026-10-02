@@ -142,6 +142,7 @@ Click the AgentX icon in the menu bar, press **Command–Option–A** from any a
 | **Hold notifications** | A "don't interrupt me" switch. While ticked, agent notifications wait and the orb turns amber. Untick it to let them through |
 | **Show floating pill** | Keeps the pill on screen when idle. Off by default |
 | **Animated orb** | Lets the orb move with your voice and the answer. On by default. Untick it for a still orb |
+| **Reduce to orb** | Makes the pill a small circle with only its orb, which you can drag anywhere. Click the orb to get the full pill back. See [reduce the pill to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb) |
 | **Hide pill** | Hides the pill and stops the voice. Greyed out when the pill isn't showing |
 | **Reset position** | Puts the pill back in the bottom-right corner |
 | **Settings…** | Opens the [settings window](#the-settings-window) (**Command–,**) |
@@ -307,6 +308,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.hotkeys.stop` | `"cmd+opt+period"` | Stop every voice |
 | `voice.hotkeys.paste` | `"cmd+opt+v"` | Smart paste |
 | `voice.look` | `"orb"` | What shows the assistant's state: the `"orb"` in the pill, or the `"character"`, a small creature above the bottom edge of the screen. See [The character](../dashboard/voice.md#the-character) |
+| `voice.startReduced` | `false` | `true` starts the app with the pill [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb): a small circle you can drag anywhere |
 | `voice.card.timeout` | `30` | Seconds an answer in the pill stays open once spoken, `0` to `600`. `0` keeps it open until you close it |
 | `voice.card.maxHeight` | `320` | Tallest the answer grows before it scrolls, in points, `120` to `800` |
 | `node.defaultAgent` | not set: the first agent | The agent that answers when none is ticked or pinned |

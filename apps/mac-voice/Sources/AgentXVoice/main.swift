@@ -20,6 +20,8 @@ final class App: NSObject, NSApplicationDelegate {
     private let statusMenu = StatusMenu()
     /// Stands in for the pill's orb when voice.look is "character".
     private let character = CharacterHost()
+    /// voice.startReduced has been applied for this launch.
+    private var startApplied = false
     /// The agent whose by-name answer is on screen now, while no turn runs.
     private var asideSpeaker: String?
     private let recorder = Recorder()
@@ -204,6 +206,11 @@ final class App: NSObject, NSApplicationDelegate {
         let asCharacter = saved.general.look == "character"
         panel.setShowsOrb(!asCharacter)
         character.setShown(asCharacter)
+        // voice.startReduced is how the assistant starts: read once.
+        if !startApplied {
+            startApplied = true
+            if saved.general.startReduced == true { panel.summon(); panel.setReduced(true) }
+        }
         if settingsWindow.model.recording == nil { registerHotkeys() }
         // Colours may have changed.
         statusMenu.refresh()
@@ -326,6 +333,15 @@ final class App: NSObject, NSApplicationDelegate {
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
         statusMenu.onResetPosition = { [weak self] in self?.panel.resetPosition() }
+        statusMenu.pillReduced = { [weak self] in self?.panel.reduced ?? false }
+        statusMenu.canReduce = { [weak self] in PillMenu.canReduce(showsOrb: self?.panel.showsOrb ?? true) }
+        statusMenu.onReduce = { [weak self] on in
+            guard let self else { return }
+            Log.info("pill: \(on ? "reduced to the orb" : "opened")")
+            // Asking for the orb brings back a pill that was dismissed.
+            if on { self.panel.summon() }
+            self.panel.setReduced(on)
+        }
         statusMenu.onAnimatedOrbChanged = { [weak self] on in
             self?.panel.orb.setAnimated(on)
             self?.panel.miniOrbs.setAnimated(on)

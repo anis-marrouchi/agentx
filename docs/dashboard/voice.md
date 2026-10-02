@@ -117,8 +117,9 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 | **Hold notifications** | Holds agent notifications until you turn it off |
 | **Show floating pill** | Keeps the [pill](#the-pill-and-its-orb) on screen when idle. Off by default: the pill appears only while listening or answering. Unticked while the pill is hidden, so one click brings it back |
 | **Animated orb** | Lets the orb in the pill move with your voice and the answer. On by default. Turn it off for an orb that stands still |
+| **Reduce to orb** | Makes the pill a small circle with only its orb, which you can drag anywhere. The item then reads **Show full pill**. See [reduce the pill to its orb](#reduce-the-pill-to-its-orb). Greyed out while the [character](#the-character) is shown |
 | **Hide pill** | Hides the pill and stops the voice, like its close button. The next **Option–Space** or **Show floating pill** brings it back |
-| **Reset position** | Puts the pill back in the bottom-right corner of the screen |
+| **Reset position** | Puts the pill back in the bottom-right corner of the screen. While the pill is reduced, puts the orb back in the middle of the bottom edge |
 | **Settings…** | Opens the [settings window](#settings-window): voices, shortcuts and speech to text |
 | **Dashboard…** | Opens the dashboard's [Settings](./settings.md) page |
 | **History…** | Opens the [History window](#history-of-what-you-asked): past questions and answers, by day |
@@ -256,6 +257,31 @@ If the pill was on a screen that is no longer connected, it comes back in the bo
 1. **Mac:** click the AgentX icon in the menu bar.
 2. **Mac:** choose **Reset position**.
 
+### Reduce the pill to its orb
+
+The pill can be reduced to its orb alone: a small circle with no name, no words and no buttons.
+
+1. **Mac:** right-click the pill, or click the AgentX icon in the menu bar.
+2. **Mac:** choose **Reduce to orb**. The pill becomes a circle in the middle of the bottom edge of the screen.
+3. **Mac:** drag the orb where you want it and let go. It stays there, and comes back to the same place the next time the app starts. The orb and the full pill each keep their own place.
+
+To bring the full pill back, click the orb once, or choose **Show full pill** in the menu.
+
+Good to know:
+
+- **It still shows the state:** the orb has the same colours and the same motion as the orb inside the pill: it follows your voice while listening, turns while the agent works and pulses while the answer is spoken.
+- **It still listens:** hold **Option–Space** as usual. A click on the reduced orb opens the pill; it does not start the microphone.
+- **It opens by itself when you must not miss something:** an agent calling you, and an answer that has more to read or buttons to press, open the full pill. It stays open afterwards; reduce it again from the menu.
+- **It stays on screen:** the reduced orb shows even when idle, whatever **Show floating pill** says. **Esc** or **Hide pill** hides it until the next **Option–Space**.
+- **Not with the character:** while the [character](#the-character) is shown, the pill has no orb of its own, so **Reduce to orb** is greyed out.
+
+To start reduced every time the app opens:
+
+1. **Mac:** open **Settings…** from the AgentX menu and go to the **General** tab.
+2. **Mac:** under **Assistant**, tick **Start reduced to the orb**, then choose **Save**.
+
+In `agentx.json` it is `voice.startReduced`: `false` (the default) or `true`. The app reads it when it starts.
+
 ### Hide the pill
 
 Hiding the pill also stops the voice that is speaking, the same as **Command–Option–.**. Use any of these:
@@ -325,6 +351,7 @@ To hear a voice before you keep it:
 | **Smart paste** | Reshapes the clipboard, then pastes. Default **Command–Option–V** | `voice.hotkeys.paste` |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen. Default **Orb** | `voice.look` |
+| **Start reduced to the orb** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb). Default off | `voice.startReduced` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
 | **Tallest answer** | How tall the answer grows before it scrolls, 120 to 800 points | `voice.card.maxHeight` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |

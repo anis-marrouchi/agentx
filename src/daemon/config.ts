@@ -1299,6 +1299,9 @@ export const daemonConfigSchema = z.object({
      *  the pill's head, or the "character", the orb grown into a small
      *  creature that hovers above the bottom edge of the screen. */
     look: z.enum(VOICE_LOOKS).default("orb"),
+    /** AgentX Voice starts with its pill reduced to the orb alone: a
+     *  small circle the person can drag. Off: the full pill. */
+    startReduced: z.boolean().default(false),
     /** The answer text AgentX Voice shows inside its pill. */
     card: z.object({
       /** Seconds the answer stays open once it has been spoken; 0 keeps
