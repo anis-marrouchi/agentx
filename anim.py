@@ -37,12 +37,28 @@ def span(t, a, b):
     return min(max((t - a) / (b - a), 0.0), 1.0)
 
 
+def swing(p, back=1.0):
+    """Like ease, with weight: a small wind-up before it goes and a small overshoot before it settles."""
+    p, c = min(max(p, 0.0), 1.0), back * 1.525
+    if p < .5:
+        return (2 * p) ** 2 * ((c + 1) * 2 * p - c) / 2
+    return ((2 * p - 2) ** 2 * ((c + 1) * (2 * p - 2) + c) + 2) / 2
+
+
+EYES = ("gx", "gy", "o", "s", "lid", "c")
+MARKS = ("hear", "think", "zz")
+
+
 def state(t, keys):
-    """The numbers at time t. keys: the first pose, then (start, pose, seconds to get there)."""
+    """The numbers at time t. keys: the first pose, then (start, pose, seconds to get there).
+
+    The eyes go first and are there by half time; the body follows a moment later, with weight.
+    """
     st = keys[0]
     for start, to, dur in keys[1:]:
-        p = ease(span(t, start, start + dur))
-        st = {k: st[k] + (to[k] - st[k]) * p for k in st}
+        eyes, marks = ease(span(t, start, start + dur * .5)), ease(span(t, start, start + dur))
+        body = swing(span(t, start + dur * .15, start + dur * 1.25))
+        st = {k: st[k] + (to[k] - st[k]) * (eyes if k in EYES else marks if k in MARKS else body) for k in st}
     return st
 
 
@@ -118,10 +134,11 @@ def sleeping(x, y, k, t, life=2.4, step=1.2):
     return "".join(out)
 
 
-def figure(x, y, st, t, loop, blinks=(), scale=1.0, extra=""):
+def figure(x, y, st, t, loop, blinks=(), scale=1.0, extra="", sway=0, marks=True, tail=True):
     """The creature in state st at time t, with what keeps it alive: breath, bob, blinks and its marks.
 
     loop is the length of the animation, so breath and bob end where they began.
+    sway: how far what it just did throws its tail back (the tail arrives late).
     """
     def wave(period):
         return math.sin(2 * math.pi * t * round(loop / period) / loop)
@@ -131,11 +148,13 @@ def figure(x, y, st, t, loop, blinks=(), scale=1.0, extra=""):
     lift = st["lift"] + (1 - z) * 4 * wave(1.4) + z * 1.5 * wave(3.4)
     shut = max([math.sin(math.pi * (t - b) / .2) for b in blinks if 0 <= t - b < .2], default=0)
     by = y + R * scale - lift - R * st["sy"] * scale  # the middle of the body
-    marks = (rings(x - 78 * scale, by, st["hear"], t) + thinking(x, by + 50, st["think"], t)
-             + sleeping(x, by + 10, z, t))
+    marks = (rings(x - 78, by, st["hear"], t) + thinking(x, by + 50, st["think"], t)
+             + sleeping(x, by + 10, z, t)) if marks else ""
+    marks = f'<g transform="translate({x},{by}) scale({scale}) translate({-x},{-by})">{marks}</g>'  # they keep its size
+    lean = sway + (1 - z) * 6 * wave(2.3) + 62 * z + 3 * z * wave(3.4)  # it sways when awake, curls over asleep
     return creature(x, y, eyes=dict(o=st["o"] * (1 - shut), s=st["s"], lid=st["lid"], c=st["c"]),
                     gaze=(st["gx"], st["gy"]), tilt=st["tilt"], sx=st["sx"] * (1 - breath / 2), sy=st["sy"] * (1 + breath),
-                    lift=lift, scale=scale, face=st["face"], extra=marks + extra)
+                    lift=lift, scale=scale, face=st["face"], extra=marks + extra, tail=lean if tail else None)
 
 
 def caption(x, y, t, labels, fade=.35):

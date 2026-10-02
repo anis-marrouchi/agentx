@@ -16,38 +16,45 @@ import tempfile
 from pathlib import Path
 
 from anim import (DOZING, DROWSY, IDLE, LISTENING, NOTICES, UNDERSTOOD, WORKING, caption, ease, figure, glide, pose,
-                  span, stars, state, trail)
+                  span, stars, state, swing, trail)
 from build_sheet import BLUE, R, page, pointer
 
 FPS, S = 20, .8  # frames a second; the size it is drawn at when it moves about
 
 
+def late(t, keys, by=.16):
+    """How far the tail is thrown by what the body did a moment ago: it arrives late."""
+    then, now = state(t - by, keys), state(t, keys)
+    return 1.6 * (then["tilt"] - now["tilt"]) + 90 * (now["sy"] - then["sy"])
+
+
 def states(t):
     keys = [IDLE, (1.0, NOTICES, .35), (2.2, LISTENING, .5), (4.0, WORKING, .6), (6.0, UNDERSTOOD, .35), (7.3, IDLE, .6)]
     names = [(0, "Idle"), (1.0, "Notices you"), (2.2, "Listening"), (4.0, "Working"), (6.0, "Understood"), (7.3, "Idle")]
-    body = figure(210, 150, state(t, keys), t, 9, blinks=(.5, 3.2, 8.3), extra=stars(210, 150, 6.1, t))
+    body = figure(210, 150, state(t, keys), t, 9, blinks=(.5, 3.2, 8.3), extra=stars(210, 150, 6.1, t), sway=late(t, keys))
     return page(420, 320, body + caption(210, 285, t, names))
 
 
 def doze(t):
     keys = [IDLE, (1.2, DROWSY, 1.0), (2.9, DOZING, 1.2), (7.4, NOTICES, .4), (8.3, IDLE, .7)]
     names = [(0, "Idle for a while"), (1.2, "Gets sleepy"), (2.9, "Dozing"), (7.4, "You speak: it wakes"), (8.3, "Idle for a while")]
-    body = figure(210, 150, state(t, keys), t, 10, blinks=(.6, 9.4))
+    body = figure(210, 150, state(t, keys), t, 10, blinks=(.6, 9.4), sway=late(t, keys))
     return page(420, 320, body + caption(210, 285, t, names))
 
 
 def mover(t, a, b, legs, turns):
     """Where it is and how it leans. legs: (start, end, +1 out or -1 back); turns: (start, end, change of face)."""
-    p = sum(way * ease(span(t, t0, t1)) for t0, t1, way in legs)
+    p = sum(way * swing(span(t, t0, t1), .7) for t0, t1, way in legs)
     face = sum(by * ease(span(t, t0, t1)) for t0, t1, by in turns)
     tilt, k = next((glide(span(t, t0, t1)) for t0, t1, _ in legs if t0 < t < t1), (0, 0))
-    return a[0] + (b[0] - a[0]) * p, a[1] + (b[1] - a[1]) * p, p, face, tilt, k
+    back = next((glide(span(t - .14, t0, t1))[1] for t0, t1, _ in legs if t0 < t - .14 < t1), 0)  # the tail, a moment behind
+    return a[0] + (b[0] - a[0]) * p, a[1] + (b[1] - a[1]) * p, p, face, tilt, k, back
 
 
-def moving(t, st, x, y, face, tilt, k, loop, where, **kw):
+def moving(t, st, x, y, face, tilt, k, back, loop, where, **kw):
     """The figure while it travels: lean, stretch and its trail."""
     st = {**st, "face": face, "tilt": st["tilt"] + tilt, "lift": st["lift"] + 5 * k, "sx": st["sx"] + .03 * k, "sy": st["sy"] - .02 * k}
-    return trail(where, t) + figure(x, y, st, t, loop, scale=S, **kw)
+    return trail(where, t) + figure(x, y, st, t, loop, scale=S, sway=-48 * back, **kw)
 
 
 def walk(t):
@@ -56,12 +63,12 @@ def walk(t):
                      [(1.0, 1.3, 1), (3.0, 3.3, -1), (4.0, 4.3, -1), (6.0, 6.3, 1)])
 
     def where(t):
-        x, y, _, face, _, k = at(t)
+        x, y, _, face, _, k, _ = at(t)
         return x, y + R * S - 16 - R * S, k, 1 if face >= 0 else -1
 
-    x, y, _, face, tilt, k = at(t)
+    x, y, _, face, tilt, k, back = at(t)
     body = '<path d="M30,165 H690" stroke="#D9DEE3" stroke-width="2"/>'
-    body += moving(t, pose(lift=16, gx=2 * abs(face)), x, y, face, tilt, k, 7, where, blinks=(.5, 3.6, 6.6))
+    body += moving(t, pose(lift=16, gx=2 * abs(face)), x, y, face, tilt, k, back, 7, where, blinks=(.5, 3.6, 6.6))
     return page(720, 200, body)
 
 
@@ -72,10 +79,10 @@ def aside(t):
                      [(1.25, 1.45, 1), (1.9, 2.15, -1), (4.75, 4.95, -1), (5.6, 5.85, 1)])
 
     def where(t):
-        x, y, _, face, _, k = at(t)
+        x, y, _, face, _, k, _ = at(t)
         return x, y + R * S - 16 - R * S, k, 1 if face >= 0 else -1
 
-    x, y, _, face, tilt, k = at(t)
+    x, y, _, face, tilt, k, back = at(t)
     keys = [pose(lift=16), (1.05, pose(s=1.22, gx=-4, gy=-1, sx=.95, sy=1.06, lift=22), .2),
             (2.1, pose(lift=16, gx=-4, gy=1, lid=.15), .4), (4.5, pose(lift=16), .4)]
     names = [(0, "Idle"), (.3, "The pointer comes close"), (1.05, "It steps aside"), (2.2, "It waits"), (4.7, "It comes back"), (6.0, "Idle")]
@@ -83,7 +90,11 @@ def aside(t):
     px, py = 90 + 180 * come - 150 * go, 20 + 85 * come + 130 * go
     show = ease(span(t, .1, .4)) * (1 - ease(span(t, 4.2, 4.6)))
     body = '<path d="M30,165 H690" stroke="#D9DEE3" stroke-width="2"/>'
-    body += moving(t, state(t, keys), x, y, face, tilt, k, 7, where, blinks=(.5, 3.0, 6.5), extra=stars(330, 105, 1.1, t, seed=3))
+    st = state(t, keys)
+    seen = show * (1 - ease(span(t, 1.3, 1.5)) + ease(span(t, 2.0, 2.2)))  # not while it turns away to go
+    st["gx"] += seen * (max(min((px - x) / 20, 5), -5) - st["gx"])
+    st["gy"] += seen * (max(min((py - 95) / 22, 4), -4) - st["gy"])
+    body += moving(t, st, x, y, face, tilt, k, back, 7, where, blinks=(.5, 3.0, 6.5), extra=stars(330, 105, 1.1, t, seed=3))
     body += f'<g opacity="{show}">{pointer(px, py)}</g>' + caption(360, 205, t, names)
     return page(720, 225, body)
 
@@ -95,10 +106,10 @@ def guide(t):
                      [(.8, 1.1, 1), (4.3, 4.6, -1), (5.0, 5.3, -1), (6.6, 6.9, 1)])
 
     def where(t):
-        x, y, p, face, _, k = at(t)
+        x, y, p, face, _, k, _ = at(t)
         return x, y + R * S - (10 + 10 * p) - R * S, k, 1 if face >= 0 else -1
 
-    x, y, p, face, tilt, k = at(t)
+    x, y, p, face, tilt, k, back = at(t)
     keys = [pose(lift=10), (.75, pose(lift=14, s=1.2), .2), (1.2, pose(lift=20, gx=3), 1.4),
             (2.6, pose(lift=20, gx=3, gy=1), .3), (4.55, pose(lift=18, o=0, c=1, sx=1.05, sy=.94), .25), (5.1, pose(lift=10), 1.5)]
     bx, by = 480, 132
@@ -113,7 +124,7 @@ def guide(t):
               f'stroke="{BLUE}" stroke-width="2.5" opacity="{ring}"/>'
             + f'<rect x="{bx}" y="{by}" width="120" height="38" rx="9" fill="#fff" stroke="{BLUE}" stroke-width="2"/>'
             + f'<rect x="{bx+28}" y="{by+14}" width="64" height="10" rx="5" fill="{BLUE}" opacity=".7"/>')
-    body += moving(t, state(t, keys), x, y, face, tilt, k, 7, where, blinks=(.4, 3.4), extra=stars(392, 128, 4.6, t, seed=5))
+    body += moving(t, state(t, keys), x, y, face, tilt, k, back, 7, where, blinks=(.4, 3.4), extra=stars(392, 128, 4.6, t, seed=5))
     return page(720, 390, body)
 
 

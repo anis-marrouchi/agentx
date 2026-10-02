@@ -6,6 +6,8 @@ the app can draw it in code the way it draws the orb today.
 Run: python3 build_sheet.py  ->  character-sheet.svg (build_anim.py makes the moving previews)
 """
 
+import math
+
 PALETTES = {  # from src/voice/orb-palettes.ts, deep to light
     "lagoon": ["#0B6E73", "#0E9594", "#1FBFB2", "#56DCCB", "#B8F4EA"],
     "sunrise": ["#E8505B", "#F2726F", "#F79A5A", "#FBBF4A", "#FFE3A3"],
@@ -65,13 +67,15 @@ def eye(x, y, e, gx=0, gy=0, w=1.0):
 
 
 def creature(cx, cy, palette="lagoon", eyes="open", gaze=(0, 0), tilt=0, sx=1.0, sy=1.0,
-             lift=0, extra="", scale=1.0, face=0):
+             lift=0, extra="", scale=1.0, face=0, tail=None, flat=None):
     """The creature over the ground line at cy + R. It has no legs: it hovers.
 
     eyes: a named look from EYES, or its numbers.
     face: 0 seen from the front, 1 turned to the right, -1 turned to the left,
     anything between while it turns. Turned, both eyes move to that side, the
     far one narrower, and the lean and the gaze follow.
+    tail: None for the plain ball, or how far (degrees) the tip of light on its
+    head leans. flat: a colour, to draw only its outline shape in that colour.
     """
     d, a = (1 if face >= 0 else -1), abs(face)
     eyes = EYES[eyes] if isinstance(eyes, str) else eyes
@@ -80,6 +84,17 @@ def creature(cx, cy, palette="lagoon", eyes="open", gaze=(0, 0), tilt=0, sx=1.0,
     body_cy = -R * sy  # body sits on the ground, squash keeps the base there
     parts = [f'<ellipse cx="{cx}" cy="{ground+5}" rx="{shadow_w}" ry="{5*scale}" fill="#0F2233" opacity=".13"/>']
     parts.append(f'<g transform="translate({cx},{ground - lift}) scale({scale}) rotate({tilt*d})">')
+    if flat:  # the outline only, to judge the shape
+        parts = [parts[1]]
+    if tail is not None:  # a soft tip of light on the head, towards the back when it is turned
+        c = PALETTES[palette]
+        bx, by, L, th = -18 * a * d * sx, body_cy - R * sy + 7 + 3 * a, 30, math.radians(tail)
+        tx, ty = bx + L * math.sin(th), by - L * math.cos(th)
+        parts.append(f'<path d="M{bx-11},{by} Q{bx-9+(tx-bx)*.2},{by-L*.6} {tx},{ty} Q{bx+3+(tx-bx)*.75},{by-L*.3} {bx+11},{by} Z" '
+                     f'fill="{flat or c[3]}" stroke="{flat or c[2]}" stroke-width="1.5" stroke-linejoin="round"/>')
+    if flat:
+        parts.append(f'<ellipse cx="0" cy="{body_cy}" rx="{R*sx}" ry="{R*sy}" fill="{flat}"/></g>')
+        return "".join(parts)
     parts.append(f'<ellipse cx="0" cy="{body_cy}" rx="{R*sx+7}" ry="{R*sy+7}" '
                  f'fill="{PALETTES[palette][2]}" opacity=".30" filter="url(#glow)"/>')
     parts.append(f'<ellipse cx="0" cy="{body_cy}" rx="{R*sx}" ry="{R*sy}" fill="url(#g-{palette})"/>')
