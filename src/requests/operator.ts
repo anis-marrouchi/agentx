@@ -1,5 +1,6 @@
 import { randomBytes, timingSafeEqual } from "crypto"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { networkInterfaces } from "os"
 import { dirname, resolve } from "path"
 
 // --- Proof that a turn on one of this node's own surfaces is the owner's (#393) ---
@@ -73,9 +74,12 @@ export function operatorKeyMatches(key: string | null | undefined, presented: st
 // node A's /mesh/task. Node A's operator key means nothing to node B, so
 // node A, having checked its own key, tells node B the turn is the
 // owner's. Node B believes that only from a request that carries one of
-// its peers' tokens: never from loopback, the dashboard token or a bare
-// header. An agent on node A that calls /mesh/task without the key gets
-// no vouching, so the rule of #393 holds on node A.
+// its peers' tokens and comes from another machine: never from this
+// machine, the dashboard token or a bare header. An agent on node A that
+// calls /mesh/task without the key gets no vouching, so the rule of #393
+// holds on node A. On node B the mesh token is in every agent's
+// environment, so a caller on node B itself is never believed, whichever
+// of this machine's addresses it dials.
 
 /** The header a forwarding node sets after checking its own operator key. */
 export const OPERATOR_VOUCH_HEADER = "x-agentx-operator-vouch"
@@ -114,4 +118,40 @@ export function peerVouches(
     if (a.length === b.length && timingSafeEqual(a, b)) return true
   }
   return false
+}
+
+/** Is this the address of a caller on this machine? Loopback, or one of
+ *  this machine's own addresses: a local caller can dial those too. */
+export function isThisMachine(
+  remoteAddress: string | undefined,
+  own: Iterable<string> = ownAddresses(),
+): boolean {
+  const addr = plainAddress(remoteAddress ?? "")
+  // No address to judge: treated as local, the side that believes nothing.
+  if (!addr || addr === "::1" || addr.startsWith("127.")) return true
+  for (const a of own) if (plainAddress(a) === addr) return true
+  return false
+}
+
+const plainAddress = (a: string) => a.toLowerCase().replace(/^::ffff:/, "").replace(/%.*$/, "")
+
+function ownAddresses(): string[] {
+  return Object.values(networkInterfaces()).flatMap((list) => (list ?? []).map((i) => i.address))
+}
+
+/** The whole rule of `POST /task`: is this turn the owner's? On one of
+ *  this node's own surfaces, and either the caller showed this node's
+ *  operator key, or a peer on another machine vouches with one of this
+ *  node's peer tokens. */
+export function ownerProven(
+  context: unknown,
+  req: { headers: Record<string, string | string[] | undefined>; remoteAddress?: string },
+  node: { key: string | null | undefined; peerTokens: Iterable<string>; operatorChannels: ReadonlySet<string>; ownAddresses?: Iterable<string> },
+): boolean {
+  if (operatorVouch(context, req.headers, node.key, node.operatorChannels)) return true
+  if (!context || typeof context !== "object") return false
+  const channel = String((context as Record<string, unknown>).channel ?? "").toLowerCase().split("@")[0]
+  if (!node.operatorChannels.has(channel)) return false
+  if (isThisMachine(req.remoteAddress, node.ownAddresses)) return false
+  return peerVouches(req.headers, node.peerTokens)
 }
