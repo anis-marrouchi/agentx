@@ -49,6 +49,12 @@ describe("who started a run", () => {
     expect(of({ channel: "voice", people: [], raw: task({ channel: "voice", sender: "Voice" }, { person: "owner" }) }).name).toBe("Owner")
   })
 
+  it("names a person listed after the event arrived", () => {
+    const raw = task({ channel: "gitlab", sender: "Sara B", senderUsername: "sara.b" }, { person: null })
+    expect(of({ channel: "gitlab", raw, people: [] }).id).toBe("unknown")
+    expect(of({ channel: "gitlab", raw }).id).toBe("person:sara")
+  })
+
   it("is AgentX for a schedule, a workflow step and an agent acting on its own", () => {
     const agentx = { kind: "agentx", id: "agentx", name: "AgentX" }
     expect(of({ source: "cron", channel: "cron", raw: { jobId: "daily-brief", agentId: "alpha" } })).toEqual(agentx)

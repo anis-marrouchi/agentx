@@ -69,10 +69,12 @@ export function starterOf(i: StarterInput): DispatchStarter {
   const raw = i.raw && typeof i.raw === "object" ? i.raw : {}
 
   // An inbound task: the daemon stored the context it arrived with, and
-  // (since #432) the person it resolved while the proof was at hand.
+  // (since #432) the person it resolved while the proof was at hand. With
+  // none stored, the context is read again: a person listed since then is
+  // named, and an unproven turn on this machine's surfaces stays unknown.
   if (i.source === "mesh") {
     const ctx = raw.context && typeof raw.context === "object" ? raw.context : undefined
-    const id = "person" in raw ? str(raw.person) : personOfTurn(i.people, ctx)?.id
+    const id = str(raw.person) ?? personOfTurn(i.people, ctx)?.id
     if (id) return person(id)
     const root = propagatedRootOf(ctx)
     const channel = root?.channel ?? i.channel
