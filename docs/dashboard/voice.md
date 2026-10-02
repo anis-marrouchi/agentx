@@ -289,7 +289,7 @@ agentx voice stroll off   # it stays where it rests
 agentx voice stroll       # which one is on now
 ```
 
-In `agentx.json` it is `voice.stroll`: `false` (the default) or `true`. A change made in the Terminal or in the file is picked up the same way as a change of [look](#the-character).
+In `agentx.json` it is `voice.stroll`: `false` (the default) or `true`. A change made in the Terminal or in the file is picked up within a few seconds, while the app runs.
 
 Good to know:
 

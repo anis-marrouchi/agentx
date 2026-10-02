@@ -265,7 +265,7 @@ voice
       const now = loadDaemonConfig(file).voice
       console.log(`  When idle: ${now.stroll ? "the character takes a slow stroll now and then" : "the character stays where it rests"}`)
       if (now.stroll && now.look !== "character") console.log(chalk.dim("  No effect while the orb is shown."))
-      if (state !== undefined) console.log(chalk.dim("  AgentX Voice picks this up the next time it reads its settings."))
+      if (state !== undefined) console.log(chalk.dim("  AgentX Voice picks this up within a few seconds."))
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))
       process.exit(1)
