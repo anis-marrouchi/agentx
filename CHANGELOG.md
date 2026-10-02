@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.97.0](https://github.com/anis-marrouchi/agentx/compare/v0.96.1...v0.97.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** a different play each time, with kick, stomp and carry ([#529](https://github.com/anis-marrouchi/agentx/issues/529)) ([320c133](https://github.com/anis-marrouchi/agentx/commit/320c1338eb851c12b24b0bee368d0c763d5e4699))
+* **voice:** a look changed in the Terminal shows without a restart ([#520](https://github.com/anis-marrouchi/agentx/issues/520)) ([7d0e789](https://github.com/anis-marrouchi/agentx/commit/7d0e7891cb63e63d8d34c429bcc90b5cefe11f16))
+* **voice:** the character can take a slow stroll when idle ([#531](https://github.com/anis-marrouchi/agentx/issues/531)) ([814de10](https://github.com/anis-marrouchi/agentx/commit/814de1032ab7634e42b509c9e7151ad532cabfdf))
+
+
+### Bug Fixes
+
+* **voice:** a still character shows the arcs of its voice only while it speaks ([1a6d726](https://github.com/anis-marrouchi/agentx/commit/1a6d7264d2eb9e06b27551837c23f0c36ff17cc4))
+
 ## [0.96.1](https://github.com/anis-marrouchi/agentx/compare/v0.96.0...v0.96.1) (2026-10-02)
 
 
