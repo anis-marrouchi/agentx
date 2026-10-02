@@ -62,8 +62,10 @@ export function agentsOf(
     const by = byOf(row.person ?? null)
     const failed = row.status === "error" || row.status === "timeout"
     const state: AgentStateName = live ? "working" : failed && by === "you" ? "blocked" : "free"
-    const mine = by === "you"
-    const thread = mine && row.channel && row.channel !== "a2a"
+    // A hand-over between agents carries the member's person, but its
+    // text was written by an agent: shown only as busy on their behalf.
+    const mine = by === "you" && row.channel !== "a2a"
+    const thread = mine && row.channel
     return {
       agentId, state, by,
       at: live ? row.started_at : (row.finished_at ?? row.started_at),

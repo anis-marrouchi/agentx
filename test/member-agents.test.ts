@@ -81,6 +81,11 @@ describe("agent cards", () => {
     expect(theirs).toMatchObject({ state: "free", by: "owner", text: null })
   })
 
+  it("give no text for a hand-over between agents, even on the member's behalf", () => {
+    turn("t1", "ops", "sara", { channel: "a2a", text: "agent-written brief" })
+    expect(cards(["ops"])[0]).toMatchObject({ state: "working", by: "you", text: null, fullText: null, where: null })
+  })
+
   it("a running turn wins over an older finished one; an agent that never ran is free", () => {
     turn("t1", "coder", "sara", { at: Date.now() - 60_000, end: "error" })
     turn("t2", "coder", "anis")

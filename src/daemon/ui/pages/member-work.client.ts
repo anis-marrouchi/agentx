@@ -82,7 +82,7 @@ export const WORK_SCRIPT = `
   function clock(at) { return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
   function agent(a, now, stale) {
     var v = agentLine(a);
-    var mine = a.state === 'working' && a.by === 'you';
+    var mine = a.state === 'working' && a.by === 'you' && !!a.text;
     var id = 'd-' + esc(a.agentId).replace(/[^A-Za-z0-9_-]/g, '_');
     var moved = a.at ? (a.state === 'working' ? '' : a.state === 'blocked' ? 'stopped ' : 'finished ') + ageText(a.at, now) + ' ago' : '';
     var meta = (v.by ? '<span>started by ' + esc(v.by) + '</span>' : '') + (moved ? '<span class="moved">' + moved + '</span>' : '') + (a.where ? '<span>from ' + where(a) + '</span>' : '');
