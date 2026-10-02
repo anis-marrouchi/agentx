@@ -85,7 +85,7 @@ describe("buildTransit", () => {
 
   it("traces a hand-off back to what reached the delegator", () => {
     expect(train("!445–!448")).toMatchObject({ channel: "voice", startedBy: "Anis" })
-    expect(routeOf(train("!445–!448"), line(V2), (id) => id)).toEqual(["Voice", "secretary-agent", "mtgl-v2", "V2"])
+    expect(routeOf(train("!445–!448"), line(V2), (id) => id)).toEqual(["Unknown", "Voice", "secretary-agent", "mtgl-v2", "V2"])
   })
 
   it("derives line status and reason from its trains", () => {
@@ -298,7 +298,7 @@ describe("hop chains and true origin", () => {
     ]
     const t = trainOf(ds, "devops-agent")
     expect(t).toMatchObject({ tag: "!7", channel: "gitlab", route: ["devops-agent"], delegator: null })
-    expect(routeOf(t, undefined, (id) => id)).toEqual(["GitLab", "devops-agent", WEB])
+    expect(routeOf(t, undefined, (id) => id)).toEqual(["Unknown", "GitLab", "devops-agent", WEB])
     // The later question is still on the train's timeline, after the webhook.
     expect(t.hops.filter((h) => h.to === "devops-agent").map((h) => h.from)).toEqual([null, "secretary-agent"])
   })
@@ -329,7 +329,7 @@ describe("hop chains and true origin", () => {
     expect(t.hops.map((h) => `${h.from ?? "voice"}→${h.to}@${h.node}`)).toEqual([
       "voice→secretary-agent@mac", "secretary-agent→idle-agent@peer-a", "idle-agent→devops-agent@mac",
     ])
-    expect(routeOf(t, undefined, (id) => id)).toEqual(["Voice", "secretary-agent", "idle-agent", "devops-agent", WEB])
+    expect(routeOf(t, undefined, (id) => id)).toEqual(["Unknown", "Voice", "secretary-agent", "idle-agent", "devops-agent", WEB])
   })
 
   it("falls back to the root marker when the run that started it is missing", () => {

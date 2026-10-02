@@ -6,7 +6,9 @@ import Database from "better-sqlite3"
 import { inferProject, projectFromPreview } from "./activity-graph-attribution"
 import { fetchForgeStatus, refsToLookUp, type ForgeItem } from "./activity-graph-forge"
 import { lineageOf, type DispatchCallback, type DispatchRoot } from "./activity-graph-lineage"
+import { starterOf, type DispatchStarter } from "./activity-graph-starter"
 import type { DaemonConfig } from "./config"
+import { currentPeople } from "./member-routes"
 
 // --- /admin/activity-graph — Fleet activity perspective view ---
 //
@@ -105,6 +107,9 @@ export interface FleetDispatch {
   root?: DispatchRoot
   /** Set on a delegation's callback turn: whose answer it carries back. */
   callback?: DispatchCallback
+  /** Who or what started the work: a person, AgentX or an external system
+   *  (#432). Absent on rows from a mesh peer that runs an older version. */
+  starter?: DispatchStarter
 }
 export interface FleetSnapshot {
   now: number
@@ -554,6 +559,7 @@ export function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonCo
   const businessProjects = (daemonConfig as any)?.business?.projects ?? []
   const contactMap: ContactRule[] = (daemonConfig as any)?.business?.contactMap ?? []
   const agentToClient = agentClients(((daemonConfig as any)?.business) ?? {})
+  const people = daemonConfig?.people ?? []
 
   for (const ev of events) {
     let raw: any = null
@@ -589,6 +595,7 @@ export function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonCo
     const upstream = upstreamChannel(ev.source, ev.intent || "", raw)
     const chanDef = CHANNEL_DEF[upstream] || { label: upstream, color: "#6b7280" }
     if (!channelMap.has(upstream)) channelMap.set(upstream, { id: upstream, label: chanDef.label, color: chanDef.color })
+    const starter = starterOf({ source: ev.source, channel: upstream, raw, people, channelLabel: (c) => CHANNEL_DEF[c]?.label ?? c })
 
     let initiatorId = "__system"
     let initiatorKind: InitiatorKind | undefined
@@ -662,6 +669,7 @@ export function buildFleetSnapshot(db: Database.Database, daemonConfig: DaemonCo
         inputPreview,
         system: isSystemAgent(d.agent_id, daemonConfig),
         ...lineage,
+        starter,
       })
     }
   }
@@ -743,7 +751,7 @@ export function buildLocalActivityGraphSnapshot(windowH: number): FleetSnapshot 
   const opened = openLedger()
   if (!opened) return null
   try {
-    return buildFleetSnapshot(opened.db, _daemonConfigRef, windowH)
+    return buildFleetSnapshot(opened.db, snapshotConfig(), windowH)
   } finally {
     opened.close()
   }
@@ -834,6 +842,11 @@ export async function withForgeStatus(snap: FleetSnapshot): Promise<FleetSnapsho
 }
 
 let _daemonConfigRef: DaemonConfig | null = null
+/** The dashboard keeps the config it started with. The people list is read
+ *  as agentx.json holds it now, so a person listed since then is named. */
+function snapshotConfig(): DaemonConfig | null {
+  return _daemonConfigRef && { ..._daemonConfigRef, people: currentPeople(_daemonConfigRef.people) as DaemonConfig["people"] }
+}
 /** Wired by board-dashboard.ts when the dashboard starts so we can read
  *  agent metadata (tier, model, name) for the snapshot. */
 export function setDaemonConfigForActivityGraph(cfg: DaemonConfig | null): void {
@@ -850,7 +863,7 @@ export async function handleActivityGraphApi(req: IncomingMessage, res: ServerRe
   try {
     const url = new URL(req.url || "/", "http://_")
     const windowH = clampWindow(parseInt(url.searchParams.get("hours") || "6", 10))
-    sendJson(res, 200, await withForgeStatus(buildFleetSnapshot(opened.db, _daemonConfigRef, windowH)))
+    sendJson(res, 200, await withForgeStatus(buildFleetSnapshot(opened.db, snapshotConfig(), windowH)))
   } catch (e: any) {
     sendJson(res, 500, { error: e?.message ?? String(e) })
   } finally {

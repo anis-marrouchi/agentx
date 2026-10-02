@@ -320,6 +320,16 @@
 .ax-fleet .tm-edge.is-active { stroke-dasharray: 18 10; animation: tm-run 1.2s linear infinite; }
 @keyframes tm-run { to { stroke-dashoffset: -28; } }
 
+/* Initiators: a person, AgentX (filled) or an external system (dashed) */
+.ax-fleet .tm-starter {
+  width: 124px; height: 30px; display: flex; align-items: center; justify-content: center; padding: 0 8px;
+  border: 2px solid var(--ax-text); border-radius: 8px; background: var(--ax-surface);
+  box-shadow: 0 3px 0 var(--tm-sh); font-size: 12px; font-weight: 700; color: var(--ax-text);
+}
+.ax-fleet .tm-starter > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ax-fleet .tm-starter.is-agentx { background: var(--ax-text); color: var(--ax-surface); }
+.ax-fleet .tm-starter.is-external { border-style: dashed; }
+
 /* Channels */
 .ax-fleet .tm-channel {
   width: 104px; height: 30px; display: flex; align-items: center; justify-content: center;

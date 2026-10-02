@@ -5,12 +5,12 @@
    inline style, which the buttons inside inherit; the map's own buttons
    must take clicks, so this has to win over the inline style. */
 .ax-fleet .tm-canvas .react-flow__node:not(.react-flow__node-district) { pointer-events: all !important; }
-.ax-fleet button.tm-channel { font-family: inherit; cursor: pointer; }
-.ax-fleet .tm-channel.is-selected,
+.ax-fleet button.tm-channel, .ax-fleet button.tm-starter { font-family: inherit; cursor: pointer; }
+.ax-fleet .tm-starter.is-selected, .ax-fleet .tm-channel.is-selected,
 .ax-fleet .tm-station.is-selected .tm-station__dot { outline: 3px solid var(--tm-bl); outline-offset: 2px; }
 .ax-fleet .tm-station { cursor: pointer; }
 .ax-fleet button.tm-station__dot { font: inherit; font-weight: 800; padding: 0; cursor: pointer; }
-.ax-fleet .tm-channel:focus-visible, .ax-fleet .tm-station__dot:focus-visible,
+.ax-fleet .tm-starter:focus-visible, .ax-fleet .tm-channel:focus-visible, .ax-fleet .tm-station__dot:focus-visible,
 .ax-fleet .tm-train:focus-visible, .ax-fleet .tm-expander:focus-visible,
 .ax-fleet .tm-panel button:focus-visible, .ax-fleet .tm-item:focus-visible { outline: 3px solid var(--tm-bl); outline-offset: 2px; }
 .ax-fleet .tm-canvas .react-flow__edge.is-clickable { cursor: pointer; }

@@ -1,15 +1,16 @@
-// Transit map layout — places channels, stations (agents), train groups and
-// line terminals. Pure so it can be tested; TransitMap.tsx only renders.
-// Horizontal (desktop): channels | interchanges | stations | trains | terminals.
+// Transit map layout — places initiators, channels, stations (agents), train
+// groups and line terminals. Pure so it can be tested; TransitMap.tsx only renders.
+// Horizontal (desktop): initiators | channels | interchanges | stations | trains | terminals.
 // Vertical (phone line view): the same tiers top to bottom, for one line.
 
-import { CHANNELS, STATE_ORDER, channelLabel, type Line, type Train, type Transit } from "./transit"
+import { CHANNELS, STARTER_KIND, STATE_ORDER, channelLabel, type Line, type Train, type Transit } from "./transit"
+import type { Starter } from "./api"
 import { drawnRoute, spread, type Orientation } from "./transit-geometry"
 
 export { COLLAPSE_AT, drawnRoute, metroPath, spread, type Orientation } from "./transit-geometry"
 
 /** "trains", not "group": xyflow styles its built-in "group" node type. */
-export type NetKind = "channel" | "station" | "trains" | "terminal" | "district"
+export type NetKind = "starter" | "channel" | "station" | "trains" | "terminal" | "district"
 
 export interface NetNode {
   id: string
@@ -23,6 +24,8 @@ export interface NetNode {
   sub?: string
   color?: string
   code?: string
+  /** Initiator: a person, AgentX or an external system. */
+  starterKind?: Starter["kind"]
   idle?: boolean
   mesh?: boolean
   interchange?: boolean
@@ -46,6 +49,8 @@ export interface NetEdge {
   trainIds?: string[]
   /** Feeder: the channel it starts from. */
   channel?: string
+  /** Feeder into a channel: the initiator it starts from. */
+  starter?: string
   /** Perpendicular shift so parallel lines on one track stay visible. */
   offset: number
   active: boolean
@@ -68,6 +73,7 @@ export interface LayoutOpts {
 }
 
 const SIZE = {
+  starter: { w: 124, h: 30 },
   channel: { w: 104, h: 30 },
   station: { w: 44, h: 44 },
   terminal: { w: 150, h: 38 },
@@ -77,6 +83,8 @@ const SIZE = {
 export const MAX_PILLS = 3
 
 const COL = { horizontal: [0, 250, 480, 640, 960], vertical: [0, 90, 200, 330, 0] }
+/** How far before the channels the initiators sit. */
+const STARTER_GAP = { horizontal: 190, vertical: 64 }
 /** Distance between hop columns (interchanges at depth 0, 1, …). */
 const HUB_STEP = { horizontal: 200, vertical: 110 }
 
@@ -172,10 +180,20 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
   const chStep = H ? 50 : 120
   const chCross = channels.map((_, i) => centre + (i - (channels.length - 1) / 2) * chStep)
 
+  // Initiators: who or what started the trains shown, each level with the
+  // channels its work came in through.
+  const chAt = new Map(channels.map((c, i) => [c.id, chCross[i]]))
+  const starterWant = (id: string) => mean(trains.filter((t) => t.starter.id === id).map((t) => chAt.get(t.channel) ?? centre))
+  const starters = [...new Map(trains.map((t) => [t.starter.id, t.starter])).values()]
+    .sort((a, b) => starterWant(a.id) - starterWant(b.id) || a.name.localeCompare(b.name))
+  const inStep = H ? 50 : 136
+  const inCross = starters.map((_, i) => centre + (i - (starters.length - 1) / 2) * inStep)
+
   const cols = COL[opts.orientation]
   const extra = Math.max(0, hubCols - 1) * HUB_STEP[opts.orientation]
   const shift = hubCols ? extra : H ? -60 : 0
   const main = {
+    starter: cols[0] - STARTER_GAP[opts.orientation],
     channel: cols[0],
     hub: (a: string) => cols[1] + (depth.get(a) ?? 0) * HUB_STEP[opts.orientation],
     station: hubCols ? cols[2] + extra : cols[1] + (H ? 60 : 0),
@@ -189,6 +207,11 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
   const edges: NetEdge[] = []
   const running = (ts: Train[]) => ts.some((t) => t.state === "running")
   const through = (a: string) => trains.filter((t) => drawn.get(t.id)!.agents.includes(a))
+
+  starters.forEach((p, i) => {
+    const s = SIZE.starter
+    nodes.push({ id: `in:${p.id}`, kind: "starter", ...at(main.starter, inCross[i], s.w, s.h), w: s.w, h: s.h, label: p.name, sub: STARTER_KIND[p.kind], starterKind: p.kind })
+  })
 
   channels.forEach((c, i) => {
     const s = SIZE.channel
@@ -255,8 +278,10 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
       handoffs.set(id, e)
     }
   }
-  // Feeders: the line's colour starts at the channel the work came from.
+  // Feeders: the initiator into the channel the work came through, then the
+  // channel into the first agent.
   const feeders = new Map<string, NetEdge>()
+  const links = new Map<string, NetEdge>()
   for (const t of trains) {
     const first = drawn.get(t.id)!.agents[0]
     const line = lines[lineIdx.get(t.lineId)!]
@@ -264,9 +289,13 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
     const e = feeders.get(id) ?? { id, source: `ch:${t.channel}`, target: `st:${first}`, kind: "feeder" as const, color: line.color, lineId: line.id, channel: t.channel, offset: 0, active: false }
     e.active ||= t.state === "running"
     feeders.set(id, e)
+    const lid = `sf:${t.starter.id}|${t.channel}|${line.id}`
+    const l = links.get(lid) ?? { id: lid, source: `in:${t.starter.id}`, target: `ch:${t.channel}`, kind: "feeder" as const, color: line.color, lineId: line.id, starter: t.starter.id, offset: 0, active: false }
+    l.active ||= t.state === "running"
+    links.set(lid, l)
   }
   // Parallel lines on one pair sit side by side, centred on the pair.
-  for (const set of [handoffs, feeders]) {
+  for (const set of [handoffs, feeders, links]) {
     const perPair = new Map<string, Array<NetEdge>>()
     for (const e of set.values()) {
       const pair = `${e.source}|${e.target}`

@@ -3,12 +3,12 @@ import { fmtRelative, type FleetDispatch, type FleetSnapshot } from "./api"
 import { buildTransit, headline, type Line, type Transit } from "./transit"
 import { layoutNetwork } from "./transit-layout"
 import { TransitMap } from "./TransitMap"
-import { ChannelCard, HopCard, selKey, StationCard, type CardCtx, type Sel } from "./MapCards"
+import { ChannelCard, HopCard, selKey, StarterCard, StationCard, type CardCtx, type Sel } from "./MapCards"
 import { TrainPanel } from "./TrainPanel"
 
 // Map perspective — the fleet as a transit map. Desktop: line board, map,
 // detail drawer. Phone (< 640 px): departures board → one line → sheet.
-// Channels, stations, hops and trains all open a card (#267).
+// Initiators, channels, stations, hops and trains all open a card (#267).
 
 const LINE_STATUS: Record<Line["state"], string> = { delays: "Delays", good: "Good service", quiet: "Quiet" }
 
@@ -138,7 +138,8 @@ export function MapPerspective(props: {
   if (sel?.kind === "train") {
     const train = transit.trains.find((t) => t.id === sel.id)
     if (train) panel = <TrainPanel train={train} line={transit.lines.find((l) => l.id === train.lineId)} ctx={ctx} sheet={narrow} onClose={close} />
-  } else if (sel?.kind === "channel") panel = <ChannelCard id={sel.id} ctx={ctx} sheet={narrow} onClose={close} />
+  } else if (sel?.kind === "starter") panel = <StarterCard id={sel.id} ctx={ctx} sheet={narrow} onClose={close} />
+  else if (sel?.kind === "channel") panel = <ChannelCard id={sel.id} ctx={ctx} sheet={narrow} onClose={close} />
   else if (sel?.kind === "station") panel = <StationCard id={sel.id} ctx={ctx} sheet={narrow} onClose={close} />
   else if (sel?.kind === "hop") panel = <HopCard sel={sel} ctx={ctx} sheet={narrow} onClose={close} />
 

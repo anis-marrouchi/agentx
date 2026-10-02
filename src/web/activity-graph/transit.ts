@@ -4,15 +4,17 @@
 // Line status and its reason come from real state: forge pipelines and
 // draft MRs (snapshot.forge) plus run outcomes — nothing is hardcoded.
 
-import type { FleetDispatch, FleetSnapshot } from "./api"
+import type { FleetDispatch, FleetSnapshot, Starter } from "./api"
 import { refKey, refsOf, type ForgeRef } from "../../daemon/activity-graph-attribution"
 import type { ForgeItem } from "../../daemon/activity-graph-forge"
 import { askOf, chainOf, delegatorOf, hopsOf, originOf, returnHop, trainRoute, type Hop } from "./hops"
 
 import { agentLineOf, isAgentLine, lineOf } from "./transit-lines"
+import { starterOf } from "./transit-starter"
 
 export { delegatorOf, type Hop } from "./hops"
 export { agentLineOf, lineOf } from "./transit-lines"
+export { STARTER_KIND } from "./transit-starter"
 
 export type TrainState = "delayed" | "running" | "held" | "review" | "delivered" | "done"
 export type LineState = "delays" | "good" | "quiet"
@@ -35,6 +37,8 @@ export interface Train {
   label: string
   state: TrainState
   reason: string | null
+  /** Who or what started it: a person, AgentX or an external system. */
+  starter: Starter
   /** Channel the work really came from (the root of its hop chain). */
   channel: string
   /** Agent that handed it to `agentId`, if any (route[route.length - 2]). */
@@ -203,6 +207,9 @@ function buildTrain(id: string, lineId: string, ds: FleetDispatch[], snap: Fleet
 
   return {
     id, lineId, title, tag, label: label.length > 26 ? label.slice(0, 25) + "…" : label, state, reason,
+    // The run it started with; when that is outside the window, a hop that
+    // carries the root.
+    starter: starterOf(from.dispatch ?? chains[0].find((d) => d.root) ?? chains[0][0]),
     channel: mapChannelId(from.channel), delegator: route.length > 1 ? route[route.length - 2] : null,
     agentId: route[route.length - 1], route, hops, originId: from.dispatch?.id ?? null,
     startedBy: who, startedAt: first.startedAt,
@@ -295,8 +302,8 @@ export function headline(lines: Line[]): string {
   return running ? "Good service on all lines" : "All lines quiet"
 }
 
-/** Route chips for a train: channel › every hop agent › line code. */
+/** Route chips for a train: initiator › channel › every hop agent › line code. */
 export function routeOf(t: Train, line: Line | undefined, agentName: (id: string) => string): string[] {
-  return [channelLabel(t.channel), ...t.route.map(agentName), line?.code ?? t.lineId]
+  return [t.starter.name, channelLabel(t.channel), ...t.route.map(agentName), line?.code ?? t.lineId]
 }
 

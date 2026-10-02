@@ -1,13 +1,14 @@
 import { useState, type ReactNode } from "react"
 import { fmtRelative, fmtTime, type FleetDispatch, type FleetSnapshot } from "./api"
-import { channelLabel, gist, runStatus, type Hop, type Train, type Transit } from "./transit"
+import { channelLabel, gist, runStatus, STARTER_KIND, type Hop, type Train, type Transit } from "./transit"
 
-// Detail cards for everything on the map (#267): a channel, a station, a
-// hop on the line. The train card is TrainPanel.tsx. Every card shows
+// Detail cards for everything on the map (#267): an initiator, a channel, a
+// station, a hop on the line. The train card is TrainPanel.tsx. Every card shows
 // bounded previews only; the full text stays behind "Open run details".
 
 export type Sel =
   | { kind: "train"; id: string }
+  | { kind: "starter"; id: string }
   | { kind: "channel"; id: string }
   | { kind: "station"; id: string }
   | { kind: "hop"; from: string | null; to: string; lineId?: string; dispatchId?: string | null }
@@ -62,30 +63,54 @@ export function Message({ text }: { text: string }) {
 
 const Empty = ({ children }: { children: ReactNode }) => <p className="tm-empty">{children}</p>
 
-/** Channel: the events that started trains here. */
-export function ChannelCard({ id, ctx, sheet, onClose }: { id: string; ctx: CardCtx; sheet?: boolean; onClose: () => void }) {
-  const trains = ctx.transit.trains.filter((t) => t.channel === id).sort((a, b) => b.startedAt - a.startedAt)
+const trainCount = (n: number) => <span className="tm-badge is-sm">{n} {n === 1 ? "train" : "trains"}</span>
+
+/** The trains an initiator or a channel started, newest first. */
+function Started({ trains, ctx, detail }: { trains: Train[]; ctx: CardCtx; detail: (t: Train) => string }) {
   return (
-    <Shell kick="Channel" title={channelLabel(id)} sheet={sheet} onClose={onClose}
-      badge={<span className="tm-badge is-sm">{trains.length} {trains.length === 1 ? "train" : "trains"}</span>}>
-      <div className="tm-panel__sec">What came in</div>
-      {!trains.length && <Empty>Nothing started on {channelLabel(id)} in this window.</Empty>}
+    <>
       <div className="tm-rows">
-        {trains.slice(0, 6).map((t) => {
-          const first = t.originId ? ctx.byId.get(t.originId) : undefined
-          return (
-            <div key={t.id} className="tm-row">
-              <button className="tm-row__main" onClick={() => ctx.onSelect({ kind: "train", id: t.id })}>
-                <b className="mono">{t.tag}</b>
-                <span className="tm-row__t">{t.title.startsWith(t.tag) ? t.title.slice(t.tag.length).trim() : t.title}</span>
-                <small>{[first?.subject || "Event from the root marker", t.startedBy, fmtTime(t.startedAt)].join(" · ")}</small>
-              </button>
-              {t.link && <a className="tm-link" href={t.link} target="_blank" rel="noreferrer">Open ›</a>}
-            </div>
-          )
-        })}
+        {trains.slice(0, 6).map((t) => (
+          <div key={t.id} className="tm-row">
+            <button className="tm-row__main" onClick={() => ctx.onSelect({ kind: "train", id: t.id })}>
+              <b className="mono">{t.tag}</b>
+              <span className="tm-row__t">{t.title.startsWith(t.tag) ? t.title.slice(t.tag.length).trim() : t.title}</span>
+              <small>{[detail(t), t.startedBy, fmtTime(t.startedAt)].join(" · ")}</small>
+            </button>
+            {t.link && <a className="tm-link" href={t.link} target="_blank" rel="noreferrer">Open ›</a>}
+          </div>
+        ))}
       </div>
       {trains.length > 6 && <Empty>{trains.length - 6} older trains are on their lines.</Empty>}
+    </>
+  )
+}
+
+const newestFirst = (a: Train, b: Train) => b.startedAt - a.startedAt
+
+/** Initiator: what this person, AgentX or external system started. */
+export function StarterCard({ id, ctx, sheet, onClose }: { id: string; ctx: CardCtx; sheet?: boolean; onClose: () => void }) {
+  const trains = ctx.transit.trains.filter((t) => t.starter.id === id).sort(newestFirst)
+  const starter = trains[0]?.starter
+  return (
+    <Shell kick={starter ? `Initiator · ${STARTER_KIND[starter.kind]}` : "Initiator"} title={starter?.name ?? id} sheet={sheet} onClose={onClose}
+      badge={trainCount(trains.length)}>
+      {id === "unknown" && <div className="tm-panel__who">The sender matches nobody in your people list, so no name is guessed.</div>}
+      <div className="tm-panel__sec">What it started</div>
+      {!trains.length && <Empty>Nothing started in this window.</Empty>}
+      <Started trains={trains} ctx={ctx} detail={(t) => channelLabel(t.channel)} />
+    </Shell>
+  )
+}
+
+/** Channel: the events that started trains here. */
+export function ChannelCard({ id, ctx, sheet, onClose }: { id: string; ctx: CardCtx; sheet?: boolean; onClose: () => void }) {
+  const trains = ctx.transit.trains.filter((t) => t.channel === id).sort(newestFirst)
+  return (
+    <Shell kick="Channel" title={channelLabel(id)} sheet={sheet} onClose={onClose} badge={trainCount(trains.length)}>
+      <div className="tm-panel__sec">What came in</div>
+      {!trains.length && <Empty>Nothing started on {channelLabel(id)} in this window.</Empty>}
+      <Started trains={trains} ctx={ctx} detail={(t) => (t.originId && ctx.byId.get(t.originId)?.subject) || "Event from the root marker"} />
     </Shell>
   )
 }
