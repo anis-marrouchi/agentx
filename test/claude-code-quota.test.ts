@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach } from "vitest"
 import {
   setDispatchBudget, clearDispatchHistory, recordClaudeCodeDispatch, recordRateLimitEvent,
   parseRateLimitEvent, preflightQuotaGate, warnIfNearingCap, getClaudeCodeUsage, activeProviderHold,
+  activeProviderHolds, liftProviderHolds,
 } from "../src/agents/claude-code-quota"
+import { handlePlanUsageApi } from "../src/daemon/plan-usage-api"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 // The dispatch gate trusts Claude Code's own rate_limit_event for the plan
@@ -30,6 +32,100 @@ describe("config", () => {
   it("accepts 0 as off", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, session: { maxClaudeCodeDispatchesPer5h: 0 } })
     expect(cfg.session.maxClaudeCodeDispatchesPer5h).toBe(0)
+  })
+})
+
+const win = (status: string, rateLimitType: string) =>
+  ({ type: "rate_limit_event", rate_limit_info: { status, rateLimitType, resetsAt: (T0 + 40 * 60_000) / 1000 } })
+
+describe("hold scope and lifting", () => {
+  it("lifts a hold when a later event for another window says allowed", () => {
+    recordRateLimitEvent(win("rejected", "five_hour"), T0)
+    recordRateLimitEvent(win("allowed", "seven_day"), T0 + 5_000)
+    expect(preflightQuotaGate(false, T0 + 10_000)).toBeNull()
+    expect(getClaudeCodeUsage(T0 + 10_000).provider.map((s) => s.window)).toEqual(["seven_day"])
+  })
+
+  it("keeps the hold when the other window is rejected too", () => {
+    recordRateLimitEvent(win("rejected", "five_hour"), T0)
+    recordRateLimitEvent(win("rejected", "seven_day"), T0 + 5_000)
+    expect(activeProviderHolds(T0 + 10_000)).toHaveLength(2)
+  })
+
+  it("holds only runs on the model a model window names", () => {
+    recordRateLimitEvent(win("rejected", "seven_day_opus"), T0, "claude-opus-5-5")
+    expect(preflightQuotaGate(false, T0 + 1000, "claude-opus-5-5")?.reason).toBe("provider_rate_limit")
+    expect(preflightQuotaGate(false, T0 + 1000, "opus")?.reason).toBe("provider_rate_limit")
+    expect(preflightQuotaGate(false, T0 + 1000, "claude-sonnet-5-5")).toBeNull()
+    expect(preflightQuotaGate(false, T0 + 1000, "claude-haiku-4-5-20251001")).toBeNull()
+  })
+
+  it("holds a run with no model set on a model window", () => {
+    recordRateLimitEvent(win("rejected", "seven_day_sonnet"), T0)
+    expect(preflightQuotaGate(false, T0 + 1000)?.reason).toBe("provider_rate_limit")
+  })
+
+  it("a shared window holds every model", () => {
+    recordRateLimitEvent(win("rejected", "five_hour"), T0, "claude-opus-5-5")
+    expect(preflightQuotaGate(false, T0 + 1000, "claude-sonnet-5-5")?.reason).toBe("provider_rate_limit")
+  })
+
+  it("lifts a model window's hold only on an allowed event from that model", () => {
+    recordRateLimitEvent(win("rejected", "seven_day_opus"), T0, "claude-opus-5-5")
+    recordRateLimitEvent(win("allowed", "five_hour"), T0 + 1000, "claude-sonnet-5-5")
+    recordRateLimitEvent(win("allowed", "five_hour"), T0 + 2000)
+    expect(activeProviderHold(T0 + 3000, "claude-opus-5-5")?.window).toBe("seven_day_opus")
+    recordRateLimitEvent(win("allowed", "five_hour"), T0 + 4000, "claude-opus-5-5")
+    expect(activeProviderHold(T0 + 5000, "claude-opus-5-5")).toBeNull()
+  })
+
+  it("lifts the active holds by hand and leaves the other signals", () => {
+    recordRateLimitEvent(win("allowed_warning", "seven_day_sonnet"), T0, "claude-sonnet-5-5")
+    recordRateLimitEvent(win("rejected", "five_hour"), T0 + 1)
+    recordRateLimitEvent(win("rejected", "seven_day_opus"), T0 + 2)
+    expect(liftProviderHolds(T0 + 10).map((s) => s.window).sort()).toEqual(["five_hour", "seven_day_opus"])
+    expect(preflightQuotaGate(false, T0 + 20)).toBeNull()
+    expect(getClaudeCodeUsage(T0 + 20).provider.map((s) => s.window)).toEqual(["seven_day_sonnet"])
+    expect(liftProviderHolds(T0 + 30)).toEqual([])
+  })
+
+  it("holds again when Claude refuses after a manual lift", () => {
+    recordRateLimitEvent(win("rejected", "five_hour"), T0)
+    liftProviderHolds(T0 + 10)
+    recordRateLimitEvent(win("rejected", "five_hour"), T0 + 20)
+    expect(preflightQuotaGate(false, T0 + 30)?.reason).toBe("provider_rate_limit")
+  })
+
+  it("names the lift command in the hold message", () => {
+    recordRateLimitEvent(win("rejected", "five_hour"), T0)
+    expect(preflightQuotaGate(false, T0 + 1000)?.message).toContain("agentx usage plan --lift")
+  })
+})
+
+describe("GET /usage/plan and POST /usage/plan/lift", () => {
+  it("returns the windows, the counters and the active holds", () => {
+    setDispatchBudget({ maxPerHour: 80 })
+    recordClaudeCodeDispatch(T0)
+    recordRateLimitEvent(win("rejected", "five_hour"), T0)
+    recordRateLimitEvent(win("rejected", "seven_day"), T0 - 41 * 60_000)
+    const reply = handlePlanUsageApi("GET", "/usage/plan", T0 + 1000)
+    expect(reply.status).toBe(200)
+    expect(reply.body).toMatchObject({ now: T0 + 1000, lastHour: 1, last5h: 1, maxPerHour: 80 })
+    const body = reply.body as { provider: unknown[]; holds: Array<{ window: string }> }
+    expect(body.provider).toHaveLength(2)
+    expect(body.holds.map((s) => s.window)).toEqual(["five_hour", "seven_day"])
+  })
+
+  it("lifts the holds and reports which", () => {
+    recordRateLimitEvent(win("rejected", "five_hour"), T0)
+    const reply = handlePlanUsageApi("POST", "/usage/plan/lift", T0 + 1000)
+    expect((reply.body as { lifted: Array<{ window: string }> }).lifted.map((s) => s.window)).toEqual(["five_hour"])
+    expect((handlePlanUsageApi("GET", "/usage/plan", T0 + 2000).body as { holds: unknown[] }).holds).toEqual([])
+  })
+
+  it("refuses the wrong method", () => {
+    expect(handlePlanUsageApi("GET", "/usage/plan/lift").status).toBe(405)
+    expect(handlePlanUsageApi("POST", "/usage/plan").status).toBe(405)
   })
 })
 

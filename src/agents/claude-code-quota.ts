@@ -21,6 +21,13 @@
 // rejected, with `isUsingOverage: true` (and `overageStatus` "allowed" or
 // "allowed_warning"). That is not a refusal, so it does not hold anything.
 //
+// Each event carries one status for the request plus the one window that
+// matters most, so an `allowed` event means Claude served the request
+// whichever window it names: it lifts the holds of the other windows too.
+// A model window ("seven_day_opus", "seven_day_sonnet") only concerns that
+// model: it holds, and is lifted by, runs on that model alone. A run with
+// no model set is held by every window, because we can't tell which it uses.
+//
 // The dispatch counters (last hour / last 5h) stay for observability and for
 // operators who want a hard local ceiling on top of the plan. Local caps are
 // opt-in: with no cap configured the counters never gate anything. Before
@@ -31,6 +38,7 @@
 //   recordClaudeCodeDispatch()  — call when a dispatch is about to fire
 //   recordRateLimitEvent(ev)    — call for every stream-json event; ignores others
 //   getClaudeCodeUsage()        — counters + the last provider signal
+//   liftProviderHolds()         — operator override: drop the active holds
 //   preflightQuotaGate(…)       — short-circuit for cold dispatches
 
 export interface DispatchBudget {
@@ -139,22 +147,57 @@ export function parseRateLimitEvent(event: unknown, now: number = Date.now()): R
   return { status, window, resetsAt, utilization, ...(usingOverage && { usingOverage }), seenAt: now }
 }
 
-/** Record the provider's view of the plan window. Non rate-limit events are ignored. */
-export function recordRateLimitEvent(event: unknown, now: number = Date.now()): RateLimitSignal | null {
+/** "seven_day_opus" → "opus". Null for the windows shared by every model. */
+function windowModel(window: string): string | null {
+  return /_(opus|sonnet|haiku)$/.exec(window)?.[1] ?? null
+}
+
+/** Whether a window concerns a run on `model`. Unknown model: every window does. */
+function concerns(window: string, model: string | undefined): boolean {
+  const family = windowModel(window)
+  return !family || !model || model.toLowerCase().includes(family)
+}
+
+/**
+ * Record the provider's view of the plan window. Non rate-limit events are
+ * ignored. `model` is the model of the run that produced the event; a served
+ * request lifts the holds of the other windows that concern that model.
+ */
+export function recordRateLimitEvent(event: unknown, now: number = Date.now(), model?: string): RateLimitSignal | null {
   const signal = parseRateLimitEvent(event, now)
   if (!signal) return null
+  if (signal.status !== "rejected") {
+    for (const [window, s] of providerSignals) {
+      if (s.status !== "rejected" || window === signal.window) continue
+      if (!windowModel(window) || (model && concerns(window, model))) providerSignals.delete(window)
+    }
+  }
   providerSignals.set(signal.window, signal)
   return signal
 }
 
-/** The rejected window that still holds at `now`, if any. Extra usage still serving is not a hold. */
-export function activeProviderHold(now: number = Date.now()): RateLimitSignal | null {
-  for (const s of providerSignals.values()) {
-    if (s.status !== "rejected" || s.usingOverage) continue
-    const until = s.resetsAt ?? s.seenAt + REJECTED_FALLBACK_HOLD_MS
-    if (until > now) return s
-  }
-  return null
+/** The rejected windows that still hold at `now`. Extra usage still serving is not a hold. */
+export function activeProviderHolds(now: number = Date.now()): RateLimitSignal[] {
+  return [...providerSignals.values()].filter((s) => {
+    if (s.status !== "rejected" || s.usingOverage) return false
+    return (s.resetsAt ?? s.seenAt + REJECTED_FALLBACK_HOLD_MS) > now
+  })
+}
+
+/** The window that holds a cold run on `model` at `now`, if any. */
+export function activeProviderHold(now: number = Date.now(), model?: string): RateLimitSignal | null {
+  return activeProviderHolds(now).find((s) => concerns(s.window, model)) ?? null
+}
+
+/**
+ * Operator override: forget the active holds, so the next cold dispatch asks
+ * Claude again. If the window is still used up, that run's refusal puts the
+ * hold back. Returns the holds that were lifted.
+ */
+export function liftProviderHolds(now: number = Date.now()): RateLimitSignal[] {
+  const lifted = activeProviderHolds(now)
+  for (const s of lifted) providerSignals.delete(s.window)
+  return lifted
 }
 
 export function getProviderSignals(): RateLimitSignal[] {
@@ -226,17 +269,18 @@ function resetLabel(resetsAt: number | undefined, now: number): string {
  * The function DOES NOT mutate state. Call `recordClaudeCodeDispatch()`
  * separately once the caller commits to the dispatch.
  */
-export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.now()): QuotaGateAbort | null {
+export function preflightQuotaGate(hasWarmSession: boolean, now: number = Date.now(), model?: string): QuotaGateAbort | null {
   const usage = getClaudeCodeUsage(now)
   if (hasWarmSession) return null
-  const hold = activeProviderHold(now)
+  const hold = activeProviderHold(now, model)
   if (hold) {
     return {
       abort: true,
       reason: "provider_rate_limit",
       message:
         `Claude plan limit reached: Claude Code reports the ${windowLabel(hold.window)} window as rejected. ` +
-        `Cold dispatches are held until it resets ${resetLabel(hold.resetsAt, now)}; open conversations still go through.`,
+        `Cold dispatches are held until it resets ${resetLabel(hold.resetsAt, now)}; open conversations still go through. ` +
+        `To try again now, run: agentx usage plan --lift`,
       usage,
     }
   }
