@@ -2,8 +2,8 @@ import Foundation
 
 /// Play mode (#505): the character leaves the bottom edge and plays on a
 /// frozen picture of the screen. It walks along a line of text as on a
-/// floor, jumps to another line, eats words and wipes a line. These are
-/// the numbers only: where the words are, what it does and when, where it
+/// floor, jumps to another line, eats words, wipes a line, kicks a word,
+/// stomps a line down and carries a word away. These are the numbers only: where the words are, what it does and when, where it
 /// is at a given moment and which letters are gone. Foundation only, so
 /// the tests can run it without a window.
 ///
@@ -44,6 +44,12 @@ enum PlayMath {
         case eat(line: Int, words: Range<Int>)
         /// Wipe a whole line with a cloth.
         case wipe(line: Int)
+        /// Kick a word: its letters fly and pile up at the bottom.
+        case kick(line: Int, word: Int)
+        /// Hop on a line until its words drop, and fall after them.
+        case stomp(line: Int)
+        /// Lift a word, carry it to the end of another line, put it down.
+        case carry(line: Int, word: Int, to: Int)
         /// Stand still, facing you, for so many seconds.
         case rest(Double)
     }
@@ -76,25 +82,6 @@ enum PlayMath {
         guard let best = count.max(by: { ($0.value, $0.key) < ($1.value, $1.key) })?.key else { return nil }
         return samples.first { $0 & 0xF8F8F8 == best }
     }
-
-    /// The built-in script: the line nearest the middle of the page and
-    /// the two under it in the same column. It walks the first, eats the
-    /// start of the second and wipes the third. Lines too close to the top
-    /// to stand on, too short or of one word are left alone.
-    static func demo(_ lines: [Line], width: Double, height: Double) -> [Step] {
-        let fit = lines.indices.filter { lines[$0].words.count >= 2 && lines[$0].rect.w >= 120 && lines[$0].rect.y >= top + 40 }
-        func far(_ i: Int) -> Double { hypot(lines[i].rect.midX - width / 2, lines[i].rect.midY - height / 2) }
-        guard let first = fit.min(by: { far($0) < far($1) }) else { return [] }
-        let a = lines[first].rect
-        let under = fit.filter { lines[$0].rect.y > a.y + a.h / 2 && lines[$0].rect.x < a.maxX && lines[$0].rect.maxX > a.x }
-            .sorted { lines[$0].rect.y < lines[$1].rect.y }
-        let picked = [first] + under.prefix(2)
-        var steps: [Step] = [.jump(line: first), .walk(line: first)]
-        if picked.count > 1 { steps += [.eat(line: picked[1], words: 0..<min(3, lines[picked[1]].words.count))] }
-        else { steps += [.eat(line: first, words: 0..<min(2, lines[first].words.count))] }
-        if picked.count > 2 { steps += [.wipe(line: picked[2])] }
-        return steps + [.rest(1.2)]
-    }
 }
 
 /// A script laid out in time: every move has its start and its end, so
@@ -104,7 +91,7 @@ struct Play {
     typealias P = PlayMath
     typealias M = CharacterMath
 
-    enum Kind { case jump, walk, eat, wipe, rest }
+    enum Kind { case jump, walk, eat, wipe, kick, stomp, fall, lift, carry, drop, rest }
 
     struct Move {
         var kind: Kind
@@ -126,17 +113,23 @@ struct Play {
         var gone: [(rect: P.Rect, paper: UInt32)] = []
         /// The cloth, while it wipes.
         var cloth: P.Rect?
+        /// What was kicked, dropped or carried, where it is now.
+        var pieces: [P.Piece] = []
         var done = false
     }
 
     let lines: [P.Line]
+    /// The picture's width and height: where a thrown piece stops.
+    let size: P.Point
     private(set) var moves: [Move] = []
+    private(set) var cuts: [P.Cut] = []
     var duration: Double { moves.last?.end ?? 0 }
 
     /// `start` is where its feet are when play begins. Steps that name a
     /// line or a word that is not there are skipped.
-    init(lines: [P.Line], steps: [P.Step], start: P.Point) {
+    init(lines: [P.Line], steps: [P.Step], start: P.Point, size: P.Point) {
         self.lines = lines
+        self.size = size
         var at = start, now = 0.0
         func add(_ kind: Kind, to: P.Point, _ seconds: Double, line: Int = 0, words: Range<Int> = 0..<0) -> Move {
             Move(kind: kind, from: at, to: to, start: now, duration: seconds, line: line, words: words)
@@ -147,7 +140,18 @@ struct Play {
             let m = add(.jump, to: to, 0.5 + hypot(to.x - at.x, to.y - at.y) / 900)
             list.append(m); at = to; now = m.end
         }
-        var list: [Move] = []
+        var list: [Move] = [], cuts: [P.Cut] = []
+        /// A move on the spot.
+        func stay(_ kind: Kind, _ seconds: Double, line: Int) -> Move {
+            let m = add(kind, to: at, seconds, line: line)
+            list.append(m); now = m.end
+            return m
+        }
+        /// A piece falls: each one a little higher on the pile.
+        func throwing(_ source: P.Rect, line: Int, at start: Double, v: P.Point, spin: Double) {
+            cuts.append(P.Cut(source: source, paper: lines[line].paper, start: start,
+                              path: .thrown(v: v, spin: spin, rise: Double(cuts.count % 4) * 4)))
+        }
         for step in steps {
             switch step {
             case .jump(let i):
@@ -174,12 +178,49 @@ struct Play {
                 reach(P.Point(x: r.x, y: r.y), into: &list)
                 let m = add(.wipe, to: P.Point(x: r.maxX, y: r.y), r.w / P.wipeSpeed, line: i)
                 list.append(m); at = m.to; now = m.end
+            case .kick(let i, let w):
+                guard lines.indices.contains(i), lines[i].words.indices.contains(w) else { continue }
+                let word = lines[i].words[w]
+                reach(P.Point(x: word.rect.x - P.mouth - 4, y: lines[i].rect.midY + P.middle), into: &list)
+                let m = stay(.kick, 0.6, line: i)
+                for (k, letter) in P.letters(of: word).enumerated() {
+                    throwing(letter, line: i, at: m.start + 0.25, v: P.Point(x: 150 + 40 * Double(k), y: -320 - 30 * Double(k % 3)),
+                             spin: 4 + Double(k % 3))
+                }
+            case .stomp(let i):
+                guard lines.indices.contains(i) else { continue }
+                let r = lines[i].rect
+                reach(P.Point(x: r.midX, y: r.y), into: &list)
+                let m = stay(.stomp, 1.2, line: i)
+                for (k, word) in lines[i].words.enumerated() {
+                    let side: Double = k % 2 == 0 ? -1 : 1
+                    throwing(word.rect, line: i, at: m.start + 0.4 + 0.8 * Double(k) / Double(lines[i].words.count),
+                             v: P.Point(x: 50 * side, y: -90), spin: 5 * side)
+                }
+                // Its floor is gone: it falls after the words, slowly
+                // enough to follow with the eye.
+                let floor = P.Point(x: at.x, y: max(size.y - 6, at.y)), drop = floor.y - at.y
+                let fall = add(.fall, to: floor, max((2 * drop / P.gravity).squareRoot(), drop / 600), line: i)
+                list.append(fall); at = floor; now = fall.end
+            case .carry(let i, let w, let j):
+                guard lines.indices.contains(i), lines[i].words.indices.contains(w), lines.indices.contains(j), j != i else { continue }
+                let word = lines[i].words[w].rect, home = lines[j].rect
+                reach(P.Point(x: word.x - P.mouth - 4, y: lines[i].rect.midY + P.middle), into: &list)
+                let up = stay(.lift, P.lift, line: i)
+                let m = add(.carry, to: P.Point(x: home.maxX - 4, y: home.y), 0.5 + hypot(home.maxX - 4 - at.x, home.y - at.y) / 900, line: j)
+                list.append(m); at = m.to; now = m.end
+                let down = stay(.drop, P.lift, line: j)
+                // After the line, or on top of its end when the page stops there.
+                let after = home.maxX + 8 + word.w <= size.x
+                let to = after ? P.Point(x: home.maxX + 8, y: home.midY - word.h / 2) : P.Point(x: home.maxX - word.w, y: home.y - word.h - 2)
+                cuts.append(P.Cut(source: word, paper: lines[i].paper, start: up.start, path: .held(until: down.start, to: to)))
             case .rest(let seconds):
                 let m = add(.rest, to: at, max(seconds, 0))
                 list.append(m); now = m.end
             }
         }
         moves = list
+        self.cuts = cuts
     }
 
     func frame(at t: Double) -> Frame {
@@ -188,10 +229,16 @@ struct Play {
         var f = Frame(t: t, done: t >= duration)
 
         f.at = P.Point(x: m.from.x + (m.to.x - m.from.x) * p, y: m.from.y + (m.to.y - m.from.y) * p)
-        if m.kind == .jump {
+        switch m.kind {
+        case .jump, .carry:
             // An arc over both ends, kept inside the picture.
             let rise = 30 + hypot(m.to.x - m.from.x, m.to.y - m.from.y) * 0.12
             f.at.y -= min(rise, max(min(m.from.y, m.to.y) - P.top, 0)) * 4 * p * (1 - p)
+        // Three hops on the spot.
+        case .stomp: f.at.y -= min(22, max(m.from.y - P.top, 0)) * abs(sin(3 * .pi * p))
+        // Faster and faster.
+        case .fall: f.at.y = m.from.y + (m.to.y - m.from.y) * p * p
+        default: break
         }
 
         // The look of this move, reached from the look of the one before
@@ -203,14 +250,18 @@ struct Play {
         f.pose = M.blend(before.pose, now.pose, eyes: into, body: into, marks: into)
         switch m.kind {
         case .walk: f.pose.lift += 3 * into * abs(sin(2 * .pi * t * 2.2))
-        case .jump:
+        case .jump, .carry:
             let air = sin(.pi * p)
             f.pose.sy *= 1 + 0.12 * air; f.pose.sx *= 1 - 0.08 * air
         case .eat:
             let bite = into * (0.5 + 0.5 * sin(2 * .pi * t / P.perLetter))
             f.pose.sy *= 1 - 0.08 * bite; f.pose.sx *= 1 + 0.05 * bite
         case .wipe: f.pose.tilt += 5 * into * sin(2 * .pi * t * 5)
-        case .rest: break
+        // Leans back, then into the kick.
+        case .kick: f.pose.tilt -= 14 * sin(2 * .pi * p)
+        case .stomp: f.pose.sy *= 1 + into * (0.1 * abs(sin(3 * .pi * p)) - 0.05)
+        case .fall: f.pose.sy *= 1 + 0.12 * p; f.pose.sx *= 1 - 0.08 * p
+        case .lift, .drop, .rest: break
         }
 
         for done in moves[...i] {
@@ -230,21 +281,10 @@ struct Play {
             default: break
             }
         }
+        move(&f)
         return f
     }
 
     /// A little more than the letters, so nothing of them shows at the edges.
-    private func cover(_ r: P.Rect) -> P.Rect { P.Rect(x: r.x - 1, y: r.y - 2, w: r.w + 2, h: r.h + 4) }
-
-    /// Which way it faces during a move, and its pose without the motion.
-    private func look(_ m: Move) -> (face: Double, pose: M.Pose) {
-        let way: Double = m.to.x >= m.from.x ? 1 : -1
-        switch m.kind {
-        case .jump: return (way, M.Pose(tilt: 6 * way, gy: -2))
-        case .walk: return (way, M.Pose(tilt: 7 * way))
-        case .eat: return (way, M.Pose(size: 1.12))
-        case .wipe: return (way, M.Pose(tilt: 12 * way, gy: 4, lid: 0.3))
-        case .rest: return (0, M.Pose())
-        }
-    }
+    func cover(_ r: P.Rect) -> P.Rect { P.Rect(x: r.x - 1, y: r.y - 2, w: r.w + 2, h: r.h + 4) }
 }

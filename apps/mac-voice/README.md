@@ -133,9 +133,13 @@ Play mode (part of #505, off by default; UserDefaults `playMode`, ticked as
 "Play mode" in the menu) adds "Play on this page": the character plays a short script on
 a frozen picture of the screen it is on, then the picture goes. `PlayRead.swift`
 takes the picture and reads its lines of text with Vision, on the Mac;
-`PlayMath.swift` lays the script out in time (jump onto the line nearest the
-middle, walk it, eat the first words of the next line letter by letter, wipe
-the third, rest), pure and tested in `Tests/Play`; `PlayStage.swift` owns
+`PlayMath.swift` lays a script out in time (jump, walk, eat, wipe, kick,
+stomp, carry, rest); `PlayActs.swift` makes a different script for each seed
+(a line near the middle to walk, then one act each on up to four others,
+never the same act twice) and holds the pieces that move: kicked letters and
+stomped words are cut from the picture, fall and stay on its bottom edge, and
+a carried word is put down after the walked line. Both are pure and tested in
+`Tests/Play`; `PlayStage.swift` owns
 the window over everything, the drawing and the exits; the picture goes up
 at once and the character waits on it while the text is read. Any key, click or
 scroll, the talk key, a change of Space, or the assistant starting to

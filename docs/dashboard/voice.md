@@ -302,7 +302,7 @@ Good to know:
 
 ### Play on the page
 
-The character can leave its place and play on a picture of your screen: it walks along a line of text, eats a few words and wipes a line. It is a short show, about ten seconds, and the real page is never touched. Play mode is off by default.
+The character can leave its place and play on a picture of your screen: it walks along a line of text, then eats words, wipes a line, kicks a word to pieces, stomps a line down or carries a word away. Each play is different. It is a short show, about ten seconds, and the real page is never touched. Play mode is off by default.
 
 To switch it on and start a play:
 
@@ -313,9 +313,16 @@ To switch it on and start a play:
 What happens:
 
 1. The app takes one picture of the screen the character is on and lays it over that screen. The character waits on it, with its three thinking dots, while the lines of text are read. The reading is done on the Mac by Apple's text recognition; nothing is uploaded.
-2. The character jumps onto the line nearest the middle of the screen and walks along it.
-3. It eats the first words of the next line under it, letter by letter.
-4. It wipes the third line with a cloth, rests, and the picture goes. The page is as it was.
+2. The character jumps onto one of the lines near the middle of the screen and walks along it.
+3. It goes to up to four other lines and does one thing to each, never the same thing twice in a play:
+   - **Eat:** it eats up to three words, letter by letter.
+   - **Wipe:** it wipes the line with a cloth.
+   - **Kick:** it kicks a word. The letters fly off and pile up at the bottom of the screen.
+   - **Stomp:** it hops on the line until the words drop one by one, then falls after them.
+   - **Carry:** it lifts a word over its head and puts it down at the end of the line it walked.
+4. It rests, and the picture goes. The page is as it was.
+
+Which lines, which words and in what order change with every play.
 
 Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring.
 
@@ -328,7 +335,8 @@ Good to know:
 - **One screen:** it plays on the screen the character is on. Other screens stay live.
 - **A short wait before it starts:** reading the text takes one to a few seconds. The screen is already frozen during that time.
 - **No text, no play:** if no line of at least two words is found away from the top of the screen, the picture goes again and nothing plays.
-- **Letters are an estimate:** a word's box is cut into equal parts, so a letter can go a little early or late.
+- **Letters are an estimate:** a word's box is cut into equal parts, so a letter can go a little early or late, and a kicked letter can carry a sliver of the one next to it.
+- **On a page with one line of text:** it walks that line and does one thing to it.
 - **Photos and gradients:** on a background that isn't one flat colour, the painted-over patch shows.
 - **It has no mouth:** eating shows as letters going at its front, with a small bite squash.
 

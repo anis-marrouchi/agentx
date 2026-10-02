@@ -236,8 +236,8 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     /// "Play on this page" (#505): one picture of the character's screen, the
-    /// lines of text read on it, and the character plays the built-in
-    /// script on the picture. The page itself is never touched.
+    /// lines of text read on it, and the character plays on the picture,
+    /// differently each time. The page itself is never touched.
     private func startPlay() {
         let foot = character.foot
         guard canPlay, let screen = NSScreen.screens.first(where: { $0.frame.contains(foot) }) ?? NSScreen.screens.first
@@ -267,9 +267,9 @@ final class App: NSObject, NSApplicationDelegate {
             // Ended while its text was read, and maybe started again since:
             // these lines belong to a picture that is gone.
             guard play.running, play.number == number else { return }
-            let steps = PlayMath.demo(lines, width: size.width, height: size.height)
+            let steps = PlayMath.script(lines, width: size.width, height: size.height, seed: .random(in: 0 ... .max))
             if steps.isEmpty { play.end("no line of text to play on") }
-            else { play.play(Play(lines: lines, steps: steps, start: start)) }
+            else { play.play(Play(lines: lines, steps: steps, start: start, size: PlayMath.Point(x: size.width, y: size.height))) }
         }
     }
 
