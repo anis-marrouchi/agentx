@@ -122,11 +122,12 @@ A page that describes a flow between two people or two machines opens with one d
 To add a diagram (in a terminal, from the repo root):
 
 1. Copy `docs/.scripts/diagrams/teammate-join.mjs` to `docs/.scripts/diagrams/<name>.mjs`.
-2. Edit the copy: the title, the rows of steps, and the extras (`callout` for the exception, `window` for what the reader ends up seeing, `list` for what to do when it fails). Keep a step's title to two short lines and its note to two.
+2. Edit the copy: the title, the rows of steps, and the extras (`callout` for the exception, `window` for what the reader ends up seeing, `list` for what to do when it fails). Put three steps on a row. Keep a step's title and its note to three lines in all.
 3. Build it: `pnpm docs:diagrams`. It writes `docs/public/diagrams/<name>.svg`.
-4. Open the file in a browser and watch it build once. Check that no text leaves its card.
+4. Open the file in a browser and watch it build once. Check that no text leaves its card and nothing overlaps.
 5. Add it to the page, with a sentence of alt text that says what the picture shows: `![…](/diagrams/<name>.svg)`.
-6. Commit the spec and the built file together.
+6. Run `pnpm docs:dev`, open the page, and read the diagram there: every line must be readable at the page's width without zooming.
+7. Commit the spec and the built file together.
 
 The rules of the look:
 
@@ -134,6 +135,7 @@ The rules of the look:
 - Motion explains order and nothing else: steps rise in one after the other, a line draws from one row to the next, then each number pulses in turn. Nothing loops back to an empty picture. A reader who turned on reduced motion sees the finished diagram, still.
 - Colours come from `C` in the kit. A new colour or shape goes into the kit first, so every diagram gets it.
 - Neutral examples only, as on every page.
+- The kit's width and type sizes go together. Keep the width; a diagram up to 1300 high also prints on one A4 page.
 
 `pnpm docs:check` fails when a built file no longer matches its spec, and names the file.
 

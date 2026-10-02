@@ -1,22 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 836" width="1200" height="836" role="img" aria-labelledby="t d" style="--cycle:9.1s">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 1256" width="920" height="1256" role="img" aria-labelledby="t d" style="--cycle:9.1s">
 <title id="t">How a teammate joins AgentX</title>
-<desc id="d">Thirteen steps in three rows. The owner prepares: add the person, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, send the address and the code. The teammate installs Tailscale, opens the address, enters a machine name and the code, and waits. The owner says yes on a decision card. The page becomes My work and can be installed as an app. A no, or three days without an answer, ends the key.</desc>
+<desc id="d">Thirteen steps in three parts. The owner prepares: add the person, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, send the address and the code. The teammate installs Tailscale, opens the address, enters a machine name and the code, and waits. The owner says yes on a decision card. The page becomes My work and can be installed as an app. A no, or three days without an answer, ends the key.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
 .h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
-.sub { font-size: 15px; fill: #475569; }
-.legend { font-size: 13px; font-weight: 600; }
-.band { font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
+.sub { font-size: 16px; fill: #475569; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
 .band.warn { fill: #B45309; }
-.title { font-size: 14.5px; font-weight: 650; }
-.note { font-size: 12px; fill: #475569; }
-.rowname { font-size: 13px; font-weight: 600; }
-.symptom { font-size: 13px; font-weight: 650; }
-.state { font-size: 11.5px; font-weight: 600; }
-.num { font-size: 13.5px; font-weight: 700; fill: #fff; }
-.pill { font-size: 12px; font-weight: 700; fill: #fff; }
-.wintitle { font-size: 12.5px; font-weight: 600; fill: #475569; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: #475569; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: #475569; }
 .card { fill: #fff; stroke: #E2E8F0; stroke-width: 1.25; filter: url(#soft); }
 .card.accent { stroke: #C7D9FF; }
 .card.win { stroke: #0B0D12; stroke-width: 1.5; }
@@ -33,168 +33,162 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 @keyframes blink { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
 </style>
-<rect width="1200" height="836" rx="24" fill="#FFFFFF"/>
+<rect width="920" height="1256" rx="24" fill="#FFFFFF"/>
 <text x="44" y="56" class="h1" text-anchor="start">How a teammate joins</text>
 <text x="44" y="82" class="sub" text-anchor="start">You prepare once. They pair in a minute. Nothing opens until you say yes.</text>
-<circle cx="984" cy="50" r="7" fill="#1A66FF"/><text x="998" y="55" class="legend" text-anchor="start">You, the owner</text>
-<circle cx="984" cy="74" r="7" fill="#0B0D12"/><text x="998" y="79" class="legend" text-anchor="start">The teammate</text>
-<rect x="20" y="104" width="1160" height="196" rx="20" fill="#F3F7FF"/>
+<circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You, the owner</text>
+<circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">The teammate</text>
+<rect x="20" y="104" width="880" height="372" rx="20" fill="#F3F7FF"/>
 <text x="44" y="132" class="band" text-anchor="start">YOU PREPARE</text>
 <g class="rise" style="animation-delay:0.32s">
-<rect x="44" y="148" width="168.7" height="132" rx="14" class="card accent"/>
+<rect x="44" y="148" width="264" height="136" rx="14" class="card accent"/>
 <circle cx="70" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:6.86s"/>
 <circle cx="70" cy="176" r="15" fill="#1A66FF"/>
 <text x="70" y="181" class="num" text-anchor="middle">1</text>
-<text x="60" y="216" class="title" text-anchor="start">Add them to</text>
-<text x="60" y="234" class="title" text-anchor="start">People</text>
-<text x="60" y="256" class="note" text-anchor="start">with the account they</text>
-<text x="60" y="271" class="note" text-anchor="start">write from</text>
+<text x="60" y="220" class="title" text-anchor="start">Add them to People</text>
+<text x="60" y="242" class="note" text-anchor="start">with the account they write from</text>
 </g>
 <g class="rise" style="animation-delay:0.64s">
-<rect x="232.7" y="148" width="168.7" height="132" rx="14" class="card accent"/>
-<circle cx="258.7" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:7.56s"/>
-<circle cx="258.7" cy="176" r="15" fill="#1A66FF"/>
-<text x="258.7" y="181" class="num" text-anchor="middle">2</text>
-<text x="248.7" y="216" class="title" text-anchor="start">Publish only the</text>
-<text x="248.7" y="234" class="title" text-anchor="start">member page</text>
-<text x="248.7" y="256" class="note" text-anchor="start">nothing else of yours</text>
-<text x="248.7" y="271" class="note" text-anchor="start">is reachable</text>
+<rect x="328" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:7.56s"/>
+<circle cx="354" cy="176" r="15" fill="#1A66FF"/>
+<text x="354" y="181" class="num" text-anchor="middle">2</text>
+<text x="344" y="220" class="title" text-anchor="start">Publish only the</text>
+<text x="344" y="241" class="title" text-anchor="start">member page</text>
+<text x="344" y="263" class="note" text-anchor="start">nothing else of yours is reachable</text>
 </g>
-<g class="fade" style="animation-delay:0.47s"><path d="M215.7 214 H227.7" class="link"/><path d="M223.7 210 L228.7 214 L223.7 218" class="link"/></g>
+<g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
 <g class="rise" style="animation-delay:0.96s">
-<rect x="421.3" y="148" width="168.7" height="132" rx="14" class="card accent"/>
-<circle cx="447.3" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:8.26s"/>
-<circle cx="447.3" cy="176" r="15" fill="#1A66FF"/>
-<text x="447.3" y="181" class="num" text-anchor="middle">3</text>
-<text x="437.3" y="216" class="title" text-anchor="start">Limit shared users</text>
-<text x="437.3" y="234" class="title" text-anchor="start">to port 443</text>
-<text x="437.3" y="256" class="note" text-anchor="start">in the Tailscale</text>
-<text x="437.3" y="271" class="note" text-anchor="start">access rules</text>
+<rect x="612" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="638" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:8.26s"/>
+<circle cx="638" cy="176" r="15" fill="#1A66FF"/>
+<text x="638" y="181" class="num" text-anchor="middle">3</text>
+<text x="628" y="220" class="title" text-anchor="start">Limit shared users</text>
+<text x="628" y="241" class="title" text-anchor="start">to port 443</text>
+<text x="628" y="263" class="note" text-anchor="start">in the Tailscale access rules</text>
 </g>
-<g class="fade" style="animation-delay:0.79s"><path d="M404.3 214 H416.3" class="link"/><path d="M412.3 210 L417.3 214 L412.3 218" class="link"/></g>
+<g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
+<path d="M744 284 V292 Q744 302 734 302 H80 Q70 302 70 312 V316" class="wrap" pathLength="100" style="animation-delay:1.26s"/>
+<path d="M65 311 L70 317 L75 311" class="link fade" style="animation-delay:2.16s"/>
 <g class="rise" style="animation-delay:1.28s">
-<rect x="610" y="148" width="168.7" height="132" rx="14" class="card accent"/>
-<circle cx="636" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:8.96s"/>
-<circle cx="636" cy="176" r="15" fill="#1A66FF"/>
-<text x="636" y="181" class="num" text-anchor="middle">4</text>
-<text x="626" y="216" class="title" text-anchor="start">Create the invite</text>
-<text x="626" y="238" class="note" text-anchor="start">agentx people invite</text>
-<text x="626" y="253" class="note" text-anchor="start">prints address + code</text>
+<rect x="44" y="320" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="348" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:8.96s"/>
+<circle cx="70" cy="348" r="15" fill="#1A66FF"/>
+<text x="70" y="353" class="num" text-anchor="middle">4</text>
+<text x="60" y="392" class="title" text-anchor="start">Create the invite</text>
+<text x="60" y="414" class="note" text-anchor="start">agentx people invite prints</text>
+<text x="60" y="431" class="note" text-anchor="start">the address and a code</text>
 </g>
-<g class="fade" style="animation-delay:1.11s"><path d="M593 214 H605" class="link"/><path d="M601 210 L606 214 L601 218" class="link"/></g>
 <g class="rise" style="animation-delay:1.60s">
-<rect x="798.7" y="148" width="168.7" height="132" rx="14" class="card accent"/>
-<circle cx="824.7" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:9.66s"/>
-<circle cx="824.7" cy="176" r="15" fill="#1A66FF"/>
-<text x="824.7" y="181" class="num" text-anchor="middle">5</text>
-<text x="814.7" y="216" class="title" text-anchor="start">Share this computer</text>
-<text x="814.7" y="234" class="title" text-anchor="start">in Tailscale</text>
-<text x="814.7" y="256" class="note" text-anchor="start">admin console:</text>
-<text x="814.7" y="271" class="note" text-anchor="start">Machines › Share</text>
+<rect x="328" y="320" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="348" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:9.66s"/>
+<circle cx="354" cy="348" r="15" fill="#1A66FF"/>
+<text x="354" y="353" class="num" text-anchor="middle">5</text>
+<text x="344" y="392" class="title" text-anchor="start">Share this computer</text>
+<text x="344" y="413" class="title" text-anchor="start">in Tailscale</text>
+<text x="344" y="435" class="note" text-anchor="start">admin console: Machines › Share</text>
 </g>
-<g class="fade" style="animation-delay:1.43s"><path d="M781.7 214 H793.7" class="link"/><path d="M789.7 210 L794.7 214 L789.7 218" class="link"/></g>
+<g class="fade" style="animation-delay:1.43s"><path d="M311 388 H323" class="link"/><path d="M319 384 L324 388 L319 392" class="link"/></g>
 <g class="rise" style="animation-delay:1.92s">
-<rect x="987.3" y="148" width="168.7" height="132" rx="14" class="card accent"/>
-<circle cx="1013.3" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:10.36s"/>
-<circle cx="1013.3" cy="176" r="15" fill="#1A66FF"/>
-<text x="1013.3" y="181" class="num" text-anchor="middle">6</text>
-<text x="1003.3" y="216" class="title" text-anchor="start">Send the address</text>
-<text x="1003.3" y="234" class="title" text-anchor="start">and the code</text>
-<text x="1003.3" y="256" class="note" text-anchor="start">the code works once,</text>
-<text x="1003.3" y="271" class="note" text-anchor="start">for 10 minutes</text>
+<rect x="612" y="320" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="638" cy="348" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:10.36s"/>
+<circle cx="638" cy="348" r="15" fill="#1A66FF"/>
+<text x="638" y="353" class="num" text-anchor="middle">6</text>
+<text x="628" y="392" class="title" text-anchor="start">Send the address</text>
+<text x="628" y="413" class="title" text-anchor="start">and the code</text>
+<text x="628" y="435" class="note" text-anchor="start">the code works once, for 10 minutes</text>
 </g>
-<g class="fade" style="animation-delay:1.75s"><path d="M970.3 214 H982.3" class="link"/><path d="M978.3 210 L983.3 214 L978.3 218" class="link"/></g>
-<rect x="20" y="316" width="1160" height="196" rx="20" fill="#F6F7F9"/>
-<text x="92" y="344" class="band" text-anchor="start">THE TEAMMATE PAIRS, YOU APPROVE</text>
-<path d="M1071.7 280 V298 Q1071.7 308 1061.7 308 H80 Q70 308 70 318 V356" class="wrap" pathLength="100" style="animation-delay:2.22s"/>
-<path d="M65 351 L70 357 L75 351" class="link fade" style="animation-delay:3.12s"/>
+<g class="fade" style="animation-delay:1.75s"><path d="M595 388 H607" class="link"/><path d="M603 384 L608 388 L603 392" class="link"/></g>
+<rect x="20" y="492" width="880" height="372" rx="20" fill="#F6F7F9"/>
+<text x="92" y="520" class="band" text-anchor="start">THE TEAMMATE PAIRS, YOU APPROVE</text>
+<path d="M744 456 V474 Q744 484 734 484 H80 Q70 484 70 494 V532" class="wrap" pathLength="100" style="animation-delay:2.22s"/>
+<path d="M65 527 L70 533 L75 527" class="link fade" style="animation-delay:3.12s"/>
 <g class="rise" style="animation-delay:2.24s">
-<rect x="44" y="360" width="206.4" height="132" rx="14" class="card"/>
-<circle cx="70" cy="388" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:11.06s"/>
-<circle cx="70" cy="388" r="15" fill="#0B0D12"/>
-<text x="70" y="393" class="num" text-anchor="middle">7</text>
-<text x="60" y="428" class="title" text-anchor="start">Install Tailscale,</text>
-<text x="60" y="446" class="title" text-anchor="start">accept the share</text>
-<text x="60" y="468" class="note" text-anchor="start">on their own machine</text>
+<rect x="44" y="536" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:11.06s"/>
+<circle cx="70" cy="564" r="15" fill="#0B0D12"/>
+<text x="70" y="569" class="num" text-anchor="middle">7</text>
+<text x="60" y="608" class="title" text-anchor="start">Install Tailscale,</text>
+<text x="60" y="629" class="title" text-anchor="start">accept the share</text>
+<text x="60" y="651" class="note" text-anchor="start">on their own machine</text>
 </g>
 <g class="rise" style="animation-delay:2.56s">
-<rect x="270.4" y="360" width="206.4" height="132" rx="14" class="card"/>
-<circle cx="296.4" cy="388" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:11.76s"/>
-<circle cx="296.4" cy="388" r="15" fill="#0B0D12"/>
-<text x="296.4" y="393" class="num" text-anchor="middle">8</text>
-<text x="286.4" y="428" class="title" text-anchor="start">Open the address</text>
-<text x="286.4" y="450" class="note" text-anchor="start">in Edge or Chrome</text>
+<rect x="328" y="536" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:11.76s"/>
+<circle cx="354" cy="564" r="15" fill="#0B0D12"/>
+<text x="354" y="569" class="num" text-anchor="middle">8</text>
+<text x="344" y="608" class="title" text-anchor="start">Open the address</text>
+<text x="344" y="630" class="note" text-anchor="start">in Edge or Chrome</text>
 </g>
-<g class="fade" style="animation-delay:2.39s"><path d="M253.4 426 H265.4" class="link"/><path d="M261.4 422 L266.4 426 L261.4 430" class="link"/></g>
+<g class="fade" style="animation-delay:2.39s"><path d="M311 604 H323" class="link"/><path d="M319 600 L324 604 L319 608" class="link"/></g>
 <g class="rise" style="animation-delay:2.88s">
-<rect x="496.8" y="360" width="206.4" height="132" rx="14" class="card"/>
-<circle cx="522.8" cy="388" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:12.46s"/>
-<circle cx="522.8" cy="388" r="15" fill="#0B0D12"/>
-<text x="522.8" y="393" class="num" text-anchor="middle">9</text>
-<text x="512.8" y="428" class="title" text-anchor="start">Enter a machine name</text>
-<text x="512.8" y="446" class="title" text-anchor="start">and the code</text>
-<text x="512.8" y="468" class="note" text-anchor="start">then press Pair</text>
+<rect x="612" y="536" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:12.46s"/>
+<circle cx="638" cy="564" r="15" fill="#0B0D12"/>
+<text x="638" y="569" class="num" text-anchor="middle">9</text>
+<text x="628" y="608" class="title" text-anchor="start">Enter a machine name</text>
+<text x="628" y="629" class="title" text-anchor="start">and the code</text>
+<text x="628" y="651" class="note" text-anchor="start">then press Pair</text>
 </g>
-<g class="fade" style="animation-delay:2.71s"><path d="M479.8 426 H491.8" class="link"/><path d="M487.8 422 L492.8 426 L487.8 430" class="link"/></g>
+<g class="fade" style="animation-delay:2.71s"><path d="M595 604 H607" class="link"/><path d="M603 600 L608 604 L603 608" class="link"/></g>
+<path d="M744 672 V680 Q744 690 734 690 H80 Q70 690 70 700 V704" class="wrap" pathLength="100" style="animation-delay:3.18s"/>
+<path d="M65 699 L70 705 L75 699" class="link fade" style="animation-delay:4.08s"/>
 <g class="rise" style="animation-delay:3.20s">
-<rect x="723.2" y="360" width="206.4" height="132" rx="14" class="card"/>
-<circle cx="749.2" cy="388" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:13.16s"/>
-<circle cx="749.2" cy="388" r="15" fill="#0B0D12"/>
-<text x="749.2" y="393" class="num" text-anchor="middle">10</text>
-<text x="739.2" y="428" class="title" text-anchor="start">Waiting for the owner</text>
-<text x="739.2" y="450" class="note" text-anchor="start">the page waits by itself</text>
+<rect x="44" y="708" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="736" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:13.16s"/>
+<circle cx="70" cy="736" r="15" fill="#0B0D12"/>
+<text x="70" y="741" class="num" text-anchor="middle">10</text>
+<text x="60" y="780" class="title" text-anchor="start">Waiting for the owner</text>
+<text x="60" y="802" class="note" text-anchor="start">the page waits by itself</text>
 </g>
-<g class="fade" style="animation-delay:3.03s"><path d="M706.2 426 H718.2" class="link"/><path d="M714.2 422 L719.2 426 L714.2 430" class="link"/></g>
 <g class="rise" style="animation-delay:3.52s">
-<rect x="949.6" y="360" width="206.4" height="132" rx="14" class="card accent"/>
-<circle cx="975.6" cy="388" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:13.86s"/>
-<circle cx="975.6" cy="388" r="15" fill="#1A66FF"/>
-<text x="975.6" y="393" class="num" text-anchor="middle">11</text>
-<text x="965.6" y="428" class="title" text-anchor="start">Say yes on the card</text>
-<text x="965.6" y="450" class="note" text-anchor="start">“New machine for …” in</text>
-<text x="965.6" y="465" class="note" text-anchor="start">your Approvals inbox</text>
+<rect x="328" y="708" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="736" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:13.86s"/>
+<circle cx="354" cy="736" r="15" fill="#1A66FF"/>
+<text x="354" y="741" class="num" text-anchor="middle">11</text>
+<text x="344" y="780" class="title" text-anchor="start">Say yes on the card</text>
+<text x="344" y="802" class="note" text-anchor="start">“New machine for …” in your</text>
+<text x="344" y="819" class="note" text-anchor="start">Approvals inbox</text>
 </g>
-<g class="fade" style="animation-delay:3.35s"><path d="M932.6 426 H944.6" class="link"/><path d="M940.6 422 L945.6 426 L940.6 430" class="link"/></g>
-<rect x="20" y="528" width="1160" height="288" rx="20" fill="#F3F7FF"/>
-<text x="92" y="556" class="band" text-anchor="start">CONNECTED</text>
-<path d="M1052.8 492 V510 Q1052.8 520 1042.8 520 H80 Q70 520 70 530 V568" class="wrap" pathLength="100" style="animation-delay:3.82s"/>
-<path d="M65 563 L70 569 L75 563" class="link fade" style="animation-delay:4.72s"/>
-<g class="fade" style="animation-delay:4.12s"><rect x="982.8" y="509" width="40" height="22" rx="11" fill="#1A66FF"/><text x="1002.8" y="524.5" class="pill" text-anchor="middle">Yes</text></g>
+<g class="fade" style="animation-delay:3.35s"><path d="M311 776 H323" class="link"/><path d="M319 772 L324 776 L319 780" class="link"/></g>
+<rect x="20" y="880" width="880" height="372" rx="20" fill="#F3F7FF"/>
+<text x="92" y="908" class="band" text-anchor="start">CONNECTED</text>
+<path d="M460 844 V862 Q460 872 450 872 H80 Q70 872 70 882 V920" class="wrap" pathLength="100" style="animation-delay:3.82s"/>
+<path d="M65 915 L70 921 L75 915" class="link fade" style="animation-delay:4.72s"/>
+<g class="fade" style="animation-delay:4.12s"><rect x="386.5" y="861" width="43.5" height="22" rx="11" fill="#1A66FF"/><text x="408.3" y="876.5" class="pill" text-anchor="middle">Yes</text></g>
 <g class="rise" style="animation-delay:3.84s">
-<rect x="44" y="572" width="206" height="132" rx="14" class="card"/>
-<circle cx="70" cy="600" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:14.56s"/>
-<circle cx="70" cy="600" r="15" fill="#0B0D12"/>
-<text x="70" y="605" class="num" text-anchor="middle">12</text>
-<text x="60" y="640" class="title" text-anchor="start">The page becomes</text>
-<text x="60" y="658" class="title" text-anchor="start">My work</text>
-<text x="60" y="680" class="note" text-anchor="start">only their own requests.</text>
-<text x="60" y="695" class="note" text-anchor="start">The key lasts 90 days</text>
+<rect x="44" y="924" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="952" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:14.56s"/>
+<circle cx="70" cy="952" r="15" fill="#0B0D12"/>
+<text x="70" y="957" class="num" text-anchor="middle">12</text>
+<text x="60" y="996" class="title" text-anchor="start">The page becomes My work</text>
+<text x="60" y="1018" class="note" text-anchor="start">only their own requests.</text>
+<text x="60" y="1035" class="note" text-anchor="start">The key lasts 90 days</text>
 </g>
 <g class="rise" style="animation-delay:4.16s">
-<rect x="270" y="572" width="206" height="132" rx="14" class="card"/>
-<circle cx="296" cy="600" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:15.26s"/>
-<circle cx="296" cy="600" r="15" fill="#0B0D12"/>
-<text x="296" y="605" class="num" text-anchor="middle">13</text>
-<text x="286" y="640" class="title" text-anchor="start">Install it as an app</text>
-<text x="286" y="662" class="note" text-anchor="start">browser menu › Apps ›</text>
-<text x="286" y="677" class="note" text-anchor="start">Install this site as an app</text>
+<rect x="328" y="924" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="952" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:15.26s"/>
+<circle cx="354" cy="952" r="15" fill="#0B0D12"/>
+<text x="354" y="957" class="num" text-anchor="middle">13</text>
+<text x="344" y="996" class="title" text-anchor="start">Install it as an app</text>
+<text x="344" y="1018" class="note" text-anchor="start">browser menu › Apps ›</text>
+<text x="344" y="1035" class="note" text-anchor="start">Install this site as an app</text>
 </g>
-<g class="fade" style="animation-delay:3.99s"><path d="M253 638 H265" class="link"/><path d="M261 634 L266 638 L261 642" class="link"/></g>
-<g class="rise" style="animation-delay:4.56s"><rect x="44" y="724" width="432" height="68" rx="14" class="card"/><rect x="44" y="724" width="6" height="68" rx="3" fill="#DC2626"/><text x="66" y="752" class="title" text-anchor="start">No, or no answer within 3 days</text><text x="66" y="772" class="note" text-anchor="start">The key ends at once. Nothing of yours is shared.</text></g>
+<g class="fade" style="animation-delay:3.99s"><path d="M311 992 H323" class="link"/><path d="M319 988 L324 992 L319 996" class="link"/></g>
+<g class="rise" style="animation-delay:4.56s"><rect x="612" y="742" width="264" height="68" rx="14" class="card"/><rect x="612" y="742" width="6" height="68" rx="3" fill="#DC2626"/><text x="634" y="771" class="title" text-anchor="start">No, or 3 days pass</text><text x="634" y="793" class="note" text-anchor="start">The key ends. Nothing is shared.</text></g>
 <g class="rise" style="animation-delay:4.36s">
-<rect x="500" y="572" width="300" height="220" rx="14" class="card win"/>
-<path d="M500 606 H800" stroke="#E2E8F0"/>
-<circle cx="518" cy="589" r="4" fill="#CBD5E1"/>
-<circle cx="532" cy="589" r="4" fill="#CBD5E1"/>
-<circle cx="546" cy="589" r="4" fill="#CBD5E1"/>
-<text x="650" y="594" class="wintitle" text-anchor="middle">My work</text>
+<rect x="612" y="924" width="264" height="160" rx="14" class="card win"/>
+<path d="M612 958 H876" stroke="#E2E8F0"/>
+<circle cx="630" cy="941" r="4" fill="#CBD5E1"/>
+<circle cx="644" cy="941" r="4" fill="#CBD5E1"/>
+<circle cx="658" cy="941" r="4" fill="#CBD5E1"/>
+<text x="744" y="946" class="wintitle" text-anchor="middle">My work</text>
 </g>
-<g class="rise" style="animation-delay:4.86s"><text x="518" y="634" class="rowname" text-anchor="start">Invoice export for March</text><rect x="518" y="643" width="90" height="20" rx="10" fill="#1A66FF" fill-opacity="0.1"/><circle cx="529" cy="653" r="3.5" fill="#1A66FF" class="blink"/><text x="538" y="657" class="state" style="fill:#1A66FF">In progress</text><path d="M518 674 H782" stroke="#E2E8F0"/></g>
-<g class="rise" style="animation-delay:5.21s"><text x="518" y="686" class="rowname" text-anchor="start">Fix the login redirect</text><rect x="518" y="695" width="121" height="20" rx="10" fill="#B45309" fill-opacity="0.1"/><circle cx="529" cy="705" r="3.5" fill="#B45309"/><text x="538" y="709" class="state" style="fill:#B45309">Waiting on owner</text><path d="M518 726 H782" stroke="#E2E8F0"/></g>
-<g class="rise" style="animation-delay:5.56s"><text x="518" y="738" class="rowname" text-anchor="start">Weekly stock report</text><rect x="518" y="747" width="47" height="20" rx="10" fill="#0F766E" fill-opacity="0.1"/><circle cx="529" cy="757" r="3.5" fill="#0F766E"/><text x="538" y="761" class="state" style="fill:#0F766E">Done</text></g>
-<g class="rise" style="animation-delay:5.76s"><text x="824" y="590" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
-<g class="rise" style="animation-delay:5.96s"><circle cx="829" cy="615" r="4" fill="#B45309"/><text x="842" y="620" class="symptom" text-anchor="start">“That code didn’t work”</text><text x="842" y="637" class="note" text-anchor="start">Invite again: a code lasts 10 minutes, one use.</text></g>
-<g class="rise" style="animation-delay:6.21s"><circle cx="829" cy="661" r="4" fill="#B45309"/><text x="842" y="666" class="symptom" text-anchor="start">“Someone else is connecting”</text><text x="842" y="683" class="note" text-anchor="start">Their Tailscale login differs from People.</text></g>
-<g class="rise" style="animation-delay:6.46s"><circle cx="829" cy="707" r="4" fill="#B45309"/><text x="842" y="712" class="symptom" text-anchor="start">Waiting does not end</text><text x="842" y="729" class="note" text-anchor="start">Your card is still unanswered.</text></g>
-<g class="rise" style="animation-delay:6.71s"><circle cx="829" cy="753" r="4" fill="#B45309"/><text x="842" y="758" class="symptom" text-anchor="start">My work is empty</text><text x="842" y="775" class="note" text-anchor="start">Turn on request tracking, add their identity.</text></g>
+<g class="rise" style="animation-delay:4.86s"><text x="630" y="988" class="rowname" text-anchor="start">Invoice export for March</text><rect x="630" y="997" width="99" height="22" rx="11" fill="#1A66FF" fill-opacity="0.1"/><circle cx="641" cy="1008" r="3.5" fill="#1A66FF" class="blink"/><text x="650" y="1012.5" class="state" style="fill:#1A66FF">In progress</text><path d="M630 1031 H858" stroke="#E2E8F0"/></g>
+<g class="rise" style="animation-delay:5.21s"><text x="630" y="1044" class="rowname" text-anchor="start">Fix the login redirect</text><rect x="630" y="1053" width="133" height="22" rx="11" fill="#B45309" fill-opacity="0.1"/><circle cx="641" cy="1064" r="3.5" fill="#B45309"/><text x="650" y="1068.5" class="state" style="fill:#B45309">Waiting on owner</text></g>
+<g class="rise" style="animation-delay:5.76s"><text x="44" y="1116" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
+<g class="rise" style="animation-delay:5.96s"><circle cx="49" cy="1142.5" r="4" fill="#B45309"/><text x="62" y="1148" class="symptom" text-anchor="start">“That code didn’t work”</text><text x="62" y="1168" class="note" text-anchor="start">Invite again: one use, 10 minutes.</text></g>
+<g class="rise" style="animation-delay:6.21s"><circle cx="465" cy="1142.5" r="4" fill="#B45309"/><text x="478" y="1148" class="symptom" text-anchor="start">“Someone else is connecting”</text><text x="478" y="1168" class="note" text-anchor="start">Their Tailscale login differs from People.</text></g>
+<g class="rise" style="animation-delay:6.46s"><circle cx="49" cy="1194.5" r="4" fill="#B45309"/><text x="62" y="1200" class="symptom" text-anchor="start">Waiting does not end</text><text x="62" y="1220" class="note" text-anchor="start">Your card is still unanswered.</text></g>
+<g class="rise" style="animation-delay:6.71s"><circle cx="465" cy="1194.5" r="4" fill="#B45309"/><text x="478" y="1200" class="symptom" text-anchor="start">My work is empty</text><text x="478" y="1220" class="note" text-anchor="start">Turn on request tracking, add their identity.</text></g>
 </svg>

@@ -25,18 +25,18 @@ const PULSE = 0.7
 const STYLE = `
 text { font-family: ${FONT}; fill: ${C.ink}; }
 .h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
-.sub { font-size: 15px; fill: ${C.body}; }
-.legend { font-size: 13px; font-weight: 600; }
-.band { font-size: 11.5px; font-weight: 700; letter-spacing: 0.12em; fill: ${C.accent}; }
+.sub { font-size: 16px; fill: ${C.body}; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: ${C.accent}; }
 .band.warn { fill: ${C.warn}; }
-.title { font-size: 14.5px; font-weight: 650; }
-.note { font-size: 12px; fill: ${C.body}; }
-.rowname { font-size: 13px; font-weight: 600; }
-.symptom { font-size: 13px; font-weight: 650; }
-.state { font-size: 11.5px; font-weight: 600; }
-.num { font-size: 13.5px; font-weight: 700; fill: #fff; }
-.pill { font-size: 12px; font-weight: 700; fill: #fff; }
-.wintitle { font-size: 12.5px; font-weight: 600; fill: ${C.body}; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: ${C.body}; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: ${C.body}; }
 .card { fill: #fff; stroke: ${C.rule}; stroke-width: 1.25; filter: url(#soft); }
 .card.accent { stroke: ${C.accentSoft}; }
 .card.win { stroke: ${C.ink}; stroke-width: 1.5; }
@@ -64,9 +64,11 @@ function text(x, y, s, cls, anchor = "start") {
 
 /**
  * Start a diagram. `margin` is the left and right inset of the content;
- * every method takes plain numbers in the SVG's own units.
+ * every method takes plain numbers in the SVG's own units. The default width
+ * and the type sizes go together: at the docs column width the text stays
+ * readable, and a diagram up to 1300 high prints on one A4 page.
  */
-export function createDiagram({ width = 1200, height, title, desc, margin = 44 }) {
+export function createDiagram({ width = 920, height, title, desc, margin = 44 }) {
   const out = []
   const x0 = margin
   const x1 = width - margin
@@ -85,9 +87,9 @@ export function createDiagram({ width = 1200, height, title, desc, margin = 44 }
     g.push(`<circle cx="${f(bx)}" cy="${f(by)}" r="15" fill="none" stroke="${colour}" stroke-width="2" class="pulse" data-step="${steps}"/>`)
     g.push(`<circle cx="${f(bx)}" cy="${f(by)}" r="15" fill="${colour}"/>`)
     g.push(text(bx, by + 5, steps, "num", "middle"))
-    lines.forEach((line, i) => g.push(text(x + 16, y + 68 + i * 18, line, "title")))
-    const ny = y + 68 + lines.length * 18 + 4
-    note.forEach((line, i) => g.push(text(x + 16, ny + i * 15, line, "note")))
+    lines.forEach((line, i) => g.push(text(x + 16, y + 72 + i * 21, line, "title")))
+    const ny = y + 72 + lines.length * 21 + 1
+    note.forEach((line, i) => g.push(text(x + 16, ny + i * 17, line, "note")))
     g.push("</g>")
     out.push(g.join("\n"))
     return { cx: x + w / 2, top: y, bottom: y + h, at: delay }
@@ -124,7 +126,7 @@ export function createDiagram({ width = 1200, height, title, desc, margin = 44 }
     },
 
     /** A row of step cards joined by arrows. Returns one anchor per card. */
-    row(items, y, { h = 132, gap = 20, from = x0, to = x1, who } = {}) {
+    row(items, y, { h = 136, gap = 20, from = x0, to = x1, who } = {}) {
       const w = (to - from - gap * (items.length - 1)) / items.length
       return items.map((item, i) => {
         const x = from + i * (w + gap)
@@ -138,13 +140,14 @@ export function createDiagram({ width = 1200, height, title, desc, margin = 44 }
     wrap(fromCard, toX, toY, { label } = {}) {
       const xa = fromCard.cx
       const ya = fromCard.bottom
-      const mid = (ya + toY) / 2 - 12
+      // Rows in two bands leave a label line above the lower one; the turn sits in the gap between the bands.
+      const mid = toY - ya > 60 ? (ya + toY) / 2 - 12 : (ya + toY) / 2
       const delay = fromCard.at + 0.3
       const p = `M${f(xa)} ${f(ya)} V${f(mid - 10)} Q${f(xa)} ${f(mid)} ${f(xa - 10)} ${f(mid)} H${f(toX + 10)} Q${f(toX)} ${f(mid)} ${f(toX)} ${f(mid + 10)} V${f(toY - 4)}`
       out.push(`<path d="${p}" class="wrap" pathLength="100" ${at(delay)}/>`)
       out.push(`<path d="M${f(toX - 5)} ${f(toY - 9)} L${f(toX)} ${f(toY - 3)} L${f(toX + 5)} ${f(toY - 9)}" class="link fade" ${at(delay + 0.9)}/>`)
       if (label) {
-        const w = 22 + String(label).length * 6
+        const w = 24 + String(label).length * 6.5
         out.push(
           `<g class="fade" ${at(delay + 0.3)}><rect x="${f(xa - 30 - w)}" y="${f(mid - 11)}" width="${f(w)}" height="22" rx="11" fill="${C.accent}"/>` +
             text(xa - 30 - w / 2, mid + 4.5, label, "pill", "middle") +
@@ -158,8 +161,8 @@ export function createDiagram({ width = 1200, height, title, desc, margin = 44 }
       out.push(
         `<g class="rise" ${at(delay)}><rect x="${f(x)}" y="${f(y)}" width="${f(w)}" height="68" rx="14" class="card"/>` +
           `<rect x="${f(x)}" y="${f(y)}" width="6" height="68" rx="3" fill="${colour}"/>` +
-          text(x + 22, y + 28, heading, "title") +
-          text(x + 22, y + 48, note, "note") +
+          text(x + 22, y + 29, heading, "title") +
+          text(x + 22, y + 51, note, "note") +
           "</g>",
       )
     },
@@ -171,26 +174,28 @@ export function createDiagram({ width = 1200, height, title, desc, margin = 44 }
       g.push(text(x + w / 2, y + 22, heading, "wintitle", "middle"), "</g>")
       out.push(g.join("\n"))
       rows.forEach(([name, state, colour], i) => {
-        const ry = y + 62 + i * 52
-        const pw = Math.round(22 + state.length * 6.2)
+        const ry = y + 64 + i * 56
+        const pw = Math.round(24 + state.length * 6.8)
         out.push(
           `<g class="rise" ${at(delay + 0.5 + i * 0.35)}>` +
             text(x + 18, ry, name, "rowname") +
-            `<rect x="${f(x + 18)}" y="${f(ry + 9)}" width="${pw}" height="20" rx="10" fill="${colour}" fill-opacity="0.1"/>` +
-            `<circle cx="${f(x + 29)}" cy="${f(ry + 19)}" r="3.5" fill="${colour}"${i === 0 ? ' class="blink"' : ""}/>` +
-            `<text x="${f(x + 38)}" y="${f(ry + 23)}" class="state" style="fill:${colour}">${esc(state)}</text>` +
-            (i < rows.length - 1 ? `<path d="M${f(x + 18)} ${f(ry + 40)} H${f(x + w - 18)}" stroke="${C.rule}"/>` : "") +
+            `<rect x="${f(x + 18)}" y="${f(ry + 9)}" width="${pw}" height="22" rx="11" fill="${colour}" fill-opacity="0.1"/>` +
+            `<circle cx="${f(x + 29)}" cy="${f(ry + 20)}" r="3.5" fill="${colour}"${i === 0 ? ' class="blink"' : ""}/>` +
+            `<text x="${f(x + 38)}" y="${f(ry + 24.5)}" class="state" style="fill:${colour}">${esc(state)}</text>` +
+            (i < rows.length - 1 ? `<path d="M${f(x + 18)} ${f(ry + 43)} H${f(x + w - 18)}" stroke="${C.rule}"/>` : "") +
             "</g>",
         )
       })
     },
 
-    /** A titled list of [heading, line] pairs with a coloured dot: what to do when it fails. */
-    list(x, y, { title: heading, items, colour = C.warn, delay = d.now }) {
+    /** A titled list of [heading, line] pairs with a coloured dot, in `columns`: what to do when it fails. */
+    list(x, y, { title: heading, items, columns = 1, colour = C.warn, delay = d.now }) {
+      const colWidth = (x1 - x) / columns
       out.push(`<g class="rise" ${at(delay)}>` + text(x, y, heading, "band warn") + "</g>")
       items.forEach(([name, line], i) => {
-        const ly = y + 30 + i * 46
-        out.push(`<g class="rise" ${at(delay + 0.2 + i * 0.25)}><circle cx="${f(x + 5)}" cy="${f(ly - 5)}" r="4" fill="${colour}"/>` + text(x + 18, ly, name, "symptom") + text(x + 18, ly + 17, line, "note") + "</g>")
+        const lx = x + (i % columns) * colWidth
+        const ly = y + 32 + Math.floor(i / columns) * 52
+        out.push(`<g class="rise" ${at(delay + 0.2 + i * 0.25)}><circle cx="${f(lx + 5)}" cy="${f(ly - 5.5)}" r="4" fill="${colour}"/>` + text(lx + 18, ly, name, "symptom") + text(lx + 18, ly + 20, line, "note") + "</g>")
       })
     },
 
