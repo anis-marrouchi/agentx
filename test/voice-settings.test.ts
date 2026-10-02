@@ -141,6 +141,16 @@ describe("applyVoiceSettings", () => {
     expect(raw.voice).toEqual({ startReduced: true })
   })
 
+  it("keeps the character where it rests unless told to stroll (#482)", () => {
+    expect(voiceSettingsView(config(), []).general.stroll).toBe(false)
+    expect(checkVoiceSettings({ general: { stroll: true } }, config())).toEqual([])
+    expect(checkVoiceSettings({ general: { stroll: "yes" } } as never, config()))
+      .toEqual([{ path: "general.stroll", message: "Character strolls when idle must be on or off" }])
+    const raw: any = {}
+    applyVoiceSettings(raw, { general: { stroll: true } })
+    expect(raw.voice).toEqual({ stroll: true })
+  })
+
   it("writes the look, and the orb is the look when none is written", () => {
     const raw: any = rawConfig()
     expect(voiceSettingsView(config(), []).general.look).toBe("orb")
@@ -224,7 +234,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })

@@ -32,13 +32,17 @@ struct VoiceSettings: Codable, Equatable {
         /// The pill starts reduced to its orb. Nil from a daemon older
         /// than the reduced pill.
         var startReduced: Bool?
+        /// The character takes a stroll when it has nothing to do. Nil
+        /// from a daemon older than the stroll.
+        var stroll: Bool?
 
         init(provider: String, fallback: String, stt: String, localStt: String = "mlx-whisper",
              endOfTurn: String = "vad", hotkeys: Hotkeys, card: Card? = nil, look: String? = nil,
-             startReduced: Bool? = nil) {
+             startReduced: Bool? = nil, stroll: Bool? = nil) {
             self.provider = provider; self.fallback = fallback; self.stt = stt
             self.localStt = localStt; self.endOfTurn = endOfTurn; self.hotkeys = hotkeys
             self.card = card; self.look = look; self.startReduced = startReduced
+            self.stroll = stroll
         }
 
         /// A daemon from before these fields leaves them out: the defaults.
@@ -53,6 +57,7 @@ struct VoiceSettings: Codable, Equatable {
             card = try c.decodeIfPresent(Card.self, forKey: .card)
             look = try c.decodeIfPresent(String.self, forKey: .look)
             startReduced = try c.decodeIfPresent(Bool.self, forKey: .startReduced)
+            stroll = try c.decodeIfPresent(Bool.self, forKey: .stroll)
         }
     }
     struct Voice: Codable, Equatable {
@@ -113,6 +118,7 @@ struct VoiceSettings: Codable, Equatable {
         if self.general.endOfTurn != old.general.endOfTurn { general["endOfTurn"] = self.general.endOfTurn }
         if let look = self.general.look, look != old.general.look { general["look"] = look }
         if let start = self.general.startReduced, start != old.general.startReduced { general["startReduced"] = start }
+        if let stroll = self.general.stroll, stroll != old.general.stroll { general["stroll"] = stroll }
         var keys: [String: Any] = [:]
         if self.general.hotkeys.talk != old.general.hotkeys.talk { keys["talk"] = self.general.hotkeys.talk }
         if self.general.hotkeys.stop != old.general.hotkeys.stop { keys["stop"] = self.general.hotkeys.stop }

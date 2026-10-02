@@ -213,6 +213,7 @@ final class App: NSObject, NSApplicationDelegate {
         let asCharacter = saved.general.look == "character"
         panel.setShowsOrb(!asCharacter)
         character.setShown(asCharacter)
+        character.strolls = saved.general.stroll == true
         if !asCharacter { panel.detach() }
         // voice.startReduced is how the assistant starts: read once.
         if !startApplied {

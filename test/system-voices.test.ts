@@ -192,6 +192,7 @@ describe("config", () => {
       hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
       look: "orb",
       startReduced: false,
+      stroll: false,
       card: { timeout: 30, maxHeight: 320 },
     })
   })

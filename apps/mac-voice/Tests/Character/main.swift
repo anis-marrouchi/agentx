@@ -187,5 +187,69 @@ let putAt = taken.x
 for i in 61...300 { _ = taken.step(to: Double(i) / 30, Input(pointer: (x: 200, y: 400), home: putAt, range: range)) }
 check(abs(taken.x - putAt) < 1, "let go: it rests where it was put")
 
+// --- A stroll when it has nothing to do (#482, `voice.stroll`) ---
+
+/// Idle for `seconds` at 30 frames a second: every place it was, and the frames.
+func idle(_ sim: inout CharacterSim, from: Int, seconds: Int, strolls: Bool, activity: M.Activity = .idle,
+          home: Double = home, range: ClosedRange<Double> = range) -> (xs: [Double], frames: [CharacterSim.Frame]) {
+    var xs: [Double] = [], frames: [CharacterSim.Frame] = []
+    for i in (from * 30 + 1)...((from + seconds) * 30) {
+        frames.append(sim.step(to: Double(i) / 30, Input(activity: activity, strolls: strolls, home: home, range: range)))
+        xs.append(sim.x)
+    }
+    return (xs, frames)
+}
+func furthest(_ xs: [Double], from home: Double = home) -> Double { xs.map { abs($0 - home) }.max() ?? 0 }
+func steps(_ xs: [Double]) -> Double { zip(xs, xs.dropFirst()).map { abs($1 - $0) }.max() ?? 0 }
+
+var stays = CharacterSim()
+_ = stays.step(to: 0, Input(home: home, range: range))
+check(furthest(idle(&stays, from: 0, seconds: 110, strolls: false).xs) < 0.5, "the setting off: it never leaves where it rests")
+
+var walker = CharacterSim()
+_ = walker.step(to: 0, Input(strolls: true, home: home, range: range))
+let walk = idle(&walker, from: 0, seconds: 110, strolls: true)
+check(furthest(walk.xs) >= 39 && furthest(walk.xs) <= CharacterSim.strollReach + 1,
+      "the setting on, idle: it goes a little way from where it rests, and no further than a stroll")
+check(furthest(Array(walk.xs.prefix(24 * 30))) < 0.5, "not at once: it waits first")
+check(steps(walk.xs) <= CharacterSim.strollSpeed / 30 + 0.5 && walk.frames.allSatisfy { $0.dots.isEmpty && $0.stars.isEmpty },
+      "slowly: no dash, no trail of dots, no stars")
+check(abs(walk.xs.last! - home) < 2 || furthest(idle(&walker, from: 110, seconds: 20, strolls: true).xs.suffix(1)) < 60,
+      "and it comes back")
+
+// Sent for while it is out: it walks home, and stays there while it works.
+var called = CharacterSim()
+_ = called.step(to: 0, Input(strolls: true, home: home, range: range))
+var out = 0
+while out < 110, abs(called.x - home) < 30 { _ = idle(&called, from: out, seconds: 1, strolls: true); out += 1 }
+check(abs(called.x - home) >= 30, "(it is out on a stroll)")
+let working = idle(&called, from: out, seconds: 30, strolls: true, activity: .thinking)
+check(abs(called.x - home) < 1 && furthest(Array(working.xs.suffix(20 * 30))) < 1, "work to do: it goes home and stays there")
+
+// It dozes off at home, and a sleeper does not walk.
+var napper = CharacterSim()
+_ = napper.step(to: 0, Input(strolls: true, home: home, range: range))
+_ = idle(&napper, from: 0, seconds: Int(CharacterSim.dozeAfter) + 10, strolls: true)
+let napping = idle(&napper, from: Int(CharacterSim.dozeAfter) + 10, seconds: 120, strolls: true)
+check(napper.mood == .dozing && furthest(napping.xs) < 1, "dozing: it sleeps where it rests")
+
+// In its corner, the screen ends on one side: it strolls the other way.
+var corner = CharacterSim()
+_ = corner.step(to: 0, Input(strolls: true, home: range.upperBound, range: range))
+let inCorner = idle(&corner, from: 0, seconds: 110, strolls: true, home: range.upperBound)
+check(inCorner.xs.max()! < range.upperBound + 1 && furthest(inCorner.xs, from: range.upperBound) >= 39,
+      "at the end of the screen it strolls the other way, and stays on screen")
+// No room on either side: it stays.
+var boxed = CharacterSim()
+_ = boxed.step(to: 0, Input(strolls: true, home: 500, range: 500...500))
+check(furthest(idle(&boxed, from: 0, seconds: 110, strolls: true, home: 500, range: 500...500).xs, from: 500) < 0.5,
+      "with no room at all it stays")
+
+// The pointer still comes first.
+var shyWalker = CharacterSim()
+_ = shyWalker.step(to: 0, Input(strolls: true, home: home, range: range))
+for i in 1...60 { _ = shyWalker.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), strolls: true, home: home, range: range)) }
+check(shyWalker.x - (home - 20) > 120, "the pointer comes close: it steps aside as before")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")
