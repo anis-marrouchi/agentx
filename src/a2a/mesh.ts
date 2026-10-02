@@ -314,6 +314,9 @@ export class A2AMesh {
       /** The message being forwarded, so the receiver can post its answer
        *  back through this node after a restart cut the forward off (#311). */
       replyVia?: { messageId?: string; accountId?: string }
+      /** This node checked its own operator key on the forward: tell the
+       *  peer the turn is the owner's (requests/operator, #407). */
+      vouchOwner?: boolean
     } = {},
   ): Promise<string> {
     const state = this.peers.get(peerName)
@@ -330,6 +333,7 @@ export class A2AMesh {
     if (state.peer.token) {
       headers["Authorization"] = `Bearer ${state.peer.token}`
     }
+    if (opts.vouchOwner) headers["X-AgentX-Operator-Vouch"] = "1"
 
     // Agent tasks frequently run for minutes (Claude Code sessions in
     // particular). Two timeout layers to defeat:
@@ -427,6 +431,8 @@ export class A2AMesh {
       /** Aborts the peer call; the peer's /task treats it as a disconnect
        *  and interrupts the run. */
       signal?: AbortSignal
+      /** See sendTask. */
+      vouchOwner?: boolean
     } = {},
   ): AsyncGenerator<{ event: string; data: any }> {
     const state = this.peers.get(peerName)
@@ -443,6 +449,7 @@ export class A2AMesh {
       Accept: "text/event-stream",
     }
     if (state.peer.token) headers["Authorization"] = `Bearer ${state.peer.token}`
+    if (opts.vouchOwner) headers["X-AgentX-Operator-Vouch"] = "1"
 
     const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000
     const controller = new AbortController()
