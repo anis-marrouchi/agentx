@@ -169,6 +169,9 @@ the models, transcribes WAVs and shows where a turn would end;
 
 Microphone only. The hotkey uses Carbon's `RegisterEventHotKey`, which
 needs no Accessibility permission — an `NSEvent` global monitor would have.
+Each shortcut has its own handler, which must pass on a press that is not
+its own or the shortcuts registered before it go dead (`Hotkey.swift`,
+tested in `Tests/Hotkey`). Every registration is logged with its result.
 
 ## Known limits
 
