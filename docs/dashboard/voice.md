@@ -38,6 +38,21 @@ agentx desktop stop
 agentx desktop start
 ```
 
+### Keep permissions after an update
+
+By default each build of the app is signed ad hoc, and macOS treats every new build as a different app: after each install it asks again for the microphone, Screen Recording and Accessibility, and the install says so with a `note: ad-hoc signature` line. Sign every build with one certificate of your own and the permissions stay. A self-signed certificate is enough; it does not need to be trusted.
+
+1. **Mac:** open Keychain Access, then choose **Keychain Access › Certificate Assistant › Create a Certificate…**.
+2. **Mac:** type a name (for example `AgentX Local Signing`), set **Certificate Type** to **Code Signing**, and click **Create**.
+3. **Terminal:** install with that name:
+   ```sh
+   AGENTX_SIGN_IDENTITY="AgentX Local Signing" agentx desktop install
+   ```
+   `apps/mac-voice/install.sh` reads the same variable. Set it in your shell profile so every later install uses it. If the name is not found in the keychain, the install stops with `The specified item could not be found in the keychain` instead of falling back to ad hoc.
+4. **Mac:** allow the permissions once more, for the first build with the certificate.
+
+The next install keeps them.
+
 ## Choose who answers
 
 The AgentX icon in the menu bar shows what the assistant is doing: a waveform when idle, a microphone while listening, dots while the agent thinks, and a speaker while it answers. Its menu lists your agents and what each one is doing: **thinking** on your question, **speaking**, **working** on something else, **queued 2** when it has two answers waiting to be spoken, or **idle**. A number next to the icon counts every line waiting in the [speaking queue](#one-queue-for-everything-spoken).
@@ -1022,6 +1037,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 ## If something is wrong
 
 - **No recording:** check the microphone permission in System Settings › Privacy & Security › Microphone, and hold the shortcut while speaking.
+- **A permission is switched on in System Settings but the app still asks, after an update:** the switch belongs to an older build. **Terminal:** run `tccutil reset ScreenCapture tn.acme.agentx.voice` (or `Microphone` instead of `ScreenCapture`), switch the permission on again, then quit AgentX Voice from its menu and open it again. To stop this after every update, see [Keep permissions after an update](#keep-permissions-after-an-update).
 - **"Sorry, I didn't hear that":** transcription failed and nothing was sent. Check your ElevenLabs key, or the local Whisper program and model.
 - **A hands-free turn is sent in the middle of a sentence, or never ends:** **Terminal:** run `agentx-voice-local status` (see [Check it worked](#check-it-worked)). If `vad` is `not installed`, the app is still using the volume check: run `agentx-voice-local fetch vad`. The app log (`~/Library/Logs/agentx-voice.log`) says `Silero VAD would not load` when the model is there but broken; delete `~/.agentx/models/silero-vad-coreml` and fetch it again. To go back to the old behaviour, set **End of a hands-free turn** to **Volume**.
 - **Parakeet is chosen but Whisper still answers:** the app log says why. `Parakeet is not downloaded yet` means the 483 MB download is still running or failed (`could not be downloaded: …`); run `agentx-voice-local fetch parakeet` in Terminal to see the error. `still loading` means the first load on this Mac is under way; ask again in a minute.

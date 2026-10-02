@@ -55,8 +55,16 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 echo "</plist>" >> "$APP/Contents/Info.plist"
 
-codesign --force --sign - --identifier tn.acme.agentx.helper "$APP" 2>/dev/null \
-  || echo "warning: codesign failed; Accessibility grants will not stick across rebuilds"
+# Ad hoc by default, which holds a grant for this one build only; see
+# AGENTX_SIGN_IDENTITY in apps/mac-voice/build.sh.
+IDENTITY="${AGENTX_SIGN_IDENTITY:--}"
+if [ "$IDENTITY" = "-" ]; then
+  codesign --force --sign - --identifier tn.acme.agentx.helper "$APP" 2>/dev/null \
+    || echo "warning: codesign failed; Accessibility grants will not stick across rebuilds"
+  echo "note: ad-hoc signature; macOS asks again for Accessibility and Screen Recording after this install (set AGENTX_SIGN_IDENTITY to keep them)"
+else
+  codesign --force --sign "$IDENTITY" --identifier tn.acme.agentx.helper "$APP"
+fi
 
 echo "built: $APP"
 echo "binary: $BIN/agentx-mac-helper"

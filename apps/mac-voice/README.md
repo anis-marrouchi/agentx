@@ -195,6 +195,11 @@ tested in `Tests/Hotkey`). Every registration is logged with its result.
 "Play on this page" needs Screen Recording, asked the first time it is
 chosen; the app must be quit and opened again after the grant.
 
+`build.sh` signs ad hoc unless `AGENTX_SIGN_IDENTITY` names a
+code-signing certificate in the keychain. An ad-hoc grant holds for that
+one build only; with a certificate (self-signed is enough) the grants carry
+over to the next build.
+
 ## Known limits
 
 - Push-to-talk only; no wake word. To cut a voice off, press ⌥Space (and
