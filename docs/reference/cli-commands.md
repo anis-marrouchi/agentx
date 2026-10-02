@@ -688,6 +688,8 @@ Print the resolved (merged) policy for an agent.
 | `--max <n>` | `40` | Candidates to consider. |
 | `--json` | — | Emit the decision as JSON instead of pointing. |
 | `--min-present <p>` | `0.5` | Refuse below this P(control exists). |
+| `--mark <kind>` | `box` | How the character marks it: box, circle, underline, none. |
+| `--hold <seconds>` | — | How long the character stays there (8 by default). |
 
 ## look
 

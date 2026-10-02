@@ -249,6 +249,7 @@ Good to know:
 - **The bubble can't be dragged by itself:** it stays with the character, so [move the character](#move-or-hide-the-character) and the bubble goes with it. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
 - **Colour:** it wears the palette of the agent that is answering, amber while notifications are held and red when something went wrong, like the orb.
 - **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked in the AgentX menu, it is a still picture that changes between states and stays in its place.
+- **It can show you things:** an agent can send it to something on screen, see [The character shows you something](#the-character-shows-you-something).
 - **Where it rests:** above the bottom edge of the screen with the menu bar, near the bottom-right corner, under the right end of its bubble, until you move it.
 
 ### Move or hide the character
@@ -271,6 +272,38 @@ Good to know:
 - **Its place is its own:** the character's place and the pill's place are kept apart, so moving one never moves the other when you switch looks.
 - **It stays on screen:** it goes no closer to the top of a screen than its bubble needs, and no further right than where it rests by default. If its screen is no longer connected, it comes back to the bottom-right corner of your main screen.
 - **Hidden until you ask:** a hidden character stays hidden, whatever an agent says meanwhile. It comes back with **Option–Space**, an agent's own shortcut, an incoming call, **Show character** or **Show floating pill**, and when the app starts again.
+
+### The character shows you something
+
+An agent can send the character to something on your screen. The character leaves its place, flies beside the thing, and marks it with a box, an oval or an underline. Then it goes back to where it rests. This needs **Shown as** set to **Character** and the character on screen.
+
+To try it yourself:
+
+1. **Mac:** open any app with a button or a field you can name, for example a search field.
+2. **Terminal:** run the command below. The character goes to the field, draws an oval around it, and goes home after eight seconds.
+
+```sh
+agentx point "the search field" --mark circle
+```
+
+While the character is on screen, an agent you speak to is told it can run the same command, so it decides by itself when to show you something and where. A [live lesson](#live-lessons) does it at every step: the character points in place of the agent's drawn cursor.
+
+| Option | What it does |
+|---|---|
+| `--mark box` | A box around the thing, lightly filled. The default |
+| `--mark circle` | An oval around it |
+| `--mark underline` | A line under it |
+| `--mark none` | The character goes there and marks nothing |
+| `--hold 20` | Seconds before it goes home: `8` by default, up to `120` |
+
+Good to know:
+
+- **Nothing is clicked:** the character and its mark are drawn on a layer of their own. No click or key goes to any app, and your pointer is not moved.
+- **Where it stands:** on the left of the thing, level with its middle, so its bubble does not cover it. With no room on the left it stands on the right.
+- **It does not step aside meanwhile:** while it shows something, the pointer can come close. Take hold of it with **Command** to end the showing and move it.
+- **Without the character:** with the orb look, with the character hidden, or with AgentX Voice closed, `agentx point` moves the highlight cursor as before.
+- **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked, the character and the mark appear in place without the flight.
+- **One thing at a time:** a new place replaces the one before. Hiding the character removes the mark.
 
 ### Play on the page
 
@@ -942,6 +975,8 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `POST /voice/hush` | Silence whatever is speaking, pause the speaking queue and wait for your words (what **Option–Space** sends when pressed) |
 | `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; the queue plays on. `stop` ends the talk or lesson and empties the queue |
 | `POST /voice/stop` | Silence every voice and empty the speaking queue (what **Command–Option–.** sends) |
+| `GET /voice/guide?after=<seq>` | What the character is sent to show: `{"seq", "agentId", "rect", "mark"}`. It answers as soon as there is a newer command than `<seq>`, else after 25 seconds. AgentX Voice waits here while the character is on screen |
+| `POST /voice/guide` | Send the character to a place: `{"rect": {"x", "y", "width", "height"}, "mark": "box", "hold": 8}`, measured in points from the top-left of the main screen. `mark` is `box`, `circle`, `underline` or `none`. `{"home": true}` sends it back. Answers `409` when no character is on screen |
 | `GET /voice/queue` | The speaking queue: `{"paused", "playing", "waiting", "recent"}` |
 | `POST /voice/queue` | Add a line in an agent's voice: `{"text": "…", "agentId": "<id>", "kind": "answer"}`. `kind` is `answer`, `narration` or `line`. Add `"wait": true` to get the reply only once the line has been spoken (`{"item", "played"}`) |
 | `POST /voice/queue/<id>/skip` | Drop that line, whether it is playing or waiting. The others keep their order |

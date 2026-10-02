@@ -255,7 +255,8 @@ Install the [desktop assistant](../dashboard/voice.md) first. These tools intera
 
 | Command | What it does |
 |---|---|
-| `agentx point "the search field"` | Locate and highlight; does not click |
+| `agentx point "the search field"` | Locate and highlight; does not click. With the [character](../dashboard/voice.md#the-character-shows-you-something) on screen, the character goes there and marks it |
+| `agentx point "the search field" --mark circle --hold 20` | How the character marks it (`box`, `circle`, `underline`, `none`) and for how many seconds |
 | `agentx point "the search field" --json` | Print the selection without pointing |
 | `agentx look "What is visible?"` | Capture the focused window and request a vision observation |
 | `agentx look "The command palette is open" --verify --json` | Check a claim and return structured evidence |
