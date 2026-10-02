@@ -99,5 +99,10 @@ check(a2?["researcher"]?["palette"] is NSNull, "back to the colour's palette sen
 let card2 = (p2["general"] as? [String: Any])?["card"] as? [String: Any]
 check(card2?["timeout"] as? Double == 0 && card2?["maxHeight"] == nil, "only the changed card setting is sent")
 
+// --- The read at start, asked again until the daemon answers ---
+
+check((1...6).map { VoiceSettings.retryDelay(after: $0) } == [2, 4, 8, 16, 30, 30], "waits 2, 4, 8, 16 seconds, then every 30")
+check(VoiceSettings.retryDelay(after: 0) == 2 && VoiceSettings.retryDelay(after: 500) == 30, "never under 2 seconds, never over 30")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")
