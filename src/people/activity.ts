@@ -22,7 +22,7 @@ export function runsOf(db: Database.Database, personId: string, limit = 20): Per
     `SELECT task_id, agent_id, channel, chat_id, status, started_at, message_preview
        FROM task_traces
       WHERE person = ? AND (channel IS NULL OR channel != 'a2a')
-      ORDER BY started_at DESC LIMIT ?`,
+      ORDER BY started_at DESC, rowid DESC LIMIT ?`,
   ).all(personId, Math.max(1, Math.min(limit, 500))) as any[]
   return rows.map((r) => ({
     taskId: r.task_id, agentId: r.agent_id, channel: r.channel, chatId: r.chat_id,
