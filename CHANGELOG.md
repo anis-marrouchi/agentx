@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.92.1](https://github.com/anis-marrouchi/agentx/compare/v0.92.0...v0.92.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **requests:** do not repeat an old owner reply on a later pick-up ([#483](https://github.com/anis-marrouchi/agentx/issues/483)) ([d77fcfe](https://github.com/anis-marrouchi/agentx/commit/d77fcfefbe2e77bc2812b4ed96af8fa3a8d81226))
+
 ## [0.92.0](https://github.com/anis-marrouchi/agentx/compare/v0.91.1...v0.92.0) (2026-10-02)
 
 
