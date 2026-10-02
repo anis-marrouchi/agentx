@@ -81,6 +81,23 @@ let moved = up.frame.offsetBy(dx: -300, dy: 200)
 check(PillPlacement.collapsed(from: moved, size: pill, above: true, alignRight: true)
         == low.offsetBy(dx: -300, dy: 200), "dragged while open: the pill collapses where it was dragged")
 
+// --- The character's speech bubble (#491) ---
+
+// The character at rest: its head 78 points above the Dock, 88 from the
+// right edge of the screen.
+let head = CGPoint(x: laptop.maxX - 24 - PillPlacement.bubbleReach, y: laptop.minY + 78)
+let said = PillPlacement.bubble(size: pill, head: head, visible: laptop)
+check(said == CGPoint(x: corner.x, y: head.y + PillPlacement.tail),
+      "the bubble sits just above the character's head, its right edge where the pill's was")
+check(said.x < head.x && head.x < said.x + pill.width, "and the character is under it, so the tail reaches it")
+let aside = PillPlacement.bubble(size: pill, head: CGPoint(x: head.x - 150, y: head.y), visible: laptop)
+check(aside == CGPoint(x: said.x - 150, y: said.y), "the character steps aside: the bubble goes the same way, as far")
+let farLeft = PillPlacement.bubble(size: pill, head: CGPoint(x: laptop.minX + 44, y: head.y), visible: laptop)
+check(farLeft.x == laptop.minX && farLeft.x + 18 < laptop.minX + 44,
+      "at the left end of the screen the bubble stays fully on it, still over the character")
+let saidOpen = PillPlacement.expanded(size: grown, pill: CGRect(origin: said, size: pill), visible: laptop)
+check(saidOpen.above && saidOpen.frame.minY == said.y, "an answer opens upwards: the row stays next to the character")
+
 // --- "Show floating pill" in the menu ---
 
 check(PillMenu.isChecked(showPill: true, visible: true), "setting on, pill on screen: checked")

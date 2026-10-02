@@ -68,6 +68,18 @@ enum PillPlacement {
                width: size.width, height: size.height)
     }
 
+    /// How far the bubble reaches to the right of the character's middle,
+    /// and the gap above its head that the bubble's tail fills.
+    static let bubbleReach: CGFloat = 64
+    static let tail: CGFloat = 10
+
+    /// The pill as the character's speech bubble (#491): above `head`,
+    /// the top of the character, most of it to the left, kept on screen.
+    static func bubble(size: CGSize, head: CGPoint, visible: CGRect) -> CGPoint {
+        inside(CGRect(x: head.x + bubbleReach - size.width, y: head.y + tail,
+                      width: size.width, height: size.height), visible).origin
+    }
+
     /// `frame` moved the least distance that puts it inside `bounds`. A
     /// frame larger than `bounds` keeps its top-left corner in view.
     static func inside(_ frame: CGRect, _ bounds: CGRect) -> CGRect {
