@@ -146,6 +146,7 @@ import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-ap
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { handleGuide, isGuidePath } from "@/daemon/voice-guide-api"
+import { GUIDE_INSTRUCTION } from "@/voice/guide"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
@@ -6067,7 +6068,9 @@ export class AgentXDaemon {
           const response = await this.registry.execute({
             agentId,
             message,
-            systemPromptAppend: `${VOICE_MODE_INSTRUCTION}\n${introInstruction(voice, introduce)}`,
+            systemPromptAppend: `${VOICE_MODE_INSTRUCTION}\n${introInstruction(voice, introduce)}` +
+              // With the character on screen, the agent may send it to show something (#482).
+              (this.config.voice.look === "character" && this.voiceTalk.guide.listening ? `\n${GUIDE_INSTRUCTION}` : ""),
             // The owner spoke to this node: the turn is theirs (#393).
             context: operatorContext({ channel: "voice", sender: "Voice", chatId: `voice:${agentId}` }),
             intentRef,

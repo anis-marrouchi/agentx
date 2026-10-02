@@ -40,3 +40,6 @@ swiftc -O -o "$out/character-tests" Sources/AgentXVoice/CharacterMath.swift Sour
 swiftc -O -o "$out/play-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/PlayMath.swift \
   Tests/Play/main.swift -target arm64-apple-macosx14.0
 "$out/play-tests"
+swiftc -O -o "$out/guide-tests" Sources/AgentXVoice/GuideMath.swift Tests/Guide/main.swift \
+  -target arm64-apple-macosx14.0
+"$out/guide-tests"

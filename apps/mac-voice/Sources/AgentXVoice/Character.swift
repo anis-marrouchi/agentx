@@ -4,7 +4,8 @@ import AppKit
 /// agent's palette, with two eyes, no mouth and no legs. It hovers above
 /// the bottom edge of the screen, or where it was dragged to (#502),
 /// shows what the assistant is doing, and gets out of the pointer's way.
-/// Chosen with `voice.look`; the orb stays the default.
+/// The answering agent can send it to something on screen, which it
+/// marks (#482). Chosen with `voice.look`; the orb stays the default.
 ///
 /// It reacts and never interrupts: its window takes no keys, no clicks
 /// but a drag of its body with ⌘ held, and never comes forward by itself.
@@ -58,6 +59,13 @@ final class CharacterHost {
     /// Carried by the pointer: where the pointer took hold, and where it
     /// stood then, which is not where it rests once it has stepped aside.
     private var carried: (from: NSPoint, rest: CGPoint)?
+    /// What the answering agent sent it to show (#482): it stands beside
+    /// it until it is sent home, taken hold of or hidden.
+    private var showing: NSRect?
+    private let mark = GuideMark()
+    /// On its way up or down, to what it shows or back; and the last frame.
+    private var gliding = false
+    private var ticked = 0.0
     /// A still picture: Reduce Motion, or "Animated orb" off.
     private var still: Bool { !animated || reduceMotion }
     /// The look is the character: whether it is on screen. Nil with the orb.
@@ -127,6 +135,20 @@ final class CharacterHost {
         redraw()
     }
 
+    /// Go beside `rect` and mark it, or with nil go back to where it rests.
+    func guide(to rect: NSRect?, mark kind: GuideMath.Mark = .none) {
+        guard shown, !hidden, carried == nil, let rect else {
+            gliding = showing != nil
+            showing = nil
+            mark.hide()
+            return redraw()
+        }
+        showing = rect
+        gliding = true
+        mark.show(kind, around: rect, color: view.stops[2], animated: !still)
+        redraw()
+    }
+
     /// Standing still, it is drawn again when something changes: its
     /// state, or its bubble showing or hiding.
     func redraw() {
@@ -137,7 +159,7 @@ final class CharacterHost {
     private func run() {
         timer?.invalidate()
         timer = nil
-        guard shown, !hidden else { carried = nil; window.orderOut(nil); return }
+        guard shown, !hidden else { carried = nil; guide(to: nil); window.orderOut(nil); return }
         tick()
         window.orderFrontRegardless()
         // Still, it only watches for the hand that moves it.
@@ -163,7 +185,7 @@ final class CharacterHost {
         switch phase {
         case .began:
             let mouse = pointerSource()
-            if body.contains(mouse) { carried = (mouse, CGPoint(x: body.midX, y: rest.y)) }
+            if body.contains(mouse) { guide(to: nil); gliding = false; carried = (mouse, CGPoint(x: body.midX, y: rest.y)) }
         case .moved:
             if carried != nil { tick() }
         case .ended:
@@ -191,11 +213,20 @@ final class CharacterHost {
         var wanted = place
         if let carried {
             wanted = CGPoint(x: carried.rest.x + mouse.x - carried.from.x, y: carried.rest.y + mouse.y - carried.from.y)
+        } else if let showing {
+            let middle = CGPoint(x: showing.midX, y: showing.midY)
+            wanted = GuideMath.stand(beside: showing, in: (screens.first { $0.frame.contains(middle) } ?? first).visibleFrame,
+                                     body: Self.diameter, tall: Self.head, inset: PillPlacement.characterInset)
         }
         let spot = PillPlacement.character(saved: wanted, room: Self.head + PillPlacement.tail + Panel.size.height,
                                            screens: screens.map(\.visibleFrame), fallback: first.visibleFrame)
         let visible = spot.visible
-        rest = spot.place
+        // Sent somewhere, it glides up or down to it; along, it springs.
+        let now = ProcessInfo.processInfo.systemUptime
+        let y = gliding && !still ? GuideMath.glide(rest.y, toward: spot.place.y, dt: now - ticked) : spot.place.y
+        gliding = y != spot.place.y
+        ticked = now
+        rest = CGPoint(x: spot.place.x, y: y)
         let home = Double(rest.x)
         if carried != nil { sim.carry(to: home) }
 
@@ -209,15 +240,16 @@ final class CharacterHost {
                 level = 0
             }
             let near = screens.first { $0.visibleFrame == visible }?.frame.contains(mouse) ?? false
-            let pointer = near ? (x: Double(mouse.x), y: Double(mouse.y - rest.y)) : nil
+            // Showing something, it does not step aside for the pointer.
+            let pointer = near && showing == nil ? (x: Double(mouse.x), y: Double(mouse.y - rest.y)) : nil
             // The gap its tail fills counts as the bubble, so a pointer a
             // little under a button does not send both away. With ⌘ held
             // it waits too, to be taken hold of.
             let held = carried != nil
                 || (bubbleFrame?.insetBy(dx: 0, dy: -PillPlacement.tail).contains(mouse) ?? false)
                 || (NSEvent.modifierFlags.contains(.command) && window.frame.contains(mouse))
-            frame = sim.step(to: ProcessInfo.processInfo.systemUptime,
-                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held,
+            frame = sim.step(to: now,
+                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, sent: showing != nil,
                                                 home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: (rest.y - Self.ground).rounded())

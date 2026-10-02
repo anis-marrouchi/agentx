@@ -189,5 +189,15 @@ let putAt = taken.x
 for i in 61...300 { _ = taken.step(to: Double(i) / 30, Input(pointer: (x: 200, y: 400), home: putAt, range: range)) }
 check(abs(taken.x - putAt) < 1, "let go: it rests where it was put")
 
+// Sent by the answering agent to show something (#482): it has just
+// stepped aside, and still goes at once; and it does not doze there.
+var sentOff = CharacterSim(unit: 0.56)
+for i in 1...30 { _ = sentOff.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), home: home, range: range)) }
+let there = home - 300
+for i in 31...75 { _ = sentOff.step(to: Double(i) / 30, Input(sent: true, home: there, range: range)) }
+check(abs(sentOff.x - there) < 12, "sent to show something: it goes at once, though it had just stepped aside")
+_ = sentOff.step(to: CharacterSim.dozeAfter + 60, Input(sent: true, home: there, range: range))
+check(sentOff.mood != .dozing, "and stays awake while it shows it")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

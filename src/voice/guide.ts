@@ -31,6 +31,14 @@ export const GUIDE_WAIT_MS = 25_000
 /** `agentx point` leaves the character at its target this long, unless told otherwise. */
 export const GUIDE_HOLD = { default: 8, max: 120 } as const
 
+/** Added to a voice turn's system text while the character is on
+ *  screen: the answering agent decides when to send it. */
+export const GUIDE_INSTRUCTION =
+  "[ON SCREEN] The listener sees you as a small character on their Mac. When pointing at something on " +
+  "their screen would help, run `agentx point \"<the control or text, in a few words>\" --mark circle` " +
+  "(or box, underline) before you answer: the character flies there and marks it. It only points and " +
+  "never clicks. Do it when showing helps, not on every answer."
+
 export class GuideFeed {
   private cmd: GuideCommand = { seq: 0, agentId: null, rect: null, mark: "none" }
   private waiters = new Set<() => void>()

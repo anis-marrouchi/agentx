@@ -129,6 +129,15 @@ the frame with Core Graphics. Both are free of AppKit windows and tested in
 `Tests/Character`. Reduce Motion or "Animated orb" off stops its frames: a
 still picture per state, and ten checks a second for the ⌘-drag.
 
+Guiding (#482): while the character is on screen, `GuideWatcher` (`Guide.swift`)
+waits on the daemon's `GET /voice/guide` and hands each command to
+`CharacterHost.guide(to:mark:)`: the character stands beside the rectangle
+(`GuideMath.stand`), glides up or down to it while its spring takes it
+along, and `GuideMark` draws the box, oval or underline on a click-through
+window of its own. Home, a ⌘-drag or hiding ends it. The wait is also how
+the daemon knows a character is there; without one, `agentx point` and
+lessons use the helper's cursor. The geometry is tested in `Tests/Guide`.
+
 Play mode (part of #505, off by default; UserDefaults `playMode`, ticked as
 "Play mode" in the menu) adds "Play on this page": the character plays a short script on
 a frozen picture of the screen it is on, then the picture goes. `PlayRead.swift`

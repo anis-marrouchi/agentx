@@ -20,6 +20,9 @@ struct CharacterSim {
         /// The pointer is on its speech bubble: it stays where it is, so
         /// the bubble is not pulled from under the pointer.
         var held = false
+        /// The answering agent sent it to show something (#482): it goes
+        /// to `home` at once, awake, whatever the pointer did before.
+        var sent = false
         /// Where it rests, and how far it may go.
         var home = 0.0
         var range: ClosedRange<Double> = 0...0
@@ -110,6 +113,9 @@ struct CharacterSim {
             awayUntil = now + Self.awayFor
             restSince = now
             steppedAside = true
+        } else if input.sent {
+            target = min(max(input.home, input.range.lowerBound), input.range.upperBound)
+            restSince = now
         } else if now >= awayUntil {
             let taken = input.pointer.map { abs($0.x - input.home) < Self.clear && abs($0.y) < tall } ?? false
             if !taken {
