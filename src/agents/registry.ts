@@ -48,7 +48,7 @@ import type { LandscapeBuilder } from "./landscape"
 import { preflightOverageGate } from "./overage-status"
 import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
-import { preflightQuotaGate, recordClaudeCodeDispatch, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
+import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
@@ -1396,6 +1396,8 @@ export class AgentRegistry {
         // SQLite subscriber persists it under traceTaskId.
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
+        // Claude Code's own view of the plan window; feeds the dispatch gate.
+        recordRateLimitEvent(event)
         // Caller-supplied event subscriber (HTTP SSE callers, etc.).
         // Fire after internal capture so a subscriber crash never breaks
         // our own bookkeeping.
@@ -1408,6 +1410,8 @@ export class AgentRegistry {
         noteFirstEvent()
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
+        // Claude Code's own view of the plan window; feeds the dispatch gate.
+        recordRateLimitEvent(event)
         if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
       }
     }

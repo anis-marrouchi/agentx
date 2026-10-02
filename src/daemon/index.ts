@@ -12,6 +12,7 @@ import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./confi
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
 import { parseQueued } from "@/agents/queued"
+import { setDispatchBudget } from "@/agents/claude-code-quota"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
@@ -1455,6 +1456,17 @@ export class AgentXDaemon {
 
     const applied: string[] = []
     const restartRequired: string[] = []
+
+    // 0. Dispatch budget — a module-level setting, safe to swap any time.
+    //    Lets an operator loosen a local cap without a restart.
+    const budgetKeys = ["maxClaudeCodeDispatchesPerHour", "maxClaudeCodeDispatchesPer5h"] as const
+    if (budgetKeys.some((k) => this.config.session[k] !== next.session[k])) {
+      setDispatchBudget({
+        maxPerHour: next.session.maxClaudeCodeDispatchesPerHour,
+        maxPer5h: next.session.maxClaudeCodeDispatchesPer5h,
+      })
+      applied.push("dispatch-budget")
+    }
 
     // 1. Crons — safe to hot-swap (stop + reinit)
     if (JSON.stringify(this.config.crons) !== JSON.stringify(next.crons)) {
