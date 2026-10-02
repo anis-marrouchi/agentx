@@ -427,6 +427,10 @@ function runMigrations(db: Database.Database): void {
   ensureColumns(db, "task_traces", LESSON_IMPACT_COLUMNS)
   ensureColumns(db, "task_traces", PERSON_COLUMNS)
   ensureColumns(db, "task_history", PERSON_COLUMNS)
+  // A person's latest turns, read by the member page every 30 s (#448).
+  // Without it that read walks every run on record. Partial: most runs
+  // carry no person, and those rows stay out of the index.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_traces_person_started ON task_traces(person, started_at) WHERE person IS NOT NULL")
 }
 
 /** Schema version check for tests. */

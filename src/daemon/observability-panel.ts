@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { resolve } from "path"
 import { existsSync } from "fs"
 import Database from "better-sqlite3"
+import { logSlowQueries } from "@/storage/slow-queries"
 import { renderObservabilityPage } from "./ui/pages/observability"
 import type { TopbarPeer } from "./topbar"
 
@@ -73,6 +74,7 @@ function openReadOnly(): OpenedDb | null {
   if (!existsSync(path)) return null
   try {
     const db = new Database(path, { readonly: true, fileMustExist: true })
+    logSlowQueries(db, "health")
     return { db, close: () => db.close() }
   } catch {
     return null

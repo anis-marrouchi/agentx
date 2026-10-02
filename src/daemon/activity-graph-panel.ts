@@ -3,6 +3,7 @@ import { clientFromProject, agentClients, matchContact as matchContactRule, type
 import { resolve, join } from "path"
 import { existsSync, readdirSync, readFileSync } from "fs"
 import Database from "better-sqlite3"
+import { logSlowQueries } from "@/storage/slow-queries"
 import { inferProject, projectFromPreview } from "./activity-graph-attribution"
 import { fetchForgeStatus, refsToLookUp, type ForgeItem } from "./activity-graph-forge"
 import { lineageOf, type DispatchCallback, type DispatchRoot } from "./activity-graph-lineage"
@@ -38,6 +39,7 @@ function openLedger(): OpenedDb | null {
   if (!existsSync(path)) return null
   try {
     const db = new Database(path, { readonly: true, fileMustExist: true })
+    logSlowQueries(db, "activity-graph")
     return { db, close: () => db.close() }
   } catch (e: any) {
     // Surface the real reason — silent failure previously masked a
