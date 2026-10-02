@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.92.4](https://github.com/anis-marrouchi/agentx/compare/v0.92.3...v0.92.4) (2026-10-02)
+
+
+### Bug Fixes
+
+* **members:** hide the connection strip after a load that worked ([#497](https://github.com/anis-marrouchi/agentx/issues/497)) ([c5c2a53](https://github.com/anis-marrouchi/agentx/commit/c5c2a5393e7c8383c13012c11e3bb6254a92b7dd)), closes [#496](https://github.com/anis-marrouchi/agentx/issues/496)
+
 ## [0.92.3](https://github.com/anis-marrouchi/agentx/compare/v0.92.2...v0.92.3) (2026-10-02)
 
 
