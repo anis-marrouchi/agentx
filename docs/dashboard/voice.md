@@ -211,6 +211,8 @@ The orb can be shown as a character instead: the same orb, grown into a small ro
 
 ![The character in its nine states, in the lagoon palette on a light background and the sunrise palette on a dark one: idle, noticing you, listening with rings beside it, a nod with stars, working with half-closed eyes and three dots, speaking, dozing, an agent calling, and waiting with a question mark](/screenshots/voice/character-states.png)
 
+![The character with its speech bubble above it and a small tail pointing down at it, in three states: listening with rings beside it, working with half-closed eyes and three dots while the bubble reads Reading files and 12 seconds, and speaking with arcs beside it. Writer in the lagoon palette on a light background, Ops in the sunrise palette on a dark one](/screenshots/voice/character-bubble.png)
+
 | What you see | What it means |
 |---|---|
 | It hovers, breathes and blinks, and its eyes follow the pointer | The assistant is idle |
