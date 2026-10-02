@@ -58,6 +58,7 @@ import type { AppVoiceDeps } from "./app-voice"
 import type { AppCameraDeps } from "./app-camera"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
+import { logSlowQueries } from "@/storage/slow-queries"
 import type { AppFleetDeps, ApprovalItem, NodeApprovals } from "./app-fleet"
 import { decide, listInbox, type InboxItem } from "@/approvals/inbox"
 import { readApprovalSettings } from "@/approvals/settings"
@@ -77,6 +78,14 @@ import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
 //
 // Drag-drop produces a ColumnTransition that may: add/remove labels, close,
 // or reopen an issue (via GitLab `state_event`).
+
+/** The database the pages read, with any query that holds this process for
+ *  200 ms or longer named in the log (#448): one such query stops every page. */
+function dashboardDb(): ReturnType<typeof openDb> {
+  const db = openDb()
+  if (db) logSlowQueries(db, "dashboard")
+  return db
+}
 
 export function startBoardDashboard(config: DaemonConfig): void {
   const dashboard = config.dashboard
@@ -114,6 +123,10 @@ export function startBoardDashboard(config: DaemonConfig): void {
   // agentx.json — set the module-level reference so the snapshot builder can
   // read it when serving each request.
   setDaemonConfigForActivityGraph(config)
+
+  // Opened before the first page is served: every later reader in this
+  // process shares this handle, so its slow queries are logged too.
+  dashboardDb()
 
   // Compact primary nav. Every other surface stays routable by URL.
   setTopbarFeatures({
@@ -212,7 +225,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (await handleMemberRequest(req, res, path, method, {
     nodeName: ctx.config.node?.name, root: process.cwd(), people: () => currentPeople(ctx.config.people),
     members: membersStore(ctx.config.members.logRetentionDays),
-    db: () => openDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
+    db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
   if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config) })) return
 
@@ -718,7 +731,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // gate above. The people list is read per request, like the member page.
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
-    root: process.cwd(), db: () => openDb(), peers: buildTopbarPeers(ctx.config), localToken: ctx.token,
+    root: process.cwd(), db: () => dashboardDb(), peers: buildTopbarPeers(ctx.config), localToken: ctx.token,
   })) return
   if (path.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, path)
@@ -2244,7 +2257,7 @@ function appPushDeps(config: DaemonConfig): AppPushDeps {
   const keysPath = pushKeysPath(push.keysFile)
   return {
     store: () => {
-      const db = openDb()
+      const db = dashboardDb()
       return db ? new PushStore(db) : null
     },
     publicKey: () => readPushKeys(keysPath)?.publicKey ?? null,
@@ -2334,7 +2347,7 @@ function appChatDeps(config: DaemonConfig): AppChatDeps {
   const fleet = appFleetDeps(config)
   return {
     store: () => {
-      const db = openDb()
+      const db = dashboardDb()
       return db ? new AppChatStore(db) : null
     },
     // The operator key proves to the daemon that a phone turn is the
@@ -2433,7 +2446,7 @@ function appVoiceDeps(config: DaemonConfig): AppVoiceDeps {
   const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
   return {
     store: () => {
-      const db = openDb()
+      const db = dashboardDb()
       return db ? new AppChatStore(db) : null
     },
     daemon: { url, token: dashboardTokenForNode(config.dashboard, url) },

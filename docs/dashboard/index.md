@@ -62,6 +62,7 @@ To open the dashboard through your own web address, see [Open the dashboard thro
 
 - **The page doesn't load:** the dashboard isn't running. Start it with `agentx board serve`, or run `agentx setup` again.
 - **The page loads but shows no agents:** the daemon is stopped or unreachable. **Terminal:** run `agentx daemon status`. See [It's not answering](../help/its-not-answering.md).
+- **Every page stops answering for seconds at a time, the teammate page and the phone app included:** one database read is holding the dashboard, which serves all of them. Read the output of `agentx board serve` (its terminal, or the log file of the service that starts it) for a line containing `slow query`. It gives the time taken and the query, for any read of 200 ms or longer. Report that line. No such line means the cause is elsewhere.
 - **The page looks out of date after an update:** the dashboard is a separate program. Stop it and start it again.
 - **The top bar shows no version:** the dashboard can't reach the daemon, or the daemon is older than this page. **Terminal:** run `agentx daemon status`.
 - **The top bar shows "restart pending":** the daemon is running older code than what is installed. Restart it when no task is running: `agentx daemon restart --when-idle`.

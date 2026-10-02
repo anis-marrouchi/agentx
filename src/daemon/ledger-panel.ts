@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { resolve } from "path"
 import { existsSync } from "fs"
 import Database from "better-sqlite3"
+import { logSlowQueries } from "@/storage/slow-queries"
 import { renderShell, type TopbarPeer } from "./ui"
 
 // --- /admin/ledger — intent-ledger explorer ---
@@ -22,6 +23,7 @@ function openReadOnly(): OpenedDb | null {
   if (!existsSync(path)) return null
   try {
     const db = new Database(path, { readonly: true, fileMustExist: true })
+    logSlowQueries(db, "ledger-panel")
     return { db, close: () => db.close() }
   } catch (e: any) {
     const now = Date.now()
