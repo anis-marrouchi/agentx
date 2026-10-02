@@ -107,6 +107,9 @@ final class Panel: NSPanel {
 
     /// Told what the orb is shown, so the character can show the same.
     var onLook: ((State, NSColor, [NSColor]?) -> Void)?
+    /// Told when it comes on screen or leaves it, so a still character
+    /// draws its bubble's tail again.
+    var onShown: (() -> Void)?
 
     /// Off while the character stands in for the orb (Character.swift):
     /// the words start where the orb was.
@@ -346,8 +349,11 @@ final class Panel: NSPanel {
     }
 
     /// Back to the bottom-right corner, forgetting where it was dragged.
+    /// Not while it is the character's bubble: nothing would move, and
+    /// the place kept for the orb look would be lost.
     @MainActor
     func resetPosition() {
+        guard bubble == nil else { return }
         Config.pillOrigin = nil
         restorePosition()
     }
@@ -431,7 +437,7 @@ final class Panel: NSPanel {
     func show() {
         orb.setOnScreen(showsOrb)
         miniOrbs.setOnScreen(!miniOrbs.isHidden)
-        if !isVisible { orderFrontRegardless() }
+        if !isVisible { orderFrontRegardless(); onShown?() }
     }
 
     @MainActor
@@ -439,7 +445,7 @@ final class Panel: NSPanel {
         closeButton.isHidden = true
         orb.setOnScreen(false)
         miniOrbs.setOnScreen(false)
-        if isVisible { orderOut(nil) }
+        if isVisible { orderOut(nil); onShown?() }
     }
 
     @objc private func closeClicked() { onDismiss?() }

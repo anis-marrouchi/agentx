@@ -325,6 +325,7 @@ final class App: NSObject, NSApplicationDelegate {
         panel.onLook = { [weak self] state, tint, colors in
             self?.character.show(state.activity, tint: tint, colors: colors)
         }
+        panel.onShown = { [weak self] in self?.character.redraw() }
         panel.onDismiss = { [weak self] in self?.dismissPill() }
         panel.agentPalette = { [weak self] in
             guard let self else { return nil }

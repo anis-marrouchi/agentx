@@ -253,7 +253,7 @@ Good to know:
 1. **Mac:** press anywhere on the pill (the orb and the words too) and drag it where you want it.
 2. Let go. The pill stays there, and it comes back to the same place the next time the app starts.
 
-While the [character](#the-character) shows, the pill is its speech bubble and can't be dragged.
+While the [character](#the-character) shows, the pill is its speech bubble and can't be dragged, and **Reset position** does nothing.
 
 If the pill was on a screen that is no longer connected, it comes back in the bottom-right corner of your main screen. To put it back in the corner yourself:
 

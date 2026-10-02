@@ -87,6 +87,12 @@ final class CharacterHost {
     func show(_ activity: CharacterMath.Activity, tint: NSColor, colors: [NSColor]?) {
         self.activity = activity
         view.stops = CharacterDraw.stops(tint: tint, colors: colors)
+        redraw()
+    }
+
+    /// Standing still, it is drawn again when something changes: its
+    /// state, or its bubble showing or hiding.
+    func redraw() {
         if shown && timer == nil { tick() }
     }
 
