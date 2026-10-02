@@ -48,8 +48,15 @@ By default each build of the app is signed ad hoc, and macOS treats every new bu
    ```sh
    AGENTX_SIGN_IDENTITY="AgentX Local Signing" agentx desktop install
    ```
-   `apps/mac-voice/install.sh` reads the same variable. Set it in your shell profile so every later install uses it. If the name is not found in the keychain, the install stops with `The specified item could not be found in the keychain` instead of falling back to ad hoc.
-4. **Mac:** allow the permissions once more, for the first build with the certificate.
+   `apps/mac-voice/install.sh` reads the same variable. If the name is not found in the keychain, the install stops with `The specified item could not be found in the keychain` instead of falling back to ad hoc.
+
+   The first install shows **codesign wants to sign using key … in your keychain**: click **Always Allow**. Until you do, the install waits. Run it in a Terminal window on the Mac the first time: over SSH or from a launchd job there is no window to click, and the build fails (usually `errSecInternalComponent`).
+4. **Terminal:** add the variable to your shell profile so every later install uses it:
+   ```sh
+   echo 'export AGENTX_SIGN_IDENTITY="AgentX Local Signing"' >> ~/.zshrc
+   ```
+   A shell profile only reaches shells you open. A rebuild started by launchd or a deploy job does not read it: that build is signed ad hoc again, says so only with the `note:` line, and the permissions are lost. Set the variable in that job's environment too.
+5. **Mac:** allow the permissions once more, for the first build with the certificate.
 
 The next install keeps them.
 
@@ -1037,7 +1044,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 ## If something is wrong
 
 - **No recording:** check the microphone permission in System Settings › Privacy & Security › Microphone, and hold the shortcut while speaking.
-- **A permission is switched on in System Settings but the app still asks, after an update:** the switch belongs to an older build. **Terminal:** run `tccutil reset ScreenCapture tn.acme.agentx.voice` (or `Microphone` instead of `ScreenCapture`), switch the permission on again, then quit AgentX Voice from its menu and open it again. To stop this after every update, see [Keep permissions after an update](#keep-permissions-after-an-update).
+- **A permission is switched on in System Settings but the app still asks, after an update:** the switch belongs to an older build. **Terminal:** run `tccutil reset ScreenCapture tn.acme.agentx.voice` (or `Microphone` instead of `ScreenCapture`), switch the permission on again, then quit AgentX Voice from its menu and open it again. For the helper that `agentx desktop install` sets up, run `tccutil reset Accessibility tn.acme.agentx.helper` and `tccutil reset ScreenCapture tn.acme.agentx.helper`, then switch both on again. To stop this after every update, see [Keep permissions after an update](#keep-permissions-after-an-update).
 - **"Sorry, I didn't hear that":** transcription failed and nothing was sent. Check your ElevenLabs key, or the local Whisper program and model.
 - **A hands-free turn is sent in the middle of a sentence, or never ends:** **Terminal:** run `agentx-voice-local status` (see [Check it worked](#check-it-worked)). If `vad` is `not installed`, the app is still using the volume check: run `agentx-voice-local fetch vad`. The app log (`~/Library/Logs/agentx-voice.log`) says `Silero VAD would not load` when the model is there but broken; delete `~/.agentx/models/silero-vad-coreml` and fetch it again. To go back to the old behaviour, set **End of a hands-free turn** to **Volume**.
 - **Parakeet is chosen but Whisper still answers:** the app log says why. `Parakeet is not downloaded yet` means the 483 MB download is still running or failed (`could not be downloaded: …`); run `agentx-voice-local fetch parakeet` in Terminal to see the error. `still loading` means the first load on this Mac is under way; ask again in a minute.
