@@ -14,7 +14,7 @@ The npm package is `agentix-cli`; the executable is `agentx`. Run `agentx <comma
 | Schedule work | `agentx schedule "daily at 9am" --agent <id> --do "<task>"` |
 | Attach an editor session | `agentx attach <agent>` |
 | Open terminal UI | `agentx tui` |
-| Inspect usage | `agentx usage today`, `agentx usage report`, `agentx usage surfaces` ([understand costs](../help/costs.md)) |
+| Inspect usage | `agentx usage today`, `agentx usage plan`, `agentx usage report`, `agentx usage surfaces` ([understand costs](../help/costs.md)) |
 | Validate configuration | `agentx config check` |
 | Create a starter `agentx.json` without the browser | `agentx init` |
 | Issue API tokens for peers and integrations | `agentx token create`, `agentx token list`, `agentx token revoke` |

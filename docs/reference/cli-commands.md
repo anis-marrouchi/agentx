@@ -869,6 +869,15 @@ Show today's token usage.
 
 No flags.
 
+### `agentx usage plan`
+
+Show the Claude plan windows as Claude Code last reported them, and any hold on fresh sessions.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--lift` | — | Lift the hold on fresh sessions now, without waiting for the reset time. |
+| `--json` | — | Raw JSON output. |
+
 ### `agentx usage report`
 
 Run full session analysis (parses Claude Code JSONL files).

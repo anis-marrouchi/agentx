@@ -61,6 +61,67 @@ usage
     }
   })
 
+// agentx usage plan — the Claude plan windows the dispatch gate acts on
+usage
+  .command("plan")
+  .description("show the Claude plan windows as Claude Code last reported them, and any hold on fresh sessions")
+  .option("--lift", "lift the hold on fresh sessions now, without waiting for the reset time")
+  .option("--json", "raw JSON output")
+  .action(async (opts) => {
+    try {
+      const config = loadDaemonConfig()
+      const [host, port] = config.node.bind.split(":")
+      const base = `http://${host || "127.0.0.1"}:${port}`
+      const res = opts.lift
+        ? await fetch(`${base}/usage/plan/lift`, { method: "POST", signal: AbortSignal.timeout(3000) })
+        : await fetch(`${base}/usage/plan`, { signal: AbortSignal.timeout(3000) })
+      if (!res.ok) throw new Error(`Daemon answered ${res.status}. It may be older than this command; restart it.`)
+      const data = await res.json() as any
+      if (opts.json) { console.log(JSON.stringify(data, null, 2)); return }
+      const label = (w: string) => w.replace(/_/g, " ")
+
+      console.log()
+      if (opts.lift) {
+        const names = (data.lifted as Array<{ window: string }>).map((s) => label(s.window))
+        console.log(names.length
+          ? `  Lifted the hold on: ${names.join(", ")}. The next fresh session asks Claude again.`
+          : chalk.dim("  No hold to lift."))
+        console.log()
+        return
+      }
+
+      const now: number = data.now
+      const held = new Set((data.holds as Array<{ window: string }>).map((s) => s.window))
+      console.log(chalk.bold("  Claude plan (as Claude Code last reported it)"))
+      console.log()
+      if (data.provider.length === 0) {
+        console.log(chalk.dim("  No report yet. Claude Code reports on each turn; the list is empty after a daemon restart."))
+      }
+      for (const s of data.provider as Array<any>) {
+        const status = s.usingOverage ? "extra usage" : s.status === "allowed_warning" ? "nearly full" : s.status
+        const used = typeof s.utilization === "number" ? `${Math.round(s.utilization * 100)}% used` : ""
+        const mins = Math.max(1, Math.round((s.resetsAt - now) / 60_000))
+        const reset = !(s.resetsAt > now) ? ""
+          : mins < 60 ? `resets in ${mins} min`
+          : mins < 48 * 60 ? `resets in ${Math.round(mins / 60)} h`
+          : `resets in ${Math.round(mins / 1440)} days`
+        const hold = held.has(s.window) ? chalk.red("holding fresh sessions") : ""
+        console.log(`  ${label(s.window).padEnd(18)} ${status.padEnd(12)} ${[used, reset, hold].filter(Boolean).join(", ")}`)
+      }
+      console.log()
+      const cap = (n?: number) => (n ? ` of ${n}` : "")
+      console.log(`  Fresh sessions started: ${data.lastHour}${cap(data.maxPerHour)} in the last hour, ${data.last5h}${cap(data.maxPer5h)} in the last 5 hours`)
+      if (held.size) console.log(chalk.dim("  To try again now: agentx usage plan --lift"))
+      console.log()
+    } catch (e: any) {
+      if (e.cause?.code === "ECONNREFUSED") {
+        console.log(chalk.red("  Daemon not running. Start with: agentx daemon start"))
+      } else {
+        console.log(chalk.red(`  ${e.message}`))
+      }
+    }
+  })
+
 // `agentx usage serve` was removed — the same data now lives at
 // /admin/cost on the dashboard, so there's no second port to keep
 // running. Anyone with a stale `usage serve` bookmark gets a redirect

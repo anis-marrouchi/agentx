@@ -104,6 +104,7 @@ import { INTERRUPT_SETTLE_MS, describeShutdown, drainLimitMs, interruptionReason
 import { IdleRestartScheduler, planSelfRestart, type SelfRestartPlan, type ServiceInfo } from "@/daemon/restart"
 import { detectService, readRespawn } from "@/daemon/restart-host"
 import { handleRestartApi, RESTART_API_PATHS, type RunningSummary } from "@/daemon/restart-api"
+import { handlePlanUsageApi, PLAN_USAGE_API_PATHS } from "@/daemon/plan-usage-api"
 import { handleRoutineFire, ROUTINE_FIRE_PATH } from "@/daemon/routine-fire"
 import { startManualWorkflowRun } from "@/daemon/workflow-manual-run"
 import { setTopbarFeatures } from "@/daemon/topbar"
@@ -4852,6 +4853,15 @@ export class AgentXDaemon {
         return
       }
 
+      if (PLAN_USAGE_API_PATHS.has(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const reply = handlePlanUsageApi(req.method || "GET", path)
+        const lifted = (reply.body as { lifted?: Array<{ window: string }> }).lifted
+        if (lifted) this.log(`  Claude plan holds lifted by operator: ${lifted.map((s) => s.window).join(", ") || "none active"}`)
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
       switch (`${req.method} ${path}`) {
         case "GET /health": {
           const ruleHealth = this.projectRules.health()
@@ -6590,6 +6600,8 @@ export class AgentXDaemon {
               "POST /mesh/task { peer, message }",
               "POST /webhook/:agentId[/:source]  — webhook callback",
               "POST /reload  — re-read agentx.json (hot-swaps crons)",
+              "GET  /usage/plan  — Claude plan windows, cold-dispatch counters, active holds",
+              "POST /usage/plan/lift  — drop the active Claude plan holds",
               "GET  /daemon/restart  — in-flight count, service manager, pending restart",
               "POST /daemon/restart  — restart when idle { timeoutMinutes?, onTimeout? }",
               "POST /daemon/restart/cancel",
