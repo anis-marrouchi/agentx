@@ -111,6 +111,19 @@ describe("deciding on a card", () => {
     expect(await sweep()).toEqual([])
   })
 
+  it("a reply is said once: a later pick-up without words does not repeat it (#480)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy, send me the file." }, ctx())
+    expect((await sweep())[0].text).toContain("What they say now:")
+    expect(store.needsAttention("req-t1", "No activity for 24 h", clock)).toBe(true)
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    expect(store.get("req-t1")!.ownerNote).toBeNull()
+    const turns = await sweep()
+    expect(turns).toHaveLength(1)
+    expect(turns[0].text).not.toContain("What they say now")
+    expect(turns[0].text).not.toContain("Skip the deploy")
+  })
+
   it("a hand-off gives it to another agent, who is told and can be seen on the card", async () => {
     failed("t1")
     expect((await handleRequestsPanel("POST", `${P}/handoff`, { id: "req-t1", agentId: "nobody" }, ctx())).status).toBe(400)

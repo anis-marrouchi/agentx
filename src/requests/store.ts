@@ -255,10 +255,11 @@ export class RequestStore {
   }
 
   /** The owner said "pick it up again": back in progress, and the agent
-   *  is to be told at the next check. */
+   *  is to be told at the next check. An earlier reply is not said again. */
   requestPickup(id: string, now: number): boolean {
     return this.db.prepare(
-      `UPDATE requests SET state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?
+      `UPDATE requests SET state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?,
+         owner_note = NULL
        WHERE id = ? AND state = 'needs_attention'`,
     ).run(now, now, id).changes > 0
   }
