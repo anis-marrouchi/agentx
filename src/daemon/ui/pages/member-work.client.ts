@@ -3,7 +3,8 @@
 // One round every 30 seconds loads the work lists, and the name line too
 // until it has loaded once. A round that fails is tried again after 20
 // seconds, and the strip says which it is: the browser offline, or the
-// server not answering (connectionNote in member-logic.ts). A request that
+// server not answering (connectionNote in member-logic.ts). A load that
+// worked hides the strip. A request that
 // gets no answer in 15 seconds counts as failed, so a stalled server
 // cannot stop the rounds.
 //
@@ -21,7 +22,8 @@ export const WORK_SCRIPT = `
   var install = document.getElementById('install');
   var updated = document.getElementById('updated');
   var theme = document.getElementById('theme');
-  var failed = false, loaded = false, named = false, busy = false, timer = null;
+  // No network counts as a failed load until a load works (#496).
+  var failed = navigator.onLine === false, loaded = false, named = false, busy = false, timer = null;
   theme.addEventListener('click', function () {
     var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', cur);
@@ -40,7 +42,7 @@ export const WORK_SCRIPT = `
     retry.hidden = !note.retry;
   }
   window.addEventListener('online', function () { failed = false; showConn(); load(); });
-  window.addEventListener('offline', showConn);
+  window.addEventListener('offline', function () { failed = true; showConn(); });
   retry.addEventListener('click', function () { load(); });
   // A 401 or 403 means this machine's key ended: /member then shows the pairing page.
   function get(url) {

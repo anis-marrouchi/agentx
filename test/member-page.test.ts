@@ -138,6 +138,20 @@ describe("the connection strip", () => {
     expect(p.el("offline-text").textContent).toMatch(/^Offline\. /)
   })
 
+  // #496: a browser can report no network while the server is reachable.
+  it("hides after a load that worked, even when the browser reports no network", async () => {
+    const p = openPage({ work: [200, "fail"] }, { online: false })
+    expect(p.el("offline").hidden).toBe(false)
+    await p.settle()
+    expect(p.el("offline").hidden).toBe(true)
+    expect(p.pending()).toEqual([30_000])
+    await p.fire(30_000)
+    expect(p.el("offline").hidden).toBe(false)
+    expect(p.el("offline-text").textContent).toMatch(/^Offline\. /)
+    await p.fire(20_000)
+    expect(p.el("offline").hidden).toBe(true)
+  })
+
   it("counts a server that does not answer in 15 seconds as failed and keeps trying", async () => {
     const p = openPage({ me: ["hang"], work: ["hang"] })
     await p.settle()
@@ -166,7 +180,8 @@ describe("connectionNote", () => {
     expect(connectionNote(false, true, 20, true)).toBeNull()
     expect(connectionNote(true, true, 20, true)).toMatchObject({ retry: true })
     expect(connectionNote(true, false, 20, true)).toMatchObject({ retry: false })
-    expect(connectionNote(false, false, 20, false)?.text).toMatch(/^Offline/)
+    expect(connectionNote(true, false, 20, false)?.text).toMatch(/^Offline/)
+    expect(connectionNote(false, false, 20, true)).toBeNull()
   })
 })
 
