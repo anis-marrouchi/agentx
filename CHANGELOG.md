@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.91.0](https://github.com/anis-marrouchi/agentx/compare/v0.90.0...v0.91.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** show the assistant as an animated character instead of the orb ([#471](https://github.com/anis-marrouchi/agentx/issues/471)) ([d2eb7f5](https://github.com/anis-marrouchi/agentx/commit/d2eb7f5aa18b02a426b292858d69a359295d0da9))
+
 ## [0.90.0](https://github.com/anis-marrouchi/agentx/compare/v0.89.0...v0.90.0) (2026-10-02)
 
 
