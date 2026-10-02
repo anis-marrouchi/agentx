@@ -125,8 +125,8 @@ const PEOPLE_SCRIPT = `
     if (d.state === 'pending') return state('Waiting for your approval', 'warn');
     return state('Ended', 'off') + (d.removedReason ? '<small>' + esc(d.removedReason) + '</small>' : '');
   }
-  function machines(id, devices) {
-    if (!devices.length) return '<p class="pp-quiet">No machine paired. Invite them with <code>agentx people invite ' + esc(id) + '</code>.</p>';
+  function machines(id, devices, listed) {
+    if (!devices.length) return '<p class="pp-quiet">No machine paired.' + (listed ? ' Invite them with <code>agentx people invite ' + esc(id) + '</code>.' : '') + '</p>';
     var rows = devices.map(function (d) {
       var end = d.state === 'removed' ? '' : '<button type="button" class="ax-btn ax-btn--danger" data-end="' + esc(d.tokenId) + '" data-person="' + esc(id) + '" data-name="' + esc(d.name) + '">End access</button>';
       return '<tr><td>' + esc(d.name) + '<small>' + esc(d.tokenId) + '</small></td>' +
@@ -155,7 +155,7 @@ const PEOPLE_SCRIPT = `
   function detail(id) {
     var d = open[id];
     if (!d || d === true) return '<p class="pp-quiet" style="padding-top:14px">Loading…</p>';
-    return '<h3>Machines</h3>' + machines(id, d.devices || []) +
+    return '<h3>Machines</h3>' + machines(id, d.devices || [], !(d.person && d.person.builtIn)) +
       '<h3>Requests, newest first</h3>' + (d.database ? requests(d.requests || []) : '<p class="pp-quiet">The database could not be opened. Start the dashboard from the folder that holds agentx.json.</p>') +
       '<h3>Latest turns they started</h3>' + runs(d.runs || []);
   }
@@ -214,6 +214,8 @@ const PEOPLE_SCRIPT = `
       fetch('/api/admin/people/' + encodeURIComponent(id) + '/devices/' + encodeURIComponent(token) + '/end', { method: 'POST', credentials: 'same-origin', headers: headers(true), body: '{}' })
         .then(function (r) { return r.json().then(function (d) { if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status)); return d; }); })
         .then(function () { say('Access ended for "' + name + '".', false); return load(); })
+        // The button is gone with the machine's access: keep the keyboard on this person.
+        .then(function () { var h = list.querySelector('[data-open="' + id + '"]'); if (h) h.focus(); })
         .catch(function (e) { say('Could not end access: ' + e.message, true); end.disabled = false; });
       return;
     }
