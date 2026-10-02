@@ -84,6 +84,13 @@ describe("session monitor", () => {
     await monitor.tick()
     expect(reviewer).not.toHaveBeenCalled()
   })
+  it("returns the person who started each run for the timeline", () => {
+    const { monitor, db } = fixture()
+    recordTraceStart(db, { agentId: "dev", channel: "telegram", chatId: "1", person: "dana" }, "by-dana")
+    recordTraceStart(db, { agentId: "dev", channel: "cron", chatId: "cron:nightly" }, "by-nobody")
+    const person = Object.fromEntries(monitor.activity(0).runs.map(r => [r.id, r.person]))
+    expect(person).toEqual({ "by-dana": "dana", "by-nobody": null })
+  })
 })
 
 describe("cost of delay", () => {

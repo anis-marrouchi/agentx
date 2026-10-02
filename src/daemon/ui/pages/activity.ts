@@ -41,6 +41,7 @@ const PERSPECTIVES: Array<[string, string, string]> = [
   ["client", "Client", ICON.user],
   ["project", "Project", ICON.folder],
   ["channel", "Channel", ICON.route],
+  ["person", "Person", ICON.user],
   ["node", "Node", ICON.mesh],
 ]
 
@@ -217,6 +218,7 @@ if(persp==='agent')return {key:r.agentId+'|'+(r.channel||''),label:r.agentId,sub
 if(persp==='client')return {key:r.clientId||'unmapped',label:r.clientId||'unmapped',sub:''};
 if(persp==='project')return {key:r.project||('('+(r.channel||'none')+')'),label:r.project||('no project'),sub:r.channel||''};
 if(persp==='channel')return {key:r.channel||'none',label:r.channel||'none',sub:''};
+if(persp==='person')return r.person?{key:'p:'+r.person,label:r.personName||r.person,sub:''}:{key:'-',label:'no known person',sub:''};
 return {key:r.node||'this node',label:r.node||'this node',sub:''};
 }
 
@@ -265,7 +267,8 @@ $('detail').innerHTML='<div class="ac-det"><div class="ac-det__h">'
  +'<dt>When</dt><dd>'+clock(r.startedAt)+' &middot; took '+fmtDur(r.durationMs||0)+'</dd>'
  +'<dt>Who</dt><dd>'+esc(r.agentId)+(r.node?' on '+esc(r.node):'')+'</dd>'
  +'<dt>Where</dt><dd>'+esc(r.channel||'&mdash;')+(r.chatId?' &middot; '+esc(r.chatId):'')+'</dd>'
- +'<dt>For</dt><dd>'+esc(r.clientId||'unmapped')+'</dd></dl>'
+ +'<dt>For</dt><dd>'+esc(r.clientId||'unmapped')+'</dd>'
+ +(r.person?'<dt>Started by</dt><dd>'+esc(r.personName||r.person)+'</dd>':'')+'</dl>'
  +(found.length?found.map(m=>'<div class="ac-find"><i class="ac-d ac-d--'+m.kind+'" style="margin-top:4px"></i>'
    +'<span><b>'+esc(KIND[m.kind]||m.kind)+'.</b> '+esc(m.text)+'</span></div>').join('')
    :'<div class="ac-find" style="color:var(--ax-text-2)">No review findings for this run.</div>')

@@ -87,7 +87,7 @@ import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { inboundTaskRaw, recordMeshDispatch } from "@/intent/sources/mesh"
-import { operatorPerson, personOfTurn } from "@/people/people"
+import { operatorPerson, personName, personOfTurn } from "@/people/people"
 import { setDefaultGovernance } from "@/intent/governance"
 import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
@@ -3366,7 +3366,9 @@ export class AgentXDaemon {
             node: this.config.node.name || this.config.node.id,
             runs: data.runs.map(r => {
               const project = (r.channel === "gitlab" || r.channel === "github") ? String(r.chatId || "").split(":")[0] : undefined
-              return { ...r, project, clientId: resolveClient({ agentId: r.agentId, channel: r.channel || undefined, project, chatId: r.chatId || undefined }, business) }
+              return { ...r, project, clientId: resolveClient({ agentId: r.agentId, channel: r.channel || undefined, project, chatId: r.chatId || undefined }, business),
+                // Named from this node's people list: a peer's "owner" is its own.
+                personName: r.person ? personName(this.config.people, r.person) : undefined }
             }),
           }); return
         }

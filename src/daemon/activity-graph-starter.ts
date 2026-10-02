@@ -13,7 +13,7 @@
 // matches nobody is "Unknown", never guessed.
 
 import { classifyInitiator, HUMAN_CHANNELS, isAgentSender, propagatedRootOf } from "@/a2a/initiator"
-import { IMPLICIT_OWNER, personOfTurn, resolvePerson, type Person } from "@/people/people"
+import { personName, personOfTurn, resolvePerson, type Person } from "@/people/people"
 
 export type StarterKind = "person" | "agentx" | "external"
 
@@ -61,8 +61,7 @@ export interface StarterInput {
 
 export function starterOf(i: StarterInput): DispatchStarter {
   const person = (id: string): DispatchStarter => ({
-    kind: "person", id: `person:${id}`,
-    name: i.people.find((p) => p.id === id)?.name ?? (id === IMPLICIT_OWNER ? "Owner" : id),
+    kind: "person", id: `person:${id}`, name: personName(i.people, id),
   })
   const software = (channel: string, fromAgent: boolean): DispatchStarter =>
     fromAgent || INTERNAL_CHANNELS.has(channel) ? AGENTX_STARTER : { kind: "external", id: `ext:${channel}`, name: i.channelLabel(channel) }
