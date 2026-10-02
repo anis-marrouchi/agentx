@@ -10,27 +10,6 @@ import Foundation
 struct CharacterSim {
     typealias M = CharacterMath
 
-    struct Input {
-        var activity = M.Activity.idle
-        /// 0…1: the microphone while listening.
-        var level = 0.0
-        /// The pointer: along the edge, and its height above it. Nil when
-        /// it is on another screen.
-        var pointer: (x: Double, y: Double)?
-        /// The pointer is on its speech bubble: it stays where it is, so
-        /// the bubble is not pulled from under the pointer.
-        var held = false
-        /// The answering agent sent it to show something (#482): it goes
-        /// to `home` at once, awake, whatever the pointer did before.
-        var sent = false
-        /// `voice.stroll`: with nothing to do, it takes a slow stroll
-        /// beside where it rests now and then (#482).
-        var strolls = false
-        /// Where it rests, and how far it may go.
-        var home = 0.0
-        var range: ClosedRange<Double> = 0...0
-    }
-
     /// Points per drawing unit: a body 56 points across.
     let unit: Double
     /// Idle this long, it dozes.
@@ -61,6 +40,9 @@ struct CharacterSim {
     private var strollTo = 0.0, strolled = 0.0
     private var strollNext: Double?
     private var strolls = 0
+    /// Its games with the pointer, and the crouch and hop they give it.
+    private(set) var play = PointerPlay()
+    private var crouch = 0.0, hop = 0.0
     private var face = 0.0, lean = 0.0
     private var glance = (x: 0.0, y: 0.0)
 
@@ -92,6 +74,14 @@ struct CharacterSim {
         // The pointer comes close: out of its way. Left alone: back home,
         // unless the pointer is resting there.
         let near = input.pointer.map { abs($0.x - x) < reach && abs($0.y) < tall } ?? false
+        // Idle with play mode on, a game with the pointer comes first.
+        // Sent to show something, it does not play.
+        var game = PointerPlay.Out()
+        if input.plays && !input.sent && !input.held && !input.shows && mood == .idle && input.activity == .idle {
+            game = play.step(now, dt, x: x, pointer: input.pointer, down: input.down, range: input.range)
+        } else {
+            play.stop(now, down: input.down)
+        }
         if input.sent {
             target = min(max(input.home, input.range.lowerBound), input.range.upperBound)
             restSince = now
@@ -100,6 +90,12 @@ struct CharacterSim {
         } else if input.held {
             target = x
             awayUntil = max(awayUntil, now + Self.awayFor)
+        } else if let to = game.target {
+            target = to
+            awayUntil = now + 1
+            restSince = now
+            // A game ends a stroll, as stepping aside does.
+            strolled = 0; strollTo = 0; strollNext = nil
         } else if near {
             target = M.aside(x: x, pointer: input.pointer!.x, clear: Self.clear, range: input.range)
             awayUntil = now + Self.awayFor
@@ -144,6 +140,14 @@ struct CharacterSim {
         func toward(_ value: inout Double, _ to: Double, _ rate: Double) { value += (to - value) * (1 - exp(-dt * rate)) }
         toward(&face, min(max(speed / 200, -1), 1), 10)
         toward(&lean, min(max(speed / 480, -1), 1) * 13, 8)
+        // A game's crouch and hop are followed, not taken at once, so a
+        // game cut short by work does not snap.
+        toward(&crouch, game.crouch, 20)
+        toward(&hop, game.hop, 20)
+        pose.sx *= 1 + 0.14 * crouch
+        pose.sy *= 1 - 0.22 * crouch
+        pose.lift += hop - 8 * crouch
+        if game.caught { burst(now, pose) }
 
         // It leaves dots behind while it moves, and stars when it has
         // stepped aside or understood.

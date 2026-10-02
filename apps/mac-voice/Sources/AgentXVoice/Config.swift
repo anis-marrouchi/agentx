@@ -36,7 +36,8 @@ enum Config {
     }
 
     /// "Play mode" in the menu (#505): the character may play on a frozen
-    /// picture of the screen when asked. Off by default.
+    /// picture of the screen when asked, and plays with the pointer while
+    /// idle. Off by default.
     static var playMode: Bool {
         get { UserDefaults.standard.bool(forKey: "playMode") }
         set { UserDefaults.standard.set(newValue, forKey: "playMode") }

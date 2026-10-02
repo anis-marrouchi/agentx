@@ -159,6 +159,16 @@ listen, speak or ring ends it. Nothing is sent to any app: eaten words are
 painted over on the picture, which lives in memory only and is dropped when
 play ends. Letters are a word's box cut in equal parts.
 
+With play mode ticked, the idle character also plays with the pointer
+(part of #505), in its own window on its own edge: `PointerPlay.swift`
+picks a game when the pointer moves in its sight (follow it, crouch and
+jump at it, run from it; a click makes it jump), then rests five to
+thirteen seconds. It only says where the character wants to be and how it
+crouches and hops; `CharacterSim` moves it with the spring it already
+has. Pure and tested in `Tests/PointerPlay`. The button is read with
+`NSEvent.pressedMouseButtons`, so no click is taken and no permission is
+needed.
+
 Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
 launch and when screens change it is clamped onto a connected screen, and
 "Reset position" puts it back bottom-right. The close button (on hover), Esc
