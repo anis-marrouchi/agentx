@@ -978,6 +978,24 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
+  // The build the primary daemon is running and since when, for the header
+  // of every page (#465). The dashboard is its own process, so it asks.
+  // Above the /api/* token gate on purpose: the header script has no token
+  // to send, and putting one in the top bar would put it on every page.
+  // Only headerBuild's five fields leave here, which the daemon's own
+  // /health already gives without a token.
+  //   GET /api/node/build
+  if (method === "GET" && path === "/api/node/build") {
+    try {
+      const headers: Record<string, string> = {}
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const r = await fetch(ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") + "/health", { headers, signal: AbortSignal.timeout(3000) })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      sendJson(res, 200, headerBuild(await r.json()))
+    } catch (e: any) { sendJson(res, 502, { error: e.message || "daemon not reachable" }) }
+    return
+  }
+
   if (path.startsWith("/api/") && ctx.token) {
     // Legacy: if dashboard.token is configured, every /api/* request must
     // carry it (or a scoped token with dashboard:write).
@@ -992,20 +1010,6 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         return
       }
     }
-  }
-
-  // The build the primary daemon is running and since when, for the header
-  // of every page (#465). The dashboard is its own process, so it asks.
-  //   GET /api/node/build
-  if (method === "GET" && path === "/api/node/build") {
-    try {
-      const headers: Record<string, string> = {}
-      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
-      const r = await fetch(ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") + "/health", { headers, signal: AbortSignal.timeout(3000) })
-      if (!r.ok) throw new Error(`HTTP ${r.status}`)
-      sendJson(res, 200, headerBuild(await r.json()))
-    } catch (e: any) { sendJson(res, 502, { error: e.message || "daemon not reachable" }) }
-    return
   }
 
   // Mesh feed (#166) — the newest events on the primary daemon's bus. That
