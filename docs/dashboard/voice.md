@@ -294,6 +294,8 @@ What happens:
 
 Which lines, which words and in what order change with every play.
 
+It moves like a drawn character, not like a pointer: it crouches before a jump and lands softly, it gets up to speed and slows to a stop when it walks, kicked letters leave one after the other, and what falls bounces once before it lies still.
+
 Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring.
 
 Good to know:
