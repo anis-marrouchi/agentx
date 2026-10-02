@@ -218,6 +218,7 @@ final class CharacterHost {
                 || (NSEvent.modifierFlags.contains(.command) && window.frame.contains(mouse))
             frame = sim.step(to: ProcessInfo.processInfo.systemUptime,
                              CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held,
+                                                plays: Config.playMode, down: NSEvent.pressedMouseButtons & 1 != 0,
                                                 home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: (rest.y - Self.ground).rounded())

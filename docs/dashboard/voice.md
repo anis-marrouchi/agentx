@@ -241,7 +241,7 @@ In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A c
 Good to know:
 
 - **It never interrupts:** it takes no keys, and a click where it hovers goes to the window behind it. Only a drag with **Command** held [moves it](#move-or-hide-the-character), and a [play on the page](#play-on-the-page) takes the first key or click to end.
-- **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it.
+- **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it. With **Play mode** ticked it also [plays with the pointer](#play-with-the-pointer).
 - **The pill is its speech bubble:** the pill shows the agent's name, the words, the answer and the call buttons as before, attached to the character. It has no orb of its own, and it appears and hides by the same rules as the pill: only while listening or answering, unless **Show floating pill** is ticked.
 - **It waits while you use the bubble:** while the pointer is on the bubble, the character stays where it is, so you can click a button or read the answer.
 - **The bubble can't be dragged by itself:** it stays with the character, so [move the character](#move-or-hide-the-character) and the bubble goes with it. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
@@ -300,6 +300,26 @@ Good to know:
 - **No text, no play:** if no line of at least two words is found away from the top of the screen, the picture goes again and nothing plays.
 - **Letters are an estimate:** a word's box is cut into equal parts, so a letter can go a little early or late.
 - **Photos and gradients:** on a background that isn't one flat colour, the painted-over patch shows.
+
+### Play with the pointer
+
+With **Play mode** ticked, the character also plays with your pointer while the assistant is idle. It stays on its own edge of the screen, draws only in its own small window, and sends nothing to any app. It needs no permission.
+
+When the pointer moves near it (about 520 points to either side and 360 above), it starts one game:
+
+- **Follow:** it walks along its edge to where the pointer is and stops a little short of it, for four to seven seconds.
+- **Jump:** if the pointer is close and low enough, it crouches, then jumps at the place the pointer was. If the pointer is still there when it lands, it has caught it and shows its stars.
+- **Run away:** it runs further off than when it only steps aside.
+
+After a game it rests for five to thirteen seconds, and goes back to its place if you leave it alone. A click near it makes it jump once and ends the game.
+
+Good to know:
+
+- **It takes no clicks:** a click where it is still goes to the window behind it. It only sees that the button went down.
+- **Work comes first:** a game stops when the assistant listens, thinks, speaks or rings, and when the pointer is on its bubble or leaves its screen.
+- **Along one edge:** it does not climb windows or walk on text here. It follows the pointer only left and right.
+- **The same games in the same order** each time the app starts.
+- **No play** with **Reduce motion** on, **Animated orb** unticked, or a sleeping character: the pointer has to come close to wake it first.
 - **It has no mouth:** eating shows as letters going at its front, with a small bite squash.
 
 ### Move the pill

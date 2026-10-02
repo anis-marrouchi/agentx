@@ -20,6 +20,10 @@ struct CharacterSim {
         /// The pointer is on its speech bubble: it stays where it is, so
         /// the bubble is not pulled from under the pointer.
         var held = false
+        /// "Play mode" is ticked: idle, it plays with the pointer (#505).
+        var plays = false
+        /// The mouse button is down.
+        var down = false
         /// Where it rests, and how far it may go.
         var home = 0.0
         var range: ClosedRange<Double> = 0...0
@@ -71,6 +75,9 @@ struct CharacterSim {
     private var target = 0.0
     private var awayUntil = 0.0
     private var steppedAside = false
+    /// Its games with the pointer, and the crouch and hop they give it.
+    private(set) var play = PointerPlay()
+    private var crouch = 0.0, hop = 0.0
     private var face = 0.0, lean = 0.0
     private var glance = (x: 0.0, y: 0.0)
 
@@ -102,9 +109,20 @@ struct CharacterSim {
         // The pointer comes close: out of its way. Left alone: back home,
         // unless the pointer is resting there.
         let near = input.pointer.map { abs($0.x - x) < reach && abs($0.y) < tall } ?? false
+        // Idle with play mode on, a game with the pointer comes first.
+        var game = PointerPlay.Out()
+        if input.plays && !input.held && mood == .idle && input.activity == .idle {
+            game = play.step(now, dt, x: x, pointer: input.pointer, down: input.down, range: input.range)
+        } else {
+            play.stop(now)
+        }
         if input.held {
             target = x
             awayUntil = max(awayUntil, now + Self.awayFor)
+        } else if let to = game.target {
+            target = to
+            awayUntil = now + 1
+            restSince = now
         } else if near {
             target = M.aside(x: x, pointer: input.pointer!.x, clear: Self.clear, range: input.range)
             awayUntil = now + Self.awayFor
@@ -145,6 +163,14 @@ struct CharacterSim {
         func toward(_ value: inout Double, _ to: Double, _ rate: Double) { value += (to - value) * (1 - exp(-dt * rate)) }
         toward(&face, min(max(speed / 200, -1), 1), 10)
         toward(&lean, min(max(speed / 480, -1), 1) * 13, 8)
+        // A game's crouch and hop are followed, not taken at once, so a
+        // game cut short by work does not snap.
+        toward(&crouch, game.crouch, 20)
+        toward(&hop, game.hop, 20)
+        pose.sx *= 1 + 0.14 * crouch
+        pose.sy *= 1 - 0.22 * crouch
+        pose.lift += hop - 8 * crouch
+        if game.caught { burst(now, pose) }
 
         // It leaves dots behind while it moves, and stars when it has
         // stepped aside or understood.
