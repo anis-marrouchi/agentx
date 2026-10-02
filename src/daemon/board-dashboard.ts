@@ -62,7 +62,7 @@ import type { AppFleetDeps, ApprovalItem, NodeApprovals } from "./app-fleet"
 import { decide, listInbox, type InboxItem } from "@/approvals/inbox"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
-import { setTopbarFeatures, type TopbarPeer } from "./topbar"
+import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
 
 // --- Kanban Board Dashboard ---
 //
@@ -992,6 +992,20 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
         return
       }
     }
+  }
+
+  // The build the primary daemon is running and since when, for the header
+  // of every page (#465). The dashboard is its own process, so it asks.
+  //   GET /api/node/build
+  if (method === "GET" && path === "/api/node/build") {
+    try {
+      const headers: Record<string, string> = {}
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const r = await fetch(ctx.config.dashboard.daemonUrl.replace(/\/+$/, "") + "/health", { headers, signal: AbortSignal.timeout(3000) })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      sendJson(res, 200, headerBuild(await r.json()))
+    } catch (e: any) { sendJson(res, 502, { error: e.message || "daemon not reachable" }) }
+    return
   }
 
   // Mesh feed (#166) — the newest events on the primary daemon's bus. That

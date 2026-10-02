@@ -83,7 +83,7 @@ agentx desktop start
 | Command | Result / useful flags |
 |---|---|
 | `agentx daemon start` | Foreground daemon; `--detach` for background, `--config <path>` for another config |
-| `agentx daemon status` | Inspect the daemon |
+| `agentx daemon status` | Which version is running, since when, what restarted it last, then agents, schedules and connected machines; `--json` for the same as data. See [what the daemon is running](#see-what-the-daemon-is-running) |
 | `agentx daemon logs` | Read logs; `-f` to follow, `-n <lines>` for more |
 | `agentx daemon stop` | Stop the daemon after its running tasks finish ([restart without losing work](../jobs/restart-safely.md)) |
 | `agentx daemon restart` | Restart through launchd, systemd, or stop + start, and wait until it answers again; `--when-idle` waits for running tasks first (`--timeout`, `--abort-on-timeout`, `--reload-service`, `--dry-run`). See [restart without losing work](../jobs/restart-safely.md) |
@@ -107,6 +107,39 @@ agentx desktop start
 | `agentx notifications ntfy` | `--server`, `--topic`, `--token`, `--enable`/`--disable` for push through ntfy |
 
 Do not share `config show` output without checking it for credentials. Starting a daemon does not start the separate browser dashboard.
+
+### See what the daemon is running
+
+`agentx daemon status` opens with a short block about the daemon (the AgentX background service) itself, before the list of agents:
+
+```text
+AgentX 1.4.0 (abc1234)   node demo-laptop
+Running since   2026-03-10 12:21 (Europe/Paris), 2h 05m ago, pid 1827
+Last restart    2026-03-10 12:21 by agentx daemon restart (SIGTERM), previous boot 2026-03-10 06:41
+Restarts        3 today, 9 in the last 7 days
+Build on disk   dist newer than process: no
+Service         launchd com.example.agentx (KeepAlive)
+```
+
+| Line | What it tells you |
+|---|---|
+| First line | The version and the commit (the exact state of the source code it was built from) that the daemon loaded when it started, and the name of this machine in `agentx.json` |
+| **Running since** | When the daemon started, in your time zone, and its process number (`pid`) |
+| **Last restart** | When it last started, what stopped the daemon before it, and when that one had started. `by agentx daemon restart` or `by agentx daemon stop` is a command; `by restart-when-idle from …` is the dashboard's **Restart when idle** button or the same request from a terminal; `by launchd (…)` or `by systemd` is the service manager. **no clean stop on record before it** means the daemon before crashed, was killed or lost power |
+| **Restarts** | How many times the daemon started today and in the last seven days. **on record since** appears while the record is younger than a week |
+| **Build on disk** | **yes** when the AgentX files on disk were rebuilt or upgraded after the daemon started. The daemon keeps running the old code until it restarts |
+| **Service** | What starts the daemon again after it stops: a launchd job (macOS), a systemd unit (Linux), or nothing when it was started from a terminal |
+
+`agentx daemon status --json` prints the same facts as data: `version`, `commit`, `startedAt`, `pid`, `lastRestart` (`at`, `by`, `reason`, `previousBootAt`), `restarts` (`today`, `last7d`, `since`), `build` (`newer`, `changedAt`, `version`) and `service`. The daemon's `/health` address answers with the same fields except `service`, so one call per machine is enough to compare a fleet.
+
+When the daemon is stopped, the command says so and prints the last start on record:
+
+```text
+AgentX is stopped   node demo-laptop
+Last boot       2026-03-10 12:21 (Europe/Paris), 2h 05m ago
+```
+
+Run it from the folder that holds `agentx.json`: the record of starts is kept there, in `.agentx/boot-log.json`. It keeps the last 500 starts.
 
 ## People
 
@@ -259,9 +292,14 @@ The [CLI command reference](./cli-commands.md) lists every command, argument and
 
 1. **Terminal:** run `agentx --version`. It prints the installed version.
 2. **Terminal:** run `agentx doctor`. It checks Node, the configuration, credentials and the daemon.
+3. **Terminal:** run `agentx daemon status`. The first line names the same version as step 1, and **Build on disk** says `no`.
 
 ## If something is wrong
 
 - **`command not found: agentx`:** the npm package isn't installed globally, or you're in a source checkout. Use `node dist/cli.js` there.
 - **`unknown command`:** check the spelling against `agentx --help` and its advanced list; your installed version may be older than these docs.
 - **A command can't find your agents:** run it from the folder that holds `agentx.json`.
+- **`agentx daemon status` shows an older version than `agentx --version`, or Build on disk says `yes`:** the daemon is still running the code it started with. Restart it: `agentx daemon restart --when-idle`. See [restart without losing work](../jobs/restart-safely.md).
+- **Last restart says "no clean stop on record before it":** the daemon before this one did not shut down in the normal way. Read the end of its log with `agentx daemon logs -n 200`. The first start after upgrading to this version also shows it once.
+- **The block has only two lines:** the daemon that answers is older than this page. Restart it to load the installed version.
+- **Service says "none":** nothing starts the daemon again after a crash or a reboot. Set it up as a service: [restart without losing work](../jobs/restart-safely.md).

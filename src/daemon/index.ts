@@ -38,7 +38,7 @@ import { buildRoutines, type Routine, type RoutineWorkflow } from "./routines"
 import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
-import { buildInfo } from "@/utils/build-info"
+import { buildInfo, diskBuild } from "@/utils/build-info"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
 import { openDb, pruneSqliteTables, insertTaskQueue, completeTaskQueue, getTaskQueue, listTaskQueueByConversation } from "@/storage/sqlite"
@@ -75,6 +75,7 @@ import { remindctlSource } from "@/reminders/source"
 import { claimFile } from "@/reminders/store"
 import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
+import { recordBootEntry, restartSummary, writeLastStop, type BootEntry } from "@/daemon/boot-record"
 import {
   listPublishedInboxes, validateRelayRequest, renderRelayMessage,
   relayChatId, relayRateLimiter, unresolvableInboxes, RELAY_CHANNEL,
@@ -960,6 +961,7 @@ export class AgentXDaemon {
     // finish connecting; fully isolated so nothing in it can affect the
     // running daemon.
     this.bootTimes = recordBoot(resolve(process.cwd(), ".agentx"))
+    this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1))
     if (this.interruptedRuns.length > 0) {
       setTimeout(() => { void this.resumeInterruptedRuns() }, 5_000).unref?.()
     }
@@ -985,6 +987,8 @@ export class AgentXDaemon {
       if (this.shuttingDown) return
       this.shuttingDown = true
       this.shutdownRequest = takeShutdownRequest(resolve(process.cwd(), ".agentx"))
+      // Kept for the next boot: its status says who stopped this one.
+      writeLastStop(resolve(process.cwd(), ".agentx"), { at: new Date().toISOString(), by: this.shutdownRequest?.by ?? serviceManager(), reason: signal })
       this.log("\n  " + describeShutdown({
         signal,
         request: this.shutdownRequest,
@@ -1248,6 +1252,8 @@ export class AgentXDaemon {
   /** Runs the previous daemon left in flight (agents/resume). */
   private interruptedRuns: InterruptedRun[] = []
   private bootTimes: number[] = []
+  /** Every start on record with who stopped the one before (boot-record.ts). */
+  private bootLog: BootEntry[] = []
 
   /** Resume, report or skip each run the last restart cut off. Never throws. */
   private async resumeInterruptedRuns(): Promise<void> {
@@ -4857,6 +4863,12 @@ export class AgentXDaemon {
             commit: buildInfo.commit,
             startedAt: buildInfo.startedAt,
             uptime: process.uptime(),
+            pid: process.pid,
+            // When this process replaced the one before, who stopped that
+            // one, how often it has started, and whether the code on disk
+            // has moved on since (#465).
+            ...restartSummary(this.bootLog),
+            build: diskBuild(),
             agents: this.registry.list(),
             crons: this.cron.list().map((j) => ({ id: j.id, enabled: j.enabled, nextRun: j.nextRun })),
             mesh: this.mesh?.directory() || [],
