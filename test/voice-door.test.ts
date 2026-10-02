@@ -7,8 +7,8 @@ import { isStop } from "../src/voice/talk"
 import { Channel, type LineModel } from "../src/voice/talk-model"
 import type { Presence } from "../src/voice/presence"
 
-// One door (Option-Space) for everything spoken: talk, live lesson,
-// narration and a spoken-answer bubble.
+// One door (Option-Space) for everything spoken: talk, live lesson
+// and narration.
 
 const agents: any = {
   "secretary-agent": { name: "Secretary", systemPrompt: "You are the secretary.", voice: { narrate: "on" } },
@@ -164,14 +164,6 @@ describe("the door", () => {
     await new Promise((r) => setTimeout(r, 10))
     svc.handle("POST", "/voice/stop", {})
     expect(svc.live).toBeNull()
-  })
-
-  it("empties a spoken-answer bubble", () => {
-    const { svc, log } = setup()
-    svc.presence.showTalk("coder-agent", "Your build is green.", true)
-    hush(svc)
-    expect(log.at(-2)).toBe("Coder say ")
-    svc.presence.close()
   })
 })
 

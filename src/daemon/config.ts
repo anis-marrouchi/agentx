@@ -1265,6 +1265,9 @@ export const daemonConfigSchema = z.object({
     /** What agents call the person they talk with, e.g. a first name.
      *  Unset: "the user". */
     listener: z.string().optional(),
+    /** The agent's drawn pointer and name tag during a lesson. false: it
+     *  is never drawn, and a lesson is spoken only. */
+    pointer: z.boolean().default(true),
     /** AgentX Voice speech to text: "auto" uses ElevenLabs when a key is
      *  set and the local Whisper otherwise; "elevenlabs" or "local" pick
      *  one (ElevenLabs still falls back to local when it fails). */

@@ -513,6 +513,7 @@ agentx voice set helper <voice-id> --provider elevenlabs   # this agent speaks t
 | `voice.system` | One system voice (or one per language) for every agent without its own. Unset: each agent gets its own |
 | `voice.locale` | Language of assigned voices, e.g. `en`, `fr`, `en-GB` (default `en`) |
 | `voice.listener` | Who agents address in talk and live teach, e.g. `"Sam"`. Unset: they say "the user" |
+| `voice.pointer` | `false` never draws an agent's [pointer and name tag](#presence-on-screen); lessons are then spoken only (default `true`) |
 | agent `voice.provider` | Overrides the global provider for this agent |
 | agent `voice.system` | This agent's system voice: a name (`Daniel`, `Ava (Premium)`), an identifier from `agentx voice list`, `system` for the OS default voice, or one per language: `{ "en": "Samantha", "fr": "Thomas", "ar": "system" }` |
 | agent `voice.fallbacks` | Voices to try in order when `voice.system` names one that is not installed, e.g. `["Ava (Premium)", "Allison"]`. Unset, or none installed: the best voice in the missing voice's language and gender (see [When a voice goes missing](#when-a-voice-goes-missing)) |
@@ -735,7 +736,7 @@ To silence a narrating task by voice:
 
 An agent can appear on your screen as its own pointer: an arrow in its colour, with its initial, its name, and a speech bubble showing what it says. The **AgentX Helper** app draws it. You can click straight through it, and it never moves your own mouse.
 
-The pointer appears during lessons (see [Live lessons](#live-lessons)), and after a spoken answer when [presence mode](#presence-mode) is on.
+The pointer appears only during a lesson (see [Live lessons](#live-lessons)) and goes when the lesson ends. A spoken answer shows no pointer: the answer is in the pill, or in the character's bubble.
 
 ![An agent's on-screen pointer beside the Numbers sidebar: an arrow in the agent's colour, a circle with its initial C, its name CX, and a speech bubble with what it is saying](/screenshots/voice/presence-pointer.png)
 
@@ -759,13 +760,24 @@ To change how an agent's pointer looks:
 
 Without `allowActions`, the agent never clicks or types. It shows you where to click and lets you do it.
 
+To turn the pointer off completely:
+
+1. **Terminal:** open `agentx.json` in a text editor.
+2. In the `voice` block, set `pointer` to `false`:
+   ```json
+   "voice": { "pointer": false }
+   ```
+3. Save the file.
+
+No pointer or name tag is drawn after that, for any agent. A lesson still runs and says each step, but nothing shows you where to click.
+
 ### Presence mode
 
-Presence mode lets AgentX decide, on each question you ask through the widget, whether the agent should also show something on screen. A small, fast decision model called a seat makes this choice; see [Jev and typed decisions](../architecture/jev.md) for how seats work and how to set up their backend. This seat is named `presence-mode` and is off by default. While it is off, answers are spoken only, and no pointer appears after them.
+Presence mode lets AgentX decide, on each question you ask through the widget, whether the agent should also show something on screen. A small, fast decision model called a seat makes this choice; see [Jev and typed decisions](../architecture/jev.md) for how seats work and how to set up their backend. This seat is named `presence-mode` and is off by default. While it is off, answers are spoken only.
 
 | Mode | What happens |
 |---|---|
-| `talk` | The agent answers out loud. Its pointer rests in a corner with the answer in its bubble |
+| `talk` | The agent answers out loud. Nothing else appears on screen |
 | `teach` | A live lesson: the agent points at each step and says it; you do it |
 | `watch` | You work; the agent coaches you and points at what you need |
 | `act` | The agent does the steps itself. Only when `allowActions` is `true`; otherwise the answer is `talk` |
@@ -775,7 +787,6 @@ Some safety rules always apply:
 
 - A lesson (`teach` or `watch`) starts only when you ask to be shown something, for example "show me how…", "how do I…", "where is…", "walk me through…" or "montre-moi…". An instruction such as "merge and deploy the release" is always answered as `talk`.
 - If the seat is unsure (below 55% confidence), takes longer than 2.5 seconds, or fails, the answer is `talk`.
-- After a `talk` answer, the pointer disappears once the answer has had time to be heard. If the seat expects the conversation to go on, it stays, quietly, for up to 5 minutes.
 
 To switch presence mode on:
 
@@ -936,7 +947,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **`A talk or lesson is already running`:** only one runs at a time. Wait for it to end, or press **Command–Option–.** to stop it.
 - **`Unknown agent: …` from `agentx talk` or `agentx teach --live`:** check the id with `agentx agent list`. For `agentx talk`, an agent on another computer must be reachable: check that its computer shows in `agentx mesh list`.
 - **A talk never starts speaking:** the lines come from the `claude` program. **Terminal:** run `claude --version` on the daemon's computer and sign in if needed, or set `AGENTX_TALK_BACKEND=api`.
-- **No pointer appears after an answer:** presence mode is off, or the seat chose `talk` with low confidence. Look for `[presence]` lines in the daemon log.
+- **No pointer appears in a lesson:** `voice.pointer` is `false` in `agentx.json`. Remove the line or set it to `true`. A plain spoken answer never shows a pointer.
 - **A lesson says "Bring … to the front":** click the app the lesson started in; it carries on.
 - **The agent never clicks in `act` mode:** set `"allowActions": true` in the agent's `presence` block.
 - **History says the daemon isn't reachable:** **Terminal:** run `agentx daemon status` and start the daemon, then choose **Refresh**.
