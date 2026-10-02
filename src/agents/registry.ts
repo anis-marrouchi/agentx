@@ -1397,7 +1397,7 @@ export class AgentRegistry {
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
-        recordRateLimitEvent(event)
+        recordRateLimitEvent(event, undefined, task.model || state.def.model)
         // Caller-supplied event subscriber (HTTP SSE callers, etc.).
         // Fire after internal capture so a subscriber crash never breaks
         // our own bookkeeping.
@@ -1411,7 +1411,7 @@ export class AgentRegistry {
         emitTraceStepsFromStreamEvent(traceTaskId, task.agentId, event)
         tallyToolUses(toolUsesByName, event)
         // Claude Code's own view of the plan window; feeds the dispatch gate.
-        recordRateLimitEvent(event)
+        recordRateLimitEvent(event, undefined, task.model || state.def.model)
         if (callerOnEvent) { try { callerOnEvent(event) } catch { /* */ } }
       }
     }
@@ -2525,7 +2525,7 @@ export class AgentRegistry {
         const hasWarmSession = Boolean(resumeSessionId) || hasLiveProcess
         const gates = [
           preflightOverageGate(hasWarmSession),
-          preflightQuotaGate(hasWarmSession),
+          preflightQuotaGate(hasWarmSession, undefined, task.model || state.def.model),
         ]
         const abort = gates.find((g) => g && g.abort)
         if (abort) {

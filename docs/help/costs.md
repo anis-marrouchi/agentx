@@ -107,9 +107,40 @@ While the hold is on, a scheduled job or an agent-to-agent call fails with a mes
 ```
 Claude plan limit reached: Claude Code reports the five hour window as rejected.
 Cold dispatches are held until it resets in about 38 min (…); open conversations still go through.
+To try again now, run: agentx usage plan --lift
 ```
 
-Nothing to configure. The hold lifts by itself at the reset time, or sooner if Claude Code reports the window as allowed again.
+Nothing to configure. The hold lifts by itself at the reset time, or sooner: as soon as Claude serves a request from an open conversation, AgentX knows the plan is accepting work again and lifts the hold.
+
+Some windows count one model only, for example a weekly limit for Opus. Such a window holds only the agents that run on that model. An agent with no model set in `agentx.json` is held too, because AgentX can't tell which model it will use.
+
+### See the plan windows and lift a hold
+
+1. **Terminal:** in the folder with `agentx.json`, run:
+   ```sh
+   agentx usage plan
+   ```
+2. Read one line per window: its name, its state (`allowed`, `nearly full`, `rejected` or `extra usage`), how full it is, and when it resets. A window that is holding fresh sessions says so.
+3. Read the last line: how many fresh Claude Code sessions AgentX started in the last hour and the last 5 hours.
+4. Optional: if you know the plan is accepting work again (for example, you changed plan or switched on extra usage), lift the hold without waiting:
+   ```sh
+   agentx usage plan --lift
+   ```
+   The next fresh session asks Claude again. If the window is still used up, that session fails and the hold comes back.
+
+Example output:
+
+```text
+  Claude plan (as Claude Code last reported it)
+
+  five hour          rejected     100% used, resets in 38 min, holding fresh sessions
+  seven day          allowed      41% used, resets in 3 days
+
+  Fresh sessions started: 12 in the last hour, 40 in the last 5 hours
+  To try again now: agentx usage plan --lift
+```
+
+AgentX keeps this state in memory. After a daemon restart the list is empty until Claude Code reports again, and no hold is in place.
 
 ## Put a local ceiling on fresh Claude Code sessions
 
@@ -130,6 +161,7 @@ Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a ch
 2. **Terminal:** `agentx usage` prints `Token Usage (last 7 days)` followed by a total.
 3. **Terminal:** `agentx usage report` ends with `Report: .agentx/reports/token_report.md`, and that file exists.
 4. **Terminal:** `agentx usage surfaces` prints `Surface usage — last 30 days`. The commands you ran in the folder, such as `usage surfaces` itself, appear in the list.
+5. **Terminal:** `agentx usage plan` prints `Claude plan (as Claude Code last reported it)`, then a line per window once an agent has run a turn.
 
 ## If something is wrong
 
@@ -140,6 +172,7 @@ Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a ch
 - **`No tasks recorded yet`:** no agent has run yet on this machine. Send an agent a message first.
 - **The Cost page is empty:** it only counts work done since AgentX started recording on this machine. Pick **All** to see everything it has.
 - **The numbers don't match your bill:** your bill also covers use outside AgentX, and providers may round or group charges differently. Use the provider's figure.
-- **`Claude plan limit reached: Claude Code reports the … window as rejected`:** the subscription's rolling window is full. Wait for the reset time in the message; open conversations keep working. If this happens every day, consider a larger plan or fewer scheduled jobs.
+- **`Claude plan limit reached: Claude Code reports the … window as rejected`:** the subscription's rolling window is full. Wait for the reset time in the message; open conversations keep working. Run `agentx usage plan` to see every window, and `agentx usage plan --lift` if you know the plan is accepting work again. If this happens every day, consider a larger plan or fewer scheduled jobs.
+- **`agentx usage plan` says `Daemon answered 404`:** the running daemon is older than the command. Restart it with `agentx daemon restart`.
 - **`Local dispatch cap reached: …`:** you set `session.maxClaudeCodeDispatchesPerHour` or `session.maxClaudeCodeDispatchesPer5h` and the fleet reached it. Raise the setting or remove it; the change applies when you save `agentx.json`.
 - **Spending is higher than expected:** check **Settings** › **Schedules** for jobs that run very often, and lower their frequency.
