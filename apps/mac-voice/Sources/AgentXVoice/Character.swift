@@ -52,7 +52,7 @@ final class CharacterHost {
     /// Its body on screen: where it can be taken hold of.
     private var body = NSRect.zero
     /// Carried by the pointer: where the pointer took hold, and where it
-    /// rested then.
+    /// stood then, which is not where it rests once it has stepped aside.
     private var carried: (from: NSPoint, rest: CGPoint)?
     /// A still picture: Reduce Motion, or "Animated orb" off.
     private var still: Bool { !animated || reduceMotion }
@@ -159,7 +159,7 @@ final class CharacterHost {
         switch phase {
         case .began:
             let mouse = pointerSource()
-            if body.contains(mouse) { carried = (mouse, rest) }
+            if body.contains(mouse) { carried = (mouse, CGPoint(x: body.midX, y: rest.y)) }
         case .moved:
             if carried != nil { tick() }
         case .ended:
