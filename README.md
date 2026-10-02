@@ -1,18 +1,22 @@
 # Desktop character concept (issue #458)
 
-Pose sheet, version 2. Not meant to be merged.
+Pose sheet, version 3, and two moving previews. Not meant to be merged.
+
+The character has no legs: its walk is the hovering (owner, 2026-10-02).
+
+Along the edge:
+
+![Hovering along the edge](hover-walk.gif)
+
+Over a page, showing you a button:
+
+![Hovering over a page](hover-guide.gif)
 
 ![Pose sheet](character-sheet.png)
 
-New in version 2: the walk is seen from the side (it looks where it is going,
-right or left), and it hovers over the page to show you something.
+Rebuild (needs `rsvg-convert` and `magick`):
 
-The side walk, played as an animation:
+    python3 build_sheet.py && rsvg-convert character-sheet.svg -o character-sheet.png
+    python3 build_anim.py
 
-![Side walk](walk.gif)
-
-Rebuild: `python3 build_sheet.py`, then
-
-    rsvg-convert character-sheet.svg -o character-sheet.png
-    for i in 1 2 3 4; do rsvg-convert -z 2 walk-$i.svg -o walk-$i.png; done
-    magick -delay 16 -dispose previous walk-[1-4].png -loop 0 walk.gif
+`hover-*-frames.png` show every tenth frame, to check the motion as a still picture.

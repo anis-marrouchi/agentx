@@ -1,9 +1,9 @@
-"""Pose sheet for the AgentX desktop character (issue 458), version 2.
+"""Pose sheet for the AgentX desktop character (issue 458), version 3.
 
 The character is the voice orb grown into a small creature: the same round
-body in the agent's palette, two eyes, no mouth. Everything is vector, so
+body in the agent's palette, two eyes, no mouth, no legs: it hovers. Everything is vector, so
 the app can draw it in code the way it draws the orb today.
-Run: python3 build_sheet.py  ->  character-sheet.svg and walk-1.svg .. walk-4.svg
+Run: python3 build_sheet.py  ->  character-sheet.svg (build_anim.py makes the moving previews)
 """
 
 PALETTES = {  # from src/voice/orb-palettes.ts, deep to light
@@ -51,26 +51,19 @@ def eye(x, y, kind, gx=0, gy=0, w=1.0):
 
 
 def creature(cx, cy, palette="lagoon", eyes="open", gaze=(0, 0), tilt=0, sx=1.0, sy=1.0,
-             lift=0, extra="", legs=None, scale=1.0, face=0):
-    """The creature standing on the ground line at cy + R.
+             lift=0, extra="", scale=1.0, face=0):
+    """The creature over the ground line at cy + R. It has no legs: it hovers.
 
-    face: 0 seen from the front, 1 turned to the right, -1 turned to the left.
-    Turned, both eyes move to that side, the far one narrower, and the legs,
-    the lean and the gaze follow.
+    face: 0 seen from the front, 1 turned to the right, -1 turned to the left,
+    anything between while it turns. Turned, both eyes move to that side, the
+    far one narrower, and the lean and the gaze follow.
     """
-    d = face or 1
+    d, a = (1 if face >= 0 else -1), abs(face)
     ground = cy + R * scale
     shadow_w = 34 * scale * (1 - min(lift, 30) / 60)
     body_cy = -R * sy  # body sits on the ground, squash keeps the base there
     parts = [f'<ellipse cx="{cx}" cy="{ground+5}" rx="{shadow_w}" ry="{5*scale}" fill="#0F2233" opacity=".13"/>']
     parts.append(f'<g transform="translate({cx},{ground - lift}) scale({scale}) rotate({tilt*d})">')
-    if legs:  # two short legs for the walk frames: far then near (hip x, foot x, foot height off the ground)
-        gy = lift / scale  # the ground, seen from the lifted body
-        parts.append(f'<g transform="scale({d},1)">')
-        for n, (hx, fx, up) in enumerate(legs):  # far leg first, one stop darker
-            parts.append(f'<path d="M{hx},-12 Q{hx},{gy-up-3} {fx},{gy-up-4} h8" fill="none" '
-                         f'stroke="{PALETTES[palette][n]}" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>')
-        parts.append("</g>")
     parts.append(f'<ellipse cx="0" cy="{body_cy}" rx="{R*sx+7}" ry="{R*sy+7}" '
                  f'fill="{PALETTES[palette][2]}" opacity=".30" filter="url(#glow)"/>')
     parts.append(f'<ellipse cx="0" cy="{body_cy}" rx="{R*sx}" ry="{R*sy}" fill="url(#g-{palette})"/>')
@@ -78,12 +71,8 @@ def creature(cx, cy, palette="lagoon", eyes="open", gaze=(0, 0), tilt=0, sx=1.0,
                  f'transform="rotate(-24 {-17*sx} {body_cy-24*sy})"/>')
     ey = body_cy + 2 * sy
     gx, gy = gaze
-    if face:
-        parts.append(eye(33 * sx * d, ey, eyes, gx * d, gy, w=.62))
-        parts.append(eye(11 * sx * d, ey, eyes, gx * d, gy))
-    else:
-        parts.append(eye(-15 * sx, ey, eyes, gx, gy))
-        parts.append(eye(15 * sx, ey, eyes, gx, gy))
+    parts.append(eye((15 + 18 * a) * sx * d, ey, eyes, gx * d, gy, w=1 - .38 * a))
+    parts.append(eye((-15 + 26 * a) * sx * d, ey, eyes, gx * d, gy))
     parts.append("</g>")
     parts.append(extra)
     return "".join(parts)
@@ -137,34 +126,35 @@ cell(8, "Needs your answer", "tilts its head and waits, never interrupts", tilt=
      extra_fn=lambda x, y: (f'<circle cx="{x+62}" cy="{y-62}" r="15" fill="#fff" stroke="{P[0]}" stroke-width="2.5"/>'
                             f'<text x="{x+62}" y="{y-55}" text-anchor="middle" font-size="20" font-weight="700" fill="{P[0]}">?</text>'))
 
-# Walk cycle, seen from the side: four frames, legs alternate, body bobs and leans forward.
-walk_y = 1058
-walk = []
-frames = [dict(legs=[(-6, -32, 0), (7, 24, 0)], lift=12, tilt=4, sx=.98, sy=1.02),
-          dict(legs=[(-6, 2, 9), (7, 4, 0)], lift=17, tilt=2, sx=.96, sy=1.05),
-          dict(legs=[(-6, 24, 0), (7, -32, 0)], lift=12, tilt=4, sx=.98, sy=1.02),
-          dict(legs=[(-6, 4, 0), (7, 2, 9)], lift=17, tilt=2, sx=.96, sy=1.05)]
-
-
 def small(x, y, text, weight=400, fill="#555", size=13):
     return f'<text x="{x}" y="{y}" text-anchor="middle" font-size="{size}" font-weight="{weight}" fill="{fill}">{text}</text>'
 
 
-for i, f in enumerate(frames):
-    x = 140 + i * 160
-    walk.append(creature(x, walk_y, gaze=(2, 0), scale=.8, face=1, **f))
-    walk.append(small(x, walk_y + 72, ["stride", "pass", "stride", "pass"][i]))
-walk.append(creature(790, walk_y, gaze=(-5, 0), scale=.8, sx=1.03, sy=.97))
-walk.append(small(790, walk_y + 72, "stops, looks back"))
-for i, f in enumerate(frames[:2]):
-    x = 950 + i * 140
-    walk.append(creature(x, walk_y, gaze=(2, 0), scale=.8, face=-1, **f))
-    walk.append(small(x, walk_y + 72, ["stride", "pass"][i]))
-walk.append(f'<path d="M70,{walk_y+45} H1130" stroke="#D9DEE3" stroke-width="2"/>')
-walk.append(small(380, walk_y + 96, "walks right, looking right &#8594;", 600, "#111", 14))
-walk.append(small(1020, walk_y + 96, "&#8592; walks left, looking left", 600, "#111", 14))
-walk.append(f'<text x="60" y="{walk_y+128}" font-size="13" fill="#555">It looks where it is going. '
-            f'Which edge it walks along is to confirm with the owner (the word was unclear; most likely the Dock).</text>')
+def trail(x, y, d=1, k=1.0):
+    """Fading dots behind it while it moves (d = the way it goes, k = how strong)."""
+    return "".join(f'<circle cx="{x-d*(58+i*20)}" cy="{y+22+i*9}" r="{6-i*1.6}" fill="{P[2]}" opacity="{(.5-i*.14)*k}"/>'
+                   for i in range(3))
+
+
+# Moving along the edge: no legs, its walk is the hovering.
+walk_y = 1058
+walk = [f'<path d="M70,{walk_y+45} H1130" stroke="#D9DEE3" stroke-width="2"/>']
+moves = [
+    (150, "hovers in place", dict(lift=14)),
+    (330, "turns the way it will go", dict(lift=16, face=.55, gaze=(2, 0))),
+    (520, "glides, leaning forward", dict(lift=20, face=1, tilt=10, sx=1.03, sy=.98, gaze=(2, 0),
+                                          extra_fn=lambda x, y: trail(x, y - 20))),
+    (700, "slows, leans back", dict(lift=17, face=1, tilt=-5, gaze=(1, 0))),
+    (870, "stops, looks back at you", dict(lift=14, gaze=(-4, 0))),
+    (1050, "glides the other way", dict(lift=20, face=-1, tilt=10, sx=1.03, sy=.98, gaze=(2, 0),
+                                        extra_fn=lambda x, y: trail(x, y - 20, -1))),
+]
+for x, text, kw in moves:
+    extra = kw.pop("extra_fn", None)
+    walk.append(creature(x, walk_y, scale=.8, extra=extra(x, walk_y) if extra else "", **kw))
+    walk.append(small(x, walk_y + 76, text))
+walk.append(f'<text x="60" y="{walk_y+120}" font-size="13" fill="#555">No legs: it floats just above the edge and bobs slowly. '
+            f'Which edge it moves along is to confirm with the owner (most likely the Dock).</text>')
 
 # Hovering over the page: it leaves the edge, floats to something and shows it.
 hov_y, BLUE = 1272, "#1F6FEB"
@@ -180,11 +170,6 @@ hov.append(f'<rect x="{bx}" y="{by}" width="120" height="38" rx="9" fill="#fff" 
 hov.append(f'<rect x="{bx+28}" y="{by+14}" width="64" height="10" rx="5" fill="{BLUE}" opacity=".7"/>')
 
 
-def trail(x, y, d=1):
-    return "".join(f'<circle cx="{x-d*(58+i*20)}" cy="{y+22+i*9}" r="{6-i*1.6}" fill="{P[2]}" opacity="{.5-i*.14}"/>'
-                   for i in range(3))
-
-
 def pointer(x, y):
     return (f'<path transform="translate({x},{y}) scale(1.5)" d="M0,0 V17 L4.5,13 L7.5,20 L10,19 L7,12 H13 Z" '
             f'fill="#111" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/>')
@@ -196,7 +181,7 @@ def sparks(x, y):
 
 
 steps = [
-    (170, "Lifts off the edge", "leaves the edge, no legs", dict(lift=16, eyes="wide", gaze=(3, -4), sx=.96, sy=1.05)),
+    (170, "Leaves the edge", "rises from where it hovers", dict(lift=16, eyes="wide", gaze=(3, -4), sx=.96, sy=1.05)),
     (375, "Floats across the page", "leans the way it is going", dict(lift=30, face=1, tilt=9, gaze=(2, -1), extra_fn=lambda x, y: trail(x, y - 30))),
     (575, "Shows you the thing", "stops beside it and looks at it", dict(lift=24, face=1, tilt=5, gaze=(3, 1))),
     (868, "Reacts", "how is still to decide", dict(lift=22, eyes="happy", sx=1.04, sy=.95, extra_fn=lambda x, y: sparks(x, y - 22))),
@@ -231,11 +216,11 @@ def page(w, h, body):
 
 
 svg = page(W, H, f'''
-<text x="60" y="62" font-size="30" font-weight="700" fill="#111">AgentX desktop character: pose sheet, version 2</text>
-<text x="60" y="90" font-size="15" fill="#555">The orb, grown into a small creature. Same round body, the agent's own colours, two eyes, no mouth. It reacts, it never interrupts.</text>
+<text x="60" y="62" font-size="30" font-weight="700" fill="#111">AgentX desktop character: pose sheet, version 3</text>
+<text x="60" y="90" font-size="15" fill="#555">The orb, grown into a small creature. Same round body, the agent's own colours, two eyes, no mouth. It has no legs: it hovers. It reacts, it never interrupts.</text>
 {heading(128, "WHAT IT SHOWS")}
 {''.join(cells)}
-{heading(970, "WALKING ALONG THE EDGE, SEEN FROM THE SIDE")}
+{heading(970, "MOVING ALONG THE EDGE: IT HOVERS")}
 {''.join(walk)}
 {heading(1240, "HOVERING OVER THE PAGE, GUIDING YOU")}
 {''.join(hov)}
@@ -243,10 +228,6 @@ svg = page(W, H, f'''
 {''.join(pals)}
 <text x="60" y="{H-28}" font-size="12" fill="#888">Example only, issue 458. Vector, drawn in code like the orb today; colours from src/voice/orb-palettes.ts.</text>
 ''')
-open("character-sheet.svg", "w").write(svg)
-print("wrote character-sheet.svg", len(svg))
-
-# The four walk frames alone, to play as an animation (see README).
-for i, f in enumerate(frames):
-    body = creature(110, 105, gaze=(2, 0), face=1, **f) + '<path d="M0,160 H220" stroke="#D9DEE3" stroke-width="2"/>'
-    open(f"walk-{i+1}.svg", "w").write(page(220, 190, body))
+if __name__ == "__main__":
+    open("character-sheet.svg", "w").write(svg)
+    print("wrote character-sheet.svg", len(svg))
