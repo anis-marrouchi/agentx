@@ -1,0 +1,164 @@
+import AppKit
+
+/// What play mode (#505) draws over the picture: the page's colour where
+/// words are gone, the cloth, and the character. The context is flipped,
+/// in the picture's points.
+enum PlayDraw {
+    static func draw(_ frame: Play.Frame, in ctx: CGContext, stops: [NSColor]) {
+        for gone in frame.gone {
+            let c = gone.paper
+            ctx.setFillColor(CGColor(srgbRed: CGFloat(c >> 16 & 0xFF) / 255, green: CGFloat(c >> 8 & 0xFF) / 255,
+                                     blue: CGFloat(c & 0xFF) / 255, alpha: 1))
+            ctx.fill(cg(gone.rect))
+        }
+        if let cloth = frame.cloth {
+            let path = CGPath(roundedRect: cg(cloth), cornerWidth: 4, cornerHeight: 4, transform: nil)
+            ctx.addPath(path)
+            ctx.setFillColor(stops[4].cgColor)
+            ctx.fillPath()
+            ctx.addPath(path)
+            ctx.setStrokeColor(stops[1].cgColor)
+            ctx.setLineWidth(1)
+            ctx.strokePath()
+        }
+        let shown = CharacterSim.Frame(pose: frame.pose, x: frame.at.x, face: frame.face, t: frame.t)
+        CharacterDraw.draw(shown, in: ctx, edge: CGPoint(x: frame.at.x, y: frame.at.y), origin: 0,
+                           unit: CGFloat(PlayMath.unit), stops: stops)
+    }
+
+    private static func cg(_ r: PlayMath.Rect) -> CGRect { CGRect(x: r.x, y: r.y, width: r.w, height: r.h) }
+}
+
+/// The stage: a frozen picture of the screen laid over everything, with
+/// the character playing on it. The real page is never touched: nothing
+/// is clicked, typed or changed, and what looks eaten or wiped is only
+/// painted over on the picture.
+///
+/// The page behind goes stale while the picture is up, so play ends on
+/// the first real input: any key, a click, a scroll, another app or Space
+/// coming forward. Unlike the character on its edge, this window does
+/// take keys and clicks, for that one purpose.
+@MainActor
+final class PlayHost {
+    private var window: NSPanel?
+    private var timer: Timer?
+    private var observers: [(NotificationCenter, NSObjectProtocol)] = []
+    private var script: Play?
+    private var began = 0.0
+    /// Raised by each `start`, so a text read that outlives its play can
+    /// tell that the picture now up is not the one it read.
+    private(set) var number = 0
+    /// Told each time a play is over.
+    var onEnd: (() -> Void)?
+
+    var running: Bool { window != nil }
+
+    /// Lay `picture` over `screen`, the character waiting at `foot` (the
+    /// picture's points) until `play(_:)` gives it a script: reading the
+    /// text takes a moment, and the page must not move meanwhile.
+    func start(picture: CGImage, on screen: NSScreen, stops: [NSColor], at foot: PlayMath.Point) {
+        guard !running else { return }
+        script = nil
+        number += 1
+        let panel = PlayWindow(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
+                               backing: .buffered, defer: false)
+        panel.level = .screenSaver
+        panel.collectionBehavior = [.fullScreenAuxiliary]
+        panel.hasShadow = false
+        panel.hidesOnDeactivate = false
+
+        let bounds = NSRect(origin: .zero, size: screen.frame.size)
+        let backdrop = NSView(frame: bounds)
+        backdrop.wantsLayer = true
+        backdrop.layer?.contents = picture
+        let view = PlayView(frame: bounds)
+        view.stops = stops
+        view.shown = Play.Frame(at: foot, pose: CharacterMath.pose(.working))
+        view.onInput = { [weak self] in self?.end("a key or a click") }
+        backdrop.addSubview(view)
+        panel.contentView = backdrop
+        panel.setFrame(screen.frame, display: true)
+        window = panel
+        panel.makeKeyAndOrderFront(nil)
+        panel.makeFirstResponder(view)
+
+        func watch(_ center: NotificationCenter, _ name: Notification.Name, _ object: Any?, _ why: String) {
+            observers.append((center, center.addObserver(forName: name, object: object, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.end(why) }
+            }))
+        }
+        watch(.default, NSWindow.didResignKeyNotification, panel, "another window came forward")
+        watch(NSWorkspace.shared.notificationCenter, NSWorkspace.activeSpaceDidChangeNotification, nil, "the Space changed")
+        watch(.default, NSApplication.didChangeScreenParametersNotification, nil, "the screens changed")
+
+        let shownAt = ProcessInfo.processInfo.systemUptime
+        let frames = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self, weak view] _ in
+            MainActor.assumeIsolated {
+                guard let self, let view else { return }
+                let now = ProcessInfo.processInfo.systemUptime
+                if let script = self.script {
+                    view.shown = script.frame(at: now - self.began)
+                } else {
+                    // Its thinking dots hop while it waits.
+                    view.shown.t = now - shownAt
+                }
+                view.needsDisplay = true
+                if view.shown.done { self.end("the script ended") }
+            }
+        }
+        RunLoop.main.add(frames, forMode: .common)
+        timer = frames
+    }
+
+    /// The script to play on the picture that is up. Nothing happens if
+    /// the play has ended meanwhile.
+    func play(_ script: Play) {
+        guard running, self.script == nil else { return }
+        self.script = script
+        began = ProcessInfo.processInfo.systemUptime
+        Log.info("play: started, \(script.lines.count) lines read, \(String(format: "%.1f", script.duration)) s")
+    }
+
+    /// Take the picture away and drop it. Safe to call when no play runs.
+    func end(_ why: String) {
+        guard let panel = window else { return }
+        window = nil
+        timer?.invalidate()
+        timer = nil
+        for (center, observer) in observers { center.removeObserver(observer) }
+        observers = []
+        panel.orderOut(nil)
+        panel.contentView?.layer?.contents = nil
+        panel.contentView = nil
+        Log.info("play: ended, \(why)")
+        onEnd?()
+    }
+}
+
+/// Borderless, and still able to take the keys that end the play.
+private final class PlayWindow: NSPanel {
+    override var canBecomeKey: Bool { true }
+}
+
+/// The drawing over the picture. Every key, click and scroll ends the play.
+private final class PlayView: NSView {
+    var shown = Play.Frame()
+    var stops = CharacterDraw.stops(tint: Brand.accent, colors: nil)
+    var onInput: (() -> Void)?
+
+    override var isFlipped: Bool { true }
+    override var acceptsFirstResponder: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
+        PlayDraw.draw(shown, in: ctx, stops: stops)
+    }
+
+    override func keyDown(with event: NSEvent) { onInput?() }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool { onInput?(); return true }
+    override func mouseDown(with event: NSEvent) { onInput?() }
+    override func rightMouseDown(with event: NSEvent) { onInput?() }
+    override func otherMouseDown(with event: NSEvent) { onInput?() }
+    override func scrollWheel(with event: NSEvent) { onInput?() }
+}

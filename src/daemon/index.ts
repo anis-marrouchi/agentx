@@ -6103,12 +6103,9 @@ export class AgentXDaemon {
           const { cleanText: withoutDirective, ui: directive } = extractUiDirective(response.content ?? "")
           const speakable = toSpeakable(withoutDirective, this.config.voice.spokenMaxChars)
           if (!response.error) this.voiceIntros.spoke(session, agentId)
-          if (!response.error && presence?.seat === "active" && presence.mode === "talk") {
-            this.voiceTalk.presence.showTalk(agentId, speakable, presence.persist)
-          } else {
-            // Quiet, a failed turn, or no seat: nothing of this agent stays on screen.
-            this.voiceTalk.presence.hide(agentId)
-          }
+          // The answer is in the pill or the character's bubble: nothing of
+          // this agent stays on screen. Only a lesson shows its pointer.
+          this.voiceTalk.presence.hide(agentId)
 
           this.json(res, response.error ? 500 : 200, {
             ...speaker,

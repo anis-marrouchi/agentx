@@ -76,6 +76,20 @@ describe("parsePlan", () => {
     expect(parsePlan("TARGET: 99\nACTION: jump\nSAY: Hmm.", new Set([7])))
       .toEqual({ target: null, action: "wait_for_user", text: null, say: "Hmm." })
   })
+
+  it("reads an empty TEXT line as no text, not as the line after it", () => {
+    expect(parsePlan("TARGET: 7\nACTION: type\nTEXT: \nSAY: Type the name in that box.", new Set([7])))
+      .toEqual({ target: 7, action: "type", text: null, say: "Type the name in that box." })
+    expect(parsePlan("TARGET: none\nACTION: key\nTEXT:\nSAY: Press it.", new Set([7])))
+      .toEqual({ target: null, action: "key", text: null, say: "Press it." })
+    expect(parsePlan("TARGET: 7\r\nACTION: click\r\nTEXT:\r\nSAY: Click that.", new Set([7])))
+      .toEqual({ target: 7, action: "click", text: null, say: "Click that." })
+  })
+
+  it("says the line under a SAY left alone on its line, without the label", () => {
+    expect(parsePlan("TARGET: 7\nACTION: type\nTEXT: abc\nSAY:\nType it.", new Set([7])))
+      .toEqual({ target: 7, action: "type", text: "abc", say: "Type it." })
+  })
 })
 
 describe("bubbleText", () => {

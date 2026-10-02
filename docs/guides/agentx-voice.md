@@ -300,6 +300,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.system` | not set: each agent gets its own voice | A Mac voice for every agent without its own. `"system"` means the Mac's default voice |
 | `voice.locale` | `"en"` | The language of automatically assigned voices, for example `"fr-FR"` |
 | `voice.listener` | not set: "the user" | What agents call you, for example your first name |
+| `voice.pointer` | `true` | `false` never draws an agent's pointer and name tag on screen; a lesson is then spoken only |
 | `voice.stt` | `"auto"` | Speech to text: `"auto"`, `"elevenlabs"` or `"local"` |
 | `voice.localStt` | `"mlx-whisper"` | The engine on this Mac: `"mlx-whisper"` or `"parakeet"` |
 | `voice.endOfTurn` | `"vad"` | How a hands-free turn ends: `"vad"` (voice detection) or `"volume"` |

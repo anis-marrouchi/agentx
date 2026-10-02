@@ -7,7 +7,7 @@ import { talkSpeaker } from "@/voice/agent-voice"
 import { HELPER } from "@/computer-use/screen"
 import { LiveTeach, teachSystemPrompt, type TeachEvent, type TeachMode } from "@/voice/live-teach"
 import { helperAct, readScreenView } from "@/voice/live-teach-screen"
-import { PresenceOverlay, presenceLook } from "@/voice/presence"
+import { NO_POINTER, PresenceOverlay, presenceLook } from "@/voice/presence"
 import { SpeechOut } from "@/voice/speaking-queue"
 import { createLineModel } from "@/voice/talk-model"
 import { DEFAULT_LISTENER } from "@/voice/talk"
@@ -62,7 +62,7 @@ export async function runLiveTeach(goal: string, opts: { agent?: string; mode?: 
     { goal, app, mode, speaker, actionsAllowed: look.allowActions, maxSteps: Number(opts.steps) || undefined, listener },
     {
       readScreen: readScreenView,
-      presence: new PresenceOverlay(look, HELPER, agentId),
+      presence: config.voice.pointer ? new PresenceOverlay(look, HELPER, agentId) : NO_POINTER,
       speech: new SpeechOut(),
       model: createLineModel({ system: teachSystemPrompt(speaker.persona, listener) }),
       act: helperAct,
