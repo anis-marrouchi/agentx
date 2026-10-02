@@ -72,7 +72,7 @@ check(saved.previewVoice(for: "writer")["system"] as? String == "Ava", "and send
 
 // --- Palettes and the answer card (#211) ---
 
-check(saved.general.look == nil && saved.general.card == nil && saved.palettes == nil && saved.agents[0].palette == nil,
+check(saved.general.startReduced == nil && saved.general.look == nil && saved.general.card == nil && saved.palettes == nil && saved.agents[0].palette == nil,
       "a daemon without palettes or card settings still decodes")
 
 let newer = """
@@ -98,6 +98,18 @@ check(a2?["writer"]?["palette"] as? String == "dusk", "a picked palette is sent"
 check(a2?["researcher"]?["palette"] is NSNull, "back to the colour's palette sends null")
 let card2 = (p2["general"] as? [String: Any])?["card"] as? [String: Any]
 check(card2?["timeout"] as? Double == 0 && card2?["maxHeight"] == nil, "only the changed card setting is sent")
+
+// --- Start reduced to the orb (#457) ---
+
+check(current.general.startReduced == nil && current.patch(from: current)["general"] == nil,
+      "a daemon older than the reduced pill sends no start setting, and none is sent back")
+let withStart = try! JSONDecoder().decode(VoiceSettings.self, from: Data(newer.replacingOccurrences(
+    of: "\"card\":{\"timeout\":30,\"maxHeight\":320}", with: "\"card\":{\"timeout\":30,\"maxHeight\":320},\"startReduced\":false").utf8))
+check(withStart.general.startReduced == false, "the start setting decodes")
+var startsSmall = withStart
+startsSmall.general.startReduced = true
+let startPatch = startsSmall.patch(from: withStart)["general"] as? [String: Any]
+check(startPatch?["startReduced"] as? Bool == true && startPatch?.count == 1, "only the start setting is sent when it changes")
 
 // --- The read at start, asked again until the daemon answers ---
 

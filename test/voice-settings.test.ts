@@ -131,6 +131,16 @@ describe("applyVoiceSettings", () => {
     expect(raw.voice).toEqual({ localStt: "parakeet", endOfTurn: "volume" })
   })
 
+  it("starts with the full pill unless told to start reduced to the orb", () => {
+    expect(voiceSettingsView(config(), []).general.startReduced).toBe(false)
+    expect(checkVoiceSettings({ general: { startReduced: true } }, config())).toEqual([])
+    expect(checkVoiceSettings({ general: { startReduced: "yes" } } as never, config()))
+      .toEqual([{ path: "general.startReduced", message: "Start reduced to the orb must be on or off" }])
+    const raw: any = {}
+    applyVoiceSettings(raw, { general: { startReduced: true } })
+    expect(raw.voice).toEqual({ startReduced: true })
+  })
+
   it("writes the look, and the orb is the look when none is written", () => {
     const raw: any = rawConfig()
     expect(voiceSettingsView(config(), []).general.look).toBe("orb")
@@ -214,7 +224,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb" })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })
