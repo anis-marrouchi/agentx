@@ -54,4 +54,9 @@ describe("built diagrams", () => {
     const { default: svg } = await import(new URL(`${name}.mjs`, specs).href)
     expect(readFileSync(new URL(`${name}.svg`, built), "utf8")).toBe(svg)
   })
+
+  it("has no built file without a spec", () => {
+    const files = readdirSync(built).filter((file) => file.endsWith(".svg"))
+    expect(files.sort()).toEqual(names.map((name) => `${name}.svg`).sort())
+  })
 })

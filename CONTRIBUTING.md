@@ -127,7 +127,7 @@ To add a diagram (in a terminal, from the repo root):
 4. Open the file in a browser and watch it build once. Check that no text leaves its card and nothing overlaps.
 5. Add it to the page, with a sentence of alt text that says what the picture shows: `![…](/diagrams/<name>.svg)`.
 6. Run `pnpm docs:dev`, open the page, and read the diagram there: every line must be readable at the page's width without zooming.
-7. Commit the spec and the built file together.
+7. Commit the spec and the built file together. When you rename or remove a spec, delete its built file too: `pnpm docs:check` fails on a built file that has no spec.
 
 The rules of the look:
 
