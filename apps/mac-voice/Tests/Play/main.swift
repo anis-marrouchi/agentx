@@ -1,5 +1,6 @@
-// Tests for play mode (#505): the letters of a word, the built-in script,
-// and where the character is and what is gone at each moment.
+// Tests for play mode (#505): the letters of a word, the play made for a
+// seed, where the character is, what is gone and what has moved at each
+// moment.
 // Run with ../../test.sh.
 import Foundation
 
@@ -42,20 +43,39 @@ check(P.common([0xFFFFFF, 0x202020, 0xFEFEFE, 0xFFFFFF, 0x808080]) == 0xFFFFFF, 
 check(P.common([0x101010, 0xFAFBFC, 0xFBFCFD, 0xF8F9FA]) == 0xFAFBFC, "close shades count as one colour")
 check(P.common([]) == nil, "no samples, no colour")
 
-// --- The built-in script ---
+// --- A play for each seed ---
 
-let demo = P.demo(page, width: 1440, height: 900)
-check(demo == [.jump(line: 1), .walk(line: 1), .eat(line: 2, words: 0..<3), .wipe(line: 3), .rest(1.2)],
-      "the script takes the line nearest the middle and the two under it in its column")
-check(!demo.contains(.walk(line: 0)) && !demo.contains(.wipe(line: 4)) && !demo.contains(.wipe(line: 5)),
-      "the menu bar, another column and a line of one word are left alone")
-check(P.demo([page[1]], width: 1440, height: 900) == [.jump(line: 0), .walk(line: 0), .eat(line: 0, words: 0..<2), .rest(1.2)],
-      "with one line it walks it and eats its first words")
-check(P.demo([page[0], page[5]], width: 1440, height: 900).isEmpty, "with no line to stand on there is no script")
+let size = P.Point(x: 1440, y: 900)
+func script(_ seed: UInt64, _ lines: [P.Line] = page) -> [P.Step] { P.script(lines, width: size.x, height: size.y, seed: seed) }
+/// The lines a step plays on.
+func named(_ step: P.Step) -> [Int] {
+    switch step {
+    case .jump(let i), .walk(let i), .wipe(let i), .stomp(let i), .eat(let i, _), .kick(let i, _): return [i]
+    case .carry(let i, _, let j): return [i, j]
+    case .rest: return []
+    }
+}
+let scripts = (0..<200).map { script(UInt64($0)) }
+check(script(7) == script(7), "the same seed gives the same play")
+check(Set(scripts.map { "\($0)" }).count > 50, "and other seeds give other plays")
+check(scripts.allSatisfy { $0.count == 6 && $0[0] == .jump(line: named($0[0])[0]) && $0[1] == .walk(line: named($0[0])[0]) && $0[5] == .rest(1.2) },
+      "it jumps onto a line, walks it, plays on the three others, and rests")
+check(scripts.allSatisfy { s in Set(s.dropFirst(2).dropLast().map { "\($0)".prefix(4) }).count == 3 }, "never the same thing twice in a play")
+check(scripts.allSatisfy { s in Set(s.dropFirst(2).dropLast().map { named($0)[0] }).count == 3 && !s.dropFirst(2).dropLast().contains { named($0)[0] == named(s[0])[0] } },
+      "one thing a line, and the line it walked stays whole")
+check(scripts.allSatisfy { $0.allSatisfy { named($0).allSatisfy { $0 >= 1 && $0 <= 4 } } }, "the menu bar and a line of one word are left alone")
+for act in ["eat", "wipe", "kick", "stomp", "carry"] {
+    check(scripts.contains { $0.contains { "\($0)".hasPrefix(act) } }, "some plays \(act)")
+}
+let alone = (0..<50).map { script(UInt64($0), [page[1]]) }
+check(alone.allSatisfy { $0.count == 4 && named($0[2]) == [0] } && !alone.contains { $0.contains { "\($0)".hasPrefix("carry") } },
+      "with one line it walks it and plays on it, and carries nothing")
+check(script(1, [page[0], page[5]]).isEmpty, "with no line to stand on there is no script")
 
 // --- The script in time ---
 
-let play = Play(lines: page, steps: demo, start: start)
+let demo: [P.Step] = [.jump(line: 1), .walk(line: 1), .eat(line: 2, words: 0..<3), .wipe(line: 3), .rest(1.2)]
+let play = Play(lines: page, steps: demo, start: start, size: size)
 /// Every frame at 30 a second, to the end and a little after.
 let frames = stride(from: 0.0, through: play.duration + 0.5, by: 1.0 / 30).map { play.frame(at: $0) }
 func during(_ kind: Play.Kind) -> [Play.Frame] {
@@ -65,9 +85,9 @@ func during(_ kind: Play.Kind) -> [Play.Frame] {
 
 check(play.moves.map(\.kind) == [.jump, .walk, .jump, .eat, .jump, .wipe, .rest], "it jumps to each line before it plays on it")
 check(frames.first!.at == start, "it starts from where it stood")
-check(Play(lines: page, steps: [.walk(line: 9), .eat(line: 1, words: 4..<9), .rest(0.5)], start: start).moves.map(\.kind) == [.rest],
+check(Play(lines: page, steps: [.walk(line: 9), .eat(line: 1, words: 4..<9), .kick(line: 1, word: 9), .carry(line: 1, word: 0, to: 1), .stomp(line: 9), .rest(0.5)], start: start, size: size).moves.map(\.kind) == [.rest],
       "a step that names a line or a word that is not there is skipped")
-check(Play(lines: [], steps: [], start: start).frame(at: 0).done, "an empty script is over at once")
+check(Play(lines: [], steps: [], start: start, size: size).frame(at: 0).done, "an empty script is over at once")
 
 let walk = during(.walk)
 check(walk.allSatisfy { $0.at.y == 440 }, "walking, its feet stay on the top of the line")
@@ -110,7 +130,67 @@ check(step < 45, "it never moves more than a body's width between two frames")
 check(turn < 0.6 && stretch < 0.08, "and its face and body turn and stretch without a snap")
 check(!play.frame(at: play.duration - 0.1).done && play.frame(at: play.duration).done, "the script is done when its last move ends")
 check(play.frame(at: play.duration + 5).at == play.moves.last!.to && frames.last!.face == 0, "and it stays there, facing you")
-check(play.duration > 6 && play.duration < 20, "the built-in script lasts a few seconds")
+check(play.duration > 6 && play.duration < 20, "a script of four moves lasts a few seconds")
+
+// --- Kicking, stomping, carrying ---
+
+func frames(of p: Play) -> [Play.Frame] { stride(from: 0.0, through: p.duration + 2, by: 1.0 / 30).map { p.frame(at: $0) } }
+func move(_ p: Play, _ kind: Play.Kind) -> Play.Move { p.moves.first { $0.kind == kind }! }
+
+let kick = Play(lines: page, steps: [.kick(line: 1, word: 2), .rest(2)], start: start, size: size)
+let kicked = frames(of: kick), hit = move(kick, .kick).start + 0.25
+check(kicked.filter { $0.t < hit }.allSatisfy { $0.pieces.isEmpty && $0.gone.isEmpty }, "before the kick lands, the word is in its place")
+check(kicked.filter { $0.t >= hit }.allSatisfy { $0.pieces.count == 5 && $0.gone.count == 5 }, "after it, each of its five letters is a piece, and its place is covered")
+check(kicked.last!.pieces.map(\.from) == P.letters(of: page[1].words[2]), "the pieces are the letters of that word")
+let air1 = kicked.first { $0.t >= hit + 0.2 }!
+check(air1.pieces.allSatisfy { $0.at.y < 440 && $0.at.x > $0.from.x && $0.turn != 0 }, "they fly up and away, turning")
+check(kicked.last!.pieces.allSatisfy { $0.at.y + 18 <= 900 && $0.at.y + 18 > 880 && $0.at.x >= 0 && $0.at.x + 8 <= 1440 }, "and come to rest on the bottom of the picture")
+check(kicked.last!.pieces == kicked[kicked.count - 20].pieces, "where they stay")
+check(kicked.last!.pieces.allSatisfy { abs(sin($0.turn)) < 1e-9 }, "lying flat")
+check(Set(kicked.last!.pieces.map(\.at.y)).count > 1, "not all at one height: a pile")
+
+let stomp = Play(lines: page, steps: [.stomp(line: 2), .rest(1)], start: start, size: size)
+let stomped = frames(of: stomp), hops = move(stomp, .stomp), fall = move(stomp, .fall)
+check(stomped.filter { $0.t <= hops.start + 0.3 }.allSatisfy { $0.pieces.isEmpty }, "the first hop drops nothing")
+let dropping = stomped.filter { $0.t >= hops.start && $0.t <= hops.end }.map(\.pieces.count)
+check(zip(dropping, dropping.dropFirst()).allSatisfy { $1 - $0 >= 0 && $1 - $0 <= 1 } && dropping.last == 6, "then the words drop one at a time, all six")
+check(stomped.filter { $0.t > hops.start && $0.t < hops.end }.contains { $0.at.y < 470 - 15 }, "it hops on the line")
+check(fall.to.y == 894 && stomped.last!.at.y == 894, "and falls to the bottom after them")
+let falling = stomped.filter { $0.t >= fall.start && $0.t <= fall.end }.map(\.at.y)
+check(zip(falling, falling.dropFirst()).allSatisfy { $0 <= $1 }, "never back up")
+
+let carry = Play(lines: page, steps: [.carry(line: 3, word: 2, to: 1), .rest(1)], start: start, size: size)
+let carried = frames(of: carry), up = move(carry, .lift), over = move(carry, .carry), down = move(carry, .drop)
+let woods = page[3].words[2].rect
+check(carried.filter { $0.t < up.start }.allSatisfy { $0.pieces.isEmpty }, "a word stays until it is lifted")
+check(carried.filter { $0.t > over.start && $0.t < over.end }.allSatisfy { f in
+    f.pieces.count == 1 && abs(f.pieces[0].at.x + woods.w / 2 - f.at.x) < 0.001 && abs(f.pieces[0].at.y + woods.h + P.top - f.at.y) < 0.001
+}, "carried, it is above the character's head")
+check(carried.last!.pieces == [P.Piece(from: woods, at: P.Point(x: page[1].rect.maxX + 8, y: 440))], "and it is put down after the other line, upright")
+check(carried.last!.gone.count == 1 && carried.last!.gone[0].rect.x == woods.x - 1, "its old place is covered")
+let edge = [line("ends at the edge of this page", x: 1440 - 29 * 8, y: 300), page[3]]
+check(Play(lines: edge, steps: [.carry(line: 1, word: 0, to: 0)], start: start, size: size).frame(at: 99).pieces[0].at
+      == P.Point(x: 1440 - 4 * 8, y: 300 - 18 - 2), "with no room after the line, on top of its end")
+check(over.to == P.Point(x: page[1].rect.maxX - 4, y: 440) && down.start == over.end, "it stands on the end of that line to put it down")
+
+// --- Any play stays in the picture and does not snap ---
+
+var worst = 0.0, out = 0, long = 0.0
+for s in scripts.prefix(60) {
+    let p = Play(lines: page, steps: s, start: start, size: size), fs = frames(of: p)
+    long = max(long, p.duration)
+    for (a, b) in zip(fs, fs.dropFirst()) { worst = max(worst, hypot(a.at.x - b.at.x, a.at.y - b.at.y)) }
+    for f in fs {
+        if f.at.y - P.top < 0 || f.at.y > 900 || f.at.x < 0 || f.at.x > 1440 { out += 1 }
+        for piece in f.pieces {
+            let right: Double = piece.at.x + piece.from.w, bottom: Double = piece.at.y + piece.from.h
+            if piece.at.x < 0 || right > 1440.001 || bottom > 900.001 { out += 1 }
+        }
+    }
+}
+check(out == 0, "in sixty plays, neither it nor a piece leaves the picture")
+check(worst < 45, "and it never moves more than a body's width between two frames")
+check(long < 30, "the longest lasts under half a minute")
 
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

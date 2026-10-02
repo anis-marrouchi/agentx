@@ -57,6 +57,8 @@ struct LookSection: View {
     @Binding var look: String
     /// Nil hides the control: the daemon is older than the reduced pill.
     var startReduced: Binding<Bool>?
+    /// Nil hides the control: the daemon is older than the stroll.
+    var stroll: Binding<Bool>?
 
     var body: some View {
         Section {
@@ -67,6 +69,10 @@ struct LookSection: View {
             if let startReduced {
                 Toggle("Start reduced to the orb", isOn: startReduced)
                     .disabled(look == "character")
+            }
+            if let stroll {
+                Toggle("Character strolls when idle", isOn: stroll)
+                    .disabled(look != "character")
             }
         } header: {
             Text("Assistant")

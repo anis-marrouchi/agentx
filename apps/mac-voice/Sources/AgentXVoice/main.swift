@@ -35,7 +35,8 @@ final class App: NSObject, NSApplicationDelegate {
     private var agentHotkeys: [Hotkey] = []
     private let settingsWindow = SettingsWindow()
     /// The saved settings: shortcuts and the speech-to-text engine. Read
-    /// from the daemon at launch and after every save; defaults until then.
+    /// from the daemon at launch, every few seconds after that, and after
+    /// every save; defaults until then.
     private var settings: VoiceSettings?
     /// The agent a per-agent shortcut is asking; nil for the talk key.
     private var forcedAgent: String?
@@ -213,6 +214,7 @@ final class App: NSObject, NSApplicationDelegate {
         let asCharacter = saved.general.look == "character"
         panel.setShowsOrb(!asCharacter)
         character.setShown(asCharacter)
+        character.strolls = saved.general.stroll == true
         if !asCharacter { panel.detach() }
         // voice.startReduced is how the assistant starts: read once.
         if !startApplied {
@@ -234,8 +236,8 @@ final class App: NSObject, NSApplicationDelegate {
     }
 
     /// "Play on this page" (#505): one picture of the character's screen, the
-    /// lines of text read on it, and the character plays the built-in
-    /// script on the picture. The page itself is never touched.
+    /// lines of text read on it, and the character plays on the picture,
+    /// differently each time. The page itself is never touched.
     private func startPlay() {
         let foot = character.foot
         guard canPlay, let screen = NSScreen.screens.first(where: { $0.frame.contains(foot) }) ?? NSScreen.screens.first
@@ -265,9 +267,9 @@ final class App: NSObject, NSApplicationDelegate {
             // Ended while its text was read, and maybe started again since:
             // these lines belong to a picture that is gone.
             guard play.running, play.number == number else { return }
-            let steps = PlayMath.demo(lines, width: size.width, height: size.height)
+            let steps = PlayMath.script(lines, width: size.width, height: size.height, seed: .random(in: 0 ... .max))
             if steps.isEmpty { play.end("no line of text to play on") }
-            else { play.play(Play(lines: lines, steps: steps, start: start)) }
+            else { play.play(Play(lines: lines, steps: steps, start: start, size: PlayMath.Point(x: size.width, y: size.height))) }
         }
     }
 
@@ -459,14 +461,26 @@ final class App: NSObject, NSApplicationDelegate {
         }
         // At login the app can start before the daemon answers. Keep
         // asking: one missed read left the orb and the built-in
-        // shortcuts until the app was restarted.
+        // shortcuts until the app was restarted. And keep reading once it
+        // has answered (#482): a change made in the Terminal or in
+        // agentx.json shows without a restart. Not during a play, which
+        // has put the character away, and not while the microphone is
+        // open: applying registers the shortcuts again, and the release
+        // of a held talk key would be lost. The next read applies it.
         Task { @MainActor in
             var failures = 0
             while true {
-                if let saved = await AgentClient.settings() { apply(saved); break }
-                failures += 1
-                if failures == 1 { Log.warn("settings: the daemon did not answer, asking again") }
-                try? await Task.sleep(for: .seconds(VoiceSettings.retryDelay(after: failures)))
+                let asked = settings
+                guard let saved = await AgentClient.settings() else {
+                    failures += 1
+                    if failures == 1 { Log.warn("settings: the daemon did not answer, asking again") }
+                    try? await Task.sleep(for: .seconds(VoiceSettings.retryDelay(after: failures)))
+                    continue
+                }
+                failures = 0
+                if !play.running, !recorder.isRecording,
+                   VoiceSettings.replaces(saved, held: settings, heldWhenAsked: asked) { apply(saved) }
+                try? await Task.sleep(for: .seconds(VoiceSettings.rereadDelay))
             }
         }
 
