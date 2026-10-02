@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.83.1](https://github.com/anis-marrouchi/agentx/compare/v0.83.0...v0.83.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **people:** check a person's limit before every way to an agent ([#421](https://github.com/anis-marrouchi/agentx/issues/421)) ([0308d73](https://github.com/anis-marrouchi/agentx/commit/0308d7381d13bee097f61bb9ccb64a20f5679408))
+* **requests:** the forwarding node vouches for the owner on a mesh forward ([#423](https://github.com/anis-marrouchi/agentx/issues/423)) ([d08ee6d](https://github.com/anis-marrouchi/agentx/commit/d08ee6d6ac7427a3accd7a6a24d37d0c2f35fe30)), closes [#407](https://github.com/anis-marrouchi/agentx/issues/407)
+
 ## [0.83.0](https://github.com/anis-marrouchi/agentx/compare/v0.82.0...v0.83.0) (2026-10-01)
 
 
