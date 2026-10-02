@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.94.1](https://github.com/anis-marrouchi/agentx/compare/v0.94.0...v0.94.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **voice:** every shortcut answers, not only the one registered last ([#513](https://github.com/anis-marrouchi/agentx/issues/513)) ([0761a71](https://github.com/anis-marrouchi/agentx/commit/0761a71220edbe0771ff8af2a0ce464da01eaba4)), closes [#511](https://github.com/anis-marrouchi/agentx/issues/511)
+
 ## [0.94.0](https://github.com/anis-marrouchi/agentx/compare/v0.93.0...v0.94.0) (2026-10-02)
 
 
