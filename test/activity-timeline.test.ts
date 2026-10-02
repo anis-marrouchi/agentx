@@ -79,13 +79,23 @@ describe("activity timeline", () => {
 
   it("ships a page whose perspective switch re-lanes without refetching", () => {
     const html = renderActivityPage()
-    for (const p of ["Agent", "Client", "Project", "Channel", "Node"]) expect(html).toContain(p)
+    for (const p of ["Agent", "Client", "Project", "Channel", "Person", "Node"]) expect(html).toContain(`</svg>${p}</button>`)
     // buildTimeline calls computeBands, so both have to travel to the browser.
     expect(html).toContain("function buildTimeline")
     expect(html).toContain("function computeBands")
     // Changing lanes must not hit the network — only render() runs.
     expect(ACTIVITY_SCRIPT).toContain("persp=b.dataset.value;paint('persp',persp);selected=null;render();")
     expect(() => new Function(ACTIVITY_SCRIPT)).not.toThrow()
+  })
+
+  it("lanes by the person who started the run, and never guesses one", () => {
+    const src = ACTIVITY_SCRIPT.match(/function lane\(r\)\{[\s\S]*?\n\}/)![0]
+    const lane = (r: object) => new Function("persp", "r", src + "return lane(r)")("person", r)
+    expect(lane({ person: "dana", personName: "Dana" })).toEqual({ key: "p:dana", label: "Dana", sub: "" })
+    // A peer that names nobody for the id: the id itself.
+    expect(lane({ person: "sam" })).toEqual({ key: "p:sam", label: "sam", sub: "" })
+    // A schedule, an unknown sender, a peer on an older version: one shared lane.
+    expect(lane({ agentId: "atlas", channel: "cron" })).toEqual({ key: "-", label: "no known person", sub: "" })
   })
 
   it("travels to the browser with every helper it calls", () => {

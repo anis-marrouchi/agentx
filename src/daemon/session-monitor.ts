@@ -272,11 +272,12 @@ export class SessionMonitor {
     // above skips them: they are zero-ms engine steps, and at ~3k/day they
     // would fill the window's LIMIT before a single real run got in.
     const rows = this.db.prepare(`SELECT task_id AS id, agent_id AS agentId, channel, chat_id AS chatId,
-      status, started_at AS startedAt, duration_ms AS durationMs, message_preview AS preview
+      status, started_at AS startedAt, duration_ms AS durationMs, message_preview AS preview, person
       FROM task_traces WHERE started_at >= ? AND agent_id NOT LIKE 'workflow:%'
       ORDER BY started_at DESC LIMIT ?`).all(sinceMs, limit) as Array<{
         id: string; agentId: string; channel: string | null; chatId: string | null
-        status: string; startedAt: number; durationMs: number | null; preview: string | null }>
+        status: string; startedAt: number; durationMs: number | null; preview: string | null
+        person: string | null }>
     const ids = new Set(rows.map(r => r.id))
     const marks: Array<{ runId: string; kind: string; text: string }> = []
     for (const r of this.db.prepare("SELECT id, result FROM session_reviews WHERE status='ready'").all() as Array<{ id: string; result: string }>) {

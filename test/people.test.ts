@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import {
-  IMPLICIT_OWNER, operatorPerson, peopleProblem, personOfTurn, resolvePerson, type Person,
+  IMPLICIT_OWNER, operatorPerson, peopleProblem, personName, personOfTurn, resolvePerson, type Person,
 } from "../src/people/people"
 import { openRequestsOf, runsOf } from "../src/people/activity"
 import { peopleConfigSchema, daemonConfigSchema } from "../src/daemon/config"
@@ -48,6 +48,14 @@ describe("matching a sender to a person", () => {
   it("does not take the chat's number for the sender on WhatsApp", () => {
     // A message the account owner sends to Sara: `username` is Sara's number.
     expect(resolvePerson(PEOPLE, "whatsapp", { id: "21699000111@s.whatsapp.net", username: "21620123456" })).toBeNull()
+  })
+})
+
+describe("the name shown for a stored person", () => {
+  it("is the listed name, Owner for the built-in owner, else the id", () => {
+    expect(personName(PEOPLE, "sara")).toBe("Sara")
+    expect(personName([], IMPLICIT_OWNER)).toBe("Owner")
+    expect(personName(PEOPLE, "gone")).toBe("gone")
   })
 })
 

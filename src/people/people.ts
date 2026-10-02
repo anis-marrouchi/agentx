@@ -48,6 +48,12 @@ export interface PersonRef {
 /** The owner's id on an install that lists no owner. */
 export const IMPLICIT_OWNER = "owner"
 
+/** The name shown for a stored person id: the listed name, "Owner" for the
+ *  built-in owner, else the id (a person removed from the list since). */
+export function personName(people: Person[], id: string): string {
+  return people.find((p) => p.id === id)?.name ?? (id === IMPLICIT_OWNER ? "Owner" : id)
+}
+
 const base = (channel: string) => channel.toLowerCase().split("@")[0]
 
 /** One comparable form per channel. WhatsApp numbers compare on digits, so
