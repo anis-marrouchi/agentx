@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.92.0](https://github.com/anis-marrouchi/agentx/compare/v0.91.1...v0.92.0) (2026-10-02)
+
+
+### Features
+
+* **requests:** show open requests as cards with reply, hand-off and a notice that stays ([#473](https://github.com/anis-marrouchi/agentx/issues/473)) ([c2bc8cf](https://github.com/anis-marrouchi/agentx/commit/c2bc8cfbeaaf33c543590f6f4e5a0fd2f367d085)), closes [#459](https://github.com/anis-marrouchi/agentx/issues/459)
+
+## [0.91.1](https://github.com/anis-marrouchi/agentx/compare/v0.91.0...v0.91.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **demo:** install without git by moving baileys to 7.0.0-rc14 ([#472](https://github.com/anis-marrouchi/agentx/issues/472)) ([7d2ccc1](https://github.com/anis-marrouchi/agentx/commit/7d2ccc1b9fe7f5c8503224d280f730a9330bd366)), closes [#461](https://github.com/anis-marrouchi/agentx/issues/461)
+
 ## [0.91.0](https://github.com/anis-marrouchi/agentx/compare/v0.90.0...v0.91.0) (2026-10-02)
 
 

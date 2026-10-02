@@ -84,6 +84,7 @@ export function recommended(card: Pick<DecisionCard, "recommend" | "choices">): 
 }
 
 function primaryLabel(card: DecisionCard): string {
+  if (card.origin?.kind === "request") return "Hand it back"
   return card.draft ? "Send" : card.choices?.length ? "Choose" : "Yes"
 }
 
@@ -99,6 +100,8 @@ export function renderCardPage(card: DecisionCard, opts: CardPageOptions = {}): 
   const nonce = randomBytes(12).toString("base64")
   const choices = card.choices ?? []
   const reminder = card.origin?.kind === "reminder"
+  // An open request that needs attention (popup-runner.ts): no expiry, and no means drop.
+  const request = card.origin?.kind === "request"
   const rec = recommended(card)
   const options = choices.map((c, i) =>
     `<button class="opt" role="radio" aria-checked="false" data-i="${i}"><span class="n">${i + 1}</span><span class="t">${esc(c)}</span>${i === rec.index ? '<i class="dot"></i>' : ""}</button>`,
@@ -122,7 +125,7 @@ export function renderCardPage(card: DecisionCard, opts: CardPageOptions = {}): 
 <body><div class="wrap"><main class="card${opts.still ? " still" : ""}">
 <div class="head" title="Drag to move"><span class="avatar">${esc(initials(from))}</span>
 <div class="who"><b>${esc(from)}</b><span>${esc(since(card.created_at, now))}</span></div>
-<span class="kind${reminder ? "" : " decision"}">${reminder ? "Reminder" : "Decision"}</span>
+<span class="kind${reminder ? "" : " decision"}">${reminder ? "Reminder" : request ? "Request" : "Decision"}</span>
 <button class="fold" id="fold" title="Shrink" aria-label="Shrink the card" aria-expanded="true">${FOLD}</button></div>
 <div class="body"><h1 dir="auto">${esc(card.title)}</h1>
 ${card.context ? `<p class="context" dir="auto">${esc(card.context)}</p>` : ""}
@@ -132,10 +135,10 @@ ${options ? `<div class="options" role="radiogroup">${options}</div>` : ""}
 ${rec.why ? `<p class="why" dir="auto">${esc(rec.why)}</p>` : ""}
 ${card.draft ? `<div class="label-row" id="msg"><span class="label">Message</span><span class="edited"><i class="dot"></i>Edited</span><button class="reset" id="reset">Reset</button></div>
 <textarea id="text" dir="auto" rows="2" spellcheck="true"></textarea>` : ""}
-<div class="notes"><div>${CLOCK}<span>If you don't answer by ${esc(when(card.expires, now))}: ${esc(card.if_silent)}.</span></div>
+<div class="notes"><div>${CLOCK}<span>${request ? "It stays in Open requests on the Approvals page until you close it." : `If you don't answer by ${esc(when(card.expires, now))}: ${esc(card.if_silent)}.`}</span></div>
 <div>${LOCK}<span>Nothing goes out until you click.</span></div></div>
 </div><div class="foot"><button class="btn later" id="later">Not now<kbd>esc</kbd></button>
-<button class="btn" id="no">No</button>
+<button class="btn" id="no">${request ? "Drop" : "No"}</button>
 <button class="btn primary" id="yes">${primaryLabel(card)}<kbd>⌘↩</kbd></button></div>
 </main></div>
 <script type="application/json" id="data">${JSON.stringify(data).replace(/</g, "\\u003c")}</script>

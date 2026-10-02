@@ -1,6 +1,8 @@
 import { readFocus, focusLabel, type FocusState } from "@/notify/focus"
-import { listCards, readCard, type DecisionCard } from "./cards"
-import { decide, type InboxContext } from "./inbox"
+import { summarize } from "@/requests/card-view"
+import type { RequestRecord } from "@/requests/store"
+import { CARD_LIMITS, listCards, readCard, type DecisionCard } from "./cards"
+import { decide, requestStoreFor, type InboxContext } from "./inbox"
 import { showPopup, type PopupAnswer, type PopupSettings } from "./popup"
 import { readInboxState, recordPopped, recordWanted } from "./state"
 
@@ -21,7 +23,11 @@ import { readInboxState, recordPopped, recordWanted } from "./state"
 //     in line, old or not, and each shows once more;
 //   - a card the operator asks for (Show on Mac on the Approvals page)
 //     goes first and shows again, whatever its age. `agentx approvals
-//     popup <key>` shows one from the terminal without waiting for this.
+//     popup <key>` shows one from the terminal without waiting for this;
+//   - with no card waiting, a request that came to need attention in the
+//     last day shows as a card, once (#459): Hand it back, Drop or Not
+//     now. The banner that announces it is gone in seconds; the card
+//     stays up like any other.
 //
 // Every popup ends with one log line saying how: the answer, "not now",
 // "timed out" or "closed".
@@ -69,20 +75,57 @@ export function nextCardToPop(ctx: InboxContext): DecisionCard | null {
   return null
 }
 
+/** Requests that need attention, oldest first. */
+function requestsWaiting(ctx: InboxContext): RequestRecord[] {
+  try { return requestStoreFor(ctx)?.listByState("needs_attention") ?? [] } catch { return [] }
+}
+
+/** The next request to show: it came to need attention in the last day,
+ *  was not shown yet, and was not put off. */
+export function nextRequestToPop(ctx: InboxContext): RequestRecord | null {
+  const now = ctx.now ?? Date.now()
+  const { popped = {}, snoozed } = readInboxState(ctx.root)
+  return requestsWaiting(ctx).find((r) => {
+    const key = `request:${r.id}`
+    const until = snoozed[key]
+    return !popped[key] && !(until && Date.parse(until) > now) && now - r.updatedAt <= POPUP_MAX_AGE_MS
+  }) ?? null
+}
+
+/** A request as the card the window shows. Not stored: the answer goes to
+ *  the request through the inbox (yes hands it back, no drops it). */
+export function requestAsCard(r: RequestRecord, now: number): DecisionCard {
+  return {
+    id: r.id,
+    title: summarize(r.text, CARD_LIMITS.title),
+    context: r.attentionReason ?? "It is not finished and nothing is retrying it.",
+    ask: `Hand it back to ${r.agentId}, or drop it?`,
+    say: "A request you made is not finished.",
+    recommend: "",
+    if_silent: "keep",
+    expires: new Date(now + POPUP_MAX_AGE_MS).toISOString(),
+    raised_by: r.agentId,
+    created_at: new Date(r.createdAt).toISOString(),
+    status: "pending",
+    origin: { kind: "request", id: r.id },
+  }
+}
+
 export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
   const { ctx, settings, log } = deps
   if (!settings.enabled || (deps.platform ?? process.platform) !== "darwin") return "off"
   if (showing) return "busy"
-  const card = nextCardToPop(ctx)
+  const request = nextCardToPop(ctx) ? null : nextRequestToPop(ctx)
+  const card = request ? requestAsCard(request, ctx.now ?? Date.now()) : nextCardToPop(ctx)
   if (!card) return "none"
   const focus = (deps.focus ?? readFocus)()
   if (focus.active) return "held"
 
   showing = true
-  const key = `card:${card.id}`
+  const key = `${request ? "request" : "card"}:${card.id}`
   try {
     // Marked first: a dialog that crashes must not come back every minute.
-    const waiting = listCards(ctx.root, "pending").map((c) => `card:${c.id}`)
+    const waiting = [...listCards(ctx.root, "pending").map((c) => `card:${c.id}`), ...requestsWaiting(ctx).map((r) => `request:${r.id}`)]
     recordPopped(ctx.root, key, waiting, ctx.now)
     log(`[approvals] popup: showing ${key} from ${card.raised_by}`)
     const answer = await (deps.show ?? showPopup)(card, settings, { from: deps.agentName?.(card.raised_by) })
@@ -91,7 +134,8 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
       return "shown"
     }
     // Answered somewhere else while the dialog was up: the first answer stands.
-    if (readCard(ctx.root, card.id)?.status !== "pending") {
+    const stillWaiting = request ? requestStoreFor(ctx)?.get(request.id)?.state === "needs_attention" : readCard(ctx.root, card.id)?.status === "pending"
+    if (!stillWaiting) {
       log(`[approvals] popup: ${key} was answered elsewhere; popup answer ignored`)
       return "shown"
     }

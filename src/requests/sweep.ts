@@ -56,11 +56,12 @@ export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?
 export function pickupText(r: RequestRecord): string {
   return [
     `[agentx:request-pickup id=${r.id}]`,
-    `The owner asked you to pick this request up again. It was given to you on ${r.channel} (chat ${r.chatId}) on ${new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")} UTC and was not finished.`,
+    `The owner asked you to pick this request up again. It was asked on ${r.channel} (chat ${r.chatId}) on ${new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")} UTC and was not finished.`,
     "",
     "What they asked:",
     r.text,
     "",
+    ...(r.ownerNote ? ["What they say now:", r.ownerNote, ""] : []),
     `Do the work now. Report to them in that chat. When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
   ].join("\n")
 }

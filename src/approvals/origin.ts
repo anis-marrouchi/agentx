@@ -6,7 +6,7 @@
 // tick off. Only the daemon sets it: POST /approvals and the agent tool
 // never pass it through.
 
-export interface CardOrigin {
+export interface ReminderOrigin {
   kind: "reminder"
   /** The reminder's full id, as remindctl prints it. */
   id: string
@@ -14,8 +14,17 @@ export interface CardOrigin {
   list?: string
 }
 
+/** An open request that needs attention, shown as a card on the Mac
+ *  (popup-runner.ts). Never stored: the request is the record. */
+export interface RequestOrigin {
+  kind: "request"
+  id: string
+}
+
+export type CardOrigin = ReminderOrigin | RequestOrigin
+
 /** Lines for the owning agent's result message. */
-export function originLines(origin: CardOrigin, approved: boolean): string[] {
+export function originLines(origin: ReminderOrigin, approved: boolean): string[] {
   const where = origin.list ? ` in the "${origin.list}" list` : ""
   const lines = [`This card came from the operator's reminder "${origin.title}"${where} (id ${origin.id}).`]
   lines.push(approved
