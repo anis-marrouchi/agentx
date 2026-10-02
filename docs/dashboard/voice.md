@@ -288,7 +288,7 @@ agentx voice start full      # start as the full pill
 agentx voice start           # which one is on now
 ```
 
-In `agentx.json` it is `voice.startReduced`: `false` (the default) or `true`. The app reads it when it starts, so a change made in the Terminal or in the file shows the next time the app starts.
+In `agentx.json` it is `voice.startReduced`: `false` (the default) or `true`. The app reads it when it starts, so a change made in the Terminal or in the file shows the next time the app starts. It has no effect while the [character](#the-character) is shown, and the command says so.
 
 ### Hide the pill
 
