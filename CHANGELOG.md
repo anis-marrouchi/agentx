@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.87.0](https://github.com/anis-marrouchi/agentx/compare/v0.86.0...v0.87.0) (2026-10-02)
+
+
+### Features
+
+* **activity:** lane the timeline by the person who started each run ([#439](https://github.com/anis-marrouchi/agentx/issues/439)) ([2ebed4d](https://github.com/anis-marrouchi/agentx/commit/2ebed4d953df605c833dc504cada2f1c6602e5ca))
+
 ## [0.86.0](https://github.com/anis-marrouchi/agentx/compare/v0.85.0...v0.86.0) (2026-10-02)
 
 
