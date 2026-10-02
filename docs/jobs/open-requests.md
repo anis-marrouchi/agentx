@@ -45,13 +45,29 @@ Other people's messages are never recorded.
 2. You see every open request, oldest first, with when and where you asked, the agent, your words and the state.
 3. For one request and what is linked to it, run `agentx requests show <id>`.
 
-In the dashboard, the same list is under **Approvals**, in **Open requests**.
+In the dashboard, the same list is under **Approvals**, in **Open requests**. Each request is a card:
+
+- a short summary of what you asked, in plain words,
+- its state, the agent that has it, and why it is not finished,
+- **What you said** (or **What you asked**): your own words, in full. For a request you spoke, this is the transcript,
+- **Last answer from …**: what the agent last told you about it, when it answered.
+
+## Decide on a request
+
+On its card in the dashboard, one step each:
+
+- **Send reply:** write your reply in the box, or press **Speak** and say it, then press **Send reply**. The agent that has the request gets your reply together with the request, within a minute, and goes on. **Speak** shows only in a browser that can turn speech into text (Chrome, Edge, Safari); it fills the box and sends nothing until you press **Send reply**.
+- **Hand to agent:** pick an agent and press **Hand to agent**. Pick the same agent to make it try again, or another agent on this computer to give it the work. Text in the reply box goes along as a note. The card then shows that agent after **With**, and the request stays on the list until it is closed.
+- **Done:** closes it as finished. A link to the evidence is optional when you close it yourself.
+- **Drop:** closes one you no longer want. Text in the reply box is kept as the reason.
+
+Reply and hand-off need open requests turned on, because the daemon's check is what tells the agent.
 
 You can also ask any agent "what is still open?". It reads the same list.
 
 ## When a request needs attention
 
-You are told once. After that it waits in the [Approvals inbox](../dashboard/approvals.md#requests-that-are-not-finished) as a **Request**, and counts in the daily digest:
+You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on, the request then shows as a card that stays on screen like a decision card, when no decision card is waiting: **Hand it back**, **Drop** or **Not now**. It shows once, and only for a request that came to need attention in the last day. After that it waits in the [Approvals inbox](../dashboard/approvals.md#requests-that-are-not-finished) as a **Request**, and counts in the daily digest:
 
 - **Yes** (or `agentx approvals approve request:<id>`) hands it back to the agent, which gets your request again and works on it. If the agent is still busy with the earlier attempt, your yes waits its turn and runs right after; the request stays in progress meanwhile. If the hand-back fails, it comes back.
 - **No** (or `agentx approvals reject request:<id>`) drops it.
@@ -59,7 +75,7 @@ You are told once. After that it waits in the [Approvals inbox](../dashboard/app
 
 ## Close a request
 
-- **It is finished:** `agentx requests done <id> --evidence <link>`. The link is the proof: a pull request, an issue, a message, a deploy. In the dashboard, paste the link next to the request and press **Done**.
+- **It is finished:** `agentx requests done <id> --evidence <link>`. The link is the proof: a pull request, an issue, a message, a deploy. In the dashboard, press **Done** on the card; the link is optional there.
 - **You no longer want it:** `agentx requests drop <id>`. Add `--reason "…"` to say why.
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
@@ -91,6 +107,6 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A message you sent on Telegram or GitHub is not recorded:** your id on that channel is not in `from`. Add it with `--from`, as `channel:id`.
 - **A request you only got an answer to is not listed:** that is expected. A request is kept only when work goes on after the answer or goes wrong.
 - **A request came back as `No activity for 24 h`:** nobody closed it. Close it with `done` or `drop`, or ask the agent to carry on.
-- **`a finished request needs --evidence <link>`:** add the link to the proof. A request cannot be closed as done without it.
+- **`a finished request needs --evidence <link>`:** add the link to the proof. From the terminal, and for agents, a request cannot be closed as done without it.
 - **A message from the phone app is not recorded:** the dashboard must run from the install folder, the one that holds `agentx.json`, so it can read `.agentx/operator.key`. Start it there. A message sent through the phone app to an agent on another computer is recorded there when the computer the phone is paired with checks its own key and vouches for you to the other one. That needs three things: both computers run 0.83.1 or later, the other computer lists the first one in `mesh.peers` with the same `token` the first one sends, and the request reaches it from another machine. A token that sits only in `MESH_TOKEN`, two different tokens, or a proxy on the same machine in front of the daemon means it is not recorded.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.

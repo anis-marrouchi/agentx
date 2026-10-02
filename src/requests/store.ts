@@ -46,6 +46,8 @@ export interface RequestRecord {
   evidence: string | null
   /** Why it was declined or dropped. */
   closeReason: string | null
+  /** What the owner last wrote on it (a reply, or a note with a hand-off). */
+  ownerNote: string | null
 }
 
 export const TEXT_MAX = 4000
@@ -86,11 +88,12 @@ export function ensureRequestTables(db: Database.Database): void {
   `)
   ensureColumns(db, "requests", PERSON_COLUMNS)
   // Added after the first version: a database that already has the table
-  // gets the column here.
+  // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
-  if (!cols.some((c) => c.name === "pickup_at")) {
+  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"]]) {
+    if (cols.some((c) => c.name === name)) continue
     try {
-      db.exec("ALTER TABLE requests ADD COLUMN pickup_at INTEGER")
+      db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
     } catch (e: any) {
       // Daemon and dashboard starting together: the other one added it first.
       if (!/duplicate column name/i.test(String(e?.message))) throw e
@@ -110,7 +113,7 @@ function toRecord(r: any): RequestRecord {
     agentId: r.agent_id, text: r.text, createdAt: r.created_at, updatedAt: r.updated_at,
     attentionReason: r.attention_reason ?? null, notifiedAt: r.notified_at ?? null,
     question: r.question ?? null, closedAt: r.closed_at ?? null,
-    evidence: r.evidence ?? null, closeReason: r.close_reason ?? null,
+    evidence: r.evidence ?? null, closeReason: r.close_reason ?? null, ownerNote: r.owner_note ?? null,
   }
 }
 
@@ -153,6 +156,23 @@ export class RequestStore {
 
   links(requestId: string): Array<{ kind: LinkKind; ref: string; at: number }> {
     return this.db.prepare("SELECT kind, ref, at FROM request_links WHERE request_id = ? ORDER BY at, rowid").all(requestId) as any
+  }
+
+  /** The agent's newest answer under this request: the final reply of its
+   *  latest linked run that has one. Null when nothing was recorded, or
+   *  when this database has no traces. */
+  lastAnswer(requestId: string): { agentId: string; text: string; at: number } | null {
+    try {
+      const row = this.db.prepare(
+        `SELECT t.agent_id AS agentId, t.final_response AS text, COALESCE(t.finished_at, t.started_at) AS at
+         FROM request_links l JOIN task_traces t ON t.task_id = l.ref
+         WHERE l.request_id = ? AND l.kind = 'run' AND t.final_response IS NOT NULL AND t.final_response != ''
+         ORDER BY t.started_at DESC LIMIT 1`,
+      ).get(requestId) as { agentId: string; text: string; at: number } | undefined
+      return row ?? null
+    } catch {
+      return null
+    }
   }
 
   /** Something happened under this request: it is not quiet. */
@@ -241,6 +261,17 @@ export class RequestStore {
       `UPDATE requests SET state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?
        WHERE id = ? AND state = 'needs_attention'`,
     ).run(now, now, id).changes > 0
+  }
+
+  /** The owner replied, or handed it to an agent (the same or another):
+   *  that agent has it, in progress, and is told at the next check. Any
+   *  open request, not only one that needs attention. */
+  handOff(id: string, agentId: string, note: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
+         question = NULL, pickup_at = ?, owner_note = ?
+       WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
+    ).run(agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
   }
 
   /** Requests whose agent has not been told to pick them up yet. Each is
