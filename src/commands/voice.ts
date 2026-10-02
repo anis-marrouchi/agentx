@@ -235,6 +235,25 @@ voice
   })
 
 voice
+  .command("start [form]")
+  .description("how the pill is when AgentX Voice starts: full, or reduced to its orb")
+  .option("-c, --config <path>", "agentx.json to read or change")
+  .action((form: string | undefined, opts) => {
+    try {
+      const file = configFile(opts.config)
+      if (form !== undefined && form !== "full" && form !== "reduced") throw new Error("The pill starts full or reduced")
+      if (form !== undefined) saveSettings(file, { general: { startReduced: form === "reduced" } })
+      const now = loadDaemonConfig(file).voice
+      console.log(`  Starts as: ${now.startReduced ? "the orb alone, reduced" : "the full pill"}`)
+      if (now.startReduced && now.look === "character") console.log(chalk.dim("  No effect while the character is shown: the pill has no orb to reduce to."))
+      if (form !== undefined) console.log(chalk.dim("  AgentX Voice picks this up the next time it starts."))
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+voice
   .command("card")
   .description("the answer shown in the pill: how long it stays open and how tall it grows")
   .option("--timeout <seconds>", `seconds it stays open once spoken, ${CARD_LIMITS.timeout.join("–")}; 0 keeps it open until closed`)

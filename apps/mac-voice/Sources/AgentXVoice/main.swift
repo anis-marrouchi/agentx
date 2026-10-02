@@ -20,6 +20,8 @@ final class App: NSObject, NSApplicationDelegate {
     private let statusMenu = StatusMenu()
     /// Stands in for the pill's orb when voice.look is "character".
     private let character = CharacterHost()
+    /// voice.startReduced has been applied for this launch.
+    private var startApplied = false
     /// The character playing on a frozen picture of the screen (#505).
     private let play = PlayHost()
     /// The agent whose by-name answer is on screen now, while no turn runs.
@@ -212,6 +214,11 @@ final class App: NSObject, NSApplicationDelegate {
         panel.setShowsOrb(!asCharacter)
         character.setShown(asCharacter)
         if !asCharacter { panel.detach() }
+        // voice.startReduced is how the assistant starts: read once.
+        if !startApplied {
+            startApplied = true
+            if saved.general.startReduced == true, !asCharacter { panel.summon(); panel.setReduced(true) }
+        }
         if settingsWindow.model.recording == nil { registerHotkeys() }
         // Colours may have changed.
         statusMenu.refresh()
@@ -403,6 +410,15 @@ final class App: NSObject, NSApplicationDelegate {
         panel.answer.onOpenChat = { [weak self] in self?.openChat() }
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
+        statusMenu.pillReduced = { [weak self] in self?.panel.reduced ?? false }
+        statusMenu.canReduce = { [weak self] in PillMenu.canReduce(showsOrb: self?.panel.showsOrb ?? true) }
+        statusMenu.onReduce = { [weak self] on in
+            guard let self else { return }
+            Log.info("pill: \(on ? "reduced to the orb" : "opened")")
+            // Asking for the orb brings back a pill that was dismissed.
+            if on { self.panel.summon() }
+            self.panel.setReduced(on)
+        }
         statusMenu.characterVisible = { [weak self] in self?.character.onScreen }
         statusMenu.onShowCharacter = { [weak self] in self?.summonPill() }
         // Each does nothing with the other's look.

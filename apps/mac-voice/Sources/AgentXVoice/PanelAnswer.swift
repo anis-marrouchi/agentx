@@ -23,6 +23,8 @@ extension Panel {
     @MainActor
     func grow(answerHeight: CGFloat) {
         guard !dismissed else { return }
+        // An answer to read, or one that asks: the full pill opens for it.
+        setReduced(false)
         let pill = collapsedFrame()
         guard let visible = visibleFrame(for: pill) else { return }
         let height = min(Self.size.height + min(answerHeight, cardMaxHeight), visible.height)

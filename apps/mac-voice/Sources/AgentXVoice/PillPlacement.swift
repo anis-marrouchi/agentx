@@ -13,13 +13,24 @@ enum PillPlacement {
         CGPoint(x: visible.maxX - size.width - inset, y: visible.minY + inset)
     }
 
+    /// The pill reduced to its orb: a circle as tall as the pill.
+    static let orbSize = CGSize(width: 54, height: 54)
+
+    /// Where the reduced orb first sits: the middle of the bottom edge of
+    /// `visible`, clear of the Dock.
+    static func orbOrigin(size: CGSize, visible: CGRect) -> CGPoint {
+        CGPoint(x: (visible.midX - size.width / 2).rounded(), y: visible.minY + inset)
+    }
+
     /// A saved position made safe: the pill lands fully on the screen it
     /// overlaps most. When it overlaps none (the monitor it was on has been
     /// unplugged, or the saved value is nonsense) it goes back to the
-    /// default corner of `fallback`. Nil `saved`: the default corner.
-    static func clamp(saved: CGPoint?, size: CGSize, screens: [CGRect], fallback: CGRect) -> CGPoint {
+    /// default place on `fallback`. Nil `saved`: the default place, which
+    /// is the bottom-right corner unless `rest` says otherwise.
+    static func clamp(saved: CGPoint?, size: CGSize, screens: [CGRect], fallback: CGRect,
+                      rest defaultOrigin: (CGSize, CGRect) -> CGPoint = PillPlacement.defaultOrigin) -> CGPoint {
         guard let saved, saved.x.isFinite, saved.y.isFinite else {
-            return defaultOrigin(size: size, visible: fallback)
+            return defaultOrigin(size, fallback)
         }
         let frame = CGRect(origin: saved, size: size)
         var best: CGRect?
@@ -31,7 +42,7 @@ enum PillPlacement {
             if area > bestArea { bestArea = area; best = screen }
         }
         guard let screen = best, bestArea > 0 else {
-            return defaultOrigin(size: size, visible: fallback)
+            return defaultOrigin(size, fallback)
         }
         return inside(frame, screen).origin
     }

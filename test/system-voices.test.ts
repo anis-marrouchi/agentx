@@ -191,6 +191,7 @@ describe("config", () => {
       provider: "system", fallback: "system", locale: "en", pointer: true, stt: "auto", allowUnmeasured: false, spokenMaxChars: 500, localStt: "mlx-whisper", endOfTurn: "vad",
       hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
       look: "orb",
+      startReduced: false,
       card: { timeout: 30, maxHeight: 320 },
     })
   })
