@@ -84,7 +84,7 @@ The page lists, for that person only:
 
 ![The My work page: three open requests with their state, one finished request, and the install hint](/screenshots/members/my-work.png)
 
-It refreshes every 30 seconds. Opened without a connection, it shows what was last loaded and says it is offline.
+It refreshes every 30 seconds. Opened without a connection, it shows what was last loaded and says it is offline. When the connection is up but your computer does not answer, the page says it can't reach the server, tries again every 20 seconds, and shows a **Try now** button.
 
 ### Keep it on the desktop
 

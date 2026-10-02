@@ -12,6 +12,8 @@
 import { AX_TOKENS_CSS } from "../tokens"
 import { injectFns } from "../inject"
 import { formatPairInput } from "./app-pair-logic"
+import { connectionNote, plainPreview } from "./member-logic"
+import { WORK_SCRIPT } from "./member-work.client"
 
 const THEME_BOOT = `<script>(function(){var t;try{t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)})()</script>`
 
@@ -94,7 +96,7 @@ export function renderMemberPage(): string {
   <div><h1>My work</h1><p id="who" class="who">Connecting…</p></div>
   <button type="button" id="theme" class="icon-btn" aria-label="Switch theme">◐</button>
 </header>
-<p id="offline" class="offline" role="status" hidden>Offline. Showing what was last loaded; live state needs a connection.</p>
+<p id="offline" class="offline" role="status" hidden><span id="offline-text"></span> <button type="button" id="retry" hidden>Try now</button></p>
 <p id="install" class="install" hidden>To keep this window on your desktop: in Edge or Chrome open the browser menu, then <b>Apps</b>, then <b>Install this site as an app</b>.</p>
 <main>
   <section aria-labelledby="h-open"><h2 id="h-open">Open <span id="n-open" class="count"></span></h2><ul id="open" class="list"><li class="muted">Loading…</li></ul></section>
@@ -102,7 +104,7 @@ export function renderMemberPage(): string {
   <section aria-labelledby="h-runs"><h2 id="h-runs">Latest turns</h2><ul id="runs" class="list"><li class="muted">Loading…</li></ul></section>
   <p id="updated" class="muted small"></p>
 </main>
-<script>${injectFns({ workState, ageText })}${WORK_SCRIPT}</script>
+<script>${injectFns({ workState, ageText, connectionNote, plainPreview })}${WORK_SCRIPT}</script>
 </body>
 </html>`
 }
@@ -196,6 +198,8 @@ body { display: flex; flex-direction: column; }
 .who { margin: 2px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
 .icon-btn { min-width: 44px; min-height: 44px; font-size: 20px; line-height: 1; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-text); cursor: pointer; }
 .offline, .install { margin: 0; padding: 8px 16px; font-size: var(--ax-fs-sm); background: var(--ax-amber-t); color: var(--ax-amber-ink); border-bottom: 1px solid var(--ax-amber-e); }
+.offline button { margin-left: 8px; min-height: 32px; padding: 4px 14px; font: inherit; font-weight: 600; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: var(--ax-radius-pill); cursor: pointer; }
+.offline button:disabled { opacity: 0.55; cursor: default; }
 .install { background: var(--ax-surface-2); color: var(--ax-text-2); border-bottom: var(--ax-border-w) solid var(--ax-border); }
 main { flex: 1; overflow-y: auto; padding: 16px; max-width: 720px; width: 100%; box-sizing: border-box; margin: 0 auto; }
 main h2 { font-size: 16px; margin: 12px 0 8px; }
@@ -284,68 +288,5 @@ const WAITING_SCRIPT = `
     }).catch(function () {});
   }
   setInterval(check, 5000);
-})();
-`
-
-const WORK_SCRIPT = `
-(function () {
-  var who = document.getElementById('who');
-  var offline = document.getElementById('offline');
-  var install = document.getElementById('install');
-  var updated = document.getElementById('updated');
-  var theme = document.getElementById('theme');
-  theme.addEventListener('click', function () {
-    var cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', cur);
-    try { localStorage.setItem('ax-theme', cur); } catch (e) {}
-  });
-  if ('serviceWorker' in navigator) { try { navigator.serviceWorker.register('/member/sw.js', { scope: '/member' }); } catch (e) {} }
-  var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
-  if (!standalone && /Windows|Macintosh|Linux/.test(navigator.userAgent) && !/Mobile/.test(navigator.userAgent)) install.hidden = false;
-  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
-  function setOnline(on) { offline.hidden = on; }
-  window.addEventListener('online', function () { setOnline(true); load(); });
-  window.addEventListener('offline', function () { setOnline(false); });
-  function where(r) {
-    var label = esc(r.where && r.where.label || r.channel);
-    return r.where && r.where.url ? '<a href="' + esc(r.where.url) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>' : label;
-  }
-  function item(r, now, closed) {
-    var st = workState(r.state);
-    var note = '';
-    if (r.state === 'waiting_owner' && r.question) note = '<p class="note"><b>The owner is asked:</b> ' + esc(r.question) + '</p>';
-    else if (r.state === 'needs_attention' && r.attentionReason) note = '<p class="note">' + esc(r.attentionReason) + '</p>';
-    else if (closed && r.evidence) note = /^https?:\\/\\//i.test(r.evidence)
-      ? '<p class="note"><a href="' + esc(r.evidence) + '" target="_blank" rel="noopener noreferrer">What was delivered</a></p>'
-      : '<p class="note"><b>What was delivered:</b> ' + esc(r.evidence) + '</p>';
-    var age = closed ? 'closed ' + ageText(r.closedAt || r.updatedAt, now) + ' ago' : 'for ' + ageText(r.createdAt, now);
-    return '<li class="item"><p class="text">' + esc(r.text) + '</p>' +
-      '<p class="meta"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span>' + esc(r.agentId) + '</span><span>' + age + '</span><span>asked on ' + where(r) + '</span></p>' + note + '</li>';
-  }
-  function run(r, now) {
-    var mark = r.status === 'ok' ? 'finished' : r.status === 'in-flight' ? 'running' : esc(r.status);
-    return '<li class="item"><p class="text">' + esc(r.messagePreview || '') + '</p><p class="meta"><span class="state ' + (r.status === 'ok' ? 'ok' : r.status === 'in-flight' ? 'warn' : 'bad') + '">' + mark + '</span><span>' + esc(r.agentId) + '</span><span>' + ageText(r.startedAt, now) + ' ago</span><span>' + esc(r.channel || '') + '</span></p></li>';
-  }
-  function fill(id, html, empty) { document.getElementById(id).innerHTML = html || '<li class="muted">' + empty + '</li>'; }
-  function load() {
-    fetch('/api/member/work', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
-      if (r.status === 401 || r.status === 403) { location.replace('/member'); return null; }
-      return r.json();
-    }).then(function (w) {
-      if (!w) return;
-      setOnline(true);
-      var now = Date.now();
-      document.getElementById('n-open').textContent = w.open.length ? '(' + w.open.length + ')' : '';
-      fill('open', w.open.map(function (r) { return item(r, now, false); }).join(''), 'Nothing open. What you ask the agents for shows up here while it is being worked on.');
-      fill('recent', w.recent.map(function (r) { return item(r, now, true); }).join(''), 'Nothing finished in the last 7 days.');
-      fill('runs', w.runs.map(function (r) { return run(r, now); }).join(''), 'No turns recorded yet.');
-      updated.textContent = 'Updated ' + new Date(now).toLocaleTimeString();
-    }).catch(function () { setOnline(false); });
-  }
-  fetch('/api/member/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) { return r.ok ? r.json() : null; }).then(function (me) {
-    if (me) who.textContent = me.name + ' · ' + me.device + (me.node ? ' · ' + me.node : '');
-  }).catch(function () {});
-  load();
-  setInterval(load, 30000);
 })();
 `
