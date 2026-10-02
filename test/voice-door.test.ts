@@ -102,6 +102,31 @@ describe("the door", () => {
     expect(door(svc, "stop").status).toBe(409)
   })
 
+  it.each(["Okay, stop now.", "please stop", "stop it"])("a stop said with filler ends the lesson and empties the queue: %s", async (words) => {
+    const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5))
+    svc.startLesson("secretary-agent", "open the merge request", "teach")
+    await new Promise((r) => setTimeout(r, 30))
+    hush(svc)
+    expect(door(svc, words).body).toEqual({ active: false, kind: "lesson", handled: true })
+    expect(log).toContain("speech stop")
+    expect(log).toContain("Secretary close")
+    expect(svc.live).toBeNull()
+  })
+
+  it("a question that contains the word stop goes to the lesson", async () => {
+    const prompts: string[] = []
+    const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5, prompts))
+    svc.startLesson("secretary-agent", "open the merge request", "teach")
+    await new Promise((r) => setTimeout(r, 30))
+    hush(svc)
+    const before = prompts.length
+    expect(door(svc, "how do I stop the recording in this app").body).toEqual({ active: true, kind: "lesson", handled: true })
+    expect(log).toContain("speech resume")
+    await new Promise((r) => setTimeout(r, 30))
+    expect(prompts.slice(before).join("\n")).toContain(`said: "how do I stop the recording in this app"`)
+    svc.close()
+  })
+
   it("stamps each lesson line with the time, and a step with its screen read and plan", async () => {
     const { svc, log } = setup(() => new Lines("TARGET: 1\nACTION: highlight\nSAY: Let's reload.", 5))
     svc.startLesson("secretary-agent", "open the merge request", "teach", "Safari")
@@ -211,6 +236,8 @@ describe("the door and narration", () => {
 })
 
 describe("isStop", () => {
-  it.each(["stop", "Stop.", "that's enough", "end the lesson", "enough!"])("%s", (s) => expect(isStop(s)).toBe(true))
-  it("not a question that contains the word", () => expect(isStop("stop the deploy after tests")).toBe(false))
+  it.each(["stop", "Stop.", "that's enough", "that\u2019s enough", "end the lesson", "enough!", "Okay, stop now.", "ok stop", "wait, stop",
+    "stop stop stop", "please stop", "stop it", "no, stop the lesson", "cancel", "stop talking", "end the narration"])("%s", (s) => expect(isStop(s)).toBe(true))
+  it.each(["stop the deploy after tests", "how do I stop the recording in this app", "wait", "no", "okay", "",
+    "cancel the order", "that's not enough", "ok ok please stop it right now thanks"])("not a stop: %s", (s) => expect(isStop(s)).toBe(false))
 })

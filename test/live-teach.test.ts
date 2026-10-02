@@ -249,6 +249,37 @@ describe("LiveTeach", () => {
     expect(s.log.at(-1)).toBe("close")
   })
 
+  it.each(["Okay, stop now.", "please stop", "stop it"])("a spoken stop with filler ends the lesson in code: %s", async (words) => {
+    const s = setup("act", [STEP1, "TARGET: 1\nACTION: click\nSAY: I'll click New now.", DONE], { speakMs: 200, actionsAllowed: true })
+    const events: any[] = []
+    s.t.on((e) => events.push(e))
+    const run = s.t.run()
+    await sleep(40)
+    s.t.hush()
+    s.t.door(words)
+    await run
+    expect(events.at(-1)).toEqual({ type: "end", reason: "stopped by the listener" })
+    // The planner never saw the words, so nothing was clicked after them:
+    // the one click is step 1's, made before the stop.
+    expect(s.model.prompts.join("\n")).not.toContain("said:")
+    expect(s.acted).toEqual(["click New"])
+  })
+
+  it("a question that contains the word is not a stop: it reaches the planner", async () => {
+    const s = setup("teach", [STEP1, DONE], { speakMs: 200 })
+    const run = s.t.run()
+    await sleep(40)
+    s.t.hush()
+    s.t.door("how do I stop the recording in this app")
+    expect(s.t.state).toBe("running")
+    await run
+    expect(s.model.prompts[1]).toContain(`said: "how do I stop the recording in this app"`)
+  })
+
+  it("tells the planner that a stop or a wait is never a click", () => {
+    expect(teachSystemPrompt("You are Cx.", "Anis")).toContain("If Anis asks to stop or to wait, ACTION is done or wait_for_user: never click, type or key.")
+  })
+
   it("shows it is looking from the start, and times the screen read and the plan of a step", async () => {
     const s = setup("teach", [STEP1, DONE], { userActsAfter: 40 })
     const events: any[] = []

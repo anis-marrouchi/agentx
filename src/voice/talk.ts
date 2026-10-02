@@ -49,10 +49,18 @@ export type TalkEvent =
   | { type: "error"; error: string }
 
 const DONE = /\bDONE\b\.?/g
-const STOP = /^\s*(stop|stop talking|that'?s enough|end( the talk)?|enough)[\s.!]*$/i
+const STOP_WORDS = new Set(["stop", "cancel", "enough", "quit", "end"])
+/** What speech to text puts around a stop: "okay, stop now", "please stop it". */
+const STOP_FILLER = new Set(("ok okay alright please now wait no hey so oh well just yes yeah thanks you can " +
+  "it that that's thats this the there here right already talking talk lesson narration").split(" "))
 
-/** "stop", "that's enough", "end the lesson": the listener wants quiet. */
-export const isStop = (text: string) => STOP.test(text) || /^\s*end the (lesson|narration)[\s.!]*$/i.test(text)
+/** "stop", "okay, stop now", "that's enough", "end the lesson": the listener
+ *  wants quiet. Six words at most, and nothing in them but stop words and
+ *  filler: "how do I stop the recording" is a question, not a stop. */
+export function isStop(text: string): boolean {
+  const words = text.toLowerCase().replace(/\u2019/g, "'").match(/[a-z']+/g) ?? []
+  return words.length <= 6 && words.some((w) => STOP_WORDS.has(w)) && words.every((w) => STOP_WORDS.has(w) || STOP_FILLER.has(w))
+}
 
 interface Turn {
   n: number
@@ -123,7 +131,7 @@ export class Talk {
   /** The listener spoke. "stop" ends the talk; anything else is answered next. */
   door(text: string): void {
     if (this.state === "ended") return
-    if (STOP.test(text)) return this.stop("stopped by the listener")
+    if (isStop(text)) return this.stop("stopped by the listener")
     this.silence()
     this.doorQueue.push(text.trim())
     this.doorAt = Date.now()

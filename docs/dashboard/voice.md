@@ -808,7 +808,7 @@ A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` 
 1. **Mac:** hold **Option–Space**, or click the widget. The lesson goes quiet and waits for you.
 2. **Mac:** say your question or remark, then release the keys. The lesson answers it with its next step.
 
-To end the lesson, say **stop** the same way. A lesson that hears nothing for one minute after it went quiet also ends.
+To end the lesson, say **stop** the same way. A short "okay, stop now", "please stop" or "cancel" ends it too. A longer sentence that only contains the word, such as "how do I stop the recording", goes to the lesson as a question. A lesson that hears nothing for one minute after it went quiet also ends.
 
 Pressing **Command–Option–.** also ends a lesson. In the terminal where it runs, type `stop` and press Return, or press Control–C.
 

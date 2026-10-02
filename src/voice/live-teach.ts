@@ -20,7 +20,7 @@ import type { LineModel } from "./talk-model"
 import type { VoiceRef } from "./speaker"
 import type { SpeechOut } from "./speaking-queue"
 import type { Presence, Rect } from "./presence"
-import { DEFAULT_LISTENER } from "./talk"
+import { DEFAULT_LISTENER, isStop } from "./talk"
 import { bubbleText, findControl, leavesApp, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
 
 export { leavesApp, parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
@@ -85,8 +85,6 @@ type Stale = { stale: string }
 /** A read costs about 0.1 s, so a done step is noticed within a second. */
 const POLL_MS = 400
 
-const STOP = /^\s*(stop|stop talking|that'?s enough|end( the lesson)?|enough)[\s.!]*$/i
-
 export class LiveTeach {
   readonly id = `teach-${Date.now().toString(36)}`
   /** Whose lesson this is. */
@@ -116,7 +114,7 @@ export class LiveTeach {
 
   door(text: string): void {
     if (this.state === "ended") return
-    if (STOP.test(text)) return this.stop("stopped by the listener")
+    if (isStop(text)) return this.stop("stopped by the listener")
     this.silence()
     this.doorQueue.push(text.trim())
     this.state = "running"
