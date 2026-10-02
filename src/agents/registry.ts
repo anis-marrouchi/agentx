@@ -59,7 +59,7 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
-import { personOfTurn, refusedPerson } from "@/people/people"
+import { personLimitsOf, nameMatches, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 
@@ -746,10 +746,21 @@ export class AgentRegistry {
     const refused = refusedPerson(this.config.people, agentId, ctx as any)
     if (!refused) return null
     this.log(`[${agentId}] refused: ${refused.person.id} may not reach this agent (people[].agents)`)
+    this.memberTrail().log({ person: refused.person.id, event: "agent-refused", detail: agentId })
+    return refused.note
+  }
+
+  /** A tool or skill call the guard hook denied for a person (#379), kept
+   *  in their trail beside refused agents. */
+  logToolRefusal(personId: string, agentId: string | undefined, detail: string): void {
+    this.log(`[${agentId ?? "?"}] blocked for ${personId}: ${detail} (people[].deny)`)
+    this.memberTrail().log({ person: personId, event: "tool-refused", detail })
+  }
+
+  private memberTrail(): MemberStore {
     const days = this.config.members.logRetentionDays
     if (!this.memberLog || this.memberLog.days !== days) this.memberLog = { days, store: new MemberStore(process.cwd(), Date.now, days) }
-    this.memberLog.store.log({ person: refused.person.id, event: "agent-refused", detail: agentId })
-    return refused.note
+    return this.memberLog.store
   }
   private memberLog?: { days: number; store: MemberStore }
 
@@ -1090,7 +1101,15 @@ export class AgentRegistry {
     // terminal runs with its own (full) permissions, outside the per-task
     // guard hook, so enforcement would be silently skipped.
     const restricted = isRestricted(task.autonomy)
-    const offered = restricted ? null : getAttachRegistry().offer({
+    // People permissions, per tool and per skill (#379): the run carries its
+    // person's deny lists to the runtime, which enforces them with a per-run
+    // guard hook. Recomputed on every run (a queued or resumed task too), so
+    // a stale list on the task is never trusted. Same rule as autonomy: an
+    // attached session runs outside the hook, so it is never offered one.
+    const limits = personLimitsOf(this.config.people, task.context as any)
+    if (limits) task.personLimits = limits
+    else delete task.personLimits
+    const offered = restricted || limits ? null : getAttachRegistry().offer({
       agentId: task.agentId,
       text: task.message,
       channel: task.context?.channel || "api",
@@ -1112,6 +1131,11 @@ export class AgentRegistry {
       // bare message and run it at full power. Refuse instead.
       if (restricted) {
         return { content: "", error: `autonomy "${task.autonomy}" cannot be enforced on a mesh peer — agent "${task.agentId}" is not local`, autonomy: task.autonomy }
+      }
+      // This forward carries the message only, so the peer would not know
+      // whose turn it is and would run it without the person's limits.
+      if (limits) {
+        return { content: "", error: `${limits.name}'s tool and skill limits cannot be enforced on a mesh peer — agent "${task.agentId}" is not local` }
       }
       // Mesh fallback: the agent isn't local but a healthy peer may host
       // it. Look it up in the mesh directory and forward via A2A sendTask.
@@ -1758,7 +1782,11 @@ export class AgentRegistry {
     if (!isCodexCli) {
       try {
         const { loadLocalSkills, getAutoInjectSkills } = await import("@/agent/skills/loader")
-        const skills = await step("skills", () => loadLocalSkills(state.def.workspace))
+        const loaded = await step("skills", () => loadLocalSkills(state.def.workspace))
+        // A skill the person may not use is not offered to them either
+        // (#379); the guard hook still blocks it if the agent reaches for it.
+        const denied = task.personLimits?.skills ?? []
+        const skills = denied.length ? loaded.filter((s) => !denied.some((p) => nameMatches(p, s.frontmatter.name))) : loaded
         skillInjection = getAutoInjectSkills(skills, task.message)
       } catch {
         // Skill loading is optional

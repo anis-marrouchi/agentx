@@ -19,6 +19,8 @@ import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeS
 //
 //   list                                   everyone, with their identities
 //   add <id> --name N [--role R] [--identity channel:id ...]
+//   allow <id> <agents...>                 limit a person to named agents (#379)
+//   deny <id> <tools|skills> <names...>    deny named tools or skills on their turns (#379)
 //   link <id> <channel:id>                 add an identity to a person
 //   unlink <id> <channel:id>               take one away
 //   remove <id>                            also ends every machine of theirs
@@ -53,6 +55,16 @@ function warnUnknownAgents(ids: string[]): void {
 }
 
 const NO_OWNER_LIMIT = "An owner reaches every agent and cannot be limited. Change the role first if that is what you want."
+const NO_OWNER_DENY = "An owner is never limited. Change the role first if that is what you want."
+/** The levels `deny` takes. A further level is a new entry here and in personSchema.deny. */
+const DENY_LEVELS = ["tools", "skills"] as const
+type DenyLevel = (typeof DENY_LEVELS)[number]
+
+/** "tool" or "Tools" → "tools"; null when it is not a level. */
+export function denyLevel(word: string): DenyLevel | null {
+  const w = word.toLowerCase().replace(/^(tool|skill)$/, "$1s")
+  return (DENY_LEVELS as readonly string[]).includes(w) ? (w as DenyLevel) : null
+}
 
 async function mutate(change: (list: any[]) => string): Promise<void> {
   let summary = ""
@@ -80,7 +92,8 @@ function sameIdentity(a: string, b: string): boolean {
 }
 
 function printPerson(p: Person): void {
-  console.log(`  ${chalk.bold(p.id)}  ${p.name} ${chalk.dim(`· ${p.role}`)}${p.agents?.length ? chalk.dim(` · agents: ${p.agents.join(", ")}`) : ""}`)
+  const denied = DENY_LEVELS.filter((l) => p.deny?.[l]?.length).map((l) => ` · no ${l}: ${p.deny![l]!.join(", ")}`).join("")
+  console.log(`  ${chalk.bold(p.id)}  ${p.name} ${chalk.dim(`· ${p.role}`)}${p.agents?.length ? chalk.dim(` · agents: ${p.agents.join(", ")}`) : ""}${chalk.dim(denied)}`)
   console.log(chalk.dim(p.identities.length ? `      ${p.identities.join(", ")}` : "      no identities yet: agentx people link " + p.id + " <channel:id>"))
 }
 
@@ -130,6 +143,21 @@ people
       return lift ? `${id} may reach every agent` : `${id} may reach ${person.agents.join(", ")} and no other agent`
     })
     if (!lift) warnUnknownAgents(agents)
+  })
+
+people
+  .command("deny <id> <level> <names...>")
+  .description("stop a person's turns using these tools or skills. Level: tools | skills. Names match without case; * is a wildcard. \"none\" lifts the limit")
+  .action(async (id: string, level: string, names: string[]) => {
+    const lvl = denyLevel(level)
+    if (!lvl) { console.error(chalk.red(`✗ level must be one of: ${DENY_LEVELS.join(", ")}`)); process.exit(1) }
+    const lift = names.length === 1 && names[0].toLowerCase() === "none"
+    await mutate((list) => {
+      const person = find(list, id)
+      if (!lift && person.role === "owner") throw new Error(NO_OWNER_DENY)
+      person.deny = { ...(person.deny ?? {}), [lvl]: lift ? [] : [...new Set(names)] }
+      return lift ? `${id} may use every ${lvl.slice(0, -1)}` : `${id} may not use these ${lvl}: ${person.deny[lvl].join(", ")}`
+    })
   })
 
 people

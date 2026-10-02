@@ -46,6 +46,9 @@ export type MemberEventKind =
   /** A message to an agent the person may not reach (people[].agents, #379);
    *  `detail` is the agent. */
   | "agent-refused"
+  /** A tool or skill call the person's turn may not make (people[].deny,
+   *  #379); `detail` is the tool, or "skill:<name>". */
+  | "tool-refused"
 
 export interface MemberEvent {
   at: string

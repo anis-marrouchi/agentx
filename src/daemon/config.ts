@@ -1041,6 +1041,15 @@ export const personSchema = z.object({
   identities: z.array(z.string().regex(/^[A-Za-z][\w-]*:\S.*$/, "write it as channel:id")).default([]),
   /** The agents this person may reach, by id. Empty: every agent (#379). */
   agents: z.array(z.string().min(1)).default([]),
+  /** What this person's turns may not use (#379), enforced by a per-run
+   *  guard hook. Names match without case; `*` is a wildcard. Empty: no
+   *  limit. A further level is a new key here. */
+  deny: z.object({
+    /** Tool names: "Bash", "WebFetch", "mcp__mail__*". */
+    tools: z.array(z.string().min(1)).default([]),
+    /** Skill names, as the Skill tool and auto-injection name them. */
+    skills: z.array(z.string().min(1)).default([]),
+  }).strict().default({}),
 })
 
 export const peopleConfigSchema = z.array(personSchema).default([]).superRefine((people, ctx) => {
