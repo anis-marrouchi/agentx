@@ -30,35 +30,51 @@ def defs():
     return "".join(out)
 
 
-def eye(x, y, kind, gx=0, gy=0, w=1.0):
-    """One eye at (x, y). gx, gy move the gaze; w narrows the far eye in a side view."""
-    if kind == "open":
-        return (f'<ellipse cx="{x+gx}" cy="{y+gy}" rx="{6.5*w}" ry="9.5" fill="{INK}"/>'
-                f'<circle cx="{x+gx+2.2*w}" cy="{y+gy-3.4}" r="{2.2*w}" fill="#fff"/>')
-    if kind == "wide":
-        return (f'<ellipse cx="{x+gx}" cy="{y+gy}" rx="{8*w}" ry="11.5" fill="{INK}"/>'
-                f'<circle cx="{x+gx+2.8*w}" cy="{y+gy-4.2}" r="{2.8*w}" fill="#fff"/>')
-    if kind == "half":
-        return (f'<path d="M{x+gx-6.5*w},{y+gy} a{6.5*w},7 0 0 0 {13*w},0 z" fill="{INK}"/>'
-                f'<path d="M{x+gx-8*w},{y+gy} h{16*w}" stroke="{INK}" stroke-width="2.6" stroke-linecap="round"/>')
-    if kind == "happy":
-        return (f'<path d="M{x-7*w},{y+3} q{7*w},-11 {14*w},0" fill="none" stroke="{INK}" '
-                f'stroke-width="3.4" stroke-linecap="round"/>')
-    if kind == "sleep":
-        return (f'<path d="M{x-7*w},{y} q{7*w},7 {14*w},0" fill="none" stroke="{INK}" '
-                f'stroke-width="3" stroke-linecap="round"/>')
-    raise ValueError(kind)
+EYES = {  # the named looks, as the numbers eye() draws from
+    "open": dict(), "wide": dict(s=1.22), "half": dict(lid=.5),
+    "happy": dict(o=0, c=1), "sleep": dict(o=0, c=-1),
+}
+
+
+def eye(x, y, e, gx=0, gy=0, w=1.0):
+    """One eye at (x, y). gx, gy move the gaze; w narrows the far eye in a side view.
+
+    e holds numbers, so one look can turn into another smoothly: o how open
+    (1 open, 0 shut), s its size, lid how far the eyelid is down, c the curve
+    of the shut eye (1 a smile, -1 asleep).
+    """
+    o, s, lid, c = e.get("o", 1), e.get("s", 1), e.get("lid", 0), e.get("c", 0)
+    k = min(o / .3, 1)  # the eyeball fades into the shut-eye curve as it closes
+    out = ""
+    if k > 0:
+        cx, cy, rx, ry = x + gx, y + gy, 6.5 * s * w, 9.5 * s * max(o, .04)
+        if lid > .02:  # what shows below the eyelid, and the eyelid line
+            yc = -ry + 2 * ry * lid
+            xw = rx * max(1 - (yc / ry) ** 2, 0) ** .5
+            out += (f'<path d="M{cx-xw},{cy+yc} A{rx},{ry} 0 {1 if yc < 0 else 0} 0 {cx+xw},{cy+yc} Z" fill="{INK}" opacity="{k}"/>'
+                    f'<path d="M{cx-xw-1.5*w},{cy+yc} h{2*xw+3*w}" stroke="{INK}" stroke-width="2.6" '
+                    f'stroke-linecap="round" opacity="{k*min(lid*4, 1)}"/>')
+        else:
+            out += f'<ellipse cx="{cx}" cy="{cy}" rx="{rx}" ry="{ry}" fill="{INK}" opacity="{k}"/>'
+        shine = k * max(1 - lid * 2.5, 0) * min(max(o * 2 - .6, 0), 1)
+        out += f'<circle cx="{cx+2.2*s*w}" cy="{cy-3.4*s*o}" r="{2.2*s*w}" fill="#fff" opacity="{shine}"/>'
+    if k < 1:
+        out += (f'<path d="M{x-7*w},{y+1.5+1.5*c} q{7*w},{-2-9*c} {14*w},0" fill="none" stroke="{INK}" '
+                f'stroke-width="3.2" stroke-linecap="round" opacity="{1-k}"/>')
+    return out
 
 
 def creature(cx, cy, palette="lagoon", eyes="open", gaze=(0, 0), tilt=0, sx=1.0, sy=1.0,
              lift=0, extra="", scale=1.0, face=0):
     """The creature over the ground line at cy + R. It has no legs: it hovers.
 
+    eyes: a named look from EYES, or its numbers.
     face: 0 seen from the front, 1 turned to the right, -1 turned to the left,
     anything between while it turns. Turned, both eyes move to that side, the
     far one narrower, and the lean and the gaze follow.
     """
     d, a = (1 if face >= 0 else -1), abs(face)
+    eyes = EYES[eyes] if isinstance(eyes, str) else eyes
     ground = cy + R * scale
     shadow_w = 34 * scale * (1 - min(lift, 30) / 60)
     body_cy = -R * sy  # body sits on the ground, squash keeps the base there
