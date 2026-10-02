@@ -184,6 +184,9 @@ the models, transcribes WAVs and shows where a turn would end;
 Microphone only, unless play mode is used. The hotkey uses Carbon's
 `RegisterEventHotKey`, which needs no Accessibility permission — an
 `NSEvent` global monitor would have.
+Each shortcut has its own handler, which must pass on a press that is not
+its own or the shortcuts registered before it go dead (`Hotkey.swift`,
+tested in `Tests/Hotkey`). Every registration is logged with its result.
 
 "Play on this page" needs Screen Recording, asked the first time it is
 chosen; the app must be quit and opened again after the grant.
