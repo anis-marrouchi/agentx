@@ -111,6 +111,18 @@ startsSmall.general.startReduced = true
 let startPatch = startsSmall.patch(from: withStart)["general"] as? [String: Any]
 check(startPatch?["startReduced"] as? Bool == true && startPatch?.count == 1, "only the start setting is sent when it changes")
 
+// --- The character's stroll when idle (#482) ---
+
+check(withStart.general.stroll == nil && withStart.patch(from: withStart)["general"] == nil,
+      "a daemon older than the stroll sends no stroll setting, and none is sent back")
+let withStroll = try! JSONDecoder().decode(VoiceSettings.self, from: Data(newer.replacingOccurrences(
+    of: "\"card\":{\"timeout\":30,\"maxHeight\":320}", with: "\"card\":{\"timeout\":30,\"maxHeight\":320},\"stroll\":false").utf8))
+check(withStroll.general.stroll == false, "the stroll setting decodes")
+var strollsNow = withStroll
+strollsNow.general.stroll = true
+let strollPatch = strollsNow.patch(from: withStroll)["general"] as? [String: Any]
+check(strollPatch?["stroll"] as? Bool == true && strollPatch?.count == 1, "only the stroll setting is sent when it changes")
+
 // --- The read at start, asked again until the daemon answers ---
 
 check((1...6).map { VoiceSettings.retryDelay(after: $0) } == [2, 4, 8, 16, 30, 30], "waits 2, 4, 8, 16 seconds, then every 30")

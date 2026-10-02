@@ -272,6 +272,34 @@ Good to know:
 - **It stays on screen:** it goes no closer to the top of a screen than its bubble needs, and no further right than where it rests by default. If its screen is no longer connected, it comes back to the bottom-right corner of your main screen.
 - **Hidden until you ask:** a hidden character stays hidden, whatever an agent says meanwhile. It comes back with **Option–Space**, an agent's own shortcut, an incoming call, **Show character** or **Show floating pill**, and when the app starts again.
 
+### Let the character stroll
+
+By default the character moves only to get out of the pointer's way. It can also take a slow stroll when the assistant has nothing to do. This is off by default.
+
+To turn it on:
+
+1. **Mac:** open **Settings…** from the AgentX menu and go to the **General** tab.
+2. **Mac:** under **Assistant**, tick **Character strolls when idle**, then choose **Save**.
+
+Or in the Terminal, from the folder with your `agentx.json`:
+
+```sh
+agentx voice stroll on    # a slow stroll now and then
+agentx voice stroll off   # it stays where it rests
+agentx voice stroll       # which one is on now
+```
+
+In `agentx.json` it is `voice.stroll`: `false` (the default) or `true`. A change made in the Terminal or in the file is picked up within a few seconds, while the app runs.
+
+Good to know:
+
+- **What a stroll is:** after 25 to 55 seconds with nothing to do, the character walks slowly a little way to one side, at most 110 points, waits there a few seconds and walks back. It leaves no trail of dots.
+- **Work comes first:** when you talk or an agent answers, it walks back to where it rests. The pointer still sends it aside as before.
+- **It stops when it dozes:** after two minutes with nothing to do the character dozes where it rests, and a dozing character does not stroll.
+- **It stays on screen:** next to the edge of the screen it strolls to the other side.
+- **Not with a still character:** with **Animated orb** unticked or Reduce Motion on, the character does not move at all.
+- **Only with the character:** the setting has no effect while the orb is shown, and the tick box is greyed out.
+
 ### Play on the page
 
 The character can leave its place and play on a picture of your screen: it walks along a line of text, eats a few words and wipes a line. It is a short show, about ten seconds, and the real page is never touched. Play mode is off by default.
@@ -421,6 +449,7 @@ To hear a voice before you keep it:
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
 | **Start reduced to the orb** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb). Default off | `voice.startReduced` |
+| **Character strolls when idle** | The [character](#the-character) takes a [slow stroll](#let-the-character-stroll) when the assistant has nothing to do. Default off | `voice.stroll` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
 | **Tallest answer** | How tall the answer grows before it scrolls, 120 to 800 points | `voice.card.maxHeight` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |

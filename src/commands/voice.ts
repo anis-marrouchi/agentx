@@ -254,6 +254,25 @@ voice
   })
 
 voice
+  .command("stroll [state]")
+  .description("whether the character takes a slow stroll when it has nothing to do: on or off")
+  .option("-c, --config <path>", "agentx.json to read or change")
+  .action((state: string | undefined, opts) => {
+    try {
+      const file = configFile(opts.config)
+      if (state !== undefined && state !== "on" && state !== "off") throw new Error("The stroll is on or off")
+      if (state !== undefined) saveSettings(file, { general: { stroll: state === "on" } })
+      const now = loadDaemonConfig(file).voice
+      console.log(`  When idle: ${now.stroll ? "the character takes a slow stroll now and then" : "the character stays where it rests"}`)
+      if (now.stroll && now.look !== "character") console.log(chalk.dim("  No effect while the orb is shown."))
+      if (state !== undefined) console.log(chalk.dim("  AgentX Voice picks this up within a few seconds."))
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+voice
   .command("card")
   .description("the answer shown in the pill: how long it stays open and how tall it grows")
   .option("--timeout <seconds>", `seconds it stays open once spoken, ${CARD_LIMITS.timeout.join("–")}; 0 keeps it open until closed`)

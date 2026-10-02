@@ -20,6 +20,9 @@ struct CharacterSim {
         /// The pointer is on its speech bubble: it stays where it is, so
         /// the bubble is not pulled from under the pointer.
         var held = false
+        /// `voice.stroll`: with nothing to do, it takes a slow stroll
+        /// beside where it rests now and then (#482).
+        var strolls = false
         /// Where it rests, and how far it may go.
         var home = 0.0
         var range: ClosedRange<Double> = 0...0
@@ -56,6 +59,9 @@ struct CharacterSim {
     /// How far it keeps from the pointer, and how long before it comes back.
     static let clear = 150.0
     static let awayFor = 4.0
+    /// A stroll: how far from where it rests, at most, and how fast.
+    static let strollReach = 110.0
+    static let strollSpeed = 28.0
 
     private(set) var mood = M.Mood.idle
     private var goal = M.Mood.idle
@@ -71,6 +77,11 @@ struct CharacterSim {
     private var target = 0.0
     private var awayUntil = 0.0
     private var steppedAside = false
+    /// A stroll: how far from home it is going and has got, when it turns
+    /// round or sets off again, and how many it has taken.
+    private var strollTo = 0.0, strolled = 0.0
+    private var strollNext: Double?
+    private var strolls = 0
     private var face = 0.0, lean = 0.0
     private var glance = (x: 0.0, y: 0.0)
 
@@ -110,11 +121,15 @@ struct CharacterSim {
             awayUntil = now + Self.awayFor
             restSince = now
             steppedAside = true
+            // The stroll is over: left alone it goes home, not back to
+            // where the pointer met it.
+            strolled = 0; strollTo = 0; strollNext = nil
         } else if now >= awayUntil {
             let taken = input.pointer.map { abs($0.x - input.home) < Self.clear && abs($0.y) < tall } ?? false
             if !taken {
                 if target != input.home { steppedAside = false }
-                target = min(max(input.home, input.range.lowerBound), input.range.upperBound)
+                stroll(now, dt, input)
+                target = min(max(input.home + strolled, input.range.lowerBound), input.range.upperBound)
             }
         }
 
@@ -197,9 +212,38 @@ struct CharacterSim {
                      dots: dots.compactMap { dot(at: now, $0) }, stars: bursts.flatMap { stars(at: now, $0) })
     }
 
-    /// Carried by the pointer (#502): it is where it is put, at once.
+    /// With nothing to do, a slow walk a little way from home, a wait
+    /// there, and a slow walk back: slow enough to leave no trail. Any
+    /// work, or dozing off, takes it home the same way.
+    private mutating func stroll(_ now: Double, _ dt: Double, _ input: Input) {
+        if !input.strolls || mood != .idle {
+            strollTo = 0; strollNext = nil
+        } else if strollNext == nil {
+            strollNext = now + 25 + 30 * M.rnd(strolls, 3)
+        } else if now >= strollNext! {
+            if strollTo == 0 {
+                strolls += 1
+                let far = 40 + (Self.strollReach - 40) * M.rnd(strolls, 1)
+                let room = (left: input.home - input.range.lowerBound, right: input.range.upperBound - input.home)
+                // To the side picked, unless only the other has the room.
+                var way: Double = M.rnd(strolls, 2) < 0.5 ? -1 : 1
+                if (way > 0 ? room.right : room.left) < far { way = -way }
+                strollTo = way * min(far, way > 0 ? room.right : room.left)
+                strollNext = now + abs(strollTo) / Self.strollSpeed + 5 + 6 * M.rnd(strolls, 4)
+            } else {
+                strollTo = 0
+                strollNext = nil
+            }
+        }
+        let pace = Self.strollSpeed * dt
+        strolled += min(max(strollTo - strolled, -pace), pace)
+    }
+
+    /// Carried by the pointer (#502): it is where it is put, at once, and
+    /// a stroll it was on is over.
     mutating func carry(to place: Double) {
         x = place; target = place; speed = 0
+        strolled = 0; strollTo = 0; strollNext = nil
     }
 
     /// The state alone, where it rests: for Reduce Motion, which shows a
