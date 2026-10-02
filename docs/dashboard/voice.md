@@ -797,6 +797,8 @@ In a live lesson, an agent teaches you how to do something in an app, one step a
 4. The agent waits for the screen to change (you did the step). In `act` mode with `allowActions` set, it does the step itself.
 5. The window is read again, and the next step starts from what is really there.
 
+As soon as a lesson starts, the agent's pointer says **Looking at** and the app's name, until the first step is ready. On a Mac that is not busy, that takes a few seconds.
+
 A lesson stays in the app it started in. If you switch to another app, the agent asks you to bring it back and waits without doing anything else. After 45 seconds it ends. A lesson stops after 12 steps unless you set another limit.
 
 A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` or `act` for your question, or from a terminal.
@@ -822,10 +824,12 @@ A lesson starts in one of two ways: when presence mode chooses `teach`, `watch` 
 
 **Drawing mode.** With `--mode draw`, the agent draws an illustration of the goal in the tldraw offline app instead, with its pointer moving over each shape as it appears. It saves a `.tldraw` file and a `.png` picture in your Documents folder. `--out <folder>` picks another folder, and `--model <id>` another planning model (default `claude-sonnet-5`). The tldraw offline app must be installed.
 
-### Interrupt or end a lesson
+### Speak to a lesson or end it
 
-1. **Mac:** hold **Option–Space**. The lesson ends at once and the screen is yours again.
-2. **Mac:** say your question, then release the keys. It goes to the agent as a normal question.
+1. **Mac:** hold **Option–Space**, or click the widget. The lesson goes quiet and waits for you.
+2. **Mac:** say your question or remark, then release the keys. The lesson answers it with its next step.
+
+To end the lesson, say **stop** the same way. A short "okay, stop now", "please stop" or "cancel" ends it too. A longer sentence that only contains the word, such as "how do I stop the recording", goes to the lesson as a question. A lesson that hears nothing for one minute after it went quiet also ends.
 
 Pressing **Command–Option–.** also ends a lesson. In the terminal where it runs, type `stop` and press Return, or press Control–C.
 
