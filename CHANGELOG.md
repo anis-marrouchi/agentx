@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.93.0](https://github.com/anis-marrouchi/agentx/compare/v0.92.4...v0.93.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** the pill is the character's speech bubble ([#494](https://github.com/anis-marrouchi/agentx/issues/494)) ([850c6ae](https://github.com/anis-marrouchi/agentx/commit/850c6ae67d2db5030053842fd02e714438a3db0a))
+
 ## [0.92.4](https://github.com/anis-marrouchi/agentx/compare/v0.92.3...v0.92.4) (2026-10-02)
 
 
