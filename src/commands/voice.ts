@@ -5,7 +5,7 @@ import { resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
 import { OS_DEFAULT, label, languageVoices, localSystemVoices } from "@/voice/agent-voice"
 import { candidates, findVoice, listSystemVoices, type SystemVoice } from "@/voice/system-voices"
-import { ORB_PALETTES, ORB_PALETTE_IDS, agentPalette } from "@/voice/orb-palettes"
+import { ORB_PALETTES, ORB_PALETTE_IDS, VOICE_LOOKS, agentPalette, type VoiceLook } from "@/voice/orb-palettes"
 import { presenceLook } from "@/voice/presence"
 import { findMissingVoices, REINSTALL_HINT, voiceDisplayName } from "@/voice/voice-health"
 import { CARD_LIMITS, applyVoiceSettings, checkVoiceSettings, type VoiceSettingsPatch } from "@/daemon/voice-settings-api"
@@ -211,6 +211,23 @@ voice
         console.log(`  ${id.padEnd(24)} ${p.id.padEnd(10)} ${chalk.dim(p.set ? "chosen" : `nearest its colour ${color}`)}`)
       }
       console.log()
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+voice
+  .command("look [look]")
+  .description(`what shows the assistant's state in AgentX Voice: ${VOICE_LOOKS.join(" or ")}`)
+  .option("-c, --config <path>", "agentx.json to read or change")
+  .action((look: string | undefined, opts) => {
+    try {
+      const file = configFile(opts.config)
+      if (look !== undefined) saveSettings(file, { general: { look: look as VoiceLook } })
+      const now = loadDaemonConfig(file).voice.look
+      console.log(`  Shown as: ${now === "character" ? "the character, above the bottom edge of the screen" : "the orb, in the pill"}`)
+      if (look !== undefined) console.log(chalk.dim("  AgentX Voice picks this up the next time it reads its settings."))
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))
       process.exit(1)

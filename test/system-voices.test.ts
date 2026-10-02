@@ -190,6 +190,7 @@ describe("config", () => {
     expect(parsed.voice).toEqual({
       provider: "system", fallback: "system", locale: "en", stt: "auto", allowUnmeasured: false, spokenMaxChars: 500, localStt: "mlx-whisper", endOfTurn: "vad",
       hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
+      look: "orb",
       card: { timeout: 30, maxHeight: 320 },
     })
   })

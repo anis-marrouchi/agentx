@@ -52,6 +52,25 @@ struct PalettePicker: View {
     }
 }
 
+/// "Shown as": the orb, or the character that stands in for it (#458).
+struct LookSection: View {
+    @Binding var look: String
+
+    var body: some View {
+        Section {
+            Picker("Shown as", selection: $look) {
+                Text("Orb").tag("orb")
+                Text("Character").tag("character")
+            }
+        } header: {
+            Text("Assistant")
+        } footer: {
+            Text("The character is the orb grown into a small creature in the agent's colours. It hovers above the bottom edge of the screen, shows what the assistant is doing, and moves out of the pointer's way. It never takes a click.")
+                .font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
 /// "Answer in the pill": how long it stays open once spoken, and how tall
 /// it grows before it scrolls.
 struct AnswerCardSection: View {

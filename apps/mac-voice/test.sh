@@ -31,3 +31,6 @@ swiftc -O -o "$out/turn-end-tests" Sources/AgentXVoice/TurnEnd.swift Tests/TurnE
 swiftc -O -o "$out/local-model-tests" Sources/AgentXVoice/ModelStore.swift Sources/AgentXVoice/Parakeet.swift \
   Tests/LocalModels/main.swift -framework CoreML -target arm64-apple-macosx14.0
 "$out/local-model-tests"
+swiftc -O -o "$out/character-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/CharacterSim.swift \
+  Sources/AgentXVoice/OrbMath.swift Tests/Character/main.swift -target arm64-apple-macosx14.0
+"$out/character-tests"

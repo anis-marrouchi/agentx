@@ -114,6 +114,17 @@ plays the audio). Idle or hidden, its timeline is paused and the level
 timer stopped; Reduce Motion, or "Animated orb" off in the menu
 (UserDefaults `animatedOrb`), makes it still.
 
+With `voice.look` set to `"character"` (#458), the pill has no orb and the
+character stands in for it (`CharacterHost` in `Character.swift`): the orb grown into a small
+creature in the same palette, in a click-through window of its own above
+the bottom edge of the main screen. A state is a small set of numbers
+(`CharacterMath.swift`), so every change is a blend, eyes first and body
+after; `CharacterSim.swift` steps it once a frame (which state, where it is
+along the edge, the trail dots and stars) and `CharacterDraw.swift` draws
+the frame with Core Graphics. Both are free of AppKit windows and tested in
+`Tests/Character`. Reduce Motion or "Animated orb" off stops its timer: a
+still picture per state.
+
 Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
 launch and when screens change it is clamped onto a connected screen, and
 "Reset position" puts it back bottom-right. The close button (on hover), Esc

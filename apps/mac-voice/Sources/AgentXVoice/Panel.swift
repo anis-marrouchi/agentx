@@ -105,6 +105,13 @@ final class Panel: NSPanel {
     /// Stay on screen when idle. Off: the pill shows only while active.
     var alwaysVisible = false
 
+    /// Told what the orb is shown, so the character can show the same.
+    var onLook: ((State, NSColor, [NSColor]?) -> Void)?
+
+    /// Off while the character stands in for the orb (Character.swift):
+    /// the words start where the orb was.
+    private(set) var showsOrb = true
+
     /// Told of every state rendered, so the menu-bar icon can follow.
     var onRender: ((State) -> Void)?
 
@@ -172,6 +179,18 @@ final class Panel: NSPanel {
             case .error: return Brand.alert
             case .ringing: return Brand.accent
             case .onCall: return Brand.accentDeep
+            }
+        }
+
+        /// What the character shows. A call between turns waits for you.
+        var activity: CharacterMath.Activity {
+            switch self {
+            case .idle, .error: return .idle
+            case .listening: return .listening
+            case .thinking, .working: return .thinking
+            case .speaking, .saying: return .speaking
+            case .ringing: return .ringing
+            case .onCall: return .waiting
             }
         }
 
@@ -295,8 +314,10 @@ final class Panel: NSPanel {
         let callWidth = CallBar.width(callBar.mode)
         let callX = bounds.width - 28 - (miniWidth > 0 ? miniWidth + 4 : 0) - callWidth
         callBar.frame = NSRect(x: callX, y: (h - 24) / 2, width: callWidth, height: 24)
-        let clipWidth = bounds.width - 88 - (miniWidth > 0 ? miniWidth + 4 : 0) - (callWidth > 0 ? callWidth + 4 : 0)
-        if let clip, clip.frame.width != clipWidth {
+        let head: CGFloat = showsOrb ? 54 : 18
+        let clipWidth = bounds.width - 34 - head - (miniWidth > 0 ? miniWidth + 4 : 0) - (callWidth > 0 ? callWidth + 4 : 0)
+        if let clip, clip.frame.width != clipWidth || clip.frame.minX != head {
+            clip.frame.origin.x = head
             clip.frame.size.width = clipWidth
             // Text that scrolled may fit now, and the other way round.
             marqueeText = ""
@@ -363,9 +384,19 @@ final class Panel: NSPanel {
         render(current)
     }
 
+    /// The orb at the pill's head, or none while the character shows.
+    @MainActor
+    func setShowsOrb(_ on: Bool) {
+        guard showsOrb != on else { return }
+        showsOrb = on
+        orb.isHidden = !on
+        orb.setOnScreen(on && isVisible)
+        if let content = contentView { layoutContent(content.bounds) }
+    }
+
     @MainActor
     func show() {
-        orb.setOnScreen(true)
+        orb.setOnScreen(showsOrb)
         miniOrbs.setOnScreen(!miniOrbs.isHidden)
         if !isVisible { orderFrontRegardless() }
     }
@@ -430,6 +461,7 @@ final class Panel: NSPanel {
         default: colors = agentPalette()
         }
         orb.show(state.orbPhase, tint: tint, colors: colors)
+        onLook?(state, tint, colors)
 
         if state.isMeta {
             stopMarquee()

@@ -26,6 +26,11 @@ export const ORB_PALETTES: OrbPalette[] = [
   { id: "blossom", label: "Blossom", hue: 330, colors: ["#A3245B", "#CF3F78", "#E8699A", "#F49BB8", "#FFD6E0"] },
 ]
 
+/** What shows the assistant's state in AgentX Voice (voice.look): the
+ *  orb, or the character that wears the same palette. */
+export const VOICE_LOOKS = ["orb", "character"] as const
+export type VoiceLook = (typeof VOICE_LOOKS)[number]
+
 export const ORB_PALETTE_IDS = ORB_PALETTES.map((p) => p.id) as [string, ...string[]]
 
 /** #RRGGBB to its hue in degrees, or null when it is grey or not a colour. */
