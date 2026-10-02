@@ -47,6 +47,10 @@ describe("who started a run", () => {
     expect(of({ channel: "app", raw: task(ctx, { person: null }) }).id).toBe("unknown")
     expect(of({ channel: "app", raw: task(ctx) }).id).toBe("unknown")
     expect(of({ channel: "voice", people: [], raw: task({ channel: "voice", sender: "Voice" }, { person: "owner" }) }).name).toBe("Owner")
+    // The desktop assistant is recorded under its own channel: the same rule.
+    const desktop = { channel: "desktop", sender: "Desktop", chatId: "desktop:alpha" }
+    expect(of({ channel: "desktop", raw: task(desktop, { person: "omar" }) }).id).toBe("person:omar")
+    expect(of({ channel: "desktop", raw: task(desktop, { person: null }) }).id).toBe("unknown")
   })
 
   it("names a person listed after the event arrived", () => {

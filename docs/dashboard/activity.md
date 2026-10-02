@@ -39,6 +39,8 @@ An initiator is one of three kinds:
 - **AgentX** (a filled box). This is work the system starts itself: a schedule (cron), a workflow step, or an agent acting on its own.
 - **An external system** (a dashed box). This is an outside service that is not a person, named after where it came in: a webhook, a call to the **Web API**, or a bot account on GitHub or GitLab.
 
+The initiator is who the work is recorded under. It is not proof of who asked. An agent that posts with a person's account from outside AgentX (the `gh` command, for example) reads as that person. A hand-off names the person its first run recorded, and a program that calls this computer's API can write that name.
+
 A hand-off keeps the initiator of the work it belongs to. If Dana's merge request passes three agents, all three hops still start at Dana.
 
 A **hop** is one agent asking another agent for help. When one agent asks a second, and the second asks a third, the map draws each hop. That holds when the agents run on different computers in your [mesh](../reference/a2a.md) (the computers linked together): the map reads each computer's own records. An agent only appears on a route when it really handled the work. For example, an agent that asks about a merge request later does not become its starting point.
@@ -105,6 +107,6 @@ The line board, **active only**, and the idle stations switch still apply. Selec
 - **The timeline is empty:** widen the window to **7d**. Nothing may have run in the last 24 hours.
 - **A train starts at Mesh (A2A) instead of where it came from:** the run that started it is older than the window, or the computer it ran on did not answer. Widen the window, or check that computer in [Operations](./operations.md). Work handed off by a computer with an older AgentX carries no starting point; update AgentX on every computer in the mesh.
 - **A person shows as Unknown:** their login or id on that channel is not in your people list. Add it under `people` in `agentx.json`: see [Tell agents who is who](../jobs/people.md). The map then names them, including for work already on the map.
-- **Your own voice or phone chats show as Unknown:** they were sent before this computer was updated, when AgentX did not yet record who started them. New ones read **Owner**. If you list two owners, AgentX cannot tell them apart at this computer and shows **Unknown**.
+- **Your own voice or phone chats show as Unknown:** they were sent before this computer was updated, when AgentX did not yet record who started them. New ones read **Owner**. If you list two owners, AgentX cannot tell them apart at this computer and shows **Unknown**. The same holds for the desktop assistant.
 - **A hop you expected is missing:** the map links a hop to the run that was in progress when the agent asked. If both computers' clocks are far apart, the link can fail. Set both computers to set their time automatically.
 - **A phone chat shows as Mesh (A2A) or Schedule on the map:** it ran on a computer with an older AgentX, or it was sent before the update. Update AgentX on the computer that runs the agent and on the one your phone is paired with, then restart it there. New phone chats then come in from **Phone app**.

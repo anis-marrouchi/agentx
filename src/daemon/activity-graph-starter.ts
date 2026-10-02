@@ -79,7 +79,11 @@ export function starterOf(i: StarterInput): DispatchStarter {
     const root = propagatedRootOf(ctx)
     const channel = root?.channel ?? i.channel
     if (classifyInitiator(ctx) === "human") return isBot(ctx?.senderUsername) ? software(channel, false) : UNKNOWN_STARTER
-    return software(channel, !!str(raw.senderAgentId) || isAgentSender(root ? root.sender : ctx?.sender))
+    const fromAgent = !!str(raw.senderAgentId) || isAgentSender(root ? root.sender : ctx?.sender)
+    // The desktop assistant is one of this machine's own surfaces: with no
+    // person recorded it is unknown, like voice.
+    if (channel === "desktop" && !fromAgent) return UNKNOWN_STARTER
+    return software(channel, fromAgent)
   }
 
   const sender = senderOf(i.source, i.channel, raw)
