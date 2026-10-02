@@ -37,6 +37,9 @@ export interface PresenceHostDeps {
   /** The global voice settings (agentx.json `voice`). */
   voiceSettings?: () => VoiceSettings
   overlay?: (look: PresenceLook, agentId: string) => Presence
+  /** The character as the agent's pointer (src/voice/guide.ts), or null
+   *  while it is not on screen: then the drawn cursor points. */
+  character?: (agentId: string) => Presence | null
   screen?: Pick<TeachDeps, "readScreen" | "act">
   frontmostApp?: () => Promise<string | null>
 }
@@ -166,6 +169,6 @@ export class PresenceHost {
   }
 
   private overlay(look: PresenceLook, agentId: string): Presence {
-    return this.deps.overlay?.(look, agentId) ?? new PresenceOverlay(look, HELPER, agentId)
+    return this.deps.overlay?.(look, agentId) ?? this.deps.character?.(agentId) ?? new PresenceOverlay(look, HELPER, agentId)
   }
 }

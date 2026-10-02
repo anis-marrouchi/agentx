@@ -4,7 +4,8 @@ import AppKit
 /// agent's palette, with two eyes, no mouth and no legs. It hovers above
 /// the bottom edge of the screen, or where it was dragged to (#502),
 /// shows what the assistant is doing, and gets out of the pointer's way.
-/// Chosen with `voice.look`; the orb stays the default.
+/// The answering agent can send it to something on screen, which it
+/// marks (#482). Chosen with `voice.look`; the orb stays the default.
 ///
 /// It reacts and never interrupts: its window takes no keys, no clicks
 /// but a drag of its body with ⌘ held, and never comes forward by itself.
@@ -60,10 +61,14 @@ final class CharacterHost {
     /// Carried by the pointer: where the pointer took hold, and where it
     /// stood then, which is not where it rests once it has stepped aside.
     private var carried: (from: NSPoint, rest: CGPoint)?
+    /// What the answering agent sent it to show (#482), and its mark.
+    private let guide = CharacterGuide()
     /// A still picture: Reduce Motion, or "Animated orb" off.
     private var still: Bool { !animated || reduceMotion }
     /// The look is the character: whether it is on screen. Nil with the orb.
     var onScreen: Bool? { shown ? !hidden : nil }
+    /// Told when it comes on screen or leaves it: shown or hidden, or the look changed.
+    var onScreenChanged: (() -> Void)?
 
     init() {
         window = NSPanel(contentRect: NSRect(origin: .zero, size: Self.size),
@@ -97,6 +102,7 @@ final class CharacterHost {
         shown = on
         if on { sim = CharacterSim(unit: Double(Self.diameter) / 100) }
         run()
+        onScreenChanged?()
     }
 
     /// Hide it, as its bubble is hidden: gone until it is asked back.
@@ -104,6 +110,7 @@ final class CharacterHost {
         guard hidden != on else { return }
         hidden = on
         run()
+        onScreenChanged?()
     }
 
     /// "Reset position" in the menu: back to its corner, forgetting where
@@ -132,6 +139,16 @@ final class CharacterHost {
         redraw()
     }
 
+    /// Go beside `rect` and mark it, or with nil go back to where it rests.
+    func guide(to rect: NSRect?, mark kind: GuideMath.Mark = .none) {
+        if shown, !hidden, carried == nil, let rect {
+            guide.show(rect, kind, color: view.stops[2], animated: !still)
+        } else {
+            guide.end()
+        }
+        redraw()
+    }
+
     /// Standing still, it is drawn again when something changes: its
     /// state, or its bubble showing or hiding.
     func redraw() {
@@ -142,7 +159,7 @@ final class CharacterHost {
     private func run() {
         timer?.invalidate()
         timer = nil
-        guard shown, !hidden else { carried = nil; window.orderOut(nil); return }
+        guard shown, !hidden else { carried = nil; guide(to: nil); window.orderOut(nil); return }
         tick()
         window.orderFrontRegardless()
         // Still, it only watches for the hand that moves it.
@@ -168,7 +185,7 @@ final class CharacterHost {
         switch phase {
         case .began:
             let mouse = pointerSource()
-            if body.contains(mouse) { carried = (mouse, CGPoint(x: body.midX, y: rest.y)) }
+            if body.contains(mouse) { guide.end(glide: false); carried = (mouse, CGPoint(x: body.midX, y: rest.y)) }
         case .moved:
             if carried != nil { tick() }
         case .ended:
@@ -196,11 +213,14 @@ final class CharacterHost {
         var wanted = place
         if let carried {
             wanted = CGPoint(x: carried.rest.x + mouse.x - carried.from.x, y: carried.rest.y + mouse.y - carried.from.y)
+        } else if let beside = guide.stand(screens: screens, body: Self.diameter, tall: Self.head) {
+            wanted = beside
         }
         let spot = PillPlacement.character(saved: wanted, room: Self.head + PillPlacement.tail + Panel.size.height,
                                            screens: screens.map(\.visibleFrame), fallback: first.visibleFrame)
         let visible = spot.visible
-        rest = spot.place
+        let now = ProcessInfo.processInfo.systemUptime
+        rest = CGPoint(x: spot.place.x, y: guide.height(from: rest.y, toward: spot.place.y, now: now, still: still))
         let home = Double(rest.x)
         if carried != nil { sim.carry(to: home) }
 
@@ -214,15 +234,16 @@ final class CharacterHost {
                 level = 0
             }
             let near = screens.first { $0.visibleFrame == visible }?.frame.contains(mouse) ?? false
-            let pointer = near ? (x: Double(mouse.x), y: Double(mouse.y - rest.y)) : nil
+            // Showing something, it does not step aside for the pointer.
+            let pointer = near && guide.showing == nil ? (x: Double(mouse.x), y: Double(mouse.y - rest.y)) : nil
             // The gap its tail fills counts as the bubble, so a pointer a
             // little under a button does not send both away. With ⌘ held
             // it waits too, to be taken hold of.
             let held = carried != nil
                 || (bubbleFrame?.insetBy(dx: 0, dy: -PillPlacement.tail).contains(mouse) ?? false)
                 || (NSEvent.modifierFlags.contains(.command) && window.frame.contains(mouse))
-            frame = sim.step(to: ProcessInfo.processInfo.systemUptime,
-                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, strolls: strolls,
+            frame = sim.step(to: now,
+                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, sent: guide.showing != nil, strolls: strolls,
                                                 shows: bubbleShows?() ?? false, plays: Config.playMode, down: NSEvent.pressedMouseButtons & 1 != 0,
                                                 home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }
@@ -236,61 +257,5 @@ final class CharacterHost {
         view.shown = frame
         view.needsDisplay = true
         aim()
-    }
-}
-
-/// The character's drawing surface. Flipped, so the drawing's y grows
-/// downwards as in the pose sheet it was ported from.
-final class CharacterView: NSView {
-    var shown = CharacterSim.Frame()
-    var stops = CharacterDraw.stops(tint: Brand.accent, colors: nil)
-    var unit: CGFloat = 0.56
-    /// Under the character, in this view; and the view's left edge on screen.
-    var edge = CGPoint.zero
-    var origin: CGFloat = 0
-    /// Its speech bubble in this window, origin bottom-left; nil while hidden.
-    var bubble: NSRect?
-
-    /// A drag of its body. Its window takes the mouse for nothing else.
-    enum Drag { case began, moved, ended }
-    var onDrag: ((Drag) -> Void)?
-
-    override var isFlipped: Bool { true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func mouseDown(with event: NSEvent) { onDrag?(.began) }
-    override func mouseDragged(with event: NSEvent) { onDrag?(.moved) }
-    override func mouseUp(with event: NSEvent) { onDrag?(.ended) }
-
-    override func draw(_ dirtyRect: NSRect) {
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        // The body is drawn where the window is, which follows the frame
-        // to the nearest point; the rest of the way is drawn here.
-        let at = CGPoint(x: CGFloat(shown.x) - origin, y: edge.y)
-        CharacterDraw.draw(shown, in: ctx, edge: at, origin: origin, unit: unit, stops: stops)
-        if let bubble { drawTail(in: ctx, from: bubble) }
-    }
-
-    /// The bubble's tail: a small point from its bottom edge down to the
-    /// character, in the bubble's own colours.
-    private func drawTail(in ctx: CGContext, from bubble: NSRect) {
-        let half: CGFloat = 7, corner = Brand.Radius.lg + half
-        let x = min(max(bounds.midX, bubble.minX + corner), bubble.maxX - corner)
-        // One point up into the bubble, so no gap shows between the two.
-        let top = bounds.height - bubble.minY - 1
-        let tip = CGPoint(x: x, y: top + 1 + PillPlacement.tail)
-        effectiveAppearance.performAsCurrentDrawingAppearance {
-            ctx.move(to: CGPoint(x: x - half, y: top))
-            ctx.addLine(to: tip)
-            ctx.addLine(to: CGPoint(x: x + half, y: top))
-            ctx.closePath()
-            ctx.setFillColor(NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor)
-            ctx.fillPath()
-            ctx.move(to: CGPoint(x: x - half, y: top + 1))
-            ctx.addLine(to: tip)
-            ctx.addLine(to: CGPoint(x: x + half, y: top + 1))
-            ctx.setStrokeColor(NSColor.separatorColor.cgColor)
-            ctx.setLineWidth(1)
-            ctx.strokePath()
-        }
     }
 }

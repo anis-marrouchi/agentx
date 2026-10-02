@@ -189,6 +189,16 @@ let putAt = taken.x
 for i in 61...300 { _ = taken.step(to: Double(i) / 30, Input(pointer: (x: 200, y: 400), home: putAt, range: range)) }
 check(abs(taken.x - putAt) < 1, "let go: it rests where it was put")
 
+// Sent by the answering agent to show something (#482): it has just
+// stepped aside, and still goes at once; and it does not doze there.
+var sentOff = CharacterSim(unit: 0.56)
+for i in 1...30 { _ = sentOff.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), home: home, range: range)) }
+let there = home - 300
+for i in 31...75 { _ = sentOff.step(to: Double(i) / 30, Input(held: true, sent: true, home: there, range: range)) }
+check(abs(sentOff.x - there) < 12, "sent to show something: it goes at once, though it had just stepped aside and the pointer is on its bubble")
+_ = sentOff.step(to: CharacterSim.dozeAfter + 60, Input(sent: true, home: there, range: range))
+check(sentOff.mood != .dozing, "and stays awake while it shows it")
+
 // --- A stroll when it has nothing to do (#482, `voice.stroll`) ---
 
 /// Idle for `seconds` at 30 frames a second: every place it was, and the frames.
@@ -252,6 +262,16 @@ var shyWalker = CharacterSim()
 _ = shyWalker.step(to: 0, Input(strolls: true, home: home, range: range))
 for i in 1...60 { _ = shyWalker.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), strolls: true, home: home, range: range)) }
 check(shyWalker.x - (home - 20) > 120, "the pointer comes close: it steps aside as before")
+
+// Sent to show something while it is out: the stroll is over, and sent
+// home again it rests there, not where the stroll had taken it.
+var shown = CharacterSim()
+_ = shown.step(to: 0, Input(strolls: true, home: home, range: range))
+var frameNo = 1
+while frameNo < 110 * 30, abs(shown.x - home) < 30 { _ = shown.step(to: Double(frameNo) / 30, Input(strolls: true, home: home, range: range)); frameNo += 1 }
+for _ in 1...60 { _ = shown.step(to: Double(frameNo) / 30, Input(sent: true, strolls: true, home: home - 300, range: range)); frameNo += 1 }
+for _ in 1...90 { _ = shown.step(to: Double(frameNo) / 30, Input(strolls: true, home: home, range: range)); frameNo += 1 }
+check(abs(shown.x - home) < 2, "sent in the middle of a stroll, then home: it rests where it rests")
 
 // Taken hold of while it is out, and put down somewhere else: the stroll is over.
 var lifted = CharacterSim()

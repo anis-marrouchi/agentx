@@ -35,6 +35,7 @@ import { SpeechOut, type QueueView } from "@/voice/speaking-queue"
 import { createLineModel, type LineModel } from "@/voice/talk-model"
 import { resolveAgentVoice, talkSpeaker, voiceRef, type VoiceIntroTracker, type VoiceSettings } from "@/voice/agent-voice"
 import { LiveTeach, type TeachMode } from "@/voice/live-teach"
+import { CharacterPresence, GuideFeed } from "@/voice/guide"
 import { PresenceHost, type PresenceHostDeps } from "@/daemon/voice-presence"
 
 export { talkSpeaker }
@@ -65,6 +66,8 @@ export class VoiceTalkService {
   readonly speech: SpeechOut
   readonly narrator: Narrator
   readonly presence: PresenceHost
+  /** Where an agent sends the character to show something (#482). */
+  readonly guide = new GuideFeed()
   private session: VoiceSession | null = null
   /** The narrated task the last hush silenced, until the listener speaks. */
   private hushed: { taskId: string; agentId: string } | null = null
@@ -90,9 +93,13 @@ export class VoiceTalkService {
     this.model = deps.model ?? ((system) => createLineModel({ system }))
     this.remote = deps.remote ?? (() => undefined)
     this.stopSpeakers = deps.stopSpeakers ?? (() => stopAllSpeakers())
-    const settings = deps.voiceSettings ?? (() => ({}))
+    const settings: () => VoiceSettings = deps.voiceSettings ?? (() => ({}))
     this.settings = settings
-    this.presence = new PresenceHost(agents, log, { voiceSettings: settings, ...deps.presence })
+    this.presence = new PresenceHost(agents, log, {
+      voiceSettings: settings,
+      character: (id) => settings().look === "character" && this.guide.listening ? new CharacterPresence(this.guide, id) : null,
+      ...deps.presence,
+    })
     this.narrator = new Narrator({
       speech: this.speech,
       model: () => this.model(NARRATOR_SYSTEM),
