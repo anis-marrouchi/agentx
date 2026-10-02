@@ -6,7 +6,7 @@
 <title>My work · AgentX (concept for #443, version 2)</title>
 <!-- Concept only. Static sample data, no network calls. Tokens are copied
      from src/daemon/ui/tokens.ts by build.mjs; the page adds no new token.
-     Open with ?page=work|empty|pair|waiting and &theme=dark. -->
+     Open with ?page=work|empty|pair|waiting, &theme=dark and &open=1. -->
 <script>(function(){var q=new URLSearchParams(location.search);document.documentElement.setAttribute('data-theme',q.get('theme')==='dark'?'dark':'light');document.documentElement.setAttribute('data-page',q.get('page')||'work')})()</script>
 <style>
 :root {
@@ -242,6 +242,20 @@ summary { cursor: pointer; font-size: 15px; font-weight: 700; color: var(--ax-te
 .strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
 .strip button { min-height: 36px; padding: 4px 16px; font: inherit; font-weight: 700; color: var(--ax-amber-ink); background: transparent; border: var(--ax-border-w) solid var(--ax-amber-ink); border-radius: var(--ax-radius-pill); cursor: pointer; }
 
+/* ── A card opens in place: the request the agent is on ── */
+.agent .more { justify-self: start; min-height: 44px; padding: 0; font: inherit; font-size: 14px; font-weight: 700; color: var(--link); background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.agent .more::after { content: " ▾"; }
+.agent .more[aria-expanded="true"]::after { content: " ▴"; }
+.agent .detail { display: none; gap: 14px; padding-top: 14px; border-top: var(--ax-border-w) solid var(--ax-border); }
+.agent.open .detail { display: grid; }
+.agent.open { border-color: var(--ax-blue); }
+@media (min-width: 640px) { .agent.open { grid-column: 1 / -1; } }
+.detail .steps { margin: 0; }
+.detail .full { overflow-wrap: anywhere; }
+.detail dl { margin: 0; display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; font-size: 14px; }
+.detail dt { color: var(--ax-text-2); }
+.detail dd { margin: 0; overflow-wrap: anywhere; }
+
 /* ── Empty ── */
 .blank { margin-top: 8px; padding: 28px 24px; border: var(--ax-border-w) dashed var(--ax-border-2); border-radius: var(--ax-radius-lg); }
 .blank p + p { margin-top: 8px; color: var(--ax-text-2); }
@@ -288,6 +302,18 @@ code { background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; fo
         <p class="what">Check why the staging login page shows the old banner</p>
         <p class="meta"><span>started by you</span><span class="moved">12 min ago</span><span>from <a href="#">GitLab acme/portal #88</a></span></p>
         <p class="hint">Busy. A new message waits in line until this ends.</p>
+        <button type="button" class="more" aria-expanded="false" aria-controls="d-coder">Show this request</button>
+        <div class="detail" id="d-coder">
+          <ol class="steps" aria-label="Where this request is"><li class="done"><span class="sr">Done: </span>Received</li><li class="now" aria-current="step">Working</li><li>Finished</li></ol>
+          <p class="full">Check why the staging login page shows the old banner https://v2.portal.example.tn/login?redirect=/dashboard/reports/2026/09</p>
+          <dl>
+            <dt>Started by</dt><dd>you</dd>
+            <dt>Sent</dt><dd>today at 10:30, 12 min ago</dd>
+            <dt>Asked on</dt><dd><a href="#">GitLab acme/portal #88</a></dd>
+            <dt>In line behind it</dt><dd>nothing</dd>
+            <dt>Answer</dt><dd>It arrives on GitLab acme/portal #88 when the agent finishes.</dd>
+          </dl>
+        </div>
       </li>
       <li class="agent free">
         <p class="top"><span class="name">secretary agent</span><span class="state free">Free</span></p>
@@ -422,5 +448,6 @@ code { background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; fo
 </main>
 </div>
 
+<script>(function(){var open=new URLSearchParams(location.search).get('open')==='1';document.querySelectorAll('.agent .more').forEach(function(b){function set(on){b.setAttribute('aria-expanded',on?'true':'false');b.textContent=on?'Hide this request':'Show this request';b.parentNode.classList.toggle('open',on)}b.addEventListener('click',function(){set(b.getAttribute('aria-expanded')!=='true')});if(open)set(true)})})()</script>
 </body>
 </html>

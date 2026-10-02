@@ -4,7 +4,7 @@ Design concept for the member page (`/member`), for the owner's approval. This b
 
 Version 2 redraws the work page around the feedback of the first member who used it (2026-10-02). Version 1 is kept in [`v1/`](v1) for comparison. The pairing and waiting pages are unchanged.
 
-`concept.html` is a static page with sample data, built on the real colour tokens from `src/daemon/ui/tokens.ts`. Download it and open it in a browser; add `?page=work|empty|pair|waiting` and `&theme=dark`.
+`concept.html` is a static page with sample data, built on the real colour tokens from `src/daemon/ui/tokens.ts`. Download it and open it in a browser; add `?page=work|empty|pair|waiting`, `&theme=dark` and `&open=1`.
 
 ## My work
 
@@ -13,6 +13,16 @@ Version 2 redraws the work page around the feedback of the first member who used
 | ![My work on a laptop, light theme](work-light-laptop.png) | ![My work on a phone, dark theme](work-dark-phone.png) |
 
 Also: [laptop, dark](work-dark-laptop.png) · [phone, light](work-light-phone.png)
+
+## A card opened: the request the agent is on
+
+| Laptop, light | Phone, dark |
+|---|---|
+| ![The working agent's card opened on a laptop, light theme](open-light-laptop.png) | ![The working agent's card opened on a phone, dark theme](open-dark-phone.png) |
+
+Also: [phone, light](open-light-phone.png). In `concept.html`, press "Show this request" on the first card, or add `&open=1`.
+
+A card whose agent is working on the member's own task has a "Show this request" button. It opens the card in place, with no new page: a three-step line (Received, Working, Finished), the full text of what was sent, who started it, when, where it was asked with a link, what is waiting in line behind it, and where the answer will arrive. A card that is busy with someone else's task has no button. What the agent is doing inside the task is not shown; that is the reasoning history left for a later stage.
 
 ## Nothing sent yet, and the server cannot be reached
 
@@ -49,5 +59,6 @@ All four can be read from records the node already keeps, but the member page is
 ## Checked
 
 - Contrast: 23 text and shape pairs per theme, all at or above the minimum (4.5 for text, 3 for large text and shapes). The list is in `contrast.txt`. The grey card outline is decoration and is not in the list.
-- No sideways scroll at 1280, 390 and 320 wide, with a long address in a task.
+- No sideways scroll at 1280, 390 and 320 wide, with a long address in a task, card closed and opened.
+- The "Show this request" button is a real button with its open state announced; it works by keyboard in the static page.
 - Not checked: a screen reader, a real phone, Windows, the member's own opinion of this version. The blue square in the top bar stands in for the app icon.
