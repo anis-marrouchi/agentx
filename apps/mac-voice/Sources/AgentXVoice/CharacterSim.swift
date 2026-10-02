@@ -17,6 +17,9 @@ struct CharacterSim {
         /// The pointer: along the edge, and its height above it. Nil when
         /// it is on another screen.
         var pointer: (x: Double, y: Double)?
+        /// The pointer is on its speech bubble: it stays where it is, so
+        /// the bubble is not pulled from under the pointer.
+        var held = false
         /// Where it rests, and how far it may go.
         var home = 0.0
         var range: ClosedRange<Double> = 0...0
@@ -99,7 +102,10 @@ struct CharacterSim {
         // The pointer comes close: out of its way. Left alone: back home,
         // unless the pointer is resting there.
         let near = input.pointer.map { abs($0.x - x) < reach && $0.y < tall } ?? false
-        if near {
+        if input.held {
+            target = x
+            awayUntil = max(awayUntil, now + Self.awayFor)
+        } else if near {
             target = M.aside(x: x, pointer: input.pointer!.x, clear: Self.clear, range: input.range)
             awayUntil = now + Self.awayFor
             restSince = now

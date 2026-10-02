@@ -144,5 +144,23 @@ for i in 1...360 {
 check(furthest <= home + 3 && pushed.x < home - 100, "a slow pointer along the edge never pushes it past home, onto the pill: it goes the other way")
 check(faint, "a dot left far behind on a long glide has faded before its window ends")
 
+// --- Its speech bubble (#491) ---
+
+// The pointer on the bubble, close enough to send it aside: it stays, so
+// the bubble's buttons can be reached.
+var holding = CharacterSim()
+_ = holding.step(to: 0, Input(home: home, range: range))
+for i in 1...90 { _ = holding.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), held: true, home: home, range: range)) }
+check(abs(holding.x - home) < 1, "the pointer is on its bubble: it does not step aside")
+// Stepped aside, then the pointer goes onto the bubble: it waits there.
+var waiting = CharacterSim()
+_ = waiting.step(to: 0, Input(home: home, range: range))
+for i in 1...60 { _ = waiting.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), home: home, range: range)) }
+let wentTo = waiting.x
+for i in 61...360 { _ = waiting.step(to: Double(i) / 30, Input(pointer: (x: wentTo, y: 110), held: true, home: home, range: range)) }
+check(abs(waiting.x - wentTo) < 3, "aside with the pointer on its bubble: it does not go home, however long")
+for i in 361...600 { _ = waiting.step(to: Double(i) / 30, Input(pointer: (x: 200, y: 400), home: home, range: range)) }
+check(abs(waiting.x - home) < 3, "the pointer leaves the bubble: it comes back")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

@@ -204,6 +204,7 @@ final class App: NSObject, NSApplicationDelegate {
         let asCharacter = saved.general.look == "character"
         panel.setShowsOrb(!asCharacter)
         character.setShown(asCharacter)
+        if !asCharacter { panel.detach() }
         if settingsWindow.model.recording == nil { registerHotkeys() }
         // Colours may have changed.
         statusMenu.refresh()
@@ -314,9 +315,17 @@ final class App: NSObject, NSApplicationDelegate {
         panel.orb.levelSource = { [weak self] in self?.recorder.level ?? 0 }
         character.setAnimated(Config.animatedOrb)
         character.levelSource = { [weak self] in self?.recorder.level ?? 0 }
+        // The pill is the character's speech bubble: it goes where the
+        // character goes.
+        character.bubble = { [weak self] head, visible in
+            guard let panel = self?.panel else { return nil }
+            panel.attach(head: head, visible: visible)
+            return panel.isVisible ? panel.frame : nil
+        }
         panel.onLook = { [weak self] state, tint, colors in
             self?.character.show(state.activity, tint: tint, colors: colors)
         }
+        panel.onShown = { [weak self] in self?.character.redraw() }
         panel.onDismiss = { [weak self] in self?.dismissPill() }
         panel.agentPalette = { [weak self] in
             guard let self else { return nil }

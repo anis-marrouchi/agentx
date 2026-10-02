@@ -18,6 +18,9 @@ final class CharacterHost {
     private static let size = NSSize(width: 440, height: 150)
     /// The edge it hovers above, from the bottom of its window.
     private static let ground: CGFloat = 8
+    /// Above the edge, clear of its body at the top of a hop: where its
+    /// speech bubble's tail ends.
+    private static let head: CGFloat = 78
 
     private let window: NSPanel
     private let view = CharacterView(frame: NSRect(origin: .zero, size: CharacterHost.size))
@@ -34,6 +37,11 @@ final class CharacterHost {
     var levelSource: (() -> Float)?
     /// Where the pointer is, in screen coordinates.
     var pointerSource: () -> NSPoint = { NSEvent.mouseLocation }
+    /// Its speech bubble (#491), the pill: told every frame where the
+    /// character's head is and on which screen, it answers with where the
+    /// bubble is, or nil while it is hidden. Set by the app.
+    var bubble: ((NSPoint, NSRect) -> NSRect?)?
+    private var bubbleFrame: NSRect?
 
     init() {
         window = NSPanel(contentRect: NSRect(origin: .zero, size: Self.size),
@@ -79,6 +87,12 @@ final class CharacterHost {
     func show(_ activity: CharacterMath.Activity, tint: NSColor, colors: [NSColor]?) {
         self.activity = activity
         view.stops = CharacterDraw.stops(tint: tint, colors: colors)
+        redraw()
+    }
+
+    /// Standing still, it is drawn again when something changes: its
+    /// state, or its bubble showing or hiding.
+    func redraw() {
         if shown && timer == nil { tick() }
     }
 
@@ -101,10 +115,10 @@ final class CharacterHost {
         // The screen with the menu bar, less the menu bar and the Dock.
         guard let screen = NSScreen.screens.first else { return }
         let visible = screen.visibleFrame
-        // It rests beside the pill's own corner, so they read as one, and
-        // goes no further right: stepping aside never puts it on the pill.
+        // It rests under the right end of its bubble, the bubble in the
+        // pill's own corner, and goes no further right.
         let left = Double(visible.minX + 44)
-        let home = max(Double(visible.maxX - PillPlacement.inset - Panel.size.width - 52), left)
+        let home = max(Double(visible.maxX - PillPlacement.inset - PillPlacement.bubbleReach), left)
         let range = left...home
 
         let frame: CharacterSim.Frame
@@ -118,11 +132,18 @@ final class CharacterHost {
             }
             let mouse = pointerSource()
             let pointer = screen.frame.contains(mouse) ? (x: Double(mouse.x), y: Double(mouse.y - visible.minY)) : nil
+            // The gap its tail fills counts as the bubble, so a pointer a
+            // little under a button does not send both away.
+            let held = bubbleFrame?.insetBy(dx: 0, dy: -PillPlacement.tail).contains(mouse) ?? false
             frame = sim.step(to: ProcessInfo.processInfo.systemUptime,
-                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, home: home, range: range))
+                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held,
+                                                home: home, range: range))
         }
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: visible.minY - Self.ground)
         if window.frame.origin != origin { window.setFrameOrigin(origin) }
+        // The bubble goes with the window, so the two move as one.
+        bubbleFrame = bubble?(NSPoint(x: origin.x + Self.size.width / 2, y: visible.minY + Self.head), visible)
+        view.bubble = bubbleFrame?.offsetBy(dx: -origin.x, dy: -origin.y)
         view.origin = origin.x
         view.shown = frame
         view.needsDisplay = true
@@ -138,6 +159,8 @@ final class CharacterView: NSView {
     /// Under the character, in this view; and the view's left edge on screen.
     var edge = CGPoint.zero
     var origin: CGFloat = 0
+    /// Its speech bubble in this window, origin bottom-left; nil while hidden.
+    var bubble: NSRect?
 
     override var isFlipped: Bool { true }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
@@ -148,5 +171,30 @@ final class CharacterView: NSView {
         // to the nearest point; the rest of the way is drawn here.
         let at = CGPoint(x: CGFloat(shown.x) - origin, y: edge.y)
         CharacterDraw.draw(shown, in: ctx, edge: at, origin: origin, unit: unit, stops: stops)
+        if let bubble { drawTail(in: ctx, from: bubble) }
+    }
+
+    /// The bubble's tail: a small point from its bottom edge down to the
+    /// character, in the bubble's own colours.
+    private func drawTail(in ctx: CGContext, from bubble: NSRect) {
+        let half: CGFloat = 7, corner = Brand.Radius.lg + half
+        let x = min(max(bounds.midX, bubble.minX + corner), bubble.maxX - corner)
+        // One point up into the bubble, so no gap shows between the two.
+        let top = bounds.height - bubble.minY - 1
+        let tip = CGPoint(x: x, y: top + 1 + PillPlacement.tail)
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            ctx.move(to: CGPoint(x: x - half, y: top))
+            ctx.addLine(to: tip)
+            ctx.addLine(to: CGPoint(x: x + half, y: top))
+            ctx.closePath()
+            ctx.setFillColor(NSColor.windowBackgroundColor.withAlphaComponent(0.92).cgColor)
+            ctx.fillPath()
+            ctx.move(to: CGPoint(x: x - half, y: top + 1))
+            ctx.addLine(to: tip)
+            ctx.addLine(to: CGPoint(x: x + half, y: top + 1))
+            ctx.setStrokeColor(NSColor.separatorColor.cgColor)
+            ctx.setLineWidth(1)
+            ctx.strokePath()
+        }
     }
 }
