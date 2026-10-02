@@ -3277,8 +3277,10 @@ export class AgentXDaemon {
       if (isGuidePath(path)) {
         if (!this.checkMeshAuth(req, res, path)) return
         const body = req.method === "POST" ? await readBody(req) : {}
-        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body)
-        // The app may have gone while it waited.
+        // The app may go while it waits: then no character is there to send.
+        const gone = new AbortController()
+        res.once("close", () => gone.abort())
+        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body, gone.signal)
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }

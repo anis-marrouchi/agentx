@@ -49,6 +49,18 @@ describe("GuideFeed", () => {
     expect(feed.listening).toBe(false)
   })
 
+  it("an app that goes away while it waits no longer counts as there", async () => {
+    let now = 0
+    const feed = new GuideFeed(() => now)
+    const gone = new AbortController()
+    const waiting = feed.next(0, 25_000, gone.signal)
+    now = 10_000
+    expect(feed.listening).toBe(true)
+    gone.abort()
+    expect(feed.listening).toBe(false)
+    expect(await waiting).toMatchObject({ seq: 0 })
+  })
+
   it("a held command goes home by itself, unless a newer one came", () => {
     vi.useFakeTimers()
     const feed = new GuideFeed()

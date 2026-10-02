@@ -32,8 +32,10 @@ export async function handleGuide(
   method: string,
   query: URLSearchParams,
   body: Record<string, unknown>,
+  /** The caller hung up: ends its wait. */
+  gone?: AbortSignal,
 ): Promise<Reply> {
-  if (method === "GET") return { status: 200, body: await feed.next(Number(query.get("after")) || 0) }
+  if (method === "GET") return { status: 200, body: await feed.next(Number(query.get("after")) || 0, undefined, gone) }
   if (method !== "POST") return { status: 405, body: { error: "GET or POST" } }
   if (!character || !feed.listening) {
     return { status: 409, body: { shown: false, error: character ? "AgentX Voice is not showing the character" : "voice.look is not character" } }

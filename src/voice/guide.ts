@@ -73,20 +73,25 @@ export class GuideFeed {
 
   /** The command after `after`: at once when there is one, else when one
    *  comes, else the current one after `waitMs`. An `after` ahead of the
-   *  feed is from before a daemon restart and gets the current one. */
-  next(after: number, waitMs = GUIDE_WAIT_MS): Promise<GuideCommand> {
+   *  feed is from before a daemon restart and gets the current one.
+   *  `gone` ends a wait whose app went away: it no longer counts as there. */
+  next(after: number, waitMs = GUIDE_WAIT_MS, gone?: AbortSignal): Promise<GuideCommand> {
     this.waitedAt = this.now()
     if (after !== this.cmd.seq) return Promise.resolve(this.cmd)
     return new Promise((resolve) => {
-      const done = () => {
+      const end = () => {
         clearTimeout(timer)
         this.waiters.delete(done)
-        this.waitedAt = this.now()
         resolve(this.cmd)
+      }
+      const done = () => {
+        this.waitedAt = this.now()
+        end()
       }
       const timer = setTimeout(done, waitMs)
       timer.unref?.()
       this.waiters.add(done)
+      gone?.addEventListener("abort", end, { once: true })
     })
   }
 
