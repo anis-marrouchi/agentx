@@ -126,7 +126,9 @@ final class CharacterHost {
             }
             let mouse = pointerSource()
             let pointer = screen.frame.contains(mouse) ? (x: Double(mouse.x), y: Double(mouse.y - visible.minY)) : nil
-            let held = bubbleFrame?.contains(mouse) ?? false
+            // The gap its tail fills counts as the bubble, so a pointer a
+            // little under a button does not send both away.
+            let held = bubbleFrame?.insetBy(dx: 0, dy: -PillPlacement.tail).contains(mouse) ?? false
             frame = sim.step(to: ProcessInfo.processInfo.systemUptime,
                              CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held,
                                                 home: home, range: range))

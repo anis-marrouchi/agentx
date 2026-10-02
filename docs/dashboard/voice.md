@@ -206,7 +206,7 @@ In `agentx.json` it is the agent's `presence.palette`. The app picks up a change
 
 ### The character
 
-The orb can be shown as a character instead: the same orb, grown into a small round creature in the agent's [palette](#orb-palettes), with two eyes. It hovers just above the bottom edge of the screen, above the Dock, and shows what the assistant is doing. The orb stays the default; the character is a choice.
+The orb can be shown as a character instead: the same orb, grown into a small round creature in the agent's [palette](#orb-palettes), with two eyes. It hovers just above the bottom edge of the screen, above the Dock, and shows what the assistant is doing. The pill becomes its speech bubble: it sits just above the character, with a small tail pointing at it. The orb stays the default; the character is a choice.
 
 ![The character in its nine states, in the lagoon palette on a light background and the sunrise palette on a dark one: idle, noticing you, listening with rings beside it, a nod with stars, working with half-closed eyes and three dots, speaking, dozing, an agent calling, and waiting with a question mark](/screenshots/voice/character-states.png)
 
@@ -240,16 +240,20 @@ In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A c
 Good to know:
 
 - **It never interrupts:** it takes no clicks and no keys. A click where it hovers goes to the window behind it.
-- **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left.
-- **The pill stays:** the pill still shows the agent's name and the words. While the character shows, the pill has no orb of its own.
+- **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it.
+- **The pill is its speech bubble:** the pill shows the agent's name, the words, the answer and the call buttons as before, attached to the character. It has no orb of its own, and it appears and hides by the same rules as the pill: only while listening or answering, unless **Show floating pill** is ticked.
+- **It waits while you use the bubble:** while the pointer is on the bubble, the character stays where it is, so you can click a button or read the answer.
+- **The bubble can't be dragged:** it stays with the character. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
 - **Colour:** it wears the palette of the agent that is answering, amber while notifications are held and red when something went wrong, like the orb.
 - **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked in the AgentX menu, it is a still picture that changes between states and stays in its place.
-- **Where it rests:** above the bottom edge of the screen with the menu bar, near the bottom-right corner, beside the place the pill appears.
+- **Where it rests:** above the bottom edge of the screen with the menu bar, near the bottom-right corner, under the right end of its bubble.
 
 ### Move the pill
 
 1. **Mac:** press anywhere on the pill (the orb and the words too) and drag it where you want it.
 2. Let go. The pill stays there, and it comes back to the same place the next time the app starts.
+
+While the [character](#the-character) shows, the pill is its speech bubble and can't be dragged.
 
 If the pill was on a screen that is no longer connected, it comes back in the bottom-right corner of your main screen. To put it back in the corner yourself:
 
@@ -324,7 +328,7 @@ To hear a voice before you keep it:
 | **Stop every voice** | Silences everything spoken. Default **Command–Option–.** | `voice.hotkeys.stop` |
 | **Smart paste** | Reshapes the clipboard, then pastes. Default **Command–Option–V** | `voice.hotkeys.paste` |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
-| **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen. Default **Orb** | `voice.look` |
+| **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
 | **Tallest answer** | How tall the answer grows before it scrolls, 120 to 800 points | `voice.card.maxHeight` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |
