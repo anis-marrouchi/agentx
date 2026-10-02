@@ -2,6 +2,33 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.98.0](https://github.com/anis-marrouchi/agentx/compare/v0.97.0...v0.98.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** play mode moves with a crouch, a soft landing and eased walks ([#532](https://github.com/anis-marrouchi/agentx/issues/532)) ([db58fa0](https://github.com/anis-marrouchi/agentx/commit/db58fa001124ffea00b43f12c9e7935a3a16ebe1))
+
+
+### Bug Fixes
+
+* **requests:** a hand-off to another agent does not report to the first agent's chat ([#481](https://github.com/anis-marrouchi/agentx/issues/481)) ([#544](https://github.com/anis-marrouchi/agentx/issues/544)) ([e2927f8](https://github.com/anis-marrouchi/agentx/commit/e2927f835383be965294c37a71e5711d12623bcc))
+* **voice:** a moved piece carries its ink, not a box of page ([#538](https://github.com/anis-marrouchi/agentx/issues/538)) ([48777c3](https://github.com/anis-marrouchi/agentx/commit/48777c35a2d4d538fe43bfb616dcc1ff2f850448))
+
+## [0.97.0](https://github.com/anis-marrouchi/agentx/compare/v0.96.1...v0.97.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** a different play each time, with kick, stomp and carry ([#529](https://github.com/anis-marrouchi/agentx/issues/529)) ([320c133](https://github.com/anis-marrouchi/agentx/commit/320c1338eb851c12b24b0bee368d0c763d5e4699))
+* **voice:** a look changed in the Terminal shows without a restart ([#520](https://github.com/anis-marrouchi/agentx/issues/520)) ([7d0e789](https://github.com/anis-marrouchi/agentx/commit/7d0e7891cb63e63d8d34c429bcc90b5cefe11f16))
+* **voice:** the character can take a slow stroll when idle ([#531](https://github.com/anis-marrouchi/agentx/issues/531)) ([814de10](https://github.com/anis-marrouchi/agentx/commit/814de1032ab7634e42b509c9e7151ad532cabfdf))
+
+
+### Bug Fixes
+
+* **voice:** a still character shows the arcs of its voice only while it speaks ([1a6d726](https://github.com/anis-marrouchi/agentx/commit/1a6d7264d2eb9e06b27551837c23f0c36ff17cc4))
+
 ## [0.96.1](https://github.com/anis-marrouchi/agentx/compare/v0.96.0...v0.96.1) (2026-10-02)
 
 

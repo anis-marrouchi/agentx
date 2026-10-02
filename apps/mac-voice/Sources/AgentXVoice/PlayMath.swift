@@ -90,6 +90,7 @@ enum PlayMath {
 struct Play {
     typealias P = PlayMath
     typealias M = CharacterMath
+    typealias Mo = PlayMotion
 
     enum Kind { case jump, walk, eat, wipe, kick, stomp, fall, lift, carry, drop, rest }
 
@@ -131,13 +132,16 @@ struct Play {
         self.lines = lines
         self.size = size
         var at = start, now = 0.0
+        /// The seconds of a jump over `points`: its crouch, its time in
+        /// the air and its landing.
+        func leap(_ points: Double) -> Double { Mo.crouch + 0.34 + points / 900 + Mo.landing }
         func add(_ kind: Kind, to: P.Point, _ seconds: Double, line: Int = 0, words: Range<Int> = 0..<0) -> Move {
             Move(kind: kind, from: at, to: to, start: now, duration: seconds, line: line, words: words)
         }
         /// Get to `to` first: a jump, unless it is already there.
         func reach(_ to: P.Point, into list: inout [Move]) {
             guard at != to else { return }
-            let m = add(.jump, to: to, 0.5 + hypot(to.x - at.x, to.y - at.y) / 900)
+            let m = add(.jump, to: to, leap(hypot(to.x - at.x, to.y - at.y)))
             list.append(m); at = to; now = m.end
         }
         var list: [Move] = [], cuts: [P.Cut] = []
@@ -183,8 +187,10 @@ struct Play {
                 let word = lines[i].words[w]
                 reach(P.Point(x: word.rect.x - P.mouth - 4, y: lines[i].rect.midY + P.middle), into: &list)
                 let m = stay(.kick, 0.6, line: i)
-                for (k, letter) in P.letters(of: word).enumerated() {
-                    throwing(letter, line: i, at: m.start + 0.25, v: P.Point(x: 150 + 40 * Double(k), y: -320 - 30 * Double(k % 3)),
+                // The letters leave one after the other, the nearest first.
+                let letters = P.letters(of: word)
+                for (k, letter) in letters.enumerated() {
+                    throwing(letter, line: i, at: m.start + 0.25 + Mo.stagger(k, of: letters.count), v: P.Point(x: 150 + 40 * Double(k), y: -320 - 30 * Double(k % 3)),
                              spin: 4 + Double(k % 3))
                 }
             case .stomp(let i):
@@ -207,7 +213,7 @@ struct Play {
                 let word = lines[i].words[w].rect, home = lines[j].rect
                 reach(P.Point(x: word.x - P.mouth - 4, y: lines[i].rect.midY + P.middle), into: &list)
                 let up = stay(.lift, P.lift, line: i)
-                let m = add(.carry, to: P.Point(x: home.maxX - 4, y: home.y), 0.5 + hypot(home.maxX - 4 - at.x, home.y - at.y) / 900, line: j)
+                let m = add(.carry, to: P.Point(x: home.maxX - 4, y: home.y), leap(hypot(home.maxX - 4 - at.x, home.y - at.y)), line: j)
                 list.append(m); at = m.to; now = m.end
                 let down = stay(.drop, P.lift, line: j)
                 // After the line, or on top of its end when the page stops there.
@@ -228,12 +234,13 @@ struct Play {
         let m = moves[i], p = M.span(t, m.start, m.end)
         var f = Frame(t: t, done: t >= duration)
 
-        f.at = P.Point(x: m.from.x + (m.to.x - m.from.x) * p, y: m.from.y + (m.to.y - m.from.y) * p)
+        let body = body(m, at: t)
+        f.at = P.Point(x: m.from.x + (m.to.x - m.from.x) * body.travel, y: m.from.y + (m.to.y - m.from.y) * body.travel)
         switch m.kind {
         case .jump, .carry:
             // An arc over both ends, kept inside the picture.
             let rise = 30 + hypot(m.to.x - m.from.x, m.to.y - m.from.y) * 0.12
-            f.at.y -= min(rise, max(min(m.from.y, m.to.y) - P.top, 0)) * 4 * p * (1 - p)
+            f.at.y -= min(rise, max(min(m.from.y, m.to.y) - P.top, 0)) * body.air
         // Three hops on the spot.
         case .stomp: f.at.y -= min(22, max(m.from.y - P.top, 0)) * abs(sin(3 * .pi * p))
         // Faster and faster.
@@ -249,10 +256,11 @@ struct Play {
         f.face = before.face + (now.face - before.face) * into
         f.pose = M.blend(before.pose, now.pose, eyes: into, body: into, marks: into)
         switch m.kind {
-        case .walk: f.pose.lift += 3 * into * abs(sin(2 * .pi * t * 2.2))
+        // A step every 50 points, smaller while it starts and stops.
+        case .walk: f.pose.lift += 3 * body.speed * abs(sin(.pi * abs(f.at.x - m.from.x) / 50))
         case .jump, .carry:
-            let air = sin(.pi * p)
-            f.pose.sy *= 1 + 0.12 * air; f.pose.sx *= 1 - 0.08 * air
+            f.pose.sy *= body.sy; f.pose.sx *= body.sx
+            f.pose.lift *= 1 - 0.5 * body.dip
         case .eat:
             let bite = into * (0.5 + 0.5 * sin(2 * .pi * t / P.perLetter))
             f.pose.sy *= 1 - 0.08 * bite; f.pose.sx *= 1 + 0.05 * bite

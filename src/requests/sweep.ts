@@ -54,17 +54,28 @@ export function pickupEnded(store: RequestStore, r: RequestRecord, res: { error?
   return store.needsAttention(r.id, `Could not hand it back to ${r.agentId}: ${res.error}`, now)
 }
 
-/** What the agent is told when the owner says "pick it up again". */
+/** What the agent is told when the owner says "pick it up again", or
+ *  hands the request to it. The chat it was asked in belongs to the agent
+ *  that was asked: another agent may have no way to write there (another
+ *  bot's chat, a voice turn), so it is told to answer in this turn, which
+ *  the request's card shows as the last answer (#481). */
 export function pickupText(r: RequestRecord): string {
+  const first = r.askedAgent && r.askedAgent !== r.agentId ? r.askedAgent : null
+  const asked = `on ${r.channel} (chat ${r.chatId}) on ${new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")} UTC and was not finished.`
+  const report = first
+    ? `That chat is ${first}'s: you may have no way to write there, so do not report in it. Give your report as the answer to this turn: the owner reads it on the request's card. If you have a chat of your own with them, you can report there as well.`
+    : "Report to them in that chat."
   return [
     `[agentx:request-pickup id=${r.id}]`,
-    `The owner asked you to pick this request up again. It was asked on ${r.channel} (chat ${r.chatId}) on ${new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")} UTC and was not finished.`,
+    first
+      ? `The owner handed this request to you. It was asked of ${first} ${asked}`
+      : `The owner asked you to pick this request up again. It was asked ${asked}`,
     "",
     "What they asked:",
     r.text,
     "",
     ...(r.ownerNote && !r.noteSaid ? ["What they say now:", r.ownerNote, ""] : []),
-    `Do the work now. Report to them in that chat. When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
+    `Do the work now. ${report} When it is finished, close it with agentx_request: {action:"done", id:"${r.id}", evidence:"<link>"}. If you will not do it, use decline with the reason.`,
   ].join("\n")
 }
 

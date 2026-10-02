@@ -324,6 +324,8 @@ What happens:
 
 Which lines, which words and in what order change with every play.
 
+It moves like a drawn character, not like a pointer: it crouches before a jump and lands softly, it gets up to speed and slows to a stop when it walks, kicked letters leave one after the other, and what falls bounces once before it lies still.
+
 Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring.
 
 Good to know:
@@ -337,7 +339,7 @@ Good to know:
 - **No text, no play:** if no line of at least two words is found away from the top of the screen, the picture goes again and nothing plays.
 - **Letters are an estimate:** a word's box is cut into equal parts, so a letter can go a little early or late, and a kicked letter can carry a sliver of the one next to it.
 - **On a page with one line of text:** it walks that line and does one thing to it.
-- **Photos and gradients:** on a background that isn't one flat colour, the painted-over patch shows.
+- **Photos and gradients:** on a background that isn't one flat colour, the painted-over patch shows, and a letter or word that moves takes some of the background with it. On a flat colour only the ink moves, so a flying letter does not hide the text it passes.
 - **It has no mouth:** eating shows as letters going at its front, with a small bite squash.
 
 ### Play with the pointer

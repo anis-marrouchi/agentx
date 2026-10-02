@@ -4,7 +4,7 @@ import AppKit
 /// words are gone, the pieces that moved, the cloth, and the character. The context is flipped,
 /// in the picture's points.
 enum PlayDraw {
-    static func draw(_ frame: Play.Frame, in ctx: CGContext, stops: [NSColor], picture: CGImage?, scale: CGFloat) {
+    static func draw(_ frame: Play.Frame, in ctx: CGContext, stops: [NSColor], cutouts: PlayCutouts?) {
         for gone in frame.gone {
             let c = gone.paper
             ctx.setFillColor(CGColor(srgbRed: CGFloat(c >> 16 & 0xFF) / 255, green: CGFloat(c >> 8 & 0xFF) / 255,
@@ -13,7 +13,7 @@ enum PlayDraw {
         }
         for piece in frame.pieces {
             let from = cg(piece.from)
-            guard let part = picture?.cropping(to: from.applying(CGAffineTransform(scaleX: scale, y: scale))) else { continue }
+            guard let part = cutouts?.image(from, paper: piece.paper) else { continue }
             ctx.saveGState()
             ctx.translateBy(x: piece.at.x + from.width / 2, y: piece.at.y + from.height / 2)
             ctx.rotate(by: piece.turn)
@@ -38,6 +38,41 @@ enum PlayDraw {
     }
 
     private static func cg(_ r: PlayMath.Rect) -> CGRect { CGRect(x: r.x, y: r.y, width: r.w, height: r.h) }
+}
+
+/// The pieces of the picture that move, each cut out once: the ink alone,
+/// the page's colour around it left out (`PlayMath.ink`).
+final class PlayCutouts {
+    private let picture: CGImage
+    /// Pixels of the picture per point.
+    private let scale: CGFloat
+    private var made: [[CGFloat]: CGImage] = [:]
+
+    init(picture: CGImage, scale: CGFloat) {
+        self.picture = picture
+        self.scale = scale
+    }
+
+    /// The part of the picture at `from` (points), without its paper.
+    func image(_ from: CGRect, paper: UInt32) -> CGImage? {
+        let key = [from.minX, from.minY, from.width, from.height]
+        if let done = made[key] { return done }
+        guard let part = picture.cropping(to: from.applying(CGAffineTransform(scaleX: scale, y: scale))),
+              let ctx = CGContext(data: nil, width: part.width, height: part.height, bitsPerComponent: 8, bytesPerRow: part.width * 4,
+                                  space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = ctx.data else { return nil }
+        ctx.draw(part, in: CGRect(x: 0, y: 0, width: part.width, height: part.height))
+        let px = data.bindMemory(to: UInt8.self, capacity: part.width * part.height * 4)
+        for i in stride(from: 0, to: part.width * part.height * 4, by: 4) {
+            let a = PlayMath.ink(r: px[i], g: px[i + 1], b: px[i + 2], paper: paper)
+            // Premultiplied: the colour fades with it.
+            for k in 0..<3 { px[i + k] = UInt8(Double(px[i + k]) * a) }
+            px[i + 3] = UInt8(255 * a)
+        }
+        let image = ctx.makeImage()
+        made[key] = image
+        return image
+    }
 }
 
 /// The stage: a frozen picture of the screen laid over everything, with
@@ -157,7 +192,8 @@ private final class PlayView: NSView {
     var shown = Play.Frame()
     var stops = CharacterDraw.stops(tint: Brand.accent, colors: nil)
     /// The picture under it: moved pieces are cut from it.
-    var picture: CGImage?
+    var picture: CGImage? { didSet { cutouts = nil } }
+    private var cutouts: PlayCutouts?
     var onInput: (() -> Void)?
 
     override var isFlipped: Bool { true }
@@ -166,8 +202,10 @@ private final class PlayView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
-        PlayDraw.draw(shown, in: ctx, stops: stops, picture: picture,
-                      scale: CGFloat(picture?.width ?? 0) / max(bounds.width, 1))
+        if cutouts == nil, let picture {
+            cutouts = PlayCutouts(picture: picture, scale: CGFloat(picture.width) / max(bounds.width, 1))
+        }
+        PlayDraw.draw(shown, in: ctx, stops: stops, cutouts: cutouts)
     }
 
     override func keyDown(with event: NSEvent) { onInput?() }
