@@ -250,9 +250,13 @@ final class App: NSObject, NSApplicationDelegate {
                 return
             }
             play.start(picture: picture, on: screen, stops: stops, at: start)
+            let number = play.number
             let asked = ProcessInfo.processInfo.systemUptime
             let lines = await Task.detached { PlayRead.lines(in: picture, size: size) }.value
             Log.info("play: \(lines.count) lines read in \(Int((ProcessInfo.processInfo.systemUptime - asked) * 1000)) ms")
+            // Ended while its text was read, and maybe started again since:
+            // these lines belong to a picture that is gone.
+            guard play.running, play.number == number else { return }
             let steps = PlayMath.demo(lines, width: size.width, height: size.height)
             if steps.isEmpty { play.end("no line of text to play on") }
             else { play.play(Play(lines: lines, steps: steps, start: start)) }

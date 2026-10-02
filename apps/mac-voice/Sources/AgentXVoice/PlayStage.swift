@@ -45,6 +45,9 @@ final class PlayHost {
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var script: Play?
     private var began = 0.0
+    /// Raised by each `start`, so a text read that outlives its play can
+    /// tell that the picture now up is not the one it read.
+    private(set) var number = 0
     /// Told each time a play is over.
     var onEnd: (() -> Void)?
 
@@ -56,6 +59,7 @@ final class PlayHost {
     func start(picture: CGImage, on screen: NSScreen, stops: [NSColor], at foot: PlayMath.Point) {
         guard !running else { return }
         script = nil
+        number += 1
         let panel = PlayWindow(contentRect: screen.frame, styleMask: [.borderless, .nonactivatingPanel],
                                backing: .buffered, defer: false)
         panel.level = .screenSaver
