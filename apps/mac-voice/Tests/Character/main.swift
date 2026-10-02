@@ -251,5 +251,41 @@ _ = shyWalker.step(to: 0, Input(strolls: true, home: home, range: range))
 for i in 1...60 { _ = shyWalker.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), strolls: true, home: home, range: range)) }
 check(shyWalker.x - (home - 20) > 120, "the pointer comes close: it steps aside as before")
 
+// Taken hold of while it is out, and put down somewhere else: the stroll is over.
+var lifted = CharacterSim()
+_ = lifted.step(to: 0, Input(strolls: true, home: home, range: range))
+var tick = 1
+while tick < 110 * 30, abs(lifted.x - home) < 30 { _ = lifted.step(to: Double(tick) / 30, Input(strolls: true, home: home, range: range)); tick += 1 }
+let setDown = 600.0
+for _ in 1...30 {
+    lifted.carry(to: setDown)
+    _ = lifted.step(to: Double(tick) / 30, Input(pointer: (x: setDown, y: 30), held: true, strolls: true, home: setDown, range: range)); tick += 1
+}
+var drift = 0.0
+for _ in 1...(20 * 30) {
+    _ = lifted.step(to: Double(tick) / 30, Input(pointer: (x: 200, y: 400), strolls: true, home: setDown, range: range)); tick += 1
+    drift = max(drift, abs(lifted.x - setDown))
+}
+check(drift < 1, "carried off in the middle of a stroll: it rests where it was put")
+
+// The pointer rests where a long stroll ends, too far from home to count
+// as resting there: it steps aside once and goes home, not back and forth.
+var met = CharacterSim()
+_ = met.step(to: 0, Input(strolls: true, home: home, range: range))
+tick = 1
+while tick < 2000 * 30, abs(met.x - home) < 95 {
+    // A short turn now and then keeps it from dozing.
+    _ = met.step(to: Double(tick) / 30, Input(activity: (tick / 30) % 100 < 3 ? .thinking : .idle, strolls: true, home: home, range: range)); tick += 1
+}
+let resting = met.x + (met.x > home ? 60 : -60)
+var bursts = 0, hadStars = false
+for _ in 1...(25 * 30) {
+    let frame = met.step(to: Double(tick) / 30, Input(pointer: (x: resting, y: 30), strolls: true, home: home, range: range)); tick += 1
+    if !frame.stars.isEmpty && !hadStars { bursts += 1 }
+    hadStars = !frame.stars.isEmpty
+}
+check(abs(resting - home) > CharacterSim.clear && bursts == 1 && abs(met.x - home) < 1,
+      "the pointer where the stroll ends: it steps aside once and goes home")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

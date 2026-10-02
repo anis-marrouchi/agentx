@@ -121,6 +121,9 @@ struct CharacterSim {
             awayUntil = now + Self.awayFor
             restSince = now
             steppedAside = true
+            // The stroll is over: left alone it goes home, not back to
+            // where the pointer met it.
+            strolled = 0; strollTo = 0; strollNext = nil
         } else if now >= awayUntil {
             let taken = input.pointer.map { abs($0.x - input.home) < Self.clear && abs($0.y) < tall } ?? false
             if !taken {
@@ -236,9 +239,11 @@ struct CharacterSim {
         strolled += min(max(strollTo - strolled, -pace), pace)
     }
 
-    /// Carried by the pointer (#502): it is where it is put, at once.
+    /// Carried by the pointer (#502): it is where it is put, at once, and
+    /// a stroll it was on is over.
     mutating func carry(to place: Double) {
         x = place; target = place; speed = 0
+        strolled = 0; strollTo = 0; strollNext = nil
     }
 
     /// The state alone, where it rests: for Reduce Motion, which shows a
