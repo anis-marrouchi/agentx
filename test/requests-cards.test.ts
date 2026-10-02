@@ -209,6 +209,38 @@ describe("deciding on a card", () => {
     expect(store.byLink("run", "t9")?.id).toBe("req-t1")
   })
 
+  it("a hand-off to another agent does not send it to the first agent's chat (#481)", async () => {
+    failed("t1")
+    // A reply, and a hand-off to the agent that was asked: the chat is its own.
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "go on" }, ctx())
+    expect((await sweep())[0].text).toContain("Report to them in that chat.")
+    await handleRequestsPanel("POST", `${P}/handoff`, { id: "req-t1", agentId: "coder" }, ctx())
+    expect((await sweep())[0].text).toContain("Report to them in that chat.")
+    // Another agent: the chat is named as the first agent's, and the card is where the answer is read.
+    await handleRequestsPanel("POST", `${P}/handoff`, { id: "req-t1", agentId: "writer" }, ctx())
+    expect(store.get("req-t1")).toMatchObject({ agentId: "writer", askedAgent: "coder" })
+    const [told] = await sweep()
+    expect(told.agentId).toBe("writer")
+    expect(told.text).toContain("The owner handed this request to you. It was asked of coder on voice (chat mac)")
+    expect(told.text).not.toContain("Report to them in that chat")
+    expect(told.text).toContain("That chat is coder's")
+    expect(told.text).toContain("request's card")
+    expect(told.text).toContain('agentx_request: {action:"done", id:"req-t1"')
+    // The answer of that turn is what the card shows.
+    tracker.taskStarted({ agentId: "writer", channel: "requests", chatId: "req-t1", taskId: "t9", messagePreview: "", at: "", pickup: true } as any)
+    db.prepare("INSERT INTO task_traces VALUES ('t9', 'writer', ?, ?, 'The report is built.')").run(clock + 10, clock + 20)
+    expect((await items())[0].lastAnswer).toMatchObject({ agentId: "writer" })
+    // Handed on again, the first agent is still the one that was asked.
+    await handleRequestsPanel("POST", `${P}/handoff`, { id: "req-t1", agentId: "writer", note: "today please" }, ctx())
+    expect(store.get("req-t1")?.askedAgent).toBe("coder")
+    expect((await sweep())[0].text).toContain("It was asked of coder on")
+    // Back with the agent that was asked: its own chat again.
+    await handleRequestsPanel("POST", `${P}/handoff`, { id: "req-t1", agentId: "coder" }, ctx())
+    const [back] = await sweep()
+    expect(back.text).toContain("Report to them in that chat.")
+    expect(back.text).not.toContain("asked of")
+  })
+
   it("works on a request that is only waiting, and refuses a closed one", async () => {
     failed("t1")
     store.progress("req-t1", clock)
