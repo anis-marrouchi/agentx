@@ -8,8 +8,8 @@ import type { Train } from "./transit"
 import { selKey, type Sel } from "./MapCards"
 
 // Renders a laid-out Network with xyflow. Positions come from
-// transit-layout.ts; this file only draws and forwards clicks. Channels,
-// stations and trains are buttons (keyboard reachable); hop tracks take a
+// transit-layout.ts; this file only draws and forwards clicks. Initiators,
+// channels, stations and trains are buttons (keyboard reachable); hop tracks take a
 // click, and a collapsed route's "+n" is a button on its track.
 
 type Ctx = {
@@ -31,8 +31,24 @@ function dimmed(n: NetNode, ctx: Ctx): boolean {
   return false
 }
 
+function StarterNode({ data }: NodeProps<Node<NodeData>>) {
+  const { n, ctx } = data
+  const sel: Sel = { kind: "starter", id: n.id.slice(3) }
+  return (
+    <button
+      className={`tm-starter is-${n.starterKind}` + (ctx.selected === selKey(sel) ? " is-selected" : "")}
+      onClick={(ev) => { ev.stopPropagation(); ctx.onSelect(sel) }}
+      aria-label={`${n.label}, ${n.sub}: what it started`} title={n.sub}
+    >
+      <span>{n.label}</span>
+      <Handle type="source" position={sides(ctx.orientation)[1]} />
+    </button>
+  )
+}
+
 function ChannelNode({ data }: NodeProps<Node<NodeData>>) {
   const { n, ctx } = data
+  const [tgt, src] = sides(ctx.orientation)
   const sel: Sel = { kind: "channel", id: n.id.slice(3) }
   return (
     <button
@@ -40,8 +56,9 @@ function ChannelNode({ data }: NodeProps<Node<NodeData>>) {
       onClick={(ev) => { ev.stopPropagation(); ctx.onSelect(sel) }}
       aria-label={`${n.label} channel: details`}
     >
+      <Handle type="target" position={tgt} />
       {n.label}
-      <Handle type="source" position={sides(ctx.orientation)[1]} />
+      <Handle type="source" position={src} />
     </button>
   )
 }
@@ -120,11 +137,13 @@ function DistrictNode({ data }: NodeProps<Node<NodeData>>) {
   )
 }
 
-const nodeTypes = { channel: ChannelNode, station: StationNode, trains: GroupNode, terminal: TerminalNode, district: DistrictNode }
+const nodeTypes = { starter: StarterNode, channel: ChannelNode, station: StationNode, trains: GroupNode, terminal: TerminalNode, district: DistrictNode }
 
-/** What clicking a track opens: its hops, or the channel a feeder leaves. */
+/** What clicking a track opens: its hops, or the initiator or channel a
+ *  feeder leaves. */
 function edgeSel(e: NetEdge): Sel | null {
   if (e.hop) return { kind: "hop", from: e.hop.from, to: e.hop.to, lineId: e.lineId }
+  if (e.kind === "feeder" && e.starter) return { kind: "starter", id: e.starter }
   if (e.kind === "feeder" && e.channel) return { kind: "channel", id: e.channel }
   return null
 }

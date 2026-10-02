@@ -87,6 +87,7 @@ import { loadPlugins, type LoadedPlugin } from "@/plugins"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { inboundTaskRaw, recordMeshDispatch } from "@/intent/sources/mesh"
+import { operatorPerson, personOfTurn } from "@/people/people"
 import { setDefaultGovernance } from "@/intent/governance"
 import { canDispatchTo, withinDelegationBudget } from "@/agents/capabilities"
 import { A2AMesh } from "@/a2a/mesh"
@@ -2776,13 +2777,16 @@ export class AgentXDaemon {
     context: { channel?: string; chatId?: string; sender?: string; [k: string]: unknown } | undefined,
     message: unknown,
     senderAgentId?: string,
+    /** The person behind the turn, where the context recorded here is not
+     *  the one the run executes with. */
+    person: string | null = personOfTurn(this.config.people, context)?.id ?? null,
   ): { eventId: string; decidedBy: string } | undefined {
     if (getLedgerMode("mesh") === "off") return undefined
     try {
       const decision = recordMeshDispatch(
         getDefaultLedger(),
         { agentId, senderAgentId, context: context as any },
-        inboundTaskRaw(agentId, senderAgentId, context, message),
+        inboundTaskRaw(agentId, senderAgentId, context, message, person),
         { agentId, outcome: "dispatched", reason: senderAgentId ? `from ${senderAgentId}` : null },
       )
       return decision.outcome === "dispatched"
@@ -6012,6 +6016,9 @@ export class AgentXDaemon {
             agentId,
             { channel: origin, sender: origin === "desktop" ? "Desktop" : "Voice", chatId: `${origin}:${agentId}` },
             message,
+            undefined,
+            // Recorded under the surface it came from; the turn below is the owner's.
+            operatorPerson(this.config.people)?.id ?? null,
           )
           const response = await this.registry.execute({
             agentId,

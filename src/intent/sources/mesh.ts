@@ -51,14 +51,17 @@ export function buildMeshEventInput(
 
 /** The raw row stored for one inbound /task, /ask or /send/agent. The
  *  activity graph reads the initiator back out of it, so every receiver
- *  must store the same shape. */
+ *  must store the same shape. `person` is the person the daemon resolved
+ *  for the turn (null: nobody); the proof for this machine's own surfaces
+ *  is not in the context once stored, so it is written here (#432). */
 export function inboundTaskRaw(
   agentId: string,
   senderAgentId: string | undefined,
   context: unknown,
   message: unknown,
+  person?: string | null,
 ): string {
-  return JSON.stringify({ agentId, senderAgentId, context, message: typeof message === "string" ? message.slice(0, 200) : "" })
+  return JSON.stringify({ agentId, senderAgentId, context, message: typeof message === "string" ? message.slice(0, 200) : "", person })
 }
 
 /** Pass-through policy. Mesh /task always dispatches (validation rejects

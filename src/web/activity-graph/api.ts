@@ -18,6 +18,8 @@ export interface FleetAgent {
 }
 export interface FleetChannel { id: string; label: string; color: string }
 export interface FleetInitiator { id: string; name: string; avatar: string; kind: InitiatorKind }
+/** Who or what started a piece of work: the map's Initiator column (#432). */
+export interface Starter { kind: "person" | "agentx" | "external"; id: string; name: string }
 export interface FleetDispatch {
   id: string
   agentId: string
@@ -42,6 +44,8 @@ export interface FleetDispatch {
   root?: { kind: "human" | "agent"; channel: string; sender?: string; agentId?: string }
   /** A delegation's callback turn: the answer `from` brings back. */
   callback?: { from: string; peer?: string; status: string }
+  /** Absent on rows from a mesh peer that runs an older version. */
+  starter?: Starter
 }
 
 export interface FleetDispatchDetail {
