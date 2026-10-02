@@ -6,7 +6,8 @@ import { AssistantStore } from "./assistant-store"
 import { resolveClient, parseWorkRef, listClients, type BusinessShape } from "@/business/clients"
 import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { createReadStream } from "fs"
-import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, watch, type FSWatcher } from "fs"
+import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, type FSWatcher } from "fs"
+import { watchConfigFile } from "./config-watch"
 import { resolve, dirname, extname, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
@@ -294,7 +295,6 @@ export class AgentXDaemon {
   private sseClients: Set<ServerResponse> = new Set()
   private configPath?: string
   private configWatcher?: FSWatcher
-  private reloadTimer?: ReturnType<typeof setTimeout>
 
   constructor(configPath?: string) {
     const logger = new Logger("agentx")
@@ -1151,7 +1151,6 @@ export class AgentXDaemon {
     this.stopReminders?.()
     this.waTriage?.stop()
 
-    if (this.reloadTimer) clearTimeout(this.reloadTimer)
     if (this.configWatcher) {
       try { this.configWatcher.close() } catch { /* best effort */ }
     }
@@ -1433,12 +1432,8 @@ export class AgentXDaemon {
     const path = this.configPath || resolve(process.cwd(), "agentx.json")
     if (!existsSync(path)) return
     try {
-      this.configWatcher = watch(path, { persistent: false }, (eventType) => {
-        if (eventType !== "change") return
-        if (this.reloadTimer) clearTimeout(this.reloadTimer)
-        this.reloadTimer = setTimeout(() => {
-          this.reload().catch((e) => this.log(`[reload] failed: ${e?.message || e}`))
-        }, 500) // debounce
+      this.configWatcher = watchConfigFile(path, () => {
+        this.reload().catch((e) => this.log(`[reload] failed: ${e?.message || e}`))
       })
       this.log(`  Watching ${path} for config changes`)
     } catch (e: any) {
@@ -2181,6 +2176,9 @@ export class AgentXDaemon {
           }
         })
       }
+      // A peer's own post comes back to the node with the webhook: its
+      // posting logins are ours too, or its agents answer themselves (#522).
+      if (this.mesh) this.github.setPeerPostingLogins(() => this.mesh!.directory().flatMap((p) => p.githubLogins))
       this.github.setProjectRules(this.projectRules)
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
@@ -6447,6 +6445,9 @@ export class AgentXDaemon {
             // when the workflow runs on a different node than the channel
             // adapter (e.g. workflow on macbook, whatsapp on peer-server).
             channels: this.router.getChannelNames(),
+            // The GitHub logins this node posts with, so the peer that
+            // receives the webhook knows an agent's comment as ours (#522).
+            githubLogins: this.github?.postingAccounts() ?? [],
             defaultInputModes: ["text"],
             defaultOutputModes: ["text"],
           })

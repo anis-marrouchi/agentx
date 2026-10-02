@@ -236,7 +236,7 @@ agentx voice look orb         # back to the orb
 agentx voice look             # which one is on now
 ```
 
-In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A change made in the Terminal or in the file shows the next time the app starts.
+In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A change made in the Terminal or in the file shows within a few seconds, while the app runs. The daemon must be running: the app reads the setting from it.
 
 Good to know:
 
@@ -1010,7 +1010,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **No answer text in the pill:** the answer had nothing the voice didn't already say. The pill only grows for a link, a picture, or more text than was spoken. If you closed the pill with **×** or **Esc**, the next answer doesn't open it either; hold **Option–Space** first.
 - **The answer closes too soon or stays too long:** change **Keep the answer open** on the General tab, or run `agentx voice card --timeout <seconds>`.
 - **`agentx voice palette` or `agentx voice card` says a value is refused:** the palette must be one of the seven names, the timeout 0 to 600 seconds and the height 120 to 800 points.
-- **The character doesn't show:** it shows after the app has read its settings. If the app starts before the daemon, as it can when you log in, it shows the orb first and asks again until the daemon answers: at most 30 seconds after the daemon is up. If you set `voice.look` in the Terminal or in `agentx.json`, quit AgentX Voice from its menu and open it again. Run `agentx voice look` to see which one is on.
+- **The character doesn't show:** it shows after the app has read its settings. If the app starts before the daemon, as it can when you log in, it shows the orb first and asks again until the daemon answers: at most 30 seconds after the daemon is up. A change to `voice.look` made in the Terminal or in `agentx.json` shows within a few seconds while the daemon runs. Run `agentx voice look` to see which one is on.
 - **Play on this page is missing, greyed out, or the pill says Allow Screen Recording:** the row shows only while **Play mode** is ticked in the AgentX menu, and is greyed out unless the character is on screen, **Animated orb** is ticked, Reduce Motion is off and the assistant is idle. **Allow Screen Recording** in the pill, or a play on a picture without your windows, means the screen recording permission is missing: switch on **AgentX Voice** in System Settings › Privacy & Security › Screen & System Audio Recording, then quit AgentX Voice from its menu and open it again. See [Play on the page](#play-on-the-page).
 - **The orb doesn't move:** Reduce Motion is on, **Animated orb** is unticked in the AgentX menu, or the microphone permission is missing, so there is no voice level to follow.
 - **Voices talk over something else, or won't stop:** press **Command–Option–.**, or choose **Stop speaking** from the AgentX menu.

@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.96.1](https://github.com/anis-marrouchi/agentx/compare/v0.96.0...v0.96.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **github:** know a peer node's posting account, so an agent does not answer itself ([#523](https://github.com/anis-marrouchi/agentx/issues/523)) ([fb3fbf3](https://github.com/anis-marrouchi/agentx/commit/fb3fbf3bab35f89253d7b8b89475d72912a58d52)), closes [#522](https://github.com/anis-marrouchi/agentx/issues/522)
+
+## [0.96.0](https://github.com/anis-marrouchi/agentx/compare/v0.95.0...v0.96.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** reduce the pill to a draggable orb ([#476](https://github.com/anis-marrouchi/agentx/issues/476)) ([3bbeda2](https://github.com/anis-marrouchi/agentx/commit/3bbeda24b36f2094fa4dee99b245dc6ee6f8d7d2))
+
 ## [0.95.0](https://github.com/anis-marrouchi/agentx/compare/v0.94.1...v0.95.0) (2026-10-02)
 
 
