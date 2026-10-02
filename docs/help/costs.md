@@ -100,6 +100,8 @@ Counting only happens inside an AgentX folder (one with `agentx.json` or `.agent
 
 If your agents use Claude Code with a subscription, the plan has a rolling five-hour and a seven-day limit. Claude Code tells AgentX on every turn how full those windows are. When Claude Code reports a window as **rejected**, AgentX stops starting fresh Claude Code sessions until the window resets, so scheduled jobs do not fail one after another with the same refusal. A conversation that is already open always goes through.
 
+If extra usage is switched on for the account, Claude keeps serving requests after a window is used up. Claude Code says so in the same report, and AgentX does not hold anything while that is the case.
+
 While the hold is on, a scheduled job or an agent-to-agent call fails with a message like this, and the log shows when the hold ends:
 
 ```
