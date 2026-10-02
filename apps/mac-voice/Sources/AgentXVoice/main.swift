@@ -229,15 +229,16 @@ final class App: NSObject, NSApplicationDelegate {
         NSWorkspace.shared.open(url)
     }
 
-    /// Close, Esc or "Hide pill": the pill goes and the voice stops, the
-    /// same stop as ⌘⌥. An open microphone closes without sending. The
-    /// next talk key brings the pill back.
+    /// Close, Esc or "Hide pill": the pill goes, the character with it,
+    /// and the voice stops, the same stop as ⌘⌥. An open microphone closes
+    /// without sending. The next talk key brings them back.
     private func dismissPill() {
         Log.info("pill: dismissed")
         // Closing the pill declines a ringing call and ends one in progress.
         if ringingCall != nil { endRinging { await CallClient.decline($0) } }
         if activeCall != nil { hangUp() }
         panel.dismiss()
+        character.setHidden(true)
         if recorder.isRecording {
             stopPolling()
             _ = recorder.stop()
@@ -245,6 +246,13 @@ final class App: NSObject, NSApplicationDelegate {
             talkCheck = nil
         }
         stopSpeaking()
+    }
+
+    /// The talk key, a call or the menu: a hidden pill may show again,
+    /// and a hidden character is back.
+    private func summonPill() {
+        character.setHidden(false)
+        panel.summon()
     }
 
     /// ⌘⌥V. Everything except the hotkey lives in `agentx paste`.
@@ -334,7 +342,13 @@ final class App: NSObject, NSApplicationDelegate {
         panel.answer.onOpenChat = { [weak self] in self?.openChat() }
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
-        statusMenu.onResetPosition = { [weak self] in self?.panel.resetPosition() }
+        statusMenu.characterVisible = { [weak self] in self?.character.onScreen }
+        statusMenu.onShowCharacter = { [weak self] in self?.summonPill() }
+        // Each does nothing with the other's look.
+        statusMenu.onResetPosition = { [weak self] in
+            self?.panel.resetPosition()
+            self?.character.resetPosition()
+        }
         statusMenu.onAnimatedOrbChanged = { [weak self] on in
             self?.panel.orb.setAnimated(on)
             self?.panel.miniOrbs.setAnimated(on)
@@ -345,7 +359,7 @@ final class App: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.panel.alwaysVisible = on
             // Asking for the pill brings back one that was dismissed.
-            if on { self.panel.summon() }
+            if on { self.summonPill() }
             if !self.busy && !self.recorder.isRecording { self.panel.render(.idle) }
         }
         statusMenu.onTargetChanged = { [weak self] id in
@@ -525,7 +539,7 @@ final class App: NSObject, NSApplicationDelegate {
         stopPolling()
         guard !recorder.isRecording else { return }
         // A dismissed pill comes back with the talk key.
-        panel.summon()
+        summonPill()
         // Option-Space is the door to everything spoken, always: our own
         // answer or step line stops now, and the daemon hushes any talk,
         // lesson or narration, remembering which it was. Even mid-turn —
@@ -888,7 +902,7 @@ final class App: NSObject, NSApplicationDelegate {
         case .ring(let call):
             Log.info("call: \(call.agentId) is calling: \(call.reason)")
             ringingCall = call
-            panel.summon()
+            summonPill()
             panel.showCall(.ringing)
             panel.render(.ringing(CallModel.ringingText(name: statusMenu.name(of: call.agentId), reason: call.reason)))
             ringer.start(sound: state.ringSound)

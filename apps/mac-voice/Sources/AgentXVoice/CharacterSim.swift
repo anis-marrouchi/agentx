@@ -101,7 +101,7 @@ struct CharacterSim {
 
         // The pointer comes close: out of its way. Left alone: back home,
         // unless the pointer is resting there.
-        let near = input.pointer.map { abs($0.x - x) < reach && $0.y < tall } ?? false
+        let near = input.pointer.map { abs($0.x - x) < reach && abs($0.y) < tall } ?? false
         if input.held {
             target = x
             awayUntil = max(awayUntil, now + Self.awayFor)
@@ -111,7 +111,7 @@ struct CharacterSim {
             restSince = now
             steppedAside = true
         } else if now >= awayUntil {
-            let taken = input.pointer.map { abs($0.x - input.home) < Self.clear && $0.y < tall } ?? false
+            let taken = input.pointer.map { abs($0.x - input.home) < Self.clear && abs($0.y) < tall } ?? false
             if !taken {
                 if target != input.home { steppedAside = false }
                 target = min(max(input.home, input.range.lowerBound), input.range.upperBound)
@@ -195,6 +195,11 @@ struct CharacterSim {
 
         return Frame(pose: pose, x: x, face: face, level: input.level, voice: voice, t: t,
                      dots: dots.compactMap { dot(at: now, $0) }, stars: bursts.flatMap { stars(at: now, $0) })
+    }
+
+    /// Carried by the pointer (#502): it is where it is put, at once.
+    mutating func carry(to place: Double) {
+        x = place; target = place; speed = 0
     }
 
     /// The state alone, where it rests: for Reduce Motion, which shows a

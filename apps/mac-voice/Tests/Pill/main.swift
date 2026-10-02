@@ -98,6 +98,33 @@ check(farLeft.x == laptop.minX && farLeft.x + 18 < laptop.minX + 44,
 let saidOpen = PillPlacement.expanded(size: grown, pill: CGRect(origin: said, size: pill), visible: laptop)
 check(saidOpen.above && saidOpen.frame.minY == said.y, "an answer opens upwards: the row stays next to the character")
 
+// --- Where the character rests (#502) ---
+
+// Its body and its bubble above the point under it.
+let room: CGFloat = 78 + PillPlacement.tail + 54
+let atHome = PillPlacement.character(saved: nil, room: room, screens: [laptop, monitor], fallback: laptop)
+check(atHome.place == CGPoint(x: head.x, y: laptop.minY) && atHome.visible == laptop,
+      "never dragged: on the edge above the Dock, under the right end of its bubble")
+check(atHome.ends == laptop.minX + 44...head.x, "and it steps aside between the left end and where it rests")
+let put = CGPoint(x: 600, y: 400)
+check(PillPlacement.character(saved: put, room: room, screens: [laptop, monitor], fallback: laptop).place == put,
+      "a place on screen is kept exactly")
+let onSecond = PillPlacement.character(saved: CGPoint(x: 2600, y: 700), room: room, screens: [laptop, monitor], fallback: laptop)
+check(onSecond.place == CGPoint(x: 2600, y: 700) && onSecond.visible == monitor && onSecond.ends.lowerBound == monitor.minX + 44,
+      "a place on the second monitor is kept, and it steps aside along that screen")
+check(PillPlacement.character(saved: CGPoint(x: 2600, y: 700), room: room, screens: [laptop], fallback: laptop) == atHome,
+      "the monitor unplugged: back to its corner of the main screen")
+check(PillPlacement.character(saved: CGPoint(x: CGFloat.nan, y: 10), room: room, screens: [laptop], fallback: laptop) == atHome,
+      "a nonsense saved place: its corner")
+let topRight = PillPlacement.character(saved: CGPoint(x: 1500, y: 930), room: room, screens: [laptop], fallback: laptop)
+check(topRight.place == CGPoint(x: head.x, y: laptop.maxY - room),
+      "dragged into the top-right corner: kept low enough for its bubble, and no further right than it rests")
+check(PillPlacement.bubble(size: pill, head: CGPoint(x: topRight.place.x, y: topRight.place.y + 78), visible: laptop).y + pill.height == laptop.maxY,
+      "its bubble still fits above it, on screen")
+let bottomLeft = PillPlacement.character(saved: CGPoint(x: -30, y: 60), room: room, screens: [laptop], fallback: laptop)
+check(bottomLeft.place == CGPoint(x: laptop.minX + 44, y: laptop.minY),
+      "under the Dock, past the left edge: lifted above it and pulled in, on the same screen")
+
 // --- "Show floating pill" in the menu ---
 
 check(PillMenu.isChecked(showPill: true, visible: true), "setting on, pill on screen: checked")

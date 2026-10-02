@@ -162,5 +162,30 @@ check(abs(waiting.x - wentTo) < 3, "aside with the pointer on its bubble: it doe
 for i in 361...600 { _ = waiting.step(to: Double(i) / 30, Input(pointer: (x: 200, y: 400), home: home, range: range)) }
 check(abs(waiting.x - home) < 3, "the pointer leaves the bubble: it comes back")
 
+// --- Dragged to a place of its own (#502) ---
+
+// Away from the bottom edge, the pointer can be under it too.
+var high = CharacterSim()
+for i in 1...60 { _ = high.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: -30), home: home, range: range)) }
+check(abs(high.x - home) > 120, "the pointer comes close from below: it steps aside as well")
+var above = CharacterSim()
+for i in 1...60 { _ = above.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: -400), home: home, range: range)) }
+check(abs(above.x - home) < 1, "a pointer far below it, under the same spot: it stays")
+
+// Carried by the pointer: where it is put, with no glide and no fight.
+var taken = CharacterSim()
+_ = taken.step(to: 0, Input(home: home, range: range))
+var followed = true
+for i in 1...60 {
+    let to = home - Double(i) * 8
+    taken.carry(to: to)
+    _ = taken.step(to: Double(i) / 30, Input(pointer: (x: to, y: 30), held: true, home: to, range: range))
+    if abs(taken.x - to) > 0.001 { followed = false }
+}
+check(followed, "dragged: it is under the pointer every frame, and does not step aside from it")
+let putAt = taken.x
+for i in 61...300 { _ = taken.step(to: Double(i) / 30, Input(pointer: (x: 200, y: 400), home: putAt, range: range)) }
+check(abs(taken.x - putAt) < 1, "let go: it rests where it was put")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

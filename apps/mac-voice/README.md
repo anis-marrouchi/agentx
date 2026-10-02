@@ -117,13 +117,17 @@ timer stopped; Reduce Motion, or "Animated orb" off in the menu
 With `voice.look` set to `"character"` (#458), the pill has no orb and the
 character stands in for it (`CharacterHost` in `Character.swift`): the orb grown into a small
 creature in the same palette, in a click-through window of its own above
-the bottom edge of the main screen. A state is a small set of numbers
+the bottom edge of the main screen, or where it was dragged to (#502):
+its window takes the mouse only on its body with ⌘ held, the place is
+kept in UserDefaults `characterPlace` and made safe by
+`PillPlacement.character` (tested in `Tests/Pill`), and it hides and
+comes back with the pill. A state is a small set of numbers
 (`CharacterMath.swift`), so every change is a blend, eyes first and body
 after; `CharacterSim.swift` steps it once a frame (which state, where it is
 along the edge, the trail dots and stars) and `CharacterDraw.swift` draws
 the frame with Core Graphics. Both are free of AppKit windows and tested in
-`Tests/Character`. Reduce Motion or "Animated orb" off stops its timer: a
-still picture per state.
+`Tests/Character`. Reduce Motion or "Animated orb" off stops its frames: a
+still picture per state, and ten checks a second for the ⌘-drag.
 
 Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
 launch and when screens change it is clamped onto a connected screen, and
