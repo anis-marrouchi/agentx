@@ -447,7 +447,9 @@ final class App: NSObject, NSApplicationDelegate {
         // shortcuts until the app was restarted. And keep reading once it
         // has answered (#482): a change made in the Terminal or in
         // agentx.json shows without a restart. Not during a play, which
-        // has put the character away.
+        // has put the character away, and not while the microphone is
+        // open: applying registers the shortcuts again, and the release
+        // of a held talk key would be lost. The next read applies it.
         Task { @MainActor in
             var failures = 0
             while true {
@@ -459,7 +461,8 @@ final class App: NSObject, NSApplicationDelegate {
                     continue
                 }
                 failures = 0
-                if !play.running, VoiceSettings.replaces(saved, held: settings, heldWhenAsked: asked) { apply(saved) }
+                if !play.running, !recorder.isRecording,
+                   VoiceSettings.replaces(saved, held: settings, heldWhenAsked: asked) { apply(saved) }
                 try? await Task.sleep(for: .seconds(VoiceSettings.rereadDelay))
             }
         }
