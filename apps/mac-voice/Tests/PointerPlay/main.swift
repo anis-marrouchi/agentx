@@ -162,6 +162,40 @@ for _ in 0..<120 {
 }
 check(bubble.play.games == 0 && abs(bubble.x - home) < 1, "the pointer on its bubble: no game, it stays")
 
+// Its bubble holds something to use (an answer, an error, call buttons):
+// a pointer on its way there starts no game, so the bubble stays put.
+var (full, fullT) = rested()
+var fullFar = 0.0
+for _ in 0..<Int(20 * fps) {
+    fullT += 1 / fps
+    _ = full.step(to: fullT, Input(pointer: (home + 150 + 20 * sin(fullT * 9), 120), shows: true, plays: true, home: home, range: range))
+    fullFar = max(fullFar, abs(full.x - home))
+}
+check(full.play.games == 0 && fullFar < 1, "its bubble holds something to use: no game, it stays")
+
+// The same in the middle of a game: the game is over.
+var (filled, cutT, _) = game(after: 0)
+check(filled.play.game != nil, "(a game is on)")
+cutT += 1 / fps
+_ = filled.step(to: cutT, Input(pointer: (home + 150, 120), shows: true, plays: true, home: home, range: range))
+check(filled.play.game == nil, "its bubble fills in the middle of a game: the game is over")
+
+// A button pressed while it works and still down after is no click: it
+// moves as with the button up.
+func afterWork(down: Bool) -> [Double] {
+    var (sim, t) = rested()
+    var lifts: [Double] = []
+    for i in 0..<Int(4 * fps) {
+        t += 1 / fps
+        let f = sim.step(to: t, Input(activity: i < 30 ? .thinking : .idle, pointer: (home + 150, 60), plays: true,
+                                      down: down && i >= 20, home: home, range: range))
+        lifts.append(f.pose.lift)
+    }
+    return lifts
+}
+check(zip(afterWork(down: true), afterWork(down: false)).allSatisfy { abs($0 - $1) < 0.01 },
+      "a button held since it worked gives no hop")
+
 // Nothing snaps in any game.
 var worst = (lift: 0.0, stretch: 0.0, x: 0.0)
 for n in 0..<12 {

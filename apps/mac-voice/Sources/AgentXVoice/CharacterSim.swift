@@ -23,6 +23,9 @@ struct CharacterSim {
         /// `voice.stroll`: with nothing to do, it takes a slow stroll
         /// beside where it rests now and then (#482).
         var strolls = false
+        /// Its bubble holds something to use (an answer, an error, the
+        /// call buttons): no game, so the bubble waits for the hand.
+        var shows = false
         /// "Play mode" is ticked: idle, it plays with the pointer (#505).
         var plays = false
         /// The mouse button is down.
@@ -122,10 +125,10 @@ struct CharacterSim {
         let near = input.pointer.map { abs($0.x - x) < reach && abs($0.y) < tall } ?? false
         // Idle with play mode on, a game with the pointer comes first.
         var game = PointerPlay.Out()
-        if input.plays && !input.held && mood == .idle && input.activity == .idle {
+        if input.plays && !input.held && !input.shows && mood == .idle && input.activity == .idle {
             game = play.step(now, dt, x: x, pointer: input.pointer, down: input.down, range: input.range)
         } else {
-            play.stop(now)
+            play.stop(now, down: input.down)
         }
         if input.held {
             target = x

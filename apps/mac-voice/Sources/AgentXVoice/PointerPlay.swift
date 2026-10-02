@@ -111,9 +111,11 @@ struct PointerPlay {
         return out
     }
 
-    /// The assistant has work, or play is off: no game, and none at once after.
-    mutating func stop(_ now: Double) {
+    /// The assistant has work, or play is off: no game, and none at once
+    /// after. The button is still followed, so one held through it is no click.
+    mutating func stop(_ now: Double, down: Bool) {
         if game != nil { end(now) }
+        self.down = down
         jolted = nil
         seen = nil
     }

@@ -355,6 +355,8 @@ Good to know:
 
 - **It takes no clicks:** a click where it is still goes to the window behind it. It only sees that the button went down.
 - **Work comes first:** a game stops when the assistant listens, thinks, speaks or rings, and when the pointer is on its bubble or leaves its screen.
+- **A bubble with something to use stays put:** while the bubble shows an answer, an error or the call buttons, no game starts and a click gives no jump, so the bubble does not move away from your hand.
+- **The empty bubble plays too:** with **Show floating pill** ticked, the bubble that only reads "hold ⌥space" goes with the character in a game. If it moves away as you reach for it, wait for the game to end, or untick **Play mode**.
 - **Along one edge:** it does not climb windows or walk on text here. It follows the pointer only left and right.
 - **The same games in the same order** each time the app starts.
 - **No play** with **Reduce motion** on, **Animated orb** unticked, or a sleeping character: the pointer has to come close to wake it first.

@@ -44,6 +44,8 @@ final class CharacterHost {
     /// bubble is, or nil while it is hidden. Set by the app.
     var bubble: ((NSPoint, NSRect) -> NSRect?)?
     private var bubbleFrame: NSRect?
+    /// Its bubble holds something to use: no play with the pointer then.
+    var bubbleShows: (() -> Bool)?
 
     /// Where it was dragged to: the point under it. Nil: its corner.
     private var place = Config.characterPlace
@@ -221,7 +223,7 @@ final class CharacterHost {
                 || (NSEvent.modifierFlags.contains(.command) && window.frame.contains(mouse))
             frame = sim.step(to: ProcessInfo.processInfo.systemUptime,
                              CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, strolls: strolls,
-                                                plays: Config.playMode, down: NSEvent.pressedMouseButtons & 1 != 0,
+                                                shows: bubbleShows?() ?? false, plays: Config.playMode, down: NSEvent.pressedMouseButtons & 1 != 0,
                                                 home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: (rest.y - Self.ground).rounded())

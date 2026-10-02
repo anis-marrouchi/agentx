@@ -392,6 +392,7 @@ final class App: NSObject, NSApplicationDelegate {
             panel.attach(head: head, visible: visible)
             return panel.isVisible ? panel.frame : nil
         }
+        character.bubbleShows = { [weak self] in self?.panel.holdsSomething ?? false }
         panel.onLook = { [weak self] state, tint, colors in
             self?.character.show(state.activity, tint: tint, colors: colors)
             // The assistant has something to show: play gives way.
