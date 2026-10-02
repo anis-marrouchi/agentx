@@ -97,7 +97,7 @@ It refreshes every 30 seconds. Opened without a connection, it shows what was la
 
 A machine's key lasts 90 days. After that, invite again.
 
-Every invite, pairing, approval, refusal, sign-in and removal is written to `.agentx/members-log.jsonl`, one line per event, with the person and the machine. Lines older than 90 days are dropped; `members.logRetentionDays` in `agentx.json` changes that. Only you, the owner, can read it: it sits next to `agentx.json` and is never served.
+Every invite, pairing, approval, refusal, sign-in and removal, and every message a person sent to an agent they may not reach, is written to `.agentx/members-log.jsonl`, one line per event, with the person and the machine. Lines older than 90 days are dropped; `members.logRetentionDays` in `agentx.json` changes that. Only you, the owner, can read it: it sits next to `agentx.json` and is never served.
 
 ## Check it worked
 

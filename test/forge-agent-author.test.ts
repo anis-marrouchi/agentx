@@ -425,7 +425,7 @@ describe("GitLab adapter", () => {
 describe("router replies name their agent, so the adapter signs them", () => {
   it("passes the agent id on mesh replies and on error replies", async () => {
     const adapter: any = { name: "github", send: vi.fn(async () => "1"), react: vi.fn(), sendTyping: vi.fn() }
-    const router = new MessageRouter({ getAgent: () => undefined } as any, { channels: {} } as any, undefined, () => {})
+    const router = new MessageRouter({ getAgent: () => undefined, refusalFor: () => null } as any, { channels: {} } as any, undefined, () => {})
     const sendTask = vi.fn(async () => "Checked the head.")
     router.setMesh({
       directory: () => [{ peer: "peer-one", peerUrl: "u", healthy: true, skills: [{ id: "reviewer-agent", name: "reviewer-agent" }], channels: [] }],

@@ -169,7 +169,7 @@ import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import type { DelegationManager } from "@/a2a/delegation"
-import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -2701,6 +2701,10 @@ export class AgentXDaemon {
   ): DelegationGateResult {
     const hint = callerHintFrom(req, body)
     const caller = resolveCallerTurn(hint, this.registry)
+    // People permissions (#379): work a limited person started stops here,
+    // whichever way the hop would have run.
+    const limited = hopRefusal(target.callee, caller, this.registry, this.syncWaits)
+    if (limited) return { refused: limited }
     if (!target.peer && this.registry.getAgent(target.callee)) {
       const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
       if (why) return { refused: why }
@@ -2716,7 +2720,7 @@ export class AgentXDaemon {
         ...(caller ? { root: rootInitiatorOf(caller.context, caller.agentId) } : {}),
         onStart: (id) => {
           runId = id
-          if (caller?.taskId) this.syncWaits.begin(caller.taskId, id)
+          if (caller?.taskId) this.syncWaits.begin(caller.taskId, id, chainRootOf(caller, this.syncWaits))
         },
         end: () => { if (runId) this.syncWaits.end(runId) },
       },
@@ -6063,6 +6067,11 @@ export class AgentXDaemon {
             this.json(res, 400, { error: "Missing: peer, message" })
             return
           }
+          // People permissions (#379), before every way out of this node:
+          // the peer cannot check a person's limit. With no agent named
+          // the peer picks one, so the peer's name stands for it.
+          const limited = hopRefusal(String(body.agent || body.peer), resolveCallerTurn(callerHintFrom(req, body), this.registry), this.registry, this.syncWaits)
+          if (limited) { this.json(res, 409, { error: limited }); return }
           // A host this node joined as a guest (#380): the message runs
           // as a turn of the host's agent inside the grant, and only the
           // answer comes back. No streaming, no callback: one request.

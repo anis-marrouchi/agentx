@@ -40,6 +40,20 @@ function memberStore(): MemberStore {
 }
 const collect = (v: string, prev: string[] = []): string[] => [...prev, v]
 
+/** A typed agent id that is not an agent of this machine: a typo leaves the
+ *  person able to reach nothing. An agent on another node is a valid entry,
+ *  and not known here, so this warns instead of refusing. */
+function warnUnknownAgents(ids: string[]): void {
+  let known: string[] = []
+  try { known = Object.keys(loadDaemonConfig().agents) } catch { return }
+  const unknown = ids.filter((id) => !known.includes(id))
+  if (!unknown.length) return
+  console.log(chalk.yellow(`  ! not an agent on this machine: ${unknown.join(", ")}. Agents here: ${known.join(", ") || "none"}.`))
+  console.log(chalk.yellow("    Keep it only if it runs on another node; a mistyped id reaches nothing."))
+}
+
+const NO_OWNER_LIMIT = "An owner reaches every agent and cannot be limited. Change the role first if that is what you want."
+
 async function mutate(change: (list: any[]) => string): Promise<void> {
   let summary = ""
   const r = await applyConfigMutation((c: any) => {
@@ -97,21 +111,25 @@ people
   .action(async (id: string, opts: { name: string; role: string; identity: string[]; agent: string[] }) => {
     await mutate((list) => {
       if (list.some((p: any) => p?.id === id)) throw new Error(`"${id}" is already listed. Add an identity with \`agentx people link ${id} <channel:id>\`.`)
+      if (opts.role === "owner" && opts.agent.length) throw new Error(NO_OWNER_LIMIT)
       list.push({ id, name: opts.name, role: opts.role, identities: opts.identity, agents: opts.agent })
       return `added ${id} (${opts.role})${opts.agent.length ? `, may reach ${opts.agent.join(", ")}` : ""}`
     })
+    warnUnknownAgents(opts.agent)
   })
 
 people
   .command("allow <id> <agents...>")
   .description("limit a person to these agents (ids, space-separated). \"all\" lifts the limit")
   .action(async (id: string, agents: string[]) => {
+    const lift = agents.length === 1 && agents[0].toLowerCase() === "all"
     await mutate((list) => {
       const person = find(list, id)
-      const lift = agents.length === 1 && agents[0].toLowerCase() === "all"
+      if (!lift && person.role === "owner") throw new Error(NO_OWNER_LIMIT)
       person.agents = lift ? [] : [...new Set(agents)]
       return lift ? `${id} may reach every agent` : `${id} may reach ${person.agents.join(", ")} and no other agent`
     })
+    if (!lift) warnUnknownAgents(agents)
   })
 
 people

@@ -64,7 +64,7 @@ describe("MessageRouter — mesh forwards resolve their intent decision", () => 
 
     peerHealthy = true
     sendTask = vi.fn(async () => "done")
-    router = new MessageRouter({ getAgent: () => undefined } as any, { channels: {} } as any)
+    router = new MessageRouter({ getAgent: () => undefined, refusalFor: () => null } as any, { channels: {} } as any)
     router.setMesh({
       directory: () => [{ peer: PEER, peerUrl: "u", healthy: peerHealthy, skills: [{ id: AGENT }], channels: [] }],
       findAgentPeer: (id: string) => (id === AGENT ? { peer: PEER, healthy: peerHealthy } : undefined),
