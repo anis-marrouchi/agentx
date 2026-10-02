@@ -148,6 +148,19 @@ let leaving = kicked.filter { $0.t >= hit && $0.t < allGone }.map(\.pieces.count
 check(leaving.first == 1 && leaving == leaving.sorted() && Set(leaving).count > 2 && kicked.first { $0.t >= hit }!.pieces[0].from == P.letters(of: page[1].words[2])[0],
       "the letters leave one after the other, the nearest first")
 check(kicked.last!.pieces.map(\.from) == P.letters(of: page[1].words[2]), "the pieces are the letters of that word")
+// Only the ink of a piece moves: the page's colour around it is left
+// out, or a flying letter would cover the text it passes with a box.
+var tinted = page
+tinted[1].paper = 0x1E1E1E
+let onDark = frames(of: Play(lines: tinted, steps: [.kick(line: 1, word: 2), .carry(line: 1, word: 0, to: 0), .rest(2)], start: start, size: size))
+check(kicked.last!.pieces.allSatisfy { $0.paper == 0xFFFFFF } && onDark.last!.pieces.count == 6 && onDark.last!.pieces.allSatisfy { $0.paper == 0x1E1E1E },
+      "a piece knows the colour of the page it was cut from, kicked or carried")
+check(P.ink(r: 255, g: 255, b: 255, paper: 0xFFFFFF) == 0 && P.ink(r: 250, g: 252, b: 249, paper: 0xFFFFFF) == 0,
+      "the page's colour, and what is next to it, is not drawn")
+check(P.ink(r: 0, g: 0, b: 0, paper: 0xFFFFFF) == 1 && P.ink(r: 230, g: 230, b: 230, paper: 0x1E1E1E) == 1 && P.ink(r: 255, g: 40, b: 255, paper: 0xFFFFFF) == 1,
+      "ink is drawn in full, dark on light, light on dark, or a colour")
+let soft = P.ink(r: 225, g: 225, b: 225, paper: 0xFFFFFF)
+check(soft > 0 && soft < 1, "and the soft edge of a letter in part")
 let air1 = kicked.first { $0.t >= hit + 0.2 }!
 check(air1.pieces.allSatisfy { $0.at.y < 440 && $0.at.x > $0.from.x && $0.turn != 0 }, "they fly up and away, turning")
 check(kicked.last!.pieces.allSatisfy { $0.at.y + 18 <= 900 && $0.at.y + 18 > 880 && $0.at.x >= 0 && $0.at.x + 8 <= 1440 }, "and come to rest on the bottom of the picture")

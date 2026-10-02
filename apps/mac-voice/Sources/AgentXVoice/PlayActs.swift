@@ -5,12 +5,23 @@ import Foundation
 /// different play each time. Numbers only, like `PlayMath`.
 extension PlayMath {
     /// A piece cut out of the picture and drawn somewhere else: which
-    /// part of the picture, where its top-left corner is now, and how far
-    /// it has turned (radians).
+    /// part of the picture, where its top-left corner is now, how far it
+    /// has turned (radians), and the page's colour around it, which is
+    /// left out so only its ink moves.
     struct Piece: Equatable {
         var from: Rect
         var at: Point
         var turn = 0.0
+        var paper: UInt32 = 0xFFFFFF
+    }
+
+    /// How much of a pixel of a moved piece is drawn, 0…1: none of the
+    /// page's colour, all of the ink, and the soft edge of a letter in
+    /// between. Without it a flying letter carries a box of page with it
+    /// and covers the text it passes.
+    static func ink(r: UInt8, g: UInt8, b: UInt8, paper: UInt32) -> Double {
+        let far = max(abs(Int(r) - Int(paper >> 16 & 0xFF)), abs(Int(g) - Int(paper >> 8 & 0xFF)), abs(Int(b) - Int(paper & 0xFF)))
+        return min(max(Double(far - 10) / 40, 0), 1)
     }
 
     /// A piece from the moment it leaves its place. Its place is covered
@@ -111,13 +122,15 @@ extension Play {
             f.gone.append((cover(cut.source), cut.paper))
             switch cut.path {
             case .thrown(let v, let spin, let rise):
-                f.pieces.append(P.thrown(cut.source, v: v, spin: spin, rise: rise, after: f.t - cut.start, width: size.x, height: size.y))
+                var piece = P.thrown(cut.source, v: v, spin: spin, rise: rise, after: f.t - cut.start, width: size.x, height: size.y)
+                piece.paper = cut.paper
+                f.pieces.append(piece)
             case .held(let until, let to):
                 // From its place to above the head, and from there down.
                 let head = P.Point(x: f.at.x - cut.source.w / 2, y: f.at.y - P.top - cut.source.h)
                 let a = f.t < until ? P.Point(x: cut.source.x, y: cut.source.y) : head, b = f.t < until ? head : to
                 let q = M.ease(f.t < until ? M.span(f.t, cut.start, cut.start + P.lift) : M.span(f.t, until, until + P.lift))
-                f.pieces.append(P.Piece(from: cut.source, at: P.Point(x: a.x + (b.x - a.x) * q, y: a.y + (b.y - a.y) * q)))
+                f.pieces.append(P.Piece(from: cut.source, at: P.Point(x: a.x + (b.x - a.x) * q, y: a.y + (b.y - a.y) * q), paper: cut.paper))
             }
         }
     }
