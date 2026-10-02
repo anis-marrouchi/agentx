@@ -276,9 +276,11 @@ export class RequestStore {
     ).run(agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
   }
 
-  /** The owner's note reached the agent in a pick-up, or (false) did not after all. */
+  /** The owner's note reached the agent in a pick-up, or (false) did not
+   *  after all. A reply written since that pick-up was taken is still
+   *  waiting for its own, so it is not marked. */
   setNoteSaid(id: string, said: boolean): void {
-    this.db.prepare("UPDATE requests SET note_said = ? WHERE id = ?").run(said ? 1 : null, id)
+    this.db.prepare(`UPDATE requests SET note_said = ? WHERE id = ?${said ? " AND pickup_at IS NULL" : ""}`).run(said ? 1 : null, id)
   }
 
   /** Requests whose agent has not been told to pick them up yet. Each is

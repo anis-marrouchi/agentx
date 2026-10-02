@@ -143,6 +143,28 @@ describe("deciding on a card", () => {
     expect((await sweep())[0].text).not.toContain("What they say now")
   })
 
+  it("a reply is kept when the agent could not be told, or is not on this node (#480)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy, send me the file." }, ctx())
+    const base = { store, settings, log: () => {}, now: clock }
+    await runRequestsSweep({ ...base, hasAgent: () => true, tellAgent: async () => { throw new Error("socket closed") } })
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", noteSaid: false })
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    await runRequestsSweep({ ...base, hasAgent: () => false, tellAgent: async () => {} })
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", noteSaid: false })
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    expect((await sweep())[0].text).toContain("What they say now:\nSkip the deploy, send me the file.")
+  })
+
+  it("a reply written while the earlier one is being given is still said (#480)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy." }, ctx())
+    await runRequestsSweep({ store, settings, log: () => {}, now: clock, hasAgent: () => true, tellAgent: async () => {
+      await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Send it today." }, ctx())
+    } })
+    expect((await sweep())[0].text).toContain("What they say now:\nSend it today.")
+  })
+
   it("a hand-off gives it to another agent, who is told and can be seen on the card", async () => {
     failed("t1")
     expect((await handleRequestsPanel("POST", `${P}/handoff`, { id: "req-t1", agentId: "nobody" }, ctx())).status).toBe(400)
