@@ -4,6 +4,7 @@ import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import chalk from "chalk"
 import { existsSync, readFileSync } from "fs"
 import { restartCommand } from "./daemon-restart"
+import { lastBoot, statusBlock, stoppedBlock, type StatusService } from "./daemon-status"
 
 // --- agentx daemon: start/stop/status/logs ---
 
@@ -246,15 +247,23 @@ daemon
       const url = `http://${host || "127.0.0.1"}:${port}/health`
       const res = await fetch(url, { signal: AbortSignal.timeout(3000) })
       const data = await res.json() as any
+      // What keeps it running (launchd / systemd). Best effort: an older
+      // daemon or a refused call only drops the Service line.
+      let service: StatusService = {}
+      try {
+        const r = await fetch(`http://${host || "127.0.0.1"}:${port}/daemon/restart`, { signal: AbortSignal.timeout(3000) })
+        if (r.ok) { const d = await r.json() as any; service = { service: d.service, selfRestart: d.selfRestart } }
+      } catch { /* no Service line */ }
 
       if (opts.json) {
-        console.log(JSON.stringify(data, null, 2))
+        console.log(JSON.stringify({ ...data, ...service }, null, 2))
         return
       }
 
       console.log()
       console.log(chalk.bold(`  ${data.node.name}`) + chalk.dim(` (${data.node.id})`))
       console.log(chalk.green("  Status: running") + chalk.dim(` — uptime ${formatDuration(data.uptime)}`))
+      for (const line of statusBlock(data, service, Date.now(), Intl.DateTimeFormat().resolvedOptions().timeZone)) console.log(`  ${line}`)
       console.log()
 
       // Agents
@@ -292,8 +301,20 @@ daemon
       console.log()
     } catch (e: any) {
       if (e.cause?.code === "ECONNREFUSED" || e.name === "TimeoutError") {
-        console.log(chalk.red("  Daemon is not running"))
-        console.log(chalk.dim("  Start with: agentx daemon start"))
+        // Nothing answers: say so, with the last start this folder recorded.
+        const { resolve } = await import("path")
+        const boot = lastBoot(resolve(process.cwd(), ".agentx"))
+        let nodeId = "unknown"
+        try { nodeId = loadDaemonConfig(opts.config).node.id } catch { /* the block still says stopped */ }
+        const answered = e.name === "TimeoutError" ? "timeout" : "refused"
+        if (opts.json) {
+          console.log(JSON.stringify({ status: answered === "timeout" ? "not answering" : "stopped", node: { id: nodeId }, lastBoot: boot }, null, 2))
+          return
+        }
+        const [head, ...rest] = stoppedBlock(nodeId, boot, Date.now(), Intl.DateTimeFormat().resolvedOptions().timeZone, answered)
+        console.log(chalk.red(`  ${head}`))
+        for (const line of rest) console.log(`  ${line}`)
+        if (answered === "refused") console.log(chalk.dim("  Start with: agentx daemon start"))
       } else {
         // No running daemon — show config info
         try {

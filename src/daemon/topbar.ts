@@ -109,6 +109,15 @@ export const TOPBAR_CSS = `
   color:var(--ax-muted);flex-shrink:0}
 .ax-topbar__right .ax-mono{color:var(--ax-text-2)}
 
+/* Running build: version, commit, running since; warns when the code on
+ * disk has moved on. */
+.ax-build{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.ax-build[hidden]{display:none}
+/* Two short lines, so the tabs keep their room on a laptop screen. */
+.ax-build__lines{display:flex;flex-direction:column;font-size:10px;line-height:1.3}
+.ax-build__stale{color:var(--ax-warn,var(--ax-accent));border:1px solid currentColor;
+  border-radius:4px;padding:1px 6px}
+
 /* Mesh selector */
 .ax-mesh-sel{position:relative;display:inline-flex;align-items:center;gap:6px;
   padding:4px 10px;border:1px solid var(--ax-border-2);border-radius:4px;
@@ -307,12 +316,64 @@ export const TOPBAR_SCRIPT = `<script>
   // (instead of proxying to the selected peer), got a 404, and silently
   // fell back to blank-graph state — looking like a "new workflow".
   wirePeerProxy();
-  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); /* wirePeerProxy already ran */ }
+  // Which build the daemon is running and since when, on every page; says
+  // so when the code on disk is newer. Asked again every minute, so a
+  // rebuild or a restart shows without a reload.
+  function wireBuild(){
+    var el = document.querySelector('.ax-build');
+    if (!el || el.dataset.wired) return; el.dataset.wired = '1';
+    function span(cls, text){ var s = document.createElement('span'); if (cls) s.className = cls; s.textContent = text; return s; }
+    function load(){
+      fetch('/api/node/build').then(function(r){ return r.ok ? r.json() : null; }).then(function(b){
+        if (!b || !b.version) return;
+        el.textContent = '';
+        var lines = span('ax-build__lines', '');
+        lines.appendChild(span('ax-mono', b.version + (b.commit ? ' · ' + b.commit : '')));
+        var d = b.startedAt ? new Date(b.startedAt) : null;
+        if (d && !isNaN(d.getTime())) {
+          lines.appendChild(span('', 'since ' + d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })));
+        }
+        el.appendChild(lines);
+        if (b.diskNewer) {
+          var w = span('ax-build__stale', 'restart pending');
+          w.setAttribute('role', 'status');
+          el.appendChild(w);
+        }
+        el.title = (b.diskNewer
+          ? 'The code on disk is newer than the running daemon. Restart the daemon to load it.'
+          : 'The build the daemon is running, and when it started.') + (b.node ? ' Node: ' + b.node : '');
+        el.hidden = false;
+      }).catch(function(){});
+    }
+    load();
+    setInterval(load, 60000);
+  }
+  function wire(){ wireHostRewrite(); wireTheme(); wireMesh(); wireBuild(); /* wirePeerProxy already ran */ }
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', wire);
   } else { wire(); }
 })();
 </script>`
+
+/**
+ * What the header shows of the daemon's GET /health (served to the page as
+ * GET /api/node/build). The dashboard is its own process, so its own build
+ * and start time would be the wrong answer.
+ */
+export function headerBuild(health: any): { node: string | null; version: string | null; commit: string | null; startedAt: string | null; diskNewer: boolean } {
+  const text = (v: unknown) => (typeof v === "string" && v ? v : null)
+  return {
+    node: text(health?.node?.id),
+    version: text(health?.version),
+    commit: text(health?.commit),
+    startedAt: text(health?.startedAt),
+    diskNewer: health?.build?.newer === true,
+  }
+}
+
+/** Where the page script (wireBuild) puts the daemon's build. Empty and
+ *  hidden until the daemon has answered. */
+export const BUILD_PILL = '<span class="ax-build" hidden></span>'
 
 /**
  * Render the topbar element. Caller places this at the start of <body>.
@@ -420,6 +481,7 @@ export function renderTopbar(opts: TopbarOpts): string {
   </div>
   <div class="ax-topbar__right">
     ${opts.rightExtras || ""}
+    ${BUILD_PILL}
     ${meshSelector}
     <div class="ax-theme-switch" role="tablist" aria-label="Theme">
       <button data-theme-opt="dark">Dark</button>

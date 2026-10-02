@@ -73,6 +73,7 @@ const shots = [
   // app and home folder, which a screenshot must not publish.
   { name: "doctor/tab", path: "/admin/health", wait: '[data-tab="doctor"]', steps: [{ click: '[data-tab="doctor"]' }, { wait: ".ax-obs__doctor-group" }], clipBefore: ".ax-obs__doctor-group + .ax-obs__doctor-group" },
   { name: "health/routing", path: "/admin/health", wait: '[data-tab="routing"]', steps: [{ click: '[data-tab="routing"]' }] },
+  { name: "live/running-build", path: "/live", wait: ".ax-build", clipTo: ".ax-topbar__right" },
   // Last: the scripted reply takes a minute, so later shots would show it running.
   { name: "live/running-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--update" }] },
 ]
@@ -172,6 +173,11 @@ try {
       await evaluate("window.scrollTo(0, 0)")
       const top = await evaluate(`document.querySelector(${JSON.stringify(shot.clipBefore)}).getBoundingClientRect().top`)
       params.clip = { x: 0, y: 0, width: 1440, height: Math.min(Math.floor(top) - 8, 900), scale: 1 }
+    }
+    // Only one element, with a little room around it.
+    if (shot.clipTo) {
+      const r = await evaluate(`(() => { const b = document.querySelector(${JSON.stringify(shot.clipTo)}).getBoundingClientRect(); return { x: b.left, y: b.top, width: b.width, height: b.height } })()`)
+      params.clip = { x: Math.max(0, r.x - 12), y: Math.max(0, r.y - 8), width: r.width + 24, height: r.height + 16, scale: 1 }
     }
     const screenshot = await cdp("Page.captureScreenshot", params)
     const file = resolve(out, `${shot.name}.png`)
