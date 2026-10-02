@@ -17,7 +17,7 @@ If nothing loads, start the dashboard yourself:
 
 ![The top bar and the Live tab](/screenshots/live.png)
 
-The top bar has seven tabs:
+The top bar has eight tabs:
 
 | Tab | What to look for |
 |---|---|
@@ -25,6 +25,7 @@ The top bar has seven tabs:
 | [Operations](./operations.md) | Work across connected machines |
 | [Monitor](./monitor.md) | What needs a person and what agents can handle |
 | [Approvals](./approvals.md) | Decisions waiting for your yes or no |
+| [People](./people.md) | Who is connected, their machines and what they asked for |
 | [Activity](./activity.md) | What ran and the decisions it recorded |
 | [Workflows](./workflows.md) | Saved automations and the editor |
 | [Settings](./settings.md) | Agents, channels, schedules, and connections |
@@ -39,7 +40,7 @@ To open the dashboard through your own web address, see [Open the dashboard thro
 
 ## Check it worked
 
-1. **Browser:** open `http://127.0.0.1:4202/live`. The top bar shows the seven tabs.
+1. **Browser:** open `http://127.0.0.1:4202/live`. The top bar shows the eight tabs.
 2. Your agents appear on **Live**. If they do, the dashboard can reach the daemon.
 
 ## If something is wrong

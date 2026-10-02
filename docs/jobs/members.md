@@ -93,6 +93,12 @@ It refreshes every 30 seconds. Opened without a connection, it shows what was la
 
 ## Manage machines
 
+In the dashboard, open the [People](../dashboard/people.md) tab and click the teammate: every machine of theirs is listed with its state, the address it paired from, and its first and last use. **End access** on a line ends that machine at once.
+
+![The People tab with a teammate open: their machines, each with an End access button](/screenshots/people/person.png)
+
+The same from a terminal:
+
 | Command | What it does |
 |---|---|
 | `agentx people devices` | Every paired machine: person, name, state, where it paired from, first and last use. `agentx people devices sara` for one person. |
@@ -105,9 +111,9 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 ## Check it worked
 
-1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`.
+1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`. The **People** tab of the dashboard shows it as **Active** too.
 2. **Their browser:** **My work** shows a request they made on their channel, with the right state.
-3. **Their browser:** opening `https://<your computer>/` or `/app` shows nothing of yours: only `/member` answers.
+3. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers.
 4. **The access rule holds:** a port other than 443 does not answer the teammate. The daemon (18800) and the dashboard (4202) listen on your own computer only, so they refuse a teammate even with no rule at all and prove nothing here. Open a test port for a minute instead.
 
    **Terminal (yours):** serve an empty folder on port 8099, and confirm it answers on your Tailscale address:

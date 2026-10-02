@@ -9,7 +9,7 @@
 // Nothing here is page-specific — callers pass in { activeTab, subtitle,
 // subheader? } and compose their own <main> below.
 
-export type TopbarTab = "monitor" | "activity" | "live" | "mesh" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox" | "projects" | "approvals"
+export type TopbarTab = "monitor" | "activity" | "live" | "mesh" | "boards" | "admin" | "graph" | "glossary" | "workflows" | "health" | "cost" | "wiki" | "procedures" | "inbox" | "projects" | "approvals" | "people"
 
 export interface TopbarPeer {
   /** Stable id: primary node id, or URL for configured daemons */
@@ -391,6 +391,7 @@ export function renderTopbar(opts: TopbarOpts): string {
         { id: "mesh", label: "Operations", href: "/mesh" },
         { id: "monitor", label: "Monitor", href: "/monitor" },
         { id: "approvals", label: "Approvals", href: "/approvals" },
+        { id: "people", label: "People", href: "/people" },
         { id: "activity", label: "Activity", href: "/activity" },
         { id: "workflows", label: "Workflows", href: "/workflows" },
         { id: "admin", label: "Settings", href: "/admin" },

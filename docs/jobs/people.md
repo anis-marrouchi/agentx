@@ -49,6 +49,8 @@ A listed teammate can also get a small window of their own, **My work**, that sh
 
 ## See what a person asked for
 
+In the dashboard, the [People](../dashboard/people.md) tab lists everyone; click a person to see their requests, their latest tasks and the machines they paired. From a terminal:
+
 1. **Terminal:** run `agentx people show sara`.
 2. You see the person, their open requests if you use them, and their latest tasks with the time, channel, agent and first words. GitLab and WhatsApp tasks appear in the same list.
 
