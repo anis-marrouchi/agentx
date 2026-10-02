@@ -61,7 +61,7 @@ import type { DecisionCard } from "@/approvals/cards"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
-import { OPERATOR_HEADER, isOperatorTurn, loadOperatorKey, operatorContext, operatorKeyMatches } from "@/requests/operator"
+import { OPERATOR_HEADER, isOperatorTurn, loadOperatorKey, operatorContext, operatorKeyMatches, operatorVouch, peerVouches } from "@/requests/operator"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
 import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
@@ -3169,7 +3169,15 @@ export class AgentXDaemon {
     if (!context || typeof context !== "object" || isOperatorTurn(context)) return
     const channel = String((context as Record<string, unknown>).channel ?? "").toLowerCase().split("@")[0]
     if (!OPERATOR_CHANNELS.has(channel)) return
-    if (operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER])) operatorContext(context)
+    if (operatorKeyMatches(this.operatorKey, req.headers[OPERATOR_HEADER])) { operatorContext(context); return }
+    // A peer that checked its own operator key vouches for the owner
+    // (#407): believed only with one of this node's peer tokens.
+    if (peerVouches(req.headers, this.config.mesh.peers.map((p) => p.token ?? ""))) operatorContext(context)
+  }
+
+  /** On a forward to a peer: did the owner's surface show this node's key? */
+  private operatorVouchFor(context: unknown, req: IncomingMessage): boolean {
+    return operatorVouch(context, req.headers, this.operatorKey, OPERATOR_CHANNELS)
   }
 
   /** What the guest-mesh routes need from the daemon (guests/daemon-api.ts). */
@@ -6086,6 +6094,10 @@ export class AgentXDaemon {
             return
           }
 
+          // The owner's surface showed this node's key on the forward:
+          // vouch for them to the peer (#407). Any other caller gets none.
+          const vouchOwner = this.operatorVouchFor(body.context, req)
+
           // Streaming pass-through: forward the peer's `/task` SSE to the
           // caller verbatim. Used by the jort-wiki Laravel proxy so the
           // browser sees the orchestrator's text/thinking/tool events
@@ -6115,7 +6127,7 @@ export class AgentXDaemon {
                 body.peer as string,
                 body.message as string,
                 body.agent as string | undefined,
-                { context: body.context as any, signal: callerGone.signal },
+                { context: body.context as any, signal: callerGone.signal, vouchOwner },
               )) {
                 writeSse(ev.event, ev.data)
               }
@@ -6204,6 +6216,7 @@ export class AgentXDaemon {
               let text: string
               try {
                 text = await mesh.sendTask(peerName, body.message as string, targetAgent, {
+                  vouchOwner,
                   context: meshContext,
                   senderAgentId: meshSender,
                 })
@@ -6235,7 +6248,7 @@ export class AgentXDaemon {
             body.peer as string,
             body.message as string,
             body.agent as string | undefined,
-            { context: meshContext, senderAgentId: meshSender },
+            { context: meshContext, senderAgentId: meshSender, vouchOwner },
           )
           this.json(res, 200, { response: result })
           break
