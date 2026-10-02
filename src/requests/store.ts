@@ -48,6 +48,8 @@ export interface RequestRecord {
   closeReason: string | null
   /** What the owner last wrote on it (a reply, or a note with a hand-off). */
   ownerNote: string | null
+  /** That note was given to the agent in a pick-up: it is not said again. */
+  noteSaid: boolean
 }
 
 export const TEXT_MAX = 4000
@@ -90,7 +92,7 @@ export function ensureRequestTables(db: Database.Database): void {
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
-  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"]]) {
+  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -113,7 +115,7 @@ function toRecord(r: any): RequestRecord {
     agentId: r.agent_id, text: r.text, createdAt: r.created_at, updatedAt: r.updated_at,
     attentionReason: r.attention_reason ?? null, notifiedAt: r.notified_at ?? null,
     question: r.question ?? null, closedAt: r.closed_at ?? null,
-    evidence: r.evidence ?? null, closeReason: r.close_reason ?? null, ownerNote: r.owner_note ?? null,
+    evidence: r.evidence ?? null, closeReason: r.close_reason ?? null, ownerNote: r.owner_note ?? null, noteSaid: !!r.note_said,
   }
 }
 
@@ -269,9 +271,16 @@ export class RequestStore {
   handOff(id: string, agentId: string, note: string, now: number): boolean {
     return this.db.prepare(
       `UPDATE requests SET agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
-         question = NULL, pickup_at = ?, owner_note = ?
+         question = NULL, pickup_at = ?, owner_note = ?, note_said = NULL
        WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
     ).run(agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
+  }
+
+  /** The owner's note reached the agent in a pick-up, or (false) did not
+   *  after all. A reply written since that pick-up was taken is still
+   *  waiting for its own, so it is not marked. */
+  setNoteSaid(id: string, said: boolean): void {
+    this.db.prepare(`UPDATE requests SET note_said = ? WHERE id = ?${said ? " AND pickup_at IS NULL" : ""}`).run(said ? 1 : null, id)
   }
 
   /** Requests whose agent has not been told to pick them up yet. Each is

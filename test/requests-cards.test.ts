@@ -5,7 +5,7 @@ import path from "path"
 import Database from "better-sqlite3"
 import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
-import { runRequestsSweep, pickupText } from "../src/requests/sweep"
+import { runRequestsSweep, pickupText, pickupEnded } from "../src/requests/sweep"
 import { plain, requestCard, summarize } from "../src/requests/card-view"
 import { handleRequestsPanel } from "../src/daemon/requests-panel"
 import { REQUESTS_SCRIPT } from "../src/daemon/ui/pages/approvals-requests"
@@ -109,6 +109,60 @@ describe("deciding on a card", () => {
     expect(turns[0].agentId).toBe("coder")
     expect(turns[0].text).toContain("What they say now:\nSkip the deploy, send me the file.")
     expect(await sweep()).toEqual([])
+  })
+
+  it("a reply is said once: a later pick-up without words does not repeat it (#480)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy, send me the file." }, ctx())
+    expect((await sweep())[0].text).toContain("What they say now:")
+    expect(store.needsAttention("req-t1", "No activity for 24 h", clock)).toBe(true)
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    const turns = await sweep()
+    expect(turns).toHaveLength(1)
+    expect(turns[0].text).not.toContain("What they say now")
+    expect(turns[0].text).not.toContain("Skip the deploy")
+    // The card still shows it.
+    expect((await items())[0].ownerNoteHtml).toContain("Skip the deploy")
+    // New words are said again, once.
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Send it today." }, ctx())
+    expect((await sweep())[0].text).toContain("What they say now:\nSend it today.")
+  })
+
+  it("a reply the agent never read is said on the next pick-up (#480)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy, send me the file." }, ctx())
+    const sent: any[] = []
+    await runRequestsSweep({ store, settings, log: () => {}, now: clock, hasAgent: () => true, tellAgent: async (_a, _t, r) => { sent.push(r) } })
+    // The turn could not start.
+    expect(pickupEnded(store, sent[0], { error: "rate limited" }, clock)).toBe(true)
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    expect((await sweep())[0].text).toContain("What they say now:\nSkip the deploy, send me the file.")
+    // Read this time: a later pick-up without words leaves it out.
+    store.needsAttention("req-t1", "No activity for 24 h", clock)
+    store.requestPickup("req-t1", clock)
+    expect((await sweep())[0].text).not.toContain("What they say now")
+  })
+
+  it("a reply is kept when the agent could not be told, or is not on this node (#480)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy, send me the file." }, ctx())
+    const base = { store, settings, log: () => {}, now: clock }
+    await runRequestsSweep({ ...base, hasAgent: () => true, tellAgent: async () => { throw new Error("socket closed") } })
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", noteSaid: false })
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    await runRequestsSweep({ ...base, hasAgent: () => false, tellAgent: async () => {} })
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", noteSaid: false })
+    expect(store.requestPickup("req-t1", clock)).toBe(true)
+    expect((await sweep())[0].text).toContain("What they say now:\nSkip the deploy, send me the file.")
+  })
+
+  it("a reply written while the earlier one is being given is still said (#480)", async () => {
+    failed("t1")
+    await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Skip the deploy." }, ctx())
+    await runRequestsSweep({ store, settings, log: () => {}, now: clock, hasAgent: () => true, tellAgent: async () => {
+      await handleRequestsPanel("POST", `${P}/reply`, { id: "req-t1", text: "Send it today." }, ctx())
+    } })
+    expect((await sweep())[0].text).toContain("What they say now:\nSend it today.")
   })
 
   it("a hand-off gives it to another agent, who is told and can be seen on the card", async () => {
