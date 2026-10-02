@@ -84,6 +84,26 @@ describe("provider signal", () => {
     expect(preflightQuotaGate(false, T0 + 10_000)).toBeNull()
   })
 
+  it("does not hold while extra usage still serves a used-up window", () => {
+    recordRateLimitEvent(rl("rejected", { utilization: 1, overageStatus: "allowed", isUsingOverage: true }), T0)
+    expect(activeProviderHold(T0 + 60_000)).toBeNull()
+    expect(preflightQuotaGate(false, T0 + 60_000)).toBeNull()
+    expect(getClaudeCodeUsage(T0 + 60_000).provider[0]).toMatchObject({ status: "rejected", usingOverage: true })
+  })
+
+  it("reads extra usage from overageStatus when isUsingOverage is missing", () => {
+    for (const overageStatus of ["allowed", "allowed_warning"]) {
+      clearDispatchHistory()
+      recordRateLimitEvent(rl("rejected", { overageStatus }), T0)
+      expect(preflightQuotaGate(false, T0 + 60_000)).toBeNull()
+    }
+  })
+
+  it("holds when extra usage is used up or off", () => {
+    recordRateLimitEvent(rl("rejected", { overageStatus: "rejected", isUsingOverage: false }), T0)
+    expect(preflightQuotaGate(false, T0 + 60_000)?.reason).toBe("provider_rate_limit")
+  })
+
   it("holds for a bounded time when rejected comes without a reset time", () => {
     recordRateLimitEvent({ type: "rate_limit_event", rate_limit_info: { status: "rejected", rateLimitType: "seven_day" } }, T0)
     expect(preflightQuotaGate(false, T0 + 14 * 60_000)?.reason).toBe("provider_rate_limit")
