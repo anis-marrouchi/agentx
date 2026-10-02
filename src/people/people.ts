@@ -28,6 +28,14 @@ export interface Person {
   identities: string[]
   /** The agents this person may reach. Empty: every agent (#379). */
   agents?: string[]
+  /** Tools and skills this person's turns may not use (#379). */
+  deny?: PersonDeny
+}
+
+/** One list per level of control. A further level is a new key. */
+export interface PersonDeny {
+  tools?: string[]
+  skills?: string[]
 }
 
 /** The person a turn is stamped with. `role` is set only on a turn this
@@ -152,4 +160,38 @@ export function refusedPerson(people: Person[], agentId: string, ctx: InitiatorC
 /** The note alone. */
 export function personRefusal(people: Person[], agentId: string, ctx: InitiatorContext | undefined | null): string | null {
   return refusedPerson(people, agentId, ctx)?.note ?? null
+}
+
+// ── Permissions: per tool and per skill (#379) ───────────────────────────
+//
+// A listed person may be denied named tools and skills. Same rules as the
+// per-agent limit: open by default, never an owner, and it follows the
+// person through a delegation (the root's person id). Unlike a refused
+// agent, the turn still runs: the limit is a hard one, enforced on every
+// tool call by a per-run hook (guard/person-limits), not an instruction.
+
+/** The limits one run carries to the hook. */
+export interface PersonLimits {
+  personId: string
+  name: string
+  tools: string[]
+  skills: string[]
+}
+
+/** Case-insensitive name match; `*` stands for any run of characters. */
+export function nameMatches(pattern: string, name: string): boolean {
+  const re = pattern.trim().split("*").map((s) => s.replace(/[.+?^${}()|[\]\\]/g, "\\$&")).join(".*")
+  return new RegExp(`^${re}$`, "i").test(name.trim())
+}
+
+/** The limits a turn runs under, or null when it has none. */
+export function personLimitsOf(people: Person[], ctx: InitiatorContext | undefined | null): PersonLimits | null {
+  const ref = personOfTurn(people, ctx)
+  if (!ref) return null
+  const person = people.find((p) => p.id === ref.id)
+  if (!person || person.role === "owner") return null
+  const tools = person.deny?.tools ?? []
+  const skills = person.deny?.skills ?? []
+  if (!tools.length && !skills.length) return null
+  return { personId: person.id, name: person.name, tools: [...tools], skills: [...skills] }
 }

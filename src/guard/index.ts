@@ -39,4 +39,8 @@ export {
   checkAutonomyPayload, setAutonomyHookPort, autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks,
 } from "./autonomy-enforce"
 export type { AutonomyBlock } from "./autonomy-enforce"
+export {
+  checkPersonLimitPayload, registerPersonLimits, clearPersonLimits, withPersonLimitHook, personLimitsUnsupported,
+} from "./person-limits"
+export type { PersonLimitBlock } from "./person-limits"
 export type { GuardServiceResult } from "./service"

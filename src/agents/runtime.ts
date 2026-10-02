@@ -32,6 +32,8 @@ import { TurnDeadlineExceeded, TurnInterrupted } from "./claude-process-factory"
 import { effectiveMcpConfig } from "./codegraph-bootstrap"
 import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonomy"
 import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
+import { clearPersonLimits, personLimitsUnsupported, registerPersonLimits, withPersonLimitHook } from "@/guard/person-limits"
+import type { PersonLimits } from "@/people/people"
 
 // --- Agent execution runtime ---
 // Routes agent tasks to the correct execution tier:
@@ -168,6 +170,10 @@ export interface AgentTask {
    *  (see guard/autonomy-enforce.ts); unset or `act` = the agent's normal
    *  permissions. Tiers that cannot enforce it refuse the task. */
   autonomy?: AutonomyLevel
+  /** The tools and skills the person behind this turn may not use (people,
+   *  #379). Set by the registry; enforced for THIS task only by a per-spawn
+   *  guard hook (guard/person-limits.ts), the same way as `autonomy`. */
+  personLimits?: PersonLimits
   context?: {
     channel?: string
     sender?: string
@@ -2108,18 +2114,28 @@ async function executeClaudeCodePersistent(
   }
 }
 
-/** Autonomy flags for a claude spawn. Restricted tasks always carry a
- *  taskId by the time they get here (executeRestrictedTask assigns one). */
+/** Guard flags for a claude spawn: the autonomy hook and the person-limit
+ *  hook, in one --settings. Guarded tasks always carry a taskId by the time
+ *  they get here (executeRestrictedTask assigns one). */
 function restrictedClaudeArgs(task: AgentTask): { args: string[] } | { error: string } {
-  if (!isRestricted(task.autonomy)) return { args: [] }
-  if (!task.taskId) return { error: `autonomy "${task.autonomy}" requires a task id to enforce` }
-  return autonomyClaudeArgs(task.autonomy, task.agentId, task.taskId)
+  const restrictedLevel = isRestricted(task.autonomy)
+  if (!restrictedLevel && !task.personLimits) return { args: [] }
+  if (!task.taskId) return { error: "a guarded task requires a task id to enforce" }
+  const autonomy = restrictedLevel ? autonomyClaudeArgs(task.autonomy, task.agentId, task.taskId) : { args: [] as string[] }
+  if ("error" in autonomy || !task.personLimits) return autonomy
+  return withPersonLimitHook(autonomy.args, task.taskId, task.agentId)
+}
+
+/** True when a task must run under a per-spawn guard hook. */
+function isGuarded(task: AgentTask): boolean {
+  return isRestricted(task.autonomy) || !!task.personLimits
 }
 
 /**
- * Run a task under a restricted autonomy level (report | propose).
+ * Run a task under a restricted autonomy level (report | propose), or for
+ * a person with tool and skill limits (#379), or both.
  *
- * Always a fresh spawn-per-task claude process carrying the autonomy hook:
+ * Always a fresh spawn-per-task claude process carrying the guard hook:
  * a warm persistent process was spawned without it (and serves other turns
  * of the chat), so reusing it would silently skip enforcement. Session
  * continuity survives through --resume. Tiers that cannot carry the hook
@@ -2134,17 +2150,24 @@ async function executeRestrictedTask(
   onEvent?: (event: any) => void,
   abortSignal?: AbortSignal,
 ): Promise<AgentResponse> {
-  const level = task.autonomy!
-  const unsupported = autonomyUnsupported(level, agent.tier)
-  if (unsupported) return { content: "", error: unsupported, autonomy: level }
-  const taskId = task.taskId || `autonomy-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-  const restricted: AgentTask = { ...task, taskId, message: `${autonomyBrief(level)}\n\n${task.message}` }
-  process.stderr.write(`[claude-autonomy] agent=${task.agentId} level=${level} task=${taskId} via=spawn (persistent process bypassed)\n`)
-  const response = onDelta
-    ? await executeClaudeCodeStreaming(agent, restricted, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
-    : await executeClaudeCode(agent, restricted, historyContext, resumeSessionId, abortSignal)
-  const blocks = takeAutonomyBlocks(taskId)
-  return { ...response, autonomy: level, ...(blocks.length ? { autonomyBlocks: blocks } : {}) }
+  const level = isRestricted(task.autonomy) ? task.autonomy : undefined
+  const unsupported = (level && autonomyUnsupported(level, agent.tier)) || (task.personLimits && personLimitsUnsupported(agent.tier))
+  if (unsupported) return { content: "", error: unsupported, ...(level ? { autonomy: level } : {}) }
+  const taskId = task.taskId || `guarded-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+  const restricted: AgentTask = { ...task, taskId, message: level ? `${autonomyBrief(level)}\n\n${task.message}` : task.message }
+  const why = [level ? `level=${level}` : "", task.personLimits ? `person=${task.personLimits.personId}` : ""].filter(Boolean).join(" ")
+  process.stderr.write(`[claude-guarded] agent=${task.agentId} ${why} task=${taskId} via=spawn (persistent process bypassed)\n`)
+  if (task.personLimits) registerPersonLimits(taskId, task.personLimits)
+  try {
+    const response = onDelta
+      ? await executeClaudeCodeStreaming(agent, restricted, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
+      : await executeClaudeCode(agent, restricted, historyContext, resumeSessionId, abortSignal)
+    if (!level) return response
+    const blocks = takeAutonomyBlocks(taskId)
+    return { ...response, autonomy: level, ...(blocks.length ? { autonomyBlocks: blocks } : {}) }
+  } finally {
+    if (task.personLimits) clearPersonLimits(taskId)
+  }
 }
 
 export async function executeTask(
@@ -2158,7 +2181,7 @@ export async function executeTask(
   abortSignal?: AbortSignal,
   onThinking?: ThinkingCallback,
 ): Promise<AgentResponse> {
-  if (isRestricted(task.autonomy)) {
+  if (isGuarded(task)) {
     return executeRestrictedTask(agent, task, onDelta, historyContext, resumeSessionId, onEvent, abortSignal)
   }
   switch (agent.tier) {

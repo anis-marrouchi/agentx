@@ -15,6 +15,7 @@ Nothing changes until you add someone. With an empty list, what you do on your o
 | role | `owner`, `member` or `guest`. Today the role is a label; only `owner` has an effect (see below). Access rules per role come later. |
 | identities | Where they write from, each as `channel:id`: `gitlab:sara.b`, `github:sara-b`, `telegram:123456789`, `whatsapp:21620123456`. |
 | agents | The agents this person may reach, by id. Empty, the default: every agent. See [Limit which agents a person can reach](#limit-which-agents-a-person-can-reach). |
+| deny | Tools and skills this person's work may not use. Empty, the default: no limit. See [Stop a person using some tools or skills](#stop-a-person-using-some-tools-or-skills). |
 
 Which value to use on each channel:
 
@@ -76,7 +77,33 @@ What the limit does not cover:
 - A request to the daemon's API that does not name the turn it comes from (a script calling `/task` directly) is not tied to a person.
 - The command warns when an id is not an agent on this machine. Check the spelling: a mistyped id leaves the person able to reach nothing.
 - With several nodes, each node reads its own people list. Give a person the same `id` and the same limit on every node they write to.
-- Limits per tool and per skill are not built yet.
+
+## Stop a person using some tools or skills
+
+A **tool** is one thing an agent can do during its work: run a terminal command (`Bash`), fetch a web page (`WebFetch`), or call a connected service such as a mail account (tool names that start with `mcp__`). A **skill** is a packaged set of instructions the agent can load, such as a deploy checklist.
+
+By default a listed person's work can use every tool and skill the agent has. To take some away from one person:
+
+1. **Terminal:** run `agentx people deny sara tools Bash WebFetch`. Sara's work can no longer run terminal commands or fetch web pages, whichever agent does it.
+2. **Terminal:** run `agentx people deny sara skills deploy`. Her work can no longer load the `deploy` skill, and that skill is not offered to the agent for her messages.
+3. Run `agentx people list` to read the result: Sara's line ends with `no tools: Bash, WebFetch · no skills: deploy`.
+4. To lift one level, run `agentx people deny sara tools none` (or `skills none`).
+
+Names match without regard to upper or lower case. A `*` stands for anything: `agentx people deny sara tools "mcp__mail__*"` covers every action of the mail connection. Put a name with `*` in quotes so the terminal leaves it alone.
+
+What happens when the agent reaches for a denied tool or skill:
+
+- The call is blocked before it runs. The agent is told *Sara B may not use Bash here (set by the owner)*, finishes what it can without it, and says in its answer what was not done.
+- The block is written to the guard log (`agentx guard log`) and to `.agentx/members-log.jsonl` with the person and the tool.
+- This is a hard limit, not an instruction: AgentX checks every tool call of that run. If the check cannot be made, for example because the daemon is not reachable, the call is blocked rather than let through.
+
+What the limit does not cover:
+
+- An owner is never limited; `agentx people deny` refuses one.
+- It works on agents of the `claude-code` tier. A message from a limited person to an agent of another tier does not run: the reply is an error that says the limits cannot be enforced on that tier, because it cannot be checked call by call.
+- A limited person's message never goes to your own Claude Code session ([Work from your Claude Code session](/jobs/claude-code-session)), which runs outside the check. It runs as a normal task instead.
+- A hand-off to an agent on another node that carries only the message (an agent-to-agent hand-off that waits for its answer) is refused, since that node could not apply the limit. A message forwarded from a channel carries who wrote it; that node applies its own people list. Give the person the same `id` and the same `deny` on every node they write to.
+- The rest of the list under [Limit which agents a person can reach](#limit-which-agents-a-person-can-reach) applies here too: unknown senders, workflows and scripts calling the API are not tied to a person.
 
 ## Change or remove
 
@@ -99,9 +126,19 @@ When an agent hands work to another agent, or to an agent on another machine, th
 2. **Terminal:** run `agentx people show <your id>`.
 3. The message is in the list of latest tasks, with the channel you used.
 
+To check a tool limit:
+
+1. **Terminal:** run `agentx people deny sara tools Bash` for a test teammate.
+2. From that teammate's account, ask an agent to run a terminal command, such as listing a folder.
+3. The agent answers that it was not allowed to run it.
+4. **Terminal:** run `agentx guard log`. The newest line names the tool and the rule `people.deny`.
+
 ## If something is wrong
 
 - **The task is not in the list:** the sender did not match. Run `agentx people list` and compare the identity with the login, id or number on that channel. On Telegram use the numeric id if the username does not match.
 - **`identity … belongs to both`:** the login or number is already on another person. Run `agentx people unlink <id> <channel:id>` on the first one.
 - **`write it as channel:id`:** the identity has no channel in front. Write `gitlab:sara.b`, not `sara.b`.
 - **Tasks on voice or the dashboard have no person:** two people have the `owner` role. Keep one owner and make the other a `member`.
+- **A denied tool still ran:** the message did not match the person, so no limit applied. Check with `agentx people show <id>` that the task is listed under them. Also check the spelling of the tool: `agentx guard log` shows the exact names agents use.
+- **Every tool call is blocked for a limited person:** the check could not reach the daemon. Run `agentx daemon status` and start the daemon if it is not running.
+- **`level must be one of: tools, skills`:** write `tools` or `skills` right after the person's id.

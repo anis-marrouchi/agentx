@@ -128,7 +128,7 @@ import { bootstrapCodegraphIndexes, effectiveMcpConfig } from "@/agents/codegrap
 import { REMEMBER_SKILL_FILENAME, rememberSkillBody, upgradeRememberSkill } from "@/agents/skills/remember-skill"
 import { HeartbeatManager } from "@/agents/heartbeat"
 import { setupAllWorkspaces } from "@/agents/workspace-setup"
-import { checkPayloadWithConfirmation, checkAutonomyPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
+import { checkPayloadWithConfirmation, checkAutonomyPayload, checkPersonLimitPayload, setAutonomyHookPort, type PreToolUsePayload } from "@/guard"
 import { extractUiDirective } from "@/channels/ui-directive"
 import { MISSING_REFRESH_MS, setMissingVoiceHook, setVoiceLog } from "@/voice/system-voices"
 import { elevenLabsKey, restoreSpokenVoice, siriSayScript } from "@/voice/speaker"
@@ -3467,6 +3467,19 @@ export class AgentXDaemon {
             level: url.searchParams.get("autonomy"),
             taskId: url.searchParams.get("task"),
           })
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(stdout)
+          return
+        }
+        // Per-run person-limit hook (people[].deny, #379). The limits are
+        // looked up by task id here; the hook never carries them.
+        if (url.searchParams.has("person")) {
+          const { stdout, blocked } = checkPersonLimitPayload(payload as PreToolUsePayload, {
+            root: process.cwd(),
+            agentId,
+            taskId: url.searchParams.get("task"),
+          })
+          if (blocked) this.registry.logToolRefusal(blocked.personId, agentId, blocked.skill ? `skill:${blocked.skill}` : blocked.tool)
           res.writeHead(200, { "Content-Type": "application/json" })
           res.end(stdout)
           return
