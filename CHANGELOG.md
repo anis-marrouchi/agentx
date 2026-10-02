@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.85.0](https://github.com/anis-marrouchi/agentx/compare/v0.84.0...v0.85.0) (2026-10-02)
+
+
+### Features
+
+* **teach:** tilt and move steps in draw mode ([#429](https://github.com/anis-marrouchi/agentx/issues/429)) ([12ee9b6](https://github.com/anis-marrouchi/agentx/commit/12ee9b683d0f6c6d21cc9d2efe8f1a043b595a0f))
+
+
+### Bug Fixes
+
+* **members:** take the address the proxy saw, not the first one listed ([#430](https://github.com/anis-marrouchi/agentx/issues/430)) ([303e09a](https://github.com/anis-marrouchi/agentx/commit/303e09a277545f6fd4c0c84808703cff5204a572))
+
 ## [0.84.0](https://github.com/anis-marrouchi/agentx/compare/v0.83.2...v0.84.0) (2026-10-02)
 
 
