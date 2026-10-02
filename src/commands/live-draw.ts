@@ -6,7 +6,7 @@ import { join, resolve } from "path"
 import { promisify } from "util"
 import { loadDaemonConfig } from "@/daemon/config"
 import { HELPER } from "@/computer-use/screen"
-import { PresenceOverlay, presenceLook } from "@/voice/presence"
+import { NO_POINTER, PresenceOverlay, presenceLook } from "@/voice/presence"
 import { createLineModel } from "@/voice/talk-model"
 import { drawLive, type DrawEvent } from "@/teach/draw"
 import { drawSystemPrompt } from "@/teach/draw-plan"
@@ -43,7 +43,7 @@ export async function runLiveDraw(goal: string, opts: { agent?: string; config?:
 
   // Warm the model while the document opens; its first turn waits for it.
   const line = createLineModel({ system: drawSystemPrompt(), model })
-  const presence = new PresenceOverlay(look, HELPER, agentId)
+  const presence = config.voice.pointer ? new PresenceOverlay(look, HELPER, agentId) : NO_POINTER
   const api = new TldrawApi()
   try {
     await ensureTldraw()

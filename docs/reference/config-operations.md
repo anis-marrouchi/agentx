@@ -82,6 +82,7 @@ How agents speak aloud. See [Desktop assistant](/dashboard/voice).
 | `voice.system` | string or map of strings | — | System voice for agents without their own. A name, `"system"` for the OS default, or one per language such as `{ "en": "Samantha", "fr": "Thomas" }`. Unset gives each agent its own. |
 | `voice.locale` | string | `"en"` | Language used when voices are assigned, for example `"fr-FR"`. |
 | `voice.listener` | string | — | What agents call you, for example a first name. Unset means "the user". |
+| `voice.pointer` | boolean | `true` | Draw the agent's pointer and name tag on screen during a lesson. `false` never draws it; a lesson is then spoken only. A plain spoken answer never shows it. |
 
 `meshVoices.<agent>` sets the voice of an agent that runs on another machine, keyed by that agent's id. This machine speaks for it, so the other machine needs no ElevenLabs key. Unset fields come from the agent's card.
 

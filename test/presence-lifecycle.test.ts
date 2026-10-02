@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { PERSIST_MS, PresenceHost } from "../src/daemon/voice-presence"
+import { PresenceHost } from "../src/daemon/voice-presence"
 import { PresenceOverlay, endRecorded, posFile, reapPresence, presenceLook, systemProcesses, type Presence, type ProcessOps } from "../src/voice/presence"
 import { SpeechOut } from "../src/voice/speaking-queue"
 import { Channel, type LineModel } from "../src/voice/talk-model"
@@ -35,12 +35,13 @@ const speech = () => new SpeechOut(async () => null, (() => { throw new Error("n
 describe("PresenceHost: one overlay per agent", () => {
   afterEach(() => vi.useRealTimers())
 
-  it("reuses the agent's overlay across spoken answers and a lesson", () => {
+  const lesson = (host: PresenceHost, agentId = "secretary-agent") => host.lesson(agentId, "open the pulls page", "teach", speech(), () => new IdleModel())
+
+  it("reuses the agent's overlay across lessons", () => {
     const { made, factory } = overlays()
     const host = new PresenceHost(() => agents, () => {}, { overlay: factory })
-    host.showTalk("secretary-agent", "First.", true)
-    host.showTalk("secretary-agent", "Second.", false)
-    host.lesson("secretary-agent", "open the pulls page", "teach", speech(), () => new IdleModel())
+    lesson(host)
+    lesson(host)
     expect(made).toHaveLength(1)
     expect(host.onScreen).toEqual(["secretary-agent"])
   })
@@ -48,26 +49,18 @@ describe("PresenceHost: one overlay per agent", () => {
   it("the lesson's end fades the overlay out", () => {
     const { made, factory } = overlays()
     const host = new PresenceHost(() => agents, () => {}, { overlay: factory })
-    const lesson = host.lesson("secretary-agent", "x", "teach", speech(), () => new IdleModel())
-    lesson.stop("stopped by the listener")
+    const l = lesson(host)
+    expect(host.onScreen).toEqual(["secretary-agent"])
+    l.stop("stopped by the listener")
     expect(made[0].log.slice(-2)).toEqual(["say ", "close"])
     expect(host.onScreen).toEqual([])
   })
 
-  it("an answer without persist goes once heard; with persist, after PERSIST_MS", () => {
-    vi.useFakeTimers()
+  it("with voice.pointer off, a lesson draws nothing", () => {
     const { made, factory } = overlays()
-    const host = new PresenceHost(() => agents, () => {}, { overlay: factory })
-    host.showTalk("secretary-agent", "Three words here.", false)
-    vi.advanceTimersByTime(2_000 + 3 * 400 + 1)
-    expect(made[0].alive).toBe(false)
-
-    host.showTalk("secretary-agent", "Stay.", true)
-    vi.advanceTimersByTime(10_000)
-    expect(made[1].alive).toBe(true)
-    expect(made[1].log).toContain("say ")
-    vi.advanceTimersByTime(PERSIST_MS)
-    expect(made[1].alive).toBe(false)
+    const host = new PresenceHost(() => agents, () => {}, { overlay: factory, voiceSettings: () => ({ pointer: false }) })
+    lesson(host).stop("stopped by the listener")
+    expect(made).toEqual([])
     expect(host.onScreen).toEqual([])
   })
 
@@ -75,11 +68,11 @@ describe("PresenceHost: one overlay per agent", () => {
     vi.useFakeTimers()
     const { made, factory } = overlays()
     const host = new PresenceHost(() => agents, () => {}, { overlay: factory })
-    host.showTalk("secretary-agent", "Stay.", true)
+    lesson(host)
     vi.advanceTimersByTime(45_000)
     expect(made[0].log.filter((l) => l === "ping").length).toBeGreaterThanOrEqual(2)
     made[0].alive = false // idle-exited or crashed
-    host.showTalk("secretary-agent", "Again.", false)
+    lesson(host)
     expect(made).toHaveLength(2)
     host.close()
     expect(made[1].alive).toBe(false)
@@ -88,8 +81,8 @@ describe("PresenceHost: one overlay per agent", () => {
   it("hide and close leave nothing on screen", () => {
     const { made, factory } = overlays()
     const host = new PresenceHost(() => ({ ...agents, "coder-agent": { name: "Coder" } }), () => {}, { overlay: factory })
-    host.showTalk("secretary-agent", "a", true)
-    host.showTalk("coder-agent", "b", true)
+    lesson(host)
+    lesson(host, "coder-agent")
     host.hide("secretary-agent")
     expect(host.onScreen).toEqual(["coder-agent"])
     host.close()

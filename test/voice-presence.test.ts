@@ -70,15 +70,18 @@ describe("PresenceHost.decide", () => {
     vi.useRealTimers()
   })
 
-  it("shows the agent's cursor with the spoken answer, then removes it", async () => {
-    vi.useFakeTimers()
+  // #508: the answer is in the pill or the character's bubble, not here too.
+  it("a talk turn draws no pointer, with or without persist", async () => {
+    process.env.AGENTX_DECISION_SEAT_PRESENCE_MODE = "active"
     const log: string[] = []
-    const host = new PresenceHost(() => agents, () => {}, { overlay: overlayLog(log) })
-    host.showTalk("coder-agent", "Your next meeting is at three.", false)
-    expect(log).toEqual(["Coder park", "Coder say Your next meeting is at three."])
-    await vi.advanceTimersByTimeAsync(10_000)
-    expect(log.at(-1)).toBe("Coder close")
-    vi.useRealTimers()
+    const host = new PresenceHost(() => agents, () => {}, { overlay: overlayLog(log), frontmostApp: async () => null })
+    for (const persist of [0.9, 0.1]) {
+      answers.current = { ...pick("talk", 0.9), persist: { type: "noul", noul: persist } }
+      expect(await host.decide("coder-agent", "what's my next meeting?")).toMatchObject({ mode: "talk", persist: persist > 0.5 })
+      host.hide("coder-agent") // what the daemon does once the answer is ready
+      expect(host.onScreen).toEqual([])
+    }
+    expect(log).toEqual([])
   })
 })
 

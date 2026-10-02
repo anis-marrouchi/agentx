@@ -170,7 +170,6 @@ export class VoiceTalkService {
     this.speech.pause()
     this.heldQueue = !!line
     this.stopSpeakers()
-    this.presence.quiet()
     const narrated = this.narrator.hush()
     this.hushed = live ? null : narrated
     const kind = live ? this.kind(live) : narrated ? "narration" : line ? "queue" : null

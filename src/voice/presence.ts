@@ -54,6 +54,9 @@ export interface Presence {
   readonly alive?: boolean
 }
 
+/** Nothing on screen: what a lesson gets when `voice.pointer` is off. */
+export const NO_POINTER: Presence = { moveTo() {}, say() {}, clear() {}, park() {}, close() {} }
+
 /** The helper fades out and exits after this long with no command, so an
  *  overlay whose owner forgot it cannot stay on screen. Owners that hold
  *  one on purpose ping it well inside this. */
