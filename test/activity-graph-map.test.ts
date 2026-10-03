@@ -460,6 +460,29 @@ describe("hop chains and true origin", () => {
       }
     })
 
+    it("stays clear on the phone when the agent is far to the side of its channel", () => {
+      // Fixed random maps: up to 8 pieces of work over 12 agents, half handed on once or twice.
+      let seed = 1
+      const rnd = (n: number) => { seed = (seed * 1664525 + 1013904223) >>> 0; return Math.floor((seed / 2 ** 32) * n) }
+      const agents = Array.from({ length: 12 }, (_, i) => `a${i}`)
+      for (let m = 0; m < 60; m++) {
+        const map: FleetDispatch[] = []
+        for (let i = 0, n = 1 + rnd(8); i < n; i++) {
+          let from = agents[rnd(12)]
+          map.push(chat(from, ["github", "gitlab", "telegram", "voice", "whatsapp"][rnd(5)], 100 + i * 10, { projectId: `acme/p${rnd(4)}` }))
+          for (let k = 0, hops = rnd(2) ? 1 + rnd(2) : 0; k < hops; k++) {
+            const to = agents.filter((a) => a !== from)[rnd(11)]
+            map.push(ask(to, from, 101 + i * 10 + k, { active: true, resolvedAt: null }))
+            from = to
+          }
+        }
+        for (const orientation of ["horizontal", "vertical"] as const) {
+          const net = layoutNetwork(buildTransit(snapshot(map), map), { ...hOpts, orientation })
+          for (const e of net.edges.filter((x) => x.id.startsWith("fd:"))) expect(touched(map, e.id, orientation).hit, `map ${m}, ${orientation}, ${e.id}`).toEqual([])
+        }
+      }
+    })
+
     it("still draws a real hand-off through the interchange", () => {
       const t = buildTransit(snapshot(ds), ds)
       expect(t.trains.find((x) => x.agentId === "coder-agent")!.route).toEqual(["coder-agent"])

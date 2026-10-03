@@ -332,8 +332,9 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
     // line does not sweep past that station's name on the way.
     const swept = (c: number) => passed.filter((b) => ((b.c0 + b.c1) / 2 - from) * ((b.c0 + b.c1) / 2 - c) < 0).length
     const gaps = passed.flatMap((b) => [b.c0 - STATION_CLEAR - 1 - e.offset, b.c1 + STATION_CLEAR + 1 - e.offset]).filter(free)
-    const c = gaps.sort((a, b) => swept(a) - swept(b) || Math.abs(a - ideal) - Math.abs(b - ideal))[0]
-    if (c !== undefined && !touches({ m0, m1, c })) e.via = { m0, m1, c }
+    // Last resort: level with the target, so the final leg runs straight in.
+    const c = [...gaps.sort((a, b) => swept(a) - swept(b) || Math.abs(a - ideal) - Math.abs(b - ideal)), ...[to].filter(free)].find((g) => !touches({ m0, m1, c: g }))
+    if (c !== undefined) e.via = { m0, m1, c }
   }
 
   if (meshSt.length) {
