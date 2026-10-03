@@ -81,7 +81,7 @@ The page shows, for that person only:
 - **One sentence** at the top: which of their agents is working on their task, and which is free.
 - **Your agents**: one card per agent they use (the agents you allowed them, or else the ones they talked to in the last 7 days). Each says **Working**, **Free** or **Blocked** in words, with a colour and a shape. A card on their own task shows what they asked, when, and where; **Show this request** opens it in place. A card busy with someone else's task says only that, and whether you or someone else started it.
 - **Needs a person**: present only when one of their requests waits on your answer or is stuck, with the question you were asked.
-- **What you sent** in the last 7 days: every turn they started, with its agent, where it was asked and its state (running, finished, waiting on the owner, stopped). A finished request links to what was delivered. A GitLab or GitHub thread is a link.
+- **What you sent** in the last 7 days: every turn they started, with its agent, where it was asked and its state (running, finished, waiting on the owner, stopped). A finished request links to what was delivered. A GitLab or GitHub thread is a link. Below the turns come their requests that no turn of the list stands for: one still open whose turn is older than 7 days, or one closed this week.
 
 ![The My work page: the summary sentence, two agent cards, a question waiting on the owner, and the list of what was sent](/screenshots/members/my-work.png)
 

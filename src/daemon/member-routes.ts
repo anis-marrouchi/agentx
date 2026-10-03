@@ -148,7 +148,11 @@ export async function handleMemberRequest(
     try {
       const ids = agentIdsFor(db, person ?? { id: access.personId }, now)
       agents = agentsOf(db, access.personId, ids, { people: ctx.people(), linkFor: ctx.linkFor })
-    } catch { /* no task_traces yet: no runs to read */ }
+    } catch (err) {
+      // No task_traces yet means no runs to read; anything else is logged.
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/no such table/i.test(msg)) ctx.log?.(`[member] agent cards failed: ${msg}`)
+    }
     return sendJson(res, 200, { ...work, agents })
   }
   return sendJson(res, 404, { error: "not found" })

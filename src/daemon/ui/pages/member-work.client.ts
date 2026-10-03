@@ -12,8 +12,8 @@
 // gets no answer in 15 seconds counts as failed, so a stalled server
 // cannot stop the rounds.
 //
-// workState, ageText, connectionNote, plainPreview, agentLine, sentState
-// and summaryLine come from injectFns.
+// workState, ageText, connectionNote, plainPreview, agentLine, sentState,
+// requestState and summaryLine come from injectFns.
 // No backticks, backslashes or dollar-brace in the script: it sits inside
 // a TS template literal.
 
@@ -110,16 +110,27 @@ export const WORK_SCRIPT = `
       '<p class="for">For <b>' + esc(plainPreview(r.text)) + '</b></p>' +
       '<p class="meta"><span>' + esc(r.agentId) + '</span><span class="moved">' + (r.state === 'waiting_owner' ? 'asked ' : 'stuck ') + ageText(r.updatedAt || r.createdAt, now) + ' ago</span><span>from ' + where(r) + '</span></p></li>';
   }
+  function delivered(ev) {
+    if (!ev) return '';
+    return /^https?:\\/\\//i.test(ev)
+      ? '<p class="note"><a href="' + esc(ev) + '" target="_blank" rel="noopener noreferrer">What was delivered</a></p>'
+      : '<p class="note"><b>What was delivered:</b> ' + esc(ev) + '</p>';
+  }
   function sent(r, now) {
     var st = sentState(r);
-    var ev = r.request && r.request.evidence;
-    var note = ev ? (/^https?:\\/\\//i.test(ev)
-      ? '<p class="note"><a href="' + esc(ev) + '" target="_blank" rel="noopener noreferrer">What was delivered</a></p>'
-      : '<p class="note"><b>What was delivered:</b> ' + esc(ev) + '</p>') : '';
+    var note = delivered(r.request && r.request.evidence);
     var moved = st.tone === 'work' ? 'started ' + ageText(r.startedAt, now) + ' ago' : ageText(r.finishedAt || r.startedAt, now) + ' ago';
     return '<li class="row"><p class="text">' + esc(plainPreview(r.messagePreview)) + '</p>' + note +
       '<p class="meta"><span>' + esc(r.agentId) + '</span>' + (r.where ? '<span>from ' + where(r) + '</span>' : '') + '</p>' +
       '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + moved + '</span></p></li>';
+  }
+  // A request no turn of the list stands for: its turn is older, or it has none.
+  function request(r, now) {
+    var st = requestState(r.state);
+    var note = delivered(r.evidence);
+    return '<li class="row"><p class="text">' + esc(plainPreview(r.text)) + '</p>' + note +
+      '<p class="meta"><span>' + esc(r.agentId) + '</span><span>from ' + where(r) + '</span></p>' +
+      '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + ageText(r.closedAt || r.updatedAt || r.createdAt, now) + ' ago</span></p></li>';
   }
   function show(w, now) {
     var agents = w.agents || [];
@@ -129,7 +140,8 @@ export const WORK_SCRIPT = `
     var asks = w.open.filter(function (r) { return r.state === 'waiting_owner' || r.state === 'needs_attention'; });
     need.hidden = !asks.length;
     document.getElementById('need-list').innerHTML = asks.map(function (r) { return needRow(r, now); }).join('');
-    document.getElementById('sent').innerHTML = w.runs.map(function (r) { return sent(r, now); }).join('') ||
+    document.getElementById('sent').innerHTML = w.runs.map(function (r) { return sent(r, now); }).join('') +
+      (w.other || []).map(function (r) { return request(r, now); }).join('') ||
       '<li class="blank"><p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here as soon as the agent starts on it.</p><p>You see when it is running, when it is finished, and when the agent is free again.</p></li>';
   }
   function loadName() {

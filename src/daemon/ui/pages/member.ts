@@ -13,7 +13,7 @@
 import { AX_TOKENS_CSS } from "../tokens"
 import { injectFns } from "../inject"
 import { formatPairInput } from "./app-pair-logic"
-import { agentLine, connectionNote, plainPreview, sentState, summaryLine } from "./member-logic"
+import { agentLine, connectionNote, plainPreview, requestState, sentState, summaryLine } from "./member-logic"
 import { WORK_SCRIPT } from "./member-work.client"
 import { BASE_CSS, LOCKED_CSS, WAITING_CSS, WORK_CSS } from "./member-styles"
 
@@ -121,7 +121,7 @@ ${bar("Connecting…", `
   <section aria-labelledby="h-sent"><h2 id="h-sent">What you sent <span class="n">(last 7 days)</span></h2><ul id="sent" class="rows"></ul></section>
   <p id="updated" class="foot"></p>
 </main>
-<script>${injectFns({ workState, ageText, connectionNote, plainPreview, agentLine, sentState, summaryLine })}${WORK_SCRIPT}</script>
+<script>${injectFns({ workState, ageText, connectionNote, plainPreview, agentLine, sentState, requestState, summaryLine })}${WORK_SCRIPT}</script>
 </body>
 </html>`
 }

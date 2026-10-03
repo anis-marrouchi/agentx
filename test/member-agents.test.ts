@@ -8,7 +8,7 @@ import { recordTraceEnd, recordTraceStart } from "../src/storage/traces"
 import { RequestStore } from "../src/requests/store"
 import { agentIdsFor, agentsOf } from "../src/members/agents"
 import { workOf } from "../src/members/work"
-import { agentLine, sentState, summaryLine } from "../src/daemon/ui/pages/member-logic"
+import { agentLine, requestState, sentState, summaryLine } from "../src/daemon/ui/pages/member-logic"
 import { renderMemberPage } from "../src/daemon/ui/pages/member"
 import type { Person } from "../src/people/people"
 
@@ -120,9 +120,39 @@ describe("what the person sent", () => {
     expect(w.runs[0].where?.label).toBe("GitLab issue #7 in acme/portal")
     expect(w.runs[0].request?.state).toBe("in_progress")
   })
+
+  it("keeps requests no listed turn stands for: an older turn, or none", () => {
+    const now = Date.now()
+    const store = new RequestStore(db)
+    const ask = (id: string, runId: string, at: number) =>
+      store.addCandidate({ id, runId, channel: "telegram", chatId: "c1", sender: "sara", person: "sara", agentId: "coder", text: id, now: at } as any)
+    turn("t1", "coder", "sara", { at: now - 60_000 })
+    ask("req-new", "t1", now - 60_000)
+    store.progress("req-new", now - 60_000)
+    turn("t2", "coder", "sara", { at: now - 9 * 86_400_000 })
+    ask("req-old", "t2", now - 9 * 86_400_000)
+    store.progress("req-old", now - 9 * 86_400_000, "waiting_other")
+    ask("req-closed", "t-gone", now - 10 * 86_400_000)
+    store.progress("req-closed", now - 10 * 86_400_000)
+    store.close("req-closed", "done", "https://x/1", now - 1000)
+    ask("req-stuck", "t-gone2", now - 9 * 86_400_000)
+    store.progress("req-stuck", now - 9 * 86_400_000)
+    store.needsAttention("req-stuck", "no answer", now - 1000)
+    const w = workOf(db, "sara", { now })
+    expect(w.runs.map((r) => r.request?.id)).toEqual(["req-new"])
+    // "Needs a person" shows req-stuck; the list keeps the other two.
+    expect(w.other.map((r) => r.id)).toEqual(["req-old", "req-closed"])
+  })
 })
 
 describe("the words", () => {
+  it("of a request no turn stands for", () => {
+    expect(requestState("in_progress")).toEqual({ label: "In progress", tone: "work" })
+    expect(requestState("waiting_other")).toEqual({ label: "Waiting on another agent", tone: "wait" })
+    expect(requestState("done")).toEqual({ label: "Finished", tone: "done" })
+    expect(requestState("dropped")).toEqual({ label: "Dropped", tone: "off" })
+  })
+
   it("of a card", () => {
     expect(agentLine({ state: "working", by: "you", text: "fix it" })).toMatchObject({ label: "Working", what: "fix it", by: "you" })
     expect(agentLine({ state: "working", by: "owner", text: null })).toMatchObject({ what: "Busy with someone else's task", by: "the owner" })

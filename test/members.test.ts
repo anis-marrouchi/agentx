@@ -386,7 +386,7 @@ describe("the work page's data", () => {
   })
 
   it("is empty before requests were ever turned on", () => {
-    expect(workOf(db, "sara")).toEqual({ open: [], recent: [], runs: [] })
+    expect(workOf(db, "sara")).toEqual({ open: [], recent: [], runs: [], other: [] })
   })
 })
 

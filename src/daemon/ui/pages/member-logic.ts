@@ -57,6 +57,19 @@ export function sentState(r: { status: string; request?: { state: string } | nul
   return { label: String(r.status || "").replace(/[_-]/g, " "), tone: "off" }
 }
 
+/** How a request no turn in "What you sent" stands for reads there (#443):
+ *  its turn is older than the list, or it has none. */
+export function requestState(state: string): { label: string; tone: string } {
+  if (state === "in_progress") return { label: "In progress", tone: "work" }
+  if (state === "waiting_owner") return { label: "Waiting on the owner", tone: "wait" }
+  if (state === "waiting_other") return { label: "Waiting on another agent", tone: "wait" }
+  if (state === "needs_attention") return { label: "Stuck", tone: "stuck" }
+  if (state === "done") return { label: "Finished", tone: "done" }
+  if (state === "declined") return { label: "Declined", tone: "off" }
+  if (state === "dropped") return { label: "Dropped", tone: "off" }
+  return { label: String(state || "").replace(/_/g, " "), tone: "off" }
+}
+
 /** The one sentence at the top of the work page (#443). */
 export function summaryLine(agents: Array<{ agentId: string; state: string; by: string | null }>, sent: number): string {
   if (!agents.length && !sent) return "Nothing sent yet."
