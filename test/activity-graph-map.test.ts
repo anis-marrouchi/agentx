@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { agentLineOf, buildTransit, headline, lineOf, routeOf } from "../src/web/activity-graph/transit"
-import { layoutNetwork, metroPath, spread } from "../src/web/activity-graph/transit-layout"
+import { crossesBox, layoutNetwork, metroPath, metroPoints, spread } from "../src/web/activity-graph/transit-layout"
 import type { FleetDispatch, FleetSnapshot } from "../src/web/activity-graph/api"
 import { inferProject, mentionedMrs, primaryRef, projectFromChatId, projectFromPreview, refsOf } from "../src/daemon/activity-graph-attribution"
 import { clearForgeCache, fetchForgeStatus, refsToLookUp, type ForgeItem } from "../src/daemon/activity-graph-forge"
@@ -416,6 +416,65 @@ describe("hop chains and true origin", () => {
     it("tags every hop and feeder with its line, so focus can dim the others", () => {
       const net = layoutNetwork(t, opts)
       for (const e of net.edges) expect(e.lineId).toBe(WEB)
+    })
+  })
+
+  describe("feeders past an interchange (#559)", () => {
+    const hOpts = { orientation: "horizontal" as const, showIdle: false, meshAgents: new Set<string>(), agentName: (id: string) => id, allAgents: [] }
+    const github = (agentId: string, at: number) => dispatch({
+      agentId, channelId: "github", initiatorId: "anis", initiatorKind: "github", clientId: "acme", projectId: "acme/api",
+      subject: "acme/api · pull_request:557", inputPreview: "[GitHub acme/api pull_request #557: release]", startedAt: at, active: true, resolvedAt: null,
+    })
+    /** Stations other than its own end that a feeder's drawn path touches. */
+    const touched = (ds: FleetDispatch[], feeder: string, orientation: "horizontal" | "vertical" = "horizontal") => {
+      const net = layoutNetwork(buildTransit(snapshot(ds), ds), { ...hOpts, orientation })
+      const e = net.edges.find((x) => x.id.startsWith(feeder))!
+      const s = net.nodes.find((n) => n.id === e.source)!, t = net.nodes.find((n) => n.id === e.target)!
+      const pts = orientation === "horizontal"
+        ? metroPoints(s.x + s.w, s.y + s.h / 2, t.x, t.y + t.h / 2, orientation, e.offset, e.via)
+        : metroPoints(s.x + s.w / 2, s.y + s.h, t.x + t.w / 2, t.y, orientation, e.offset, e.via)
+      return { edge: e, hit: net.nodes.filter((n) => n.kind === "station" && n.id !== e.target && crossesBox(pts, n)).map((n) => n.id) }
+    }
+    // Voice → Secretary → DevOps is a real hand-off; GitHub → Coder is direct.
+    const ds = [
+      chat("secretary-agent", "voice", 100, { active: true, resolvedAt: null }),
+      ask("devops-agent", "secretary-agent", 200, { active: true, resolvedAt: null }),
+      github("coder-agent", 300),
+    ]
+
+    it("goes straight to the agent that got the work, clear of an interchange that took no part", () => {
+      for (const orientation of ["horizontal", "vertical"] as const) {
+        const { edge, hit } = touched(ds, "fd:github|", orientation)
+        expect(edge.target).toBe("st:coder-agent")
+        expect(hit).toEqual([])
+      }
+    })
+
+    it("stays clear on a busy map, where a channel line is too steep for one 45° leg", () => {
+      const busy = [...ds, ...["a1", "a2", "a3", "a4", "a5", "a6"].flatMap((a, i) => [github(a, 400 + i), chat(a, "telegram", 500 + i)])]
+      for (const orientation of ["horizontal", "vertical"] as const) {
+        const net = layoutNetwork(buildTransit(snapshot(busy), busy), { ...hOpts, orientation })
+        const feeders = net.edges.filter((e) => e.id.startsWith("fd:"))
+        expect(feeders.length).toBeGreaterThan(8)
+        for (const e of feeders) expect(touched(busy, e.id, orientation).hit).toEqual([])
+      }
+    })
+
+    it("still draws a real hand-off through the interchange", () => {
+      const t = buildTransit(snapshot(ds), ds)
+      expect(t.trains.find((x) => x.agentId === "coder-agent")!.route).toEqual(["coder-agent"])
+      const net = layoutNetwork(t, hOpts)
+      expect(net.edges.some((e) => e.id.startsWith("fd:voice|secretary-agent|"))).toBe(true)
+      expect(net.edges.some((e) => e.id.startsWith("ho:secretary-agent|devops-agent|"))).toBe(true)
+      expect(net.edges.some((e) => e.hop?.to === "coder-agent")).toBe(false)
+    })
+
+    it("tells a line through a box from one beside it", () => {
+      const box = { x: 10, y: 10, w: 10, h: 10 }
+      expect(crossesBox([[0, 0], [30, 30]], box)).toBe(true)
+      expect(crossesBox([[0, 0], [30, 0], [30, 30]], box)).toBe(false)
+      expect(crossesBox([[0, 0], [30, 0], [30, 30]], box, 12)).toBe(true)
+      expect(metroPath(0, 0, 100, 0, "horizontal", 0, { m0: 40, m1: 60, c: 10 })).toBe("M 0 0 L 10 0 L 20 10 L 40 10 L 60 10 L 70 10 L 80 0 L 100 0")
     })
   })
 
