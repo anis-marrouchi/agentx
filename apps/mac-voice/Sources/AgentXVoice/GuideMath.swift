@@ -51,11 +51,21 @@ enum GuideMath {
         return away ? .nothing : .hint
     }
 
+    /// What a label needs beyond the width of its words (#569): a text
+    /// field keeps two points clear at each end, and cuts the last letter
+    /// when given the words' width alone.
+    static let labelEnds: CGFloat = 4
+
     /// How wide the bubble is around a caption `words` wide (#566): its
-    /// words and the room at both ends of the row, no wider; never less
-    /// than holds its tail, nor more than the pill, where a long one scrolls.
+    /// label and the room at both ends of the row, no wider; never less
+    /// than holds its tail, nor more than `full`, where a long one scrolls.
     static func bubbleWidth(words: CGFloat, full: CGFloat) -> CGFloat {
-        min(max(words.rounded(.up) + 52, 96), full)
+        min(max(words.rounded(.up) + labelEnds + 52, 96), full)
+    }
+
+    /// Whether words `words` wide show whole in a label `room` wide.
+    static func fits(words: CGFloat, room: CGFloat) -> Bool {
+        words + labelEnds <= room
     }
 
     /// One frame of its way up or down to where it is sent: most of the

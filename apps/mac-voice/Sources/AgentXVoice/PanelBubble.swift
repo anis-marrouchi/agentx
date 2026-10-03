@@ -33,12 +33,13 @@ extension Panel {
         }
     }
 
-    /// The bubble's size: with a caption, as wide as its words, no wider.
+    /// The bubble's size: with a caption, as wide as its words, no wider,
+    /// up to the answer card's width so a sentence shows whole (#569).
     @MainActor
     var bubbleSize: NSSize {
         guard let caption else { return Self.size }
         let words = (caption as NSString).size(withAttributes: [.font: Brand.body()]).width
-        return NSSize(width: GuideMath.bubbleWidth(words: words, full: Self.size.width), height: Self.size.height)
+        return NSSize(width: GuideMath.bubbleWidth(words: words, full: Self.expandedWidth), height: Self.size.height)
     }
 }
 
