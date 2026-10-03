@@ -362,7 +362,7 @@ final class Panel: NSPanel {
             clip.frame.size.width = clipWidth
             // Text that scrolled may fit now, and the other way round.
             marqueeText = ""
-            if !current.isMeta { setText(label.stringValue) }
+            if !current.isMeta || caption != nil { setText(label.stringValue) }
         }
         answer.frame = NSRect(x: 0, y: above ? h : 0, width: Self.expandedWidth, height: answerHeight)
         separator.frame = NSRect(x: 0, y: above ? h - 1 : answerHeight, width: bounds.width, height: 1)
@@ -428,7 +428,7 @@ final class Panel: NSPanel {
         // Growing or collapsing: it catches up on the next frame.
         guard placing == 0 else { return }
         shrink(expanded ? 0 : amount)
-        let shape = PillPlacement.shrunk(Self.size, small: small)
+        let shape = PillPlacement.shrunk(bubbleSize, small: small)
         let size = expanded ? frame.size : shape.size
         let to = NSRect(origin: PillPlacement.bubble(size: size, head: head, visible: visible, reach: shape.reach), size: size)
         guard to != frame else { return }
@@ -573,7 +573,10 @@ final class Panel: NSPanel {
         }
         orb.show(state.orbPhase, tint: tint, colors: colors)
 
-        if state.isMeta, case .caption(let words) = idle {
+        label.font = Brand.body(size: 12)
+        if let words = caption {
+            // In the answer's text size, to be read in a small video.
+            label.font = Brand.body()
             label.textColor = .labelColor
             setText(words)
         } else if state.isMeta {

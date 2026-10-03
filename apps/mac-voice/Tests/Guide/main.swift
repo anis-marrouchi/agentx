@@ -55,5 +55,10 @@ check(G.idle(caption: "Start a run here", away: true) == .caption("Start a run h
 check(G.idle(caption: nil, away: true) == .nothing, "at a stop with no caption, on the way there or in a play, no bubble")
 check(G.idle(caption: "", away: true) == .nothing, "an empty caption is none")
 
+// How wide the bubble is around a caption (#566).
+check(G.bubbleWidth(words: 88.2, full: 284) == 141, "the bubble is as wide as its caption and the room at its ends, no wider")
+check(G.bubbleWidth(words: 12, full: 284) == 96, "a short caption still has a bubble that holds its tail")
+check(G.bubbleWidth(words: 600, full: 284) == 284, "a long one is the pill's width, and scrolls")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")
