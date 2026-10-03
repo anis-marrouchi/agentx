@@ -279,6 +279,8 @@ Good to know:
 
 While the character moves, its bubble is reduced to a small shape with three dots, in the middle above its head, so the character is not carried across the screen under a wide bubble. The dots say the assistant is still there, listening or answering. When the character rests again, the full bubble comes back with its words.
 
+![The character moving to the left with a trail of dots behind it, and above its head a small bubble holding three dots, with a tail pointing down at it](/screenshots/voice/character-bubble-dots.png)
+
 Good to know:
 
 - **Every move counts:** stepping aside, a stroll, a game with the pointer, a drag, and the way to something it shows you and back.
