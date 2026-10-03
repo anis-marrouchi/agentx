@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.102.1](https://github.com/anis-marrouchi/agentx/compare/v0.102.0...v0.102.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **voice:** a guide caption always shows, in the answer's text size, in a bubble as wide as its words ([#567](https://github.com/anis-marrouchi/agentx/issues/567)) ([b506187](https://github.com/anis-marrouchi/agentx/commit/b506187067b6f3121b5ea3cd4d2b55b6087f0bdb)), closes [#566](https://github.com/anis-marrouchi/agentx/issues/566)
+
 ## [0.102.0](https://github.com/anis-marrouchi/agentx/compare/v0.101.2...v0.102.0) (2026-10-03)
 
 
