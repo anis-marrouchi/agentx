@@ -266,13 +266,13 @@ final class App: NSObject, NSApplicationDelegate {
             return
         }
         let stops = character.stops, size = screen.frame.size
-        // No idle bubble while it is away. The picture leaves this app's
-        // windows out, so the character stays where it is meanwhile.
+        // No idle bubble while it is away. The picture leaves the character
+        // and its bubble out, so the character stays where it is meanwhile.
         playing = true
         idleWords()
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 150_000_000)
-            guard let picture = PlayRead.picture(of: screen), !busy, !recorder.isRecording else {
+            guard let picture = PlayRead.picture(of: screen, without: character.windows + [panel.windowNumber]), !busy, !recorder.isRecording else {
                 playing = false
                 idleWords()
                 return
