@@ -159,7 +159,7 @@ The pill is the small floating bar that shows what the assistant is doing. It ap
 | The orb swells and shrinks with your voice, and the pill says **Listening** | The microphone is on and hears you |
 | A white ring goes round the orb, and the pill shows the step the agent is on and for how long | The agent is thinking on your question |
 | The orb pulses in a speaking rhythm, and the answer scrolls past in the pill | The answer is being spoken |
-| A still orb and **HOLD ⌥SPACE** | The assistant is idle. You only see this when **Show floating pill** is ticked |
+| A still orb and **HOLD ⌥SPACE** | The assistant is idle. You only see this when **Show floating pill** is ticked; with the character look, only for the first six seconds after the app starts |
 
 ![The same four states in dark mode](/screenshots/voice/pill-states-dark.png)
 
@@ -367,7 +367,7 @@ While the character is on screen, an agent you speak to is told it can run the s
 Good to know:
 
 - **Nothing is clicked:** the character and its mark are drawn on a layer of their own. No click or key goes to any app, and your pointer is not moved.
-- **Its bubble there:** the bubble shows the text you gave from the moment the character is sent, on its way and for as long as it stands there, and goes when it leaves. It is not reduced to its three dots on the way, and it stays while an agent is listening, working or speaking; only an error or a call takes its place. The text is in the size of an answer's text, and the bubble is as wide as the text, last letter included, up to the width of an answer (about 45 characters). The text is one line: line breaks become spaces, it is cut at 120 characters, and a text wider than the widest bubble scrolls. With no text there is no bubble at the stop. The **hold ⌥space** hint shows only where the character rests, never on its way, at a stop, or during a play.
+- **Its bubble there:** the bubble shows the text you gave from the moment the character is sent, on its way and for as long as it stands there, and goes when it leaves. It is not reduced to its three dots on the way, and it stays while an agent is listening, working or speaking; only an error or a call takes its place. The text is in the size of an answer's text, and the bubble is as wide as the text, last letter included, up to the width of an answer (about 45 characters). The text is one line: line breaks become spaces, it is cut at 120 characters, and a text wider than the widest bubble scrolls. With no text there is no bubble at the stop. The **hold ⌥space** hint shows only where the character rests, never on its way, at a stop, or during a play, and only for the first six seconds after the app starts: after that the character has no bubble while idle, unless notifications are held.
 - **Where it stands:** on the left of the thing, level with its middle, so its bubble does not cover it. With no room on the left it stands on the right.
 - **It does not step aside meanwhile:** while it shows something, the pointer can come close. Take hold of it with **Command** to end the showing and move it.
 - **No busy look at a stop:** while the character is sent to show something, it does not take the working look when an agent is thinking, so the move stays in view. It still listens when you talk and speaks when the answer is read.
