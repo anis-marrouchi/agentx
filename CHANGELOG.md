@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.104.2](https://github.com/anis-marrouchi/agentx/compare/v0.104.1...v0.104.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* reduce session context costs and redundant draft reviews ([#600](https://github.com/anis-marrouchi/agentx/issues/600)) ([013a8d0](https://github.com/anis-marrouchi/agentx/commit/013a8d0d0ce39c2469b67f03bdbc8261aebab369))
+
 ## [0.104.1](https://github.com/anis-marrouchi/agentx/compare/v0.104.0...v0.104.1) (2026-10-03)
 
 
