@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.102.0](https://github.com/anis-marrouchi/agentx/compare/v0.101.2...v0.102.0) (2026-10-03)
+
+
+### Features
+
+* **voice:** the character's bubble says a caption at each guide stop ([#564](https://github.com/anis-marrouchi/agentx/issues/564)) ([251d790](https://github.com/anis-marrouchi/agentx/commit/251d79010101b87d4b8b36112183091ab6ecb8c4)), closes [#562](https://github.com/anis-marrouchi/agentx/issues/562)
+
 ## [0.101.2](https://github.com/anis-marrouchi/agentx/compare/v0.101.1...v0.101.2) (2026-10-03)
 
 
