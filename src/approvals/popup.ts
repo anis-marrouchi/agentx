@@ -72,11 +72,18 @@ export function spokenLine(card: Pick<DecisionCard, "say" | "title">): string {
 
 /** The sound, then the spoken line. Never fatal. The card window plays
  *  "chime" itself; the dialogs have no chime, so they get Glass. */
-async function cue(card: DecisionCard, s: PopupSettings, exec: Run, inCard: boolean): Promise<void> {
+async function cue(card: DecisionCard, s: PopupSettings, exec: Run, inCard: boolean, speak?: ShowOptions["speak"]): Promise<void> {
   const name = s.sound === "chime" ? (inCard ? "" : "Glass") : s.sound
   const path = name ? soundPath(name) : null
   if (path) await exec("/usr/bin/afplay", ["-v", String(Math.min(1, Math.max(0, s.volume))), path], CUE_TIMEOUT_MS)
-  if (s.speak) {
+  if (!s.speak) return
+  if (speak) {
+    // The host's speaking queue (#493): the line waits while the
+    // microphone is open. Past the limit the dialog goes on without it.
+    let timer: ReturnType<typeof setTimeout> | undefined
+    await Promise.race([speak(spokenLine(card)), new Promise((r) => { timer = setTimeout(r, CUE_TIMEOUT_MS) })])
+    clearTimeout(timer)
+  } else {
     const voice = s.voice && /^[\w .()-]+$/.test(s.voice) ? ["-v", s.voice] : []
     await exec("/usr/bin/say", [...voice, "--", spokenLine(card)], CUE_TIMEOUT_MS)
   }
@@ -143,6 +150,8 @@ export interface ShowOptions {
   capture?: string
   /** Previews: start with this option (1-based) picked. */
   pick?: number
+  /** Says the card's line in place of `say`: the daemon's speaking queue. */
+  speak?: (line: string) => Promise<unknown>
 }
 
 /** Show one card and return what the operator did. */
@@ -150,7 +159,7 @@ export async function showPopup(card: DecisionCard, settings: PopupSettings, dep
   const exec = deps.run ?? run
   const inCard = (settings.style ?? "card") === "card"
   // The spoken line runs beside the window, so the card is on screen while it speaks.
-  const spoken = cue(card, settings, exec, inCard).catch(() => undefined)
+  const spoken = cue(card, settings, exec, inCard, deps.speak).catch(() => undefined)
   if (inCard) {
     const answer = await showCardWindow(card, {
       timeoutSeconds: settings.timeoutSeconds, sound: settings.sound, volume: settings.volume,

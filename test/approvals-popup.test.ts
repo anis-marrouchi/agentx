@@ -170,6 +170,18 @@ describe("the dialog", () => {
     expect(await showPopup(c, S, { run: fake(["Not now\n"]).run })).toEqual({ action: "dismiss" })
   })
 
+  // #493: `say` plays over an open microphone; the daemon's queue waits.
+  it("says the line through the speaking queue when given one, not `say`", async () => {
+    const f = fake(["Yes\n"])
+    const said: string[] = []
+    await showPopup(raise({ say: "Pick a date" }), S, { run: f.run, speak: async (line) => { said.push(line) } })
+    expect(said).toEqual(["Pick a date"])
+    expect(f.calls.map((c) => c.file)).toEqual(["/usr/bin/osascript"])
+    said.length = 0
+    await showPopup(raise(), { ...S, speak: false }, { run: fake(["Yes\n"]).run, speak: async (line) => { said.push(line) } })
+    expect(said).toEqual([])
+  })
+
   it("stays quiet when speech and sound are off", async () => {
     const f = fake(["Yes\n"])
     await showPopup(raise(), { ...S, speak: false, sound: "" }, { run: f.run })

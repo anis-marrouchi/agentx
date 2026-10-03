@@ -211,7 +211,7 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
 | `popup.enabled` | Show waiting cards on this Mac | `--popup on\|off` |
 | `popup.style` | `"card"`: the web card. `"dialog"`: plain macOS dialogs | `--popup-style` |
 | `popup.theme` | `"system"`, `"light"` or `"dark"` | `--popup-theme` |
-| `popup.speak` | Speak one short line when it opens | `--popup-speak on\|off` |
+| `popup.speak` | Speak one short line when it opens. The line waits while you hold the talk key in AgentX Voice, and plays after. Of several request cards within ten minutes, only the first speaks | `--popup-speak on\|off` |
 | `popup.voice` | macOS voice for that line. Unset: the system voice | `--popup-voice` |
 | `popup.sound` | `"chime"`, a system sound such as `Glass`, or `""` for none | `--popup-sound` |
 | `popup.volume` | Sound volume, 0 to 1 | — |

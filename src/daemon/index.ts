@@ -1818,6 +1818,12 @@ export class AgentXDaemon {
         void popNext({
           ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log,
           agentName: (id) => this.registry.getAgent(id)?.name,
+          // Through the speaking queue, never straight to `say`: the line
+          // waits while the owner is dictating (#493).
+          speak: (text) => this.voiceTalk.speech.say({
+            voice: { provider: "system", elevenlabs: "", system: this.config.approvals.popup.voice ?? null, fallback: false },
+            text, kind: "line",
+          }),
         }).catch((e: any) => this.log(`[approvals] popup failed: ${e?.message ?? e}`))
         // Check-ins ask agents to write cards, which takes minutes: beside
         // the sweep too (src/approvals/checkin.ts).
