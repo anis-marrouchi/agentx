@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.101.1](https://github.com/anis-marrouchi/agentx/compare/v0.101.0...v0.101.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **voice:** the bubble never covers the character, and is three dots while it moves ([#558](https://github.com/anis-marrouchi/agentx/issues/558)) ([eba5dd4](https://github.com/anis-marrouchi/agentx/commit/eba5dd43222d939f7060fe3c12b2785b91b5c294))
+
 ## [0.101.0](https://github.com/anis-marrouchi/agentx/compare/v0.100.0...v0.101.0) (2026-10-03)
 
 
