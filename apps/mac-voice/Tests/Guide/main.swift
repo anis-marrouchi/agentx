@@ -56,9 +56,17 @@ check(G.idle(caption: nil, away: true) == .nothing, "at a stop with no caption, 
 check(G.idle(caption: "", away: true) == .nothing, "an empty caption is none")
 
 // How wide the bubble is around a caption (#566).
-check(G.bubbleWidth(words: 88.2, full: 284) == 141, "the bubble is as wide as its caption and the room at its ends, no wider")
-check(G.bubbleWidth(words: 12, full: 284) == 96, "a short caption still has a bubble that holds its tail")
-check(G.bubbleWidth(words: 600, full: 284) == 284, "a long one is the pill's width, and scrolls")
+check(G.bubbleWidth(words: 88.2, full: 360) == 145, "the bubble is as wide as its caption's label and the room at its ends, no wider")
+check(G.bubbleWidth(words: 12, full: 360) == 96, "a short caption still has a bubble that holds its tail")
+check(G.bubbleWidth(words: 600, full: 360) == 360, "a long one is the answer card's width, and scrolls")
+
+// The last letter (#569): a label needs more than its words' width.
+for words in [12.0, 88.2, 203.95, 288.6, 303.9] as [CGFloat] {
+    let room = G.bubbleWidth(words: words, full: 360) - 52
+    check(G.fits(words: words, room: room), "a caption \(words) wide shows whole in its bubble, last letter included")
+}
+check(!G.fits(words: 203.95, room: 204) && G.fits(words: 203.95, room: 208), "words with only their own width for a label do not fit: the label cuts the last letter")
+check(!G.fits(words: 600, room: G.bubbleWidth(words: 600, full: 360) - 52), "a caption wider than the widest bubble scrolls")
 
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

@@ -664,7 +664,7 @@ final class Panel: NSPanel {
         let font = label.font ?? NSFont.systemFont(ofSize: 12)
         let width = (text as NSString).size(withAttributes: [.font: font]).width
 
-        if width <= clipView.bounds.width {
+        if GuideMath.fits(words: width, room: clipView.bounds.width) {
             stopMarquee()
             label.stringValue = text
             label.frame.size.width = clipView.bounds.width
