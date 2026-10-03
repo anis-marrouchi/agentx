@@ -34,7 +34,7 @@ class PlanModel implements LineModel {
   close() { this.closed = true }
 }
 
-function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: boolean; userActsAfter?: number; speakMs?: number } = {}) {
+function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: boolean; userActsAfter?: number; speakMs?: number; planMs?: number } = {}) {
   const app = fakeApp()
   const log: string[] = []
   const presence: Presence = {
@@ -51,7 +51,7 @@ function setup(mode: TeachMode, replies: string[], opts: { actionsAllowed?: bool
     cancel: (kind: string) => { if (kind === "lesson") stopped++ },
   } as any
   const acted: string[] = []
-  const model = new PlanModel(replies)
+  const model = new PlanModel(replies, opts.planMs)
   const deps: TeachDeps = {
     readScreen: async () => app.view(), presence, speech, model,
     act: async (s) => { acted.push(s.action === "key" ? `key ${s.keys}` : `${s.action} ${s.label}`); app.open(); return { error: null } },
@@ -295,14 +295,16 @@ describe("LiveTeach", () => {
   })
 
   it("shows it is looking from the start, and times the screen read and the plan of a step", async () => {
-    const s = setup("teach", [STEP1, DONE], { userActsAfter: 40 })
+    // A 30 ms plan, checked against 20: a timer can fire a little early on
+    // the event loop's clock, so a 2 ms plan sometimes measured 1 in CI.
+    const s = setup("teach", [STEP1, DONE], { userActsAfter: 40, planMs: 30 })
     const events: any[] = []
     s.t.on((e) => events.push(e))
     await s.t.run()
     expect(s.log[0]).toBe("bubble Looking at the screen…")
     const step = events.find((e) => e.type === "step")
     expect(step.readMs).toBeGreaterThanOrEqual(0)
-    expect(step.planMs).toBeGreaterThanOrEqual(2)
+    expect(step.planMs).toBeGreaterThanOrEqual(20)
   })
 })
 
