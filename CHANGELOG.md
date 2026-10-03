@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.99.0](https://github.com/anis-marrouchi/agentx/compare/v0.98.1...v0.99.0) (2026-10-03)
+
+
+### Features
+
+* **voice:** on a stroll the character stops at a window side ([#543](https://github.com/anis-marrouchi/agentx/issues/543)) ([eb87235](https://github.com/anis-marrouchi/agentx/commit/eb8723528239eeb0263b8c149bd27532040cb96a))
+* **voice:** the answering agent sends the character to show something ([#535](https://github.com/anis-marrouchi/agentx/issues/535)) ([d059f6f](https://github.com/anis-marrouchi/agentx/commit/d059f6f4ec955d52f4540aff990a36e5217c8582))
+* **voice:** the character plays with the pointer in play mode ([#534](https://github.com/anis-marrouchi/agentx/issues/534)) ([a203ef0](https://github.com/anis-marrouchi/agentx/commit/a203ef0d4518e622a3264cd4cf62571d191ef6c2))
+
 ## [0.98.1](https://github.com/anis-marrouchi/agentx/compare/v0.98.0...v0.98.1) (2026-10-02)
 
 
