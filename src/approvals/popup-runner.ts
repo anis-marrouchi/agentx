@@ -45,7 +45,10 @@ export interface PopupRunnerDeps {
   settings: PopupRunnerSettings
   log: (msg: string) => void
   focus?: () => FocusState
-  show?: (card: DecisionCard, settings: PopupSettings, opts: { from?: string }) => Promise<PopupAnswer>
+  show?: (card: DecisionCard, settings: PopupSettings, opts: { from?: string; speak?: (line: string) => Promise<unknown> }) => Promise<PopupAnswer>
+  /** Says a card's line through the host's speaking queue, which waits
+   *  while the microphone is open. Without it the popup runs `say`. */
+  speak?: (line: string) => Promise<unknown>
   /** An agent's display name, for the card. */
   agentName?: (agentId: string) => string | undefined
   platform?: NodeJS.Platform
@@ -54,6 +57,10 @@ export interface PopupRunnerDeps {
 // Shared by every caller in the process: a config reload must not open a
 // second dialog over the first.
 let showing = false
+// Request cards all say the same sentence: one that follows another
+// within this long shows without it (#493).
+const REQUEST_SAY_GAP_MS = 10 * 60_000
+let requestSaidAt = -Infinity
 
 /** The next card to show, or null. */
 export function nextCardToPop(ctx: InboxContext): DecisionCard | null {
@@ -128,7 +135,11 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
     const waiting = [...listCards(ctx.root, "pending").map((c) => `card:${c.id}`), ...requestsWaiting(ctx).map((r) => `request:${r.id}`)]
     recordPopped(ctx.root, key, waiting, ctx.now)
     log(`[approvals] popup: showing ${key} from ${card.raised_by}`)
-    const answer = await (deps.show ?? showPopup)(card, settings, { from: deps.agentName?.(card.raised_by) })
+    const now = ctx.now ?? Date.now()
+    const repeat = !!request && now - requestSaidAt < REQUEST_SAY_GAP_MS
+    if (request && settings.speak) requestSaidAt = now
+    const answer = await (deps.show ?? showPopup)(card, repeat ? { ...settings, speak: false } : settings,
+      { from: deps.agentName?.(card.raised_by), speak: deps.speak })
     if (answer.action === "dismiss") {
       log(`[approvals] popup: ${key} left waiting: ${answer.why ?? "no answer"} (${focusLabel(focus)} when shown)`)
       return "shown"

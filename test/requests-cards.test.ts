@@ -301,6 +301,20 @@ describe("the notice on the Mac", () => {
     expect(nextRequestToPop(ctx())).toBeNull()
   })
 
+  it("says its line for the first of a run of requests only, through the daemon's voice (#493)", async () => {
+    clock += 3_600_000
+    const said: boolean[] = []
+    const speak = async () => true
+    const show = async (_c: any, s: any, o: any) => { said.push(s.speak && o.speak === speak); return { action: "dismiss" as const } }
+    const run = () => popNext({ ...deps(show), settings: { ...POPUP, speak: true }, speak })
+    failed("t1"); await run()
+    clock += 60_000
+    failed("t2"); await run()
+    clock += 11 * 60_000
+    failed("t3"); await run()
+    expect(said).toEqual([true, false, true])
+  })
+
   it("lets a decision card go first, and skips a request that is a day old", async () => {
     failed("t1")
     const card = createCard(tmp, { title: "Send the offer?", ask: "Send it?", recommend: "yes", if_silent: "keep", raised_by: "coder" } as any, { now: clock })
