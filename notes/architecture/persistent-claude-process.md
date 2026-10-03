@@ -178,8 +178,8 @@ After confirming slash commands don't work in `-p`, the operative table is:
 
 | Scenario | Action | CLI primitive |
 |---|---|---|
-| First turn in a chat | spawn process, no `--resume` | `claude -p --input-format stream-json --output-format stream-json --verbose [--append-system-prompt …]` |
-| Subsequent turn, same chat, process alive | write a JSON message to the existing process's stdin | (no new spawn) |
+| First turn in a chat | spawn process, no `--resume` | `claude -p --input-format stream-json --output-format stream-json --verbose --replay-user-messages [--append-system-prompt …]` |
+| Subsequent turn, same chat, process alive | write a JSON message with a `uuid` to the existing process's stdin; read from the echo of that `uuid` to the next `result` (#585) | (no new spawn) |
 | Subsequent turn, same chat, process gone | spawn process with `--resume <stored sessionId>` | `--resume` |
 | Stale rotation (idle > 45min) | kill process; next turn spawns fresh | process kill + clear stored sessionId |
 | Max-turns rotation (turns ≥ 15) | kill process; before next spawn, summarize last N turns at the application layer and seed via `--append-system-prompt` (and use a fresh session) | `--append-system-prompt` |
