@@ -32,6 +32,15 @@ let page = [
 ]
 let start = P.Point(x: 1300, y: 860)
 
+// --- The screens changed (#586) ---
+
+let built = P.Rect(x: 0, y: 0, w: 1440, h: 900), second = P.Rect(x: 1440, y: 0, w: 1920, h: 1080)
+check(!P.gone(built, from: [built, second]) && !P.gone(built, from: [built]),
+      "a change that leaves the play's screen as it was does not end the play")
+check(P.gone(built, from: [second]) && P.gone(built, from: []), "the play's screen unplugged ends it")
+check(P.gone(built, from: [P.Rect(x: 0, y: 0, w: 1680, h: 1050), second]), "the play's screen resized ends it")
+check(P.gone(second, from: [built, P.Rect(x: -1920, y: 0, w: 1920, h: 1080)]), "the play's screen moved ends it")
+
 // --- Letters and the page's colour ---
 
 let fox = P.Word(text: "brown", rect: P.Rect(x: 100, y: 50, w: 50, h: 18))
