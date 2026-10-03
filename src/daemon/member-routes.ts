@@ -9,6 +9,7 @@ import { MemberStore } from "@/members/store"
 import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
 import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor } from "@/members/work"
+import { agentIdsFor, agentsOf, type AgentCard } from "@/members/agents"
 import type { Person } from "@/people/people"
 import {
   MEMBER_SERVICE_WORKER,
@@ -140,7 +141,19 @@ export async function handleMemberRequest(
   if (method === "GET" && path === "/api/member/work") {
     const db = ctx.db?.() ?? null
     if (!db) return sendJson(res, 503, { error: "the work list needs the database" })
-    return sendJson(res, 200, workOf(db, access.personId, { now: (ctx.now ?? Date.now)(), linkFor: ctx.linkFor }))
+    const now = (ctx.now ?? Date.now)()
+    const work = workOf(db, access.personId, { now, linkFor: ctx.linkFor })
+    // The agents this person uses, and what each is doing (#443).
+    let agents: AgentCard[] = []
+    try {
+      const ids = agentIdsFor(db, person ?? { id: access.personId }, now)
+      agents = agentsOf(db, access.personId, ids, { people: ctx.people(), linkFor: ctx.linkFor })
+    } catch (err) {
+      // No task_traces yet means no runs to read; anything else is logged.
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/no such table/i.test(msg)) ctx.log?.(`[member] agent cards failed: ${msg}`)
+    }
+    return sendJson(res, 200, { ...work, agents })
   }
   return sendJson(res, 404, { error: "not found" })
 }

@@ -4,7 +4,8 @@
 // HTML the service worker can keep for offline starts, live data from
 // /api/member/* only. Three pages: the locked one (type the code the
 // owner sent), the waiting one (the owner has not said yes to this machine
-// yet) and the work page itself.
+// yet) and the work page itself. The look is the concept the owner
+// approved on #443.
 //
 // No backticks, backslashes or dollar-brace inside the client scripts:
 // they sit in TS template literals.
@@ -12,8 +13,9 @@
 import { AX_TOKENS_CSS } from "../tokens"
 import { injectFns } from "../inject"
 import { formatPairInput } from "./app-pair-logic"
-import { connectionNote, plainPreview } from "./member-logic"
+import { agentLine, connectionNote, plainPreview, requestState, sentState, summaryLine } from "./member-logic"
 import { WORK_SCRIPT } from "./member-work.client"
+import { BASE_CSS, LOCKED_CSS, WAITING_CSS, WORK_CSS } from "./member-styles"
 
 const THEME_BOOT = `<script>(function(){var t;try{t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)})()</script>`
 
@@ -87,24 +89,39 @@ self.addEventListener('fetch', function (e) {
 });
 `
 
+/** The top bar every member page shares. */
+function bar(who: string, extra = ""): string {
+  return `<header class="bar">
+  <img class="mark" src="/member/icon-192.png" alt="" width="36" height="36">
+  <div class="grow"><h1>My work</h1><p id="who" class="who">${who}</p></div>${extra}
+</header>`
+}
+
+/** The three steps from a code to the work page. */
+function pairSteps(at: 0 | 1): string {
+  const names = ["Type the code", "The owner says yes", "Your work opens"]
+  return `<ol class="steps" aria-label="Steps">${names.map((n, i) =>
+    i < at ? `<li class="done"><span class="sr">Done: </span>${n}</li>` : i === at ? `<li class="now" aria-current="step">${n}</li>` : `<li>${n}</li>`,
+  ).join("")}</ol>`
+}
+
 export function renderMemberPage(): string {
   return `<!doctype html>
 <html lang="en">
 <head>${head("My work · AgentX")}<style>${WORK_CSS}</style></head>
 <body>
-<header class="bar">
-  <div><h1>My work</h1><p id="who" class="who">Connecting…</p></div>
-  <button type="button" id="theme" class="icon-btn" aria-label="Switch theme">◐</button>
-</header>
-<p id="offline" class="offline" role="status" hidden><span id="offline-text"></span> <button type="button" id="retry" hidden>Try now</button></p>
+${bar("Connecting…", `
+  <button type="button" id="theme" class="icon-btn" aria-label="Switch theme">◐</button>`)}
+<p id="offline" class="strip" role="status" hidden><span id="offline-text"></span><button type="button" id="retry" hidden>Try now</button></p>
 <p id="install" class="install" hidden>To keep this window on your desktop: in Edge or Chrome open the browser menu, then <b>Apps</b>, then <b>Install this site as an app</b>.</p>
-<main>
-  <section aria-labelledby="h-open"><h2 id="h-open">Open <span id="n-open" class="count"></span></h2><ul id="open" class="list"><li class="muted">Loading…</li></ul></section>
-  <section aria-labelledby="h-recent"><h2 id="h-recent">Finished in the last 7 days</h2><ul id="recent" class="list"><li class="muted">Loading…</li></ul></section>
-  <section aria-labelledby="h-runs"><h2 id="h-runs">Latest turns</h2><ul id="runs" class="list"><li class="muted">Loading…</li></ul></section>
-  <p id="updated" class="muted small"></p>
+<main class="wrap">
+  <p id="sum" class="sum" aria-live="polite">Loading…</p>
+  <section id="agents-box" aria-labelledby="h-agents" hidden><h2 id="h-agents">Your agents</h2><ul id="agents" class="agents"></ul></section>
+  <section id="need" class="need" aria-labelledby="h-need" hidden><h2 id="h-need">Needs a person</h2><ul id="need-list"></ul></section>
+  <section aria-labelledby="h-sent"><h2 id="h-sent">What you sent <span class="n">(last 7 days)</span></h2><ul id="sent" class="rows"></ul></section>
+  <p id="updated" class="foot"></p>
 </main>
-<script>${injectFns({ workState, ageText, connectionNote, plainPreview })}${WORK_SCRIPT}</script>
+<script>${injectFns({ workState, ageText, connectionNote, plainPreview, agentLine, sentState, requestState, summaryLine })}${WORK_SCRIPT}</script>
 </body>
 </html>`
 }
@@ -115,20 +132,24 @@ export function renderMemberLockedPage(): string {
 <html lang="en">
 <head>${head("Pair this machine · AgentX")}<style>${LOCKED_CSS}</style></head>
 <body>
-<main class="card">
-  <h1>Pair this machine</h1>
-  <p>The owner sent you a pairing code. Type it below with a name for this machine. The owner then approves the machine, and your work page opens.</p>
-  <form id="pair-form" class="pair-form" novalidate>
-    <label for="machine">This machine's name</label>
-    <input id="machine" name="machine" type="text" maxlength="60" placeholder="Work laptop" autocomplete="off" required>
-    <label for="pair-code">Pairing code</label>
-    <input id="pair-code" name="code" type="text" placeholder="XXXX-XXXX" maxlength="9"
-      autocomplete="one-time-code" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" required>
-    <button type="submit" id="pair-btn">Pair</button>
-    <p id="pair-offline" class="pair-offline" role="status" hidden>You're offline. Pairing needs a connection to the private network.</p>
-    <p id="pair-msg" class="pair-msg" role="status" aria-live="polite"></p>
-  </form>
-  <p class="muted">No code? Ask the owner to run <code>agentx people invite &lt;you&gt;</code>. A code works once, for 10 minutes.</p>
+${bar("This machine is not paired yet")}
+<main class="narrow">
+  ${pairSteps(0)}
+  <div class="card">
+    <h2>Pair this machine</h2>
+    <p>The owner sent you a pairing code. Type it with a name for this machine. The owner then approves the machine, and your work page opens.</p>
+    <form id="pair-form" class="pair-form" novalidate>
+      <label for="machine">This machine's name</label>
+      <input id="machine" name="machine" type="text" maxlength="60" placeholder="Work laptop" autocomplete="off" required>
+      <label for="pair-code">Pairing code</label>
+      <input id="pair-code" name="code" type="text" placeholder="XXXX-XXXX" maxlength="9"
+        autocomplete="one-time-code" inputmode="text" autocapitalize="characters" autocorrect="off" spellcheck="false" enterkeyhint="go" required>
+      <button type="submit" id="pair-btn">Pair this machine</button>
+      <p id="pair-offline" class="pair-offline" role="status" hidden>You're offline. Pairing needs a connection to the private network.</p>
+      <p id="pair-msg" class="pair-msg" role="status" aria-live="polite"></p>
+    </form>
+    <p class="help">No code? Ask the owner to run <code>agentx people invite &lt;you&gt;</code>. A code works once, for 10 minutes.</p>
+  </div>
 </main>
 <script>${injectFns({ formatPairInput })}${LOCKED_SCRIPT}</script>
 </body>
@@ -139,12 +160,16 @@ export function renderMemberLockedPage(): string {
 export function renderMemberWaitingPage(): string {
   return `<!doctype html>
 <html lang="en">
-<head>${head("Waiting for the owner · AgentX")}</head>
+<head>${head("Waiting for the owner · AgentX")}<style>${WAITING_CSS}</style></head>
 <body>
-<main class="card">
-  <h1>Waiting for the owner</h1>
-  <p id="msg" role="status">This machine is paired. The owner has to approve it once; this page opens by itself when they do.</p>
-  <p class="muted">If they said no, this page will ask for a new code.</p>
+${bar("This machine is paired")}
+<main class="narrow">
+  ${pairSteps(1)}
+  <div class="card">
+    <h2><span class="pulse" aria-hidden="true"></span>Waiting for the owner</h2>
+    <p id="msg" role="status">This machine is paired. The owner has to approve it once; this page opens your work by itself when they do.</p>
+    <p class="help">If they say no, this page asks for a new code.</p>
+  </div>
 </main>
 <script>${WAITING_SCRIPT}</script>
 </body>
@@ -178,59 +203,7 @@ export function ageText(at: number, now: number): string {
   return d + " d " + (h % 24) + " h"
 }
 
-// ── Styles and scripts ───────────────────────────────────────────────────
-
-const BASE_CSS = `
-html, body { margin: 0; background: var(--ax-bg); color: var(--ax-text); font-family: var(--ax-font); }
-body { min-height: 100dvh; -webkit-text-size-adjust: 100%; }
-code { font-family: var(--ax-mono); font-size: 0.92em; background: var(--ax-surface-3); padding: 1px 6px; border-radius: 6px; }
-.card { max-width: 460px; margin: 0 auto; padding: 40px 24px; line-height: 1.55; }
-.card h1 { font-size: 22px; margin: 0 0 12px; }
-.muted { color: var(--ax-text-2); }
-.small { font-size: var(--ax-fs-xs); }
-:focus-visible { outline: 3px solid var(--ax-accent); outline-offset: 2px; }
-`
-
-const WORK_CSS = `
-body { display: flex; flex-direction: column; }
-.bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; background: var(--ax-surface); border-bottom: var(--ax-border-w) solid var(--ax-border); }
-.bar h1 { font-size: 18px; margin: 0; font-weight: 700; }
-.who { margin: 2px 0 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); }
-.icon-btn { min-width: 44px; min-height: 44px; font-size: 20px; line-height: 1; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-pill); background: var(--ax-surface-2); color: var(--ax-text); cursor: pointer; }
-.offline, .install { margin: 0; padding: 8px 16px; font-size: var(--ax-fs-sm); background: var(--ax-amber-t); color: var(--ax-amber-ink); border-bottom: 1px solid var(--ax-amber-e); }
-.offline button { margin-left: 8px; min-height: 32px; padding: 4px 14px; font: inherit; font-weight: 600; color: inherit; background: transparent; border: 1px solid currentColor; border-radius: var(--ax-radius-pill); cursor: pointer; }
-.offline button:disabled { opacity: 0.55; cursor: default; }
-.install { background: var(--ax-surface-2); color: var(--ax-text-2); border-bottom: var(--ax-border-w) solid var(--ax-border); }
-main { flex: 1; overflow-y: auto; padding: 16px; max-width: 720px; width: 100%; box-sizing: border-box; margin: 0 auto; }
-main h2 { font-size: 16px; margin: 12px 0 8px; }
-.count { color: var(--ax-text-2); font-weight: 400; }
-.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.item { padding: 10px 12px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); background: var(--ax-surface); }
-.item .text { margin: 0 0 4px; line-height: 1.4; }
-.item .meta { margin: 0; font-size: var(--ax-fs-xs); color: var(--ax-text-2); display: flex; flex-wrap: wrap; gap: 4px 10px; }
-.item .note { margin: 6px 0 0; font-size: var(--ax-fs-sm); }
-.state { font-weight: 600; }
-.state.ok { color: var(--ax-green-ink, var(--ax-text)); }
-.state.warn { color: var(--ax-amber-ink); }
-.state.bad { color: var(--ax-red-ink); }
-[data-theme="dark"] .state.bad { color: var(--ax-red); }
-.state.muted { color: var(--ax-text-2); }
-a { color: var(--ax-accent); }
-`
-
-const LOCKED_CSS = `
-.pair-form { display: grid; gap: 10px; margin: 20px 0 24px; }
-.pair-form label { font-weight: 600; }
-.pair-form input { box-sizing: border-box; width: 100%; min-height: 48px; padding: 10px 14px; font: inherit; font-size: 17px; color: var(--ax-text); background: var(--ax-surface); border: 2px solid var(--ax-border); border-radius: var(--ax-radius-sm); }
-.pair-form input#pair-code { min-height: 60px; font: 600 26px/1.2 var(--ax-mono); letter-spacing: 0.12em; text-align: center; text-transform: uppercase; }
-.pair-form input:focus { border-color: var(--ax-accent); outline: none; }
-.pair-form button { min-height: 52px; border: 0; border-radius: var(--ax-radius-pill); font: inherit; font-size: 17px; font-weight: 700; color: #fff; background: var(--ax-accent); cursor: pointer; }
-.pair-form button:disabled { opacity: 0.55; cursor: default; }
-.pair-msg { margin: 0; min-height: 1.5em; }
-.pair-msg.bad { color: var(--ax-red-ink); }
-[data-theme="dark"] .pair-msg.bad { color: var(--ax-red); }
-.pair-offline { margin: 0; padding: 8px 12px; border-radius: var(--ax-radius-sm); font-size: var(--ax-fs-sm); background: var(--ax-amber-t); color: var(--ax-amber-ink); border: 1px solid var(--ax-amber-e); }
-`
+// ── Scripts ────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 const LOCKED_SCRIPT = `
 (function () {
