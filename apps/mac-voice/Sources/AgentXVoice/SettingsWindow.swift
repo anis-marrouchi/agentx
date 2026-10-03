@@ -336,7 +336,7 @@ private struct AgentForm: View {
             set: { agent.color = $0.hex; agent.colorSet = true })
         let footer = agent.colorSet
             ? "Hold the shortcut and speak to ask this agent without changing who is ticked in the menu. The colour also paints this agent's pointer, and picks the orb's palette unless you choose one."
-            : "Hold the shortcut and speak to ask this agent without changing who is ticked in the menu. The colour comes from the agent's id until you pick one, and picks the orb's palette unless you choose one."
+            : "Hold the shortcut and speak to ask this agent without changing who is ticked in the menu. The colour comes from the agent's id until you pick one. A colour you pick also picks the orb's palette unless you choose one."
         return Section {
             HotkeyField(title: "Ask with shortcut", value: $agent.voice.hotkey, optional: true, model: model, id: "agent.\(agent.id)")
             HStack {

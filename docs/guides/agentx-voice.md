@@ -330,7 +330,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.priority` | `"normal"` | `"high"`, `"normal"` or `"low"` in the speaking queue |
 | `voice.hotkey` | none | A shortcut that asks this agent directly, for example `"ctrl+opt+1"` |
 | `presence.color` | picked from the agent's id | Orb and pointer colour as `"#RRGGBB"` |
-| `presence.palette` | the palette nearest `presence.color` | The orb's palette: `sunrise`, `desert`, `forest`, `lagoon`, `ocean`, `dusk` or `blossom` |
+| `presence.palette` | the palette nearest `presence.color`; with no colour set, `voice.palette` (`lagoon`) | The orb's palette: `sunrise`, `desert`, `forest`, `lagoon`, `ocean`, `dusk` or `blossom` |
 
 Agents on other AgentX computers in your mesh can get a voice here too, under `meshVoices.<agent-id>`, with the same keys except `rate`, `priority` and `hotkey`, plus `name` (what to call the agent aloud).
 

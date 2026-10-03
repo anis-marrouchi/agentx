@@ -134,6 +134,16 @@ describe("resolveAddress", () => {
     expect(r).toMatchObject({ color: "#112233", palette: { id: "forest" } })
   })
 
+  // #553
+  it("a local agent with no colour of its own gets the default palette", () => {
+    const hashed = (defaultPalette?: string) => resolveAddress({
+      text: "", target: "ops-agent", local: [{ id: "ops-agent" }], remote: [], localNode: "n",
+      localLook: () => ({ color: "#7C3AED", colorSet: false }), defaultPalette,
+    })
+    expect(hashed()).toMatchObject({ color: "#7C3AED", palette: { id: "lagoon" } })
+    expect(hashed("forest").palette.id).toBe("forest")
+  })
+
   it("ignores a malformed colour from a peer", () => {
     const r = resolveAddress({ text: "Odd, hi", target: "writer", local: [], remote: [{ id: "odd", name: "Odd", node: "server", color: "red;x" }], localNode: "laptop" })
     expect(r.color).toMatch(/^#[0-9A-F]{6}$/i)

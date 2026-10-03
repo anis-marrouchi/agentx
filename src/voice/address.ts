@@ -114,8 +114,11 @@ export function resolveAddress(opts: {
   local: Addressable[]
   remote: Addressable[]
   localNode: string
-  /** A local agent's configured look (presence.color / presence.palette). */
-  localLook?: (id: string) => { color?: string; palette?: string } | undefined
+  /** A local agent's look (presence.color / presence.palette).
+   *  `colorSet` false: the colour is the one derived from its id. */
+  localLook?: (id: string) => { color?: string; palette?: string; colorSet?: boolean } | undefined
+  /** voice.palette: for an agent that chose neither palette nor colour. */
+  defaultPalette?: string
 }): AddressReply {
   const found = findAddressed(opts.text, [...opts.local, ...opts.remote])
   const agent = found
@@ -126,7 +129,7 @@ export function resolveAddress(opts: {
   const given = look?.color ?? agent.color
   // The same hash fallback as GET /agents and the app (OrbMath.colorHex).
   const color = given && HEX.test(given) ? given : presenceLook(agent.id).color
-  const palette = agentPalette(look?.palette, color)
+  const palette = agentPalette({ palette: look?.palette, color: look?.colorSet === false ? undefined : given }, opts.defaultPalette)
   return {
     agentId: agent.id,
     name: agent.name || agent.id,
