@@ -256,8 +256,7 @@ final class App: NSObject, NSApplicationDelegate {
     /// lines of text read on it, and the character plays on the picture,
     /// differently each time. The page itself is never touched.
     private func startPlay() {
-        let foot = character.foot
-        guard canPlay, let screen = NSScreen.screens.first(where: { $0.frame.contains(foot) }) ?? NSScreen.screens.first
+        guard canPlay, let screen = NSScreen.screens.first(where: { $0.frame.contains(character.foot) }) ?? NSScreen.screens.first
         else { return }
         guard PlayRead.allowed else {
             PlayRead.ask()
@@ -267,21 +266,23 @@ final class App: NSObject, NSApplicationDelegate {
             return
         }
         let stops = character.stops, size = screen.frame.size
-        let start = PlayMath.Point(x: foot.x - screen.frame.minX, y: screen.frame.maxY - foot.y)
-        // Off its edge, so it is not in the picture twice; its idle
-        // bubble too, which would stay in the picture all the play long.
-        character.setShown(false)
+        // No idle bubble while it is away. The picture leaves this app's
+        // windows out, so the character stays where it is meanwhile.
         playing = true
         idleWords()
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard let picture = PlayRead.picture(of: screen), !busy, !recorder.isRecording else {
                 playing = false
-                character.setShown(settings?.general.look == "character")
                 idleWords()
                 return
             }
+            let foot = character.foot
+            let start = PlayMath.Point(x: foot.x - screen.frame.minX, y: screen.frame.maxY - foot.y)
             play.start(picture: picture, on: screen, stops: stops, at: start)
+            // It is on the picture now, where it stood and as big: its own
+            // window goes from under it, and it never disappears (#580).
+            character.setAway(true)
             let number = play.number
             let asked = ProcessInfo.processInfo.systemUptime
             let lines = await Task.detached { PlayRead.lines(in: picture, size: size) }.value
@@ -425,7 +426,7 @@ final class App: NSObject, NSApplicationDelegate {
         play.onEnd = { [weak self] in
             guard let self else { return }
             self.playing = false
-            self.character.setShown(self.settings?.general.look == "character")
+            self.character.setAway(false)
             self.idleWords()
         }
         panel.onShown = { [weak self] in self?.character.redraw() }
