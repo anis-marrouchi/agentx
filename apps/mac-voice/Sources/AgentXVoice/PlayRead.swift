@@ -14,19 +14,19 @@ enum PlayRead {
     /// Shows the system's request, once; after that macOS only answers no.
     static func ask() { CGRequestScreenCaptureAccess() }
 
-    /// What is on `screen` now, without this app's own windows: the
-    /// character stays on its edge while the picture is taken, and must
-    /// not be in it twice (#580).
-    static func picture(of screen: NSScreen) -> CGImage? {
+    /// What is on `screen` now, without the windows numbered `without`:
+    /// the character stays on its edge while the picture is taken, and
+    /// must not be in it twice (#580). The app's other windows stay in
+    /// it, its menu-bar icon among them (#583).
+    static func picture(of screen: NSScreen, without: [Int]) -> CGImage? {
         // Screens are measured from the bottom of the first one; the
         // picture is asked for from its top.
         guard let first = NSScreen.screens.first else { return nil }
         let f = screen.frame
         let rect = CGRect(x: f.minX, y: first.frame.maxY - f.maxY, width: f.width, height: f.height)
-        let me = Int(ProcessInfo.processInfo.processIdentifier)
         let shown = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
-        var others: [UnsafeRawPointer?] = shown.filter { $0[kCGWindowOwnerPID as String] as? Int != me }
-            .compactMap { $0[kCGWindowNumber as String] as? UInt }.map { UnsafeRawPointer(bitPattern: $0) }
+        var others: [UnsafeRawPointer?] = shown.compactMap { $0[kCGWindowNumber as String] as? Int }
+            .filter { !without.contains($0) }.map { UnsafeRawPointer(bitPattern: $0) }
         guard let list = CFArrayCreate(nil, &others, others.count, nil) else { return nil }
         return CGImage(windowListFromArrayScreenBounds: rect, windowArray: list, imageOption: [.bestResolution])
     }

@@ -66,6 +66,9 @@ final class CharacterHost {
     /// (#505) takes it from there.
     var stops: [NSColor] { view.stops }
     var foot: NSPoint { NSPoint(x: CGFloat(sim.x), y: rest.y) }
+    /// Its windows, by number: its own and its mark's. The picture of a
+    /// play leaves them out (#583).
+    var windows: [Int] { [window.windowNumber, guide.window] }
     /// Carried by the pointer: where the pointer took hold, and where it
     /// stood then, which is not where it rests once it has stepped aside.
     private var carried: (from: NSPoint, rest: CGPoint)?
@@ -81,7 +84,7 @@ final class CharacterHost {
     /// A still picture: Reduce Motion, or "Animated orb" off.
     private var still: Bool { !animated || reduceMotion }
     /// The look is the character: whether it is on screen. Nil with the orb.
-    var onScreen: Bool? { shown ? !hidden : nil }
+    var onScreen: Bool? { shown ? !hidden && !away : nil }
     /// Told when it comes on screen or leaves it: shown or hidden, or the look changed.
     var onScreenChanged: (() -> Void)?
 
@@ -126,6 +129,7 @@ final class CharacterHost {
         guard away != on else { return }
         away = on
         run()
+        onScreenChanged?()
     }
 
     /// Hide it, as its bubble is hidden: gone until it is asked back.
@@ -169,8 +173,8 @@ final class CharacterHost {
     /// Go beside `rect` and mark it, or with nil go back to where it
     /// rests; in the state `asked`, or with nil its real one.
     func guide(to rect: NSRect?, mark kind: GuideMath.Mark = .none, caption: String? = nil, asked mood: CharacterMath.Mood? = nil) {
-        asked = shown && !hidden ? mood : nil
-        if shown, !hidden, carried == nil, let rect {
+        asked = shown && !hidden && !away ? mood : nil
+        if shown, !hidden, !away, carried == nil, let rect {
             guide.show(rect, kind, caption: caption, color: view.stops[2], animated: !still)
         } else {
             guide.end()

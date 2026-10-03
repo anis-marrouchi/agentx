@@ -85,6 +85,8 @@ final class CharacterGuide {
     /// What its bubble says there (#562).
     private(set) var caption: String?
     private let mark = GuideMark()
+    /// The number of its mark's window.
+    var window: Int { mark.number }
     /// On its way up or down, to what it shows or back; and the last frame.
     private var gliding = false
     private var ticked = 0.0
@@ -130,6 +132,7 @@ final class GuideMark {
     private static let margin: CGFloat = 6
     private let window: NSPanel
     private let shape = CAShapeLayer()
+    var number: Int { window.windowNumber }
 
     init() {
         window = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
