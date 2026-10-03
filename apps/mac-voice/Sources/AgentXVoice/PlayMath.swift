@@ -61,6 +61,11 @@ enum PlayMath {
     static let unit = 0.4
     /// How many times bigger it is on its edge: 56 points across there.
     static let edge = 1.4
+
+    /// The screen a picture was taken of is no longer among `screens`, as
+    /// it was: unplugged, resized or moved. Anything else the system calls
+    /// a change of screens leaves the picture good (#586).
+    static func gone(_ screen: Rect, from screens: [Rect]) -> Bool { !screens.contains(screen) }
     /// The middle of its body above its feet, and its top, in points.
     static let middle = (M.Pose().lift + 50) * unit
     static let top = (M.Pose().lift + 100) * unit + 8

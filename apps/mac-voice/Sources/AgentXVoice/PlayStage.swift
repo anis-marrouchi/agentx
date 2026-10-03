@@ -137,7 +137,16 @@ final class PlayHost {
         }
         watch(.default, NSWindow.didResignKeyNotification, panel, "another window came forward")
         watch(NSWorkspace.shared.notificationCenter, NSWorkspace.activeSpaceDidChangeNotification, nil, "the Space changed")
-        watch(.default, NSApplication.didChangeScreenParametersNotification, nil, "the screens changed")
+        // macOS says this for more than a screen plugged or resized: the
+        // Dock moving, the display's brightness range changing. The picture
+        // is stale only if its own screen is gone or has another size (#586).
+        let frame = PlayMath.Rect(screen.frame)
+        observers.append((.default, NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                if PlayMath.gone(frame, from: NSScreen.screens.map { PlayMath.Rect($0.frame) }) { self?.end("the screens changed") }
+            }
+        }))
 
         let shownAt = ProcessInfo.processInfo.systemUptime
         let frames = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self, weak view] _ in
@@ -217,4 +226,8 @@ private final class PlayView: NSView {
     override func rightMouseDown(with event: NSEvent) { onInput?() }
     override func otherMouseDown(with event: NSEvent) { onInput?() }
     override func scrollWheel(with event: NSEvent) { onInput?() }
+}
+
+private extension PlayMath.Rect {
+    init(_ r: NSRect) { self.init(x: r.minX, y: r.minY, w: r.width, h: r.height) }
 }

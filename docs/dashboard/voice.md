@@ -476,7 +476,7 @@ The order of the acts, which one is left out and which words are eaten or carrie
 
 It moves like a drawn character, not like a pointer: it crouches before a jump and lands softly, it gets up to speed and slows to a stop when it walks, kicked letters leave one after the other, and what falls bounces once before it lies still.
 
-Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring. Ended this way, the picture goes at once and the character is back on its edge, without the jump home.
+Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, when the assistant starts to listen, speak or ring, or when the screen it plays on is unplugged, resized or moved. Ended this way, the picture goes at once and the character is back on its edge, without the jump home. A Dock that moves or hides, or a screen that changes its brightness, does not end a play.
 
 Good to know:
 
