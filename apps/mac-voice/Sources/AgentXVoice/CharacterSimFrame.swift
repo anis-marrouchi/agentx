@@ -15,6 +15,9 @@ extension CharacterSim {
         /// The answering agent sent it to show something (#482): it goes
         /// to `home` at once, awake, whatever the pointer did before.
         var sent = false
+        /// The state it was asked to show by name (#570), in place of
+        /// what the assistant is doing.
+        var asked: M.Mood?
         /// `voice.stroll`: with nothing to do, it takes a slow stroll
         /// beside where it rests now and then (#482).
         var strolls = false

@@ -258,7 +258,9 @@ Install the [desktop assistant](../dashboard/voice.md) first. These tools intera
 | `agentx point "the search field"` | Locate and highlight; does not click. With the [character](../dashboard/voice.md#the-character-shows-you-something) on screen, the character goes there and marks it |
 | `agentx point "the search field" --mark circle --hold 20` | How the character marks it (`box`, `circle`, `underline`, `none`) and for how many seconds |
 | `agentx point "the search field" --text "Search starts here"` | What the character's bubble says while it stands there. Without it there is no bubble at the stop |
+| `agentx point "the search field" --expression speaking` | The [state](../dashboard/voice.md#ask-for-a-state-by-name) the character shows while it stands there |
 | `agentx point "the search field" --json` | Print the selection without pointing |
+| `agentx express listening --hold 5` | The character shows a state where it rests for that many seconds: `idle`, `notices`, `listening`, `working`, `speaking`, `understood`, `dozing`, `calling` or `asking` |
 | `agentx look "What is visible?"` | Capture the focused window and request a vision observation |
 | `agentx look "The command palette is open" --verify --json` | Check a claim and return structured evidence |
 | `agentx look "What is visible?" --screen` | Capture the full screen instead |

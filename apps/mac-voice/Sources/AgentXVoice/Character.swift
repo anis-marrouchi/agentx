@@ -72,6 +72,8 @@ final class CharacterHost {
     /// Sent somewhere, and what its bubble says there (#562).
     var sent: Bool { guide.showing != nil }
     var caption: String? { guide.caption }
+    /// The state it was asked to show by name (#570), there or where it rests.
+    private var asked: CharacterMath.Mood?
     /// Told when it is sent somewhere, to its next stop or back.
     var onGuide: (() -> Void)?
     /// A still picture: Reduce Motion, or "Animated orb" off.
@@ -151,8 +153,10 @@ final class CharacterHost {
         redraw()
     }
 
-    /// Go beside `rect` and mark it, or with nil go back to where it rests.
-    func guide(to rect: NSRect?, mark kind: GuideMath.Mark = .none, caption: String? = nil) {
+    /// Go beside `rect` and mark it, or with nil go back to where it
+    /// rests; in the state `asked`, or with nil its real one.
+    func guide(to rect: NSRect?, mark kind: GuideMath.Mark = .none, caption: String? = nil, asked mood: CharacterMath.Mood? = nil) {
+        asked = shown && !hidden ? mood : nil
         if shown, !hidden, carried == nil, let rect {
             guide.show(rect, kind, caption: caption, color: view.stops[2], animated: !still)
         } else {
@@ -239,10 +243,13 @@ final class CharacterHost {
 
         let frame: CharacterSim.Frame
         if still {
-            frame = CharacterSim.still(activity, home: home)
+            frame = CharacterSim.still(activity, asked: asked, sent: guide.showing != nil, home: home)
         } else {
             if activity == .listening, let read = levelSource {
                 level = OrbMath.smooth(level, toward: OrbMath.level(fromRMS: read()))
+            } else if asked == .listening {
+                // Asked to listen, there is no microphone to follow: a slow swell.
+                level = 0.45 + 0.3 * sin(now * 5)
             } else {
                 level = 0
             }
@@ -262,7 +269,7 @@ final class CharacterHost {
                 edges = strolls && Config.playMode ? Meets.edges(of: Meets.windows(), band: (top - Self.head)...top) : []
             }
             frame = sim.step(to: now,
-                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, sent: guide.showing != nil, strolls: strolls,
+                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, sent: guide.showing != nil, asked: asked, strolls: strolls,
                                                 edges: edges, shows: bubbleShows?() ?? false, plays: Config.playMode, down: NSEvent.pressedMouseButtons & 1 != 0,
                                                 home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }

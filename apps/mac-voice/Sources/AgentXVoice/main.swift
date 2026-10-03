@@ -526,7 +526,7 @@ final class App: NSObject, NSApplicationDelegate {
         callWatcher.start()
         // The answering agent sends the character to something (#482).
         guideWatcher.wanted = { [weak self] in self?.character.onScreen == true }
-        guideWatcher.onCommand = { [weak self] rect, mark, caption in self?.character.guide(to: rect, mark: mark, caption: caption) }
+        guideWatcher.onCommand = { [weak self] rect, mark, caption, asked in self?.character.guide(to: rect, mark: mark, caption: caption, asked: asked) }
         character.onGuide = { [weak self] in self?.idleWords() }
         guideWatcher.start()
         character.onScreenChanged = { [weak self] in self?.guideWatcher.start() }

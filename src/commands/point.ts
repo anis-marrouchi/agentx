@@ -15,7 +15,7 @@ import {
 } from "@/decisions/seats/ui-element"
 import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
 import { daemon } from "@/commands/call"
-import { GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
+import { GUIDE_EXPRESSIONS, GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
 
 const run = promisify(execFile)
 
@@ -45,9 +45,10 @@ interface Snapshot {
 type ScreenRect = { x: number; y: number; width: number; height: number }
 
 /** Show `rect`: the character when it is on screen, else the cursor. */
-async function show(rect: ScreenRect, label: string, opts: { mark: string; hold?: string; text?: string }): Promise<void> {
+async function show(rect: ScreenRect, label: string, opts: { mark: string; hold?: string; text?: string; expression?: string }): Promise<void> {
   const shown = await daemon("POST", "/voice/guide", {
     rect, mark: opts.mark, ...(opts.hold ? { hold: Number(opts.hold) } : {}), ...(opts.text ? { text: opts.text } : {}),
+    ...(opts.expression ? { expression: opts.expression } : {}),
   })
     .then((r) => r?.shown === true, () => false)
   if (shown) return
@@ -65,9 +66,14 @@ export const point = new Command()
   .option("--mark <kind>", `how the character marks it: ${GUIDE_MARKS.join(", ")}`, "box")
   .option("--hold <seconds>", "how long the character stays there (8 by default)")
   .option("--text <words>", "what the character's bubble says there (no bubble without it)")
+  .option("--expression <name>", `the state the character shows there: ${GUIDE_EXPRESSIONS.join(", ")}`)
   .action(async (request: string, opts) => {
     if (!(GUIDE_MARKS as readonly string[]).includes(opts.mark)) {
       console.log(chalk.red(`  --mark is one of: ${GUIDE_MARKS.join(", ")}`))
+      process.exit(1)
+    }
+    if (opts.expression !== undefined && !(GUIDE_EXPRESSIONS as readonly string[]).includes(opts.expression)) {
+      console.log(chalk.red(`  --expression is one of: ${GUIDE_EXPRESSIONS.join(", ")}`))
       process.exit(1)
     }
     if (opts.hold !== undefined && !(Number(opts.hold) > 0 && Number(opts.hold) <= GUIDE_HOLD.max)) {
