@@ -142,4 +142,13 @@ enum CharacterMath {
         if range.contains(there) { return there }
         return min(max(pointer - side * clear, range.lowerBound), range.upperBound)
     }
+
+    /// Walking from `from` to `to`: the nearest of `edges` in its way, and
+    /// where it stops, `gap` short of it and never back from where it is.
+    static func stop(from: Double, to: Double, edges: [Double], gap: Double) -> (edge: Double, at: Double)? {
+        let way: Double = to >= from ? 1 : -1
+        let ahead = edges.filter { way * ($0 - from) > 0 && way * ($0 - to) < gap }
+        guard let edge = ahead.min(by: { abs($0 - from) < abs($1 - from) }) else { return nil }
+        return (edge, from + way * max(way * (edge - from) - gap, 0))
+    }
 }

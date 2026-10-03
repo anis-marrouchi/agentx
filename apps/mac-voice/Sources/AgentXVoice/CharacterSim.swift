@@ -40,6 +40,8 @@ struct CharacterSim {
     private var strollTo = 0.0, strolled = 0.0
     private var strollNext: Double?
     private var strolls = 0
+    /// What stopped the stroll it is on.
+    private var met: Double?
     /// Its games with the pointer, and the crouch and hop they give it.
     private(set) var play = PointerPlay()
     private var crouch = 0.0, hop = 0.0
@@ -138,7 +140,10 @@ struct CharacterSim {
         let moving = abs(speed) > 40
         let way: Double = speed >= 0 ? 1 : -1
         func toward(_ value: inout Double, _ to: Double, _ rate: Double) { value += (to - value) * (1 - exp(-dt * rate)) }
-        toward(&face, min(max(speed / 200, -1), 1), 10)
+        // Stopped at something in its way: it turns to look at it.
+        let stopped = strollTo != 0 && abs(strollTo - strolled) < 0.5 ? met : nil
+        let turned = stopped.map { $0 > x ? 0.7 : -0.7 } ?? 0
+        toward(&face, min(max(speed / 200 + turned, -1), 1), 10)
         toward(&lean, min(max(speed / 480, -1), 1) * 13, 8)
         // A game's crouch and hop are followed, not taken at once, so a
         // game cut short by work does not snap.
@@ -174,6 +179,7 @@ struct CharacterSim {
             let pull = min(far / 60, 1) * 4.5
             look = (dx / far * pull, dy / far * pull)
         }
+        if stopped != nil { look = (turned * 5, -2) }
         toward(&glance.x, look.x + face * 2, 9)
         toward(&glance.y, look.y, 9)
 
@@ -217,11 +223,19 @@ struct CharacterSim {
                 var way: Double = M.rnd(strolls, 2) < 0.5 ? -1 : 1
                 if (way > 0 ? room.right : room.left) < far { way = -way }
                 strollTo = way * min(far, way > 0 ? room.right : room.left)
+                met = nil
                 strollNext = now + abs(strollTo) / Self.strollSpeed + 5 + 6 * M.rnd(strolls, 4)
             } else {
                 strollTo = 0
                 strollNext = nil
             }
+        }
+        // Something in its way: it goes no further than just short of it.
+        // Only on the way out: nothing keeps it from going home.
+        if strollTo != 0, strollTo != strolled, let stop = M.stop(from: input.home + strolled, to: input.home + strollTo,
+                                            edges: input.edges, gap: 50 * unit + 10) {
+            strollTo = stop.at - input.home
+            met = stop.edge
         }
         let pace = Self.strollSpeed * dt
         strolled += min(max(strollTo - strolled, -pace), pace)

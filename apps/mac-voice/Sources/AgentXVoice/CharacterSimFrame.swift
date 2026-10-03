@@ -18,6 +18,9 @@ extension CharacterSim {
         /// `voice.stroll`: with nothing to do, it takes a slow stroll
         /// beside where it rests now and then (#482).
         var strolls = false
+        /// What stands on its line, along the edge: the sides of the
+        /// windows there (#539). On a stroll it stops short of the first.
+        var edges: [Double] = []
         /// Its bubble holds something to use (an answer, an error, the
         /// call buttons): no game, so the bubble waits for the hand.
         var shows = false
