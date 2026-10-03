@@ -6,6 +6,12 @@ These are standard web notifications (*Web Push*). They reach the phone through 
 
 ![The Alerts tab before notifications are turned on, with recent notifications listed](/screenshots/mobile-app/alerts.png)
 
+## Read recent alerts
+
+1. **Phone:** open **Alerts**. A blue dot on the tab means there are unread alerts.
+2. **Phone:** tap an alert to mark it read, or tap **Mark all read**. The choice is remembered on this phone.
+3. **Phone:** tap **Open**, when shown, to follow the alert’s link.
+
 ## Before you start
 
 - Install and pair the [phone app](./mobile-app.md), and add it to the home screen.
