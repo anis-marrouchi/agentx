@@ -8,10 +8,14 @@
 //                                   hold?: seconds, text?}  send the character
 //                                   there; its bubble says `text` at the stop,
 //                                   and with none there is no bubble.
+//                                   expression?: one of the nine states, shown
+//                                   there in place of its real one.
+//                                   {expression, hold?}  show that state
+//                                   where it rests.
 //                                   {home: true}  send it back.
 //                                   409 when no character is on screen.
 
-import { GUIDE_HOLD, GUIDE_MARKS, GUIDE_TEXT_MAX, guideText, type GuideFeed, type GuideMark } from "@/voice/guide"
+import { GUIDE_EXPRESSIONS, GUIDE_HOLD, GUIDE_MARKS, GUIDE_TEXT_MAX, guideText, type GuideExpression, type GuideFeed, type GuideMark } from "@/voice/guide"
 import type { Rect } from "@/voice/presence"
 import type { Reply } from "@/daemon/voice-talk-api"
 
@@ -48,8 +52,13 @@ export async function handleGuide(
   const mark = (body.mark ?? "box") as GuideMark
   const hold = body.hold === undefined ? GUIDE_HOLD.default : num(body.hold)
   const text = body.text ?? ""
-  if (!rect || !GUIDE_MARKS.includes(mark) || hold === null || hold <= 0 || hold > GUIDE_HOLD.max || typeof text !== "string") {
-    return { status: 400, body: { error: `Required: rect {x, y, width, height}; mark is ${GUIDE_MARKS.join(" | ")}; hold is up to ${GUIDE_HOLD.max} seconds; text is a string, cut at ${GUIDE_TEXT_MAX} characters` } }
+  const expression = (body.expression ?? null) as GuideExpression | null
+  // An expression alone is shown where the character rests.
+  const alone = expression !== null && body.rect === undefined
+  if ((!rect && !alone) || !GUIDE_MARKS.includes(mark) || hold === null || hold <= 0 || hold > GUIDE_HOLD.max || typeof text !== "string"
+      || (expression !== null && !GUIDE_EXPRESSIONS.includes(expression))) {
+    return { status: 400, body: { error: `Required: rect {x, y, width, height}, or an expression alone; mark is ${GUIDE_MARKS.join(" | ")}; hold is up to ${GUIDE_HOLD.max} seconds; text is a string, cut at ${GUIDE_TEXT_MAX} characters; expression is ${GUIDE_EXPRESSIONS.join(" | ")}` } }
   }
-  return { status: 200, body: { shown: true, ...feed.show(agentId, rect, mark, hold, guideText(text)) } }
+  if (!rect) return { status: 200, body: { shown: true, ...feed.express(agentId, expression!, hold) } }
+  return { status: 200, body: { shown: true, ...feed.show(agentId, rect, mark, hold, guideText(text), expression) } }
 }

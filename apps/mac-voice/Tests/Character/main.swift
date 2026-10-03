@@ -356,5 +356,43 @@ check(Meets.edges(of: [CGRect(x: 0, y: 0, width: 500, height: 800), CGRect(x: 20
         == [0, 500, 600], "a side behind another window is not met")
 check(Meets.edges(of: [CGRect(x: 300, y: 720, width: 40, height: 20)], band: band).isEmpty, "nor is a very small window")
 
+// --- A state asked for by name, and the busy look during a guide (#570) ---
+
+check(M.Mood.allCases.allSatisfy { M.mood(for: .idle, asked: $0, sent: false) == $0 && M.mood(for: .thinking, asked: $0, sent: true) == $0 },
+      "each of the nine states can be asked for by name, at rest or at a stop, busy or not")
+check(M.mood(for: .thinking, asked: nil, sent: true) == .idle, "sent to show something, it does not take the busy look")
+check(M.mood(for: .thinking, asked: nil, sent: false) == .working, "where it rests with nothing asked, thinking still works")
+check(M.mood(for: .speaking, asked: nil, sent: true) == .speaking, "sent somewhere, it still speaks its answer")
+check(M.mood(for: .speaking, asked: .dozing, sent: false) == .dozing, "a state asked for wins over the answer being spoken")
+check(M.mood(for: .listening, asked: .speaking, sent: true) == .listening && M.mood(for: .ringing, asked: .speaking, sent: false) == .calling
+      && M.mood(for: .waiting, asked: .speaking, sent: false) == .asking,
+      "someone talking, a ringing call and a call between turns show whatever was asked for")
+
+var asked = CharacterSim()
+func ask(_ seconds: Double, _ activity: M.Activity, _ mood: M.Mood?, sent: Bool = false) -> [CharacterSim.Frame] {
+    var frames: [CharacterSim.Frame] = []
+    for _ in 0..<Int(seconds * 30) {
+        clock += 1.0 / 30
+        frames.append(asked.step(to: clock, Input(activity: activity, sent: sent, asked: mood, home: home, range: range)))
+    }
+    return frames
+}
+_ = ask(2, .thinking, nil, sent: true)
+check(asked.mood == .idle, "during a guide move with a turn running, the character is not shown working")
+let spoke = ask(2, .thinking, .speaking, sent: true)
+check(asked.mood == .speaking && spoke.last!.voice > 0, "asked to speak at a stop, it speaks, its voice marks moving")
+let j570 = jumps(ask(2, .thinking, .listening) + ask(2, .thinking, nil))
+check(asked.mood == .working, "when the state asked for ends, the real one is back")
+check(j570.stretch < 0.08 && j570.lift < 6 && j570.mark < 0.2, "and nothing snaps on the way in or out")
+_ = ask(1, .listening, .dozing)
+check(asked.mood == .listening || asked.mood == .notices, "someone who starts talking is listened to, whatever was asked for")
+var keptIdle = CharacterSim()
+for i in 0...150 { _ = keptIdle.step(to: Double(i), Input(asked: .idle, home: home, range: range)) }
+check(keptIdle.mood == .idle, "asked to stay idle, it does not doze off meanwhile")
+check(CharacterSim.still(.thinking, asked: .listening, home: home).pose == M.pose(.listening)
+      && CharacterSim.still(.thinking, sent: true, home: home).pose == M.pose(.idle)
+      && CharacterSim.still(.thinking, home: home).pose == M.pose(.working),
+      "the still picture shows the state asked for too, and no busy look at a stop")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

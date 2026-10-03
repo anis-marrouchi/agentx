@@ -31,6 +31,19 @@ enum CharacterMath {
         }
     }
 
+    /// The state shown when one was asked for by name, or it was sent to
+    /// show something (#570). Someone talking, a ringing call and a call
+    /// between turns always show: the real turn comes first. Otherwise
+    /// the state asked for; and sent somewhere with none asked for, it
+    /// does not take the busy look, which would hide the move.
+    static func mood(for activity: Activity, asked: Mood?, sent: Bool) -> Mood {
+        switch activity {
+        case .listening, .ringing, .waiting: return mood(for: activity)
+        case .thinking: return asked ?? (sent ? .idle : .working)
+        case .idle, .speaking: return asked ?? mood(for: activity)
+        }
+    }
+
     /// The state it goes through on the way from `from` to `to`, if any:
     /// it notices you before it listens and when it wakes, and nods once
     /// it has heard you.

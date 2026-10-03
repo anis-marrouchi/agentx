@@ -16,7 +16,7 @@ describe("GuideFeed", () => {
     const waiting = feed.next(0)
     expect(feed.listening).toBe(true)
     feed.show("coder-agent", rect, "circle")
-    expect(await waiting).toEqual({ seq: 1, agentId: "coder-agent", rect, mark: "circle", text: null })
+    expect(await waiting).toEqual({ seq: 1, agentId: "coder-agent", rect, mark: "circle", text: null, expression: null })
   })
 
   it("a command sent between two waits is not lost", async () => {
@@ -80,6 +80,34 @@ describe("GuideFeed", () => {
     expect(feed.home().seq).toBe(0)
     feed.show(null, rect)
     expect(feed.home().seq).toBe(2)
+    expect(feed.home().seq).toBe(2)
+  })
+})
+
+describe("an expression by name (#570)", () => {
+  it("is shown where it rests for its hold, then the real state again", () => {
+    vi.useFakeTimers()
+    const feed = new GuideFeed()
+    expect(feed.express("coder-agent", "speaking", 5)).toMatchObject({ seq: 1, rect: null, mark: "none", text: null, expression: "speaking" })
+    vi.advanceTimersByTime(5_000)
+    expect(feed.current).toMatchObject({ seq: 2, rect: null, expression: null })
+  })
+
+  it("a newer command ends it, and its hold no longer sends anything", () => {
+    vi.useFakeTimers()
+    const feed = new GuideFeed()
+    feed.express(null, "listening", 5)
+    feed.show(null, rect, "box", 30, "Here", "speaking")
+    vi.advanceTimersByTime(5_000)
+    expect(feed.current).toMatchObject({ seq: 2, rect, text: "Here", expression: "speaking" })
+    vi.advanceTimersByTime(25_000)
+    expect(feed.current).toMatchObject({ seq: 3, rect: null, expression: null })
+  })
+
+  it("home ends an expression shown where it rests, once", () => {
+    const feed = new GuideFeed()
+    feed.express(null, "dozing", 60)
+    expect(feed.home()).toMatchObject({ seq: 2, expression: null })
     expect(feed.home().seq).toBe(2)
   })
 })
@@ -170,6 +198,27 @@ describe("/voice/guide", () => {
     expect((await handleGuide(feed, true, "POST", query(), { home: true })).body).toMatchObject({ rect: null, text: null })
   })
 
+  it("a stop can carry an expression; without one it is the real state", async () => {
+    const feed = listeningFeed()
+    expect((await handleGuide(feed, true, "POST", query(), { rect, expression: "speaking" })).body).toMatchObject({ rect, expression: "speaking" })
+    expect((await handleGuide(feed, true, "POST", query(), { rect })).body).toMatchObject({ expression: null })
+  })
+
+  it("an expression alone is shown where the character rests", async () => {
+    const feed = listeningFeed()
+    expect(await handleGuide(feed, true, "POST", query(), { expression: "listening", hold: 4 }))
+      .toMatchObject({ status: 200, body: { shown: true, rect: null, expression: "listening" } })
+    expect(await handleGuide(feed, true, "GET", query(0), {})).toMatchObject({ body: { seq: 1, expression: "listening" } })
+  })
+
+  it("refuses a state it does not know, and names the nine", async () => {
+    for (const body of [{ expression: "angry" }, { rect, expression: "angry" }, { expression: 3 }, { expression: "speaking", hold: 121 }, { expression: "speaking", rect: { x: 1 } }]) {
+      const reply = await handleGuide(listeningFeed(), true, "POST", query(), body)
+      expect(reply.status).toBe(400)
+      expect(String((reply.body as { error: string }).error)).toContain("idle | notices | listening | working | speaking | understood | dozing | calling | asking")
+    }
+  })
+
   it("sends it home", async () => {
     const feed = listeningFeed()
     await handleGuide(feed, true, "POST", query(), { rect, mark: "underline", hold: 30 })
@@ -219,6 +268,39 @@ describe("agentx point --hold", () => {
         await expect(point.parseAsync(["the search field", "--hold", hold], { from: "user" })).rejects.toThrow("exit 1")
       }
       expect(said.mock.calls.every(([line]) => String(line).includes("--hold is a number of seconds, up to 120"))).toBe(true)
+    } finally {
+      exit.mockRestore()
+      said.mockRestore()
+    }
+  })
+})
+
+describe("agentx express", () => {
+  it("refuses an unknown state and a hold that is too long, before it calls the daemon", async () => {
+    const { express } = await import("../src/commands/express")
+    const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => { throw new Error(`exit ${code}`) }) as never)
+    const said = vi.spyOn(console, "log").mockImplementation(() => {})
+    const sent = vi.spyOn(globalThis, "fetch")
+    try {
+      await expect(express.parseAsync(["angry"], { from: "user" })).rejects.toThrow("exit 1")
+      expect(String(said.mock.calls.at(-1)?.[0])).toContain("the state is one of: idle, notices, listening, working, speaking, understood, dozing, calling, asking")
+      await expect(express.parseAsync(["speaking", "--hold", "121"], { from: "user" })).rejects.toThrow("exit 1")
+      expect(String(said.mock.calls.at(-1)?.[0])).toContain("--hold is a number of seconds, up to 120")
+      expect(sent).not.toHaveBeenCalled()
+    } finally {
+      exit.mockRestore()
+      said.mockRestore()
+      sent.mockRestore()
+    }
+  })
+
+  it("agentx point refuses an unknown --expression before it reads the screen", async () => {
+    const { point } = await import("../src/commands/point")
+    const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => { throw new Error(`exit ${code}`) }) as never)
+    const said = vi.spyOn(console, "log").mockImplementation(() => {})
+    try {
+      await expect(point.parseAsync(["the search field", "--expression", "angry"], { from: "user" })).rejects.toThrow("exit 1")
+      expect(String(said.mock.calls.at(-1)?.[0])).toContain("--expression is one of: idle, notices")
     } finally {
       exit.mockRestore()
       said.mockRestore()

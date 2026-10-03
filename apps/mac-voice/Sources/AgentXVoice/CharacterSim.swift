@@ -117,8 +117,8 @@ struct CharacterSim {
 
         // Which state. A change starts from the pose it has now, so a
         // change in the middle of another is still one smooth move.
-        if input.activity != .idle { restSince = now }
-        var want = M.mood(for: input.activity)
+        if input.activity != .idle || input.asked != nil { restSince = now }
+        var want = M.mood(for: input.activity, asked: input.asked, sent: input.sent)
         if want == .idle && now - restSince >= Self.dozeAfter { want = .dozing }
         if want != goal {
             goal = want
@@ -250,10 +250,10 @@ struct CharacterSim {
 
     /// The state alone, where it rests: for Reduce Motion, which shows a
     /// still picture that changes between states and never a loop.
-    static func still(_ activity: M.Activity, home: Double) -> Frame {
+    static func still(_ activity: M.Activity, asked: M.Mood? = nil, sent: Bool = false, home: Double) -> Frame {
         // Its marks at full strength, so each state reads without motion:
         // the arcs of its voice only while it speaks.
-        let pose = M.pose(M.mood(for: activity))
+        let pose = M.pose(M.mood(for: activity, asked: asked, sent: sent))
         return Frame(pose: pose, x: home, level: 1, voice: pose.speak)
     }
 

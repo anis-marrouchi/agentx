@@ -362,6 +362,7 @@ While the character is on screen, an agent you speak to is told it can run the s
 | `--mark none` | The character goes there and marks nothing |
 | `--hold 20` | Seconds before it goes home: `8` by default, up to `120` |
 | `--text "Search starts here"` | What its bubble says while it stands there. Without it there is no bubble at the stop |
+| `--expression speaking` | The state it shows while it stands there. See [Ask for a state by name](#ask-for-a-state-by-name) |
 
 Good to know:
 
@@ -369,7 +370,43 @@ Good to know:
 - **Its bubble there:** the bubble shows the text you gave from the moment the character is sent, on its way and for as long as it stands there, and goes when it leaves. It is not reduced to its three dots on the way, and it stays while an agent is listening, working or speaking; only an error or a call takes its place. The text is in the size of an answer's text, and the bubble is as wide as the text. The text is one line: line breaks become spaces, it is cut at 120 characters, and a text wider than the full bubble scrolls. With no text there is no bubble at the stop. The **hold ⌥space** hint shows only where the character rests, never on its way, at a stop, or during a play.
 - **Where it stands:** on the left of the thing, level with its middle, so its bubble does not cover it. With no room on the left it stands on the right.
 - **It does not step aside meanwhile:** while it shows something, the pointer can come close. Take hold of it with **Command** to end the showing and move it.
+- **No busy look at a stop:** while the character is sent to show something, it does not take the working look when an agent is thinking, so the move stays in view. It still listens when you talk and speaks when the answer is read.
 - **Without the character:** with the orb look, with the character hidden, or with AgentX Voice closed, `agentx point` moves the highlight cursor as before.
+
+### Ask for a state by name
+
+The character can show any of its nine states when you ask, for example to record a demo. This needs **Shown as** set to **Character** and the character on screen.
+
+1. **Terminal:** run the command below. The character shows the listening state where it rests for five seconds, then its real state again.
+
+```sh
+agentx express listening --hold 5
+```
+
+2. **Terminal:** to show a state at something on screen, add `--expression` to `agentx point`:
+
+```sh
+agentx point "the search field" --text "Search starts here" --expression speaking
+```
+
+| State | What you see |
+|---|---|
+| `idle` | At rest, eyes open |
+| `notices` | It looks up at you |
+| `listening` | Rings beside it |
+| `working` | Half-closed eyes and three dots: the busy look |
+| `speaking` | The arcs of its voice |
+| `understood` | A nod with stars |
+| `dozing` | Asleep |
+| `calling` | Ringing, as for a call |
+| `asking` | Waiting with a question mark, as in a call between turns |
+
+Good to know:
+
+- **How long:** `--hold` is in seconds, `8` by default, up to `120`. A newer command ends it sooner.
+- **Your turn comes first:** when you start talking, when a call rings, and in a call between turns, the character shows that instead, whatever was asked.
+- **Where:** `agentx express` shows the state where the character rests. If the character stands at something, it goes home first.
+- **Without the character:** the command answers that no character is on screen, and nothing changes.
 - **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked, the character and the mark appear in place without the flight.
 - **One thing at a time:** a new place replaces the one before. Hiding the character removes the mark.
 
@@ -1076,8 +1113,8 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `POST /voice/hush` | Silence whatever is speaking, pause the speaking queue and wait for your words (what **Option–Space** sends when pressed) |
 | `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; the queue plays on. `stop` ends the talk or lesson and empties the queue |
 | `POST /voice/stop` | Silence every voice and empty the speaking queue (what **Command–Option–.** sends) |
-| `GET /voice/guide?after=<seq>` | What the character is sent to show: `{"seq", "agentId", "rect", "mark", "text"}`. It answers as soon as there is a newer command than `<seq>`, else after 25 seconds. AgentX Voice waits here while the character is on screen |
-| `POST /voice/guide` | Send the character to a place: `{"rect": {"x", "y", "width", "height"}, "mark": "box", "hold": 8, "text": "Search starts here"}`, measured in points from the top-left of the main screen. `mark` is `box`, `circle`, `underline` or `none`. `text` is optional: what the bubble says at the stop, cut at 120 characters; without it there is no bubble. `{"home": true}` sends it back. Answers `409` when no character is on screen |
+| `GET /voice/guide?after=<seq>` | What the character is sent to show: `{"seq", "agentId", "rect", "mark", "text", "expression"}`. It answers as soon as there is a newer command than `<seq>`, else after 25 seconds. AgentX Voice waits here while the character is on screen |
+| `POST /voice/guide` | Send the character to a place: `{"rect": {"x", "y", "width", "height"}, "mark": "box", "hold": 8, "text": "Search starts here"}`, measured in points from the top-left of the main screen. `mark` is `box`, `circle`, `underline` or `none`. `text` is optional: what the bubble says at the stop, cut at 120 characters; without it there is no bubble. `expression` is optional: one of the nine [states](#ask-for-a-state-by-name), shown while it stands there. `{"expression": "listening", "hold": 5}` with no `rect` shows the state where it rests. `{"home": true}` sends it back. Answers `409` when no character is on screen |
 | `GET /voice/queue` | The speaking queue: `{"paused", "playing", "waiting", "recent"}` |
 | `POST /voice/queue` | Add a line in an agent's voice: `{"text": "…", "agentId": "<id>", "kind": "answer"}`. `kind` is `answer`, `narration` or `line`. Add `"wait": true` to get the reply only once the line has been spoken (`{"item", "played"}`) |
 | `POST /voice/queue/<id>/skip` | Drop that line, whether it is playing or waiting. The others keep their order |

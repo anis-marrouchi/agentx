@@ -13,6 +13,11 @@ import type { Presence, Rect } from "./presence"
 export const GUIDE_MARKS = ["box", "circle", "underline", "none"] as const
 export type GuideMark = (typeof GUIDE_MARKS)[number]
 
+/** The states the character can be asked to show (#570): the nine of its
+ *  pose sheet, by the names AgentX Voice knows them (CharacterMath.Mood). */
+export const GUIDE_EXPRESSIONS = ["idle", "notices", "listening", "working", "speaking", "understood", "dozing", "calling", "asking"] as const
+export type GuideExpression = (typeof GUIDE_EXPRESSIONS)[number]
+
 export interface GuideCommand {
   /** Grows with every command, so a waiting app knows a new one. */
   seq: number
@@ -23,6 +28,9 @@ export interface GuideCommand {
   mark: GuideMark
   /** What its bubble says while it stands there (#562). Null: no bubble. */
   text: string | null
+  /** The state it shows meanwhile, in place of what the assistant is
+   *  doing (#570). Null: its real state. */
+  expression: GuideExpression | null
 }
 
 /** How long after its last wait ended the app still counts as there:
@@ -51,7 +59,7 @@ export const GUIDE_INSTRUCTION =
   "`--text \"<a few words>\"` to have its bubble say why. It only points and never clicks. Do it when showing helps, not on every answer."
 
 export class GuideFeed {
-  private cmd: GuideCommand = { seq: 0, agentId: null, rect: null, mark: "none", text: null }
+  private cmd: GuideCommand = { seq: 0, agentId: null, rect: null, mark: "none", text: null, expression: null }
   private waiters = new Set<() => void>()
   private waitedAt = -Infinity
   private holdTimer: NodeJS.Timeout | null = null
@@ -67,20 +75,30 @@ export class GuideFeed {
 
   /** Send the character to `rect`. With `holdSeconds` it goes home by
    *  itself after that long, unless a newer command came. Its bubble
-   *  says `text` while it stands there. */
-  show(agentId: string | null, rect: Rect, mark: GuideMark = "box", holdSeconds?: number, text: string | null = null): GuideCommand {
-    const cmd = this.push({ agentId, rect, mark, text })
-    if (holdSeconds !== undefined) {
-      this.holdTimer = setTimeout(() => { if (this.cmd.seq === cmd.seq) this.home(agentId) }, holdSeconds * 1000)
+   *  says `text` and it shows `expression` while it stands there. */
+  show(agentId: string | null, rect: Rect, mark: GuideMark = "box", holdSeconds?: number, text: string | null = null,
+       expression: GuideExpression | null = null): GuideCommand {
+    return this.held(this.push({ agentId, rect, mark, text, expression }), holdSeconds)
+  }
+
+  /** Show `expression` where it rests (#570), for `holdSeconds`; then its
+   *  real state again, unless a newer command came. */
+  express(agentId: string | null, expression: GuideExpression, holdSeconds: number): GuideCommand {
+    return this.held(this.push({ agentId, rect: null, mark: "none", text: null, expression }), holdSeconds)
+  }
+
+  /** Back to where it rests, its mark and its expression gone. */
+  home(agentId: string | null = null): GuideCommand {
+    if (!this.cmd.rect && !this.cmd.expression) return this.cmd
+    return this.push({ agentId, rect: null, mark: "none", text: null, expression: null })
+  }
+
+  private held(cmd: GuideCommand, seconds?: number): GuideCommand {
+    if (seconds !== undefined) {
+      this.holdTimer = setTimeout(() => { if (this.cmd.seq === cmd.seq) this.home(cmd.agentId) }, seconds * 1000)
       this.holdTimer.unref?.()
     }
     return cmd
-  }
-
-  /** Back to where it rests, its mark gone. */
-  home(agentId: string | null = null): GuideCommand {
-    if (!this.cmd.rect) return this.cmd
-    return this.push({ agentId, rect: null, mark: "none", text: null })
   }
 
   /** The command after `after`: at once when there is one, else when one

@@ -691,6 +691,15 @@ Print the resolved (merged) policy for an agent.
 | `--mark <kind>` | `box` | How the character marks it: box, circle, underline, none. |
 | `--hold <seconds>` | — | How long the character stays there (8 by default). |
 | `--text <words>` | — | What the character's bubble says there (no bubble without it). |
+| `--expression <name>` | — | The state the character shows there: idle, notices, listening, working, speaking, understood, dozing, calling, asking. |
+
+## express
+
+`agentx express <name>`: Have the character show one of its states for a few seconds: idle, notices, listening, working, speaking, understood, dozing, calling, asking.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--hold <seconds>` | — | How long it shows it (8 by default). |
 
 ## look
 
