@@ -180,6 +180,16 @@ cutT += 1 / fps
 _ = filled.step(to: cutT, Input(pointer: (home + 150, 120), shows: true, plays: true, home: home, range: range))
 check(filled.play.game == nil, "its bubble fills in the middle of a game: the game is over")
 
+// Sent to show something (#482) in the middle of a game: the game is
+// over and it goes home.
+var (sent, sentT, _) = game(after: 0)
+check(sent.play.game != nil, "(a game is on)")
+for _ in 0..<Int(3 * fps) {
+    sentT += 1 / fps
+    _ = sent.step(to: sentT, Input(pointer: (home + 150, 60), sent: true, plays: true, home: home, range: range))
+}
+check(sent.play.game == nil && abs(sent.x - home) < 1, "sent to show something in a game: the game is over, it is home")
+
 // A button pressed while it works and still down after is no click: it
 // moves as with the button up.
 func afterWork(down: Bool) -> [Double] {

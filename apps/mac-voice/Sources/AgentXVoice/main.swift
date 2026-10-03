@@ -85,6 +85,7 @@ final class App: NSObject, NSApplicationDelegate {
 
     // An agent ringing the owner (#321).
     private let callWatcher = CallWatcher()
+    private let guideWatcher = GuideWatcher()
     private let ringer = Ringer()
     /// The call ringing on the pill now.
     private var ringingCall: IncomingCall?
@@ -508,6 +509,11 @@ final class App: NSObject, NSApplicationDelegate {
             return CallModel.pollQuery(ringing: self.ringingCall?.id ?? self.answeringCall, canRing: self.canRing)
         }
         callWatcher.start()
+        // The answering agent sends the character to something (#482).
+        guideWatcher.wanted = { [weak self] in self?.character.onScreen == true }
+        guideWatcher.onCommand = { [weak self] rect, mark in self?.character.guide(to: rect, mark: mark) }
+        guideWatcher.start()
+        character.onScreenChanged = { [weak self] in self?.guideWatcher.start() }
 
         // The target does not wait for the microphone: the menu shows it
         // either way.
