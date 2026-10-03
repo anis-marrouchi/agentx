@@ -2,9 +2,10 @@
 //
 // Each agent's orb in AgentX Voice flows through one of these gradients.
 // An agent picks one with presence.palette; without one it gets the
-// palette whose hue is nearest its presence colour, so it stays
-// recognisable as the same agent as its on-screen pointer. The app draws
-// whatever colours the daemon sends, so this file is the only list.
+// palette whose hue is nearest its own presence.color, so it stays
+// recognisable as the same agent as its on-screen pointer; with neither
+// it gets the default, voice.palette. The app draws whatever colours the
+// daemon sends, so this file is the only list.
 
 export interface OrbPalette {
   id: string
@@ -57,9 +58,21 @@ export function paletteForColor(hex: string): OrbPalette {
   return best
 }
 
+/** The palette of an agent that chose neither a palette nor a colour,
+ *  unless voice.palette names another. */
+export const DEFAULT_PALETTE = "lagoon"
+
 /** An agent's palette: the one it chose (presence.palette), else the one
- *  nearest its colour (presenceLook's). `set` says which. */
-export function agentPalette(chosen: string | undefined, color: string): OrbPalette & { set: boolean } {
-  const picked = ORB_PALETTES.find((p) => p.id === chosen)
-  return picked ? { ...picked, set: true } : { ...paletteForColor(color), set: false }
+ *  nearest the colour it chose (presence.color), else `fallback`
+ *  (voice.palette). `set` says whether it chose the palette itself. */
+export function agentPalette(
+  presence: { palette?: string; color?: string } | undefined,
+  fallback: string = DEFAULT_PALETTE,
+): OrbPalette & { set: boolean } {
+  const byId = (id?: string) => ORB_PALETTES.find((p) => p.id === id)
+  const picked = byId(presence?.palette)
+  if (picked) return { ...picked, set: true }
+  const color = presence?.color
+  const unchosen = color && hueOf(color) !== null ? paletteForColor(color) : byId(fallback) ?? byId(DEFAULT_PALETTE)!
+  return { ...unchosen, set: false }
 }

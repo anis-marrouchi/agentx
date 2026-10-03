@@ -202,7 +202,7 @@ Each agent's orb flows through a gradient drawn from nature. There are seven:
 
 ![The seven orb palettes: Sunrise (coral to amber), Desert (terracotta to sand), Forest (moss to fern), Lagoon (teal to aqua), Ocean (deep blue to sky), Dusk (indigo to rose) and Blossom (rose to blush)](/screenshots/voice/orb-palettes.png)
 
-| Palette | Colours | Given by default to agents coloured |
+| Palette | Colours | Given to agents whose own colour is |
 |---|---|---|
 | `sunrise` | coral to amber | red and orange |
 | `desert` | terracotta to sand | brown and gold |
@@ -212,7 +212,7 @@ Each agent's orb flows through a gradient drawn from nature. There are seven:
 | `dusk` | indigo to rose | violet and purple |
 | `blossom` | rose to blush | pink |
 
-Without a choice, an agent gets the palette nearest its [colour](#presence-on-screen), so its orb still matches its on-screen pointer. To pick one:
+Without a choice, an agent that has a [colour](#presence-on-screen) of its own (`presence.color`) gets the palette nearest it, so its orb still matches its on-screen pointer. An agent with neither gets the default palette, `lagoon` (teal). To change the default for every such agent, set `voice.palette` in `agentx.json` to one of the seven ids. The pointer of an agent with no colour keeps the colour picked from its id. To pick a palette for one agent:
 
 1. **Mac:** open **Settings…** from the AgentX menu, pick the agent on the **Agents** tab, and choose an **Orb palette**. **Match the colour** goes back to the default.
 2. **Mac:** choose **Save**.

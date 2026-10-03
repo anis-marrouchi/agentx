@@ -49,9 +49,30 @@ describe("orb palettes", () => {
   })
 
   it("a chosen palette wins over the colour; an unknown one is ignored", () => {
-    expect(agentPalette("forest", "#DB2777")).toMatchObject({ id: "forest", set: true })
-    expect(agentPalette(undefined, "#DB2777")).toMatchObject({ id: "blossom", set: false })
-    expect(agentPalette("jungle", "#DB2777")).toMatchObject({ id: "blossom", set: false })
+    expect(agentPalette({ palette: "forest", color: "#DB2777" })).toMatchObject({ id: "forest", set: true })
+    expect(agentPalette({ color: "#DB2777" })).toMatchObject({ id: "blossom", set: false })
+    expect(agentPalette({ palette: "jungle", color: "#DB2777" })).toMatchObject({ id: "blossom", set: false })
+  })
+
+  // #553: no purple by the luck of an agent's id.
+  it("an agent that chose neither gets the default: lagoon, or voice.palette", () => {
+    expect(agentPalette(undefined)).toMatchObject({ id: "lagoon", set: false })
+    expect(agentPalette({})).toMatchObject({ id: "lagoon", set: false })
+    expect(agentPalette({}, "dusk")).toMatchObject({ id: "dusk", set: false })
+    expect(agentPalette({ color: "#DB2777" }, "dusk").id).toBe("blossom")
+    expect(agentPalette({ palette: "forest" }, "dusk").id).toBe("forest")
+    expect(agentPalette({}, "jungle").id).toBe("lagoon")
+    expect(agentPalette({ color: "teal" }, "dusk").id).toBe("dusk")
+  })
+
+  it("voice.palette is lagoon unless set, and takes known palettes only", () => {
+    expect(config().voice.palette).toBe("lagoon")
+    const set: any = rawConfig()
+    set.voice = { palette: "dusk" }
+    const parsed = daemonConfigSchema.parse(set)
+    expect(voiceSettingsView(parsed, []).agents.find((a) => a.id === "writer")).toMatchObject({ paletteDefault: "dusk" })
+    set.voice = { palette: "jungle" }
+    expect(daemonConfigSchema.safeParse(set).success).toBe(false)
   })
 
   it("the config schema accepts known palettes only", () => {
@@ -67,7 +88,7 @@ describe("palettes and the card in the settings window", () => {
     const writer = view.agents.find((a) => a.id === "writer")!
     const researcher = view.agents.find((a) => a.id === "researcher")!
     expect(writer.palette).toBeUndefined()
-    expect(writer.paletteDefault).toBe(paletteForColor(writer.color).id)
+    expect(writer.paletteDefault).toBe("lagoon")
     expect(researcher).toMatchObject({ palette: "forest", paletteDefault: "ocean" })
     expect(view.palettes.map((p) => p.id)).toEqual(ORB_PALETTES.map((p) => p.id))
     expect(view.palettes[0].colors).toHaveLength(5)

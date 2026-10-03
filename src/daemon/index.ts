@@ -4923,10 +4923,9 @@ export class AgentXDaemon {
             // derived from its id. The cursor and the voice orb share it.
             color: presenceLook(agent.id, this.config.agents[agent.id]).color,
             // The voice orb's gradient: presence.palette, else the nature
-            // palette nearest that colour.
+            // palette nearest presence.color, else voice.palette.
             palette: (({ id, colors }) => ({ id, colors }))(agentPalette(
-              this.config.agents[agent.id]?.presence?.palette,
-              presenceLook(agent.id, this.config.agents[agent.id]).color)),
+              this.config.agents[agent.id]?.presence, this.config.voice.palette)),
           })))
           break
 
@@ -5918,8 +5917,9 @@ export class AgentXDaemon {
             localNode: this.config.node.id,
             localLook: (id) => {
               const a = this.config.agents[id]
-              return a ? { color: presenceLook(id, a).color, palette: a.presence?.palette } : undefined
+              return a ? { color: presenceLook(id, a).color, palette: a.presence?.palette, colorSet: !!a.presence?.color } : undefined
             },
+            defaultPalette: this.config.voice.palette,
           }))
           break
         }

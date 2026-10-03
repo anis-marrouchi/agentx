@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync } from "fs"
 import type { DaemonConfig } from "@/daemon/config"
 import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
 import { presenceLook } from "@/voice/presence"
-import { ORB_PALETTES, VOICE_LOOKS, agentPalette, paletteForColor, type VoiceLook } from "@/voice/orb-palettes"
+import { ORB_PALETTES, VOICE_LOOKS, agentPalette, type VoiceLook } from "@/voice/orb-palettes"
 import { resolveAgentVoice, voiceRef, label } from "@/voice/agent-voice"
 import type { SystemVoice } from "@/voice/system-voices"
 import type { VoiceRef } from "@/voice/speaker"
@@ -136,14 +136,14 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       const av = a.voice ?? {}
       const resolved = resolveAgentVoice(id, config.agents, v, installed)
       const color = presenceLook(id, a).color
-      const palette = agentPalette(a.presence?.palette, color)
+      const palette = agentPalette(a.presence, v.palette)
       return {
         id,
         name: a.name || id,
         color,
         colorSet: !!a.presence?.color,
         ...(palette.set ? { palette: palette.id } : {}),
-        paletteDefault: paletteForColor(color).id,
+        paletteDefault: agentPalette({ color: a.presence?.color }, v.palette).id,
         voice: {
           ...(av.provider ? { provider: av.provider } : {}),
           ...(typeof av.system === "string" ? { system: av.system } : {}),

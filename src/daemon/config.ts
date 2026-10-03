@@ -5,7 +5,7 @@ import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
-import { ORB_PALETTE_IDS, VOICE_LOOKS } from "@/voice/orb-palettes"
+import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_LOOKS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
@@ -1308,6 +1308,9 @@ export const daemonConfigSchema = z.object({
     /** The character takes a slow stroll beside where it rests when it
      *  has nothing to do. Off: it moves only out of the pointer's way. */
     stroll: z.boolean().default(false),
+    /** The orb and character palette of an agent that set neither
+     *  presence.palette nor presence.color. */
+    palette: z.enum(ORB_PALETTE_IDS).default(DEFAULT_PALETTE),
     /** The answer text AgentX Voice shows inside its pill. */
     card: z.object({
       /** Seconds the answer stays open once it has been spoken; 0 keeps

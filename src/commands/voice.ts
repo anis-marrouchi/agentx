@@ -187,7 +187,7 @@ function saveSettings(file: string, patch: VoiceSettingsPatch): void {
 
 voice
   .command("palette [agent] [palette]")
-  .description(`the voice orb's colours: list the palettes, or pick one for an agent (${ORB_PALETTE_IDS.join(", ")}; "default" follows the agent's colour)`)
+  .description(`the voice orb's colours: list the palettes, or pick one for an agent (${ORB_PALETTE_IDS.join(", ")}; "default" follows the agent's colour, or voice.palette when it has none)`)
   .option("-c, --config <path>", "agentx.json to read or change")
   .action((agentId: string | undefined, choice: string | undefined, opts) => {
     try {
@@ -207,8 +207,8 @@ voice
       for (const [id, a] of Object.entries(config.agents)) {
         if (agentId && id !== agentId) continue
         const color = presenceLook(id, a).color
-        const p = agentPalette(a.presence?.palette, color)
-        console.log(`  ${id.padEnd(24)} ${p.id.padEnd(10)} ${chalk.dim(p.set ? "chosen" : `nearest its colour ${color}`)}`)
+        const p = agentPalette(a.presence, config.voice.palette)
+        console.log(`  ${id.padEnd(24)} ${p.id.padEnd(10)} ${chalk.dim(p.set ? "chosen" : a.presence?.color ? `nearest its colour ${color}` : "the default, voice.palette")}`)
       }
       console.log()
     } catch (e: any) {
