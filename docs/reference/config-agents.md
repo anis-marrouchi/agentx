@@ -198,6 +198,8 @@ How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and 
 | `processPool.maxAgeSeconds` | number (60–86400) | `2700` | Seconds of idleness after which a process is always stopped. |
 | `processPool.sweepIntervalSeconds` | number (1–300) | `5` | How often the pool is checked. |
 
+A warm process answers only the question it was asked. When a background task of the agent ends, Claude Code writes a reply nobody asked for; that reply is not sent, and the daemon log notes it as `dropped a reply no question asked for`.
+
 ## plugins
 
 | Key | Type | Default | What it does |
@@ -214,4 +216,5 @@ How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and 
 
 - **`config check` names a field:** the value has the wrong type or is out of range. Compare it with the table above.
 - **An `sdk` agent fails with `No API key for provider`:** set `providers.<name>.apiKey`, or check that the environment variable it points to is in `.env`.
+- **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.

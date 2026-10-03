@@ -195,3 +195,79 @@ describe("ClaudeProcessFactory — turn deadline", () => {
     expect((err as TurnInterrupted).reason).toBe("registry-stop")
   })
 })
+
+describe("ClaudeProcessFactory — a reply no question asked for (#585)", () => {
+  // Stands in for Claude Code with --replay-user-messages: echoes each
+  // question's uuid, then answers it. 50 ms after the first answer it runs
+  // a turn of its own, as Claude does when a background task ends; that
+  // turn takes 200 ms and a question written meanwhile waits behind it.
+  const standIn = `#!/usr/bin/env node
+const out = (e) => process.stdout.write(JSON.stringify(e) + "\\n")
+const wait = (ms) => new Promise((r) => setTimeout(r, ms))
+let chain = Promise.resolve()
+let n = 0
+let buf = ""
+process.stdin.on("data", (c) => {
+  buf += c
+  let nl
+  while ((nl = buf.indexOf("\\n")) !== -1) {
+    const q = JSON.parse(buf.slice(0, nl))
+    buf = buf.slice(nl + 1)
+    chain = chain.then(() => {
+      n++
+      out({ type: "system", subtype: "init", turn: n })
+      out({ type: "user", uuid: q.uuid, isReplay: true, message: q.message })
+      out({ type: "result", result: "answer " + n })
+      if (n === 1) setTimeout(() => { chain = chain.then(async () => {
+        out({ type: "system", subtype: "init", turn: "notification" })
+        await wait(200)
+        out({ type: "result", result: "notification reply" })
+      }) }, 50)
+    })
+  }
+})
+`
+  const spawnStandIn = () => {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-notifying-claude-"))
+    const binary = join(dir, "claude")
+    writeFileSync(binary, standIn)
+    chmodSync(binary, 0o755)
+    const logs: string[] = []
+    const handle = new ClaudeProcessFactory({ binary, log: (m) => logs.push(m) }).spawn(KEY, OPTS())
+    const ask = async (message: string) => {
+      const events: any[] = []
+      for await (const evt of handle.runTurn({ message, taskId: "t", deadlineMs: 5_000 })) events.push(evt.raw)
+      return events
+    }
+    return { handle, logs, ask }
+  }
+  const answer = (events: any[]) => events.find((e) => e.type === "result")?.result
+
+  it("answers the question asked, not the reply that was waiting", async () => {
+    const { handle, logs, ask } = spawnStandIn()
+    try {
+      expect(answer(await ask("q1"))).toBe("answer 1")
+      await new Promise(r => setTimeout(r, 400))   // the notification turn ends while nobody asks
+      const second = await ask("q2")
+      expect(answer(second)).toBe("answer 2")
+      // The turn keeps its own init, not the notification's.
+      expect(second.filter((e) => e.subtype === "init").map((e) => e.turn)).toEqual([2])
+      expect(answer(await ask("q3"))).toBe("answer 3")
+      expect(logs.filter((m) => m.includes("notification reply"))).toHaveLength(1)
+      expect(handle.snapshot().turnCount).toBe(3)
+    } finally {
+      await handle.kill("test-end")
+    }
+  })
+
+  it("answers a question written while that turn is still running", async () => {
+    const { handle, ask } = spawnStandIn()
+    try {
+      expect(answer(await ask("q1"))).toBe("answer 1")
+      await new Promise(r => setTimeout(r, 120))   // the notification turn has started
+      expect(answer(await ask("q2"))).toBe("answer 2")
+    } finally {
+      await handle.kill("test-end")
+    }
+  })
+})

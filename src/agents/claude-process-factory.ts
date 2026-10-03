@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "child_process"
+import { randomUUID } from "crypto"
 import { existsSync, readFileSync } from "fs"
 import { resolve } from "path"
 import {
@@ -26,6 +27,13 @@ import { claudeBillingEnv } from "@/utils/workspace-env"
 //           rate_limit_event, result, ...). The `result` event marks
 //           the end of one turn; subsequent turns can be sent on the
 //           same stdin without spawning again.
+//
+// A `result` is not always the answer to the last line written: when a
+// background task of the agent ends, Claude runs a turn nobody asked for,
+// with its own `result`. So each user line carries a uuid, and with
+// --replay-user-messages Claude echoes it on stdout as that question's
+// turn starts (verified on 2.1.288, 2026-10-03). Only what follows the
+// echo belongs to the question (#585).
 //
 // Concurrency: same-chat turns serialize through `turnQueue`. The
 // handle never runs two turns simultaneously — Claude's session state
@@ -111,6 +119,7 @@ class ClaudeProcessHandle implements ProcessHandle {
   /** Promise chain that serialises runTurn calls. Each call appends. */
   private turnQueue: Promise<void> = Promise.resolve()
   private snap: ProcessSnapshot
+  private log: (msg: string) => void
 
   constructor(
     public readonly key: ProcessKey,
@@ -119,7 +128,7 @@ class ClaudeProcessHandle implements ProcessHandle {
   ) {
     const binary = factoryOpts.binary ?? "claude"
     const args = this.buildArgs(opts)
-    const log = factoryOpts.log ?? (() => {})
+    const log = this.log = factoryOpts.log ?? (() => {})
 
     this.child = spawn(binary, args, {
       cwd: opts.workspace,
@@ -194,8 +203,10 @@ class ClaudeProcessHandle implements ProcessHandle {
 
     // Write the user line. JSON.stringify guarantees no embedded
     // newlines so a single \n delimits the message.
+    const uuid = randomUUID()
     const line = JSON.stringify({
       type: "user",
+      uuid,
       message: { role: "user", content: input.message },
     })
     this.child.stdin.write(line + "\n")
@@ -209,6 +220,12 @@ class ClaudeProcessHandle implements ProcessHandle {
       return new TurnDeadlineExceeded(budgetMs)
     }
 
+    // Until Claude echoes our uuid, the events are from a turn nobody
+    // asked for (queued while the handle sat idle, or still running).
+    // Its reply is not this question's answer: log it and drop it.
+    let echoed = false
+    let init: ParsedEvent | null = null
+
     try {
       while (true) {
         const remaining = deadline - Date.now()
@@ -220,6 +237,20 @@ class ClaudeProcessHandle implements ProcessHandle {
         if (evt === null && !this.exited) throw timedOut()
         if (evt === null) {
           throw new Error(`claude process exited mid-turn (code=${this.exitCode}, reason=${this.snap.deadReason ?? "?"})`)
+        }
+        if (!echoed) {
+          if (evt.type === "user" && evt.uuid === uuid) {
+            echoed = true
+            // The init of our own turn arrives before the echo.
+            if (init) yield { type: init.type, raw: init }
+          } else if (evt.type === "system" && evt.subtype === "init") {
+            init = evt
+          } else if (evt.type === "result") {
+            init = null
+            const text = typeof evt.result === "string" ? evt.result : ""
+            this.log(`[claude pid=${this.snap.pid}] dropped a reply no question asked for (${text.length} chars): ${text.slice(0, 120)}`)
+          }
+          continue
         }
         yield { type: evt.type, raw: evt }
 
@@ -280,6 +311,7 @@ class ClaudeProcessHandle implements ProcessHandle {
       "--input-format", "stream-json",
       "--output-format", "stream-json",
       "--verbose",
+      "--replay-user-messages",
     ]
     if (opts.model) args.push("--model", opts.model)
     if (opts.permissionMode === "bypassPermissions") {
