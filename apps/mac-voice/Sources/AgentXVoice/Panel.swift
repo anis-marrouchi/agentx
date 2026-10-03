@@ -125,6 +125,11 @@ final class Panel: NSPanel {
     /// character's head is, and the screen it is on.
     private(set) var bubble: (head: NSPoint, visible: NSRect)?
 
+    /// 0 the full bubble … 1 its three dots, while its character moves
+    /// (PanelBubble.swift).
+    var small: CGFloat = 0
+    let dots = BubbleDots()
+
     /// Told of every state rendered, so the menu-bar icon can follow.
     var onRender: ((State) -> Void)?
 
@@ -263,6 +268,10 @@ final class Panel: NSPanel {
         separator.isHidden = true
         surface.addSubview(separator)
         surface.addSubview(answer)
+        dots.frame = surface.bounds
+        dots.autoresizingMask = [.width, .height]
+        dots.alphaValue = 0
+        surface.addSubview(dots)
         answer.onHeight = { [weak self] height in self?.grow(answerHeight: height) }
 
         // The orb, centred 28 points from the left edge; its square is
@@ -331,7 +340,8 @@ final class Panel: NSPanel {
         row.frame = NSRect(x: 0, y: above ? 0 : answerHeight, width: bounds.width, height: h)
         // Reduced, the orb is all there is: in the middle of its circle.
         orb.frame.origin.x = reduced ? (bounds.width - Self.orbFrame) / 2 : 28 - Self.orbFrame / 2
-        if reduced { return }
+        // Reduced either way, the row is not laid out: nothing of it shows.
+        if reduced || small > 0 { return }
         closeButton.frame.origin.x = bounds.width - 28
         // The mini orbs sit between the words and the close button, and
         // the words give up that room while they show.
@@ -403,19 +413,24 @@ final class Panel: NSPanel {
     }
 
     /// The character's speech bubble (#491): the pill sits above `head`,
-    /// the top of the character, and goes where it goes, grown or not. It
-    /// is not dragged by itself, and the place it was dragged to as a
-    /// pill is kept for the orb look.
+    /// the top of the character, and goes where it goes, grown or not,
+    /// never over it (#554). `small` of the way reduced to its dots,
+    /// unless it has grown into an answer. It is not dragged by itself,
+    /// and the place it was dragged to as a pill is kept for the orb look.
     @MainActor
-    func attach(head: NSPoint, visible: NSRect) {
+    func attach(head: NSPoint, visible: NSRect, small amount: CGFloat = 0) {
         bubble = (head, visible)
         isMovableByWindowBackground = false
         // Growing or collapsing: it catches up on the next frame.
         guard placing == 0 else { return }
-        let to = PillPlacement.bubble(size: Self.size, head: head, visible: visible)
-        let from = collapsedFrame().origin
-        let moved = PillPlacement.inside(frame.offsetBy(dx: to.x - from.x, dy: to.y - from.y), visible)
-        if moved.origin != frame.origin { place(moved.origin) }
+        shrink(expanded ? 0 : amount)
+        let shape = PillPlacement.shrunk(Self.size, small: small)
+        let size = expanded ? frame.size : shape.size
+        let to = NSRect(origin: PillPlacement.bubble(size: size, head: head, visible: visible, reach: shape.reach), size: size)
+        guard to != frame else { return }
+        placing += 1
+        setFrame(to, display: true)
+        placing -= 1
     }
 
     /// The orb look again: a pill of its own, back where it was left.
@@ -424,6 +439,12 @@ final class Panel: NSPanel {
         guard bubble != nil else { return }
         bubble = nil
         isMovableByWindowBackground = true
+        if small > 0 {
+            shrink(0)
+            placing += 1
+            setContentSize(Self.size)
+            placing -= 1
+        }
         restorePosition()
     }
 
