@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.103.2](https://github.com/anis-marrouchi/agentx/compare/v0.103.1...v0.103.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* **voice:** a play ends on a change of screens only if its own screen changed ([#587](https://github.com/anis-marrouchi/agentx/issues/587)) ([05154a1](https://github.com/anis-marrouchi/agentx/commit/05154a1d38a69da8a8707af16e95d87bfec60001))
+
 ## [0.103.1](https://github.com/anis-marrouchi/agentx/compare/v0.103.0...v0.103.1) (2026-10-03)
 
 
