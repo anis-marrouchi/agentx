@@ -219,6 +219,29 @@ describe("SessionStore — tier-2 rotation metric (context vs cumulative)", () =
   })
   afterEach(() => rmSync(TEST_DIR, { recursive: true, force: true }))
 
+  it("rotates selected channels earlier without changing other chats, across native runtimes", () => {
+    store = new SessionStore(TEST_DIR, {
+      tierTwoThresholdTokens: 120_000,
+      tierTwoThresholdTokensByChannel: { voice: 60_000, github: 80_000 },
+    })
+    store.setCodexSessionId("atlas", "voice", "v1", "codex-1")
+    store.setClaudeSessionId("atlas", "github", "pr1", "claude-1")
+    store.setOpenCodeSessionId("atlas", "telegram", "t1", "opencode-1")
+    const usage = { inputTokens: 100, outputTokens: 100, cacheReadTokens: 1_000_000, cacheCreateTokens: 0 }
+    store.recordTurnUsage("atlas", "voice", "v1", usage, 60_000)
+    store.recordTurnUsage("atlas", "github", "pr1", usage, 79_999)
+    store.recordTurnUsage("atlas", "telegram", "t1", usage, 100_000)
+    expect(store.shouldRotateByTierTwo("atlas", "voice", "v1")).toBe(true)
+    expect(store.shouldRotateByTierTwo("atlas", "github", "pr1")).toBe(false)
+    expect(store.shouldRotateByTierTwo("atlas", "telegram", "t1")).toBe(false)
+    store.recordTurnUsage("atlas", "github", "pr1", usage, 80_000)
+    expect(store.shouldRotateByTierTwo("atlas", "github", "pr1")).toBe(true)
+    expect(store.getTierTwoThresholdTokens("telegram")).toBe(120_000)
+    expect(store.getTierTwoThresholdTokens()).toBe(120_000)
+    store.clearClaudeSessionId("atlas", "voice", "v1")
+    expect(store.shouldRotateByTierTwo("atlas", "voice", "v1")).toBe(false)
+  })
+
   it("records both the cumulative turn total and the per-request context size", () => {
     store.recordTurnUsage("atlas", "telegram", "g1", bigCumulative, 120_000)
     const s = store.getSession("atlas", "telegram", "g1")

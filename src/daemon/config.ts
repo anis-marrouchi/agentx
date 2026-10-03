@@ -1430,6 +1430,8 @@ export const daemonConfigSchema = z.object({
     staleMinutes: z.number().int().min(1).max(1440).default(720),
     maxTurnsPerSession: z.number().int().min(2).max(200).default(40),
     tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(180_000),
+    /** Per-channel context rotation limits; omitted channels use the global limit. */
+    tierTwoThresholdTokensByChannel: z.record(z.number().int().min(50_000).max(200_000)).default({}),
     /** Context assembly strategy:
      *  - "layered" (default): the classic stacked layers — session history,
      *    memory, cross-chat, wiki hint all appended every turn.
