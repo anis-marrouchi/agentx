@@ -127,7 +127,9 @@ for (a, b) in zip(frames, frames.dropFirst()) {
     stretch = max(stretch, abs(a.pose.sx - b.pose.sx), abs(a.pose.sy - b.pose.sy))
 }
 check(step < 45, "it never moves more than a body's width between two frames")
-check(turn < 0.6 && stretch < 0.08, "and its face and body turn and stretch without a snap")
+// A landing is its fastest change of shape: from stretched to squashed
+// (0.34) in three frames.
+check(turn < 0.6 && stretch < 0.2, "and its face and body turn and stretch without a snap")
 check(!play.frame(at: play.duration - 0.1).done && play.frame(at: play.duration).done, "the script is done when its last move ends")
 check(play.frame(at: play.duration + 5).at == play.moves.last!.to && frames.last!.face == 0, "and it stays there, facing you")
 check(play.duration > 6 && play.duration < 20, "a script of four moves lasts a few seconds")
@@ -140,7 +142,11 @@ func move(_ p: Play, _ kind: Play.Kind) -> Play.Move { p.moves.first { $0.kind =
 let kick = Play(lines: page, steps: [.kick(line: 1, word: 2), .rest(2)], start: start, size: size)
 let kicked = frames(of: kick), hit = move(kick, .kick).start + 0.25
 check(kicked.filter { $0.t < hit }.allSatisfy { $0.pieces.isEmpty && $0.gone.isEmpty }, "before the kick lands, the word is in its place")
-check(kicked.filter { $0.t >= hit }.allSatisfy { $0.pieces.count == 5 && $0.gone.count == 5 }, "after it, each of its five letters is a piece, and its place is covered")
+let allGone = hit + PlayMotion.stagger(4, of: 5)
+check(kicked.filter { $0.t >= allGone }.allSatisfy { $0.pieces.count == 5 && $0.gone.count == 5 }, "after it, each of its five letters is a piece, and its place is covered")
+let leaving = kicked.filter { $0.t >= hit && $0.t < allGone }.map(\.pieces.count)
+check(leaving.first == 1 && leaving == leaving.sorted() && Set(leaving).count > 2 && kicked.first { $0.t >= hit }!.pieces[0].from == P.letters(of: page[1].words[2])[0],
+      "the letters leave one after the other, the nearest first")
 check(kicked.last!.pieces.map(\.from) == P.letters(of: page[1].words[2]), "the pieces are the letters of that word")
 // Only the ink of a piece moves: the page's colour around it is left
 // out, or a flying letter would cover the text it passes with a box.

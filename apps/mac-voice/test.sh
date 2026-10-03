@@ -34,9 +34,21 @@ swiftc -O -o "$out/turn-end-tests" Sources/AgentXVoice/TurnEnd.swift Tests/TurnE
 swiftc -O -o "$out/local-model-tests" Sources/AgentXVoice/ModelStore.swift Sources/AgentXVoice/Parakeet.swift \
   Tests/LocalModels/main.swift -framework CoreML -target arm64-apple-macosx14.0
 "$out/local-model-tests"
-swiftc -O -o "$out/character-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/CharacterSim.swift \
-  Sources/AgentXVoice/OrbMath.swift Tests/Character/main.swift -target arm64-apple-macosx14.0
+swiftc -O -o "$out/character-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/CharacterSim.swift Sources/AgentXVoice/CharacterSimFrame.swift \
+  Sources/AgentXVoice/PointerPlay.swift Sources/AgentXVoice/OrbMath.swift Sources/AgentXVoice/Meets.swift Tests/Character/main.swift \
+  -target arm64-apple-macosx14.0
 "$out/character-tests"
+swiftc -O -o "$out/pointer-play-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/CharacterSim.swift Sources/AgentXVoice/CharacterSimFrame.swift \
+  Sources/AgentXVoice/PointerPlay.swift Sources/AgentXVoice/OrbMath.swift Tests/PointerPlay/main.swift \
+  -target arm64-apple-macosx14.0
+"$out/pointer-play-tests"
 swiftc -O -o "$out/play-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/PlayMath.swift \
-  Sources/AgentXVoice/PlayActs.swift   Tests/Play/main.swift -target arm64-apple-macosx14.0
+  Sources/AgentXVoice/PlayActs.swift Sources/AgentXVoice/PlayMotion.swift Tests/Play/main.swift \
+  -target arm64-apple-macosx14.0
 "$out/play-tests"
+swiftc -O -o "$out/play-motion-tests" Sources/AgentXVoice/CharacterMath.swift Sources/AgentXVoice/PlayMotion.swift \
+  Tests/PlayMotion/main.swift -target arm64-apple-macosx14.0
+"$out/play-motion-tests"
+swiftc -O -o "$out/guide-tests" Sources/AgentXVoice/GuideMath.swift Tests/Guide/main.swift \
+  -target arm64-apple-macosx14.0
+"$out/guide-tests"

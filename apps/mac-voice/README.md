@@ -129,6 +129,15 @@ the frame with Core Graphics. Both are free of AppKit windows and tested in
 `Tests/Character`. Reduce Motion or "Animated orb" off stops its frames: a
 still picture per state, and ten checks a second for the ⌘-drag.
 
+Guiding (#482): while the character is on screen, `GuideWatcher` (`Guide.swift`)
+waits on the daemon's `GET /voice/guide` and hands each command to
+`CharacterHost.guide(to:mark:)`: the character stands beside the rectangle
+(`GuideMath.stand`), glides up or down to it while its spring takes it
+along, and `GuideMark` draws the box, oval or underline on a click-through
+window of its own. Home, a ⌘-drag or hiding ends it. The wait is also how
+the daemon knows a character is there; without one, `agentx point` and
+lessons use the helper's cursor. The geometry is tested in `Tests/Guide`.
+
 Play mode (part of #505, off by default; UserDefaults `playMode`, ticked as
 "Play mode" in the menu) adds "Play on this page": the character plays a short script on
 a frozen picture of the screen it is on, then the picture goes. `PlayRead.swift`
@@ -139,13 +148,26 @@ stomp, carry, rest); `PlayActs.swift` makes a different script for each seed
 never the same act twice) and holds the pieces that move: kicked letters and
 stomped words are cut from the picture, fall and stay on its bottom edge, and
 a carried word is put down after the walked line. Both are pure and tested in
-`Tests/Play`; `PlayStage.swift` owns
+`Tests/Play`. `PlayMotion.swift` is how it all moves (tested in
+`Tests/PlayMotion`): a jump crouches first, stretches in the air and lands
+squashed, a walk and a wipe start and stop, kicked letters leave one after
+the other, and what falls bounces once. `PlayStage.swift` owns
 the window over everything, the drawing and the exits; the picture goes up
 at once and the character waits on it while the text is read. Any key, click or
 scroll, the talk key, a change of Space, or the assistant starting to
 listen, speak or ring ends it. Nothing is sent to any app: eaten words are
 painted over on the picture, which lives in memory only and is dropped when
 play ends. Letters are a word's box cut in equal parts.
+
+With play mode ticked, the idle character also plays with the pointer
+(part of #505), in its own window on its own edge: `PointerPlay.swift`
+picks a game when the pointer moves in its sight (follow it, crouch and
+jump at it, run from it; a click makes it jump), then rests five to
+thirteen seconds. It only says where the character wants to be and how it
+crouches and hops; `CharacterSim` moves it with the spring it already
+has. Pure and tested in `Tests/PointerPlay`. The button is read with
+`NSEvent.pressedMouseButtons`, so no click is taken and no permission is
+needed.
 
 Dragging it anywhere saves the position (UserDefaults `pillOrigin`); on
 launch and when screens change it is clamped onto a connected screen, and
@@ -194,6 +216,11 @@ tested in `Tests/Hotkey`). Every registration is logged with its result.
 
 "Play on this page" needs Screen Recording, asked the first time it is
 chosen; the app must be quit and opened again after the grant.
+
+With play mode ticked and `voice.stroll` on, a stroll stops short of the
+side of a window that stands on the character's line (#539): `Meets.swift`
+reads the window list once a second (rectangles only, no picture, title or
+text, so no permission; tested in `Tests/Character`).
 
 `build.sh` signs ad hoc unless `AGENTX_SIGN_IDENTITY` names a
 code-signing certificate in the keychain. An ad-hoc grant holds for that

@@ -189,14 +189,24 @@ let putAt = taken.x
 for i in 61...300 { _ = taken.step(to: Double(i) / 30, Input(pointer: (x: 200, y: 400), home: putAt, range: range)) }
 check(abs(taken.x - putAt) < 1, "let go: it rests where it was put")
 
+// Sent by the answering agent to show something (#482): it has just
+// stepped aside, and still goes at once; and it does not doze there.
+var sentOff = CharacterSim(unit: 0.56)
+for i in 1...30 { _ = sentOff.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), home: home, range: range)) }
+let there = home - 300
+for i in 31...75 { _ = sentOff.step(to: Double(i) / 30, Input(held: true, sent: true, home: there, range: range)) }
+check(abs(sentOff.x - there) < 12, "sent to show something: it goes at once, though it had just stepped aside and the pointer is on its bubble")
+_ = sentOff.step(to: CharacterSim.dozeAfter + 60, Input(sent: true, home: there, range: range))
+check(sentOff.mood != .dozing, "and stays awake while it shows it")
+
 // --- A stroll when it has nothing to do (#482, `voice.stroll`) ---
 
 /// Idle for `seconds` at 30 frames a second: every place it was, and the frames.
 func idle(_ sim: inout CharacterSim, from: Int, seconds: Int, strolls: Bool, activity: M.Activity = .idle,
-          home: Double = home, range: ClosedRange<Double> = range) -> (xs: [Double], frames: [CharacterSim.Frame]) {
+          edges: [Double] = [], home: Double = home, range: ClosedRange<Double> = range) -> (xs: [Double], frames: [CharacterSim.Frame]) {
     var xs: [Double] = [], frames: [CharacterSim.Frame] = []
     for i in (from * 30 + 1)...((from + seconds) * 30) {
-        frames.append(sim.step(to: Double(i) / 30, Input(activity: activity, strolls: strolls, home: home, range: range)))
+        frames.append(sim.step(to: Double(i) / 30, Input(activity: activity, strolls: strolls, edges: edges, home: home, range: range)))
         xs.append(sim.x)
     }
     return (xs, frames)
@@ -253,6 +263,16 @@ _ = shyWalker.step(to: 0, Input(strolls: true, home: home, range: range))
 for i in 1...60 { _ = shyWalker.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), strolls: true, home: home, range: range)) }
 check(shyWalker.x - (home - 20) > 120, "the pointer comes close: it steps aside as before")
 
+// Sent to show something while it is out: the stroll is over, and sent
+// home again it rests there, not where the stroll had taken it.
+var shown = CharacterSim()
+_ = shown.step(to: 0, Input(strolls: true, home: home, range: range))
+var frameNo = 1
+while frameNo < 110 * 30, abs(shown.x - home) < 30 { _ = shown.step(to: Double(frameNo) / 30, Input(strolls: true, home: home, range: range)); frameNo += 1 }
+for _ in 1...60 { _ = shown.step(to: Double(frameNo) / 30, Input(sent: true, strolls: true, home: home - 300, range: range)); frameNo += 1 }
+for _ in 1...90 { _ = shown.step(to: Double(frameNo) / 30, Input(strolls: true, home: home, range: range)); frameNo += 1 }
+check(abs(shown.x - home) < 2, "sent in the middle of a stroll, then home: it rests where it rests")
+
 // Taken hold of while it is out, and put down somewhere else: the stroll is over.
 var lifted = CharacterSim()
 _ = lifted.step(to: 0, Input(strolls: true, home: home, range: range))
@@ -288,6 +308,53 @@ for _ in 1...(25 * 30) {
 }
 check(abs(resting - home) > CharacterSim.clear && bursts == 1 && abs(met.x - home) < 1,
       "the pointer where the stroll ends: it steps aside once and goes home")
+
+// --- What it meets on a stroll (#539): the side of a window on its line ---
+
+check(M.stop(from: 100, to: 200, edges: [160, 180], gap: 38).map { $0.edge == 160 && $0.at == 122 } ?? false,
+      "an edge in its way: it stops short of the nearest one")
+check(M.stop(from: 100, to: 0, edges: [40], gap: 38).map { $0.edge == 40 && $0.at == 78 } ?? false, "the same to the left")
+check(M.stop(from: 100, to: 200, edges: [120], gap: 38).map { $0.at == 100 } ?? false, "an edge right beside it: it stays, and never steps back")
+check(M.stop(from: 100, to: 200, edges: [60, 250], gap: 38) == nil, "an edge behind it or past where it is going is not in its way")
+check(M.stop(from: 100, to: 200, edges: [230], gap: 38).map { $0.at == 192 } ?? false, "one just past where it is going still keeps it off")
+
+// The same walk as `walker`, with a window side closer than it went.
+let reached = walk.xs.max(by: { abs($0 - home) < abs($1 - home) })!
+let side: Double = reached > home ? 1 : -1
+let sides = [home + side * 60]
+var meeter = CharacterSim()
+_ = meeter.step(to: 0, Input(strolls: true, home: home, range: range))
+let meeting = idle(&meeter, from: 0, seconds: 110, strolls: true, edges: sides)
+let gap = 50 * meeter.unit + 10
+check(furthest(walk.xs) > 60 - gap + 5, "(without the window it went further)")
+check(side * (meeting.xs.max(by: { abs($0 - home) < abs($1 - home) })! - home) > 5 && furthest(meeting.xs) <= 60 - gap + 1,
+      "a window side in its way: it walks up to it and stops short of it")
+let facing = meeting.frames.map { side * $0.face }.max() ?? 0
+check(facing > 0.6 && meeting.frames.contains { side * $0.face > 0.6 && abs($0.x - home - side * (60 - gap)) < 1 },
+      "there it turns to look at it")
+let arrived = meeting.xs.firstIndex { abs($0 - home - side * (60 - gap)) < 1 } ?? meeting.xs.count
+check(meeting.xs.dropFirst(arrived).contains { abs($0 - home) < 1 }, "then it turns back, all the way to where it rests")
+check(meeting.frames.allSatisfy { $0.dots.isEmpty && $0.stars.isEmpty }, "still slowly: no trail, no stars")
+
+// A window side that turns up between it and home while it is out: it
+// still goes home, whether left alone or called back by work.
+for (activity, seconds, what) in [(M.Activity.idle, 120, "left alone"), (.speaking, 20, "while an agent speaks")] {
+    var away = CharacterSim()
+    _ = away.step(to: 0, Input(strolls: true, home: home, range: range))
+    var t = 0
+    while t < 110, abs(away.x - home) < 30 { _ = idle(&away, from: t, seconds: 1, strolls: true); t += 1 }
+    let between = (away.x + home) / 2
+    let back = idle(&away, from: t, seconds: seconds, strolls: true, activity: activity, edges: [between])
+    check(back.xs.contains { abs($0 - home) < 1 }, "a window side between it and home, \(what): it still walks home")
+}
+
+// The window list: the sides on its line, front to back.
+let band: ClosedRange<CGFloat> = 700...778
+check(Meets.edges(of: [CGRect(x: 200, y: 300, width: 400, height: 450)], band: band) == [200, 600], "a window on its line: both its sides")
+check(Meets.edges(of: [CGRect(x: 200, y: 100, width: 400, height: 500)], band: band).isEmpty, "a window that ends above its line is not met")
+check(Meets.edges(of: [CGRect(x: 0, y: 0, width: 500, height: 800), CGRect(x: 200, y: 300, width: 400, height: 450)], band: band)
+        == [0, 500, 600], "a side behind another window is not met")
+check(Meets.edges(of: [CGRect(x: 300, y: 720, width: 40, height: 20)], band: band).isEmpty, "nor is a very small window")
 
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

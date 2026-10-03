@@ -265,12 +265,13 @@ In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A c
 Good to know:
 
 - **It never interrupts:** it takes no keys, and a click where it hovers goes to the window behind it. Only a drag with **Command** held [moves it](#move-or-hide-the-character), and a [play on the page](#play-on-the-page) takes the first key or click to end.
-- **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it.
+- **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it. With **Play mode** ticked it also [plays with the pointer](#play-with-the-pointer).
 - **The pill is its speech bubble:** the pill shows the agent's name, the words, the answer and the call buttons as before, attached to the character. It has no orb of its own, and it appears and hides by the same rules as the pill: only while listening or answering, unless **Show floating pill** is ticked.
 - **It waits while you use the bubble:** while the pointer is on the bubble, the character stays where it is, so you can click a button or read the answer.
 - **The bubble can't be dragged by itself:** it stays with the character, so [move the character](#move-or-hide-the-character) and the bubble goes with it. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
 - **Colour:** it wears the palette of the agent that is answering, amber while notifications are held and red when something went wrong, like the orb.
 - **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked in the AgentX menu, it is a still picture that changes between states and stays in its place.
+- **It can show you things:** an agent can send it to something on screen, see [The character shows you something](#the-character-shows-you-something).
 - **Where it rests:** above the bottom edge of the screen with the menu bar, near the bottom-right corner, under the right end of its bubble, until you move it.
 
 ### Move or hide the character
@@ -319,8 +320,41 @@ Good to know:
 - **Work comes first:** when you talk or an agent answers, it walks back to where it rests. The pointer still sends it aside as before.
 - **It stops when it dozes:** after two minutes with nothing to do the character dozes where it rests, and a dozing character does not stroll.
 - **It stays on screen:** next to the edge of the screen it strolls to the other side.
+- **It stops at windows, in play mode:** with [**Play mode**](#play-on-the-page) also ticked, a stroll stops short of the side of a window that comes down to the character's line. It turns to look at it, then walks back; on the way back nothing stops it. The app's own windows, such as **Settings…**, count too. It reads only where the windows are, never what is in them, so no permission is asked.
 - **Not with a still character:** with **Animated orb** unticked or Reduce Motion on, the character does not move at all.
 - **Only with the character:** the setting has no effect while the orb is shown, and the tick box is greyed out.
+
+### The character shows you something
+
+An agent can send the character to something on your screen. The character leaves its place, flies beside the thing, and marks it with a box, an oval or an underline. Then it goes back to where it rests. This needs **Shown as** set to **Character** and the character on screen.
+
+To try it yourself:
+
+1. **Mac:** open any app with a button or a field you can name, for example a search field.
+2. **Terminal:** run the command below. The character goes to the field, draws an oval around it, and goes home after eight seconds.
+
+```sh
+agentx point "the search field" --mark circle
+```
+
+While the character is on screen, an agent you speak to is told it can run the same command, so it decides by itself when to show you something and where. A [live lesson](#live-lessons) does it at every step: the character points in place of the agent's drawn cursor.
+
+| Option | What it does |
+|---|---|
+| `--mark box` | A box around the thing, lightly filled. The default |
+| `--mark circle` | An oval around it |
+| `--mark underline` | A line under it |
+| `--mark none` | The character goes there and marks nothing |
+| `--hold 20` | Seconds before it goes home: `8` by default, up to `120` |
+
+Good to know:
+
+- **Nothing is clicked:** the character and its mark are drawn on a layer of their own. No click or key goes to any app, and your pointer is not moved.
+- **Where it stands:** on the left of the thing, level with its middle, so its bubble does not cover it. With no room on the left it stands on the right.
+- **It does not step aside meanwhile:** while it shows something, the pointer can come close. Take hold of it with **Command** to end the showing and move it.
+- **Without the character:** with the orb look, with the character hidden, or with AgentX Voice closed, `agentx point` moves the highlight cursor as before.
+- **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked, the character and the mark appear in place without the flight.
+- **One thing at a time:** a new place replaces the one before. Hiding the character removes the mark.
 
 ### Play on the page
 
@@ -346,6 +380,8 @@ What happens:
 
 Which lines, which words and in what order change with every play.
 
+It moves like a drawn character, not like a pointer: it crouches before a jump and lands softly, it gets up to speed and slows to a stop when it walks, kicked letters leave one after the other, and what falls bounces once before it lies still.
+
 Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring.
 
 Good to know:
@@ -361,6 +397,28 @@ Good to know:
 - **On a page with one line of text:** it walks that line and does one thing to it.
 - **Photos and gradients:** on a background that isn't one flat colour, the painted-over patch shows, and a letter or word that moves takes some of the background with it. On a flat colour only the ink moves, so a flying letter does not hide the text it passes.
 - **It has no mouth:** eating shows as letters going at its front, with a small bite squash.
+
+### Play with the pointer
+
+With **Play mode** ticked, the character also plays with your pointer while the assistant is idle. It stays on its own edge of the screen, draws only in its own small window, and sends nothing to any app. It needs no permission.
+
+When the pointer moves near it (about 520 points to either side and 360 above), it starts one game:
+
+- **Follow:** it walks along its edge to where the pointer is and stops a little short of it, for four to seven seconds.
+- **Jump:** if the pointer is close and low enough, it crouches, then jumps at the place the pointer was. If the pointer is still there when it lands, it has caught it and shows its stars.
+- **Run away:** it runs further off than when it only steps aside.
+
+After a game it rests for five to thirteen seconds, and goes back to its place if you leave it alone. A click near it makes it jump once and ends the game.
+
+Good to know:
+
+- **It takes no clicks:** a click where it is still goes to the window behind it. It only sees that the button went down.
+- **Work comes first:** a game stops when the assistant listens, thinks, speaks or rings, and when the pointer is on its bubble or leaves its screen.
+- **A bubble with something to use stays put:** while the bubble shows an answer, an error or the call buttons, no game starts and a click gives no jump, so the bubble does not move away from your hand.
+- **The empty bubble plays too:** with **Show floating pill** ticked, the bubble that only reads "hold ⌥space" goes with the character in a game. If it moves away as you reach for it, wait for the game to end, or untick **Play mode**.
+- **Along one edge:** it does not climb windows or walk on text here. It follows the pointer only left and right.
+- **The same games in the same order** each time the app starts.
+- **No play** with **Reduce motion** on, **Animated orb** unticked, or a sleeping character: the pointer has to come close to wake it first.
 
 ### Move the pill
 
@@ -1001,6 +1059,8 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `POST /voice/hush` | Silence whatever is speaking, pause the speaking queue and wait for your words (what **Option–Space** sends when pressed) |
 | `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; the queue plays on. `stop` ends the talk or lesson and empties the queue |
 | `POST /voice/stop` | Silence every voice and empty the speaking queue (what **Command–Option–.** sends) |
+| `GET /voice/guide?after=<seq>` | What the character is sent to show: `{"seq", "agentId", "rect", "mark"}`. It answers as soon as there is a newer command than `<seq>`, else after 25 seconds. AgentX Voice waits here while the character is on screen |
+| `POST /voice/guide` | Send the character to a place: `{"rect": {"x", "y", "width", "height"}, "mark": "box", "hold": 8}`, measured in points from the top-left of the main screen. `mark` is `box`, `circle`, `underline` or `none`. `{"home": true}` sends it back. Answers `409` when no character is on screen |
 | `GET /voice/queue` | The speaking queue: `{"paused", "playing", "waiting", "recent"}` |
 | `POST /voice/queue` | Add a line in an agent's voice: `{"text": "…", "agentId": "<id>", "kind": "answer"}`. `kind` is `answer`, `narration` or `line`. Add `"wait": true` to get the reply only once the line has been spoken (`{"item", "played"}`) |
 | `POST /voice/queue/<id>/skip` | Drop that line, whether it is playing or waiting. The others keep their order |

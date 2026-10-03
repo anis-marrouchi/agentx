@@ -2,6 +2,35 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.99.0](https://github.com/anis-marrouchi/agentx/compare/v0.98.1...v0.99.0) (2026-10-03)
+
+
+### Features
+
+* **voice:** on a stroll the character stops at a window side ([#543](https://github.com/anis-marrouchi/agentx/issues/543)) ([eb87235](https://github.com/anis-marrouchi/agentx/commit/eb8723528239eeb0263b8c149bd27532040cb96a))
+* **voice:** the answering agent sends the character to show something ([#535](https://github.com/anis-marrouchi/agentx/issues/535)) ([d059f6f](https://github.com/anis-marrouchi/agentx/commit/d059f6f4ec955d52f4540aff990a36e5217c8582))
+* **voice:** the character plays with the pointer in play mode ([#534](https://github.com/anis-marrouchi/agentx/issues/534)) ([a203ef0](https://github.com/anis-marrouchi/agentx/commit/a203ef0d4518e622a3264cd4cf62571d191ef6c2))
+
+## [0.98.1](https://github.com/anis-marrouchi/agentx/compare/v0.98.0...v0.98.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **dashboard:** refuse an address not sent in normal form, for every page ([#452](https://github.com/anis-marrouchi/agentx/issues/452)) ([#545](https://github.com/anis-marrouchi/agentx/issues/545)) ([baccb95](https://github.com/anis-marrouchi/agentx/commit/baccb95350a389dfc233b339eecef3b9a7921b0d))
+
+## [0.98.0](https://github.com/anis-marrouchi/agentx/compare/v0.97.0...v0.98.0) (2026-10-02)
+
+
+### Features
+
+* **voice:** play mode moves with a crouch, a soft landing and eased walks ([#532](https://github.com/anis-marrouchi/agentx/issues/532)) ([db58fa0](https://github.com/anis-marrouchi/agentx/commit/db58fa001124ffea00b43f12c9e7935a3a16ebe1))
+
+
+### Bug Fixes
+
+* **requests:** a hand-off to another agent does not report to the first agent's chat ([#481](https://github.com/anis-marrouchi/agentx/issues/481)) ([#544](https://github.com/anis-marrouchi/agentx/issues/544)) ([e2927f8](https://github.com/anis-marrouchi/agentx/commit/e2927f835383be965294c37a71e5711d12623bcc))
+* **voice:** a moved piece carries its ink, not a box of page ([#538](https://github.com/anis-marrouchi/agentx/issues/538)) ([48777c3](https://github.com/anis-marrouchi/agentx/commit/48777c35a2d4d538fe43bfb616dcc1ff2f850448))
+
 ## [0.97.0](https://github.com/anis-marrouchi/agentx/compare/v0.96.1...v0.97.0) (2026-10-02)
 
 

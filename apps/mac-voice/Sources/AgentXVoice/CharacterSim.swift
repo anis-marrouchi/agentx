@@ -10,48 +10,6 @@ import Foundation
 struct CharacterSim {
     typealias M = CharacterMath
 
-    struct Input {
-        var activity = M.Activity.idle
-        /// 0…1: the microphone while listening.
-        var level = 0.0
-        /// The pointer: along the edge, and its height above it. Nil when
-        /// it is on another screen.
-        var pointer: (x: Double, y: Double)?
-        /// The pointer is on its speech bubble: it stays where it is, so
-        /// the bubble is not pulled from under the pointer.
-        var held = false
-        /// `voice.stroll`: with nothing to do, it takes a slow stroll
-        /// beside where it rests now and then (#482).
-        var strolls = false
-        /// Where it rests, and how far it may go.
-        var home = 0.0
-        var range: ClosedRange<Double> = 0...0
-    }
-
-    /// A trail dot or a star, where and how it is drawn this frame.
-    struct Mark: Equatable {
-        /// Along the edge and above it, in points.
-        var x, y: Double
-        /// Radius in drawing units, opacity, turn in degrees, and which
-        /// palette stop colours it.
-        var r, alpha, turn: Double
-        var shade: Int
-    }
-
-    struct Frame {
-        var pose = M.Pose()
-        var x = 0.0
-        /// -1 turned left, 0 facing you, 1 turned right.
-        var face = 0.0
-        var level = 0.0
-        /// 0…1: the rise and fall of its own voice while speaking.
-        var voice = 0.0
-        /// Seconds since it appeared, for the marks' own loops.
-        var t = 0.0
-        var dots: [Mark] = []
-        var stars: [Mark] = []
-    }
-
     /// Points per drawing unit: a body 56 points across.
     let unit: Double
     /// Idle this long, it dozes.
@@ -82,6 +40,11 @@ struct CharacterSim {
     private var strollTo = 0.0, strolled = 0.0
     private var strollNext: Double?
     private var strolls = 0
+    /// What stopped the stroll it is on.
+    private var met: Double?
+    /// Its games with the pointer, and the crouch and hop they give it.
+    private(set) var play = PointerPlay()
+    private var crouch = 0.0, hop = 0.0
     private var face = 0.0, lean = 0.0
     private var glance = (x: 0.0, y: 0.0)
 
@@ -113,9 +76,28 @@ struct CharacterSim {
         // The pointer comes close: out of its way. Left alone: back home,
         // unless the pointer is resting there.
         let near = input.pointer.map { abs($0.x - x) < reach && abs($0.y) < tall } ?? false
-        if input.held {
+        // Idle with play mode on, a game with the pointer comes first.
+        // Sent to show something, it does not play.
+        var game = PointerPlay.Out()
+        if input.plays && !input.sent && !input.held && !input.shows && mood == .idle && input.activity == .idle {
+            game = play.step(now, dt, x: x, pointer: input.pointer, down: input.down, range: input.range)
+        } else {
+            play.stop(now, down: input.down)
+        }
+        if input.sent {
+            target = min(max(input.home, input.range.lowerBound), input.range.upperBound)
+            restSince = now
+            // The stroll is over: sent home again, it rests there.
+            strolled = 0; strollTo = 0; strollNext = nil
+        } else if input.held {
             target = x
             awayUntil = max(awayUntil, now + Self.awayFor)
+        } else if let to = game.target {
+            target = to
+            awayUntil = now + 1
+            restSince = now
+            // A game ends a stroll, as stepping aside does.
+            strolled = 0; strollTo = 0; strollNext = nil
         } else if near {
             target = M.aside(x: x, pointer: input.pointer!.x, clear: Self.clear, range: input.range)
             awayUntil = now + Self.awayFor
@@ -158,8 +140,19 @@ struct CharacterSim {
         let moving = abs(speed) > 40
         let way: Double = speed >= 0 ? 1 : -1
         func toward(_ value: inout Double, _ to: Double, _ rate: Double) { value += (to - value) * (1 - exp(-dt * rate)) }
-        toward(&face, min(max(speed / 200, -1), 1), 10)
+        // Stopped at something in its way: it turns to look at it.
+        let stopped = strollTo != 0 && abs(strollTo - strolled) < 0.5 ? met : nil
+        let turned = stopped.map { $0 > x ? 0.7 : -0.7 } ?? 0
+        toward(&face, min(max(speed / 200 + turned, -1), 1), 10)
         toward(&lean, min(max(speed / 480, -1), 1) * 13, 8)
+        // A game's crouch and hop are followed, not taken at once, so a
+        // game cut short by work does not snap.
+        toward(&crouch, game.crouch, 20)
+        toward(&hop, game.hop, 20)
+        pose.sx *= 1 + 0.14 * crouch
+        pose.sy *= 1 - 0.22 * crouch
+        pose.lift += hop - 8 * crouch
+        if game.caught { burst(now, pose) }
 
         // It leaves dots behind while it moves, and stars when it has
         // stepped aside or understood.
@@ -186,6 +179,7 @@ struct CharacterSim {
             let pull = min(far / 60, 1) * 4.5
             look = (dx / far * pull, dy / far * pull)
         }
+        if stopped != nil { look = (turned * 5, -2) }
         toward(&glance.x, look.x + face * 2, 9)
         toward(&glance.y, look.y, 9)
 
@@ -229,11 +223,19 @@ struct CharacterSim {
                 var way: Double = M.rnd(strolls, 2) < 0.5 ? -1 : 1
                 if (way > 0 ? room.right : room.left) < far { way = -way }
                 strollTo = way * min(far, way > 0 ? room.right : room.left)
+                met = nil
                 strollNext = now + abs(strollTo) / Self.strollSpeed + 5 + 6 * M.rnd(strolls, 4)
             } else {
                 strollTo = 0
                 strollNext = nil
             }
+        }
+        // Something in its way: it goes no further than just short of it.
+        // Only on the way out: nothing keeps it from going home.
+        if strollTo != 0, strollTo != strolled, let stop = M.stop(from: input.home + strolled, to: input.home + strollTo,
+                                            edges: input.edges, gap: 50 * unit + 10) {
+            strollTo = stop.at - input.home
+            met = stop.edge
         }
         let pace = Self.strollSpeed * dt
         strolled += min(max(strollTo - strolled, -pace), pace)

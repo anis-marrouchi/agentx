@@ -570,6 +570,15 @@ final class Panel: NSPanel {
         onRender?(state)
     }
 
+    /// On screen with something to use: an answer, an error or the call
+    /// buttons. The character does not play with the pointer then (#537).
+    @MainActor
+    var holdsSomething: Bool {
+        guard isVisible else { return false }
+        if case .error = current { return true }
+        return expanded || callBar.mode != .hidden
+    }
+
     /// The call buttons for this moment of a call; `.hidden` outside one.
     @MainActor
     func showCall(_ mode: CallBar.Mode) {

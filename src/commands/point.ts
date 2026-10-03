@@ -14,6 +14,8 @@ import {
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
 import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
+import { daemon } from "@/commands/call"
+import { GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
 
 const run = promisify(execFile)
 
@@ -21,7 +23,9 @@ const run = promisify(execFile)
 //
 // Reads the focused window's accessibility tree, asks the ui-element seat
 // which control the request names, and moves the cursor there with a
-// highlight. It does NOT click.
+// highlight. It does NOT click. With the character on screen (`voice.look`
+// "character", AgentX Voice running) the character goes there and marks
+// it instead (#482), and the person's cursor stays where it is.
 //
 // This lives in agentx rather than inside the voice widget on purpose: the
 // capability then belongs to every agent — the secretary by voice, devops
@@ -38,10 +42,16 @@ interface Snapshot {
   note?: string | null
 }
 
-/** Controls a person could plausibly mean. The raw tree is mostly groups
- *  and static text scaffolding; handing forty of those to a model buys
- *  nothing and crowds out the real candidates. */
+type ScreenRect = { x: number; y: number; width: number; height: number }
 
+/** Show `rect`: the character when it is on screen, else the cursor. */
+async function show(rect: ScreenRect, label: string, opts: { mark: string; hold?: string }): Promise<void> {
+  const shown = await daemon("POST", "/voice/guide", { rect, mark: opts.mark, ...(opts.hold ? { hold: Number(opts.hold) } : {}) })
+    .then((r) => r?.shown === true, () => false)
+  if (shown) return
+  await run(HELPER, ["point", "--x", String(rect.x), "--y", String(rect.y),
+                     "--w", String(rect.width), "--h", String(rect.height), "--label", label])
+}
 
 export const point = new Command()
   .name("point")
@@ -50,7 +60,17 @@ export const point = new Command()
   .option("--max <n>", "candidates to consider", "40")
   .option("--json", "emit the decision as JSON instead of pointing")
   .option("--min-present <p>", "refuse below this P(control exists)", "0.5")
+  .option("--mark <kind>", `how the character marks it: ${GUIDE_MARKS.join(", ")}`, "box")
+  .option("--hold <seconds>", "how long the character stays there (8 by default)")
   .action(async (request: string, opts) => {
+    if (!(GUIDE_MARKS as readonly string[]).includes(opts.mark)) {
+      console.log(chalk.red(`  --mark is one of: ${GUIDE_MARKS.join(", ")}`))
+      process.exit(1)
+    }
+    if (opts.hold !== undefined && !(Number(opts.hold) > 0 && Number(opts.hold) <= GUIDE_HOLD.max)) {
+      console.log(chalk.red(`  --hold is a number of seconds, up to ${GUIDE_HOLD.max}`))
+      process.exit(1)
+    }
     if (!existsSync(HELPER)) {
       console.log(chalk.red(`  helper not built — run apps/mac-helper/build.sh`))
       process.exit(1)
@@ -77,9 +97,7 @@ export const point = new Command()
       if (only) {
         console.log(chalk.yellow(`  ${screen.app} exposes exactly one target — pointing at it: `) +
                     chalk.bold(candidates[0].label))
-        await run(HELPER, ["point", "--x", String(only.x), "--y", String(only.y),
-                           "--w", String(only.width), "--h", String(only.height),
-                           "--label", candidates[0].label])
+        await show(only, candidates[0].label, opts)
       }
       return
     }
@@ -128,12 +146,7 @@ export const point = new Command()
       `  ${chalk.green("→")} ${chalk.bold(name)} ` +
       chalk.dim(`(${fromOCR ? "read from screen" : "control"}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),
     )
-    await run(HELPER, [
-      "point",
-      "--x", String(chosen.x), "--y", String(chosen.y),
-      "--w", String(chosen.width), "--h", String(chosen.height),
-      "--label", name,
-    ])
+    await show(chosen, name, opts)
   })
 
 function tryError(stdout: string): string {
