@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.101.2](https://github.com/anis-marrouchi/agentx/compare/v0.101.1...v0.101.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* **activity:** a channel line on the map never crosses a station that took no part ([#561](https://github.com/anis-marrouchi/agentx/issues/561)) ([049f796](https://github.com/anis-marrouchi/agentx/commit/049f796cb8f786b13852ad79836c39be277c5657))
+
 ## [0.101.1](https://github.com/anis-marrouchi/agentx/compare/v0.101.0...v0.101.1) (2026-10-03)
 
 
