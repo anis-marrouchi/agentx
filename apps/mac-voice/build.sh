@@ -32,10 +32,20 @@ swiftc -O \
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
-# Ad-hoc signature. Unsigned bundles get a fresh TCC identity on every
-# rebuild, so macOS re-asks for the microphone every single launch.
-codesign --force --sign - --identifier tn.acme.agentx.voice "$APP" 2>/dev/null \
-  || echo "warning: codesign failed; expect repeated microphone prompts"
+# Signing. Unsigned bundles get a fresh TCC identity on every launch. An
+# ad-hoc signature (the default) holds only for this one build: macOS keys
+# a permission to the build's hash, so every new build is asked again for
+# the microphone and Screen Recording. AGENTX_SIGN_IDENTITY names a
+# code-signing certificate in the keychain (a self-signed one is enough)
+# whose permissions carry over to the next build.
+IDENTITY="${AGENTX_SIGN_IDENTITY:--}"
+if [ "$IDENTITY" = "-" ]; then
+  codesign --force --sign - --identifier tn.acme.agentx.voice "$APP" 2>/dev/null \
+    || echo "warning: codesign failed; expect repeated microphone prompts"
+  echo "note: ad-hoc signature; macOS asks again for the microphone and Screen Recording after this install (set AGENTX_SIGN_IDENTITY to keep them)"
+else
+  codesign --force --sign "$IDENTITY" --identifier tn.acme.agentx.voice "$APP"
+fi
 
 echo "built: $APP"
 echo "run:   open \"$APP\"     (or ./build/AgentX\\ Voice.app/Contents/MacOS/AgentXVoice for logs)"

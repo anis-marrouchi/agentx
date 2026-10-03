@@ -222,6 +222,11 @@ side of a window that stands on the character's line (#539): `Meets.swift`
 reads the window list once a second (rectangles only, no picture, title or
 text, so no permission; tested in `Tests/Character`).
 
+`build.sh` signs ad hoc unless `AGENTX_SIGN_IDENTITY` names a
+code-signing certificate in the keychain. An ad-hoc grant holds for that
+one build only; with a certificate (self-signed is enough) the grants carry
+over to the next build.
+
 ## Known limits
 
 - Push-to-talk only; no wake word. To cut a voice off, press ⌥Space (and
