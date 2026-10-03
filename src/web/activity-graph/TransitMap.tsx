@@ -150,7 +150,7 @@ function edgeSel(e: NetEdge): Sel | null {
 
 function MetroEdge(props: EdgeProps<Edge<EdgeData>>) {
   const { e, ctx } = props.data!
-  const d = metroPath(props.sourceX, props.sourceY, props.targetX, props.targetY, ctx.orientation, e.offset)
+  const d = metroPath(props.sourceX, props.sourceY, props.targetX, props.targetY, ctx.orientation, e.offset, e.via)
   const dim = ctx.focus && e.lineId && e.lineId !== ctx.focus
   const style = e.kind === "feeder"
     ? { stroke: "var(--tm-feeder)", strokeWidth: 3, strokeDasharray: "2 7", strokeLinecap: "round" as const }

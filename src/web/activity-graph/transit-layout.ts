@@ -5,9 +5,9 @@
 
 import { CHANNELS, STARTER_KIND, STATE_ORDER, channelLabel, type Line, type Train, type Transit } from "./transit"
 import type { Starter } from "./api"
-import { drawnRoute, spread, type Orientation } from "./transit-geometry"
+import { crossesBox, drawnRoute, metroPoints, spread, type Orientation, type Via } from "./transit-geometry"
 
-export { COLLAPSE_AT, drawnRoute, metroPath, spread, type Orientation } from "./transit-geometry"
+export { COLLAPSE_AT, crossesBox, drawnRoute, metroPath, metroPoints, spread, type Orientation } from "./transit-geometry"
 
 /** "trains", not "group": xyflow styles its built-in "group" node type. */
 export type NetKind = "starter" | "channel" | "station" | "trains" | "terminal" | "district"
@@ -53,6 +53,8 @@ export interface NetEdge {
   starter?: string
   /** Perpendicular shift so parallel lines on one track stay visible. */
   offset: number
+  /** Feeder: the level stretch it takes past stations it does not call at. */
+  via?: Via
   active: boolean
 }
 export interface Network { nodes: NetNode[]; edges: NetEdge[] }
@@ -81,6 +83,8 @@ const SIZE = {
   pillH: 30,
 }
 export const MAX_PILLS = 3
+/** Room a feeder leaves around a station it does not call at. */
+const STATION_CLEAR = 18
 
 const COL = { horizontal: [0, 250, 480, 640, 960], vertical: [0, 90, 200, 330, 0] }
 /** How far before the channels the initiators sit. */
@@ -303,6 +307,34 @@ export function layoutNetwork(transit: Transit, opts: LayoutOpts): Network {
     }
     for (const es of perPair.values()) es.forEach((e, k) => { e.offset = k * 8 - ((es.length - 1) * 8) / 2 })
     edges.push(...set.values())
+  }
+  // A feeder that runs past the interchange columns must not look like it
+  // calls at one: when its path would touch a station that is not its own,
+  // it passes those columns level, through the nearest free gap.
+  const stations = nodes.filter((n) => n.kind === "station")
+  const nodeAt = new Map(nodes.map((n) => [n.id, n]))
+  // Main axis = across the tiers, cross axis = along a tier, as above.
+  const box = (n: NetNode) => (H ? { m0: n.x, m1: n.x + n.w, c0: n.y, c1: n.y + n.h } : { m0: n.y, m1: n.y + n.h, c0: n.x, c1: n.x + n.w })
+  for (const e of feeders.values()) {
+    const s = nodeAt.get(e.source)!, t = nodeAt.get(e.target)!
+    const sb = box(s), tb = box(t)
+    const pts = (via?: Via) => H
+      ? metroPoints(s.x + s.w, s.y + s.h / 2, t.x, t.y + t.h / 2, "horizontal", e.offset, via)
+      : metroPoints(s.x + s.w / 2, s.y + s.h, t.x + t.w / 2, t.y, "vertical", e.offset, via)
+    const touches = (via?: Via) => stations.some((n) => n.id !== e.target && crossesBox(pts(via), n, STATION_CLEAR))
+    const passed = stations.filter((n) => n.id !== e.target && box(n).m1 < tb.m0).map(box)
+    if (!passed.length || !touches()) continue
+    const m0 = Math.min(...passed.map((b) => b.m0)) - STATION_CLEAR, m1 = Math.max(...passed.map((b) => b.m1)) + STATION_CLEAR
+    const from = (sb.c0 + sb.c1) / 2, to = (tb.c0 + tb.c1) / 2
+    const ideal = from + (to - from) * (((m0 + m1) / 2 - sb.m1) / Math.max(1, tb.m0 - sb.m1))
+    const free = (c: number) => passed.every((b) => c + e.offset < b.c0 - STATION_CLEAR || c + e.offset > b.c1 + STATION_CLEAR)
+    // Stay on the channel's side of a station where there is room, so the
+    // line does not sweep past that station's name on the way.
+    const swept = (c: number) => passed.filter((b) => ((b.c0 + b.c1) / 2 - from) * ((b.c0 + b.c1) / 2 - c) < 0).length
+    const gaps = passed.flatMap((b) => [b.c0 - STATION_CLEAR - 1 - e.offset, b.c1 + STATION_CLEAR + 1 - e.offset]).filter(free)
+    // Last resort: level with the target, so the final leg runs straight in.
+    const c = [...gaps.sort((a, b) => swept(a) - swept(b) || Math.abs(a - ideal) - Math.abs(b - ideal)), ...[to].filter(free)].find((g) => !touches({ m0, m1, c: g }))
+    if (c !== undefined) e.via = { m0, m1, c }
   }
 
   if (meshSt.length) {
