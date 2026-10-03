@@ -5,9 +5,9 @@ Notable changes per release. Older releases are summarized; see `git log` for th
 ## [0.104.0](https://github.com/anis-marrouchi/agentx/compare/v0.103.3...v0.104.0) (2026-10-03)
 
 
-### Features
+### Release note correction
 
-* **app:** apply approved mobile redesign with centered orb ([#488](https://github.com/anis-marrouchi/agentx/issues/488)) ([b209d84](https://github.com/anis-marrouchi/agentx/commit/b209d8442a4db509d47ca4141582114904a3de4f))
+The mobile redesign was reverted before this release. Version 0.104.0 contains the same application code as 0.103.3; its original mobile feature entry was incorrect. The approved centered-orb redesign is tracked in [PR #593](https://github.com/anis-marrouchi/agentx/pull/593) and ships in a later release.
 
 ## [0.103.3](https://github.com/anis-marrouchi/agentx/compare/v0.103.2...v0.103.3) (2026-10-03)
 
