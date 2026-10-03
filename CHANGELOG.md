@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.104.0](https://github.com/anis-marrouchi/agentx/compare/v0.103.3...v0.104.0) (2026-10-03)
+
+
+### Features
+
+* **app:** apply approved mobile redesign with centered orb ([#488](https://github.com/anis-marrouchi/agentx/issues/488)) ([b209d84](https://github.com/anis-marrouchi/agentx/commit/b209d8442a4db509d47ca4141582114904a3de4f))
+
 ## [0.103.3](https://github.com/anis-marrouchi/agentx/compare/v0.103.2...v0.103.3) (2026-10-03)
 
 
