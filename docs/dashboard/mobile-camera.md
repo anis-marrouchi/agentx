@@ -19,7 +19,7 @@ When you show the camera to another computer, the picture goes straight from the
 
 ## Show the camera to another computer
 
-1. **Phone:** open the app and tap the camera button (📷) at the top right.
+1. **Phone:** open the app and tap the **Share camera** button at the top of **Chat**.
 2. **Phone:** under **Show it to**, pick the computer you will watch from.
 
    ![The Share camera sheet with one computer to pick](/screenshots/mobile-app/camera-sheet.png)
@@ -37,7 +37,7 @@ The phone waits until you open the link, so you can take your time.
 
 ## Let an agent look
 
-1. **Phone:** tap the camera button (📷) at the top right.
+1. **Phone:** tap the **Share camera** button at the top of **Chat**.
 2. **Phone:** under **Show it to**, pick the agent. Agents are listed as **Agent: …** after the computers.
 
    ![The Share camera sheet with an agent picked](/screenshots/mobile-app/camera-agent-pick.png)
