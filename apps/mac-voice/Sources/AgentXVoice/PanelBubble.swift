@@ -15,11 +15,30 @@ extension Panel {
         small = amount
         row.alphaValue = max(1 - 2 * amount, 0)
         dots.alphaValue = max(2 * amount - 1, 0)
-        (contentView as? Surface)?.shape(size: amount > 0 ? PillPlacement.shrunk(Self.size, small: amount).size : nil)
+        (contentView as? Surface)?.shape(size: amount > 0 ? PillPlacement.shrunk(bubbleSize, small: amount).size : nil)
         invalidateShadow()
         // The row was not laid out while reduced, and the frame may already
         // be the full pill's: nothing else would lay it out again.
         if amount == 0, let content = contentView { layoutContent(content.bounds) }
+    }
+
+    /// The caption the bubble says now (#566): at a stop it shows whatever
+    /// the assistant is doing; only an error or a call takes its place.
+    @MainActor
+    var caption: String? {
+        guard case .caption(let words) = idle else { return nil }
+        switch current {
+        case .error, .ringing, .onCall: return nil
+        default: return words
+        }
+    }
+
+    /// The bubble's size: with a caption, as wide as its words, no wider.
+    @MainActor
+    var bubbleSize: NSSize {
+        guard let caption else { return Self.size }
+        let words = (caption as NSString).size(withAttributes: [.font: Brand.body()]).width
+        return NSSize(width: GuideMath.bubbleWidth(words: words, full: Self.size.width), height: Self.size.height)
     }
 }
 

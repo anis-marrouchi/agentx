@@ -51,6 +51,13 @@ enum GuideMath {
         return away ? .nothing : .hint
     }
 
+    /// How wide the bubble is around a caption `words` wide (#566): its
+    /// words and the room at both ends of the row, no wider; never less
+    /// than holds its tail, nor more than the pill, where a long one scrolls.
+    static func bubbleWidth(words: CGFloat, full: CGFloat) -> CGFloat {
+        min(max(words.rounded(.up) + 52, 96), full)
+    }
+
     /// One frame of its way up or down to where it is sent: most of the
     /// way in a third of a second, and there once it is within a point.
     static func glide(_ y: CGFloat, toward goal: CGFloat, dt: Double) -> CGFloat {

@@ -277,7 +277,8 @@ final class CharacterHost {
         let head = min(max(top + 2 - PillPlacement.tail, Self.head), room)
         let moving = carried != nil || abs(sim.speed) > 8 || rest.y != spot.place.y || head > Self.head
         if still { motion = BubbleMotion() }
-        let small = still ? 0 : motion.step(now: now, moving: moving, holds: bubbleShows?() ?? false)
+        // A caption is to be read from the moment it is sent (#566).
+        let small = still ? 0 : motion.step(now: now, moving: moving, holds: guide.caption != nil || bubbleShows?() ?? false)
         let at = NSPoint(x: origin.x + Self.size.width / 2, y: origin.y + Self.ground + head)
         bubbleFrame = bubble?(at, visible, CGFloat(small))
         // Its tail, unless the bubble had to go beside it.
