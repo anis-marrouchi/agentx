@@ -34,7 +34,7 @@ enum PlayDraw {
         }
         let shown = CharacterSim.Frame(pose: frame.pose, x: frame.at.x, face: frame.face, t: frame.t)
         CharacterDraw.draw(shown, in: ctx, edge: CGPoint(x: frame.at.x, y: frame.at.y), origin: 0,
-                           unit: CGFloat(PlayMath.unit), stops: stops)
+                           unit: CGFloat(PlayMath.unit * frame.scale), stops: stops)
     }
 
     private static func cg(_ r: PlayMath.Rect) -> CGRect { CGRect(x: r.x, y: r.y, width: r.w, height: r.h) }
@@ -120,7 +120,8 @@ final class PlayHost {
         let view = PlayView(frame: bounds)
         view.stops = stops
         view.picture = picture
-        view.shown = Play.Frame(at: foot, pose: CharacterMath.pose(.working))
+        // As big as on its edge, where it stood: it shrinks once it jumps (#580).
+        view.shown = Play.Frame(at: foot, pose: CharacterMath.pose(.working), scale: PlayMath.edge)
         view.onInput = { [weak self] in self?.end("a key or a click") }
         backdrop.addSubview(view)
         panel.contentView = backdrop
@@ -174,11 +175,13 @@ final class PlayHost {
         timer = nil
         for (center, observer) in observers { center.removeObserver(observer) }
         observers = []
+        // The character is back on its edge before the picture goes, so
+        // it is never off the screen in between (#580).
+        onEnd?()
         panel.orderOut(nil)
         panel.contentView?.layer?.contents = nil
         panel.contentView = nil
         Log.info("play: ended, \(why)")
-        onEnd?()
     }
 }
 

@@ -32,6 +32,8 @@ final class CharacterHost {
     private var shown = false
     /// Hidden with its bubble, until the talk key or the menu (#502).
     private var hidden = false
+    /// On the page, playing (#580): its window is out until it is back.
+    private var away = false
     private var animated = true
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     private var activity = CharacterMath.Activity.idle
@@ -119,6 +121,13 @@ final class CharacterHost {
         onScreenChanged?()
     }
 
+    /// Out for a play on the page, and back as it left, where it left.
+    func setAway(_ on: Bool) {
+        guard away != on else { return }
+        away = on
+        run()
+    }
+
     /// Hide it, as its bubble is hidden: gone until it is asked back.
     func setHidden(_ on: Bool) {
         guard hidden != on else { return }
@@ -180,7 +189,7 @@ final class CharacterHost {
     private func run() {
         timer?.invalidate()
         timer = nil
-        guard shown, !hidden else { carried = nil; guide(to: nil); window.orderOut(nil); return }
+        guard shown, !hidden, !away else { carried = nil; guide(to: nil); window.orderOut(nil); return }
         tick()
         window.orderFrontRegardless()
         // Still, it only watches for the hand that moves it.

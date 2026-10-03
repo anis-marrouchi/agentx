@@ -52,25 +52,60 @@ func named(_ step: P.Step) -> [Int] {
     switch step {
     case .jump(let i), .walk(let i), .wipe(let i), .stomp(let i), .eat(let i, _), .kick(let i, _): return [i]
     case .carry(let i, _, let j): return [i, j]
-    case .rest: return []
+    case .rest, .home: return []
     }
 }
 let scripts = (0..<200).map { script(UInt64($0)) }
 check(script(7) == script(7), "the same seed gives the same play")
 check(Set(scripts.map { "\($0)" }).count > 50, "and other seeds give other plays")
-check(scripts.allSatisfy { $0.count == 6 && $0[0] == .jump(line: named($0[0])[0]) && $0[1] == .walk(line: named($0[0])[0]) && $0[5] == .rest(1.2) },
-      "it jumps onto a line, walks it, plays on the three others, and rests")
-check(scripts.allSatisfy { s in Set(s.dropFirst(2).dropLast().map { "\($0)".prefix(4) }).count == 3 }, "never the same thing twice in a play")
-check(scripts.allSatisfy { s in Set(s.dropFirst(2).dropLast().map { named($0)[0] }).count == 3 && !s.dropFirst(2).dropLast().contains { named($0)[0] == named(s[0])[0] } },
+check(scripts.allSatisfy { $0.count == 8 && $0[0] == .jump(line: named($0[0])[0]) && $0[1] == .walk(line: named($0[0])[0]) && Array($0[5...]) == [.rest(0.6), .home, .rest(0.3)] },
+      "it jumps onto a line, walks it, plays on the three others, rests and goes home")
+check(scripts.allSatisfy { s in Set(s.dropFirst(2).dropLast(3).map { "\($0)".prefix(4) }).count == 3 }, "never the same thing twice in a play")
+check(scripts.allSatisfy { s in Set(s.dropFirst(2).dropLast(3).map { named($0)[0] }).count == 3 && !s.dropFirst(2).dropLast(3).contains { named($0)[0] == named(s[0])[0] } },
       "one thing a line, and the line it walked stays whole")
 check(scripts.allSatisfy { $0.allSatisfy { named($0).allSatisfy { $0 >= 1 && $0 <= 4 } } }, "the menu bar and a line of one word are left alone")
 for act in ["eat", "wipe", "kick", "stomp", "carry"] {
     check(scripts.contains { $0.contains { "\($0)".hasPrefix(act) } }, "some plays \(act)")
 }
 let alone = (0..<50).map { script(UInt64($0), [page[1]]) }
-check(alone.allSatisfy { $0.count == 4 && named($0[2]) == [0] } && !alone.contains { $0.contains { "\($0)".hasPrefix("carry") } },
+check(alone.allSatisfy { $0.count == 6 && named($0[2]) == [0] } && !alone.contains { $0.contains { "\($0)".hasPrefix("carry") } },
       "with one line it walks it and plays on it, and carries nothing")
 check(script(1, [page[0], page[5]]).isEmpty, "with no line to stand on there is no script")
+
+// --- The page decides (#580) ---
+
+check(Set(scripts.map { named($0[0])[0] }).count == 4, "with no heading it walks any of the lines near the middle")
+var titled = page
+titled.append(P.Line(words: [P.Word(text: "Release", rect: P.Rect(x: 400, y: 380, w: 120, h: 30)), P.Word(text: "notes", rect: P.Rect(x: 530, y: 380, w: 90, h: 30))],
+                     rect: P.Rect(x: 400, y: 380, w: 220, h: 30)))
+check((0..<50).allSatisfy { script(UInt64($0), titled)[0] == .jump(line: 6) }, "a line clearly taller than the others is the heading: it walks that one")
+/// The line an act of this name took, and the lines still whole then.
+func took(_ s: [P.Step], _ act: String) -> (line: Int, free: [Int])? {
+    guard let k = s.firstIndex(where: { "\($0)".hasPrefix(act) }) else { return nil }
+    let taken = Set(s[..<k].map { named($0)[0] })
+    return (named(s[k])[0], (1...4).filter { !taken.contains($0) })
+}
+check(scripts.allSatisfy { s in took(s, "wipe").map { t in t.free.allSatisfy { page[$0].rect.w <= page[t.line].rect.w } } ?? true },
+      "the wipe takes the widest line still whole")
+check(scripts.allSatisfy { s in took(s, "stomp").map { t in t.free.allSatisfy { page[$0].words.count <= page[t.line].words.count } } ?? true },
+      "the stomp the one with the most words")
+check(scripts.allSatisfy { $0.allSatisfy { if case .kick(let i, let w) = $0 { return page[i].words[w].text.count == page[i].words.map(\.text.count).max() } else { return true } } },
+      "a kick takes the longest word of its line")
+
+// --- It shrinks into the play and grows out of it (#580) ---
+
+let whole = Play(lines: page, steps: script(3), start: start, size: size)
+let all = stride(from: 0.0, through: whole.duration + 0.5, by: 1.0 / 30).map { whole.frame(at: $0) }
+let leap = whole.moves[0], back = whole.moves[whole.back!]
+check(all.first!.scale == P.edge && all.first!.at == start, "it starts where it stood on its edge, as big as there")
+check(all.filter { $0.t <= leap.start + PlayMotion.crouch }.allSatisfy { $0.scale == P.edge }, "still that big while it crouches")
+check(all.filter { $0.t >= leap.end - PlayMotion.landing && $0.t <= back.start }.allSatisfy { $0.scale == 1 }, "it has its play size from its first landing to its last jump")
+check(back.to == start && whole.moves.last!.kind == .rest && all.filter { $0.t >= back.end - PlayMotion.landing }.allSatisfy { $0.scale == P.edge },
+      "it jumps back to where it stood and lands as big as it left")
+check(all.last!.at == start && all.last!.face == 0 && all.last!.pose == CharacterMath.Pose(), "and ends there, facing you, as it stands on its edge")
+check(zip(all, all.dropFirst()).allSatisfy { abs($0.scale - $1.scale) < 0.05 }, "its size never changes at once")
+check(Play(lines: page, steps: [.jump(line: 1), .home], start: start, size: size).back == 1 && Play(lines: page, steps: [.home], start: start, size: size).moves.isEmpty,
+      "going home from home is no move")
 
 // --- The script in time ---
 

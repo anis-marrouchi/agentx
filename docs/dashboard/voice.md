@@ -452,7 +452,7 @@ Good to know:
 
 ### Play on the page
 
-The character can leave its place and play on a picture of your screen: it walks along a line of text, then eats words, wipes a line, kicks a word to pieces, stomps a line down or carries a word away. Each play is different. It is a short show, about ten seconds, and the real page is never touched. Play mode is off by default.
+The character can leave its place and play on a picture of your screen: it walks along a line of text, then eats words, wipes a line, kicks a word to pieces, stomps a line down or carries a word away. The page decides what it does where, so each page gets its own play, and each play is different. It is one movement from start to end: the character never disappears, it shrinks as it jumps onto the page and grows as it jumps back. It is a short show, about fifteen seconds, and the real page is never touched. Play mode is off by default.
 
 To switch it on and start a play:
 
@@ -462,21 +462,21 @@ To switch it on and start a play:
 
 What happens:
 
-1. The app takes one picture of the screen the character is on and lays it over that screen. The character waits on it, with its three thinking dots, while the lines of text are read. The reading is done on the Mac by Apple's text recognition; nothing is uploaded.
-2. The character jumps onto one of the lines near the middle of the screen and walks along it.
-3. It goes to up to four other lines and does one thing to each, never the same thing twice in a play:
-   - **Eat:** it eats up to three words, letter by letter.
-   - **Wipe:** it wipes the line with a cloth.
-   - **Kick:** it kicks a word. The letters fly off and pile up at the bottom of the screen.
-   - **Stomp:** it hops on the line until the words drop one by one, then falls after them.
-   - **Carry:** it lifts a word over its head and puts it down at the end of the line it walked.
-4. It rests, and the picture goes. The page is as it was.
+1. The app takes one picture of the screen the character is on, without the character and its bubble, and lays it over that screen. The character stays where it stood, at its usual size, with its three thinking dots, while the lines of text are read. The reading is done on the Mac by Apple's text recognition; nothing is uploaded.
+2. The character crouches and jumps onto the page, shrinking in the air to fit between the lines. It lands on the page's heading, the line clearly taller than the others, and walks along it. On a page with no heading it takes one of the lines near the middle of the screen.
+3. It goes to up to four other lines near the middle and does one thing to each, never the same thing twice in a play. The page decides which line gets what:
+   - **Eat:** it eats up to three words of any line, letter by letter.
+   - **Wipe:** it wipes the widest line with a cloth.
+   - **Kick:** it kicks the longest word of the line that has the longest one. The letters fly off and pile up at the bottom of the screen.
+   - **Stomp:** it hops on the line with the most words until they drop one by one, then falls after them.
+   - **Carry:** it lifts a word of the shortest line over its head and puts it down at the end of the line it walked.
+4. It rests, then jumps back to where it stood, growing in the air to its usual size. The picture goes, and the character is on its edge as before. The page is as it was.
 
-Which lines, which words and in what order change with every play.
+The order of the acts, which one is left out and which words are eaten or carried change with every play.
 
 It moves like a drawn character, not like a pointer: it crouches before a jump and lands softly, it gets up to speed and slows to a stop when it walks, kicked letters leave one after the other, and what falls bounces once before it lies still.
 
-Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring.
+Play ends at once on any key (**Esc** included), any click or scroll, the talk key, a change of Space, or when the assistant starts to listen, speak or ring. Ended this way, the picture goes at once and the character is back on its edge, without the jump home.
 
 Good to know:
 

@@ -52,11 +52,15 @@ enum PlayMath {
         case carry(line: Int, word: Int, to: Int)
         /// Stand still, facing you, for so many seconds.
         case rest(Double)
+        /// Jump back to where it left its edge, growing to its size there.
+        case home
     }
 
     /// Points per drawing unit on the page: a body 40 points across,
     /// smaller than on the bottom edge so it fits between lines.
     static let unit = 0.4
+    /// How many times bigger it is on its edge: 56 points across there.
+    static let edge = 1.4
     /// The middle of its body above its feet, and its top, in points.
     static let middle = (M.Pose().lift + 50) * unit
     static let top = (M.Pose().lift + 100) * unit + 8
@@ -66,22 +70,6 @@ enum PlayMath {
     static let perLetter = 0.09
     /// Its mouth, ahead of its middle.
     static let mouth = 10.0
-
-    /// A word's letters: the word's rectangle cut into equal parts, one a
-    /// character. An estimate, close enough to take them one at a time.
-    static func letters(of word: Word) -> [Rect] {
-        let n = max(word.text.count, 1), w = word.rect.w / Double(n)
-        return (0..<n).map { Rect(x: word.rect.x + Double($0) * w, y: word.rect.y, w: w, h: word.rect.h) }
-    }
-
-    /// The colour most of `samples` share: the page around a line. Close
-    /// shades count as one, so the soft edge of a letter does not win.
-    static func common(_ samples: [UInt32]) -> UInt32? {
-        var count: [UInt32: Int] = [:]
-        for s in samples { count[s & 0xF8F8F8, default: 0] += 1 }
-        guard let best = count.max(by: { ($0.value, $0.key) < ($1.value, $1.key) })?.key else { return nil }
-        return samples.first { $0 & 0xF8F8F8 == best }
-    }
 }
 
 /// A script laid out in time: every move has its start and its end, so
@@ -110,6 +98,8 @@ struct Play {
         var face = 0.0
         var pose = M.Pose()
         var t = 0.0
+        /// Its size, in play sizes: bigger as it leaves its edge and comes back.
+        var scale = 1.0
         /// What is covered with the page's colour, and which colour.
         var gone: [(rect: P.Rect, paper: UInt32)] = []
         /// The cloth, while it wipes.
@@ -124,6 +114,8 @@ struct Play {
     let size: P.Point
     private(set) var moves: [Move] = []
     private(set) var cuts: [P.Cut] = []
+    /// The jump that takes it back to its place, if the script has one.
+    private(set) var back: Int?
     var duration: Double { moves.last?.end ?? 0 }
 
     /// `start` is where its feet are when play begins. Steps that name a
@@ -223,6 +215,10 @@ struct Play {
             case .rest(let seconds):
                 let m = add(.rest, to: at, max(seconds, 0))
                 list.append(m); now = m.end
+            case .home:
+                guard at != start else { continue }
+                back = list.count
+                reach(start, into: &list)
             }
         }
         moves = list
@@ -232,7 +228,7 @@ struct Play {
     func frame(at t: Double) -> Frame {
         guard let i = moves.lastIndex(where: { $0.start <= t }) else { return Frame(done: true) }
         let m = moves[i], p = M.span(t, m.start, m.end)
-        var f = Frame(t: t, done: t >= duration)
+        var f = Frame(t: t, scale: scale(at: t), done: t >= duration)
 
         let body = body(m, at: t)
         f.at = P.Point(x: m.from.x + (m.to.x - m.from.x) * body.travel, y: m.from.y + (m.to.y - m.from.y) * body.travel)
