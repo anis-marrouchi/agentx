@@ -4,7 +4,9 @@
 # (table in issue #53) and prints only steps that are new, or still true after
 # 24 h. Ownership needs no judgment, so the script applies it itself: it
 # assigns anis-marrouchi and labels the owning agent (agent:<id>; issues
-# default to coder-agent) and a new PR's reviewer (review:devops-agent). When
+# default to coder-agent) and a ready PR's reviewer (review:devops-agent).
+# The example action uses --review-ready-only: draft PRs still get ownership
+# and CI fixes, but review waits until the PR leaves draft. When
 # steps remain, the coordinator agent carries them out.
 # A PR whose session ended with CI red (the #52 case) goes back to its author
 # agent with the failing checks; after two red commits it escalates instead.

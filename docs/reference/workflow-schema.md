@@ -142,6 +142,20 @@ The editor's assistant can propose a workflow from a request. **Apply to canvas 
 
 <!-- No screenshot needed: this is the machine-readable counterpart to the illustrated automation guide. -->
 
+## GitHub owner sweep example
+
+The checkout includes `examples/workflows/github-owner-sweep.yaml` and its shell action, `examples/actions/github-owner-sweep.json`. The action runs `scripts/owner-sweep.mjs` to find missing ownership, review and CI follow-ups. It needs an authenticated GitHub CLI (`gh`). Adapt the repository, agent IDs, assignee and checkout path before using the example.
+
+The action passes `--review-ready-only`. With this flag, draft pull requests still get an owner and failing CI is sent back for repair, but review requests wait until the pull request is marked ready. Without the flag, drafts can receive review requests too. Existing review labels and completed reviews are kept.
+
+For a report that does not change GitHub, run from a checkout in a terminal without `--assignee`:
+
+```sh
+node scripts/owner-sweep.mjs --repo example/project --state .agentx/owner-sweep/example.json --review-ready-only
+```
+
+The script writes its local state file and prints `RESULT steps=…` followed by the proposed follow-ups. Adding `--assignee <login>` lets it assign issues and pull requests and add ownership/review labels. The workflow's agent handles the remaining proposed steps; the script does not merge pull requests.
+
 ## Check it worked
 
 1. **Terminal:** run `agentx workflow validate <file>`. It reports no errors.
