@@ -59,7 +59,7 @@ export const APP_ANNOUNCE_SCRIPT = `
   card.appendChild(err);
   card.appendChild(list);
   // Above "Recent", under the notifications card.
-  var recent = panel.querySelector('h3.fx-sub');
+  var recent = panel.querySelector('#al-recent-head');
   if (recent) panel.insertBefore(card, recent); else panel.appendChild(card);
 
   var busy = false;

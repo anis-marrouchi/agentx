@@ -16,6 +16,8 @@
 // app-camera.client.ts; a sideways swipe changes tab (app-swipe.client.ts).
 // A tab without content yet says so plainly — no simulated data.
 
+import { APP_REDESIGN_CSS } from "./app-redesign.css"
+import { APP_SHEET_SCRIPT } from "./app-sheet.client"
 import { AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
@@ -64,6 +66,13 @@ ${THEME_BOOT}
 <style>${AX_TOKENS_CSS}${BASE_CSS}</style>`
 }
 
+const TAB_ICONS: Record<string, string> = {
+  chat: 'M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-2 2V11.5a9.5 9.5 0 0 1 19 0Z',
+  fleet: 'M3 3h18v13H3zM8 21h8M12 16v5',
+  activity: 'M3 12h4l3-8 4 16 3-8h4',
+  alerts: 'M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4',
+}
+
 const TABS = [
   { id: "chat", label: "Chat", soon: "Loading your conversations…" },
   { id: "fleet", label: "Fleet", soon: "Loading your machines…" },
@@ -73,7 +82,7 @@ const TABS = [
 
 export function renderAppPage(): string {
   const tabs = TABS.map((t, i) =>
-    `<button type="button" role="tab" id="tab-${t.id}" aria-controls="panel-${t.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${t.id}">${t.label}</button>`,
+    `<button type="button" role="tab" id="tab-${t.id}" aria-controls="panel-${t.id}" aria-selected="${i === 0}" tabindex="${i === 0 ? 0 : -1}" data-tab="${t.id}"><span class="tab-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${TAB_ICONS[t.id]}"/></svg></span><span>${t.label}</span></button>`,
   ).join("")
   const panels = TABS.map((t, i) =>
     `<section role="tabpanel" id="panel-${t.id}" aria-labelledby="tab-${t.id}" tabindex="0"${i === 0 ? "" : " hidden"}>
@@ -84,14 +93,14 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}${APP_REDESIGN_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
     <h1>AgentX</h1>
     <p id="who" class="who">Connecting…</p>
   </div>
-  <div class="bar-btns">${CAMERA_BUTTON}<button type="button" id="theme" class="icon-btn" aria-label="Switch to light theme">◐</button></div>
+  <div class="bar-btns">${CAMERA_BUTTON}<button type="button" id="theme" class="icon-btn" aria-label="Switch to light theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A9 9 0 0 1 8.5 4 9 9 0 1 0 20 15.5Z"/></svg></button></div>
 </header>
 <p id="offline" class="offline" role="status" hidden>Offline. Showing the saved app; live data needs a connection.</p>
 ${CAMERA_ASKS_BODY}
@@ -100,6 +109,7 @@ ${CAMERA_ASKS_BODY}
 ${CAMERA_BODY}
 <script>${APP_SCRIPT}</script>
 <script>${injectFns({ swipeMayStart, swipeAxis, swipeOffset, swipeLanding })}${APP_SWIPE_SCRIPT}</script>
+<script>${APP_SHEET_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
 <script>${APP_ANNOUNCE_SCRIPT}</script>
@@ -166,12 +176,14 @@ const APP_SCRIPT = `
 (function () {
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
   function select(tab, focus, keepHash) {
+    document.querySelector('.tabs').style.setProperty('--tab-position', String(tabs.indexOf(tab)));
     tabs.forEach(function (t) {
       var on = t === tab;
       t.setAttribute('aria-selected', on ? 'true' : 'false');
       t.tabIndex = on ? 0 : -1;
       document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
     });
+    document.dispatchEvent(new CustomEvent('ax-tab'));
     if (focus) tab.focus();
     if (keepHash) return;
     try { history.replaceState(null, '', '#' + tab.dataset.tab); } catch (e) {}
