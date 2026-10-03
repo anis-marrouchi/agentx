@@ -12,15 +12,18 @@ final class CharacterView: NSView {
     /// Its speech bubble in this window, origin bottom-left; nil while hidden.
     var bubble: NSRect?
 
-    /// A drag of its body. Its window takes the mouse for nothing else.
+    /// A press on its body: a drag, or a click when it did not move.
     enum Drag { case began, moved, ended }
     var onDrag: ((Drag) -> Void)?
+    /// A right-click on its body.
+    var onMenu: ((NSEvent) -> Void)?
 
     override var isFlipped: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     override func mouseDown(with event: NSEvent) { onDrag?(.began) }
     override func mouseDragged(with event: NSEvent) { onDrag?(.moved) }
     override func mouseUp(with event: NSEvent) { onDrag?(.ended) }
+    override func rightMouseDown(with event: NSEvent) { onMenu?(event) }
 
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }

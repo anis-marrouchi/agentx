@@ -289,9 +289,22 @@ Good to know:
 - **A click on the dots** talks, like a click on the bubble.
 - **Still picture:** with **Reduce Motion** on, or **Animated orb** unticked, the bubble is never reduced.
 
+### Click the character
+
+While the assistant is idle and the character shows no bubble, the character is what you click:
+
+- **Click it** to start listening, the same as a click on the pill or **Option–Space**.
+- **Right-click it** to open the menu, the same as the AgentX icon in the menu bar.
+
+It waits for the pointer then and does not step aside. Good to know:
+
+- **A click no longer goes through it:** while it can be clicked, a click on its body does not reach the window behind it. Drag it out of the way to reach what is under it.
+- **With a bubble, click the bubble:** as soon as it shows a bubble, clicks on the character go through to the window behind again, and it steps aside for the pointer as before.
+- **Play mode:** a game stops when the pointer reaches the character. When it runs away, wait for it to stop, at most two and a half seconds.
+
 ### Move or hide the character
 
-The character steps aside when the pointer comes close, so hold **Command** to make it wait. To move it:
+With a bubble showing, the character steps aside when the pointer comes close, so hold **Command** to make it wait. Idle with no bubble, it waits by itself and **Command** is not needed. To move it:
 
 1. **Mac:** hold **Command** and move the pointer onto the character.
 2. **Mac:** press on it and drag it where you want it, on any screen. Its bubble goes with it.

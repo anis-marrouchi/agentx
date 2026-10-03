@@ -12,6 +12,9 @@ extension CharacterSim {
         /// The pointer is on its speech bubble: it stays where it is, so
         /// the bubble is not pulled from under the pointer.
         var held = false
+        /// It can be clicked (`CharacterMath.clickable`): it waits for a
+        /// pointer that comes close, and plays no game with it (#579).
+        var clickable = false
         /// The answering agent sent it to show something (#482): it goes
         /// to `home` at once, awake, whatever the pointer did before.
         var sent = false

@@ -239,5 +239,22 @@ for _ in 0..<Int(8 * fps) {
 }
 check(abs(roamer.x - home) < 2, "a game ends a stroll: left alone it goes home")
 
+// --- It can be clicked (#579) ---
+
+// Idle with no bubble, a pointer wiggling on it starts no game: it waits
+// for the click. Further off, the games go on as before.
+var (onIt, onItT) = rested()
+for _ in 0..<Int(20 * fps) {
+    onItT += 1 / fps
+    _ = onIt.step(to: onItT, Input(pointer: (home + 20 + 20 * sin(onItT * 9), 30), clickable: true, plays: true, home: home, range: range))
+}
+check(onIt.play.games == 0 && abs(onIt.x - home) < 1, "the pointer on a character that can be clicked: no game, it stays")
+var (offIt, offItT) = rested()
+for _ in 0..<Int(20 * fps) {
+    offItT += 1 / fps
+    _ = offIt.step(to: offItT, Input(pointer: (home + 150 + 20 * sin(offItT * 9), 60), clickable: true, plays: true, home: home, range: range))
+}
+check(offIt.play.games > 0, "the pointer further off: it still plays")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

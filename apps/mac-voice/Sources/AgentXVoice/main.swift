@@ -477,6 +477,8 @@ final class App: NSObject, NSApplicationDelegate {
 
         registerHotkeys()
         panel.onClick = { [weak self] in self?.toggleListening() }
+        character.onClick = { [weak self] in self?.toggleListening() }
+        character.contextMenu = { [weak self] in self?.statusMenu.menu ?? NSMenu() }
         statusMenu.onSettings = { [weak self] in self?.settingsWindow.show() }
         settingsWindow.model.onSaved = { [weak self] saved in self?.apply(saved) }
         // While a shortcut field waits for keys, ours stand aside so the
