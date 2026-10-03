@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.102.2](https://github.com/anis-marrouchi/agentx/compare/v0.102.1...v0.102.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* **voice:** a guide caption shows whole, last letter included ([#572](https://github.com/anis-marrouchi/agentx/issues/572)) ([4902a92](https://github.com/anis-marrouchi/agentx/commit/4902a92a90fba4fb837cafa6d89dc78550b0e0d0)), closes [#569](https://github.com/anis-marrouchi/agentx/issues/569)
+
 ## [0.102.1](https://github.com/anis-marrouchi/agentx/compare/v0.102.0...v0.102.1) (2026-10-03)
 
 
