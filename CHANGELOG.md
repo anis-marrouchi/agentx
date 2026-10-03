@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.103.1](https://github.com/anis-marrouchi/agentx/compare/v0.103.0...v0.103.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **voice:** a play on the page is one movement, and the page decides what happens where ([#581](https://github.com/anis-marrouchi/agentx/issues/581)) ([2df6fb3](https://github.com/anis-marrouchi/agentx/commit/2df6fb33d106ec3b15ae1c20d8704482c6c68d66)), closes [#580](https://github.com/anis-marrouchi/agentx/issues/580)
+* **voice:** the picture of a play keeps the menu-bar icon ([#584](https://github.com/anis-marrouchi/agentx/issues/584)) ([9b36552](https://github.com/anis-marrouchi/agentx/commit/9b36552d0a6705375f331ef5a353c84152215fab)), closes [#583](https://github.com/anis-marrouchi/agentx/issues/583)
+
 ## [0.103.0](https://github.com/anis-marrouchi/agentx/compare/v0.102.2...v0.103.0) (2026-10-03)
 
 
