@@ -2,6 +2,14 @@ import { describe, it, expect } from "vitest"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 describe("daemonConfigSchema", () => {
+  it("validates channel-specific session rotation limits without silently stripping them", () => {
+    const config = { node: { id: "test", name: "Test" }, session: { tierTwoThresholdTokensByChannel: { voice: 60_000, github: 80_000 } } }
+    expect(daemonConfigSchema.parse(config).session.tierTwoThresholdTokensByChannel).toEqual({ voice: 60_000, github: 80_000 })
+    expect(daemonConfigSchema.parse({ node: config.node }).session.tierTwoThresholdTokensByChannel).toEqual({})
+    for (const tokens of [49_999, 200_001, 60_000.5]) {
+      expect(daemonConfigSchema.safeParse({ ...config, session: { tierTwoThresholdTokensByChannel: { voice: tokens } } }).success).toBe(false)
+    }
+  })
   it("validates minimal config", () => {
     const result = daemonConfigSchema.safeParse({
       node: { id: "test", name: "Test" },
