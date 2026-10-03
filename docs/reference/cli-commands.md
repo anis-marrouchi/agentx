@@ -690,6 +690,7 @@ Print the resolved (merged) policy for an agent.
 | `--min-present <p>` | `0.5` | Refuse below this P(control exists). |
 | `--mark <kind>` | `box` | How the character marks it: box, circle, underline, none. |
 | `--hold <seconds>` | — | How long the character stays there (8 by default). |
+| `--text <words>` | — | What the character's bubble says there (no bubble without it). |
 
 ## look
 

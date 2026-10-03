@@ -10,6 +10,9 @@ enum GuideClient {
         /// Nil: back to where it rests.
         let rect: Rect?
         let mark: String
+        /// What its bubble says at the stop (#562). Nil: no bubble there,
+        /// and a daemon too old to send one.
+        let text: String?
     }
 
     /// GET /voice/guide: the command after `seq`, as soon as there is
@@ -34,8 +37,8 @@ final class GuideWatcher {
     private var task: Task<Void, Never>?
     /// The character is on screen.
     var wanted: (() -> Bool)?
-    /// Show this, in AppKit coordinates, or go home.
-    var onCommand: ((NSRect?, GuideMath.Mark) -> Void)?
+    /// Show this, in AppKit coordinates, with this caption, or go home.
+    var onCommand: ((NSRect?, GuideMath.Mark, String?) -> Void)?
 
     /// (Re)start the wait. Called again when the character comes on screen
     /// or leaves it, so a wait already open is ended: cancelling it closes
@@ -53,7 +56,7 @@ final class GuideWatcher {
     private func turn() async {
         guard wanted?() == true, let command = await GuideClient.next(after: seq) else {
             // Hidden, or the daemon is gone: nothing is left on screen.
-            if away { away = false; onCommand?(nil, .none) }
+            if away { away = false; onCommand?(nil, .none, nil) }
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             return
         }
@@ -65,7 +68,7 @@ final class GuideWatcher {
         }
         away = rect != nil
         Log.info("guide: \(rect.map { "to \(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))x\(Int($0.height)) \(command.mark)" } ?? "home")")
-        onCommand?(rect, GuideMath.Mark(rawValue: command.mark) ?? .box)
+        onCommand?(rect, GuideMath.Mark(rawValue: command.mark) ?? .box, rect == nil ? nil : command.text)
     }
 }
 
@@ -74,13 +77,16 @@ final class GuideWatcher {
 @MainActor
 final class CharacterGuide {
     private(set) var showing: NSRect?
+    /// What its bubble says there (#562).
+    private(set) var caption: String?
     private let mark = GuideMark()
     /// On its way up or down, to what it shows or back; and the last frame.
     private var gliding = false
     private var ticked = 0.0
 
-    func show(_ rect: NSRect, _ kind: GuideMath.Mark, color: NSColor, animated: Bool) {
+    func show(_ rect: NSRect, _ kind: GuideMath.Mark, caption text: String?, color: NSColor, animated: Bool) {
         showing = rect
+        caption = text
         gliding = true
         mark.show(kind, around: rect, color: color, animated: animated)
     }
@@ -89,6 +95,7 @@ final class CharacterGuide {
     func end(glide: Bool = true) {
         gliding = glide && showing != nil
         showing = nil
+        caption = nil
         mark.hide()
     }
 

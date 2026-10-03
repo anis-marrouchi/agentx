@@ -49,5 +49,11 @@ for _ in 0..<5 { let next = G.glide(at, toward: 78, dt: 1.0 / 30); steps.append(
 check(steps.allSatisfy { $0 > 0 } && steps[0] > steps[4], "fast at first, then slower: no jump")
 check(G.glide(100, toward: 500, dt: 5) < 500, "a long gap between two frames is one step, not a jump there")
 
+// What the bubble says while the assistant is idle (#562).
+check(G.idle(caption: nil, away: false) == .hint, "where it rests, the idle bubble is the hint")
+check(G.idle(caption: "Start a run here", away: true) == .caption("Start a run here"), "at a stop, the bubble says the command's caption")
+check(G.idle(caption: nil, away: true) == .nothing, "at a stop with no caption, on the way there or in a play, no bubble")
+check(G.idle(caption: "", away: true) == .nothing, "an empty caption is none")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

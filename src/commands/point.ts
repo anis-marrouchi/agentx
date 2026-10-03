@@ -45,8 +45,10 @@ interface Snapshot {
 type ScreenRect = { x: number; y: number; width: number; height: number }
 
 /** Show `rect`: the character when it is on screen, else the cursor. */
-async function show(rect: ScreenRect, label: string, opts: { mark: string; hold?: string }): Promise<void> {
-  const shown = await daemon("POST", "/voice/guide", { rect, mark: opts.mark, ...(opts.hold ? { hold: Number(opts.hold) } : {}) })
+async function show(rect: ScreenRect, label: string, opts: { mark: string; hold?: string; text?: string }): Promise<void> {
+  const shown = await daemon("POST", "/voice/guide", {
+    rect, mark: opts.mark, ...(opts.hold ? { hold: Number(opts.hold) } : {}), ...(opts.text ? { text: opts.text } : {}),
+  })
     .then((r) => r?.shown === true, () => false)
   if (shown) return
   await run(HELPER, ["point", "--x", String(rect.x), "--y", String(rect.y),
@@ -62,6 +64,7 @@ export const point = new Command()
   .option("--min-present <p>", "refuse below this P(control exists)", "0.5")
   .option("--mark <kind>", `how the character marks it: ${GUIDE_MARKS.join(", ")}`, "box")
   .option("--hold <seconds>", "how long the character stays there (8 by default)")
+  .option("--text <words>", "what the character's bubble says there (no bubble without it)")
   .action(async (request: string, opts) => {
     if (!(GUIDE_MARKS as readonly string[]).includes(opts.mark)) {
       console.log(chalk.red(`  --mark is one of: ${GUIDE_MARKS.join(", ")}`))

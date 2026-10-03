@@ -40,6 +40,17 @@ enum GuideMath {
         }
     }
 
+    /// What the bubble says while the assistant has nothing to say (#562).
+    enum Idle: Equatable { case hint, caption(String), nothing }
+
+    /// At a stop the bubble says the command's caption, and with none
+    /// there is no bubble; the idle hint is for where it rests, not for
+    /// a stop, the way there or a play. `away`: sent somewhere, or playing.
+    static func idle(caption: String?, away: Bool) -> Idle {
+        if let caption, !caption.isEmpty { return .caption(caption) }
+        return away ? .nothing : .hint
+    }
+
     /// One frame of its way up or down to where it is sent: most of the
     /// way in a third of a second, and there once it is within a point.
     static func glide(_ y: CGFloat, toward goal: CGFloat, dt: Double) -> CGFloat {

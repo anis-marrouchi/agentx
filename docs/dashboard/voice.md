@@ -361,10 +361,12 @@ While the character is on screen, an agent you speak to is told it can run the s
 | `--mark underline` | A line under it |
 | `--mark none` | The character goes there and marks nothing |
 | `--hold 20` | Seconds before it goes home: `8` by default, up to `120` |
+| `--text "Search starts here"` | What its bubble says while it stands there. Without it there is no bubble at the stop |
 
 Good to know:
 
 - **Nothing is clicked:** the character and its mark are drawn on a layer of their own. No click or key goes to any app, and your pointer is not moved.
+- **Its bubble there:** the bubble shows the text you gave, for as long as the character stands there, and goes when it leaves. The text is one line: line breaks become spaces, it is cut at 120 characters, and a text wider than the bubble scrolls. With no text there is no bubble at the stop. The **hold ⌥space** hint shows only where the character rests, never on its way, at a stop, or during a play.
 - **Where it stands:** on the left of the thing, level with its middle, so its bubble does not cover it. With no room on the left it stands on the right.
 - **It does not step aside meanwhile:** while it shows something, the pointer can come close. Take hold of it with **Command** to end the showing and move it.
 - **Without the character:** with the orb look, with the character hidden, or with AgentX Voice closed, `agentx point` moves the highlight cursor as before.
@@ -1074,8 +1076,8 @@ The daemon offers these addresses for talks, lessons and narration. Requests fro
 | `POST /voice/hush` | Silence whatever is speaking, pause the speaking queue and wait for your words (what **Option–Space** sends when pressed) |
 | `POST /voice/door` | `{"text": "…"}`: your words for the talk or lesson; the queue plays on. `stop` ends the talk or lesson and empties the queue |
 | `POST /voice/stop` | Silence every voice and empty the speaking queue (what **Command–Option–.** sends) |
-| `GET /voice/guide?after=<seq>` | What the character is sent to show: `{"seq", "agentId", "rect", "mark"}`. It answers as soon as there is a newer command than `<seq>`, else after 25 seconds. AgentX Voice waits here while the character is on screen |
-| `POST /voice/guide` | Send the character to a place: `{"rect": {"x", "y", "width", "height"}, "mark": "box", "hold": 8}`, measured in points from the top-left of the main screen. `mark` is `box`, `circle`, `underline` or `none`. `{"home": true}` sends it back. Answers `409` when no character is on screen |
+| `GET /voice/guide?after=<seq>` | What the character is sent to show: `{"seq", "agentId", "rect", "mark", "text"}`. It answers as soon as there is a newer command than `<seq>`, else after 25 seconds. AgentX Voice waits here while the character is on screen |
+| `POST /voice/guide` | Send the character to a place: `{"rect": {"x", "y", "width", "height"}, "mark": "box", "hold": 8, "text": "Search starts here"}`, measured in points from the top-left of the main screen. `mark` is `box`, `circle`, `underline` or `none`. `text` is optional: what the bubble says at the stop, cut at 120 characters; without it there is no bubble. `{"home": true}` sends it back. Answers `409` when no character is on screen |
 | `GET /voice/queue` | The speaking queue: `{"paused", "playing", "waiting", "recent"}` |
 | `POST /voice/queue` | Add a line in an agent's voice: `{"text": "…", "agentId": "<id>", "kind": "answer"}`. `kind` is `answer`, `narration` or `line`. Add `"wait": true` to get the reply only once the line has been spoken (`{"item", "played"}`) |
 | `POST /voice/queue/<id>/skip` | Drop that line, whether it is playing or waiting. The others keep their order |
