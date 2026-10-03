@@ -381,7 +381,10 @@ private struct GeneralTab: View {
                                               set: { model.draft?.general.startReduced = $0 }),
                                 stroll: draft.general.stroll == nil ? nil
                                     : Binding(get: { model.draft?.general.stroll ?? false },
-                                              set: { model.draft?.general.stroll = $0 }))
+                                              set: { model.draft?.general.stroll = $0 }),
+                                animations: draft.general.animations == nil ? nil
+                                    : Binding(get: { model.draft?.general.animations ?? "off" },
+                                              set: { model.draft?.general.animations = $0 }))
                 }
                 if draft.general.card != nil {
                     AnswerCardSection(card: Binding(get: { model.draft?.general.card ?? .standard },

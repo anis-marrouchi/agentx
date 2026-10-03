@@ -151,6 +151,16 @@ describe("applyVoiceSettings", () => {
     expect(raw.voice).toEqual({ stroll: true })
   })
 
+  it("lets the character play by itself sometimes, more, less or never (#571)", () => {
+    expect(voiceSettingsView(config(), []).general.animations).toBe("sometimes")
+    for (const often of ["off", "rarely", "sometimes", "often"] as const) expect(checkVoiceSettings({ general: { animations: often } }, config())).toEqual([])
+    expect(checkVoiceSettings({ general: { animations: "always" } } as never, config()))
+      .toEqual([{ path: "general.animations", message: "Character plays when idle must be off, rarely, sometimes or often" }])
+    const raw: any = {}
+    applyVoiceSettings(raw, { general: { animations: "off" } })
+    expect(raw.voice).toEqual({ animations: "off" })
+  })
+
   it("writes the look, and the orb is the look when none is written", () => {
     const raw: any = rawConfig()
     expect(voiceSettingsView(config(), []).general.look).toBe("orb")
@@ -234,7 +244,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false, animations: "sometimes" })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })

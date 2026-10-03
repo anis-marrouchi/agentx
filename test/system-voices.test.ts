@@ -193,6 +193,7 @@ describe("config", () => {
       look: "orb",
       startReduced: false,
       stroll: false,
+      animations: "sometimes",
       palette: "lagoon",
       card: { timeout: 30, maxHeight: 320 },
     })

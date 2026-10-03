@@ -339,6 +339,46 @@ Good to know:
 - **Not with a still character:** with **Animated orb** unticked or Reduce Motion on, the character does not move at all.
 - **Only with the character:** the setting has no effect while the orb is shown, and the tick box is greyed out.
 
+### Let the character play by itself
+
+When the assistant has nothing to do, the character plays a small animation from time to time, just for the fun of it. This is on by default, at **Sometimes**.
+
+To change how often, or turn it off:
+
+1. **Mac:** open **Settings…** from the AgentX menu and go to the **General** tab.
+2. **Mac:** under **Assistant**, set **Character plays when idle** to **Never**, **Rarely**, **Sometimes** or **Often**, then choose **Save**.
+
+Or in the Terminal, from the folder with your `agentx.json`:
+
+```sh
+agentx voice animations off         # none
+agentx voice animations rarely      # one every 60 to 120 seconds
+agentx voice animations sometimes   # one every 25 to 50 seconds
+agentx voice animations often       # one every 10 to 20 seconds
+agentx voice animations             # which one is set now
+```
+
+In `agentx.json` it is `voice.animations`: `"off"`, `"rarely"`, `"sometimes"` (the default) or `"often"`. A change made in the Terminal or in the file is picked up within a few seconds, while the app runs.
+
+The animations:
+
+| Animation | What you see |
+|-----------|--------------|
+| **Look around** | Its eyes go to one side, then the other, and back |
+| **Hop** | A short crouch, then a small jump on the spot |
+| **Sway** | It leans from side to side twice |
+| **Stretch and yawn** | It stretches tall and shuts its eyes for a moment. This one comes just before it dozes, not at random |
+
+Good to know:
+
+- **Work comes first:** no animation starts while you talk, while an agent thinks or speaks, during a call, while the character shows you something, or while its bubble holds an answer. One that is playing stops at once.
+- **The pointer comes first:** it does not play while it steps aside, walks, or plays a game with the pointer in [play mode](#play-on-the-page).
+- **Not while notifications are held:** with **Hold notifications** ticked in the AgentX menu, it plays nothing. This is AgentX's own hold, not the Focus of macOS, which the app cannot read.
+- **It stays where it is:** an animation never moves it along the edge and leaves no trail.
+- **It stops when it dozes:** after two minutes with nothing to do the character dozes, and a dozing character plays nothing. So **Rarely** shows one animation or two before the yawn.
+- **Not with a still character:** with **Animated orb** unticked or Reduce Motion on, the character does not move at all.
+- **Only with the character:** the setting has no effect while the orb is shown, and the control is greyed out.
+
 ### The character shows you something
 
 An agent can send the character to something on your screen. The character leaves its place, flies beside the thing, and marks it with a box, an oval or an underline. Then it goes back to where it rests. This needs **Shown as** set to **Character** and the character on screen.
@@ -592,6 +632,7 @@ To hear a voice before you keep it:
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
 | **Start reduced to the orb** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb). Default off | `voice.startReduced` |
 | **Character strolls when idle** | The [character](#the-character) takes a [slow stroll](#let-the-character-stroll) when the assistant has nothing to do. Default off | `voice.stroll` |
+| **Character plays when idle** | How often the [character](#the-character) plays a [small animation by itself](#let-the-character-play-by-itself): **Never**, **Rarely**, **Sometimes** or **Often**. Default **Sometimes** | `voice.animations` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
 | **Tallest answer** | How tall the answer grows before it scrolls, 120 to 800 points | `voice.card.maxHeight` |
 | **Launch at login** | Starts the app when you log in. Saved by macOS as a login item, not in `agentx.json`. If you installed with `agentx desktop install`, that already starts it at login: the switch is on and greyed out | macOS |

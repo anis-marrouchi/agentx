@@ -44,6 +44,8 @@ struct CharacterSim {
     private var met: Double?
     /// Its games with the pointer, and the crouch and hop they give it.
     private(set) var play = PointerPlay()
+    /// Its small animations by itself (#571).
+    private(set) var idle = IdlePlay()
     private var crouch = 0.0, hop = 0.0
     private var face = 0.0, lean = 0.0
     private var glance = (x: 0.0, y: 0.0)
@@ -130,6 +132,10 @@ struct CharacterSim {
         }
         if let at = pending, now >= at { pending = nil; go(goal, now) }
         var pose = change.pose(at: now)
+        // Idle, left alone and standing: a small animation now and then.
+        let alone = mood == .idle && input.activity == .idle && input.asked == nil && !input.sent && !input.held && !input.shows
+            && !near && game == PointerPlay.Out() && play.game == nil && abs(speed) < 40 && strolled == 0 && strollTo == 0
+        let own = idle.step(now, dt, free: alone, gap: input.animates, dozeIn: restSince + Self.dozeAfter - now)
 
         // Along the edge: a spring a little short of critical, so it
         // arrives with a small overshoot.
@@ -144,11 +150,11 @@ struct CharacterSim {
         let stopped = strollTo != 0 && abs(strollTo - strolled) < 0.5 ? met : nil
         let turned = stopped.map { $0 > x ? 0.7 : -0.7 } ?? 0
         toward(&face, min(max(speed / 200 + turned, -1), 1), 10)
-        toward(&lean, min(max(speed / 480, -1), 1) * 13, 8)
+        toward(&lean, min(max(speed / 480, -1), 1) * 13 + own.tilt, 8)
         // A game's crouch and hop are followed, not taken at once, so a
         // game cut short by work does not snap.
-        toward(&crouch, game.crouch, 20)
-        toward(&hop, game.hop, 20)
+        toward(&crouch, game.crouch + own.crouch, 20)
+        toward(&hop, game.hop + own.hop, 20)
         pose.sx *= 1 + 0.14 * crouch
         pose.sy *= 1 - 0.22 * crouch
         pose.lift += hop - 8 * crouch
@@ -180,8 +186,8 @@ struct CharacterSim {
             look = (dx / far * pull, dy / far * pull)
         }
         if stopped != nil { look = (turned * 5, -2) }
-        toward(&glance.x, look.x + face * 2, 9)
-        toward(&glance.y, look.y, 9)
+        toward(&glance.x, look.x + face * 2 + own.gx, 9)
+        toward(&glance.y, look.y + own.gy, 9)
 
         // What keeps it alive: breath, bob, blinks, and the voice.
         let t = now - (began ?? now)
@@ -201,6 +207,7 @@ struct CharacterSim {
             nextBlink = now + 2.2 + 4.5 * M.rnd(blinks)  // uneven, never the same loop twice
         }
         if now >= nextBlink { pose.open *= 1 - sin(.pi * (now - nextBlink) / Self.blink) }
+        pose.open *= 1 - own.shut
 
         return Frame(pose: pose, x: x, face: face, level: input.level, voice: voice, t: t,
                      dots: dots.compactMap { dot(at: now, $0) }, stars: bursts.flatMap { stars(at: now, $0) })
@@ -246,15 +253,6 @@ struct CharacterSim {
     mutating func carry(to place: Double) {
         x = place; target = place; speed = 0
         strolled = 0; strollTo = 0; strollNext = nil
-    }
-
-    /// The state alone, where it rests: for Reduce Motion, which shows a
-    /// still picture that changes between states and never a loop.
-    static func still(_ activity: M.Activity, asked: M.Mood? = nil, sent: Bool = false, home: Double) -> Frame {
-        // Its marks at full strength, so each state reads without motion:
-        // the arcs of its voice only while it speaks.
-        let pose = M.pose(M.mood(for: activity, asked: asked, sent: sent))
-        return Frame(pose: pose, x: home, level: 1, voice: pose.speak)
     }
 
     private mutating func go(_ to: M.Mood, _ now: Double) {

@@ -218,6 +218,7 @@ final class App: NSObject, NSApplicationDelegate {
         panel.setShowsOrb(!asCharacter)
         character.setShown(asCharacter)
         character.strolls = saved.general.stroll == true
+        character.animates = IdlePlay.gap(saved.general.animations)
         if !asCharacter { panel.detach() }
         // voice.startReduced is how the assistant starts: read once.
         if !startApplied {

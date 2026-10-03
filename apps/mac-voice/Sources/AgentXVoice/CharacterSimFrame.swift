@@ -29,6 +29,9 @@ extension CharacterSim {
         var shows = false
         /// "Play mode" is ticked: idle, it plays with the pointer (#505).
         var plays = false
+        /// `voice.animations`: the shortest wait between two small
+        /// animations by itself, in seconds (#571). 0: none.
+        var animates = 0.0
         /// The mouse button is down.
         var down = false
         /// Where it rests, and how far it may go.
@@ -58,5 +61,14 @@ extension CharacterSim {
         var t = 0.0
         var dots: [Mark] = []
         var stars: [Mark] = []
+    }
+
+    /// The state alone, where it rests: for Reduce Motion, which shows a
+    /// still picture that changes between states and never a loop.
+    static func still(_ activity: M.Activity, asked: M.Mood? = nil, sent: Bool = false, home: Double) -> Frame {
+        // Its marks at full strength, so each state reads without motion:
+        // the arcs of its voice only while it speaks.
+        let pose = M.pose(M.mood(for: activity, asked: asked, sent: sent))
+        return Frame(pose: pose, x: home, level: 1, voice: pose.speak)
     }
 }

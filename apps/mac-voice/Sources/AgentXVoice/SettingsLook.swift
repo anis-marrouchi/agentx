@@ -59,6 +59,8 @@ struct LookSection: View {
     var startReduced: Binding<Bool>?
     /// Nil hides the control: the daemon is older than the stroll.
     var stroll: Binding<Bool>?
+    /// Nil hides the control: the daemon is older than the animations.
+    var animations: Binding<String>?
 
     var body: some View {
         Section {
@@ -73,6 +75,15 @@ struct LookSection: View {
             if let stroll {
                 Toggle("Character strolls when idle", isOn: stroll)
                     .disabled(look != "character")
+            }
+            if let animations {
+                Picker("Character plays when idle", selection: animations) {
+                    Text("Never").tag("off")
+                    Text("Rarely").tag("rarely")
+                    Text("Sometimes").tag("sometimes")
+                    Text("Often").tag("often")
+                }
+                .disabled(look != "character")
             }
         } header: {
             Text("Assistant")
