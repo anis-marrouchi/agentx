@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.103.3](https://github.com/anis-marrouchi/agentx/compare/v0.103.2...v0.103.3) (2026-10-03)
+
+
+### Bug Fixes
+
+* **agents:** a warm claude process answers the question it was asked ([#589](https://github.com/anis-marrouchi/agentx/issues/589)) ([b093147](https://github.com/anis-marrouchi/agentx/commit/b0931478af11b5f8d8b18fe53f056583e48b3003)), closes [#585](https://github.com/anis-marrouchi/agentx/issues/585)
+* **voice:** the idle character waits for the pointer and takes a click ([#590](https://github.com/anis-marrouchi/agentx/issues/590)) ([d0a2f19](https://github.com/anis-marrouchi/agentx/commit/d0a2f19c93b8b5efdb4769050b6646de6c9f670c)), closes [#579](https://github.com/anis-marrouchi/agentx/issues/579)
+
 ## [0.103.2](https://github.com/anis-marrouchi/agentx/compare/v0.103.1...v0.103.2) (2026-10-03)
 
 
