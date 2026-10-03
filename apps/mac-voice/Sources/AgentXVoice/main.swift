@@ -388,9 +388,9 @@ final class App: NSObject, NSApplicationDelegate {
         character.levelSource = { [weak self] in self?.recorder.level ?? 0 }
         // The pill is the character's speech bubble: it goes where the
         // character goes.
-        character.bubble = { [weak self] head, visible in
+        character.bubble = { [weak self] head, visible, small in
             guard let panel = self?.panel else { return nil }
-            panel.attach(head: head, visible: visible)
+            panel.attach(head: head, visible: visible, small: small)
             return panel.isVisible ? panel.frame : nil
         }
         character.bubbleShows = { [weak self] in self?.panel.holdsSomething ?? false }

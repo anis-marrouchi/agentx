@@ -86,9 +86,29 @@ enum PillPlacement {
 
     /// The pill as the character's speech bubble (#491): above `head`,
     /// the top of the character, most of it to the left, kept on screen.
-    static func bubble(size: CGSize, head: CGPoint, visible: CGRect) -> CGPoint {
-        inside(CGRect(x: head.x + bubbleReach - size.width, y: head.y + tail,
-                      width: size.width, height: size.height), visible).origin
+    /// Too tall for the room above (an answer, high on a screen): beside
+    /// the character instead, clear of its marks, on the left or with no
+    /// room there on the right. Never over it (#554).
+    static func bubble(size: CGSize, head: CGPoint, visible: CGRect, reach: CGFloat = bubbleReach) -> CGPoint {
+        var frame = CGRect(x: head.x + reach - size.width, y: head.y + tail, width: size.width, height: size.height)
+        if frame.maxY > visible.maxY {
+            let left = head.x - bubbleReach - size.width
+            frame.origin.x = left >= visible.minX ? left : head.x + bubbleReach
+        }
+        return inside(frame, visible).origin
+    }
+
+    /// The bubble while its character moves (#554): three dots in the
+    /// smallest shape that holds them, in the middle above its head.
+    static let dots = CGSize(width: 48, height: 28)
+
+    /// The bubble `small` of the way (0…1) from the pill to its dots: its
+    /// size, and how far it reaches to the right of the character's middle.
+    static func shrunk(_ full: CGSize, small: CGFloat) -> (size: CGSize, reach: CGFloat) {
+        let p = min(max(small, 0), 1)
+        return (CGSize(width: (full.width + (dots.width - full.width) * p).rounded(),
+                       height: (full.height + (dots.height - full.height) * p).rounded()),
+                bubbleReach + (dots.width / 2 - bubbleReach) * p)
     }
 
     /// How close the middle of the character comes to the left edge of

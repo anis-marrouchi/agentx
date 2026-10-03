@@ -25,11 +25,15 @@ extension Panel {
         guard !dismissed else { return }
         // An answer to read, or one that asks: the full pill opens for it.
         setReduced(false)
+        shrink(0)
         let pill = collapsedFrame()
-        guard let visible = visibleFrame(for: pill) else { return }
-        let height = min(Self.size.height + min(answerHeight, cardMaxHeight), visible.height)
-        let spot = PillPlacement.expanded(size: CGSize(width: Self.expandedWidth, height: height),
-                                          pill: pill, visible: visible)
+        guard let visible = bubble?.visible ?? visibleFrame(for: pill) else { return }
+        let size = CGSize(width: Self.expandedWidth, height: min(Self.size.height + min(answerHeight, cardMaxHeight), visible.height))
+        // The character's bubble opens above it, or beside it: never over it.
+        let spot = bubble.map {
+            PillPlacement.Expanded(frame: CGRect(origin: PillPlacement.bubble(size: size, head: $0.head, visible: visible), size: size),
+                                   above: true, alignRight: true)
+        } ?? PillPlacement.expanded(size: size, pill: pill, visible: visible)
         if !expanded {
             growth = (spot.above, spot.alignRight)
             expanded = true
@@ -50,7 +54,11 @@ extension Panel {
         collapseTimer = nil
         guard expanded else { return }
         var pill = collapsedFrame()
-        if let visible = visibleFrame(for: pill) { pill = PillPlacement.inside(pill, visible) }
+        if let bubble {
+            pill.origin = PillPlacement.bubble(size: Self.size, head: bubble.head, visible: bubble.visible)
+        } else if let visible = visibleFrame(for: pill) {
+            pill = PillPlacement.inside(pill, visible)
+        }
         expanded = false
         animate(to: pill, animated: animated) { [weak self] in
             guard let self, !self.expanded else { return }

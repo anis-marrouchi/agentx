@@ -156,5 +156,74 @@ check(PillMenu.reduceTitle(reduced: false) == "Reduce to orb" && PillMenu.reduce
 check(PillMenu.canReduce(showsOrb: true) && !PillMenu.canReduce(showsOrb: false),
       "nothing to reduce to while the character stands in for the orb")
 
+// --- The bubble never covers the character (#554) ---
+
+// The character: 56 points wide, its head 78 above the point under it.
+func body(_ head: CGPoint) -> CGRect { CGRect(x: head.x - 28, y: head.y - 78, width: 56, height: 78) }
+let card = CGSize(width: 360, height: 374)
+let lowHead = CGPoint(x: 700, y: laptop.minY + 78)
+check(PillPlacement.bubble(size: card, head: lowHead, visible: laptop) == CGPoint(x: lowHead.x + PillPlacement.bubbleReach - 360, y: lowHead.y + PillPlacement.tail),
+      "an answer with room above the character opens there, as the pill sits")
+// Dragged or sent high on the screen: room for the pill, not for an answer.
+let highHead = CGPoint(x: 700, y: laptop.maxY - 54 - PillPlacement.tail)
+let besideLeft = CGRect(origin: PillPlacement.bubble(size: card, head: highHead, visible: laptop), size: card)
+check(besideLeft.maxX == highHead.x - PillPlacement.bubbleReach && besideLeft.maxY == laptop.maxY,
+      "no room above for the answer: it opens beside the character, on the left, at the top of the screen")
+let highLeft = CGPoint(x: laptop.minX + 44, y: highHead.y)
+check(PillPlacement.bubble(size: card, head: highLeft, visible: laptop).x == highLeft.x + PillPlacement.bubbleReach,
+      "no room on the left either: on the right")
+check(PillPlacement.bubble(size: pill, head: highHead, visible: laptop) == CGPoint(x: highHead.x + PillPlacement.bubbleReach - pill.width, y: laptop.maxY - 54),
+      "the pill itself still fits above it there")
+var covered = 0, off = 0
+for screen in [laptop, monitor] {
+    for size in [pill, card, PillPlacement.dots] {
+        for x in stride(from: screen.minX + 44, through: screen.maxX - 24 - PillPlacement.bubbleReach, by: 37) {
+            for y in stride(from: screen.minY + 78, through: screen.maxY - 54 - PillPlacement.tail, by: 29) {
+                let at = CGPoint(x: x, y: y)
+                let frame = CGRect(origin: PillPlacement.bubble(size: size, head: at, visible: screen), size: size)
+                if frame.intersects(body(at)) { covered += 1 }
+                if !screen.contains(frame) { off += 1 }
+            }
+        }
+    }
+}
+check(covered == 0, "wherever the character may be, the pill, an answer and the dots never cover it (\(covered) do)")
+check(off == 0, "and all of them stay on its screen (\(off) do not)")
+
+// --- Reduced to three dots while the character moves (#554) ---
+
+let whole = PillPlacement.shrunk(pill, small: 0), least = PillPlacement.shrunk(pill, small: 1)
+check(whole.size == pill && whole.reach == PillPlacement.bubbleReach, "not reduced: the pill, where it always sat")
+check(least.size == PillPlacement.dots && PillPlacement.bubble(size: least.size, head: lowHead, visible: laptop, reach: least.reach).x == lowHead.x - 24,
+      "reduced: the dots, in the middle above the character's head")
+let halfway = PillPlacement.shrunk(pill, small: 0.5).size
+check(halfway.width < pill.width && halfway.width > 48 && halfway.height < pill.height && halfway.height > 28, "and every size between on the way")
+
+/// Run `motion` at 30 frames a second from `t` for `seconds`; the amounts it gave.
+func run(_ motion: inout BubbleMotion, from t: inout Double, for seconds: Double, moving: Bool, holds: Bool = false) -> [Double] {
+    var out: [Double] = []
+    let end = t + seconds
+    while t < end - 1e-9 { t += 1.0 / 30; out.append(motion.step(now: t, moving: moving, holds: holds)) }
+    return out
+}
+var motion = BubbleMotion()
+var clock = 100.0
+check(run(&motion, from: &clock, for: 1, moving: false).allSatisfy { $0 == 0 }, "at rest: the full bubble")
+check(run(&motion, from: &clock, for: 0.1, moving: true).allSatisfy { $0 == 0 }, "a move shorter than \(BubbleMotion.after) s changes nothing")
+check(run(&motion, from: &clock, for: 1, moving: false).allSatisfy { $0 == 0 } && !motion.reduced, "and nothing after it")
+let shrinking = run(&motion, from: &clock, for: 0.6, moving: true)
+check(shrinking.last == 1 && motion.reduced, "it moves on: the bubble is its three dots")
+check(zip(shrinking, shrinking.dropFirst()).allSatisfy { $0 <= $1 } && shrinking.contains { $0 > 0.1 && $0 < 0.9 }, "eased down, never back on the way")
+check(run(&motion, from: &clock, for: 0.4, moving: false).allSatisfy { $0 == 1 }, "a stop shorter than \(BubbleMotion.rest) s: still the dots")
+check(run(&motion, from: &clock, for: 0.5, moving: true).allSatisfy { $0 == 1 }, "moving again: no flicker between two moves")
+let growing = run(&motion, from: &clock, for: 1.2, moving: false)
+check(growing.last == 0 && !motion.reduced, "it rests: the full bubble is back")
+check(zip(growing, growing.dropFirst()).allSatisfy { $0 >= $1 } && growing.contains { $0 > 0.1 && $0 < 0.9 }, "eased back, never down on the way")
+_ = run(&motion, from: &clock, for: 0.6, moving: true)
+check(run(&motion, from: &clock, for: 0.2, moving: true, holds: true).allSatisfy { $0 == 0 },
+      "an answer, an error or the call buttons: the full bubble at once, moving or not")
+check(run(&motion, from: &clock, for: 0.1, moving: true).first! < 0.2 && run(&motion, from: &clock, for: 0.5, moving: true).last == 1,
+      "used and gone, and still moving: reduced again, eased")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

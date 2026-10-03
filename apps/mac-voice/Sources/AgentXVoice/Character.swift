@@ -41,10 +41,12 @@ final class CharacterHost {
     /// Where the pointer is, in screen coordinates.
     var pointerSource: () -> NSPoint = { NSEvent.mouseLocation }
     /// Its speech bubble (#491), the pill: told every frame where the
-    /// character's head is and on which screen, it answers with where the
-    /// bubble is, or nil while it is hidden. Set by the app.
-    var bubble: ((NSPoint, NSRect) -> NSRect?)?
+    /// character's head is, on which screen, and how far reduced to its
+    /// dots it is (0…1), it answers with where the bubble is, or nil
+    /// while it is hidden. Set by the app.
+    var bubble: ((NSPoint, NSRect, CGFloat) -> NSRect?)?
     private var bubbleFrame: NSRect?
+    private var motion = BubbleMotion()
     /// What stands on its line (#539): the sides of the windows there,
     /// read once a second while it may stroll and play mode is ticked.
     private var edges: [Double] = []
@@ -78,7 +80,8 @@ final class CharacterHost {
         window = NSPanel(contentRect: NSRect(origin: .zero, size: Self.size),
                          styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         window.isFloatingPanel = true
-        window.level = .floating
+        // One above its bubble, which never hides it (#554).
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 1)
         window.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         window.isOpaque = false
         window.backgroundColor = .clear
@@ -260,9 +263,20 @@ final class CharacterHost {
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: (rest.y - Self.ground).rounded())
         if window.frame.origin != origin { window.setFrameOrigin(origin) }
         body = NSRect(x: CGFloat(frame.x) - Self.diameter / 2, y: rest.y, width: Self.diameter, height: Self.head)
-        // The bubble goes with the window, so the two move as one.
-        bubbleFrame = bubble?(NSPoint(x: origin.x + Self.size.width / 2, y: origin.y + Self.ground + Self.head), visible)
-        view.bubble = bubbleFrame?.offsetBy(dx: -origin.x, dy: -origin.y)
+        // The bubble goes with the window, so the two move as one. It
+        // stays above the top of the body, a jump included, as far as the
+        // screen has room, and is reduced to its dots while it moves (#554).
+        let top = CGFloat(frame.pose.lift + 100 * frame.pose.sy) * Self.diameter / 100
+        let room = max(visible.maxY - rest.y - PillPlacement.tail - Panel.size.height, Self.head)
+        let head = min(max(top + 2 - PillPlacement.tail, Self.head), room)
+        let moving = carried != nil || abs(sim.speed) > 8 || rest.y != spot.place.y || head > Self.head
+        if still { motion = BubbleMotion() }
+        let small = still ? 0 : motion.step(now: now, moving: moving, holds: bubbleShows?() ?? false)
+        let at = NSPoint(x: origin.x + Self.size.width / 2, y: origin.y + Self.ground + head)
+        bubbleFrame = bubble?(at, visible, CGFloat(small))
+        // Its tail, unless the bubble had to go beside it.
+        let above = bubbleFrame.map { $0.minY >= at.y && $0.minX < at.x && at.x < $0.maxX } ?? false
+        view.bubble = above ? bubbleFrame?.offsetBy(dx: -origin.x, dy: -origin.y) : nil
         view.origin = origin.x
         view.shown = frame
         view.needsDisplay = true

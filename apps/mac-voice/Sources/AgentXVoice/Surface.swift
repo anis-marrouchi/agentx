@@ -69,6 +69,19 @@ final class Surface: NSVisualEffectView {
         }
     }
 
+    /// The pill's own shape at exactly `size`, for a bubble smaller than
+    /// its corners: the stretchable mask cannot draw that one either.
+    func shape(size: NSSize?) {
+        guard let size else { shape(circle: nil); return }
+        let radius = min(Brand.Radius.lg, size.height / 2)
+        layer?.cornerRadius = radius
+        maskImage = NSImage(size: size, flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+    }
+
     override func resizeSubviews(withOldSize oldSize: NSSize) {
         super.resizeSubviews(withOldSize: oldSize)
         layoutContent?(bounds)

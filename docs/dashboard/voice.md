@@ -265,14 +265,29 @@ In `agentx.json` it is `voice.look`: `"orb"` (the default) or `"character"`. A c
 Good to know:
 
 - **It never interrupts:** it takes no keys, and a click where it hovers goes to the window behind it. Only a drag with **Command** held [moves it](#move-or-hide-the-character), and a [play on the page](#play-on-the-page) takes the first key or click to end.
-- **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it. With **Play mode** ticked it also [plays with the pointer](#play-with-the-pointer).
+- **It moves out of the way:** when the pointer comes close it glides aside along the edge, leaving a short trail of dots, and comes back a few seconds after the pointer has left. Its bubble goes with it, [reduced to three dots](#the-bubble-while-it-moves) on the way. With **Play mode** ticked it also [plays with the pointer](#play-with-the-pointer).
 - **The pill is its speech bubble:** the pill shows the agent's name, the words, the answer and the call buttons as before, attached to the character. It has no orb of its own, and it appears and hides by the same rules as the pill: only while listening or answering, unless **Show floating pill** is ticked.
 - **It waits while you use the bubble:** while the pointer is on the bubble, the character stays where it is, so you can click a button or read the answer.
+- **The bubble never covers it:** the bubble sits above the character, and rises with it when it jumps. An answer opens above it too. When the character is too high on the screen for that, the answer opens beside it instead, on the left, or on the right when the left has no room.
 - **The bubble can't be dragged by itself:** it stays with the character, so [move the character](#move-or-hide-the-character) and the bubble goes with it. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
 - **Colour:** it wears the palette of the agent that is answering, amber while notifications are held and red when something went wrong, like the orb.
 - **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked in the AgentX menu, it is a still picture that changes between states and stays in its place.
 - **It can show you things:** an agent can send it to something on screen, see [The character shows you something](#the-character-shows-you-something).
 - **Where it rests:** above the bottom edge of the screen with the menu bar, near the bottom-right corner, under the right end of its bubble, until you move it.
+
+### The bubble while it moves
+
+While the character moves, its bubble is reduced to a small shape with three dots, in the middle above its head, so the character is not carried across the screen under a wide bubble. The dots say the assistant is still there, listening or answering. When the character rests again, the full bubble comes back with its words.
+
+![The character moving to the left with a trail of dots behind it, and above its head a small bubble holding three dots, with a tail pointing down at it](/screenshots/voice/character-bubble-dots.png)
+
+Good to know:
+
+- **Every move counts:** stepping aside, a stroll, a game with the pointer, a drag, and the way to something it shows you and back.
+- **A short move changes nothing:** the bubble reduces only once the character has moved for a moment, and comes back a little after it has stopped, so it does not flicker.
+- **Something to read or to use is never reduced:** an answer, an error and the call buttons stay in the full bubble, moving or not.
+- **A click on the dots** talks, like a click on the bubble.
+- **Still picture:** with **Reduce Motion** on, or **Animated orb** unticked, the bubble is never reduced.
 
 ### Move or hide the character
 
@@ -415,7 +430,7 @@ Good to know:
 - **It takes no clicks:** a click where it is still goes to the window behind it. It only sees that the button went down.
 - **Work comes first:** a game stops when the assistant listens, thinks, speaks or rings, and when the pointer is on its bubble or leaves its screen.
 - **A bubble with something to use stays put:** while the bubble shows an answer, an error or the call buttons, no game starts and a click gives no jump, so the bubble does not move away from your hand.
-- **The empty bubble plays too:** with **Show floating pill** ticked, the bubble that only reads "hold ⌥space" goes with the character in a game. If it moves away as you reach for it, wait for the game to end, or untick **Play mode**.
+- **The empty bubble plays too:** with **Show floating pill** ticked, the bubble that only reads "hold ⌥space" goes with the character in a game, [reduced to three dots](#the-bubble-while-it-moves). If it moves away as you reach for it, wait for the game to end, or untick **Play mode**.
 - **Along one edge:** it does not climb windows or walk on text here. It follows the pointer only left and right.
 - **The same games in the same order** each time the app starts.
 - **No play** with **Reduce motion** on, **Animated orb** unticked, or a sleeping character: the pointer has to come close to wake it first.
