@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.103.0](https://github.com/anis-marrouchi/agentx/compare/v0.102.2...v0.103.0) (2026-10-03)
+
+
+### Features
+
+* **voice:** the character plays small animations by itself when idle ([#575](https://github.com/anis-marrouchi/agentx/issues/575)) ([d08df70](https://github.com/anis-marrouchi/agentx/commit/d08df703f566b4ba3cf047ab24ac13c58e7245e5)), closes [#571](https://github.com/anis-marrouchi/agentx/issues/571)
+* **voice:** the character shows a state asked for by name, and no busy look at a guide stop ([#574](https://github.com/anis-marrouchi/agentx/issues/574)) ([4ac7b06](https://github.com/anis-marrouchi/agentx/commit/4ac7b060a37045b5ac57ab73c677815cee70188a)), closes [#570](https://github.com/anis-marrouchi/agentx/issues/570)
+* **voice:** the character's idle bubble shows the hint only just after the app starts ([#578](https://github.com/anis-marrouchi/agentx/issues/578)) ([c742d73](https://github.com/anis-marrouchi/agentx/commit/c742d738b044d5f43b8793eb251d08090453cd46))
+
 ## [0.102.2](https://github.com/anis-marrouchi/agentx/compare/v0.102.1...v0.102.2) (2026-10-03)
 
 
