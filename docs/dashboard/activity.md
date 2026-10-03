@@ -47,6 +47,8 @@ A hand-off keeps the initiator of the work it belongs to. If Dana's merge reques
 
 A **hop** is one agent asking another agent for help. When one agent asks a second, and the second asks a third, the map draws each hop. That holds when the agents run on different computers in your [mesh](../reference/a2a.md) (the computers linked together): the map reads each computer's own records. An agent only appears on a route when it really handled the work. For example, an agent that asks about a merge request later does not become its starting point.
 
+The dotted line from a channel ends at the agent that received the work. It goes around every other agent, so it never looks like a hand-off that did not happen.
+
 A chat you start in the [phone app](./mobile-app.md), typed or spoken, comes in from **Phone app** and names you (`operator`) as the person who started it. That holds when the agent runs on another computer in your mesh too. In its details, a spoken message says **Voice** and a typed one says **Phone app**. Work that one agent hands to another, with no earlier channel on record, comes in from **Mesh (A2A)**.
 
 When an agent hands work off and gets the answer later, the answer shows as a hop back to the agent that asked. It is marked **↩** on the train's list of hops. It never starts a new train.

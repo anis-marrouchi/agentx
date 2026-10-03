@@ -84,7 +84,7 @@ const SIZE = {
 }
 export const MAX_PILLS = 3
 /** Room a feeder leaves around a station it does not call at. */
-const STATION_CLEAR = 10
+const STATION_CLEAR = 18
 
 const COL = { horizontal: [0, 250, 480, 640, 960], vertical: [0, 90, 200, 330, 0] }
 /** How far before the channels the initiators sit. */
