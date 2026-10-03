@@ -32,6 +32,10 @@ export const ORB_PALETTES: OrbPalette[] = [
 export const VOICE_LOOKS = ["orb", "character"] as const
 export type VoiceLook = (typeof VOICE_LOOKS)[number]
 
+/** How often the character plays a small animation by itself when idle. */
+export const VOICE_ANIMATIONS = ["off", "rarely", "sometimes", "often"] as const
+export type VoiceAnimations = (typeof VOICE_ANIMATIONS)[number]
+
 export const ORB_PALETTE_IDS = ORB_PALETTES.map((p) => p.id) as [string, ...string[]]
 
 /** #RRGGBB to its hue in degrees, or null when it is grey or not a colour. */

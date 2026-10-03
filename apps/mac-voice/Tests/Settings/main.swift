@@ -123,6 +123,18 @@ strollsNow.general.stroll = true
 let strollPatch = strollsNow.patch(from: withStroll)["general"] as? [String: Any]
 check(strollPatch?["stroll"] as? Bool == true && strollPatch?.count == 1, "only the stroll setting is sent when it changes")
 
+// --- The character's small animations when idle (#571) ---
+
+check(withStroll.general.animations == nil && withStroll.patch(from: withStroll)["general"] == nil,
+      "a daemon older than the animations sends no such setting, and none is sent back")
+let withPlay = try! JSONDecoder().decode(VoiceSettings.self, from: Data(newer.replacingOccurrences(
+    of: "\"card\":{\"timeout\":30,\"maxHeight\":320}", with: "\"card\":{\"timeout\":30,\"maxHeight\":320},\"animations\":\"sometimes\"").utf8))
+check(withPlay.general.animations == "sometimes", "the animations setting decodes")
+var playsOften = withPlay
+playsOften.general.animations = "often"
+let playPatch = playsOften.patch(from: withPlay)["general"] as? [String: Any]
+check(playPatch?["animations"] as? String == "often" && playPatch?.count == 1, "only the animations setting is sent when it changes")
+
 // --- The read at start, asked again until the daemon answers ---
 
 check((1...6).map { VoiceSettings.retryDelay(after: $0) } == [2, 4, 8, 16, 30, 30], "waits 2, 4, 8, 16 seconds, then every 30")

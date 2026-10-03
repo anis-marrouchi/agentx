@@ -138,6 +138,10 @@ final class CharacterHost {
 
     /// `voice.stroll`: a slow walk now and then while it has nothing to do.
     var strolls = false
+    /// `voice.animations` as the wait between two small animations by
+    /// itself (`IdlePlay.gap`), and AgentX's own hold, which stops them.
+    var animates = 0.0
+    private var quiet = false
 
     /// "Animated orb" in the menu.
     func setAnimated(_ on: Bool) {
@@ -266,11 +270,12 @@ final class CharacterHost {
                 edgesRead = now
                 // The window list counts down from the top of the main screen.
                 let top = first.frame.maxY - rest.y
+                quiet = animates > 0 && Hold.isOn
                 edges = strolls && Config.playMode ? Meets.edges(of: Meets.windows(), band: (top - Self.head)...top) : []
             }
             frame = sim.step(to: now,
                              CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, sent: guide.showing != nil, asked: asked, strolls: strolls,
-                                                edges: edges, shows: bubbleShows?() ?? false, plays: Config.playMode, down: NSEvent.pressedMouseButtons & 1 != 0,
+                                                edges: edges, shows: bubbleShows?() ?? false, plays: Config.playMode, animates: quiet ? 0 : animates, down: NSEvent.pressedMouseButtons & 1 != 0,
                                                 home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }
         let origin = NSPoint(x: (CGFloat(frame.x) - Self.size.width / 2).rounded(), y: (rest.y - Self.ground).rounded())

@@ -5,7 +5,7 @@ import { resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
 import { OS_DEFAULT, label, languageVoices, localSystemVoices } from "@/voice/agent-voice"
 import { candidates, findVoice, listSystemVoices, type SystemVoice } from "@/voice/system-voices"
-import { ORB_PALETTES, ORB_PALETTE_IDS, VOICE_LOOKS, agentPalette, type VoiceLook } from "@/voice/orb-palettes"
+import { ORB_PALETTES, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS, agentPalette, type VoiceAnimations, type VoiceLook } from "@/voice/orb-palettes"
 import { presenceLook } from "@/voice/presence"
 import { findMissingVoices, REINSTALL_HINT, voiceDisplayName } from "@/voice/voice-health"
 import { CARD_LIMITS, applyVoiceSettings, checkVoiceSettings, type VoiceSettingsPatch } from "@/daemon/voice-settings-api"
@@ -247,6 +247,25 @@ voice
       console.log(`  Starts as: ${now.startReduced ? "the orb alone, reduced" : "the full pill"}`)
       if (now.startReduced && now.look === "character") console.log(chalk.dim("  No effect while the character is shown: the pill has no orb to reduce to."))
       if (form !== undefined) console.log(chalk.dim("  AgentX Voice picks this up the next time it starts."))
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+voice
+  .command("animations [often]")
+  .description("how often the character plays a small animation by itself when idle: off, rarely, sometimes or often")
+  .option("-c, --config <path>", "agentx.json to read or change")
+  .action((often: string | undefined, opts) => {
+    try {
+      const file = configFile(opts.config)
+      if (often !== undefined && !VOICE_ANIMATIONS.includes(often as VoiceAnimations)) throw new Error("Animations are off, rarely, sometimes or often")
+      if (often !== undefined) saveSettings(file, { general: { animations: often as VoiceAnimations } })
+      const now = loadDaemonConfig(file).voice
+      console.log(`  When idle: ${now.animations === "off" ? "the character plays no animation by itself" : `the character plays a small animation ${now.animations}`}`)
+      if (now.animations !== "off" && now.look !== "character") console.log(chalk.dim("  No effect while the orb is shown."))
+      if (often !== undefined) console.log(chalk.dim("  AgentX Voice picks this up within a few seconds."))
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))
       process.exit(1)

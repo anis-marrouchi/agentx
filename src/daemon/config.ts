@@ -5,7 +5,7 @@ import { businessConfigSchema } from "@/business/config"
 import { boardsConfigSchema, dashboardConfigSchema } from "@/boards/config"
 import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
-import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_LOOKS } from "@/voice/orb-palettes"
+import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
@@ -1308,6 +1308,10 @@ export const daemonConfigSchema = z.object({
     /** The character takes a slow stroll beside where it rests when it
      *  has nothing to do. Off: it moves only out of the pointer's way. */
     stroll: z.boolean().default(false),
+    /** How often the character plays a small animation by itself when
+     *  it has nothing to do: a look around, a hop, a sway, and a yawn
+     *  before it dozes. "off": none. */
+    animations: z.enum(VOICE_ANIMATIONS).default("sometimes"),
     /** The orb and character palette of an agent that set neither
      *  presence.palette nor presence.color. */
     palette: z.enum(ORB_PALETTE_IDS).default(DEFAULT_PALETTE),

@@ -35,14 +35,18 @@ struct VoiceSettings: Codable, Equatable {
         /// The character takes a stroll when it has nothing to do. Nil
         /// from a daemon older than the stroll.
         var stroll: Bool?
+        /// How often the character plays a small animation by itself:
+        /// "off", "rarely", "sometimes" or "often". Nil from a daemon
+        /// older than the animations.
+        var animations: String?
 
         init(provider: String, fallback: String, stt: String, localStt: String = "mlx-whisper",
              endOfTurn: String = "vad", hotkeys: Hotkeys, card: Card? = nil, look: String? = nil,
-             startReduced: Bool? = nil, stroll: Bool? = nil) {
+             startReduced: Bool? = nil, stroll: Bool? = nil, animations: String? = nil) {
             self.provider = provider; self.fallback = fallback; self.stt = stt
             self.localStt = localStt; self.endOfTurn = endOfTurn; self.hotkeys = hotkeys
             self.card = card; self.look = look; self.startReduced = startReduced
-            self.stroll = stroll
+            self.stroll = stroll; self.animations = animations
         }
 
         /// A daemon from before these fields leaves them out: the defaults.
@@ -58,6 +62,7 @@ struct VoiceSettings: Codable, Equatable {
             look = try c.decodeIfPresent(String.self, forKey: .look)
             startReduced = try c.decodeIfPresent(Bool.self, forKey: .startReduced)
             stroll = try c.decodeIfPresent(Bool.self, forKey: .stroll)
+            animations = try c.decodeIfPresent(String.self, forKey: .animations)
         }
     }
     struct Voice: Codable, Equatable {
@@ -119,6 +124,7 @@ struct VoiceSettings: Codable, Equatable {
         if let look = self.general.look, look != old.general.look { general["look"] = look }
         if let start = self.general.startReduced, start != old.general.startReduced { general["startReduced"] = start }
         if let stroll = self.general.stroll, stroll != old.general.stroll { general["stroll"] = stroll }
+        if let often = self.general.animations, often != old.general.animations { general["animations"] = often }
         var keys: [String: Any] = [:]
         if self.general.hotkeys.talk != old.general.hotkeys.talk { keys["talk"] = self.general.hotkeys.talk }
         if self.general.hotkeys.stop != old.general.hotkeys.stop { keys["stop"] = self.general.hotkeys.stop }

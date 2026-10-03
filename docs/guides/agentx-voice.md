@@ -311,6 +311,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.look` | `"orb"` | What shows the assistant's state: the `"orb"` in the pill, or the `"character"`, a small creature above the bottom edge of the screen. See [The character](../dashboard/voice.md#the-character) |
 | `voice.startReduced` | `false` | `true` starts the app with the pill [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb): a small circle you can drag anywhere |
 | `voice.stroll` | `false` | `true` lets the [character](../dashboard/voice.md#the-character) take a [slow stroll](../dashboard/voice.md#let-the-character-stroll) when the assistant has nothing to do |
+| `voice.animations` | `"sometimes"` | How often the character plays a [small animation by itself](../dashboard/voice.md#let-the-character-play-by-itself) when idle: `"off"`, `"rarely"`, `"sometimes"` or `"often"` |
 | `voice.card.timeout` | `30` | Seconds an answer in the pill stays open once spoken, `0` to `600`. `0` keeps it open until you close it |
 | `voice.card.maxHeight` | `320` | Tallest the answer grows before it scrolls, in points, `120` to `800` |
 | `node.defaultAgent` | not set: the first agent | The agent that answers when none is ticked or pinned |

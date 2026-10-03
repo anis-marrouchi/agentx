@@ -20,7 +20,7 @@ import { readFileSync, writeFileSync } from "fs"
 import type { DaemonConfig } from "@/daemon/config"
 import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
 import { presenceLook } from "@/voice/presence"
-import { ORB_PALETTES, VOICE_LOOKS, agentPalette, type VoiceLook } from "@/voice/orb-palettes"
+import { ORB_PALETTES, VOICE_ANIMATIONS, VOICE_LOOKS, agentPalette, type VoiceAnimations, type VoiceLook } from "@/voice/orb-palettes"
 import { resolveAgentVoice, voiceRef, label } from "@/voice/agent-voice"
 import type { SystemVoice } from "@/voice/system-voices"
 import type { VoiceRef } from "@/voice/speaker"
@@ -58,6 +58,7 @@ export interface VoiceSettingsPatch {
     look?: VoiceLook
     startReduced?: boolean
     stroll?: boolean
+    animations?: VoiceAnimations
   }
   agents?: Record<string, AgentVoicePatch>
 }
@@ -84,6 +85,8 @@ export interface VoiceSettingsView {
     startReduced: boolean
     /** The character strolls when it has nothing to do. */
     stroll: boolean
+    /** How often the character plays a small animation by itself. */
+    animations: VoiceAnimations
   }
   agents: Array<{
     id: string
@@ -131,6 +134,7 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       look: v.look,
       startReduced: v.startReduced,
       stroll: v.stroll,
+      animations: v.animations,
     },
     agents: Object.entries(config.agents).map(([id, a]) => {
       const av = a.voice ?? {}
@@ -178,7 +182,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   for (const k of Object.keys(patch)) if (k !== "general" && k !== "agents") err(k, `"${k}" is not a voice setting`)
 
   const g = patch.general ?? {}
-  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced", "stroll"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
+  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced", "stroll", "animations"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
   if (g.provider !== undefined && !["system", "elevenlabs"].includes(g.provider)) err("general.provider", "Voice provider must be system or elevenlabs")
   if (g.stt !== undefined && !["auto", "elevenlabs", "local"].includes(g.stt)) err("general.stt", "Speech to text must be auto, elevenlabs or local")
   if (g.localStt !== undefined && !["mlx-whisper", "parakeet"].includes(g.localStt)) err("general.localStt", "The engine on this Mac must be mlx-whisper or parakeet")
@@ -186,6 +190,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   if (g.look !== undefined && !VOICE_LOOKS.includes(g.look)) err("general.look", `The assistant is shown as ${VOICE_LOOKS.join(" or ")}`)
   if (g.startReduced !== undefined && typeof g.startReduced !== "boolean") err("general.startReduced", "Start reduced to the orb must be on or off")
   if (g.stroll !== undefined && typeof g.stroll !== "boolean") err("general.stroll", "Character strolls when idle must be on or off")
+  if (g.animations !== undefined && !VOICE_ANIMATIONS.includes(g.animations)) err("general.animations", `Character plays when idle must be ${VOICE_ANIMATIONS.slice(0, -1).join(", ")} or ${VOICE_ANIMATIONS.at(-1)}`)
   for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
     if (!["talk", "stop", "paste"].includes(k)) { err(`general.hotkeys.${k}`, `"${k}" is not a shortcut the window sets`); continue }
     const r = parseHotkey(String(value ?? ""))
@@ -251,6 +256,7 @@ export function applyVoiceSettings(raw: any, patch: VoiceSettingsPatch): void {
     if (g.look !== undefined) raw.voice.look = g.look
     if (g.startReduced !== undefined) raw.voice.startReduced = g.startReduced
     if (g.stroll !== undefined) raw.voice.stroll = g.stroll
+    if (g.animations !== undefined) raw.voice.animations = g.animations
     for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
       const r = parseHotkey(String(value))
       if (!r.ok) continue
