@@ -16,7 +16,7 @@ describe("GuideFeed", () => {
     const waiting = feed.next(0)
     expect(feed.listening).toBe(true)
     feed.show("coder-agent", rect, "circle")
-    expect(await waiting).toEqual({ seq: 1, agentId: "coder-agent", rect, mark: "circle" })
+    expect(await waiting).toEqual({ seq: 1, agentId: "coder-agent", rect, mark: "circle", text: null })
   })
 
   it("a command sent between two waits is not lost", async () => {
@@ -147,6 +147,27 @@ describe("/voice/guide", () => {
     for (const body of [{ rect: { ...rect, width: 0 } }, { rect: { x: 1 } }, {}, { rect, mark: "arrow" }, { rect, hold: 121 }, { rect, hold: 0 }]) {
       expect((await handleGuide(listeningFeed(), true, "POST", query(), body)).status).toBe(400)
     }
+  })
+
+  it("carries what the bubble says at the stop, as one line; with none, there is no caption", async () => {
+    const feed = listeningFeed()
+    expect(await handleGuide(feed, true, "POST", query(), { rect, text: "  Start a run\n here " })).toMatchObject({ status: 200, body: { text: "Start a run here" } })
+    expect(await handleGuide(feed, true, "GET", query(0), {})).toMatchObject({ body: { seq: 1, text: "Start a run here" } })
+    expect((await handleGuide(feed, true, "POST", query(), { rect })).body).toMatchObject({ seq: 2, text: null })
+    expect((await handleGuide(feed, true, "POST", query(), { rect, text: "   " })).body).toMatchObject({ text: null })
+    const long = (await handleGuide(feed, true, "POST", query(), { rect, text: "word ".repeat(60) })).body as { text: string }
+    expect(long.text.length).toBeLessThanOrEqual(120)
+    expect(long.text.endsWith("…")).toBe(true)
+    expect((await handleGuide(feed, true, "POST", query(), { rect, text: 7 })).status).toBe(400)
+  })
+
+  it("the caption goes when the character goes home or to its next stop", async () => {
+    const feed = listeningFeed()
+    await handleGuide(feed, true, "POST", query(), { rect, text: "Here" })
+    await handleGuide(feed, true, "POST", query(), { rect })
+    expect(feed.current.text).toBeNull()
+    await handleGuide(feed, true, "POST", query(), { rect, text: "Here" })
+    expect((await handleGuide(feed, true, "POST", query(), { home: true })).body).toMatchObject({ rect: null, text: null })
   })
 
   it("sends it home", async () => {

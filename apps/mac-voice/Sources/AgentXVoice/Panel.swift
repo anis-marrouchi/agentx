@@ -130,6 +130,10 @@ final class Panel: NSPanel {
     var small: CGFloat = 0
     let dots = BubbleDots()
 
+    /// What the bubble says while the assistant is idle (#562): the hint,
+    /// the caption of what the character shows, or nothing while it is away.
+    private(set) var idle = GuideMath.Idle.hint
+
     /// Told of every state rendered, so the menu-bar icon can follow.
     var onRender: ((State) -> Void)?
 
@@ -569,7 +573,10 @@ final class Panel: NSPanel {
         }
         orb.show(state.orbPhase, tint: tint, colors: colors)
 
-        if state.isMeta {
+        if state.isMeta, case .caption(let words) = idle {
+            label.textColor = .labelColor
+            setText(words)
+        } else if state.isMeta {
             stopMarquee()
             label.attributedStringValue = Brand.metaString(state.text, color: state.color)
             label.frame.origin.x = 0
@@ -583,12 +590,22 @@ final class Panel: NSPanel {
         // Grown into an answer, it stays until it collapses, idle or not;
         // so does a pill with agents still busy in its mini orbs.
         // Reduced, the orb is the assistant's place on screen: it stays, idle or not.
-        if dismissed || (state.isMeta && !alwaysVisible && !expanded && busyCount == 0 && !reduced) { hide() } else { show() }
+        // A caption shows like any words; away with none, the hint does not.
+        let quiet = state.isMeta && !expanded && busyCount == 0
+        if dismissed || (quiet && idle == .nothing) || (quiet && idle == .hint && !alwaysVisible && !reduced) { hide() } else { show() }
         // After showing or hiding: a still character draws its bubble's
         // tail only while the bubble is on screen.
         onLook?(state, tint, colors)
         armCollapse()
         onRender?(state)
+    }
+
+    /// The character was sent somewhere or back, or a play began or ended.
+    @MainActor
+    func setIdle(_ words: GuideMath.Idle) {
+        guard words != idle else { return }
+        idle = words
+        render(current)
     }
 
     /// On screen with something to use: an answer, an error or the call

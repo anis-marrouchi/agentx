@@ -86,6 +86,8 @@ final class App: NSObject, NSApplicationDelegate {
     // An agent ringing the owner (#321).
     private let callWatcher = CallWatcher()
     private let guideWatcher = GuideWatcher()
+    /// A play runs, or its picture is being taken (#562).
+    private var playing = false
     private let ringer = Ringer()
     /// The call ringing on the pill now.
     private var ringingCall: IncomingCall?
@@ -236,6 +238,12 @@ final class App: NSObject, NSApplicationDelegate {
             && !busy && !recorder.isRecording && !play.running
     }
 
+    /// What the idle bubble says (#562): no hint at a guide stop, on the
+    /// way there or during a play; the stop's caption if it has one.
+    private func idleWords() {
+        panel.setIdle(GuideMath.idle(caption: character.caption, away: character.sent || playing))
+    }
+
     /// "Play on this page" (#505): one picture of the character's screen, the
     /// lines of text read on it, and the character plays on the picture,
     /// differently each time. The page itself is never touched.
@@ -252,12 +260,17 @@ final class App: NSObject, NSApplicationDelegate {
         }
         let stops = character.stops, size = screen.frame.size
         let start = PlayMath.Point(x: foot.x - screen.frame.minX, y: screen.frame.maxY - foot.y)
-        // Off its edge, so it is not in the picture twice.
+        // Off its edge, so it is not in the picture twice; its idle
+        // bubble too, which would stay in the picture all the play long.
         character.setShown(false)
+        playing = true
+        idleWords()
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard let picture = PlayRead.picture(of: screen), !busy, !recorder.isRecording else {
+                playing = false
                 character.setShown(settings?.general.look == "character")
+                idleWords()
                 return
             }
             play.start(picture: picture, on: screen, stops: stops, at: start)
@@ -403,7 +416,9 @@ final class App: NSObject, NSApplicationDelegate {
         statusMenu.onPlay = { [weak self] in self?.startPlay() }
         play.onEnd = { [weak self] in
             guard let self else { return }
+            self.playing = false
             self.character.setShown(self.settings?.general.look == "character")
+            self.idleWords()
         }
         panel.onShown = { [weak self] in self?.character.redraw() }
         panel.onDismiss = { [weak self] in self?.dismissPill() }
@@ -511,7 +526,8 @@ final class App: NSObject, NSApplicationDelegate {
         callWatcher.start()
         // The answering agent sends the character to something (#482).
         guideWatcher.wanted = { [weak self] in self?.character.onScreen == true }
-        guideWatcher.onCommand = { [weak self] rect, mark in self?.character.guide(to: rect, mark: mark) }
+        guideWatcher.onCommand = { [weak self] rect, mark, caption in self?.character.guide(to: rect, mark: mark, caption: caption) }
+        character.onGuide = { [weak self] in self?.idleWords() }
         guideWatcher.start()
         character.onScreenChanged = { [weak self] in self?.guideWatcher.start() }
 

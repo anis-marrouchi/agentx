@@ -5,11 +5,13 @@
 //                                   command, or the current one after 25 s.
 //   POST /voice/guide               {rect: {x, y, width, height}, mark?: box |
 //                                   circle | underline | none, agentId?,
-//                                   hold?: seconds}  send the character there.
+//                                   hold?: seconds, text?}  send the character
+//                                   there; its bubble says `text` at the stop,
+//                                   and with none there is no bubble.
 //                                   {home: true}  send it back.
 //                                   409 when no character is on screen.
 
-import { GUIDE_HOLD, GUIDE_MARKS, type GuideFeed, type GuideMark } from "@/voice/guide"
+import { GUIDE_HOLD, GUIDE_MARKS, GUIDE_TEXT_MAX, guideText, type GuideFeed, type GuideMark } from "@/voice/guide"
 import type { Rect } from "@/voice/presence"
 import type { Reply } from "@/daemon/voice-talk-api"
 
@@ -45,8 +47,9 @@ export async function handleGuide(
   const rect = rectOf(body.rect)
   const mark = (body.mark ?? "box") as GuideMark
   const hold = body.hold === undefined ? GUIDE_HOLD.default : num(body.hold)
-  if (!rect || !GUIDE_MARKS.includes(mark) || hold === null || hold <= 0 || hold > GUIDE_HOLD.max) {
-    return { status: 400, body: { error: `Required: rect {x, y, width, height}; mark is ${GUIDE_MARKS.join(" | ")}; hold is up to ${GUIDE_HOLD.max} seconds` } }
+  const text = body.text ?? ""
+  if (!rect || !GUIDE_MARKS.includes(mark) || hold === null || hold <= 0 || hold > GUIDE_HOLD.max || typeof text !== "string") {
+    return { status: 400, body: { error: `Required: rect {x, y, width, height}; mark is ${GUIDE_MARKS.join(" | ")}; hold is up to ${GUIDE_HOLD.max} seconds; text is a string, cut at ${GUIDE_TEXT_MAX} characters` } }
   }
-  return { status: 200, body: { shown: true, ...feed.show(agentId, rect, mark, hold) } }
+  return { status: 200, body: { shown: true, ...feed.show(agentId, rect, mark, hold, guideText(text)) } }
 }

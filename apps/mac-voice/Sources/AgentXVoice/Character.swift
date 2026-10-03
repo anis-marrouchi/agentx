@@ -69,6 +69,11 @@ final class CharacterHost {
     private var carried: (from: NSPoint, rest: CGPoint)?
     /// What the answering agent sent it to show (#482), and its mark.
     private let guide = CharacterGuide()
+    /// Sent somewhere, and what its bubble says there (#562).
+    var sent: Bool { guide.showing != nil }
+    var caption: String? { guide.caption }
+    /// Told when it is sent somewhere, to its next stop or back.
+    var onGuide: (() -> Void)?
     /// A still picture: Reduce Motion, or "Animated orb" off.
     private var still: Bool { !animated || reduceMotion }
     /// The look is the character: whether it is on screen. Nil with the orb.
@@ -147,12 +152,13 @@ final class CharacterHost {
     }
 
     /// Go beside `rect` and mark it, or with nil go back to where it rests.
-    func guide(to rect: NSRect?, mark kind: GuideMath.Mark = .none) {
+    func guide(to rect: NSRect?, mark kind: GuideMath.Mark = .none, caption: String? = nil) {
         if shown, !hidden, carried == nil, let rect {
-            guide.show(rect, kind, color: view.stops[2], animated: !still)
+            guide.show(rect, kind, caption: caption, color: view.stops[2], animated: !still)
         } else {
             guide.end()
         }
+        onGuide?()
         redraw()
     }
 
@@ -192,7 +198,7 @@ final class CharacterHost {
         switch phase {
         case .began:
             let mouse = pointerSource()
-            if body.contains(mouse) { guide.end(glide: false); carried = (mouse, CGPoint(x: body.midX, y: rest.y)) }
+            if body.contains(mouse) { guide.end(glide: false); onGuide?(); carried = (mouse, CGPoint(x: body.midX, y: rest.y)) }
         case .moved:
             if carried != nil { tick() }
         case .ended:
