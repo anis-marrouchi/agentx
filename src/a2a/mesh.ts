@@ -22,6 +22,9 @@ export interface PeerState {
   healthy: boolean
   lastCheck?: Date
   agentCard?: AgentCard
+  /** Posting identities remain trusted for delayed webhooks after a token
+   *  changes or a startup card temporarily advertises no identities. */
+  githubLogins?: string[]
   agents: AgentSkill[]
   /** Count of back-to-back failed health probes since the last successful one.
    *  Used to suppress transient flaps: the `healthy` flag only flips to false
@@ -245,6 +248,14 @@ export class A2AMesh {
       state.healthy = true
       state.lastCheck = new Date()
       state.agentCard = card
+      const githubLogins = (card as AgentCard & { githubLogins?: unknown }).githubLogins
+      if (Array.isArray(githubLogins)) {
+        state.githubLogins = [...new Set([
+          ...(state.githubLogins ?? []),
+          ...githubLogins.filter((login): login is string => typeof login === "string" && login.trim().length > 0)
+            .map((login) => login.trim().toLowerCase()),
+        ])]
+      }
       state.agents = card.skills || []
       state.consecutiveFailures = 0
       state.lastError = undefined
@@ -654,9 +665,7 @@ export class A2AMesh {
         ? ((state.agentCard as any).channels as unknown[]).map((c) => String(c))
         : [],
       node: typeof state.agentCard?.name === "string" ? state.agentCard.name : undefined,
-      githubLogins: Array.isArray((state.agentCard as any)?.githubLogins)
-        ? ((state.agentCard as any).githubLogins as unknown[]).map((l) => String(l))
-        : [],
+      githubLogins: [...(state.githubLogins ?? [])],
       lastCheck: state.lastCheck,
     }))
   }

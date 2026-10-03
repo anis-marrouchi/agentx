@@ -646,6 +646,7 @@ export class AgentRegistry {
       staleMinutes: config.session.staleMinutes,
       maxTurnsPerSession: config.session.maxTurnsPerSession,
       tierTwoThresholdTokens: config.session.tierTwoThresholdTokens,
+      tierTwoThresholdTokensByChannel: config.session.tierTwoThresholdTokensByChannel,
     })
     this.wikiHub = new WikiHub(undefined, undefined, "unified")
     this.memoryStore = new MemoryStore()
@@ -1828,7 +1829,7 @@ export class AgentRegistry {
     // context keeps billing tier-2 indefinitely until we drop the session.
     if (resumeSessionId && this.sessions.shouldRotateByTierTwo(task.agentId, channel, chatId)) {
       const lastTokens = this.sessions.getLastTurnContextTokens(task.agentId, channel, chatId)
-      this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn context: ${lastTokens} tokens ≥ ${this.sessions.getTierTwoThresholdTokens()})`)
+      this.log(`[${task.agentId}] tier-2 rotation for ${channel}:${chatId} (last turn context: ${lastTokens} tokens ≥ ${this.sessions.getTierTwoThresholdTokens(channel)})`)
       if (state.def.tier === "claude-code") {
         void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "tier-2")
       }
@@ -2720,7 +2721,7 @@ export class AgentRegistry {
             (response.usage.inputTokens || 0) +
             (response.usage.cacheReadTokens || 0) +
             (response.usage.cacheCreateTokens || 0)
-          if ((contextSize ?? cumulative) >= this.sessions.getTierTwoThresholdTokens()) {
+          if ((contextSize ?? cumulative) >= this.sessions.getTierTwoThresholdTokens(channel)) {
             this.log(`[${task.agentId}] TIER-2 HIT on ${channel}:${chatId}: context=${contextSize ?? "n/a"} tokens (cumulative turn total=${cumulative}) — next turn will rotate`)
           }
         }

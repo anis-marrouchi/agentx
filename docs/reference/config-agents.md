@@ -183,6 +183,7 @@ When a conversation's memory is rotated or treated as stale.
 | `session.staleMinutes` | number (1–1440) | `720` | Minutes of silence after which a conversation starts fresh. |
 | `session.maxTurnsPerSession` | number (2–200) | `40` | Turns after which the conversation is rotated to a new session. |
 | `session.tierTwoThresholdTokens` | number (50000–200000) | `180000` | Context size, in tokens, at which the conversation is rotated. |
+| `session.tierTwoThresholdTokensByChannel` | object of channel → number (50000–200000) | `{}` | Overrides the context rotation limit for selected channels, for example `{"voice": 60000, "github": 80000}`. Other channels use the global limit. Applies to native Claude, Codex and OpenCode sessions; existing history seeds the next session. Requires a daemon restart. |
 | `session.contextStrategy` | `"layered"` \| `"planner"` | `"layered"` | How context is built: all layers every turn, or a small model picks what to retrieve first. |
 | `session.maxClaudeCodeDispatchesPerHour` | number (0–10000) | unset (off) | Optional local ceiling on new `claude-code` runs across the machine in one hour. The plan's own limit is read from Claude Code and needs no setting. Warm sessions still go through. Applies on save. |
 | `session.maxClaudeCodeDispatchesPer5h` | number (0–50000) | unset (off) | The same optional ceiling over five hours. |

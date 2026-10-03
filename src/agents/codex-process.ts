@@ -22,6 +22,8 @@ interface Result {
   codexSessionId?: string
   billedModel?: string
   usage?: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number }
+  /** Input context of the final model call, distinct from cumulative turn usage. */
+  contextTokens?: number
   error?: string
   duration: number
 }
@@ -128,6 +130,7 @@ export class CodexProcessPool {
     let finalText: string | undefined
     let threadId: string | undefined
     let usage: Result["usage"]
+    let contextTokens: number | undefined
     let firstOutput = false
     const abort = () => c.close(new Error("task cancelled by operator"))
     o.signal?.addEventListener("abort", abort, { once: true })
@@ -180,6 +183,7 @@ export class CodexProcessPool {
             // shares with earlier turns). OpenAI's inputTokens includes the
             // cached part; TokenUsage keeps them apart, Anthropic-style.
             const u = p.tokenUsage.last
+            contextTokens = u.inputTokens
             const cached = u.cachedInputTokens || 0
             usage = {
               inputTokens: (usage?.inputTokens || 0) + Math.max(0, (u.inputTokens || 0) - cached),
@@ -199,11 +203,11 @@ export class CodexProcessPool {
       submitted = true
       await c.rpc("turn/start", { threadId, input: [{ type: "text", text: o.prompt, text_elements: [] }] })
       await completed
-      return { content: finalText ?? content, codexSessionId: threadId, billedModel: o.model, usage, duration: Date.now() - start }
+      return { content: finalText ?? content, codexSessionId: threadId, billedModel: o.model, usage, contextTokens, duration: Date.now() - start }
     } catch (e: any) {
       c.close()
       if (!submitted && !o.signal?.aborted) throw new CodexUnavailable(e.message)
-      return { content, codexSessionId: threadId, usage, error: e.message, duration: Date.now() - start }
+      return { content, codexSessionId: threadId, usage, contextTokens, error: e.message, duration: Date.now() - start }
     } finally {
       clearTimeout(startup)
       clearTimeout(deadline)
