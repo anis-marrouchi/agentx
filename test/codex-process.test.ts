@@ -90,8 +90,11 @@ describe("Codex persistent processes", () => {
   it("reports the whole turn's usage, with cached input split out", async () => {
     const f = fixture("usage")
     try {
-      const { usage } = await f.pool.run(f.options)
+      const { usage, contextTokens } = await f.pool.run(f.options)
       expect(usage).toEqual({ inputTokens: 1300, outputTokens: 80, cacheReadTokens: 900, cacheCreateTokens: 0 })
+      // A tool-heavy turn pays for all calls, but rotation must use only
+      // the final request's context (cached input is already included).
+      expect(contextTokens).toBe(1200)
     } finally { f.pool.stop() }
   })
   it("times out and removes idle processes", async () => {
