@@ -34,18 +34,13 @@ export const APP_VOICE_SCRIPT = `
   bar.className = 'vx';
   bar.innerHTML = '<p id="vx-status" class="vx-status" role="status" aria-live="polite"></p><div class="vx-row">' +
     '<button type="button" id="vx-keys" class="vx-side" aria-pressed="false" aria-label="Type a message">' + KEYS + '</button>' +
-    '<button type="button" id="vx-orb" class="vx-orb" aria-describedby="vx-status"><canvas aria-hidden="true"></canvas><svg class="vx-mic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3ZM5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg><span class="cx-sr">Hold to talk</span></button>' +
+    '<button type="button" id="vx-orb" class="vx-orb" aria-describedby="vx-status"><canvas aria-hidden="true"></canvas><span class="cx-sr">Hold to talk</span></button>' +
     '<button type="button" id="vx-speaker" class="vx-side" aria-pressed="true" aria-label="Speak answers aloud">' + SPK + '</button></div>';
   cx.appendChild(bar);
-  // The text box and Stop move into the dock; CSS places them below the orb.
+  // The text box and Stop move into the bar, above the orb.
   bar.insertBefore(document.getElementById('cx-form'), bar.firstChild);
   var status = document.getElementById('vx-status'), orbBtn = document.getElementById('vx-orb');
   var keysBtn = document.getElementById('vx-keys'), spkBtn = document.getElementById('vx-speaker');
-  bar.insertBefore(document.getElementById('cx-pick'), bar.firstChild);
-  bar.appendChild(status);
-  var row = bar.querySelector('.vx-row');
-  row.insertBefore(spkBtn, row.firstChild);
-  row.appendChild(keysBtn);
   var orb = O.create(orbBtn.querySelector('canvas'));
   empty.textContent = 'Pick an agent, then hold the orb and speak. Let go to send. Its answer appears here, and is read out when it is done.';
 
@@ -70,7 +65,7 @@ export const APP_VOICE_SCRIPT = `
     orbBtn.querySelector('.cx-sr').textContent = state === 'speaking' ? 'Stop speaking' : 'Hold to talk';
   }
   function idle(msg, bad) { show(C.busy() ? 'thinking' : 'idle', msg, bad); setTimeout(pump, 0); }
-  function tint() { orb.tint('#2979FF'); }
+  function tint() { var t = C.target(); orb.tint(O.colorFor(t && t.agent, t && t.color)); }
   function buzz(ms) { try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {} }
 
   // --- Typing and the speaker ---

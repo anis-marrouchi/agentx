@@ -139,7 +139,7 @@ describe("page scripts parse", () => {
 
   it("the shell has four labelled tabs, safe-area padding and a theme toggle", () => {
     const html = renderAppPage()
-    for (const t of ["Chat", "Fleet", "Activity", "Alerts"]) expect(html).toContain(`<span>${t}</span></button>`)
+    for (const t of ["Chat", "Fleet", "Activity", "Alerts"]) expect(html).toContain(`>${t}</button>`)
     expect(html).toContain("viewport-fit=cover")
     expect(html).toContain("env(safe-area-inset-bottom)")
     expect(html).toContain('id="theme"')

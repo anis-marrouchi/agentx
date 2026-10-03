@@ -21,7 +21,7 @@ export const APP_ALERTS_SCRIPT = `
     '<div id="al-finish" class="fx-row al-finish" hidden><p id="al-finish-l">When a chat answer finishes<small>Only for conversations you are not looking at</small></p>' +
     '<button type="button" id="al-finish-sw" class="fx-switch" role="switch" aria-checked="true" aria-labelledby="al-finish-l"><span></span></button></div>' +
     '<p id="al-error" class="fx-error fx-bad" role="alert"></p></div>' +
-    '<div id="al-recent-head" class="fx-row"><h3 class="fx-sub">Recent</h3><button type="button" id="al-read-all" class="fx-btn">Mark all read</button></div><ul id="al-list" class="fx-list"></ul>';
+    '<h3 class="fx-sub">Recent</h3><ul id="al-list" class="fx-list"></ul>';
   var pill = document.getElementById('al-pill');
   var text = document.getElementById('al-text');
   var btn = document.getElementById('al-btn');
@@ -164,49 +164,19 @@ export const APP_ALERTS_SCRIPT = `
     }).catch(function (e) { err.textContent = e.message; }).then(function () { finishSw.disabled = false; });
   });
 
-  var read = [], recent = [];
-  try { var saved = JSON.parse(localStorage.getItem('ax-alerts-read') || '[]'); if (Array.isArray(saved)) read = saved.slice(-200); } catch (e) {}
-  function key(it) { return String(it.id) + ':' + String(it.at); }
-  function saveRead() { read = read.slice(-200); try { localStorage.setItem('ax-alerts-read', JSON.stringify(read)); } catch (e) {} }
-  function paintRecent() {
-    var unread = recent.filter(function (it) { return read.indexOf(key(it)) < 0; }).length;
-    var tab = document.getElementById('tab-alerts');
-    tab.classList.toggle('has-unread', unread > 0);
-    tab.setAttribute('aria-label', unread ? 'Alerts, ' + unread + ' unread' : 'Alerts');
-    document.getElementById('al-read-all').disabled = !unread;
-    if (!recent.length) { list.innerHTML = '<li class="fx-muted">No notifications yet.</li>'; return; }
-    list.innerHTML = recent.map(function (it, i) {
-      var unseen = read.indexOf(key(it)) < 0;
-      var link = /^https?:/i.test(it.url || '')
-        ? '<a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">Open</a>'
-        : /^[/]app#chat=c[a-z0-9]+$/.test(it.url || '') ? '<a href="' + esc(it.url) + '">Open</a>' : '';
-      return '<li data-alert="' + i + '" class="' + (unseen ? 'al-unread' : '') + '"><button type="button" class="al-item" aria-label="' + esc(it.title + (unseen ? ', unread. Mark as read' : ', read')) + '">' +
-        '<span class="fx-row"><strong>' + esc(it.title) + '</strong><span class="fx-muted">' + esc(ago(it.at)) + '</span></span>' +
-        '<span class="al-body">' + esc(it.body) + '</span></button>' + link + '</li>';
-    }).join('');
-  }
-  list.addEventListener('click', function (ev) {
-    var row = ev.target.closest('[data-alert]');
-    if (!row) return;
-    var it = recent[+row.getAttribute('data-alert')];
-    if (!it || read.indexOf(key(it)) >= 0) return;
-    read.push(key(it)); saveRead();
-    // Do not replace a focused button or interrupt a link's default action.
-    row.classList.remove('al-unread');
-    row.querySelector('button').setAttribute('aria-label', it.title + ', read');
-    var unread = recent.filter(function (x) { return read.indexOf(key(x)) < 0; }).length;
-    var tab = document.getElementById('tab-alerts');
-    tab.classList.toggle('has-unread', unread > 0);
-    tab.setAttribute('aria-label', unread ? 'Alerts, ' + unread + ' unread' : 'Alerts');
-    document.getElementById('al-read-all').disabled = !unread;
-  });
-  document.getElementById('al-read-all').addEventListener('click', function () {
-    recent.forEach(function (it) { if (read.indexOf(key(it)) < 0) read.push(key(it)); });
-    saveRead(); paintRecent();
-  });
   function loadRecent() {
     return api('GET', '/api/app/alerts').then(function (b) {
-      recent = b.items || []; paintRecent();
+      var items = b.items || [];
+      if (!items.length) { list.innerHTML = '<li class="fx-muted">No notifications yet.</li>'; return; }
+      list.innerHTML = items.map(function (it) {
+        // Only web links: a button URL comes from an agent's message.
+        // A finished chat answer links back into the app (/app#chat=<id>).
+        var link = /^https?:/i.test(it.url || '')
+          ? ' <a href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">Open</a>'
+          : /^[/]app#chat=c[a-z0-9]+$/.test(it.url || '') ? ' <a href="' + esc(it.url) + '">Open</a>' : '';
+        return '<li><div class="fx-row"><strong>' + esc(it.title) + '</strong><span class="fx-muted">' + esc(ago(it.at)) + '</span></div>' +
+          '<p>' + esc(it.body) + link + '</p></li>';
+      }).join('');
     }).catch(function (e) { list.innerHTML = '<li class="fx-bad">Could not load notifications: ' + esc(e.message) + '</li>'; });
   }
 

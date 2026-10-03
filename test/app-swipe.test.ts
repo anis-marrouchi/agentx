@@ -94,9 +94,8 @@ function page(opts: { reduce?: boolean; selected?: number } = {}) {
     clientWidth: 390, scrollTop: 120, classList: classes(), parentElement: null,
     addEventListener: (type: string, fn: (ev: any) => void) => { handlers[type] = fn },
   }
-  const tabPosition: string[] = []
   const document = {
-    querySelector: (selector: string) => selector === ".tabs" ? { style: { setProperty: (_: string, value: string) => tabPosition.push(value) } } : main,
+    querySelector: () => main,
     querySelectorAll: () => tabs,
     getElementById: (id: string) => panels.find((p) => p.id === id),
   }
@@ -111,7 +110,7 @@ function page(opts: { reduce?: boolean; selected?: number } = {}) {
   let prevented = 0
   const touch = (type: string, x: number, y: number, target: any = content) =>
     handlers[type]({ target, touches: type === "touchend" ? [] : [{ clientX: x, clientY: y }], cancelable: true, preventDefault: () => { prevented++ } })
-  return { main, panels, clicks, timers, tabPosition, touch, content, prevented: () => prevented, settle: () => { while (timers.length) timers.shift()!() } }
+  return { main, panels, clicks, timers, touch, content, prevented: () => prevented, settle: () => { while (timers.length) timers.shift()!() } }
 }
 
 describe("the swipe script", () => {
@@ -130,7 +129,6 @@ describe("the swipe script", () => {
     p.touch("touchmove", 240, 404)
     expect(p.main.classList.has("sw-on")).toBe(true)
     expect(p.prevented()).toBe(1)
-    expect(Number(p.tabPosition.at(-1))).toBeCloseTo(60 / 390)
     expect(p.panels[0].style.transform).toBe("translateX(-60px)")
     expect(p.panels[1].classList.has("sw-peek")).toBe(true)
     expect(p.panels[1].style.transform).toBe("translateX(330px)")
@@ -147,7 +145,6 @@ describe("the swipe script", () => {
 
     p.settle()
     expect(p.clicks).toEqual(["fleet"])
-    expect(p.tabPosition.at(-1)).toBe("1")
     expect(p.main.scrollTop).toBe(0)
     expect(p.main.classList.has("sw-on") || p.main.classList.has("sw-slide")).toBe(false)
     expect(p.panels[0].style.transform).toBe("")
@@ -256,7 +253,6 @@ describe("the swipe script", () => {
     p.touch("touchend", 0, 0)
     expect(p.timers.length).toBe(0)
     expect(p.clicks).toEqual(["fleet"])
-    expect(p.tabPosition.at(-1)).toBe("1")
   })
 
   it("lets go when a second finger lands", () => {

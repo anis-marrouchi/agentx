@@ -7,7 +7,7 @@ Two tabs of the [phone app](./mobile-app.md) let you watch and manage every comp
 
 The app shows every computer the dashboard can see, including those it finds through your *mesh* (the private link between your AgentX computers). Both tabs refresh on their own every 15 seconds while they are open.
 
-![The Fleet tab with an online computer and an offline computer](/screenshots/mobile-app/fleet.png)
+![The Fleet tab with three computers online](/screenshots/mobile-app/fleet.png)
 
 ## Before you start
 
@@ -30,11 +30,10 @@ Each schedule shows the result of its last run today and a short excerpt of what
 ## Reload or restart a computer
 
 1. **Phone:** tap **Fleet**.
-2. **Phone:** open **Manage computer** under the computer.
-3. **Phone:** tap one of:
+2. **Phone:** under the computer, tap one of:
    - **Reload config** re-reads `agentx.json`. Running work continues.
    - **Restart when idle** restarts AgentX on that computer as soon as no agent is working. Its agents are unavailable for a moment.
-4. **Phone:** confirm in the sheet that opens.
+3. **Phone:** confirm in the sheet that opens.
 
 While a restart is waiting, the computer shows **Restart pending** and a **Cancel restart** button.
 

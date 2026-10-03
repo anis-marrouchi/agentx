@@ -11,7 +11,7 @@
 export const APP_CHAT_LOG_SCRIPT = `
 window.AXChatLog = function (o) {
   var V = o.V, log = o.log, empty = o.empty, NOTES = o.notes;
-  function scrollDown() { var m = log; if (m) m.scrollTop = m.scrollHeight; }
+  function scrollDown() { var m = document.querySelector('main'); if (m) m.scrollTop = m.scrollHeight; }
   function clear() { log.innerHTML = ''; empty.hidden = false; }
   function bubble(cls) {
     var el = document.createElement('div');

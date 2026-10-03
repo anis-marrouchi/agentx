@@ -23,7 +23,7 @@
 
 export { CAMERA_CSS } from "./app-camera.css"
 
-export const CAMERA_BUTTON = `<button type="button" id="cam-btn" class="icon-btn" aria-label="Share camera" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h12v12H3zM15 10l6-3v10l-6-3"/></svg><span>Share camera</span></button>`
+export const CAMERA_BUTTON = `<button type="button" id="cam-btn" class="icon-btn" aria-label="Share camera" aria-haspopup="dialog">📷</button>`
 
 export const CAMERA_BODY = `
 <div id="cam" class="cam" role="dialog" aria-modal="true" aria-labelledby="cam-title" hidden>

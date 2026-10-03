@@ -58,7 +58,7 @@ export const APP_CHAT_STRIP_SCRIPT = `
       return '<li><button type="button" class="cs-chip cs-' + c.state + '" data-id="' + V.esc(c.id) + '" style="--cs-c:' + colorOf(c) + '"' +
         (here ? ' aria-current="true"' : '') + ' aria-label="' + V.esc(label) + '" title="' + V.esc(c.preview || '') + '">' +
         '<span class="cs-dot" aria-hidden="true"></span><span class="cs-name">' + V.esc(nameOf(c)) + '</span>' +
-        (fresh ? '<span class="cs-new" aria-hidden="true">New</span>' : '<span class="cs-state" aria-hidden="true">' + V.esc(SAY[c.state] || '') + '</span>') + '</button></li>';
+        (fresh ? '<span class="cs-new" aria-hidden="true">New</span>' : '') + '</button></li>';
     }).join('');
     // Redrawn only when something changed, so a poll never steals focus
     // or a tap; a focused chip keeps focus across a redraw.

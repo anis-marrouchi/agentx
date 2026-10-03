@@ -22,7 +22,6 @@ export const APP_SWIPE_SCRIPT = `
   var tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
   if (!main || tabs.length < 2) return;
   var reduce = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : null;
-  var tabBar = document.querySelector('.tabs');
   var SLIDE_MS = 220;
   var g = null;        // the touch being followed
   var sliding = false; // the landing slide is running
@@ -64,7 +63,6 @@ export const APP_SWIPE_SCRIPT = `
     g.peek.classList.add('sw-peek');
   }
   function place(x) {
-    tabBar.style.setProperty('--tab-position', String(g.index - x / g.width));
     g.from.style.transform = 'translateX(' + x + 'px)';
     if (g.peek) g.peek.style.transform = 'translateX(' + (x + g.side * g.width) + 'px)';
   }
@@ -83,7 +81,6 @@ export const APP_SWIPE_SCRIPT = `
     unpeek();
     g = null;
     sliding = false;
-    tabBar.style.setProperty('--tab-position', String(to));
     if (to === s.index) return;
     tabs[to].click();
     main.scrollTop = 0;

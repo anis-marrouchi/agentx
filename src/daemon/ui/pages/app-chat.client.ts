@@ -25,15 +25,15 @@ export const APP_CHAT_SCRIPT = `
   var panel = document.getElementById('panel-chat');
   var V = window.AXChatView;
   if (!panel || !V || !window.AXChatSheets || !window.AXChatLog) return;
-  // History and New stay above the scrolling log. Voice moves the agent
-  // picker into the bottom dock; its lists open in a native modal sheet.
+  // The head (agent, History, New) and its two sheets stay pinned at the top
+  // of a long conversation, as the composer stays at the bottom.
   panel.innerHTML = '<h2 class="cx-sr">Chat</h2><div class="cx"><div class="cx-top">' +
-    '<div class="cx-head"><button type="button" id="cx-pick" class="cx-pick" aria-haspopup="dialog" aria-controls="cx-picker" aria-expanded="false">' +
-    '<span class="cx-pick-intro">Talking to</span><span class="cx-pick-label">Choose an agent</span><span class="cx-pick-sub">Tap to see the agents on your machines</span></button>' +
-    '<button type="button" id="cx-history-btn" class="fx-btn" aria-haspopup="dialog" aria-label="History" title="History" aria-controls="cx-history" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10a9 9 0 1 1 1 7M3 4v6h6M12 7v5l3 2"/></svg></button>' +
-    '<button type="button" id="cx-new" class="fx-btn" aria-label="New conversation" title="New conversation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>' +
-    '</div><dialog id="cx-dialog" class="fx-sheet" aria-labelledby="cx-sheet-title"><div class="sheet-head"><h3 id="cx-sheet-title">Choose an agent</h3><button type="button" class="fx-btn" id="cx-sheet-done">Done</button></div><div id="cx-picker" class="cx-sheet" role="region" aria-label="Agents" hidden></div>' +
-    '<div id="cx-history" class="cx-sheet" role="region" aria-label="Past conversations" hidden></div></dialog>' +
+    '<div class="cx-head"><button type="button" id="cx-pick" class="cx-pick" aria-controls="cx-picker" aria-expanded="false">' +
+    '<span class="cx-pick-label">Choose an agent</span><span class="cx-pick-sub">Tap to see the agents on your machines</span></button>' +
+    '<button type="button" id="cx-history-btn" class="fx-btn" aria-controls="cx-history" aria-expanded="false">History</button>' +
+    '<button type="button" id="cx-new" class="fx-btn">New</button></div>' +
+    '<div id="cx-picker" class="cx-sheet" role="region" aria-label="Agents" hidden></div>' +
+    '<div id="cx-history" class="cx-sheet" role="region" aria-label="Past conversations" hidden></div></div>' +
     '<p id="cx-empty" class="soon">Pick an agent, then ask it anything. Its answer appears here as it writes.</p>' +
     '<div id="cx-log" class="cx-log" role="log" aria-live="polite"></div>' +
     '<form id="cx-form" class="cx-composer"><label for="cx-input" class="cx-sr">Message</label>' +
@@ -44,12 +44,6 @@ export const APP_CHAT_SCRIPT = `
   function $(id) { return document.getElementById(id); }
   var log = $('cx-log'), empty = $('cx-empty'), form = $('cx-form'), input = $('cx-input'), stopBtn = $('cx-stop');
   var pickBtn = $('cx-pick'), picker = $('cx-picker'), hist = $('cx-history'), histBtn = $('cx-history-btn'), newBtn = $('cx-new');
-  var dialog = $('cx-dialog');
-  document.body.appendChild(dialog);
-  window.AXSheet(dialog, function () {
-    [[picker, pickBtn], [hist, histBtn]].forEach(function (p) { p[0].hidden = true; p[1].setAttribute('aria-expanded', 'false'); });
-  });
-  $('cx-sheet-done').addEventListener('click', function () { dialog.close(); });
   // flow: the stream this view follows; a stream from before a switch is ignored.
   var state = { conv: null, target: null, busy: false, queue: [], stopWanted: false, view: 0, flow: 0, ac: null };
   // Follow-ups typed for a conversation the phone switched away from, and
@@ -79,7 +73,6 @@ export const APP_CHAT_SCRIPT = `
 
   // --- Agent, conversation and the sheets ---
   function showTarget(t) {
-    pickBtn.querySelector('.cx-pick-intro').hidden = !t;
     pickBtn.querySelector('.cx-pick-label').textContent = t ? (t.agentName || t.agent) : 'Choose an agent';
     pickBtn.querySelector('.cx-pick-sub').textContent = t ? 'on ' + t.nodeName : 'Tap to see the agents on your machines';
     emit('target', { target: t, conversationId: state.conv && state.conv.id });
@@ -97,13 +90,9 @@ export const APP_CHAT_SCRIPT = `
       var on = p[0] === sheet && open;
       p[0].hidden = !on; p[1].setAttribute('aria-expanded', on ? 'true' : 'false');
     });
-    if (open) {
-      $('cx-sheet-title').textContent = sheet === picker ? 'Choose an agent' : 'Past conversations';
-      if (!dialog.open) dialog.showModal();
-    } else if (dialog.open) dialog.close();
   }
   var sheets = window.AXChatSheets({ V: V, api: api, picker: picker, hist: hist,
-    onPick: function (t) { state.target = t; remember('ax-chat-target', t); startNew(); toggle(picker, false); if (document.querySelector('.cx').classList.contains('cx-typing-on')) input.focus(); },
+    onPick: function (t) { state.target = t; remember('ax-chat-target', t); startNew(); toggle(picker, false); input.focus(); },
     onOpen: function (id) { toggle(hist, false); openConversation(id); } });
 
   // Lets go of the stream being followed; the computer keeps the turn going.
