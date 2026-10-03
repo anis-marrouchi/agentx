@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.100.0](https://github.com/anis-marrouchi/agentx/compare/v0.99.0...v0.100.0) (2026-10-03)
+
+
+### Features
+
+* **members:** redesign My work around the agents a teammate uses ([#548](https://github.com/anis-marrouchi/agentx/issues/548)) ([3c78ba1](https://github.com/anis-marrouchi/agentx/commit/3c78ba1b05346842f2cc84785d192e7ce8025480))
+
+
+### Bug Fixes
+
+* **voice:** sign builds with one certificate so permissions survive an update ([#546](https://github.com/anis-marrouchi/agentx/issues/546)) ([77ea002](https://github.com/anis-marrouchi/agentx/commit/77ea0023c8aff80bbe77cb7d6a50c4b2f6c5daa5))
+
 ## [0.99.0](https://github.com/anis-marrouchi/agentx/compare/v0.98.1...v0.99.0) (2026-10-03)
 
 
