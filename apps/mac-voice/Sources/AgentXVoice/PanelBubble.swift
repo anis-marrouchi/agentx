@@ -17,6 +17,9 @@ extension Panel {
         dots.alphaValue = max(2 * amount - 1, 0)
         (contentView as? Surface)?.shape(size: amount > 0 ? PillPlacement.shrunk(Self.size, small: amount).size : nil)
         invalidateShadow()
+        // The row was not laid out while reduced, and the frame may already
+        // be the full pill's: nothing else would lay it out again.
+        if amount == 0, let content = contentView { layoutContent(content.bounds) }
     }
 }
 
