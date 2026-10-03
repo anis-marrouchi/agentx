@@ -44,6 +44,12 @@ enum CharacterMath {
         }
     }
 
+    /// It can be clicked (#579): idle, where it rests, with no bubble to
+    /// click in its place. Then it waits for the pointer and takes the click.
+    static func clickable(_ activity: Activity, asked: Mood?, sent: Bool, bubble: Bool) -> Bool {
+        activity == .idle && asked == nil && !sent && !bubble
+    }
+
     /// The state it goes through on the way from `from` to `to`, if any:
     /// it notices you before it listens and when it wakes, and nods once
     /// it has heard you.
