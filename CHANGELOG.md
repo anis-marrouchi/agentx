@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.104.1](https://github.com/anis-marrouchi/agentx/compare/v0.104.0...v0.104.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **release:** correct the 0.104.0 mobile release notes ([b812aa7](https://github.com/anis-marrouchi/agentx/commit/b812aa7440431cefc778edb21434dda28c916ebe))
+
 ## [0.104.0](https://github.com/anis-marrouchi/agentx/compare/v0.103.3...v0.104.0) (2026-10-03)
 
 
