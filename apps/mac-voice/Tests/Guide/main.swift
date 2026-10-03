@@ -55,6 +55,14 @@ check(G.idle(caption: "Start a run here", away: true) == .caption("Start a run h
 check(G.idle(caption: nil, away: true) == .nothing, "at a stop with no caption, on the way there or in a play, no bubble")
 check(G.idle(caption: "", away: true) == .nothing, "an empty caption is none")
 
+// The character's idle bubble at its smallest (#576).
+check(G.hintShows(character: true, sinceStart: 2, held: false), "the character's bubble says the hint just after the app starts")
+check(!G.hintShows(character: true, sinceStart: G.hintSeconds, held: false), "and not after its first seconds")
+check(G.hintShows(character: false, sinceStart: 600, held: false), "a pill of its own still says it")
+check(G.hintShows(character: true, sinceStart: 600, held: true), "notifications held is still said")
+check(G.idle(caption: nil, away: false, hint: false) == .nothing, "with no hint, no bubble where it rests")
+check(G.idle(caption: "Start a run here", away: false, hint: false) == .caption("Start a run here"), "a caption shows with or without the hint")
+
 // How wide the bubble is around a caption (#566).
 check(G.bubbleWidth(words: 88.2, full: 360) == 145, "the bubble is as wide as its caption's label and the room at its ends, no wider")
 check(G.bubbleWidth(words: 12, full: 360) == 96, "a short caption still has a bubble that holds its tail")

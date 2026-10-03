@@ -88,6 +88,8 @@ final class App: NSObject, NSApplicationDelegate {
     private let guideWatcher = GuideWatcher()
     /// A play runs, or its picture is being taken (#562).
     private var playing = false
+    /// When the app started, for the hint in the character's bubble.
+    private let launched = ProcessInfo.processInfo.systemUptime
     private let ringer = Ringer()
     /// The call ringing on the pill now.
     private var ringingCall: IncomingCall?
@@ -219,6 +221,7 @@ final class App: NSObject, NSApplicationDelegate {
         character.setShown(asCharacter)
         character.strolls = saved.general.stroll == true
         if !asCharacter { panel.detach() }
+        idleWords()
         // voice.startReduced is how the assistant starts: read once.
         if !startApplied {
             startApplied = true
@@ -240,8 +243,12 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// What the idle bubble says (#562): no hint at a guide stop, on the
     /// way there or during a play; the stop's caption if it has one.
+    /// The character's bubble says the hint only just after the app
+    /// starts, then there is none at idle (#576).
     private func idleWords() {
-        panel.setIdle(GuideMath.idle(caption: character.caption, away: character.sent || playing))
+        let hint = GuideMath.hintShows(character: settings?.general.look == "character",
+                                       sinceStart: ProcessInfo.processInfo.systemUptime - launched, held: Hold.isOn)
+        panel.setIdle(GuideMath.idle(caption: character.caption, away: character.sent || playing, hint: hint))
     }
 
     /// "Play on this page" (#505): one picture of the character's screen, the
@@ -507,6 +514,7 @@ final class App: NSObject, NSApplicationDelegate {
         // and this switch is not that.
         statusMenu.onHoldChanged = { [weak self] nowOn in
             guard let self else { return }
+            self.idleWords()
             self.panel.render(.idle)
             if !nowOn { Hold.flushHeld() }
             Log.info(nowOn ? "notifications held" : "notifications delivering")
@@ -528,6 +536,8 @@ final class App: NSObject, NSApplicationDelegate {
         guideWatcher.wanted = { [weak self] in self?.character.onScreen == true }
         guideWatcher.onCommand = { [weak self] rect, mark, caption, asked in self?.character.guide(to: rect, mark: mark, caption: caption, asked: asked) }
         character.onGuide = { [weak self] in self?.idleWords() }
+        // The hint has had its seconds: no bubble at idle from here.
+        DispatchQueue.main.asyncAfter(deadline: .now() + GuideMath.hintSeconds) { [weak self] in self?.idleWords() }
         guideWatcher.start()
         character.onScreenChanged = { [weak self] in self?.guideWatcher.start() }
 

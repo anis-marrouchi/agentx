@@ -46,9 +46,21 @@ enum GuideMath {
     /// At a stop the bubble says the command's caption, and with none
     /// there is no bubble; the idle hint is for where it rests, not for
     /// a stop, the way there or a play. `away`: sent somewhere, or playing.
-    static func idle(caption: String?, away: Bool) -> Idle {
+    /// `hint`: the hint may show (hintShows).
+    static func idle(caption: String?, away: Bool, hint: Bool = true) -> Idle {
         if let caption, !caption.isEmpty { return .caption(caption) }
-        return away ? .nothing : .hint
+        return away || !hint ? .nothing : .hint
+    }
+
+    /// Seconds after the app starts that the character's bubble says the hint.
+    static let hintSeconds = 6.0
+
+    /// Whether the idle hint may show (#576). A pill of its own always
+    /// says it. The character's bubble says it only for the first seconds
+    /// after the app starts, then there is no bubble at idle; "notifications
+    /// held" stays, since nothing else on screen says it.
+    static func hintShows(character: Bool, sinceStart: Double, held: Bool) -> Bool {
+        !character || held || sinceStart < hintSeconds
     }
 
     /// What a label needs beyond the width of its words (#569): a text
