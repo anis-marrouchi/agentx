@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.101.0](https://github.com/anis-marrouchi/agentx/compare/v0.100.0...v0.101.0) (2026-10-03)
+
+
+### Features
+
+* **voice:** agents with no colour of their own get the teal palette ([#555](https://github.com/anis-marrouchi/agentx/issues/555)) ([d9675a0](https://github.com/anis-marrouchi/agentx/commit/d9675a0f415f36db2f91cefb644bcc1cd8838a5f))
+
+
+### Bug Fixes
+
+* **approvals:** the card's spoken line waits while the owner dictates ([#556](https://github.com/anis-marrouchi/agentx/issues/556)) ([3013280](https://github.com/anis-marrouchi/agentx/commit/3013280f19aac9a0c4c8b9640358efc8cf4905ec)), closes [#493](https://github.com/anis-marrouchi/agentx/issues/493)
+
 ## [0.100.0](https://github.com/anis-marrouchi/agentx/compare/v0.99.0...v0.100.0) (2026-10-03)
 
 
