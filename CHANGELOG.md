@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.106.0](https://github.com/anis-marrouchi/agentx/compare/v0.105.1...v0.106.0) (2026-10-04)
+
+
+### Features
+
+* **session:** lean session profile for github, a2a, workflow and cron ([#615](https://github.com/anis-marrouchi/agentx/issues/615)) ([#618](https://github.com/anis-marrouchi/agentx/issues/618)) ([9a9792e](https://github.com/anis-marrouchi/agentx/commit/9a9792e32e388acd9d8f2ea526c60931dde14312))
+
+
+### Bug Fixes
+
+* **automation:** defer draft reviews until ready when requested ([#597](https://github.com/anis-marrouchi/agentx/issues/597)) ([0e5ec2b](https://github.com/anis-marrouchi/agentx/commit/0e5ec2b08b8c71a1ce4de973cd2001aaf07e4b5a))
+* **codex:** use final request context for session rotation ([#596](https://github.com/anis-marrouchi/agentx/issues/596)) ([3b070fd](https://github.com/anis-marrouchi/agentx/commit/3b070fd63924f502d51f95f8f5ee35e50757c706))
+* **voice:** drop transcripts with no words before an agent is woken ([#617](https://github.com/anis-marrouchi/agentx/issues/617)) ([a378760](https://github.com/anis-marrouchi/agentx/commit/a378760c63ac34a4ca5e0ecf201ba9d00b10299e)), closes [#614](https://github.com/anis-marrouchi/agentx/issues/614)
+
 ## [0.105.1](https://github.com/anis-marrouchi/agentx/compare/v0.105.0...v0.105.1) (2026-10-04)
 
 
