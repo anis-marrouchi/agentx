@@ -531,6 +531,22 @@ const channelsConfigSchema = z.object({
       tokenFile: z.string().optional(),
       node: z.string().optional(),
     })).default([]),
+    // --- Which issue and pull request events start a run (#612) ---
+    /** Issue actions that start a run. A project rule whose `actions`
+     *  list is set replaces this list for its repository; a rule without
+     *  one keeps it, so `closed` never starts a run unless asked for. */
+    issueActions: z.array(z.string().min(1)).default(["opened", "reopened", "assigned"]),
+    /** Pull request actions that start a run. Same precedence as issueActions. */
+    pullRequestActions: z.array(z.string().min(1)).default(["opened", "reopened", "ready_for_review"]),
+    /** A label, assignment, close or edit made by an account AgentX posts
+     *  with (the App bot, a token owner, a mapped username, a mesh peer)
+     *  does not start a run: the owner sweep's own `agent:<id>` label woke
+     *  the agent it was filed for. Opened and reopened always count. */
+    ignoreOwnChanges: z.boolean().default(true),
+    /** Events on one issue or pull request within this many seconds become
+     *  one run, carrying the latest state. The window restarts with each
+     *  event. 0 starts a run per event. */
+    debounceSeconds: z.number().min(0).max(3600).default(30),
   }).default({}),
   /** ntfy push notifications — outbound only. The operator-facing tap on
    *  the shoulder: cron failures, task errors, and anything an agent decides

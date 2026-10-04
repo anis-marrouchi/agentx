@@ -2156,6 +2156,10 @@ export class AgentXDaemon {
           webhookSecret: githubConfig.webhookSecret,
           routes: githubConfig.routes,
           agentMappings: githubConfig.agentMappings,
+          issueActions: githubConfig.issueActions,
+          pullRequestActions: githubConfig.pullRequestActions,
+          ignoreOwnChanges: githubConfig.ignoreOwnChanges,
+          debounceSeconds: githubConfig.debounceSeconds,
         },
         this.log,
       )

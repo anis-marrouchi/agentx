@@ -24,6 +24,10 @@ import { agentHeader, forgeAuthorLabel, forgeBody, forgeSender, isUnattributedEc
 //     - agentId: "coder"
 //       githubUsernames: ["my-bot"]
 //       node: "hq-local"        # forward to mesh peer
+//   issueActions: [opened, reopened, assigned]          # see GITHUB_EVENT_DEFAULTS
+//   pullRequestActions: [opened, reopened, ready_for_review]
+//   ignoreOwnChanges: true     # AgentX's own labels/assignments start nothing
+//   debounceSeconds: 30        # events on one issue in this window = one run
 
 export interface GitHubRoute {
   repo: string   // "owner/repo" or "*" for default
@@ -51,7 +55,35 @@ export interface GitHubChannelConfig {
   webhookSecret?: string
   routes: GitHubRoute[]
   agentMappings?: GitHubAgentMapping[]
+  /** Issue actions that start a run when the repo's project rule lists no
+   *  `actions` of its own (#612). Default: GITHUB_EVENT_DEFAULTS. */
+  issueActions?: string[]
+  /** Pull request actions that start a run, same precedence. */
+  pullRequestActions?: string[]
+  /** A change made by an account AgentX posts with (a label, an
+   *  assignment, a close, an edit) starts no run. Opened and reopened
+   *  always count: a person may open issues with the account AgentX
+   *  posts with. */
+  ignoreOwnChanges?: boolean
+  /** Events on one issue or PR within this many seconds become one run
+   *  with the latest state; the window restarts with each event. 0 runs
+   *  each event as it arrives. */
+  debounceSeconds?: number
 }
+
+/** Defaults for the event gate (#612). `channels.github` in agentx.json
+ *  overrides each one; a project rule's `actions` list overrides the
+ *  action lists for its repository. */
+export const GITHUB_EVENT_DEFAULTS = {
+  issueActions: ["opened", "reopened", "assigned"],
+  pullRequestActions: ["opened", "reopened", "ready_for_review"],
+  ignoreOwnChanges: true,
+  debounceSeconds: 30,
+} as const
+
+/** Actions that count even when AgentX's own account caused them: the
+ *  token owner is often a person who opens issues by hand. */
+const ALWAYS_COUNTED_ACTIONS = new Set(["opened", "reopened"])
 
 // --- GitHub event type definitions ---
 
@@ -95,6 +127,9 @@ interface GitHubPREvent {
     base: { ref: string }
     user: GitHubUser
   }
+  /** Who caused the event: the person or app that labeled, assigned,
+   *  closed or edited. Differs from `pull_request.user`, the author. */
+  sender?: GitHubUser
   repository: GitHubRepo
 }
 
@@ -155,7 +190,18 @@ interface GitHubIssueEvent {
     user: GitHubUser
     assignees: GitHubUser[]
   }
+  /** Who caused the event (see GitHubPREvent.sender). */
+  sender?: GitHubUser
   repository: GitHubRepo
+}
+
+/** One issue or PR event after the gate, waiting for its window to end. */
+interface PendingDispatch {
+  timer: ReturnType<typeof setTimeout>
+  /** Every action collapsed into this run, oldest first. */
+  actions: string[]
+  /** Builds the message from the latest event, naming every action. */
+  build: (actions: string[]) => Promise<IncomingMessage>
 }
 
 type GitHubEvent = GitHubIssueCommentEvent | GitHubPREvent | GitHubPRReviewEvent
@@ -199,6 +245,8 @@ export class GitHubAdapter implements ChannelAdapter {
    *  state/author and resolves a runbook path for the agent. Optional;
    *  unset = legacy hardcoded actionable arrays. */
   private rules?: import("@/projects/rules").ProjectRulesStore
+  /** Issue and PR runs held for their debounce window, by chatId (#612). */
+  private pending: Map<string, PendingDispatch> = new Map()
   // GitHub App auth state
   private appPrivateKey?: string
   private installationTokens: Map<string, { token: string; expiresAt: number }> = new Map()
@@ -310,7 +358,11 @@ export class GitHubAdapter implements ChannelAdapter {
   }
 
   async stop(): Promise<void> {
-    // No persistent server — webhooks come through the main daemon HTTP server
+    // No persistent server — webhooks come through the main daemon HTTP
+    // server. A run still held for its window is dropped: starting an
+    // agent while the daemon goes down helps nobody.
+    for (const held of this.pending.values()) clearTimeout(held.timer)
+    this.pending.clear()
   }
 
   /**
@@ -627,35 +679,29 @@ export class GitHubAdapter implements ChannelAdapter {
     // Skip bot PRs
     if (this.isBotUser(pr.user.login)) return
 
-    // Project-rule gate. When a rule exists, it owns the actionable allowlist
-    // (actions / requireLabels / excludeLabels / excludeStates / excludeAuthors).
-    // Without a rule, fall back to the legacy hardcoded allowlist so existing
-    // projects without a rule file keep working.
     const labels = (((pr as any).labels ?? []) as any[]).map((l: any) => l?.name).filter(Boolean)
-    const ruleDecision = this.rules?.shouldFireGithubPR(repo, {
+    const rule = this.rules?.find(repo)?.github?.pull_request
+    const verdict = this.gateEvent(`PR #${pr.number} on ${repo}`, {
       action: event.action,
-      state: pr.state,
-      labels,
-      authorUsername: pr.user.login,
+      senderLogin: event.sender?.login,
+      ruleActions: rule?.actions,
+      defaultActions: this.config.pullRequestActions ?? GITHUB_EVENT_DEFAULTS.pullRequestActions,
+      settingName: "pullRequestActions",
+      decision: this.rules?.shouldFireGithubPR(repo, {
+        action: event.action,
+        state: pr.state,
+        labels,
+        authorUsername: pr.user.login,
+      }),
     })
-    if (ruleDecision) {
-      if (!ruleDecision.allow) {
-        this.log(`PR #${pr.number} on ${repo} dropped by rule: ${ruleDecision.reason}`)
-        return
-      }
-    } else {
-      const actionable = ["opened", "reopened", "ready_for_review"]
-      if (!actionable.includes(event.action)) return
-    }
+    if (!verdict) return
 
     const chatId = `${repo}:pull:${pr.number}`
     const agentId = this.resolveAgent(repo)
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
-
-    const channelMeta = await this.getChannelMeta(chatId)
     const projectRule = this.rules?.find(repo)
 
-    const incoming: IncomingMessage = {
+    this.scheduleDispatch(chatId, event.action, async (actions) => ({
       id: `pr-${repo}-${pr.number}`,
       channel: "github",
       accountId: "default",
@@ -664,17 +710,15 @@ export class GitHubAdapter implements ChannelAdapter {
         name: pr.user.login,
         username: pr.user.login,
       },
-      text: `[GitHub PR #${pr.number} ${event.action}]: ${stripAgentxMarkers(pr.title)}\nBranch: ${pr.head.ref} -> ${pr.base.ref}\n${forgeBody(pr.body, this.postsAs(pr.user.login))?.slice(0, 500) || ""}\nURL: ${pr.html_url}`,
+      text: `[GitHub PR #${pr.number} ${actions.join(", ")}]: ${stripAgentxMarkers(pr.title)}\nBranch: ${pr.head.ref} -> ${pr.base.ref}\n${forgeBody(pr.body, this.postsAs(pr.user.login))?.slice(0, 500) || ""}\nURL: ${pr.html_url}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
       preferNode: mapping?.node,
-      channelMeta,
+      channelMeta: await this.getChannelMeta(chatId),
       runbookPath: projectRule?.runbook,
       runbookFiles: projectRule?.runbookFiles,
-    }
-
-    this.handler(incoming).catch(e => this.log(`Error handling PR: ${e.message}`))
+    }))
   }
 
   private async handlePRReview(event: GitHubPRReviewEvent): Promise<void> {
@@ -752,31 +796,29 @@ export class GitHubAdapter implements ChannelAdapter {
 
     if (this.isBotUser(issue.user.login)) return
 
-    // Project-rule gate. Same shape as handlePR — rule wins, otherwise
-    // legacy hardcoded allowlist applies.
     const labels = (((issue as any).labels ?? []) as any[]).map((l: any) => l?.name ?? l).filter(Boolean)
-    const ruleDecision = this.rules?.shouldFireGithubIssue(repo, {
+    const rule = this.rules?.find(repo)?.github?.issues
+    const verdict = this.gateEvent(`Issue #${issue.number} on ${repo}`, {
       action: event.action,
-      state: issue.state,
-      labels,
-      authorUsername: issue.user.login,
+      senderLogin: event.sender?.login,
+      ruleActions: rule?.actions,
+      defaultActions: this.config.issueActions ?? GITHUB_EVENT_DEFAULTS.issueActions,
+      settingName: "issueActions",
+      decision: this.rules?.shouldFireGithubIssue(repo, {
+        action: event.action,
+        state: issue.state,
+        labels,
+        authorUsername: issue.user.login,
+      }),
     })
-    if (ruleDecision) {
-      if (!ruleDecision.allow) {
-        this.log(`Issue #${issue.number} on ${repo} dropped by rule: ${ruleDecision.reason}`)
-        return
-      }
-    } else {
-      const actionable = ["opened", "assigned", "reopened"]
-      if (!actionable.includes(event.action)) return
-    }
+    if (!verdict) return
 
     const chatId = `${repo}:issue:${issue.number}`
     const agentId = this.resolveAgent(repo)
     const mapping = agentId ? this.config.agentMappings?.find(m => m.agentId === agentId) : undefined
     const projectRule = this.rules?.find(repo)
 
-    const incoming: IncomingMessage = {
+    this.scheduleDispatch(chatId, event.action, async (actions) => ({
       id: `issue-${repo}-${issue.number}`,
       channel: "github",
       accountId: "default",
@@ -785,16 +827,79 @@ export class GitHubAdapter implements ChannelAdapter {
         name: issue.user.login,
         username: issue.user.login,
       },
-      text: `[GitHub Issue #${issue.number} ${event.action}]: ${stripAgentxMarkers(issue.title)}\n${forgeBody(issue.body, this.postsAs(issue.user.login))?.slice(0, 500) || ""}\nURL: ${issue.html_url}`,
+      text: `[GitHub Issue #${issue.number} ${actions.join(", ")}]: ${stripAgentxMarkers(issue.title)}\n${forgeBody(issue.body, this.postsAs(issue.user.login))?.slice(0, 500) || ""}\nURL: ${issue.html_url}`,
       timestamp: new Date(),
       raw: event,
       resolvedAgent: agentId,
       preferNode: mapping?.node,
       runbookPath: projectRule?.runbook,
       runbookFiles: projectRule?.runbookFiles,
-    }
+    }))
+  }
 
-    this.handler(incoming).catch(e => this.log(`Error handling issue: ${e.message}`))
+  /**
+   * The event gate for issues and pull requests (#612). In order:
+   *   1. The project rule's own filter (labels, state, author, and its
+   *      `actions` list when it has one).
+   *   2. Without a rule `actions` list, the channel's action list: so a
+   *      rule that only says `requireLabels` does not let `closed`,
+   *      `labeled` or `edited` through.
+   *   3. A change one of AgentX's own accounts made starts nothing, unless
+   *      it opened or reopened the thread.
+   * True when the event may start a run; every drop is logged with why.
+   */
+  private gateEvent(what: string, input: {
+    action: string
+    senderLogin?: string
+    ruleActions?: string[]
+    defaultActions: readonly string[]
+    settingName: "issueActions" | "pullRequestActions"
+    decision?: import("@/projects/rules").FilterDecision
+  }): boolean {
+    if (input.decision && !input.decision.allow) {
+      this.log(`${what} dropped by rule: ${input.decision.reason}`)
+      return false
+    }
+    if (!input.ruleActions?.length && !input.defaultActions.includes(input.action)) {
+      this.log(`${what} skipped: action="${input.action}" not in channels.github.${input.settingName}=${JSON.stringify(input.defaultActions)} (a project rule's actions list replaces it)`)
+      return false
+    }
+    const ignoreOwn = this.config.ignoreOwnChanges ?? GITHUB_EVENT_DEFAULTS.ignoreOwnChanges
+    const sender = input.senderLogin
+    if (ignoreOwn && sender && !ALWAYS_COUNTED_ACTIONS.has(input.action) && (this.postsAs(sender) || this.isBotUser(sender))) {
+      this.log(`${what} skipped: "${input.action}" by ${sender}, an account AgentX posts with (channels.github.ignoreOwnChanges)`)
+      return false
+    }
+    return true
+  }
+
+  /**
+   * Hold a run for the debounce window so the events one issue or PR
+   * raises in a burst (opened, then labeled, then assigned) start one run
+   * with the latest state (#612). A later event replaces the held one and
+   * restarts the window; the run names every action it collapsed. With a
+   * window of 0 the run starts now.
+   */
+  private scheduleDispatch(key: string, action: string, build: (actions: string[]) => Promise<IncomingMessage>): void {
+    const seconds = this.config.debounceSeconds ?? GITHUB_EVENT_DEFAULTS.debounceSeconds
+    if (!(seconds > 0)) {
+      this.dispatch(build([action]))
+      return
+    }
+    const held = this.pending.get(key)
+    if (held) clearTimeout(held.timer)
+    const actions = [...(held?.actions ?? []), action]
+    const timer = setTimeout(() => {
+      this.pending.delete(key)
+      this.dispatch(build(actions))
+    }, seconds * 1000)
+    timer.unref?.()
+    this.pending.set(key, { timer, actions, build })
+    this.log(`${key}: ${held ? `${actions.join(", ")} held as one run` : `"${action}" held`} for ${seconds}s (channels.github.debounceSeconds)`)
+  }
+
+  private dispatch(message: Promise<IncomingMessage>): void {
+    message.then((incoming) => this.handler?.(incoming)).catch(e => this.log(`Error handling GitHub event: ${e.message}`))
   }
 
   private async handlePush(event: GitHubPushEvent): Promise<void> {
