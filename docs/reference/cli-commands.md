@@ -3296,6 +3296,9 @@ No flags.
 | `--timeout <minutes>` | — | Upper bound on the task's run time. |
 | `--setup-workspace` | — | Write the managed workspace files first, as daemon boot does. |
 | `--json` | — | Print one JSON result object instead of the reply text. |
+| `--channel <name>` | `exec` | Channel name the task runs under, as a channel adapter would set it. Decides the session profile, see [Lean sessions](./config-agents.md#lean-sessions). |
+| `--chat-id <id>` | a fresh one | Chat id for the session, so repeated runs share a history. |
+| `--profile <full\|lean>` | — | Session profile for this run's channel, overriding `session.profileByChannel`. |
 
 ## chat (advanced)
 

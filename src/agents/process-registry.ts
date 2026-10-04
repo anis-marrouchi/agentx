@@ -90,6 +90,10 @@ export interface SpawnOptions {
   /** Pass-through to `claude --resume <id>`. Set when SessionStore has a
    *  stored claudeSessionId for this chat (e.g. across daemon restart). */
   resumeSessionId?: string
+  /** Extra `claude` flags for this chat's process, from the channel's
+   *  session profile (AgentTask.claudeArgs). The process key already
+   *  carries the channel, so one process never mixes profiles. */
+  extraArgs?: string[]
 }
 
 export interface TurnInput {

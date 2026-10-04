@@ -188,6 +188,50 @@ When a conversation's memory is rotated or treated as stale.
 | `session.maxClaudeCodeDispatchesPerHour` | number (0–10000) | unset (off) | Optional local ceiling on new `claude-code` runs across the machine in one hour. The plan's own limit is read from Claude Code and needs no setting. Warm sessions still go through. Applies on save. |
 | `session.maxClaudeCodeDispatchesPer5h` | number (0–50000) | unset (off) | The same optional ceiling over five hours. |
 | `session.continuityStateTurns` | number (0–5) | `0` | Extra earlier requests shown to the session-continuity decision. `0` keeps the default two messages. |
+| `session.profileByChannel` | object of channel → `"full"` \| `"lean"` | `{}` | How much a session is given when it starts, per channel. A channel you do not list keeps the built-in default: `github`, `a2a`, `workflow` and `cron` are `lean`, every other channel is `full`. See [Lean sessions](#lean-sessions). |
+| `session.lean.mcpServers` | list of string | `["agentx"]` | Tool servers from the workspace's `.mcp.json` that a lean session keeps, by name. `agentx` is always kept. |
+| `session.lean.settingSources` | list of `"user"` \| `"project"` \| `"local"` | `["project", "local"]` | Which Claude Code settings a lean session reads. Without `user`, the global `CLAUDE.md`, user skills, plugins and user-level tool servers stay out. `project` is the agent's workspace. |
+| `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. |
+
+### Lean sessions
+
+A session's first turn carries a lot before the agent reads the task: every tool server (MCP server) the computer's user has connected, every user-level skill and plugin, the global `CLAUDE.md`, plus what AgentX adds, such as the list of agents (the landscape), today's history of the chat and a summary of the agent's other chats. A GitHub label event or a one-line answer to another agent pays for all of it, on every new session.
+
+A **lean** session gets only what the task needs up front. The rest is one tool call away:
+
+| What a full session gets | What a lean session gets instead |
+|---|---|
+| Every connected tool server | Only the `agentx` tool server, plus the ones named in `session.lean.mcpServers`. |
+| User-level settings: global `CLAUDE.md`, user skills, plugins | Only the workspace's own settings and skills (`session.lean.settingSources`). |
+| The project `CLAUDE.md` twice: once from the workspace, once appended by AgentX | Once, from the workspace. |
+| The landscape in the prompt | The `agentx_agents` tool with `landscape: true`. |
+| Today's history of this chat in the prompt | The `agentx_recent` tool with the chat's `channel` and `chatId`. |
+| A summary of the agent's other chats today | The `agentx_recent` tool without a `chatId`. |
+| (both) Stored knowledge, as before | The `agentx_wiki_query` tool, as before. |
+
+The prompt keeps one line, `[Context on demand]`, naming these tools. Chat channels (Telegram, WhatsApp, voice, the dashboard and the phone app) are not changed: they stay full unless you list them. Only `claude-code` and `codex-cli` agents have a lean start; other engines always start full. The daemon log shows `session profile for github: lean (…)` when a lean session starts.
+
+To make one channel full again, list it:
+
+```json
+"session": {
+  "profileByChannel": { "github": "full" }
+}
+```
+
+To make a chat channel lean, or keep a second tool server in lean sessions:
+
+```json
+"session": {
+  "profileByChannel": { "telegram": "lean" },
+  "lean": { "mcpServers": ["agentx", "codegraph"] }
+}
+```
+
+To see what a session on a channel is handed, before and after:
+
+1. **Terminal:** in the AgentX source folder, run `pnpm bench:profiles --channels github`. It prints a table with one row per prompt section, full against lean, and the saving. No model is called.
+2. **Terminal:** run `pnpm bench:context --channel github --sections --config agentx.json --agent <your agent id>` to measure a real agent of yours.
 
 ## processPool
 
@@ -212,6 +256,7 @@ A warm process answers only the question it was asked. When a background task of
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
+4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
 
 ## If something is wrong
 
@@ -219,3 +264,5 @@ A warm process answers only the question it was asked. When a background task of
 - **An `sdk` agent fails with `No API key for provider`:** set `providers.<name>.apiKey`, or check that the environment variable it points to is in `.env`.
 - **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.
+- **An agent on GitHub, a schedule or a workflow says it cannot see another agent, an earlier message or a tool it had before:** its channel starts lean. Either tell the agent to use the `agentx_agents`, `agentx_recent` and `agentx_wiki_query` tools, add the tool server it misses to `session.lean.mcpServers`, or set that channel to `"full"` in `session.profileByChannel`.
+- **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.

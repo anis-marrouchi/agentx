@@ -165,6 +165,11 @@ export interface AgentTask {
    *  Seeds an empty AgentX session the same way a channel adapter's
    *  seedHistory does, so a new or rotated session starts with it. */
   seedHistory?: SeededMessage[]
+  /** Extra flags for the `claude` CLI, set by the registry from the
+   *  channel's session profile (lean: strict MCP config, setting sources;
+   *  see agents/session-profile.ts). Spawn-per-task and persistent
+   *  processes carry them alike. Ignored by other tiers. */
+  claudeArgs?: string[]
   /** Routine autonomy level (cron job / workflow agent step). `report` and
    *  `propose` are enforced for THIS task only via a per-spawn guard hook
    *  (see guard/autonomy-enforce.ts); unset or `act` = the agent's normal
@@ -805,7 +810,7 @@ export async function executeClaudeCode(
   const prompt = buildPrompt(agent, task, historyContext)
   const restricted = restrictedClaudeArgs(task)
   if ("error" in restricted) return { content: "", error: restricted.error, duration: Date.now() - start }
-  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend, restricted.args)
+  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend, [...(task.claudeArgs ?? []), ...restricted.args])
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "spawn")
 
   // If the caller already aborted before we spawned, short-circuit so we
@@ -944,7 +949,7 @@ export async function executeClaudeCodeStreaming(
   const prompt = buildPrompt(agent, task, historyContext)
   const restricted = restrictedClaudeArgs(task)
   if ("error" in restricted) return { content: "", error: restricted.error, duration: Date.now() - start }
-  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend, restricted.args)
+  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend, [...(task.claudeArgs ?? []), ...restricted.args])
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "stream")
 
   let fullText = ""
@@ -1945,6 +1950,7 @@ async function executeClaudeCodePersistent(
       billing: agent.billing,
       systemPromptAppend: task.systemPromptAppend,
       resumeSessionId,
+      extraArgs: task.claudeArgs,
     })
     wasFreshSpawn = registry.list().length > before
   } catch (e: any) {

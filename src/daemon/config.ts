@@ -1476,6 +1476,30 @@ export const daemonConfigSchema = z.object({
      *  context. The promotion gate for that wants labelled production rows,
      *  not a good afternoon on a fixture. Raise it to collect them. */
     continuityStateTurns: z.number().int().min(0).max(5).default(0),
+    /** How much a session is given when it starts, per channel (#615).
+     *  `full` is the classic start. `lean` starts Claude Code with only
+     *  the `agentx` MCP server (no user-level connectors), only the
+     *  project's settings (no global CLAUDE.md, user skills or plugins),
+     *  and asks for the landscape, chat history and cross-chat context
+     *  through MCP tools instead of pushing them into the prompt. A
+     *  channel missing here keeps the built-in default: github, a2a,
+     *  workflow and cron are lean; every other channel is full. Only
+     *  claude-code and codex-cli agents have a lean start; other tiers
+     *  are always full. See src/agents/session-profile.ts. */
+    profileByChannel: z.record(z.enum(["full", "lean"])).default({}),
+    /** What a lean start keeps. */
+    lean: z.object({
+      /** MCP servers from the workspace's .mcp.json kept in a lean
+       *  session, by name. `agentx` is always added. */
+      mcpServers: z.array(z.string().min(1)).default(["agentx"]),
+      /** Claude Code setting sources a lean session reads. Without `user`,
+       *  the global CLAUDE.md, user skills, plugins and user-level MCP
+       *  connectors are not loaded. `project` is the workspace. */
+      settingSources: z.array(z.enum(["user", "project", "local"])).default(["project", "local"]),
+      /** Replace the pushed landscape, chat history and cross-chat
+       *  context with one line naming the tools that fetch them. */
+      contextOnDemand: z.boolean().default(true),
+    }).default({}),
   }).default({}),
   /** Move B — JS/TS plugins. Each entry is an installed npm package name
    *  (e.g. `agentx-plugin-mattermost` or `@acme/plugin-mattermost`); the
