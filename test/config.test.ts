@@ -14,14 +14,14 @@ describe("daemonConfigSchema", () => {
     const node = { id: "test", name: "Test" }
     const defaults = daemonConfigSchema.parse({ node }).session
     expect(defaults.profileByChannel).toEqual({})
-    expect(defaults.lean).toEqual({ mcpServers: ["agentx"], settingSources: ["project", "local"], contextOnDemand: true })
+    expect(defaults.lean).toEqual({ mcpServers: ["agentx"], settingSources: ["project", "local"], contextOnDemand: true, tools: [], toolsByChannel: {} })
 
     const set = daemonConfigSchema.parse({ node, session: {
       profileByChannel: { github: "full", telegram: "lean" },
       lean: { mcpServers: ["agentx", "codegraph"], settingSources: ["project"], contextOnDemand: false },
     } }).session
     expect(set.profileByChannel).toEqual({ github: "full", telegram: "lean" })
-    expect(set.lean).toEqual({ mcpServers: ["agentx", "codegraph"], settingSources: ["project"], contextOnDemand: false })
+    expect(set.lean).toEqual({ mcpServers: ["agentx", "codegraph"], settingSources: ["project"], contextOnDemand: false, tools: [], toolsByChannel: {} })
 
     expect(daemonConfigSchema.safeParse({ node, session: { profileByChannel: { github: "tiny" } } }).success).toBe(false)
     expect(daemonConfigSchema.safeParse({ node, session: { lean: { settingSources: ["global"] } } }).success).toBe(false)

@@ -31,6 +31,14 @@ export interface LeanProfileConfig {
   mcpServers: string[]
   settingSources: SettingSource[]
   contextOnDemand: boolean
+  /** Built-in Claude Code tools a lean session gets (`--tools`). Empty:
+   *  every built-in tool, as today. The built-in tool schemas are about
+   *  14k tokens of the first turn, so this is the lever that gets a lean
+   *  start under 20k; an agent that lacks a tool it needs fails mid-task,
+   *  so lists stay opt-in. */
+  tools: string[]
+  /** Per-channel tool lists; a non-empty entry wins over `tools`. */
+  toolsByChannel: Record<string, string[]>
 }
 
 export interface SessionProfileConfig {
@@ -49,6 +57,19 @@ export const DEFAULT_LEAN: LeanProfileConfig = {
   mcpServers: ["agentx"],
   settingSources: ["project", "local"],
   contextOnDemand: true,
+  tools: [],
+  toolsByChannel: {},
+}
+
+/** The built-in tools a lean session on `channel` gets: the channel's own
+ *  list when one is set, else the shared `tools` list. Empty means every
+ *  built-in tool (no `--tools` flag). An all-tools-off list is never
+ *  produced: `--tools ""` is not a saving, it makes Claude Code load every
+ *  MCP tool schema instead. */
+export function leanTools(lean: LeanProfileConfig, channel?: string): string[] {
+  const own = channel ? lean.toolsByChannel?.[channel] : undefined
+  const list = own && own.length ? own : (lean.tools ?? [])
+  return Array.from(new Set(list.map((t) => t.trim()).filter(Boolean)))
 }
 
 /** The profile a channel's sessions start with. Listed channels win;
@@ -113,13 +134,19 @@ export function leanClaudeArgs(
   workspace: string,
   lean: LeanProfileConfig,
   agentx: McpServerConfig = agentxToolServer(),
+  channel?: string,
 ): string[] {
   const mcp = leanMcpServers(workspace, lean, agentx)
-  return [
+  const args = [
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers: mcp }),
     "--setting-sources", lean.settingSources.join(","),
   ]
+  // Only ever next to --strict-mcp-config above: measured on its own,
+  // `--tools` tripled the first turn by loading every MCP schema (#615).
+  const tools = leanTools(lean, channel)
+  if (tools.length) args.push("--tools", tools.join(","))
+  return args
 }
 
 /** The one line a lean prompt carries in place of the landscape, the chat
@@ -137,12 +164,14 @@ export function onDemandContextNote(channel: string, chatId: string): string {
 }
 
 /** What a lean start changes, for logs and the context benchmark. */
-export function describeProfile(profile: SessionProfileName, lean: LeanProfileConfig): string {
+export function describeProfile(profile: SessionProfileName, lean: LeanProfileConfig, channel?: string): string {
   if (profile === "full") return "full"
   const parts = [
     `mcp=${lean.mcpServers.join("+") || "agentx"}`,
     `settings=${lean.settingSources.join(",") || "none"}`,
     lean.contextOnDemand ? "context=on-demand" : "context=pushed",
   ]
+  const tools = leanTools(lean, channel)
+  if (tools.length) parts.push(`tools=${tools.join("+")}`)
   return `lean (${parts.join(" ")})`
 }

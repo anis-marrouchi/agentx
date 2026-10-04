@@ -196,6 +196,9 @@ When a conversation's memory is rotated or treated as stale.
 | `session.lean.mcpServers` | list of string | `["agentx"]` | Tool servers from the workspace's `.mcp.json` that a lean session keeps, by name. `agentx` is always kept. |
 | `session.lean.settingSources` | list of `"user"` \| `"project"` \| `"local"` | `["project", "local"]` | Which Claude Code settings a lean session reads. Without `user`, the global `CLAUDE.md`, user skills, plugins and user-level tool servers stay out. `project` is the agent's workspace. |
 | `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. |
+| `session.lean.tools` | list of string | `[]` | Built-in Claude Code tools a lean session gets, such as `Bash`, `Read`, `Edit`. Empty keeps every built-in tool. A short list is what brings a lean start under 20k tokens; an agent that lacks a tool it needs fails mid-task. The `agentx` tools are not affected. `claude-code` agents only. See [Fewer built-in tools](#fewer-built-in-tools). |
+| `session.lean.toolsByChannel` | object of channel → list of string | `{}` | The same list per channel. A channel's own list wins over `session.lean.tools`; an empty list falls back to it. |
+| `session.memoryIndexMaxChars` | number | `0` | Longest the agent-memory index may be where every session loads it: in the workspace `CLAUDE.md` and in the system prompt. `0` keeps the whole index. The cut keeps whole lines and ends with a line counting the entries left out; the full index stays in `.agentx-memory.md` in the workspace. See [A shorter memory index](#a-shorter-memory-index). |
 | `session.observationPack.enabled` | boolean | `false` | Keep large tool results out of the conversation: the agent sees the start and the end of the result and the path of a file with the exact original. See [Large tool results](#large-tool-results). Turning it on takes a daemon restart; turning it off applies on save. |
 | `session.observationPack.limitBytes` | number (1024–1048576) | `10240` | A text result larger than this many bytes is replaced by an excerpt. |
 | `session.observationPack.headBytes` | number (0–65536) | `1024` | Bytes of the start of the original the agent sees. |
@@ -242,6 +245,38 @@ To see what a session on a channel is handed, before and after:
 
 1. **Terminal:** in the AgentX source folder, run `pnpm bench:profiles --channels github`. It prints a table with one row per prompt section, full against lean, and the saving. No model is called.
 2. **Terminal:** run `pnpm bench:context --channel github --sections --config agentx.json --agent <your agent id>` to measure a real agent of yours.
+
+#### Fewer built-in tools
+
+Even a lean session carries the descriptions of every built-in Claude Code tool, about 14k tokens of a first turn. The lowest first turn with every tool, and none of your own files loaded, measured about 27k tokens. Getting under 20k means giving the session a shorter list of tools. This is off until you set it, because an agent that needs a tool it does not have fails in the middle of its task.
+
+To give lean sessions a short tool list:
+
+1. **Terminal:** look at what the agent's tasks on that channel use. Run `agentx trace show <taskId>` on a few recent runs; the `tool_use` steps name the tools.
+2. **Terminal:** open `agentx.json` and set the list, for all lean channels or for one:
+
+   ```json
+   "session": {
+     "lean": {
+       "tools": ["Bash", "Read", "Edit", "Write", "Grep", "Glob"],
+       "toolsByChannel": { "cron": ["Bash", "Read"] }
+     }
+   }
+   ```
+
+3. **Terminal:** run `agentx daemon restart --when-idle`. The daemon log line for the next lean session ends with `tools=Bash+Read+…`.
+
+The list applies to `claude-code` agents on lean channels only, and never to the `agentx` tools, which stay available. An empty list means every tool: there is no way to start a session with no tools at all, because Claude Code then loads every tool server's full description instead, which costs more, not less.
+
+#### A shorter memory index
+
+The index of what an agent remembers (`agentx memory index`) is loaded on every session, twice: merged into the agent's workspace `CLAUDE.md`, and inlined in the system prompt. An agent with many memories pays for the whole list on every task. `session.memoryIndexMaxChars` caps it:
+
+1. **Terminal:** run `agentx memory index --agent <agent id>` and look at its length.
+2. **Terminal:** open `agentx.json` and set the cap, for example `"session": { "memoryIndexMaxChars": 4000 }`.
+3. **Terminal:** run `agentx daemon restart --when-idle`. The prompt uses the cap at once; the `CLAUDE.md` block is rewritten at the restart and after every memory change.
+
+The cut keeps whole lines, in the index's own order (user, feedback, project, reference), and ends with a line such as `_(12 more memories not shown here. The full index is in .agentx-memory.md in this workspace, or run \`agentx memory index\`.)_`. The file it names always holds the whole index, so the agent can read it when a task needs more.
 
 ### Large tool results
 

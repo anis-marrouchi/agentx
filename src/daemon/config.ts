@@ -1530,7 +1530,27 @@ export const daemonConfigSchema = z.object({
       /** Replace the pushed landscape, chat history and cross-chat
        *  context with one line naming the tools that fetch them. */
       contextOnDemand: z.boolean().default(true),
+      /** Built-in Claude Code tools a lean session gets, passed as
+       *  `--tools` next to `--strict-mcp-config` (#615). Empty, the
+       *  default, keeps every built-in tool. The tool schemas are about
+       *  14k tokens of a first turn, so a short list is what brings a lean
+       *  start under 20k; an agent that lacks a tool it needs fails
+       *  mid-task, so this stays opt-in. The agentx MCP tools are not
+       *  affected. claude-code agents only. */
+      tools: z.array(z.string().min(1)).default([]),
+      /** The same per channel; a channel's non-empty list wins over
+       *  `tools`. */
+      toolsByChannel: z.record(z.array(z.string().min(1))).default({}),
     }).default({}),
+    /** Longest the agent-memory index (MEMORY.md) may be where it is
+     *  loaded on every session: merged into each workspace's CLAUDE.md
+     *  and inlined in the system prompt (#615). 0, the default, keeps the
+     *  whole index. Cut whole lines only; a closing line counts the
+     *  entries left out and points at `.agentx-memory.md`, which always
+     *  holds the full index, and at `agentx memory index`. Applies to the
+     *  prompt on save; the CLAUDE.md block follows at the next daemon
+     *  start or memory change. */
+    memoryIndexMaxChars: z.number().int().min(0).max(200_000).default(0),
     /** ObservationPack (#621). A large tool result stays in the context
      *  and is re-read on every later request. With this on, a Claude Code
      *  PostToolUse hook saves a text result over `limitBytes` to
