@@ -152,6 +152,74 @@ usage
     }
   })
 
+// agentx usage channels — cost per channel over fixed days, with a saved
+// baseline to compare against. Reads the daily usage files; no daemon needed.
+usage
+  .command("channels")
+  .description("cost per channel over a fixed range of days, next to a saved baseline")
+  .requiredOption("--from <date>", "first day, YYYY-MM-DD")
+  .requiredOption("--to <date>", "last day, YYYY-MM-DD")
+  .option("--save <file>", "write this range's figures to a JSON file")
+  .option("--baseline <file>", "a file written by --save, shown beside this range")
+  .option("--json", "raw JSON output")
+  .action(async (opts) => {
+    const { readFileSync, writeFileSync } = await import("fs")
+    const { TokenTracker } = await import("@/daemon/token-tracker")
+    const { channelCosts, costPerTask } = await import("@/daemon/usage-channels")
+
+    const isDay = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d))
+    if (!isDay(opts.from) || !isDay(opts.to) || opts.from > opts.to) {
+      console.log(chalk.red("  --from and --to must be YYYY-MM-DD, with --from not after --to"))
+      process.exitCode = 1
+      return
+    }
+
+    const report = channelCosts(new TokenTracker(), opts.from, opts.to)
+    if (opts.save) writeFileSync(opts.save, JSON.stringify(report, null, 2))
+    let baseline: typeof report | null = null
+    if (opts.baseline) {
+      try {
+        baseline = JSON.parse(readFileSync(opts.baseline, "utf-8"))
+      } catch (e: any) {
+        console.log(chalk.red(`  Cannot read baseline ${opts.baseline}: ${e.message}`))
+        process.exitCode = 1
+        return
+      }
+    }
+    if (opts.json) {
+      console.log(JSON.stringify(baseline ? { baseline, current: report } : report, null, 2))
+      return
+    }
+
+    const usd = (n: number | null) => (n === null ? "-" : `$${n.toFixed(n < 10 ? 3 : 2)}`)
+    const mtok = (n: number) => `${(n / 1_000_000).toFixed(1)}M`
+    console.log()
+    console.log(chalk.bold(`  Cost per channel, ${report.from} to ${report.to} (${report.days} day(s) with data)`))
+    if (baseline) console.log(chalk.dim(`  Baseline: ${baseline.from} to ${baseline.to} (${baseline.days} day(s) with data)`))
+    console.log()
+    const head = `  ${"channel".padEnd(14)} ${"tasks".padStart(6)} ${"cache read".padStart(11)} ${"cache write".padStart(11)} ${"output".padStart(8)} ${"cost".padStart(10)} ${"per task".padStart(9)}`
+    console.log(chalk.dim(baseline ? `${head} ${"baseline".padStart(9)} ${"change".padStart(7)}` : head))
+    const names = new Set([...Object.keys(report.channels), ...Object.keys(baseline?.channels || {})])
+    const rows: Array<[string, typeof report.total | undefined, typeof report.total | undefined]> = [...names]
+      .map((n): [string, typeof report.total | undefined, typeof report.total | undefined] => [n, report.channels[n], baseline?.channels[n]])
+      .sort((a, b) => (b[1]?.cost || 0) - (a[1]?.cost || 0))
+    rows.push(["TOTAL", report.total, baseline?.total])
+    for (const [name, now, was] of rows) {
+      const per = costPerTask(now)
+      let line = `  ${name.padEnd(14)} ${String(now?.tasks || 0).padStart(6)} ${mtok(now?.cacheRead || 0).padStart(11)} ${mtok(now?.cacheCreate || 0).padStart(11)} ${mtok(now?.output || 0).padStart(8)} ${usd(now?.cost || 0).padStart(10)} ${usd(per).padStart(9)}`
+      if (baseline) {
+        const perWas = costPerTask(was)
+        const change = per !== null && perWas ? `${(((per - perWas) / perWas) * 100).toFixed(0)}%` : "-"
+        line += ` ${usd(perWas).padStart(9)} ${change.padStart(7)}`
+      }
+      console.log(line)
+    }
+    console.log()
+    if (baseline) console.log(chalk.dim("  change = cost per task against the baseline; the two ranges do not have the same tasks."))
+    if (opts.save) console.log(chalk.dim(`  Saved ${opts.save}`))
+    console.log()
+  })
+
 // ---------------------------------------------------------------------------
 // agentx usage surfaces — which CLI commands and dashboard pages get used
 // ---------------------------------------------------------------------------
