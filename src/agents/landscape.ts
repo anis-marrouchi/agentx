@@ -220,7 +220,7 @@ export class LandscapeBuilder {
   private getPrimaryHandle(agentId: string): string | undefined {
     const def = this.config.agents[agentId]
     if (!def) return undefined
-    return def.mentions.find(m => m.startsWith("@"))
+    return def.mentions?.find(m => m.startsWith("@"))
   }
 
   /**

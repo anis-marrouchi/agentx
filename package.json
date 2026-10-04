@@ -58,6 +58,7 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "bench:context": "tsx bench/context-size.ts",
+    "bench:profiles": "tsx bench/context-profiles.ts",
     "test": "vitest run",
     "clean": "rimraf dist",
     "format:write": "prettier --write \"src/**/*.{ts,tsx,mdx}\" --cache",

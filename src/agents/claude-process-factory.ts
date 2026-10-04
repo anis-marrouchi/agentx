@@ -323,6 +323,9 @@ class ClaudeProcessHandle implements ProcessHandle {
     if (opts.systemPromptAppend && opts.systemPromptAppend.trim().length > 0) {
       args.push("--append-system-prompt", opts.systemPromptAppend)
     }
+    if (opts.extraArgs) {
+      args.push(...opts.extraArgs)
+    }
     if (this.factoryOpts.extraArgs) {
       args.push(...this.factoryOpts.extraArgs)
     }

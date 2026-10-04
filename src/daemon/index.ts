@@ -4768,6 +4768,19 @@ export class AgentXDaemon {
         return
       }
 
+      // The landscape an agent would have been given in its prompt (team,
+      // mesh peers, channels, rules). Lean sessions (#615) fetch it here,
+      // through agentx_agents, instead of carrying it on every start.
+      //   GET /agents/:id/landscape
+      // 200 → { landscape: string }   404 unknown agent
+      const landscapeMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/landscape$/)
+      if (landscapeMatch) {
+        const agentId = decodeURIComponent(landscapeMatch[1])
+        if (!this.config.agents[agentId]) { this.json(res, 404, { error: `unknown agent "${agentId}"` }); return }
+        this.json(res, 200, { landscape: this.landscape.getForAgent(agentId) ?? "" })
+        return
+      }
+
       const cronEnabledMatch = req.method === "POST" && path.match(/^\/crons\/([^/]+)\/enabled$/)
       if (cronEnabledMatch) {
         const body = await readJsonBody(req).catch(() => ({})) as { enabled?: unknown }

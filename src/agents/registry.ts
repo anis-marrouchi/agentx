@@ -50,6 +50,7 @@ import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
+import { describeProfile, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
@@ -1618,6 +1619,15 @@ export class AgentRegistry {
     const senderName = task.context?.sender || "User"
     const isCodexCli = state.def.tier === "codex-cli"
 
+    // Session profile (#615): what this channel's sessions get up front.
+    // `lean` (github, a2a, workflow, cron by default) hands the landscape,
+    // chat history and cross-chat context over on demand through the
+    // agentx MCP tools and starts Claude Code without user-level MCP
+    // servers, skills and settings. Chat channels stay `full`.
+    const sessionProfile = resolveSessionProfile(this.config.session, channel, state.def.tier)
+    const lean = leanConfig(this.config.session)
+    const leanOnDemand = sessionProfile === "lean" && lean.contextOnDemand
+
     // Improvement plan #8 — caller-driven session reset. Honour it before
     // seeding or recording the current inbound message; otherwise the fresh
     // reset can erase the very message that started the task.
@@ -1928,7 +1938,8 @@ export class AgentRegistry {
       ? buildWikiContext(agentWiki, task.agentId)
       : undefined
 
-    const sessionHistory = !resumeSessionId
+    // Lean sessions fetch earlier turns with agentx_recent instead.
+    const sessionHistory = !resumeSessionId && !leanOnDemand
       ? this.sessions.buildHistoryContext(
           task.agentId,
           channel,
@@ -2060,7 +2071,8 @@ export class AgentRegistry {
     // Gated on the current message — we only ship the hint when the user
     // actually refers to another conversation, a peer agent, or earlier
     // activity. Otherwise it's pure waste AND breaks prompt cache every turn.
-    let crossChatContext = this.sessions.getCrossSessionSummary(
+    // Lean sessions read other chats with agentx_recent (no chatId) instead.
+    let crossChatContext = leanOnDemand ? "" : this.sessions.getCrossSessionSummary(
       task.agentId, channel, chatId, task.message,
     )
 
@@ -2119,7 +2131,9 @@ export class AgentRegistry {
     let sessionHistoryOverride: string | undefined
     let planDebug: Record<string, unknown> | undefined
     let plannerSucceeded = false
-    if (strategy === "planner" && !requestGate.active && channel !== "voice" && channel !== "desktop") {
+    // A lean session has nothing for the planner to curate: history and
+    // cross-chat are fetched by the agent, not pushed.
+    if (strategy === "planner" && !requestGate.active && !leanOnDemand && channel !== "voice" && channel !== "desktop") {
       try {
         const { planContext } = await import("./context-planner")
         const plan = await step("plan-context", () => planContext({
@@ -2214,8 +2228,12 @@ export class AgentRegistry {
     // a missing/unreadable file is a no-op. Lives in the cacheable system
     // prompt prefix; project-specific patterns reach the agent before any
     // task context.
+    // A lean claude-code session whose setting sources include the project
+    // gets the workspace CLAUDE.md from Claude Code itself; appending it
+    // here as well sent it twice (#615).
+    const claudeLoadsWorkspace = state.def.tier === "claude-code" && sessionProfile === "lean" && leanLoadsWorkspace(lean)
     let projectClaudeMd = ""
-    if (state.def.workspace) {
+    if (state.def.workspace && !claudeLoadsWorkspace) {
       const claudeMdPath = resolve(state.def.workspace, "CLAUDE.md")
       if (existsSync(claudeMdPath)) {
         try {
@@ -2293,7 +2311,8 @@ export class AgentRegistry {
       // team agents) is irrelevant for focused code work on one issue/PR and
       // anchors the agent on context it shouldn't be using. Chat/orchestrator
       // agents still get the landscape — that's where peer discovery matters.
-      landscape: (isCodexCli || isCodingChannelContext(channel, state.def.tier))
+      // Lean sessions fetch it with agentx_agents (landscape=true) instead.
+      landscape: (isCodexCli || leanOnDemand || isCodingChannelContext(channel, state.def.tier))
         ? undefined
         : this.landscape?.getForAgent(task.agentId),
       channelMeta: task.context?.channelMeta,
@@ -2313,6 +2332,9 @@ export class AgentRegistry {
       memoryContext: memoryContext || undefined,
       crossChatContext: crossChatContext || undefined,
       longMemoryRecall: longMemoryRecall || undefined,
+      // The one line that stands in for the three layers above on a fresh
+      // lean session; a resumed one already saw it.
+      contextOnDemand: leanOnDemand && !resumeSessionId ? onDemandContextNote(channel, chatId) : undefined,
       wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
       rotationMemo,
@@ -2432,8 +2454,19 @@ export class AgentRegistry {
       }
     }
 
+    // Lean claude-code sessions also start the CLI with only the agentx MCP
+    // server and the project's settings (#615). The flags describe the
+    // process, so a resumed session carries them too.
+    const claudeArgs = sessionProfile === "lean" && state.def.tier === "claude-code"
+      ? leanClaudeArgs(state.def.workspace, lean)
+      : undefined
+    if (sessionProfile === "lean" && !resumeSessionId) {
+      this.log(`[${task.agentId}] session profile for ${channel}: ${describeProfile(sessionProfile, lean)}`)
+    }
+
     const taskWithSystemPrompt: AgentTask = {
       ...task, systemPromptAppend,
+      ...(claudeArgs ? { claudeArgs } : {}),
       ...(routedModel ? { model: routedModel } : {}),
     }
 
