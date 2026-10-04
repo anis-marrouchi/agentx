@@ -73,3 +73,53 @@ describe('request preprocessing', () => {
     expect(state.context.every((block: any) => block.preview.length <= 400)).toBe(true)
   })
 })
+
+// #455: the landscape is offered section by section, and its [Rules] are
+// never offered, so a seat that drops the directory keeps the group rules.
+describe('landscape sections', async () => {
+  const { LandscapeBuilder } = await import('../src/agents/landscape')
+  const { splitLandscape } = await import('../src/agents/request-planner')
+  const config: any = {
+    node: { id: 'n1', name: 'Node', bind: '127.0.0.1:19900' },
+    agents: { coder: { name: 'Coder', tier: 'claude-code', systemPrompt: 'Writes code.' }, ops: { name: 'Ops', tier: 'claude-code', systemPrompt: 'Runs servers.' } },
+    channels: { telegram: { enabled: false }, gitlab: { enabled: false }, whatsapp: { enabled: false } },
+  }
+  const builder = new LandscapeBuilder(config)
+  builder.build()
+  const landscape = builder.getForAgent('coder')!
+  const chat = { ...input, channel: 'telegram', message: 'Fix the failing test in src/cart.js', landscape }
+
+  it('splits the rendered landscape at its section headers, keeping every line', () => {
+    const sections = splitLandscape(landscape)
+    expect(sections.map(s => s.id)).toEqual(['landscape', null, 'landscape.messaging', 'landscape.recall', 'landscape.monitoring', 'landscape.teams'])
+    expect(sections[1].text.startsWith('[Rules]')).toBe(true)
+    expect(sections.map(s => s.text).join('\n')).toBe(landscape)
+  })
+
+  it('offers each section but the rules', async () => {
+    mocks.askSeat.mockResolvedValue(null)
+    await selectRequestContext(chat)
+    const state = mocks.askSeat.mock.calls[0][1]
+    expect(state.context.map((b: any) => b.id).filter((id: string) => id.startsWith('landscape'))).toEqual(['landscape', 'landscape.messaging', 'landscape.recall', 'landscape.monitoring', 'landscape.teams'])
+    expect(state.mandatory).toContain('group-chat rules')
+  })
+
+  it('drops only the sections answered irrelevant, and keeps the rules even when everything else goes', async () => {
+    mocks.askSeat.mockResolvedValue({ mode: 'active', answers: { landscape: { noul: 0.05 }, 'landscape.messaging': { noul: 0.1 }, 'landscape.recall': { noul: 0.6 }, 'landscape.monitoring': { noul: 0 }, 'landscape.teams': { noul: 0.01 } } })
+    const result = await selectRequestContext(chat)
+    expect(result.excluded).toEqual(['landscape', 'landscape.messaging', 'landscape.monitoring', 'landscape.teams'])
+    expect(result.input.landscape).toContain('[Rules]')
+    expect(result.input.landscape).toContain('[Conversation Recall')
+    expect(result.input.landscape).not.toContain('Available agents on this node')
+    expect(result.input.landscape).not.toContain('[Cross-Channel Messaging]')
+
+    mocks.askSeat.mockResolvedValue({ mode: 'active', answers: Object.fromEntries(['landscape', 'landscape.messaging', 'landscape.recall', 'landscape.monitoring', 'landscape.teams'].map(id => [id, { noul: 0 }])) })
+    const all = await selectRequestContext(chat)
+    expect(all.input.landscape?.startsWith('[Rules]')).toBe(true)
+  })
+
+  it('leaves the landscape untouched when no section is dropped', async () => {
+    mocks.askSeat.mockResolvedValue({ mode: 'active', answers: { landscape: { noul: 0.9 } } })
+    expect((await selectRequestContext(chat)).input.landscape).toBe(landscape)
+  })
+})
