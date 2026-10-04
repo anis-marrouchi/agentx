@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.110.0](https://github.com/anis-marrouchi/agentx/compare/v0.109.0...v0.110.0) (2026-10-04)
+
+
+### Features
+
+* **members:** put "Needs a person" first and notify when an agent is free ([#634](https://github.com/anis-marrouchi/agentx/issues/634)) ([3490121](https://github.com/anis-marrouchi/agentx/commit/3490121410046cff788b88bf6eba994fa9307822))
+
 ## [0.109.0](https://github.com/anis-marrouchi/agentx/compare/v0.108.0...v0.109.0) (2026-10-04)
 
 
