@@ -1,6 +1,7 @@
 import { createHash } from "crypto"
 import { isPastTtl } from "@/agents/fact-freshness"
 import type { SourceTrust } from "@/agents/memory-trust"
+import type { WikiMode } from "@/wiki/hub"
 import type { BackendHit } from "./backend"
 import type { Evidence, EvidenceResult, EvidenceScope, EvidenceSource, Requester, Standing } from "./types"
 
@@ -15,6 +16,16 @@ import type { Evidence, EvidenceResult, EvidenceScope, EvidenceSource, Requester
 /** The same source version always gets the same id, so a re-send lands on the same record. */
 export function evidenceId(source: EvidenceSource): string {
   return "e-" + createHash("sha1").update(`${source.id}\u0000${source.version}`).digest("hex").slice(0, 16)
+}
+
+/**
+ * The source id of a wiki article. An agent's articles live in one folder
+ * per wiki mode (`agents/<id>/graph/`, `agents/<id>/unified/`), and the
+ * daemon and the CLI do not read the same one, so the path alone does not
+ * name an article.
+ */
+export function wikiSourceId(agentId: string, mode: WikiMode, path: string): string {
+  return `wiki:${agentId}/${mode}/${path}`
 }
 
 const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim()
@@ -33,7 +44,7 @@ const checkedAt = (e: Evidence) => Date.parse(e.check?.at ?? "")
  */
 export function standing(e: Evidence, now = Date.now()): Standing {
   if (e.kind === "derived") return "unverified"
-  if (e.kind === "approved") return e.approval ? "approved" : "unverified"
+  if (e.kind === "article") return e.approval ? "approved" : "unverified"
   const at = checkedAt(e)
   // A check dated after now did not happen yet.
   if (!Number.isFinite(at) || at > now) return "unverified"
@@ -88,8 +99,10 @@ export function resolve(current: Evidence, incoming: Evidence, now = Date.now())
   if (incoming.kind === "derived") return { outcome: "keep", reason: "a backend's own text is not a source" }
   if (!usable(incoming)) return { outcome: "keep", reason: "the newer record is held, rejected or no longer active" }
 
-  if (current.kind === "approved") {
-    if (incoming.kind === "approved" && incoming.approval && incoming.source.id === current.source.id
+  // Only a reviewed article is protected. One nobody reviewed falls through
+  // to the ordinary rules, as a claim nobody checked.
+  if (current.kind === "article" && current.approval) {
+    if (incoming.kind === "article" && incoming.approval && incoming.source.id === current.source.id
       && incoming.source.version !== current.source.version) {
       return { outcome: "supersede", reason: "a reviewed new version of the same article" }
     }

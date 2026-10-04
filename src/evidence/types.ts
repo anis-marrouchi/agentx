@@ -21,19 +21,24 @@ import type { WikiAccess } from "@/wiki/types"
 
 /**
  * What a record is, which decides what can replace it.
- *   approved     a curated wiki article: written by promotion review or an operator.
+ *   article      a wiki article. It counts as approved only when `approval` is set.
+ *                One the absorb job wrote has none, and is an unchecked claim like any other.
  *   fact         a fact-ledger entry: subject, attribute, value and a check.
  *   observation  recent evidence nobody curated: a raw entry, a memory fact, a task result.
  *   derived      text a backend wrote from other records. Never an authority.
  */
-export type EvidenceKind = "approved" | "fact" | "observation" | "derived"
+export type EvidenceKind = "article" | "fact" | "observation" | "derived"
 
 /** Records are never dropped silently: an old one keeps its id and says why it is no longer current. */
 export type EvidenceState = "active" | "superseded" | "revoked" | "deleted"
 
 /** The thing a record was made from, and which version of it. */
 export interface EvidenceSource {
-  /** Stable across edits: "wiki:<article path>", "fact:<fact id>", "entry:<entry id>", "memory:<agent>/<fact id>", "task:<task id>". */
+  /**
+   * Stable across edits: "wiki:<agent>/<folder>/<article path>" (`wikiSourceId`),
+   * "fact:<fact id>", "proposal:<fact proposal id>", "entry:<entry id>",
+   * "memory:<agent>/<fact id>", "task:<task id>".
+   */
   id: string
   /** Changes on every edit: a content hash for articles, `updatedAt` for facts, "1" for things that never change. */
   version: string
@@ -57,7 +62,10 @@ export interface EvidenceScope {
   owner: string
   access: WikiAccess
   sharedWith?: string[]
-  /** When set, only a requester working on this project may read it. */
+  /**
+   * When set, only a requester working on this project may read it.
+   * Reserved: no task carries a project today, so nothing may set it yet.
+   */
   project?: string
 }
 
@@ -80,9 +88,13 @@ export interface Evidence {
   ttlDays?: number
   scope: EvidenceScope
   trust: SourceTrust
-  /** External-source records are held until a person approves them (#97). */
+  /** External-source records, and fact proposals nobody decided (#273), are held until a person approves them (#97). */
   review?: FactReview
-  /** Who approved an `approved` record and when (#95). Says the text was reviewed. It is not permission to act. */
+  /**
+   * Who reviewed this version of an article and when: the decision on its
+   * promotion proposal (#95). Says the text was reviewed. It is not
+   * permission to act.
+   */
   approval?: { by: string; at: string }
   state: EvidenceState
   /** The record that replaced this one. */

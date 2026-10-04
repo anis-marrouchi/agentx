@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { canRead, evidenceId, gate, markConflicts, partitionsFor, partitionsOf, resolve, standing, usable, type Outcome } from "../src/evidence/authority"
+import { canRead, evidenceId, gate, markConflicts, partitionsFor, partitionsOf, resolve, standing, usable, wikiSourceId, type Outcome } from "../src/evidence/authority"
 import { toBackendRecord, type BackendHit } from "../src/evidence/backend"
 import type { Evidence, Requester, Standing } from "../src/evidence/types"
 
@@ -33,8 +33,11 @@ const paid = (over: Partial<Evidence> = {}) => ev({
   ...over,
 })
 
+const ADA = wikiSourceId("coder", "graph", "people/ada.md")
+const DEPLOY_WINDOW = wikiSourceId("devops", "graph", "decisions/deploy-window.md")
+
 const article = (over: Partial<Evidence> = {}) => ev({
-  kind: "approved", source: { id: "wiki:decisions/deploy-window.md", version: "a1" },
+  kind: "article", source: { id: DEPLOY_WINDOW, version: "a1" },
   claim: { subject: "production deploy", attribute: "window", value: "Tuesday morning" },
   content: "Production deploys happen on Tuesday morning.", volatility: "stable",
   check: undefined, approval: { by: "owner", at: day(60) },
@@ -82,11 +85,18 @@ describe("resolve: which record is current", () => {
     ["a person's word in chat against an approved decision", article(),
       paid({ claim: { subject: "production deploy", attribute: "window", value: "any day" }, check: { at: day(0), by: "owner", method: "owner said", confirmedBy: "owner" } }), "conflict"],
     ["a reviewed new version of the same article", article(),
-      article({ source: { id: "wiki:decisions/deploy-window.md", version: "b2" }, claim: { subject: "production deploy", attribute: "window", value: "any day" }, approval: { by: "owner", at: day(0) } }), "supersede"],
+      article({ source: { id: DEPLOY_WINDOW, version: "b2" }, claim: { subject: "production deploy", attribute: "window", value: "any day" }, approval: { by: "owner", at: day(0) } }), "supersede"],
     ["a new version of the article nobody approved", article(),
-      article({ source: { id: "wiki:decisions/deploy-window.md", version: "b2" }, claim: { subject: "production deploy", attribute: "window", value: "any day" }, approval: undefined }), "conflict"],
+      article({ source: { id: DEPLOY_WINDOW, version: "b2" }, claim: { subject: "production deploy", attribute: "window", value: "any day" }, approval: undefined }), "conflict"],
     ["a different approved article saying otherwise", article(),
-      article({ source: { id: "wiki:decisions/other.md", version: "c3" }, claim: { subject: "production deploy", attribute: "window", value: "any day" } }), "conflict"],
+      article({ source: { id: wikiSourceId("devops", "graph", "decisions/other.md"), version: "c3" }, claim: { subject: "production deploy", attribute: "window", value: "any day" } }), "conflict"],
+    ["a newer verified result against an article nobody reviewed", article({ approval: undefined }),
+      paid({ claim: { subject: "production deploy", attribute: "window", value: "any day" } }), "supersede"],
+    ["a newer unchecked claim against an article nobody reviewed", article({ approval: undefined }),
+      paid({ claim: { subject: "production deploy", attribute: "window", value: "any day" }, check: undefined }), "conflict"],
+    ["a reviewed version of an article nobody reviewed", article({ approval: undefined }),
+      article({ source: { id: DEPLOY_WINDOW, version: "b2" }, claim: { subject: "production deploy", attribute: "window", value: "any day" } }), "supersede"],
+    ["a fact proposal nobody decided", ev(), paid({ source: { id: "proposal:fp-1", version: "1" }, review: "held" }), "keep"],
   ]
   it.each(cases)("%s", (_name, current, incoming, want) => {
     expect(resolve(current, incoming, NOW).outcome).toBe(want)
@@ -126,7 +136,7 @@ describe("gate: what a backend's answer is worth", () => {
   const who: Requester = { agentId: "coder" }
   const fresh = ev({ check: { at: day(0), by: "a", method: "portal" } })
   const secret = ev({ source: { id: "memory:accountant/m-1", version: "1" }, scope: { owner: "accountant", access: "private" } })
-  const old = ev({ source: { id: "wiki:people/ada.md", version: "v1" }, state: "superseded" })
+  const old = ev({ source: { id: ADA, version: "v1" }, state: "superseded" })
   const gone = ev({ source: { id: "entry:e-77", version: "1" }, state: "deleted", content: "" })
   const revoked = ev({ source: { id: "entry:e-78", version: "1" }, state: "revoked" })
   const held = ev({ source: { id: "entry:e-79", version: "1" }, trust: "external", review: "held" })
@@ -187,9 +197,17 @@ describe("gate: what a backend's answer is worth", () => {
 
 describe("ids and what a backend is given", () => {
   it("gives the same source version the same id, and an edit a new one", () => {
-    const a = evidenceId({ id: "wiki:people/ada.md", version: "v1" })
-    expect(evidenceId({ id: "wiki:people/ada.md", version: "v1" })).toBe(a)
-    expect(evidenceId({ id: "wiki:people/ada.md", version: "v2" })).not.toBe(a)
+    const a = evidenceId({ id: ADA, version: "v1" })
+    expect(evidenceId({ id: ADA, version: "v1" })).toBe(a)
+    expect(evidenceId({ id: ADA, version: "v2" })).not.toBe(a)
+  })
+
+  it("tells one agent's article in one folder from the same path anywhere else", () => {
+    const ids = [
+      wikiSourceId("coder", "graph", "people/ada.md"), wikiSourceId("coder", "unified", "people/ada.md"),
+      wikiSourceId("sales", "graph", "people/ada.md"),
+    ].map((id) => evidenceId({ id, version: "v1" }))
+    expect(new Set(ids).size).toBe(3)
   })
 
   it("hands a backend the id, source and text, and no check, trust or approval", () => {
@@ -205,5 +223,6 @@ describe("ids and what a backend is given", () => {
     expect(usable(ev({ state: "superseded" }))).toBe(false)
     expect(usable(ev({ review: "rejected" }))).toBe(false)
     expect(usable(ev({ trust: "external" }))).toBe(false)
+    expect(usable(ev({ source: { id: "proposal:fp-1", version: "1" }, kind: "observation", review: "held" }))).toBe(false)
   })
 })

@@ -11,6 +11,8 @@ Agents draw on two kinds of knowledge:
 - **Approved knowledge**: wiki articles that a person reviewed, and facts in the fact ledger (the wiki's list of checked facts).
 - **Recent observations**: raw entries, agent memory and task results that nobody has curated yet.
 
+Most wiki articles are in neither group. The audit in [#603](https://github.com/anis-marrouchi/agentx/issues/603) found that articles are written by the absorb job (an agent that turns raw entries into articles), with no person's review, and that the job has been off since 2026-09-18. This contract treats such an article as a claim nobody checked.
+
 A backend that indexes both can return a three-week-old wiki line next to yesterday's task result, or a summary it wrote itself. Without a shared rule, the agent cannot tell which one to trust.
 
 ## The decision
@@ -25,20 +27,36 @@ A backend that indexes both can return a three-week-old wiki line next to yester
 | Field | Meaning | Reused from |
 |---|---|---|
 | ID | The same source version always gets the same ID. An edit gets a new one. | new |
-| Kind | `approved` (reviewed wiki article), `fact` (ledger fact), `observation` (uncurated), `derived` (written by a backend) | new |
-| Source and version | What it was made from, such as a wiki article path or a task, and which version | wiki versions (#94) |
+| Kind | `article` (wiki article, reviewed or not), `fact` (ledger fact), `observation` (uncurated), `derived` (written by a backend) | new |
+| Source and version | What it was made from, such as a wiki article or a task, and which version | wiki versions (#94) |
 | Event time | When it happened or was observed | new |
 | Ingestion time | When AgentX stored it. **Never used to judge freshness** | new |
 | Check | When it was checked, by whom, how, and whether a person confirmed it | fact ledger (#273) |
 | Volatility and expiry | How fast this kind of fact goes out of date (billing: 2 days; a name: never) | fact ledger (#273) |
 | Scope | Owner agent, access (`private`, `shared`, `public`), shared-with list, optional project | wiki access rules |
 | Trust | `operator`, `internal` or `external`, from the channel it arrived on | capture trust (#97) |
-| Review | External records are held until a person approves them | capture trust (#97) |
-| Approval | Who reviewed an approved article, and when | promotion review (#95) |
+| Review | External records, and fact proposals nobody decided, are held until a person approves them | capture trust (#97), fact checks (#273) |
+| Approval | Who reviewed this version of an article, and when. Only an approved promotion proposal sets it | promotion review (#95) |
 | State | `active`, `superseded`, `revoked` or `deleted` | new |
 | Derived from | For backend-written text: the records it was written from | new |
 
 Code: `src/evidence/types.ts`.
+
+### Which article a record means
+
+An agent's articles live in one folder per wiki mode: `agents/<id>/graph/` and `agents/<id>/unified/`. The audit found the daemon reading one and the command line reading the other. So an article's source names the agent, the folder and the path, as `wiki:<agent>/<folder>/<path>`. The same path in two folders, or under two agents, gives two records. Which folder is the real one is a separate fix; this contract only makes sure the two are never mixed up.
+
+### Fact proposals
+
+A fact proposal is a claim from a session summary that waits for a person (`agentx wiki facts proposals`). The audit found 102 waiting and none decided.
+
+| Proposal | Record |
+|---|---|
+| Waiting | An `observation` that is **held**: it is not shown, and it replaces nothing |
+| Rejected | Not shown |
+| Approved | No record of its own. The fact it becomes in the ledger is the record, confirmed by the person who approved it |
+
+This keeps the rule from #273: a summary's claim is not stated as a fact until a person approves it.
 
 ## How far a record can be relied on
 
@@ -46,10 +64,10 @@ Every record is returned with one of four labels. The label is never left out.
 
 | Label | When |
 |---|---|
-| **approved** | A reviewed wiki article |
+| **approved** | A wiki article with a recorded review of this version |
 | **verified** | Checked, and the check is still within its expiry time |
 | **stale** | Checked once, but the check has expired. Re-check before stating it |
-| **unverified** | Nobody checked it, the check date cannot be read, or a backend wrote it |
+| **unverified** | Nobody checked it, the check date cannot be read, a backend wrote it, or it is an article nobody reviewed |
 
 Expiry is counted from the check, not from when the record was stored. Storing an old claim today does not make it fresh.
 
@@ -66,8 +84,9 @@ When a new record disagrees with the current one about the same thing:
 | Any fact | Confirmed by a person | The new one **replaces** it |
 | Any | Written by a backend | **Ignored** as evidence. Nobody is asked |
 | Any | From an external source, not yet approved | **Ignored** until a person approves it |
-| An approved article | Any observation or fact, even one a person confirmed in a chat | **Conflict**. Approved text changes only through its review |
-| An approved article | A reviewed new version of the same article | The new version **replaces** it |
+| A reviewed article | Any observation or fact, even one a person confirmed in a chat | **Conflict**. Reviewed text changes only through its review |
+| A reviewed article | A reviewed new version of the same article | The new version **replaces** it |
+| An article nobody reviewed | Anything | The fact rules above apply, with the article as a fact nobody checked. A newer checked result **replaces** it; an unchecked claim is a **conflict** |
 
 A conflict uses the wiki's existing question queue (`agentx wiki questions`). Until a person answers, a search returns both records, each with its source and label, and marks them as disagreeing.
 
@@ -80,7 +99,7 @@ These are the fact ledger's existing rules, applied to every kind of record. Cod
 - Access is checked **twice**: AgentX tells the backend which partitions to search, then checks every returned record again against its own copy before anything is summarised or shown. The second check is the one that counts.
 - A backend-written summary is shown only if the reader may read every record behind it.
 
-A record with a project set is readable only by an agent working on that project. Which project boundaries AgentX can actually enforce today is a question for the audit in [#603](https://github.com/anis-marrouchi/agentx/issues/603); until it answers, treat the project field as reserved.
+A record with a project set is readable only by an agent working on that project. **The project field is reserved: nothing may set it yet.** A task does not carry a project today, so AgentX has nothing trusted to compare it with. The audit did not measure project boundaries. It did see the absorb job work on another project's wiki in 86 of its 184 runs, so an agent's working folder is not a boundary. If a record does carry a project, a reader with no project is refused.
 
 ## What makes a backend's answer invalid
 
@@ -118,9 +137,11 @@ Because AgentX holds the original records, exporting them or moving to another b
 ## Open points for review
 
 1. Where the records are stored (a file per agent, or the existing database). This belongs to the capture work in [#606](https://github.com/anis-marrouchi/agentx/issues/606).
-2. Whether project scope can be enforced today (see above; waits for #603).
-3. Whether a conflict with an approved article should open a wiki question, a promotion proposal, or both.
-4. The audit in #603 may show capture gaps that need a field this record does not have. The record is not final until that audit is read against it.
+2. How a task gets a project that AgentX can trust. Until that exists the project field stays reserved (see above).
+3. Whether a conflict with a reviewed article should open a wiki question, a promotion proposal, or both.
+4. Whether the articles the absorb job already wrote should be counted as reviewed. This contract says no: each one is unverified until a person reviews it. Counting them as reviewed in one step would be the owner's decision.
+
+The audit in #603 has been read against this record. It needed no new field. The capture gaps it found (11 of 1,723 tasks with no entry, and no logged reason) are a logging fix, not a change to the record.
 
 ## Check it worked
 
