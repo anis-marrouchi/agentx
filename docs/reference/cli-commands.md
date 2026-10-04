@@ -3307,7 +3307,7 @@ No flags.
 | `-m, --model <model>` | — | Override the agent's model for this task. |
 | `--timeout <minutes>` | — | Upper bound on the task's run time. |
 | `--setup-workspace` | — | Write the managed workspace files first, as daemon boot does. |
-| `--json` | — | Print one JSON result object instead of the reply text. |
+| `--json` | — | Print one JSON result object instead of the reply text: the reply, any error, the token counts, the number of turns, the cost the Claude Code CLI reported for the run (`costUsd`, when the engine reports one), the billed model and the duration. |
 | `--channel <name>` | `exec` | Channel name the task runs under, as a channel adapter would set it. Decides the session profile, see [Lean sessions](./config-agents.md#lean-sessions). |
 | `--chat-id <id>` | a fresh one | Chat id for the session, so repeated runs share a history. |
 | `--profile <full\|lean>` | — | Session profile for this run's channel, overriding `session.profileByChannel`. |

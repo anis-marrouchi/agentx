@@ -20,7 +20,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 // directory, so run it from a state directory, not the agent's workspace.
 //
 // With --json, stdout is exactly one JSON object:
-//   { content, error?, errorKind?, usage?, numTurns?, billedModel?, durationMs }
+//   { content, error?, errorKind?, usage?, numTurns?, costUsd?, billedModel?, durationMs }
 // usage is cumulative across the whole agentic loop, cache split out:
 //   { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens }
 // Exit code is 1 when the agent returned an error.
@@ -81,6 +81,9 @@ export const exec = new Command()
         errorKind: response.errorKind,
         usage: response.usage,
         numTurns: response.numTurns,
+        // What the Claude Code CLI itself said the run cost (list price),
+        // when the tier reports it; absent otherwise.
+        costUsd: response.costUsd,
         billedModel: response.billedModel,
         durationMs: Date.now() - started,
       }) + "\n")
