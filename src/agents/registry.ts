@@ -1,6 +1,8 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine } from "./routing"
-import { askSeat } from "@/decisions/seat"
+import { askSeat, getSeatMode } from "@/decisions/seat"
+import { CONTEXT_PRUNE_SEAT } from "@/decisions/seats/context-prune"
+import { pruneHistory, resolveContextPruneSettings } from "./context-prune"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
   SESSION_CONTINUITY_SEAT,
@@ -12,7 +14,7 @@ import {
 } from "@/decisions/seats/session-continuity"
 import { executeTask, warmProcessChat, withCallerEnv, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
-import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests } from "./sessions"
+import { SessionStore, renderHistoryContext, detectLongMemoryHint, priorUserMessage, priorUserRequests } from "./sessions"
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
 import { WikiHub } from "@/wiki"
 import { RateLimiter } from "@/daemon/rate-limit"
@@ -1144,6 +1146,32 @@ export class AgentRegistry {
     return response
   }
 
+  /** Today's history block for a fresh session, pruned by the
+   *  `context-prune` seat when it is on (#636). Seat off: exactly
+   *  buildHistoryContext, with no extra call. */
+  private async buildPrunedHistory(
+    agentId: string,
+    channel: string,
+    chatId: string,
+    cap?: { maxMessages?: number; maxChars?: number },
+  ): Promise<string> {
+    if (getSeatMode(CONTEXT_PRUNE_SEAT) === "off") {
+      return this.sessions.buildHistoryContext(agentId, channel, chatId, cap)
+    }
+    const { day, messages } = this.sessions.selectHistoryWindow(agentId, channel, chatId, cap)
+    const settings = resolveContextPruneSettings(this.config.contextPruning)
+    const outcome = await pruneHistory(messages, settings, { agentId, channel })
+    if (outcome.mode === "shadow" || outcome.mode === "active" || outcome.mode === "failed") {
+      const chars = (ms: typeof messages) => ms.reduce((n, m) => n + m.content.length, 0)
+      this.log(
+        `[${agentId}] context-prune ${outcome.mode}: ${outcome.candidates} scored, ` +
+          `${outcome.scores.filter((s) => s.dropped).length} below ${settings.threshold}, ` +
+          `${outcome.dropped} dropped, ${chars(messages)}→${chars(outcome.messages)} chars, ${outcome.latencyMs}ms`,
+      )
+    }
+    return renderHistoryContext(day, outcome.messages, { omitted: outcome.dropped })
+  }
+
   /**
    * Internal dispatcher — the real body. See `execute` for the public
    * wrapper that adds intent-ledger resolution recording.
@@ -2000,12 +2028,7 @@ export class AgentRegistry {
 
     // Lean sessions fetch earlier turns with agentx_recent instead.
     const sessionHistory = !resumeSessionId && !leanOnDemand
-      ? this.sessions.buildHistoryContext(
-          task.agentId,
-          channel,
-          chatId,
-          historyCap,
-        )
+      ? await this.buildPrunedHistory(task.agentId, channel, chatId, historyCap)
       : undefined
 
     // Continuity memo from the previous (rotated) session — deterministic

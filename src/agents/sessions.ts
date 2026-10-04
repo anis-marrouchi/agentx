@@ -229,6 +229,65 @@ function bucketLabel(iso: string): string {
   return `${hh}:${qtr.toString().padStart(2, "0")}`
 }
 
+/** Newest-last window of at most maxMessages, stopping once maxChars is
+ *  reached (the message that crosses it is included). */
+function selectWindow(
+  all: SessionMessage[],
+  opts: { maxMessages?: number; maxChars?: number },
+): SessionMessage[] {
+  const maxMessages = Math.max(1, opts.maxMessages ?? MAX_MESSAGES)
+  const maxChars = Math.max(200, opts.maxChars ?? MAX_HISTORY_CHARS)
+  const messages: SessionMessage[] = []
+  let chars = 0
+  for (let i = all.length - 1; i >= 0 && messages.length < maxMessages; i--) {
+    const msg = all[i]
+    chars += msg.content.length
+    messages.push(msg)
+    if (chars >= maxChars) break
+  }
+  return messages.reverse()
+}
+
+/** Render a history window. `omitted` > 0 adds a line telling the agent
+ *  that earlier messages were left out and how to fetch them, so a pruned
+ *  turn never reads as a complete record (#636). */
+export function renderHistoryContext(
+  day: string,
+  messages: SessionMessage[],
+  opts: { omitted?: number } = {},
+): string {
+  if (messages.length === 0) return ""
+  const lines: string[] = [
+    `[Conversation history for today (${day})]`,
+  ]
+  if (opts.omitted && opts.omitted > 0) {
+    lines.push(
+      `[${opts.omitted} earlier message(s) from today were left out as unrelated to the latest message. ` +
+        `If you need them, fetch them with agentx_recent or /recall.]`,
+    )
+  }
+
+  // Bucket messages into 15-min windows. Stamping every line with its own
+  // HH:MM broke the server-side prompt cache every turn (each new message
+  // adds a never-seen timestamp near the tail). A bucket header changes
+  // only every 15 min, so most turns within the window preserve cache.
+  let currentBucket = ""
+  for (const msg of messages) {
+    const bucket = bucketLabel(msg.timestamp)
+    if (bucket !== currentBucket) {
+      lines.push(`— ${bucket} —`)
+      currentBucket = bucket
+    }
+    const name = msg.name || (msg.role === "user" ? "User" : "Agent")
+    lines.push(`${name}: ${msg.content}`)
+  }
+
+  lines.push("[End of history — respond to the latest message above]")
+  lines.push("")
+
+  return lines.join("\n")
+}
+
 export class SessionStore {
   private sessionsDir: string
   private cache: Map<string, Session> = new Map()
@@ -551,43 +610,20 @@ export class SessionStore {
     chatId: string,
     opts: { maxMessages?: number; maxChars?: number } = {},
   ): string {
+    const { day, messages } = this.selectHistoryWindow(agentId, channel, chatId, opts)
+    return renderHistoryContext(day, messages)
+  }
+
+  /** The messages buildHistoryContext would render, newest last. Split out
+   *  so context pruning (#636) can filter the window before it is rendered. */
+  selectHistoryWindow(
+    agentId: string,
+    channel: string,
+    chatId: string,
+    opts: { maxMessages?: number; maxChars?: number } = {},
+  ): { day: string; messages: SessionMessage[] } {
     const session = this.getSession(agentId, channel, chatId)
-    if (session.messages.length === 0) return ""
-    const maxMessages = Math.max(1, opts.maxMessages ?? MAX_MESSAGES)
-    const maxChars = Math.max(200, opts.maxChars ?? MAX_HISTORY_CHARS)
-    const messages: SessionMessage[] = []
-    let chars = 0
-    for (let i = session.messages.length - 1; i >= 0 && messages.length < maxMessages; i--) {
-      const msg = session.messages[i]
-      chars += msg.content.length
-      messages.push(msg)
-      if (chars >= maxChars) break
-    }
-    messages.reverse()
-
-    const lines: string[] = [
-      `[Conversation history for today (${session.day})]`,
-    ]
-
-    // Bucket messages into 15-min windows. Stamping every line with its own
-    // HH:MM broke the server-side prompt cache every turn (each new message
-    // adds a never-seen timestamp near the tail). A bucket header changes
-    // only every 15 min, so most turns within the window preserve cache.
-    let currentBucket = ""
-    for (const msg of messages) {
-      const bucket = bucketLabel(msg.timestamp)
-      if (bucket !== currentBucket) {
-        lines.push(`— ${bucket} —`)
-        currentBucket = bucket
-      }
-      const name = msg.name || (msg.role === "user" ? "User" : "Agent")
-      lines.push(`${name}: ${msg.content}`)
-    }
-
-    lines.push("[End of history — respond to the latest message above]")
-    lines.push("")
-
-    return lines.join("\n")
+    return { day: session.day, messages: selectWindow(session.messages, opts) }
   }
 
   /**

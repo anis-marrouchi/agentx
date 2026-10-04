@@ -1424,6 +1424,27 @@ export const daemonConfigSchema = z.object({
       minScore: z.number().min(0).max(1).default(0.5),
     }).default({}),
   }).default({}),
+  /** Context pruning (#636): drop earlier messages of today's history that
+   *  the `context-prune` seat scores as not needed for the current message.
+   *  Switched by the seat's mode (decisions.seats["context-prune"].mode or
+   *  AGENTX_DECISION_SEAT_CONTEXT_PRUNE), off by default; these keys only
+   *  tune it. Applies to the history block of fresh sessions — a resumed
+   *  session replays its transcript and never receives that block. */
+  contextPruning: z.object({
+    /** Drop a message when the seat's P(needed) is at or below this. */
+    threshold: z.number().min(0).max(1).default(0.2),
+    /** Latest user turns always kept, with every message after them. */
+    keepLastTurns: z.number().int().min(0).max(30).default(2),
+    /** Case-insensitive regexes. A matching message is always kept.
+     *  Unset keeps approvals, instructions and pinned facts. */
+    keepPatterns: z.array(z.string()).optional(),
+    /** Skip the call when fewer messages than this are left to score. */
+    minCandidates: z.number().int().min(1).default(3),
+    /** Backend for the seat. Unset: the seat's backend, then
+     *  decisions.defaultBackend. */
+    backend: z.string().optional(),
+    timeoutMs: z.number().int().min(500).max(30000).default(4000),
+  }).default({}),
   /** Registered inbound webhooks — an inventory the dashboard manages. Each
    *  entry binds an (agent, source) pair to an optional signing secret. The
    *  actual inbound URL is always POST /webhook/<agentId>/<source>. */

@@ -331,6 +331,54 @@ Each entry in `decisions.seats.<seat>`:
 }
 ```
 
+## contextPruning
+
+Context pruning makes the start of a conversation smaller. When an agent starts a fresh session, AgentX adds today's earlier messages from the same chat (at most 30 messages or 12,000 characters). With pruning on, the `context-prune` seat (see [decisions](#decisions)) first checks each earlier message: does the new message need it? Messages it is confident are not needed are left out. A line in the history tells the agent how many were left out and that it can fetch them with `agentx_recent`.
+
+Resumed sessions are not changed. A resumed session already has its own transcript and gets no history block.
+
+Some messages are never checked and never left out:
+
+- the new message, and the last `keepLastTurns` messages from the person with every message after them,
+- any message that matches one of `keepPatterns` (approvals, instructions and pinned facts by default),
+- the system prompt, memory and continuity memo, which are not part of the history.
+
+Pruning is off by default. The seat's mode switches it:
+
+| Mode | What happens |
+|---|---|
+| `off` | No check, no extra call. The history is exactly as before. |
+| `shadow` | Each message is checked and the result goes to the daemon log and the decision store. Nothing is left out. |
+| `active` | Messages at or below `threshold` are left out. |
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `contextPruning.threshold` | number (0–1) | `0.2` | A message is left out when the seat's chance that it is needed is at or below this. Lower keeps more. |
+| `contextPruning.keepLastTurns` | number (0–30) | `2` | How many of the latest messages from the person are always kept, with everything after them. |
+| `contextPruning.keepPatterns` | list of strings | approvals, instructions, pinned facts | Regular expressions, ignoring case. A matching message is always kept. Setting this replaces the defaults. |
+| `contextPruning.minCandidates` | number | `3` | No check when fewer messages than this are left to check. |
+| `contextPruning.backend` | string | the seat's backend | Decision backend for the check, for example `typesafe` or `jev`. |
+| `contextPruning.timeoutMs` | number (500–30000) | `4000` | Time limit for the check. On a timeout or any error nothing is left out. |
+
+```json
+"decisions": {
+  "enabled": true,
+  "seats": { "context-prune": { "mode": "shadow", "backend": "typesafe" } }
+},
+"contextPruning": { "threshold": 0.2, "keepLastTurns": 2 }
+```
+
+Environment variables override the file for one daemon, without editing `agentx.json`:
+
+| Variable | Overrides |
+|---|---|
+| `AGENTX_DECISION_SEAT_CONTEXT_PRUNE` | the seat mode (`off`, `shadow`, `active`) |
+| `AGENTX_CONTEXT_PRUNE_THRESHOLD` | `contextPruning.threshold` |
+| `AGENTX_CONTEXT_PRUNE_KEEP_TURNS` | `contextPruning.keepLastTurns` |
+| `AGENTX_CONTEXT_PRUNE_BACKEND` | `contextPruning.backend` |
+
+To measure it on your own conversations before you switch it on, run `pnpm exec tsx scripts/bench-context-prune.ts --root <daemon folder> --days 7`. It replays recorded fresh sessions through the seat and writes a report and a list of the messages it would leave out.
+
 ## demo
 
 How long `agentx demo` waits while it starts. The demo reads this from the `agentx.json` in the folder you run it from. It needs no config file, so this is only for machines where it starts slowly.
@@ -347,6 +395,7 @@ How long `agentx demo` waits while it starts. The demo reads this from the `agen
 
 ## If something is wrong
 
+- **Context pruning does nothing:** the daemon log shows a `context-prune` line only for fresh sessions with more than a few earlier messages. Check that the seat mode is `shadow` or `active` and that the backend has a key.
 - **`config check` names a field:** fix the value to match the type in the tables above. Ids for boards and columns must be lowercase.
 - **Dashboard changes don't show:** the dashboard is its own process. Restart it after changing `dashboard` settings.
 - **A mesh peer shows as down:** check its `url` and `token`, then raise `mesh.healthCheck.timeout` if the link is slow.
