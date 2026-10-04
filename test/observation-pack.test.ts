@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, utimesSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { resolve } from "path"
 import {
+  agentObservationDir,
   answerPackHook,
   buildExcerpt,
   packToolOutput,
@@ -86,6 +87,22 @@ describe("ObservationPack", () => {
     expect(packToolOutput({ tool_name: "Bash", tool_response: { stdout: big, isImage: true } }, config(), dir)).toBeNull()
   })
 
+  it("leaves base64 sound and resource bodies alone, and packs a resource's text", () => {
+    const base64 = "A".repeat(20_000)
+    const audio = { type: "audio", data: base64, mimeType: "audio/wav" }
+    const blob = { type: "resource", resource: { uri: "file:///a.bin", mimeType: "application/octet-stream", blob: base64 } }
+    expect(packToolOutput({ tool_name: "mcp__x__y", tool_response: [audio, blob] }, config(), dir)).toBeNull()
+    expect(existsSync(dir)).toBe(false)
+
+    const text = { type: "resource", resource: { uri: "file:///a.log", mimeType: "text/plain", text: big } }
+    const result = packToolOutput({ tool_name: "mcp__x__y", tool_response: [audio, blob, text] }, config(), dir)!
+    const [keptAudio, keptBlob, packed] = result.updated as [typeof audio, typeof blob, typeof text]
+    expect(keptAudio).toEqual(audio)
+    expect(keptBlob).toEqual(blob)
+    expect(packed.resource.text).toContain("ObservationPack")
+    expect(result.packs).toHaveLength(1)
+  })
+
   it("leaves a result Claude Code already saved to a file", () => {
     const persisted = { stdout: big, stderr: "", persistedOutputPath: "/x/tool-results/abc.txt", persistedOutputSize: 52_889 }
     expect(packToolOutput({ tool_name: "Bash", tool_response: persisted }, config(), dir)).toBeNull()
@@ -102,6 +119,29 @@ describe("ObservationPack", () => {
     })
     expect(packToolOutput(read(packs[0].path), cfg, dir)).toBeNull()
     expect(packToolOutput(read("/somewhere/else.log"), cfg, dir)).not.toBeNull()
+
+    // The same file reached through a symlink is still the original.
+    const link = resolve(dir, "../link")
+    symlinkSync(dir, link)
+    expect(packToolOutput(read(packs[0].path.replace(dir, link)), cfg, dir)).toBeNull()
+  })
+
+  it("points at byte ranges, not lines, when the original is a few very long lines", () => {
+    const cfg = { headBytes: 1024, tailBytes: 1024 }
+    expect(buildExcerpt(big, "/p", cfg)).toContain("offset and limit")
+    const minified = buildExcerpt(JSON.stringify({ rows: "x".repeat(25_000) }), "/p", cfg)
+    expect(minified).toContain("(1 lines)")
+    expect(minified).toContain("byte range")
+    expect(minified).not.toContain("offset and limit")
+  })
+
+  it("gives each agent its own folder, inside the store whatever the id", () => {
+    expect(agentObservationDir(dir, "coder-agent")).toBe(resolve(dir, "coder-agent"))
+    for (const id of ["..", "../x", "a/b", "."]) {
+      expect(agentObservationDir(dir, id).startsWith(dir + "/")).toBe(true)
+      expect(resolve(agentObservationDir(dir, id), "..")).toBe(dir)
+    }
+    expect(agentObservationDir(dir, "a")).not.toBe(agentObservationDir(dir, "b"))
   })
 
   it("does not split a multi-byte character at the cut", () => {
@@ -130,7 +170,7 @@ describe("ObservationPack", () => {
   })
 
   it("prunes only originals older than the retention, and nothing at 0", () => {
-    const { packs } = packToolOutput(bash(big), config(), dir)!
+    const { packs } = packToolOutput(bash(big), config(), agentObservationDir(dir, "coder-agent"))!
     const old = new Date(Date.now() - 10 * 86_400_000)
     utimesSync(packs[0].path, old, old)
     expect(pruneObservations(dir, 0)).toBe(0)
@@ -162,7 +202,8 @@ describe("ObservationPack", () => {
       expect(command).toContain("http://127.0.0.1:18800/observation/pack?agent=coder-agent")
       // With the daemon down the hook must print nothing and exit 0.
       expect(command.trim().endsWith("|| true")).toBe(true)
-      expect(s.permissions.allow).toEqual(["Bash(git *)", "Read(//data/.agentx/observations/**)"])
+      // Its own folder of the store, not the store.
+      expect(s.permissions.allow).toEqual(["Bash(git *)", "Read(//data/.agentx/observations/coder-agent/**)"])
 
       expect(patchObservationPack(ws(), "coder-agent", "18800", pack(true))).toBe(false)
     })

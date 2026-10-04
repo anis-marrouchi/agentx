@@ -4,7 +4,7 @@ import { createHash } from "crypto"
 import type { AgentDef } from "@/daemon/config"
 import { generateAgentsMd } from "./bootstrap"
 import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
-import { OBSERVATION_PACK_ROUTE } from "./observation-pack"
+import { OBSERVATION_PACK_ROUTE, agentObservationDir } from "./observation-pack"
 
 // Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
 // files apart from user-edited ones. On daemon start, files with the marker
@@ -602,7 +602,8 @@ export function patchGuardrails(workspace: string, agentId: string, daemonPort: 
 export interface ObservationPackHook {
   enabled: boolean
   tools: string[]
-  /** Where originals are saved; the agent is allowed to read it. */
+  /** The store of saved originals; the agent is allowed to read its own
+   *  folder in it and no other agent's. */
   dir: string
 }
 
@@ -618,7 +619,7 @@ function isObservationPackEntry(entry: any): boolean {
  * settings.json when the pack is on, and take it out when it is off. The
  * hook pipes the tool result to the daemon's loopback route and hands the
  * answer back to Claude Code; with the daemon down it prints nothing and the
- * result is left as it was. Also lets the agent Read the saved originals.
+ * result is left as it was. Also lets the agent Read its own saved originals.
  * Idempotent. Returns true if it changed the file.
  */
 export function patchObservationPack(
@@ -635,7 +636,7 @@ export function patchObservationPack(
     const before = JSON.stringify(existing)
 
     const on = pack.enabled && pack.tools.length > 0
-    const readRule = `Read(/${pack.dir}/**)`
+    const readRule = `Read(/${agentObservationDir(pack.dir, agentId)}/**)`
     const posted: unknown[] = Array.isArray(existing.hooks?.PostToolUse) ? existing.hooks.PostToolUse : []
     const others = posted.filter((e) => !isObservationPackEntry(e))
     const allowed: string[] = Array.isArray(existing.permissions?.allow) ? existing.permissions.allow : []

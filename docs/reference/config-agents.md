@@ -243,18 +243,18 @@ To see what a session on a channel is handed, before and after:
 
 A tool result stays in the conversation, and the model re-reads the whole conversation on every later step of the task. A 20 KB test log read once is paid for again on each of the next thirty steps, although the agent rarely looks at it twice.
 
-With `session.observationPack.enabled`, a text result larger than `limitBytes` is saved in full under `.agentx/observations/` in the daemon's folder, and the agent gets this in its place:
+With `session.observationPack.enabled`, a text result larger than `limitBytes` is saved in full under `.agentx/observations/<agent id>/` in the daemon's folder, and the agent gets this in its place:
 
 ```text
 [ObservationPack: this result is 23442 bytes (400 lines). Only its first 1024 and last 1024 bytes are shown.
-The exact original is saved at /srv/agentx/.agentx/observations/aa0c…864c.txt
+The exact original is saved at /srv/agentx/.agentx/observations/coder/aa0c…864c.txt
 Read that file with offset and limit (line numbers), or grep it, for the part you need. Do not guess at what is not shown.]
 (the first 1024 bytes)
 [... 21394 bytes not shown ...]
 (the last 1024 bytes)
 ```
 
-Nothing is lost: the saved file is byte for byte what the tool returned, and the agent reads it back with its own file tool. Reading a saved original is never packed again.
+Nothing is lost: the saved file is byte for byte what the tool returned, and the agent reads it back with its own file tool. Reading a saved original is never packed again. When the original is a few very long lines, such as minified JSON, the excerpt tells the agent to read it by byte range instead of by line.
 
 ```json
 "session": {
@@ -270,12 +270,13 @@ What it covers, and what it does not:
 | Tools | The ones in `tools`. By default: commands (`Bash`), searches (`Grep`), fetched web pages (`WebFetch`) and every tool server (`mcp__.*`, which includes the AgentX tools). |
 | Files the agent reads | Not packed by default. An agent that sees only the two ends of a file it is about to edit has to read it again in pages. Add `"Read"` to `tools` to pack them too. |
 | Very large command output | Claude Code itself already replaces command output over 30,000 characters with a 2 KB preview and a saved file. The pack leaves those results to it, and covers the ones between `limitBytes` and that size. |
-| Pictures | Never packed. |
+| Pictures, sound and files in base64 | Never packed. Only text is. |
+| Claude Code version | The hook answer that replaces a result (`updatedToolOutput`) was confirmed on Claude Code 2.1.289. A version that ignores it gives the agent the full result, while the original is still saved and counted in `index.jsonl`. |
 | Event text | The text of the event or message that starts a task is not a tool result and is not packed. |
 | Timing | The excerpt replaces the result at once. The agent never sees the full result unless it reads the saved file. |
 | Sessions outside the workspace | A session whose working folder is not the agent's workspace does not load the workspace's hooks and is not packed. |
 
-The saved originals can hold whatever a command printed, including secrets, exactly as Claude Code's own session logs do. The folder is readable by the daemon's user only. It grows with use; set `retentionDays` to delete originals that have not been written or seen again for that many days. An agent that resumes an older session can then no longer read them.
+The saved originals can hold whatever a command printed, including secrets, exactly as Claude Code's own session logs do. Each agent has its own folder, and AgentX allows an agent to read its own folder only, so an agent that asks before reading files cannot open what another agent's commands printed. The folders are readable by the daemon's user only. They grow with use; set `retentionDays` to delete originals that have not been written or seen again for that many days. An agent that resumes an older session can then no longer read them.
 
 If the daemon is not running, the hook does nothing and the agent gets the full result.
 
@@ -284,7 +285,7 @@ To see what the pack does to your costs:
 1. **Terminal:** before turning it on, in the folder with `agentx.json`, run `agentx usage channels --from 2026-10-01 --to 2026-10-03 --save before.json` with three recent full days. It prints the cost per channel and per task, and saves the figures.
 2. Turn the pack on and restart the daemon. Let it run for a few days.
 3. **Terminal:** run `agentx usage channels --from <first day> --to <last day> --baseline before.json` with the days after the restart. It prints both ranges side by side with the change in cost per task.
-4. **Terminal:** run `wc -l .agentx/observations/index.jsonl`. Each line is one packed result, with its size and what the agent was shown.
+4. **Terminal:** run `cat .agentx/observations/*/index.jsonl | wc -l`. Each line is one packed result, with its size and what the agent was shown.
 
 The two ranges do not hold the same tasks, so compare the cost per task on the busy channels, not the totals. In the AgentX source folder, `python3 bench/observation-pack-replay.py --from <day> --to <day>` reads the Claude Code session logs of a range and prints how many tool-result bytes are over the limit, per tool and per channel, without calling a model.
 
@@ -312,7 +313,7 @@ A warm process answers only the question it was asked. When a background task of
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
 4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
-5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start, and `.agentx/observations/index.jsonl` gets a line the first time an agent runs a command with more than 10 KB of output.
+5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start, and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output.
 
 ## If something is wrong
 

@@ -98,7 +98,7 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { prepareOutbox } from "@/utils/app-outbox"
-import { OBSERVATION_PACK_ROUTE, answerPackHook, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
+import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -3561,10 +3561,15 @@ export class AgentXDaemon {
           return
         }
         const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
-        const out = answerPackHook(payload as PostToolUsePayload, this.config.session.observationPack, {
-          dir: observationDir(),
-          agentId: url.searchParams.get("agent") || undefined,
-        })
+        // Each agent has its own folder and may read no other. A call that
+        // names no agent of this daemon is not packed.
+        const agentId = url.searchParams.get("agent") || ""
+        const out = Object.hasOwn(this.config.agents, agentId)
+          ? answerPackHook(payload as PostToolUsePayload, this.config.session.observationPack, {
+              dir: agentObservationDir(observationDir(), agentId),
+              agentId,
+            })
+          : ""
         res.writeHead(200, { "Content-Type": "application/json" })
         res.end(out)
         return

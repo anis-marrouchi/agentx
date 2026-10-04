@@ -1511,7 +1511,7 @@ export const daemonConfigSchema = z.object({
     /** ObservationPack (#621). A large tool result stays in the context
      *  and is re-read on every later request. With this on, a Claude Code
      *  PostToolUse hook saves a text result over `limitBytes` to
-     *  `.agentx/observations/` and shows the model its first and last
+     *  `.agentx/observations/<agent id>/` and shows the model its first and last
      *  bytes plus the path of the saved original, which it can Read or
      *  grep. Off by default. claude-code agents only. Turning it on, or
      *  changing `tools`, takes a daemon restart (the hook is written into
