@@ -2288,10 +2288,12 @@ export class AgentRegistry {
     // a missing/unreadable file is a no-op. Lives in the cacheable system
     // prompt prefix; project-specific patterns reach the agent before any
     // task context.
-    // A lean claude-code session whose setting sources include the project
-    // gets the workspace CLAUDE.md from Claude Code itself; appending it
-    // here as well sent it twice (#615).
-    const claudeLoadsWorkspace = state.def.tier === "claude-code" && sessionProfile === "lean" && leanLoadsWorkspace(lean)
+    // A claude-code session gets the workspace CLAUDE.md from Claude Code
+    // itself: it runs in the workspace, and its setting sources include the
+    // project unless a lean profile leaves it out. Appending it here as well
+    // sent it twice (#615 for lean, #455 for full: about 2.5k characters on
+    // every call of a session).
+    const claudeLoadsWorkspace = state.def.tier === "claude-code" && (sessionProfile !== "lean" || leanLoadsWorkspace(lean))
     let projectClaudeMd = ""
     if (state.def.workspace && !claudeLoadsWorkspace) {
       const claudeMdPath = resolve(state.def.workspace, "CLAUDE.md")
