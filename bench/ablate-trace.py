@@ -13,12 +13,16 @@
 #                      captured with a fake `claude` on PATH that dumps its argv
 #   CLAUDE.md, AGENTS.md, dotclaude/   the files `--setup-workspace` writes
 #   code-quality-no300.md              the code-quality rule without the 300-line line
+#   edit-rule.txt, edit-rule2.txt      instructions tested for the edit retry
+#                                      (copies: results/edit-rule-a.txt, -b.txt)
 # Every run calls the model (about $0.07 a run on Sonnet 5.5).
 import json, os, re, shutil, subprocess, sys, glob, time
 S = os.environ.get("ABLATE_DIR") or os.path.dirname(os.path.abspath(__file__))
 lean = json.load(open(f"{S}/argv-lean.json"))
 WRAPPED, APPEND, MCP = lean[1], lean[8], lean[11]
 PROMPT = open(f"{S}/prompt.txt").read().strip()
+EDIT_RULE = open(f"{S}/edit-rule.txt").read() if os.path.exists(f"{S}/edit-rule.txt") else ""
+EDIT_RULE2 = open(f"{S}/edit-rule2.txt").read() if os.path.exists(f"{S}/edit-rule2.txt") else ""
 VARIANTS = {
     "bare":   dict(),
     "prompt": dict(prompt=True),
@@ -30,6 +34,9 @@ VARIANTS = {
     "settings": dict(files=["settings"]),
     "md":       dict(files=["md"]),
     "lean-no300": dict(prompt=True, append=True, mcp=True, files=["md", "settings", "testing-rule", "no300"], sources=True),
+    "now": dict(prompt=True, append=True, mcp=True, files=["md", "settings", "testing-rule", "no300"], sources=True),
+    "now-edit": dict(prompt=True, append=True, mcp=True, files=["md", "settings", "testing-rule", "no300"], sources=True, edit=True),
+    "now-edit2": dict(prompt=True, append=True, mcp=True, files=["md", "settings", "testing-rule", "no300"], sources=True, edit=2),
     "lean-norule": dict(prompt=True, append=True, mcp=True, files=["md", "settings", "testing-rule"], sources=True),
 }
 only = sys.argv[2].split(",") if len(sys.argv) > 2 else list(VARIANTS)
@@ -80,7 +87,7 @@ for n in range(1, runs + 1):
             if "no300" in files: shutil.copy(f"{S}/code-quality-no300.md", f"{work}/.claude/rules/code-quality.md")
         args = ["claude", "-p", WRAPPED if v.get("prompt") else PROMPT, "--output-format", "json",
                 "--model", "claude-sonnet-5-5", "--dangerously-skip-permissions"]
-        if v.get("append"): args += ["--append-system-prompt", APPEND]
+        if v.get("append"): args += ["--append-system-prompt", APPEND + ({1: EDIT_RULE, 2: EDIT_RULE2}.get(v.get("edit") and int(v.get("edit")), "") if v.get("edit") else "")]
         if v.get("mcp"): args += ["--strict-mcp-config", "--mcp-config", MCP]
         if v.get("sources"): args += ["--setting-sources", "project,local"]
         t = time.time()

@@ -1,0 +1,2 @@
+
+A one-line substitution with sed is fine. Any change that adds, removes or moves lines goes through the Edit tool, one exact replacement per edit: a multi-line sed or a delete by line number that misses leaves the file broken and costs another round. Several edits can go in one turn, and the tests can run in that same turn.
