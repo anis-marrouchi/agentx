@@ -98,6 +98,7 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { prepareOutbox } from "@/utils/app-outbox"
+import { OBSERVATION_PACK_ROUTE, answerPackHook, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -370,7 +371,16 @@ export class AgentXDaemon {
 
     // Set up agent workspaces with Claude Code best practices (non-destructive)
     const [, portStr] = this.config.node.bind.split(":")
-    setupAllWorkspaces(this.config.agents, portStr || "19900", this.log)
+    const pack = this.config.session.observationPack
+    setupAllWorkspaces(this.config.agents, portStr || "19900", this.log, {
+      enabled: pack.enabled,
+      tools: pack.tools,
+      dir: observationDir(),
+    })
+    if (pack.enabled) {
+      const pruned = pruneObservations(observationDir(), pack.retentionDays)
+      if (pruned > 0) this.log(`ObservationPack: ${pruned} saved original(s) older than ${pack.retentionDays} day(s) removed`)
+    }
     // Restricted-autonomy routines point their per-task hook here.
     setAutonomyHookPort(portStr || "19900")
 
@@ -3539,6 +3549,24 @@ export class AgentXDaemon {
         // Empty body == allow. The hook pipes our stdout straight to Claude Code.
         res.writeHead(200, { "Content-Type": "application/json" })
         res.end(stdout)
+        return
+      }
+
+      // ObservationPack (PostToolUse hook, #621). Loopback ONLY, like
+      // /guard/check: the body is a tool result and the answer names a
+      // path on this host. An empty answer leaves the result as it was.
+      if (req.method === "POST" && path === OBSERVATION_PACK_ROUTE) {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: `Forbidden: ${OBSERVATION_PACK_ROUTE} is loopback-only` })
+          return
+        }
+        const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
+        const out = answerPackHook(payload as PostToolUsePayload, this.config.session.observationPack, {
+          dir: observationDir(),
+          agentId: url.searchParams.get("agent") || undefined,
+        })
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(out)
         return
       }
 

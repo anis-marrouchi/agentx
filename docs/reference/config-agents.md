@@ -192,6 +192,12 @@ When a conversation's memory is rotated or treated as stale.
 | `session.lean.mcpServers` | list of string | `["agentx"]` | Tool servers from the workspace's `.mcp.json` that a lean session keeps, by name. `agentx` is always kept. |
 | `session.lean.settingSources` | list of `"user"` \| `"project"` \| `"local"` | `["project", "local"]` | Which Claude Code settings a lean session reads. Without `user`, the global `CLAUDE.md`, user skills, plugins and user-level tool servers stay out. `project` is the agent's workspace. |
 | `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. |
+| `session.observationPack.enabled` | boolean | `false` | Keep large tool results out of the conversation: the agent sees the start and the end of the result and the path of a file with the exact original. See [Large tool results](#large-tool-results). Turning it on takes a daemon restart; turning it off applies on save. |
+| `session.observationPack.limitBytes` | number (1024–1048576) | `10240` | A text result larger than this many bytes is replaced by an excerpt. |
+| `session.observationPack.headBytes` | number (0–65536) | `1024` | Bytes of the start of the original the agent sees. |
+| `session.observationPack.tailBytes` | number (0–65536) | `1024` | Bytes of the end of the original the agent sees. |
+| `session.observationPack.tools` | list of string | `["Bash", "Grep", "WebFetch", "mcp__.*"]` | Tools whose results are packed. Each entry must match the whole tool name and may be a regular expression. Requires a daemon restart. |
+| `session.observationPack.retentionDays` | number (0–3650) | `0` | Days a saved original is kept. `0` keeps every original. |
 
 ### Lean sessions
 
@@ -233,6 +239,55 @@ To see what a session on a channel is handed, before and after:
 1. **Terminal:** in the AgentX source folder, run `pnpm bench:profiles --channels github`. It prints a table with one row per prompt section, full against lean, and the saving. No model is called.
 2. **Terminal:** run `pnpm bench:context --channel github --sections --config agentx.json --agent <your agent id>` to measure a real agent of yours.
 
+### Large tool results
+
+A tool result stays in the conversation, and the model re-reads the whole conversation on every later step of the task. A 20 KB test log read once is paid for again on each of the next thirty steps, although the agent rarely looks at it twice.
+
+With `session.observationPack.enabled`, a text result larger than `limitBytes` is saved in full under `.agentx/observations/` in the daemon's folder, and the agent gets this in its place:
+
+```text
+[ObservationPack: this result is 23442 bytes (400 lines). Only its first 1024 and last 1024 bytes are shown.
+The exact original is saved at /srv/agentx/.agentx/observations/aa0c…864c.txt
+Read that file with offset and limit (line numbers), or grep it, for the part you need. Do not guess at what is not shown.]
+(the first 1024 bytes)
+[... 21394 bytes not shown ...]
+(the last 1024 bytes)
+```
+
+Nothing is lost: the saved file is byte for byte what the tool returned, and the agent reads it back with its own file tool. Reading a saved original is never packed again.
+
+```json
+"session": {
+  "observationPack": { "enabled": true }
+}
+```
+
+What it covers, and what it does not:
+
+| | |
+|---|---|
+| Agents | `claude-code` agents only. It works through a Claude Code hook (PostToolUse) that AgentX writes into each agent workspace's `.claude/settings.json` when the daemon starts. Codex and the other engines are not changed. |
+| Tools | The ones in `tools`. By default: commands (`Bash`), searches (`Grep`), fetched web pages (`WebFetch`) and every tool server (`mcp__.*`, which includes the AgentX tools). |
+| Files the agent reads | Not packed by default. An agent that sees only the two ends of a file it is about to edit has to read it again in pages. Add `"Read"` to `tools` to pack them too. |
+| Very large command output | Claude Code itself already replaces command output over 30,000 characters with a 2 KB preview and a saved file. The pack leaves those results to it, and covers the ones between `limitBytes` and that size. |
+| Pictures | Never packed. |
+| Event text | The text of the event or message that starts a task is not a tool result and is not packed. |
+| Timing | The excerpt replaces the result at once. The agent never sees the full result unless it reads the saved file. |
+| Sessions outside the workspace | A session whose working folder is not the agent's workspace does not load the workspace's hooks and is not packed. |
+
+The saved originals can hold whatever a command printed, including secrets, exactly as Claude Code's own session logs do. The folder is readable by the daemon's user only. It grows with use; set `retentionDays` to delete originals that have not been written or seen again for that many days. An agent that resumes an older session can then no longer read them.
+
+If the daemon is not running, the hook does nothing and the agent gets the full result.
+
+To see what the pack does to your costs:
+
+1. **Terminal:** before turning it on, in the folder with `agentx.json`, run `agentx usage channels --from 2026-10-01 --to 2026-10-03 --save before.json` with three recent full days. It prints the cost per channel and per task, and saves the figures.
+2. Turn the pack on and restart the daemon. Let it run for a few days.
+3. **Terminal:** run `agentx usage channels --from <first day> --to <last day> --baseline before.json` with the days after the restart. It prints both ranges side by side with the change in cost per task.
+4. **Terminal:** run `wc -l .agentx/observations/index.jsonl`. Each line is one packed result, with its size and what the agent was shown.
+
+The two ranges do not hold the same tasks, so compare the cost per task on the busy channels, not the totals. In the AgentX source folder, `python3 bench/observation-pack-replay.py --from <day> --to <day>` reads the Claude Code session logs of a range and prints how many tool-result bytes are over the limit, per tool and per channel, without calling a model.
+
 ## processPool
 
 How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and OpenCode use fixed limits.
@@ -257,6 +312,7 @@ A warm process answers only the question it was asked. When a background task of
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
 4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
+5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start, and `.agentx/observations/index.jsonl` gets a line the first time an agent runs a command with more than 10 KB of output.
 
 ## If something is wrong
 
@@ -265,4 +321,6 @@ A warm process answers only the question it was asked. When a background task of
 - **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.
 - **An agent on GitHub, a schedule or a workflow says it cannot see another agent, an earlier message or a tool it had before:** its channel starts lean. Either tell the agent to use the `agentx_agents`, `agentx_recent` and `agentx_wiki_query` tools, add the tool server it misses to `session.lean.mcpServers`, or set that channel to `"full"` in `session.profileByChannel`.
+- **An agent says it cannot open the saved original of a packed result:** the agent does not run with `permissionMode: "bypassPermissions"` and its session ignored the read rule AgentX added to the workspace settings. Open Claude Code once in the agent's workspace and accept the trust question, or turn `session.observationPack.enabled` off.
+- **`session.observationPack.enabled` is on and nothing is packed:** restart the daemon; the hook is written into the workspaces at start. Then check that the agent's `tier` is `claude-code` and that the result was over `limitBytes`.
 - **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.
