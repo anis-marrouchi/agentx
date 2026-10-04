@@ -41,9 +41,14 @@ Medians:
 | claude | 3/3 | 12 | 267.6k | 253.7k | $0.0599 | 22s |
 | agentx | 3/3 | 12 | 447.1k | 430.5k | $0.0858 | 28s |
 | agentx-lean | 3/3 | 12 | 250.5k | 234.7k | $0.0635 | 21s |
+| agentx, all six runs | 6/6 | 12 | 335.4k | 318.8k | $0.0748 | 26s |
 
 Three more full-profile runs, kept for their logs: 375.2k / $0.0795 / 29s,
-295.7k / $0.0701 / 25s, 258.7k / $0.0652 / 23s.
+295.7k / $0.0701 / 25s, 258.7k / $0.0652 / 23s. The full profile's runs
+split into two groups (about 259k and about 447k tokens), so three runs
+give an unsteady median. Over all six it is 335.4k tokens and $0.0748:
+25 percent above the bare CLI on both, not the 67 and 43 percent the
+first three runs give. Read the full profile from the six-run row.
 
 ## What the session logs say
 
@@ -70,7 +75,9 @@ and the tool calls made.
 - **Correctness and wall time are the same.** Nine of nine correct; 21 to
   29 seconds; the extra seconds track the extra API calls.
 - **The lean profile costs the same as the bare CLI** (within 6 percent on
-  Haiku, the difference being the larger cache write).
+  Haiku, the difference being the larger cache write). **The full profile
+  costs about 25 percent more** (six-run median), from the extra API calls
+  some of its runs made.
 
 ## What this does and does not show
 
@@ -139,3 +146,13 @@ lean, 38.0k full.
 The variance seen on Haiku (7 to 12 API calls for the same work) does not
 appear on Sonnet; the full profile's extra cost on Sonnet is purely its
 larger prefix.
+
+**About the `billedModel` field in the raw JSON.** In this file it reads
+`claude-haiku-4-5-20251001` on most rows, the bare CLI's included. That is
+a reading error, not the model that ran: the CLI lists every model a run
+called under `modelUsage`, a multi-step run also makes small side calls
+on Haiku, and the benchmark took the first entry. The `--model` flag, the
+4-call pattern and the price per token all point to Sonnet 5.5 doing the
+work on every row; the raw `modelUsage` was not kept, so this cannot be
+re-read from the file. The benchmark and the runtime now take the model the
+run spent the most on.

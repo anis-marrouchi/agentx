@@ -36,6 +36,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, write
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { primaryModelFromUsage } from "../src/agents/model-usage"
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -203,7 +204,7 @@ function parseClaude(stdout: string): Parsed {
     },
     costUsd: typeof d.total_cost_usd === "number" ? d.total_cost_usd : undefined,
     reportedMs: d.duration_ms,
-    billedModel: d.modelUsage ? Object.keys(d.modelUsage)[0] : undefined,
+    billedModel: primaryModelFromUsage(d.modelUsage),
   }
 }
 
