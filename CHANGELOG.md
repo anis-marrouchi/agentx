@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.105.1](https://github.com/anis-marrouchi/agentx/compare/v0.105.0...v0.105.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **github:** one issue starts one run, not one per webhook ([#613](https://github.com/anis-marrouchi/agentx/issues/613)) ([c340e5c](https://github.com/anis-marrouchi/agentx/commit/c340e5c7878e628540cb841c74e1f845d2c762f8))
+
 ## [0.105.0](https://github.com/anis-marrouchi/agentx/compare/v0.104.2...v0.105.0) (2026-10-04)
 
 
