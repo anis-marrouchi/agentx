@@ -10,7 +10,7 @@ import {
   type ContinuityInput,
   type SessionContinuityAnswers,
 } from "@/decisions/seats/session-continuity"
-import { executeTask, warmProcessChat, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
+import { executeTask, warmProcessChat, withCallerEnv, type AgentTask, type AgentResponse, type StreamCallback, type ThinkingCallback, type AgentPeer } from "./runtime"
 import { friendlyModelError, renderFriendlyError } from "./error-map"
 import { SessionStore, detectLongMemoryHint, priorUserMessage, priorUserRequests } from "./sessions"
 import { shouldCaptureEntry } from "@/wiki/capture-filter"
@@ -63,6 +63,8 @@ import { isOperatorTurn } from "@/requests/operator"
 import { personLimitsOf, nameMatches, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
+import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
+import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
  *  deadline is minutes; these are seconds, and a best-effort step that
@@ -617,6 +619,9 @@ export class AgentRegistry {
   private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
   /** Runs a daemon shutdown stopped, with the reason each one reports. */
   private interruptedRuns: Map<string, string> = new Map()
+  /** Claude cloud sessions this node launched (#622), by issue. Created on
+   *  first use so a fleet with the setting off never touches the file. */
+  private cloudSessions?: CloudSessionStore
   /** The context each running task was started with, by RunningTask id.
    *  Kept apart from RunningTask because /agents serialises that, and a
    *  context can carry a whole conversation history. Read by A2A
@@ -1008,6 +1013,61 @@ export class AgentRegistry {
 
     // Fallback: first mention
     return agent.mentions[0]
+  }
+
+  /** The store of cloud sessions this node launched (#622). */
+  private cloudSessionStore(): CloudSessionStore {
+    if (!this.cloudSessions) this.cloudSessions = new CloudSessionStore(resolve(process.cwd(), ".agentx/cloud-sessions.json"))
+    return this.cloudSessions
+  }
+
+  /** Where this task runs (#622): a Claude cloud session, a follow-up to one
+   *  already open for its issue, or locally. Decided before the dispatch
+   *  gates, which only guard a local spawn. Cheap when the setting is off. */
+  private planCloudSession(def: AgentDef, task: AgentTask): CloudRoute {
+    const settings = { ...CLOUD_SESSIONS_DEFAULTS, ...(def.cloudSessions ?? {}) }
+    if (!settings.enabled) return { route: "local", reason: "cloud sessions are off for this agent" }
+    const channel = task.context?.channel || "api"
+    const channelCfg = (this.config.channels as Record<string, { cloudSessions?: boolean } | undefined>)?.[channel]
+    const target = parseCloudTarget(task.context?.chatId)
+    const store = this.cloudSessionStore()
+    return decideCloudRoute({
+      agent: def,
+      channelEnabled: channelCfg?.cloudSessions === true,
+      context: task.context,
+      openSession: target ? store.open(target.repo, target.number, settings.openHours) : undefined,
+      launchesToday: store.launchesToday(task.agentId),
+    })
+  }
+
+  /** Launches the cloud session (or forwards to the open one) and records
+   *  it on the trace. Null means: run locally, the reason is logged and on
+   *  the trace. */
+  private async runCloudSession(def: AgentDef, task: AgentTask, route: CloudRoute, traceId: string): Promise<AgentResponse | null> {
+    const settings = { ...CLOUD_SESSIONS_DEFAULTS, ...(def.cloudSessions ?? {}) }
+    const started = Date.now()
+    const env = claudeBillingEnv(withCallerEnv(buildAgentEnv(def.workspace), task), def.billing)
+    const result = await dispatchCloudSession({
+      route,
+      agentId: task.agentId,
+      message: task.message,
+      settings,
+      store: this.cloudSessionStore(),
+      traceId,
+      launch: (opts) => launchCloudSession({ ...opts, env, timeoutMs: settings.launchTimeoutSeconds * 1000 }),
+      log: (line) => this.log(line),
+      trace: (s) => {
+        try {
+          getEventBus().emit("task:step", {
+            taskId: traceId, agentId: task.agentId, name: "cloud_session", action: s.action, status: s.status,
+            outputSummary: s.status === "ok" ? s.summary : undefined, error: s.status === "error" ? s.summary : undefined,
+            ms: Date.now() - started, at: new Date().toISOString(),
+          })
+        } catch { /* observability never breaks the run */ }
+      },
+    })
+    if (!result) return null
+    return { content: result.content, error: result.error, cloudSession: result.cloudSession, duration: Date.now() - started }
   }
 
   /**
@@ -2548,7 +2608,13 @@ export class AgentRegistry {
       //
       // Kept inside the try so the `finally` below still runs — otherwise a
       // short-circuit return leaks runningTask bookkeeping.
-      if (state.def.tier === "claude-code") {
+      //
+      // The gates guard a LOCAL claude spawn, so a task bound for a cloud
+      // session (#622) skips them: the session draws on separate credit, and
+      // a rejected plan window is exactly when the cloud is wanted. When the
+      // launch then fails, the gates run before the local fallback.
+      const runDispatchGates = (): AgentResponse | null => {
+        if (state.def.tier !== "claude-code") return null
         traceStep("dispatch-gate")
         // A persistent-process handle counts as "warm" — its subprocess already
         // has the system prompt cached, so no fresh cache-create is needed even
@@ -2563,7 +2629,6 @@ export class AgentRegistry {
         ]
         const abort = gates.find((g) => g && g.abort)
         if (abort) {
-          state.errors++
           this.log(`[${task.agentId}] skipping cold dispatch — ${abort.reason}`)
           const preflightResponse: AgentResponse = {
             content: "",
@@ -2576,7 +2641,6 @@ export class AgentRegistry {
               try { sub(output.buffer) } catch { /* */ }
             }
           }
-          finalResponse = preflightResponse
           return preflightResponse
         }
         // Past the gates — commit the dispatch to the rolling budget and log
@@ -2585,6 +2649,18 @@ export class AgentRegistry {
         recordClaudeCodeDispatch()
         const warning = warnIfNearingCap()
         if (warning) this.log(`[${task.agentId}] ${warning}`)
+        return null
+      }
+      const cloudRoute = this.planCloudSession(state.def, task)
+      if (cloudRoute.route === "local") {
+        const gated = runDispatchGates()
+        if (gated) {
+          // The early return skips the error accounting below; a gated
+          // fallback inside the agent step goes through it instead.
+          state.errors++
+          finalResponse = gated
+          return gated
+        }
       }
 
       // Tiers other than claude-code don't emit stream-json events into
@@ -2636,7 +2712,17 @@ export class AgentRegistry {
           : undefined
       // The runtime reaps its own subprocess on abort; the grace only covers
       // a runtime that never returns.
-      const response = await step("agent", () => executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking), CANCEL_GRACE_MS)
+      const response = await step("agent", async () => {
+        // Cloud first (#622): a launched session answers the task; a failed
+        // launch runs it locally after the gates a local spawn gets.
+        if (cloudRoute.route !== "local") {
+          const cloud = await this.runCloudSession(state.def, task, cloudRoute, traceTaskId)
+          if (cloud) return cloud
+          const gated = runDispatchGates()
+          if (gated) return gated
+        }
+        return executeTask(state.def, taskWithSystemPrompt, this.providers, wrappedOnDeltaWithThinkingClose, historyContext, resumeSessionId, onEvent, abortController.signal, wrappedOnThinking)
+      }, CANCEL_GRACE_MS)
 
       // Improvement plan #3 — fail with a typed error when the agent
       // declared toolUseRequired and the model didn't invoke at least
