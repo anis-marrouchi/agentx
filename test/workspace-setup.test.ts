@@ -304,3 +304,43 @@ describe("destructive-action guardrails wiring", () => {
     expect(patchGuardrails(workspace, "coder-agent", "18800")).toBe(false) // idempotent
   })
 })
+
+// #455: "Keep files under 300 lines" made a coding agent open a task by
+// counting lines instead of reading the files, one extra model call.
+describe("code-quality rule", () => {
+  const OLD = `# Code Quality
+
+- No console.log in production code (use a logger)
+- Handle errors explicitly — no empty catch blocks
+- Keep files under 300 lines
+- Extract repeated logic into shared utilities
+`
+  let ws: string
+  const coder = () => baseAgent({ workspace: ws, systemPrompt: "You are a careful software engineer." })
+  const rulePath = () => resolve(ws, ".claude/rules/code-quality.md")
+  beforeEach(() => { ws = mkdtempSync(resolve(tmpdir(), "agentx-rules-")) })
+  afterEach(() => rmSync(ws, { recursive: true, force: true }))
+
+  it("is written without the line-count rule", () => {
+    setupWorkspace("bench", coder(), "19900")
+    const rule = readFileSync(rulePath(), "utf8")
+    expect(rule).toContain("Handle errors explicitly")
+    expect(rule).not.toContain("300 lines")
+  })
+
+  it("replaces the earlier generated version", () => {
+    mkdirSync(resolve(ws, ".claude/rules"), { recursive: true })
+    writeFileSync(rulePath(), OLD)
+    const { created } = setupWorkspace("bench", coder(), "19900")
+    expect(readFileSync(rulePath(), "utf8")).not.toContain("300 lines")
+    expect(created).toContain(rulePath())
+  })
+
+  it("leaves a hand-edited rule alone", () => {
+    mkdirSync(resolve(ws, ".claude/rules"), { recursive: true })
+    const edited = OLD + "- Our own rule\n"
+    writeFileSync(rulePath(), edited)
+    setupWorkspace("bench", coder(), "19900")
+    expect(readFileSync(rulePath(), "utf8")).toBe(edited)
+  })
+})

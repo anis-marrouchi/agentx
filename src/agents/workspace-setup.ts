@@ -330,10 +330,31 @@ function generateSettings(agentId: string, def: AgentDef, daemonPort: string = "
   return settings
 }
 
+/** The code-quality rule as written before #455. Its "Keep files under 300
+ *  lines" made a coding agent open a task by counting lines (`wc -l`)
+ *  instead of reading the files, one extra model call: in a 10-run test on
+ *  a six-file bug hunt, 10 of 10 first calls counted lines with it and 2 of
+ *  10 without it, and median tokens fell from 160k to 124k. */
+const CODE_QUALITY_RULE_BEFORE_455 = `# Code Quality
+
+- No console.log in production code (use a logger)
+- Handle errors explicitly — no empty catch blocks
+- Keep files under 300 lines
+- Extract repeated logic into shared utilities
+`
+
+interface RuleFile {
+  name: string
+  content: string
+  /** Earlier generated versions. A workspace file still identical to one
+   *  of them was never edited by hand, so it is brought up to date. */
+  replaces?: string[]
+}
+
 /** Generate .claude/rules/ files based on agent role */
-function generateRules(agentId: string, def: AgentDef): Array<{ name: string; content: string }> {
+function generateRules(agentId: string, def: AgentDef): RuleFile[] {
   const role = detectRole(agentId, def)
-  const rules: Array<{ name: string; content: string }> = []
+  const rules: RuleFile[] = []
 
   switch (role) {
     case "coding":
@@ -360,9 +381,9 @@ paths:
 
 - No console.log in production code (use a logger)
 - Handle errors explicitly — no empty catch blocks
-- Keep files under 300 lines
 - Extract repeated logic into shared utilities
 `,
+        replaces: [CODE_QUALITY_RULE_BEFORE_455],
       })
       break
 
@@ -508,7 +529,13 @@ export function setupWorkspace(
   // .claude/rules/
   const rules = generateRules(agentId, def)
   for (const rule of rules) {
-    writeIfMissing(resolve(workspace, ".claude/rules", rule.name), rule.content)
+    const path = resolve(workspace, ".claude/rules", rule.name)
+    if (rule.replaces && existsSync(path) && rule.replaces.includes(readFileSync(path, "utf8"))) {
+      writeFileSync(path, rule.content)
+      created.push(path)
+    } else {
+      writeIfMissing(path, rule.content)
+    }
   }
 
   if (created.length > 0) {
