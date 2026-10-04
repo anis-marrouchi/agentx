@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.105.0](https://github.com/anis-marrouchi/agentx/compare/v0.104.2...v0.105.0) (2026-10-04)
+
+
+### Features
+
+* **evidence:** define evidence authority and the memory backend contract ([#609](https://github.com/anis-marrouchi/agentx/issues/609)) ([9c8c522](https://github.com/anis-marrouchi/agentx/commit/9c8c5222a5a074f05c0ea750df8cbc39ecb9f1f9))
+
 ## [0.104.2](https://github.com/anis-marrouchi/agentx/compare/v0.104.1...v0.104.2) (2026-10-03)
 
 
