@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.107.0](https://github.com/anis-marrouchi/agentx/compare/v0.106.0...v0.107.0) (2026-10-04)
+
+
+### Features
+
+* **agents:** send GitHub coding tasks to Claude cloud sessions ([#622](https://github.com/anis-marrouchi/agentx/issues/622)) ([#627](https://github.com/anis-marrouchi/agentx/issues/627)) ([3996199](https://github.com/anis-marrouchi/agentx/commit/3996199f8799748f7f23872a2e1d0c0e4069d013))
+* **decisions:** backtest harness for the Jev wake gate and model tier ([103a1aa](https://github.com/anis-marrouchi/agentx/commit/103a1aa33578d93356d5c9ea23e8afe4ab79a521))
+* **session:** ObservationPack for large tool results ([#621](https://github.com/anis-marrouchi/agentx/issues/621)) ([#623](https://github.com/anis-marrouchi/agentx/issues/623)) ([bad2aa1](https://github.com/anis-marrouchi/agentx/commit/bad2aa16d8082c2bff1e583feea8feeb4aca52f6))
+
 ## [0.106.0](https://github.com/anis-marrouchi/agentx/compare/v0.105.1...v0.106.0) (2026-10-04)
 
 
