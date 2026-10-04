@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.108.0](https://github.com/anis-marrouchi/agentx/compare/v0.107.0...v0.108.0) (2026-10-04)
+
+
+### Features
+
+* **session:** built-in tool list for lean sessions and a memory index cap ([#615](https://github.com/anis-marrouchi/agentx/issues/615)) ([#629](https://github.com/anis-marrouchi/agentx/issues/629)) ([19df895](https://github.com/anis-marrouchi/agentx/commit/19df895b5695e326f9755e5363157899e0e729b8))
+
 ## [0.107.0](https://github.com/anis-marrouchi/agentx/compare/v0.106.0...v0.107.0) (2026-10-04)
 
 
