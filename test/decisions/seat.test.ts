@@ -193,3 +193,24 @@ describe("askSeat", () => {
     expect(row.backend).toBe("mock") // the mock backend reports its own name
   })
 })
+
+// #455: the 10 s default moved from the config schema into askSeat, so
+// request seats can tell a configured timeout from the fallback. Every
+// other seat must see the same timeout as before.
+describe("seat timeout", () => {
+  const seen: Array<number | undefined> = []
+  const capture = () => {
+    const mock = createMockDecisionBackend()
+    return { ...mock, decide: (req: any) => { seen.push(req.timeoutMs); return mock.decide(req) } }
+  }
+  beforeEach(() => { seen.length = 0; registerDecisionBackend("capture", capture) })
+
+  it("is 10 s for a configured seat with none set, the configured value when set, and the call's own when given", async () => {
+    configureDecisions({ enabled: true, defaultBackend: "capture", seats: { [SEAT]: { mode: "shadow" } }, store })
+    await askSeat(SEAT, { text: "x" }, questions)
+    configureDecisions({ enabled: true, defaultBackend: "capture", seats: { [SEAT]: { mode: "shadow", timeoutMs: 2500 } }, store })
+    await askSeat(SEAT, { text: "x" }, questions)
+    await askSeat(SEAT, { text: "x" }, questions, { timeoutMs: 700 })
+    expect(seen).toEqual([10_000, 2500, 700])
+  })
+})

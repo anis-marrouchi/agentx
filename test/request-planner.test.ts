@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-const mocks = vi.hoisted(() => ({ askSeat: vi.fn(), mode: 'active', seats: {} as Record<string, { holdout?: number }> }))
+const mocks = vi.hoisted(() => ({ askSeat: vi.fn(), mode: 'active', seats: {} as Record<string, { holdout?: number; timeoutMs?: number }> }))
 vi.mock('../src/decisions/seat', () => ({
   askSeat: mocks.askSeat,
   getSeatMode: () => mocks.mode,
   decisionsRuntime: () => ({ seats: mocks.seats }),
+  configuredSeatTimeout: (seat: string) => mocks.seats[seat]?.timeoutMs,
 }))
 import { evaluateRequest, selectRequestContext } from '../src/agents/request-planner'
 // Never lands in the holdout under the default 10% rate.
@@ -121,5 +122,21 @@ describe('landscape sections', async () => {
   it('leaves the landscape untouched when no section is dropped', async () => {
     mocks.askSeat.mockResolvedValue({ mode: 'active', answers: { landscape: { noul: 0.9 } } })
     expect((await selectRequestContext(chat)).input.landscape).toBe(landscape)
+  })
+})
+
+// #455: a timeoutMs in the seat's config is used; without one, 3 s.
+describe('request seat timeouts', () => {
+  it('waits 3 s by default and the configured time when one is set', async () => {
+    mocks.askSeat.mockResolvedValue(null)
+    await evaluateRequest('x', 'coder', 'api', treat)
+    await selectRequestContext(input)
+    expect(mocks.askSeat.mock.calls.map((c: any[]) => c[3].timeoutMs)).toEqual([3000, 3000])
+
+    mocks.askSeat.mockReset(); mocks.askSeat.mockResolvedValue(null)
+    mocks.seats = { 'request-gate': { timeoutMs: 1500 }, 'request-context': { timeoutMs: 2500 } }
+    await evaluateRequest('x', 'coder', 'api', treat)
+    await selectRequestContext(input)
+    expect(mocks.askSeat.mock.calls.map((c: any[]) => c[3].timeoutMs)).toEqual([1500, 2500])
   })
 })

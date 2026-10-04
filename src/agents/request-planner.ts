@@ -1,4 +1,4 @@
-import { askSeat, decisionsRuntime, getSeatMode } from '@/decisions/seat'
+import { askSeat, configuredSeatTimeout, decisionsRuntime, getSeatMode } from '@/decisions/seat'
 import { noul } from '@/decisions/questions'
 import type { NoulAnswer, Questions } from '@/decisions/types'
 import type { ContextInput } from './context'
@@ -9,6 +9,15 @@ export const REQUEST_CONTEXT_SEAT = 'request-context'
 /** Share of turns held out of Jev preprocessing when the gate is active.
  *  Overridden by decisions.seats.request-gate.holdout; 0 turns it off. */
 export const DEFAULT_REQUEST_GATE_HOLDOUT = 0.1
+
+/** How long a live turn waits for request-gate or request-context when the
+ *  config sets no `timeoutMs` for the seat. The pipeline's step budget
+ *  (5 s) still bounds the wait whatever is configured. */
+export const REQUEST_SEAT_TIMEOUT_MS = 3000
+
+function requestSeatTimeout(seat: string, override?: number): number {
+  return override ?? configuredSeatTimeout(seat) ?? REQUEST_SEAT_TIMEOUT_MS
+}
 
 /** Experiment arm for an active gate. "treatment" is assigned before the
  *  gate is asked, so a failed or skipped gate call stays in treatment —
@@ -39,7 +48,7 @@ export async function evaluateRequest(message: string, agent: string, channel: s
   }, { preprocess: noul('This request benefits from structured context selection or another bounded typed decision before the main agent executes.', {
     true: 'Relevant context must be selected, or a bounded routing decision can help. Follow-ups and ambiguous references need context.',
     false: 'Typed preprocessing adds no useful decision; send the request to the configured main agent with existing context.',
-  }) }, { timeoutMs: 3000 })
+  }) }, { timeoutMs: requestSeatTimeout(REQUEST_GATE_SEAT) })
   if (!result || result.mode !== 'active') return { active: false, preprocess: false, arm }
   const p = (result.answers.preprocess as NoulAnswer)?.noul
   return { active: true, preprocess: Number.isFinite(p) && p >= 0.5, arm }
@@ -115,7 +124,7 @@ export async function selectRequestContext(input: ContextInput, opts: { timeoutM
     request: input.message.slice(0, 2000), channel: input.channel, agent: input.agentId,
     mandatory: ['request', 'identity', 'permissions and instructions', 'same-chat history', 'handover', 'attachments', 'group-chat rules'],
     context: blocks,
-  }, questions, { timeoutMs: opts.timeoutMs ?? 3000 })
+  }, questions, { timeoutMs: requestSeatTimeout(REQUEST_CONTEXT_SEAT, opts.timeoutMs) })
   if (!result || result.mode !== 'active') return { input, excluded: [] }
   const selected = { ...input }
   const excluded: string[] = []

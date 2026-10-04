@@ -870,7 +870,11 @@ const decisionSeatSchema = z.object({
    *  graded against a different backend than another at the same time. */
   backend: z.string().optional(),
   model: z.string().optional(),
-  timeoutMs: z.number().int().min(100).default(10_000),
+  /** Unset: 10 s (DEFAULT_SEAT_TIMEOUT_MS), except where a call site sets
+   *  its own default, as request-gate and request-context do (3 s). Left
+   *  without a schema default so those seats can tell a value the operator
+   *  wrote from one nobody chose. */
+  timeoutMs: z.number().int().min(100).optional(),
   /** Post-hoc temperature fitted on this seat's own labeled rows. 1 means
    *  "not calibrated yet", which is where every seat starts — see
    *  `agentx decisions calibrate`. */

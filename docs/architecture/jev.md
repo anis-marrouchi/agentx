@@ -130,7 +130,7 @@ Enable both seats using the backend you have configured (this example uses the e
 }
 ```
 
-An active gate replaces the legacy Haiku context-planner call. When the gate is off/shadow/unavailable, existing non-desktop dispatch remains authoritative. Each new decision has a three-second timeout.
+An active gate replaces the legacy Haiku context-planner call. When the gate is off/shadow/unavailable, existing non-desktop dispatch remains authoritative. Each of these decisions waits three seconds by default; set `timeoutMs` on the seat to change it, up to the 5-second limit a message waits for either one. The gate runs while the session is loaded, and the context selection runs at the same time as the model-tier decision, so their waits overlap rather than add up.
 
 ### Desktop model guarantee
 

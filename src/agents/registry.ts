@@ -1689,12 +1689,18 @@ export class AgentRegistry {
     // Build conversation history for session continuity
     const channel = task.context?.channel || "api"
     const { evaluateRequest, selectRequestContext } = await import("./request-planner")
-    const requestGate = await budgeted(
+    // Asked now, read later: nothing before the context planner needs the
+    // gate's answer, so it runs alongside history seeding, skill loading,
+    // the continuity seat and compaction instead of ahead of them (#455).
+    // The settle handlers also keep a run that returns before the await
+    // from leaving a rejection unhandled; the await below still sees it.
+    const requestGatePending = budgeted(
       "request-gate",
       () => evaluateRequest(task.message, task.agentId, channel),
       (): Awaited<ReturnType<typeof evaluateRequest>> => ({ active: false, preprocess: false }),
     )
-    if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
+    let requestGateSettled = false
+    requestGatePending.then(() => { requestGateSettled = true }, () => { requestGateSettled = true })
     const chatId = qChatId
     const senderName = task.context?.sender || "User"
     const isCodexCli = state.def.tier === "codex-cli"
@@ -2211,6 +2217,11 @@ export class AgentRegistry {
     let sessionHistoryOverride: string | undefined
     let planDebug: Record<string, unknown> | undefined
     let plannerSucceeded = false
+    // Steps since have moved the run's step label on; a run that stalls here
+    // is waiting on the gate, so that is the step it must report.
+    if (!requestGateSettled) traceStep("request-gate")
+    const requestGate = await requestGatePending
+    if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
     // A lean session has nothing for the planner to curate: history and
     // cross-chat are fetched by the agent, not pushed.
     if (strategy === "planner" && !requestGate.active && !leanOnDemand && channel !== "voice" && channel !== "desktop") {
@@ -2439,6 +2450,43 @@ export class AgentRegistry {
       message: task.message,
     }
 
+    // Route mechanical work to a cheaper model, when the seat is active
+    // and sure. Everything that is not an explicit confident "no" keeps
+    // the agent's own model — see agents/routing.ts for why the failure
+    // has to land on the expensive side.
+    //
+    // Started before the context selection and awaited after it: neither
+    // reads the other's answer, so the two seat calls overlap instead of
+    // queueing (#455). The answer is still in hand before the task runs.
+    const cheapModel = cheapModelForEngine(state.def.tier, this.config.decisions.routing)
+    const routedModelPending: Promise<string | undefined> =
+      !task.model && cheapModel && (!requestGate.active || requestGate.preprocess)
+        ? (async () => {
+            try {
+              const { routeTaskModel } = await import("./routing")
+              const route = await step("route-model", () => routeTaskModel({
+                message: task.message,
+                agent: task.agentId,
+                channel,
+                isFollowUp: Boolean(resumeSessionId),
+                // Idle time decides whether the cache this would give up still
+                // exists. See routing.ts for the arithmetic.
+                sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
+                cheapModel,
+              }))
+              if (route.downgraded) {
+                this.log(`[${task.agentId}] ${route.reason}`)
+                return route.model
+              }
+            } catch {
+              /* routing is an optimisation; never let it stop a task */
+            }
+            return undefined
+          })()
+        : Promise.resolve(undefined)
+    let routedModelSettled = false
+    routedModelPending.then(() => { routedModelSettled = true })
+
     const selectedContext = requestGate.active && requestGate.preprocess
       ? await budgeted("select-context", () => selectRequestContext(contextInput), () => ({ input: contextInput, excluded: [] as string[] }))
       : { input: contextInput, excluded: [] }
@@ -2501,37 +2549,8 @@ export class AgentRegistry {
 
     // Attach the cacheable preamble onto the task so runtime.ts can forward
     // it to Claude CLI's --append-system-prompt arg.
-    // Route mechanical work to a cheaper model, when the seat is active
-    // and sure. Everything that is not an explicit confident "no" keeps
-    // the agent's own model — see agents/routing.ts for why the failure
-    // has to land on the expensive side.
-    //
-    // Awaited rather than fired off, because the answer has to be in hand
-    // before the task runs; it is one Noul against a message that is
-    // already in memory, and it never blocks a task from running.
-    let routedModel: string | undefined
-    const cheapModel = cheapModelForEngine(state.def.tier, this.config.decisions.routing)
-    if (!task.model && cheapModel && (!requestGate.active || requestGate.preprocess)) {
-      try {
-        const { routeTaskModel } = await import("./routing")
-        const route = await step("route-model", () => routeTaskModel({
-          message: task.message,
-          agent: task.agentId,
-          channel,
-          isFollowUp: Boolean(resumeSessionId),
-          // Idle time decides whether the cache this would give up still
-          // exists. See routing.ts for the arithmetic.
-          sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
-          cheapModel,
-        }))
-        if (route.downgraded) {
-          routedModel = route.model
-          this.log(`[${task.agentId}] ${route.reason}`)
-        }
-      } catch {
-        /* routing is an optimisation; never let it stop a task */
-      }
-    }
+    if (!routedModelSettled) traceStep("route-model")
+    const routedModel = await routedModelPending
 
     // Lean claude-code sessions also start the CLI with only the agentx MCP
     // server and the project's settings (#615). The flags describe the
