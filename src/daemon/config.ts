@@ -7,6 +7,7 @@ import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
+import { NOISE_MARKERS } from "@/voice/noise"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
 
@@ -1282,6 +1283,13 @@ export const daemonConfigSchema = z.object({
      *  keeps a cut answer over the 280 characters the Mac pill opens
      *  at (AnswerView.isWorthShowing), so "on screen" stays true. */
     spokenMaxChars: z.number().int().min(300).max(1500).default(SPOKEN_MAX_CHARS),
+    /** A transcript with no words (empty, or only bracketed markers such
+     *  as "[background noise]") gets a fixed reply from /ask and wakes no
+     *  agent. `markers` is what counts as a marker, without the brackets. */
+    noiseFilter: z.object({
+      enabled: z.boolean().default(true),
+      markers: z.array(z.string()).default(NOISE_MARKERS),
+    }).default({}),
     /** The on-device engine behind "local" and every fallback:
      *  mlx-whisper (Python, all languages) or Parakeet (Core ML, 25
      *  European languages, no Arabic; 483 MB downloaded on first use into

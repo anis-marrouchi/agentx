@@ -6,6 +6,7 @@ import { localSystemVoices, resolveAgentVoice, voiceRef } from "../src/voice/age
 import { elevenLabsSynth, sayArgs, type VoiceRef } from "../src/voice/speaker"
 import { MeshVoices } from "../src/voice/mesh-voice"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { NOISE_MARKERS } from "../src/voice/noise"
 
 /** What JXA prints on a Mac with only the standard voices, plus noise. */
 const JXA_OUT = [
@@ -188,7 +189,7 @@ describe("config", () => {
   it("defaults to free system voices with a system fallback", () => {
     const parsed = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
     expect(parsed.voice).toEqual({
-      provider: "system", fallback: "system", locale: "en", pointer: true, stt: "auto", allowUnmeasured: false, spokenMaxChars: 500, localStt: "mlx-whisper", endOfTurn: "vad",
+      provider: "system", fallback: "system", locale: "en", pointer: true, stt: "auto", allowUnmeasured: false, spokenMaxChars: 500, noiseFilter: { enabled: true, markers: NOISE_MARKERS }, localStt: "mlx-whisper", endOfTurn: "vad",
       hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
       look: "orb",
       startReduced: false,

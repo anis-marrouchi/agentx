@@ -152,6 +152,7 @@ import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { toSpeakable } from "@/voice/speakable"
+import { isNoiseTranscript, NOISE_REPLY } from "@/voice/noise"
 import { meshAddressables, resolveAddress } from "@/voice/address"
 import { presenceLook } from "@/voice/presence"
 import { agentPalette } from "@/voice/orb-palettes"
@@ -6031,6 +6032,15 @@ export class AgentXDaemon {
           // builds it from the few voice fields the proxy sends.
           const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents, this.config.voice)
           const introduce = this.voiceIntros.needsIntro(session, agentId)
+
+          // A transcript with no words ("[background noise]") wakes no
+          // agent: no presence decision, no task, one fixed line (#614).
+          const noise = this.config.voice.noiseFilter
+          if (noise.enabled && isNoiseTranscript(message, noise.markers)) {
+            this.log(`[voice] ${agentId}: noise transcript dropped (${JSON.stringify(message.slice(0, 60))})`)
+            this.json(res, 200, { agentId, voice: voiceForText(voice, NOISE_REPLY), presence: null, text: NOISE_REPLY, full: NOISE_REPLY, ui: null, noise: true })
+            break
+          }
 
           // How the agent shows up on screen this turn (the presence-mode
           // seat, decided on every voice turn). When the seat is active and
