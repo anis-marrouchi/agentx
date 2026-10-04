@@ -110,7 +110,9 @@ flowchart TD
 
 The gate is itself a bounded typed decision. It does not answer arbitrary requests or execute tools. It receives a clipped request, the source channel, agent identity, and the available preprocessing operations. An active negative answer bypasses optional context planning and model routing.
 
-Optional context is a catalogue of stable IDs with source, description, size, bounded preview, and a data-trust label. The context seat can omit clearly irrelevant mesh overviews, patterns, references, memory, other-chat summaries, older recall, or wiki blocks. Uncertain, missing, shadow, and failed selection results retain context. The original request, identity, permissions, runbooks, skills, attachments, same-chat continuity, and handover remain outside its removal allowlist.
+Optional context is a catalogue of stable IDs with source, description, size, bounded preview, and a data-trust label. The context seat can omit clearly irrelevant patterns, references, memory, other-chat summaries, older recall, or wiki blocks. It decides the landscape (the block that tells an agent about the rest of the node) one section at a time: the directory of other agents and channels, how to message another channel, how to look up earlier turns, background monitoring, and agent teams. Uncertain, missing, shadow, and failed selection results retain context. The original request, identity, permissions, runbooks, skills, attachments, same-chat continuity, handover, and the landscape's group-chat rules (for example, stay silent when another agent was mentioned) remain outside its removal allowlist.
+
+The seat waits at most three seconds per turn. The local backend (Claude Code with Haiku) takes about 13 seconds per decision, so with it the seat always times out and keeps everything; use a faster backend such as `jev`. Measured on 16 labelled messages, the seat removed about half of the landscape with no needed section dropped: see `bench/results/jev-and-edit-followups.md` in the source code.
 
 This selects AgentX-assembled context before rendering the prompt. It does not erase native CLI session history, filter files/tools the main agent later reads, or avoid retrieval already performed upstream. Context previews are sent to the configured decision backend; this is not a data-isolation boundary.
 
@@ -128,7 +130,7 @@ Enable both seats using the backend you have configured (this example uses the e
 }
 ```
 
-An active gate replaces the legacy Haiku context-planner call. When the gate is off/shadow/unavailable, existing non-desktop dispatch remains authoritative. Each new decision has a three-second timeout.
+An active gate replaces the legacy Haiku context-planner call. When the gate is off/shadow/unavailable, existing non-desktop dispatch remains authoritative. Each of these decisions waits three seconds by default; set `timeoutMs` on the seat to change it, up to the 5-second limit a message waits for either one. The gate runs while the session is loaded, and the context selection runs at the same time as the model-tier decision, so their waits overlap rather than add up.
 
 ### Desktop model guarantee
 

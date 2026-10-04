@@ -54,17 +54,18 @@ describe("context-size section helpers", () => {
 })
 
 describe("context profiles end to end", () => {
-  it("a lean github session is handed less than half the prompt a full one gets, with the rest a tool call away", async () => {
+  it("a lean github session is handed a smaller prompt than a full one, with the rest a tool call away", async () => {
     const task = "Continuing from what @helper_bot mentioned earlier: fix the failing test."
     const full = await measure({ task, channel: "github", profile: "full", sections: true, warmTurns: 1 })
     const lean = await measure({ task, channel: "github", profile: "lean", sections: true, warmTurns: 1 })
     const names = (m: typeof full) => m.sections.map((s) => s.name)
     const promptTokens = (m: typeof full) => m.sections.filter((s) => s.name.startsWith("prompt:") || s.name.startsWith("preamble:")).reduce((n, s) => n + s.tokens, 0)
 
-    // Full: history and cross-chat pushed, the project CLAUDE.md twice.
+    // Full: history and cross-chat pushed; the project CLAUDE.md once, loaded
+    // by Claude Code from the workspace, not appended again (#455).
     expect(names(full)).toContain("prompt: conversation history for today")
     expect(names(full)).toContain("prompt: cross-chat context")
-    expect(names(full)).toContain("preamble: project claude.md")
+    expect(names(full)).not.toContain("preamble: project claude.md")
     expect(names(full)).toContain("workspace CLAUDE.md")
     expect(full.flags).toEqual([])
 
@@ -77,7 +78,9 @@ describe("context profiles end to end", () => {
     expect(names(lean)).toContain("workspace CLAUDE.md")
     expect(lean.flags).toEqual(["strict mcp config: agentx", "setting sources: project,local"])
 
-    expect(promptTokens(lean)).toBeLessThan(promptTokens(full) / 2)
+    // Lean was under half of full while full also appended CLAUDE.md a
+    // second time; with that gone (#455) lean is still the smaller prompt.
+    expect(promptTokens(lean)).toBeLessThan(promptTokens(full))
     expect(lean.total).toBeLessThan(full.total)
   }, 120_000)
 

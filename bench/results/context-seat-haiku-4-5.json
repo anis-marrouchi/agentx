@@ -1,0 +1,672 @@
+{
+  "backend": "local",
+  "repeats": 3,
+  "sectionChars": {
+    "landscape": 442,
+    "landscape.messaging": 596,
+    "landscape.recall": 1605,
+    "landscape.monitoring": 326,
+    "landscape.teams": 502
+  },
+  "landscapeChars": 4429,
+  "results": [
+    {
+      "message": "Ask the ops agent to check whether last night's backup finished.",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 2433,
+      "ms": 14895
+    },
+    {
+      "message": "Who on this node can help me with an invoice question?",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 2433,
+      "ms": 12932
+    },
+    {
+      "message": "Tell the design agent the mockups are approved.",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 828,
+      "ms": 12699
+    },
+    {
+      "message": "Post the release notes in the team's Telegram group.",
+      "needs": [
+        "landscape.messaging"
+      ],
+      "dropped": [
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 2433,
+      "ms": 11217
+    },
+    {
+      "message": "Send this summary as a comment on the GitLab issue for the login bug.",
+      "needs": [
+        "landscape.messaging"
+      ],
+      "dropped": [
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 828,
+      "ms": 15868
+    },
+    {
+      "message": "Continue with what we discussed yesterday about the pricing page.",
+      "needs": [
+        "landscape.recall"
+      ],
+      "dropped": [
+        "landscape.messaging",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1424,
+      "ms": 11400
+    },
+    {
+      "message": "As I said earlier, go with the second option.",
+      "needs": [
+        "landscape.recall"
+      ],
+      "dropped": [
+        "landscape.messaging",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1424,
+      "ms": 11485
+    },
+    {
+      "message": "Watch the deploy logs and tell me as soon as errors show up.",
+      "needs": [
+        "landscape.monitoring"
+      ],
+      "dropped": [
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 502,
+      "ms": 12192
+    },
+    {
+      "message": "Review this large pull request for security, performance and test coverage in parallel.",
+      "needs": [
+        "landscape.teams"
+      ],
+      "dropped": [
+        "landscape",
+        "landscape.messaging"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1038,
+      "ms": 12702
+    },
+    {
+      "message": "Fix the failing test in src/cart.js.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 9326
+    },
+    {
+      "message": "Rename the function parseDate to parseIsoDate across the repository.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 13625
+    },
+    {
+      "message": "What does this error mean: TypeError: undefined is not a function?",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 15596
+    },
+    {
+      "message": "Write a unit test for formatCents in src/money.js.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 9796
+    },
+    {
+      "message": "Explain how the retry logic in src/client.ts works.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 13303
+    },
+    {
+      "message": "Thanks, that's all for today.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 9616
+    },
+    {
+      "message": "Good morning!",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 10830
+    },
+    {
+      "message": "Ask the ops agent to check whether last night's backup finished.",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 2433,
+      "ms": 14226
+    },
+    {
+      "message": "Who on this node can help me with an invoice question?",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 2433,
+      "ms": 14506
+    },
+    {
+      "message": "Tell the design agent the mockups are approved.",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 2433,
+      "ms": 12222
+    },
+    {
+      "message": "Post the release notes in the team's Telegram group.",
+      "needs": [
+        "landscape.messaging"
+      ],
+      "dropped": [
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 828,
+      "ms": 14091
+    },
+    {
+      "message": "Send this summary as a comment on the GitLab issue for the login bug.",
+      "needs": [
+        "landscape.messaging"
+      ],
+      "dropped": [
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 828,
+      "ms": 13271
+    },
+    {
+      "message": "Continue with what we discussed yesterday about the pricing page.",
+      "needs": [
+        "landscape.recall"
+      ],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1866,
+      "ms": 13861
+    },
+    {
+      "message": "As I said earlier, go with the second option.",
+      "needs": [
+        "landscape.recall"
+      ],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1866,
+      "ms": 13164
+    },
+    {
+      "message": "Watch the deploy logs and tell me as soon as errors show up.",
+      "needs": [
+        "landscape.monitoring"
+      ],
+      "dropped": [
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 502,
+      "ms": 12899
+    },
+    {
+      "message": "Review this large pull request for security, performance and test coverage in parallel.",
+      "needs": [
+        "landscape.teams"
+      ],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.monitoring"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1364,
+      "ms": 20850
+    },
+    {
+      "message": "Fix the failing test in src/cart.js.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1866,
+      "ms": 11565
+    },
+    {
+      "message": "Rename the function parseDate to parseIsoDate across the repository.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 11103
+    },
+    {
+      "message": "What does this error mean: TypeError: undefined is not a function?",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 12805
+    },
+    {
+      "message": "Write a unit test for formatCents in src/money.js.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 9003
+    },
+    {
+      "message": "Explain how the retry logic in src/client.ts works.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 10623
+    },
+    {
+      "message": "Thanks, that's all for today.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 10364
+    },
+    {
+      "message": "Good morning!",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 12903
+    },
+    {
+      "message": "Ask the ops agent to check whether last night's backup finished.",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 828,
+      "ms": 12732
+    },
+    {
+      "message": "Who on this node can help me with an invoice question?",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 2433,
+      "ms": 10560
+    },
+    {
+      "message": "Tell the design agent the mockups are approved.",
+      "needs": [
+        "landscape"
+      ],
+      "dropped": [
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 828,
+      "ms": 13718
+    },
+    {
+      "message": "Post the release notes in the team's Telegram group.",
+      "needs": [
+        "landscape.messaging"
+      ],
+      "dropped": [
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 828,
+      "ms": 15794
+    },
+    {
+      "message": "Send this summary as a comment on the GitLab issue for the login bug.",
+      "needs": [
+        "landscape.messaging"
+      ],
+      "dropped": [
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 828,
+      "ms": 14799
+    },
+    {
+      "message": "Continue with what we discussed yesterday about the pricing page.",
+      "needs": [
+        "landscape.recall"
+      ],
+      "dropped": [
+        "landscape.messaging",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1424,
+      "ms": 15145
+    },
+    {
+      "message": "As I said earlier, go with the second option.",
+      "needs": [
+        "landscape.recall"
+      ],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1866,
+      "ms": 12515
+    },
+    {
+      "message": "Watch the deploy logs and tell me as soon as errors show up.",
+      "needs": [
+        "landscape.monitoring"
+      ],
+      "dropped": [
+        "landscape.recall",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 2107,
+      "ms": 11262
+    },
+    {
+      "message": "Review this large pull request for security, performance and test coverage in parallel.",
+      "needs": [
+        "landscape.teams"
+      ],
+      "dropped": [
+        "landscape",
+        "landscape.messaging"
+      ],
+      "wrongDrops": [],
+      "savedChars": 1038,
+      "ms": 23692
+    },
+    {
+      "message": "Fix the failing test in src/cart.js.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3145,
+      "ms": 17589
+    },
+    {
+      "message": "Rename the function parseDate to parseIsoDate across the repository.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 13526
+    },
+    {
+      "message": "What does this error mean: TypeError: undefined is not a function?",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 9159
+    },
+    {
+      "message": "Write a unit test for formatCents in src/money.js.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 11026
+    },
+    {
+      "message": "Explain how the retry logic in src/client.ts works.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 10667
+    },
+    {
+      "message": "Thanks, that's all for today.",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 10187
+    },
+    {
+      "message": "Good morning!",
+      "needs": [],
+      "dropped": [
+        "landscape",
+        "landscape.messaging",
+        "landscape.recall",
+        "landscape.monitoring",
+        "landscape.teams"
+      ],
+      "wrongDrops": [],
+      "savedChars": 3471,
+      "ms": 12287
+    }
+  ]
+}

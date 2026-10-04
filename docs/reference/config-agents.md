@@ -90,6 +90,15 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 }
 ```
 
+### Instructions AgentX adds for coding agents
+
+A `claude-code` or `codex-cli` agent gets two short rules in its system prompt, on top of its own `systemPrompt`. There is no setting for them.
+
+| Rule | Engines | Why |
+|---|---|---|
+| Read the code before trusting an issue thread or earlier comments. | `claude-code`, `codex-cli` | Threads can hold wrong guesses; the code is the source of truth. |
+| Change files with the Edit tool, not with `sed`, `awk` or a shell rewrite. | `claude-code` | A multi-line `sed` that misses leaves the file broken and costs extra rounds with the model. In a test on a bug fix across six files, runs that needed extra rounds fell from 7 in 20 to 0 in 20, and tokens fell 13 percent. Edits spell out the old and new text, so the cost per run rose about 4 percent. |
+
 ### MCP servers
 
 Each entry under `agents.<id>.mcp.<name>` is either a local command or an HTTP server.
@@ -216,11 +225,12 @@ A **lean** session gets only what the task needs up front. The rest is one tool 
 |---|---|
 | Every connected tool server | Only the `agentx` tool server, plus the ones named in `session.lean.mcpServers`. |
 | User-level settings: global `CLAUDE.md`, user skills, plugins | Only the workspace's own settings and skills (`session.lean.settingSources`). |
-| The project `CLAUDE.md` twice: once from the workspace, once appended by AgentX | Once, from the workspace. |
 | The landscape in the prompt | The `agentx_agents` tool with `landscape: true`. |
 | Today's history of this chat in the prompt | The `agentx_recent` tool with the chat's `channel` and `chatId`. |
 | A summary of the agent's other chats today | The `agentx_recent` tool without a `chatId`. |
 | (both) Stored knowledge, as before | The `agentx_wiki_query` tool, as before. |
+
+Both kinds of session send a `claude-code` agent's project `CLAUDE.md` once: Claude Code reads it from the workspace, and AgentX does not add a second copy.
 
 The prompt keeps one line, `[Context on demand]`, naming these tools. Chat channels (Telegram, WhatsApp, voice, the dashboard and the phone app) are not changed: they stay full unless you list them. Only `claude-code` and `codex-cli` agents have a lean start; other engines always start full. The daemon log shows `session profile for github: lean (…)` when a lean session starts.
 

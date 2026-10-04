@@ -1,0 +1,2 @@
+
+Change files with the Edit tool, one exact replacement per edit, not with sed, awk or a shell rewrite: a pattern that misses or matches twice leaves the file broken and costs another round. Several edits can go in one turn, and the tests can run in that same turn.

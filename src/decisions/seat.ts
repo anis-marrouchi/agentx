@@ -50,6 +50,17 @@ export interface DecisionsRuntime {
   store: DecisionStore | null
 }
 
+/** A configured seat's timeout when neither the call nor the config sets
+ *  one. It was the schema default; it lives here so a seat can tell a
+ *  configured value from this fallback (see configuredSeatTimeout). */
+export const DEFAULT_SEAT_TIMEOUT_MS = 10_000
+
+/** The timeout the operator wrote for this seat, or undefined. */
+export function configuredSeatTimeout(seat: string): number | undefined {
+  ensureConfigured()
+  return runtime.seats[seat]?.timeoutMs
+}
+
 const DEFAULT_RUNTIME: DecisionsRuntime = {
   enabled: false,
   defaultBackend: "local",
@@ -238,7 +249,7 @@ export async function askSeat<Q extends Questions>(
       questions,
       model: opts.model ?? settings.model,
       abortSignal: opts.signal,
-      timeoutMs: opts.timeoutMs ?? settings.timeoutMs,
+      timeoutMs: opts.timeoutMs ?? settings.timeoutMs ?? (runtime.seats[seat] ? DEFAULT_SEAT_TIMEOUT_MS : undefined),
     })
 
     const callId = record(seat, mode, state, questions, response, opts, settings)

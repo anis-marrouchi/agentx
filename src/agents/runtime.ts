@@ -7,6 +7,7 @@ import { mkdtempSync, readFileSync, rmSync } from "fs"
 import { join } from "path"
 import { tmpdir } from "os"
 import { friendlyModelError, renderFriendlyError, type FriendlyError } from "./error-map"
+import { primaryModelFromUsage } from "./model-usage"
 
 /** An exit 143 this close to the time limit is the limit's own SIGTERM. */
 const SIGTERM_TIMEOUT_SLACK_MS = 5_000
@@ -787,11 +788,12 @@ function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: stri
 
     // Claude Code's --output-format json response carries the actual billed
     // model at `model` (or nested under `message.model` depending on CLI ver).
-    // Recent CLIs put it under `modelUsage` keyed by model id instead.
+    // Recent CLIs put it under `modelUsage` keyed by model id instead, next
+    // to any side model the CLI called, so take the one that cost the most.
     const billedModel: string | undefined =
       (typeof data.model === "string" && data.model) ||
       (typeof data.message?.model === "string" && data.message.model) ||
-      (data.modelUsage && typeof data.modelUsage === "object" && Object.keys(data.modelUsage)[0]) ||
+      primaryModelFromUsage(data.modelUsage) ||
       undefined
 
     return {
@@ -1106,6 +1108,7 @@ export async function executeClaudeCodeStreaming(
                 }
               }
               if (typeof event.model === "string") streamBilledModel = event.model
+              else streamBilledModel = primaryModelFromUsage(event.modelUsage) || streamBilledModel
               if (typeof event.session_id === "string") streamSessionId = event.session_id
               if (typeof event.num_turns === "number") streamNumTurns = event.num_turns
               if (typeof event.total_cost_usd === "number") streamCostUsd = event.total_cost_usd
@@ -2088,6 +2091,7 @@ async function executeClaudeCodePersistent(
         if (typeof r.num_turns === "number") numTurns = r.num_turns
         if (typeof (r.message?.model) === "string") billedModel = r.message.model
         else if (typeof r.model === "string") billedModel = r.model
+        else billedModel = primaryModelFromUsage(r.modelUsage) || billedModel
       }
     }
   } catch (e: any) {

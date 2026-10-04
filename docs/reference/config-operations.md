@@ -319,7 +319,7 @@ Each entry in `decisions.seats.<seat>`:
 | `mode` | `"off"` \| `"shadow"` \| `"active"` | `"off"` | `off`: unused. `shadow`: runs and records only. `active`: its answer is used. |
 | `backend` | string | `decisions.defaultBackend` | Backend for this seat. |
 | `model` | string | — | Model for this seat. |
-| `timeoutMs` | number | `10000` | Time limit per decision, in milliseconds. |
+| `timeoutMs` | number | `10000` | Time limit per decision, in milliseconds. `request-gate` and `request-context` default to `3000` instead, because a message waits for them; a value you set is used, but a message never waits more than 5 seconds for either. |
 | `temperature` | number | `1` | Calibration fitted from labelled answers (`agentx decisions calibrate`). `1` means not calibrated yet. |
 | `explore` | number (0–1) | `0.15` | Share of would-be skips run anyway, so the seat can still be graded. |
 | `holdout` | number (0–1) | — | Share of turns that skip the seat as a comparison group. Only seats that run an experiment read it. |
