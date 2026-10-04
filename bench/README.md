@@ -63,6 +63,36 @@ same session log). It is an upper limit: it ignores compaction and what the
 agent reads back from a saved original. The recorded cost per channel, before
 and after, comes from `agentx usage channels`.
 
+## Level 1, small: one task, AgentX against the bare CLI (#455)
+
+`pnpm bench:compare` runs the same multi-step coding task on the bare
+Claude Code CLI and through `agentx exec`, same model, same prompt, several
+times each, and prints tokens, turns, wall time, the CLI's own cost figure
+and whether the task came out right. The task is a small Node project whose
+tests fail because of four bugs: the agent has to run the tests, read the
+code, fix it and run them again. The check afterwards is mechanical (the
+tests pass; the test file is untouched).
+
+```bash
+pnpm build                                   # agentx exec runs from dist/
+pnpm bench:compare                           # 3 runs each of claude, agentx, agentx-lean on Haiku 4.5
+pnpm bench:compare --runs 5 --model claude-sonnet-5-5
+pnpm bench:compare --modes claude,agentx --json results.json --keep
+```
+
+Every run calls the model and costs money (cents per run on Haiku). The
+`claude` CLI must be signed in; both sides bill the same account. The modes:
+
+| Mode | What runs |
+|---|---|
+| `claude` | `claude -p <prompt> --dangerously-skip-permissions` in a fresh copy of the project; no CLAUDE.md, nothing from AgentX. |
+| `agentx` | `agentx exec` with one `claude-code` agent on the same copy, the managed workspace files written first as the daemon does, full session profile. |
+| `agentx-lean` | The same with the lean session profile (#615). |
+
+Runs are interleaved across modes so a slow hour hits every mode alike.
+The cost column is `total_cost_usd` as the CLI reports it (list price); the
+`agentx` rows get it through `agentx exec --json` (`costUsd`).
+
 ## Level 1: dev set
 
 Claude Code and agentx, same model (Haiku 4.5), same 8 Terminal-Bench tasks

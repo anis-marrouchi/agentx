@@ -1,0 +1,59 @@
+{
+  "model": "claude-haiku-4-5-20251001",
+  "runs": 3,
+  "prompt": "Run `npm test` in this project. Some tests fail. Fix the code under src/ so that every test passes. Do not change anything under test/. Run the tests again to confirm, then reply with one line: how many tests pass.",
+  "at": "2026-10-04T14:37:45.616Z",
+  "results": [
+    {
+      "mode": "agentx",
+      "run": 1,
+      "ok": true,
+      "testsPass": true,
+      "testsUntouched": true,
+      "numTurns": 11,
+      "inputTokens": 82,
+      "outputTokens": 2669,
+      "cacheReadTokens": 358344,
+      "cacheCreateTokens": 14102,
+      "totalTokens": 375197,
+      "costUsd": 0.0795324,
+      "wallMs": 29331,
+      "reportedMs": 28794,
+      "billedModel": "claude-haiku-4-5-20251001"
+    },
+    {
+      "mode": "agentx",
+      "run": 2,
+      "ok": true,
+      "testsPass": true,
+      "testsUntouched": true,
+      "numTurns": 12,
+      "inputTokens": 66,
+      "outputTokens": 2422,
+      "cacheReadTokens": 279236,
+      "cacheCreateTokens": 13968,
+      "totalTokens": 295692,
+      "costUsd": 0.07011260000000001,
+      "wallMs": 25033,
+      "reportedMs": 24561,
+      "billedModel": "claude-haiku-4-5-20251001"
+    },
+    {
+      "mode": "agentx",
+      "run": 3,
+      "ok": true,
+      "testsPass": true,
+      "testsUntouched": true,
+      "numTurns": 12,
+      "inputTokens": 58,
+      "outputTokens": 2251,
+      "cacheReadTokens": 242653,
+      "cacheCreateTokens": 13782,
+      "totalTokens": 258744,
+      "costUsd": 0.06520630000000001,
+      "wallMs": 23357,
+      "reportedMs": 22876,
+      "billedModel": "claude-haiku-4-5-20251001"
+    }
+  ]
+}
