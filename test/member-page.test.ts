@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { renderMemberPage } from "../src/daemon/ui/pages/member"
-import { connectionNote, plainPreview } from "../src/daemon/ui/pages/member-logic"
+import { connectionNote, freedAgents, plainPreview } from "../src/daemon/ui/pages/member-logic"
 
 // #489: the work page said "Offline" for any failed load and never asked
 // for the name line a second time. These tests run the page's real script
@@ -11,7 +11,7 @@ type Answer = "fail" | "hang" | number | { status: number; body: unknown }
 const ME = { name: "Sara B", device: "Laptop", node: "node-a" }
 const WORK = { open: [], recent: [], runs: [] as unknown[] }
 
-function openPage(answers: { me?: Answer[]; work?: Answer[] }, opts: { online?: boolean } = {}) {
+function openPage(answers: { me?: Answer[]; work?: Answer[] }, opts: { online?: boolean; Notification?: unknown } = {}) {
   const page = renderMemberPage()
   const script = [...page.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).pop()!
   const els = new Map<string, any>()
@@ -48,11 +48,11 @@ function openPage(answers: { me?: Answer[]; work?: Answer[] }, opts: { online?: 
   const windowListeners: Record<string, () => void> = {}
   const navigatorStub = { onLine: opts.online ?? true, userAgent: "Macintosh" }
   const left: string[] = []
-  new Function("document", "window", "navigator", "fetch", "location", "localStorage", "matchMedia", "setTimeout", "clearTimeout", "AbortController", script)(
+  new Function("document", "window", "navigator", "fetch", "location", "localStorage", "matchMedia", "setTimeout", "clearTimeout", "AbortController", "Notification", script)(
     { getElementById: el, documentElement: { getAttribute: () => "light", setAttribute: () => {} } },
     { addEventListener: (t: string, f: () => void) => { windowListeners[t] = f } },
     navigatorStub, fetchStub, { replace: (to: string) => { left.push(to) } },
-    { setItem: () => {} }, () => ({ matches: false }), setTimeoutStub, clearTimeoutStub, AbortController,
+    { setItem: () => {} }, () => ({ matches: false }), setTimeoutStub, clearTimeoutStub, AbortController, opts.Notification,
   )
   const settle = () => new Promise<void>((r) => setImmediate(r))
   /** Run the one pending timer of this length; throws when there is none. */
@@ -246,5 +246,59 @@ describe("the agent cards and what needs a person (#443)", () => {
     await p.fire(30_000)
     expect(p.el("agents").innerHTML).toMatch(/Working when this page last loaded, at /)
     expect(p.el("agents").innerHTML).not.toContain(" live")
+  })
+})
+
+describe("Saber's answers on #443: order and a notification when an agent is free", () => {
+  it("puts Needs a person above the agent cards", () => {
+    const page = renderMemberPage()
+    expect(page.indexOf('id="need"')).toBeGreaterThan(page.indexOf('id="sum"'))
+    expect(page.indexOf('id="need"')).toBeLessThan(page.indexOf('id="agents-box"'))
+    expect(page.indexOf('id="agents-box"')).toBeLessThan(page.indexOf('id="sent"'))
+  })
+
+  it("finds the agents that went from Working to Free, and nothing on the first load", () => {
+    const working = [{ agentId: "coder", state: "working" }, { agentId: "ops", state: "blocked" }, { agentId: "qa", state: "working" }]
+    const after = [{ agentId: "coder", state: "free" }, { agentId: "ops", state: "free" }, { agentId: "qa", state: "working" }, { agentId: "new", state: "free" }]
+    expect(freedAgents(working, after)).toEqual(["coder"])
+    expect(freedAgents(null, after)).toEqual([])
+  })
+
+  function notificationStub(permission: string) {
+    const shown: Array<{ title: string; body: string }> = []
+    function N(this: unknown, title: string, o: { body: string }) { shown.push({ title, body: o.body }) }
+    const stub = Object.assign(N, { permission, requestPermission: () => Promise.resolve((stub.permission = "granted")) })
+    return { stub, shown }
+  }
+  const agents = (state: string) => ({ status: 200, body: { open: [], recent: [], runs: [], agents: [
+    { agentId: "coder", state, by: "owner", at: Date.now(), text: null, fullText: null, where: null },
+  ] } })
+
+  it("notifies once when an agent becomes Free, with no word of the task", async () => {
+    const { stub, shown } = notificationStub("granted")
+    const p = openPage({ work: [agents("working"), agents("free"), agents("free")] }, { Notification: stub })
+    await p.settle()
+    expect(shown).toEqual([])
+    await p.fire(30_000)
+    expect(shown).toEqual([{ title: "coder is free", body: "Ready for your next message." }])
+    await p.fire(30_000)
+    expect(shown).toHaveLength(1)
+  })
+
+  it("offers the button only while the browser has not been asked, and hides it once allowed", async () => {
+    const { stub, shown } = notificationStub("default")
+    const p = openPage({ work: [agents("working"), agents("free")] }, { Notification: stub })
+    await p.settle()
+    expect(p.el("notify").hidden).toBe(false)
+    p.el("notify").click()
+    await p.settle()
+    expect(p.el("notify").hidden).toBe(true)
+    await p.fire(30_000)
+    expect(shown).toHaveLength(1)
+    for (const permission of ["denied", "granted"]) {
+      const q = openPage({}, { Notification: notificationStub(permission).stub })
+      expect(q.el("notify").hidden).toBe(true)
+    }
+    expect(openPage({}).el("notify").hidden).toBe(true)
   })
 })

@@ -81,11 +81,11 @@ If the teammate's Tailscale login is on their person entry as `tailscale:<login>
 The page shows, for that person only:
 
 - **One sentence** at the top: which of their agents is working on their task, and which is free.
-- **Your agents**: one card per agent they use (the agents you allowed them, or else the ones they talked to in the last 7 days). Each says **Working**, **Free** or **Blocked** in words, with a colour and a shape. A card on their own task shows what they asked, when, and where; **Show this request** opens it in place. A card busy with someone else's task says only that, and whether you or someone else started it.
-- **Needs a person**: present only when one of their requests waits on your answer or is stuck, with the question you were asked.
+- **Needs a person**, right under that sentence: present only when one of their requests waits on your answer or is stuck, with the question you were asked.
+- **Your agents**: one card per agent they use (the agents you allowed them, or else the ones they talked to in the last 7 days). Each says **Working**, **Free** or **Blocked** in words, with a colour and a shape. A card on their own task shows what they asked, when, and where; **Show this request** opens it in place. A card busy with someone else's task says only that, and whether you or someone else started it. **Tell me when an agent is free**, under the cards, lets the browser show a notification each time one of these agents goes from Working to Free while the page is open.
 - **What you sent** in the last 7 days: every turn they started, with its agent, where it was asked and its state (running, finished, waiting on the owner, stopped). A finished request links to what was delivered. A GitLab or GitHub thread is a link. Below the turns come their requests that no turn of the list stands for: one still open whose turn is older than 7 days, or one closed this week.
 
-![The My work page: the summary sentence, two agent cards, a question waiting on the owner, and the list of what was sent](/screenshots/members/my-work.png)
+![The My work page: the summary sentence, a question waiting on the owner, four agent cards, and the list of what was sent](/screenshots/members/my-work.png)
 
 It refreshes every 30 seconds. Opened without a connection, it shows what was last loaded and says it is offline. When the connection is up but your computer does not answer, the page says it can't reach the server, tries again every 20 seconds, and shows a **Try now** button. Either notice goes away as soon as a load works.
 

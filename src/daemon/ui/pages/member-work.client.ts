@@ -1,7 +1,9 @@
 // --- The work page's script (/member) (#386, #489, #443) ---
 //
-// Fills the summary line, the agent cards, "Needs a person" and "What you
-// sent". An opened agent card stays open across rounds. When a round
+// Fills the summary line, "Needs a person", the agent cards and "What you
+// sent". An opened agent card stays open across rounds. When an agent goes
+// from Working to Free between two good loads, a notification says so, once
+// the person has allowed them with the button under the cards. When a round
 // fails after a good one, the cards say the state is from the last load.
 //
 // One round every 30 seconds loads the work lists, and the name line too
@@ -13,7 +15,7 @@
 // cannot stop the rounds.
 //
 // workState, ageText, connectionNote, plainPreview, agentLine, sentState,
-// requestState and summaryLine come from injectFns.
+// requestState, summaryLine and freedAgents come from injectFns.
 // No backticks, backslashes or dollar-brace in the script: it sits inside
 // a TS template literal.
 
@@ -34,6 +36,22 @@ export const WORK_SCRIPT = `
   var agentsList = document.getElementById('agents');
   var need = document.getElementById('need');
   var opened = {}, last = null, lastAt = 0, shownStale = false;
+  var notify = document.getElementById('notify');
+  var canNotify = typeof Notification !== 'undefined';
+  function showNotify() { notify.hidden = !canNotify || Notification.permission !== 'default'; }
+  notify.addEventListener('click', function () {
+    // Older Safari answers by callback only.
+    var asked = Notification.requestPermission(showNotify);
+    if (asked && asked.then) asked.then(showNotify, showNotify);
+  });
+  function tellFree(id) {
+    if (!canNotify || Notification.permission !== 'granted') return;
+    try {
+      var n = new Notification(id + ' is free', { body: 'Ready for your next message.', tag: 'free-' + id });
+      n.onclick = function () { window.focus(); n.close(); };
+    } catch (e) { /* Chrome on Android shows them only from a service worker; the green card still says Free. */ }
+  }
+  showNotify();
   agentsList.addEventListener('click', function (ev) {
     var b = ev.target && ev.target.closest ? ev.target.closest('button.more') : null;
     if (!b) return;
@@ -160,6 +178,7 @@ export const WORK_SCRIPT = `
       if (!w) return;
       failed = false;
       var now = Date.now();
+      freedAgents(last && last.agents, w.agents || []).forEach(tellFree);
       show(w, now);
       last = w; lastAt = now; shownStale = false;
       updated.textContent = 'Updated ' + new Date(now).toLocaleTimeString() + '. This page refreshes by itself.';
