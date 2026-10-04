@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.110.1](https://github.com/anis-marrouchi/agentx/compare/v0.110.0...v0.110.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **config:** collapse navigation sections for improved organization ([53ef95d](https://github.com/anis-marrouchi/agentx/commit/53ef95d14c4e74317acc3ef67166ba263821be0d))
+
 ## [0.110.0](https://github.com/anis-marrouchi/agentx/compare/v0.109.0...v0.110.0) (2026-10-04)
 
 
