@@ -59,15 +59,20 @@ export function usable(e: Evidence): boolean {
   return true
 }
 
-/** The wiki's read rule, plus the project boundary. */
+/** The wiki's read rule, plus the project boundary. A requester with no agent id reads public records only. */
 export function canRead(scope: EvidenceScope, who: Requester): boolean {
   if (scope.project && !who.projects?.includes(scope.project)) return false
   if (scope.access === "public") return true
+  if (!who.agentId) return false
   if (scope.owner === who.agentId) return true
   return scope.access === "shared" && !!scope.sharedWith?.includes(who.agentId)
 }
 
-/** Where a record is indexed. A shared record is indexed once per reader. */
+/**
+ * Where a record is indexed. A shared record is indexed once per reader.
+ * `project` is not part of the partition: it must become one before
+ * anything may set the field.
+ */
 export function partitionsOf(scope: EvidenceScope): string[] {
   if (scope.access === "public") return ["public"]
   const readers = scope.access === "shared" ? [scope.owner, ...(scope.sharedWith ?? [])] : [scope.owner]
@@ -76,7 +81,7 @@ export function partitionsOf(scope: EvidenceScope): string[] {
 
 /** Where a requester may search. Derived from the task's agent, never passed in by it. */
 export function partitionsFor(who: Requester): string[] {
-  return ["public", `agent:${who.agentId}`]
+  return who.agentId ? ["public", `agent:${who.agentId}`] : ["public"]
 }
 
 export type Outcome =
@@ -104,7 +109,10 @@ export function resolve(current: Evidence, incoming: Evidence, now = Date.now())
   if (current.kind === "article" && current.approval) {
     if (incoming.kind === "article" && incoming.approval && incoming.source.id === current.source.id
       && incoming.source.version !== current.source.version) {
-      return { outcome: "supersede", reason: "a reviewed new version of the same article" }
+      // A content hash has no order, so the review dates decide which version is newer.
+      return Date.parse(incoming.approval.at) > Date.parse(current.approval.at)
+        ? { outcome: "supersede", reason: "a reviewed new version of the same article" }
+        : { outcome: "keep", reason: "not reviewed later than the current version of the same article" }
     }
     if (sameValue(current, incoming)) return { outcome: "same", reason: "same value" }
     return { outcome: "conflict", reason: "approved text changes only through review" }
@@ -137,8 +145,13 @@ const TRUST_ORDER: SourceTrust[] = ["external", "internal", "operator"]
  * Dropped: an id AgentX does not know (deleted), a version that is no
  * longer current (edited), a record that is revoked, superseded, held or
  * unreadable for this requester. Backend-written text is dropped unless
- * every record behind it passes the same checks, and it is always
- * returned as unverified.
+ * every record behind it passes the same checks and they share one
+ * partition this requester searches, or when it carries an id AgentX
+ * issued. It gets its own `d-` id and is always returned as unverified.
+ *
+ * The text itself cannot be checked here, only the records the backend
+ * names. Keeping other partitions' text out of it is the backend's duty
+ * (backend.ts `BackendHit.derived`).
  */
 export function gate(
   hit: BackendHit, lookup: (id: string) => Evidence | undefined, who: Requester, now = Date.now(),
@@ -146,11 +159,13 @@ export function gate(
   const ok = (e: Evidence | undefined): e is Evidence => !!e && usable(e) && canRead(e.scope, who)
 
   if (hit.derived) {
+    if (lookup(hit.id)) return null
     const from = hit.derived.from.map(lookup)
     if (!from.length || !from.every(ok)) return null
     const sources = from as Evidence[]
+    if (!partitionsFor(who).some((p) => sources.every((s) => partitionsOf(s.scope).includes(p)))) return null
     const evidence: Evidence = {
-      id: hit.id, kind: "derived", source: { id: `backend:${hit.id}`, version: hit.sourceVersion },
+      id: `d-${hit.id}`, kind: "derived", source: { id: `backend:${hit.id}`, version: hit.sourceVersion },
       content: hit.derived.content,
       eventAt: sources.map((s) => s.eventAt).sort().at(-1)!,
       ingestedAt: new Date(now).toISOString(),

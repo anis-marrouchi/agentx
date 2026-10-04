@@ -86,6 +86,10 @@ describe("resolve: which record is current", () => {
       paid({ claim: { subject: "production deploy", attribute: "window", value: "any day" }, check: { at: day(0), by: "owner", method: "owner said", confirmedBy: "owner" } }), "conflict"],
     ["a reviewed new version of the same article", article(),
       article({ source: { id: DEPLOY_WINDOW, version: "b2" }, claim: { subject: "production deploy", attribute: "window", value: "any day" }, approval: { by: "owner", at: day(0) } }), "supersede"],
+    ["an older reviewed version sent again", article({ source: { id: DEPLOY_WINDOW, version: "b2" }, approval: { by: "owner", at: day(0) } }),
+      article({ claim: { subject: "production deploy", attribute: "window", value: "any day" } }), "keep"],
+    ["a new version with an unreadable review date", article(),
+      article({ source: { id: DEPLOY_WINDOW, version: "b2" }, approval: { by: "owner", at: "today" } }), "keep"],
     ["a new version of the article nobody approved", article(),
       article({ source: { id: DEPLOY_WINDOW, version: "b2" }, claim: { subject: "production deploy", attribute: "window", value: "any day" }, approval: undefined }), "conflict"],
     ["a different approved article saying otherwise", article(),
@@ -119,6 +123,9 @@ describe("canRead: who may see a record", () => {
     ["public inside another project", { owner: "accountant", access: "public", project: "initech" }, coder, false],
     ["the owner's own record in a project they are not on", { owner: "coder", access: "private", project: "initech" }, coder, false],
     ["a project record, requester with no projects", { owner: "accountant", access: "public", project: "globex" }, { agentId: "coder" }, false],
+    ["public, requester with no agent id", { owner: "accountant", access: "public" }, { agentId: "" }, true],
+    ["private with no owner, requester with no agent id", { owner: "", access: "private" }, { agentId: "" }, false],
+    ["shared with an empty name, requester with no agent id", { owner: "accountant", access: "shared", sharedWith: [""] }, { agentId: "" }, false],
   ]
   it.each(cases)("%s", (_name, scope, who, want) => {
     expect(canRead(scope, who)).toBe(want)
@@ -129,6 +136,7 @@ describe("canRead: who may see a record", () => {
     expect(partitionsOf({ owner: "a", access: "private" })).toEqual(["agent:a"])
     expect(partitionsOf({ owner: "a", access: "shared", sharedWith: ["b", "a"] })).toEqual(["agent:a", "agent:b"])
     expect(partitionsFor({ agentId: "b" })).toEqual(["public", "agent:b"])
+    expect(partitionsFor({ agentId: "" })).toEqual(["public"])
   })
 })
 
@@ -140,7 +148,8 @@ describe("gate: what a backend's answer is worth", () => {
   const gone = ev({ source: { id: "entry:e-77", version: "1" }, state: "deleted", content: "" })
   const revoked = ev({ source: { id: "entry:e-78", version: "1" }, state: "revoked" })
   const held = ev({ source: { id: "entry:e-79", version: "1" }, trust: "external", review: "held" })
-  const store = new Map([fresh, secret, old, gone, revoked, held].map((e) => [e.id, e]))
+  const mine = ev({ source: { id: "memory:coder/m-2", version: "1" }, scope: { owner: "coder", access: "private" } })
+  const store = new Map([fresh, secret, old, gone, revoked, held, mine].map((e) => [e.id, e]))
   const lookup = (id: string) => store.get(id)
   const hit = (e: Evidence, over: Partial<BackendHit> = {}): BackendHit => ({ id: e.id, sourceVersion: e.source.version, score: 1, ...over })
 
@@ -158,6 +167,8 @@ describe("gate: what a backend's answer is worth", () => {
     ["backend text built on a revoked record", { id: "h-4", sourceVersion: "1", score: 1, derived: { content: "x", from: [fresh.id, revoked.id] } }],
     ["backend text built on a deleted record", { id: "h-5", sourceVersion: "1", score: 1, derived: { content: "x", from: [gone.id] } }],
     ["backend text built on an edited record", { id: "h-6", sourceVersion: "1", score: 1, derived: { content: "x", from: [old.id] } }],
+    ["backend text built across two partitions", { id: "h-8", sourceVersion: "1", score: 1, derived: { content: "x", from: [fresh.id, mine.id] } }],
+    ["backend text under an id AgentX issued", hit(fresh, { derived: { content: "x", from: [fresh.id] } })],
   ]
   it.each(dropped)("drops %s", (_name, h) => {
     expect(gate(h, lookup, who, NOW)).toBeNull()
@@ -176,7 +187,7 @@ describe("gate: what a backend's answer is worth", () => {
     )
     expect(r?.standing).toBe("unverified")
     expect(r?.evidence).toMatchObject({
-      kind: "derived", trust: "external", derivedFrom: [fresh.id, external.id],
+      id: "d-h-7", kind: "derived", trust: "external", derivedFrom: [fresh.id, external.id],
       scope: { owner: "coder", access: "private" }, volatility: "billing",
     })
     expect(r?.evidence.check).toBeUndefined()

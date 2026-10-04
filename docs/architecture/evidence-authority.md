@@ -85,7 +85,8 @@ When a new record disagrees with the current one about the same thing:
 | Any | Written by a backend | **Ignored** as evidence. Nobody is asked |
 | Any | From an external source, not yet approved | **Ignored** until a person approves it |
 | A reviewed article | Any observation or fact, even one a person confirmed in a chat | **Conflict**. Reviewed text changes only through its review |
-| A reviewed article | A reviewed new version of the same article | The new version **replaces** it |
+| A reviewed article | A version of the same article reviewed later | The new version **replaces** it |
+| A reviewed article | A version of the same article reviewed earlier, or with a review date that cannot be read | **Ignored**. Sending an old version again does not roll the article back |
 | An article nobody reviewed | Anything | The fact rules above apply, with the article as a fact nobody checked. A newer checked result **replaces** it; an unchecked claim is a **conflict** |
 
 A conflict uses the wiki's existing question queue (`agentx wiki questions`). Until a person answers, a search returns both records, each with its source and label, and marks them as disagreeing.
@@ -96,8 +97,10 @@ These are the fact ledger's existing rules, applied to every kind of record. Cod
 
 - The scope is set by AgentX when the record is made, from the source's own access rules.
 - The reader is the agent running the task. AgentX takes it from the task. It is never taken from what a model wrote, and never from a label or "bank" name in the backend.
-- Access is checked **twice**: AgentX tells the backend which partitions to search, then checks every returned record again against its own copy before anything is summarised or shown. The second check is the one that counts.
-- A backend-written summary is shown only if the reader may read every record behind it.
+- Access is checked **twice**: AgentX tells the backend which partitions to search, then checks every returned record again against its own copy before anything is shown. For a record, the second check is the one that counts.
+- A reader with no agent ID reads public records only, as in the wiki.
+- **Backend-written text is the exception.** AgentX can check the records a backend says it wrote a summary from. It cannot check the summary's words. So the partition is the only protection, and the backend must keep to it: it may write text only from records inside one partition, and may return that text only to a search of that partition. An adapter that cannot guarantee this must not return its own text.
+- AgentX still drops a summary unless the reader may read every record named behind it, and all of them sit in one partition the reader searches.
 
 A record with a project set is readable only by an agent working on that project. **The project field is reserved: nothing may set it yet.** A task does not carry a project today, so AgentX has nothing trusted to compare it with. The audit did not measure project boundaries. It did see the absorb job work on another project's wiki in 86 of its 184 runs, so an agent's working folder is not a boundary. If a record does carry a project, a reader with no project is refused.
 
@@ -109,6 +112,7 @@ A record with a project set is readable only by an agent working on that project
 | A record is revoked or deleted | Its state changes, its text is removed, and it is deleted from the backend. AgentX keeps the ID and the state so a late result can be recognised and dropped |
 | A record a summary was written from is edited, revoked, deleted or unreadable | The summary is dropped |
 | The backend returns an ID AgentX never issued | Dropped |
+| The backend returns its own text under an ID AgentX issued | Dropped. Backend text gets an ID of its own (`d-…`), so it is never cited as the real record |
 
 Code: `gate` in `src/evidence/authority.ts`.
 
@@ -137,9 +141,19 @@ Because AgentX holds the original records, exporting them or moving to another b
 ## Open points for review
 
 1. Where the records are stored (a file per agent, or the existing database). This belongs to the capture work in [#606](https://github.com/anis-marrouchi/agentx/issues/606).
-2. How a task gets a project that AgentX can trust. Until that exists the project field stays reserved (see above).
+2. How a task gets a project that AgentX can trust. Until that exists the project field stays reserved (see above). The project is also not part of the partition yet: a public record with a project would be indexed with every other public record. It must become part of the partition before anything may set the field.
 3. Whether a conflict with a reviewed article should open a wiki question, a promotion proposal, or both.
 4. Whether the articles the absorb job already wrote should be counted as reviewed. This contract says no: each one is unverified until a person reviews it. Counting them as reviewed in one step would be the owner's decision.
+
+### Left for the capture work (#606)
+
+The access-control review of this contract found five smaller points. None is reachable while nothing calls this code. Each must be settled before records are stored or sent to a backend:
+
+1. **Secrets.** Memory capture refuses a secret before it stores a fact (`isInjectable` in `src/agents/memory-trust.ts`). `usable` here does not repeat that check. The step that builds a record must refuse secrets before `upsert` sends the text to an outside service.
+2. **Unknown values.** An unknown access or state is refused. An unknown trust or review value is not: the record is shown. Both should be refused.
+3. **Backend text from approved external sources.** `gate` returns it marked external with no review, and `usable` then refuses it. The result is safe, but the two rules should agree.
+4. **A change of access.** When a record is unshared or made private, `gate` already drops it for the old reader. The copy indexed in the old reader's partition still has to be deleted.
+5. **A check on an article nobody reviewed.** The label ignores it, but `resolve` reads it when that article is the current record. One of the two should change.
 
 The audit in #603 has been read against this record. It needed no new field. The capture gaps it found (11 of 1,723 tasks with no entry, and no logged reason) are a logging fix, not a change to the record.
 

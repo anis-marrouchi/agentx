@@ -23,7 +23,11 @@ export interface BackendRecord {
   sourceVersion: string
   content: string
   eventAt: string
-  /** A hint for pre-filtering. The backend's answer is checked again by AgentX, so this is not the enforcement. */
+  /**
+   * A hint for pre-filtering. A returned record is checked again by AgentX,
+   * so for records this is not the enforcement. For text the backend writes
+   * itself the partition is: see `BackendHit.derived`.
+   */
   scope: EvidenceScope
 }
 
@@ -39,7 +43,14 @@ export interface BackendHit {
   id: string
   sourceVersion: string
   score: number
-  /** Text the backend wrote itself, and the ids it wrote it from. Returned as `derived`, never as a source. */
+  /**
+   * Text the backend wrote itself, and the ids it wrote it from. Returned as `derived`, never as a source.
+   *
+   * AgentX can check the ids, not the text. So a backend may write text
+   * only from records inside one partition, and may return it only for a
+   * query that names that partition. An adapter that cannot guarantee this
+   * must not return derived text.
+   */
   derived?: { content: string; from: string[] }
 }
 
