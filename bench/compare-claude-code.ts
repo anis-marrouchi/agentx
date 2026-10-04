@@ -1,21 +1,21 @@
-// Level 1, small: the same multi-step coding task run on the bare Claude
-// Code CLI and through AgentX (`agentx exec`), same model, same prompt,
-// several times each. Prints tokens, turns, wall time, the CLI's own cost
-// figure, and whether the task came out right. The first measured run of
-// #455 (AgentX against Claude Code alone).
+// The same coding tasks run on the bare Claude Code CLI and through AgentX
+// (`agentx exec`), same model, same prompt, several times each. Prints
+// tokens, turns, wall time, the CLI's own cost figure, whether each task
+// came out right, and, against the bare CLI, the ratio of medians with a
+// 95% bootstrap interval and a verdict. Measures #455 (AgentX against
+// Claude Code alone).
 //
-//   pnpm bench:compare                      # 3 runs each, Haiku, modes claude,agentx,agentx-lean
-//   pnpm bench:compare --runs 5 --model claude-sonnet-5-5
-//   pnpm bench:compare --modes claude,agentx --json out.json
+//   pnpm bench:compare                      # 3 runs each, Haiku, task fix-bugs, modes claude,agentx,agentx-lean
+//   pnpm bench:compare --runs 10 --model claude-sonnet-5-5 --tasks all --json out.json
+//   pnpm bench:compare --modes claude,agentx --tasks trace
 //   pnpm bench:compare --keep               # keep the work directories
 //
 // Every run calls the model and costs money (cents on Haiku, more on larger
 // models). The CLI must be signed in; both sides bill the same account.
 //
-// The task: a tiny Node project whose tests fail because of four bugs
-// across two source files. The agent has to run the tests, read the
-// code, fix it, and run the tests again. The check afterwards is
-// mechanical: the tests pass, and the test file is untouched.
+// The tasks are in compare-tasks.ts: small Node projects with failing
+// tests. The check afterwards is mechanical: the tests pass, and no file
+// under test/ changed.
 //
 // What each mode is:
 //   claude       `claude -p <prompt> --dangerously-skip-permissions` in a
@@ -32,11 +32,12 @@
 
 import { execFileSync, spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { primaryModelFromUsage } from "../src/agents/model-usage"
+import { type CompareTask, TASKS, taskById } from "./compare-tasks"
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 
@@ -46,12 +47,15 @@ interface Options {
   runs: number
   model: string
   modes: Mode[]
+  /** Task ids from compare-tasks.ts; runs interleave across them too. */
+  tasks: string[]
   json?: string
   keep: boolean
   timeoutMinutes: number
 }
 
-interface RunResult {
+export interface RunResult {
+  task?: string
   mode: Mode
   run: number
   ok: boolean
@@ -70,94 +74,31 @@ interface RunResult {
   billedModel?: string
 }
 
-export const PROMPT = [
-  "Run `npm test` in this project. Some tests fail.",
-  "Fix the code under src/ so that every test passes. Do not change anything under test/.",
-  "Run the tests again to confirm, then reply with one line: how many tests pass.",
-].join(" ")
+const FIX_BUGS = taskById("fix-bugs")!
 
-/** The project the task works on. Four bugs: mean divides by n+1, median
- *  ignores even lengths, mode returns the count instead of the value, and
- *  the report formats the range with the wrong separator. */
-export function writeFixture(dir: string): void {
-  mkdirSync(join(dir, "src"), { recursive: true })
-  mkdirSync(join(dir, "test"), { recursive: true })
-  writeFileSync(join(dir, "package.json"), JSON.stringify({
-    name: "stats-fixture", version: "1.0.0", private: true, type: "module",
-    scripts: { test: "node --test" },
-  }, null, 2) + "\n")
-  writeFileSync(join(dir, "src", "stats.js"), `// Small statistics helpers.
-export function mean(values) {
-  if (values.length === 0) return 0
-  let sum = 0
-  for (const v of values) sum += v
-  return sum / (values.length + 1)
-}
+/** The prompt of the first task, kept under its old name. */
+export const PROMPT = FIX_BUGS.prompt
 
-export function median(values) {
-  if (values.length === 0) return 0
-  const sorted = [...values].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)]
-}
-
-export function mode(values) {
-  if (values.length === 0) return null
-  const counts = new Map()
-  for (const v of values) counts.set(v, (counts.get(v) || 0) + 1)
-  let best = null
-  let bestCount = 0
-  for (const [value, count] of counts) {
-    if (count > bestCount) { best = value; bestCount = count }
+/** Write a task's project into dir (the first task by default). */
+export function writeFixture(dir: string, task: CompareTask = FIX_BUGS): void {
+  for (const [path, content] of Object.entries(task.files)) {
+    mkdirSync(dirname(join(dir, path)), { recursive: true })
+    writeFileSync(join(dir, path), content)
   }
-  return bestCount
-}
-
-export function range(values) {
-  if (values.length === 0) return 0
-  return Math.max(...values) - Math.min(...values)
-}
-`)
-  writeFileSync(join(dir, "src", "format.js"), `import { mean, median, mode, range } from "./stats.js"
-
-/** One line per statistic, "name: value", joined by newlines. */
-export function formatReport(values) {
-  const lines = [
-    \`mean: \${mean(values)}\`,
-    \`median: \${median(values)}\`,
-    \`mode: \${mode(values)}\`,
-    \`range: \${range(values)}\`,
-  ]
-  return lines.join(", ")
-}
-`)
-  writeFileSync(join(dir, "test", "stats.test.js"), `import { test } from "node:test"
-import assert from "node:assert/strict"
-import { mean, median, mode, range } from "../src/stats.js"
-import { formatReport } from "../src/format.js"
-
-test("mean of an empty list is 0", () => assert.equal(mean([]), 0))
-test("mean of 2, 4, 6 is 4", () => assert.equal(mean([2, 4, 6]), 4))
-test("mean of one value is that value", () => assert.equal(mean([7]), 7))
-test("median of an odd count is the middle value", () => assert.equal(median([5, 1, 3]), 3))
-test("median of an even count is the average of the two middle values", () => assert.equal(median([1, 2, 3, 4]), 2.5))
-test("median of an empty list is 0", () => assert.equal(median([]), 0))
-test("mode is the most frequent value, not its count", () => assert.equal(mode([5, 7, 5]), 5))
-test("mode of an empty list is null", () => assert.equal(mode([]), null))
-test("range is max minus min", () => assert.equal(range([4, 9, 1]), 8))
-test("report has one statistic per line", () => {
-  assert.equal(formatReport([1, 2, 2, 3]), "mean: 2\\nmedian: 2\\nmode: 2\\nrange: 2")
-})
-`)
 }
 
 function parseArgs(argv: string[]): Options {
-  const opts: Options = { runs: 3, model: "claude-haiku-4-5-20251001", modes: ["claude", "agentx", "agentx-lean"], keep: false, timeoutMinutes: 10 }
+  const opts: Options = { runs: 3, model: "claude-haiku-4-5-20251001", modes: ["claude", "agentx", "agentx-lean"], tasks: ["fix-bugs"], keep: false, timeoutMinutes: 10 }
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]
     const next = () => argv[++i]
     if (a === "--runs") opts.runs = Math.max(1, Number(next()))
     else if (a === "--model") opts.model = next()
     else if (a === "--modes") opts.modes = next().split(",").map((m) => m.trim()).filter(Boolean) as Mode[]
+    else if (a === "--tasks") {
+      const v = next()
+      opts.tasks = v === "all" ? TASKS.map((t) => t.id) : v.split(",").map((t) => t.trim()).filter(Boolean)
+    }
     else if (a === "--json") opts.json = next()
     else if (a === "--keep") opts.keep = true
     else if (a === "--timeout") opts.timeoutMinutes = Math.max(1, Number(next()))
@@ -167,11 +108,14 @@ function parseArgs(argv: string[]): Options {
   for (const m of opts.modes) {
     if (!["claude", "agentx", "agentx-lean"].includes(m)) { console.error(`unknown mode "${m}"`); process.exit(2) }
   }
+  for (const t of opts.tasks) {
+    if (!taskById(t)) { console.error(`unknown task "${t}" (known: ${TASKS.map((x) => x.id).join(", ")}, or all)`); process.exit(2) }
+  }
   return opts
 }
 
 function usage(): string {
-  return "pnpm bench:compare [--runs N] [--model id] [--modes claude,agentx,agentx-lean] [--json file] [--keep] [--timeout minutes]"
+  return "pnpm bench:compare [--runs N] [--model id] [--modes claude,agentx,agentx-lean] [--tasks fix-bugs,implement,trace|all] [--json file] [--keep] [--timeout minutes]"
 }
 
 function sha(file: string): string {
@@ -225,19 +169,20 @@ function parseAgentx(stdout: string): Parsed {
   }
 }
 
-function runOnce(mode: Mode, run: number, opts: Options, root: string): RunResult {
-  const dir = join(root, `${mode}-${run}`)
+function runOnce(task: CompareTask, mode: Mode, run: number, opts: Options, root: string): RunResult {
+  const dir = join(root, `${task.id}-${mode}-${run}`)
   const work = join(dir, "work")
-  writeFixture(work)
-  const testFile = join(work, "test", "stats.test.js")
-  const before = sha(testFile)
+  writeFixture(work, task)
+  const testFiles = Object.keys(task.files).filter((f) => f.startsWith("test/")).map((f) => join(work, f))
+  const before = testFiles.map(sha)
+  const prompt = task.prompt
   const timeoutMs = opts.timeoutMinutes * 60_000
   const env = { ...process.env }
   let parsed: Parsed
   const started = Date.now()
   if (mode === "claude") {
     const r = spawnSync("claude", [
-      "-p", PROMPT, "--model", opts.model, "--output-format", "json", "--dangerously-skip-permissions",
+      "-p", prompt, "--model", opts.model, "--output-format", "json", "--dangerously-skip-permissions",
     ], { cwd: work, encoding: "utf8", env, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 })
     parsed = r.status === 0 || (r.stdout && r.stdout.trim().startsWith("{"))
       ? safeParse(() => parseClaude(r.stdout), r.stderr)
@@ -258,17 +203,17 @@ function runOnce(mode: Mode, run: number, opts: Options, root: string): RunResul
     const args = [join(REPO, "dist/cli.js"), "exec", "-a", "bench", "-c", configPath, "--setup-workspace", "--json",
       "-m", opts.model, "--channel", "exec", "--timeout", String(opts.timeoutMinutes)]
     if (mode === "agentx-lean") args.push("--profile", "lean")
-    const r = spawnSync(process.execPath, args, { cwd: state, input: PROMPT, encoding: "utf8", env, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 })
+    const r = spawnSync(process.execPath, args, { cwd: state, input: prompt, encoding: "utf8", env, timeout: timeoutMs, maxBuffer: 50 * 1024 * 1024 })
     parsed = r.stdout && r.stdout.includes("{")
       ? safeParse(() => parseAgentx(r.stdout), r.stderr)
       : { error: (r.stderr || `agentx exited ${r.status}`).trim().slice(-500), usage: zeroUsage() }
   }
   const wallMs = Date.now() - started
-  const untouched = existsSync(testFile) && sha(testFile) === before
+  const untouched = testFiles.every((f, i) => existsSync(f) && sha(f) === before[i])
   const pass = untouched && testsPass(work)
   const u = parsed.usage
   return {
-    mode, run, ok: !parsed.error && pass, testsPass: pass, testsUntouched: untouched, error: parsed.error,
+    task: task.id, mode, run, ok: !parsed.error && pass, testsPass: pass, testsUntouched: untouched, error: parsed.error,
     numTurns: parsed.numTurns,
     inputTokens: u.inputTokens, outputTokens: u.outputTokens, cacheReadTokens: u.cacheReadTokens, cacheCreateTokens: u.cacheCreateTokens,
     totalTokens: u.inputTokens + u.outputTokens + u.cacheReadTokens + u.cacheCreateTokens,
@@ -295,22 +240,143 @@ function fmtS(ms?: number): string { return ms === undefined ? "-" : `${(ms / 10
 
 export function renderTable(results: RunResult[], opts: Options): string {
   const lines: string[] = []
-  lines.push(`Model: ${opts.model}. Runs per mode: ${opts.runs}. Task: fix four bugs so ten tests pass.`, "")
-  lines.push("| Mode | Run | Correct | Turns | Input | Output | Cache read | Cache write | Total tokens | Cost (CLI) | Wall |")
-  lines.push("|---|---|---|---|---|---|---|---|---|---|---|")
-  for (const r of results) {
-    const correct = r.ok ? "yes" : r.error ? `no (${r.error.slice(0, 40).replace(/\|/g, "/")})` : r.testsUntouched ? "no (tests fail)" : "no (tests edited)"
-    lines.push(`| ${r.mode} | ${r.run} | ${correct} | ${r.numTurns ?? "-"} | ${fmtK(r.inputTokens)} | ${fmtK(r.outputTokens)} | ${fmtK(r.cacheReadTokens)} | ${fmtK(r.cacheCreateTokens)} | ${fmtK(r.totalTokens)} | ${fmtUsd(r.costUsd)} | ${fmtS(r.wallMs)} |`)
+  lines.push(`Model: ${opts.model}. Runs per mode: ${opts.runs}.`)
+  const taskIds = [...new Set(results.map((r) => r.task))]
+  for (const taskId of taskIds) {
+    const task = taskId ? taskById(taskId) : undefined
+    const rs = results.filter((r) => r.task === taskId)
+    lines.push("")
+    if (task) lines.push(`### Task ${task.id}: ${task.title}`, "")
+    lines.push("| Mode | Run | Correct | Turns | Input | Output | Cache read | Cache write | Total tokens | Cost (CLI) | Wall |")
+    lines.push("|---|---|---|---|---|---|---|---|---|---|---|")
+    for (const r of rs) {
+      const correct = r.ok ? "yes" : r.error ? `no (${r.error.slice(0, 40).replace(/\|/g, "/")})` : r.testsUntouched ? "no (tests fail)" : "no (tests edited)"
+      lines.push(`| ${r.mode} | ${r.run} | ${correct} | ${r.numTurns ?? "-"} | ${fmtK(r.inputTokens)} | ${fmtK(r.outputTokens)} | ${fmtK(r.cacheReadTokens)} | ${fmtK(r.cacheCreateTokens)} | ${fmtK(r.totalTokens)} | ${fmtUsd(r.costUsd)} | ${fmtS(r.wallMs)} |`)
+    }
+    lines.push("", "Medians per mode:", "")
+    lines.push("| Mode | Correct | Turns | Total tokens | Cache read | Cost (CLI) | Wall |")
+    lines.push("|---|---|---|---|---|---|---|")
+    for (const mode of opts.modes) {
+      const ms = rs.filter((r) => r.mode === mode)
+      if (!ms.length) continue
+      const ok = ms.filter((r) => r.ok).length
+      const costs = ms.map((r) => r.costUsd).filter((c): c is number => typeof c === "number")
+      lines.push(`| ${mode} | ${ok}/${ms.length} | ${median(ms.map((r) => r.numTurns ?? 0))} | ${fmtK(median(ms.map((r) => r.totalTokens)))} | ${fmtK(median(ms.map((r) => r.cacheReadTokens)))} | ${costs.length ? fmtUsd(median(costs)) : "-"} | ${fmtS(median(ms.map((r) => r.wallMs)))} |`)
+    }
   }
-  lines.push("", "Medians per mode:", "")
-  lines.push("| Mode | Correct | Turns | Total tokens | Cache read | Cost (CLI) | Wall |")
-  lines.push("|---|---|---|---|---|---|---|")
-  for (const mode of opts.modes) {
-    const rs = results.filter((r) => r.mode === mode)
-    if (!rs.length) continue
-    const ok = rs.filter((r) => r.ok).length
-    const costs = rs.map((r) => r.costUsd).filter((c): c is number => typeof c === "number")
-    lines.push(`| ${mode} | ${ok}/${rs.length} | ${median(rs.map((r) => r.numTurns ?? 0))} | ${fmtK(median(rs.map((r) => r.totalTokens)))} | ${fmtK(median(rs.map((r) => r.cacheReadTokens)))} | ${costs.length ? fmtUsd(median(costs)) : "-"} | ${fmtS(median(rs.map((r) => r.wallMs)))} |`)
+  const verdicts = compareToBare(results, opts.modes)
+  if (verdicts.length) lines.push("", renderVerdicts(verdicts))
+  return lines.join("\n")
+}
+
+// --- The decision: is an AgentX mode's token use (or cost) different
+// from the bare CLI's, and by how much? The ratio of medians (AgentX over
+// bare) per task, with a 95% bootstrap interval, and across tasks the
+// geometric mean of those ratios. Every run counts, correct or not: tokens
+// spent on a wrong answer are still spent. The interval decides:
+//   upper bound below 1   AgentX uses less
+//   lower bound above 1   AgentX uses more
+//   otherwise             no clear difference at this sample size
+// and "within 10%" when the whole interval sits between 0.90 and 1.10.
+
+export type Metric = "totalTokens" | "costUsd"
+
+export interface Verdict {
+  metric: Metric
+  mode: Mode
+  /** Undefined for the row pooled over every task. */
+  task?: string
+  ratio: number
+  lo: number
+  hi: number
+  runs: { agentx: number; bare: number }
+  verdict: "less" | "more" | "unclear"
+  within10: boolean
+}
+
+/** A small seeded generator so the same results give the same interval. */
+function rng(seed: number): () => number {
+  let a = seed >>> 0
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0
+    let t = a
+    t = Math.imul(t ^ (t >>> 15), t | 1)
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61)
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+function resample(values: number[], rand: () => number): number[] {
+  return values.map(() => values[Math.floor(rand() * values.length)])
+}
+
+function percentile(sorted: number[], p: number): number {
+  const i = Math.min(sorted.length - 1, Math.max(0, Math.round(p * (sorted.length - 1))))
+  return sorted[i]
+}
+
+function values(rs: RunResult[], metric: Metric): number[] {
+  return rs.map((r) => r[metric]).filter((v): v is number => typeof v === "number" && v > 0)
+}
+
+export function compareToBare(results: RunResult[], modes: Mode[], iterations = 5000): Verdict[] {
+  if (!modes.includes("claude")) return []
+  const out: Verdict[] = []
+  const taskIds = [...new Set(results.map((r) => r.task))]
+  for (const metric of ["totalTokens", "costUsd"] as Metric[]) {
+    for (const mode of modes.filter((m) => m !== "claude")) {
+      const pairs = taskIds.map((task) => ({
+        task,
+        a: values(results.filter((r) => r.task === task && r.mode === mode), metric),
+        b: values(results.filter((r) => r.task === task && r.mode === "claude"), metric),
+      })).filter((p) => p.a.length >= 2 && p.b.length >= 2)
+      if (!pairs.length) continue
+      const rand = rng(455)
+      const perTask = pairs.map(() => [] as number[])
+      const pooled: number[] = []
+      for (let i = 0; i < iterations; i++) {
+        let logSum = 0
+        pairs.forEach((p, k) => {
+          const ratio = median(resample(p.a, rand)) / median(resample(p.b, rand))
+          perTask[k].push(ratio)
+          logSum += Math.log(ratio)
+        })
+        pooled.push(Math.exp(logSum / pairs.length))
+      }
+      const make = (task: string | undefined, ratio: number, draws: number[], runs: { agentx: number; bare: number }): Verdict => {
+        const sorted = [...draws].sort((x, y) => x - y)
+        const lo = percentile(sorted, 0.025)
+        const hi = percentile(sorted, 0.975)
+        return { metric, mode, task, ratio, lo, hi, runs, verdict: hi < 1 ? "less" : lo > 1 ? "more" : "unclear", within10: lo >= 0.9 && hi <= 1.1 }
+      }
+      const ratios = pairs.map((p) => median(p.a) / median(p.b))
+      pairs.forEach((p, k) => out.push(make(p.task, ratios[k], perTask[k], { agentx: p.a.length, bare: p.b.length })))
+      if (pairs.length > 1) {
+        const geo = Math.exp(ratios.reduce((sum, r) => sum + Math.log(r), 0) / ratios.length)
+        out.push(make(undefined, geo, pooled, {
+          agentx: pairs.reduce((n, p) => n + p.a.length, 0), bare: pairs.reduce((n, p) => n + p.b.length, 0),
+        }))
+      }
+    }
+  }
+  return out
+}
+
+export function renderVerdicts(verdicts: Verdict[]): string {
+  const pct = (x: number) => `${x >= 1 ? "+" : ""}${((x - 1) * 100).toFixed(0)}%`
+  const word = (v: Verdict) => {
+    const what = v.metric === "costUsd" ? "costs" : "uses"
+    const base = v.verdict === "less" ? `${what} less` : v.verdict === "more" ? `${what} more` : "no clear difference"
+    return v.within10 ? `${base}; within 10%` : base
+  }
+  const lines = [
+    "Against the bare CLI (AgentX median over bare median, 95% bootstrap interval; every run counts):",
+    "",
+    "| Metric | Mode | Task | Runs (AgentX/bare) | Ratio | 95% interval | Verdict |",
+    "|---|---|---|---|---|---|---|",
+  ]
+  for (const v of verdicts) {
+    lines.push(`| ${v.metric === "costUsd" ? "cost" : "tokens"} | ${v.mode} | ${v.task ?? "all tasks"} | ${v.runs.agentx}/${v.runs.bare} | ${v.ratio.toFixed(2)} (${pct(v.ratio)}) | ${v.lo.toFixed(2)} to ${v.hi.toFixed(2)} | ${word(v)} |`)
   }
   return lines.join("\n")
 }
@@ -327,22 +393,34 @@ async function main(): Promise<void> {
   }
   const root = mkdtempSync(join(tmpdir(), "agentx-compare-"))
   console.error(`work directories under ${root}${opts.keep ? "" : " (removed at the end; --keep keeps them)"}`)
+  const tasks = opts.tasks.map((id) => taskById(id)!)
   const results: RunResult[] = []
-  // Interleave the modes so a slow hour hits every mode the same way.
+  const save = () => {
+    if (!opts.json) return
+    writeFileSync(opts.json, JSON.stringify({
+      model: opts.model, runs: opts.runs, modes: opts.modes,
+      tasks: tasks.map((t) => ({ id: t.id, title: t.title, prompt: t.prompt })),
+      at: new Date().toISOString(), results,
+    }, null, 2) + "\n")
+  }
+  // Interleave tasks and modes so a slow hour hits every mode the same way.
+  // The raw file is rewritten after every run, so a long series that stops
+  // part way keeps what it measured.
+  const total = opts.runs * tasks.length * opts.modes.length
   for (let run = 1; run <= opts.runs; run++) {
-    for (const mode of opts.modes) {
-      console.error(`[${mode} ${run}/${opts.runs}] running…`)
-      const r = runOnce(mode, run, opts, root)
-      results.push(r)
-      console.error(`[${mode} ${run}/${opts.runs}] ${r.ok ? "correct" : "NOT correct"} turns=${r.numTurns ?? "-"} tokens=${fmtK(r.totalTokens)} cost=${fmtUsd(r.costUsd)} wall=${fmtS(r.wallMs)}${r.error ? ` error=${r.error.slice(0, 120)}` : ""}`)
+    for (const task of tasks) {
+      for (const mode of opts.modes) {
+        const tag = `[${results.length + 1}/${total} ${task.id} ${mode} ${run}/${opts.runs}]`
+        console.error(`${tag} running…`)
+        const r = runOnce(task, mode, run, opts, root)
+        results.push(r)
+        save()
+        console.error(`${tag} ${r.ok ? "correct" : "NOT correct"} turns=${r.numTurns ?? "-"} tokens=${fmtK(r.totalTokens)} cost=${fmtUsd(r.costUsd)} wall=${fmtS(r.wallMs)}${r.error ? ` error=${r.error.slice(0, 120)}` : ""}`)
+      }
     }
   }
-  const table = renderTable(results, opts)
-  console.log(table)
-  if (opts.json) {
-    writeFileSync(opts.json, JSON.stringify({ model: opts.model, runs: opts.runs, prompt: PROMPT, at: new Date().toISOString(), results }, null, 2) + "\n")
-    console.error(`raw results written to ${opts.json}`)
-  }
+  console.log(renderTable(results, opts))
+  if (opts.json) console.error(`raw results written to ${opts.json}`)
   if (!opts.keep) rmSync(root, { recursive: true, force: true })
 }
 
