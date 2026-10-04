@@ -99,14 +99,72 @@ explained.
   machine with no user-level Claude Code settings, AgentX with no history
   or memory.
 
+## Follow-up: why AgentX took the extra call, and the fix
+
+**Cause.** The session logs show the extra call is a survey. In 8 of 10
+runs of each AgentX profile, the first call listed the files and counted
+their lines (`ls`, `wc -l`) without reading them, so reading took a
+second call. The bare CLI read everything in its first call in 9 of 10.
+
+**Pinpointed by ablation** (`bench/ablate-trace.py`, raw runs in
+`ablation-trace-sonnet-5-5.jsonl`): the bare CLI on `trace`, with one
+lean-AgentX ingredient added at a time, 10 runs each.
+
+| Added to the bare CLI | First call counts lines | First call only surveys | Median tokens |
+|---|---|---|---|
+| nothing | 0/10 | 0/10 | 104k |
+| AgentX's prompt wrapper | 0/10 | 0/10 | 105k |
+| AgentX's appended instructions | 0/10 | 0/10 | 105k |
+| AgentX's tool server (MCP) | 0/10 | 0/10 | 142k |
+| `.claude/settings.json` only | 0/10 | 0/10 | 105k |
+| CLAUDE.md and AGENTS.md only | 0/10 | 0/10 | 108k |
+| `.claude/rules` only | 2/10 | 0/10 | 105k |
+| all project files | 5/10 | 1/10 | 128k |
+| everything (lean AgentX) | **10/10** | **6/10** | **160k** |
+| everything but the rule "Keep files under 300 lines" | 2/10 | 2/10 | 124k |
+
+The trigger is one line in the generated `.claude/rules/code-quality.md`:
+"Keep files under 300 lines". On its own it rarely changes anything; with
+the rest of AgentX's setup the agent counts lines on every run (10 of 10
+against 2 of 10 without it; Fisher's exact test p = 0.0001). The tool
+server alone made more runs go past 3 calls (7 of 10 against 3 of 10),
+but that is not significant at 10 runs (p = 0.18) and its extra calls
+were edit retries, not surveys.
+
+**Fix.** The line is removed from the generated rule; a workspace whose
+rule is still the old generated text is updated, a hand-edited rule is
+left alone (`src/agents/workspace-setup.ts`).
+
+**Checked through `agentx exec`** after the fix: `trace`, 10 runs each,
+raw runs in `token-test-trace-after-fix-sonnet-5-5.json`.
+
+| `trace` | First call only surveys, before | After | Median tokens, before | After | Over bare, after |
+|---|---|---|---|---|---|
+| Bare CLI | 1/10 | 2/10 | 100.9k | 117.7k | |
+| Full AgentX | 8/10 | 2/10 | 152.3k | 152.2k | 1.29 (0.84 to 1.96), no clear difference |
+| Lean AgentX | 8/10 | 1/10 | 136.5k | **102.3k** | **0.87** (0.76 to 1.37), no clear difference |
+
+The survey call is gone for both profiles. Lean AgentX's median on
+`trace` is now below the bare CLI's; with 10 runs the interval still
+includes 1, so this is "no longer more", not yet "less".
+
+**What remains** is a second kind of extra call, not caused by AgentX:
+the model edits `checkout.js` with `sed`, leaves a duplicate line, and
+spends one to three calls fixing it. After the fix it happened in 3 of 10
+runs in every mode, bare CLI included. It costs full AgentX more than
+the others because each of its calls carries about 4.5k more tokens;
+three such runs at about 230k are what keep its median cost 29 percent
+above the bare CLI.
+
 ## What to do with it
 
-1. Use the lean profile wherever a channel runs one-shot coding tasks; it
-   is within 2 percent of the bare CLI per call.
-2. Read the `trace` session logs to find why AgentX more often takes a
-   fourth call, and fix it if its instructions cause it (for example, a
-   rule to run the tests before editing).
-3. Repeat on Haiku 4.5, where the earlier run showed far more variation
+1. Use the lean profile wherever a channel runs one-shot coding tasks.
+2. Rerun the 90-run series with the fix, to replace the `trace` row
+   above with a full before/after.
+3. Find what in the full profile costs 4.5k tokens a call that lean
+   does not need (the CLAUDE.md is both appended to the system prompt
+   and loaded by Claude Code from the project, so it is sent twice).
+4. Repeat on Haiku 4.5, where the earlier run showed far more variation
    in the number of calls.
 
 ## Check it worked
