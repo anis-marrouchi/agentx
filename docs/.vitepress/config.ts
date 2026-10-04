@@ -47,6 +47,7 @@ const groups = [
     { text: "Record a VS Code walkthrough", link: "/tutorials/record-vscode" },
     { text: "Architecture", link: "/architecture/overview" },
     { text: "Jev and typed decisions", link: "/architecture/jev" },
+    { text: "Backtest the wake gate and model tier", link: "/architecture/jev-backtest" },
     { text: "Persistent Codex processes", link: "/architecture/persistent-codex-process" },
     { text: "Persistent OpenCode servers", link: "/architecture/persistent-opencode-process" },
     { text: "Author a teach lesson", link: "/guides/teach-authoring" },

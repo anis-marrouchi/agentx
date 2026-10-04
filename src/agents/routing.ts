@@ -58,7 +58,15 @@ import {
  *  adequate — it is the point past which being wrong is cheap, and the
  *  asymmetry between "saved a fraction of a cent" and "gave a subtly wrong
  *  answer nobody caught" is not close. */
-const DOWNGRADE_BELOW = 0.2
+export const DOWNGRADE_BELOW = 0.2
+
+/** Channels where the person picked the model themselves — in the desktop
+ *  app, or as agentx/<agent> in OpenCode's model menu. Downgrading there is
+ *  overriding them, so routing never applies. Exported so an offline
+ *  replay (scripts/backtest-jev.ts) applies the same rule as this path. */
+export function channelKeepsConfiguredModel(channel: string | null | undefined): boolean {
+  return channel === "voice" || channel === "desktop" || channel === "opencode"
+}
 
 /** How long a cached prefix is assumed to live. Anthropic's default TTL is
  *  five minutes with a one-hour option; an hour is assumed here because it
@@ -114,9 +122,7 @@ export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
     downgraded: false, needsFlagship: p, reason,
   })
 
-  // The person picked this agent's model: in the desktop app, or as
-  // agentx/<agent> in OpenCode's model menu. Downgrading it is overriding them.
-  if (opts.channel === "voice" || opts.channel === "desktop" || opts.channel === "opencode") {
+  if (channelKeepsConfiguredModel(opts.channel)) {
     return keep(`${opts.channel} requests retain the configured model`)
   }
 
