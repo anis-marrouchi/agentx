@@ -13,7 +13,7 @@
 import { AX_TOKENS_CSS } from "../tokens"
 import { injectFns } from "../inject"
 import { formatPairInput } from "./app-pair-logic"
-import { agentLine, connectionNote, plainPreview, requestState, sentState, summaryLine } from "./member-logic"
+import { agentLine, connectionNote, freedAgents, plainPreview, requestState, sentState, summaryLine } from "./member-logic"
 import { WORK_SCRIPT } from "./member-work.client"
 import { BASE_CSS, LOCKED_CSS, WAITING_CSS, WORK_CSS } from "./member-styles"
 
@@ -116,12 +116,12 @@ ${bar("Connecting…", `
 <p id="install" class="install" hidden>To keep this window on your desktop: in Edge or Chrome open the browser menu, then <b>Apps</b>, then <b>Install this site as an app</b>.</p>
 <main class="wrap">
   <p id="sum" class="sum" aria-live="polite">Loading…</p>
-  <section id="agents-box" aria-labelledby="h-agents" hidden><h2 id="h-agents">Your agents</h2><ul id="agents" class="agents"></ul></section>
   <section id="need" class="need" aria-labelledby="h-need" hidden><h2 id="h-need">Needs a person</h2><ul id="need-list"></ul></section>
+  <section id="agents-box" aria-labelledby="h-agents" hidden><h2 id="h-agents">Your agents</h2><ul id="agents" class="agents"></ul><button type="button" id="notify" class="notify" hidden>Tell me when an agent is free</button></section>
   <section aria-labelledby="h-sent"><h2 id="h-sent">What you sent <span class="n">(last 7 days)</span></h2><ul id="sent" class="rows"></ul></section>
   <p id="updated" class="foot"></p>
 </main>
-<script>${injectFns({ workState, ageText, connectionNote, plainPreview, agentLine, sentState, requestState, summaryLine })}${WORK_SCRIPT}</script>
+<script>${injectFns({ workState, ageText, connectionNote, plainPreview, agentLine, sentState, requestState, summaryLine, freedAgents })}${WORK_SCRIPT}</script>
 </body>
 </html>`
 }
