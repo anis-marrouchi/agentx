@@ -62,6 +62,22 @@ export function readClaudeMdHashSafe(workspace: string): string | null {
   }
 }
 
+/**
+ * Flags for a lean claude session (#615): only the MCP servers in the
+ * workspace's own .mcp.json, and no user-level settings. Measured on
+ * Claude Code 2.1.289: 48.9k -> 36.3k tokens on the first turn.
+ * `--tools` is deliberately left alone: without tool search every MCP
+ * tool schema loads in full.
+ */
+export function leanSessionArgs(workspace: string): string[] {
+  const mcpPath = resolve(workspace, ".mcp.json")
+  return [
+    "--strict-mcp-config",
+    ...(existsSync(mcpPath) ? ["--mcp-config", mcpPath] : []),
+    "--setting-sources", "project,local",
+  ]
+}
+
 const TURN_DEADLINE_MS = 20 * 60 * 1000   // default when the caller passes no deadlineMs
 const KILL_GRACE_MS = 5_000               // SIGTERM → wait → SIGKILL
 
@@ -323,6 +339,7 @@ class ClaudeProcessHandle implements ProcessHandle {
     if (opts.systemPromptAppend && opts.systemPromptAppend.trim().length > 0) {
       args.push("--append-system-prompt", opts.systemPromptAppend)
     }
+    if (opts.leanSession) args.push(...leanSessionArgs(opts.workspace))
     if (this.factoryOpts.extraArgs) {
       args.push(...this.factoryOpts.extraArgs)
     }

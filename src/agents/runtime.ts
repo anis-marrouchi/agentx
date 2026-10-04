@@ -28,7 +28,7 @@ import type { AgentDef } from "@/daemon/config"
 import type { SeededMessage } from "@/channels/types"
 import { getProcessRegistry } from "./process-registry-instance"
 import { RegistryCapExceeded, type ProcessKey } from "./process-registry"
-import { TurnDeadlineExceeded, TurnInterrupted } from "./claude-process-factory"
+import { TurnDeadlineExceeded, TurnInterrupted, leanSessionArgs } from "./claude-process-factory"
 import { effectiveMcpConfig } from "./codegraph-bootstrap"
 import { autonomyBrief, isRestricted, type AutonomyLevel } from "@/guard/autonomy"
 import { autonomyClaudeArgs, autonomyUnsupported, takeAutonomyBlocks, type AutonomyBlock } from "@/guard/autonomy-enforce"
@@ -89,6 +89,8 @@ export interface AgentTask {
    *  an agent as part of a state transition, this carries the run id so
    *  post:response can re-enter the engine with an agentResult condition. */
   workflowRunId?: string
+  /** Set by the registry when the task's channel is in `session.leanChannels`. */
+  leanSession?: boolean
   /** Per-invocation model override (e.g. cron model). Falls back to agent.model. */
   model?: string
   /** What the person typed, when `message` wraps it in a prompt of the
@@ -805,7 +807,7 @@ export async function executeClaudeCode(
   const prompt = buildPrompt(agent, task, historyContext)
   const restricted = restrictedClaudeArgs(task)
   if ("error" in restricted) return { content: "", error: restricted.error, duration: Date.now() - start }
-  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend, restricted.args)
+  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend, [...(task.leanSession ? leanSessionArgs(agent.workspace) : []), ...restricted.args])
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "spawn")
 
   // If the caller already aborted before we spawned, short-circuit so we
@@ -944,7 +946,7 @@ export async function executeClaudeCodeStreaming(
   const prompt = buildPrompt(agent, task, historyContext)
   const restricted = restrictedClaudeArgs(task)
   if ("error" in restricted) return { content: "", error: restricted.error, duration: Date.now() - start }
-  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend, restricted.args)
+  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend, [...(task.leanSession ? leanSessionArgs(agent.workspace) : []), ...restricted.args])
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "stream")
 
   let fullText = ""
@@ -1944,6 +1946,7 @@ async function executeClaudeCodePersistent(
       permissionMode: agent.permissionMode,
       billing: agent.billing,
       systemPromptAppend: task.systemPromptAppend,
+      leanSession: task.leanSession,
       resumeSessionId,
     })
     wasFreshSpawn = registry.list().length > before

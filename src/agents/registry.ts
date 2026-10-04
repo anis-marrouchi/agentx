@@ -2435,6 +2435,7 @@ export class AgentRegistry {
     const taskWithSystemPrompt: AgentTask = {
       ...task, systemPromptAppend,
       ...(routedModel ? { model: routedModel } : {}),
+      ...(this.config.session.leanChannels.includes(task.context?.channel || "api") ? { leanSession: true } : {}),
     }
 
     let finalResponse: AgentResponse | undefined

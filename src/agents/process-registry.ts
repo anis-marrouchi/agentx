@@ -87,6 +87,8 @@ export interface SpawnOptions {
   /** The agent's `billing`; picks which Anthropic credential the spawn keeps. */
   billing?: ClaudeBilling
   systemPromptAppend?: string
+  /** Start with the lean session flags (`session.leanChannels`). */
+  leanSession?: boolean
   /** Pass-through to `claude --resume <id>`. Set when SessionStore has a
    *  stored claudeSessionId for this chat (e.g. across daemon restart). */
   resumeSessionId?: string

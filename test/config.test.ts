@@ -10,6 +10,11 @@ describe("daemonConfigSchema", () => {
       expect(daemonConfigSchema.safeParse({ ...config, session: { tierTwoThresholdTokensByChannel: { voice: tokens } } }).success).toBe(false)
     }
   })
+  it("defaults lean channels to none and keeps the configured ones", () => {
+    const node = { id: "test", name: "Test" }
+    expect(daemonConfigSchema.parse({ node }).session.leanChannels).toEqual([])
+    expect(daemonConfigSchema.parse({ node, session: { leanChannels: ["github", "a2a"] } }).session.leanChannels).toEqual(["github", "a2a"])
+  })
   it("validates minimal config", () => {
     const result = daemonConfigSchema.safeParse({
       node: { id: "test", name: "Test" },
