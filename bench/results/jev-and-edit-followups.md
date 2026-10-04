@@ -38,8 +38,10 @@ variants `now`, `now-edit`, `now-edit2`):
 - **B is worse on both.** Mixing `sed` and Edit led to more calls, not
   fewer.
 
-**Not shipped.** A trades 13 percent fewer tokens and steadier runs for
-4 percent more money. That is a choice for the owner, not a default.
+**Shipped, by the owner's choice.** A trades 13 percent fewer tokens and
+steadier runs for 4 percent more money. It is in the system prompt of
+every `claude-code` agent (`EDIT_TOOL_INSTRUCTION` in
+`src/agents/registry.ts`); Codex has no Edit tool and does not get it.
 
 ## 2. The context seat on the landscape sections
 

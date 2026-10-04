@@ -90,6 +90,15 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 }
 ```
 
+### Instructions AgentX adds for coding agents
+
+A `claude-code` or `codex-cli` agent gets two short rules in its system prompt, on top of its own `systemPrompt`. There is no setting for them.
+
+| Rule | Engines | Why |
+|---|---|---|
+| Read the code before trusting an issue thread or earlier comments. | `claude-code`, `codex-cli` | Threads can hold wrong guesses; the code is the source of truth. |
+| Change files with the Edit tool, not with `sed`, `awk` or a shell rewrite. | `claude-code` | A multi-line `sed` that misses leaves the file broken and costs extra rounds with the model. In a test on a bug fix across six files, runs that needed extra rounds fell from 7 in 20 to 0 in 20, and tokens fell 13 percent. Edits spell out the old and new text, so the cost per run rose about 4 percent. |
+
 ### MCP servers
 
 Each entry under `agents.<id>.mcp.<name>` is either a local command or an HTTP server.

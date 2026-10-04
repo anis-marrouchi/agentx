@@ -92,6 +92,26 @@ import { prepareOutbox } from "@/utils/app-outbox"
  * on one issue/PR. The mesh-peer landscape and full session-history aren't
  * useful in that context and bias the agent on noise.
  */
+/** The code-first operating principle (Context Surgery, Fix 4) for coding
+ *  tiers, empty for the rest so chat/orchestrator agents are unaffected.
+ *  Lives in the cacheable system-prompt prefix. */
+const CODE_FIRST_INSTRUCTION = "[Operating principle]\nAlways investigate the codebase before relying on issue history or comments. The code is the source of truth — start by reading relevant files (CLAUDE.md, then code), and consult conversation context only to clarify intent. Issue threads may contain wrong hypotheses; verify against the source."
+
+/** Claude Code only (Codex has no Edit tool). Without it, about a third of
+ *  runs of a six-file bug fix edited with a multi-line `sed`, left a
+ *  duplicate line and spent one to three more model calls repairing it.
+ *  With it, 0 of 20 runs needed an extra call against 7 of 20, and mean
+ *  tokens fell 13 percent; output tokens rise, since an edit spells out
+ *  the old and new text, so cost rose about 4 percent (#455,
+ *  bench/results/jev-and-edit-followups.md). */
+export const EDIT_TOOL_INSTRUCTION = "Change files with the Edit tool, one exact replacement per edit, not with sed, awk or a shell rewrite: a pattern that misses or matches twice leaves the file broken and costs another round. Several edits can go in one turn, and the tests can run in that same turn."
+
+export function codingInstructions(tier: string): string {
+  if (tier === "claude-code") return `${CODE_FIRST_INSTRUCTION}\n${EDIT_TOOL_INSTRUCTION}`
+  if (tier === "codex-cli") return CODE_FIRST_INSTRUCTION
+  return ""
+}
+
 function isCodingChannelContext(channel: string, tier: string): boolean {
   if (tier !== "claude-code" && tier !== "codex-cli") return false
   return channel === "github" || channel === "gitlab"
@@ -2272,10 +2292,7 @@ export class AgentRegistry {
     // Context Surgery — Fix 4: code-first operating principle for coding-tier
     // agents. Cacheable (lives in the system-prompt prefix). Empty for non-
     // coding tiers so chat/orchestrator agents are unaffected.
-    const codeFirstInstruction =
-      (state.def.tier === "claude-code" || state.def.tier === "codex-cli")
-        ? "[Operating principle]\nAlways investigate the codebase before relying on issue history or comments. The code is the source of truth — start by reading relevant files (CLAUDE.md, then code), and consult conversation context only to clarify intent. Issue threads may contain wrong hypotheses; verify against the source."
-        : ""
+    const codeFirstInstruction = codingInstructions(state.def.tier)
 
     // Rich-reply convention — only on interactive chat channels, and only when
     // the agent hasn't opted out. Rides the cacheable system prompt so it
