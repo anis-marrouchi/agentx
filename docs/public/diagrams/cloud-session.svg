@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 1170" width="920" height="1170" role="img" aria-labelledby="t d" style="--cycle:7.0s">
+<title id="t">How a GitHub task becomes a Claude cloud session</title>
+<desc id="d">Ten steps in three parts. You prepare: keep a clone of the repository on the computer, point the project file at it, turn the setting on for the agent and for the GitHub channel. A task arrives: someone opens an issue, AgentX checks the rules and starts a cloud session with claude --cloud, then posts the session id and link on the issue. The session works in a copy of the repository and opens a pull request; you review it. Comments on the issue reach the session while it is open. When the launch fails, the task runs on the computer as before and the reason is logged.</desc>
+<defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
+.h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.sub { font-size: 16px; fill: #475569; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
+.band.warn { fill: #B45309; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: #475569; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: #475569; }
+.card { fill: #fff; stroke: #E2E8F0; stroke-width: 1.25; filter: url(#soft); }
+.card.accent { stroke: #C7D9FF; }
+.card.win { stroke: #0B0D12; stroke-width: 1.5; }
+.link { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wrap { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; animation: draw 0.9s ease-in-out backwards; }
+.rise { animation: rise 0.55s cubic-bezier(.2,.7,.2,1) backwards; }
+.fade { animation: fade 0.4s ease-out backwards; }
+.pulse { transform-box: fill-box; transform-origin: center; opacity: 0; animation: pulse var(--cycle) ease-out infinite; }
+.blink { animation: blink 1.6s ease-in-out infinite; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0% { opacity: .7; transform: scale(1); } 9% { opacity: 0; transform: scale(1.9); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
+</style>
+<rect width="920" height="1170" rx="24" fill="#FFFFFF"/>
+<text x="44" y="56" class="h1" text-anchor="start">How a GitHub task becomes a cloud session</text>
+<text x="44" y="82" class="sub" text-anchor="start">You prepare once. The work happens away from your computer.</text>
+<circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You, the owner</text>
+<circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">AgentX and the cloud session</text>
+<rect x="20" y="104" width="880" height="200" rx="20" fill="#F3F7FF"/>
+<text x="44" y="132" class="band" text-anchor="start">YOU PREPARE</text>
+<g class="rise" style="animation-delay:0.32s">
+<rect x="44" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:5.90s"/>
+<circle cx="70" cy="176" r="15" fill="#1A66FF"/>
+<text x="70" y="181" class="num" text-anchor="middle">1</text>
+<text x="60" y="220" class="title" text-anchor="start">Keep a clone of the</text>
+<text x="60" y="241" class="title" text-anchor="start">repository on the computer</text>
+<text x="60" y="263" class="note" text-anchor="start">its origin is on github.com</text>
+</g>
+<g class="rise" style="animation-delay:0.64s">
+<rect x="328" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:6.60s"/>
+<circle cx="354" cy="176" r="15" fill="#1A66FF"/>
+<text x="354" y="181" class="num" text-anchor="middle">2</text>
+<text x="344" y="220" class="title" text-anchor="start">Point the project file</text>
+<text x="344" y="241" class="title" text-anchor="start">at the clone</text>
+<text x="344" y="263" class="note" text-anchor="start">.agentx/projects/&lt;owner&gt;/&lt;repo&gt;.yaml</text>
+<text x="344" y="280" class="note" text-anchor="start">runbook: the clone's path</text>
+</g>
+<g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
+<g class="rise" style="animation-delay:0.96s">
+<rect x="612" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="638" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:7.30s"/>
+<circle cx="638" cy="176" r="15" fill="#1A66FF"/>
+<text x="638" y="181" class="num" text-anchor="middle">3</text>
+<text x="628" y="220" class="title" text-anchor="start">Turn the setting on</text>
+<text x="628" y="242" class="note" text-anchor="start">agent: cloudSessions.enabled</text>
+<text x="628" y="259" class="note" text-anchor="start">channel: github.cloudSessions</text>
+</g>
+<g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
+<rect x="20" y="320" width="880" height="372" rx="20" fill="#F6F7F9"/>
+<text x="92" y="348" class="band" text-anchor="start">A TASK ARRIVES</text>
+<path d="M744 284 V302 Q744 312 734 312 H80 Q70 312 70 322 V360" class="wrap" pathLength="100" style="animation-delay:1.26s"/>
+<path d="M65 355 L70 361 L75 355" class="link fade" style="animation-delay:2.16s"/>
+<g class="rise" style="animation-delay:1.28s">
+<rect x="44" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:8.00s"/>
+<circle cx="70" cy="392" r="15" fill="#0B0D12"/>
+<text x="70" y="397" class="num" text-anchor="middle">4</text>
+<text x="60" y="436" class="title" text-anchor="start">Someone opens an issue</text>
+<text x="60" y="458" class="note" text-anchor="start">or comments on one, on GitHub</text>
+</g>
+<g class="rise" style="animation-delay:1.60s">
+<rect x="328" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:8.70s"/>
+<circle cx="354" cy="392" r="15" fill="#0B0D12"/>
+<text x="354" y="397" class="num" text-anchor="middle">5</text>
+<text x="344" y="436" class="title" text-anchor="start">AgentX checks the rules</text>
+<text x="344" y="458" class="note" text-anchor="start">GitHub channel, agent on,</text>
+<text x="344" y="475" class="note" text-anchor="start">clone found: go to the cloud</text>
+</g>
+<g class="fade" style="animation-delay:1.43s"><path d="M311 432 H323" class="link"/><path d="M319 428 L324 432 L319 436" class="link"/></g>
+<g class="rise" style="animation-delay:1.92s">
+<rect x="612" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:9.40s"/>
+<circle cx="638" cy="392" r="15" fill="#0B0D12"/>
+<text x="638" y="397" class="num" text-anchor="middle">6</text>
+<text x="628" y="436" class="title" text-anchor="start">claude --cloud starts</text>
+<text x="628" y="457" class="title" text-anchor="start">a session</text>
+<text x="628" y="479" class="note" text-anchor="start">on a copy of the repository,</text>
+<text x="628" y="496" class="note" text-anchor="start">away from your computer</text>
+</g>
+<g class="fade" style="animation-delay:1.75s"><path d="M595 432 H607" class="link"/><path d="M603 428 L608 432 L603 436" class="link"/></g>
+<path d="M744 500 V508 Q744 518 734 518 H80 Q70 518 70 528 V532" class="wrap" pathLength="100" style="animation-delay:2.22s"/>
+<path d="M65 527 L70 533 L75 527" class="link fade" style="animation-delay:3.12s"/>
+<g class="rise" style="animation-delay:2.24s">
+<rect x="44" y="536" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:10.10s"/>
+<circle cx="70" cy="564" r="15" fill="#0B0D12"/>
+<text x="70" y="569" class="num" text-anchor="middle">7</text>
+<text x="60" y="608" class="title" text-anchor="start">The issue gets a comment</text>
+<text x="60" y="630" class="note" text-anchor="start">the session id and its link,</text>
+<text x="60" y="647" class="note" text-anchor="start">also kept on the task trace</text>
+</g>
+<g class="rise" style="animation-delay:2.56s">
+<rect x="328" y="536" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:10.80s"/>
+<circle cx="354" cy="564" r="15" fill="#0B0D12"/>
+<text x="354" y="569" class="num" text-anchor="middle">8</text>
+<text x="344" y="608" class="title" text-anchor="start">The session opens</text>
+<text x="344" y="629" class="title" text-anchor="start">a pull request</text>
+<text x="344" y="651" class="note" text-anchor="start">it references the issue</text>
+</g>
+<g class="fade" style="animation-delay:2.39s"><path d="M311 604 H323" class="link"/><path d="M319 600 L324 604 L319 608" class="link"/></g>
+<rect x="20" y="708" width="880" height="432" rx="20" fill="#F3F7FF"/>
+<text x="92" y="736" class="band" text-anchor="start">YOU FOLLOW UP</text>
+<path d="M460 672 V690 Q460 700 450 700 H80 Q70 700 70 710 V748" class="wrap" pathLength="100" style="animation-delay:2.86s"/>
+<path d="M65 743 L70 749 L75 743" class="link fade" style="animation-delay:3.76s"/>
+<g class="rise" style="animation-delay:2.88s">
+<rect x="44" y="752" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="780" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:11.50s"/>
+<circle cx="70" cy="780" r="15" fill="#1A66FF"/>
+<text x="70" y="785" class="num" text-anchor="middle">9</text>
+<text x="60" y="824" class="title" text-anchor="start">Review the pull request</text>
+<text x="60" y="846" class="note" text-anchor="start">as you would any other</text>
+</g>
+<g class="rise" style="animation-delay:3.20s">
+<rect x="328" y="752" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="780" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:12.20s"/>
+<circle cx="354" cy="780" r="15" fill="#1A66FF"/>
+<text x="354" y="785" class="num" text-anchor="middle">10</text>
+<text x="344" y="824" class="title" text-anchor="start">Comment on the issue</text>
+<text x="344" y="845" class="title" text-anchor="start">to steer the session</text>
+<text x="344" y="867" class="note" text-anchor="start">forwarded while the session</text>
+<text x="344" y="884" class="note" text-anchor="start">is open (24 hours by default)</text>
+</g>
+<g class="fade" style="animation-delay:3.03s"><path d="M311 820 H323" class="link"/><path d="M319 816 L324 820 L319 824" class="link"/></g>
+<g class="rise" style="animation-delay:3.60s"><rect x="612" y="570" width="264" height="68" rx="14" class="card"/><rect x="612" y="570" width="6" height="68" rx="3" fill="#DC2626"/><text x="634" y="599" class="title" text-anchor="start">The launch fails</text><text x="634" y="621" class="note" text-anchor="start">It runs on the computer; the log says why.</text></g>
+<g class="rise" style="animation-delay:3.40s">
+<rect x="612" y="752" width="264" height="160" rx="14" class="card win"/>
+<path d="M612 786 H876" stroke="#E2E8F0"/>
+<circle cx="630" cy="769" r="4" fill="#CBD5E1"/>
+<circle cx="644" cy="769" r="4" fill="#CBD5E1"/>
+<circle cx="658" cy="769" r="4" fill="#CBD5E1"/>
+<text x="744" y="774" class="wintitle" text-anchor="middle">Issue #42</text>
+</g>
+<g class="rise" style="animation-delay:3.90s"><text x="630" y="816" class="rowname" text-anchor="start">Started a cloud session</text><rect x="630" y="825" width="106" height="22" rx="11" fill="#1A66FF" fill-opacity="0.1"/><circle cx="641" cy="836" r="3.5" fill="#1A66FF" class="blink"/><text x="650" y="840.5" class="state" style="fill:#1A66FF">session link</text><path d="M630 859 H858" stroke="#E2E8F0"/></g>
+<g class="rise" style="animation-delay:4.25s"><text x="630" y="872" class="rowname" text-anchor="start">Pull request #43 opened</text><rect x="630" y="881" width="133" height="22" rx="11" fill="#0F766E" fill-opacity="0.1"/><circle cx="641" cy="892" r="3.5" fill="#0F766E"/><text x="650" y="896.5" class="state" style="fill:#0F766E">Ready for review</text></g>
+<g class="rise" style="animation-delay:4.80s"><text x="44" y="944" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
+<g class="rise" style="animation-delay:5.00s"><circle cx="49" cy="970.5" r="4" fill="#B45309"/><text x="62" y="976" class="symptom" text-anchor="start">Everything still runs locally</text><text x="62" y="996" class="note" text-anchor="start">Both settings must be on; check the trace.</text></g>
+<g class="rise" style="animation-delay:5.25s"><circle cx="465" cy="970.5" r="4" fill="#B45309"/><text x="478" y="976" class="symptom" text-anchor="start">“no checkout of owner/repo”</text><text x="478" y="996" class="note" text-anchor="start">The clone's origin must be that repository.</text></g>
+<g class="rise" style="animation-delay:5.50s"><circle cx="49" cy="1022.5" r="4" fill="#B45309"/><text x="62" y="1028" class="symptom" text-anchor="start">“did not print a session”</text><text x="62" y="1048" class="note" text-anchor="start">Run claude --cloud by hand in the clone.</text></g>
+<g class="rise" style="animation-delay:5.75s"><circle cx="465" cy="1022.5" r="4" fill="#B45309"/><text x="478" y="1028" class="symptom" text-anchor="start">A second run started</text><text x="478" y="1048" class="note" text-anchor="start">The session's open time has passed.</text></g>
+</svg>

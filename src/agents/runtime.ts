@@ -268,6 +268,12 @@ export interface AgentResponse {
    *  the task instead of a spawned provider (attach mode). Claude Code
    *  session id of the terminal that wrote the reply. */
   viaAttachedSession?: string
+  /** Set when the task went to a Claude cloud session instead of a local
+   *  run (#622): the session's id and claude.ai/code URL. `followUp` marks
+   *  a comment forwarded to a session that was already open. The result of
+   *  the session is a pull request, so `content` is only the notice posted
+   *  on the issue. */
+  cloudSession?: { id: string; url: string; followUp?: boolean }
   /** Set on tasks that ran under a restricted autonomy level. */
   autonomy?: AutonomyLevel
   /** Tool calls the autonomy guard blocked during this task — what the

@@ -58,6 +58,10 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `drainTimeoutSeconds` | number (0–86400) | — | How long a daemon stop waits for this agent's running tasks, when that is longer than `shutdown.drainTimeoutSeconds`. For agents whose tasks take long, such as renders. See [change how long it waits](/jobs/restart-safely#change-how-long-it-waits). |
 | `permissionMode` | string | `"default"` | Permission mode for the agent's CLI. `bypassPermissions` lets it act without asking. |
 | `billing` | `"subscription"` \| `"api"` | `"subscription"` | For `claude-code` agents: use the shared sign-in (`subscription`) or bill `ANTHROPIC_API_KEY` (`api`). An `api` agent with no key fails its run. |
+| `cloudSessions.enabled` | boolean | `false` | Sends this `claude-code` agent's GitHub issue and pull request tasks to Claude cloud sessions (`claude --cloud`) instead of running them here; the result is a pull request. Needs `channels.github.cloudSessions` too, and a clone of the repository on this computer. A launch that fails runs locally. See [Send coding tasks to Claude cloud sessions](/jobs/cloud-sessions). |
+| `cloudSessions.maxPerDay` | number | `0` | Most cloud sessions this agent may start per day; `0` means no limit. Past it, tasks run locally. |
+| `cloudSessions.openHours` | number (1–168) | `24` | How long a started session counts as open: no local run starts for its issue, and comments on the issue are forwarded to it. |
+| `cloudSessions.launchTimeoutSeconds` | number (10–600) | `120` | How long `claude --cloud` may take to print the session id before the launch is given up and the task runs locally. |
 | `toolUseRequired` | list of string | `[]` | Tool names, such as `Write`, of which at least one must be used in a run; otherwise the run fails with `tool_required_not_called`. |
 | `gitlabAutoReply` | boolean | — | For this agent, overrides the GitLab or GitHub channel's `autoReplyLegacy`: `true` posts the agent's final answer as a comment, `false` does not. |
 | `persistentProcess` | boolean | `false` | Keeps a warm process per conversation for `claude-code`, `codex-cli` and `opencode` agents so replies start faster. |

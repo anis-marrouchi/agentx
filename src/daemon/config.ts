@@ -291,6 +291,25 @@ const agentConfigSchema = z.object({
    *  e.g. benchmark agents never draw on the fleet's subscription quota.
    *  An "api" agent with no key fails its task rather than falling back. */
   billing: z.enum(["subscription", "api"]).default("subscription"),
+  /** Run GitHub coding tasks as Claude cloud sessions (`claude --cloud`)
+   *  instead of local runs (#622). Off by default. Needs
+   *  `channels.github.cloudSessions: true` too. Only a task from the GitHub
+   *  channel for an issue or pull request of a repository this node has a
+   *  checkout of (the project rule's `runbook` path, or the agent's
+   *  workspace) goes to the cloud; everything else runs locally. The result
+   *  is a pull request, not a reply. A launch that fails falls back to a
+   *  local run. See src/agents/cloud-sessions.ts. */
+  cloudSessions: z.object({
+    enabled: z.boolean().default(false),
+    /** Launches per calendar day for this agent; 0 = no cap. */
+    maxPerDay: z.number().int().min(0).default(0),
+    /** Hours a launched session counts as open: no local run starts for
+     *  its issue, and comments on the issue are forwarded to it. */
+    openHours: z.number().min(1).max(168).default(24),
+    /** Seconds `claude --cloud` may take to print the session id before
+     *  the launch is given up and the task runs locally. */
+    launchTimeoutSeconds: z.number().int().min(10).max(600).default(120),
+  }).default({}),
   /** Improvement plan #3 — tool-use-required preset. When set,
    *  AgentX inspects the stream-json events from each task and
    *  fails the response with `tool_required_not_called: <name>`
@@ -507,6 +526,10 @@ const channelsConfigSchema = z.object({
     /** Legacy auto-reply — same semantics as gitlab.autoReplyLegacy.
      *  Defaults true; set false once agent skills use channel.reply. */
     autoReplyLegacy: z.boolean().default(true),
+    /** Let agents whose `cloudSessions.enabled` is on send this channel's
+     *  issue and pull request tasks to Claude cloud sessions (#622). Off by
+     *  default: both this and the agent setting must be on. */
+    cloudSessions: z.boolean().default(false),
     /** GitHub PAT or env var (${GITHUB_TOKEN}) for posting comments back. */
     token: z.string().optional(),
     /** Path to file containing the token (first line read at startup). */

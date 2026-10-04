@@ -1135,7 +1135,9 @@ export class MessageRouter {
     // default stays false. Falls back to channel.autoReplyLegacy (default true).
     const perAgentAutoReply = (agentDef as { gitlabAutoReply?: boolean } | undefined)?.gitlabAutoReply
     const autoReplyLegacy = perAgentAutoReply ?? (channelCfg?.autoReplyLegacy !== false)
-    if (!autoReplyLegacy && responseText && (msg.channel === "gitlab" || msg.channel === "github")) {
+    // A cloud session notice (#622) is always posted: the issue must carry
+    // the session id and URL, and no agent ran locally to post it itself.
+    if (!autoReplyLegacy && responseText && (msg.channel === "gitlab" || msg.channel === "github") && !response.cloudSession) {
       this.log(`Auto-reply suppressed for ${msg.channel}:${chatId} — autoReply=false (agent must call channel.reply)`)
       // Still log into the group conversation log below, just don't post.
       responseText = ""

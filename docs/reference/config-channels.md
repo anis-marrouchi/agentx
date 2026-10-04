@@ -144,6 +144,7 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 |---|---|---|---|
 | `channels.github.enabled` | boolean | `false` | Turns the GitHub channel on. |
 | `channels.github.autoReplyLegacy` | boolean | `true` | Same as the GitLab setting: post the answer automatically, or let the agent post it. |
+| `channels.github.cloudSessions` | boolean | `false` | Lets agents with `cloudSessions.enabled` send this channel's issue and pull request tasks to Claude cloud sessions. Both must be on. See [Send coding tasks to Claude cloud sessions](/jobs/cloud-sessions). |
 | `channels.github.token` | string | — | Personal access token used to post comments. |
 | `channels.github.tokenFile` | string | — | File holding the token (first line is read at start). |
 | `channels.github.appId` | number | — | GitHub App id, when you use a GitHub App instead of a token. |
