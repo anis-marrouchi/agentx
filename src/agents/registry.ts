@@ -2267,7 +2267,7 @@ export class AgentRegistry {
     // project / reference). Inlined into the cacheable system prompt so
     // it survives --resume and shows up on every turn. Empty when the
     // agent has no memories yet — no prompt bloat for fresh agents.
-    const agentMemoryBlock = this.agentMemory.indexMarkdown(task.agentId)
+    const agentMemoryBlock = this.agentMemory.indexMarkdown(task.agentId, this.config.session.memoryIndexMaxChars)
 
     // Context Surgery — Fix 4: code-first operating principle for coding-tier
     // agents. Cacheable (lives in the system-prompt prefix). Empty for non-
@@ -2518,10 +2518,10 @@ export class AgentRegistry {
     // server and the project's settings (#615). The flags describe the
     // process, so a resumed session carries them too.
     const claudeArgs = sessionProfile === "lean" && state.def.tier === "claude-code"
-      ? leanClaudeArgs(state.def.workspace, lean)
+      ? leanClaudeArgs(state.def.workspace, lean, undefined, channel)
       : undefined
     if (sessionProfile === "lean" && !resumeSessionId) {
-      this.log(`[${task.agentId}] session profile for ${channel}: ${describeProfile(sessionProfile, lean)}`)
+      this.log(`[${task.agentId}] session profile for ${channel}: ${describeProfile(sessionProfile, lean, channel)}`)
     }
 
     const taskWithSystemPrompt: AgentTask = {
