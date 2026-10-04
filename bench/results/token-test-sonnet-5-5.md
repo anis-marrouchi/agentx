@@ -156,16 +156,60 @@ the others because each of its calls carries about 4.5k more tokens;
 three such runs at about 230k are what keep its median cost 29 percent
 above the bare CLI.
 
+## Rerun after both fixes
+
+The same 90-run series (three tasks, three ways, ten runs, Sonnet 5.5)
+after the two fixes: the 300-line rule removed, and full sessions no
+longer sending the project CLAUDE.md twice (it was appended to the
+system prompt and also loaded by Claude Code; now only loaded, as lean
+already did). Raw runs: `token-test-sonnet-5-5-after-fixes.json`; tables
+as printed: `token-test-sonnet-5-5-after-fixes-table.md`. 90 of 90
+correct; $6.35.
+
+Median tokens per run, before → after:
+
+| Task | Bare CLI | Full AgentX | Lean AgentX | Full / bare | Lean / bare |
+|---|---|---|---|---|---|
+| `fix-bugs` | 133.3k → 133.3k | 151.4k → 147.1k | 135.5k → 135.7k | 1.14 → 1.10 | 1.02 → 1.02 |
+| `implement` | 99.0k → 99.0k | 112.8k → 109.5k | 100.9k → 100.9k | 1.14 → 1.11 | 1.02 → 1.02 |
+| `trace` | 100.9k → 100.3k | 152.3k → 110.8k | 136.5k → 102.2k | 1.51 → 1.10 | 1.35 → 1.02 |
+| All three | | | | **1.25 → 1.10** (1.10 to 1.16) | **1.12 → 1.02** (1.01 to 1.10) |
+
+Cost over the three tasks: full **+27 → +22 percent**, lean **+5 → +2
+percent** (within 10 percent).
+
+The claims, by the rule fixed in the plan:
+
+| Claim | Before | After |
+|---|---|---|
+| H1: lean uses no more tokens (pooled upper end ≤ 1.10) | No (1.12) | **Holds, at the limit** (upper end 1.10) |
+| H2: full uses no more tokens | No (1.26) | No (1.16) |
+| H3: AgentX uses fewer tokens | No | No |
+
+- **`trace` is fixed for both profiles.** The extra survey call is gone;
+  lean is now 2 percent above the bare CLI on every task, the size of its
+  added instructions.
+- **Full AgentX is a steady 10 percent above the bare CLI** on every
+  task, down from 14 to 51. What is left is its message wrapper (the
+  agent list, chat-channel rules, cross-channel and recall instructions:
+  about 3,900 characters a call), which full keeps for chat channels and
+  lean drops.
+- **H1 holds by the narrowest margin** (upper end exactly 1.10): treat it
+  as "lean costs the same as the bare CLI", not as a saving.
+
 ## What to do with it
 
-1. Use the lean profile wherever a channel runs one-shot coding tasks.
-2. Rerun the 90-run series with the fix, to replace the `trace` row
-   above with a full before/after.
-3. Find what in the full profile costs 4.5k tokens a call that lean
-   does not need (the CLAUDE.md is both appended to the system prompt
-   and loaded by Claude Code from the project, so it is sent twice).
-4. Repeat on Haiku 4.5, where the earlier run showed far more variation
-   in the number of calls.
+1. Use the lean profile wherever a channel runs one-shot coding tasks: it
+   now costs the same as Claude Code alone, within 2 percent.
+2. For full sessions on coding channels, trim the wrapper: the
+   cross-channel block appears both in the prompt wrapper and in the
+   generated CLAUDE.md, and the Telegram/WhatsApp/GitLab rules do not
+   apply to an `exec` or GitHub task.
+3. To make AgentX *save* tokens rather than match, the remaining lever is
+   the number of calls: the edit retry (a `sed` that leaves a duplicate
+   line, 1 to 3 extra calls in about 3 of 10 `trace` runs in every mode)
+   is the largest variable cost left.
+4. Repeat on Haiku 4.5, where the number of calls varied far more.
 
 ## Check it worked
 
