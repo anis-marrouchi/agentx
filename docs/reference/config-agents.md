@@ -248,7 +248,7 @@ With `session.observationPack.enabled`, a text result larger than `limitBytes` i
 ```text
 [ObservationPack: this result is 23442 bytes (400 lines). Only its first 1024 and last 1024 bytes are shown.
 The exact original is saved at /srv/agentx/.agentx/observations/coder/aa0c…864c.txt
-Read that file with offset and limit (line numbers), or grep it, for the part you need. Do not guess at what is not shown.]
+Read that file with offset and limit (line numbers), or grep it, for the part you need. Do not cat it whole: that is packed again. Do not guess at what is not shown.]
 (the first 1024 bytes)
 [... 21394 bytes not shown ...]
 (the last 1024 bytes)
@@ -267,6 +267,7 @@ What it covers, and what it does not:
 | | |
 |---|---|
 | Agents | `claude-code` agents only. It works through a Claude Code hook (PostToolUse) that AgentX writes into each agent workspace's `.claude/settings.json` when the daemon starts. Codex and the other engines are not changed. |
+| Agents that ask before acting | Not packed. Only an agent with `permissionMode: "bypassPermissions"` gets the hook: in any other mode Claude Code refuses to open the saved original in a session nobody answers for, and the agent would guess at the part it was not shown. The daemon log says how many agents were left out. |
 | Tools | The ones in `tools`. By default: commands (`Bash`), searches (`Grep`), fetched web pages (`WebFetch`) and every tool server (`mcp__.*`, which includes the AgentX tools). |
 | Files the agent reads | Not packed by default. An agent that sees only the two ends of a file it is about to edit has to read it again in pages. Add `"Read"` to `tools` to pack them too. |
 | Very large command output | Claude Code itself already replaces command output over 30,000 characters with a 2 KB preview and a saved file. The pack leaves those results to it, and covers the ones between `limitBytes` and that size. |
@@ -276,7 +277,7 @@ What it covers, and what it does not:
 | Timing | The excerpt replaces the result at once. The agent never sees the full result unless it reads the saved file. |
 | Sessions outside the workspace | A session whose working folder is not the agent's workspace does not load the workspace's hooks and is not packed. |
 
-The saved originals can hold whatever a command printed, including secrets, exactly as Claude Code's own session logs do. Each agent has its own folder, and AgentX allows an agent to read its own folder only, so an agent that asks before reading files cannot open what another agent's commands printed. The folders are readable by the daemon's user only. They grow with use; set `retentionDays` to delete originals that have not been written or seen again for that many days. An agent that resumes an older session can then no longer read them.
+The saved originals can hold whatever a command printed, including secrets, exactly as Claude Code's own session logs do. Each agent has its own folder, and the read rule AgentX writes into a workspace names that agent's folder only. The folders are readable by the daemon's user only. They grow with use; set `retentionDays` to delete originals that have not been written or seen again for that many days. An agent that resumes an older session can then no longer read them.
 
 If the daemon is not running, the hook does nothing and the agent gets the full result.
 
@@ -313,7 +314,7 @@ A warm process answers only the question it was asked. When a background task of
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
 4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
-5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start, and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output.
+5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output.
 
 ## If something is wrong
 
@@ -322,6 +323,6 @@ A warm process answers only the question it was asked. When a background task of
 - **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.
 - **An agent on GitHub, a schedule or a workflow says it cannot see another agent, an earlier message or a tool it had before:** its channel starts lean. Either tell the agent to use the `agentx_agents`, `agentx_recent` and `agentx_wiki_query` tools, add the tool server it misses to `session.lean.mcpServers`, or set that channel to `"full"` in `session.profileByChannel`.
-- **An agent says it cannot open the saved original of a packed result:** the agent does not run with `permissionMode: "bypassPermissions"` and its session ignored the read rule AgentX added to the workspace settings. Open Claude Code once in the agent's workspace and accept the trust question, or turn `session.observationPack.enabled` off.
-- **`session.observationPack.enabled` is on and nothing is packed:** restart the daemon; the hook is written into the workspaces at start. Then check that the agent's `tier` is `claude-code` and that the result was over `limitBytes`.
+- **The daemon log says `N agent(s) not packed`:** those agents do not run with `permissionMode: "bypassPermissions"`. They could not open a saved original, so they keep getting full results. This is by design; nothing to fix.
+- **`session.observationPack.enabled` is on and nothing is packed:** restart the daemon; the hook is written into the workspaces at start. Then check that the agent's `tier` is `claude-code`, that its `permissionMode` is `bypassPermissions` and that the result was over `limitBytes`.
 - **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.

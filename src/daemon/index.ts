@@ -98,7 +98,7 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { prepareOutbox } from "@/utils/app-outbox"
-import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
+import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -3562,9 +3562,10 @@ export class AgentXDaemon {
         }
         const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
         // Each agent has its own folder and may read no other. A call that
-        // names no agent of this daemon is not packed.
+        // names no agent of this daemon, or one that could not read the
+        // original back, is not packed.
         const agentId = url.searchParams.get("agent") || ""
-        const out = Object.hasOwn(this.config.agents, agentId)
+        const out = Object.hasOwn(this.config.agents, agentId) && canReadOriginals(this.config.agents[agentId].permissionMode)
           ? answerPackHook(payload as PostToolUsePayload, this.config.session.observationPack, {
               dir: agentObservationDir(observationDir(), agentId),
               agentId,

@@ -69,6 +69,16 @@ export function agentObservationDir(storeDir: string, agentId: string): string {
   return resolve(storeDir, encodeURIComponent(agentId).replace(/\./g, "%2E"))
 }
 
+/**
+ * Whether an agent can read a saved original back. Seen live on Claude Code
+ * 2.1.289: outside `bypassPermissions` the Read of an original is refused in
+ * a session nobody answers for, the allow rule notwithstanding, and the model
+ * then guesses at the part it was not shown. Such an agent is not packed.
+ */
+export function canReadOriginals(permissionMode: string | undefined): boolean {
+  return permissionMode === "bypassPermissions"
+}
+
 /** The same path with symlinks followed, or as given when it does not exist. */
 function realPath(path: string): string {
   try {
@@ -108,7 +118,7 @@ export function buildExcerpt(text: string, path: string, config: Pick<Observatio
   const longLines = buf.length / lines > LONG_LINE_BYTES
   const how = longLines
     ? `Its lines are very long, so read it by byte range (for example head -c or tail -c, or jq for JSON) for the part you need.`
-    : `Read that file with offset and limit (line numbers), or grep it, for the part you need.`
+    : `Read that file with offset and limit (line numbers), or grep it, for the part you need. Do not cat it whole: that is packed again.`
   return [
     `[ObservationPack: this result is ${buf.length} bytes (${lines} lines). Only its first ${config.headBytes} and last ${config.tailBytes} bytes are shown.`,
     `The exact original is saved at ${path}`,
@@ -203,7 +213,8 @@ export function answerPackHook(
   config: ObservationPackConfig,
   opts: { dir: string; agentId?: string },
 ): string {
-  const result = packToolOutput(payload, config, opts.dir)
+  // A body that is not an object (JSON `null`) is no tool result.
+  const result = payload && typeof payload === "object" ? packToolOutput(payload, config, opts.dir) : null
   if (!result) return ""
   try {
     const at = new Date().toISOString()

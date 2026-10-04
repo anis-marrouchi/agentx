@@ -4,7 +4,7 @@ import { createHash } from "crypto"
 import type { AgentDef } from "@/daemon/config"
 import { generateAgentsMd } from "./bootstrap"
 import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
-import { OBSERVATION_PACK_ROUTE, agentObservationDir } from "./observation-pack"
+import { OBSERVATION_PACK_ROUTE, agentObservationDir, canReadOriginals } from "./observation-pack"
 
 // Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
 // files apart from user-edited ones. On daemon start, files with the marker
@@ -673,7 +673,9 @@ export function setupAllWorkspaces(
   let totalCreated = 0
   let totalPatched = 0
   let totalGuarded = 0
-  let totalPacked = 0
+  let packWritten = 0
+  let packRemoved = 0
+  let packSkipped = 0
   for (const [id, def] of Object.entries(agents)) {
     if (def.tier !== "claude-code" && def.tier !== "codex-cli") continue
     const result = setupWorkspace(id, def, daemonPort, log)
@@ -692,8 +694,16 @@ export function setupAllWorkspaces(
       totalGuarded++
     }
 
-    if (def.tier === "claude-code" && observationPack && patchObservationPack(def.workspace, id, daemonPort, observationPack)) {
-      totalPacked++
+    if (def.tier === "claude-code" && observationPack) {
+      // An agent that cannot read an original back is not packed, and loses
+      // the hook if an earlier start wrote it.
+      const readable = canReadOriginals(def.permissionMode)
+      if (observationPack.enabled && !readable) packSkipped++
+      const on = observationPack.enabled && readable
+      if (patchObservationPack(def.workspace, id, daemonPort, { ...observationPack, enabled: on })) {
+        if (on) packWritten++
+        else packRemoved++
+      }
     }
   }
   if (totalCreated > 0) {
@@ -705,7 +715,13 @@ export function setupAllWorkspaces(
   if (totalGuarded > 0) {
     log(`Guardrails: ${totalGuarded} workspace(s) backfilled with deny list + PreToolUse guard hook`)
   }
-  if (totalPacked > 0) {
-    log(`ObservationPack: PostToolUse hook ${observationPack?.enabled ? "written to" : "removed from"} ${totalPacked} workspace(s)`)
+  if (packWritten > 0) {
+    log(`ObservationPack: PostToolUse hook written to ${packWritten} workspace(s)`)
+  }
+  if (packRemoved > 0) {
+    log(`ObservationPack: PostToolUse hook removed from ${packRemoved} workspace(s)`)
+  }
+  if (packSkipped > 0) {
+    log(`ObservationPack: ${packSkipped} agent(s) not packed: permissionMode is not "bypassPermissions", so they could not read a saved original back`)
   }
 }

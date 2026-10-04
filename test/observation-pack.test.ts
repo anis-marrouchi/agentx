@@ -11,7 +11,8 @@ import {
   toolIsPacked,
   type ObservationPackConfig,
 } from "../src/agents/observation-pack"
-import { patchObservationPack } from "../src/agents/workspace-setup"
+import { patchObservationPack, setupAllWorkspaces } from "../src/agents/workspace-setup"
+import type { AgentDef } from "../src/daemon/config"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 const config = (overrides: Partial<ObservationPackConfig> = {}): ObservationPackConfig => ({
@@ -162,6 +163,7 @@ describe("ObservationPack", () => {
 
   it("answers the hook in Claude Code's shape and counts the pack", () => {
     expect(answerPackHook(bash("short"), config(), { dir })).toBe("")
+    expect(answerPackHook(null as never, config(), { dir })).toBe("")
     const out = JSON.parse(answerPackHook(bash(big), config(), { dir, agentId: "coder-agent" }))
     expect(out.hookSpecificOutput.hookEventName).toBe("PostToolUse")
     expect(out.hookSpecificOutput.updatedToolOutput.stdout).toContain("ObservationPack")
@@ -213,6 +215,32 @@ describe("ObservationPack", () => {
       patchObservationPack(ws(), "coder-agent", "18800", pack(true))
       expect(patchObservationPack(ws(), "coder-agent", "18800", pack(false))).toBe(true)
       expect(read()).toEqual({ permissions: { allow: ["Bash(git *)"] }, hooks: { PostToolUse: [] } })
+    })
+
+    it("skips an agent that could not read an original back, and takes its hook out", () => {
+      const store = "/data/.agentx/observations"
+      const hooksOf = (ws: string) => JSON.parse(readFileSync(resolve(ws, ".claude/settings.json"), "utf-8")).hooks?.PostToolUse ?? []
+      const isPack = (e: { hooks: { command: string }[] }) => e.hooks.some((h) => h.command.includes("/observation/pack"))
+      const agent = (name: string, permissionMode: string) => {
+        const workspace = resolve(dir, "..", name)
+        mkdirSync(workspace, { recursive: true })
+        return { name, workspace, tier: "claude-code", permissionMode } as AgentDef
+      }
+      const agents = { open: agent("open", "bypassPermissions"), asks: agent("asks", "default") }
+      const logs: string[] = []
+      const log = (...a: unknown[]) => void logs.push(a.join(" "))
+
+      // A hook left by an earlier start in the workspace of the agent that asks.
+      setupAllWorkspaces(agents, "18800", () => {})
+      patchObservationPack(agents.asks.workspace, "asks", "18800", { enabled: true, tools: ["Bash"], dir: store })
+      expect(hooksOf(agents.asks.workspace).some(isPack)).toBe(true)
+
+      setupAllWorkspaces(agents, "18800", log, { enabled: true, tools: ["Bash"], dir: store })
+      expect(hooksOf(agents.open.workspace).some(isPack)).toBe(true)
+      expect(hooksOf(agents.asks.workspace).some(isPack)).toBe(false)
+      expect(logs.some((l) => l.includes("written to 1 workspace"))).toBe(true)
+      expect(logs.some((l) => l.includes("removed from 1 workspace"))).toBe(true)
+      expect(logs.some((l) => l.includes("1 agent(s) not packed"))).toBe(true)
     })
 
     it("does not touch a workspace that never had the pack", () => {
