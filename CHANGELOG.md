@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.109.0](https://github.com/anis-marrouchi/agentx/compare/v0.108.0...v0.109.0) (2026-10-04)
+
+
+### Features
+
+* **bench:** compare one task on the bare Claude Code CLI and through AgentX ([#455](https://github.com/anis-marrouchi/agentx/issues/455)) ([#631](https://github.com/anis-marrouchi/agentx/issues/631)) ([39df2fc](https://github.com/anis-marrouchi/agentx/commit/39df2fc4053e5b92a49ad4bdd29437f12ed1397d))
+
 ## [0.108.0](https://github.com/anis-marrouchi/agentx/compare/v0.107.0...v0.108.0) (2026-10-04)
 
 
