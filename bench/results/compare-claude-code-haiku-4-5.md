@@ -87,3 +87,55 @@ developer's machine looks; `agentx exec` in a fresh state directory, so no
 history, memory or wiki was pushed into the prompt.
 
 To repeat on another model: `pnpm bench:compare --model <id> --runs 3`.
+
+## Second run: Sonnet 5.5
+
+Same task, same prompt, same three modes, 2026-10-04, raw results in
+`compare-claude-code-sonnet-5-5.json`.
+
+| Mode | Run | Correct | Turns | Input | Output | Cache read | Cache write | Total tokens | Cost (CLI) | Wall |
+|---|---|---|---|---|---|---|---|---|---|---|
+| claude | 1 | yes | 4 | 8 | 455 | 128.2k | 11.2k | 139.8k | $0.0760 | 12s |
+| agentx | 1 | yes | 4 | 8 | 562 | 116.7k | 40.2k | 157.5k | $0.1919 | 15s |
+| agentx-lean | 1 | yes | 4 | 8 | 575 | 124.0k | 10.8k | 135.3k | $0.0749 | 13s |
+| claude | 2 | yes | 4 | 8 | 470 | 128.3k | 11.4k | 140.2k | $0.0768 | 11s |
+| agentx | 2 | yes | 4 | 8 | 537 | 142.8k | 14.1k | 157.4k | $0.0925 | 13s |
+| agentx-lean | 2 | yes | 4 | 8 | 413 | 124.6k | 9.4k | 134.5k | $0.0679 | 11s |
+| claude | 3 | yes | 4 | 8 | 495 | 128.3k | 11.3k | 140.2k | $0.0770 | 11s |
+| agentx | 3 | yes | 4 | 8 | 502 | 143.1k | 14.3k | 158.0k | $0.0930 | 12s |
+| agentx-lean | 3 | yes | 4 | 8 | 501 | 125.3k | 9.8k | 135.6k | $0.0704 | 14s |
+
+Medians:
+
+| Mode | Correct | Turns | Total tokens | Cache read | Cost (CLI) | Wall |
+|---|---|---|---|---|---|---|
+| claude | 3/3 | 4 | 140.2k | 128.3k | $0.0768 | 11s |
+| agentx | 3/3 | 4 | 157.5k | 142.8k | $0.0930 | 13s |
+| agentx-lean | 3/3 | 4 | 135.3k | 124.6k | $0.0704 | 13s |
+
+From the session logs: every run made exactly 4 API calls and 3 tool
+calls. Sonnet batches the work: one `npm test` with `ls`, one read of the
+test and source files, then the edits and the test rerun in a single
+command (in most runs it rewrote the two files from a `python3 -c`
+one-liner rather than with Edit). First request: 33.5k tokens bare, 32.4k
+lean, 38.0k full.
+
+- **Sonnet does the task in a third of the tokens Haiku needs** (140k
+  against 268k) and half the time, at a similar price per run on this
+  task ($0.077 against $0.060), because it makes 4 calls where Haiku makes
+  8 to 12.
+- **Full profile: 12 percent more tokens and 21 percent more cost than
+  the bare CLI** (medians), all of it the larger prefix read on every
+  call. Its first run paid a 40k cache write ($0.19): AgentX's prefix was
+  not yet in the prompt cache, and the two runs after it read it from
+  there. Across a day of runs that first write is paid once per hour of
+  idle time, not per run.
+- **Lean profile: 3 percent fewer tokens and 8 percent less cost than the
+  bare CLI.** Its first request is smaller than the bare CLI's here, since
+  the bare CLI loads this VM's user-level settings and the lean session
+  does not.
+- **Correct 9 of 9, 11 to 15 seconds.**
+
+The variance seen on Haiku (7 to 12 API calls for the same work) does not
+appear on Sonnet; the full profile's extra cost on Sonnet is purely its
+larger prefix.
