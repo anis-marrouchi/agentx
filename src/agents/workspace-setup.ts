@@ -4,6 +4,7 @@ import { createHash } from "crypto"
 import type { AgentDef } from "@/daemon/config"
 import { generateAgentsMd } from "./bootstrap"
 import { CODEGRAPH_TOOLS, codegraphClaudeMdSection } from "./codegraph-bootstrap"
+import { OBSERVATION_PACK_ROUTE, agentObservationDir, canReadOriginals } from "./observation-pack"
 
 // Marker stamped into auto-generated CLAUDE.md so we can tell agentx-managed
 // files apart from user-edited ones. On daemon start, files with the marker
@@ -597,6 +598,69 @@ export function patchGuardrails(workspace: string, agentId: string, daemonPort: 
   }
 }
 
+/** What `patchObservationPack` needs from `session.observationPack`. */
+export interface ObservationPackHook {
+  enabled: boolean
+  tools: string[]
+  /** The store of saved originals; the agent is allowed to read its own
+   *  folder in it and no other agent's. */
+  dir: string
+}
+
+function isObservationPackEntry(entry: any): boolean {
+  return (
+    Array.isArray(entry?.hooks) &&
+    entry.hooks.some((h: any) => typeof h?.command === "string" && h.command.includes(OBSERVATION_PACK_ROUTE))
+  )
+}
+
+/**
+ * Add the ObservationPack PostToolUse hook (#621) to an existing
+ * settings.json when the pack is on, and take it out when it is off. The
+ * hook pipes the tool result to the daemon's loopback route and hands the
+ * answer back to Claude Code; with the daemon down it prints nothing and the
+ * result is left as it was. Also lets the agent Read its own saved originals.
+ * Idempotent. Returns true if it changed the file.
+ */
+export function patchObservationPack(
+  workspace: string,
+  agentId: string,
+  daemonPort: string,
+  pack: ObservationPackHook,
+): boolean {
+  const settingsPath = resolve(workspace, ".claude/settings.json")
+  if (!existsSync(settingsPath)) return false
+
+  try {
+    const existing = JSON.parse(readFileSync(settingsPath, "utf-8"))
+    const before = JSON.stringify(existing)
+
+    const on = pack.enabled && pack.tools.length > 0
+    const readRule = `Read(/${agentObservationDir(pack.dir, agentId)}/**)`
+    const posted: unknown[] = Array.isArray(existing.hooks?.PostToolUse) ? existing.hooks.PostToolUse : []
+    const others = posted.filter((e) => !isObservationPackEntry(e))
+    const allowed: string[] = Array.isArray(existing.permissions?.allow) ? existing.permissions.allow : []
+    const allow = allowed.filter((r) => r !== readRule)
+
+    if (on) {
+      const url = `http://127.0.0.1:${daemonPort}${OBSERVATION_PACK_ROUTE}?agent=${encodeURIComponent(agentId)}`
+      const command = `curl -s --max-time 5 -H 'Content-Type: application/json' --data-binary @- '${url}' 2>/dev/null || true`
+      others.push({ matcher: pack.tools.join("|"), hooks: [{ type: "command", command, timeout: 10 }] })
+      allow.push(readRule)
+    }
+
+    // Only touch the keys the pack owns, and only when it has something there.
+    if (on || posted.length > 0) (existing.hooks ??= {}).PostToolUse = others
+    if (on || allowed.length > 0) (existing.permissions ??= {}).allow = allow
+
+    if (JSON.stringify(existing) === before) return false
+    writeFileSync(settingsPath, JSON.stringify(existing, null, 2))
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Set up all agent workspaces on daemon start.
  */
@@ -604,10 +668,14 @@ export function setupAllWorkspaces(
   agents: Record<string, AgentDef>,
   daemonPort: string = "19900",
   log: (...args: unknown[]) => void = console.error,
+  observationPack?: ObservationPackHook,
 ): void {
   let totalCreated = 0
   let totalPatched = 0
   let totalGuarded = 0
+  let packWritten = 0
+  let packRemoved = 0
+  let packSkipped = 0
   for (const [id, def] of Object.entries(agents)) {
     if (def.tier !== "claude-code" && def.tier !== "codex-cli") continue
     const result = setupWorkspace(id, def, daemonPort, log)
@@ -625,6 +693,18 @@ export function setupAllWorkspaces(
     if (def.tier === "claude-code" && patchGuardrails(def.workspace, id, daemonPort)) {
       totalGuarded++
     }
+
+    if (def.tier === "claude-code" && observationPack) {
+      // An agent that cannot read an original back is not packed, and loses
+      // the hook if an earlier start wrote it.
+      const readable = canReadOriginals(def.permissionMode)
+      if (observationPack.enabled && !readable) packSkipped++
+      const on = observationPack.enabled && readable
+      if (patchObservationPack(def.workspace, id, daemonPort, { ...observationPack, enabled: on })) {
+        if (on) packWritten++
+        else packRemoved++
+      }
+    }
   }
   if (totalCreated > 0) {
     log(`Workspace setup: ${totalCreated} file(s) created across agent workspaces`)
@@ -634,5 +714,14 @@ export function setupAllWorkspaces(
   }
   if (totalGuarded > 0) {
     log(`Guardrails: ${totalGuarded} workspace(s) backfilled with deny list + PreToolUse guard hook`)
+  }
+  if (packWritten > 0) {
+    log(`ObservationPack: PostToolUse hook written to ${packWritten} workspace(s)`)
+  }
+  if (packRemoved > 0) {
+    log(`ObservationPack: PostToolUse hook removed from ${packRemoved} workspace(s)`)
+  }
+  if (packSkipped > 0) {
+    log(`ObservationPack: ${packSkipped} agent(s) not packed: permissionMode is not "bypassPermissions", so they could not read a saved original back`)
   }
 }

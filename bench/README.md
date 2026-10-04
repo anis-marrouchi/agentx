@@ -45,6 +45,24 @@ tool schemas, the skill list, user-level MCP tool schemas, the global
 CLAUDE.md) is not visible to a fake `claude`; the `claude flags` row shows
 which of it a lean session leaves out, and issue #615 has its measured size.
 
+### Tool results (#621)
+
+`bench/observation-pack-replay.py` reads the Claude Code session logs of a
+fixed range of days and counts the tool results over the ObservationPack
+limit: per tool and per channel, how many bytes they are and how many tokens
+later requests re-read. No model is called. Use it to see what
+`session.observationPack` can reach on a node before turning it on.
+
+```bash
+python3 bench/observation-pack-replay.py --from 2026-10-01 --to 2026-10-03
+python3 bench/observation-pack-replay.py --from 2026-10-01 --to 2026-10-03 --limit 20480 --json replay.json
+```
+
+The token column is an estimate (bytes / 4, once per later request in the
+same session log). It is an upper limit: it ignores compaction and what the
+agent reads back from a saved original. The recorded cost per channel, before
+and after, comes from `agentx usage channels`.
+
 ## Level 1: dev set
 
 Claude Code and agentx, same model (Haiku 4.5), same 8 Terminal-Bench tasks

@@ -1531,6 +1531,30 @@ export const daemonConfigSchema = z.object({
        *  context with one line naming the tools that fetch them. */
       contextOnDemand: z.boolean().default(true),
     }).default({}),
+    /** ObservationPack (#621). A large tool result stays in the context
+     *  and is re-read on every later request. With this on, a Claude Code
+     *  PostToolUse hook saves a text result over `limitBytes` to
+     *  `.agentx/observations/<agent id>/` and shows the model its first and last
+     *  bytes plus the path of the saved original, which it can Read or
+     *  grep. Off by default. claude-code agents only. Turning it on, or
+     *  changing `tools`, takes a daemon restart (the hook is written into
+     *  each workspace's .claude/settings.json at start); turning it off
+     *  applies on save. See src/agents/observation-pack.ts. */
+    observationPack: z.object({
+      enabled: z.boolean().default(false),
+      /** A text result larger than this many bytes is packed. */
+      limitBytes: z.number().int().min(1024).max(1_048_576).default(10_240),
+      /** Bytes of the start and of the end of the original the model sees. */
+      headBytes: z.number().int().min(0).max(65_536).default(1024),
+      tailBytes: z.number().int().min(0).max(65_536).default(1024),
+      /** Tools the pack applies to. Each entry must match the whole tool
+       *  name and may be a regular expression. `Read` is left out by
+       *  default: an agent that sees only the two ends of a file it is
+       *  about to edit has to read it again in pages. */
+      tools: z.array(z.string().min(1)).default(["Bash", "Grep", "WebFetch", "mcp__.*"]),
+      /** Days a saved original is kept. 0 keeps every original. */
+      retentionDays: z.number().int().min(0).max(3650).default(0),
+    }).default({}),
   }).default({}),
   /** Move B — JS/TS plugins. Each entry is an installed npm package name
    *  (e.g. `agentx-plugin-mattermost` or `@acme/plugin-mattermost`); the

@@ -898,6 +898,18 @@ Run full session analysis (parses Claude Code JSONL files).
 |---|---|---|
 | `--days <n>` | `7` | Analyze last N days. |
 
+### `agentx usage channels`
+
+Cost per channel over a fixed range of days, next to a saved baseline.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--from <date>` | — | First day, YYYY-MM-DD. Required. |
+| `--to <date>` | — | Last day, YYYY-MM-DD. Required. |
+| `--save <file>` | — | Write this range's figures to a JSON file. |
+| `--baseline <file>` | — | A file written by --save, shown beside this range. |
+| `--json` | — | Raw JSON output. |
+
 ### `agentx usage surfaces`
 
 Which CLI commands and dashboard pages are actually used.
