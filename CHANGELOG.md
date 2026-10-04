@@ -2,6 +2,101 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.110.0](https://github.com/anis-marrouchi/agentx/compare/v0.109.0...v0.110.0) (2026-10-04)
+
+
+### Features
+
+* **members:** put "Needs a person" first and notify when an agent is free ([#634](https://github.com/anis-marrouchi/agentx/issues/634)) ([3490121](https://github.com/anis-marrouchi/agentx/commit/3490121410046cff788b88bf6eba994fa9307822))
+
+## [0.109.0](https://github.com/anis-marrouchi/agentx/compare/v0.108.0...v0.109.0) (2026-10-04)
+
+
+### Features
+
+* **bench:** compare one task on the bare Claude Code CLI and through AgentX ([#455](https://github.com/anis-marrouchi/agentx/issues/455)) ([#631](https://github.com/anis-marrouchi/agentx/issues/631)) ([39df2fc](https://github.com/anis-marrouchi/agentx/commit/39df2fc4053e5b92a49ad4bdd29437f12ed1397d))
+
+## [0.108.0](https://github.com/anis-marrouchi/agentx/compare/v0.107.0...v0.108.0) (2026-10-04)
+
+
+### Features
+
+* **session:** built-in tool list for lean sessions and a memory index cap ([#615](https://github.com/anis-marrouchi/agentx/issues/615)) ([#629](https://github.com/anis-marrouchi/agentx/issues/629)) ([19df895](https://github.com/anis-marrouchi/agentx/commit/19df895b5695e326f9755e5363157899e0e729b8))
+
+## [0.107.0](https://github.com/anis-marrouchi/agentx/compare/v0.106.0...v0.107.0) (2026-10-04)
+
+
+### Features
+
+* **agents:** send GitHub coding tasks to Claude cloud sessions ([#622](https://github.com/anis-marrouchi/agentx/issues/622)) ([#627](https://github.com/anis-marrouchi/agentx/issues/627)) ([3996199](https://github.com/anis-marrouchi/agentx/commit/3996199f8799748f7f23872a2e1d0c0e4069d013))
+* **decisions:** backtest harness for the Jev wake gate and model tier ([103a1aa](https://github.com/anis-marrouchi/agentx/commit/103a1aa33578d93356d5c9ea23e8afe4ab79a521))
+* **session:** ObservationPack for large tool results ([#621](https://github.com/anis-marrouchi/agentx/issues/621)) ([#623](https://github.com/anis-marrouchi/agentx/issues/623)) ([bad2aa1](https://github.com/anis-marrouchi/agentx/commit/bad2aa16d8082c2bff1e583feea8feeb4aca52f6))
+
+## [0.106.0](https://github.com/anis-marrouchi/agentx/compare/v0.105.1...v0.106.0) (2026-10-04)
+
+
+### Features
+
+* **session:** lean session profile for github, a2a, workflow and cron ([#615](https://github.com/anis-marrouchi/agentx/issues/615)) ([#618](https://github.com/anis-marrouchi/agentx/issues/618)) ([9a9792e](https://github.com/anis-marrouchi/agentx/commit/9a9792e32e388acd9d8f2ea526c60931dde14312))
+
+
+### Bug Fixes
+
+* **automation:** defer draft reviews until ready when requested ([#597](https://github.com/anis-marrouchi/agentx/issues/597)) ([0e5ec2b](https://github.com/anis-marrouchi/agentx/commit/0e5ec2b08b8c71a1ce4de973cd2001aaf07e4b5a))
+* **codex:** use final request context for session rotation ([#596](https://github.com/anis-marrouchi/agentx/issues/596)) ([3b070fd](https://github.com/anis-marrouchi/agentx/commit/3b070fd63924f502d51f95f8f5ee35e50757c706))
+* **voice:** drop transcripts with no words before an agent is woken ([#617](https://github.com/anis-marrouchi/agentx/issues/617)) ([a378760](https://github.com/anis-marrouchi/agentx/commit/a378760c63ac34a4ca5e0ecf201ba9d00b10299e)), closes [#614](https://github.com/anis-marrouchi/agentx/issues/614)
+
+## [0.105.1](https://github.com/anis-marrouchi/agentx/compare/v0.105.0...v0.105.1) (2026-10-04)
+
+
+### Bug Fixes
+
+* **github:** one issue starts one run, not one per webhook ([#613](https://github.com/anis-marrouchi/agentx/issues/613)) ([c340e5c](https://github.com/anis-marrouchi/agentx/commit/c340e5c7878e628540cb841c74e1f845d2c762f8))
+
+## [0.105.0](https://github.com/anis-marrouchi/agentx/compare/v0.104.2...v0.105.0) (2026-10-04)
+
+
+### Features
+
+* **evidence:** define evidence authority and the memory backend contract ([#609](https://github.com/anis-marrouchi/agentx/issues/609)) ([9c8c522](https://github.com/anis-marrouchi/agentx/commit/9c8c5222a5a074f05c0ea750df8cbc39ecb9f1f9))
+
+## [0.104.2](https://github.com/anis-marrouchi/agentx/compare/v0.104.1...v0.104.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* reduce session context costs and redundant draft reviews ([#600](https://github.com/anis-marrouchi/agentx/issues/600)) ([013a8d0](https://github.com/anis-marrouchi/agentx/commit/013a8d0d0ce39c2469b67f03bdbc8261aebab369))
+
+## [0.104.1](https://github.com/anis-marrouchi/agentx/compare/v0.104.0...v0.104.1) (2026-10-03)
+
+
+### Features
+
+* **app:** ship the approved mobile redesign with a large centered voice orb, icon tabs, bottom sheets and phone-local unread alerts ([#593](https://github.com/anis-marrouchi/agentx/pull/593)). This is the first release containing the approved redesign; 0.104.0 did not contain it.
+
+### Documentation
+
+* Group the sidebar into collapsible categories while preserving existing page links ([#594](https://github.com/anis-marrouchi/agentx/pull/594)).
+
+### Bug Fixes
+
+* **release:** correct the 0.104.0 mobile release notes ([b812aa7](https://github.com/anis-marrouchi/agentx/commit/b812aa7440431cefc778edb21434dda28c916ebe))
+
+## [0.104.0](https://github.com/anis-marrouchi/agentx/compare/v0.103.3...v0.104.0) (2026-10-03)
+
+
+### Release note correction
+
+The mobile redesign was reverted before this release. Version 0.104.0 contains the same application code as 0.103.3; its original mobile feature entry was incorrect. The approved centered-orb redesign is tracked in [PR #593](https://github.com/anis-marrouchi/agentx/pull/593) and ships in a later release.
+
+## [0.103.3](https://github.com/anis-marrouchi/agentx/compare/v0.103.2...v0.103.3) (2026-10-03)
+
+
+### Bug Fixes
+
+* **agents:** a warm claude process answers the question it was asked ([#589](https://github.com/anis-marrouchi/agentx/issues/589)) ([b093147](https://github.com/anis-marrouchi/agentx/commit/b0931478af11b5f8d8b18fe53f056583e48b3003)), closes [#585](https://github.com/anis-marrouchi/agentx/issues/585)
+* **voice:** the idle character waits for the pointer and takes a click ([#590](https://github.com/anis-marrouchi/agentx/issues/590)) ([d0a2f19](https://github.com/anis-marrouchi/agentx/commit/d0a2f19c93b8b5efdb4769050b6646de6c9f670c)), closes [#579](https://github.com/anis-marrouchi/agentx/issues/579)
+
 ## [0.103.2](https://github.com/anis-marrouchi/agentx/compare/v0.103.1...v0.103.2) (2026-10-03)
 
 

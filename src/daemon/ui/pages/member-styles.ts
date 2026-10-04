@@ -45,8 +45,8 @@ export const WORK_CSS = `
 .sum { font-size: 22px; font-weight: 600; line-height: 1.3; margin-bottom: 24px; text-wrap: balance; }
 .wrap h2 { font-size: 15px; font-weight: 700; color: var(--ax-text-2); margin: 32px 0 8px; }
 .wrap h2 .n { font-weight: 400; }
-.wrap section:first-of-type h2 { margin-top: 0; }
-.need { margin-top: 32px; border: var(--ax-border-w) solid var(--ax-blue); border-radius: var(--ax-radius-lg); background: var(--ax-surface); box-shadow: 0 4px 0 var(--ax-blue-d); }
+.need[hidden] + section h2 { margin-top: 0; }
+.need { border: var(--ax-border-w) solid var(--ax-blue); border-radius: var(--ax-radius-lg); background: var(--ax-surface); box-shadow: 0 4px 0 var(--ax-blue-d); }
 .need[hidden] { display: none; }
 .wrap .need h2 { margin: 0; padding: 14px 20px 0; color: var(--ax-text); font-size: 17px; }
 .need li { padding: 14px 20px 18px; }
@@ -84,6 +84,8 @@ export const WORK_CSS = `
 .agent.free { border-color: var(--tick); }
 .agent.free .hint { color: var(--ax-text); font-weight: 600; }
 .agent .more { justify-self: start; min-height: 44px; padding: 0; font: inherit; font-size: 14px; font-weight: 700; color: var(--link); background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.notify { min-height: 44px; margin-top: 4px; padding: 0; font: inherit; font-size: 14px; font-weight: 700; color: var(--link); background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.notify[hidden] { display: none; }
 .agent .more::after { content: " \\25BE"; }
 .agent .more[aria-expanded="true"]::after { content: " \\25B4"; }
 .agent .detail { display: none; gap: 14px; padding-top: 14px; border-top: var(--ax-border-w) solid var(--ax-border); }

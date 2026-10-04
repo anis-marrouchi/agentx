@@ -78,10 +78,11 @@ struct CharacterSim {
         // The pointer comes close: out of its way. Left alone: back home,
         // unless the pointer is resting there.
         let near = input.pointer.map { abs($0.x - x) < reach && abs($0.y) < tall } ?? false
+        let held = input.held || (input.clickable && near)
         // Idle with play mode on, a game with the pointer comes first.
         // Sent to show something, it does not play.
         var game = PointerPlay.Out()
-        if input.plays && !input.sent && !input.held && !input.shows && mood == .idle && input.activity == .idle {
+        if input.plays && !input.sent && !held && !input.shows && mood == .idle && input.activity == .idle {
             game = play.step(now, dt, x: x, pointer: input.pointer, down: input.down, range: input.range)
         } else {
             play.stop(now, down: input.down)
@@ -91,7 +92,7 @@ struct CharacterSim {
             restSince = now
             // The stroll is over: sent home again, it rests there.
             strolled = 0; strollTo = 0; strollNext = nil
-        } else if input.held {
+        } else if held {
             target = x
             awayUntil = max(awayUntil, now + Self.awayFor)
         } else if let to = game.target {
@@ -133,7 +134,7 @@ struct CharacterSim {
         if let at = pending, now >= at { pending = nil; go(goal, now) }
         var pose = change.pose(at: now)
         // Idle, left alone and standing: a small animation now and then.
-        let alone = mood == .idle && input.activity == .idle && input.asked == nil && !input.sent && !input.held && !input.shows
+        let alone = mood == .idle && input.activity == .idle && input.asked == nil && !input.sent && !held && !input.shows
             && !near && game == PointerPlay.Out() && play.game == nil && abs(speed) < 40 && strolled == 0 && strollTo == 0
         let own = idle.step(now, dt, free: alone, gap: input.animates, dozeIn: restSince + Self.dozeAfter - now)
 

@@ -19,6 +19,7 @@
 // Usage: node scripts/owner-sweep.mjs --repo owner/name --state path.json
 //          [--agent coder-agent] [--coordinator secretary-agent]
 //          [--assignee login --owner coder-agent --reviewer devops-agent]
+//          [--review-ready-only] (defer draft reviews until ready)
 //          [--stale-minutes 30] [--max-ci-retries 2] [--remind-hours 24]
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
@@ -110,13 +111,13 @@ export function planSweep({ issues, prs }, state = {}, now = new Date(), opts = 
     const unreviewed = !pr.reviewRequests?.length && !pr.latestReviews?.length && !reviewLabel(pr)
     if (o.assignee) {
       own(item, author)
-      if (unreviewed) {
+      if (unreviewed && (!o.reviewReadyOnly || !pr.isDraft)) {
         apply.push({ kind: 'pr', number: n, labels: [`review:${o.reviewer}`] })
         propose(item, o.reviewer, 'review', `new PR by ${author}: review it, Anis gives the final approval`, `pr#${n}:review`)
       }
     } else {
       if (!pr.assignees?.length) propose(item, o.coordinator, 'assign-owner', 'no assignee', `pr#${n}:assign`)
-      if (unreviewed) propose(item, o.coordinator, 'request-review', 'no reviewer yet: agent review first, then Anis', `pr#${n}:review`)
+      if (unreviewed && (!o.reviewReadyOnly || !pr.isDraft)) propose(item, o.coordinator, 'request-review', 'no reviewer yet: agent review first, then Anis', `pr#${n}:review`)
     }
     if (!pr.closingIssuesReferences?.length) propose(item, o.coordinator, 'link-issue', 'no linked issue', `pr#${n}:link`)
 
@@ -180,9 +181,12 @@ export async function applyEdits(repo, edits, run = ghRun) {
   return results
 }
 
-function parseArgs(argv) {
+export function parseArgs(argv) {
   const args = {}
-  for (let i = 0; i < argv.length; i += 2) args[argv[i].replace(/^--/, '')] = argv[i + 1]
+  for (let i = 0; i < argv.length; i++) {
+    const key = argv[i].replace(/^--/, '')
+    args[key] = key === 'review-ready-only' ? true : argv[++i]
+  }
   return args
 }
 
@@ -216,6 +220,7 @@ async function main() {
   }
   const prev = JSON.parse(await readFile(a.state, 'utf8').catch(() => '{}'))
   const opts = {}
+  opts.reviewReadyOnly = a['review-ready-only'] === true
   if (a.agent) opts.agent = a.agent
   if (a.coordinator) opts.coordinator = a.coordinator
   for (const k of ['assignee', 'owner', 'reviewer']) if (a[k]) opts[k] = a[k]

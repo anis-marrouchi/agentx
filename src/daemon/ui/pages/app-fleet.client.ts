@@ -54,12 +54,14 @@ export const APP_FLEET_SCRIPT = `
   // One shared bottom sheet for every confirmation and the follow-up box.
   var sheet = document.createElement('dialog');
   sheet.className = 'fx-sheet';
+  sheet.setAttribute('aria-labelledby', 'fx-title');
   sheet.innerHTML = '<form method="dialog"><h3 id="fx-title"></h3><p id="fx-text"></p>' +
     '<label id="fx-field" hidden><span>Message</span><textarea id="fx-input" rows="3"></textarea></label>' +
     '<p id="fx-error" class="fx-error" role="alert"></p>' +
     '<div class="fx-actions"><button value="cancel" class="fx-btn">Cancel</button>' +
     '<button value="ok" id="fx-ok" class="fx-btn fx-primary">OK</button></div></form>';
   document.body.appendChild(sheet);
+  window.AXSheet(sheet);
   var pending = null;
   function ask(opts) {
     document.getElementById('fx-title').textContent = opts.title;
@@ -104,9 +106,9 @@ export const APP_FLEET_SCRIPT = `
   }
 
   function statusPill(n) {
-    if (!n.reachable) return '<span class="fx-pill fx-off">Offline</span>';
+    if (!n.reachable) return '<span class="fx-pill fx-off"><span aria-hidden="true">⊘ </span>Offline</span>';
     if (n.restart) return '<span class="fx-pill fx-warn">Restart ' + esc(n.restart.state) + '</span>';
-    return '<span class="fx-pill fx-on">Online</span>';
+    return '<span class="fx-pill fx-on"><span aria-hidden="true">● </span>Online</span>';
   }
   function renderFleet(data) {
     // Redraws every 15 seconds; keep the sections the user opened open.
@@ -117,23 +119,20 @@ export const APP_FLEET_SCRIPT = `
     if (!data.nodes.length) html += '<p class="soon">No machines found.</p>';
     data.nodes.forEach(function (n, i) {
       var running = n.agents.reduce(function (sum, a) { return sum + (a.active || 0); }, 0);
-      html += '<article class="fx-card"><div class="fx-row"><h3>' + esc(n.name) + '</h3>' + statusPill(n) + '</div>';
+      html += '<article class="fx-card' + (n.reachable ? '' : ' fx-offline') + '"><div class="fx-row"><h3 class="fx-machine"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v12H4zM2 20h20' + (n.reachable ? '' : 'M2 2l20 20') + '"/></svg>' + esc(n.name) + '</h3>' + statusPill(n) + '</div>';
       if (!n.reachable) {
         html += '<p class="fx-muted">Not reachable' + (n.error ? ': ' + esc(n.error) : '') + '. The rest of the fleet still works.</p></article>';
         return;
       }
       html += '<p class="fx-muted">' + esc(uptime(n.uptimeSec)) + ' · ' + plural(n.agents.length, 'agent') + ' · ' + running + ' running · schedules today: ' +
         n.crons.today.success + ' ok, ' + n.crons.today.failed + ' failed</p>';
-      html += '<div class="fx-row fx-gap"><button type="button" class="fx-btn" data-act="reload" data-i="' + i + '">Reload config</button>' +
-        (n.restart ? '<button type="button" class="fx-btn" data-act="unrestart" data-i="' + i + '">Cancel restart</button>'
-          : '<button type="button" class="fx-btn fx-danger-o" data-act="restart" data-i="' + i + '">Restart when idle</button>') + '</div>';
-      html += '<details data-key="' + esc(n.url) + '|agents"' + (openKeys[n.url + '|agents'] ? ' open' : '') + '><summary>Agents (' + n.agents.length + ')</summary><ul class="fx-list">';
+      html += '<ul class="fx-list fx-agents">';
       n.agents.forEach(function (a) {
         html += '<li><div class="fx-row"><strong>' + esc(a.name) + '</strong><span class="fx-muted">' +
           (a.active ? a.active + ' running' : (a.lastActive ? ago(a.lastActive) : 'idle')) + (a.errors ? ' · ' + a.errors + ' errors' : '') + '</span></div>' +
           (a.last ? '<p class="fx-muted' + (a.last.ok ? '' : ' fx-bad') + '">' + esc(a.last.text) + '</p>' : '') + '</li>';
       });
-      html += '</ul></details><details data-key="' + esc(n.url) + '|crons"' + (openKeys[n.url + '|crons'] ? ' open' : '') + '><summary>Schedules (' + n.crons.items.length + ')</summary><ul class="fx-list">';
+      html += '</ul><details data-key="' + esc(n.url) + '|crons"' + (openKeys[n.url + '|crons'] ? ' open' : '') + '><summary>Schedules (' + n.crons.items.length + ')</summary><ul class="fx-list">';
       n.crons.items.forEach(function (c, j) {
         var last = c.last ? '<span class="fx-pill ' + (c.last.status === 'success' ? 'fx-on' : 'fx-off') + '">' + esc(c.last.status) + '</span>' : '';
         html += '<li><div class="fx-row"><strong>' + esc(c.id) + '</strong>' +
@@ -142,7 +141,11 @@ export const APP_FLEET_SCRIPT = `
           '<p class="fx-muted">' + esc(c.schedule) + ' · ' + esc(c.agent) + (c.consecutiveErrors ? ' · failed ' + c.consecutiveErrors + ' times in a row' : '') + ' ' + last + '</p>' +
           (c.last && c.last.text ? '<p class="fx-muted">' + esc(c.last.text) + '</p>' : '') + '</li>';
       });
-      html += '</ul></details></article>';
+      html += '</ul></details>';
+      html += '<details data-key="' + esc(n.url) + '|manage"' + (openKeys[n.url + '|manage'] ? ' open' : '') + '><summary>Manage computer</summary><div class="fx-row fx-gap"><button type="button" class="fx-btn" data-act="reload" data-i="' + i + '">Reload config</button>' +
+        (n.restart ? '<button type="button" class="fx-btn" data-act="unrestart" data-i="' + i + '">Cancel restart</button>'
+          : '<button type="button" class="fx-btn fx-danger-o" data-act="restart" data-i="' + i + '">Restart when idle</button>') + '</div></details>';
+      html += '</article>';
     });
     fleetPanel.innerHTML = html;
     fleetPanel._data = data;
@@ -156,7 +159,7 @@ export const APP_FLEET_SCRIPT = `
     html += '<h3 class="fx-sub">Needs you (' + items.length + ')</h3>';
     if (!items.length) html += '<p class="fx-muted">Nothing is waiting for a decision.</p>';
     items.forEach(function (x, k) {
-      html += '<article class="fx-card"><h4>' + esc(x.it.title) + '</h4><p>' + esc(x.it.ask) + '</p>' +
+      html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(x.it.title) + '</h4><span class="fx-pill fx-warn">Ⅱ Waiting</span></div><p>' + esc(x.it.ask) + '</p>' +
         (x.it.recommend ? '<p class="fx-muted">Suggested: ' + esc(x.it.recommend) + '</p>' : '') +
         '<p class="fx-muted">' + esc(x.it.raisedBy || '') + ' · ' + esc(x.node.nodeName) + '</p>' +
         '<div class="fx-row fx-gap"><button type="button" class="fx-btn fx-primary" data-act="decide" data-k="' + k + '" data-v="yes">Yes</button>' +
@@ -167,7 +170,7 @@ export const APP_FLEET_SCRIPT = `
     html += '<h3 class="fx-sub">Running now (' + act.tasks.length + ')</h3>';
     if (!act.tasks.length) html += '<p class="fx-muted">No agent is working right now.</p>';
     act.tasks.forEach(function (t, k) {
-      html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(t.agentName) + '</h4><span class="fx-muted">' + esc(ago(t.startedAt)) + '</span></div>' +
+      html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(t.agentName) + '</h4><span class="fx-muted">' + esc(ago(t.startedAt)) + '</span></div><p class="fx-working"><span aria-hidden="true">◔</span> Working</p>' +
         '<p>' + esc(t.preview) + '</p><p class="fx-muted">' + esc(t.nodeName) + ' · ' + esc(t.channel) + '</p>' +
         '<div class="fx-row fx-gap"><button type="button" class="fx-btn" data-act="followup" data-k="' + k + '">Follow up</button>' +
         '<button type="button" class="fx-btn fx-danger-o" data-act="cancel" data-k="' + k + '">Stop</button></div></article>';
@@ -246,7 +249,7 @@ export const APP_FLEET_SCRIPT = `
   [fleetPanel, activityPanel].forEach(function (p) {
     if (!p.querySelector('.fx-status')) p.insertAdjacentHTML('beforeend', '<p class="fx-status" role="status" aria-live="polite"></p>');
   });
-  document.querySelectorAll('[role=tab]').forEach(function (t) { t.addEventListener('click', function () { setTimeout(refresh, 0); }); });
+  document.addEventListener('ax-tab', function () { setTimeout(refresh, 0); });
   document.addEventListener('visibilitychange', refresh);
   window.addEventListener('online', refresh);
   setInterval(refresh, 15000);

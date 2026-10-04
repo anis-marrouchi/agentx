@@ -898,6 +898,18 @@ Run full session analysis (parses Claude Code JSONL files).
 |---|---|---|
 | `--days <n>` | `7` | Analyze last N days. |
 
+### `agentx usage channels`
+
+Cost per channel over a fixed range of days, next to a saved baseline.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--from <date>` | — | First day, YYYY-MM-DD. Required. |
+| `--to <date>` | — | Last day, YYYY-MM-DD. Required. |
+| `--save <file>` | — | Write this range's figures to a JSON file. |
+| `--baseline <file>` | — | A file written by --save, shown beside this range. |
+| `--json` | — | Raw JSON output. |
+
 ### `agentx usage surfaces`
 
 Which CLI commands and dashboard pages are actually used.
@@ -3295,7 +3307,10 @@ No flags.
 | `-m, --model <model>` | — | Override the agent's model for this task. |
 | `--timeout <minutes>` | — | Upper bound on the task's run time. |
 | `--setup-workspace` | — | Write the managed workspace files first, as daemon boot does. |
-| `--json` | — | Print one JSON result object instead of the reply text. |
+| `--json` | — | Print one JSON result object instead of the reply text: the reply, any error, the token counts, the number of turns, the cost the Claude Code CLI reported for the run (`costUsd`, when the engine reports one), the billed model and the duration. |
+| `--channel <name>` | `exec` | Channel name the task runs under, as a channel adapter would set it. Decides the session profile, see [Lean sessions](./config-agents.md#lean-sessions). |
+| `--chat-id <id>` | a fresh one | Chat id for the session, so repeated runs share a history. |
+| `--profile <full\|lean>` | — | Session profile for this run's channel, overriding `session.profileByChannel`. |
 
 ## chat (advanced)
 

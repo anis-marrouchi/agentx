@@ -641,10 +641,12 @@ export class TokenTracker {
  * override file is optional; operators tweak rates (e.g. when Anthropic
  * publishes a price change) without rebuilding the daemon.
  */
-function loadPricingWithOverrides(): typeof CACHE_AWARE_PRICING {
+export function loadPricingWithOverrides(
+  overridePath: string = PRICING_OVERRIDE_PATH,
+): typeof CACHE_AWARE_PRICING {
   const result = JSON.parse(JSON.stringify(CACHE_AWARE_PRICING))
   try {
-    const p = resolve(process.cwd(), PRICING_OVERRIDE_PATH)
+    const p = resolve(process.cwd(), overridePath)
     if (!existsSync(p)) return result
     const raw = JSON.parse(readFileSync(p, "utf-8"))
     for (const [family, rates] of Object.entries(raw)) {

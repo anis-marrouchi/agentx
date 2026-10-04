@@ -32,6 +32,8 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `request-context` | Which optional pieces of context should this request receive? |
 | `session-continuity` | Does this turn need the earlier conversation, or can the session start fresh early? |
 | `intent-path` | Which intent-graph category, then which verb within it, does this message belong to? Replaces the model call the classifier makes on a cache miss. |
+| `task-tier` | Does this task need the strongest model, or would a cheaper one do? Steers model routing when `active` and `decisions.routing` names a cheap model. |
+| `wake-gate` | Does this event need an agent run at all? Not yet asked on the live path; replayed on recorded runs by the [backtest](./jev-backtest.md). |
 
 More seats exist in `src/decisions/seats/`; the table lists the ones this page refers to.
 

@@ -235,6 +235,7 @@ export class SessionStore {
   private staleMinutes: number
   private maxTurnsPerSession: number
   private tierTwoThresholdTokens: number
+  private tierTwoThresholdTokensByChannel: Record<string, number>
   /** Resolves a channel name to its adapter — installed by the daemon after
    *  channels are registered (see daemon/index.ts after router.register). The
    *  cold-create branch consults it to call adapter.seedHistory(). Optional;
@@ -252,6 +253,7 @@ export class SessionStore {
       staleMinutes?: number
       maxTurnsPerSession?: number
       tierTwoThresholdTokens?: number
+      tierTwoThresholdTokensByChannel?: Record<string, number>
     } = {},
   ) {
     this.sessionsDir = resolve(baseDir, ".agentx/sessions")
@@ -261,6 +263,9 @@ export class SessionStore {
     this.staleMinutes = Math.max(1, opts.staleMinutes ?? DEFAULT_STALE_SESSION_MINUTES)
     this.maxTurnsPerSession = Math.max(2, opts.maxTurnsPerSession ?? DEFAULT_MAX_TURNS_PER_SESSION)
     this.tierTwoThresholdTokens = Math.max(50_000, opts.tierTwoThresholdTokens ?? DEFAULT_TIER_TWO_THRESHOLD_TOKENS)
+    this.tierTwoThresholdTokensByChannel = Object.fromEntries(
+      Object.entries(opts.tierTwoThresholdTokensByChannel ?? {}).map(([channel, tokens]) => [channel, Math.max(50_000, tokens)]),
+    )
   }
 
   /** Install the channel-adapter resolver. Called once at daemon startup
@@ -1029,7 +1034,7 @@ export class SessionStore {
     const session = this.getSession(agentId, channel, chatId)
     if (!session.claudeSessionId && !session.codexSessionId && !session.opencodeSessionId) return false
     const contextSize = session.lastTurnContextTokens ?? session.lastTurnInputTokens ?? 0
-    return contextSize >= this.tierTwoThresholdTokens
+    return contextSize >= this.getTierTwoThresholdTokens(channel)
   }
 
   /**
@@ -1112,7 +1117,9 @@ export class SessionStore {
     return s.lastTurnContextTokens ?? s.lastTurnInputTokens ?? 0
   }
   getMaxTurnsPerSession(): number { return this.maxTurnsPerSession }
-  getTierTwoThresholdTokens(): number { return this.tierTwoThresholdTokens }
+  getTierTwoThresholdTokens(channel?: string): number {
+    return (channel ? this.tierTwoThresholdTokensByChannel[channel] : undefined) ?? this.tierTwoThresholdTokens
+  }
 
   /**
    * Trim session to stay within limits.

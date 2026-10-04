@@ -5,7 +5,7 @@ import { parseYamlWorkflow } from "../src/workflows/yaml"
 import { workflowSchema, lintWorkflow } from "../src/workflows/types"
 import { evaluateBranch } from "../src/workflows/engine"
 // @ts-expect-error — plain .mjs script, no type declarations
-import { planSweep, ciState, formatSteps, applyEdits } from "../scripts/owner-sweep.mjs"
+import { planSweep, ciState, formatSteps, applyEdits, parseArgs } from "../scripts/owner-sweep.mjs"
 
 const now = new Date("2026-09-25T12:00:00Z")
 const minsAgo = (m: number) => new Date(now.getTime() - m * 60000).toISOString()
@@ -21,6 +21,10 @@ function pr(over: Record<string, unknown> = {}) {
   }
 }
 const steps = (r: { steps: Array<{ owner: string; step: string }> }) => r.steps.map((s) => `${s.owner} ${s.step}`)
+
+it("parses the review-ready-only flag without consuming the next option", () => {
+  expect(parseArgs(["--repo", "a/b", "--review-ready-only", "--state", "s.json"])).toEqual({ repo: "a/b", "review-ready-only": true, state: "s.json" })
+})
 
 describe("owner sweep (#53)", () => {
   it("re-dispatches a draft PR with red CI to its author — the dropped #52 case", () => {
@@ -141,6 +145,17 @@ describe("owner sweep (#53)", () => {
 
 describe("owner sweep: applying ownership (#53 decisions)", () => {
   const opts = { assignee: "anis-marrouchi", owner: "coder-agent", reviewer: "devops-agent" }
+  it("defers draft reviews until ready while still assigning ownership and repairing CI", () => {
+    const draft = pr({ body: "<!-- agentx:coder-agent -->", assignees: [], reviewRequests: [], labels: [], statusCheckRollup: [check("FAILURE")] })
+    const r = planSweep({ issues: [], prs: [draft] }, {}, now, { ...opts, reviewReadyOnly: true })
+    expect(r.apply).toEqual([{ kind: "pr", number: 52, assignee: "anis-marrouchi", labels: ["agent:coder-agent"] }])
+    expect(steps(r)).toEqual(["coder-agent fix-ci"])
+    expect(r.state.seen["pr#52:review"]).toBeUndefined()
+    const ready = { ...draft, isDraft: false, assignees: [{ login: "anis-marrouchi" }], labels: [{ name: "agent:coder-agent" }], statusCheckRollup: [check(null, "IN_PROGRESS")] }
+    const next = planSweep({ issues: [], prs: [ready] }, r.state, now, { ...opts, reviewReadyOnly: true })
+    expect(steps(next)).toEqual(["devops-agent review"])
+    expect(next.apply).toEqual([{ kind: "pr", number: 52, labels: ["review:devops-agent"] }])
+  })
   const issue = (over: Record<string, unknown> = {}) =>
     ({ number: 53, title: "owners", url: "u", body: "", assignees: [], labels: [], updatedAt: minsAgo(10), ...over })
 

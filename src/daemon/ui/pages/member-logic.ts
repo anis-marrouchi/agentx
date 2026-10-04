@@ -81,3 +81,13 @@ export function summaryLine(agents: Array<{ agentId: string; state: string; by: 
   if (agents.length > 4) parts.push((agents.length - 4) + " more below.")
   return parts.join(" ") || "Nothing running now."
 }
+
+/** The agents that went from Working to Free between two good loads
+ *  (#443): the page tells the person with a notification, as well as the
+ *  green card. `before` is null on the first load, which tells nothing. */
+export function freedAgents(before: Array<{ agentId: string; state: string }> | null | undefined, after: Array<{ agentId: string; state: string }>): string[] {
+  if (!before) return []
+  const was: Record<string, string> = {}
+  before.forEach(function (a) { was[a.agentId] = a.state })
+  return after.filter(function (a) { return a.state === "free" && was[a.agentId] === "working" }).map(function (a) { return a.agentId })
+}

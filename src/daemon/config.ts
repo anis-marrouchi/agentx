@@ -7,6 +7,7 @@ import { autonomyLevelSchema } from "@/guard/autonomy"
 import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
+import { NOISE_MARKERS } from "@/voice/noise"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
 
@@ -290,6 +291,25 @@ const agentConfigSchema = z.object({
    *  e.g. benchmark agents never draw on the fleet's subscription quota.
    *  An "api" agent with no key fails its task rather than falling back. */
   billing: z.enum(["subscription", "api"]).default("subscription"),
+  /** Run GitHub coding tasks as Claude cloud sessions (`claude --cloud`)
+   *  instead of local runs (#622). Off by default. Needs
+   *  `channels.github.cloudSessions: true` too. Only a task from the GitHub
+   *  channel for an issue or pull request of a repository this node has a
+   *  checkout of (the project rule's `runbook` path, or the agent's
+   *  workspace) goes to the cloud; everything else runs locally. The result
+   *  is a pull request, not a reply. A launch that fails falls back to a
+   *  local run. See src/agents/cloud-sessions.ts. */
+  cloudSessions: z.object({
+    enabled: z.boolean().default(false),
+    /** Launches per calendar day for this agent; 0 = no cap. */
+    maxPerDay: z.number().int().min(0).default(0),
+    /** Hours a launched session counts as open: no local run starts for
+     *  its issue, and comments on the issue are forwarded to it. */
+    openHours: z.number().min(1).max(168).default(24),
+    /** Seconds `claude --cloud` may take to print the session id before
+     *  the launch is given up and the task runs locally. */
+    launchTimeoutSeconds: z.number().int().min(10).max(600).default(120),
+  }).default({}),
   /** Improvement plan #3 — tool-use-required preset. When set,
    *  AgentX inspects the stream-json events from each task and
    *  fails the response with `tool_required_not_called: <name>`
@@ -506,6 +526,10 @@ const channelsConfigSchema = z.object({
     /** Legacy auto-reply — same semantics as gitlab.autoReplyLegacy.
      *  Defaults true; set false once agent skills use channel.reply. */
     autoReplyLegacy: z.boolean().default(true),
+    /** Let agents whose `cloudSessions.enabled` is on send this channel's
+     *  issue and pull request tasks to Claude cloud sessions (#622). Off by
+     *  default: both this and the agent setting must be on. */
+    cloudSessions: z.boolean().default(false),
     /** GitHub PAT or env var (${GITHUB_TOKEN}) for posting comments back. */
     token: z.string().optional(),
     /** Path to file containing the token (first line read at startup). */
@@ -531,6 +555,22 @@ const channelsConfigSchema = z.object({
       tokenFile: z.string().optional(),
       node: z.string().optional(),
     })).default([]),
+    // --- Which issue and pull request events start a run (#612) ---
+    /** Issue actions that start a run. A project rule whose `actions`
+     *  list is set replaces this list for its repository; a rule without
+     *  one keeps it, so `closed` never starts a run unless asked for. */
+    issueActions: z.array(z.string().min(1)).default(["opened", "reopened", "assigned"]),
+    /** Pull request actions that start a run. Same precedence as issueActions. */
+    pullRequestActions: z.array(z.string().min(1)).default(["opened", "reopened", "ready_for_review"]),
+    /** A label, assignment, close or edit made by an account AgentX posts
+     *  with (the App bot, a token owner, a mapped username, a mesh peer)
+     *  does not start a run: the owner sweep's own `agent:<id>` label woke
+     *  the agent it was filed for. Opened and reopened always count. */
+    ignoreOwnChanges: z.boolean().default(true),
+    /** Events on one issue or pull request within this many seconds become
+     *  one run, carrying the latest state. The window restarts with each
+     *  event. 0 starts a run per event. */
+    debounceSeconds: z.number().min(0).max(3600).default(30),
   }).default({}),
   /** ntfy push notifications — outbound only. The operator-facing tap on
    *  the shoulder: cron failures, task errors, and anything an agent decides
@@ -1282,6 +1322,13 @@ export const daemonConfigSchema = z.object({
      *  keeps a cut answer over the 280 characters the Mac pill opens
      *  at (AnswerView.isWorthShowing), so "on screen" stays true. */
     spokenMaxChars: z.number().int().min(300).max(1500).default(SPOKEN_MAX_CHARS),
+    /** A transcript with no words (empty, or only bracketed markers such
+     *  as "[background noise]") gets a fixed reply from /ask and wakes no
+     *  agent. `markers` is what counts as a marker, without the brackets. */
+    noiseFilter: z.object({
+      enabled: z.boolean().default(true),
+      markers: z.array(z.string()).default(NOISE_MARKERS),
+    }).default({}),
     /** The on-device engine behind "local" and every fallback:
      *  mlx-whisper (Python, all languages) or Parakeet (Core ML, 25
      *  European languages, no Arabic; 483 MB downloaded on first use into
@@ -1430,6 +1477,8 @@ export const daemonConfigSchema = z.object({
     staleMinutes: z.number().int().min(1).max(1440).default(720),
     maxTurnsPerSession: z.number().int().min(2).max(200).default(40),
     tierTwoThresholdTokens: z.number().int().min(50_000).max(200_000).default(180_000),
+    /** Per-channel context rotation limits; omitted channels use the global limit. */
+    tierTwoThresholdTokensByChannel: z.record(z.number().int().min(50_000).max(200_000)).default({}),
     /** Context assembly strategy:
      *  - "layered" (default): the classic stacked layers — session history,
      *    memory, cross-chat, wiki hint all appended every turn.
@@ -1458,6 +1507,74 @@ export const daemonConfigSchema = z.object({
      *  context. The promotion gate for that wants labelled production rows,
      *  not a good afternoon on a fixture. Raise it to collect them. */
     continuityStateTurns: z.number().int().min(0).max(5).default(0),
+    /** How much a session is given when it starts, per channel (#615).
+     *  `full` is the classic start. `lean` starts Claude Code with only
+     *  the `agentx` MCP server (no user-level connectors), only the
+     *  project's settings (no global CLAUDE.md, user skills or plugins),
+     *  and asks for the landscape, chat history and cross-chat context
+     *  through MCP tools instead of pushing them into the prompt. A
+     *  channel missing here keeps the built-in default: github, a2a,
+     *  workflow and cron are lean; every other channel is full. Only
+     *  claude-code and codex-cli agents have a lean start; other tiers
+     *  are always full. See src/agents/session-profile.ts. */
+    profileByChannel: z.record(z.enum(["full", "lean"])).default({}),
+    /** What a lean start keeps. */
+    lean: z.object({
+      /** MCP servers from the workspace's .mcp.json kept in a lean
+       *  session, by name. `agentx` is always added. */
+      mcpServers: z.array(z.string().min(1)).default(["agentx"]),
+      /** Claude Code setting sources a lean session reads. Without `user`,
+       *  the global CLAUDE.md, user skills, plugins and user-level MCP
+       *  connectors are not loaded. `project` is the workspace. */
+      settingSources: z.array(z.enum(["user", "project", "local"])).default(["project", "local"]),
+      /** Replace the pushed landscape, chat history and cross-chat
+       *  context with one line naming the tools that fetch them. */
+      contextOnDemand: z.boolean().default(true),
+      /** Built-in Claude Code tools a lean session gets, passed as
+       *  `--tools` next to `--strict-mcp-config` (#615). Empty, the
+       *  default, keeps every built-in tool. The tool schemas are about
+       *  14k tokens of a first turn, so a short list is what brings a lean
+       *  start under 20k; an agent that lacks a tool it needs fails
+       *  mid-task, so this stays opt-in. The agentx MCP tools are not
+       *  affected. claude-code agents only. */
+      tools: z.array(z.string().min(1)).default([]),
+      /** The same per channel; a channel's non-empty list wins over
+       *  `tools`. */
+      toolsByChannel: z.record(z.array(z.string().min(1))).default({}),
+    }).default({}),
+    /** Longest the agent-memory index (MEMORY.md) may be where it is
+     *  loaded on every session: merged into each workspace's CLAUDE.md
+     *  and inlined in the system prompt (#615). 0, the default, keeps the
+     *  whole index. Cut whole lines only; a closing line counts the
+     *  entries left out and points at `.agentx-memory.md`, which always
+     *  holds the full index, and at `agentx memory index`. Applies to the
+     *  prompt on save; the CLAUDE.md block follows at the next daemon
+     *  start or memory change. */
+    memoryIndexMaxChars: z.number().int().min(0).max(200_000).default(0),
+    /** ObservationPack (#621). A large tool result stays in the context
+     *  and is re-read on every later request. With this on, a Claude Code
+     *  PostToolUse hook saves a text result over `limitBytes` to
+     *  `.agentx/observations/<agent id>/` and shows the model its first and last
+     *  bytes plus the path of the saved original, which it can Read or
+     *  grep. Off by default. claude-code agents only. Turning it on, or
+     *  changing `tools`, takes a daemon restart (the hook is written into
+     *  each workspace's .claude/settings.json at start); turning it off
+     *  applies on save. See src/agents/observation-pack.ts. */
+    observationPack: z.object({
+      enabled: z.boolean().default(false),
+      /** A text result larger than this many bytes is packed. */
+      limitBytes: z.number().int().min(1024).max(1_048_576).default(10_240),
+      /** Bytes of the start and of the end of the original the model sees. */
+      headBytes: z.number().int().min(0).max(65_536).default(1024),
+      tailBytes: z.number().int().min(0).max(65_536).default(1024),
+      /** Tools the pack applies to. Each entry must match the whole tool
+       *  name and may be a regular expression. `Read` is left out by
+       *  default: an agent that sees only the two ends of a file it is
+       *  about to edit has to read it again in pages. */
+      tools: z.array(z.string().min(1)).default(["Bash", "Grep", "WebFetch", "mcp__.*"]),
+      /** Days a saved original is kept. 0 keeps every original. */
+      retentionDays: z.number().int().min(0).max(3650).default(0),
+    }).default({}),
   }).default({}),
   /** Move B — JS/TS plugins. Each entry is an installed npm package name
    *  (e.g. `agentx-plugin-mattermost` or `@acme/plugin-mattermost`); the

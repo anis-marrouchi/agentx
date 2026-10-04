@@ -5,6 +5,6 @@
   "kind": "shell",
   "timeoutMs": 120000,
   "inputs": [],
-  "command": "node scripts/owner-sweep.mjs --repo anis-marrouchi/agentx --state .agentx/owner-sweep/agentx.json --agent coder-agent --coordinator secretary-agent --assignee anis-marrouchi --owner coder-agent --reviewer devops-agent",
+  "command": "node scripts/owner-sweep.mjs --repo anis-marrouchi/agentx --state .agentx/owner-sweep/agentx.json --agent coder-agent --coordinator secretary-agent --assignee anis-marrouchi --owner coder-agent --reviewer devops-agent --review-ready-only",
   "cwd": "<AGENTX_CHECKOUT>"
 }

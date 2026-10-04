@@ -2,6 +2,7 @@ import { Command } from "commander"
 import { randomUUID } from "crypto"
 import { readFileSync } from "fs"
 import { resolve } from "path"
+import { LandscapeBuilder } from "@/agents/landscape"
 import { AgentRegistry } from "@/agents/registry"
 import { setupWorkspace } from "@/agents/workspace-setup"
 import { loadDaemonConfig } from "@/daemon/config"
@@ -19,7 +20,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 // directory, so run it from a state directory, not the agent's workspace.
 //
 // With --json, stdout is exactly one JSON object:
-//   { content, error?, errorKind?, usage?, numTurns?, billedModel?, durationMs }
+//   { content, error?, errorKind?, usage?, numTurns?, costUsd?, billedModel?, durationMs }
 // usage is cumulative across the whole agentic loop, cache split out:
 //   { inputTokens, outputTokens, cacheReadTokens, cacheCreateTokens }
 // Exit code is 1 when the agent returned an error.
@@ -34,6 +35,9 @@ export const exec = new Command()
   .option("--timeout <minutes>", "upper bound on the task's run time")
   .option("--setup-workspace", "write the managed workspace files first, as daemon boot does")
   .option("--json", "print one JSON result object instead of the reply text")
+  .option("--channel <name>", "channel name the task runs under, as a channel adapter would set it", "exec")
+  .option("--chat-id <id>", "chat id for the session (default: a fresh one), so repeated runs share a history")
+  .option("--profile <full|lean>", "session profile for this run's channel, overriding session.profileByChannel")
   .action(async (messageArg: string | undefined, opts) => {
     const message = (messageArg ?? readFileSync(0, "utf8")).trim()
     if (!message) fail("no task given (pass it as an argument or on stdin)")
@@ -41,6 +45,8 @@ export const exec = new Command()
     const config = loadDaemonConfig(opts.config ? resolve(opts.config) : undefined)
     const agent = config.agents[opts.agent]
     if (!agent) fail(`unknown agent "${opts.agent}" — known: ${Object.keys(config.agents).join(", ")}`)
+    if (opts.profile !== undefined && opts.profile !== "full" && opts.profile !== "lean") fail(`--profile must be full or lean, not "${opts.profile}"`)
+    if (opts.profile) config.session.profileByChannel = { ...config.session.profileByChannel, [opts.channel]: opts.profile }
 
     const log = (...args: unknown[]) => console.error("[agentx exec]", ...args)
     if (opts.setupWorkspace) {
@@ -49,13 +55,23 @@ export const exec = new Command()
     }
 
     const registry = new AgentRegistry(config, log)
+    // The daemon gives every agent its landscape (team, channels, rules);
+    // a run here gets the same, minus mesh peers, so what it measures is
+    // what the daemon sends.
+    try {
+      const landscape = new LandscapeBuilder(config)
+      landscape.build()
+      registry.setLandscape(landscape)
+    } catch (e: any) {
+      log(`no landscape: ${e?.message ?? e}`)
+    }
     const started = Date.now()
     const response = await registry.execute({
       agentId: opts.agent,
       message,
       model: opts.model,
       timeoutMinutes: opts.timeout ? Number(opts.timeout) : undefined,
-      context: { channel: "exec", chatId: `exec-${randomUUID()}`, sender: "cli" },
+      context: { channel: opts.channel, chatId: opts.chatId || `exec-${randomUUID()}`, sender: "cli" },
     })
 
     if (opts.json) {
@@ -65,6 +81,9 @@ export const exec = new Command()
         errorKind: response.errorKind,
         usage: response.usage,
         numTurns: response.numTurns,
+        // What the Claude Code CLI itself said the run cost (list price),
+        // when the tier reports it; absent otherwise.
+        costUsd: response.costUsd,
         billedModel: response.billedModel,
         durationMs: Date.now() - started,
       }) + "\n")

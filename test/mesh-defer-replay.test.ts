@@ -28,6 +28,25 @@ function meshConfig(): any {
 describe("A2AMesh.findAgentPeer — down is not unknown", () => {
   afterEach(() => { vi.unstubAllGlobals() })
 
+  it("keeps peer posting identities across incomplete startup cards, token changes and outages", async () => {
+    const mesh = new A2AMesh(meshConfig(), () => {})
+    const state = (mesh as any).peers.get(PEER)
+    state.client.getAgentCard = vi.fn(async () => ({ name: "HQ-Local", githubLogins: ["Agent[bot]", null, ""] }))
+    await mesh.discoverAll()
+    for (const card of [{ name: "HQ-Local" }, { name: "HQ-Local", githubLogins: [] }, { name: "HQ-Local", githubLogins: ["New-Agent[bot]"] }]) {
+      state.client.getAgentCard = vi.fn(async () => card)
+      await mesh.discoverAll()
+      expect(mesh.directory()[0].githubLogins).toContain("agent[bot]")
+    }
+    state.client.getAgentCard = vi.fn(async () => { throw new Error("fetch failed") })
+    await mesh.discoverAll()
+    await mesh.discoverAll()
+    await mesh.discoverAll()
+    expect(mesh.directory()[0]).toMatchObject({ healthy: false, githubLogins: ["agent[bot]", "new-agent[bot]"] })
+    mesh.directory()[0].githubLogins.push("mutated")
+    expect(mesh.directory()[0].githubLogins).not.toContain("mutated")
+  })
+
   it("still resolves an agent on a peer that has gone unreachable", async () => {
     const mesh = new A2AMesh(meshConfig(), () => {})
 

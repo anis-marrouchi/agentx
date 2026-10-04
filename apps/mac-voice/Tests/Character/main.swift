@@ -394,5 +394,26 @@ check(CharacterSim.still(.thinking, asked: .listening, home: home).pose == M.pos
       && CharacterSim.still(.thinking, home: home).pose == M.pose(.working),
       "the still picture shows the state asked for too, and no busy look at a stop")
 
+// --- A click on it (#579) ---
+
+check(M.clickable(.idle, asked: nil, sent: false, bubble: false), "idle with no bubble, it can be clicked")
+check(!M.clickable(.idle, asked: nil, sent: false, bubble: true), "with a bubble, the bubble is clicked, not it")
+check(!M.clickable(.thinking, asked: nil, sent: false, bubble: false) && !M.clickable(.idle, asked: .working, sent: false, bubble: false)
+      && !M.clickable(.idle, asked: nil, sent: true, bubble: false), "nor at work, in a state asked for, or sent to show something")
+var clicked579 = CharacterSim()
+_ = clicked579.step(to: 0, Input(home: home, range: range))
+for i in 1...90 { _ = clicked579.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), clickable: true, home: home, range: range)) }
+check(abs(clicked579.x - home) < 1, "the pointer comes to click it: it does not step aside")
+for i in 91...150 { _ = clicked579.step(to: Double(i) / 30, Input(pointer: (x: home - 20, y: 30), home: home, range: range)) }
+check(abs(clicked579.x - home) > 100, "with a bubble again, it steps aside as before")
+var waited579 = CharacterSim()
+_ = waited579.step(to: 0, Input(home: home, range: range))
+var strayed579 = 0.0
+for i in 1...3600 {
+    _ = waited579.step(to: Double(i) / 30, Input(pointer: (x: waited579.x + 10, y: 30), clickable: true, strolls: true, animates: 10, home: home, range: range))
+    strayed579 = max(strayed579, abs(waited579.x - home))
+}
+check(strayed579 < 1, "under the pointer it takes no stroll either, however long")
+
 if failures > 0 { print("\(failures) failed"); exit(1) }
 print("all passed")

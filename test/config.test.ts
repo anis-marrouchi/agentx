@@ -2,6 +2,30 @@ import { describe, it, expect } from "vitest"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 describe("daemonConfigSchema", () => {
+  it("validates channel-specific session rotation limits without silently stripping them", () => {
+    const config = { node: { id: "test", name: "Test" }, session: { tierTwoThresholdTokensByChannel: { voice: 60_000, github: 80_000 } } }
+    expect(daemonConfigSchema.parse(config).session.tierTwoThresholdTokensByChannel).toEqual({ voice: 60_000, github: 80_000 })
+    expect(daemonConfigSchema.parse({ node: config.node }).session.tierTwoThresholdTokensByChannel).toEqual({})
+    for (const tokens of [49_999, 200_001, 60_000.5]) {
+      expect(daemonConfigSchema.safeParse({ ...config, session: { tierTwoThresholdTokensByChannel: { voice: tokens } } }).success).toBe(false)
+    }
+  })
+  it("validates the per-channel session profile and the lean settings (#615)", () => {
+    const node = { id: "test", name: "Test" }
+    const defaults = daemonConfigSchema.parse({ node }).session
+    expect(defaults.profileByChannel).toEqual({})
+    expect(defaults.lean).toEqual({ mcpServers: ["agentx"], settingSources: ["project", "local"], contextOnDemand: true, tools: [], toolsByChannel: {} })
+
+    const set = daemonConfigSchema.parse({ node, session: {
+      profileByChannel: { github: "full", telegram: "lean" },
+      lean: { mcpServers: ["agentx", "codegraph"], settingSources: ["project"], contextOnDemand: false },
+    } }).session
+    expect(set.profileByChannel).toEqual({ github: "full", telegram: "lean" })
+    expect(set.lean).toEqual({ mcpServers: ["agentx", "codegraph"], settingSources: ["project"], contextOnDemand: false, tools: [], toolsByChannel: {} })
+
+    expect(daemonConfigSchema.safeParse({ node, session: { profileByChannel: { github: "tiny" } } }).success).toBe(false)
+    expect(daemonConfigSchema.safeParse({ node, session: { lean: { settingSources: ["global"] } } }).success).toBe(false)
+  })
   it("validates minimal config", () => {
     const result = daemonConfigSchema.safeParse({
       node: { id: "test", name: "Test" },

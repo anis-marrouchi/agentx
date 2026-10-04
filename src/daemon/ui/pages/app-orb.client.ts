@@ -1,19 +1,9 @@
 // --- Phone app: the voice orb (window.AXOrb) ---
 //
-// A canvas port of the AgentX Voice pill orb on the Mac
-// (apps/mac-voice/Sources/AgentXVoice/Orb.swift and OrbMath.swift), so the
-// two read as the same object: the agent's colour in five shades, a soft
-// glow that swells with energy, colours that drift, a white ring going round
-// while thinking and a pulse while speaking. The numbers are the Swift ones,
-// at its 96-point design size, scaled to the canvas.
-//
-// SwiftUI's MeshGradient becomes nine radial blobs at the mesh points, in the
-// mesh's colours; SwiftUI's blur becomes a radial fade (Safari's canvas has
-// no filter). It only animates while it has something to show and the page
-// is visible; with Reduce Motion it is a still picture per state.
-//
-// This string lives inside a TypeScript template literal: no backslashes,
-// no dollar-brace and no backticks in it, or the inlined script breaks.
+// The approved blue phone orb: a radial highlight, a glow that follows the
+// microphone, a thinking ring and speech pulses. The shared level/envelope
+// helpers retain the Mac voice timing; reduced motion renders a still state.
+// The 96-point body sits in a 160-point canvas to leave room for its glow.
 
 export const APP_ORB_SCRIPT = `
 window.AXOrb = (function () {
@@ -68,10 +58,6 @@ window.AXOrb = (function () {
       if (o.phase === 'speaking') return s ? 0.7 : o.meter ? 0.15 + 0.85 * o.level : speakingEnvelope(t);
       return 0;
     }
-    function speed() {
-      return o.phase === 'listening' ? 0.5 + o.level * 1.5 : o.phase === 'thinking' ? 1.3 : o.phase === 'speaking' ? 0.9 : 0;
-    }
-
     function draw(t) {
       var dpr = window.devicePixelRatio || 1, css = canvas.clientWidth || 150, px = Math.round(css * dpr);
       // Both sides: a canvas starts at 300x150, so at 2x the width alone already matches.
@@ -80,30 +66,20 @@ window.AXOrb = (function () {
       var W = canvas.width, k = W / 160;
       ctx.setTransform(k, 0, 0, k, W / 2, W / 2);
       ctx.clearRect(-80, -80, 160, 160);
-      var e = energy(t), sc = 0.78 + 0.22 * e, R = 48 * sc, base = hexToHsb(o.tint);
+      var e = energy(t), sc = 1 + 0.08 * e, R = 48 * sc, base = hexToHsb(o.tint);
       var drift = o.phase === 'thinking' && !still() ? Math.sin(t * 0.8) * 0.04 : 0;
       function shade(dh, ds, db, a) { var h = (base.h + dh + drift) % 1; return hsb(h < 0 ? h + 1 : h, clamp(base.s + ds), clamp(base.b + db), a); }
-      var core = 0.12 + 0.3 * e;
-      var sh = [[0, 0, 0], [0.07, -0.05, 0.08], [-0.06, 0.05, -0.12], [0.13, -0.1, 0.02], [0.02, -0.7 * core, core]];
-
       // Glow: a disc of the tint, blurred 10 + 12e points.
       var blur = 10 + 12 * e, gr = 48 * sc * 1.08, g = ctx.createRadialGradient(0, 0, Math.max(0, gr - blur), 0, 0, gr + blur);
       g.addColorStop(0, shade(0, 0, 0, 0.28 + 0.32 * e)); g.addColorStop(1, shade(0, 0, 0, 0));
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, gr + blur, 0, Math.PI * 2); ctx.fill();
 
-      // The body: the mesh, clipped to the circle.
+      // The body: the approved radial highlight, clipped to the circle.
       ctx.save(); ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.clip();
       ctx.fillStyle = shade(0, 0, 0); ctx.fillRect(-R, -R, 2 * R, 2 * R);
-      var s = still() ? 0 : t * speed(), reach = 0.08 + 0.14 * e;
-      function sway(p) { return Math.sin(s + p) * reach * 0.6; }
-      var pts = [[0, 0, 0], [0.5 + sway(0.3), 0, 1], [1, 0, 2], [0, 0.5 + sway(1.1), 3], [1, 0.5 + sway(2.3), 1],
-        [0, 1, 2], [0.5 + sway(3.7), 1, 3], [1, 1, 0], [0.5 + Math.cos(s * 1.3) * reach, 0.5 + Math.sin(s * 1.7) * reach, 4]];
-      pts.forEach(function (p, i) {
-        var x = (p[0] - 0.5) * 2 * R, y = (p[1] - 0.5) * 2 * R, rad = (i === 8 ? 0.95 : 1.05) * R, c = sh[p[2]];
-        var bl = ctx.createRadialGradient(x, y, 0, x, y, rad);
-        bl.addColorStop(0, shade(c[0], c[1], c[2], 1)); bl.addColorStop(1, shade(c[0], c[1], c[2], 0));
-        ctx.fillStyle = bl; ctx.fillRect(-R, -R, 2 * R, 2 * R);
-      });
+      var body = ctx.createRadialGradient(-16, -21, 0, 0, 0, R * 1.2);
+      body.addColorStop(0, '#9cc1ff'); body.addColorStop(0.48, '#2979ff'); body.addColorStop(1, '#1747c2');
+      ctx.fillStyle = body; ctx.fillRect(-R, -R, 2 * R, 2 * R);
       ctx.restore();
 
       if (o.phase === 'thinking') {

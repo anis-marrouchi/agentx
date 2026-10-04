@@ -305,6 +305,8 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.localStt` | `"mlx-whisper"` | The engine on this Mac: `"mlx-whisper"` or `"parakeet"` |
 | `voice.endOfTurn` | `"vad"` | How a hands-free turn ends: `"vad"` (voice detection) or `"volume"` |
 | `voice.spokenMaxChars` | `500` | Longest answer read aloud, in characters, `300` to `1500`. A longer answer stops at the end of a sentence and says the rest is on screen. The written answer is always shown whole |
+| `voice.noiseFilter.enabled` | `true` | A transcript with no words (empty, or only a marker such as `[background noise]`) gets the reply "I didn't catch that." and starts no agent turn. `false` sends every transcript to the agent |
+| `voice.noiseFilter.markers` | `["background noise", "noise", "mumbling", "babbling", "unintelligible", "inaudible", "muffled speech", "pause", "silence", "music", "outro jingle", "blank audio"]` | What counts as a marker, written without the brackets. Capitals do not matter. Your list replaces the default one |
 | `voice.hotkeys.talk` | `"opt+space"` | Hold to talk |
 | `voice.hotkeys.stop` | `"cmd+opt+period"` | Stop every voice |
 | `voice.hotkeys.paste` | `"cmd+opt+v"` | Smart paste |

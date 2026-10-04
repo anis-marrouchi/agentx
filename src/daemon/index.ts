@@ -98,6 +98,7 @@ import { setMesh } from "@/a2a/mesh-instance"
 import { extractArtifacts } from "@/utils/artifact-sentinel"
 import { APP_FILES_PATH, handleAppFilesApi } from "@/daemon/app-files-api"
 import { prepareOutbox } from "@/utils/app-outbox"
+import { OBSERVATION_PACK_ROUTE, agentObservationDir, answerPackHook, canReadOriginals, observationDir, pruneObservations, type PostToolUsePayload } from "@/agents/observation-pack"
 import { decideMeshAuth, isLoopback, isMeshGatedPath, isControlPost, collectAcceptedMeshTokens } from "@/daemon/mesh-auth"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "@/daemon/browser-origin"
 import { handleMemoryApi } from "@/daemon/memory-api"
@@ -152,6 +153,7 @@ import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { toSpeakable } from "@/voice/speakable"
+import { isNoiseTranscript, NOISE_REPLY } from "@/voice/noise"
 import { meshAddressables, resolveAddress } from "@/voice/address"
 import { presenceLook } from "@/voice/presence"
 import { agentPalette } from "@/voice/orb-palettes"
@@ -369,7 +371,16 @@ export class AgentXDaemon {
 
     // Set up agent workspaces with Claude Code best practices (non-destructive)
     const [, portStr] = this.config.node.bind.split(":")
-    setupAllWorkspaces(this.config.agents, portStr || "19900", this.log)
+    const pack = this.config.session.observationPack
+    setupAllWorkspaces(this.config.agents, portStr || "19900", this.log, {
+      enabled: pack.enabled,
+      tools: pack.tools,
+      dir: observationDir(),
+    })
+    if (pack.enabled) {
+      const pruned = pruneObservations(observationDir(), pack.retentionDays)
+      if (pruned > 0) this.log(`ObservationPack: ${pruned} saved original(s) older than ${pack.retentionDays} day(s) removed`)
+    }
     // Restricted-autonomy routines point their per-task hook here.
     setAutonomyHookPort(portStr || "19900")
 
@@ -2156,6 +2167,10 @@ export class AgentXDaemon {
           webhookSecret: githubConfig.webhookSecret,
           routes: githubConfig.routes,
           agentMappings: githubConfig.agentMappings,
+          issueActions: githubConfig.issueActions,
+          pullRequestActions: githubConfig.pullRequestActions,
+          ignoreOwnChanges: githubConfig.ignoreOwnChanges,
+          debounceSeconds: githubConfig.debounceSeconds,
         },
         this.log,
       )
@@ -3537,6 +3552,30 @@ export class AgentXDaemon {
         return
       }
 
+      // ObservationPack (PostToolUse hook, #621). Loopback ONLY, like
+      // /guard/check: the body is a tool result and the answer names a
+      // path on this host. An empty answer leaves the result as it was.
+      if (req.method === "POST" && path === OBSERVATION_PACK_ROUTE) {
+        if (!isLoopback(req.socket?.remoteAddress || "")) {
+          this.json(res, 403, { error: `Forbidden: ${OBSERVATION_PACK_ROUTE} is loopback-only` })
+          return
+        }
+        const payload = await readBody(req).catch(() => ({} as Record<string, unknown>))
+        // Each agent has its own folder and may read no other. A call that
+        // names no agent of this daemon, or one that could not read the
+        // original back, is not packed.
+        const agentId = url.searchParams.get("agent") || ""
+        const out = Object.hasOwn(this.config.agents, agentId) && canReadOriginals(this.config.agents[agentId].permissionMode)
+          ? answerPackHook(payload as PostToolUsePayload, this.config.session.observationPack, {
+              dir: agentObservationDir(observationDir(), agentId),
+              agentId,
+            })
+          : ""
+        res.writeHead(200, { "Content-Type": "application/json" })
+        res.end(out)
+        return
+      }
+
       // Attach mode (wearable agents). Same shape and same constraints as
       // /guard/check: the hooks always run on this host, the responses name
       // agent identities and quote channel messages, and a bound session can
@@ -4765,6 +4804,19 @@ export class AgentXDaemon {
           path: this.registry.runningIntentPath(agentId, channel, chatId) ?? null,
           graphWeight: this.config.graph?.retrievalWeights?.graph ?? 0.6,
         })
+        return
+      }
+
+      // The landscape an agent would have been given in its prompt (team,
+      // mesh peers, channels, rules). Lean sessions (#615) fetch it here,
+      // through agentx_agents, instead of carrying it on every start.
+      //   GET /agents/:id/landscape
+      // 200 → { landscape: string }   404 unknown agent
+      const landscapeMatch = req.method === "GET" && path.match(/^\/agents\/([^/]+)\/landscape$/)
+      if (landscapeMatch) {
+        const agentId = decodeURIComponent(landscapeMatch[1])
+        if (!this.config.agents[agentId]) { this.json(res, 404, { error: `unknown agent "${agentId}"` }); return }
+        this.json(res, 200, { landscape: this.landscape.getForAgent(agentId) ?? "" })
         return
       }
 
@@ -6032,6 +6084,15 @@ export class AgentXDaemon {
           const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents, this.config.voice)
           const introduce = this.voiceIntros.needsIntro(session, agentId)
 
+          // A transcript with no words ("[background noise]") wakes no
+          // agent: no presence decision, no task, one fixed line (#614).
+          const noise = this.config.voice.noiseFilter
+          if (noise.enabled && isNoiseTranscript(message, noise.markers)) {
+            this.log(`[voice] ${agentId}: noise transcript dropped (${JSON.stringify(message.slice(0, 60))})`)
+            this.json(res, 200, { agentId, voice: voiceForText(voice, NOISE_REPLY), presence: null, text: NOISE_REPLY, full: NOISE_REPLY, ui: null, noise: true })
+            break
+          }
+
           // How the agent shows up on screen this turn (the presence-mode
           // seat, decided on every voice turn). When the seat is active and
           // says teach, watch or act, a live lesson on this screen answers
@@ -6740,7 +6801,7 @@ export class AgentXDaemon {
         }
         // Always re-sync: rewrites .agentx-memory.md and the CLAUDE.md
         // sentinel block from whatever is currently on disk.
-        this.agentMemory.syncToWorkspace(agent.id, ws)
+        this.agentMemory.syncToWorkspace(agent.id, ws, this.config.session.memoryIndexMaxChars)
       } catch (e: any) {
         this.log(`  memory-skill: ${agent.id} install failed — ${e?.message ?? e}`)
       }
@@ -6805,6 +6866,7 @@ export class AgentXDaemon {
       mem: this.agentMemory,
       workspaceFor: (id) => this.workspaceFor(id),
       runningTaskOwner: (id) => this.registry.runningTaskOwner(id),
+      indexMaxChars: () => this.config.session.memoryIndexMaxChars,
     })
   }
 

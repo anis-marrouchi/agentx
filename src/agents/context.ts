@@ -132,6 +132,11 @@ export interface ContextInput {
    *  fabricated facts via unrelated tools. */
   longMemoryRecall?: string
 
+  // One line naming the MCP tools that fetch the landscape, history and
+  // cross-chat context a lean session (#615) does not get pushed. From
+  // session-profile.ts onDemandContextNote(); fresh sessions only.
+  contextOnDemand?: string
+
   // Wiki
   wikiContext?: string               // from WikiStore.buildContext()
 
@@ -402,6 +407,18 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("cross-chat", 800),
       content: input.crossChatContext,
       tags: ["history", "cross-chat"],
+    })
+  }
+
+  // 7a. Context on demand — stands where history and cross-chat would be
+  //     in a lean session, so the agent knows what it can still fetch.
+  if (input.contextOnDemand) {
+    layers.push({
+      name: "on-demand",
+      priority: 7,
+      maxTokens: budget("on-demand", 150),
+      content: input.contextOnDemand,
+      tags: ["history", "on-demand", "lean"],
     })
   }
 

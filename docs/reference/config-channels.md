@@ -144,6 +144,7 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 |---|---|---|---|
 | `channels.github.enabled` | boolean | `false` | Turns the GitHub channel on. |
 | `channels.github.autoReplyLegacy` | boolean | `true` | Same as the GitLab setting: post the answer automatically, or let the agent post it. |
+| `channels.github.cloudSessions` | boolean | `false` | Lets agents with `cloudSessions.enabled` send this channel's issue and pull request tasks to Claude cloud sessions. Both must be on. See [Send coding tasks to Claude cloud sessions](/jobs/cloud-sessions). |
 | `channels.github.token` | string | — | Personal access token used to post comments. |
 | `channels.github.tokenFile` | string | — | File holding the token (first line is read at start). |
 | `channels.github.appId` | number | — | GitHub App id, when you use a GitHub App instead of a token. |
@@ -159,6 +160,30 @@ AgentX receives GitLab webhooks and answers `@`-mentions in issues and merge req
 | `token` | string | — | This agent's own token. |
 | `tokenFile` | string | — | File holding this agent's token. |
 | `node` | string | — | Mesh node the agent lives on. |
+| `channels.github.issueActions` | list of strings | `["opened", "reopened", "assigned"]` | Issue changes that start a run. Anything else, such as `labeled`, `edited` or `closed`, starts nothing. |
+| `channels.github.pullRequestActions` | list of strings | `["opened", "reopened", "ready_for_review"]` | Pull request changes that start a run. |
+| `channels.github.ignoreOwnChanges` | boolean | `true` | A label, assignment, close or edit made by an account AgentX posts with starts no run. This covers the GitHub App, the token owners, the `githubUsernames` above and accounts of other computers on the mesh. Opening or reopening an issue always counts. |
+| `channels.github.debounceSeconds` | number (0–3600) | `30` | Several changes to one issue or pull request within this many seconds start one run. The run sees the latest state and lists every change. Each new change restarts the wait. `0` starts a run for every change. |
+
+### Which changes start a run
+
+GitHub sends a separate message for each change to an issue: opened, labeled, assigned, closed. Without limits, one new issue could start the agent three or four times. AgentX filters these messages in three steps:
+
+1. **Project rule.** If the repository has a project rule with an `actions` list under `github.issues` or `github.pull_request`, that list decides which changes count. Its other filters, such as required labels, still apply.
+2. **Channel list.** Without such a list, `issueActions` or `pullRequestActions` decides. A rule that only sets labels does not let `closed` through. To run on `closed`, add it to a rule's `actions` list or to the channel list.
+3. **AgentX's own changes.** A label or assignment that AgentX made itself, for example when it files an issue for an agent, starts nothing while `ignoreOwnChanges` is on.
+
+Changes that pass all three steps wait `debounceSeconds` before the agent starts, so a burst becomes one run.
+
+```json
+"github": {
+  "enabled": true,
+  "routes": [{ "repo": "example/app", "agent": "helper" }],
+  "issueActions": ["opened", "reopened", "assigned"],
+  "ignoreOwnChanges": true,
+  "debounceSeconds": 30
+}
+```
 
 An agent never answers its own comment. On a mesh, each computer tells its peers which GitHub accounts it posts with, so the computer that receives the webhook also knows a comment that another computer posted for an agent. This needs no setting; both computers must run a version that has it.
 
@@ -248,5 +273,7 @@ The call bot joins a call, writes down what is said and posts it to a chat. It d
 - **`config check` names a field:** fix that field. A `required` field in the tables above is missing.
 - **Telegram ignores every message:** neither the account's `allowFrom` nor `channels.telegram.policy.allowFrom` is set, or your id isn't in it.
 - **Telegram logs `409 Conflict`:** two daemons read the same bot. Set `pollInbound` to `false` on the machine that shouldn't read it.
+- **A GitHub issue starts no run:** the daemon log says why, with a line such as `skipped: action="labeled" not in channels.github.issueActions`. Add the change to `issueActions` or to the project rule's `actions` list.
+- **A GitHub issue still starts several runs:** the changes came further apart than `debounceSeconds`. Raise it.
 - **GitLab says the webhook failed:** check that `channels.gitlab.webhookPort` is reachable from GitLab and that the secret matches `channels.gitlab.webhookSecret`.
 - **A value is empty at runtime:** a `${…}` reference points at a variable missing from `.env`. Add it and restart the daemon.

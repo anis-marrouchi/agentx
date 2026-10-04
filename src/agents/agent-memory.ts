@@ -216,10 +216,12 @@ export class AgentMemory {
 
   /** The content of MEMORY.md — used at prompt-build time to inline into
    *  the agent's system prompt. Returns "" when the agent has no
-   *  memories (so the prompt builder can no-op). */
-  indexMarkdown(agentId: string): string {
+   *  memories (so the prompt builder can no-op). With `maxChars` > 0 the
+   *  index is cut to that size (#615): whole lines only, and a closing line
+   *  says how many memories were left out and where the full index is. */
+  indexMarkdown(agentId: string, maxChars = 0): string {
     const path = this.indexPath(agentId)
-    return safeRead(path) ?? ""
+    return trimMemoryIndex(safeRead(path) ?? "", maxChars)
   }
 
   /** Push the agent's memory into its workspace so Claude Code sessions
@@ -235,19 +237,22 @@ export class AgentMemory {
    *  Never touches content outside the sentinel block — if the file
    *  doesn't exist, creates it with just the sentinels. Safe to call
    *  on any save / delete. */
-  syncToWorkspace(agentId: string, workspacePath: string): void {
+  syncToWorkspace(agentId: string, workspacePath: string, maxChars = 0): void {
     if (!workspacePath) return
-    const memory = this.indexMarkdown(agentId).trim()
+    const full = this.indexMarkdown(agentId).trim()
 
     // 1. Explicit file for the `remember` skill to Read if it wants to.
+    //    Always the whole index: it is what the capped block points at.
     const explicitPath = resolve(workspacePath, ".agentx-memory.md")
-    if (memory) {
-      writeFileSync(explicitPath, memory + "\n")
+    if (full) {
+      writeFileSync(explicitPath, full + "\n")
     } else if (existsSync(explicitPath)) {
       unlinkSync(explicitPath)
     }
 
-    // 2. Sentinel-merged into CLAUDE.md for auto-inject.
+    // 2. Sentinel-merged into CLAUDE.md for auto-inject, capped when the
+    //    operator set session.memoryIndexMaxChars (#615).
+    const memory = trimMemoryIndex(full, maxChars)
     const claudePath = resolve(workspacePath, "CLAUDE.md")
     const start = "<!-- AGENTX-MEMORY-START — auto-managed by agentx; edit via `agentx memory` -->"
     const end   = "<!-- AGENTX-MEMORY-END -->"
@@ -310,6 +315,40 @@ export class AgentMemory {
     lines.push("")
     writeFileSync(this.indexPath(agentId), lines.join("\n"))
   }
+}
+
+/** What a cut index ends with: how many entries are missing and where the
+ *  whole index is (the workspace file, or `agentx memory index`). */
+export const MEMORY_INDEX_CUT_NOTE = "memories not shown here. The full index is in .agentx-memory.md in this workspace, or run `agentx memory index`."
+
+/** Cut a MEMORY.md index down to `maxChars` (#615). 0 or a size the index
+ *  already fits in returns it unchanged. Lines are kept whole, in order,
+ *  until the budget is spent; a type heading left with no entry under it
+ *  is dropped; the closing note counts the entries left out. The budget
+ *  includes that note, so the result never exceeds `maxChars`. */
+export function trimMemoryIndex(markdown: string, maxChars: number): string {
+  if (!maxChars || maxChars <= 0 || markdown.length <= maxChars) return markdown
+  const lines = markdown.replace(/\n+$/, "").split("\n")
+  const isEntry = (line: string) => line.startsWith("- ")
+  const total = lines.filter(isEntry).length
+  // The note is longest when every entry is left out; reserve for that.
+  const noteFor = (left: number) => `_(${left} more ${MEMORY_INDEX_CUT_NOTE})_`
+  const reserve = noteFor(total).length + 2
+  const kept: string[] = []
+  let used = 0
+  let entries = 0
+  for (const line of lines) {
+    const cost = line.length + 1
+    if (used + cost > maxChars - reserve) break
+    kept.push(line)
+    used += cost
+    if (isEntry(line)) entries++
+  }
+  // A heading (or blank) at the tail with no entry under it says nothing.
+  while (kept.length && !isEntry(kept[kept.length - 1])) kept.pop()
+  const left = total - entries
+  const out = left > 0 ? [...kept, "", noteFor(left)] : kept
+  return out.join("\n").replace(/^\n+/, "")
 }
 
 // --- Serialisation helpers ---------------------------------------------

@@ -1,0 +1,83 @@
+import { describe, it, expect } from "vitest"
+import fixture from "./fixtures/freshness-cases.json"
+
+// Shape guard for the memory-freshness question set (#603).
+//
+// The set is the shared ground truth for the current wiki path and any
+// later backend arm. It grades nothing by itself; this only keeps the
+// set honest: 40 questions, six categories, a held-out part in every
+// category, and evidence that exists, is not from the future and fits
+// the expected result.
+
+const CATEGORIES = [
+  "recent-correction",
+  "changing-fact",
+  "procedure",
+  "past-fix",
+  "permission-boundary",
+  "missing-or-contradictory",
+]
+const EXPECTS = ["answer", "abstain", "conflict", "refuse"]
+
+describe("freshness question set", () => {
+  const events = new Map(fixture.events.map((e) => [e.id, e]))
+
+  it("has 40 uniquely named questions", () => {
+    expect(fixture.cases).toHaveLength(40)
+    expect(new Set(fixture.cases.map((c) => c.id)).size).toBe(40)
+    expect(events.size).toBe(fixture.events.length)
+  })
+
+  it("splits 28 for development and 12 held out", () => {
+    expect(fixture.cases.filter((c) => c.split === "dev")).toHaveLength(28)
+    expect(fixture.cases.filter((c) => c.split === "held-out")).toHaveLength(12)
+  })
+
+  it("covers every category in both splits", () => {
+    for (const category of CATEGORIES) {
+      const inCategory = fixture.cases.filter((c) => c.category === category)
+      expect(inCategory.filter((c) => c.split === "dev").length, category).toBeGreaterThanOrEqual(4)
+      expect(inCategory.filter((c) => c.split === "held-out").length, category).toBe(2)
+    }
+    expect(fixture.cases.every((c) => CATEGORIES.includes(c.category))).toBe(true)
+    // Both ways of having no answer are checked on cases nobody tuned on.
+    const heldOutGaps = fixture.cases.filter(
+      (c) => c.category === "missing-or-contradictory" && c.split === "held-out",
+    )
+    expect(heldOutGaps.map((c) => c.expect).sort()).toEqual(["abstain", "conflict"])
+  })
+
+  it("points only at evidence that exists before the question is asked", () => {
+    for (const c of fixture.cases) {
+      expect(EXPECTS, c.id).toContain(c.expect)
+      for (const id of c.evidence) {
+        const event = events.get(id)
+        expect(event, `${c.id} -> ${id}`).toBeDefined()
+        expect(Date.parse(event!.at), `${c.id} -> ${id}`).toBeLessThan(Date.parse(c.askedAt))
+      }
+    }
+  })
+
+  it("gives every question something to grade", () => {
+    for (const c of fixture.cases) {
+      const scopes = c.evidence.map((id) => events.get(id)!.scope)
+      if (c.expect === "answer" || c.expect === "conflict") {
+        expect(c.answerContains?.length ?? 0, c.id).toBeGreaterThan(0)
+        expect(c.evidence.length, c.id).toBeGreaterThan(0)
+        // The asker may read all of it; otherwise the right result is a refusal.
+        if (c.askerScope) expect(scopes.every((s) => c.askerScope!.includes(s)), c.id).toBe(true)
+      }
+      if (c.expect === "conflict") expect(c.evidence.length, c.id).toBeGreaterThan(1)
+      if (c.expect === "abstain") {
+        // Either nothing is known, or what is known is stale and the
+        // answer says when it was last checked.
+        const checkedOn = c.evidence.map((id) => events.get(id)!.at.slice(0, 10))
+        expect(c.answerContains ?? [], c.id).toEqual(checkedOn)
+      }
+      if (c.expect === "refuse") {
+        // The evidence exists, but outside what the asker may read.
+        expect(scopes.some((s) => !(c.askerScope ?? []).includes(s)), c.id).toBe(true)
+      }
+    }
+  })
+})

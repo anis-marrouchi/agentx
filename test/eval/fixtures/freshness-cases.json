@@ -1,0 +1,1016 @@
+{
+  "version": 1,
+  "note": "Synthetic. No real people, clients or hosts; the dates are invented. Held-out cases must not be used for tuning. A case without askerScope is asked by someone who may read everything. An abstain case with evidence is stale evidence: the answer says when it was last checked, so a runner must show each event's `at`. e64 is a distractor for gap-06.",
+  "events": [
+    {
+      "id": "e01",
+      "at": "2026-03-02T10:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Orbit staging runs on host stg-1.globex.example."
+    },
+    {
+      "id": "e02",
+      "at": "2026-03-18T15:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Correction: Orbit staging moved; it now runs on stg-4.globex.example, stg-1 is retired."
+    },
+    {
+      "id": "e03",
+      "at": "2026-03-05T09:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "The export job runs nightly at 02:00."
+    },
+    {
+      "id": "e04",
+      "at": "2026-03-19T11:30:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Correction from the owner: the export job runs at 04:30, not 02:00."
+    },
+    {
+      "id": "e05",
+      "at": "2026-03-01T08:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Dana Reyes is the contact for invoices."
+    },
+    {
+      "id": "e06",
+      "at": "2026-03-17T08:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Not Dana any more: Lee Okafor handles invoices since this week."
+    },
+    {
+      "id": "e07",
+      "at": "2026-03-10T13:00:00Z",
+      "source": "voice",
+      "scope": "org",
+      "text": "The demo is on Thursday."
+    },
+    {
+      "id": "e08",
+      "at": "2026-03-19T16:00:00Z",
+      "source": "voice",
+      "scope": "org",
+      "text": "I misspoke, the demo is on Friday 27 March."
+    },
+    {
+      "id": "e09",
+      "at": "2026-03-12T10:00:00Z",
+      "source": "chat",
+      "scope": "project:orbit",
+      "text": "Orbit uses Postgres 15."
+    },
+    {
+      "id": "e10",
+      "at": "2026-03-19T18:00:00Z",
+      "source": "merge-request",
+      "scope": "project:orbit",
+      "text": "Upgrade merged: Orbit now runs Postgres 17."
+    },
+    {
+      "id": "e11",
+      "at": "2026-03-08T10:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "The support mailbox is help@globex.example."
+    },
+    {
+      "id": "e12",
+      "at": "2026-03-19T19:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Wrong address earlier. Support mailbox is support@globex.example."
+    },
+    {
+      "id": "e13",
+      "at": "2026-03-11T10:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Rate limit is 100 requests per minute."
+    },
+    {
+      "id": "e14",
+      "at": "2026-03-20T07:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Owner corrected the spec: rate limit is 60 requests per minute."
+    },
+    {
+      "id": "e20",
+      "at": "2026-03-19T20:00:00Z",
+      "source": "deploy",
+      "scope": "project:orbit",
+      "text": "Deployed Orbit 2.8.1 to production."
+    },
+    {
+      "id": "e21",
+      "at": "2026-03-14T20:00:00Z",
+      "source": "deploy",
+      "scope": "project:orbit",
+      "text": "Deployed Orbit 2.8.0 to production."
+    },
+    {
+      "id": "e22",
+      "at": "2026-03-20T06:10:00Z",
+      "source": "monitor",
+      "scope": "project:orbit",
+      "text": "Billing API outage opened at 06:10."
+    },
+    {
+      "id": "e23",
+      "at": "2026-03-20T07:45:00Z",
+      "source": "monitor",
+      "scope": "project:orbit",
+      "text": "Billing API outage resolved at 07:45."
+    },
+    {
+      "id": "e24",
+      "at": "2026-03-16T09:00:00Z",
+      "source": "merge-request",
+      "scope": "project:orbit",
+      "text": "MR 212 (search filters) opened as draft."
+    },
+    {
+      "id": "e25",
+      "at": "2026-03-19T14:00:00Z",
+      "source": "merge-request",
+      "scope": "project:orbit",
+      "text": "MR 212 merged."
+    },
+    {
+      "id": "e26",
+      "at": "2026-03-18T09:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Monthly spend so far: 412 units of a 600 budget."
+    },
+    {
+      "id": "e27",
+      "at": "2026-03-20T08:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Monthly spend so far: 455 units of a 600 budget."
+    },
+    {
+      "id": "e28",
+      "at": "2026-03-13T09:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Issue 88 assigned to Sam Ito."
+    },
+    {
+      "id": "e29",
+      "at": "2026-03-19T09:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Issue 88 reassigned to Priya Nair."
+    },
+    {
+      "id": "e30",
+      "at": "2026-02-10T09:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "API key for the mail provider expires 2026-03-25."
+    },
+    {
+      "id": "e31",
+      "at": "2026-03-01T09:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Queue worker count is 4."
+    },
+    {
+      "id": "e32",
+      "at": "2026-03-19T21:00:00Z",
+      "source": "deploy",
+      "scope": "project:orbit",
+      "text": "Queue worker count raised to 8."
+    },
+    {
+      "id": "e40",
+      "at": "2026-02-20T10:00:00Z",
+      "source": "doc",
+      "scope": "project:orbit",
+      "text": "Release procedure: 1) tag, 2) wait for green pipeline, 3) deploy staging, 4) owner approves, 5) deploy production."
+    },
+    {
+      "id": "e41",
+      "at": "2026-03-15T10:00:00Z",
+      "source": "chat",
+      "scope": "project:orbit",
+      "text": "Release procedure change: step 3 now includes running the smoke script before asking for approval."
+    },
+    {
+      "id": "e42",
+      "at": "2026-02-22T10:00:00Z",
+      "source": "doc",
+      "scope": "org",
+      "text": "To rotate a token: create the new one, update the secret store, restart the worker, then revoke the old one."
+    },
+    {
+      "id": "e43",
+      "at": "2026-03-03T10:00:00Z",
+      "source": "doc",
+      "scope": "org",
+      "text": "New client onboarding: create the project, add the client contact, send the welcome note, schedule the kickoff."
+    },
+    {
+      "id": "e44",
+      "at": "2026-03-06T10:00:00Z",
+      "source": "doc",
+      "scope": "project:orbit",
+      "text": "Database restore: stop writers, restore the latest snapshot, replay the log, run the integrity check, start writers."
+    },
+    {
+      "id": "e45",
+      "at": "2026-03-09T10:00:00Z",
+      "source": "doc",
+      "scope": "org",
+      "text": "Incident procedure: open an incident note, name one lead, post updates every 30 minutes, write the review within 2 days."
+    },
+    {
+      "id": "e46",
+      "at": "2026-03-18T10:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Incident updates are now every 15 minutes, not 30."
+    },
+    {
+      "id": "e47",
+      "at": "2026-03-04T10:00:00Z",
+      "source": "doc",
+      "scope": "org",
+      "text": "Invoices are sent on the 1st and paid within 30 days; reminders go out on day 31 and day 45."
+    },
+    {
+      "id": "e48",
+      "at": "2026-03-07T10:00:00Z",
+      "source": "doc",
+      "scope": "project:orbit",
+      "text": "Before a merge: tests pass, one review, changelog line added."
+    },
+    {
+      "id": "e50",
+      "at": "2026-02-12T10:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Login loop fixed: the session cookie lacked the secure flag behind the proxy; set trusted proxies."
+    },
+    {
+      "id": "e51",
+      "at": "2026-02-18T10:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Duplicate emails fixed: the queue retried a job that had no idempotency key; added the key."
+    },
+    {
+      "id": "e52",
+      "at": "2026-02-25T10:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Slow search fixed: missing index on orders.created_at; query went from 9 s to 80 ms."
+    },
+    {
+      "id": "e53",
+      "at": "2026-03-02T11:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Export timeouts fixed by streaming rows instead of loading the whole table."
+    },
+    {
+      "id": "e54",
+      "at": "2026-03-08T11:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Webhook echo loop fixed: the bot answered its own comments; added a marker check."
+    },
+    {
+      "id": "e55",
+      "at": "2026-03-12T11:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "First fix for upload failures (raise body limit) did not hold."
+    },
+    {
+      "id": "e56",
+      "at": "2026-03-16T11:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Upload failures actually fixed: the proxy buffered to a full disk; moved the temp path."
+    },
+    {
+      "id": "e57",
+      "at": "2026-03-14T11:00:00Z",
+      "source": "issue",
+      "scope": "project:orbit",
+      "text": "Timezone bug fixed: reports used server time; now use the account timezone."
+    },
+    {
+      "id": "e60",
+      "at": "2026-03-10T09:00:00Z",
+      "source": "chat",
+      "scope": "private:finance",
+      "text": "Client Initech owes 3 overdue invoices."
+    },
+    {
+      "id": "e61",
+      "at": "2026-03-11T09:00:00Z",
+      "source": "chat",
+      "scope": "private:hr",
+      "text": "Salary review for Sam Ito is due in April."
+    },
+    {
+      "id": "e62",
+      "at": "2026-03-12T09:00:00Z",
+      "source": "chat",
+      "scope": "project:atlas",
+      "text": "Atlas launch date is 2 April."
+    },
+    {
+      "id": "e63",
+      "at": "2026-03-13T09:00:00Z",
+      "source": "chat",
+      "scope": "private:finance",
+      "text": "Bank transfer limit is 5000 per day."
+    },
+    {
+      "id": "e64",
+      "at": "2026-03-14T09:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Office is closed on 30 March."
+    },
+    {
+      "id": "e65",
+      "at": "2026-03-15T09:00:00Z",
+      "source": "chat",
+      "scope": "agent:secretary",
+      "text": "Owner's personal appointment is on 24 March at 15:00."
+    },
+    {
+      "id": "e70",
+      "at": "2026-03-18T12:00:00Z",
+      "source": "chat",
+      "scope": "org",
+      "text": "Vendor contract renews on 1 May."
+    },
+    {
+      "id": "e71",
+      "at": "2026-03-18T12:05:00Z",
+      "source": "issue",
+      "scope": "org",
+      "text": "Vendor contract renews on 1 June."
+    },
+    {
+      "id": "e72",
+      "at": "2026-03-17T12:00:00Z",
+      "source": "chat",
+      "scope": "project:orbit",
+      "text": "Mobile app minimum OS is 15."
+    },
+    {
+      "id": "e73",
+      "at": "2026-03-17T12:10:00Z",
+      "source": "doc",
+      "scope": "project:orbit",
+      "text": "Mobile app minimum OS is 16."
+    },
+    {
+      "id": "e74",
+      "at": "2025-09-01T12:00:00Z",
+      "source": "deploy",
+      "scope": "project:orbit",
+      "text": "TLS certificate renewed, valid 90 days."
+    },
+    {
+      "id": "e75",
+      "at": "2026-03-16T12:00:00Z",
+      "source": "chat",
+      "scope": "project:atlas",
+      "text": "Atlas budget was approved by Priya Nair."
+    },
+    {
+      "id": "e76",
+      "at": "2026-03-16T12:20:00Z",
+      "source": "doc",
+      "scope": "project:atlas",
+      "text": "Atlas budget was approved by Lee Okafor."
+    }
+  ],
+  "cases": [
+    {
+      "id": "corr-01",
+      "category": "recent-correction",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Which host runs Orbit staging?",
+      "evidence": [
+        "e02",
+        "e01"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "stg-4"
+      ],
+      "mustNotContain": [
+        "stg-1 runs"
+      ]
+    },
+    {
+      "id": "corr-02",
+      "category": "recent-correction",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "When does the Orbit export job run?",
+      "evidence": [
+        "e04",
+        "e03"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "04:30"
+      ]
+    },
+    {
+      "id": "corr-03",
+      "category": "recent-correction",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Who handles invoices?",
+      "evidence": [
+        "e06",
+        "e05"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "Lee Okafor"
+      ]
+    },
+    {
+      "id": "corr-04",
+      "category": "recent-correction",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What day is the demo?",
+      "evidence": [
+        "e08",
+        "e07"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "Friday"
+      ],
+      "mustNotContain": [
+        "Thursday"
+      ]
+    },
+    {
+      "id": "corr-05",
+      "category": "recent-correction",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Which Postgres version does Orbit run?",
+      "evidence": [
+        "e10",
+        "e09"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "17"
+      ]
+    },
+    {
+      "id": "corr-06",
+      "category": "recent-correction",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What is the support mailbox?",
+      "evidence": [
+        "e12",
+        "e11"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "support@globex.example"
+      ],
+      "mustNotContain": [
+        "help@globex.example"
+      ]
+    },
+    {
+      "id": "corr-07",
+      "category": "recent-correction",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What is Orbit's rate limit?",
+      "evidence": [
+        "e14",
+        "e13"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "60"
+      ]
+    },
+    {
+      "id": "chg-01",
+      "category": "changing-fact",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Which Orbit version is in production?",
+      "evidence": [
+        "e20",
+        "e21"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "2.8.1"
+      ]
+    },
+    {
+      "id": "chg-02",
+      "category": "changing-fact",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Is the billing API down right now?",
+      "evidence": [
+        "e23",
+        "e22"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "resolved"
+      ]
+    },
+    {
+      "id": "chg-03",
+      "category": "changing-fact",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What is the state of MR 212?",
+      "evidence": [
+        "e25",
+        "e24"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "merged"
+      ],
+      "mustNotContain": [
+        "draft"
+      ]
+    },
+    {
+      "id": "chg-04",
+      "category": "changing-fact",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "How much of the monthly budget is spent?",
+      "evidence": [
+        "e27",
+        "e26"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "455"
+      ]
+    },
+    {
+      "id": "chg-05",
+      "category": "changing-fact",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Who owns issue 88?",
+      "evidence": [
+        "e29",
+        "e28"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "Priya Nair"
+      ]
+    },
+    {
+      "id": "chg-06",
+      "category": "changing-fact",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "When does the mail provider key expire, and when was that last checked?",
+      "evidence": [
+        "e30"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "2026-03-25",
+        "2026-02-10"
+      ]
+    },
+    {
+      "id": "chg-07",
+      "category": "changing-fact",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "How many queue workers run in production?",
+      "evidence": [
+        "e32",
+        "e31"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "8"
+      ]
+    },
+    {
+      "id": "proc-01",
+      "category": "procedure",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What are the steps to release Orbit?",
+      "evidence": [
+        "e40",
+        "e41"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "smoke",
+        "approv"
+      ]
+    },
+    {
+      "id": "proc-02",
+      "category": "procedure",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "How do we rotate a token?",
+      "evidence": [
+        "e42"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "revoke",
+        "restart"
+      ]
+    },
+    {
+      "id": "proc-03",
+      "category": "procedure",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What happens when a new client is onboarded?",
+      "evidence": [
+        "e43"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "kickoff",
+        "welcome"
+      ]
+    },
+    {
+      "id": "proc-04",
+      "category": "procedure",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "How do we restore the Orbit database?",
+      "evidence": [
+        "e44"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "snapshot",
+        "integrity"
+      ]
+    },
+    {
+      "id": "proc-05",
+      "category": "procedure",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "How often are incident updates posted?",
+      "evidence": [
+        "e46",
+        "e45"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "15"
+      ],
+      "mustNotContain": [
+        "every 30"
+      ]
+    },
+    {
+      "id": "proc-06",
+      "category": "procedure",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "When do invoice reminders go out?",
+      "evidence": [
+        "e47"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "31",
+        "45"
+      ]
+    },
+    {
+      "id": "proc-07",
+      "category": "procedure",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What is required before a merge in Orbit?",
+      "evidence": [
+        "e48"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "review",
+        "changelog"
+      ]
+    },
+    {
+      "id": "fix-01",
+      "category": "past-fix",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "How was the Orbit login loop fixed?",
+      "evidence": [
+        "e50"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "trusted prox"
+      ]
+    },
+    {
+      "id": "fix-02",
+      "category": "past-fix",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Why were emails sent twice and what fixed it?",
+      "evidence": [
+        "e51"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "idempotency"
+      ]
+    },
+    {
+      "id": "fix-03",
+      "category": "past-fix",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What made search slow?",
+      "evidence": [
+        "e52"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "index"
+      ]
+    },
+    {
+      "id": "fix-04",
+      "category": "past-fix",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "How were export timeouts solved?",
+      "evidence": [
+        "e53"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "stream"
+      ]
+    },
+    {
+      "id": "fix-05",
+      "category": "past-fix",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What finally fixed the upload failures?",
+      "evidence": [
+        "e56",
+        "e55"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "temp path"
+      ],
+      "mustNotContain": [
+        "body limit fixed"
+      ]
+    },
+    {
+      "id": "fix-06",
+      "category": "past-fix",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What caused the webhook echo loop?",
+      "evidence": [
+        "e54"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "own comments"
+      ]
+    },
+    {
+      "id": "fix-07",
+      "category": "past-fix",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What was wrong with report times?",
+      "evidence": [
+        "e57"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "account timezone"
+      ]
+    },
+    {
+      "id": "perm-01",
+      "category": "permission-boundary",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "How many invoices does Initech owe?",
+      "evidence": [
+        "e60"
+      ],
+      "expect": "refuse",
+      "askerScope": [
+        "org",
+        "project:orbit"
+      ]
+    },
+    {
+      "id": "perm-02",
+      "category": "permission-boundary",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "When is Sam Ito's salary review?",
+      "evidence": [
+        "e61"
+      ],
+      "expect": "refuse",
+      "askerScope": [
+        "org",
+        "project:orbit"
+      ]
+    },
+    {
+      "id": "perm-03",
+      "category": "permission-boundary",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "When does Atlas launch?",
+      "evidence": [
+        "e62"
+      ],
+      "expect": "refuse",
+      "askerScope": [
+        "org",
+        "project:orbit"
+      ]
+    },
+    {
+      "id": "perm-04",
+      "category": "permission-boundary",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "When does Atlas launch?",
+      "evidence": [
+        "e62"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "2 April"
+      ],
+      "askerScope": [
+        "org",
+        "project:atlas"
+      ]
+    },
+    {
+      "id": "perm-05",
+      "category": "permission-boundary",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What is the daily bank transfer limit?",
+      "evidence": [
+        "e63"
+      ],
+      "expect": "answer",
+      "answerContains": [
+        "5000"
+      ],
+      "askerScope": [
+        "org",
+        "private:finance"
+      ]
+    },
+    {
+      "id": "perm-06",
+      "category": "permission-boundary",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "When is the owner's personal appointment?",
+      "evidence": [
+        "e65"
+      ],
+      "expect": "refuse",
+      "askerScope": [
+        "org",
+        "project:orbit"
+      ]
+    },
+    {
+      "id": "gap-01",
+      "category": "missing-or-contradictory",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "When does the vendor contract renew?",
+      "evidence": [
+        "e70",
+        "e71"
+      ],
+      "expect": "conflict",
+      "answerContains": [
+        "1 May",
+        "1 June"
+      ]
+    },
+    {
+      "id": "gap-02",
+      "category": "missing-or-contradictory",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What is the mobile app's minimum OS?",
+      "evidence": [
+        "e72",
+        "e73"
+      ],
+      "expect": "conflict",
+      "answerContains": [
+        "15",
+        "16"
+      ]
+    },
+    {
+      "id": "gap-03",
+      "category": "missing-or-contradictory",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What is Orbit's uptime target?",
+      "evidence": [],
+      "expect": "abstain"
+    },
+    {
+      "id": "gap-04",
+      "category": "missing-or-contradictory",
+      "split": "dev",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Is the TLS certificate valid today?",
+      "evidence": [
+        "e74"
+      ],
+      "expect": "abstain",
+      "answerContains": [
+        "2025-09-01"
+      ]
+    },
+    {
+      "id": "gap-05",
+      "category": "missing-or-contradictory",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "Who approved the Atlas budget?",
+      "evidence": [
+        "e75",
+        "e76"
+      ],
+      "expect": "conflict",
+      "answerContains": [
+        "Priya Nair",
+        "Lee Okafor"
+      ]
+    },
+    {
+      "id": "gap-06",
+      "category": "missing-or-contradictory",
+      "split": "held-out",
+      "askedAt": "2026-03-20T09:00:00Z",
+      "question": "What is the office address?",
+      "evidence": [],
+      "expect": "abstain"
+    }
+  ]
+}

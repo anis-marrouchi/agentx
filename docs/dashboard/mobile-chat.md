@@ -2,7 +2,7 @@
 
 The **Chat** tab of the [phone app](./mobile-app.md) lets you talk to any agent on this computer, or on another computer linked to it in your *mesh* (the private link between your AgentX computers, see [Add a second machine](../jobs/second-machine.md)). Chat is voice first: you hold the round button at the bottom, the *orb*, and speak. The agent's answer appears as it writes it and is then read out loud. You can always type instead. Each conversation stays with the agent you started it with, and the agent remembers the earlier messages in it.
 
-![Listening: the orb in the agent's colour follows your voice](/screenshots/mobile-app/voice-listening.png)
+![Listening: the centered blue orb follows your voice](/screenshots/mobile-app/voice-listening.png)
 
 ## Before you start
 
@@ -14,7 +14,9 @@ The **Chat** tab of the [phone app](./mobile-app.md) lets you talk to any agent 
 
 1. **Phone:** open the app and tap **Chat**.
 2. **Phone:** tap **Choose an agent**. The list shows each computer with a green dot when it is online, and each agent as **idle** or **busy**. Agents on an offline computer can't be picked.
-3. **Phone:** tap an agent. The orb takes that agent's colour, the same colour as its orb on the Mac.
+3. **Phone:** tap an agent. The **Talking to** button above the orb shows the agent you picked.
+
+Close a sheet with **Done**, by pulling its handle down, by tapping outside it, or with **Escape** on a keyboard.
 
 ![Choosing an agent: every computer, whether it is online, and whether each agent is busy](/screenshots/mobile-app/chat-picker.png)
 
@@ -32,7 +34,7 @@ The **Chat** tab of the [phone app](./mobile-app.md) lets you talk to any agent 
 
 - **Cancel a recording:** while holding, slide your finger off the orb. The text says **Let go to cancel**, and letting go there sends nothing.
 - **Stop the voice:** tap the orb while it speaks.
-- **Turn spoken answers off:** tap the speaker button to the right of the orb. The phone remembers the choice. Answers still appear as text.
+- **Turn spoken answers off:** tap the speaker button to the left of the orb. The phone remembers the choice. Answers still appear as text.
 - A recording can be up to 2 minutes long. At 2 minutes it is sent on its own.
 - With **Reduce Motion** turned on in the phone's accessibility settings, the orb stays still and only changes its look between listening, thinking and speaking.
 - On a keyboard, focus the orb, then hold **Space** to talk. **Esc** cancels.
@@ -41,7 +43,7 @@ The answer is read in the agent's own voice when the agent speaks with ElevenLab
 
 ## Type instead
 
-1. **Phone:** tap the keyboard button to the left of the orb. The text box appears above a smaller orb.
+1. **Phone:** tap the keyboard button to the right of the orb. The text box appears below a smaller orb.
 2. **Phone:** type your message and tap **Send**.
 
 The phone remembers typing mode until you tap the keyboard button again. Answers to typed messages are read out loud too while the speaker is on.
@@ -63,7 +65,7 @@ You can leave the app, lock the phone or lose the connection while the agent ans
 You don't have to wait for one agent before asking another. Each conversation runs on its own on the computer, and different agents work at the same time.
 
 1. **Phone:** ask the first agent something, as above.
-2. **Phone:** while it answers, tap **Choose an agent** and pick another agent (or tap **New** to start over with the same one). The first agent keeps working.
+2. **Phone:** while it answers, tap **Choose an agent** and pick another agent (or tap **New conversation** (the plus icon) to start over with the same one). The first agent keeps working.
 3. **Phone:** ask the second agent your question.
 
 A row of *chips*, small rounded buttons, appears at the top of Chat: one for each conversation that is still running or has an answer you haven't opened yet. Each chip has the agent's colour and name, and shows what it is doing:
@@ -177,10 +179,10 @@ The phone never sees where a file is on the computer: each file gets its own ran
 
 ## Go back to a conversation
 
-1. **Phone:** tap **History**.
+1. **Phone:** tap **History** (the clock icon).
 2. **Phone:** tap the conversation. Its messages appear, and your next message continues it with the same agent.
 
-To start over with the same agent, tap **New**.
+To start over with the same agent, tap **New conversation** (the plus icon).
 
 ![History lists your conversations, newest first](/screenshots/mobile-app/chat-history.png)
 
@@ -246,7 +248,7 @@ An iPhone may ask again each time you open the app. Tap **Allow**. An answer rea
 2. **Phone:** tap **Chat**, then **Choose an agent**. Your computers and their agents are listed.
 3. **Phone:** pick an agent, hold the orb, say `hello`, and let go. Your words appear as your message, and the agent's answer appears under it.
 4. **Phone:** listen. The answer is read out loud while the orb pulses.
-5. **Phone:** tap **History**. The conversation is listed with the agent's name.
+5. **Phone:** tap **History** (the clock icon). The conversation is listed with the agent's name.
 6. **Phone:** ask an agent: `make a small chart of three numbers, save it as a png and attach it`. The chart appears under the answer. Tap it to see it full screen.
 7. **Phone:** ask an agent: `ask me yes or no with quick replies`. **Yes** and **No** appear under the answer. Tap **Yes**: it shows as your message, both turn grey, and the agent answers.
 8. **Phone:** ask one agent something long, then pick a second agent and ask it something too. Two chips show at the top of Chat. When the first agent finishes, a banner with its name appears; tap it, and its answer opens.

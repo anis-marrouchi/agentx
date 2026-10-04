@@ -7,8 +7,9 @@ import AppKit
 /// The answering agent can send it to something on screen, which it
 /// marks (#482). Chosen with `voice.look`; the orb stays the default.
 ///
-/// It reacts and never interrupts: its window takes no keys, no clicks
-/// but a drag of its body with ⌘ held, and never comes forward by itself.
+/// It reacts and never interrupts: its window takes no keys and never
+/// comes forward by itself. It takes a drag of its body with ⌘ held, and
+/// idle with no bubble a click and a right-click on its body (#579).
 /// With Reduce Motion on, or "Animated orb" off in the menu, it is a
 /// still picture that changes between states and stays where it rests.
 @MainActor
@@ -72,6 +73,15 @@ final class CharacterHost {
     /// Carried by the pointer: where the pointer took hold, and where it
     /// stood then, which is not where it rests once it has stepped aside.
     private var carried: (from: NSPoint, rest: CGPoint)?
+    /// Idle with no bubble, a click on it talks and a right-click opens
+    /// the menu, as on the pill (#579). Set by the app.
+    var onClick: (() -> Void)?
+    var contextMenu: (() -> NSMenu)?
+    private var clickable: Bool {
+        CharacterMath.clickable(activity, asked: asked, sent: guide.showing != nil, bubble: bubbleFrame != nil)
+    }
+    /// The press that carries it began as a click.
+    private var pressed = false
     /// What the answering agent sent it to show (#482), and its mark.
     private let guide = CharacterGuide()
     /// Sent somewhere, and what its bubble says there (#562).
@@ -102,6 +112,10 @@ final class CharacterHost {
         window.ignoresMouseEvents = true
         window.contentView = view
         view.onDrag = { [weak self] phase in self?.drag(phase) }
+        view.onMenu = { [weak self] event in
+            guard let self, let menu = self.contextMenu?() else { return }
+            NSMenu.popUpContextMenu(menu, with: event, for: self.view)
+        }
         view.unit = Self.diameter / 100
         view.edge = CGPoint(x: Self.size.width / 2, y: Self.size.height - Self.ground)
         motionObserver = NSWorkspace.shared.notificationCenter.addObserver(
@@ -206,12 +220,13 @@ final class CharacterHost {
         self.timer = timer
     }
 
-    /// It takes the pointer only to be moved: on its body, with ⌘ held.
-    /// Any other click goes through it to the window behind.
+    /// It takes the pointer on its body: with ⌘ held to be moved, and
+    /// idle with no bubble to be clicked. Any other click goes through it
+    /// to the window behind.
     private func aim() {
         // The button came up where no event told of it.
         if carried != nil && NSEvent.pressedMouseButtons & 1 == 0 { drop() }
-        let take = carried != nil || (NSEvent.modifierFlags.contains(.command) && body.contains(pointerSource()))
+        let take = carried != nil || ((clickable || NSEvent.modifierFlags.contains(.command)) && body.contains(pointerSource()))
         if window.ignoresMouseEvents == take { window.ignoresMouseEvents = !take }
     }
 
@@ -219,20 +234,26 @@ final class CharacterHost {
         switch phase {
         case .began:
             let mouse = pointerSource()
+            pressed = clickable
             if body.contains(mouse) { guide.end(glide: false); onGuide?(); carried = (mouse, CGPoint(x: body.midX, y: rest.y)) }
         case .moved:
             if carried != nil { tick() }
         case .ended:
             if carried != nil { tick() }
-            drop()
+            drop(click: pressed)
         }
     }
 
-    /// Let go: where it was carried to is kept. A click alone moves nothing.
-    private func drop() {
+    /// Let go: where it was carried to is kept. A click alone moves
+    /// nothing; on a character that could be clicked, it talks.
+    private func drop(click: Bool = false) {
         guard let was = carried else { return }
         carried = nil
-        guard pointerSource() != was.from else { return }
+        let now = pointerSource()
+        guard hypot(now.x - was.from.x, now.y - was.from.y) >= 4 else {
+            if click { onClick?() }
+            return
+        }
         place = rest
         Config.characterPlace = rest
     }
@@ -287,7 +308,7 @@ final class CharacterHost {
                 edges = strolls && Config.playMode ? Meets.edges(of: Meets.windows(), band: (top - Self.head)...top) : []
             }
             frame = sim.step(to: now,
-                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, sent: guide.showing != nil, asked: asked, strolls: strolls,
+                             CharacterSim.Input(activity: activity, level: level, pointer: pointer, held: held, clickable: clickable, sent: guide.showing != nil, asked: asked, strolls: strolls,
                                                 edges: edges, shows: bubbleShows?() ?? false, plays: Config.playMode, animates: quiet ? 0 : animates, down: NSEvent.pressedMouseButtons & 1 != 0,
                                                 home: home, range: Double(spot.ends.lowerBound)...Double(spot.ends.upperBound)))
         }

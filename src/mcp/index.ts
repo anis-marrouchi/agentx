@@ -201,6 +201,54 @@ export function _resolveDaemonUrlForTesting(): string {
 const ANSI_RE = /\x1B\[[0-9;]*[A-Za-z]/g
 function stripAnsi(s: string): string { return s.replace(ANSI_RE, "") }
 
+/** agentx_recent without a chatId: the calling agent's own chats of today,
+ *  newest first, grouped by chat. Stands in for the cross-chat context a
+ *  lean session (#615) is not handed up front. */
+async function recentAcrossChats(agent: string, channel: string | undefined, limit: number | undefined) {
+  const res = await fetch(`${daemonUrl()}/recall`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agent, channel, limit: Math.min(Math.max(limit ?? 30, 1), 100) }),
+  })
+  const data = await res.json().catch(() => ({})) as any
+  if (!res.ok) return { content: [{ type: "text" as const, text: `Error: ${data.error || res.statusText}` }] }
+  const turns = (data.turns || []) as Array<{ ts: string; role: string; senderName: string; content: string; channel: string; chatId: string }>
+  const scope = channel ? `on ${channel}` : "on any channel"
+  if (turns.length === 0) return { content: [{ type: "text" as const, text: `No other messages ${scope} today for ${agent}.` }] }
+  return { content: [{ type: "text" as const, text: renderTurnsByChat(turns, Boolean(data.hasMore)) }] }
+}
+
+/** Exported for tests. */
+export function renderTurnsByChat(
+  turns: Array<{ ts: string; role: string; senderName: string; content: string; channel: string; chatId: string }>,
+  hasMore: boolean,
+): string {
+  const byChat = new Map<string, typeof turns>()
+  for (const t of turns) {
+    const key = `${t.channel}/${t.chatId}`
+    if (!byChat.has(key)) byChat.set(key, [])
+    byChat.get(key)!.push(t)
+  }
+  const blocks: string[] = []
+  for (const [key, list] of byChat) {
+    const lines = [...list].sort((a, b) => a.ts.localeCompare(b.ts)).map((t) => {
+      const who = t.role === "agent" ? "you" : (t.senderName || "user")
+      return `  [${t.ts.slice(11, 16)}] ${who}: ${t.content.slice(0, 300)}`
+    })
+    blocks.push(`From ${key}:\n${lines.join("\n")}`)
+  }
+  if (hasMore) blocks.push("[older turns exist — pass a chatId, or call /recall with before=<ts>]")
+  return blocks.join("\n\n")
+}
+
+/** The landscape text an agent would have been given in its prompt. */
+async function fetchLandscape(agent: string): Promise<string> {
+  const res = await fetch(`${daemonUrl()}/agents/${encodeURIComponent(agent)}/landscape`)
+  const data = await res.json().catch(() => ({})) as any
+  if (!res.ok) return `No landscape: ${data.error || res.statusText}`
+  return (data.landscape as string) || `No landscape for ${agent}.`
+}
+
 /** Plain-text answer for agentx_events. Exported for tests. */
 export function renderEventsAnswer(
   agentId: string,
@@ -406,17 +454,22 @@ const TOOLS = [
   {
     name: "agentx_recent",
     description:
-      "Read the most recent messages from a chat across ALL agents that have sessions for it. Returns inbound + each agent's replies in chronological order, so you can see what's actually been said in a Telegram chat / GitLab thread / WhatsApp DM regardless of which agent recorded it. Use this BEFORE speculating about what was sent — the cx/devops/marketing thread on 2026-04-29 about a Marketing/CX bot mixup would have been resolved in one call instead of three agents speculating. Bounded by sinceISO (default: last 24h) and limit (default: 30, max: 200).",
+      "Read the most recent messages from a chat across ALL agents that have sessions for it. Returns inbound + each agent's replies in chronological order, so you can see what's actually been said in a Telegram chat / GitLab thread / WhatsApp DM regardless of which agent recorded it. Use this BEFORE speculating about what was sent — the cx/devops/marketing thread on 2026-04-29 about a Marketing/CX bot mixup would have been resolved in one call instead of three agents speculating. Bounded by sinceISO (default: last 24h) and limit (default: 30, max: 200). " +
+      "Without chatId: your own chats of today (all channels, or one when channel is given), newest first, grouped by chat — the cross-chat context a lean session is not handed up front.",
     inputSchema: {
       type: "object" as const,
       properties: {
         channel: {
           type: "string",
-          description: "Channel name. Examples: telegram, whatsapp, gitlab, github, discord, cron, api, a2a.",
+          description: "Channel name. Examples: telegram, whatsapp, gitlab, github, discord, cron, api, a2a. Optional when chatId is omitted.",
         },
         chatId: {
           type: "string",
-          description: "Channel-native chat id. Telegram: numeric (e.g. \"1816212449\" for a DM, \"-1001234567890\" for a group). GitLab: \"group/project:issue:123\". WhatsApp: \"+phone@s.whatsapp.net\".",
+          description: "Channel-native chat id. Telegram: numeric (e.g. \"1816212449\" for a DM, \"-1001234567890\" for a group). GitLab: \"group/project:issue:123\". WhatsApp: \"+phone@s.whatsapp.net\". Omit to read across your own chats of today instead.",
+        },
+        agentId: {
+          type: "string",
+          description: "Whose chats to read when chatId is omitted. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID).",
         },
         sinceISO: {
           type: "string",
@@ -427,7 +480,6 @@ const TOOLS = [
           description: "Optional cap on returned messages. Default 30, max 200.",
         },
       },
-      required: ["channel", "chatId"],
     },
   },
   {
@@ -511,10 +563,20 @@ const TOOLS = [
   {
     name: "agentx_agents",
     description:
-      "List all agents registered on the daemon with their status (active tasks, total tasks, errors, tier).",
+      "List all agents registered on the daemon with their status (active tasks, total tasks, errors, tier). " +
+      "With landscape=true, also your landscape: the team on this node with handles and roles, agents on mesh peers, channels and the rules for working with them — what a lean session is not handed up front.",
     inputSchema: {
       type: "object" as const,
-      properties: {},
+      properties: {
+        landscape: {
+          type: "boolean",
+          description: "Also return the landscape text for the calling agent (AGENTX_AGENT_ID, or agentId).",
+        },
+        agentId: {
+          type: "string",
+          description: "Whose landscape to return when landscape=true. Ignored when the AgentX runtime already identifies you.",
+        },
+      },
     },
   },
   {
@@ -1098,8 +1160,13 @@ async function handleToolCall(
       const chatId = args.chatId as string | undefined
       const sinceISO = args.sinceISO as string | undefined
       const limit = args.limit as number | undefined
-      if (!channel || !chatId) {
-        return { content: [{ type: "text", text: "Error: channel and chatId are required." }] }
+      if (!chatId) {
+        const agent = process.env.AGENTX_AGENT_ID || (args.agentId as string | undefined)
+        if (!agent) return { content: [{ type: "text", text: "Error: chatId is required, or agentId to read across your own chats." }] }
+        return recentAcrossChats(agent, channel, limit)
+      }
+      if (!channel) {
+        return { content: [{ type: "text", text: "Error: channel is required with chatId." }] }
       }
       const res = await fetch(`${daemonUrl()}/chat/recent`, {
         method: "POST",
@@ -1211,7 +1278,11 @@ async function handleToolCall(
       const lines = agents.map((a: any) =>
         `${a.id} (${a.name}) — ${a.tier}, active: ${a.active}/${a.total}, errors: ${a.errors}`
       )
-      return { content: [{ type: "text", text: lines.join("\n") || "No agents." }] }
+      const text = lines.join("\n") || "No agents."
+      if (args.landscape !== true) return { content: [{ type: "text", text }] }
+      const agent = process.env.AGENTX_AGENT_ID || (args.agentId as string | undefined)
+      if (!agent) return { content: [{ type: "text", text: `${text}\n\nNo landscape: pass agentId to say whose to return.` }] }
+      return { content: [{ type: "text", text: `${text}\n\n${await fetchLandscape(agent)}` }] }
     }
 
     case "agentx_voice_queue": {

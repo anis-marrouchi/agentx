@@ -165,6 +165,11 @@ export interface AgentTask {
    *  Seeds an empty AgentX session the same way a channel adapter's
    *  seedHistory does, so a new or rotated session starts with it. */
   seedHistory?: SeededMessage[]
+  /** Extra flags for the `claude` CLI, set by the registry from the
+   *  channel's session profile (lean: strict MCP config, setting sources;
+   *  see agents/session-profile.ts). Spawn-per-task and persistent
+   *  processes carry them alike. Ignored by other tiers. */
+  claudeArgs?: string[]
   /** Routine autonomy level (cron job / workflow agent step). `report` and
    *  `propose` are enforced for THIS task only via a per-spawn guard hook
    *  (see guard/autonomy-enforce.ts); unset or `act` = the agent's normal
@@ -249,6 +254,12 @@ export interface AgentResponse {
    *  "JEV made the agent do less work". Undefined when the provider does
    *  not report it. */
   numTurns?: number
+  /** What the Claude Code CLI itself reported the turn cost, in USD at
+   *  list price (`total_cost_usd` on its result). Undefined on other tiers
+   *  and on the warm-process path. The benchmark that compares a task run
+   *  through AgentX with the same run on the bare CLI (#455) reads it, so
+   *  both sides are priced by the same meter. */
+  costUsd?: number
   /** The model Claude actually billed for (from the CLI's init event). When
    *  absent, cost reporting should fall back to the model override / agent
    *  config. Knowing the billed model is what makes cache-aware pricing
@@ -263,6 +274,12 @@ export interface AgentResponse {
    *  the task instead of a spawned provider (attach mode). Claude Code
    *  session id of the terminal that wrote the reply. */
   viaAttachedSession?: string
+  /** Set when the task went to a Claude cloud session instead of a local
+   *  run (#622): the session's id and claude.ai/code URL. `followUp` marks
+   *  a comment forwarded to a session that was already open. The result of
+   *  the session is a pull request, so `content` is only the notice posted
+   *  on the issue. */
+  cloudSession?: { id: string; url: string; followUp?: boolean }
   /** Set on tasks that ran under a restricted autonomy level. */
   autonomy?: AutonomyLevel
   /** Tool calls the autonomy guard blocked during this task — what the
@@ -758,7 +775,7 @@ function extractClaudeIsError(stdout: string): string | null {
   return null
 }
 
-function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string; usage?: TokenUsage; billedModel?: string; numTurns?: number } {
+function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: string; usage?: TokenUsage; billedModel?: string; numTurns?: number; costUsd?: number } {
   try {
     const data = JSON.parse(stdout)
     const usage = data.usage ? {
@@ -770,9 +787,11 @@ function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: stri
 
     // Claude Code's --output-format json response carries the actual billed
     // model at `model` (or nested under `message.model` depending on CLI ver).
+    // Recent CLIs put it under `modelUsage` keyed by model id instead.
     const billedModel: string | undefined =
       (typeof data.model === "string" && data.model) ||
       (typeof data.message?.model === "string" && data.message.model) ||
+      (data.modelUsage && typeof data.modelUsage === "object" && Object.keys(data.modelUsage)[0]) ||
       undefined
 
     return {
@@ -781,6 +800,7 @@ function parseClaudeJsonOutput(stdout: string): { text: string; sessionId?: stri
       usage,
       billedModel,
       numTurns: typeof data.num_turns === "number" ? data.num_turns : undefined,
+      costUsd: typeof data.total_cost_usd === "number" ? data.total_cost_usd : undefined,
     }
   } catch {
     return { text: stdout }
@@ -805,7 +825,7 @@ export async function executeClaudeCode(
   const prompt = buildPrompt(agent, task, historyContext)
   const restricted = restrictedClaudeArgs(task)
   if ("error" in restricted) return { content: "", error: restricted.error, duration: Date.now() - start }
-  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend, restricted.args)
+  const args = buildClaudeArgs(agent, prompt, false, resumeSessionId, task.model, task.systemPromptAppend, [...(task.claudeArgs ?? []), ...restricted.args])
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "spawn")
 
   // If the caller already aborted before we spawned, short-circuit so we
@@ -909,6 +929,7 @@ export async function executeClaudeCode(
       claudeSessionId: parsed.sessionId,
       usage: parsed.usage,
       numTurns: parsed.numTurns,
+      costUsd: parsed.costUsd,
       billedModel: parsed.billedModel,
     }
   } catch (error: any) {
@@ -944,7 +965,7 @@ export async function executeClaudeCodeStreaming(
   const prompt = buildPrompt(agent, task, historyContext)
   const restricted = restrictedClaudeArgs(task)
   if ("error" in restricted) return { content: "", error: restricted.error, duration: Date.now() - start }
-  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend, restricted.args)
+  const args = buildClaudeArgs(agent, prompt, true, resumeSessionId, task.model, task.systemPromptAppend, [...(task.claudeArgs ?? []), ...restricted.args])
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "stream")
 
   let fullText = ""
@@ -958,6 +979,7 @@ export async function executeClaudeCodeStreaming(
   /** Last assistant event's per-call context size — see AgentResponse.contextTokens. */
   let streamContextTokens: number | undefined
   let streamNumTurns: number | undefined
+  let streamCostUsd: number | undefined
   /** If the terminal `result` event carries is_error, we stash it here and
    *  surface the translated message instead of treating `result` as agent text. */
   let streamApiError: string | undefined
@@ -1086,6 +1108,7 @@ export async function executeClaudeCodeStreaming(
               if (typeof event.model === "string") streamBilledModel = event.model
               if (typeof event.session_id === "string") streamSessionId = event.session_id
               if (typeof event.num_turns === "number") streamNumTurns = event.num_turns
+              if (typeof event.total_cost_usd === "number") streamCostUsd = event.total_cost_usd
             }
 
             // System-init event (first thing the CLI emits) carries the model
@@ -1188,6 +1211,7 @@ export async function executeClaudeCodeStreaming(
       usage: streamUsage,
       contextTokens: streamContextTokens,
       numTurns: streamNumTurns,
+      costUsd: streamCostUsd,
       billedModel: streamBilledModel,
       claudeSessionId: streamSessionId,
     }
@@ -1945,6 +1969,7 @@ async function executeClaudeCodePersistent(
       billing: agent.billing,
       systemPromptAppend: task.systemPromptAppend,
       resumeSessionId,
+      extraArgs: task.claudeArgs,
     })
     wasFreshSpawn = registry.list().length > before
   } catch (e: any) {

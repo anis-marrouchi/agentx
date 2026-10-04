@@ -1,6 +1,6 @@
 {
   "name": "agentix-cli",
-  "version": "0.103.2",
+  "version": "0.110.0",
   "description": "AI operations layer for small and medium businesses. Routes Telegram, WhatsApp, GitLab, GitHub, crons, webhooks, and mesh tasks to AI agents. Web wizard for operators, CLI for engineers. Self-hosted.",
   "license": "MIT",
   "author": {
@@ -58,6 +58,8 @@
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "bench:context": "tsx bench/context-size.ts",
+    "bench:profiles": "tsx bench/context-profiles.ts",
+    "bench:compare": "tsx bench/compare-claude-code.ts",
     "test": "vitest run",
     "clean": "rimraf dist",
     "format:write": "prettier --write \"src/**/*.{ts,tsx,mdx}\" --cache",

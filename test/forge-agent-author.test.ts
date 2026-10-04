@@ -94,6 +94,9 @@ describe("GitHub adapter — inbound", () => {
       routes: [{ repo: REPO, agent: "coder-agent" }],
       // The loop guard's list: the account AgentX posts with.
       agentMappings: [{ agentId: "coder-agent", githubUsernames: [OWNER] }],
+      // Issue runs start at once: the window itself is covered in
+      // github-issue-events.test.ts.
+      debounceSeconds: 0,
     } as any, () => {})
     received = []
     gh.onMessage(async (m) => { received.push(m) })

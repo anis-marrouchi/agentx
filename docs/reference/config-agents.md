@@ -58,6 +58,10 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `drainTimeoutSeconds` | number (0–86400) | — | How long a daemon stop waits for this agent's running tasks, when that is longer than `shutdown.drainTimeoutSeconds`. For agents whose tasks take long, such as renders. See [change how long it waits](/jobs/restart-safely#change-how-long-it-waits). |
 | `permissionMode` | string | `"default"` | Permission mode for the agent's CLI. `bypassPermissions` lets it act without asking. |
 | `billing` | `"subscription"` \| `"api"` | `"subscription"` | For `claude-code` agents: use the shared sign-in (`subscription`) or bill `ANTHROPIC_API_KEY` (`api`). An `api` agent with no key fails its run. |
+| `cloudSessions.enabled` | boolean | `false` | Sends this `claude-code` agent's GitHub issue and pull request tasks to Claude cloud sessions (`claude --cloud`) instead of running them here; the result is a pull request. Needs `channels.github.cloudSessions` too, and a clone of the repository on this computer. A launch that fails runs locally. See [Send coding tasks to Claude cloud sessions](/jobs/cloud-sessions). |
+| `cloudSessions.maxPerDay` | number | `0` | Most cloud sessions this agent may start per day; `0` means no limit. Past it, tasks run locally. |
+| `cloudSessions.openHours` | number (1–168) | `24` | How long a started session counts as open: no local run starts for its issue, and comments on the issue are forwarded to it. |
+| `cloudSessions.launchTimeoutSeconds` | number (10–600) | `120` | How long `claude --cloud` may take to print the session id before the launch is given up and the task runs locally. |
 | `toolUseRequired` | list of string | `[]` | Tool names, such as `Write`, of which at least one must be used in a run; otherwise the run fails with `tool_required_not_called`. |
 | `gitlabAutoReply` | boolean | — | For this agent, overrides the GitLab or GitHub channel's `autoReplyLegacy`: `true` posts the agent's final answer as a comment, `false` does not. |
 | `persistentProcess` | boolean | `false` | Keeps a warm process per conversation for `claude-code`, `codex-cli` and `opencode` agents so replies start faster. |
@@ -183,10 +187,147 @@ When a conversation's memory is rotated or treated as stale.
 | `session.staleMinutes` | number (1–1440) | `720` | Minutes of silence after which a conversation starts fresh. |
 | `session.maxTurnsPerSession` | number (2–200) | `40` | Turns after which the conversation is rotated to a new session. |
 | `session.tierTwoThresholdTokens` | number (50000–200000) | `180000` | Context size, in tokens, at which the conversation is rotated. |
+| `session.tierTwoThresholdTokensByChannel` | object of channel → number (50000–200000) | `{}` | Overrides the context rotation limit for selected channels, for example `{"voice": 60000, "github": 80000}`. Other channels use the global limit. Applies to native Claude, Codex and OpenCode sessions; existing history seeds the next session. Requires a daemon restart. |
 | `session.contextStrategy` | `"layered"` \| `"planner"` | `"layered"` | How context is built: all layers every turn, or a small model picks what to retrieve first. |
 | `session.maxClaudeCodeDispatchesPerHour` | number (0–10000) | unset (off) | Optional local ceiling on new `claude-code` runs across the machine in one hour. The plan's own limit is read from Claude Code and needs no setting. Warm sessions still go through. Applies on save. |
 | `session.maxClaudeCodeDispatchesPer5h` | number (0–50000) | unset (off) | The same optional ceiling over five hours. |
 | `session.continuityStateTurns` | number (0–5) | `0` | Extra earlier requests shown to the session-continuity decision. `0` keeps the default two messages. |
+| `session.profileByChannel` | object of channel → `"full"` \| `"lean"` | `{}` | How much a session is given when it starts, per channel. A channel you do not list keeps the built-in default: `github`, `a2a`, `workflow` and `cron` are `lean`, every other channel is `full`. See [Lean sessions](#lean-sessions). |
+| `session.lean.mcpServers` | list of string | `["agentx"]` | Tool servers from the workspace's `.mcp.json` that a lean session keeps, by name. `agentx` is always kept. |
+| `session.lean.settingSources` | list of `"user"` \| `"project"` \| `"local"` | `["project", "local"]` | Which Claude Code settings a lean session reads. Without `user`, the global `CLAUDE.md`, user skills, plugins and user-level tool servers stay out. `project` is the agent's workspace. |
+| `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. |
+| `session.lean.tools` | list of string | `[]` | Built-in Claude Code tools a lean session gets, such as `Bash`, `Read`, `Edit`. Empty keeps every built-in tool. A short list is what brings a lean start under 20k tokens; an agent that lacks a tool it needs fails mid-task. The `agentx` tools are not affected. `claude-code` agents only. See [Fewer built-in tools](#fewer-built-in-tools). |
+| `session.lean.toolsByChannel` | object of channel → list of string | `{}` | The same list per channel. A channel's own list wins over `session.lean.tools`; an empty list falls back to it. |
+| `session.memoryIndexMaxChars` | number | `0` | Longest the agent-memory index may be where every session loads it: in the workspace `CLAUDE.md` and in the system prompt. `0` keeps the whole index. The cut keeps whole lines and ends with a line counting the entries left out; the full index stays in `.agentx-memory.md` in the workspace. See [A shorter memory index](#a-shorter-memory-index). |
+| `session.observationPack.enabled` | boolean | `false` | Keep large tool results out of the conversation: the agent sees the start and the end of the result and the path of a file with the exact original. See [Large tool results](#large-tool-results). Turning it on takes a daemon restart; turning it off applies on save. |
+| `session.observationPack.limitBytes` | number (1024–1048576) | `10240` | A text result larger than this many bytes is replaced by an excerpt. |
+| `session.observationPack.headBytes` | number (0–65536) | `1024` | Bytes of the start of the original the agent sees. |
+| `session.observationPack.tailBytes` | number (0–65536) | `1024` | Bytes of the end of the original the agent sees. |
+| `session.observationPack.tools` | list of string | `["Bash", "Grep", "WebFetch", "mcp__.*"]` | Tools whose results are packed. Each entry must match the whole tool name and may be a regular expression. Requires a daemon restart. |
+| `session.observationPack.retentionDays` | number (0–3650) | `0` | Days a saved original is kept. `0` keeps every original. |
+
+### Lean sessions
+
+A session's first turn carries a lot before the agent reads the task: every tool server (MCP server) the computer's user has connected, every user-level skill and plugin, the global `CLAUDE.md`, plus what AgentX adds, such as the list of agents (the landscape), today's history of the chat and a summary of the agent's other chats. A GitHub label event or a one-line answer to another agent pays for all of it, on every new session.
+
+A **lean** session gets only what the task needs up front. The rest is one tool call away:
+
+| What a full session gets | What a lean session gets instead |
+|---|---|
+| Every connected tool server | Only the `agentx` tool server, plus the ones named in `session.lean.mcpServers`. |
+| User-level settings: global `CLAUDE.md`, user skills, plugins | Only the workspace's own settings and skills (`session.lean.settingSources`). |
+| The project `CLAUDE.md` twice: once from the workspace, once appended by AgentX | Once, from the workspace. |
+| The landscape in the prompt | The `agentx_agents` tool with `landscape: true`. |
+| Today's history of this chat in the prompt | The `agentx_recent` tool with the chat's `channel` and `chatId`. |
+| A summary of the agent's other chats today | The `agentx_recent` tool without a `chatId`. |
+| (both) Stored knowledge, as before | The `agentx_wiki_query` tool, as before. |
+
+The prompt keeps one line, `[Context on demand]`, naming these tools. Chat channels (Telegram, WhatsApp, voice, the dashboard and the phone app) are not changed: they stay full unless you list them. Only `claude-code` and `codex-cli` agents have a lean start; other engines always start full. The daemon log shows `session profile for github: lean (…)` when a lean session starts.
+
+To make one channel full again, list it:
+
+```json
+"session": {
+  "profileByChannel": { "github": "full" }
+}
+```
+
+To make a chat channel lean, or keep a second tool server in lean sessions:
+
+```json
+"session": {
+  "profileByChannel": { "telegram": "lean" },
+  "lean": { "mcpServers": ["agentx", "codegraph"] }
+}
+```
+
+To see what a session on a channel is handed, before and after:
+
+1. **Terminal:** in the AgentX source folder, run `pnpm bench:profiles --channels github`. It prints a table with one row per prompt section, full against lean, and the saving. No model is called.
+2. **Terminal:** run `pnpm bench:context --channel github --sections --config agentx.json --agent <your agent id>` to measure a real agent of yours.
+
+#### Fewer built-in tools
+
+Even a lean session carries the descriptions of every built-in Claude Code tool, about 14k tokens of a first turn. The lowest first turn with every tool, and none of your own files loaded, measured about 27k tokens. Getting under 20k means giving the session a shorter list of tools. This is off until you set it, because an agent that needs a tool it does not have fails in the middle of its task.
+
+To give lean sessions a short tool list:
+
+1. **Terminal:** look at what the agent's tasks on that channel use. Run `agentx trace show <taskId>` on a few recent runs; the `tool_use` steps name the tools.
+2. **Terminal:** open `agentx.json` and set the list, for all lean channels or for one:
+
+   ```json
+   "session": {
+     "lean": {
+       "tools": ["Bash", "Read", "Edit", "Write", "Grep", "Glob"],
+       "toolsByChannel": { "cron": ["Bash", "Read"] }
+     }
+   }
+   ```
+
+3. **Terminal:** run `agentx daemon restart --when-idle`. The daemon log line for the next lean session ends with `tools=Bash+Read+…`.
+
+The list applies to `claude-code` agents on lean channels only, and never to the `agentx` tools, which stay available. An empty list means every tool: there is no way to start a session with no tools at all, because Claude Code then loads every tool server's full description instead, which costs more, not less.
+
+#### A shorter memory index
+
+The index of what an agent remembers (`agentx memory index`) is loaded on every session, twice: merged into the agent's workspace `CLAUDE.md`, and inlined in the system prompt. An agent with many memories pays for the whole list on every task. `session.memoryIndexMaxChars` caps it:
+
+1. **Terminal:** run `agentx memory index --agent <agent id>` and look at its length.
+2. **Terminal:** open `agentx.json` and set the cap, for example `"session": { "memoryIndexMaxChars": 4000 }`.
+3. **Terminal:** run `agentx daemon restart --when-idle`. The prompt uses the cap at once; the `CLAUDE.md` block is rewritten at the restart and after every memory change.
+
+The cut keeps whole lines, in the index's own order (user, feedback, project, reference), and ends with a line such as `_(12 more memories not shown here. The full index is in .agentx-memory.md in this workspace, or run \`agentx memory index\`.)_`. The file it names always holds the whole index, so the agent can read it when a task needs more.
+
+### Large tool results
+
+A tool result stays in the conversation, and the model re-reads the whole conversation on every later step of the task. A 20 KB test log read once is paid for again on each of the next thirty steps, although the agent rarely looks at it twice.
+
+With `session.observationPack.enabled`, a text result larger than `limitBytes` is saved in full under `.agentx/observations/<agent id>/` in the daemon's folder, and the agent gets this in its place:
+
+```text
+[ObservationPack: this result is 23442 bytes (400 lines). Only its first 1024 and last 1024 bytes are shown.
+The exact original is saved at /srv/agentx/.agentx/observations/coder/aa0c…864c.txt
+Read that file with offset and limit (line numbers), or grep it, for the part you need. Do not cat it whole: that is packed again. Do not guess at what is not shown.]
+(the first 1024 bytes)
+[... 21394 bytes not shown ...]
+(the last 1024 bytes)
+```
+
+Nothing is lost: the saved file is byte for byte what the tool returned, and the agent reads it back with its own file tool. Reading a saved original is never packed again. When the original is a few very long lines, such as minified JSON, the excerpt tells the agent to read it by byte range instead of by line.
+
+```json
+"session": {
+  "observationPack": { "enabled": true }
+}
+```
+
+What it covers, and what it does not:
+
+| | |
+|---|---|
+| Agents | `claude-code` agents only. It works through a Claude Code hook (PostToolUse) that AgentX writes into each agent workspace's `.claude/settings.json` when the daemon starts. Codex and the other engines are not changed. |
+| Agents that ask before acting | Not packed. Only an agent with `permissionMode: "bypassPermissions"` gets the hook: in any other mode Claude Code refuses to open the saved original in a session nobody answers for, and the agent would guess at the part it was not shown. The daemon log says how many agents were left out. |
+| Tools | The ones in `tools`. By default: commands (`Bash`), searches (`Grep`), fetched web pages (`WebFetch`) and every tool server (`mcp__.*`, which includes the AgentX tools). |
+| Files the agent reads | Not packed by default. An agent that sees only the two ends of a file it is about to edit has to read it again in pages. Add `"Read"` to `tools` to pack them too. |
+| Very large command output | Claude Code itself already replaces command output over 30,000 characters with a 2 KB preview and a saved file. The pack leaves those results to it, and covers the ones between `limitBytes` and that size. |
+| Pictures, sound and files in base64 | Never packed. Only text is. |
+| Claude Code version | The hook answer that replaces a result (`updatedToolOutput`) was confirmed on Claude Code 2.1.289. A version that ignores it gives the agent the full result, while the original is still saved and counted in `index.jsonl`. |
+| Event text | The text of the event or message that starts a task is not a tool result and is not packed. |
+| Timing | The excerpt replaces the result at once. The agent never sees the full result unless it reads the saved file. |
+| Sessions outside the workspace | A session whose working folder is not the agent's workspace does not load the workspace's hooks and is not packed. |
+
+The saved originals can hold whatever a command printed, including secrets, exactly as Claude Code's own session logs do. Each agent has its own folder, and the read rule AgentX writes into a workspace names that agent's folder only. The folders are readable by the daemon's user only. They grow with use; set `retentionDays` to delete originals that have not been written or seen again for that many days. An agent that resumes an older session can then no longer read them.
+
+If the daemon is not running, the hook does nothing and the agent gets the full result.
+
+To see what the pack does to your costs:
+
+1. **Terminal:** before turning it on, in the folder with `agentx.json`, run `agentx usage channels --from 2026-10-01 --to 2026-10-03 --save before.json` with three recent full days. It prints the cost per channel and per task, and saves the figures.
+2. Turn the pack on and restart the daemon. Let it run for a few days.
+3. **Terminal:** run `agentx usage channels --from <first day> --to <last day> --baseline before.json` with the days after the restart. It prints both ranges side by side with the change in cost per task.
+4. **Terminal:** run `cat .agentx/observations/*/index.jsonl | wc -l`. Each line is one packed result, with its size and what the agent was shown.
+
+The two ranges do not hold the same tasks, so compare the cost per task on the busy channels, not the totals. In the AgentX source folder, `python3 bench/observation-pack-replay.py --from <day> --to <day>` reads the Claude Code session logs of a range and prints how many tool-result bytes are over the limit, per tool and per channel, without calling a model.
 
 ## processPool
 
@@ -197,6 +338,8 @@ How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and 
 | `processPool.maxIdleSeconds` | number (5–86400) | `30` | Seconds after its last turn when a process may be stopped to make room. |
 | `processPool.maxAgeSeconds` | number (60–86400) | `2700` | Seconds of idleness after which a process is always stopped. |
 | `processPool.sweepIntervalSeconds` | number (1–300) | `5` | How often the pool is checked. |
+
+A warm process answers only the question it was asked. When a background task of the agent ends, Claude Code writes a reply nobody asked for; that reply is not sent, and the daemon log notes it as `dropped a reply no question asked for`.
 
 ## plugins
 
@@ -209,9 +352,16 @@ How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
+4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
+5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output.
 
 ## If something is wrong
 
 - **`config check` names a field:** the value has the wrong type or is out of range. Compare it with the table above.
 - **An `sdk` agent fails with `No API key for provider`:** set `providers.<name>.apiKey`, or check that the environment variable it points to is in `.env`.
+- **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.
+- **An agent on GitHub, a schedule or a workflow says it cannot see another agent, an earlier message or a tool it had before:** its channel starts lean. Either tell the agent to use the `agentx_agents`, `agentx_recent` and `agentx_wiki_query` tools, add the tool server it misses to `session.lean.mcpServers`, or set that channel to `"full"` in `session.profileByChannel`.
+- **The daemon log says `N agent(s) not packed`:** those agents do not run with `permissionMode: "bypassPermissions"`. They could not open a saved original, so they keep getting full results. This is by design; nothing to fix.
+- **`session.observationPack.enabled` is on and nothing is packed:** restart the daemon; the hook is written into the workspaces at start. Then check that the agent's `tier` is `claude-code`, that its `permissionMode` is `bypassPermissions` and that the result was over `limitBytes`.
+- **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.
