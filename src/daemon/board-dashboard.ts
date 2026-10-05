@@ -24,6 +24,8 @@ import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
 import { handlePeoplePanel } from "./people-panel"
+import { assetLinks, handlePlacesPanel } from "./places-panel"
+import { appPlacesDeps, type AppPlacesDeps } from "./app-places"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
 import { renderCostPage } from "./ui/pages/cost"
@@ -183,6 +185,7 @@ const DASHBOARD_PAGES = new Set([
   "/admin/graph",
   "/approvals",
   "/people",
+  "/places",
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
@@ -237,7 +240,16 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: placesDeps(ctx.config) })) return
+  // The Android shell's Digital Asset Links (#676): with it, the phone app
+  // opens without an address bar. Public by design, like any assetlinks.json:
+  // it names the app package and its signing fingerprint, nothing else.
+  if (method === "GET" && path === "/.well-known/assetlinks.json") {
+    const links = assetLinks(ctx.config.places)
+    if (!links) { sendJson(res, 404, { error: "no Android app fingerprint configured (places.android.sha256CertFingerprints)" }); return }
+    sendJson(res, 200, links)
+    return
+  }
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -742,6 +754,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (await handlePeoplePanel(req, res, path, {
     people: () => currentPeople(ctx.config.people), members: membersStore(ctx.config.members.logRetentionDays),
     root: process.cwd(), db: () => dashboardDb(), peers: buildTopbarPeers(ctx.config), localToken: ctx.token,
+  })) return
+  // Places (#676): the page and its /api/admin/places data, after the token gate above.
+  if (await handlePlacesPanel(req, res, path, {
+    db: () => dashboardDb(), settings: ctx.config.places, peers: buildTopbarPeers(ctx.config), localToken: ctx.token,
   })) return
   if (path.startsWith("/api/admin/graph/")) {
     await handleGraphApi(req, res, path)
@@ -2275,6 +2291,15 @@ function appPushDeps(config: DaemonConfig): AppPushDeps {
     allowedHosts: push.allowedHosts,
     reason: "The database on this computer is unavailable, so notifications can't be saved.",
   }
+}
+
+/** Places and place reminders for the Android shell (app-places.ts). Same
+ *  SQLite file as the push tables; deliveries go through the primary daemon. */
+function placesDeps(config: DaemonConfig): AppPlacesDeps {
+  const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  return appPlacesDeps(config, () => dashboardDb(), {
+    url, token: dashboardTokenForNode(config.dashboard, url), operatorKey: loadOperatorKey(process.cwd()) ?? undefined,
+  })
 }
 
 /** What the phone app's Fleet and Activity tabs read and act through

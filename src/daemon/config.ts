@@ -1280,6 +1280,40 @@ export const daemonConfigSchema = z.object({
     /** The remindctl binary, when it isn't on the daemon's PATH. */
     command: z.string().min(1).default("remindctl"),
   }).default({}),
+  /** Place-based reminders (src/places, #676). Places are saved from the
+   *  phone app, the dashboard or `agentx places`; the Android shell turns
+   *  them into geofences and reports only "entered" or "left" a place. */
+  places: z.object({
+    /** Off: the phone is told to drop its geofences and events are refused. */
+    enabled: z.boolean().default(true),
+    /** Radius a new place gets when none is given. */
+    defaultRadiusMeters: z.number().int().min(50).max(50_000).default(150),
+    /** Android needs about 100 m to tell inside from outside reliably. */
+    minRadiusMeters: z.number().int().min(50).max(50_000).default(100),
+    maxRadiusMeters: z.number().int().min(50).max(50_000).default(5000),
+    /** Android allows 100 geofences per app. */
+    maxPlaces: z.number().int().min(1).max(100).default(50),
+    /** The same place, phone and direction again within this is ignored. */
+    cooldownMinutes: z.number().int().min(0).max(1440).default(10),
+    /** An event that reaches the computer later than this is not reminded. */
+    staleMinutes: z.number().int().min(1).max(10_080).default(60),
+    /** How quickly the phone reports, in seconds. Lower costs battery. */
+    responsivenessSeconds: z.number().int().min(0).max(3600).default(60),
+    /** How often the phone fetches the place list, in minutes (15 at least). */
+    syncMinutes: z.number().int().min(15).max(1440).default(360),
+    /** Recent events kept for the dashboard. */
+    keepEvents: z.number().int().min(1).max(5000).default(200),
+    /** How long an agent may take to answer a place reminder. */
+    agentTimeoutSeconds: z.number().int().min(10).max(3600).default(300),
+    /** The Android shell, for /.well-known/assetlinks.json. Without its
+     *  signing fingerprint the app still works, with an address bar. */
+    android: z.object({
+      packageName: z.string().regex(/^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$/).default("dev.agentx.phone"),
+      /** SHA-256 signing-certificate fingerprints, AA:BB:… (the app's
+       *  Place settings screen shows its own). */
+      sha256CertFingerprints: z.array(z.string().regex(/^([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$/, "must be 32 hex pairs separated by colons")).default([]),
+    }).default({}),
+  }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */
   demo: z.object({
     /** Seconds each startup step (node /health, dashboard /live, mesh

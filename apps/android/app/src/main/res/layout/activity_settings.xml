@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView style="@style/Section" android:text="@string/section_connect" />
+        <TextView style="@style/Help" android:text="@string/connect_help" />
+        <TextView android:id="@+id/conn_status" style="@style/Status" />
+        <EditText
+            android:id="@+id/server"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints=""
+            android:hint="@string/server_hint"
+            android:inputType="textUri" />
+        <EditText
+            android:id="@+id/code"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:autofillHints=""
+            android:hint="@string/code_hint"
+            android:inputType="textCapCharacters|textNoSuggestions" />
+        <Button android:id="@+id/connect" style="@style/Action" android:text="@string/connect" />
+        <Button android:id="@+id/open_app" style="@style/Action" android:text="@string/open_app" />
+        <Button android:id="@+id/disconnect" style="@style/Action" android:text="@string/disconnect" />
+
+        <TextView style="@style/Section" android:text="@string/section_places" />
+        <TextView style="@style/Help" android:text="@string/places_help" />
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/places_switch"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="48dp"
+            android:text="@string/places_switch"
+            android:textSize="17sp" />
+        <TextView android:id="@+id/places_status" style="@style/Status" />
+        <TextView android:id="@+id/loc_status" style="@style/Status" />
+        <Button android:id="@+id/loc_btn" style="@style/Action" android:text="@string/allow" />
+        <TextView android:id="@+id/bg_status" style="@style/Status" />
+        <Button android:id="@+id/bg_btn" style="@style/Action" android:text="@string/allow" />
+        <TextView android:id="@+id/notif_status" style="@style/Status" />
+        <Button android:id="@+id/notif_btn" style="@style/Action" android:text="@string/allow" />
+        <Button android:id="@+id/sync_now" style="@style/Action" android:text="@string/sync_now" />
+
+        <TextView style="@style/Section" android:text="@string/section_privacy" />
+        <TextView style="@style/Help" android:text="@string/privacy" />
+
+        <TextView style="@style/Section" android:text="@string/section_advanced" />
+        <TextView style="@style/Help" android:text="@string/fingerprint_help" />
+        <TextView
+            android:id="@+id/fingerprint"
+            style="@style/Status"
+            android:fontFamily="monospace"
+            android:textIsSelectable="true"
+            android:textSize="12sp" />
+        <Button android:id="@+id/copy_fingerprint" style="@style/Action" android:text="@string/copy" />
+    </LinearLayout>
+</ScrollView>

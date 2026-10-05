@@ -10,6 +10,7 @@ import { handleAppChat, type AppChatDeps } from "./app-chat"
 import { handleAppFiles } from "./app-files"
 import { handleAppVoice, type AppVoiceDeps } from "./app-voice"
 import { handleAppCamera, type AppCameraDeps } from "./app-camera"
+import { handleAppPlaces, type AppPlacesDeps } from "./app-places"
 import { PairAttemptLimiter, redeemPairCode } from "./app-pair-code"
 import { PairCodeStore } from "./pair-codes"
 import { RejectLog, credentialState, rejectFields } from "./app-auth-log"
@@ -54,6 +55,7 @@ export interface AppRouteCtx {
   chat?: AppChatDeps
   voice?: AppVoiceDeps
   camera?: AppCameraDeps
+  places?: AppPlacesDeps
   pairCodes?: PairCodeStore
   pairLimiter?: PairAttemptLimiter
   /** Minimum duration of a pair-code attempt (tests shorten it). */
@@ -146,6 +148,7 @@ export async function handleAppRequest(
   if (ctx.chat && await handleAppFiles(req, res, path, method, rec, ctx.chat)) return true
   if (ctx.voice && await handleAppVoice(req, res, path, method, rec, ctx.voice)) return true
   if (ctx.camera && await handleAppCamera(req, res, path, method, ctx.camera)) return true
+  if (ctx.places && await handleAppPlaces(req, res, path, method, rec, ctx.places)) return true
   return sendJson(res, 404, { error: "not found" })
 }
 

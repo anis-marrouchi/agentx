@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AgentX</string>
+    <string name="settings_title">AgentX settings</string>
+    <string name="shortcut_settings">Place settings</string>
+
+    <string name="section_connect">1. Connect to your computer</string>
+    <string name="connect_help">On the computer, run: agentx app pair. Type the address and the code it shows, or paste the whole pairing link into the address field.</string>
+    <string name="server_hint">Address, e.g. my-computer.example.ts.net</string>
+    <string name="code_hint">Pairing code, e.g. ABCD-EFGH</string>
+    <string name="connect">Connect</string>
+    <string name="connecting">Connecting…</string>
+    <string name="connected_as">Connected as %1$s to %2$s</string>
+    <string name="not_connected">Not connected yet.</string>
+    <string name="bad_server">That address doesn\'t look right. It starts with https:// or is a name like my-computer.example.ts.net.</string>
+    <string name="bad_code">Type the 8-character code from agentx app pair.</string>
+    <string name="too_many">Too many tries. Wait a few minutes, then run agentx app pair for a new code.</string>
+    <string name="unreachable">Could not reach the computer: %1$s. Is this phone on the same network (Tailscale on)?</string>
+    <string name="open_app">Open the phone app</string>
+    <string name="disconnect">Disconnect this phone</string>
+    <string name="disconnect_explain">This phone forgets the computer and stops watching places. To remove it on the computer too, run agentx app devices, then agentx app revoke.</string>
+
+    <string name="section_places">2. Place reminders</string>
+    <string name="places_help">Get a reminder when you arrive at or leave a saved place, even with the app closed. Save places in the phone app (Alerts tab), on the dashboard\'s Places page, or with agentx places add.</string>
+    <string name="places_switch">Watch my places</string>
+    <string name="loc_ok">Location: allowed</string>
+    <string name="loc_missing">Location: not allowed. Place reminders need precise location.</string>
+    <string name="bg_ok">Location with the app closed: allowed</string>
+    <string name="bg_missing">Location with the app closed: not allowed. Choose \"Allow all the time\": reminders must work with the app closed.</string>
+    <string name="notif_ok">Notifications: allowed</string>
+    <string name="notif_missing">Notifications: not allowed. Reminders arrive as notifications.</string>
+    <string name="allow">Allow</string>
+    <string name="sync_now">Update places now</string>
+    <string name="syncing">Updating places…</string>
+    <string name="places_off">Off. No place is watched, and nothing about where you are leaves this phone.</string>
+    <string name="places_need_permission">On, but waiting for location permission.</string>
+    <plurals name="watching">
+        <item quantity="one">Watching %d place.</item>
+        <item quantity="other">Watching %d places.</item>
+    </plurals>
+    <string name="last_sync">Places last updated %1$s.</string>
+    <string name="last_event">Last event: %1$s.</string>
+    <string name="bg_title">Allow location all the time?</string>
+    <string name="bg_explain">AgentX uses your location in the background only to notice when you arrive at or leave a place you saved. Android does the watching. The computer only hears \"arrived at School\" or \"left School\", never where you are.\n\nOn the next screen, choose \"Allow all the time\".</string>
+    <string name="continue_label">Continue</string>
+    <string name="not_now">Not now</string>
+
+    <string name="section_privacy">What leaves this phone</string>
+    <string name="privacy">Only the place\'s id, \"arrived\" or \"left\", and the time. Never coordinates or a location history. Turn the switch off to stop it at once.</string>
+
+    <string name="section_advanced">For the computer\'s settings</string>
+    <string name="fingerprint_help">This build\'s signing fingerprint. Put it in places.android.sha256CertFingerprints so the phone app opens without an address bar.</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Copied</string>
+    <string name="unknown">unknown</string>
+</resources>
