@@ -69,6 +69,7 @@ describe("registry flush of a queued channel message", () => {
   const config = () => daemonConfigSchema.parse({
     node: { id: "test", name: "test" },
     agents: { ops: { name: "Ops", tier: "claude-code", workspace: dir, maxConcurrent: 1 } },
+    people: [{ id: "sam", name: "Sam", role: "member", identities: ["telegram:77"] }],
   })
 
   const ctx = { channel: "telegram", chatId: "chat-1", sender: "Sam" }
@@ -112,6 +113,40 @@ describe("registry flush of a queued channel message", () => {
     expect(isQueued(queued.error)).toBe(true)
     expect(seen).toHaveLength(1)
     expect(seen[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", humanRoot: true, sender: { name: "Sam", id: "77" } })
+    // The person and the text, for the member page's line (#443).
+    expect(seen[0]).toMatchObject({ person: "sam", messagePreview: "second" })
+    expect(seen[0].queuedAt).toBeLessThanOrEqual(Date.now())
+  })
+
+  it("announces the hand-over of the line before the flushed turns start (#443)", async () => {
+    const seen: any[] = []
+    const listen = (p: any) => { seen.push(p) }
+    getEventBus().on("task:queue-flushed", listen)
+    const r = new AgentRegistry(config(), () => {})
+    const first = await busy(r)
+    await r.execute({ message: "second", agentId: "ops", context: ctx })
+    await r.execute({ message: "third", agentId: "ops", context: ctx })
+    const before = Date.now()
+    await flushedMessage(r, first)
+    getEventBus().off("task:queue-flushed", listen)
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", count: 1 })
+    expect(seen[0].flushedAt).toBeGreaterThanOrEqual(before)
+  })
+
+  it("records a follow-up from the dashboard as the owner's place in the line (#443)", async () => {
+    const seen: any[] = []
+    const listen = (p: any) => { seen.push(p) }
+    getEventBus().on("task:queued", listen)
+    const r = new AgentRegistry(config(), () => {})
+    const first = await busy(r)
+    const out = r.queueFollowUp(first.id, "and also this", "operator")
+    getEventBus().off("task:queued", listen)
+    expect(out).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", pending: 1 })
+    expect(seen).toHaveLength(1)
+    expect(seen[0]).toMatchObject({ agentId: "ops", channel: "telegram", chatId: "chat-1", humanRoot: false, person: "owner", messagePreview: "and also this" })
+    r.cancelRunningTask(first.id, "done")
+    await first.run
   })
 
   it("announces the end of a flushed turn that never started (request status, #383)", async () => {

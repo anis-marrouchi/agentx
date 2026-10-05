@@ -31,25 +31,44 @@ export function plainPreview(text: string | null | undefined): string {
 }
 
 /** What an agent's card says (#443), from an AgentCard of /api/member/work.
- *  The state is always a word as well as a colour and a shape. Of a turn
- *  someone else started there is no text to show, only that it is theirs. */
-export function agentLine(a: { state: string; by: string | null; text: string | null }): { label: string; tone: string; what: string | null; by: string | null; hint: string } {
+ *  The state is always a word as well as a colour and a shape. A busy card
+ *  says what the agent is doing whoever started it, and what waits in
+ *  line: the person's own messages and how many are ahead of the first, or
+ *  else how many messages a new one would wait behind. */
+export function agentLine(a: { state: string; by: string | null; text: string | null; queue?: { waiting: number; yours: number; ahead: number | null } | null }): { label: string; tone: string; what: string | null; by: string | null; hint: string } {
   const by = a.by === "you" ? "you" : a.by === "owner" ? "the owner" : a.by ? "someone else" : null
   if (a.state === "working") {
-    if (a.by === "you") return { label: "Working", tone: "work", what: a.text, by, hint: "Busy. A new message waits in line until this ends." }
-    return { label: "Working", tone: "work", what: "Busy with someone else's task", by, hint: "A message you send now waits in line until this ends." }
+    // No inner function bound to a name here: the bundler would wrap it
+    // in a helper the browser does not have (inject.ts).
+    const q = a.queue || { waiting: 0, yours: 0, ahead: null }
+    const ahead = q.ahead || 0
+    let line: string
+    if (q.yours > 0) {
+      line = (q.yours === 1 ? "Your message is in line" : q.yours + " messages of yours are in line") +
+        (ahead === 0
+          ? (q.yours === 1 ? ": it runs when this ends." : ": the first runs when this ends.")
+          : ", " + ahead + (ahead === 1 ? " message" : " messages") + " ahead of " + (q.yours === 1 ? "it." : "the first."))
+    } else if (q.waiting > 0) {
+      line = q.waiting + (q.waiting === 1 ? " message waits" : " messages wait") + " in line. A new one from you waits behind " + (q.waiting === 1 ? "it." : "them.")
+    } else {
+      line = a.by === "you" ? "Busy. A new message waits in line until this ends." : "A message you send now waits in line until this ends."
+    }
+    if (a.by === "you") return { label: "Working", tone: "work", what: a.text, by, hint: line }
+    return { label: "Working", tone: "work", what: a.text || "Busy with someone else's task", by, hint: line }
   }
   if (a.state === "blocked") return { label: "Blocked", tone: "stuck", what: a.text ? "Stopped on: " + a.text : null, by, hint: "It stopped before finishing. It needs a person." }
   return { label: "Free", tone: "free", what: a.by === "you" && a.text ? "Finished: " + a.text : null, by: a.by === "you" ? by : null, hint: "Free. Ready for your next message." }
 }
 
 /** How one of the person's turns reads in "What you sent" (#443). A
- *  request the turn became speaks first: it knows when the owner is asked. */
+ *  request the turn became speaks first: it knows when the owner is asked.
+ *  A message still waiting behind a busy agent has status "queued". */
 export function sentState(r: { status: string; request?: { state: string } | null }): { label: string; tone: string } {
   const req = r.request ? r.request.state : ""
   if (req === "waiting_owner") return { label: "Waiting on the owner", tone: "wait" }
   if (req === "waiting_other") return { label: "Waiting on another agent", tone: "wait" }
   if (req === "needs_attention") return { label: "Stuck", tone: "stuck" }
+  if (r.status === "queued") return { label: "In line", tone: "wait" }
   if (r.status === "in-flight") return { label: "Running", tone: "work" }
   if (r.status === "ok") return { label: "Finished", tone: "done" }
   if (r.status === "error" || r.status === "timeout") return { label: "Stopped", tone: "stuck" }

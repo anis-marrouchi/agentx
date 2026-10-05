@@ -10,6 +10,7 @@ import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairin
 import { loadDaemonConfig } from "./config"
 import { workOf, type LinkFor } from "@/members/work"
 import { agentIdsFor, agentsOf, type AgentCard } from "@/members/agents"
+import { queueOf, type QueuedItem, type QueueView } from "@/members/queue"
 import type { Person } from "@/people/people"
 import {
   MEMBER_SERVICE_WORKER,
@@ -143,17 +144,21 @@ export async function handleMemberRequest(
     if (!db) return sendJson(res, 503, { error: "the work list needs the database" })
     const now = (ctx.now ?? Date.now)()
     const work = workOf(db, access.personId, { now, linkFor: ctx.linkFor })
+    // No task_traces or queued_messages yet means nothing to read; anything else is logged.
+    const quiet = (what: string, err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!/no such table/i.test(msg)) ctx.log?.(`[member] ${what} failed: ${msg}`)
+    }
+    // The messages waiting behind each of this person's agents, and their own among them (#443).
+    let queue: { byAgent: Map<string, QueueView>; mine: QueuedItem[] } = { byAgent: new Map(), mine: [] }
+    try { queue = queueOf(db, access.personId, { linkFor: ctx.linkFor }) } catch (err) { quiet("the line", err) }
     // The agents this person uses, and what each is doing (#443).
     let agents: AgentCard[] = []
     try {
       const ids = agentIdsFor(db, person ?? { id: access.personId }, now)
-      agents = agentsOf(db, access.personId, ids, { people: ctx.people(), linkFor: ctx.linkFor })
-    } catch (err) {
-      // No task_traces yet means no runs to read; anything else is logged.
-      const msg = err instanceof Error ? err.message : String(err)
-      if (!/no such table/i.test(msg)) ctx.log?.(`[member] agent cards failed: ${msg}`)
-    }
-    return sendJson(res, 200, { ...work, agents })
+      agents = agentsOf(db, access.personId, ids, { people: ctx.people(), linkFor: ctx.linkFor, queue: queue.byAgent })
+    } catch (err) { quiet("agent cards", err) }
+    return sendJson(res, 200, { ...work, agents, queued: queue.mine })
   }
   return sendJson(res, 404, { error: "not found" })
 }

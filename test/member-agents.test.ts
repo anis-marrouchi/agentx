@@ -7,6 +7,8 @@ import { openDb, closeDb } from "../src/storage/sqlite"
 import { recordTraceEnd, recordTraceStart } from "../src/storage/traces"
 import { RequestStore } from "../src/requests/store"
 import { agentIdsFor, agentsOf } from "../src/members/agents"
+import { queueOf } from "../src/members/queue"
+import { insertQueuedMessage } from "../src/storage/queued-messages"
 import { workOf } from "../src/members/work"
 import { agentLine, requestState, sentState, summaryLine } from "../src/daemon/ui/pages/member-logic"
 import { renderMemberPage } from "../src/daemon/ui/pages/member"
@@ -55,14 +57,25 @@ describe("agent cards", () => {
     expect(c.where).toEqual({ label: "GitLab issue #88 in acme/portal", url: "https://git.example.com/x" })
   })
 
-  it("show only that the agent is busy when someone else started it", () => {
-    turn("t1", "ops", "anis", { text: "the owner's secret task" })
+  // The owner's decision on #443 (2026-10-05): a busy card says what the task is.
+  it("say what the agent is doing when someone else started it, but not where, and no more than the preview", () => {
+    const long = "the owner's task " + "y".repeat(300)
+    turn("t1", "ops", "anis", { text: long, channel: "gitlab", chatId: "acme/secret:issue:1" })
     turn("t2", "billing", "omar", { text: "omar's task" })
     turn("t3", "cron", null, { text: "a timer" })
     const out = cards(["ops", "billing", "cron"])
-    expect(out.map((c) => [c.state, c.by])).toEqual([["working", "owner"], ["working", "other"], ["working", "other"]])
-    for (const c of out) expect([c.text, c.fullText, c.where]).toEqual([null, null, null])
-    expect(JSON.stringify(out)).not.toMatch(/secret|omar's|timer/)
+    expect(out.map((c) => [c.state, c.by, c.text])).toEqual([
+      ["working", "owner", long.slice(0, 200)], ["working", "other", "omar's task"], ["working", "other", "a timer"],
+    ])
+    for (const c of out) expect([c.fullText, c.where]).toEqual([null, null])
+    const json = JSON.stringify(out)
+    expect(json).not.toContain("acme/secret")
+    expect(json).not.toContain("y".repeat(201))
+  })
+
+  it("keep what someone else's agent finished to themselves", () => {
+    turn("t1", "ops", "anis", { text: "owner work", end: "ok" })
+    expect(cards(["ops"])[0]).toMatchObject({ state: "free", by: "owner", text: null, fullText: null, where: null })
   })
 
   it("say free, and what was finished when it was the member's", () => {
@@ -81,9 +94,29 @@ describe("agent cards", () => {
     expect(theirs).toMatchObject({ state: "free", by: "owner", text: null })
   })
 
-  it("give no text for a hand-over between agents, even on the member's behalf", () => {
+  it("show a hand-over between agents on the member's behalf as busy, not as a request of theirs to open", () => {
     turn("t1", "ops", "sara", { channel: "a2a", text: "agent-written brief" })
-    expect(cards(["ops"])[0]).toMatchObject({ state: "working", by: "you", text: null, fullText: null, where: null })
+    expect(cards(["ops"])[0]).toMatchObject({ state: "working", by: "you", text: "agent-written brief", fullText: null, where: null })
+  })
+
+  it("carry the line behind each agent, and nothing of anyone else's message", () => {
+    const now = Date.now()
+    turn("t1", "coder", "anis", { text: "owner work" })
+    const q = (agentId: string, person: string | null, chatId: string, at: number, text = "x") =>
+      insertQueuedMessage(db, { agentId, channel: "telegram", chatId, person, sender: person, messagePreview: text, queuedAt: at })
+    q("coder", "anis", "c1", now - 3000, "the owner's follow-up")
+    q("coder", "sara", "c1", now - 2000, "mine first")
+    q("coder", "omar", "c1", now - 1000)
+    q("coder", "sara", "c1", now, "mine second")
+    q("coder", "omar", "c2", now - 500)
+    q("ops", "omar", "c9", now)
+    const line = queueOf(db, "sara", { linkFor: () => null })
+    expect(line.byAgent.get("coder")).toEqual({ waiting: 5, yours: 2, ahead: 1 })
+    expect(line.byAgent.get("ops")).toEqual({ waiting: 1, yours: 0, ahead: null })
+    expect(line.mine.map((m) => [m.messagePreview, m.ahead, m.where.label])).toEqual([["mine first", 1, "Telegram"], ["mine second", 3, "Telegram"]])
+    expect(JSON.stringify(line.mine)).not.toMatch(/follow-up|omar/)
+    const out = agentsOf(db, "sara", ["coder", "ops", "new"], { people: PEOPLE, queue: line.byAgent })
+    expect(out.map((c) => c.queue)).toEqual([{ waiting: 5, yours: 2, ahead: 1 }, { waiting: 1, yours: 0, ahead: null }, { waiting: 0, yours: 0, ahead: null }])
   })
 
   it("a running turn wins over an older finished one; an agent that never ran is free", () => {
@@ -154,15 +187,28 @@ describe("the words", () => {
   })
 
   it("of a card", () => {
-    expect(agentLine({ state: "working", by: "you", text: "fix it" })).toMatchObject({ label: "Working", what: "fix it", by: "you" })
-    expect(agentLine({ state: "working", by: "owner", text: null })).toMatchObject({ what: "Busy with someone else's task", by: "the owner" })
+    expect(agentLine({ state: "working", by: "you", text: "fix it" })).toMatchObject({ label: "Working", what: "fix it", by: "you", hint: "Busy. A new message waits in line until this ends." })
+    expect(agentLine({ state: "working", by: "owner", text: null })).toMatchObject({ what: "Busy with someone else's task", by: "the owner", hint: "A message you send now waits in line until this ends." })
+    expect(agentLine({ state: "working", by: "owner", text: "the owner's task" }).what).toBe("the owner's task")
     expect(agentLine({ state: "working", by: "other", text: null }).by).toBe("someone else")
     expect(agentLine({ state: "free", by: "you", text: "draft" })).toMatchObject({ label: "Free", what: "Finished: draft", hint: "Free. Ready for your next message." })
     expect(agentLine({ state: "free", by: "owner", text: null })).toMatchObject({ what: null, by: null })
     expect(agentLine({ state: "blocked", by: "you", text: "export" })).toMatchObject({ label: "Blocked", tone: "stuck", what: "Stopped on: export" })
   })
 
+  it("of the line behind a busy card", () => {
+    const hint = (by: string, queue: { waiting: number; yours: number; ahead: number | null }) => agentLine({ state: "working", by, text: null, queue }).hint
+    expect(hint("owner", { waiting: 1, yours: 1, ahead: 0 })).toBe("Your message is in line: it runs when this ends.")
+    expect(hint("you", { waiting: 3, yours: 1, ahead: 2 })).toBe("Your message is in line, 2 messages ahead of it.")
+    expect(hint("owner", { waiting: 2, yours: 2, ahead: 0 })).toBe("2 messages of yours are in line: the first runs when this ends.")
+    expect(hint("owner", { waiting: 3, yours: 2, ahead: 1 })).toBe("2 messages of yours are in line, 1 message ahead of the first.")
+    expect(hint("owner", { waiting: 1, yours: 0, ahead: null })).toBe("1 message waits in line. A new one from you waits behind it.")
+    expect(hint("you", { waiting: 2, yours: 0, ahead: null })).toBe("2 messages wait in line. A new one from you waits behind them.")
+    expect(hint("you", { waiting: 0, yours: 0, ahead: null })).toBe("Busy. A new message waits in line until this ends.")
+  })
+
   it("of a sent row, the request first", () => {
+    expect(sentState({ status: "queued" })).toEqual({ label: "In line", tone: "wait" })
     expect(sentState({ status: "in-flight" }).label).toBe("Running")
     expect(sentState({ status: "in-flight", request: { state: "waiting_owner" } }).label).toBe("Waiting on the owner")
     expect(sentState({ status: "ok" }).label).toBe("Finished")
