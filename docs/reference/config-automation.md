@@ -169,6 +169,7 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.maxExpiryDays` | number (up to 365) | `30` | The longest any card may wait. |
 | `approvals.laterHours` | number (up to 720) | `24` | Hours **Later** hides an item. |
 | `approvals.notifyAgent` | boolean | `true` | Tells the agent that raised a card when it is decided or expires. |
+| `approvals.forwardTo` | string | — | The name of a machine in `mesh.peers` whose inbox and popup take the cards agents on this machine raise. The answer comes back to the agent here. Unset: cards stay on this machine. See [Agents on another machine](/dashboard/approvals#agents-on-another-machine). |
 | `approvals.digest` | object | `{}` | One reminder a day of what is waiting. |
 | `approvals.digest.enabled` | boolean | `true` | Sends the daily reminder. |
 | `approvals.digest.time` | string | `"09:00"` | Time of day, 24-hour `HH:MM`. |
@@ -211,7 +212,7 @@ An open request that fails, times out, is cut off and not picked up again, or ha
 
 Who counts as you on this computer's own surfaces (voice, the phone app, the dashboard) is proven, not declared: the daemon marks the turns it starts itself, and the dashboard presents the key in `.agentx/operator.key` for the phone app. The daemon creates that file next to `agentx.json` at start, readable by your user only. A call to `POST /task` that names one of those channels without the key runs as an ordinary turn and is not recorded as your request. When the phone app talks to an agent on another computer, the computer it is paired with checks its own key on the forward and tells the other one the turn is yours; that other computer believes it only from a request that carries one of its `mesh.peers[].token` values and comes from another machine, never from a caller on the same machine or a bare header. A computer you let vouch is trusted for more than the list: the turn is yours for [people limits](/jobs/people) too. When the whole mesh shares one token, every computer in it can vouch, so share a token only between computers you own.
 
-While requests are on, the daemon adds its own tool server (`agentx serve --stdio`) to every agent's `.mcp.json` at start, as `agentx`, so each agent can close its requests with the `agentx_request` tool. An `agentx` entry you declared in the agent's `mcp` block, or a `.mcp.json` you wrote by hand, wins.
+While requests are on, the daemon adds its own tool server (`agentx serve --stdio`) to every agent's `.mcp.json` at start, as `agentx`, so each agent can close its requests with the `agentx_request` tool. An `agentx` entry you declared in the agent's `mcp` block, or a `.mcp.json` you wrote by hand, wins. Agents on a `claude-code` engine do not depend on that file: every session the daemon starts for them loads the `agentx` tool server through its own start flags, so the `agentx_request` and `agentx_approval` tools are there whether or not requests are on.
 
 How to see, close and drop requests, step by step: [Keep track of what you asked for](/jobs/open-requests).
 

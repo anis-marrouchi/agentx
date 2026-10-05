@@ -15,6 +15,10 @@ import { listInbox, type InboxContext } from "./inbox"
 //
 // The daemon gates /approvals like agent memory: loopback, or a mesh token
 // (mesh-auth.ts isMeshGatedPath).
+//
+// A card may also come from another node of the mesh (forward.ts, #668):
+// its body names that node, `raised_by` is an agent there, and the card
+// is kept here with `node` set so the result finds its way back.
 
 export const LIST_LIMIT = 100
 
@@ -26,6 +30,9 @@ export interface ApprovalsApiDeps {
   settings: CardSettings
   /** True when the agent exists on this node. */
   hasAgent: (agentId: string) => boolean
+  /** True when `node` names a mesh peer of this node, so a card raised by
+   *  an agent there may be kept here (forward.ts). Unset: never. */
+  hasPeer?: (node: string) => boolean
   /** Start a check-in pass in the background (checkin.ts). */
   runCheckin?: (kind: "daily" | "check") => void
 }
@@ -60,10 +67,19 @@ export function handleApprovalsApi(
     if (m === "POST") {
       const input = body ?? {}
       const raisedBy = typeof input.raised_by === "string" ? input.raised_by.trim() : ""
-      if (raisedBy && !deps.hasAgent(raisedBy)) {
-        return { status: 400, body: { error: `unknown agent "${raisedBy}": raised_by must be an agent on this node` } }
+      // A card from another node names it; the name must be a peer of ours.
+      // A local agent's card never carries one, whatever the body says.
+      const from = typeof input.node === "string" ? input.node.trim() : ""
+      const node = from && !deps.hasAgent(raisedBy) && deps.hasPeer?.(from) ? from : undefined
+      if (raisedBy && !deps.hasAgent(raisedBy) && !node) {
+        return {
+          status: 400,
+          body: { error: from
+            ? `unknown node "${from}": node must be one of this node's mesh peers`
+            : `unknown agent "${raisedBy}": raised_by must be an agent on this node` },
+        }
       }
-      const r = createCard(deps.ctx.root, input, { now: deps.ctx.now, settings: deps.settings })
+      const r = createCard(deps.ctx.root, input, { now: deps.ctx.now, settings: deps.settings, node })
       if (!r.ok) return { status: 400, body: { error: r.error } }
       return { status: 201, body: { card: r.card } }
     }

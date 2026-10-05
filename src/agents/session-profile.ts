@@ -22,6 +22,12 @@ import { agentxToolServer, type McpServerConfig, type McpServerMap } from "./age
 // Chat channels (telegram, whatsapp, voice, dashboard …) keep the `full`
 // start; only the channels listed in `session.profileByChannel`, or in
 // DEFAULT_LEAN_CHANNELS when unlisted, are lean.
+//
+// A full claude-code session gets one flag of its own (#668): `--mcp-config`
+// with this install's agentx tool server, on top of whatever the user and
+// the workspace load. Without it the tools (agentx_approval among them)
+// depended on the workspace .mcp.json being both written and approved,
+// which a node with no user-level MCP servers never had.
 
 export type SessionProfileName = "full" | "lean"
 
@@ -147,6 +153,19 @@ export function leanClaudeArgs(
   const tools = leanTools(lean, channel)
   if (tools.length) args.push("--tools", tools.join(","))
   return args
+}
+
+/** Flags appended to a full `claude` spawn: this install's agentx tool
+ *  server, added to the user-level and workspace MCP servers rather than
+ *  replacing them (no `--strict-mcp-config`). An `agentx` entry the
+ *  operator declared in the workspace .mcp.json wins, as in lean sessions.
+ *  Resumed sessions carry it too: the flag describes the process. */
+export function fullClaudeArgs(
+  workspace: string,
+  agentx: McpServerConfig = agentxToolServer(),
+): string[] {
+  const declared = readWorkspaceMcp(workspace)
+  return ["--mcp-config", JSON.stringify({ mcpServers: { agentx: declared.agentx ?? agentx } })]
 }
 
 /** The one line a lean prompt carries in place of the landscape, the chat

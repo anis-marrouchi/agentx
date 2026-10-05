@@ -33,6 +33,8 @@ Don't make the daemon reachable from the public internet just to get pairing wor
 2. **Browser:** open the **Operations** tab. Both machines appear. See [Operations](../dashboard/operations.md).
 3. Send a small test task to an agent on the other machine: see [Agent-to-agent (A2A)](../reference/a2a.md).
 
+Agents on the second machine sometimes need your yes or no. If your screen is on the first machine, tell the second one to send its decision cards there: see [Approvals › Agents on another machine](../dashboard/approvals.md#agents-on-another-machine).
+
 ## If something is wrong
 
 - **`join` says it could not reach the peer:** the second machine can't reach the first machine's address. Check the address in the invite, the network and any firewall.

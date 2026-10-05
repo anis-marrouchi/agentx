@@ -450,6 +450,7 @@ Show or change expiry, "later" and digest settings (approvals in agentx.json).
 | `--max-expiry-days <n>` | — | Longest a card may wait. |
 | `--later-hours <n>` | — | How long `later` hides an item. |
 | `--notify-agent <on\|off>` | — | Tell the agent that raised a card its result. |
+| `--forward-to <peer>` | — | Send this machine's cards to that mesh peer's inbox and popup; "none" to keep them here. |
 | `--digest <on\|off>` | — | The daily message about what is waiting. |
 | `--digest-time <HH:MM>` | — | When the digest goes out, 24-hour local time. |
 | `--digest-timezone <zone>` | — | IANA timezone for --digest-time; "local" for this machine's. |

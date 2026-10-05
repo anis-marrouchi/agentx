@@ -1125,6 +1125,10 @@ export const approvalsConfigSchema = z.object({
   laterHours: z.number().positive().max(24 * 30).default(24),
   /** Tell the agent that raised a card when it is decided or expires. */
   notifyAgent: z.boolean().default(true),
+  /** The mesh peer (`mesh.peers[].name`) whose inbox and popup take the
+   *  cards agents on this node raise (#668). The result comes back here
+   *  and reaches the agent. Unset: cards stay on this node. */
+  forwardTo: z.string().min(1).optional(),
   /** At most one message a day: how many are waiting, and the most urgent. */
   digest: z.object({
     enabled: z.boolean().default(true),

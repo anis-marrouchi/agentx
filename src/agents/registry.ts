@@ -51,7 +51,7 @@ import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
-import { describeProfile, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
+import { describeProfile, fullClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
@@ -2564,11 +2564,14 @@ export class AgentRegistry {
     const routedModel = await routedModelPending
 
     // Lean claude-code sessions also start the CLI with only the agentx MCP
-    // server and the project's settings (#615). The flags describe the
+    // server and the project's settings (#615); full ones add the agentx
+    // server to what they load anyway (#668). The flags describe the
     // process, so a resumed session carries them too.
-    const claudeArgs = sessionProfile === "lean" && state.def.tier === "claude-code"
-      ? leanClaudeArgs(state.def.workspace, lean, undefined, channel)
-      : undefined
+    const claudeArgs = state.def.tier !== "claude-code"
+      ? undefined
+      : sessionProfile === "lean"
+        ? leanClaudeArgs(state.def.workspace, lean, undefined, channel)
+        : fullClaudeArgs(state.def.workspace)
     if (sessionProfile === "lean" && !resumeSessionId) {
       this.log(`[${task.agentId}] session profile for ${channel}: ${describeProfile(sessionProfile, lean, channel)}`)
     }
