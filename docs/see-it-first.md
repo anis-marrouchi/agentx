@@ -2,18 +2,20 @@
 
 The demo shows AgentX passing a task from one agent to an agent on another machine. It runs three AgentX daemons (background services) on your own computer and needs no model account: the network connection, routing and records are real, but **the model replies are scripted**, so nothing calls a paid model. It doesn't touch your real agents or credentials.
 
-You need a copy of the AgentX source code that has been built, and Node.js 22. See [Install › Run from source](./install.md#run-from-source) for how to get one.
+You need Node.js 22.19 or newer, up to 26. Nothing else: no download of the source code, no account and no API key. See [Before you start](./requirements.md#option-b-run-from-source) if Node.js isn't installed yet.
 
 ## Run the demo
 
-1. **Terminal:** go to the folder with the AgentX source code.
-2. **Terminal:** start the demo:
+1. **Terminal:** start the demo:
    ```sh
-   node dist/cli.js demo
+   npx agentix-cli demo
    ```
-3. Wait for the line `Dashboard: http://127.0.0.1:18931/live`. The demo opens it in your browser. On a machine with no browser, such as a server, it prints `Couldn't open a browser. Visit http://127.0.0.1:18931/live` and carries on.
-4. **Browser:** watch the **Live** tab. The task moves from one machine to another.
-5. **Terminal:** press Enter to play the scenario again, or Ctrl-C to stop the demo.
+   The first run downloads the AgentX package, which takes a minute or two. The demo writes its files to a folder called `.agentx-demo` in the folder you ran it from.
+2. Wait for the line `Dashboard: http://127.0.0.1:18931/live`. The demo opens it in your browser. On a machine with no browser, such as a server, it prints `Couldn't open a browser. Visit http://127.0.0.1:18931/live` and carries on.
+3. **Browser:** watch the **Live** tab. The task moves from one machine to another.
+4. **Terminal:** press Enter to play the scenario again, or Ctrl-C to stop the demo.
+
+If you already have a built copy of the source code (see [Install › Run from source](./install.md#run-from-source)), `node dist/cli.js demo` in that folder does the same.
 
 ![Three local demo nodes in Live](/screenshots/live.png)
 
@@ -27,7 +29,7 @@ The demo is a tour of routing, not a filled-in copy of a business, so some dashb
 
 ## See a filled-in demo
 
-The filled-in demo is the one used for the screenshots on this site. It adds made-up reviews, switched-off schedules and two switched-off workflows. It never connects a real channel.
+The filled-in demo is the one used for the screenshots on this site. It adds made-up reviews, switched-off schedules and two switched-off workflows. It never connects a real channel. Unlike the plain demo, it needs a built copy of the source code: see [Install › Run from source](./install.md#run-from-source).
 
 1. **Terminal:** in the AgentX source folder, start the demo and leave it running:
    ```sh
@@ -67,7 +69,8 @@ Next: [follow the annotated workflow walkthrough](tutorials/first-workflow.md), 
 
 ## If something is wrong
 
-- **`Cannot find module … dist/cli.js`:** the source hasn't been built. Run `pnpm install`, then `pnpm build`.
-- **The demo won't start because a port is busy:** another demo is already running, perhaps in another terminal. Stop that one with Ctrl-C, or start this one elsewhere with `node dist/cli.js demo --base-port 19021` (the dashboard is then on the base port plus 10).
+- **`npx` asks `Need to install the following packages: agentix-cli`:** answer `y`. It's the download mentioned in step 1.
+- **`Cannot find module … dist/cli.js`:** you ran the source version and the source hasn't been built. Run `pnpm install`, then `pnpm build`. Or use `npx agentix-cli demo`, which needs no build.
+- **The demo won't start because a port is busy:** another demo is already running, perhaps in another terminal. Stop that one with Ctrl-C, or start this one elsewhere with `npx agentix-cli demo --base-port 19021` (the dashboard is then on the base port plus 10).
 - **`AgentX needs Node.js 22.19 or newer, up to 26`:** the command stopped because this Node.js is too old or too new. Install Node.js 22, check with `node --version`, and run it again.
 - **The Docker demo shows old data:** run `docker compose -f docker-compose.demo.yml down -v` to start fresh.

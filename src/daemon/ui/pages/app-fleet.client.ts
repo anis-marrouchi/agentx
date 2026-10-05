@@ -228,11 +228,13 @@ export const APP_FLEET_SCRIPT = `
       path: '/api/app/tasks/followup', body: function (text) { return { node: t.node, taskId: t.taskId, message: text }; }, done: function () { return 'Follow-up queued.'; } });
   });
 
-  var loading = false;
+  var loading = false, again = 0;
   function visible(panel) { return !panel.hidden && document.visibilityState === 'visible'; }
   function refresh() {
     // Never redraw under an open sheet: the rows it refers to would move.
     if (loading || sheet.open) return;
+    // Nor under a finger pulling the next tab in: the redraw would end the swipe.
+    if (document.querySelector('main.sw-on')) { clearTimeout(again); again = setTimeout(refresh, 300); return; }
     var q = '?timezone=' + encodeURIComponent(tz);
     var jobs = [];
     loading = true;
