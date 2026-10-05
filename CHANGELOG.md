@@ -2,6 +2,25 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.111.0](https://github.com/anis-marrouchi/agentx/compare/v0.110.1...v0.111.0) (2026-10-05)
+
+
+### Features
+
+* **app:** finish the phone redesign: swipe fix, pairing palette, reproducible screenshots ([#488](https://github.com/anis-marrouchi/agentx/issues/488)) ([#662](https://github.com/anis-marrouchi/agentx/issues/662)) ([76d362e](https://github.com/anis-marrouchi/agentx/commit/76d362e20d7d4dbf6b20de628fef46ff7e9e82b1))
+* **members:** count the line ahead of a teammate's message and show a busy agent's task ([#443](https://github.com/anis-marrouchi/agentx/issues/443)) ([#657](https://github.com/anis-marrouchi/agentx/issues/657)) ([75d2a0d](https://github.com/anis-marrouchi/agentx/commit/75d2a0d2314fab304a5d7bc11ee7092d8aabeaa7))
+* **people:** `agentx people invite` ends with a message to forward ([#659](https://github.com/anis-marrouchi/agentx/issues/659)) ([#665](https://github.com/anis-marrouchi/agentx/issues/665)) ([a5f43be](https://github.com/anis-marrouchi/agentx/commit/a5f43be75832f8449168380b0570a8db4119cdc8))
+* **people:** client role and a "Your project" page of their own ([#658](https://github.com/anis-marrouchi/agentx/issues/658)) ([9f49e05](https://github.com/anis-marrouchi/agentx/commit/9f49e0552c153f522024de20a637c29bfec2b9b6)), closes [#453](https://github.com/anis-marrouchi/agentx/issues/453)
+* **session:** pack file reads in ObservationPack by default ([#621](https://github.com/anis-marrouchi/agentx/issues/621)) ([#654](https://github.com/anis-marrouchi/agentx/issues/654)) ([9f39ef0](https://github.com/anis-marrouchi/agentx/commit/9f39ef0cf6f008107f2ade8e65687e512e2f1770))
+* **voice:** `agentx voice lessons` grades a hands-free lesson from the daemon log ([#500](https://github.com/anis-marrouchi/agentx/issues/500)) ([#651](https://github.com/anis-marrouchi/agentx/issues/651)) ([8e621b7](https://github.com/anis-marrouchi/agentx/commit/8e621b7da288c055ab0fd117335dae651bf12734))
+* **voice:** the reduced pill goes back by itself, and the character reduces too ([#457](https://github.com/anis-marrouchi/agentx/issues/457)) ([#656](https://github.com/anis-marrouchi/agentx/issues/656)) ([f8b7849](https://github.com/anis-marrouchi/agentx/commit/f8b78494e180202afefe834ff481e892d30757a4))
+
+
+### Bug Fixes
+
+* **approvals:** remote-node agents reach the operator's popup ([#668](https://github.com/anis-marrouchi/agentx/issues/668)) ([#670](https://github.com/anis-marrouchi/agentx/issues/670)) ([e022b01](https://github.com/anis-marrouchi/agentx/commit/e022b01516ad038eec427d4da8f9884053200316))
+* **backtest:** drop zero-cost workflow rows, read agentx.json via --config, fix /traces port ([#655](https://github.com/anis-marrouchi/agentx/issues/655)) ([8eea6b5](https://github.com/anis-marrouchi/agentx/commit/8eea6b52f01919c452a48c704d946bb45b0f52f5))
+
 ## [0.110.1](https://github.com/anis-marrouchi/agentx/compare/v0.110.0...v0.110.1) (2026-10-04)
 
 
