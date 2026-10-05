@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -24,6 +26,7 @@ class _View {
   String? base;
   bool on = false;
   Access access = Access.none;
+  bool notifications = true;
   List<String> names = const [];
   DateTime? lastSync;
   String? error;
@@ -59,6 +62,7 @@ class _PlacesScreenState extends State<PlacesScreen> with WidgetsBindingObserver
       ..base = await _prefs.baseUrl
       ..on = await _prefs.placesOn
       ..access = await widget.sync.fences.access()
+      ..notifications = await _notificationsAllowed()
       ..names = await _prefs.placeNames
       ..lastSync = await _prefs.lastSyncAt
       ..error = await _prefs.lastError;
@@ -81,9 +85,15 @@ class _PlacesScreenState extends State<PlacesScreen> with WidgetsBindingObserver
       if (!await _ask('Allow location all the time', Messages.backgroundAsk)) return _denied(Messages.deniedBackground);
       if (!await Permission.locationAlways.request().isGranted) return _denied(Messages.deniedBackground);
     }
+    // Reminders arrive as the phone app's notifications, which Chrome shows
+    // under this app's name (Android 13+ asks for it). Not needed to watch
+    // places, so a refusal is only shown on the screen.
+    if (Platform.isAndroid) await Permission.notification.request();
     await _prefs.setPlacesOn(true);
     await _check();
   }
+
+  Future<bool> _notificationsAllowed() async => !Platform.isAndroid || await Permission.notification.isGranted;
 
   Future<void> _turnOff() async {
     await _prefs.setPlacesOn(false);
@@ -162,6 +172,7 @@ class _PlacesScreenState extends State<PlacesScreen> with WidgetsBindingObserver
                 onChanged: (on) => on ? _turnOn() : _turnOff(),
               ),
               Text('Location: ${_accessText(v.access)}'),
+              Text('Notifications: ${v.notifications ? 'allowed' : 'not allowed. Allow them, or reminders may not show.'}'),
               const SizedBox(height: 12),
               if (!v.on)
                 const Text(Messages.placesOff)
