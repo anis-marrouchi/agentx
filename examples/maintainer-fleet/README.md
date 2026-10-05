@@ -21,9 +21,9 @@ mkdir -p workspaces/{triage,repro}
 agentx daemon start
 ```
 
-Point your repos' webhooks (issues, issue_comment, pull_request) at the daemon — see [journey ch. 5](../../docs/journey/05-hooks-webhooks.md) for the receiver + signing setup.
+Point your repos' webhooks (issues, issue_comment, pull_request) at the daemon — see the [GitHub channel settings](../../docs/reference/config-channels.md#github) for the receiver + signing setup.
 
 ## Grow it
 
-- Run @repro on a beefier machine and mesh it in ([mesh federation](../../docs/journey/08-mesh-federation.md))
-- Let triage knowledge compound into a wiki (known flaky tests, common misconfigs) ([shared wiki](../../docs/journey/06-shared-wiki.md))
+- Run @repro on a beefier machine and mesh it in ([add a second machine](../../docs/jobs/second-machine.md))
+- Let triage knowledge compound into a wiki (known flaky tests, common misconfigs) ([approve lessons for the shared wiki](../../docs/jobs/agent-memory.md#7-approve-the-lessons-proposed-for-the-shared-wiki))

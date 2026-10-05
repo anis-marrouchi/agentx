@@ -24,6 +24,6 @@ agentx daemon start
 
 ## Grow it
 
-- Move a client's agent to a dedicated node and mesh it in ([mesh federation](../../docs/journey/08-mesh-federation.md))
-- Kanban per client with two-way GitLab sync ([boards](../../docs/reference/boards.md))
-- Time-bound scoped API tokens for client-side integrations ([tokens](../../docs/reference/tokens.md))
+- Move a client's agent to a dedicated node and mesh it in ([add a second machine](../../docs/jobs/second-machine.md))
+- Kanban per client with two-way GitLab sync ([boards settings](../../docs/reference/config-operations.md#boards))
+- Time-bound scoped API tokens for client-side integrations ([create an access token](../../docs/dashboard/settings.md#create-an-access-token))
