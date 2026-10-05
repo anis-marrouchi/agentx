@@ -6,7 +6,7 @@
 
 | I want to… | What I need | Start here |
 |---|---|---|
-| Explore without a model account | A source installation; the demo uses scripted replies | [Source setup](#option-b-run-from-source), then [demo](see-it-first.md) |
+| Explore without a model account | Node.js 22 only; `npx agentix-cli demo` uses scripted replies | [Demo](see-it-first.md) |
 | Run agents and use the browser dashboard | Docker **or** Node.js; a model connection | [Core setup](#core-setup) |
 | Chat inside the dashboard | Running dashboard, daemon, and configured agent | [In-page chat](dashboard/chat.md) |
 | Use the OpenCode terminal interface | Core setup + OpenCode v2 or newer | [Terminal setup](#terminal-interface) |

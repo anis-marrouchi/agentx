@@ -34,6 +34,7 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `intent-path` | Which intent-graph category, then which verb within it, does this message belong to? Replaces the model call the classifier makes on a cache miss. |
 | `task-tier` | Does this task need the strongest model, or would a cheaper one do? Steers model routing when `active` and `decisions.routing` names a cheap model. |
 | `wake-gate` | Does this event need an agent run at all? Not yet asked on the live path; replayed on recorded runs by the [backtest](./jev-backtest.md). |
+| `tool-set` | Which set of built-in tools does a new Claude Code session need: read-only, change code, or everything? Shadow only: it records, the session still gets every tool. See [Tool set](#tool-set). |
 
 More seats exist in `src/decisions/seats/`; the table lists the ones this page refers to.
 
@@ -135,6 +136,35 @@ An active gate replaces the legacy Haiku context-planner call. When the gate is 
 ### Desktop model guarantee
 
 Desktop requests arriving through `/ask` use the `voice` channel. Both `voice` and `desktop` requests are excluded from automatic cheap-model routing, even for greetings, short confirmations, and cold sessions. They also skip the legacy Haiku context planner. Jev may still perform typed context decisions; the main response and computer-use task stay on the assigned agent's configured model. This preserves that configured model rather than selecting a hard-coded premium model; provider failures do not authorize a downgrade.
+
+## Tool set
+
+A Claude Code session carries a description of every built-in tool it may use, about 14,000 tokens of its first message, and re-reads them on every later step. A task that only reads and answers does not need the tools that edit files or run commands. The `tool-set` seat asks, for each new `claude-code` session, which of three sets the task needs:
+
+| Set | Built-in tools |
+|---|---|
+| `answer` | Read, Grep, Glob |
+| `code` | those, plus Edit, MultiEdit, Write, Bash |
+| `full` | every tool, as today |
+
+Only shadow mode exists: the seat records what it would choose, and the session still starts with every tool. A message never waits for it: the question is asked alongside the run, not before it.
+
+When the run ends, AgentX records the smallest set that covered the tools the run actually used, so every recorded decision is graded without a person. Runs that end in an error, and runs that report no tool calls (one-shot runs that do not stream), are not graded.
+
+To try it:
+
+1. Merge this into `agentx.json`:
+   ```json
+   { "decisions": { "enabled": true, "seats": { "tool-set": { "mode": "shadow", "backend": "typesafe" } } } }
+   ```
+2. **Terminal:** restart the daemon with `agentx daemon stop`, then `agentx daemon start --detach`.
+3. After a few days, **Terminal**, in a copy of the AgentX source code, from the daemon's folder:
+   ```sh
+   pnpm exec tsx /path/to/agentx/scripts/tool-set-report.ts --since 7d
+   ```
+   It prints how many new sessions would have started with fewer tools, and how many of those would have been missing a tool the run used (a "miss"). The daemon log also has one `tool-set shadow:` line per graded run, ending in `MISS` for a miss.
+
+A wrong choice in a future active mode would stop an agent in the middle of its task, so the miss rate decides whether this ever goes further than shadow.
 
 ## Check it worked
 

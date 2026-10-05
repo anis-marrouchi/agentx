@@ -214,6 +214,22 @@ export interface SeatResult<Q extends Questions> {
  *  owns the policy: askSeat cannot know whether its caller acted. Silent
  *  no-op when there is no store or no call id, like every other recording
  *  path here — observability never breaks the thing it observes. */
+/** Attach a ground-truth label to a recorded call. Same contract as
+ *  recordSeatOutcome: never throws, a no-op without a store or a call id. */
+export function labelSeatCall(
+  callId: string | null,
+  question: string,
+  value: string | number,
+  opts: { kind?: "human" | "outcome" | "replay"; labeledBy?: string; note?: string } = {},
+): void {
+  if (!callId || !runtime.store) return
+  try {
+    runtime.store.label(callId, question, value, opts)
+  } catch {
+    /* observability never breaks the caller */
+  }
+}
+
 export function recordSeatOutcome(
   callId: string | null,
   action: DecisionAction,

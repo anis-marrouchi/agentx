@@ -3,15 +3,25 @@
 // reports what they WOULD have decided. Changes no runtime behaviour: no
 // run is blocked, skipped or downgraded by anything in this file.
 //
-// Run with:
-//   curl -s "http://127.0.0.1:4202/traces?since=<msEpoch>&limit=1000" > traces.json
+// Run with (the daemon serves /traces on node.bind, 18800 by default):
+//   curl -s "http://127.0.0.1:18800/traces?since=<msEpoch>&limit=1000" > traces.json
 //   pnpm exec tsx scripts/backtest-jev.ts --traces traces.json
 //   pnpm exec tsx scripts/backtest-jev.ts --traces traces.json --backend typesafe --skip-below 0.1
+//   pnpm exec tsx scripts/backtest-jev.ts --traces traces.json --config ~/agentx/agentx.json
 //
-// Reads agentx.json from the current directory for the decision backends,
-// their keys (.env) and each agent's model; falls back to the built-in
-// defaults without one (then --backend is required, and a seat that needs
-// a key reads it from its key file or the environment).
+// Run it from the source checkout that holds this file: the imports below
+// use the "@/" alias from tsconfig.json, which tsx resolves only from the
+// folder it starts in. Reads agentx.json from that folder, or from --config
+// when the configuration lives elsewhere (a worktree, say), for the decision
+// backends, their keys (.env next to agentx.json) and each agent's model;
+// falls back to the built-in defaults without one (then --backend is
+// required, and a seat that needs a key reads it from its key file or the
+// environment).
+//
+// Zero-cost workflow rows (the dispatcher's own step traces, which never
+// ran an agent) are left out before any seat is asked and counted in the
+// report. Skipping them would save nothing, and counting them as skips
+// overstated the gate's share (#626).
 //
 // Output, under --out (default .agentx/reports/jev-backtest/):
 //   report.json   every number the table shows, plus the threshold sweep
@@ -23,17 +33,20 @@
 // daemon's decision store — a backtest must not pollute the calibration
 // rows of the live seats.
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
-import { resolve } from "path"
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "fs"
+import { homedir } from "os"
+import { dirname, resolve } from "path"
 import { configureDecisions, registerBuiltinDecisionBackends, DecisionStore } from "../src/decisions"
 import { seatEnvVar } from "../src/decisions/seat"
 import { WAKE_GATE_SEAT, SKIP_BELOW } from "../src/decisions/seats/wake-gate"
 import { TASK_TIER_SEAT } from "../src/decisions/seats/task-tier"
 import { DOWNGRADE_BELOW, cheapModelForEngine } from "../src/agents/routing"
 import { loadPricingWithOverrides } from "../src/daemon/token-tracker"
+import { loadEnvFileIntoProcess } from "../src/utils/workspace-env"
 import {
   buildReport,
   decideTraces,
+  dropZeroCostWorkflowRows,
   parseTraceExport,
   renderReport,
   sampleRows,
@@ -48,6 +61,28 @@ import {
 const DEFAULT_OUT = ".agentx/reports/jev-backtest"
 const DEFAULT_CHEAP_MODEL = "claude-haiku-4-5"
 const DEFAULT_MODEL = "claude-opus-5"
+const PRICING_OVERRIDES = ".agentx/pricing/custom.json"
+
+/**
+ * Where agentx.json lives, and so where .env, .agentx/pricing/custom.json
+ * and the default report folder are looked up. Without --config that is the
+ * current folder, as before. --config may name the file or its folder; a
+ * folder is searched the way the daemon searches (agentx.json, then
+ * .agentx/config.json).
+ */
+function resolveConfigHome(arg: string | undefined): { home: string; configPath: string | undefined } {
+  if (!arg) return { home: process.cwd(), configPath: undefined }
+  const expanded = arg === "~" || arg.startsWith("~/") ? resolve(homedir(), arg.slice(2)) : arg
+  const p = resolve(process.cwd(), expanded)
+  if (existsSync(p) && statSync(p).isDirectory()) {
+    const candidates = [resolve(p, "agentx.json"), resolve(p, ".agentx/config.json")]
+    const found = candidates.find((c) => existsSync(c))
+    // Hand the first candidate on when none exists, so loadDaemonConfig
+    // names the file it looked for in its error.
+    return { home: p, configPath: found ?? candidates[0] }
+  }
+  return { home: dirname(p), configPath: p }
+}
 
 function parseArgs(argv: string[]) {
   const get = (name: string, fallback?: string): string | undefined => {
@@ -70,8 +105,9 @@ function parseArgs(argv: string[]) {
   return {
     help: argv.includes("--help") || argv.includes("-h"),
     traces: get("traces"),
+    config: get("config"),
     backend: get("backend"),
-    out: get("out", DEFAULT_OUT)!,
+    out: get("out"),
     skipBelow: number("skip-below", SKIP_BELOW),
     downgradeBelow: number("downgrade-below", DOWNGRADE_BELOW),
     sweep: list("sweep")?.map(Number) ?? DEFAULT_SWEEP,
@@ -102,10 +138,14 @@ Backtest the Jev wake gate and model tier on an export of GET /traces.
   pnpm exec tsx scripts/backtest-jev.ts --traces <file> [options]
 
   --traces <file>            JSON from GET /traces (required)
+  --config <path>            agentx.json, or the folder that holds it (default: the
+                             current folder). Its .env and ${PRICING_OVERRIDES}
+                             are read from the same folder.
   --backend <name>           decision backend: jev, typesafe, local, simple-jev, mock
                              (default: the wake-gate seat's backend in agentx.json,
                              else decisions.defaultBackend, else jev)
-  --out <dir>                where report.json and sample.csv go (${DEFAULT_OUT})
+  --out <dir>                where report.json and sample.csv go
+                             (default: ${DEFAULT_OUT} under the agentx.json folder)
   --skip-below <p>           gate skips when P(needs run) <= p (${SKIP_BELOW})
   --downgrade-below <p>      tier downgrades when P(needs flagship) < p (${DOWNGRADE_BELOW})
   --sweep <p,p,...>          thresholds to replay the answers at (${DEFAULT_SWEEP.join(",")})
@@ -137,12 +177,28 @@ async function main() {
   }
 
   // --- config: backends, keys, agent models, cheap model ---------------
+  //
+  // Paths the person typed (--traces, --prices, --out) are relative to
+  // where they typed them; what belongs to the installation (.env, pricing
+  // overrides, the default report folder) is relative to agentx.json.
+  const { home, configPath } = resolveConfigHome(args.config)
+  const outDir = args.out ? resolve(process.cwd(), args.out) : resolve(home, DEFAULT_OUT)
+  // Without --config, loadDaemonConfig searches the current folder itself;
+  // this is the same search, for the "config" line below.
+  const configRead =
+    configPath ?? [resolve(home, "agentx.json"), resolve(home, ".agentx/config.json")].find((p) => existsSync(p))
   let config: any = null
   try {
+    // loadDaemonConfig reads .env from the current folder only; with
+    // --config the keys sit next to agentx.json instead.
+    if (home !== process.cwd()) loadEnvFileIntoProcess(resolve(home, ".env"))
     const { loadDaemonConfig } = await import("../src/daemon/config")
-    config = loadDaemonConfig()
+    config = loadDaemonConfig(configPath)
   } catch (e: unknown) {
-    console.error(`[backtest] no agentx.json read (${(e as Error)?.message?.split("\n")[0]}); using built-in backend defaults`)
+    // The whole message: a validation failure lists the fields that are
+    // wrong on the lines after the first, and that is what the person needs.
+    const detail = String((e as Error)?.message ?? e).trim().replace(/\n/g, "\n           ")
+    console.error(`[backtest] no agentx.json read; using built-in backend defaults\n           ${detail}`)
   }
   const b = config?.decisions?.backends ?? {}
   registerBuiltinDecisionBackends(b.local, b.simpleJev, b.jev, b.typesafe)
@@ -170,8 +226,8 @@ async function main() {
   // _TASK_TIER=off (a sensible thing to have set) cannot silently empty the
   // tier column of this report.
   for (const seat of [WAKE_GATE_SEAT, TASK_TIER_SEAT]) delete process.env[seatEnvVar(seat)]
-  mkdirSync(resolve(process.cwd(), args.out), { recursive: true })
-  const store = args.record ? new DecisionStore({ path: resolve(process.cwd(), args.out, "decisions.sqlite") }) : null
+  mkdirSync(outDir, { recursive: true })
+  const store = args.record ? new DecisionStore({ path: resolve(outDir, "decisions.sqlite") }) : null
   configureDecisions({
     enabled: true,
     defaultBackend: backend,
@@ -190,15 +246,17 @@ async function main() {
     pricing = loadPricingWithOverrides(p)
     pricingSource = `built-in list prices merged with ${args.prices}`
   } else {
-    pricing = loadPricingWithOverrides()
-    pricingSource = existsSync(resolve(process.cwd(), ".agentx/pricing/custom.json"))
-      ? "built-in list prices merged with .agentx/pricing/custom.json"
+    const overrides = resolve(home, PRICING_OVERRIDES)
+    pricing = loadPricingWithOverrides(overrides)
+    pricingSource = existsSync(overrides)
+      ? `built-in list prices merged with ${PRICING_OVERRIDES}`
       : "built-in list prices (src/daemon/token-tracker.ts)"
   }
 
   // --- traces ------------------------------------------------------------
   const tracesPath = resolve(process.cwd(), args.traces!)
-  let traces = parseTraceExport(JSON.parse(readFileSync(tracesPath, "utf-8")))
+  const { kept, dropped } = dropZeroCostWorkflowRows(parseTraceExport(JSON.parse(readFileSync(tracesPath, "utf-8"))))
+  let traces = kept
   if (args.channels) traces = traces.filter((t) => args.channels!.includes(t.channel ?? "unknown"))
   if (args.agents) traces = traces.filter((t) => args.agents!.includes(t.agentId))
   if (args.limit) traces = traces.slice(0, args.limit)
@@ -208,6 +266,8 @@ async function main() {
   }
 
   console.error(`traces     ${traces.length} from ${args.traces}`)
+  if (dropped.length > 0) console.error(`left out   ${dropped.length} zero-cost workflow rows (no agent ran, nothing to save)`)
+  console.error(`config     ${config && configRead ? configRead : "none read"}`)
   console.error(`backend    ${backend}`)
   console.error(`cheap      ${cheapModel}`)
   console.error(`prices     ${pricingSource}`)
@@ -242,6 +302,7 @@ async function main() {
     cacheTtlMs: args.cacheTtlMs,
     proxy: args.proxy,
     sweep: args.sweep,
+    droppedZeroCostWorkflow: dropped.length,
   })
   const sample = sampleRows(verdicts, {
     skipBelow: args.skipBelow,
@@ -249,7 +310,6 @@ async function main() {
     perKind: args.sample,
   })
 
-  const outDir = resolve(process.cwd(), args.out)
   writeFileSync(resolve(outDir, "report.json"), JSON.stringify(report, null, 2))
   writeFileSync(resolve(outDir, "sample.csv"), toCsv(sample))
 

@@ -8,7 +8,7 @@ import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest, APP_COOKIE } from "../src/daemon/app-routes"
 import { appIconPng } from "../src/daemon/app-icon"
 import { exposedDashboardMounts } from "../src/commands/app"
-import { renderAppPage, renderAppPairPage, renderAppManifest, APP_SERVICE_WORKER } from "../src/daemon/ui/pages/app"
+import { renderAppPage, renderAppPairPage, renderAppLockedPage, renderAppManifest, APP_SERVICE_WORKER } from "../src/daemon/ui/pages/app"
 
 // A real server on 127.0.0.1: every request below is a loopback request,
 // which is exactly the case `tailscale serve` produces. None may get in
@@ -143,6 +143,17 @@ describe("page scripts parse", () => {
     expect(html).toContain("viewport-fit=cover")
     expect(html).toContain("env(safe-area-inset-bottom)")
     expect(html).toContain('id="theme"')
+  })
+
+  it("every phone page shares the approved palette, with readable blue text (#488)", () => {
+    for (const html of [renderAppPage(), renderAppPairPage(), renderAppLockedPage()]) {
+      // 5.13:1 on white and 6.4:1 on the dark ground; #2979FF would be 3.98:1.
+      expect(html).toContain("--ax-accent: #1f66e5")
+      expect(html).toContain("--ax-accent: #6aa0ff")
+    }
+    // The palette comes after the desktop tokens, so it wins.
+    const locked = renderAppLockedPage()
+    expect(locked.indexOf("--ax-accent: var(--ax-blue)")).toBeLessThan(locked.indexOf("--ax-accent: #1f66e5"))
   })
 })
 

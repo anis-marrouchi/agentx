@@ -2967,7 +2967,7 @@ Add a person.
 | Flag | Default | What it does |
 |---|---|---|
 | `--name <name>` | required | Their name. |
-| `--role <role>` | `member` | owner \| member \| guest. |
+| `--role <role>` | `member` | owner \| member \| client \| guest. A client is someone you do work for; their page is "Your project". |
 | `--identity <channel:id>` | — | A login, a Telegram id or a WhatsApp number (repeatable). |
 | `--agent <id>` | — | An agent this person may reach; repeat for several. None: every agent. Not for an owner. |
 
@@ -3003,7 +3003,7 @@ No flags.
 
 ### `agentx people invite <id>`
 
-A one-time code that pairs one of this person's machines with their own work page (`/member`). Refuses to run while `tailscale serve` publishes the whole dashboard. See [Invite a teammate to their work page](/jobs/members).
+A one-time code that pairs one of this person's machines with their own page (`/member`): **My work** for a teammate, **Your project** for a client. The output names the page the person gets. Refuses to run while `tailscale serve` publishes the whole dashboard. See [Invite a teammate to their work page](/jobs/members) and [Give a client a page of their own](/jobs/clients).
 
 | Flag | Description |
 |---|---|
@@ -3011,7 +3011,7 @@ A one-time code that pairs one of this person's machines with their own work pag
 
 ### `agentx people devices [id]`
 
-The machines paired to people's work pages: state, where from, first and last use. With an id, one person's machines.
+The machines paired to people's own pages (My work, Your project): state, where from, first and last use. With an id, one person's machines.
 
 | Flag | Description |
 |---|---|

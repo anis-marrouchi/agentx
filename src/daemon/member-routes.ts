@@ -8,7 +8,7 @@ import { appIconPng } from "./app-icon"
 import { MemberStore } from "@/members/store"
 import { clientAddress, memberAccess, pairMemberMachine } from "@/members/pairing"
 import { loadDaemonConfig } from "./config"
-import { workOf, type LinkFor } from "@/members/work"
+import { workOf, type LinkFor, type PersonWork, type SentItem, type WorkItem } from "@/members/work"
 import { agentIdsFor, agentsOf, type AgentCard } from "@/members/agents"
 import { queueOf, type QueuedItem, type QueueView } from "@/members/queue"
 import type { Person } from "@/people/people"
@@ -19,15 +19,21 @@ import {
   renderMemberPage,
   renderMemberWaitingPage,
 } from "./ui/pages/member"
+import { CLIENT_MANIFEST_PATH, renderClientManifest, renderClientPage } from "./ui/pages/client"
 
-// --- A teammate's page: /member and /api/member/* (#385, #386) ---
+// --- A teammate's or a client's page: /member and /api/member/* (#385, #386, #453) ---
 //
 // Served like the phone app (app-routes.ts): no loopback exemption, since
 // `tailscale serve` proxies from 127.0.0.1; only a machine's own key,
 // carrying `member:<person>`, opens anything here, and it opens this
 // person's own work and nothing else. An `app` key or a dashboard key is
-// refused the same as no key. The manifest, icons and service worker stay
+// refused the same as no key. The manifests, icons and service worker stay
 // public: they hold no data.
+//
+// The person's role picks the page (#453): a `member` gets "My work", a
+// `client` gets "Your project" (client.ts), which shows no agent ids and
+// no cards about the owner's agents, so /api/member/work sends a client
+// no agent cards.
 
 export const MEMBER_COOKIE = "agentx_member"
 const COOKIE_MAX_AGE = 90 * 86400
@@ -93,6 +99,7 @@ export async function handleMemberRequest(
 
   if (method === "GET") {
     if (path === "/member/manifest.webmanifest") return send(res, 200, "application/manifest+json", renderMemberManifest())
+    if (path === CLIENT_MANIFEST_PATH) return send(res, 200, "application/manifest+json", renderClientManifest())
     if (path === "/member/sw.js") {
       res.setHeader("Service-Worker-Allowed", "/member")
       return send(res, 200, "text/javascript; charset=utf-8", MEMBER_SERVICE_WORKER)
@@ -127,14 +134,15 @@ export async function handleMemberRequest(
   }
 
   const person = ctx.people().find((p) => p.id === access.personId)
+  const client = person?.role === "client"
   if (method === "GET" && path === "/member") {
     const c = cookie(req, MEMBER_COOKIE)
     if (c && !bearer(req)) res.setHeader("Set-Cookie", sessionCookie(c))
-    return send(res, 200, "text/html; charset=utf-8", renderMemberPage())
+    return send(res, 200, "text/html; charset=utf-8", client ? renderClientPage() : renderMemberPage())
   }
   if (method === "GET" && path === "/api/member/me") {
     return sendJson(res, 200, {
-      person: access.personId, name: person?.name ?? access.personId,
+      person: access.personId, name: person?.name ?? access.personId, role: person?.role ?? "member",
       device: access.device.name, since: access.device.approvedAt ?? access.device.createdAt,
       node: ctx.nodeName ?? null,
     })
@@ -152,8 +160,10 @@ export async function handleMemberRequest(
     // The messages waiting behind each of this person's agents, and their own among them (#443).
     let queue: { byAgent: Map<string, QueueView>; mine: QueuedItem[] } = { byAgent: new Map(), mine: [] }
     try { queue = queueOf(db, access.personId, { linkFor: ctx.linkFor }) } catch (err) { quiet("the line", err) }
-    // The agents this person uses, and what each is doing (#443).
+    // The agents this person uses, and what each is doing (#443). Not for
+    // a client: their page names no agent, so their data carries none (#453).
     let agents: AgentCard[] = []
+    if (client) return sendJson(res, 200, { ...withoutAgents(work), agents })
     try {
       const ids = agentIdsFor(db, person ?? { id: access.personId }, now)
       agents = agentsOf(db, access.personId, ids, { people: ctx.people(), linkFor: ctx.linkFor, queue: queue.byAgent })
@@ -161,6 +171,17 @@ export async function handleMemberRequest(
     return sendJson(res, 200, { ...work, agents, queued: queue.mine })
   }
   return sendJson(res, 404, { error: "not found" })
+}
+
+/** A client's work with the agent ids taken out of every row (#453). */
+export function withoutAgents(work: PersonWork): Omit<PersonWork, "open" | "recent" | "runs" | "other"> & {
+  open: Omit<WorkItem, "agentId">[]
+  recent: Omit<WorkItem, "agentId">[]
+  runs: Omit<SentItem, "agentId">[]
+  other: Omit<WorkItem, "agentId">[]
+} {
+  const strip = <T extends { agentId: string }>(rows: T[]): Omit<T, "agentId">[] => rows.map(({ agentId: _agentId, ...rest }) => rest)
+  return { ...work, open: strip(work.open), recent: strip(work.recent), runs: strip(work.runs), other: strip(work.other) }
 }
 
 export function sessionCookie(token: string): string {

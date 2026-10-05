@@ -17,8 +17,15 @@ import { isOperatorTurn } from "@/requests/operator"
 //     With no owner listed that is the built-in person "owner", so an
 //     install with no `people` needs nothing configured.
 //   - Turns software starts (cron, workflows, agent comments) have no person.
+//
+// Roles (#453): `owner` runs this install; `member` is a teammate; `client`
+// is someone the owner does work for, who gets a page of their own
+// (/member shows "Your project" instead of "My work"); `guest` is the
+// operator of another organisation's mesh. Only `owner` changes what a
+// turn may do; the other three are told apart on the pages they see.
 
-export type PersonRole = "owner" | "member" | "guest"
+export type PersonRole = "owner" | "member" | "client" | "guest"
+export const PERSON_ROLES: readonly PersonRole[] = ["owner", "member", "client", "guest"]
 
 export interface Person {
   id: string

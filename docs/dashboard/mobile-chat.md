@@ -77,7 +77,7 @@ A row of *chips*, small rounded buttons, appears at the top of Chat: one for eac
 | **New** | The answer is ready and you haven't opened it |
 | Hollow dot, highlighted chip | The conversation on screen |
 
-![Two conversations running at once: Builder in the background and CX on screen](/screenshots/mobile-app/chat-strip.png)
+![Two conversations at once: Helper on screen and Support thinking in the background](/screenshots/mobile-app/chat-strip.png)
 
 - **Switch:** tap a chip. A conversation that is still running picks up where the agent is; a finished one shows its answer, and its **New** mark goes away.
 - **More chips than fit:** swipe the row sideways. It shows up to 12.
@@ -94,7 +94,7 @@ When an agent finishes in a conversation you are not looking at:
 - **App open:** a banner slides in at the top with the agent's name and the first line of its answer. Tap it to open that conversation, or tap **×** to close it. It goes away by itself after about 6 seconds. When several answers finish together, their banners show one after another.
 - **App closed or in the background:** the phone gets a notification, if notifications are on. Tapping it opens that conversation. You can turn these off for one phone; see [Notifications when a chat answer finishes](./mobile-alerts.md#notifications-when-a-chat-answer-finishes).
 
-![A banner: Builder finished while CX is on screen](/screenshots/mobile-app/chat-finish-banner.png)
+![A banner: Support finished while Helper is on screen, and its chip now says New](/screenshots/mobile-app/chat-finish-banner.png)
 
 ### Answers read out one at a time
 
