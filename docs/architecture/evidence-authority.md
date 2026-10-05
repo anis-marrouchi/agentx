@@ -1,6 +1,6 @@
 # Evidence authority and the memory backend contract
 
-Status: **proposed**, for review in [#604](https://github.com/anis-marrouchi/agentx/issues/604). Nothing here is switched on. No agent reads or writes through this contract yet, and no memory service is installed.
+Status: **recorded, follow-on work paused.** The contract was reviewed in [#604](https://github.com/anis-marrouchi/agentx/issues/604) and merged on 2026-10-04 ([#609](https://github.com/anis-marrouchi/agentx/pull/609)). On 2026-10-05 the owner decided to skip the Hindsight memory backend for now: the remaining phases of [#602](https://github.com/anis-marrouchi/agentx/issues/602) (the adapter, capture, comparison and rollout) stay open but are not being worked on until the owner picks them up again. Nothing here is switched on. No agent reads or writes through this contract yet, and no memory service is installed.
 
 This page records one decision: when AgentX uses a memory backend (a service that indexes what agents know so they can search it), **AgentX decides what is true, who may read it and how fresh it is. The backend only finds things.**
 
@@ -140,6 +140,8 @@ Because AgentX holds the original records, exporting them or moving to another b
 
 ## Open points for review
 
+These points wait with the paused work. They are not being answered until the owner picks [#602](https://github.com/anis-marrouchi/agentx/issues/602) up again.
+
 1. Where the records are stored (a file per agent, or the existing database). This belongs to the capture work in [#606](https://github.com/anis-marrouchi/agentx/issues/606).
 2. How a task gets a project that AgentX can trust. Until that exists the project field stays reserved (see above). The project is also not part of the partition yet: a public record with a project would be indexed with every other public record. It must become part of the partition before anything may set the field.
 3. Whether a conflict with a reviewed article should open a wiki question, a promotion proposal, or both.
@@ -167,4 +169,4 @@ This page describes a contract, not a feature you can switch on. To check the ru
 ## If something is wrong
 
 - **A case fails after a code change:** a rule above was changed. Either restore it, or update this page and the case in the same change so a reviewer sees the rule moved.
-- **A rule here disagrees with how the fact ledger behaves:** the ledger (`src/wiki/facts/ledger.ts`) is the behaviour in use today. Report the difference on #604.
+- **A rule here disagrees with how the fact ledger behaves:** the ledger (`src/wiki/facts/ledger.ts`) is the behaviour in use today. Report the difference on [#602](https://github.com/anis-marrouchi/agentx/issues/602); #604 is closed.

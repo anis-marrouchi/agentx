@@ -19,5 +19,5 @@ DM your bot, then try:
 
 ## Grow it
 
-- Add WhatsApp for customer-facing intake ([journey ch. 4](../../docs/journey/04-cross-channel.md))
-- Give @ops a wiki so context compounds ([journey ch. 6](../../docs/journey/06-shared-wiki.md))
+- Add WhatsApp for customer-facing intake ([watch a WhatsApp chat](../../docs/jobs/watch-whatsapp.md))
+- Give @ops a wiki so context compounds ([approve lessons for the shared wiki](../../docs/jobs/agent-memory.md#7-approve-the-lessons-proposed-for-the-shared-wiki))

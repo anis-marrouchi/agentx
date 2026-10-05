@@ -11,8 +11,8 @@ const d = createDiagram({
   height: 1256,
   title: "How a teammate joins AgentX",
   desc:
-    "Thirteen steps in three parts. The owner prepares: add the person, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, send the address and the code. " +
-    "The teammate installs Tailscale, opens the address, enters a machine name and the code, and waits. The owner says yes on a decision card. " +
+    "Thirteen steps in three parts. The owner prepares: add the person, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, forward the printed message with the address and the code. " +
+    "The teammate's four steps on one strip: install Tailscale and accept the share, open the address, enter a machine name and the code, wait for the owner. The owner says yes on a decision card. " +
     "The page becomes My work and can be installed as an app. A no, or three days without an answer, ends the key.",
 })
 
@@ -37,44 +37,39 @@ y += ROW + GAP
 d.wrap(prepareA.at(-1), d.x0 + 26, y)
 const prepareB = d.row(
   [
-    { title: ["Create the invite"], note: ["agentx people invite prints", "the address and a code"] },
+    { title: ["Create the invite"], note: ["agentx people invite prints a code", "and a message to forward"] },
     { title: ["Share this computer", "in Tailscale"], note: ["admin console: Machines › Share"] },
-    { title: ["Send the address", "and the code"], note: ["the code works once, for 10 minutes"] },
+    { title: ["Forward the message"], note: ["address and code inside;", "the code works once, for 10 minutes"] },
   ],
   y,
   { who: "accent" },
 )
 
-// Part 2: the teammate pairs, the owner approves.
+// Part 2: the teammate pairs on one strip (the four steps of docs/jobs/join-my-work.md), then the owner approves.
 let band = y + ROW + 36
 y = band + 44
 d.band(band, 2 * ROW + GAP + 64, "THE TEAMMATE PAIRS, YOU APPROVE", { tint: C.tintGrey, dx: 48 })
 d.wrap(prepareB.at(-1), d.x0 + 26, y)
-const pairA = d.row(
+const pair = d.row(
   [
-    { title: ["Install Tailscale,", "accept the share"], note: ["on their own machine"], who: "ink" },
-    { title: ["Open the address"], note: ["in Edge or Chrome"], who: "ink" },
-    { title: ["Enter a machine name", "and the code"], note: ["then press Pair"], who: "ink" },
+    { title: ["Install Tailscale,", "accept the share"], note: ["on their own machine"] },
+    { title: ["Open the address"], note: ["in Edge or Chrome"] },
+    { title: ["Enter a name", "and the code"], note: ["then press", "Pair this machine"] },
+    { title: ["Waiting for", "the owner"], note: ["the page moves on", "by itself"] },
   ],
   y,
+  { gap: 16, who: "ink" },
 )
 y += ROW + GAP
-d.wrap(pairA.at(-1), d.x0 + 26, y)
-const pairB = d.row(
-  [
-    { title: ["Waiting for the owner"], note: ["the page waits by itself"], who: "ink" },
-    { title: ["Say yes on the card"], note: ["“New machine for …” in your", "Approvals inbox"], who: "accent" },
-  ],
-  y,
-  { to: twoColumns },
-)
+d.wrap(pair.at(-1), d.x0 + 26, y)
+const approve = d.row([{ title: ["Say yes on the card"], note: ["“New machine for …” in your", "Approvals inbox"] }], y, { to: d.x0 + COL, who: "accent" })
 const refusalY = y + (ROW - 68) / 2
 
 // Part 3: connected.
 band = y + ROW + 36
 y = band + 44
 d.band(band, ROW + 236, "CONNECTED", { dx: 48 })
-d.wrap(pairB.at(-1), d.x0 + 26, y, { label: "Yes" })
+d.wrap(approve.at(-1), d.x0 + 26, y, { label: "Yes" })
 d.row(
   [
     { title: ["The page becomes My work"], note: ["only their own requests.", "The key lasts 90 days"], who: "ink" },
@@ -85,7 +80,7 @@ d.row(
 )
 
 const end = d.now
-d.callout(twoColumns + 20, refusalY, COL, {
+d.callout(d.x0 + COL + 20, refusalY, COL, {
   title: "No, or 3 days pass",
   note: "The key ends. Nothing is shared.",
   delay: end + 0.4,

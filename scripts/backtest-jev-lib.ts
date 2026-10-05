@@ -130,6 +130,33 @@ export function parseTraceExport(raw: unknown): BacktestTrace[] {
   return out
 }
 
+/**
+ * A `workflow` row that recorded no tokens. The workflow dispatcher writes
+ * one trace per non-agent step (transform, branch, signal, action) so the
+ * trace list can show a whole run; no agent ran for those and nothing was
+ * spent. Replaying them through the gate inflates the skip count with rows
+ * that could never have saved anything (#626), so they are dropped before
+ * any seat is asked. A workflow step that did run an agent records tokens
+ * and stays.
+ */
+export function isZeroCostWorkflowRow(t: BacktestTrace): boolean {
+  if (t.channel !== "workflow") return false
+  const tokens =
+    (t.inputTokens ?? 0) + (t.outputTokens ?? 0) + (t.cacheReadTokens ?? 0) + (t.cacheCreateTokens ?? 0) +
+    (t.tier2InputTokens ?? 0) + (t.tier2OutputTokens ?? 0) + (t.tier2CacheReadTokens ?? 0) + (t.tier2CacheCreateTokens ?? 0)
+  return tokens === 0
+}
+
+/** Split an export into the rows worth replaying and the zero-cost
+ *  workflow rows (see isZeroCostWorkflowRow). The count of the latter goes
+ *  into the report so a reader can see what was left out. */
+export function dropZeroCostWorkflowRows(traces: BacktestTrace[]): { kept: BacktestTrace[]; dropped: BacktestTrace[] } {
+  const kept: BacktestTrace[] = []
+  const dropped: BacktestTrace[] = []
+  for (const t of traces) (isZeroCostWorkflowRow(t) ? dropped : kept).push(t)
+  return { kept, dropped }
+}
+
 // --- ground-truth proxy ---------------------------------------------------
 
 /**
@@ -450,6 +477,9 @@ export interface BacktestReport {
   proxyRules: ProxyOptions
   traces: {
     total: number
+    /** Zero-cost `workflow` rows left out before any seat was asked; not
+     *  in `total`. See isZeroCostWorkflowRow. */
+    droppedZeroCostWorkflow: number
     unansweredGate: number
     unansweredTier: number
     /** Priced at the agent's configured model or the default, not the
@@ -475,6 +505,8 @@ export interface ReportOptions {
   cacheTtlMs?: number
   proxy?: ProxyOptions
   sweep?: number[]
+  /** How many zero-cost workflow rows the export held (dropZeroCostWorkflowRows). */
+  droppedZeroCostWorkflow?: number
 }
 
 export const DEFAULT_SWEEP = [0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5]
@@ -485,6 +517,7 @@ export const PROXY_NOTES = [
   "The gate saving is the list-price cost of the runs it would have skipped. It does not include the cost of asking the gate itself, nor any follow-up a wrong skip would have caused.",
   "A follow-up is blocked from the tier when the previous run in the same thread finished less than the cache TTL before it, as the live routing does. The idle time is read off the export, not off the session.",
   "Rows that recorded no model are priced at the agent's configured model, or at the default model when the agent is unknown; the report counts them.",
+  "Workflow rows that recorded no tokens (the dispatcher's own step traces: transform, branch, signal, action) are left out before any seat is asked. No agent ran for them, so there was nothing to skip or save. The report counts them under droppedZeroCostWorkflow.",
 ]
 
 export function buildReport(verdicts: Verdict[], opts: ReportOptions): BacktestReport {
@@ -514,6 +547,7 @@ export function buildReport(verdicts: Verdict[], opts: ReportOptions): BacktestR
     proxyRules: opts.proxy ?? DEFAULT_PROXY,
     traces: {
       total: verdicts.length,
+      droppedZeroCostWorkflow: opts.droppedZeroCostWorkflow ?? 0,
       unansweredGate: verdicts.filter((v) => v.pNeedsRun == null).length,
       unansweredTier: verdicts.filter((v) => !v.tierBlocked && v.pNeedsFlagship == null).length,
       modelFromAgent: verdicts.filter((v) => v.modelSource === "agent").length,
@@ -700,6 +734,9 @@ export function renderReport(report: BacktestReport): string {
 
   lines.push("")
   lines.push(`  traces ${report.traces.total} · proxy noop ${report.traces.byProxy.noop} · worked ${report.traces.byProxy.worked} · unlabelled ${report.traces.byProxy.unknown}`)
+  if (report.traces.droppedZeroCostWorkflow > 0) {
+    lines.push(`  left out: ${report.traces.droppedZeroCostWorkflow} zero-cost workflow rows (no agent ran, nothing to save)`)
+  }
   lines.push(`  priced at the agent's model: ${report.traces.modelFromAgent} · at the default model: ${report.traces.modelFromDefault}`)
   lines.push(`  unanswered: gate ${report.traces.unansweredGate} · tier ${report.traces.unansweredTier}`)
   lines.push("")

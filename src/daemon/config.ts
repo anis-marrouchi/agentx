@@ -1079,7 +1079,9 @@ export const requestsConfigSchema = z.object({
 export const personSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, "lower-case letters, digits, - and _"),
   name: z.string().min(1).max(80),
-  role: z.enum(["owner", "member", "guest"]).default("member"),
+  /** `client` (#453): someone the owner works for; /member shows them
+   *  "Your project", not a teammate's "My work". */
+  role: z.enum(["owner", "member", "client", "guest"]).default("member"),
   /** "channel:id": a GitLab or GitHub login, a Telegram id or username, a
    *  WhatsApp number. Display names are not matched. */
   identities: z.array(z.string().regex(/^[A-Za-z][\w-]*:\S.*$/, "write it as channel:id")).default([]),
@@ -1572,10 +1574,13 @@ export const daemonConfigSchema = z.object({
       headBytes: z.number().int().min(0).max(65_536).default(1024),
       tailBytes: z.number().int().min(0).max(65_536).default(1024),
       /** Tools the pack applies to. Each entry must match the whole tool
-       *  name and may be a regular expression. `Read` is left out by
-       *  default: an agent that sees only the two ends of a file it is
-       *  about to edit has to read it again in pages. */
-      tools: z.array(z.string().min(1)).default(["Bash", "Grep", "WebFetch", "mcp__.*"]),
+       *  name and may be a regular expression. `Read` is in by default
+       *  (owner decision on #621, 2026-10-05): a file read over the limit
+       *  is cut to its first and last lines, with the file's own path and
+       *  line numbers, and the agent reads the lines it needs again with
+       *  offset and limit. No copy of the file is saved. Take `Read` out
+       *  of the list for an agent that edits large files all day. */
+      tools: z.array(z.string().min(1)).default(["Bash", "Grep", "Read", "WebFetch", "mcp__.*"]),
       /** Days a saved original is kept. 0 keeps every original. */
       retentionDays: z.number().int().min(0).max(3650).default(0),
     }).default({}),

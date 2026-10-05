@@ -1,6 +1,6 @@
 # Let another organisation into part of your mesh
 
-**This page is for two organisations that both run AgentX.** The guest's operator joins from their own machine, with a terminal. The work runs the other way round from a client's project: the guest asks, and your agent works on **your** machine and **your** files, never on the guest's. For a person who only asks your agents for things on a chat channel, give them [their own work page](./members.md) instead; for a machine of your own, [add a second machine](./second-machine.md); for your own phone, the [phone app](../dashboard/mobile-app.md). Never pair a guest with a mesh invite or the phone app: both open everything of yours. The five ways side by side: [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in).
+**This page is for two organisations that both run AgentX.** The guest's operator joins from their own machine, with a terminal. The work runs the other way round from a client's project: the guest asks, and your agent works on **your** machine and **your** files, never on the guest's. For a person who only asks your agents for things on a chat channel, give them [their own work page](./members.md) instead, or a client [a project page of their own](./clients.md); for a machine of your own, [add a second machine](./second-machine.md); for your own phone, the [phone app](../dashboard/mobile-app.md). Never pair a guest with a mesh invite or the phone app: both open everything of yours. The five ways side by side: [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in).
 
 Two companies with some common ground: one is willing to give the other access to one of its machines, for a service, for assistance, for a project. This page shows how a **host** opens part of its mesh to a **guest** mesh, keeps control of it while it is in use, and how the guest uses it.
 
@@ -32,6 +32,20 @@ Nothing is shared until you open a grant, and a grant opens nothing until the gu
 3. Send both to the guest's operator on a channel you trust.
 
 The address is the one other machines reach your daemon on, over your private network or a [reverse proxy](./reverse-proxy.md). Pass `--url` if it differs from `dashboard.daemonUrl`.
+
+## Host: bill the guest's turns to your API key
+
+The guest's turns run on your engine. A personal plan, the sign-in `claude` uses by default, is for you alone under the provider's terms; an API key billed to you is made for use by others on your behalf. So the agent a grant names should bill your API key, not your sign-in. Do this before you send the code.
+
+1. **Terminal:** from the folder that holds `agentx.json`, check that `.env` next to it has a line `ANTHROPIC_API_KEY=…`. Add it if not. The daemon reads this file when it starts.
+2. **Terminal:** set the grant's agent to bill that key:
+
+   ```sh
+   agentx config set agents.support-agent.billing api
+   ```
+3. **Terminal:** run `agentx daemon restart --when-idle` so the agent's next run uses the key.
+
+This setting is for agents on the `claude-code` tier (see [`billing`](../reference/config-agents.md#agents)). An agent on another tier uses that engine's own credentials: give it an API key of yours there too, never a personal plan.
 
 ## Guest: join
 
@@ -79,10 +93,11 @@ Every turn the guest takes shows in your normal activity as channel `guest`, and
 
 ## Check it worked
 
-1. **Host, terminal:** `agentx mesh guests` lists the grant as `active` after you said yes.
-2. **Guest, terminal:** `agentx mesh ask company-x "Say hello"` prints an answer from the host's agent.
-3. **Host, dashboard:** the grant shows 1 turn, and the trail has a `task` line.
-4. **Host, terminal:** `agentx mesh guests pause <id>`; **guest:** `agentx mesh hosts` now says *the host paused this grant*.
+1. **Host, terminal:** `agentx config get agents.support-agent.billing` prints `api`.
+2. **Host, terminal:** `agentx mesh guests` lists the grant as `active` after you said yes.
+3. **Guest, terminal:** `agentx mesh ask company-x "Say hello"` prints an answer from the host's agent.
+4. **Host, dashboard:** the grant shows 1 turn, and the trail has a `task` line.
+5. **Host, terminal:** `agentx mesh guests pause <id>`; **guest:** `agentx mesh hosts` now says *the host paused this grant*.
 
 ## If something is wrong
 
@@ -92,4 +107,5 @@ Every turn the guest takes shows in your normal activity as channel `guest`, and
 - **`no grant opens this`:** the host said no, ended the grant, or it reached its end date. Ask the host.
 - **`agent must be an agent on this node`:** the `--agent` id is not in your `agentx.json`. Run `agentx agents`.
 - **`Could not reach the daemon`:** `pause`, `resume`, `set` and `end` go through the running daemon, which also stops the guest's running turns. Start it.
+- **The guest's turn fails with `billing "api" needs ANTHROPIC_API_KEY in the agent's environment`:** the agent is set to bill your API key, but the daemon has none. Add `ANTHROPIC_API_KEY=…` to `.env` next to `agentx.json` and restart the daemon. The run does not fall back to your sign-in.
 - **The guest's turns are refused with `autonomy "report" is only enforceable on the claude-code tier`:** `report` and `propose` need the agent on the `claude-code` tier. Use such an agent, or `act` with a narrow grant.

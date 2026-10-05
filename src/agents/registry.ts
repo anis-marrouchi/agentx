@@ -1,5 +1,6 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine } from "./routing"
+import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { askSeat } from "@/decisions/seat"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
@@ -60,7 +61,7 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
-import { personLimitsOf, nameMatches, personOfTurn, refusedPerson } from "@/people/people"
+import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
@@ -1324,9 +1325,15 @@ export class AgentRegistry {
 
         if (queued) {
           const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
+          // Who is waiting, so the member page can count the messages ahead
+          // of a teammate's (#443). The person is resolved here, not read
+          // from the context: a queued message never reached the stamping
+          // a run does below.
           getEventBus().emit("task:queued", {
             agentId: task.agentId, channel: qChannel, chatId: qChatId, at: new Date().toISOString(),
             sender: senderOf(task.context), humanRoot: isHumanFacingTurn(task.context as any),
+            person: personOfTurn(this.config.people, task.context as any)?.id ?? null,
+            messagePreview: task.message.slice(0, 200), queuedAt: Date.now(),
           })
           this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId} at=${new Date().toISOString()}`)
           return {
@@ -1644,6 +1651,10 @@ export class AgentRegistry {
           // running task, the follow-up runs and produces a reply, but
           // nothing arrives in Telegram.)
           const flushedAt = Date.now()
+          // The line is empty from here: what waited now runs (#443).
+          getEventBus().emit("task:queue-flushed", {
+            agentId: task.agentId, channel: qChannel, chatId: qChatId, flushedAt, count: queued.length, at: new Date().toISOString(),
+          })
           const ended = () => getEventBus().emit("task:queue-ended", {
             agentId: task.agentId, channel: qChannel, chatId: qChatId, flushedAt, at: new Date().toISOString(),
           })
@@ -2562,6 +2573,20 @@ export class AgentRegistry {
       this.log(`[${task.agentId}] session profile for ${channel}: ${describeProfile(sessionProfile, lean, channel)}`)
     }
 
+    // tool-set seat, shadow only (#455): which built-in tools this fresh
+    // session would need. Asked alongside the run and never awaited here,
+    // so it adds no time before the agent starts; the run's own tool calls
+    // label it afterwards.
+    const toolSetPending = state.def.tier === "claude-code" && !resumeSessionId
+      ? startToolSetShadow({
+          message: task.message ?? "",
+          agent: task.agentId,
+          channel,
+          agentPrompt: state.def.systemPrompt ?? null,
+          taskId: traceTaskId,
+        }, (m) => this.log(m))
+      : undefined
+
     const taskWithSystemPrompt: AgentTask = {
       ...task, systemPromptAppend,
       ...(claudeArgs ? { claudeArgs } : {}),
@@ -2778,6 +2803,12 @@ export class AgentRegistry {
           response.content = ""
           this.log(`[${task.agentId}] tool-use contract violation — required ${missing}, observed ${invokedSummary}`)
         }
+      }
+
+      if (toolSetPending) {
+        void labelToolSetRun(toolSetPending, {
+          toolUses: toolUsesByName, eventsSeen: firstEventSeen, error: response.error, agentId: task.agentId,
+        }, (m) => this.log(m))
       }
 
       // Stopped by a daemon shutdown: say so, whatever the runtime made of
@@ -3416,15 +3447,26 @@ export class AgentRegistry {
       edited = this.sessions.removeLastUserMessageIfMatches(agentId, channel, chatId, originalMessage)
     }
 
+    const queuedAt = Date.now()
     this.messageQueue.enqueue(agentId, channel, chatId, {
       text: message,
       sender,
-      timestamp: Date.now(),
+      timestamp: queuedAt,
       channel,
       chatId,
       originalContext: { channel, chatId, sender },
     })
     const pending = this.messageQueue.pendingCount(agentId, channel, chatId)
+    // It waits in the same line as a channel message, so the member page
+    // counts it among the messages ahead of a teammate's (#443). Sent from
+    // the owner's dashboard, it is the owner's; not a human-facing root,
+    // so request status leaves it alone.
+    getEventBus().emit("task:queued", {
+      agentId, channel, chatId, at: new Date(queuedAt).toISOString(),
+      sender: { name: sender }, humanRoot: false,
+      person: operatorPerson(this.config.people)?.id ?? null,
+      messagePreview: message.slice(0, 200), queuedAt,
+    })
 
     let replaced = false
     if (opts.replace) {

@@ -12,7 +12,7 @@ Nothing changes until you add someone. With an empty list, what you do on your o
 |---|---|
 | id | A short name you choose, such as `sara`. Lower-case letters, digits, `-` and `_`. |
 | name | Their name as you want to read it. |
-| role | `owner`, `member` or `guest`. Today the role is a label; only `owner` has an effect (see below). Access rules per role come later. |
+| role | `owner`, `member`, `client` or `guest`. `owner` is you (see below). `member` is a teammate. `client` is someone you do work for: their paired machine opens [Your project](./clients.md) instead of a teammate's [My work](./members.md). `guest` is the operator of another organisation's mesh. Beyond the page a person sees, only `owner` changes what their messages may do. |
 | identities | Where they write from, each as `channel:id`: `gitlab:sara.b`, `github:sara-b`, `telegram:123456789`, `whatsapp:21620123456`. |
 | agents | The agents this person may reach, by id. Empty, the default: every agent. See [Limit which agents a person can reach](#limit-which-agents-a-person-can-reach). |
 | deny | Tools and skills this person's work may not use. Empty, the default: no limit. See [Stop a person using some tools or skills](#stop-a-person-using-some-tools-or-skills). |
@@ -46,6 +46,15 @@ With one owner listed, your messages on those channels count as yours for [open 
 Each identity belongs to one person. Giving the same login or number to a second person is refused.
 
 A listed teammate can also get a small window of their own, **My work**, that shows what they asked for and where it stands: see [Invite a teammate to their work page](./members.md). That page, the phone app and a mesh invite each hand over a different amount of what is yours; [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in) says which fits whom.
+
+## Add a client
+
+A client is someone you do work for, not a teammate.
+
+1. **Terminal:** run `agentx people add acme --name "Acme Bakery" --role client --identity whatsapp:21620123456`.
+2. Run `agentx people list` to read the result: the line ends with `· client`.
+
+A client's messages are matched and limited the same way as a teammate's. What differs is the page they can be given: **Your project**, their own requests in plain words and nothing about your agents. See [Give a client a page of their own](./clients.md).
 
 ## See what a person asked for
 
@@ -141,6 +150,7 @@ To check a tool limit:
 - **`identity … belongs to both`:** the login or number is already on another person. Run `agentx people unlink <id> <channel:id>` on the first one.
 - **`write it as channel:id`:** the identity has no channel in front. Write `gitlab:sara.b`, not `sara.b`.
 - **Tasks on voice or the dashboard have no person:** two people have the `owner` role. Keep one owner and make the other a `member`.
+- **`--role must be one of: owner, member, client, guest`:** the role was mistyped. Use one of those four words.
 - **A denied tool still ran:** the message did not match the person, so no limit applied. Check with `agentx people show <id>` that the task is listed under them. Also check the spelling of the tool: `agentx guard log` shows the exact names agents use.
 - **Every tool call is blocked for a limited person:** the check could not reach the daemon. Run `agentx daemon status` and start the daemon if it is not running.
 - **`level must be one of: tools, skills`:** write `tools` or `skills` right after the person's id.

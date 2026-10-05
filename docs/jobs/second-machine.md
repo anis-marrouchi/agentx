@@ -1,6 +1,6 @@
 # Add a second machine
 
-**This page is for a machine of your own.** A paired machine holds the mesh password, which lets it send work to every agent in the mesh and control the other machines' daemons. Never pair a teammate's or a client's machine this way: give a teammate [their own work page](./members.md), and another organisation [a guest grant](./guest-mesh.md). For your own phone, use the [phone app](../dashboard/mobile-app.md). The five ways side by side: [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in).
+**This page is for a machine of your own.** A paired machine holds the mesh password, which lets it send work to every agent in the mesh and control the other machines' daemons. Never pair a teammate's or a client's machine this way: give a teammate [their own work page](./members.md), a client [a project page of their own](./clients.md), and another organisation [a guest grant](./guest-mesh.md). For your own phone, use the [phone app](../dashboard/mobile-app.md). The five ways side by side: [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in).
 
 You can keep all your agents on one machine. Add another only when an agent needs tools or files that live elsewhere.
 

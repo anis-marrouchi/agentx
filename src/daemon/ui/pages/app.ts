@@ -16,7 +16,7 @@
 // app-camera.client.ts; a sideways swipe changes tab (app-swipe.client.ts).
 // A tab without content yet says so plainly — no simulated data.
 
-import { APP_REDESIGN_CSS } from "./app-redesign.css"
+import { APP_PHONE_PALETTE_CSS, APP_REDESIGN_CSS } from "./app-redesign.css"
 import { APP_SHEET_SCRIPT } from "./app-sheet.client"
 import { AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
@@ -63,7 +63,7 @@ function head(title: string): string {
 <link rel="apple-touch-icon" href="/app/icon-192.png">
 <title>${title}</title>
 ${THEME_BOOT}
-<style>${AX_TOKENS_CSS}${BASE_CSS}</style>`
+<style>${AX_TOKENS_CSS}${APP_PHONE_PALETTE_CSS}${BASE_CSS}</style>`
 }
 
 const TAB_ICONS: Record<string, string> = {

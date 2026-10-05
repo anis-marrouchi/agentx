@@ -1,10 +1,15 @@
 // --- The work page's script (/member) (#386, #489, #443) ---
 //
 // Fills the summary line, "Needs a person", the agent cards and "What you
-// sent". An opened agent card stays open across rounds. When an agent goes
-// from Working to Free between two good loads, a notification says so, once
-// the person has allowed them with the button under the cards. When a round
-// fails after a good one, the cards say the state is from the last load.
+// sent", which opens with the person's messages still waiting in line. An
+// opened agent card stays open across rounds. When an agent goes from
+// Working to Free between two good loads, a notification says so, once the
+// person has allowed them with the button under the cards; it is shown by
+// this page only, so never with the page closed. When a round fails after
+// a good one, the cards say the state is from the last load.
+//
+// A busy card says what the agent is doing whoever started it, and what
+// waits in line behind it (the owner's decisions on #443, 2026-10-05).
 //
 // One round every 30 seconds loads the work lists, and the name line too
 // until it has loaded once. A round that fails is tried again after 20
@@ -100,7 +105,11 @@ export const WORK_SCRIPT = `
   function clock(at) { return new Date(at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
   function agent(a, now, stale) {
     var v = agentLine(a);
-    var mine = a.state === 'working' && a.by === 'you' && !!a.text;
+    // The full text comes only with the person's own request (agents.ts).
+    var mine = a.state === 'working' && a.by === 'you' && !!a.fullText;
+    var q = a.queue || { waiting: 0, yours: 0 };
+    var line = !q.waiting ? 'Nothing waits behind this.' :
+      q.waiting + (q.waiting === 1 ? ' message waits' : ' messages wait') + ' behind this' + (q.yours ? ', ' + (q.yours === q.waiting ? (q.yours === 1 ? 'yours' : 'all yours') : q.yours + ' of them yours') : '') + '.';
     var id = 'd-' + esc(a.agentId).replace(/[^A-Za-z0-9_-]/g, '_');
     var moved = a.at ? (a.state === 'working' ? '' : a.state === 'blocked' ? 'stopped ' : 'finished ') + ageText(a.at, now) + ' ago' : '';
     var meta = (v.by ? '<span>started by ' + esc(v.by) + '</span>' : '') + (moved ? '<span class="moved">' + moved + '</span>' : '') + (a.where ? '<span>from ' + where(a) + '</span>' : '');
@@ -113,10 +122,11 @@ export const WORK_SCRIPT = `
       html += '<button type="button" class="more" data-agent="' + esc(a.agentId) + '" aria-expanded="' + (opened[a.agentId] ? 'true' : 'false') + '" aria-controls="' + id + '">' + (opened[a.agentId] ? 'Hide' : 'Show') + ' this request</button>' +
         '<div class="detail" id="' + id + '">' +
         '<ol class="steps" aria-label="Where this request is"><li class="done"><span class="sr">Done: </span>Received</li><li class="now" aria-current="step">Working</li><li>Finished</li></ol>' +
-        '<p class="full">' + esc(a.fullText || a.text) + '</p><dl>' +
+        '<p class="full">' + esc(a.fullText) + '</p><dl>' +
         '<dt>Started by</dt><dd>you</dd>' +
         '<dt>Sent</dt><dd>' + clock(a.at) + ', ' + ageText(a.at, now) + ' ago</dd>' +
         (a.where ? '<dt>Asked on</dt><dd>' + where(a) + '</dd><dt>Answer</dt><dd>It arrives on ' + where(a) + ' when the agent finishes.</dd>' : '') +
+        '<dt>In line</dt><dd>' + line + '</dd>' +
         '</dl></div>';
     }
     return html + '</li>';
@@ -142,6 +152,14 @@ export const WORK_SCRIPT = `
       '<p class="meta"><span>' + esc(r.agentId) + '</span>' + (r.where ? '<span>from ' + where(r) + '</span>' : '') + '</p>' +
       '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + moved + '</span></p></li>';
   }
+  // One of the person's messages still waiting behind a busy agent.
+  function queued(r, now) {
+    var st = sentState({ status: 'queued' });
+    var place = r.ahead === 0 ? 'next when the agent is free' : r.ahead + (r.ahead === 1 ? ' message' : ' messages') + ' ahead of it';
+    return '<li class="row"><p class="text">' + esc(plainPreview(r.messagePreview)) + '</p>' +
+      '<p class="meta"><span>' + esc(r.agentId) + '</span>' + (r.where ? '<span>from ' + where(r) + '</span>' : '') + '</p>' +
+      '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + place + '</span><span class="moved">sent ' + ageText(r.queuedAt, now) + ' ago</span></p></li>';
+  }
   // A request no turn of the list stands for: its turn is older, or it has none.
   function request(r, now) {
     var st = requestState(r.state);
@@ -151,14 +169,15 @@ export const WORK_SCRIPT = `
       '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + ageText(r.closedAt || r.updatedAt || r.createdAt, now) + ' ago</span></p></li>';
   }
   function show(w, now) {
-    var agents = w.agents || [];
-    sum.textContent = summaryLine(agents, w.runs.length);
+    var agents = w.agents || [], waiting = w.queued || [];
+    sum.textContent = summaryLine(agents, w.runs.length + waiting.length);
     agentsBox.hidden = !agents.length;
     agentsList.innerHTML = agents.map(function (a) { return agent(a, now, false); }).join('');
     var asks = w.open.filter(function (r) { return r.state === 'waiting_owner' || r.state === 'needs_attention'; });
     need.hidden = !asks.length;
     document.getElementById('need-list').innerHTML = asks.map(function (r) { return needRow(r, now); }).join('');
-    document.getElementById('sent').innerHTML = w.runs.map(function (r) { return sent(r, now); }).join('') +
+    document.getElementById('sent').innerHTML = waiting.map(function (r) { return queued(r, now); }).join('') +
+      w.runs.map(function (r) { return sent(r, now); }).join('') +
       (w.other || []).map(function (r) { return request(r, now); }).join('') ||
       '<li class="blank"><p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here as soon as the agent starts on it.</p><p>You see when it is running, when it is finished, and when the agent is free again.</p></li>';
   }

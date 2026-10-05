@@ -2,6 +2,7 @@ import type Database from "better-sqlite3"
 import { createRequire } from "module"
 import { existsSync, mkdirSync } from "fs"
 import { dirname, resolve } from "path"
+import { ensureQueuedMessagesTable } from "./queued-messages"
 
 // --- SQLite storage layer ---
 //
@@ -431,6 +432,9 @@ function runMigrations(db: Database.Database): void {
   // Without it that read walks every run on record. Partial: most runs
   // carry no person, and those rows stay out of the index.
   db.exec("CREATE INDEX IF NOT EXISTS idx_traces_person_started ON task_traces(person, started_at) WHERE person IS NOT NULL")
+  // Messages waiting behind a busy agent, with who sent them (#443). By
+  // name, not by version number, for the same reason as the columns above.
+  ensureQueuedMessagesTable(db)
 }
 
 /** Schema version check for tests. */
