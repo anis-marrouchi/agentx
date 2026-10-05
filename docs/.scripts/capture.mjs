@@ -68,6 +68,7 @@ const shots = [
     { scroll: '[name="agentName"]' },
   ] },
   { name: "setup/engine", path: "/setup", wait: "#wizard", steps: [{ select: '[name="tier"]', value: "sdk" }, { scroll: '[name="triggerWords"]' }] },
+  { name: "places/page", path: "/places", wait: ".pl-item" },
   { name: "costs/page", path: "/admin/cost", wait: "body" },
   // Only the first check group: the others describe this machine's desktop
   // app and home folder, which a screenshot must not publish.

@@ -10,6 +10,7 @@ import { handleAppChat, type AppChatDeps } from "./app-chat"
 import { handleAppFiles } from "./app-files"
 import { handleAppVoice, type AppVoiceDeps } from "./app-voice"
 import { handleAppCamera, type AppCameraDeps } from "./app-camera"
+import { handleAppPlaces, type PlacesDeps } from "./app-places"
 import { PairAttemptLimiter, redeemPairCode } from "./app-pair-code"
 import { PairCodeStore } from "./pair-codes"
 import { RejectLog, credentialState, rejectFields } from "./app-auth-log"
@@ -54,6 +55,9 @@ export interface AppRouteCtx {
   chat?: AppChatDeps
   voice?: AppVoiceDeps
   camera?: AppCameraDeps
+  places?: PlacesDeps
+  /** The statement served at /.well-known/assetlinks.json, or null for 404. */
+  assetLinks?: () => unknown[] | null
   pairCodes?: PairCodeStore
   pairLimiter?: PairAttemptLimiter
   /** Minimum duration of a pair-code attempt (tests shorten it). */
@@ -75,6 +79,12 @@ export async function handleAppRequest(
   method: string,
   ctx: AppRouteCtx = {},
 ): Promise<boolean> {
+  // Public like the manifest: it names the Android app (apps/android) and
+  // its signing key, so Chrome opens it without an address bar. No data.
+  if (path === "/.well-known/assetlinks.json" && method === "GET") {
+    const links = ctx.assetLinks?.() ?? null
+    return links ? send(res, 200, "application/json", JSON.stringify(links), "public, max-age=300") : sendJson(res, 404, { error: "not found" })
+  }
   if (path !== "/app" && !path.startsWith("/app/") && !path.startsWith("/api/app/")) return false
   const tokens = ctx.tokens ?? new TokenStore()
 
@@ -146,6 +156,7 @@ export async function handleAppRequest(
   if (ctx.chat && await handleAppFiles(req, res, path, method, rec, ctx.chat)) return true
   if (ctx.voice && await handleAppVoice(req, res, path, method, rec, ctx.voice)) return true
   if (ctx.camera && await handleAppCamera(req, res, path, method, ctx.camera)) return true
+  if (ctx.places && await handleAppPlaces(req, res, path, method, rec, ctx.places)) return true
   return sendJson(res, 404, { error: "not found" })
 }
 

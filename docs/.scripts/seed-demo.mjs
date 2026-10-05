@@ -65,6 +65,22 @@ cfg.boards = [{
 }]
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
 
+// Two places with reminders for the /places shot (place reminders, #676).
+// Nothing watches them: no phone is paired with the demo.
+mkdirSync(resolve(root, ".agentx"), { recursive: true })
+const placesAt = new Date(Date.now() - 86400000).toISOString()
+writeFileSync(resolve(root, ".agentx/places.json"), JSON.stringify({
+  places: [
+    { id: "pl_demo00school", name: "School", lat: 48.8584, lng: 2.2945, radius: 200, createdAt: placesAt },
+    { id: "pl_demo0library", name: "Library", lat: 48.8606, lng: 2.3376, radius: 150, createdAt: placesAt },
+  ],
+  rules: [
+    { id: "pr_demo00000001", placeId: "pl_demo00school", on: "enter", text: "Pick up the parcel at the front desk", repeat: false, enabled: true, createdAt: placesAt },
+    { id: "pr_demo00000002", placeId: "pl_demo00school", on: "exit", text: "What is left on today's list?", agent: "cx", repeat: true, enabled: true, createdAt: placesAt },
+  ],
+  seen: [],
+}, null, 2) + "\n")
+
 // A slow scripted step, so the Live shot can catch a task while it runs.
 const scriptPath = resolve(root, "demo-script.json")
 const script = JSON.parse(readFileSync(scriptPath, "utf8"))
@@ -148,4 +164,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded two workflows, three disabled schedules with one scheduled run, one schedule request, two decision cards, two clients, six fictional reviews, a webhook, a board, an action, and two real scripted task runs.")
+console.log("Seeded two workflows, three disabled schedules with one scheduled run, one schedule request, two decision cards, two clients, six fictional reviews, a webhook, a board, an action, two places, and two real scripted task runs.")

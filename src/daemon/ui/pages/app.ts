@@ -11,7 +11,7 @@
 //
 // Phase 1 of the mobile epic shipped the shell and pairing. Chat is filled
 // by app-chat.client.ts, Fleet and Activity by app-fleet.client.ts, Alerts
-// by app-alerts.client.ts; Chat is voice first (app-voice.client.ts, with
+// by app-alerts.client.ts with its Places card from app-places.client.ts; Chat is voice first (app-voice.client.ts, with
 // the orb in app-orb.client.ts); the header's Share camera is
 // app-camera.client.ts; a sideways swipe changes tab (app-swipe.client.ts).
 // A tab without content yet says so plainly — no simulated data.
@@ -22,6 +22,7 @@ import { AX_TOKENS_CSS } from "../tokens"
 import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
+import { APP_PLACES_CSS, APP_PLACES_SCRIPT } from "./app-places.client"
 import { APP_ANNOUNCE_SCRIPT } from "./app-announce.client"
 import { APP_CHAT_SCRIPT } from "./app-chat.client"
 import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
@@ -93,7 +94,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}${APP_REDESIGN_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -112,6 +113,7 @@ ${CAMERA_BODY}
 <script>${APP_SHEET_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
+<script>${APP_PLACES_SCRIPT}</script>
 <script>${APP_ANNOUNCE_SCRIPT}</script>
 <script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_LOG_SCRIPT}${APP_CHAT_SHEETS_SCRIPT}${APP_CHAT_SCRIPT}</script>
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>

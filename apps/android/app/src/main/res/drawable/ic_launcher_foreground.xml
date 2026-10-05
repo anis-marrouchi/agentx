@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- "AX" on the brand blue, inside the 66dp safe zone. -->
+    <path android:fillColor="@color/on_brand"
+        android:fillType="evenOdd"
+        android:pathData="M30,70L39,38h6l9,32h-6l-2,-7h-9l-2,7zM39.5,58h6l-3,-11zM56,38h6.5l5.5,10.5 5.5,-10.5H80l-8.5,15.5 9,16.5h-6.5l-6,-11.5 -6,11.5h-6.5l9,-16.5z" />
+</vector>

@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AgentX</string>
+
+    <!-- Setup -->
+    <string name="setup_title">Pair this phone</string>
+    <string name="setup_lead">On your computer, in the folder that holds agentx.json, run agentx app pair. Then type the address and the pairing code it shows.</string>
+    <string name="setup_address">Computer address</string>
+    <string name="setup_address_hint">computer-name.your-tailnet.ts.net</string>
+    <string name="setup_code">Pairing code</string>
+    <string name="setup_code_hint">ABCD-EFGH</string>
+    <string name="setup_pair">Pair</string>
+    <string name="setup_pairing">Pairing…</string>
+    <string name="setup_bad_address">Type the address that starts with https:// (the part before /app).</string>
+    <string name="setup_bad_code">A pairing code has 8 letters or digits, like ABCD-EFGH.</string>
+    <string name="setup_unreachable">Could not reach the computer. Check that Tailscale is on, on this phone and on the computer, and try again.</string>
+
+    <!-- Place reminders -->
+    <string name="places_title">Place reminders</string>
+    <string name="first_run">Paired. To get reminders when you arrive at or leave a place, turn on place reminders below. You can do it later from the phone app\'s Alerts tab.</string>
+    <string name="disclosure">AgentX uses your location in the background, even when the app is closed, to notice when you arrive at or leave the places you saved. It tells your computer only which place and whether you arrived or left. It never sends where you are.</string>
+    <string name="places_switch">Place reminders</string>
+    <string name="perm_location">Precise location: %1$s</string>
+    <string name="perm_background">Location all the time: %1$s</string>
+    <string name="perm_notifications">Notifications: %1$s</string>
+    <string name="allowed">allowed</string>
+    <string name="not_allowed">not allowed</string>
+    <string name="places_off">Place reminders are off. This phone watches no places.</string>
+    <string name="places_none">No places yet. Add one in the phone app\'s Alerts tab, or on the computer\'s Places page.</string>
+    <string name="places_watching">Watching: %1$s</string>
+    <string name="places_last_check">Last checked for changes at %1$s.</string>
+    <string name="places_checking">Checking for changes…</string>
+    <string name="sync_now">Check for new places now</string>
+    <string name="android_settings">Open Android settings for AgentX</string>
+    <string name="open_app">Open AgentX</string>
+    <string name="paired_with">Paired with %1$s</string>
+    <string name="forget">Forget this computer</string>
+    <string name="forget_title">Forget this computer?</string>
+    <string name="forget_message">This phone stops watching places and forgets its pairing. To remove its key on the computer too, run agentx app revoke there.</string>
+
+    <string name="bg_title">Allow location all the time</string>
+    <string name="bg_message">Reminders only work with the app closed if AgentX may use the location all the time. On the next screen, tap Location if needed, then choose Allow all the time and keep Use precise location on.</string>
+    <string name="bg_continue">Continue</string>
+    <string name="not_now">Not now</string>
+    <string name="denied_title">Place reminders stay off</string>
+    <string name="denied_location">AgentX may not use this phone\'s precise location, so it can\'t notice when you arrive somewhere. To change this, open Android settings for AgentX, tap Permissions, then Location, and choose Allow all the time with Use precise location on.</string>
+    <string name="denied_background">AgentX may use the location only while it is open, so reminders would not fire with the app closed. To change this, open Android settings for AgentX, tap Permissions, then Location, and choose Allow all the time.</string>
+    <string name="open_settings">Open settings</string>
+    <string name="close">Close</string>
+
+    <string name="err_unpaired">This phone is no longer paired with the computer. Tap Forget this computer, then pair again.</string>
+    <string name="err_offline">Could not reach the computer. Places are checked again when it is reachable.</string>
+    <string name="err_permission">Location all the time is not allowed, so no place is watched. Turn place reminders off and on again.</string>
+    <string name="err_location_off">Location is off on this phone. Turn it on in quick settings; places are watched again at the next check.</string>
+    <string name="err_too_many">Android watches at most 100 places per app. Remove some places.</string>
+    <string name="err_register">Android could not watch the places: %1$s</string>
+</resources>

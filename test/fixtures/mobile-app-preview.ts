@@ -189,6 +189,20 @@ function api(path: string): any {
       return { peers: [{ name: "Workshop" }], agents: [{ id: "helper", name: "Helper" }], camera: { width: 1280, height: 720, frameRate: 15, maxSeconds: 600 } }
     case "/api/app/camera/watch":
       return { watch: { replies: [] } }
+    case "/api/app/places":
+      return {
+        enabled: true, reason: null, pushAvailable: true, pushReason: null,
+        limits: { defaultRadiusMeters: 150, minRadiusMeters: 100, maxRadiusMeters: 5000, maxPlaces: 50 },
+        syncMinutes: 60, android: { packageName: "dev.agentx.phone" }, agents: ["helper", "support"],
+        places: [
+          { id: "pl_demo00school", name: "School", lat: 48.8584, lng: 2.2945, radius: 200, createdAt: iso(86400000) },
+          { id: "pl_demo0library", name: "Library", lat: 48.8606, lng: 2.3376, radius: 150, createdAt: iso(86400000) },
+        ],
+        rules: [
+          { id: "pr_demo00000001", placeId: "pl_demo00school", on: "enter", text: "Pick up the parcel at the front desk", repeat: false, enabled: true, createdAt: iso(3600000) },
+          { id: "pr_demo00000002", placeId: "pl_demo00school", on: "exit", text: "What is left on today's list?", agent: "helper", repeat: true, enabled: true, createdAt: iso(3600000) },
+        ],
+      }
   }
   const conv = /^\/api\/app\/conversations\/([a-z0-9]+)$/.exec(path)
   if (conv) return conversations[conv[1]] || 404

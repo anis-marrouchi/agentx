@@ -48,6 +48,9 @@ import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
+import { assetLinks, handleDashboardPlaces, placesDeps, type PlacesDeps } from "./app-places"
+import { daemonFireDeps } from "@/places/fire"
+import { renderPlacesPage } from "./ui/pages/places"
 import type { AppPushDeps } from "./app-push"
 import { appAnnounceDeps } from "./app-announce"
 import { PushStore } from "@/channels/push-store"
@@ -183,6 +186,7 @@ const DASHBOARD_PAGES = new Set([
   "/admin/graph",
   "/approvals",
   "/people",
+  "/places",
   "/admin/health",
   "/admin/observability",
   "/admin/ledger",
@@ -237,7 +241,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), assetLinks: () => assetLinks(ctx.config) })) return
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
@@ -408,6 +412,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/mesh") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderMeshPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  // Places for the phone's place reminders (#676): the same store and
+  // routes the phone app uses (app-places.ts), from the dashboard.
+  if (method === "GET" && path === "/places") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
+    res.end(renderPlacesPage({ peers: buildTopbarPeers(ctx.config) }))
     return
   }
   // Guest meshes (#380): the host's panel, with its data proxied to the
@@ -1056,6 +1067,10 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     const xr = req.headers["x-requested-with"]
     if (xr !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
   }
+
+  // Places (#676), below the /api/* token and X-Requested-With checks:
+  // the /places page adds and removes the owner's places here.
+  if (await handleDashboardPlaces(req, res, path, method, appPlacesDeps(ctx.config))) return
 
   // "Restart when idle" on a node's header (Live page). The daemon holds the
   // request and exits by itself once no task is running, so its service
@@ -2275,6 +2290,18 @@ function appPushDeps(config: DaemonConfig): AppPushDeps {
     allowedHosts: push.allowedHosts,
     reason: "The database on this computer is unavailable, so notifications can't be saved.",
   }
+}
+
+/** Places and place reminders (#676), for the phone app and /places.
+ *  Reminders are pushed through the daemon's push channel, so they are
+ *  only sent where the phone's pushes are: push on here, not relayed. */
+function appPlacesDeps(config: DaemonConfig): PlacesDeps {
+  const push = config.channels.push
+  const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const fire = push.enabled && !push.relayTo
+    ? daemonFireDeps({ url, token: dashboardTokenForNode(config.dashboard, url), operatorKey: loadOperatorKey(process.cwd()) ?? undefined })
+    : null
+  return placesDeps(config, process.cwd(), fire, appPushDeps(config).reason)
 }
 
 /** What the phone app's Fleet and Activity tabs read and act through

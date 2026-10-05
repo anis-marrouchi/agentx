@@ -88,6 +88,8 @@ const BOOT = `(function () {
       return Promise.resolve(stream)
     }
   }
+  // Opened from the AgentX Android app (the Places card links to its settings).
+  if (flags.shell) { try { localStorage.setItem('ax-shell', 'android') } catch (e) {} }
   // The camera permission was refused.
   if (flags.noCamera && navigator.mediaDevices) {
     navigator.mediaDevices.getUserMedia = function () { var e = new Error('Permission denied'); e.name = 'NotAllowedError'; return Promise.reject(e) }
@@ -239,6 +241,23 @@ try {
     "alerts-announcements": async () => {
       await scene({ push: "on", announcements: "two" }); await open("/app", { flags: { pushOn: true } })
       await alerts("#an-list li p"); await wait("js:(() => document.querySelector('#al-pill').textContent === 'On')()"); await shot("alerts-announcements")
+    },
+    // --- Places ---
+    "places": async () => {
+      await scene({ push: "on" }); await open("/app", { flags: { pushOn: true, shell: true } })
+      await alerts("#pl-list .pl-place"); await ev("document.querySelector('#pl-card').scrollIntoView()"); await sleep(200); await shot("places")
+    },
+    "places-reminder": async () => {
+      await scene({ push: "on" }); await open("/app", { flags: { pushOn: true, shell: true } })
+      await alerts("#pl-list .pl-place"); await click("#pl-list .pl-place:nth-child(2) .pl-more summary")
+      await type('#pl-list .pl-place:nth-child(2) input[name="text"]', "Return the borrowed books")
+      await ev("document.activeElement.blur(); document.querySelector('#pl-list .pl-place:nth-child(2)').scrollIntoView()"); await sleep(200); await shot("places-reminder")
+    },
+    "places-add": async () => {
+      await scene({ push: "on" }); await open("/app", { flags: { pushOn: true, shell: true } })
+      await alerts("#pl-list .pl-place"); await click("#pl-add-wrap summary")
+      await type('#pl-add input[name="name"]', "Sports hall"); await type('#pl-add input[name="coords"]', "48.8530, 2.3499")
+      await ev("document.activeElement.blur(); document.querySelector('#pl-add-wrap').scrollIntoView()"); await sleep(200); await shot("places-add")
     },
     // --- Share camera ---
     "camera-sheet": async () => { await open("/app", { conv: "cdemo" }); await camera("Workshop"); await sleep(200); await shot("camera-sheet"); await click("#cam-close") },

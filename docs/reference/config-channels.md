@@ -203,6 +203,25 @@ Sends notifications to the AgentX [phone app](../dashboard/mobile-alerts.md). It
 
 A message's chat ID picks the phones: `default` sends to every phone that turned notifications on, and a device id from `agentx app devices` (it starts with `tok_`) sends to that phone only.
 
+## app
+
+The phone app beyond pairing and notifications: the AgentX Android app and place reminders. How to set them up, step by step: [Place reminders](../dashboard/mobile-places.md).
+
+| Field | Type | Default | What it does |
+|---|---|---|---|
+| `app.android.packageName` | string | `"dev.agentx.phone"` | The Android app's package name (its `agentxApplicationId` when it was built). |
+| `app.android.certFingerprints` | list of strings | `[]` | SHA-256 fingerprints of the keys that signed the Android app, as `AB:CD:…` (32 pairs). With at least one, this computer answers `/.well-known/assetlinks.json` and Chrome shows the app without an address bar. Empty: that address answers 404 and Chrome shows a slim address bar. |
+| `app.places.enabled` | boolean | `true` | Turns place reminders on. Off: the phone app and the Places page say so, and phones' reports are refused. |
+| `app.places.file` | string | `".agentx/places.json"` | Where places and their reminders are kept, relative to the folder that holds `agentx.json`. |
+| `app.places.defaultRadiusMeters` | number | `150` | Size of a new place when none is given, in metres. |
+| `app.places.minRadiusMeters` | number | `100` | Smallest place allowed. Android rarely notices smaller circles reliably. |
+| `app.places.maxRadiusMeters` | number | `5000` | Largest place allowed. |
+| `app.places.maxPlaces` | number (1 to 100) | `50` | Most places you can save. Android lets one app watch at most 100. |
+| `app.places.maxRulesPerPlace` | number (1 to 50) | `10` | Most reminders on one place. |
+| `app.places.cooldownMinutes` | number (0 to 1440) | `10` | A reminder set to fire every time fires at most once in this many minutes, so a phone at the edge of a place doesn't buzz again and again. |
+| `app.places.maxEventAgeMinutes` | number (1 to 1440) | `30` | A crossing the phone could only report later, for lack of signal, is dropped once it is older than this. |
+| `app.places.syncMinutes` | number (15 to 1440) | `60` | How often the Android app checks for added or removed places. Android runs background checks at most every 15 minutes. |
+
 ## ntfy
 
 ntfy sends push notifications to your phone. It only sends; it does not receive messages.

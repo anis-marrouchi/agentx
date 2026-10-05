@@ -31,6 +31,7 @@ The seven top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 | Procedures learned from activity | `/procedures` |
 | Running agent processes | `/processes` |
 | Words used on screen | `/glossary` |
+| Places for the phone's place reminders | `/places` |
 
 The browser call page, `/call`, is served by the daemon (default `http://127.0.0.1:18800/call`), not the dashboard.
 
