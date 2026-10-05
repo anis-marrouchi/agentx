@@ -1,13 +1,13 @@
 # People: who is connected and what they asked for
 
-Your teammates and guests reach your agents from their own channels and their own machines. **People** is one page that lists every person, the machines each has paired, and what each asked the agents for. You can end one machine's access from it.
+Your teammates, clients and guests reach your agents from their own channels and their own machines. **People** is one page that lists every person, the machines each has paired, and what each asked the agents for. You can end one machine's access from it.
 
 It shows what `agentx people` already records. There is nothing to set up: with nobody listed, the page shows you, the owner of this machine.
 
 ## Open it
 
 1. **Browser:** open the dashboard and click the **People** tab (or go to `/people`).
-2. Every person is one row: their name, their role (owner, member or guest), their id, and the channel identities you gave them, such as `gitlab:sara.b`. On the right, how many machines they have, and how many are waiting for your approval.
+2. Every person is one row: their name, their role as a badge (**Owner**, **Member**, **Client** or **Guest**), their id, and the channel identities you gave them, such as `gitlab:sara.b`. On the right, how many machines they have, and how many are waiting for your approval.
 3. Click a person to open them. Click again to close.
 
 ![The People tab with one person open: three machines with their state, the address each paired from, first and last use, then their requests and latest turns](/screenshots/people/person.png)
@@ -16,7 +16,7 @@ The page refreshes every 30 seconds.
 
 ## What you see for one person
 
-**Machines.** A machine is a computer the person paired with their own work page (see [Invite a teammate to their work page](../jobs/members.md)). Each line shows:
+**Machines.** A machine is a computer the person paired with their own page: **My work** for a teammate (see [Invite a teammate to their work page](../jobs/members.md)), **Your project** for a client (see [Give a client a page of their own](../jobs/clients.md)). Each line shows:
 
 | Column | What it means |
 |---|---|
@@ -44,7 +44,7 @@ Ending a machine does not remove the share in Tailscale. If the person should no
 
 ## When nobody is paired
 
-The page says **Nobody has paired a machine yet** and shows the three steps to invite someone: list them, make their one-time code, and say yes to their machine in Approvals.
+The page says **Nobody has paired a machine yet** and shows the three steps to invite someone: list them (with `--role client` for a client), make their one-time code, and say yes to their machine in Approvals.
 
 ![The People tab with nobody paired: the three steps to invite someone, above the owner of this machine](/screenshots/people/nobody-paired.png)
 

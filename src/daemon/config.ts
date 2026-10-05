@@ -1079,7 +1079,9 @@ export const requestsConfigSchema = z.object({
 export const personSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, "lower-case letters, digits, - and _"),
   name: z.string().min(1).max(80),
-  role: z.enum(["owner", "member", "guest"]).default("member"),
+  /** `client` (#453): someone the owner works for; /member shows them
+   *  "Your project", not a teammate's "My work". */
+  role: z.enum(["owner", "member", "client", "guest"]).default("member"),
   /** "channel:id": a GitLab or GitHub login, a Telegram id or username, a
    *  WhatsApp number. Display names are not matched. */
   identities: z.array(z.string().regex(/^[A-Za-z][\w-]*:\S.*$/, "write it as channel:id")).default([]),

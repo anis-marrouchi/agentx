@@ -61,6 +61,7 @@ const groups = [
     { text: "When an agent asks another", link: "/jobs/ask-another-agent" },
     { text: "Tell agents who is who", link: "/jobs/people" },
     { text: "Invite a teammate to their work page", link: "/jobs/members" },
+    { text: "Give a client a page of their own", link: "/jobs/clients" },
     { text: "Let another organisation into part of your mesh", link: "/jobs/guest-mesh" },
   ] },
   { text: "Machines and safety", collapsed: true, items: [

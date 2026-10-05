@@ -120,7 +120,7 @@ export interface AgentXEvents {
     sender?: { name?: string; id?: string; username?: string }
     /** The known person who started this chain (people, #384). Absent for
      *  an unknown sender and for turns software starts. */
-    person?: { id: string; role?: "owner" | "member" | "guest" }
+    person?: { id: string; role?: "owner" | "member" | "client" | "guest" }
     /** True for the turn that talks to the person: not a delegated hop,
      *  not a callback (a2a/initiator isHumanFacingTurn). */
     humanRoot?: boolean

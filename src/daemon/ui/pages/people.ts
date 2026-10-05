@@ -1,6 +1,6 @@
 // --- People page (/people) (#441) ---
 //
-// Everyone who talks to the agents: the owner, teammates and guests. Open a
+// Everyone who talks to the agents: the owner, teammates, clients and guests. Open a
 // person to see the machines they paired (state, where from, first and
 // last use), what they asked for, and to end one machine.
 //
@@ -23,15 +23,15 @@ export function renderPeoplePage(opts: PeoplePageOpts = {}): string {
   const body = pageHead({
     kicker: "Operations",
     title: "People",
-    lead: "Everyone who talks to your agents: you, your teammates and guests. Open a person to see the machines they paired and what they asked for.",
+    lead: "Everyone who talks to your agents: you, your teammates, your clients and guests. Open a person to see the machines they paired and what they asked for.",
   }) + `
   <div class="pp">
     <div id="pp-msg" class="pp-msg" role="status" aria-live="polite"></div>
     <section id="pp-none" class="pp-none" hidden aria-labelledby="pp-none-title">
       <h2 id="pp-none-title">Nobody has paired a machine yet</h2>
-      <p>A teammate gets one page of their own, <b>My work</b>, on a machine you approve. To invite someone, from the folder that holds <code>agentx.json</code>:</p>
+      <p>A teammate gets one page of their own, <b>My work</b>, on a machine you approve. A client gets <b>Your project</b> instead. To invite someone, from the folder that holds <code>agentx.json</code>:</p>
       <ol>
-        <li>List them, with the identity they write from: <code>agentx people add sara --name "Sara B" --identity gitlab:sara.b</code></li>
+        <li>List them, with the identity they write from: <code>agentx people add sara --name "Sara B" --identity gitlab:sara.b</code>. For a client, add <code>--role client</code>.</li>
         <li>Make their one-time code: <code>agentx people invite sara</code></li>
         <li>Send them the address and the code it prints, then say yes to their machine in <a href="/approvals">Approvals</a>.</li>
       </ol>
@@ -99,7 +99,7 @@ const PEOPLE_SCRIPT = `
   var none = document.getElementById('pp-none');
   var open = {};   // person id -> the last detail loaded for it
   var people = [];
-  var ROLE = { owner: 'Owner', member: 'Member', guest: 'Guest' };
+  var ROLE = { owner: 'Owner', member: 'Member', client: 'Client', guest: 'Guest' };
   var REQUEST = {
     in_progress: ['In progress', 'ok'], waiting_owner: ['Waiting on you', 'warn'], waiting_other: ['Waiting on another agent', 'warn'],
     needs_attention: ['Needs attention', 'bad'], done: ['Done', 'off'], declined: ['Declined', 'off'], dropped: ['Dropped', 'off']

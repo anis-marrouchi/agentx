@@ -5,7 +5,8 @@
 // /api/member/* only. Three pages: the locked one (type the code the
 // owner sent), the waiting one (the owner has not said yes to this machine
 // yet) and the work page itself. The look is the concept the owner
-// approved on #443.
+// approved on #443. A client's machine gets the locked and waiting pages
+// too, then "Your project" (client.ts) instead of the work page (#453).
 //
 // No backticks, backslashes or dollar-brace inside the client scripts:
 // they sit in TS template literals.
@@ -19,14 +20,16 @@ import { BASE_CSS, LOCKED_CSS, WAITING_CSS, WORK_CSS } from "./member-styles"
 
 const THEME_BOOT = `<script>(function(){var t;try{t=localStorage.getItem('ax-theme')}catch(e){}if(t!=='light'&&t!=='dark'){t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'}document.documentElement.setAttribute('data-theme',t)})()</script>`
 
-function head(title: string): string {
+/** The <head> every page under /member shares. A client's page names its
+ *  own manifest and app title (client.ts). */
+export function memberHead(title: string, opts: { manifest?: string; appTitle?: string } = {}): string {
   return `<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#2979FF">
 <meta name="referrer" content="no-referrer">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="My work">
-<link rel="manifest" href="/member/manifest.webmanifest">
+<meta name="apple-mobile-web-app-title" content="${opts.appTitle ?? "My work"}">
+<link rel="manifest" href="${opts.manifest ?? "/member/manifest.webmanifest"}">
 <link rel="icon" type="image/png" href="/member/icon-192.png">
 <link rel="apple-touch-icon" href="/member/icon-192.png">
 <title>${title}</title>
@@ -90,12 +93,14 @@ self.addEventListener('fetch', function (e) {
 `
 
 /** The top bar every member page shares. */
-function bar(who: string, extra = ""): string {
+export function memberBar(who: string, extra = "", heading = "My work"): string {
   return `<header class="bar">
   <img class="mark" src="/member/icon-192.png" alt="" width="36" height="36">
-  <div class="grow"><h1>My work</h1><p id="who" class="who">${who}</p></div>${extra}
+  <div class="grow"><h1>${heading}</h1><p id="who" class="who">${who}</p></div>${extra}
 </header>`
 }
+const head = memberHead
+const bar = memberBar
 
 /** The three steps from a code to the work page. */
 function pairSteps(at: 0 | 1): string {
@@ -148,7 +153,7 @@ ${bar("This machine is not paired yet")}
       <p id="pair-offline" class="pair-offline" role="status" hidden>You're offline. Pairing needs a connection to the private network.</p>
       <p id="pair-msg" class="pair-msg" role="status" aria-live="polite"></p>
     </form>
-    <p class="help">No code? Ask the owner to run <code>agentx people invite &lt;you&gt;</code>. A code works once, for 10 minutes.</p>
+    <p class="help">No code? Ask the person who invited you for one. A code works once, for 10 minutes.</p>
   </div>
 </main>
 <script>${injectFns({ formatPairInput })}${LOCKED_SCRIPT}</script>
@@ -257,7 +262,7 @@ const WAITING_SCRIPT = `
   function check() {
     fetch('/api/member/me', { credentials: 'same-origin', cache: 'no-store' }).then(function (r) {
       if (r.status === 200) { location.replace('/member'); return; }
-      if (r.status === 401) { msg.textContent = 'The owner did not approve this machine. Ask them for a new code.'; setTimeout(function () { location.replace('/member'); }, 4000); return; }
+      if (r.status === 401) { msg.textContent = 'The owner did not approve this machine. Ask the person who invited you for a new code.'; setTimeout(function () { location.replace('/member'); }, 4000); return; }
     }).catch(function () {});
   }
   setInterval(check, 5000);
