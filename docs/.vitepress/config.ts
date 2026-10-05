@@ -63,6 +63,7 @@ const groups = [
     { text: "Invite a teammate to their work page", link: "/jobs/members" },
     { text: "Join My work (for the teammate)", link: "/jobs/join-my-work" },
     { text: "Join Your project (for the client)", link: "/jobs/join-your-project" },
+    { text: "Give a client a page of their own", link: "/jobs/clients" },
     { text: "Let another organisation into part of your mesh", link: "/jobs/guest-mesh" },
   ] },
   { text: "Machines and safety", collapsed: true, items: [

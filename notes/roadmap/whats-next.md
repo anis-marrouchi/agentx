@@ -22,6 +22,10 @@ The backlog. No vision copy.
 
 **MCP tool surface beyond `wiki_query`** — `agentx_wiki_patch`, `agentx_wiki_interview`, `agentx_graph_review` now exposed over MCP. Claude Code / Cursor / Windsurf can call them as tools. Remaining CLI-only: `wiki edit`, `wiki quiz`, `skill sync`, `procedure add/show`.
 
+## Decided, waiting
+
+**Engines on another AgentX node** ([#445](https://github.com/anis-marrouchi/agentx/issues/445)) — a teammate without a subscription uses the host's engine. Decided: host-side agent first, every shared agent on `billing: "api"`, a relay through an existing gateway later if at all. Waits on a trusted, readable answer on the provider's terms. Spike result and child issues in [engines-remote-node.md](./engines-remote-node.md).
+
 ## Parking lot
 
 Auto-prune rejected classifications · retrieval-weights audit (verify `graph.retrievalWeights` is actually wired) · classifier content-hash short-circuit for trivial messages ("thanks", "ok") · MCP client compatibility sweep (Cursor/Windsurf/Zed) · **MCP-client wiring per agent** (centralize each agent's `.mcp.json` via an `mcp:` block in `agentx.json`, install at boot via the `installAgentMemorySurface()` pattern in `src/daemon/index.ts`; ~half a day) · public procedure registry (after Procedures land) · graph taxonomy tree-viz.

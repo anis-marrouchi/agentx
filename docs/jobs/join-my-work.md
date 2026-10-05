@@ -18,7 +18,7 @@ The owner sends you three things: a **share link** from Tailscale (the program t
 ## What My work shows
 
 - **One sentence** at the top: which of your agents is working on your task, and which is free. Under it, **Needs a person** appears only when one of your requests waits on the owner, with the question that was asked.
-- **Your agents**: one card per agent you use, saying **Working**, **Free** or **Blocked**. A card on your task shows what you asked, when and where. A card busy with someone else's task says only that: nothing of the owner's or of anyone else's work is shown. **Tell me when an agent is free** shows a notification each time one of them becomes free while the page is open.
+- **Your agents**: one card per agent you use, saying **Working**, **Free** or **Blocked**. A card on your task shows what you asked, when and where. A card busy with someone else's task shows the first 200 characters of what it is doing and who started it; nothing of that task stays on the page once it is done. A message you send while the agent is busy waits in its line, and the card says how many messages are ahead of yours. **Tell me when an agent is free** shows a notification each time one of them becomes free while the page is open.
 - **What you sent** in the last 7 days: each request, with its agent, where you asked it, and its state. A finished one links to what was delivered.
 
 ![The My work page: the summary sentence, a question waiting on the owner, four agent cards, and the list of what was sent](/screenshots/members/my-work.png)

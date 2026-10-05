@@ -63,6 +63,14 @@ same session log). It is an upper limit: it ignores compaction and what the
 agent reads back from a saved original. The recorded cost per channel, before
 and after, comes from `agentx usage channels`.
 
+### The history block (#636, parked)
+
+Pruning today's earlier messages with a Jev seat before a fresh session
+starts was measured and parked: the block is sent on few turns and the
+saving is cents a week. The numbers, the reasons and the conditions for
+reopening are in [results/context-prune-636.md](results/context-prune-636.md);
+the code stays on the branch `636-jev-context-pruning`.
+
 ## Level 1, small: AgentX against the bare CLI (#455)
 
 `pnpm bench:compare` runs the same coding tasks on the bare Claude Code CLI
@@ -103,6 +111,16 @@ or "no clear difference". The rule is written out in
 
 The cost column is `total_cost_usd` as the CLI reports it (list price); the
 `agentx` rows get it through `agentx exec --json` (`costUsd`).
+
+### What it found (#455, parked)
+
+On one-prompt coding tasks AgentX does not save tokens: after the fixes
+the test led to, the lean profile costs the same as the bare CLI on Sonnet
+5.5 (1.02 times the tokens) and the full profile about a tenth more; on
+Haiku 4.5 ten runs a cell cannot tell them apart. The owner parked the
+higher rungs of the comparison on 2026-10-05. The results, the product
+changes they led to and the conditions for reopening are gathered in
+[results/claude-code-comparison-455.md](results/claude-code-comparison-455.md).
 
 ## Level 1: dev set
 

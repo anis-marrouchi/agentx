@@ -9,8 +9,8 @@ import { PairCodeStore } from "../src/daemon/pair-codes"
 import { PairAttemptLimiter } from "../src/daemon/app-pair-code"
 import { MemberStore } from "../src/members/store"
 import {
-  NETWORK_MISMATCH, clientAddress, inviteMember, machineName, memberAccess, networkIdentities, networkLogin, personOfToken,
-  removeDevice, removePersonDevices,
+  CODE_MINUTES, NETWORK_MISMATCH, clientAddress, inviteMember, inviteMessage, machineName, memberAccess, networkIdentities,
+  networkLogin, personOfToken, removeDevice, removePersonDevices,
 } from "../src/members/pairing"
 import { forgeLink, whereLabel, workOf } from "../src/members/work"
 import { currentPeople, handleMemberRequest, MEMBER_COOKIE } from "../src/daemon/member-routes"
@@ -107,6 +107,40 @@ describe("inviting", () => {
   it("refuses a person who is not listed", () => {
     const inv = inviteMember({ tokens, codes, members, people: () => PEOPLE }, "nobody")
     expect(inv).toMatchObject({ ok: false, error: expect.stringContaining('No person "nobody"') })
+  })
+
+  describe("the message the owner forwards as it is (#659)", () => {
+    const origin = "https://your-mac.tailnet-name.ts.net/"
+    const member = inviteMessage({ person: { name: "Sara B", role: "member" }, origin, code: "7KQ4M2XH" })
+    const client = inviteMessage({ person: { name: "Acme Bakery", role: "client" }, origin, code: "7KQ4M2XH" })
+
+    it("names the page for the person's role", () => {
+      expect(member.startsWith("Hi Sara B,")).toBe(true)
+      expect(member).toContain('"My work"')
+      expect(member).not.toContain("Your project")
+      expect(client.startsWith("Hi Acme Bakery,")).toBe(true)
+      expect(client).toContain('"Your project"')
+      expect(client).not.toContain("My work")
+      // A client's page names no agent, so neither does their message.
+      expect(client).not.toMatch(/\bagents?\b/i)
+      expect(member).toMatch(/\bagents\b/)
+    })
+
+    it.each([["a teammate", member], ["a client", client]])("gives %s the address, the code, their two steps and what comes next", (_who, msg) => {
+      expect(msg).toContain("https://your-mac.tailnet-name.ts.net/member")
+      expect(msg).not.toContain(".ts.net//member")
+      expect(msg).toContain("7KQ4-M2XH")
+      expect(msg).toContain(`works once, for ${CODE_MINUTES} minutes`)
+      expect(msg).toMatch(/1\. Accept the Tailscale share/)
+      expect(msg).toMatch(/2\. Open .* in Edge or Chrome/)
+      expect(msg).toContain("I then approve your machine, and the page opens by itself.")
+      expect(msg).toContain("tell me and I will send you a new one")
+      // No command: the person has no terminal on the owner's computer.
+      expect(msg).not.toMatch(/agentx |tailscale serve|\$ |`/)
+      // Plain text, flush left: nothing to strip before pasting.
+      expect(msg).not.toMatch(/\u001b\[/)
+      expect(msg.startsWith("Hi ")).toBe(true)
+    })
   })
 
   it("reads the private-network logins from the identities", () => {
