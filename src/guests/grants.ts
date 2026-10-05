@@ -1,6 +1,6 @@
 import { TokenStore, type TokenRecord } from "@/daemon/token-store"
 import { PairCodeStore } from "@/daemon/pair-codes"
-import { PAIR_CODE_FAILED, type PairAttemptLimiter } from "@/daemon/app-pair-code"
+import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { createCard, readCard } from "@/approvals/cards"
 import { autonomyLevelSchema, type AutonomyLevel } from "@/guard/autonomy"
 import { GuestStore, type GuestGrant } from "./store"
@@ -102,6 +102,9 @@ export type JoinResult =
   | { status: 401 | 403; body: { error: string } }
   | { status: 429; body: { error: string; retryAfter: number }; retryAfter: number }
 
+/** The guest runs `agentx mesh join` on their own node; "run agentx app
+ *  pair" (the phone app's PAIR_CODE_FAILED) is the host's command, not
+ *  theirs. Same reason as MEMBER_CODE_FAILED for teammates (#453, #643). */
 export const JOIN_FAILED = "That code didn't work. Ask the host for a new one."
 
 /** POST /mesh/guest/join: the guest trades the code for its key and asks
@@ -127,7 +130,7 @@ export async function joinGuest(
   if (!redeemed || !rec || !grant || grant.tokenId !== rec.id || grant.state === "ended") {
     deps.limiter.fail(client)
     log(`[guests] join failed from ${client}`)
-    return { status: 401, body: { error: PAIR_CODE_FAILED } }
+    return { status: 401, body: { error: JOIN_FAILED } }
   }
   deps.limiter.succeed(client)
   const node = (body.node && typeof body.node === "object" ? body.node : {}) as Record<string, unknown>

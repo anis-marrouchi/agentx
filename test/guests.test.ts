@@ -7,7 +7,7 @@ import { PairCodeStore } from "../src/daemon/pair-codes"
 import { PairAttemptLimiter } from "../src/daemon/app-pair-code"
 import { decideCard, listCards } from "../src/approvals/cards"
 import { GuestStore } from "../src/guests/store"
-import { grantBrief, guestAccess, guestTask, inviteGuest, joinGuest, updateGrant, NO_GRANT, PAUSED, WAITING_HOST } from "../src/guests/grants"
+import { grantBrief, guestAccess, guestTask, inviteGuest, joinGuest, updateGrant, JOIN_FAILED, NO_GRANT, PAUSED, WAITING_HOST } from "../src/guests/grants"
 import { handleGuestApi, type GuestApiDeps } from "../src/guests/daemon-api"
 import { GuestHostStore } from "../src/guests/hosts"
 import { isControlPost, isMeshGatedPath } from "../src/daemon/mesh-auth"
@@ -123,10 +123,13 @@ describe("joining", () => {
   })
 
   it("refuses a wrong code with one answer, spends a good one, and locks out", async () => {
-    expect(await joinWith("AAAA-AAAA")).toMatchObject({ status: 401, body: { error: expect.stringContaining("didn't work") } })
+    // The guest has no terminal on the host: the answer names no command
+    // (the phone app's "run agentx app pair" was returned here by mistake).
+    expect(await joinWith("AAAA-AAAA")).toMatchObject({ status: 401, body: { error: JOIN_FAILED } })
+    expect(JOIN_FAILED).not.toContain("agentx ")
     const inv = invite()
     expect((await joinWith(inv.code)).status).toBe(200)
-    expect((await joinWith(inv.code)).status).toBe(401)
+    expect(await joinWith(inv.code)).toMatchObject({ status: 401, body: { error: JOIN_FAILED } })
     for (let i = 0; i < 4; i++) await joinWith("BBBB-BBBB")
     expect(await joinWith("CCCC-CCCC")).toMatchObject({ status: 429 })
   })

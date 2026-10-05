@@ -101,7 +101,7 @@ Every turn the guest takes shows in your normal activity as channel `guest`, and
 
 ## If something is wrong
 
-- **`Join refused (401): That code didn't work`:** the code was mistyped, is older than 10 minutes, or was already used. Ask the host for a new one.
+- **`Join refused (401): That code didn't work. Ask the host for a new one.`:** the code was mistyped, is older than 10 minutes, or was already used. The host runs `agentx mesh guests invite` again and sends you the new code. The message never names a command, because the command is the host's, not yours.
 - **`Join refused (429)`:** too many wrong codes from that address. Wait the minutes shown.
 - **`waiting for the host to approve the join`:** the card is still in the host's Approvals inbox.
 - **`no grant opens this`:** the host said no, ended the grant, or it reached its end date. Ask the host.
