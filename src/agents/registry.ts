@@ -61,7 +61,7 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
-import { personLimitsOf, nameMatches, personOfTurn, refusedPerson } from "@/people/people"
+import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
@@ -1325,9 +1325,15 @@ export class AgentRegistry {
 
         if (queued) {
           const pending = this.messageQueue.pendingCount(task.agentId, qChannel, qChatId)
+          // Who is waiting, so the member page can count the messages ahead
+          // of a teammate's (#443). The person is resolved here, not read
+          // from the context: a queued message never reached the stamping
+          // a run does below.
           getEventBus().emit("task:queued", {
             agentId: task.agentId, channel: qChannel, chatId: qChatId, at: new Date().toISOString(),
             sender: senderOf(task.context), humanRoot: isHumanFacingTurn(task.context as any),
+            person: personOfTurn(this.config.people, task.context as any)?.id ?? null,
+            messagePreview: task.message.slice(0, 200), queuedAt: Date.now(),
           })
           this.log(`[${task.agentId}] busy, message queued (mode: ${queued}, pending: ${pending}) behind=${state.runningTasks.map((r) => r.id).join(",") || "-"} chat=${qChannel}:${qChatId} at=${new Date().toISOString()}`)
           return {
@@ -1645,6 +1651,10 @@ export class AgentRegistry {
           // running task, the follow-up runs and produces a reply, but
           // nothing arrives in Telegram.)
           const flushedAt = Date.now()
+          // The line is empty from here: what waited now runs (#443).
+          getEventBus().emit("task:queue-flushed", {
+            agentId: task.agentId, channel: qChannel, chatId: qChatId, flushedAt, count: queued.length, at: new Date().toISOString(),
+          })
           const ended = () => getEventBus().emit("task:queue-ended", {
             agentId: task.agentId, channel: qChannel, chatId: qChatId, flushedAt, at: new Date().toISOString(),
           })
@@ -3437,15 +3447,26 @@ export class AgentRegistry {
       edited = this.sessions.removeLastUserMessageIfMatches(agentId, channel, chatId, originalMessage)
     }
 
+    const queuedAt = Date.now()
     this.messageQueue.enqueue(agentId, channel, chatId, {
       text: message,
       sender,
-      timestamp: Date.now(),
+      timestamp: queuedAt,
       channel,
       chatId,
       originalContext: { channel, chatId, sender },
     })
     const pending = this.messageQueue.pendingCount(agentId, channel, chatId)
+    // It waits in the same line as a channel message, so the member page
+    // counts it among the messages ahead of a teammate's (#443). Sent from
+    // the owner's dashboard, it is the owner's; not a human-facing root,
+    // so request status leaves it alone.
+    getEventBus().emit("task:queued", {
+      agentId, channel, chatId, at: new Date(queuedAt).toISOString(),
+      sender: { name: sender }, humanRoot: false,
+      person: operatorPerson(this.config.people)?.id ?? null,
+      messagePreview: message.slice(0, 200), queuedAt,
+    })
 
     let replaced = false
     if (opts.replace) {
