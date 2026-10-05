@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 1256" width="920" height="1256" role="img" aria-labelledby="t d" style="--cycle:9.1s">
 <title id="t">How a teammate joins AgentX</title>
-<desc id="d">Thirteen steps in three parts. The owner prepares: add the person, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, forward the printed message with the address and the code. The teammate installs Tailscale, opens the address, enters a machine name and the code, and waits. The owner says yes on a decision card. The page becomes My work and can be installed as an app. A no, or three days without an answer, ends the key.</desc>
+<desc id="d">Thirteen steps in three parts. The owner prepares: add the person, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, forward the printed message with the address and the code. The teammate's four steps on one strip: install Tailscale and accept the share, open the address, enter a machine name and the code, wait for the owner. The owner says yes on a decision card. The page becomes My work and can be installed as an app. A no, or three days without an answer, ends the key.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
@@ -104,7 +104,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <path d="M744 456 V474 Q744 484 734 484 H80 Q70 484 70 494 V532" class="wrap" pathLength="100" style="animation-delay:2.22s"/>
 <path d="M65 527 L70 533 L75 527" class="link fade" style="animation-delay:3.12s"/>
 <g class="rise" style="animation-delay:2.24s">
-<rect x="44" y="536" width="264" height="136" rx="14" class="card"/>
+<rect x="44" y="536" width="196" height="136" rx="14" class="card"/>
 <circle cx="70" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:11.06s"/>
 <circle cx="70" cy="564" r="15" fill="#0B0D12"/>
 <text x="70" y="569" class="num" text-anchor="middle">7</text>
@@ -113,49 +113,52 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <text x="60" y="651" class="note" text-anchor="start">on their own machine</text>
 </g>
 <g class="rise" style="animation-delay:2.56s">
-<rect x="328" y="536" width="264" height="136" rx="14" class="card"/>
-<circle cx="354" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:11.76s"/>
-<circle cx="354" cy="564" r="15" fill="#0B0D12"/>
-<text x="354" y="569" class="num" text-anchor="middle">8</text>
-<text x="344" y="608" class="title" text-anchor="start">Open the address</text>
-<text x="344" y="630" class="note" text-anchor="start">in Edge or Chrome</text>
+<rect x="256" y="536" width="196" height="136" rx="14" class="card"/>
+<circle cx="282" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:11.76s"/>
+<circle cx="282" cy="564" r="15" fill="#0B0D12"/>
+<text x="282" y="569" class="num" text-anchor="middle">8</text>
+<text x="272" y="608" class="title" text-anchor="start">Open the address</text>
+<text x="272" y="630" class="note" text-anchor="start">in Edge or Chrome</text>
 </g>
-<g class="fade" style="animation-delay:2.39s"><path d="M311 604 H323" class="link"/><path d="M319 600 L324 604 L319 608" class="link"/></g>
+<g class="fade" style="animation-delay:2.39s"><path d="M243 604 H251" class="link"/><path d="M247 600 L252 604 L247 608" class="link"/></g>
 <g class="rise" style="animation-delay:2.88s">
-<rect x="612" y="536" width="264" height="136" rx="14" class="card"/>
-<circle cx="638" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:12.46s"/>
-<circle cx="638" cy="564" r="15" fill="#0B0D12"/>
-<text x="638" y="569" class="num" text-anchor="middle">9</text>
-<text x="628" y="608" class="title" text-anchor="start">Enter a machine name</text>
-<text x="628" y="629" class="title" text-anchor="start">and the code</text>
-<text x="628" y="651" class="note" text-anchor="start">then press Pair</text>
+<rect x="468" y="536" width="196" height="136" rx="14" class="card"/>
+<circle cx="494" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:12.46s"/>
+<circle cx="494" cy="564" r="15" fill="#0B0D12"/>
+<text x="494" y="569" class="num" text-anchor="middle">9</text>
+<text x="484" y="608" class="title" text-anchor="start">Enter a name</text>
+<text x="484" y="629" class="title" text-anchor="start">and the code</text>
+<text x="484" y="651" class="note" text-anchor="start">then press</text>
+<text x="484" y="668" class="note" text-anchor="start">Pair this machine</text>
 </g>
-<g class="fade" style="animation-delay:2.71s"><path d="M595 604 H607" class="link"/><path d="M603 600 L608 604 L603 608" class="link"/></g>
-<path d="M744 672 V680 Q744 690 734 690 H80 Q70 690 70 700 V704" class="wrap" pathLength="100" style="animation-delay:3.18s"/>
-<path d="M65 699 L70 705 L75 699" class="link fade" style="animation-delay:4.08s"/>
+<g class="fade" style="animation-delay:2.71s"><path d="M455 604 H463" class="link"/><path d="M459 600 L464 604 L459 608" class="link"/></g>
 <g class="rise" style="animation-delay:3.20s">
-<rect x="44" y="708" width="264" height="136" rx="14" class="card"/>
-<circle cx="70" cy="736" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:13.16s"/>
-<circle cx="70" cy="736" r="15" fill="#0B0D12"/>
-<text x="70" y="741" class="num" text-anchor="middle">10</text>
-<text x="60" y="780" class="title" text-anchor="start">Waiting for the owner</text>
-<text x="60" y="802" class="note" text-anchor="start">the page waits by itself</text>
+<rect x="680" y="536" width="196" height="136" rx="14" class="card"/>
+<circle cx="706" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:13.16s"/>
+<circle cx="706" cy="564" r="15" fill="#0B0D12"/>
+<text x="706" y="569" class="num" text-anchor="middle">10</text>
+<text x="696" y="608" class="title" text-anchor="start">Waiting for</text>
+<text x="696" y="629" class="title" text-anchor="start">the owner</text>
+<text x="696" y="651" class="note" text-anchor="start">the page moves on</text>
+<text x="696" y="668" class="note" text-anchor="start">by itself</text>
 </g>
+<g class="fade" style="animation-delay:3.03s"><path d="M667 604 H675" class="link"/><path d="M671 600 L676 604 L671 608" class="link"/></g>
+<path d="M778 672 V680 Q778 690 768 690 H80 Q70 690 70 700 V704" class="wrap" pathLength="100" style="animation-delay:3.50s"/>
+<path d="M65 699 L70 705 L75 699" class="link fade" style="animation-delay:4.40s"/>
 <g class="rise" style="animation-delay:3.52s">
-<rect x="328" y="708" width="264" height="136" rx="14" class="card accent"/>
-<circle cx="354" cy="736" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:13.86s"/>
-<circle cx="354" cy="736" r="15" fill="#1A66FF"/>
-<text x="354" y="741" class="num" text-anchor="middle">11</text>
-<text x="344" y="780" class="title" text-anchor="start">Say yes on the card</text>
-<text x="344" y="802" class="note" text-anchor="start">“New machine for …” in your</text>
-<text x="344" y="819" class="note" text-anchor="start">Approvals inbox</text>
+<rect x="44" y="708" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="736" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:13.86s"/>
+<circle cx="70" cy="736" r="15" fill="#1A66FF"/>
+<text x="70" y="741" class="num" text-anchor="middle">11</text>
+<text x="60" y="780" class="title" text-anchor="start">Say yes on the card</text>
+<text x="60" y="802" class="note" text-anchor="start">“New machine for …” in your</text>
+<text x="60" y="819" class="note" text-anchor="start">Approvals inbox</text>
 </g>
-<g class="fade" style="animation-delay:3.35s"><path d="M311 776 H323" class="link"/><path d="M319 772 L324 776 L319 780" class="link"/></g>
 <rect x="20" y="880" width="880" height="372" rx="20" fill="#F3F7FF"/>
 <text x="92" y="908" class="band" text-anchor="start">CONNECTED</text>
-<path d="M460 844 V862 Q460 872 450 872 H80 Q70 872 70 882 V920" class="wrap" pathLength="100" style="animation-delay:3.82s"/>
+<path d="M176 844 V862 Q176 872 166 872 H80 Q70 872 70 882 V920" class="wrap" pathLength="100" style="animation-delay:3.82s"/>
 <path d="M65 915 L70 921 L75 915" class="link fade" style="animation-delay:4.72s"/>
-<g class="fade" style="animation-delay:4.12s"><rect x="386.5" y="861" width="43.5" height="22" rx="11" fill="#1A66FF"/><text x="408.3" y="876.5" class="pill" text-anchor="middle">Yes</text></g>
+<g class="fade" style="animation-delay:4.12s"><rect x="102.5" y="861" width="43.5" height="22" rx="11" fill="#1A66FF"/><text x="124.3" y="876.5" class="pill" text-anchor="middle">Yes</text></g>
 <g class="rise" style="animation-delay:3.84s">
 <rect x="44" y="924" width="264" height="136" rx="14" class="card"/>
 <circle cx="70" cy="952" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:14.56s"/>
@@ -175,7 +178,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <text x="344" y="1035" class="note" text-anchor="start">Install this site as an app</text>
 </g>
 <g class="fade" style="animation-delay:3.99s"><path d="M311 992 H323" class="link"/><path d="M319 988 L324 992 L319 996" class="link"/></g>
-<g class="rise" style="animation-delay:4.56s"><rect x="612" y="742" width="264" height="68" rx="14" class="card"/><rect x="612" y="742" width="6" height="68" rx="3" fill="#DC2626"/><text x="634" y="771" class="title" text-anchor="start">No, or 3 days pass</text><text x="634" y="793" class="note" text-anchor="start">The key ends. Nothing is shared.</text></g>
+<g class="rise" style="animation-delay:4.56s"><rect x="328" y="742" width="264" height="68" rx="14" class="card"/><rect x="328" y="742" width="6" height="68" rx="3" fill="#DC2626"/><text x="350" y="771" class="title" text-anchor="start">No, or 3 days pass</text><text x="350" y="793" class="note" text-anchor="start">The key ends. Nothing is shared.</text></g>
 <g class="rise" style="animation-delay:4.36s">
 <rect x="612" y="924" width="264" height="160" rx="14" class="card win"/>
 <path d="M612 958 H876" stroke="#E2E8F0"/>

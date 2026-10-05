@@ -240,6 +240,33 @@ describe("the agent cards and what needs a person (#443)", () => {
     expect(p.el("sent").innerHTML).toContain(">Running<")
   })
 
+  // The owner's decisions on #443 (2026-10-05): a busy card says what the
+  // task is, and the line behind it; a waiting message of the person's
+  // shows as "In line" in What you sent.
+  it("say what someone else's task is, and what waits in line", async () => {
+    const line = {
+      ...body,
+      agents: [
+        { ...body.agents[0], queue: { waiting: 2, yours: 1, ahead: 1 } },
+        { ...body.agents[1], text: "Rotate the **staging** keys", queue: { waiting: 1, yours: 0, ahead: null } },
+      ],
+      queued: [{ agentId: "coder", channel: "telegram", chatId: "c1", queuedAt: now - 60_000, messagePreview: "Then run the *tests*", where: { label: "Telegram", url: null }, ahead: 1 }],
+    }
+    const p = openPage({ work: [{ status: 200, body: line }] })
+    await p.settle()
+    const cards = p.el("agents").innerHTML
+    expect(cards).toContain('<p class="what">Rotate the staging keys</p>')
+    expect(cards).not.toContain("Busy with someone else")
+    expect(cards).toContain("Your message is in line, 1 message ahead of it.")
+    expect(cards).toContain("1 message waits in line. A new one from you waits behind it.")
+    expect(cards).toContain("<dt>In line</dt><dd>2 messages wait behind this, 1 of them yours.</dd>")
+    const sent = p.el("sent").innerHTML
+    expect(sent.indexOf("Then run the tests")).toBeLessThan(sent.indexOf("Fix the banner"))
+    expect(sent).toContain(">In line<")
+    expect(sent).toContain("1 message ahead of it")
+    expect(p.el("sum").textContent).toBe("coder is working on your task. ops is busy with someone else's task.")
+  })
+
   it("say the state is from the last load when a round fails", async () => {
     const p = openPage({ work: [{ status: 200, body }, "fail"] })
     await p.settle()

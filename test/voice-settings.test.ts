@@ -135,7 +135,7 @@ describe("applyVoiceSettings", () => {
     expect(voiceSettingsView(config(), []).general.startReduced).toBe(false)
     expect(checkVoiceSettings({ general: { startReduced: true } }, config())).toEqual([])
     expect(checkVoiceSettings({ general: { startReduced: "yes" } } as never, config()))
-      .toEqual([{ path: "general.startReduced", message: "Start reduced to the orb must be on or off" }])
+      .toEqual([{ path: "general.startReduced", message: "Start reduced must be on or off" }])
     const raw: any = {}
     applyVoiceSettings(raw, { general: { startReduced: true } })
     expect(raw.voice).toEqual({ startReduced: true })

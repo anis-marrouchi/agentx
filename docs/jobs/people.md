@@ -45,7 +45,7 @@ With one owner listed, your messages on those channels count as yours for [open 
 
 Each identity belongs to one person. Giving the same login or number to a second person is refused.
 
-A listed teammate can also get a small window of their own, **My work**, that shows what they asked for and where it stands: see [Invite a teammate to their work page](./members.md).
+A listed teammate can also get a small window of their own, **My work**, that shows what they asked for and where it stands: see [Invite a teammate to their work page](./members.md). That page, the phone app and a mesh invite each hand over a different amount of what is yours; [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in) says which fits whom.
 
 ## Add a client
 

@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import { getEventBus, type AgentXEvents } from "@/events/bus"
 import { recordTraceStart, recordTraceEnd, recordTraceStep } from "@/storage/traces"
+import { flushQueuedMessages, insertQueuedMessage } from "@/storage/queued-messages"
 
 // --- Bus subscribers that persist to SQLite ---
 //
@@ -322,12 +323,29 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     } catch { /* */ }
   }
 
+  // The line behind a busy agent, with who sent each message (#443): a row
+  // while a message waits, gone when the line is handed over to a turn.
+  const onQueued = (p: AgentXEvents["task:queued"]) => {
+    try {
+      insertQueuedMessage(db, {
+        agentId: p.agentId, channel: p.channel, chatId: p.chatId,
+        person: p.person ?? null, sender: p.sender?.name ?? p.sender?.username ?? p.sender?.id ?? null,
+        messagePreview: p.messagePreview ?? null, queuedAt: p.queuedAt ?? (Number.isFinite(Date.parse(p.at)) ? Date.parse(p.at) : Date.now()),
+      })
+    } catch { /* */ }
+  }
+  const onQueueFlushed = (p: AgentXEvents["task:queue-flushed"]) => {
+    try { flushQueuedMessages(db, p.agentId, p.channel, p.chatId, p.flushedAt) } catch { /* */ }
+  }
+
   bus.on("task:started", onStarted)
   bus.on("task:completed", onCompleted)
   bus.on("task:step", onStep)
   bus.on("session:rotated", onRotated)
   bus.on("message:matched", onMatched)
   bus.on("message:dropped", onDropped)
+  bus.on("task:queued", onQueued)
+  bus.on("task:queue-flushed", onQueueFlushed)
 
   return () => {
     bus.off("task:started", onStarted)
@@ -336,5 +354,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     bus.off("session:rotated", onRotated)
     bus.off("message:matched", onMatched)
     bus.off("message:dropped", onDropped)
+    bus.off("task:queued", onQueued)
+    bus.off("task:queue-flushed", onQueueFlushed)
   }
 }

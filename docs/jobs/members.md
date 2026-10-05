@@ -1,8 +1,8 @@
 # Invite a teammate to their work page
 
-A teammate who asks your agents for things on GitLab, Telegram or WhatsApp has no dashboard. They cannot see whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see only that an agent is busy with it, never what it is.
+**This page is for you, the owner.** A teammate who asks your agents for things on GitLab, Telegram or WhatsApp cannot see, from that channel, whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see what an agent is busy with right now, in a short preview, and nothing of it once it is done. The teammate's own steps are on [Join My work](./join-my-work.md), a short page you can send them as it is. Which way in fits whom, side by side: [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in).
 
-This page is for a teammate, a person with the role `member`. A **client**, someone you do work for, goes through the same door but gets a different page, **Your project**: see [Give a client a page of their own](./clients.md).
+It covers a teammate, a person with the role `member`. A **client**, someone you do work for, goes through the same door but gets a different page, **Your project**: see [Give a client a page of their own](./clients.md).
 
 It works like the [phone app](../dashboard/mobile-app.md): one page served on your private network, a one-time code to pair, a key per machine. Two things are stricter, because a teammate is not you:
 
@@ -70,20 +70,15 @@ The dashboard trusts anything that reaches it from your own computer, so only th
    I then approve your machine, and the page opens by itself.
    ```
 3. **Browser (Tailscale admin console):** open **Machines**, this computer, **Share**, and send the link to the teammate. Do this once per person; the invite reminds you.
-4. Copy the message between the two dashed lines and send it to the teammate on WhatsApp, Telegram or mail, on a channel you know is theirs. Only the lines between the dashes are for them; the rest of the output is for you.
+4. Copy the message between the two dashed lines and send it to the teammate on WhatsApp, Telegram or mail, on a channel you know is theirs. Only the lines between the dashes are for them; the rest of the output is for you. If they want more than the message, send them [Join My work](./join-my-work.md), which has only their steps.
 
 If the teammate's Tailscale login is on their person entry as `tailscale:<login>` (for example `agentx people link sara tailscale:sara@example.com`), pairing is refused unless the network reports that very login. Without the entry, the login the network reports is recorded and shown to you on the card instead.
 
 ## The teammate pairs their machine
 
-1. **Their machine:** install Tailscale and accept the share.
-2. **Their browser:** open the address, for example `https://your-mac.tailnet-name.ts.net/member`.
-3. The page asks for a name for the machine and the code. They type both and press **Pair**.
+The teammate follows [Join My work](./join-my-work.md), which walks them through these four steps with a screenshot of each page: they install Tailscale and accept the share, open the address (for example `https://your-mac.tailnet-name.ts.net/member`), type a name for the machine and the code, and the page says **Waiting for the owner**. Opening the address before Tailscale on their machine says **Connected** gives them "site can't be reached", the most common stumble.
 
-   ![The "Pair this machine" page with a field for the machine's name and one for the code](/screenshots/members/pair.png)
-4. The page says **Waiting for the owner**.
-
-   ![The "Waiting for the owner" page](/screenshots/members/waiting.png)
+![The "Waiting for the owner" page](/screenshots/members/waiting.png)
 
 ## Approve the machine
 
@@ -97,10 +92,12 @@ The page shows, for that person only:
 
 - **One sentence** at the top: which of their agents is working on their task, and which is free.
 - **Needs a person**, right under that sentence: present only when one of their requests waits on your answer or is stuck, with the question you were asked.
-- **Your agents**: one card per agent they use (the agents you allowed them, or else the ones they talked to in the last 7 days). Each says **Working**, **Free** or **Blocked** in words, with a colour and a shape. A card on their own task shows what they asked, when, and where; **Show this request** opens it in place. A card busy with someone else's task says only that, and whether you or someone else started it. **Tell me when an agent is free**, under the cards, lets the browser show a notification each time one of these agents goes from Working to Free while the page is open.
-- **What you sent** in the last 7 days: every turn they started, with its agent, where it was asked and its state (running, finished, waiting on the owner, stopped). A finished request links to what was delivered. A GitLab or GitHub thread is a link. Below the turns come their requests that no turn of the list stands for: one still open whose turn is older than 7 days, or one closed this week.
+- **Your agents**: one card per agent they use (the agents you allowed them, or else the ones they talked to in the last 7 days). Each says **Working**, **Free** or **Blocked** in words, with a colour and a shape. A working card says what the agent is doing, in the first 200 characters of the message, and whether they, you or someone else started it. On their own task it also says when and where it was asked, and **Show this request** opens the full text in place. Under the line of the card, the **line**: a message they sent while the agent was busy waits there, and the card says how many messages are ahead of it; with nothing of theirs waiting, it says how many messages a new one would wait behind. What a free agent finished, or a blocked one stopped on, is shown only when it was their own task. **Tell me when an agent is free**, under the cards, lets the browser show a notification each time one of these agents goes from Working to Free. The page itself shows it, so only while the page is open: there is no alert with the page closed.
+- **What you sent** in the last 7 days: first their messages still waiting in line, marked **In line** with their place in it; then every turn they started, with its agent, where it was asked and its state (running, finished, waiting on the owner, stopped). A finished request links to what was delivered. A GitLab or GitHub thread is a link. Below the turns come their requests that no turn of the list stands for: one still open whose turn is older than 7 days, or one closed this week.
 
-![The My work page: the summary sentence, a question waiting on the owner, four agent cards, and the list of what was sent](/screenshots/members/my-work.png)
+![The My work page: the summary sentence, a question waiting on the owner, four agent cards with what each is doing and what waits in line, and the list of what was sent](/screenshots/members/my-work.png)
+
+The line is read from the daemon, which notes who sent each message that waits behind a busy agent. After the daemon restarts, the line starts empty: a message that was waiting is run again from the channel it came from, as before.
 
 It refreshes every 30 seconds. Opened without a connection, it shows what was last loaded and says it is offline. When the connection is up but your computer does not answer, the page says it can't reach the server, tries again every 20 seconds, and shows a **Try now** button. Either notice goes away as soon as a load works.
 
@@ -131,8 +128,9 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 1. **Terminal:** run `agentx people devices`. The teammate's machine is listed as `active`. The **People** tab of the dashboard shows it as **Active** too.
 2. **Their browser:** **My work** shows a request they made on their channel, with the right state.
-3. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers. On **My work**, a card busy with your task shows no text of it.
-4. **The access rule holds:** a port other than 443 does not answer the teammate. The daemon (18800) and the dashboard (4202) listen on your own computer only, so they refuse a teammate even with no rule at all and prove nothing here. Open a test port for a minute instead.
+3. **Their browser:** opening `https://<your computer>/`, `/people` or `/app` shows nothing of yours: only `/member` answers. On **My work**, a card busy with your task shows its first 200 characters and that you started it, but not where it was asked and no **Show this request** button; once it is finished, the card shows nothing of it.
+4. **Their browser:** while an agent is busy, they send it a second message on their channel. Within 30 seconds the card says **Your message is in line**, and the message appears at the top of **What you sent** as **In line**.
+5. **The access rule holds:** a port other than 443 does not answer the teammate. The daemon (18800) and the dashboard (4202) listen on your own computer only, so they refuse a teammate even with no rule at all and prove nothing here. Open a test port for a minute instead.
 
    **Terminal (yours):** serve an empty folder on port 8099, and confirm it answers on your Tailscale address:
 
@@ -153,11 +151,13 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 - **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above. The reset removes every served path, so add the phone app's two `/app` lines back if you use it.
 - **`Could not read this machine's Tailscale name`:** Tailscale is not running on your computer. Start it, or pass `--url https://<address>` to `agentx people invite`.
+- **The browser says the address does not exist** (`DNS_PROBE_FINISHED_NXDOMAIN` or similar): the share is not accepted yet, or Tailscale on their machine is not connected. Accept the share, wait for **Connected**, then restart the browser and open the address again.
 - **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again and forward the new message. The page and the message both tell the teammate to ask you for a new code; neither sends them to a terminal.
 - **The teammate sees Your project instead of My work:** their role is `client`. Set `role` to `member` in `agentx.json`; the page changes on the next open.
 - **"The private network says someone else is connecting":** the login Tailscale reports for their machine is not among the person's `tailscale:` identities. Check with `agentx people show <id>` and fix the identity, or remove it to accept whatever login is reported.
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
 - **The page is empty:** request tracking is off (`agentx requests settings`), or the teammate's identity on that channel is not on their person entry, so their requests were not stamped with their id.
+- **A message they sent while the agent was busy is not shown as In line:** their identity on that channel is not on their person entry, so the daemon could not tell the message was theirs. It still counts in the line the card shows, as someone else's.
 - **The teammate can open other pages or ports of yours:** your access rules let shared users reach more than port 443. Narrow the allow-all rule and add the shared-user rule above.
 - **A link to a dashboard page answers `{"error":"not found"}` although the page exists:** the address has `.` or `..` parts, or a backslash. Open the page from the dashboard's menu, or remove those parts from the address.
 - **A teammate added a moment ago cannot pair:** fixed after 0.82.0. On 0.82.0, restart the dashboard after `agentx people add`, then invite again.

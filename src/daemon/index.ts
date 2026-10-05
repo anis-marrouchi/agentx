@@ -45,6 +45,7 @@ import { WebhookHandler } from "./webhooks"
 import { openDb, pruneSqliteTables, insertTaskQueue, completeTaskQueue, getTaskQueue, listTaskQueueByConversation } from "@/storage/sqlite"
 import { newEventId } from "@/intent/ulid"
 import { attachSqliteSubscribers } from "@/storage/subscribers"
+import { clearQueuedMessages } from "@/storage/queued-messages"
 import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
 import { TokenStore } from "./token-store"
@@ -553,6 +554,9 @@ export class AgentXDaemon {
           this.log(`  Traces: couldn't collect cut-off runs (${e?.message ?? e}); closing them without resuming`)
           try { cleanupOrphanedTraces(db) } catch { /* nothing more to do */ }
         }
+        // The line behind each agent lived in the old daemon's memory, so
+        // its mirror on disk says nothing true now (#443).
+        try { clearQueuedMessages(db) } catch { /* the table is made on open */ }
         attachSqliteSubscribers(db)
         // Open requests (#356). Attached whatever the setting says, so
         // turning it on needs no restart; the tracker itself reads

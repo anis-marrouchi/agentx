@@ -99,7 +99,7 @@ check(a2?["researcher"]?["palette"] is NSNull, "back to the colour's palette sen
 let card2 = (p2["general"] as? [String: Any])?["card"] as? [String: Any]
 check(card2?["timeout"] as? Double == 0 && card2?["maxHeight"] == nil, "only the changed card setting is sent")
 
-// --- Start reduced to the orb (#457) ---
+// --- Start reduced (#457) ---
 
 check(current.general.startReduced == nil && current.patch(from: current)["general"] == nil,
       "a daemon older than the reduced pill sends no start setting, and none is sent back")

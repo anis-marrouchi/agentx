@@ -14,12 +14,13 @@ enum PillMenu {
         !isChecked(showPill: showPill, visible: visible)
     }
 
-    /// The item that reduces the pill to its orb, or brings the pill back.
-    static func reduceTitle(reduced: Bool) -> String {
-        reduced ? "Show full pill" : "Reduce to orb"
+    /// The item that reduces the pill, or brings the full one back: to its
+    /// orb, or with the character (which stands in for the orb) to the
+    /// character alone, without its speech bubble. The title follows what
+    /// is on screen, so a pill open for a while over the chosen orb still
+    /// offers to reduce.
+    static func reduceTitle(reduced: Bool, character: Bool = false) -> String {
+        if character { return reduced ? "Show speech bubble" : "Reduce to character" }
+        return reduced ? "Show full pill" : "Reduce to orb"
     }
-
-    /// Only a pill that has its orb can be reduced to it: while the
-    /// character stands in for the orb, there is nothing to reduce to.
-    static func canReduce(showsOrb: Bool) -> Bool { showsOrb }
 }

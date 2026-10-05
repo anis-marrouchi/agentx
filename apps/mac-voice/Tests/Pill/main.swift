@@ -153,8 +153,38 @@ check(PillPlacement.clamp(saved: CGPoint(x: 1500, y: 60), size: orb, screens: [l
         == CGPoint(x: 1512 - 54, y: 80), "dropped half off the screen: moved fully onto it")
 check(PillMenu.reduceTitle(reduced: false) == "Reduce to orb" && PillMenu.reduceTitle(reduced: true) == "Show full pill",
       "one menu item reduces the pill and brings it back")
-check(PillMenu.canReduce(showsOrb: true) && !PillMenu.canReduce(showsOrb: false),
-      "nothing to reduce to while the character stands in for the orb")
+check(PillMenu.reduceTitle(reduced: false, character: true) == "Reduce to character"
+        && PillMenu.reduceTitle(reduced: true, character: true) == "Show speech bubble",
+      "with the character, the same item reduces it to the character alone and brings its bubble back")
+
+// --- The full pill over the reduced form, and back by itself (#457) ---
+
+var pillForm = PillForm()
+check(!pillForm.reduced && !pillForm.chosen, "the pill starts full")
+check(!pillForm.rendered(atRest: false, holds: false) && !pillForm.rendered(atRest: true, holds: false) && !pillForm.reduced,
+      "not chosen, it never reduces by itself")
+pillForm.choose(reduced: true)
+check(pillForm.reduced && pillForm.chosen, "the menu, or voice.startReduced: reduced")
+check(!pillForm.rendered(atRest: false, holds: false) && pillForm.reduced, "a turn on the orb leaves it reduced")
+check(pillForm.open() && !pillForm.reduced && pillForm.chosen, "a call or an answer opens the full pill; the orb stays chosen")
+check(!pillForm.open(), "opening it twice changes nothing")
+check(!pillForm.rendered(atRest: true, holds: true) && !pillForm.reduced, "idle with the answer still open: it stays")
+check(!pillForm.rendered(atRest: false, holds: false) && !pillForm.reduced, "listening again: it stays")
+check(pillForm.rendered(atRest: true, holds: false) && pillForm.reduced, "idle with nothing left to read: back to the orb by itself")
+pillForm.open(clicked: true)
+check(!pillForm.reduced, "a click opens the full pill")
+check(!pillForm.rendered(atRest: true, holds: false) && !pillForm.reduced, "and it stays open while nothing happens")
+check(!pillForm.rendered(atRest: false, holds: false) && !pillForm.reduced, "a turn runs")
+check(pillForm.rendered(atRest: true, holds: false) && pillForm.reduced, "over: back to the orb")
+pillForm.open()
+pillForm.choose(reduced: false)
+check(!pillForm.reduced && !pillForm.chosen, "Show full pill in the menu: the full pill is chosen")
+_ = pillForm.rendered(atRest: false, holds: false)
+check(!pillForm.rendered(atRest: true, holds: false) && !pillForm.reduced, "and a turn no longer reduces it")
+pillForm.open()
+pillForm.rendered(atRest: false, holds: false)
+pillForm.choose(reduced: true)
+check(pillForm.reduced && !pillForm.pending, "Reduce to orb while the full pill is open: reduced now")
 
 // --- The bubble never covers the character (#554) ---
 
