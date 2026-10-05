@@ -21,5 +21,5 @@ Put the service's procedure docs (required documents, fees, office hours) in `wo
 
 ## Grow it
 
-- Formal multi-step applications as workflows with citizen-facing forms ([BPM — grant application](../../docs/journey/12-bpm-grant-application.md))
-- Compounding FAQ wiki from real questions ([shared wiki](../../docs/journey/06-shared-wiki.md))
+- Formal multi-step applications as workflows with citizen-facing forms ([workflows](../../docs/dashboard/workflows.md))
+- Compounding FAQ wiki from real questions ([approve lessons for the shared wiki](../../docs/jobs/agent-memory.md#7-approve-the-lessons-proposed-for-the-shared-wiki))
