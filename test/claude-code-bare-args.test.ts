@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { BARE_CLI_ARGS, buildCliGenerateArgs } from "../src/agent/providers/claude-code"
+import { BARE_CLI_ARGS, buildCliGenerateArgs, describeCliFailure } from "../src/agent/providers/claude-code"
 
 // Helper calls (classifier, summaries, extraction) went through the same
 // `claude -p` startup as an interactive agent: plugins, hooks, MCP servers,
@@ -35,5 +35,19 @@ describe("buildCliGenerateArgs", () => {
     const args = buildCliGenerateArgs({ model: "haiku", prompt: "hi", bare: true })
     expect(args).not.toContain("--system-prompt")
     expect(args[args.length - 1]).toBe("hi")
+  })
+})
+
+describe("describeCliFailure", () => {
+  it("prefers what the CLI printed", () => {
+    expect(describeCliFailure({ stderr: " rate limited \n", exitCode: 1 })).toBe("rate limited")
+  })
+
+  it("names an abort, a timeout or a signal when the CLI printed nothing", () => {
+    // The classifier's 30s abort was the bare "Claude CLI failed" in daemon logs.
+    expect(describeCliFailure({ stderr: "", stdout: "", isCanceled: true, signal: "SIGTERM" })).toMatch(/aborted/)
+    expect(describeCliFailure({ timedOut: true })).toMatch(/timed out/)
+    expect(describeCliFailure({ signal: "SIGKILL" })).toMatch(/SIGKILL/)
+    expect(describeCliFailure({ exitCode: 2 })).toMatch(/exit 2/)
   })
 })
