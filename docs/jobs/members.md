@@ -55,9 +55,22 @@ The dashboard trusts anything that reaches it from your own computer, so only th
    ```
 
    It refuses to go on if `tailscale serve` publishes the whole dashboard.
-2. It prints three things: the share step, the address of the page, and a **pairing code** such as `7KQ4-M2XH`. The code works once, for 10 minutes.
+2. It prints the share step, the address of the page, and a **pairing code** such as `7KQ4-M2XH`. The code works once, for 10 minutes. It ends with a block marked **Message to forward**: a short message in plain words, written for the teammate, that you copy and send as it is. It names their page, **My work**, and asks them to run nothing on your computer.
+
+   ```text
+   Hi Sara B,
+
+   I use AgentX to give our AI agents their jobs. It has a page for you, "My work": what you asked the agents for, and where each request stands.
+
+   To open it:
+   1. Accept the Tailscale share I sent you. Tailscale is a small program that connects your computer to mine, privately.
+   2. Open https://your-mac.tailnet-name.ts.net/member in Edge or Chrome, give your computer a name and type this code: 7KQ4-M2XH
+      The code works once, for 10 minutes. If it has stopped working, tell me and I will send you a new one.
+
+   I then approve your machine, and the page opens by itself.
+   ```
 3. **Browser (Tailscale admin console):** open **Machines**, this computer, **Share**, and send the link to the teammate. Do this once per person; the invite reminds you.
-4. Send the teammate the address and the code on a channel you know is theirs.
+4. Copy the message between the two dashed lines and send it to the teammate on WhatsApp, Telegram or mail, on a channel you know is theirs. Only the lines between the dashes are for them; the rest of the output is for you.
 
 If the teammate's Tailscale login is on their person entry as `tailscale:<login>` (for example `agentx people link sara tailscale:sara@example.com`), pairing is refused unless the network reports that very login. Without the entry, the login the network reports is recorded and shown to you on the card instead.
 
@@ -145,7 +158,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 - **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above. The reset removes every served path, so add the phone app's two `/app` lines back if you use it.
 - **`Could not read this machine's Tailscale name`:** Tailscale is not running on your computer. Start it, or pass `--url https://<address>` to `agentx people invite`.
 - **The browser says the address does not exist** (`DNS_PROBE_FINISHED_NXDOMAIN` or similar): the share is not accepted yet, or Tailscale on their machine is not connected. Accept the share, wait for **Connected**, then restart the browser and open the address again.
-- **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again. The page tells the teammate to ask you for a new code; it never sends them to a terminal.
+- **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again and forward the new message. The page and the message both tell the teammate to ask you for a new code; neither sends them to a terminal.
 - **The teammate sees Your project instead of My work:** their role is `client`. Set `role` to `member` in `agentx.json`; the page changes on the next open.
 - **"The private network says someone else is connecting":** the login Tailscale reports for their machine is not among the person's `tailscale:` identities. Check with `agentx people show <id>` and fix the identity, or remove it to accept whatever login is reported.
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
