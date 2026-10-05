@@ -42,6 +42,39 @@ The app is in the AgentX source code, in `apps/android`. Build it once, then ins
 
 Every change to `apps/android` is also built by the **Android app** check on GitHub; the app it builds is attached to that run as `agentx-android-debug`.
 
+### Or: the Flutter app (preview)
+
+`apps/phone` is the same app written once in Flutter, so that one codebase can also become an iPhone app later. It talks to the computer in the same way and uses the same name on the phone (`dev.agentx.phone`), so install this one **or** the one above, not both. It is a preview: it has not yet been checked on a real phone.
+
+1. **Computer:** install [Flutter](https://docs.flutter.dev/get-started/install) 3.47 or newer, with Java 17 and the Android SDK.
+2. **Terminal (computer):** go to the app's folder:
+   ```sh
+   cd apps/phone
+   ```
+3. **Terminal (computer):** build it:
+   ```sh
+   flutter build apk --debug
+   ```
+   The app is written to `build/app/outputs/flutter-apk/app-debug.apk`.
+4. **Terminal (computer):** with the phone connected as in step 3 above, install it:
+   ```sh
+   adb install -r build/app/outputs/flutter-apk/app-debug.apk
+   ```
+   If the other Android app is already on the phone, uninstall it first: **Phone:** long-press **AgentX**, tap **App info**, then **Uninstall**.
+
+Without building it yourself: on GitHub, open the latest **Phone app** check of a change to `apps/phone`, and download `agentx-phone-debug` under **Artifacts**. It is a `.zip` holding the `.apk`.
+
+The Flutter app's screens differ from the steps below in a few places:
+
+- After pairing, and every time you open it from the app list, it goes straight to the phone app. Press **Back** to reach its own screen, which holds **Open AgentX** and the **Place reminders** switch.
+- The location is one line, **Location:**, which should say **allowed all the time**.
+- **Open Android settings for AgentX** is called **Open settings for AgentX**.
+- There is no long-press shortcut on the icon yet. Use **Location settings** on the **Places** card, or press **Back** from the phone app.
+
+To set its package name or sign a release build, use the Gradle properties in `apps/phone/README.md`. They are the same names as for the app above.
+
+**iPhone:** the iPhone project is set up but not built or tested yet. Building it needs Xcode, and installing it needs an Apple account.
+
 ### Use your own package name
 
 The app is called `dev.agentx.phone` on the phone. To install your own build next to another one, or to publish it, give it another name:
