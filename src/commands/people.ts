@@ -8,7 +8,7 @@ import { openRequestsOf, runsOf } from "@/people/activity"
 import { TokenStore } from "@/daemon/token-store"
 import { PairCodeStore, formatCode } from "@/daemon/pair-codes"
 import { MemberStore } from "@/members/store"
-import { inviteMember, removeDevice, removePersonDevices, MEMBER_KEY_DAYS } from "@/members/pairing"
+import { CODE_MINUTES, inviteMember, inviteMessage, pageFor, removeDevice, removePersonDevices, MEMBER_KEY_DAYS } from "@/members/pairing"
 import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeStatus } from "./app"
 
 // --- agentx people: the humans who talk to your agents (#384) ---
@@ -26,7 +26,8 @@ import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeS
 //   remove <id>                            also ends every machine of theirs
 //   show <id> [--limit N]                  what they asked for, on every channel
 //   invite <id> [--url origin]             a one-time code for their own page (#385): My work
-//                                          for a teammate, Your project for a client (#453)
+//                                          for a teammate, Your project for a client (#453),
+//                                          and a message to forward to them as it is (#659)
 //   devices [id]                           their machines: state, first and last use
 //   revoke-device <tokenId>                end one machine at once
 
@@ -34,11 +35,8 @@ export const people = new Command("people")
   .description("the humans who talk to your agents: one person per human, whatever channel they use")
 
 const ROLES = PERSON_ROLES
-
-/** The page a person's paired machine opens at /member (#453). */
-export function pageFor(role: string): string {
-  return role === "client" ? "Your project" : "My work"
-}
+/** The line above and below the message to forward. */
+const MESSAGE_RULE = "-".repeat(64)
 
 /** The member store with this install's log retention. */
 function memberStore(): MemberStore {
@@ -209,7 +207,7 @@ people
 
 people
   .command("invite <id>")
-  .description("a one-time code that pairs one of this person's machines with their own page (/member): My work for a teammate, Your project for a client")
+  .description("a one-time code that pairs one of this person's machines with their own page (/member): My work for a teammate, Your project for a client. Ends with a message to forward to them as it is")
   .option("--url <origin>", "address the person opens, e.g. https://my-mac.tailnet-name.ts.net (default: this computer's Tailscale name)")
   .action((id: string, opts: { url?: string }) => {
     try {
@@ -235,13 +233,20 @@ people
       console.log(`  1. Share this computer with them on your private network, if you have not yet:`)
       console.log(chalk.dim(`     Tailscale admin console → Machines → this computer → Share → send them the link.`))
       console.log(chalk.dim(`     Limit what shared users can reach to port 443 in your access rules (see the docs page "Invite a teammate").`))
-      console.log(`  2. Send them this address and code. The code works once, for 10 minutes:`)
+      console.log(`  2. Send them the message below, or this address and code. The code works once, for ${CODE_MINUTES} minutes:`)
       console.log()
       console.log(`     ${chalk.cyan(`${origin}/member`)}`)
       console.log(`     ${chalk.bold(formatCode(r.code))}`)
       console.log()
       console.log(`  3. When they pair, a card "New machine for ${r.person.name}" asks you to approve that machine. Then ${pageFor(r.person.role)} opens for them.`)
       console.log(chalk.dim(`     Their key stops after ${MEMBER_KEY_DAYS} days; invite again then. Machine id: ${r.tokenId}`))
+      console.log()
+      // The message sits flush left, with no colour, so a copy carries no
+      // indent and no escape code into WhatsApp, Telegram or mail.
+      console.log(`  ${chalk.bold("Message to forward")} ${chalk.dim("(copy everything between the two lines; the rest of this output is for you)")}`)
+      console.log(chalk.dim(MESSAGE_RULE))
+      console.log(inviteMessage({ person: r.person, origin, code: r.code }))
+      console.log(chalk.dim(MESSAGE_RULE))
       console.log()
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))

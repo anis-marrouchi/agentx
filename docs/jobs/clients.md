@@ -34,8 +34,23 @@ The whole path, from your first step to the client's desktop:
    ```
 
    It prints the share step, the address of the page, a **pairing code** such as `7KQ4-M2XH`, and the name of the page the person gets, **Your project**. The code works once, for 10 minutes. The command refuses to go on if `tailscale serve` publishes the whole dashboard.
+
+   It ends with a block marked **Message to forward**: a short message in plain words, written for the client, that you copy and send as it is. It names their page, **Your project**, says nothing about your agents, and asks them to run nothing on your computer.
+
+   ```text
+   Hi Acme Bakery,
+
+   I use AgentX to keep track of the work I do for you. It has a page for you, "Your project": what you asked us for, and where each request stands.
+
+   To open it:
+   1. Accept the Tailscale share I sent you. Tailscale is a small program that connects your computer to mine, privately.
+   2. Open https://your-mac.tailnet-name.ts.net/member in Edge or Chrome, give your computer a name and type this code: 7KQ4-M2XH
+      The code works once, for 10 minutes. If it has stopped working, tell me and I will send you a new one.
+
+   I then approve your machine, and the page opens by itself.
+   ```
 3. **Browser (Tailscale admin console):** open **Machines**, this computer, **Share**, and send the link to the client. Do this once per person; the invite reminds you.
-4. Send the client the address and the code on a channel you know is theirs.
+4. Copy the message between the two dashed lines and send it to the client on WhatsApp, Telegram or mail, on a channel you know is theirs. Only the lines between the dashes are for them; the rest of the output is for you.
 
 ## The client pairs their machine
 
@@ -92,7 +107,7 @@ A client's machines are managed like a teammate's: in the dashboard's [People](.
 
 - **The client sees My work instead of Your project:** their role is not `client`. Run `agentx people list` and check the word after their name; set `role` to `client` in `agentx.json` if it is not. The page changes on the next open.
 - **`--role must be one of: owner, member, client, guest`:** the role was mistyped. Write `client`.
-- **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite acme` again and send the new code.
+- **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite acme` again and forward the new message.
 - **"The private network says someone else is connecting":** the login Tailscale reports for their machine is not among the person's `tailscale:` identities. Check with `agentx people show acme` and fix the identity, or remove it to accept whatever login is reported.
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
 - **The page says "Nothing asked for yet" although they asked:** request tracking is off (`agentx requests settings`), or the client's identity on that channel is not on their person entry, so their requests were not stamped with their id.
