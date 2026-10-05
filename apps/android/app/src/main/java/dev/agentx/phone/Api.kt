@@ -49,9 +49,14 @@ object Api {
         return JSONObject(conn.inputStream.bufferedReader().use { it.readText() })
     }
 
-    /** Sends one crossing. Returns the HTTP status. */
-    fun postEvent(base: String, token: String, event: JSONObject): Int {
+    /** Sends one crossing. Returns the HTTP status. [quick] keeps it short
+     *  enough to finish inside the geofence broadcast. */
+    fun postEvent(base: String, token: String, event: JSONObject, quick: Boolean = false): Int {
         val conn = open("$base/api/app/places/event", "POST", token)
+        if (quick) {
+            conn.connectTimeout = 4_000
+            conn.readTimeout = 4_000
+        }
         conn.setRequestProperty("Content-Type", "application/json")
         conn.outputStream.use { it.write(event.toString().toByteArray()) }
         val status = conn.responseCode

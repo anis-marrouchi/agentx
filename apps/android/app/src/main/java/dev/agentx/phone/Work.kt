@@ -44,17 +44,64 @@ object Jobs {
         WorkManager.getInstance(context).cancelAllWork()
     }
 
-    fun report(context: Context, id: String, place: String, transition: String, time: Long) {
+    fun report(context: Context, crossing: Crossing) {
         val data = Data.Builder()
-            .putString("id", id).putString("place", place)
-            .putString("transition", transition).putLong("time", time)
+            .putString("id", crossing.id).putString("place", crossing.place)
+            .putString("transition", crossing.transition).putLong("time", crossing.time)
             .build()
         val req = OneTimeWorkRequestBuilder<EventWorker>()
             .setInputData(data)
             .setConstraints(online)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork("place-event-$id", ExistingWorkPolicy.KEEP, req)
+        WorkManager.getInstance(context).enqueueUniqueWork(eventWork(crossing.id), ExistingWorkPolicy.KEEP, req)
+    }
+
+    /** Sent already (or not worth sending): the queued copy is not needed. */
+    fun reported(context: Context, id: String) {
+        WorkManager.getInstance(context).cancelUniqueWork(eventWork(id))
+    }
+
+    private fun eventWork(id: String) = "place-event-$id"
+}
+
+/** One crossing: which place, which way, when. Nothing else. */
+data class Crossing(val id: String, val place: String, val transition: String, val time: Long)
+
+object Report {
+    /**
+     * Sends one crossing to the computer. Returns false when it should be
+     * tried again later (offline, or the computer is busy). The computer
+     * fires a crossing once even if it arrives twice, by its id.
+     */
+    fun send(context: Context, crossing: Crossing, quick: Boolean = false): Boolean {
+        val prefs = Prefs(context)
+        val base = prefs.baseUrl ?: return true
+        val token = prefs.token ?: return true
+        // Turned off since the crossing: drop it.
+        if (!prefs.placesOn) return true
+        // The computer drops old reports anyway (app.places.maxEventAgeMinutes);
+        // stop retrying one that can only be dropped.
+        if (System.currentTimeMillis() - crossing.time > TimeUnit.DAYS.toMillis(1)) return true
+        val event = JSONObject()
+            .put("id", crossing.id)
+            .put("place", crossing.place)
+            .put("transition", crossing.transition)
+            .put("time", crossing.time)
+        return try {
+            when (val status = Api.postEvent(base, token, event, quick)) {
+                in 200..299 -> true
+                401 -> {
+                    prefs.lastError = context.getString(R.string.err_unpaired)
+                    true
+                }
+                // Malformed or refused for good (places turned off there): don't retry.
+                400, 403, 404 -> true
+                else -> !(status >= 500 || status == 429)
+            }
+        } catch (e: IOException) {
+            false
+        }
     }
 }
 
@@ -67,36 +114,15 @@ class SyncWorker(context: Context, params: WorkerParameters) : Worker(context, p
     }
 }
 
-/** Sends one crossing: which place, which way, when. Nothing else. */
+/** Sends a crossing that could not be sent at once, when there is a network. */
 class EventWorker(context: Context, params: WorkerParameters) : Worker(context, params) {
     override fun doWork(): Result {
-        val prefs = Prefs(applicationContext)
-        val base = prefs.baseUrl ?: return Result.success()
-        val token = prefs.token ?: return Result.success()
-        // Turned off since the crossing: drop it.
-        if (!prefs.placesOn) return Result.success()
-        val time = inputData.getLong("time", 0)
-        // The computer drops old reports anyway (app.places.maxEventAgeMinutes);
-        // stop retrying one that can only be dropped.
-        if (System.currentTimeMillis() - time > TimeUnit.DAYS.toMillis(1)) return Result.success()
-        val event = JSONObject()
-            .put("id", inputData.getString("id"))
-            .put("place", inputData.getString("place"))
-            .put("transition", inputData.getString("transition"))
-            .put("time", time)
-        return try {
-            when (val status = Api.postEvent(base, token, event)) {
-                in 200..299 -> Result.success()
-                401 -> {
-                    prefs.lastError = applicationContext.getString(R.string.err_unpaired)
-                    Result.success()
-                }
-                // Malformed or refused for good (places turned off there): don't retry.
-                400, 403, 404 -> Result.success()
-                else -> if (status >= 500 || status == 429) Result.retry() else Result.success()
-            }
-        } catch (e: IOException) {
-            Result.retry()
-        }
+        val crossing = Crossing(
+            inputData.getString("id") ?: return Result.success(),
+            inputData.getString("place") ?: return Result.success(),
+            inputData.getString("transition") ?: return Result.success(),
+            inputData.getLong("time", 0),
+        )
+        return if (Report.send(applicationContext, crossing)) Result.success() else Result.retry()
     }
 }

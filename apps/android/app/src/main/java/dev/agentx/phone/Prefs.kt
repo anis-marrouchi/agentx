@@ -38,6 +38,12 @@ class Prefs(context: Context) {
         get() = p.getStringSet("placeNames", emptySet()) ?: emptySet()
         set(v) = p.edit().putStringSet("placeNames", v).apply()
 
+    /** The places registered with Android at the last check (Places.toJson),
+     *  so they can be watched again after a restart without the computer. */
+    var watched: String?
+        get() = p.getString("watched", null)
+        set(v) = p.edit().putString("watched", v).apply()
+
     var lastSyncAt: Long
         get() = p.getLong("lastSyncAt", 0)
         set(v) = p.edit().putLong("lastSyncAt", v).apply()
