@@ -74,6 +74,7 @@
     "docs:demo": "node dist/cli.js demo --no-open --keep",
     "docs:seed": "node docs/.scripts/seed-demo.mjs",
     "docs:shots": "node docs/.scripts/capture.mjs",
+    "docs:shots:mobile": "node docs/.scripts/capture-mobile.mjs",
     "docs:preview": "vitepress preview docs",
     "prepublishOnly": "npm run build",
     "postinstall": "node scripts/postinstall.mjs"

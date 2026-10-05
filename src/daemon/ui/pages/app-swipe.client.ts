@@ -13,6 +13,11 @@
 // With reduced motion nothing follows the finger and nothing slides; a
 // completed swipe changes the tab at once.
 //
+// A touch keeps sending its events to the node it started on, even after a
+// redraw has taken that node out of the page; then nothing reaches <main>
+// and the page would stay half-dragged. A watcher on <main> notices the
+// node going and lands the swipe where the finger was.
+//
 // This string lives inside a TypeScript template literal: no backslashes,
 // no dollar-brace and no backticks in it, or the inlined script breaks.
 
@@ -104,8 +109,15 @@ export const APP_SWIPE_SCRIPT = `
     if (g) { end(true); return; } // a second finger: let go
     if (ev.touches.length !== 1 || !swipeMayStart(pathFrom(ev.target))) return;
     var t = ev.touches[0];
-    g = { x: t.clientX, y: t.clientY, trail: [{ dx: 0, t: Date.now() }], axis: '', dx: 0, side: 0, peek: null, index: current() };
+    g = { x: t.clientX, y: t.clientY, trail: [{ dx: 0, t: Date.now() }], axis: '', dx: 0, side: 0, peek: null, index: current(), target: ev.target };
   }, { passive: true });
+  // The touched node left the page: its events no longer arrive here.
+  if (window.MutationObserver) {
+    new window.MutationObserver(function () {
+      if (!g || sliding || !g.target || main.contains(g.target)) return;
+      if (g.axis === 'x') end(false); else g = null;
+    }).observe(main, { childList: true, subtree: true });
+  }
   main.addEventListener('touchmove', function (ev) {
     if (!g || sliding) return;
     var t = ev.touches[0], dx = t.clientX - g.x;
