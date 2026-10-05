@@ -1,6 +1,6 @@
 # Invite a teammate to their work page
 
-A teammate who asks your agents for things on GitLab, Telegram or WhatsApp has no dashboard. They cannot see whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see only that an agent is busy with it, never what it is.
+**This page is for you, the owner.** A teammate who asks your agents for things on GitLab, Telegram or WhatsApp cannot see, from that channel, whether the agent is working, waiting or stuck, whatever tools they run on their own machine. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see only that an agent is busy with it, never what it is. The teammate's own steps are on [Join My work](./join-my-work.md), a short page you can send them as it is.
 
 It works like the [phone app](../dashboard/mobile-app.md): one page served on your private network, a one-time code to pair, a key per machine. Two things are stricter, because a teammate is not you:
 
@@ -55,20 +55,15 @@ The dashboard trusts anything that reaches it from your own computer, so only th
    It refuses to go on if `tailscale serve` publishes the whole dashboard.
 2. It prints three things: the share step, the address of the page, and a **pairing code** such as `7KQ4-M2XH`. The code works once, for 10 minutes.
 3. **Browser (Tailscale admin console):** open **Machines**, this computer, **Share**, and send the link to the teammate. Do this once per person; the invite reminds you.
-4. Send the teammate the address and the code on a channel you know is theirs.
+4. Send the teammate the address and the code on a channel you know is theirs, with a link to [Join My work](./join-my-work.md). That page has only their steps, with no network setup and no commands.
 
 If the teammate's Tailscale login is on their person entry as `tailscale:<login>` (for example `agentx people link sara tailscale:sara@example.com`), pairing is refused unless the network reports that very login. Without the entry, the login the network reports is recorded and shown to you on the card instead.
 
 ## The teammate pairs their machine
 
-1. **Their machine:** install Tailscale and accept the share.
-2. **Their browser:** open the address, for example `https://your-mac.tailnet-name.ts.net/member`.
-3. The page asks for a name for the machine and the code. They type both and press **Pair**.
+The teammate follows [Join My work](./join-my-work.md), which walks them through these four steps with a screenshot of each page: they install Tailscale and accept the share, open the address (for example `https://your-mac.tailnet-name.ts.net/member`), type a name for the machine and the code, and the page says **Waiting for the owner**. Opening the address before Tailscale on their machine says **Connected** gives them "site can't be reached", the most common stumble.
 
-   ![The "Pair this machine" page with a field for the machine's name and one for the code](/screenshots/members/pair.png)
-4. The page says **Waiting for the owner**.
-
-   ![The "Waiting for the owner" page](/screenshots/members/waiting.png)
+![The "Waiting for the owner" page](/screenshots/members/waiting.png)
 
 ## Approve the machine
 
@@ -138,6 +133,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 - **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above. The reset removes every served path, so add the phone app's two `/app` lines back if you use it.
 - **`Could not read this machine's Tailscale name`:** Tailscale is not running on your computer. Start it, or pass `--url https://<address>` to `agentx people invite`.
+- **The teammate's browser says the site can't be reached:** they opened the address before Tailscale on their machine said **Connected**, or before accepting the share. Once it is connected, they close the browser and open the address again.
 - **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again.
 - **"The private network says someone else is connecting":** the login Tailscale reports for their machine is not among the person's `tailscale:` identities. Check with `agentx people show <id>` and fix the identity, or remove it to accept whatever login is reported.
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
