@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "http"
 import { TokenStore, type TokenRecord } from "@/daemon/token-store"
 import { PairCodeStore } from "@/daemon/pair-codes"
-import { PAIR_CODE_FAILED, type PairAttemptLimiter } from "@/daemon/app-pair-code"
+import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { readJson } from "@/daemon/app-fleet"
 import { createCard, readCard } from "@/approvals/cards"
 import { splitIdentity, type Person } from "@/people/people"
@@ -35,6 +35,11 @@ export const MEMBER_KEY_DAYS = 90
  *  the verdict; the member page reads it instead. */
 export const PAIRING_CARD_BY = "members"
 export const NETWORK_LOGIN_HEADER = "tailscale-user-login"
+/** The one answer for a wrong, expired or used code. The phone app's
+ *  message (PAIR_CODE_FAILED) names `agentx app pair`, the owner's own
+ *  command; a teammate has no terminal on the host, so this one names the
+ *  person who invited them instead (#643). */
+export const MEMBER_CODE_FAILED = "That code didn't work. Check it, or ask the person who invited you for a new code."
 const MIN_MS = 400
 const SEEN_EVERY_MS = 60 * 60 * 1000
 
@@ -162,7 +167,7 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
   if (!redeemed || !verified) {
     deps.limiter.fail(client)
     log(`[member] pair-code failed from ${client}`)
-    return { status: 401, body: { error: PAIR_CODE_FAILED } }
+    return { status: 401, body: { error: MEMBER_CODE_FAILED } }
   }
   deps.limiter.succeed(client)
   const { rec, personId } = verified
@@ -171,7 +176,7 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
     deps.tokens.revoke(rec.id)
     deps.members.log({ person: personId, device: rec.id, event: "refused", address: client, detail: "person no longer listed" })
     log(`[member] pair-code for ${personId} refused from ${client}: person no longer listed`)
-    return { status: 403, body: { error: PAIR_CODE_FAILED } }
+    return { status: 403, body: { error: MEMBER_CODE_FAILED } }
   }
   const login = networkLogin(req)
   const expected = networkIdentities(person)

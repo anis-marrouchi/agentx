@@ -148,7 +148,7 @@ ${bar("This machine is not paired yet")}
       <p id="pair-offline" class="pair-offline" role="status" hidden>You're offline. Pairing needs a connection to the private network.</p>
       <p id="pair-msg" class="pair-msg" role="status" aria-live="polite"></p>
     </form>
-    <p class="help">No code? Ask the owner to run <code>agentx people invite &lt;you&gt;</code>. A code works once, for 10 minutes.</p>
+    <p class="help">No code? Ask the person who invited you. A code works once, for 10 minutes.</p>
   </div>
 </main>
 <script>${injectFns({ formatPairInput })}${LOCKED_SCRIPT}</script>
@@ -245,7 +245,7 @@ const LOCKED_SCRIPT = `
       if (r.status === 200) { say('Paired. Waiting for the owner…', false); location.replace('/member'); return; }
       busy = false; btn.disabled = false;
       if (r.status === 429) { say('Too many attempts. Wait ' + Math.ceil((r.body.retryAfter || 300) / 60) + ' minutes, then try again.', true); return; }
-      say(r.body.error || 'That code did not work.', true);
+      say(r.body.error || 'That code did not work. Ask the person who invited you for a new one.', true);
     }).catch(function () { busy = false; btn.disabled = false; say('No connection. Check the private network and try again.', true); });
   });
 })();

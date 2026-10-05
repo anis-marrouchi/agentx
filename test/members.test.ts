@@ -6,10 +6,10 @@ import { join } from "path"
 import Database from "better-sqlite3"
 import { TokenStore } from "../src/daemon/token-store"
 import { PairCodeStore } from "../src/daemon/pair-codes"
-import { PairAttemptLimiter } from "../src/daemon/app-pair-code"
+import { PAIR_CODE_FAILED, PairAttemptLimiter } from "../src/daemon/app-pair-code"
 import { MemberStore } from "../src/members/store"
 import {
-  NETWORK_MISMATCH, clientAddress, inviteMember, machineName, memberAccess, networkIdentities, networkLogin, personOfToken,
+  MEMBER_CODE_FAILED, NETWORK_MISMATCH, clientAddress, inviteMember, machineName, memberAccess, networkIdentities, networkLogin, personOfToken,
   removeDevice, removePersonDevices,
 } from "../src/members/pairing"
 import { forgeLink, whereLabel, workOf } from "../src/members/work"
@@ -185,11 +185,31 @@ describe("pairing a machine", () => {
   it("refuses a wrong code with one answer, and locks out after too many", async () => {
     const r = await fetch(`${base}/api/member/pair-code`, json({ code: "AAAA-AAAA", machine: "x" }))
     expect(r.status).toBe(401)
-    expect(await r.json()).toEqual({ error: expect.stringContaining("didn't work") })
+    expect(await r.json()).toEqual({ error: MEMBER_CODE_FAILED })
     for (let i = 0; i < 4; i++) await fetch(`${base}/api/member/pair-code`, json({ code: "BBBB-BBBB", machine: "x" }))
     const locked = await fetch(`${base}/api/member/pair-code`, json({ code: "CCCC-CCCC", machine: "x" }))
     expect(locked.status).toBe(429)
     expect(locked.headers.get("retry-after")).toBeTruthy()
+  })
+
+  // #643: a teammate has no terminal on the host, so neither the wrong-code
+  // answer nor the page may name a command. The phone app's own message
+  // still names the owner's command, since the owner is the one typing there.
+  it("tells a teammate to ask whoever invited them, never to run a command", async () => {
+    expect(MEMBER_CODE_FAILED).toContain("ask the person who invited you")
+    expect(MEMBER_CODE_FAILED).not.toMatch(/agentx/)
+    expect(PAIR_CODE_FAILED).toContain("run agentx app pair")
+    const wrong = await fetch(`${base}/api/member/pair-code`, json({ code: "AAAA-AAAA", machine: "x" }))
+    expect(await wrong.json()).toEqual({ error: MEMBER_CODE_FAILED })
+    const owner = await fetch(`${base}/api/app/pair-code`, json({ code: "AAAA-AAAA" }))
+    expect(owner.status).toBe(401)
+    expect(await owner.json()).toEqual({ error: PAIR_CODE_FAILED })
+    const page = await fetch(`${base}/member`)
+    expect(page.status).toBe(401)
+    const html = await page.text()
+    expect(html).toContain("No code? Ask the person who invited you.")
+    expect(html).not.toMatch(/agentx (people|app) /)
+    expect(html).not.toContain("<code>")
   })
 
   it("spends the code: a second use finds nothing", async () => {

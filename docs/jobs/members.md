@@ -138,7 +138,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 - **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above. The reset removes every served path, so add the phone app's two `/app` lines back if you use it.
 - **`Could not read this machine's Tailscale name`:** Tailscale is not running on your computer. Start it, or pass `--url https://<address>` to `agentx people invite`.
-- **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again.
+- **"That code didn't work. Check it, or ask the person who invited you for a new code":** the code was mistyped, is older than 10 minutes, or was already used. The page tells the teammate to ask you, because they have no terminal on your computer: run `agentx people invite` again and send them the new code.
 - **"The private network says someone else is connecting":** the login Tailscale reports for their machine is not among the person's `tailscale:` identities. Check with `agentx people show <id>` and fix the identity, or remove it to accept whatever login is reported.
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
 - **The page is empty:** request tracking is off (`agentx requests settings`), or the teammate's identity on that channel is not on their person entry, so their requests were not stamped with their id.
