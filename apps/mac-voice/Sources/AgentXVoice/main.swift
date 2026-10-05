@@ -223,10 +223,11 @@ final class App: NSObject, NSApplicationDelegate {
         character.animates = IdlePlay.gap(saved.general.animations)
         if !asCharacter { panel.detach() }
         idleWords()
-        // voice.startReduced is how the assistant starts: read once.
+        // voice.startReduced is how the assistant starts: read once. With
+        // the character, it starts without its bubble.
         if !startApplied {
             startApplied = true
-            if saved.general.startReduced == true, !asCharacter { panel.summon(); panel.setReduced(true) }
+            if saved.general.startReduced == true { panel.summon(); panel.setReduced(true) }
         }
         if settingsWindow.model.recording == nil { registerHotkeys() }
         // Colours may have changed.
@@ -439,12 +440,12 @@ final class App: NSObject, NSApplicationDelegate {
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
         statusMenu.pillReduced = { [weak self] in self?.panel.reduced ?? false }
-        statusMenu.canReduce = { [weak self] in PillMenu.canReduce(showsOrb: self?.panel.showsOrb ?? true) }
         statusMenu.onReduce = { [weak self] on in
             guard let self else { return }
-            Log.info("pill: \(on ? "reduced to the orb" : "opened")")
-            // Asking for the orb brings back a pill that was dismissed.
-            if on { self.panel.summon() }
+            Log.info("pill: \(on ? "reduced" : "opened")")
+            // Asking for the reduced form brings back a pill, or a
+            // character, that was dismissed.
+            if on { self.summonPill() }
             self.panel.setReduced(on)
         }
         statusMenu.characterVisible = { [weak self] in self?.character.onScreen }

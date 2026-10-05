@@ -49,10 +49,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
     var onResetPosition: (() -> Void)?
     /// Whether the pill is on screen, for "Hide pill" and "Show floating pill".
     var pillVisible: () -> Bool = { false }
-    /// Whether the pill is reduced to its orb, and whether it can be.
+    /// Whether the pill is reduced: to its orb, or to the character alone.
     var pillReduced: () -> Bool = { false }
-    var canReduce: () -> Bool = { true }
-    /// Reduce the pill to its orb (true), or open it again.
+    /// Reduce the pill (true), or open it again.
     var onReduce: ((Bool) -> Void)?
     /// The character look: whether the character is on screen. Nil with
     /// the orb look.
@@ -253,9 +252,9 @@ final class StatusMenu: NSObject, NSMenuDelegate {
         let pill = action("Show floating pill", #selector(togglePill), key: "")
         pill.state = PillMenu.isChecked(showPill: Config.showPill, visible: pillVisible()) ? .on : .off
         menu.addItem(pill)
-        let reduce = action(PillMenu.reduceTitle(reduced: pillReduced()), #selector(toggleReduce), key: "")
-        reduce.isEnabled = pillReduced() || canReduce()
-        menu.addItem(reduce)
+        // The pill to its orb, or the character to itself without its bubble.
+        menu.addItem(action(PillMenu.reduceTitle(reduced: pillReduced(), character: characterVisible() != nil),
+                            #selector(toggleReduce), key: ""))
         let orb = action("Animated orb", #selector(toggleOrb), key: "")
         orb.state = Config.animatedOrb ? .on : .off
         menu.addItem(orb)

@@ -69,8 +69,8 @@ struct LookSection: View {
                 Text("Character").tag("character")
             }
             if let startReduced {
-                Toggle("Start reduced to the orb", isOn: startReduced)
-                    .disabled(look == "character")
+                // The orb alone, or the character alone without its bubble.
+                Toggle("Start reduced", isOn: startReduced)
             }
             if let stroll {
                 Toggle("Character strolls when idle", isOn: stroll)
