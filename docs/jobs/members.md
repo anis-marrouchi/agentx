@@ -1,6 +1,6 @@
 # Invite a teammate to their work page
 
-**This page is for you, the owner.** A teammate who asks your agents for things on GitLab, Telegram or WhatsApp cannot see, from that channel, whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see what an agent is busy with right now, in a short preview, and nothing of it once it is done. The teammate's own steps are on [Join My work](./join-my-work.md), a short page you can send them as it is.
+**This page is for you, the owner.** A teammate who asks your agents for things on GitLab, Telegram or WhatsApp cannot see, from that channel, whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see what an agent is busy with right now, in a short preview, and nothing of it once it is done. The teammate's own steps are on [Join My work](./join-my-work.md), a short page you can send them as it is. Which way in fits whom, side by side: [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in).
 
 It covers a teammate, a person with the role `member`. A **client**, someone you do work for, goes through the same door but gets a different page, **Your project**: see [Give a client a page of their own](./clients.md).
 

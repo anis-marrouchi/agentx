@@ -1,5 +1,7 @@
 # Connect machines with Tailscale
 
+**This page is for your own machines.** Pairing hands over the mesh password, and a machine that holds it can send work to every agent in the mesh and control the other machines' daemons. Never pair a teammate's or a client's machine this way: give a teammate [their own work page](./members.md), a client [a project page of their own](./clients.md), and another organisation [a guest grant](./guest-mesh.md). For your own phone, use the [phone app](../dashboard/mobile-app.md). The five ways side by side: [Who gets which way in](./keep-it-safe.md#who-gets-which-way-in).
+
 Use the [network prerequisites checklist](../requirements.md#two-machines-and-a2a) before pairing.
 
 [Tailscale](https://tailscale.com) is a private network that links your own machines over the internet. Your private Tailscale network is called a **tailnet**. Tailscale lets the machines reach each other; AgentX **mesh pairing** then tells each AgentX daemon (the background service) where its peers are and gives them a shared password. You need both before agents on different machines can work together.
@@ -50,7 +52,7 @@ Run these commands in the folder that holds `agentx.json` on each machine. For D
    ```sh
    agentx connect mesh invite --url http://100.64.0.10:18800
    ```
-2. Copy the printed link. It contains a password: share it privately.
+2. Copy the printed link. It contains the mesh password: share it privately, and only with the person setting up your other machine, never with a teammate or a client.
 3. **Terminal, on machine B:** join with it:
    ```sh
    agentx connect mesh join '<invite-from-A>'
