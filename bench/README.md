@@ -104,6 +104,16 @@ or "no clear difference". The rule is written out in
 The cost column is `total_cost_usd` as the CLI reports it (list price); the
 `agentx` rows get it through `agentx exec --json` (`costUsd`).
 
+### What it found (#455, parked)
+
+On one-prompt coding tasks AgentX does not save tokens: after the fixes
+the test led to, the lean profile costs the same as the bare CLI on Sonnet
+5.5 (1.02 times the tokens) and the full profile about a tenth more; on
+Haiku 4.5 ten runs a cell cannot tell them apart. The owner parked the
+higher rungs of the comparison on 2026-10-05. The results, the product
+changes they led to and the conditions for reopening are gathered in
+[results/claude-code-comparison-455.md](results/claude-code-comparison-455.md).
+
 ## Level 1: dev set
 
 Claude Code and agentx, same model (Haiku 4.5), same 8 Terminal-Bench tasks

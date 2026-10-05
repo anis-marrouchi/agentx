@@ -209,7 +209,9 @@ The claims, by the rule fixed in the plan:
    the number of calls: the edit retry (a `sed` that leaves a duplicate
    line, 1 to 3 extra calls in about 3 of 10 `trace` runs in every mode)
    is the largest variable cost left.
-4. Repeat on Haiku 4.5, where the number of calls varied far more.
+4. Repeat on Haiku 4.5, where the number of calls varied far more. Done:
+   [token-test-haiku-4-5.md](token-test-haiku-4-5.md), no clear difference
+   at ten runs a cell.
 
 ## Check it worked
 
