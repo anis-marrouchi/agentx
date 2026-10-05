@@ -96,9 +96,10 @@ Most answers are only spoken. A long answer is read aloud up to the end of a sen
 ![The same answer in dark mode](/screenshots/voice/answer-open-dark.png)
 
 1. **Mac:** read or scroll the answer. Click a link or a button to open it in your browser.
-2. **Mac:** move the pointer over the answer. Two small buttons appear at its top-right corner: **Copy the answer** and **Open in chat** (which opens the agent's chat in the dashboard).
-3. **Mac:** to copy only part of it, select the text and press **Command–C**.
-4. Move the pointer away. The pill shrinks back 30 seconds after the answer has been spoken, never while the pointer is over it.
+2. **Mac:** move the pointer over the answer. Three small buttons appear at its top-right corner: **Listen again** (a speaker), **Copy the answer** and **Open in chat** (which opens the agent's chat in the dashboard).
+3. **Mac:** to hear the answer again, click **Listen again**. It is said from the start in the agent's voice, after anything already speaking. Click it again (it shows a stop square), or press **Command–Option–.**, to stop it.
+4. **Mac:** to copy only part of it, select the text and press **Command–C**.
+5. Move the pointer away. The pill shrinks back 30 seconds after the answer has been spoken, never while the pointer is over it.
 
 ![The answer with the pointer over it: the Copy the answer and Open in chat buttons at its top-right corner, and the close button at the right end of the pill](/screenshots/voice/answer-hover.png)
 
@@ -476,6 +477,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **Two agents are busy but the pill shows no small orbs:** the pill was closed or **Show floating pill** hides it when idle; hold **Option–Space** to bring it back. The row also shows only questions asked from this Mac.
 - **A name is still said the old way:** **Terminal:** run `agentx voice pronounce` and check the pair is listed. A pair with `--lang` is skipped in answers in another language. The written form must be the whole word as it appears in the answer: a pair for "Okafor" does not change "Okafors". Words are swapped only for what is said aloud, never in what is shown.
 - **A misheard name went to the ticked agent:** a near match needs a comma or a pause after the name, a name of four letters or more, and only one agent that close. Add the wrong spelling to the agent's `mentions`; see [Spoken aliases](#spoken-aliases).
+- **Listen again says nothing:** it waits behind anything already speaking, so another agent's answer may play first. Check the queue: **Terminal:** run `curl -s http://127.0.0.1:18800/voice/queue`. If `paused` is `true` and you are not speaking, run `curl -s -X POST http://127.0.0.1:18800/voice/queue/resume`.
 - **History is empty or says the daemon isn't reachable:** History reads from the daemon. Start it, then choose **Refresh**.
 - **Save in the settings window shows a red message:** a shortcut is used twice. Change one of them and save again.
 - **Where to find the logs:** the app keeps its own log in `~/Library/Logs/agentx-voice.log`, whichever way you installed it. Crash messages and anything else it prints go to a second file that depends on how you installed it: `~/Library/Logs/agentx-desktop.err.log` after `agentx desktop install`, or `~/Library/Logs/agentx-voice.err.log` after `apps/mac-voice/install.sh`. The installer prints this second path when it finishes. **Terminal:** run `tail -n 50 <path>` to see the latest lines.
