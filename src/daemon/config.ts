@@ -1280,6 +1280,43 @@ export const daemonConfigSchema = z.object({
     /** The remindctl binary, when it isn't on the daemon's PATH. */
     command: z.string().min(1).default("remindctl"),
   }).default({}),
+  /** The phone app (/app) beyond pairing and notifications (#676). */
+  app: z.object({
+    /** The AgentX Android app (apps/android). Chrome shows it full screen,
+     *  without an address bar, only when this computer vouches for it at
+     *  /.well-known/assetlinks.json; with no fingerprints there is nothing
+     *  to vouch for and that address answers 404. */
+    android: z.object({
+      /** applicationId the Android app was built with. */
+      packageName: z.string().regex(/^[a-zA-Z][\w]*(\.[a-zA-Z][\w]*)+$/, "must look like com.example.app").default("dev.agentx.phone"),
+      /** SHA-256 fingerprints of the key(s) that signed it, as AB:CD:… */
+      certFingerprints: z.array(z.string().regex(/^([0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}$/, "must be 32 hex pairs separated by colons")).default([]),
+    }).default({}),
+    /** Place reminders: places the Android app watches as geofences, and
+     *  what to do when the phone arrives or leaves (src/places). */
+    places: z.object({
+      enabled: z.boolean().default(true),
+      /** Where places and their reminders are kept. Relative paths resolve
+       *  from the folder holding agentx.json. */
+      file: z.string().min(1).default(".agentx/places.json"),
+      defaultRadiusMeters: z.number().int().min(50).max(50_000).default(150),
+      /** Android rarely notices a smaller circle reliably. */
+      minRadiusMeters: z.number().int().min(50).max(50_000).default(100),
+      maxRadiusMeters: z.number().int().min(50).max(50_000).default(5000),
+      /** Android lets one app watch at most 100 places. */
+      maxPlaces: z.number().int().min(1).max(100).default(50),
+      maxRulesPerPlace: z.number().int().min(1).max(50).default(10),
+      /** A repeating reminder fires at most once in this window, so a
+       *  phone hovering at the edge of a place doesn't buzz again and again. */
+      cooldownMinutes: z.number().int().min(0).max(1440).default(10),
+      /** A crossing the phone could only report later (no signal) is
+       *  dropped once it is older than this. */
+      maxEventAgeMinutes: z.number().int().min(1).max(1440).default(30),
+      /** How often the Android app checks for changed places, in minutes.
+       *  Android runs background checks at most every 15 minutes. */
+      syncMinutes: z.number().int().min(15).max(1440).default(60),
+    }).default({}),
+  }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */
   demo: z.object({
     /** Seconds each startup step (node /health, dashboard /live, mesh
