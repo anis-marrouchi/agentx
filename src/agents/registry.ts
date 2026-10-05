@@ -1,5 +1,6 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine } from "./routing"
+import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { askSeat } from "@/decisions/seat"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
@@ -2562,6 +2563,20 @@ export class AgentRegistry {
       this.log(`[${task.agentId}] session profile for ${channel}: ${describeProfile(sessionProfile, lean, channel)}`)
     }
 
+    // tool-set seat, shadow only (#455): which built-in tools this fresh
+    // session would need. Asked alongside the run and never awaited here,
+    // so it adds no time before the agent starts; the run's own tool calls
+    // label it afterwards.
+    const toolSetPending = state.def.tier === "claude-code" && !resumeSessionId
+      ? startToolSetShadow({
+          message: task.message ?? "",
+          agent: task.agentId,
+          channel,
+          agentPrompt: state.def.systemPrompt ?? null,
+          taskId: traceTaskId,
+        }, (m) => this.log(m))
+      : undefined
+
     const taskWithSystemPrompt: AgentTask = {
       ...task, systemPromptAppend,
       ...(claudeArgs ? { claudeArgs } : {}),
@@ -2778,6 +2793,12 @@ export class AgentRegistry {
           response.content = ""
           this.log(`[${task.agentId}] tool-use contract violation — required ${missing}, observed ${invokedSummary}`)
         }
+      }
+
+      if (toolSetPending) {
+        void labelToolSetRun(toolSetPending, {
+          toolUses: toolUsesByName, eventsSeen: firstEventSeen, error: response.error, agentId: task.agentId,
+        }, (m) => this.log(m))
       }
 
       // Stopped by a daemon shutdown: say so, whatever the runtime made of
