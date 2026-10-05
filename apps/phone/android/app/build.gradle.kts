@@ -11,7 +11,9 @@ fun prop(name: String): String? = (project.findProperty(name) as String?)?.takeI
 
 android {
     namespace = "dev.agentx.phone"
-    compileSdk = flutter.compileSdkVersion
+    // permission_handler_android 14 compiles against Android 37. This only
+    // sets the APIs the build sees; targetSdk keeps the runtime behaviour.
+    compileSdk = maxOf(flutter.compileSdkVersion, 37)
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
