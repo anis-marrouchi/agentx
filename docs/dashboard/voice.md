@@ -139,7 +139,7 @@ The rest of the menu works from the keyboard too: use the arrow keys and **Retur
 | **Hold notifications** | Holds agent notifications until you turn it off |
 | **Show floating pill** | Keeps the [pill](#the-pill-and-its-orb) on screen when idle. Off by default: the pill appears only while listening or answering. Unticked while the pill is hidden, so one click brings it back |
 | **Animated orb** | Lets the orb in the pill move with your voice and the answer. On by default. Turn it off for an orb that stands still |
-| **Reduce to orb** | Makes the pill a small circle with only its orb, which you can drag anywhere. The item then reads **Show full pill**. See [reduce the pill to its orb](#reduce-the-pill-to-its-orb). Greyed out while the [character](#the-character) is shown |
+| **Reduce to orb** | Makes the pill a small circle with only its orb, which you can drag anywhere. The item then reads **Show full pill**. With the [character](#the-character) it reads **Reduce to character**: the character stays and its speech bubble goes, and the item then reads **Show speech bubble**. See [reduce the pill to its orb](#reduce-the-pill-to-its-orb) |
 | **Hide pill** | Hides the pill and stops the voice, like its close button. The next **Option–Space** or **Show floating pill** brings it back. With the [character](#the-character) it reads **Hide character** and hides the character too, then **Show character** to bring it back |
 | **Reset position** | Puts the pill back in the bottom-right corner of the screen, or the character back where it rests by default. While the pill is reduced, puts the orb back in the middle of the bottom edge |
 | **Settings…** | Opens the [settings window](#settings-window): voices, shortcuts and speech to text |
@@ -270,6 +270,7 @@ Good to know:
 - **It waits while you use the bubble:** while the pointer is on the bubble, the character stays where it is, so you can click a button or read the answer.
 - **The bubble never covers it:** the bubble sits above the character, and rises with it when it jumps. An answer opens above it too. When the character is too high on the screen for that, the answer opens beside it instead, on the left, or on the right when the left has no room.
 - **The bubble can't be dragged by itself:** it stays with the character, so [move the character](#move-or-hide-the-character) and the bubble goes with it. The place you dragged the pill to is kept, and the pill goes back there when you switch to the orb.
+- **It can lose its bubble:** **Reduce to character** in the menu keeps the character and takes its speech bubble away, until an agent calls or an answer needs reading. See [reduce the character](#reduce-the-character).
 - **Colour:** it wears the palette of the agent that is answering, amber while notifications are held and red when something went wrong, like the orb.
 - **Reduce Motion:** with **Reduce motion** on, or **Animated orb** unticked in the AgentX menu, it is a still picture that changes between states and stays in its place.
 - **It can show you things:** an agent can send it to something on screen, see [The character shows you something](#the-character-shows-you-something).
@@ -541,7 +542,7 @@ If the pill was on a screen that is no longer connected, it comes back in the bo
 
 ### Reduce the pill to its orb
 
-The pill can be reduced to its orb alone: a small circle with no name, no words and no buttons.
+The pill can be reduced to its orb alone: a small circle with no name, no words and no buttons. The orb is then the assistant's place on screen: the full pill opens over it when there is something to read or to answer, and goes back to the orb by itself once that is over.
 
 ![The full pill at rest, reading HOLD ⌥SPACE beside its orb, and next to it the same pill reduced: a small circle holding only the orb](/screenshots/voice/pill-reduced-light.png)
 
@@ -549,30 +550,46 @@ The pill can be reduced to its orb alone: a small circle with no name, no words 
 2. **Mac:** choose **Reduce to orb**. The pill becomes a circle in the middle of the bottom edge of the screen.
 3. **Mac:** drag the orb where you want it and let go. It stays there, and comes back to the same place the next time the app starts. The orb and the full pill each keep their own place.
 
-To bring the full pill back, click the orb once, or choose **Show full pill** in the menu.
+To open the full pill, click the orb once. It stays open until your next turn is over, then goes back to the orb by itself. To keep the full pill, choose **Show full pill** in the menu.
 
 Good to know:
 
 - **It still shows the state:** the orb has the same colours and the same motion as the orb inside the pill: it follows your voice while listening, turns while the agent works and pulses while the answer is spoken.
 - **It still listens:** hold **Option–Space** as usual. A click on the reduced orb opens the pill; it does not start the microphone.
-- **It opens by itself when you must not miss something:** an agent calling you, and an answer that has more to read or buttons to press, open the full pill. It stays open afterwards; reduce it again from the menu.
+- **It opens by itself when you must not miss something:** an agent calling you, and an answer that has more to read or buttons to press, open the full pill.
+- **It goes back by itself:** however the full pill opened, with a click, a call or an answer, the orb comes back once the turn is over: the answer has been spoken, an open answer has [closed](#read-the-answer-in-the-pill), the call has ended, and the assistant is idle again. A pill opened with a click waits for a turn first, so it does not vanish while you look at it.
 - **It stays on screen:** the reduced orb shows even when idle, whatever **Show floating pill** says. **Esc** or **Hide pill** hides it until the next **Option–Space**.
-- **Not with the character:** while the [character](#the-character) is shown, the pill has no orb of its own, so **Reduce to orb** is greyed out.
+- **With the character:** the [character](#the-character) has a reduced form of its own, see [reduce the character](#reduce-the-character).
+
+#### Reduce the character
+
+While the [character](#the-character) is shown, the pill is its speech bubble and has no orb of its own. Reduced, the character stays, at its size, with its eyes, its colours and its motion, and its speech bubble goes: no name, no words and no buttons while it listens, works or speaks. The character alone shows what the assistant is doing.
+
+1. **Mac:** right-click the character while it is idle, or click the AgentX icon in the menu bar.
+2. **Mac:** choose **Reduce to character**. The bubble goes; the character stays where it is, and you can still [move it](#move-or-hide-the-character) with **Command** held.
+
+To give it its bubble back, choose **Show speech bubble** in the menu.
+
+Good to know:
+
+- **It opens its bubble by itself when you must not miss something:** an agent calling you, an answer that has more to read or buttons to press, and the caption of [something it shows you](#the-character-shows-you-something) open the bubble. Once that is over, the bubble goes again by itself.
+- **A click still talks:** a click on the idle character starts the microphone, as it does with the bubble; there is no bubble to open.
+- **Hide character** still hides both, until the next **Option–Space**.
 
 To start reduced every time the app opens:
 
 1. **Mac:** open **Settings…** from the AgentX menu and go to the **General** tab.
-2. **Mac:** under **Assistant**, tick **Start reduced to the orb**, then choose **Save**.
+2. **Mac:** under **Assistant**, tick **Start reduced**, then choose **Save**.
 
 Or in the Terminal, from the folder with your `agentx.json`:
 
 ```sh
-agentx voice start reduced   # start as the orb alone
+agentx voice start reduced   # start as the orb alone, or the character without its bubble
 agentx voice start full      # start as the full pill
 agentx voice start           # which one is on now
 ```
 
-In `agentx.json` it is `voice.startReduced`: `false` (the default) or `true`. The app reads it when it starts, so a change made in the Terminal or in the file shows the next time the app starts. It has no effect while the [character](#the-character) is shown, and the command says so.
+In `agentx.json` it is `voice.startReduced`: `false` (the default) or `true`. The app reads it when it starts, so a change made in the Terminal or in the file shows the next time the app starts. With the orb look it starts as the orb alone; with the [character](#the-character), as the character without its speech bubble.
 
 ### Hide the pill
 
@@ -643,7 +660,7 @@ To hear a voice before you keep it:
 | **Smart paste** | Reshapes the clipboard, then pastes. Default **Command–Option–V** | `voice.hotkeys.paste` |
 | **Open the menu** | **Command–Option–A**. Fixed; shown so you don't reuse it | not saved |
 | **Shown as** | The **Orb** in the pill, or the [**Character**](#the-character) above the bottom edge of the screen, with the pill as its speech bubble. Default **Orb** | `voice.look` |
-| **Start reduced to the orb** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb). Default off | `voice.startReduced` |
+| **Start reduced** | The app starts with the pill [reduced to its orb](#reduce-the-pill-to-its-orb), or the character [without its speech bubble](#reduce-the-character). Default off | `voice.startReduced` |
 | **Character strolls when idle** | The [character](#the-character) takes a [slow stroll](#let-the-character-stroll) when the assistant has nothing to do. Default off | `voice.stroll` |
 | **Character plays when idle** | How often the [character](#the-character) plays a [small animation by itself](#let-the-character-play-by-itself): **Never**, **Rarely**, **Sometimes** or **Often**. Default **Sometimes** | `voice.animations` |
 | **Keep the answer open** | How long the [answer in the pill](#read-the-answer-in-the-pill) stays open once it has been spoken, or **Until I close it** | `voice.card.timeout` |
@@ -1253,7 +1270,9 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 22. **Mac:** click the pill so the microphone opens without a key, say a sentence with a short pause in the middle, then stop. The question is sent about a second after your last word, not during the pause.
 23. **Mac:** ask "Give me three links about macOS design." The pill grows into the answer, with no second window. Once it has been spoken and you move the pointer away, it shrinks back after the time set in **Keep the answer open**.
 24. **Terminal:** run `agentx voice palette <agent-id> forest`, then open the AgentX menu and hold **Option–Space**. The orb is moss to fern green. Run `agentx voice palette <agent-id> default` to undo it.
-25. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
+25. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
+26. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
+27. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
 
 ## If something is wrong
 

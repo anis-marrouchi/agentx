@@ -36,10 +36,15 @@ final class Panel: NSPanel {
     let separator = NSBox()
     /// Hidden by close, Esc or the menu until the next talk key.
     var dismissed = false
-    /// Reduced to the orb alone (#457): a small circle with no words and no
-    /// buttons, dragged and remembered apart from the pill. A click, a
-    /// call or an answer to read opens the full pill again.
-    private(set) var reduced = false
+    /// Full, or reduced (#457): the orb alone, a small circle with no words
+    /// and no buttons, dragged and remembered apart from the pill; with the
+    /// character standing in for the orb, the character alone, its speech
+    /// bubble gone. A click, a call, an answer to read or a caption opens
+    /// the full pill over the reduced form, and once the turn is over it
+    /// goes back by itself (PillForm.swift).
+    private(set) var form = PillForm()
+    /// The reduced form shows now.
+    var reduced: Bool { form.reduced }
     /// Told when the pill reduces or opens.
     var onReduced: ((Bool) -> Void)?
     /// Above zero while the app moves or resizes the pill, so only a drag
@@ -153,7 +158,7 @@ final class Panel: NSPanel {
             let onRow = convertToScreen(row.convert(row.bounds, to: nil)).contains(start)
             // Reduced, a click opens the pill; it does not start talking.
             if moved < 4 && onRow {
-                if reduced { MainActor.assumeIsolated { setReduced(false) } } else { onClick?() }
+                if reduced { MainActor.assumeIsolated { open(clicked: true) } } else { onClick?() }
             }
         }
         super.mouseUp(with: event)
@@ -219,7 +224,7 @@ final class Panel: NSPanel {
             }
         }
 
-        /// A call must not be missed behind an orb: it opens the full pill.
+        /// A call must not be missed behind the reduced form: it opens the full pill.
         var opensFullPill: Bool {
             switch self {
             case .ringing, .onCall: return true
@@ -343,7 +348,7 @@ final class Panel: NSPanel {
         let above = growth.above
         row.frame = NSRect(x: 0, y: above ? 0 : answerHeight, width: bounds.width, height: h)
         // Reduced, the orb is all there is: in the middle of its circle.
-        orb.frame.origin.x = reduced ? (bounds.width - Self.orbFrame) / 2 : 28 - Self.orbFrame / 2
+        orb.frame.origin.x = reduced && showsOrb ? (bounds.width - Self.orbFrame) / 2 : 28 - Self.orbFrame / 2
         // Reduced either way, the row is not laid out: nothing of it shows.
         if reduced || small > 0 { return }
         closeButton.frame.origin.x = bounds.width - 28
@@ -395,26 +400,60 @@ final class Panel: NSPanel {
         restorePosition()
     }
 
-    /// Reduce the pill to its orb, or open it again. The two forms keep
-    /// their own places. Nothing to reduce to while the character stands
-    /// in for the orb.
+    /// The menu, or voice.startReduced: the reduced form is the assistant's
+    /// from now on, or the full pill is. The two forms keep their own places.
     @MainActor
     func setReduced(_ on: Bool) {
-        guard reduced != on, !on || PillMenu.canReduce(showsOrb: showsOrb) else { return }
+        let was = reduced
+        form.choose(reduced: on)
+        guard was != on else { return }
+        reform()
+        render(current)
+    }
+
+    /// The full pill over the chosen reduced form, for a while: clicked,
+    /// until a turn has run; for a call, an answer or a caption, until it
+    /// is over. Then it goes back by itself, in `render`.
+    @MainActor
+    func open(clicked: Bool = false) {
+        guard form.open(clicked: clicked) else { return }
+        reform()
+        if clicked { render(current) }
+    }
+
+    /// The form changed: its shape, and its own place.
+    @MainActor
+    private func reform() {
         collapse(animated: false)
-        reduced = on
-        clip?.isHidden = on
-        closeButton.isHidden = true
-        miniOrbs.isHidden = on || busyCount == 0
-        (contentView as? Surface)?.shape(circle: on ? PillPlacement.orbSize.height : nil)
-        placing += 1
-        setContentSize(on ? PillPlacement.orbSize : Self.size)
-        placing -= 1
+        shape()
         restorePosition()
         invalidateShadow()
-        render(current)
-        onReduced?(on)
+        onReduced?(reduced)
     }
+
+    /// The pill's shape for its form: the orb's circle while reduced with
+    /// an orb to hold. Reduced with the character, the pill keeps its own
+    /// shape and is hidden instead (`render`): the character shows the state.
+    @MainActor
+    private func shape() {
+        let circle = reduced && showsOrb
+        clip?.isHidden = circle
+        closeButton.isHidden = true
+        miniOrbs.isHidden = circle || busyCount == 0
+        // Shrunk to its dots, the bubble's shape and size are the
+        // character's to set (`attach`), and the full bubble comes back at
+        // once for what opens it.
+        guard circle || small == 0 else { return }
+        (contentView as? Surface)?.shape(circle: circle ? PillPlacement.orbSize.height : nil)
+        placing += 1
+        setContentSize(circle ? PillPlacement.orbSize : Self.size)
+        placing -= 1
+    }
+
+    /// Something to read or to use is on the pill: an answer, the call
+    /// buttons, or a caption. The full pill stays for it.
+    @MainActor
+    private var holds: Bool { expanded || callBar.mode != .hidden || caption != nil }
 
     /// The character's speech bubble (#491): the pill sits above `head`,
     /// the top of the character, and goes where it goes, grown or not,
@@ -443,12 +482,11 @@ final class Panel: NSPanel {
         guard bubble != nil else { return }
         bubble = nil
         isMovableByWindowBackground = true
-        if small > 0 {
-            shrink(0)
-            placing += 1
-            setContentSize(Self.size)
-            placing -= 1
-        }
+        let shrunk = small > 0
+        if shrunk { shrink(0) }
+        // The dots' shape undone, or the orb's circle back: the shape the
+        // form has.
+        if shrunk || reduced { shape() }
         restorePosition()
     }
 
@@ -497,10 +535,12 @@ final class Panel: NSPanel {
     @MainActor
     func setShowsOrb(_ on: Bool) {
         guard showsOrb != on else { return }
-        if !on { setReduced(false) }
         showsOrb = on
         orb.isHidden = !on
         orb.setOnScreen(on && isVisible)
+        // Reduced, the form follows the look: the orb's circle, or the
+        // character alone with the bubble hidden.
+        if reduced { shape(); render(current) }
         if let content = contentView { layoutContent(content.bounds) }
     }
 
@@ -555,8 +595,13 @@ final class Panel: NSPanel {
     /// corruption that traps somewhere unrelated an hour later.
     @MainActor
     func render(_ state: State) {
-        if reduced && state.opensFullPill { setReduced(false) }
         current = state
+        // A call, or a caption to read, must not be missed behind the
+        // reduced form: the full pill opens for it.
+        if reduced && (state.opensFullPill || caption != nil) { open() }
+        // The turn over, and nothing left to read or to use: back to the
+        // reduced form by itself (#457).
+        if form.rendered(atRest: state.isMeta, holds: holds) { reform() }
         // The agent's colour, except where the state is the message: an
         // error, or notifications held.
         let tint: NSColor
@@ -593,9 +638,11 @@ final class Panel: NSPanel {
         // Grown into an answer, it stays until it collapses, idle or not;
         // so does a pill with agents still busy in its mini orbs.
         // Reduced, the orb is the assistant's place on screen: it stays, idle or not.
+        // Reduced with the character, the bubble is gone: the character shows the state.
         // A caption shows like any words; away with none, the hint does not.
         let quiet = state.isMeta && !expanded && busyCount == 0
-        if dismissed || (quiet && idle == .nothing) || (quiet && idle == .hint && !alwaysVisible && !reduced) { hide() } else { show() }
+        let gone = reduced && !showsOrb
+        if dismissed || gone || (quiet && idle == .nothing) || (quiet && idle == .hint && !alwaysVisible && !reduced) { hide() } else { show() }
         // After showing or hiding: a still character draws its bubble's
         // tail only while the bubble is on screen.
         onLook?(state, tint, colors)
@@ -624,7 +671,7 @@ final class Panel: NSPanel {
     @MainActor
     func showCall(_ mode: CallBar.Mode) {
         guard mode != callBar.mode else { return }
-        if mode != .hidden { setReduced(false) }
+        if mode != .hidden { open() }
         callBar.show(mode)
         if let content = contentView { layoutContent(content.bounds) }
     }

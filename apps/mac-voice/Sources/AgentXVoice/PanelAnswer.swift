@@ -23,8 +23,9 @@ extension Panel {
     @MainActor
     func grow(answerHeight: CGFloat) {
         guard !dismissed else { return }
-        // An answer to read, or one that asks: the full pill opens for it.
-        setReduced(false)
+        // An answer to read, or one that asks: the full pill opens for it,
+        // and goes back to the reduced form once it has gone.
+        open()
         shrink(0)
         let pill = collapsedFrame()
         guard let visible = bubble?.visible ?? visibleFrame(for: pill) else { return }

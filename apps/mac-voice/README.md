@@ -183,6 +183,14 @@ tested in `Tests/Pill`. `Surface.swift` is the native background (popover
 vibrancy, continuous corners, hairline, Increase Contrast). The panel is
 non-activating and only becomes key when clicked.
 
+"Reduce to orb" (#457) makes the pill its orb alone, a circle with its own
+saved place (`orbOrigin`); with the character, which has no orb in its
+bubble, "Reduce to character" hides the bubble instead and the character
+shows the state. The reduced form is a choice (`PillForm.swift`, tested in
+`Tests/Pill`): a click, a call, an answer to read or a caption opens the
+full pill over it, and once that turn is over it goes back by itself.
+`voice.startReduced` starts the app reduced.
+
 ## On-device models
 
 Core ML only, no package dependency, nothing bundled. `ModelStore.swift`

@@ -188,7 +188,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   if (g.localStt !== undefined && !["mlx-whisper", "parakeet"].includes(g.localStt)) err("general.localStt", "The engine on this Mac must be mlx-whisper or parakeet")
   if (g.endOfTurn !== undefined && !["vad", "volume"].includes(g.endOfTurn)) err("general.endOfTurn", "The end of a turn must be vad or volume")
   if (g.look !== undefined && !VOICE_LOOKS.includes(g.look)) err("general.look", `The assistant is shown as ${VOICE_LOOKS.join(" or ")}`)
-  if (g.startReduced !== undefined && typeof g.startReduced !== "boolean") err("general.startReduced", "Start reduced to the orb must be on or off")
+  if (g.startReduced !== undefined && typeof g.startReduced !== "boolean") err("general.startReduced", "Start reduced must be on or off")
   if (g.stroll !== undefined && typeof g.stroll !== "boolean") err("general.stroll", "Character strolls when idle must be on or off")
   if (g.animations !== undefined && !VOICE_ANIMATIONS.includes(g.animations)) err("general.animations", `Character plays when idle must be ${VOICE_ANIMATIONS.slice(0, -1).join(", ")} or ${VOICE_ANIMATIONS.at(-1)}`)
   for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
