@@ -58,7 +58,7 @@ class PlaceSync {
     } on HttpError catch (e) {
       if (e.status == 401) {
         await prefs.setLastError(Messages.unpaired);
-        await fences.clear();
+        await _stop();
         return true;
       }
       await prefs.setLastError(e.message);
@@ -72,13 +72,12 @@ class PlaceSync {
     await prefs.setSyncMinutes(minutes is num ? minutes.toInt().clamp(15, 1440) : 60);
     final all = parseFences(body['places']);
     final list = all.take(fences.max).toList();
-    await prefs.setPlaceNames([for (final f in list) f.name]);
     await prefs.setLastSyncAt(_now());
 
     final enabled = body['enabled'] == true;
     final placesOn = await prefs.placesOn;
     final access = await fences.access();
-    await fences.clear();
+    await _stop();
     if (!enabled || !placesOn || access != Access.always || list.isEmpty) {
       String? error;
       if (!enabled) {
@@ -92,9 +91,17 @@ class PlaceSync {
     }
     try {
       await fences.watch(list);
+      // Turned off while this sync waited on the computer: undo it.
+      if (!await prefs.placesOn) {
+        await _stop();
+        await prefs.setLastError(null);
+        return true;
+      }
+      await prefs.setPlaceNames([for (final f in list) f.name]);
       await prefs.setLastError(all.length > list.length ? Messages.tooMany(fences.max) : null);
       return true;
     } on FenceError catch (e) {
+      await _stop();
       await prefs.setLastError(switch (e.kind) {
         FenceFailure.locationOff => Messages.locationOff,
         FenceFailure.tooMany => Messages.tooMany(fences.max),
@@ -102,6 +109,12 @@ class PlaceSync {
       });
       return e.kind != FenceFailure.tooMany;
     }
+  }
+
+  /// Stops watching, and stops listing places as watched.
+  Future<void> _stop() async {
+    await fences.clear();
+    await prefs.setPlaceNames(const []);
   }
 
   /// Turns the places in GET /api/app/places into fences, skipping any it

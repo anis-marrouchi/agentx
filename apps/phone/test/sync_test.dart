@@ -54,7 +54,16 @@ void main() {
     final fences = FakeFences(granted: Access.whileInUse);
     await placeSync(prefs, fences, (_) async => ok(placesBody())).sync();
     expect(fences.watching, isEmpty);
+    expect(await prefs.placeNames, isEmpty);
     expect(await prefs.lastError, Messages.permission);
+  });
+
+  test('switched off while the computer answered: stops watching again', () async {
+    final prefs = await pairedPrefs();
+    final fences = FakeFences()..onWatch = () => prefs.setPlacesOn(false);
+    await placeSync(prefs, fences, (_) async => ok(placesBody())).sync();
+    expect(fences.watching, isEmpty);
+    expect(await prefs.placeNames, isEmpty);
   });
 
   test("shows the computer's reason when it has place reminders off", () async {
@@ -78,6 +87,7 @@ void main() {
     final fences = FakeFences()..watching = [const Fence(id: 'x', name: 'x', lat: 0, lng: 0, radius: 100)];
     expect(await placeSync(prefs, fences, (_) async => http.Response('{"error":"unauthorized"}', 401)).sync(), isTrue);
     expect(fences.watching, isEmpty);
+    expect(await prefs.placeNames, isEmpty);
     expect(await prefs.lastError, Messages.unpaired);
   });
 

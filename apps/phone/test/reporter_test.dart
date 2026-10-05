@@ -76,6 +76,20 @@ void main() {
     expect(calls, 0);
   });
 
+  test('a crossing queued while another is being sent is kept', () async {
+    final prefs = await pairedPrefs();
+    final queuedLater = PlaceEvent(id: 'late-crossing', place: 'pl_school', transition: 'enter', time: now.millisecondsSinceEpoch);
+    final r = reporter(prefs, (req) async {
+      final id = (jsonDecode(req.body) as Map)['id'];
+      if (id == 'late-crossing') throw const SocketException('gone');
+      // The geofence callback, in its own isolate, queues a crossing now.
+      await prefs.setQueued([...await prefs.queued, queuedLater]);
+      return http.Response('{}', 202);
+    });
+    expect(await r.report(['pl_home'], 'exit'), isFalse);
+    expect((await prefs.queued).map((e) => e.id), ['late-crossing']);
+  });
+
   test('sends nothing when place reminders are off on this phone', () async {
     final prefs = await pairedPrefs(placesOn: false);
     var calls = 0;

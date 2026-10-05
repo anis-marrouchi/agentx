@@ -25,6 +25,9 @@ class FakeFences implements Fences {
   @override
   final int max;
   FenceError? failure;
+
+  /// Runs while the phone registers the places.
+  Future<void> Function()? onWatch;
   List<Fence> watching = [];
   int clears = 0;
 
@@ -41,5 +44,6 @@ class FakeFences implements Fences {
   Future<void> watch(List<Fence> fences) async {
     if (failure != null) throw failure!;
     watching = fences;
+    await onWatch?.call();
   }
 }

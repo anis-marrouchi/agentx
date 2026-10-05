@@ -46,32 +46,31 @@ class Reporter {
       await prefs.setQueued(const []);
       return true;
     }
-    final keep = <PlaceEvent>[];
+    // Ids sent or dropped for good. The geofence callback and the background
+    // job run apart, so a crossing may be queued while this one posts: the
+    // queue is read again at the end and only these are taken out of it.
+    final done = <String>{};
     final now = _now().millisecondsSinceEpoch;
-    var offline = false;
     for (final event in queue) {
-      if (now - event.time > maxAge.inMilliseconds) continue;
-      // Once one fails for lack of network the rest would too.
-      if (offline) {
-        keep.add(event);
+      if (now - event.time > maxAge.inMilliseconds) {
+        done.add(event.id);
         continue;
       }
       try {
         final status = await api.postEvent(base, token, event);
-        if (status == 401) {
-          await prefs.setLastError(Messages.unpaired);
-        } else if (status == 429 || status >= 500) {
-          keep.add(event);
-        }
+        if (status == 429 || status >= 500) continue;
         // 2xx: sent. 400, 403, 404 and the rest: refused for good, don't retry.
+        done.add(event.id);
+        if (status == 401) await prefs.setLastError(Messages.unpaired);
       } on Exception {
-        // No network, a timeout, the computer asleep: try again later.
-        offline = true;
-        keep.add(event);
+        // No network, a timeout, the computer asleep: the rest would fail
+        // too, so try them all again later.
+        break;
       }
     }
-    await prefs.setQueued(keep);
-    return keep.isEmpty;
+    final left = [for (final e in await prefs.queued) if (!done.contains(e.id)) e];
+    await prefs.setQueued(left);
+    return left.isEmpty;
   }
 
   /// 32 random hex digits: matches the computer's 8–64 letters, digits, - or _.
