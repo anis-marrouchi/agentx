@@ -30,6 +30,8 @@ export const PERSON_ROLES: readonly PersonRole[] = ["owner", "member", "client",
 export interface Person {
   id: string
   name: string
+  /** How their name is said aloud (#433); see voice.pronunciations. */
+  say?: string
   role: PersonRole
   /** "channel:id" entries: a login, a Telegram id, a WhatsApp number. */
   identities: string[]

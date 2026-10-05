@@ -287,6 +287,48 @@ The History window lists the questions you asked out loud and the answers you go
 
 To see one agent only, pick it in the **Agent** menu at the top; **All agents** shows everyone again. **Load older** at the bottom of the list shows more, and **Refresh** (**Command–R**) shows new questions. A replay waits for anything already speaking. For the last three questions, the menu's **Recent** section is quicker. More in [History of what you asked](../dashboard/voice.md#history-of-what-you-asked).
 
+## Say a word the way it is said
+
+A voice reads names the way its language would. An English voice may read "Okafor" or a French name wrongly. You can tell AgentX how to say a word. The word stays spelt the same everywhere you read it: in the pill, in chat, in History and in messages. Only what you hear changes.
+
+This works for every voice that reads an answer: the Mac voices, ElevenLabs, AgentX Voice and the phone app.
+
+### Say a person's name
+
+1. **Terminal:** go to the folder that holds `agentx.json`.
+2. **Terminal:** run `agentx people list` and find the person's id, for example `sam`.
+3. **Terminal:** run `agentx people say sam "Sam Oh-kah-for"`. Write the name as it sounds, one spoken word for each written word.
+4. **Mac:** ask an agent a question whose answer names the person. The voice says the name the new way.
+
+The whole name is covered, and so is each part of it written with its capital letter. If the name is also an ordinary word ("Will"), that word is still read normally when it starts without a capital.
+
+### Say any other word
+
+1. **Terminal:** run `agentx voice pronounce "Okafor" "Oh-kah-for"`.
+2. **Terminal:** to use it only in English answers, add `--lang en`. A French voice usually reads a French name well, so a French answer then keeps the word as written.
+3. **Terminal:** run `agentx voice pronounce` with nothing after it. It lists every pair, people's names included.
+4. **Terminal:** to take a pair away, run `agentx voice pronounce "Okafor" --remove`.
+
+Matching ignores capitals and only takes whole words: a pair for "Ana" changes "Ana" but not "Banana". A running daemon uses a change on its next spoken line.
+
+You can also write the list in `agentx.json` by hand:
+
+```json
+{
+  "voice": {
+    "pronunciations": [
+      { "written": "Okafor", "spoken": "Oh-kah-for", "languages": ["en"] },
+      { "written": "SQL", "spoken": "sequel" }
+    ]
+  },
+  "people": [
+    { "id": "sam", "name": "Sam Okafor", "say": "Sam Oh-kah-for" }
+  ]
+}
+```
+
+If a word has a pair of its own and also belongs to a person's name, the pair wins.
+
 ## Config reference
 
 The settings window writes most of these for you. You can also edit `agentx.json` by hand; the daemon checks every value when it loads.
@@ -300,6 +342,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.system` | not set: each agent gets its own voice | A Mac voice for every agent without its own. `"system"` means the Mac's default voice |
 | `voice.locale` | `"en"` | The language of automatically assigned voices, for example `"fr-FR"` |
 | `voice.listener` | not set: "the user" | What agents call you, for example your first name |
+| `voice.pronunciations` | `[]` | How a word is said aloud without changing how it is written. See [Say a word the way it is said](#say-a-word-the-way-it-is-said) |
 | `voice.pointer` | `true` | `false` never draws an agent's pointer and name tag on screen; a lesson is then spoken only |
 | `voice.stt` | `"auto"` | Speech to text: `"auto"`, `"elevenlabs"` or `"local"` |
 | `voice.localStt` | `"mlx-whisper"` | The engine on this Mac: `"mlx-whisper"` or `"parakeet"` |
@@ -385,6 +428,8 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 | `agentx voice palette [agent] [palette]` | Lists the orb palettes and who uses which, or picks one for an agent. `default` goes back to the one nearest its colour. `-c <path>` |
 | `agentx voice look [orb\|character]` | Shows or changes what shows the assistant's state: the orb in the pill, or the character. `-c <path>` |
 | `agentx voice start [full\|reduced]` | Shows or changes how the pill is when the app starts: full, or [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb). `-c <path>` |
+| `agentx voice pronounce [written] [spoken]` | Lists the [pronunciations](#say-a-word-the-way-it-is-said), or sets one. `--lang en,fr,ar` limits it to lines in those languages, `--remove` takes it away, `-c <path>` |
+| `agentx people say <id> [spoken]` | Sets how a person's name is said aloud; `none` clears it |
 | `agentx voice card` | Shows or changes the answer in the pill. `--timeout <seconds>` (0 to 600, 0 keeps it open), `--max-height <points>` (120 to 800), `-c <path>` |
 | `agentx narrate <agent> on\|off\|default` | Switches task narration for an agent. `--task` targets one task id instead |
 | `agentx talk <agentA> <agentB> <topic…>` | Two agents talk out loud. See [Talk mode](../dashboard/voice.md#talk-mode-two-agents-talk-out-loud) |
@@ -401,6 +446,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 8. **Mac:** while an answer plays, press **Command–Option–.**. The voice stops at once.
 9. **Mac:** open **History…** from the menu. Your questions are listed under **Today**.
 10. **Mac:** open **Settings…**, pick an agent, change its **Mac voice**, and choose **Preview**. The sample plays in the new voice.
+11. **Terminal:** run `agentx voice pronounce "Okafor" "Oh-kah-for"`, then ask an agent to say "Okafor". You hear the new form and the pill shows "Okafor".
 
 ## If something is wrong
 
@@ -417,6 +463,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **The menu can't switch agents:** the app was installed with `--agent`. **Terminal:** run `agentx desktop install` again without it.
 - **A question by name went to the ticked agent:** the name matched no agent, or more than one. Check names and mentions with `agentx agent list`. For an agent on another computer, check that computer is online: **Terminal:** run `agentx mesh list`; it should say `healthy`. Two computers with an agent of the same name make the name ambiguous; say the agent's id instead.
 - **Two agents are busy but the pill shows no small orbs:** the pill was closed or **Show floating pill** hides it when idle; hold **Option–Space** to bring it back. The row also shows only questions asked from this Mac.
+- **A name is still said the old way:** **Terminal:** run `agentx voice pronounce` and check the pair is listed. A pair with `--lang` is skipped in answers in another language. The written form must be the whole word as it appears in the answer: a pair for "Okafor" does not change "Okafors". Words are swapped only for what is said aloud, never in what is shown.
 - **History is empty or says the daemon isn't reachable:** History reads from the daemon. Start it, then choose **Refresh**.
 - **Save in the settings window shows a red message:** a shortcut is used twice. Change one of them and save again.
 - **Where to find the logs:** the app keeps its own log in `~/Library/Logs/agentx-voice.log`, whichever way you installed it. Crash messages and anything else it prints go to a second file that depends on how you installed it: `~/Library/Logs/agentx-desktop.err.log` after `agentx desktop install`, or `~/Library/Logs/agentx-voice.err.log` after `apps/mac-voice/install.sh`. The installer prints this second path when it finishes. **Terminal:** run `tail -n 50 <path>` to see the latest lines.

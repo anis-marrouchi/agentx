@@ -872,6 +872,16 @@ Pick an agent's voice: a system voice name, a Siri voice as siri:&lt;name&gt;, "
 | `--gender <gender>` | — | Female, male or neutral; an assigned voice matches it. |
 | `-c, --config <path>` | — | Agentx.json to change. |
 
+### `agentx voice pronounce [written] [spoken]`
+
+How a word is said aloud without changing how it is written: list the pairs, or set one ("Okafor" "Oh-kah-for").
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--lang <langs>` | — | Only lines in these languages, comma-separated: en, fr, ar. |
+| `--remove` | — | Take the pair for &lt;written&gt; away. |
+| `-c, --config <path>` | — | Agentx.json to read or change. |
+
 ## usage
 
 `agentx usage`: Token usage analysis and reporting.
@@ -2993,6 +3003,12 @@ No flags.
 ### `agentx people unlink <id> <identity>`
 
 Take a channel identity away from a person.
+
+No flags.
+
+### `agentx people say <id> [spoken...]`
+
+How the person's name is said aloud, for example "Shiv-awn Oh-kah-for"; the written name stays. `none` clears it. With no spoken form, shows the current one.
 
 No flags.
 

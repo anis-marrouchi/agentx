@@ -49,6 +49,8 @@ export interface VoiceIoDeps {
   allowUnmeasured?: () => boolean
   /** voice.spokenMaxChars: the longest answer said aloud. */
   spokenMaxChars?: () => number
+  /** voice.pronunciations: how the voice says a word (#433). */
+  pronounce?: (text: string) => string
   /** This node's name, for the phone's setup hint. */
   nodeName?: string
   synth?: (key: string, voice: VoiceRef, text: string) => Promise<Buffer>
@@ -146,19 +148,20 @@ async function speak(req: IncomingMessage, res: ServerResponse, deps: VoiceIoDep
   if (!agent) return json(res, 400, { error: "agent is required" })
   const text = speakableAnswer(typeof body?.text === "string" ? body.text : "", deps.spokenMaxChars?.())
   if (!text) return json(res, 422, { error: "Nothing in this answer can be said aloud." })
+  const said = deps.pronounce ? deps.pronounce(text) : text
 
   const voice = deps.voiceOf(agent, peer)
   if (!voice) return json(res, 404, { error: `Unknown agent: ${agent}` })
   // No ElevenLabs voice for this agent: the phone speaks the same cleaned
   // text with its own voice. That is the normal case for system-voice
   // agents, so it is a 200, not an error.
-  const browser = (why: string, status = 200) => json(res, status, { fallback: "browser", reason: why, text })
+  const browser = (why: string, status = 200) => json(res, status, { fallback: "browser", reason: why, text: said })
   if (voice.provider !== "elevenlabs") return browser("This agent speaks with a system voice, which only plays on the computer.")
   const key = deps.elevenLabsKey()
   if (!key) return browser("No ElevenLabs key is set on this computer.")
   try {
-    const audio = await (deps.synth ?? elevenLabsAudio)(key, voice, text)
-    res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": audio.length, "Cache-Control": "no-store", "X-Spoken-Chars": String(text.length) })
+    const audio = await (deps.synth ?? elevenLabsAudio)(key, voice, said)
+    res.writeHead(200, { "Content-Type": "audio/mpeg", "Content-Length": audio.length, "Cache-Control": "no-store", "X-Spoken-Chars": String(said.length) })
     res.end(audio)
   } catch (e: any) {
     deps.log(`[voice] phone answer synthesis failed: ${String(e?.message ?? e).split("\n")[0].slice(0, 160)}`)

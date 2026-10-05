@@ -118,6 +118,7 @@ What the limit does not cover:
 
 ## Change or remove
 
+- **Say a name the way it is said:** `agentx people say sara "Sah-ra"`. Spoken answers use it; written ones keep "Sara". See [Say a word the way it is said](../guides/agentx-voice.md#say-a-word-the-way-it-is-said).
 - **Take an identity away:** `agentx people unlink sara gitlab:sara.b`.
 - **Remove a person:** `agentx people remove sara`. Their past tasks keep the id `sara`. New messages from them are unknown.
 

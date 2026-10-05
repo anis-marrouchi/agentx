@@ -10,6 +10,7 @@ import { ORB_PALETTES, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS, agentPale
 import { presenceLook } from "@/voice/presence"
 import { findMissingVoices, REINSTALL_HINT, voiceDisplayName } from "@/voice/voice-health"
 import { CARD_LIMITS, applyVoiceSettings, checkVoiceSettings, type VoiceSettingsPatch } from "@/daemon/voice-settings-api"
+import type { Pronunciation } from "@/voice/pronounce"
 import { formatLesson, gradeLesson, readLessons, type Verdict } from "@/voice/lesson-log"
 
 // --- agentx voice: which voice each agent speaks with ---
@@ -287,6 +288,49 @@ voice
       console.log(`  When idle: ${now.stroll ? "the character takes a slow stroll now and then" : "the character stays where it rests"}`)
       if (now.stroll && now.look !== "character") console.log(chalk.dim("  No effect while the orb is shown."))
       if (state !== undefined) console.log(chalk.dim("  AgentX Voice picks this up within a few seconds."))
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+/** voice.pronunciations after `agentx voice pronounce`: the pair for
+ *  `written` added or replaced (`spoken` given), or taken away (`spoken`
+ *  null). Matching on the written form ignores case and spacing. */
+export function setPronunciation(
+  list: Pronunciation[], written: string, spoken: string | null, languages?: string[],
+): Pronunciation[] {
+  const key = (w: string) => w.trim().toLowerCase().replace(/\s+/g, " ")
+  const rest = list.filter((p) => key(p.written) !== key(written))
+  if (spoken === null) {
+    if (rest.length === list.length) throw new Error(`No pronunciation for "${written}". See \`agentx voice pronounce\`.`)
+    return rest
+  }
+  return [...rest, { written: written.trim(), spoken: spoken.trim(), ...(languages?.length ? { languages } : {}) }]
+}
+
+voice
+  .command("pronounce [written] [spoken]")
+  .description("how a word is said aloud without changing how it is written: list the pairs, or set one (\"Marrouchi\" \"Ma-roo-shee\")")
+  .option("--lang <langs>", "only lines in these languages, comma-separated: en, fr, ar")
+  .option("--remove", "take the pair for <written> away")
+  .option("-c, --config <path>", "agentx.json to read or change")
+  .action((written: string | undefined, spoken: string | undefined, opts) => {
+    try {
+      const file = configFile(opts.config)
+      if (written !== undefined) {
+        if (!opts.remove && spoken === undefined) throw new Error("Give the spoken form too, or --remove")
+        const languages = opts.lang ? String(opts.lang).split(",").map((l: string) => l.trim().toLowerCase()).filter(Boolean) : undefined
+        const list = setPronunciation(loadDaemonConfig(file).voice.pronunciations, written, opts.remove ? null : spoken!, languages)
+        saveSettings(file, { general: { pronunciations: list as Pronunciation[] } })
+      }
+      const config = loadDaemonConfig(file)
+      const pairs = config.voice.pronunciations
+      const people = config.people.filter((p) => p.say)
+      if (!pairs.length && !people.length) console.log(chalk.dim("  Every word is said as written. Add one: agentx voice pronounce <written> <spoken>"))
+      for (const p of pairs) console.log(`  ${p.written.padEnd(24)} said "${p.spoken}"${p.languages?.length ? chalk.dim(` (${p.languages.join(", ")} lines only)`) : ""}`)
+      for (const p of people) console.log(`  ${p.name.padEnd(24)} said "${p.say}" ${chalk.dim(`(people: ${p.id})`)}`)
+      if (written !== undefined) console.log(chalk.dim("  A running daemon uses this on its next spoken line."))
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))
       process.exit(1)

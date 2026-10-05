@@ -155,6 +155,7 @@ import { CallService, SUMMARY_PROMPT } from "@/calls/service"
 import { CallStore } from "@/calls/store"
 import { handleVoiceHistory, isVoiceHistoryPath } from "@/daemon/voice-history-api"
 import { toSpeakable } from "@/voice/speakable"
+import { pronouncer } from "@/voice/pronounce"
 import { isNoiseTranscript, NOISE_REPLY } from "@/voice/noise"
 import { meshAddressables, resolveAddress } from "@/voice/address"
 import { presenceLook } from "@/voice/presence"
@@ -282,6 +283,8 @@ export class AgentXDaemon {
   private voiceIntros = new VoiceIntroTracker()
   /** Talk mode and task narration: see src/daemon/voice-talk-api.ts. */
   private voiceTalk!: VoiceTalkService
+  /** Words as the voice says them (voice.pronunciations, people[].say). */
+  private sayAs = pronouncer(() => ({ pairs: this.config?.voice?.pronunciations, people: this.config?.people }))
   private screenBuffer?: ScreenBuffer
   /** Voice for agents on mesh peers: see src/daemon/voice-mesh-proxy.ts. */
   private voiceMesh!: VoiceMeshProxy
@@ -335,6 +338,7 @@ export class AgentXDaemon {
       // Who is speaking and who waits, live for the menu and any client.
       onQueue: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:queue", ...view })),
     })
+    this.voiceTalk.speech.pronounce = this.sayAs
     this.voiceTalk.narrator.attach(getAgentEventBus())
 
     getAgentEventBus().on("task:step", (e: AgentXEvents["task:step"]) => {
@@ -3404,6 +3408,7 @@ export class AgentXDaemon {
           host: () => detectSttHost(elevenLabsKey()),
           allowUnmeasured: () => this.config.voice.allowUnmeasured,
           spokenMaxChars: () => this.config.voice.spokenMaxChars,
+          pronounce: this.sayAs,
           nodeName: this.config.node?.name,
           elevenLabsKey,
           voiceOf: (id, peer) => resolveVoice(id, peer, this.config, this.voiceMesh.voices),
@@ -6162,7 +6167,7 @@ export class AgentXDaemon {
             const voice = remoteSwitch ? this.voiceMesh.voices.voice(switched) : resolveAgentVoice(switched, this.config.agents, this.config.voice)
             const text = this.voiceIntros.needsIntro(session, switched) ? voice.intro : "I'm here."
             this.voiceIntros.spoke(session, switched)
-            this.json(res, 200, { agentId: switched, voice: voiceForText(voice, text), presence: null, text, full: text, ui: null, switched: true })
+            this.json(res, 200, { agentId: switched, voice: voiceForText(voice, text), presence: null, text: this.sayAs(text), full: text, ui: null, switched: true })
             break
           }
 
@@ -6211,7 +6216,7 @@ export class AgentXDaemon {
             const spoken = reply.error ? null : toSpeakable(cleanText, this.config.voice.spokenMaxChars)
             this.json(res, reply.error ? 502 : 200, {
               agentId, voice: voiceForText(voice, spoken), presence: null,
-              text: spoken,
+              text: spoken && this.sayAs(spoken),
               full: reply.error ? null : cleanText,
               ui: ui ?? null,
               error: reply.error,
@@ -6287,7 +6292,8 @@ export class AgentXDaemon {
             // The voice of the reply's language, when the agent has one.
             voice: voiceForText(voice, speakable),
             presence,
-            text: speakable,
+            // As the voice says it: names as their owners pronounce them.
+            text: this.sayAs(speakable),
             // The answer as written — what a client SHOWS, while `text` is
             // what it speaks. They differ: spoken text drops URLs and
             // markdown, which are exactly what is worth reading.

@@ -39,6 +39,8 @@ type Audio = { f: string | null } | { e: unknown }
 interface Entry {
   item: QueueItem
   u: Utterance
+  /** The line as the voice says it: `u` after pronounce. */
+  said: Utterance
   audio: Promise<Audio>
   ac: AbortController
   started: boolean
@@ -61,6 +63,9 @@ export class SpeechOut {
    *  synthesis that finishes under an older run is ignored. */
   private run = 0
   private seq = 0
+  /** How the voice says a line's words (voice.pronunciations, #433).
+   *  The queue, its events and replays keep the written text. */
+  pronounce: (text: string) => string = (text) => text
 
   constructor(
     private synth: Synth = elevenLabsSynth(),
@@ -90,8 +95,9 @@ export class SpeechOut {
     const played = new Promise<boolean>((r) => { done = r })
     // The catch keeps an early failure from being reported as unhandled
     // before this line's turn comes.
-    const audio = this.synth(u, ac.signal).then((f) => ({ f }), (e) => ({ e }))
-    const entry: Entry = { item, u, audio, ac, started: false, playingSince: 0, done }
+    const said: Utterance = { ...u, text: this.pronounce(u.text) }
+    const audio = this.synth(said, ac.signal).then((f) => ({ f }), (e) => ({ e }))
+    const entry: Entry = { item, u, said, audio, ac, started: false, playingSince: 0, done }
     if (front) this.waiting.unshift(entry)
     else {
       // A "high" agent's line goes ahead of waiting normal and low ones,
@@ -201,7 +207,7 @@ export class SpeechOut {
   }
 
   private playOne(e: Entry, file: string | null, run: number): void {
-    const p = this.play(file, e.u)
+    const p = this.play(file, e.said)
     this.playing = p
     e.playingSince = Date.now()
     if (!e.started) {
@@ -213,7 +219,7 @@ export class SpeechOut {
     let overran = false
     // A player that never exits (a hung `say`) must not hold every later
     // line: past its bound it is killed and the line fails.
-    const watchdog = setTimeout(() => { if (!ended) { overran = true; p.kill() } }, this.limitMs(e.u.text))
+    const watchdog = setTimeout(() => { if (!ended) { overran = true; p.kill() } }, this.limitMs(e.said.text))
     const end = (completed: boolean) => {
       if (ended) return
       ended = true

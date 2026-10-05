@@ -23,6 +23,7 @@ import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeS
 //   deny <id> <tools|skills> <names...>    deny named tools or skills on their turns (#379)
 //   link <id> <channel:id>                 add an identity to a person
 //   unlink <id> <channel:id>               take one away
+//   say <id> [spoken]                      how their name is said aloud (#433); "none" clears it
 //   remove <id>                            also ends every machine of theirs
 //   show <id> [--limit N]                  what they asked for, on every channel
 //   invite <id> [--url origin]             a one-time code for their own page (#385): My work
@@ -97,7 +98,7 @@ function sameIdentity(a: string, b: string): boolean {
 
 function printPerson(p: Person): void {
   const denied = DENY_LEVELS.filter((l) => p.deny?.[l]?.length).map((l) => ` · no ${l}: ${p.deny![l]!.join(", ")}`).join("")
-  console.log(`  ${chalk.bold(p.id)}  ${p.name} ${chalk.dim(`· ${p.role}`)}${p.agents?.length ? chalk.dim(` · agents: ${p.agents.join(", ")}`) : ""}${chalk.dim(denied)}`)
+  console.log(`  ${chalk.bold(p.id)}  ${p.name}${p.say ? chalk.dim(` (said "${p.say}")`) : ""} ${chalk.dim(`· ${p.role}`)}${p.agents?.length ? chalk.dim(` · agents: ${p.agents.join(", ")}`) : ""}${chalk.dim(denied)}`)
   console.log(chalk.dim(p.identities.length ? `      ${p.identities.join(", ")}` : "      no identities yet: agentx people link " + p.id + " <channel:id>"))
 }
 
@@ -187,6 +188,26 @@ people
       person.identities = person.identities.filter((i: string) => !sameIdentity(i, identity))
       if (person.identities.length === before) throw new Error(`"${id}" has no identity ${identity}.`)
       return `${identity} is no longer ${id}`
+    })
+  })
+
+people
+  .command("say <id> [spoken...]")
+  .description("how the person's name is said aloud, e.g. \"A-neess Ma-roo-shee\"; the written name stays. \"none\" clears it")
+  .action(async (id: string, spoken: string[] = []) => {
+    const said = spoken.join(" ").trim()
+    if (!said) {
+      const person = loadDaemonConfig().people.find((p) => p.id === id)
+      if (!person) { console.error(chalk.red(`✗ No person "${id}". See \`agentx people list\`.`)); process.exit(1) }
+      console.log(person.say ? `  ${person.name} is said "${person.say}"` : `  ${person.name} is said as written`)
+      return
+    }
+    await mutate((list) => {
+      const person = find(list, id)
+      if (said.toLowerCase() === "none") { delete person.say; return `${person.name} is said as written` }
+      if (said.length > 120) throw new Error("The spoken form is at most 120 characters")
+      person.say = said
+      return `${person.name} is now said "${said}"; written, it stays ${person.name}`
     })
   })
 
