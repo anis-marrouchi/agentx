@@ -1,5 +1,7 @@
 # Let another organisation into part of your mesh
 
+**This page is for two organisations that both run AgentX.** The guest's operator joins from their own machine, with a terminal. For a person who only asks your agents for things on a chat channel, give them [their own work page](./members.md) instead; for a machine of your own, [add a second machine](./second-machine.md); for your own phone, the [phone app](../dashboard/mobile-app.md). Never pair a guest with a mesh invite or the phone app: both open everything of yours.
+
 Two companies with some common ground: one is willing to give the other access to one of its machines, for a service, for assistance, for a project. This page shows how a **host** opens part of its mesh to a **guest** mesh, keeps control of it while it is in use, and how the guest uses it.
 
 The rule that keeps it safe: **the guest asks, the host's own agent acts.** The guest never gets a shell, a session or an agent of its own on your machine. Its messages run as turns of one agent of yours, inside what you opened, under your rules and in your log. The guest sees only the answers to its own requests.

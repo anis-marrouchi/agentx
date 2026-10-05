@@ -1,5 +1,7 @@
 # Add a second machine
 
+**This page is for a machine of your own.** A paired machine holds the mesh password, which lets it send work to every agent in the mesh and control the other machines' daemons. Never pair a teammate's or a client's machine this way: give a teammate [their own work page](./members.md), and another organisation [a guest grant](./guest-mesh.md). For your own phone, use the [phone app](../dashboard/mobile-app.md).
+
 You can keep all your agents on one machine. Add another only when an agent needs tools or files that live elsewhere.
 
 Each machine runs its own AgentX daemon (the background service). Connected machines form a **mesh**, and each machine in it is a **peer** (or **node**) of the others. Peers need a private network path to each other; [Tailscale setup](tailscale.md) shows one way to get it.
@@ -11,7 +13,7 @@ Each machine runs its own AgentX daemon (the background service). Connected mach
    agentx connect mesh invite
    ```
    If the second machine reaches this one on a different address (such as a Tailscale address), add `--url http://<this-machine's-address>:18800`.
-2. Copy the join link it prints. It contains a password: share it only with the person setting up the second machine.
+2. Copy the join link it prints. It contains the mesh password: share it only with the person setting up the second machine, never with a teammate or a client.
 3. **Terminal, on the second machine:** install AgentX and run its setup. See [Install](../install.md).
 4. **Terminal, on the second machine:** join with the link:
    ```sh
