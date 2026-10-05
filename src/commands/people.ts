@@ -3,7 +3,7 @@ import chalk from "chalk"
 import { applyConfigMutation } from "@/daemon/config-mutator"
 import { loadDaemonConfig } from "@/daemon/config"
 import { openDb } from "@/storage/sqlite"
-import { IMPLICIT_OWNER, splitIdentity, type Person } from "@/people/people"
+import { IMPLICIT_OWNER, PERSON_ROLES, splitIdentity, type Person } from "@/people/people"
 import { openRequestsOf, runsOf } from "@/people/activity"
 import { TokenStore } from "@/daemon/token-store"
 import { PairCodeStore, formatCode } from "@/daemon/pair-codes"
@@ -25,14 +25,20 @@ import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeS
 //   unlink <id> <channel:id>               take one away
 //   remove <id>                            also ends every machine of theirs
 //   show <id> [--limit N]                  what they asked for, on every channel
-//   invite <id> [--url origin]             a one-time code for their own work page (#385)
+//   invite <id> [--url origin]             a one-time code for their own page (#385): My work
+//                                          for a teammate, Your project for a client (#453)
 //   devices [id]                           their machines: state, first and last use
 //   revoke-device <tokenId>                end one machine at once
 
 export const people = new Command("people")
   .description("the humans who talk to your agents: one person per human, whatever channel they use")
 
-const ROLES = ["owner", "member", "guest"]
+const ROLES = PERSON_ROLES
+
+/** The page a person's paired machine opens at /member (#453). */
+export function pageFor(role: string): string {
+  return role === "client" ? "Your project" : "My work"
+}
 
 /** The member store with this install's log retention. */
 function memberStore(): MemberStore {
@@ -118,12 +124,13 @@ people
   .command("add <id>")
   .description("add a person")
   .requiredOption("--name <name>", "their name")
-  .option("--role <role>", `${ROLES.join(" | ")}`, "member")
+  .option("--role <role>", `${ROLES.join(" | ")}. A client is someone you do work for; their page is "Your project"`, "member")
   .option("--identity <channel:id>", "a login, a Telegram id or a WhatsApp number (repeatable)", collect, [])
   .option("--agent <id>", "an agent this person may reach; repeat for several. None: every agent", collect, [])
   .action(async (id: string, opts: { name: string; role: string; identity: string[]; agent: string[] }) => {
     await mutate((list) => {
       if (list.some((p: any) => p?.id === id)) throw new Error(`"${id}" is already listed. Add an identity with \`agentx people link ${id} <channel:id>\`.`)
+      if (!(ROLES as readonly string[]).includes(opts.role)) throw new Error(`--role must be one of: ${ROLES.join(", ")}`)
       if (opts.role === "owner" && opts.agent.length) throw new Error(NO_OWNER_LIMIT)
       list.push({ id, name: opts.name, role: opts.role, identities: opts.identity, agents: opts.agent })
       return `added ${id} (${opts.role})${opts.agent.length ? `, may reach ${opts.agent.join(", ")}` : ""}`
@@ -202,7 +209,7 @@ people
 
 people
   .command("invite <id>")
-  .description("a one-time code that pairs one of this person's machines with their own work page (/member)")
+  .description("a one-time code that pairs one of this person's machines with their own page (/member): My work for a teammate, Your project for a client")
   .option("--url <origin>", "address the person opens, e.g. https://my-mac.tailnet-name.ts.net (default: this computer's Tailscale name)")
   .action((id: string, opts: { url?: string }) => {
     try {
@@ -223,7 +230,7 @@ people
       const r = inviteMember({ tokens: new TokenStore(), codes: new PairCodeStore(), members: memberStore(), people: () => people }, id)
       if (!r.ok) throw new Error(r.error)
       console.log()
-      console.log(`  Invite for ${chalk.bold(r.person.name)} (${r.person.id})`)
+      console.log(`  Invite for ${chalk.bold(r.person.name)} (${r.person.id}, ${r.person.role}). Their page is ${chalk.bold(pageFor(r.person.role))}.`)
       console.log()
       console.log(`  1. Share this computer with them on your private network, if you have not yet:`)
       console.log(chalk.dim(`     Tailscale admin console → Machines → this computer → Share → send them the link.`))
@@ -233,7 +240,7 @@ people
       console.log(`     ${chalk.cyan(`${origin}/member`)}`)
       console.log(`     ${chalk.bold(formatCode(r.code))}`)
       console.log()
-      console.log(`  3. When they pair, a card "New machine for ${r.person.name}" asks you to approve that machine.`)
+      console.log(`  3. When they pair, a card "New machine for ${r.person.name}" asks you to approve that machine. Then ${pageFor(r.person.role)} opens for them.`)
       console.log(chalk.dim(`     Their key stops after ${MEMBER_KEY_DAYS} days; invite again then. Machine id: ${r.tokenId}`))
       console.log()
     } catch (e: any) {
@@ -244,7 +251,7 @@ people
 
 people
   .command("devices [id]")
-  .description("the machines paired to people's work pages: state, where from, first and last use")
+  .description("the machines paired to people's own pages (My work, Your project): state, where from, first and last use")
   .option("--json", "machine-readable output")
   .action((id: string | undefined, opts: { json?: boolean }) => {
     const devices = memberStore().devices(id)

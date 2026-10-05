@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "http"
 import { TokenStore, type TokenRecord } from "@/daemon/token-store"
 import { PairCodeStore } from "@/daemon/pair-codes"
-import { PAIR_CODE_FAILED, type PairAttemptLimiter } from "@/daemon/app-pair-code"
+import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { readJson } from "@/daemon/app-fleet"
 import { createCard, readCard } from "@/approvals/cards"
 import { splitIdentity, type Person } from "@/people/people"
@@ -88,8 +88,11 @@ export type PairResult =
   | { status: 401 | 403 | 503; body: { error: string } }
   | { status: 429; body: { error: string; retryAfter: number }; retryAfter: number }
 
-export const NETWORK_MISMATCH = "The private network says someone else is connecting from this machine. Ask the owner for a new code."
+export const NETWORK_MISMATCH = "The private network says someone else is connecting from this machine. Ask the person who invited you for a new code."
 export const TOO_MANY_WAITING = "Too many machines are waiting for the owner's answer. Try again later."
+/** A teammate or client has no terminal on the host, so the phone app's
+ *  "run agentx app pair" (PAIR_CODE_FAILED) is the wrong advice here (#453). */
+export const MEMBER_CODE_FAILED = "That code didn't work. Check it, or ask the person who invited you for a new one."
 
 type ProxiedRequest = Pick<IncomingMessage, "headers"> & { socket?: { remoteAddress?: string } | null }
 
@@ -162,7 +165,7 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
   if (!redeemed || !verified) {
     deps.limiter.fail(client)
     log(`[member] pair-code failed from ${client}`)
-    return { status: 401, body: { error: PAIR_CODE_FAILED } }
+    return { status: 401, body: { error: MEMBER_CODE_FAILED } }
   }
   deps.limiter.succeed(client)
   const { rec, personId } = verified
@@ -171,7 +174,7 @@ export async function pairMemberMachine(req: IncomingMessage, deps: MemberDeps):
     deps.tokens.revoke(rec.id)
     deps.members.log({ person: personId, device: rec.id, event: "refused", address: client, detail: "person no longer listed" })
     log(`[member] pair-code for ${personId} refused from ${client}: person no longer listed`)
-    return { status: 403, body: { error: PAIR_CODE_FAILED } }
+    return { status: 403, body: { error: MEMBER_CODE_FAILED } }
   }
   const login = networkLogin(req)
   const expected = networkIdentities(person)

@@ -2,6 +2,8 @@
 
 A teammate who asks your agents for things on GitLab, Telegram or WhatsApp has no dashboard. They cannot see whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see only that an agent is busy with it, never what it is.
 
+This page is for a teammate, a person with the role `member`. A **client**, someone you do work for, goes through the same door but gets a different page, **Your project**: see [Give a client a page of their own](./clients.md).
+
 It works like the [phone app](../dashboard/mobile-app.md): one page served on your private network, a one-time code to pair, a key per machine. Two things are stricter, because a teammate is not you:
 
 - the code is made for one person from your [people list](./people.md), and the key it gives opens that person's own work only;
@@ -138,7 +140,8 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 - **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above. The reset removes every served path, so add the phone app's two `/app` lines back if you use it.
 - **`Could not read this machine's Tailscale name`:** Tailscale is not running on your computer. Start it, or pass `--url https://<address>` to `agentx people invite`.
-- **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again.
+- **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again. The page tells the teammate to ask you for a new code; it never sends them to a terminal.
+- **The teammate sees Your project instead of My work:** their role is `client`. Set `role` to `member` in `agentx.json`; the page changes on the next open.
 - **"The private network says someone else is connecting":** the login Tailscale reports for their machine is not among the person's `tailscale:` identities. Check with `agentx people show <id>` and fix the identity, or remove it to accept whatever login is reported.
 - **"Waiting for the owner" does not end:** the card is still in your Approvals inbox. Answer it.
 - **The page is empty:** request tracking is off (`agentx requests settings`), or the teammate's identity on that channel is not on their person entry, so their requests were not stamped with their id.
