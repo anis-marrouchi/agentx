@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.112.0](https://github.com/anis-marrouchi/agentx/compare/v0.111.1...v0.112.0) (2026-10-05)
+
+
+### Features
+
+* **voice:** pronounce names as their owners say them; reach an agent through a misheard name ([#673](https://github.com/anis-marrouchi/agentx/issues/673)) ([227e694](https://github.com/anis-marrouchi/agentx/commit/227e69482d156b1f76fc77288da72f56347c6083))
+
 ## [0.111.1](https://github.com/anis-marrouchi/agentx/compare/v0.111.0...v0.111.1) (2026-10-05)
 
 
