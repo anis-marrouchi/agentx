@@ -8,7 +8,7 @@ import { openRequestsOf, runsOf } from "@/people/activity"
 import { TokenStore } from "@/daemon/token-store"
 import { PairCodeStore, formatCode } from "@/daemon/pair-codes"
 import { MemberStore } from "@/members/store"
-import { inviteMember, removeDevice, removePersonDevices, MEMBER_KEY_DAYS } from "@/members/pairing"
+import { CODE_MINUTES, inviteMember, inviteMessage, removeDevice, removePersonDevices, MEMBER_KEY_DAYS } from "@/members/pairing"
 import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeStatus } from "./app"
 
 // --- agentx people: the humans who talk to your agents (#384) ---
@@ -25,7 +25,8 @@ import { dashboardPort, exposedDashboardMounts, tailscaleOrigin, tailscaleServeS
 //   unlink <id> <channel:id>               take one away
 //   remove <id>                            also ends every machine of theirs
 //   show <id> [--limit N]                  what they asked for, on every channel
-//   invite <id> [--url origin]             a one-time code for their own work page (#385)
+//   invite <id> [--url origin]             a one-time code for their own work page (#385),
+//                                          with a message to forward as it is (#644)
 //   devices [id]                           their machines: state, first and last use
 //   revoke-device <tokenId>                end one machine at once
 
@@ -202,7 +203,7 @@ people
 
 people
   .command("invite <id>")
-  .description("a one-time code that pairs one of this person's machines with their own work page (/member)")
+  .description("a one-time code that pairs one of this person's machines with their own work page (/member), and a message to forward to them as it is")
   .option("--url <origin>", "address the person opens, e.g. https://my-mac.tailnet-name.ts.net (default: this computer's Tailscale name)")
   .action((id: string, opts: { url?: string }) => {
     try {
@@ -228,10 +229,15 @@ people
       console.log(`  1. Share this computer with them on your private network, if you have not yet:`)
       console.log(chalk.dim(`     Tailscale admin console → Machines → this computer → Share → send them the link.`))
       console.log(chalk.dim(`     Limit what shared users can reach to port 443 in your access rules (see the docs page "Invite a teammate").`))
-      console.log(`  2. Send them this address and code. The code works once, for 10 minutes:`)
+      console.log(`  2. Send them this address and code. The code works once, for ${CODE_MINUTES} minutes:`)
       console.log()
       console.log(`     ${chalk.cyan(`${origin}/member`)}`)
       console.log(`     ${chalk.bold(formatCode(r.code))}`)
+      console.log()
+      console.log(chalk.dim(`     Or paste this message to them as it is (everything between the lines):`))
+      console.log(chalk.dim(`     ${"-".repeat(60)}`))
+      console.log(inviteMessage({ name: r.person.name, origin, code: r.code }))
+      console.log(chalk.dim(`     ${"-".repeat(60)}`))
       console.log()
       console.log(`  3. When they pair, a card "New machine for ${r.person.name}" asks you to approve that machine.`)
       console.log(chalk.dim(`     Their key stops after ${MEMBER_KEY_DAYS} days; invite again then. Machine id: ${r.tokenId}`))

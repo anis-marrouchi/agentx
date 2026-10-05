@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "http"
 import { TokenStore, type TokenRecord } from "@/daemon/token-store"
-import { PairCodeStore } from "@/daemon/pair-codes"
+import { CODE_TTL_MS, PairCodeStore, formatCode } from "@/daemon/pair-codes"
 import { PAIR_CODE_FAILED, type PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { readJson } from "@/daemon/app-fleet"
 import { createCard, readCard } from "@/approvals/cards"
@@ -81,6 +81,31 @@ export function inviteMember(deps: Pick<MemberDeps, "tokens" | "codes" | "member
   const { code, expiresAt } = deps.codes.create({ token, tokenId: record.id, name: person.id })
   deps.members.log({ person: person.id, device: record.id, event: "invited" })
   return { ok: true, code, expiresAt, tokenId: record.id, person }
+}
+
+/** How long a pairing code stays valid, in whole minutes. */
+export const CODE_MINUTES = Math.round(CODE_TTL_MS / 60000)
+
+/**
+ * The message the owner forwards to the teammate as it is (#644): what
+ * AgentX is, the address, the code, how long it lasts and what to do when
+ * it has expired. Plain text, no colour, nothing the teammate would have to
+ * run on the owner's computer. `origin` is the address without a path.
+ */
+export function inviteMessage(p: { name: string; origin: string; code: string }): string {
+  return [
+    `Hi ${p.name},`,
+    ``,
+    `I run AgentX, a tool that gives AI agents jobs for our team. It has a page for you, "My work", that shows what you asked the agents for and where it stands.`,
+    ``,
+    `To open it:`,
+    `1. Accept the Tailscale share I sent you, if you have not yet.`,
+    `2. Open ${p.origin.replace(/\/+$/, "")}/member in your browser.`,
+    `3. Give your machine a name and type this code: ${formatCode(p.code)}`,
+    ``,
+    `The code works once and stops working after ${CODE_MINUTES} minutes. If it has expired or does not work, tell me and I will send you a new one.`,
+    `After you pair, I approve your machine on my side. The page opens by itself once I do.`,
+  ].join("\n")
 }
 
 export type PairResult =

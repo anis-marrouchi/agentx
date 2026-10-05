@@ -3003,11 +3003,33 @@ No flags.
 
 ### `agentx people invite <id>`
 
-A one-time code that pairs one of this person's machines with their own work page (`/member`). Refuses to run while `tailscale serve` publishes the whole dashboard. See [Invite a teammate to their work page](/jobs/members).
+A one-time code that pairs one of this person's machines with their own work page (`/member`), followed by a message to forward to them as it is. Refuses to run while `tailscale serve` publishes the whole dashboard. See [Invite a teammate to their work page](/jobs/members).
 
 | Flag | Description |
 |---|---|
 | `--url <origin>` | Address the person opens, e.g. `https://my-mac.tailnet-name.ts.net` (default: this computer's Tailscale name) |
+
+The output, after the share step: the address, the code, and between two dashed lines the message for the teammate. The message says what AgentX is, where to go, the code, that it works once for 10 minutes, and to ask you for a new one if it has expired. It names no command to run on your computer.
+
+```text
+     https://my-mac.tailnet-name.ts.net/member
+     7KQ4-M2XH
+
+     Or paste this message to them as it is (everything between the lines):
+     ------------------------------------------------------------
+Hi Sara B,
+
+I run AgentX, a tool that gives AI agents jobs for our team. It has a page for you, "My work", that shows what you asked the agents for and where it stands.
+
+To open it:
+1. Accept the Tailscale share I sent you, if you have not yet.
+2. Open https://my-mac.tailnet-name.ts.net/member in your browser.
+3. Give your machine a name and type this code: 7KQ4-M2XH
+
+The code works once and stops working after 10 minutes. If it has expired or does not work, tell me and I will send you a new one.
+After you pair, I approve your machine on my side. The page opens by itself once I do.
+     ------------------------------------------------------------
+```
 
 ### `agentx people devices [id]`
 

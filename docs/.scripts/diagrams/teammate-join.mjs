@@ -37,7 +37,7 @@ y += ROW + GAP
 d.wrap(prepareA.at(-1), d.x0 + 26, y)
 const prepareB = d.row(
   [
-    { title: ["Create the invite"], note: ["agentx people invite prints", "the address and a code"] },
+    { title: ["Create the invite"], note: ["agentx people invite prints the", "address, a code and a message"] },
     { title: ["Share this computer", "in Tailscale"], note: ["admin console: Machines › Share"] },
     { title: ["Send the address", "and the code"], note: ["the code works once, for 10 minutes"] },
   ],

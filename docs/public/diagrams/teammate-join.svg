@@ -76,8 +76,8 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="70" cy="348" r="15" fill="#1A66FF"/>
 <text x="70" y="353" class="num" text-anchor="middle">4</text>
 <text x="60" y="392" class="title" text-anchor="start">Create the invite</text>
-<text x="60" y="414" class="note" text-anchor="start">agentx people invite prints</text>
-<text x="60" y="431" class="note" text-anchor="start">the address and a code</text>
+<text x="60" y="414" class="note" text-anchor="start">agentx people invite prints the</text>
+<text x="60" y="431" class="note" text-anchor="start">address, a code and a message</text>
 </g>
 <g class="rise" style="animation-delay:1.60s">
 <rect x="328" y="320" width="264" height="136" rx="14" class="card accent"/>

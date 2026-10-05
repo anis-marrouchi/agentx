@@ -9,8 +9,8 @@ import { PairCodeStore } from "../src/daemon/pair-codes"
 import { PairAttemptLimiter } from "../src/daemon/app-pair-code"
 import { MemberStore } from "../src/members/store"
 import {
-  NETWORK_MISMATCH, clientAddress, inviteMember, machineName, memberAccess, networkIdentities, networkLogin, personOfToken,
-  removeDevice, removePersonDevices,
+  CODE_MINUTES, NETWORK_MISMATCH, clientAddress, inviteMember, inviteMessage, machineName, memberAccess, networkIdentities,
+  networkLogin, personOfToken, removeDevice, removePersonDevices,
 } from "../src/members/pairing"
 import { forgeLink, whereLabel, workOf } from "../src/members/work"
 import { currentPeople, handleMemberRequest, MEMBER_COOKIE } from "../src/daemon/member-routes"
@@ -107,6 +107,22 @@ describe("inviting", () => {
   it("refuses a person who is not listed", () => {
     const inv = inviteMember({ tokens, codes, members, people: () => PEOPLE }, "nobody")
     expect(inv).toMatchObject({ ok: false, error: expect.stringContaining('No person "nobody"') })
+  })
+
+  it("writes a message the owner forwards as it is (#644)", () => {
+    const msg = inviteMessage({ name: "Sara B", origin: "https://your-mac.tailnet-name.ts.net/", code: "7KQ4M2XH" })
+    expect(msg.startsWith("Hi Sara B,")).toBe(true)
+    expect(msg).toContain("AgentX")
+    expect(msg).toContain("https://your-mac.tailnet-name.ts.net/member")
+    expect(msg).not.toContain(".ts.net//member")
+    expect(msg).toContain("7KQ4-M2XH")
+    expect(msg).toContain(`${CODE_MINUTES} minutes`)
+    expect(msg).toMatch(/expired/i)
+    expect(msg).toContain("tell me and I will send you a new one")
+    // Nothing the teammate would have to run on the owner's computer.
+    expect(msg).not.toMatch(/agentx |tailscale serve|\$ /)
+    // Plain text: no colour codes.
+    expect(msg).not.toMatch(/\u001b\[/)
   })
 
   it("reads the private-network logins from the identities", () => {
