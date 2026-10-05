@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.111.1](https://github.com/anis-marrouchi/agentx/compare/v0.111.0...v0.111.1) (2026-10-05)
+
+
+### Bug Fixes
+
+* **guests:** a wrong guest code no longer names the host's command ([#669](https://github.com/anis-marrouchi/agentx/issues/669)) ([393a1c5](https://github.com/anis-marrouchi/agentx/commit/393a1c5f9bdc2895827989a2cfbed97a47b43b5f))
+
 ## [0.111.0](https://github.com/anis-marrouchi/agentx/compare/v0.110.1...v0.111.0) (2026-10-05)
 
 
