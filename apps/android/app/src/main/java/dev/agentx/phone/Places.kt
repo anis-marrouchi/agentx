@@ -13,6 +13,8 @@ import com.google.android.gms.location.GeofenceStatusCodes
 import com.google.android.gms.location.GeofencingRequest
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.tasks.Tasks
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -56,11 +58,40 @@ object Places {
         }
     }
 
+    /** One saved place, as the computer sends it and as it is kept for a restart. */
+    data class Fence(val id: String, val name: String, val lat: Double, val lng: Double, val radius: Double)
+
+    /** Reads the `places` array of GET /api/app/places, skipping incomplete
+     *  entries, up to Android's limit. */
+    fun parse(places: JSONArray?): List<Fence> {
+        val out = mutableListOf<Fence>()
+        if (places == null) return out
+        for (i in 0 until places.length()) {
+            if (out.size >= MAX_GEOFENCES) break
+            val p = places.optJSONObject(i) ?: continue
+            val id = p.optString("id")
+            val radius = p.optDouble("radius", Double.NaN)
+            val lat = p.optDouble("lat", Double.NaN)
+            val lng = p.optDouble("lng", Double.NaN)
+            if (id.isEmpty() || radius.isNaN() || lat.isNaN() || lng.isNaN()) continue
+            out.add(Fence(id, p.optString("name", id), lat, lng, radius))
+        }
+        return out
+    }
+
+    /** The places as kept in Prefs.watched: only what a geofence needs. */
+    fun toJson(fences: List<Fence>): String {
+        val arr = JSONArray()
+        for (f in fences) {
+            arr.put(JSONObject().put("id", f.id).put("name", f.name).put("lat", f.lat).put("lng", f.lng).put("radius", f.radius))
+        }
+        return arr.toString()
+    }
+
     /**
      * Fetches the places from the computer and registers them. Blocking;
      * runs in SyncWorker. Returns false when it should be tried again later.
      */
-    @SuppressLint("MissingPermission") // checked through access() first
     fun sync(context: Context): Boolean {
         val prefs = Prefs(context)
         val base = prefs.baseUrl
@@ -72,6 +103,7 @@ object Places {
         } catch (e: Api.HttpError) {
             if (e.status == 401) {
                 prefs.lastError = context.getString(R.string.err_unpaired)
+                prefs.watched = null
                 clear(context)
                 return true
             }
@@ -83,34 +115,14 @@ object Places {
         }
 
         prefs.syncMinutes = body.optInt("syncMinutes", 60).coerceIn(15, 1440)
-        val places = body.optJSONArray("places")
-        val names = mutableSetOf<String>()
-        val fences = mutableListOf<Geofence>()
-        if (places != null) {
-            for (i in 0 until minOf(places.length(), MAX_GEOFENCES)) {
-                val p = places.optJSONObject(i) ?: continue
-                val id = p.optString("id")
-                val radius = p.optDouble("radius", Double.NaN)
-                val lat = p.optDouble("lat", Double.NaN)
-                val lng = p.optDouble("lng", Double.NaN)
-                if (id.isEmpty() || radius.isNaN() || lat.isNaN() || lng.isNaN()) continue
-                names.add(p.optString("name", id))
-                fences.add(
-                    Geofence.Builder()
-                        .setRequestId(id)
-                        .setCircularRegion(lat, lng, radius.toFloat())
-                        .setExpirationDuration(Geofence.NEVER_EXPIRE)
-                        .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
-                        .build(),
-                )
-            }
-        }
-        prefs.placeNames = names
+        val fences = parse(body.optJSONArray("places"))
+        prefs.placeNames = fences.map { it.name }.toSet()
         prefs.lastSyncAt = System.currentTimeMillis()
 
         val on = body.optBoolean("enabled", false) && prefs.placesOn && access(context) == Access.ALL_THE_TIME
         clear(context)
         if (!on || fences.isEmpty()) {
+            prefs.watched = null
             prefs.lastError = when {
                 !body.optBoolean("enabled", false) -> body.optString("reason").ifEmpty { null }
                 prefs.placesOn && access(context) != Access.ALL_THE_TIME -> context.getString(R.string.err_permission)
@@ -118,24 +130,56 @@ object Places {
             }
             return true
         }
+        val error = register(context, fences)
+        prefs.watched = if (error == null) toJson(fences) else null
+        prefs.lastError = error?.message
+        return error == null || !error.retry
+    }
+
+    /**
+     * After a restart: watches the places registered before it again, from
+     * what was kept, without waiting for the computer to be reachable (the
+     * tailnet is often not up yet at boot). SyncWorker then checks for
+     * changes as usual. Blocking.
+     */
+    fun restore(context: Context) {
+        val prefs = Prefs(context)
+        if (!prefs.paired || !prefs.placesOn || access(context) != Access.ALL_THE_TIME) return
+        val kept = prefs.watched ?: return
+        val fences = try { parse(JSONArray(kept)) } catch (_: Exception) { emptyList() }
+        if (fences.isEmpty()) return
+        register(context, fences)?.let { prefs.lastError = it.message }
+    }
+
+    private class RegisterError(val message: String, val retry: Boolean)
+
+    /** Replaces whatever is registered with these places. Null when it worked. */
+    @SuppressLint("MissingPermission") // callers check access() first
+    private fun register(context: Context, fences: List<Fence>): RegisterError? {
+        clear(context)
         return try {
             val request = GeofencingRequest.Builder()
                 // 0: a place the phone is already inside doesn't fire now;
                 // only a real arrival or departure does.
                 .setInitialTrigger(0)
-                .addGeofences(fences)
+                .addGeofences(fences.map { f ->
+                    Geofence.Builder()
+                        .setRequestId(f.id)
+                        .setCircularRegion(f.lat, f.lng, f.radius.toFloat())
+                        .setExpirationDuration(Geofence.NEVER_EXPIRE)
+                        .setTransitionTypes(Geofence.GEOFENCE_TRANSITION_ENTER or Geofence.GEOFENCE_TRANSITION_EXIT)
+                        .build()
+                })
                 .build()
             Tasks.await(LocationServices.getGeofencingClient(context).addGeofences(request, pendingIntent(context)), 30, TimeUnit.SECONDS)
-            prefs.lastError = null
-            true
+            null
         } catch (e: Exception) {
             val code = ((e.cause ?: e) as? ApiException)?.statusCode
-            prefs.lastError = when (code) {
-                GeofenceStatusCodes.GEOFENCE_NOT_AVAILABLE -> context.getString(R.string.err_location_off)
-                GeofenceStatusCodes.GEOFENCE_TOO_MANY_GEOFENCES -> context.getString(R.string.err_too_many)
-                else -> context.getString(R.string.err_register, e.message ?: e.toString())
+            when (code) {
+                GeofenceStatusCodes.GEOFENCE_NOT_AVAILABLE -> RegisterError(context.getString(R.string.err_location_off), true)
+                GeofenceStatusCodes.GEOFENCE_TOO_MANY_GEOFENCES -> RegisterError(context.getString(R.string.err_too_many), false)
+                else -> RegisterError(context.getString(R.string.err_register, e.message ?: e.toString()), true)
             }
-            code != GeofenceStatusCodes.GEOFENCE_TOO_MANY_GEOFENCES
         }
     }
 }

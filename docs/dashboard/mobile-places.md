@@ -11,6 +11,7 @@ A web app can't do this on its own: Android lets a web page read the location on
 - **Android watches the places, not AgentX.** Each place is registered with Android as a *geofence*: a circle around a point. Android wakes the app only when the phone crosses a circle.
 - **The phone sends three things per crossing:** which saved place, whether you arrived or left, and the time. It never sends where you are, and it never sends your position in the background.
 - **The computer keeps nothing about the crossing** except a random id, so a report that is sent twice fires once.
+- **The phone keeps a copy of your places** (name, centre and size) in the app's own storage, which no other app and no backup can read. After a restart it uses that copy to watch your places again at once, even before Tailscale is connected. **Forget this computer** deletes it.
 - **Where a place is** is what you typed or picked when you saved it. **Use where I am now** in the phone app reads the location once, only when you tap it, to fill in the form; nothing is sent until you tap **Save place**.
 - **Everything stays on your tailnet.** The Android app talks only to the computer you paired it with, over the same private address as the phone app.
 
@@ -192,6 +193,7 @@ All in `agentx.json`, under `app`. Each one is described in the [configuration r
   1. **Phone:** tap **Check for new places now**.
   2. **Phone:** make the place bigger: 150 metres or more. Android notices small circles late, or not at all.
   3. **Phone:** in Android settings, open **Apps**, then **AgentX**, then **Battery**, and choose **Unrestricted**. Some phones stop background apps to save battery.
+- **No notification after restarting the phone** — the places are watched again as soon as the phone has started, without opening the app. If you changed places while the phone was off, open **AgentX** once, or tap **Check for new places now**.
 - **"Location is off on this phone"** — Location was turned off, so Android dropped every place. Turn it on in quick settings; the places are watched again at the next check, or at once when you tap **Check for new places now**.
 - **"This phone is no longer paired with the computer"** — the Android app's key was removed with `agentx app revoke`. Tap **Forget this computer**, then [pair again](#pair-the-android-app).
 - **"Could not reach the computer"** — Tailscale is off on the phone or on the computer. Turn it on; the app tries again by itself.

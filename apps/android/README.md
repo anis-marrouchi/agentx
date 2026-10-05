@@ -21,10 +21,16 @@ How to build, install, pair and use it, step by step:
   Chrome the same key the first time through `/app/pair#token=…`.
 - `Places` fetches `GET /api/app/places` and registers each place as a
   geofence. `SyncWorker` repeats that every `app.places.syncMinutes`, after
-  a restart and after an update (`BootReceiver`).
-- `GeofenceReceiver` gets the crossing from Android; `EventWorker` sends
+  a restart and after an update (`BootReceiver`). The places registered
+  last are kept in app-private storage, so after a restart `BootReceiver`
+  watches them again at once, before the tailnet is up.
+- `GeofenceReceiver` gets the crossing from Android and sends
   `POST /api/app/places/event` with `{ id, place, transition, time }` and
-  nothing else, retrying while the phone is offline.
+  nothing else, at once, while Android keeps the app awake for the
+  broadcast (a background job can wait for Doze's next maintenance window
+  with the screen off). `EventWorker` is queued first and sends it later
+  if that fails, retrying while the phone is offline. The computer fires a
+  crossing once even if both send it.
 - `PlacesActivity` is the settings screen: the switch, the permissions, the
   places watched, and the way out. The phone app links to it with
   `intent://places#Intent;scheme=agentx;package=<package>;end`.
