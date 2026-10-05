@@ -199,6 +199,38 @@ on the Live tab, starts a scripted task that takes a minute. The capture script 
 at `http://127.0.0.1:18931`. Set `CHROME_PATH` if your browser is elsewhere, or
 `DOCS_SHOTS=live,operations` to capture a subset. Stop the demo with Ctrl-C.
 
+### Social preview image
+
+The social preview is the card a chat app or social site shows when someone pastes a link to the repository. GitHub shows its own default card until the repository owner uploads an image in the repository settings. GitHub has no API for this setting, so a script or an agent cannot do it.
+
+The image is built from a page, not drawn by hand: `docs/.scripts/social-preview/template.html` holds the words, the AgentX mark and the palette, and `docs/public/social-preview.png` is the built file, 1280×640 (the size GitHub recommends). The headline is set in Archivo Black and the rest in Archivo; both fonts ship in `docs/.scripts/social-preview/fonts/` under the SIL Open Font License. Edit the template, never the PNG.
+
+To change the words or the look (in a terminal, from the repo root, with Chrome or Chromium installed):
+
+1. Edit `docs/.scripts/social-preview/template.html`.
+2. Run `pnpm docs:social-preview`. It writes `docs/public/social-preview.png`, and stops with a message if a text colour falls under the WCAG AA contrast ratio (4.5:1) or if text leaves the card. Set `CHROME_PATH` if your browser is elsewhere.
+3. Open the PNG and read it at a small size, as it will appear in a chat.
+4. Commit the template and the PNG together. `pnpm docs:social-preview --check` fails when they no longer match.
+
+To put it on the repository (in the browser, as the repository owner):
+
+1. Download `docs/public/social-preview.png` from the `main` branch.
+2. Open the repository on GitHub and click **Settings**.
+3. On the **General** page, scroll to **Social preview** and click **Edit**, then **Upload an image…**.
+4. Choose the downloaded file and wait for the preview to update.
+
+#### Check it worked
+
+1. Paste the repository link into a Slack or Discord message, or into any link-preview tool. The card shows the AgentX image.
+2. Run `pnpm docs:social-preview --check`. It prints `social-preview.png matches its template.`
+
+#### If something is wrong
+
+- **The old card still shows.** Link previews are cached. Try again after a few hours, or use the site's own cache refresh (for example the X or LinkedIn post inspector).
+- **The image looks cropped.** Some sites crop the card to 1.91:1. The template keeps text inside a 72px margin; keep it there when you edit.
+- **The script says a font did not load.** The font files are missing from `docs/.scripts/social-preview/fonts/`; restore them from git.
+- **The script says Chrome did not start.** Set `CHROME_PATH` to the Chrome or Chromium binary.
+
 ## Filing issues
 
 People are the heart of this project, and every contribution is equally welcome, however it was written. There are two ways to open an issue.

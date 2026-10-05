@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>AgentX social preview</title>
+<style>
+  /* Archivo Black and Archivo, SIL Open Font License 1.1 (see fonts/LICENSE-*.txt). */
+  @font-face { font-family: "Archivo Black"; font-weight: 400; src: url(fonts/archivo-black-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Archivo"; font-weight: 400; src: url(fonts/archivo-latin-400-normal.woff2) format("woff2"); }
+  @font-face { font-family: "Archivo"; font-weight: 500; src: url(fonts/archivo-latin-500-normal.woff2) format("woff2"); }
+
+  :root {
+    /* The AgentX palette: ink from the diagram kit, the accent lightened so text passes WCAG AA on ink. */
+    --ink: #0B0D12;
+    --accent: #1A66FF;
+    --accent-text: #6FA2FF;
+    --headline: #FFFFFF;
+    --body: #C7CFDD;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 640px; overflow: hidden; background: var(--ink); }
+  body { position: relative; font-family: "Archivo", "Liberation Sans", Arial, sans-serif; color: var(--body); }
+
+  .glow {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(520px 420px at 1040px 300px, rgba(26, 102, 255, 0.34), rgba(26, 102, 255, 0) 70%),
+      radial-gradient(360px 300px at 1180px 560px, rgba(26, 102, 255, 0.22), rgba(26, 102, 255, 0) 70%);
+  }
+  .mesh { position: absolute; inset: 0; }
+  .fade {
+    position: absolute; inset: 0;
+    background: linear-gradient(90deg, var(--ink) 0, var(--ink) 540px, rgba(11, 13, 18, 0) 820px);
+  }
+
+  .brand { position: absolute; left: 72px; top: 64px; display: flex; align-items: center; gap: 18px; }
+  .brand img { width: 84px; height: 84px; filter: invert(1); }
+  .brand span { font-family: "Archivo Black", "Archivo", sans-serif; font-size: 40px; color: var(--headline); letter-spacing: -0.01em; }
+
+  h1 {
+    position: absolute; left: 72px; top: 196px; width: 700px;
+    font-family: "Archivo Black", "Archivo", sans-serif; font-weight: 400;
+    font-size: 60px; line-height: 1.08; letter-spacing: -0.015em; color: var(--headline);
+  }
+  p.sub { position: absolute; left: 72px; top: 440px; width: 760px; font-size: 26px; line-height: 1.35; }
+  p.cmd { position: absolute; left: 72px; top: 536px; font-weight: 500; font-size: 30px; color: var(--accent-text); letter-spacing: 0.005em; }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <svg class="mesh" viewBox="0 0 1280 640" aria-hidden="true"></svg>
+  <div class="fade"></div>
+
+  <div class="brand">
+    <img src="../../public/agentx-symbol.png" alt="">
+    <span>AgentX</span>
+  </div>
+  <h1>Put an AI teammate on the tools your team already uses.</h1>
+  <p class="sub">Self-hosted agents for Telegram, WhatsApp, GitHub and GitLab.</p>
+  <p class="cmd">npx agentix-cli demo</p>
+
+<script>
+  // A constellation on the right. The points come from a fixed seed, so every
+  // run draws the same picture.
+  let seed = 640;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  const pts = [];
+  for (let i = 0; i < 26; i++) pts.push({ x: 700 + rnd() * 620, y: 40 + rnd() * 580, r: 2 + rnd() * 3.5 });
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.querySelector(".mesh");
+  const el = (tag, attrs) => { const e = document.createElementNS(ns, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); return e; };
+  const defs = el("defs", {});
+  const grad = el("radialGradient", { id: "dot" });
+  grad.append(el("stop", { offset: "0", "stop-color": "#DCE8FF" }), el("stop", { offset: "0.45", "stop-color": "#1A66FF" }), el("stop", { offset: "1", "stop-color": "#1A66FF", "stop-opacity": "0" }));
+  defs.append(grad);
+  svg.append(defs);
+  for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+    const a = pts[i], b = pts[j], d = Math.hypot(a.x - b.x, a.y - b.y);
+    if (d < 190) svg.append(el("line", { x1: a.x, y1: a.y, x2: b.x, y2: b.y, stroke: "#1A66FF", "stroke-opacity": (0.55 * (1 - d / 190)).toFixed(3), "stroke-width": "1.4" }));
+  }
+  for (const p of pts) {
+    svg.append(el("circle", { cx: p.x, cy: p.y, r: p.r * 4, fill: "url(#dot)", opacity: "0.45" }));
+    svg.append(el("circle", { cx: p.x, cy: p.y, r: p.r, fill: "#DCE8FF" }));
+  }
+</script>
+</body>
+</html>
