@@ -1,0 +1,58 @@
+name: Phone app
+
+# Builds the AgentX phone shell (apps/phone, Flutter): the phone app plus
+# place reminders (#676). The debug APK is kept as a workflow artifact so it
+# can be installed on a test phone. iOS is not built here yet.
+
+on:
+  push:
+    branches: [main]
+    paths: ['apps/phone/**', '.github/workflows/phone.yml']
+  pull_request:
+    paths: ['apps/phone/**', '.github/workflows/phone.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phone-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/phone
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.6"
+          channel: stable
+          cache: true
+
+      - run: flutter pub get
+
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Unit tests
+        run: flutter test
+
+      - name: Build the debug APK
+        run: flutter build apk --debug
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agentx-phone-debug
+          path: apps/phone/build/app/outputs/flutter-apk/app-debug.apk
+          if-no-files-found: error
