@@ -240,6 +240,17 @@ Start with an agent's name to send just that question to it. The ticked agent st
 
 The name can be the agent's id, its name, or one of its mentions in `agentx.json`. Capital letters don't matter. Only the first word or two count, so "ask Researcher later" is an ordinary question for the ticked agent. If no agent matches, or more than one does, the ticked agent answers. An agent with its own **Ask with shortcut** can also be asked by holding that shortcut instead.
 
+**A name heard slightly wrong.** Speech to text sometimes mishears a name, for example "Radia" for "Nadia". When no name matches exactly, a first word that is one letter away from exactly one agent's name still reaches that agent, if a comma or a pause follows it ("Radia, what's new?"). It works for names of four letters or more. Close to two agents, or an ordinary word such as "Okay" or "Really", and the ticked agent answers as before. For a name that is misheard in other ways, add the wrong spelling to that agent's `mentions` (see [Spoken aliases](#spoken-aliases)).
+
+#### Spoken aliases
+
+An agent answers to every entry in its `mentions` list, spoken or typed. To catch a name that speech to text often gets wrong:
+
+1. **Mac:** ask the agent by name a few times and note how the pill writes the name when it goes to the wrong agent, for example "Nadya".
+2. **Terminal:** open `agentx.json` in the folder you run AgentX from.
+3. **Terminal:** add the spelling to the agent's `mentions`: `"mentions": ["@nadia", "nadya"]`. Save the file; a running daemon picks it up.
+4. **Mac:** say "Nadya, what's new?". The agent answers.
+
 **Agents on your other computers.** If you link several computers running AgentX (a *mesh*), you can ask any agent on them by name the same way: "Planner, what's the status?" reaches the agent called Planner on the other computer, and the answer is spoken here. Only computers that are online right now count. If two computers each have an agent with that name, the name is ambiguous and the ticked agent answers; ask by the agent's id instead.
 
 ### Ask several agents at once
@@ -464,6 +475,7 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 - **A question by name went to the ticked agent:** the name matched no agent, or more than one. Check names and mentions with `agentx agent list`. For an agent on another computer, check that computer is online: **Terminal:** run `agentx mesh list`; it should say `healthy`. Two computers with an agent of the same name make the name ambiguous; say the agent's id instead.
 - **Two agents are busy but the pill shows no small orbs:** the pill was closed or **Show floating pill** hides it when idle; hold **Option–Space** to bring it back. The row also shows only questions asked from this Mac.
 - **A name is still said the old way:** **Terminal:** run `agentx voice pronounce` and check the pair is listed. A pair with `--lang` is skipped in answers in another language. The written form must be the whole word as it appears in the answer: a pair for "Okafor" does not change "Okafors". Words are swapped only for what is said aloud, never in what is shown.
+- **A misheard name went to the ticked agent:** a near match needs a comma or a pause after the name, a name of four letters or more, and only one agent that close. Add the wrong spelling to the agent's `mentions`; see [Spoken aliases](#spoken-aliases).
 - **History is empty or says the daemon isn't reachable:** History reads from the daemon. Start it, then choose **Refresh**.
 - **Save in the settings window shows a red message:** a shortcut is used twice. Change one of them and save again.
 - **Where to find the logs:** the app keeps its own log in `~/Library/Logs/agentx-voice.log`, whichever way you installed it. Crash messages and anything else it prints go to a second file that depends on how you installed it: `~/Library/Logs/agentx-desktop.err.log` after `agentx desktop install`, or `~/Library/Logs/agentx-voice.err.log` after `apps/mac-voice/install.sh`. The installer prints this second path when it finishes. **Terminal:** run `tail -n 50 <path>` to see the latest lines.

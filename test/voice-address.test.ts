@@ -149,3 +149,50 @@ describe("resolveAddress", () => {
     expect(r.color).toMatch(/^#[0-9A-F]{6}$/i)
   })
 })
+
+// #509: speech to text wrote "Radia" for "Nadia".
+describe("a name one letter off", () => {
+  const team = [
+    { id: "marketing-agent", name: "Nadia" },
+    { id: "coder-agent", name: "Coder" },
+    { id: "secretary-agent", name: "Secretary" },
+  ]
+
+  it("reaches the one agent it is close to when set off by a comma or a pause", () => {
+    expect(addressedAgent("Radia, what are you doing right now?", team, "secretary-agent")).toBe("marketing-agent")
+    expect(addressedAgent("Nadja. Make me a post", team, "secretary-agent")).toBe("marketing-agent")
+    expect(addressedAgent("Coders, run the tests", team, "secretary-agent")).toBe("coder-agent")
+    expect(addressedAgent("Codr: status?", team, "secretary-agent")).toBe("coder-agent")
+  })
+
+  it("keeps the target when the first word is close to two names", () => {
+    const close = [...team, { id: "nadja-agent", name: "Nadja" }]
+    // "Nadka" is one letter from both Nadia and Nadja.
+    expect(addressedAgent("Nadka, what's new?", close, "secretary-agent")).toBe("secretary-agent")
+  })
+
+  it("keeps the target for an ordinary first word", () => {
+    for (const text of ["Really, what are you doing?", "Okay, send it", "Well, maybe later", "Merci, c'est bon"]) {
+      expect(addressedAgent(text, team, "secretary-agent"), text).toBe("secretary-agent")
+    }
+  })
+
+  it("keeps the target with no comma or pause after the word", () => {
+    expect(addressedAgent("Radia what are you doing", team, "secretary-agent")).toBe("secretary-agent")
+  })
+
+  it("does not guess when a name matches exactly, even ambiguously", () => {
+    const twins = [{ id: "a", name: "Sam" }, { id: "b", name: "Sam" }, { id: "c", name: "Samy" }]
+    expect(addressedAgent("Sam, hi", twins, "x")).toBe("x")
+  })
+
+  it("is not tried on short names", () => {
+    const short = [{ id: "ava-agent", name: "Ava" }]
+    expect(addressedAgent("Eva, hello", short, "x")).toBe("x")
+  })
+
+  it("is reported as addressed by /voice/address", () => {
+    const r = resolveAddress({ text: "Radia, what are you doing right now?", target: "secretary-agent", local: team, remote: [], localNode: "laptop" })
+    expect(r).toMatchObject({ agentId: "marketing-agent", name: "Nadia", addressed: true })
+  })
+})
