@@ -65,6 +65,25 @@ export function buildCliGenerateArgs(input: {
   return args
 }
 
+/** Why a `claude -p` run failed, for when it printed nothing. A caller's
+ *  abort or the timeout kills the process before it writes a word, and
+ *  "Claude CLI failed" alone hid that most classifier fallbacks die this way. */
+export function describeCliFailure(result: {
+  stderr?: string
+  stdout?: string
+  exitCode?: number | null
+  signal?: string | null
+  timedOut?: boolean
+  isCanceled?: boolean
+}): string {
+  const out = (result.stderr || result.stdout || "").toString().trim()
+  if (out) return out
+  if (result.isCanceled) return "Claude CLI aborted by caller (timeout or cancel)"
+  if (result.timedOut) return "Claude CLI timed out"
+  if (result.signal) return `Claude CLI killed by ${result.signal}`
+  return `Claude CLI failed (exit ${result.exitCode ?? "unknown"}, no output)`
+}
+
 interface AnthropicResponse {
   id: string
   content: Array<{
@@ -238,8 +257,7 @@ export class ClaudeCodeProvider implements AgentProvider {
     })
 
     if (result.exitCode !== 0) {
-      const err = result.stderr || result.stdout || "Claude CLI failed"
-      throw new Error(`Claude CLI error: ${err}`)
+      throw new Error(`Claude CLI error: ${describeCliFailure(result)}`)
     }
 
     // Claude CLI may return success exit code but with is_error in JSON
@@ -411,7 +429,7 @@ export class ClaudeCodeProvider implements AgentProvider {
 
     const res = await child
     if (res.exitCode !== 0 && !fatalError) {
-      fatalError = (stderr || res.stderr || res.stdout || "Claude CLI failed").toString().trim()
+      fatalError = stderr.toString().trim() || describeCliFailure(res)
     }
 
     if (fatalError) {

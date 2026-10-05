@@ -31,6 +31,12 @@ export const INTENT_PATH_SEAT = "intent-path"
  *  the pick is a match rather than the least bad option. */
 export const INTENT_PATH_MIN_CATEGORY_P = 0.5
 export const INTENT_PATH_MIN_VERB_P = 0.3
+/** A verb between the floor above and this keeps only its category. In the
+ *  first days active, 30% of seat labels sat at 0.30-0.50 and most of the
+ *  nonsensical verbs in a spot check were under 0.45, while the category
+ *  stayed right. Dropping the verb keeps the sub-second answer instead of
+ *  handing the message to an LLM fallback that failed about half the time. */
+export const INTENT_PATH_FULL_VERB_P = 0.45
 
 export interface IntentPathInput {
   message: string
@@ -40,9 +46,11 @@ export interface IntentPathInput {
 }
 
 export interface IntentPathProposal {
-  /** `[category]` or `[category, verb]`, existing node ids only. */
+  /** `[category]` or `[category, verb]`, existing node ids only. A verb
+   *  under `INTENT_PATH_FULL_VERB_P` is dropped from `path`. */
   path: string[]
-  /** min over the stages' argmax probability. */
+  /** min over the stages' argmax probability, over the stages kept in
+   *  `path`. */
   confidence: number
   /** Both stages cleared their thresholds; the caller may act on `path`. */
   confident: boolean
@@ -131,9 +139,11 @@ export async function proposePathViaSeat(
     })
     if (!stage2) return null
     const verb = stage2.answers.verb as ChoiceAnswer
-    confidence = Math.min(confidence, verb.pMax)
     confident = confident && verb.pMax >= INTENT_PATH_MIN_VERB_P
-    path.push(verb.choice)
+    if (verb.pMax >= INTENT_PATH_FULL_VERB_P || !confident) {
+      confidence = Math.min(confidence, verb.pMax)
+      path.push(verb.choice)
+    }
   } else if (verbs.length === 1) {
     path.push(verbs[0].id)
   }

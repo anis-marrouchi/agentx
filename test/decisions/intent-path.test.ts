@@ -22,6 +22,8 @@ const NODES: GraphNode[] = [
   node("deploy.staging", "ops"),
   node("restart.service", "ops"),
 ]
+// More code verbs so a stage-2 argmax can sit under one half, or one third.
+const WIDE = [...NODES, node("write.tests", "code", "Add tests"), node("refactor.module", "code", "Restructure code")]
 const input = { message: "please review MR !5", channel: "gitlab", agent: "coder" }
 
 beforeEach(() => resetDecisionsRuntime())
@@ -68,6 +70,35 @@ describe("proposePathViaSeat", () => {
     })
     const p = await proposePathViaSeat(input, NODES)
     expect(p?.path).toEqual(["ops", "deploy.staging"])
+    expect(p?.confident).toBe(false)
+  })
+
+  it("keeps only the category when the verb is weak but above the floor", async () => {
+    seat("active", {
+      category: { probabilities: { code: 0.9, ops: 0.05, admin: 0.05 } },
+      verb: { probabilities: { "review.merge-request": 0.4, "fix.bug": 0.6 } },
+    })
+    // fix.bug wins at 0.6: a full path.
+    expect((await proposePathViaSeat(input, NODES))?.path).toEqual(["code", "fix.bug"])
+
+    resetDecisionsRuntime()
+    seat("active", {
+      category: { probabilities: { code: 0.9, ops: 0.05, admin: 0.05 } },
+      verb: { probabilities: { "review.merge-request": 0.4, "fix.bug": 0.35, "write.tests": 0.25, "refactor.module": 0 } },
+    })
+    const p = await proposePathViaSeat(input, WIDE)
+    expect(p?.path).toEqual(["code"])
+    expect(p?.confidence).toBeCloseTo(0.9, 5)
+    expect(p?.confident).toBe(true)
+  })
+
+  it("still hands a verb under the floor to the LLM", async () => {
+    seat("active", {
+      category: { probabilities: { code: 0.9, ops: 0.05, admin: 0.05 } },
+      verb: { probabilities: { "review.merge-request": 0.28, "fix.bug": 0.26, "write.tests": 0.24, "refactor.module": 0.22 } },
+    })
+    const p = await proposePathViaSeat(input, WIDE)
+    expect(p?.path).toEqual(["code", "review.merge-request"])
     expect(p?.confident).toBe(false)
   })
 
