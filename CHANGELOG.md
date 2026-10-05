@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.113.0](https://github.com/anis-marrouchi/agentx/compare/v0.112.0...v0.113.0) (2026-10-05)
+
+
+### Features
+
+* **app:** Android app with place reminders ([#676](https://github.com/anis-marrouchi/agentx/issues/676)) ([#678](https://github.com/anis-marrouchi/agentx/issues/678)) ([9a05544](https://github.com/anis-marrouchi/agentx/commit/9a05544120449f4f4159c267aa44dd7968382ba4))
+
+
+### Bug Fixes
+
+* **decisions:** keep only the category for a weak intent-path verb; name why the Claude CLI failed ([#677](https://github.com/anis-marrouchi/agentx/issues/677)) ([423dfce](https://github.com/anis-marrouchi/agentx/commit/423dfcef83b04bfa2af058e5a05b14037ae7eb76)), closes [#308](https://github.com/anis-marrouchi/agentx/issues/308)
+
 ## [0.112.0](https://github.com/anis-marrouchi/agentx/compare/v0.111.1...v0.112.0) (2026-10-05)
 
 
