@@ -3003,11 +3003,29 @@ No flags.
 
 ### `agentx people invite <id>`
 
-A one-time code that pairs one of this person's machines with their own page (`/member`): **My work** for a teammate, **Your project** for a client. The output names the page the person gets. Refuses to run while `tailscale serve` publishes the whole dashboard. See [Invite a teammate to their work page](/jobs/members) and [Give a client a page of their own](/jobs/clients).
+A one-time code that pairs one of this person's machines with their own page (`/member`): **My work** for a teammate, **Your project** for a client. The output names the page the person gets and ends with a message to forward to them as it is. Refuses to run while `tailscale serve` publishes the whole dashboard. See [Invite a teammate to their work page](/jobs/members) and [Give a client a page of their own](/jobs/clients).
 
 | Flag | Description |
 |---|---|
 | `--url <origin>` | Address the person opens, e.g. `https://my-mac.tailnet-name.ts.net` (default: this computer's Tailscale name) |
+
+The output ends with a block marked **Message to forward**, between two dashed lines: the person's page named for their role, the address, the code, that it works once for 10 minutes, the two steps on their side (accept the Tailscale share, open the address in Edge or Chrome), and what happens next. It names no command to run on your computer. For a client, the message says nothing about agents.
+
+```text
+  Message to forward (copy everything between the two lines; the rest of this output is for you)
+----------------------------------------------------------------
+Hi Sara B,
+
+I use AgentX to give our AI agents their jobs. It has a page for you, "My work": what you asked the agents for, and where each request stands.
+
+To open it:
+1. Accept the Tailscale share I sent you. Tailscale is a small program that connects your computer to mine, privately.
+2. Open https://my-mac.tailnet-name.ts.net/member in Edge or Chrome, give your computer a name and type this code: 7KQ4-M2XH
+   The code works once, for 10 minutes. If it has stopped working, tell me and I will send you a new one.
+
+I then approve your machine, and the page opens by itself.
+----------------------------------------------------------------
+```
 
 ### `agentx people devices [id]`
 

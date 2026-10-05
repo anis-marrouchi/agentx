@@ -1,6 +1,6 @@
 import type { IncomingMessage } from "http"
 import { TokenStore, type TokenRecord } from "@/daemon/token-store"
-import { PairCodeStore } from "@/daemon/pair-codes"
+import { CODE_TTL_MS, PairCodeStore, formatCode } from "@/daemon/pair-codes"
 import type { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { readJson } from "@/daemon/app-fleet"
 import { createCard, readCard } from "@/approvals/cards"
@@ -81,6 +81,41 @@ export function inviteMember(deps: Pick<MemberDeps, "tokens" | "codes" | "member
   const { code, expiresAt } = deps.codes.create({ token, tokenId: record.id, name: person.id })
   deps.members.log({ person: person.id, device: record.id, event: "invited" })
   return { ok: true, code, expiresAt, tokenId: record.id, person }
+}
+
+/** How long a pairing code stays valid, in whole minutes. */
+export const CODE_MINUTES = Math.round(CODE_TTL_MS / 60000)
+
+/** The page a person's paired machine opens at /member (#453): "My work"
+ *  for a teammate, "Your project" for a client. */
+export function pageFor(role: string): string {
+  return role === "client" ? "Your project" : "My work"
+}
+
+/**
+ * The message the owner forwards to the person as it is, on WhatsApp,
+ * Telegram or mail (#659): the page they get, named for their role; the
+ * address and the code; the two steps on their side; and what happens next.
+ * Plain words and no colour, and nothing to run: the person has no terminal
+ * on this computer. `origin` is the address without a path.
+ */
+export function inviteMessage(p: { person: Pick<Person, "name" | "role">; origin: string; code: string }): string {
+  const page = pageFor(p.person.role)
+  const about = p.person.role === "client"
+    ? `I use AgentX to keep track of the work I do for you. It has a page for you, "${page}": what you asked us for, and where each request stands.`
+    : `I use AgentX to give our AI agents their jobs. It has a page for you, "${page}": what you asked the agents for, and where each request stands.`
+  return [
+    `Hi ${p.person.name},`,
+    ``,
+    about,
+    ``,
+    `To open it:`,
+    `1. Accept the Tailscale share I sent you. Tailscale is a small program that connects your computer to mine, privately.`,
+    `2. Open ${p.origin.replace(/\/+$/, "")}/member in Edge or Chrome, give your computer a name and type this code: ${formatCode(p.code)}`,
+    `   The code works once, for ${CODE_MINUTES} minutes. If it has stopped working, tell me and I will send you a new one.`,
+    ``,
+    `I then approve your machine, and the page opens by itself.`,
+  ].join("\n")
 }
 
 export type PairResult =

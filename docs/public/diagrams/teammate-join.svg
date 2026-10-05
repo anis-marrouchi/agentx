@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 1256" width="920" height="1256" role="img" aria-labelledby="t d" style="--cycle:9.1s">
 <title id="t">How a teammate joins AgentX</title>
-<desc id="d">Thirteen steps in three parts. The owner prepares: add the person, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, send the address and the code. The teammate installs Tailscale, opens the address, enters a machine name and the code, and waits. The owner says yes on a decision card. The page becomes My work and can be installed as an app. A no, or three days without an answer, ends the key.</desc>
+<desc id="d">Thirteen steps in three parts. The owner prepares: add the person, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, forward the printed message with the address and the code. The teammate installs Tailscale, opens the address, enters a machine name and the code, and waits. The owner says yes on a decision card. The page becomes My work and can be installed as an app. A no, or three days without an answer, ends the key.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
@@ -76,8 +76,8 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="70" cy="348" r="15" fill="#1A66FF"/>
 <text x="70" y="353" class="num" text-anchor="middle">4</text>
 <text x="60" y="392" class="title" text-anchor="start">Create the invite</text>
-<text x="60" y="414" class="note" text-anchor="start">agentx people invite prints</text>
-<text x="60" y="431" class="note" text-anchor="start">the address and a code</text>
+<text x="60" y="414" class="note" text-anchor="start">agentx people invite prints a code</text>
+<text x="60" y="431" class="note" text-anchor="start">and a message to forward</text>
 </g>
 <g class="rise" style="animation-delay:1.60s">
 <rect x="328" y="320" width="264" height="136" rx="14" class="card accent"/>
@@ -94,9 +94,9 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="638" cy="348" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:10.36s"/>
 <circle cx="638" cy="348" r="15" fill="#1A66FF"/>
 <text x="638" y="353" class="num" text-anchor="middle">6</text>
-<text x="628" y="392" class="title" text-anchor="start">Send the address</text>
-<text x="628" y="413" class="title" text-anchor="start">and the code</text>
-<text x="628" y="435" class="note" text-anchor="start">the code works once, for 10 minutes</text>
+<text x="628" y="392" class="title" text-anchor="start">Forward the message</text>
+<text x="628" y="414" class="note" text-anchor="start">address and code inside;</text>
+<text x="628" y="431" class="note" text-anchor="start">the code works once, for 10 minutes</text>
 </g>
 <g class="fade" style="animation-delay:1.75s"><path d="M595 388 H607" class="link"/><path d="M603 384 L608 388 L603 392" class="link"/></g>
 <rect x="20" y="492" width="880" height="372" rx="20" fill="#F6F7F9"/>

@@ -11,7 +11,7 @@ const d = createDiagram({
   height: 1256,
   title: "How a client gets their page",
   desc:
-    "Thirteen steps in three parts. You prepare: add the person with the client role, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, send the address and the code. " +
+    "Thirteen steps in three parts. You prepare: add the person with the client role, publish only the member page, limit shared users to port 443, create the invite, share the computer in Tailscale, forward the printed message with the address and the code. " +
     "The client installs Tailscale, opens the address, enters a machine name and the code, and waits. You say yes on a decision card. " +
     "The page becomes Your project and can be installed as an app. A no, or three days without an answer, ends the key.",
 })
@@ -37,9 +37,9 @@ y += ROW + GAP
 d.wrap(prepareA.at(-1), d.x0 + 26, y)
 const prepareB = d.row(
   [
-    { title: ["Create the invite"], note: ["agentx people invite prints", "the address and a code"] },
+    { title: ["Create the invite"], note: ["agentx people invite prints a code", "and a message to forward"] },
     { title: ["Share this computer", "in Tailscale"], note: ["admin console: Machines › Share"] },
-    { title: ["Send the address", "and the code"], note: ["the code works once, for 10 minutes"] },
+    { title: ["Forward the message"], note: ["address and code inside;", "the code works once, for 10 minutes"] },
   ],
   y,
   { who: "accent" },
