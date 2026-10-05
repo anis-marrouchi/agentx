@@ -7,6 +7,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.SystemClock
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.location.Geofence
 import com.google.android.gms.location.GeofenceStatusCodes
@@ -17,6 +18,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * Registers the saved places as OS geofences. Android, not this app, then
@@ -26,6 +29,9 @@ import java.util.concurrent.TimeUnit
 object Places {
     /** Android allows 100 geofences per app. */
     private const val MAX_GEOFENCES = 100
+
+    /** Held while registering, by sync() and restore(). */
+    private val lock = ReentrantLock()
 
     enum class Access { NONE, FOREGROUND_ONLY, ALL_THE_TIME }
 
@@ -50,9 +56,9 @@ object Places {
     }
 
     /** Stops watching every place. */
-    fun clear(context: Context) {
+    fun clear(context: Context, timeoutSeconds: Long = 30) {
         try {
-            Tasks.await(LocationServices.getGeofencingClient(context).removeGeofences(pendingIntent(context)), 30, TimeUnit.SECONDS)
+            Tasks.await(LocationServices.getGeofencingClient(context).removeGeofences(pendingIntent(context)), timeoutSeconds, TimeUnit.SECONDS)
         } catch (_: Exception) {
             // Nothing registered, or Play services unavailable: nothing to stop.
         }
@@ -114,49 +120,70 @@ object Places {
             return false
         }
 
-        prefs.syncMinutes = body.optInt("syncMinutes", 60).coerceIn(15, 1440)
-        val fences = parse(body.optJSONArray("places"))
-        prefs.placeNames = fences.map { it.name }.toSet()
-        prefs.lastSyncAt = System.currentTimeMillis()
+        // Registering is locked with restore(), so the two never register
+        // over each other at boot.
+        lock.withLock {
+            prefs.syncMinutes = body.optInt("syncMinutes", 60).coerceIn(15, 1440)
+            val fences = parse(body.optJSONArray("places"))
+            prefs.placeNames = fences.map { it.name }.toSet()
+            prefs.lastSyncAt = System.currentTimeMillis()
 
-        val on = body.optBoolean("enabled", false) && prefs.placesOn && access(context) == Access.ALL_THE_TIME
-        clear(context)
-        if (!on || fences.isEmpty()) {
-            prefs.watched = null
-            prefs.lastError = when {
-                !body.optBoolean("enabled", false) -> body.optString("reason").ifEmpty { null }
-                prefs.placesOn && access(context) != Access.ALL_THE_TIME -> context.getString(R.string.err_permission)
-                else -> null
+            val on = body.optBoolean("enabled", false) && prefs.placesOn && access(context) == Access.ALL_THE_TIME
+            clear(context)
+            if (!on || fences.isEmpty()) {
+                prefs.watched = null
+                prefs.lastError = when {
+                    !body.optBoolean("enabled", false) -> body.optString("reason").ifEmpty { null }
+                    prefs.placesOn && access(context) != Access.ALL_THE_TIME -> context.getString(R.string.err_permission)
+                    else -> null
+                }
+                return true
             }
-            return true
+            val error = register(context, fences)
+            // Kept even if Android refused them for now (location off, say): it is
+            // still the list to watch again after a restart.
+            prefs.watched = toJson(fences)
+            prefs.lastError = error?.message
+            return error == null || !error.retry
         }
-        val error = register(context, fences)
-        prefs.watched = if (error == null) toJson(fences) else null
-        prefs.lastError = error?.message
-        return error == null || !error.retry
     }
 
     /**
      * After a restart: watches the places registered before it again, from
      * what was kept, without waiting for the computer to be reachable (the
      * tailnet is often not up yet at boot). SyncWorker then checks for
-     * changes as usual. Blocking.
+     * changes as usual. Blocking; runs inside the boot broadcast, so Play
+     * services gets 8 seconds per call instead of 30, and it waits at most
+     * 8 seconds for a check that is registering at the same time.
      */
     fun restore(context: Context) {
         val prefs = Prefs(context)
         if (!prefs.paired || !prefs.placesOn || access(context) != Access.ALL_THE_TIME) return
+        // Busy: a check is registering the current places right now.
+        if (!lock.tryLock(8, TimeUnit.SECONDS)) return
+        try {
+            restoreLocked(context, prefs)
+        } finally {
+            lock.unlock()
+        }
+    }
+
+    private fun restoreLocked(context: Context, prefs: Prefs) {
+        // A check already ran since the phone started: it registered the
+        // current places, which may be newer than the ones kept.
+        if (prefs.lastSyncAt >= System.currentTimeMillis() - SystemClock.elapsedRealtime()) return
         val kept = prefs.watched ?: return
         val fences = try { parse(JSONArray(kept)) } catch (_: Exception) { emptyList() }
         if (fences.isEmpty()) return
-        register(context, fences)?.let { prefs.lastError = it.message }
+        register(context, fences, timeoutSeconds = 8)?.let { prefs.lastError = it.message }
     }
 
     private class RegisterError(val message: String, val retry: Boolean)
 
     /** Replaces whatever is registered with these places. Null when it worked. */
     @SuppressLint("MissingPermission") // callers check access() first
-    private fun register(context: Context, fences: List<Fence>): RegisterError? {
-        clear(context)
+    private fun register(context: Context, fences: List<Fence>, timeoutSeconds: Long = 30): RegisterError? {
+        clear(context, timeoutSeconds)
         return try {
             val request = GeofencingRequest.Builder()
                 // 0: a place the phone is already inside doesn't fire now;
@@ -171,7 +198,7 @@ object Places {
                         .build()
                 })
                 .build()
-            Tasks.await(LocationServices.getGeofencingClient(context).addGeofences(request, pendingIntent(context)), 30, TimeUnit.SECONDS)
+            Tasks.await(LocationServices.getGeofencingClient(context).addGeofences(request, pendingIntent(context)), timeoutSeconds, TimeUnit.SECONDS)
             null
         } catch (e: Exception) {
             val code = ((e.cause ?: e) as? ApiException)?.statusCode
