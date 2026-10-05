@@ -63,6 +63,14 @@ same session log). It is an upper limit: it ignores compaction and what the
 agent reads back from a saved original. The recorded cost per channel, before
 and after, comes from `agentx usage channels`.
 
+### The history block (#636, parked)
+
+Pruning today's earlier messages with a Jev seat before a fresh session
+starts was measured and parked: the block is sent on few turns and the
+saving is cents a week. The numbers, the reasons and the conditions for
+reopening are in [results/context-prune-636.md](results/context-prune-636.md);
+the code stays on the branch `636-jev-context-pruning`.
+
 ## Level 1, small: AgentX against the bare CLI (#455)
 
 `pnpm bench:compare` runs the same coding tasks on the bare Claude Code CLI
