@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { spawnSync } from "child_process"
 import { tmpdir } from "os"
 import path from "path"
@@ -19,7 +19,9 @@ import { CACHE_AWARE_PRICING } from "../src/daemon/token-tracker"
 import {
   buildReport,
   decideTraces,
+  dropZeroCostWorkflowRows,
   gateWouldSkip,
+  isZeroCostWorkflowRow,
   parseTraceExport,
   proxyLabel,
   renderReport,
@@ -72,8 +74,10 @@ function scriptedBackend(): DecisionBackend {
   }
 }
 
+/** The fixture as the CLI sees it: parsed, with the one zero-cost workflow
+ *  step row (TRACE14) left out. 13 runs. */
 function fixtureTraces(): BacktestTrace[] {
-  return parseTraceExport(JSON.parse(readFileSync(FIXTURE, "utf-8")))
+  return dropZeroCostWorkflowRows(parseTraceExport(JSON.parse(readFileSync(FIXTURE, "utf-8")))).kept
 }
 
 const DECIDE = {
@@ -106,17 +110,17 @@ afterEach(() => {
 
 describe("parseTraceExport", () => {
   it("accepts the /traces response shape, drops in-flight rows and duplicates, sorts by start", () => {
-    const traces = fixtureTraces()
-    expect(traces).toHaveLength(12)
+    const traces = parseTraceExport(JSON.parse(readFileSync(FIXTURE, "utf-8")))
+    expect(traces).toHaveLength(14)
     expect(traces.map((t) => t.status)).not.toContain("in-flight")
-    expect(new Set(traces.map((t) => t.taskId)).size).toBe(12)
+    expect(new Set(traces.map((t) => t.taskId)).size).toBe(14)
     for (let i = 1; i < traces.length; i++) expect(traces[i].startedAt).toBeGreaterThanOrEqual(traces[i - 1].startedAt)
   })
 
   it("accepts a bare array and an array of responses", () => {
     const raw = JSON.parse(readFileSync(FIXTURE, "utf-8"))
-    expect(parseTraceExport(raw.traces)).toHaveLength(12)
-    expect(parseTraceExport([raw, raw])).toHaveLength(12)
+    expect(parseTraceExport(raw.traces)).toHaveLength(14)
+    expect(parseTraceExport([raw, raw])).toHaveLength(14)
     expect(parseTraceExport({ nothing: true })).toEqual([])
   })
 
@@ -127,6 +131,37 @@ describe("parseTraceExport", () => {
       { taskId: "c", agentId: "x", status: "ok" },
     ])
     expect([a.resumed, b.resumed, c.resumed]).toEqual([true, false, null])
+  })
+})
+
+describe("zero-cost workflow rows (#626)", () => {
+  const row = (over: Partial<BacktestTrace>): BacktestTrace => ({
+    taskId: "t", agentId: "workflow:transform", channel: "workflow", chatId: "wf:step", status: "ok", model: null,
+    startedAt: 0, finishedAt: 1, numTurns: null, inputTokens: null, outputTokens: null,
+    cacheReadTokens: null, cacheCreateTokens: null, tier2InputTokens: null, tier2OutputTokens: null,
+    tier2CacheReadTokens: null, tier2CacheCreateTokens: null, resumed: null,
+    messagePreview: "transform step", originalMessage: null, ...over,
+  })
+
+  it("names a workflow row with no tokens, and nothing else", () => {
+    expect(isZeroCostWorkflowRow(row({}))).toBe(true)
+    expect(isZeroCostWorkflowRow(row({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }))).toBe(true)
+    // A workflow step that ran an agent recorded tokens: kept.
+    expect(isZeroCostWorkflowRow(row({ agentId: "reporter", inputTokens: 1500, outputTokens: 900 }))).toBe(false)
+    expect(isZeroCostWorkflowRow(row({ agentId: "reporter", tier2CacheReadTokens: 10 }))).toBe(false)
+    // A zero-token row on any other channel is still an event the gate saw: kept.
+    expect(isZeroCostWorkflowRow(row({ channel: "telegram", agentId: "helper", status: "timeout" }))).toBe(false)
+    expect(isZeroCostWorkflowRow(row({ channel: null }))).toBe(false)
+  })
+
+  it("splits the fixture into 13 runs and the one dispatcher step row", () => {
+    const { kept, dropped } = dropZeroCostWorkflowRows(parseTraceExport(JSON.parse(readFileSync(FIXTURE, "utf-8"))))
+    expect(kept).toHaveLength(13)
+    expect(dropped).toHaveLength(1)
+    expect(dropped[0].taskId).toMatch(/TRACE14$/)
+    expect(dropped[0].agentId).toBe("workflow:transform")
+    // The agent run inside a workflow stays, on its channel.
+    expect(kept.find((t) => t.taskId.endsWith("TRACE15"))?.channel).toBe("workflow")
   })
 })
 
@@ -164,7 +199,7 @@ describe("decideTraces through the decision layer", () => {
   })
 
   it("asks both seats and keeps the answers per trace, in input order", () => {
-    expect(verdicts).toHaveLength(12)
+    expect(verdicts).toHaveLength(13)
     expect(verdicts.every((v) => v.errors.length === 0)).toBe(true)
     expect(byId("TRACE4").pNeedsRun).toBeCloseTo(0.05)
     expect(byId("TRACE1").pNeedsRun).toBeCloseTo(0.9)
@@ -190,6 +225,11 @@ describe("decideTraces through the decision layer", () => {
     expect(byId("TRACE6").modelSource).toBe("agent")
     expect(byId("TRACE6").model).toBe("claude-sonnet-5")
     expect(byId("TRACE12").costUsd).toBe(0)
+    // The agent run inside a workflow is a run like any other.
+    expect(byId("TRACE15").modelSource).toBe("agent")
+    expect(byId("TRACE15").costUsd).toBeGreaterThan(0)
+    expect(byId("TRACE15").proxy).toBe("worked")
+    expect(byId("TRACE15").tierBlocked).toBeNull()
   })
 
   it("never shows the seat a run's outcome", async () => {
@@ -233,10 +273,10 @@ describe("decideTraces through the decision layer", () => {
 
     it("counts skips and downgrades per channel and in total, with proxy grades", () => {
       const r = buildReport(verdicts, opts)
-      expect(r.totals.runs).toBe(12)
+      expect(r.totals.runs).toBe(13)
       // Three [bot] events and the review request sit at or below 0.2.
       expect(r.totals.gate.skipped).toBe(4)
-      expect(r.totals.gate.share).toBeCloseTo(4 / 12)
+      expect(r.totals.gate.share).toBeCloseTo(4 / 13)
       expect(r.totals.gate.rightSkips).toBe(3)
       expect(r.totals.gate.wrongSkips).toBe(1) // the 24-turn review
       const skippedCost = verdicts.filter((v) => gateWouldSkip(v, 0.2)).reduce((a, v) => a + v.costUsd, 0)
@@ -250,21 +290,35 @@ describe("decideTraces through the decision layer", () => {
       expect(r.totals.tier.savingUsd).toBeGreaterThan(0)
       expect(r.totals.tier.blockedChannel).toBe(1)
       expect(r.totals.tier.blockedWarmCache).toBe(1)
-      expect(r.totals.tier.eligible).toBe(10)
+      expect(r.totals.tier.eligible).toBe(11)
 
       const github = r.channels.find((c) => c.channel === "github")!
       expect(github.runs).toBe(3)
       expect(github.gate.skipped).toBe(3)
       const voice = r.channels.find((c) => c.channel === "voice")!
       expect(voice.tier.downgraded).toBe(0)
-      expect(r.channels.reduce((a, c) => a + c.runs, 0)).toBe(12)
+      const workflow = r.channels.find((c) => c.channel === "workflow")!
+      expect(workflow.runs).toBe(1)
+      expect(workflow.gate.skipped).toBe(0)
+      expect(r.channels.reduce((a, c) => a + c.runs, 0)).toBe(13)
       expect(r.channels[0].costUsd).toBeGreaterThanOrEqual(r.channels[r.channels.length - 1].costUsd)
+    })
+
+    it("counts the dropped workflow rows and says so in the rendering", () => {
+      const silent = buildReport(verdicts, opts)
+      expect(silent.traces.droppedZeroCostWorkflow).toBe(0)
+      expect(renderReport(silent)).not.toContain("left out:")
+      const r = buildReport(verdicts, { ...opts, droppedZeroCostWorkflow: 118 })
+      expect(r.traces.droppedZeroCostWorkflow).toBe(118)
+      expect(r.totals.runs).toBe(13)
+      expect(renderReport(r)).toContain("left out: 118 zero-cost workflow rows")
+      expect(r.proxies.join(" ")).toMatch(/droppedZeroCostWorkflow/)
     })
 
     it("replays the same answers at other thresholds without new calls", () => {
       const r = buildReport(verdicts, opts)
       expect(r.sweep.gate.map((s) => s.threshold)).toEqual([0.1, 0.2, 0.5])
-      expect(r.sweep.gate.map((s) => s.count)).toEqual([3, 4, 12 - verdicts.filter((v) => (v.pNeedsRun ?? 1) > 0.5).length])
+      expect(r.sweep.gate.map((s) => s.count)).toEqual([3, 4, verdicts.length - verdicts.filter((v) => (v.pNeedsRun ?? 1) > 0.5).length])
       expect(r.sweep.gate[0].wrong).toBe(0)
       expect(r.sweep.gate[1].wrong).toBe(1)
       // tier: p < threshold, so 0.1 catches nothing, 0.2 both.
@@ -278,8 +332,8 @@ describe("decideTraces through the decision layer", () => {
       const r = buildReport(verdicts, opts)
       expect(r.proxies.length).toBeGreaterThan(0)
       expect(r.proxies.join(" ")).toMatch(/proxy/)
-      expect(r.traces.byProxy).toEqual({ noop: 6, worked: 3, unknown: 3 })
-      expect(r.traces.modelFromAgent).toBe(2)
+      expect(r.traces.byProxy).toEqual({ noop: 6, worked: 4, unknown: 3 })
+      expect(r.traces.modelFromAgent).toBe(3)
       expect(r.traces.modelFromDefault).toBe(0)
       expect(r.pricing.perMillionTokens["claude-haiku"]).toBeDefined()
       const text = renderReport(r)
@@ -317,26 +371,88 @@ describe("decideTraces through the decision layer", () => {
 })
 
 describe("scripts/backtest-jev.ts", () => {
+  const run = (args: string[]) =>
+    spawnSync(
+      path.join(ROOT, "node_modules/.bin/tsx"),
+      ["scripts/backtest-jev.ts", "--traces", FIXTURE, "--backend", "mock", "--sample", "3", ...args],
+      { cwd: ROOT, encoding: "utf8", timeout: 120_000 },
+    )
+
   it("runs end to end on the fixture with the mock backend and writes the report", () => {
     const out = mkdtempSync(path.join(tmpdir(), "jev-backtest-"))
     try {
-      const r = spawnSync(
-        path.join(ROOT, "node_modules/.bin/tsx"),
-        ["scripts/backtest-jev.ts", "--traces", FIXTURE, "--backend", "mock", "--out", out, "--sample", "3"],
-        { cwd: ROOT, encoding: "utf8", timeout: 120_000 },
-      )
+      const r = run(["--out", out])
       expect(r.error).toBeUndefined()
       expect(r.status, r.stderr).toBe(0)
       expect(r.stdout).toContain("Jev backtest")
+      expect(r.stderr).toContain("left out   1 zero-cost workflow rows")
       expect(existsSync(path.join(out, "report.json"))).toBe(true)
       expect(existsSync(path.join(out, "sample.csv"))).toBe(true)
       // Not recorded unless asked.
       expect(existsSync(path.join(out, "decisions.sqlite"))).toBe(false)
       const report = JSON.parse(readFileSync(path.join(out, "report.json"), "utf-8"))
       expect(report.backend).toBe("mock")
-      expect(report.totals.runs).toBe(12)
+      expect(report.totals.runs).toBe(13)
+      expect(report.traces.droppedZeroCostWorkflow).toBe(1)
       expect(report.traces.unansweredGate).toBe(0)
       expect(report.sweep.gate.length).toBeGreaterThan(0)
+    } finally {
+      rmSync(out, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  it("reads agentx.json, its .env and its pricing overrides from --config, and reports there (#626)", () => {
+    // The daemon's folder, somewhere other than the source checkout: the
+    // worktree case. The script is started from ROOT, where tsconfig.json
+    // resolves the "@/" imports, and pointed at this folder.
+    const home = mkdtempSync(path.join(tmpdir(), "jev-backtest-home-"))
+    try {
+      writeFileSync(path.join(home, "agentx.json"), JSON.stringify({
+        node: { id: "demo", name: "Demo", bind: "127.0.0.1:18800" },
+        agents: { reporter: { name: "Reporter", workspace: home, tier: "claude-code", model: "${REPORTER_MODEL}" } },
+      }))
+      writeFileSync(path.join(home, ".env"), "REPORTER_MODEL=claude-sonnet-5\n")
+      // A made-up family at ten times the sonnet list price, so the override
+      // is visible in the cost.
+      mkdirSync(path.join(home, ".agentx/pricing"), { recursive: true })
+      writeFileSync(path.join(home, ".agentx/pricing/custom.json"), JSON.stringify({
+        "claude-sonnet-5": { input: 30, output: 150, cacheRead: 3, cacheCreate: 37.5 },
+      }))
+
+      const r = run(["--config", path.join(home, "agentx.json")])
+      expect(r.error).toBeUndefined()
+      expect(r.status, r.stderr).toBe(0)
+      expect(r.stderr).toContain(`config     ${path.join(home, "agentx.json")}`)
+      expect(r.stderr).not.toContain("no agentx.json read")
+
+      // Report lands under the agentx.json folder, not the current one.
+      const reportPath = path.join(home, ".agentx/reports/jev-backtest/report.json")
+      expect(existsSync(reportPath)).toBe(true)
+      const report = JSON.parse(readFileSync(reportPath, "utf-8"))
+      // TRACE6, TRACE7 and TRACE15 recorded no model: priced at the reporter's
+      // model from agentx.json (expanded from .env), none at the default.
+      expect(report.traces.modelFromAgent).toBe(3)
+      expect(report.traces.modelFromDefault).toBe(0)
+      expect(report.pricing.source).toContain(".agentx/pricing/custom.json")
+      expect(report.pricing.perMillionTokens["claude-sonnet-5"].input).toBe(30)
+
+      // A folder works as well as the file.
+      const r2 = run(["--config", home, "--out", path.join(home, "out2")])
+      expect(r2.status, r2.stderr).toBe(0)
+      expect(r2.stderr).toContain(`config     ${path.join(home, "agentx.json")}`)
+      expect(existsSync(path.join(home, "out2/report.json"))).toBe(true)
+    } finally {
+      rmSync(home, { recursive: true, force: true })
+    }
+  }, 120_000)
+
+  it("still says so when --config names a file that is not there", () => {
+    const out = mkdtempSync(path.join(tmpdir(), "jev-backtest-"))
+    try {
+      const r = run(["--config", path.join(out, "missing/agentx.json"), "--out", out])
+      expect(r.status, r.stderr).toBe(0)
+      expect(r.stderr).toContain("no agentx.json read")
+      expect(r.stderr).toContain("config     none read")
     } finally {
       rmSync(out, { recursive: true, force: true })
     }
