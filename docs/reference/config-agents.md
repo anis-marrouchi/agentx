@@ -212,7 +212,7 @@ When a conversation's memory is rotated or treated as stale.
 | `session.observationPack.limitBytes` | number (1024–1048576) | `10240` | A text result larger than this many bytes is replaced by an excerpt. |
 | `session.observationPack.headBytes` | number (0–65536) | `1024` | Bytes of the start of the original the agent sees. |
 | `session.observationPack.tailBytes` | number (0–65536) | `1024` | Bytes of the end of the original the agent sees. |
-| `session.observationPack.tools` | list of string | `["Bash", "Grep", "WebFetch", "mcp__.*"]` | Tools whose results are packed. Each entry must match the whole tool name and may be a regular expression. Requires a daemon restart. |
+| `session.observationPack.tools` | list of string | `["Bash", "Grep", "Read", "WebFetch", "mcp__.*"]` | Tools whose results are packed. Each entry must match the whole tool name and may be a regular expression. Requires a daemon restart. |
 | `session.observationPack.retentionDays` | number (0–3650) | `0` | Days a saved original is kept. `0` keeps every original. |
 
 ### Lean sessions
@@ -305,6 +305,18 @@ Read that file with offset and limit (line numbers), or grep it, for the part yo
 
 Nothing is lost: the saved file is byte for byte what the tool returned, and the agent reads it back with its own file tool. Reading a saved original is never packed again. When the original is a few very long lines, such as minified JSON, the excerpt tells the agent to read it by byte range instead of by line.
 
+A file the agent reads (the `Read` tool) is its own original, so no copy is saved. The agent keeps the first and last whole lines that fit in `headBytes` and `tailBytes`, and a notice between them names the file and the exact lines left out:
+
+```text
+(the first 21 lines, with their line numbers)
+[ObservationPack: this read is 29889 bytes, lines 1 to 600 of /srv/app/src/server.ts.
+Lines 22 to 580 (27870 bytes) are not shown. Lines 581 to 600 follow; the numbers beside them are not the file's.
+Read the file again with offset and limit for the lines you need, or Grep it. Do not guess at what is not shown.]
+(the last 20 lines)
+```
+
+The agent then reads the lines it needs with `offset` and `limit`, which is also how it gets the exact text for an edit. A read that starts at an offset counts its lines from there. Notebooks, PDFs and pictures are never cut.
+
 ```json
 "session": {
   "observationPack": { "enabled": true }
@@ -317,8 +329,8 @@ What it covers, and what it does not:
 |---|---|
 | Agents | `claude-code` agents only. It works through a Claude Code hook (PostToolUse) that AgentX writes into each agent workspace's `.claude/settings.json` when the daemon starts. Codex and the other engines are not changed. |
 | Agents that ask before acting | Not packed. Only an agent with `permissionMode: "bypassPermissions"` gets the hook: in any other mode Claude Code refuses to open the saved original in a session nobody answers for, and the agent would guess at the part it was not shown. The daemon log says how many agents were left out. |
-| Tools | The ones in `tools`. By default: commands (`Bash`), searches (`Grep`), fetched web pages (`WebFetch`) and every tool server (`mcp__.*`, which includes the AgentX tools). |
-| Files the agent reads | Not packed by default. An agent that sees only the two ends of a file it is about to edit has to read it again in pages. Add `"Read"` to `tools` to pack them too. |
+| Tools | The ones in `tools`. By default: commands (`Bash`), searches (`Grep`), file reads (`Read`), fetched web pages (`WebFetch`) and every tool server (`mcp__.*`, which includes the AgentX tools). |
+| Files the agent reads | Packed by default (owner decision on [#621](https://github.com/anis-marrouchi/agentx/issues/621), 2026-10-05); the replay of three days of logs put the ceiling of cached tokens saved at 7.5% with file reads and 5.5% without. A file over `limitBytes` is cut to its first and last lines with the file's path and line numbers, and no copy is saved. An agent that edits large files reads the part it changes again in pages; set `tools` without `"Read"` to spare it that. |
 | Very large command output | Claude Code itself already replaces command output over 30,000 characters with a 2 KB preview and a saved file. The pack leaves those results to it, and covers the ones between `limitBytes` and that size. |
 | Pictures, sound and files in base64 | Never packed. Only text is. |
 | Claude Code version | The hook answer that replaces a result (`updatedToolOutput`) was confirmed on Claude Code 2.1.289. A version that ignores it gives the agent the full result, while the original is still saved and counted in `index.jsonl`. |
@@ -363,7 +375,7 @@ A warm process answers only the question it was asked. When a background task of
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
 4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
-5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output.
+5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
 
 ## If something is wrong
 
@@ -373,5 +385,6 @@ A warm process answers only the question it was asked. When a background task of
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.
 - **An agent on GitHub, a schedule or a workflow says it cannot see another agent, an earlier message or a tool it had before:** its channel starts lean. Either tell the agent to use the `agentx_agents`, `agentx_recent` and `agentx_wiki_query` tools, add the tool server it misses to `session.lean.mcpServers`, or set that channel to `"full"` in `session.profileByChannel`.
 - **The daemon log says `N agent(s) not packed`:** those agents do not run with `permissionMode: "bypassPermissions"`. They could not open a saved original, so they keep getting full results. This is by design; nothing to fix.
+- **An agent reads the same large file again and again in pages, or its edit fails with `old_string not found` right after a read:** the read was packed and the agent is fetching the lines it needs. That is expected once per file; if the agent spends most of a task on one large file, set `session.observationPack.tools` to `["Bash", "Grep", "WebFetch", "mcp__.*"]` and restart the daemon, so file reads stay whole.
 - **`session.observationPack.enabled` is on and nothing is packed:** restart the daemon; the hook is written into the workspaces at start. Then check that the agent's `tier` is `claude-code`, that its `permissionMode` is `bypassPermissions` and that the result was over `limitBytes`.
 - **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.

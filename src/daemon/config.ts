@@ -1572,10 +1572,13 @@ export const daemonConfigSchema = z.object({
       headBytes: z.number().int().min(0).max(65_536).default(1024),
       tailBytes: z.number().int().min(0).max(65_536).default(1024),
       /** Tools the pack applies to. Each entry must match the whole tool
-       *  name and may be a regular expression. `Read` is left out by
-       *  default: an agent that sees only the two ends of a file it is
-       *  about to edit has to read it again in pages. */
-      tools: z.array(z.string().min(1)).default(["Bash", "Grep", "WebFetch", "mcp__.*"]),
+       *  name and may be a regular expression. `Read` is in by default
+       *  (owner decision on #621, 2026-10-05): a file read over the limit
+       *  is cut to its first and last lines, with the file's own path and
+       *  line numbers, and the agent reads the lines it needs again with
+       *  offset and limit. No copy of the file is saved. Take `Read` out
+       *  of the list for an agent that edits large files all day. */
+      tools: z.array(z.string().min(1)).default(["Bash", "Grep", "Read", "WebFetch", "mcp__.*"]),
       /** Days a saved original is kept. 0 keeps every original. */
       retentionDays: z.number().int().min(0).max(3650).default(0),
     }).default({}),
