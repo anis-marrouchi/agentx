@@ -244,7 +244,7 @@ describe("voiceSettingsView", () => {
     expect(writer.colorSet).toBe(false)
     expect(writer.color).toMatch(/^#[0-9A-F]{6}$/)
     expect(researcher).toMatchObject({ color: "#123456", colorSet: true })
-    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false, animations: "sometimes" })
+    expect(view.general).toEqual({ provider: "system", fallback: "system", stt: "auto", localStt: "mlx-whisper", endOfTurn: "vad", hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" }, card: { timeout: 30, maxHeight: 320 }, look: "orb", startReduced: false, stroll: false, animations: "sometimes", pronunciations: [] })
     expect(view.systemVoices.map((v) => v.id)).toEqual(voices.map((v) => v.id))
   })
 })

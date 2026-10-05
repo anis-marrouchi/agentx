@@ -15,6 +15,12 @@
 // sentence ("ask Writer later") never reroutes. No match, or more than one
 // agent matching, keeps the target: a wrong guess is worse than none. The
 // same name on two nodes is more than one agent.
+//
+// Speech to text mishears names (#509): "Nadia, …" comes back as "Radia,
+// …". With no exact match, a first word set off by a comma or a pause
+// that is one letter away from exactly one agent's name goes to that
+// agent. A name that is often misheard in other ways goes in the agent's
+// `mentions`, which is matched exactly.
 
 import { presenceLook } from "./presence"
 import { agentPalette } from "./orb-palettes"
@@ -32,9 +38,60 @@ export interface Addressable {
 const norm = (s: string) =>
   s.toLowerCase().replace(/^@/, "").replace(/[^\p{L}\p{N}\s-]/gu, " ").replace(/\s+/g, " ").trim()
 
+/** One edit apart: a letter changed, added or dropped. */
+export function oneLetterApart(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false
+  let i = 0
+  while (i < a.length && i < b.length && a[i] === b[i]) i++
+  if (a.length === b.length) return a.slice(i + 1) === b.slice(i + 1)
+  return a.length > b.length ? a.slice(i + 1) === b.slice(i) : a.slice(i) === b.slice(i + 1)
+}
+
+/** Shortest name a near match is tried on: below this, one letter is
+ *  too much of the word ("Ava" and "Eva" are two people). */
+const NEAR_MIN = 4
+
+/** First words that are never taken for a misheard name. */
+const COMMON = new Set(("okay well yeah yes sure right really maybe hello hey please thanks thank sorry also then "
+  + "alors bien merci voila voilà donc ouais salut").split(" "))
+
+/** The first word, when a comma or a pause sets it off from the rest. */
+function leadingWord(text: string): string | null {
+  const m = /^\s*@?([\p{L}\p{N}-]+)\s*[,،:;.!?…—–]/u.exec(text)
+  return m ? norm(m[1]) : null
+}
+
+/** The one agent whose single-word name is one letter from the utterance's
+ *  set-off first word; null when none is, or more than one. */
+function nearAddressed<A extends Addressable>(text: string, agents: A[]): A | null {
+  const word = leadingWord(text)
+  if (!word || word.length < NEAR_MIN || COMMON.has(word)) return null
+  const matched = new Map<string, A>()
+  for (const agent of agents) {
+    const names = [agent.id, agent.name ?? "", ...(agent.mentions ?? [])].map(norm)
+    if (names.some((n) => n.length >= NEAR_MIN && !n.includes(" ") && oneLetterApart(word, n))) {
+      matched.set(`${agent.node ?? ""}\u0000${agent.id}`, agent)
+    }
+  }
+  return matched.size === 1 ? [...matched.values()][0] : null
+}
+
 /** The one agent the utterance starts by naming, or null when it names
- *  none or more than one. */
+ *  none or more than one. A name one letter off counts only when no name
+ *  matches exactly; see nearAddressed. */
 export function findAddressed<A extends Addressable>(text: string, agents: A[]): A | null {
+  return exactAddressed(text, agents) ?? (anyExact(text, agents) ? null : nearAddressed(text, agents))
+}
+
+/** True when the first one or two words name any agent exactly, even
+ *  several: an ambiguous exact name is not then guessed at. */
+function anyExact(text: string, agents: Addressable[]): boolean {
+  const words = norm(text).split(" ").filter(Boolean)
+  const leads = [words.slice(0, 2).join(" "), words[0] ?? ""].filter(Boolean)
+  return agents.some((a) => [a.id, a.name ?? "", ...(a.mentions ?? [])].map(norm).some((n) => leads.includes(n)))
+}
+
+function exactAddressed<A extends Addressable>(text: string, agents: A[]): A | null {
   const words = norm(text).split(" ").filter(Boolean)
   // Two words first, so "Dev Session, …" is not read as "Dev".
   for (const lead of [words.length > 1 ? words.slice(0, 2).join(" ") : "", words[0] ?? ""]) {

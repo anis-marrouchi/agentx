@@ -1079,6 +1079,9 @@ export const requestsConfigSchema = z.object({
 export const personSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/, "lower-case letters, digits, - and _"),
   name: z.string().min(1).max(80),
+  /** How this person's name is said aloud, e.g. "A-neess Ma-roo-shee"
+   *  (#433). Written forms stay as they are; see voice.pronunciations. */
+  say: z.string().trim().min(1).max(120).optional(),
   /** `client` (#453): someone the owner works for; /member shows them
    *  "Your project", not a teammate's "My work". */
   role: z.enum(["owner", "member", "client", "guest"]).default("member"),
@@ -1315,6 +1318,17 @@ export const daemonConfigSchema = z.object({
     /** What agents call the person they talk with, e.g. a first name.
      *  Unset: "the user". */
     listener: z.string().optional(),
+    /** How a word is said aloud without changing how it is written
+     *  (#433): each pair's `written` form, matched as a whole word
+     *  without case, is spoken as `spoken`. `languages` ("en", "fr",
+     *  "ar") limits a pair to lines in those languages. Only speech
+     *  changes; cards, transcripts and messages keep the written form.
+     *  See src/voice/pronounce.ts. */
+    pronunciations: z.array(z.object({
+      written: z.string().trim().min(1).max(80),
+      spoken: z.string().trim().min(1).max(120),
+      languages: z.array(z.enum(["en", "fr", "ar"])).optional(),
+    }).strict()).max(200).default([]),
     /** The agent's drawn pointer and name tag during a lesson. false: it
      *  is never drawn, and a lesson is spoken only. */
     pointer: z.boolean().default(true),

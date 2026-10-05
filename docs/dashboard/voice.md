@@ -82,7 +82,7 @@ Start with an agent's name to send just that question to it. With Writer ticked,
 2. Say the agent's name first, then your question: "Researcher, what's the status?"
 3. Let go. The pill shows the named agent while it answers.
 
-The name can be the agent's id, its `name`, or any of its `mentions` from `agentx.json` without the `@`. Capital letters don't matter. Only the first word or two count, so "ask Researcher later" still goes to the ticked agent. If no agent matches, or more than one does, the ticked agent answers.
+The name can be the agent's id, its `name`, or any of its `mentions` from `agentx.json` without the `@`. Capital letters don't matter. Only the first word or two count, so "ask Researcher later" still goes to the ticked agent. If no agent matches, or more than one does, the ticked agent answers. A name speech to text got one letter wrong ("Radia, …" for Nadia) still reaches the one agent it is that close to; see [Ask another agent by name](../guides/agentx-voice.md#ask-another-agent-by-name).
 
 #### Agents on other computers
 

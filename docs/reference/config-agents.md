@@ -44,7 +44,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `provider` | string | — | Provider name in `providers` for `sdk` (default `claude`) and `orchestrator` (default `claude-code`) agents. |
 | `model` | string | — | Model id passed to the engine. Unset uses the engine's default. |
 | `systemPrompt` | string | — | Extra instructions added to every run of this agent. |
-| `mentions` | list of string | `[]` | Names that route a message to this agent, such as `@helper`. |
+| `mentions` | list of string | `[]` | Names that route a message to this agent, such as `@helper`. Spoken questions match them too, without the `@`, so this is also where spoken aliases go: add a spelling speech to text often writes for the agent's name. See [Spoken aliases](../guides/agentx-voice.md#spoken-aliases). |
 | `intents` | list of string | `[]` | Intents this agent may handle, such as `issue.opened`. Empty allows any intent. |
 | `maxDelegationDepth` | number (0–50) | `5` | Refuses a hand-off to this agent when that many other agents already worked on the same item in a chain. `0` turns the check off. |
 | `mcp` | map of object | — | MCP tool servers for this agent, by name. Written to the workspace's `.mcp.json` when the daemon starts; your own edits to that file are kept. See the table below. |
@@ -173,6 +173,7 @@ The humans who talk to your agents, one entry per person. A task started by a li
 |---|---|---|---|
 | `people[].id` | string | required | Short name you choose: lower-case letters, digits, `-` and `_`, up to 40 characters. Each id appears once. `owner` is kept for a person with the owner role. |
 | `people[].name` | string | required | The person's name, for you to read. |
+| `people[].say` | string | — | How the person's name is said aloud, for example `"Shiv-awn Oh-kah-for"` for "Siobhan Okafor". Only speech changes; the written name stays. With as many words as the name, each name word written with its capital is covered too. See [Say a word the way it is said](../guides/agentx-voice.md#say-a-word-the-way-it-is-said). |
 | `people[].role` | `owner`, `member`, `client` or `guest` | `member` | A single `owner` is also the person at this machine's own surfaces (voice, phone app, dashboard), and their turns on other channels count as yours for `requests`. A `client` (someone you do work for) opens **Your project** on a paired machine instead of a teammate's **My work** ([Give a client a page of their own](../jobs/clients.md)). `guest` is a label for another organisation's operator. |
 | `people[].identities` | list of strings | `[]` | Where the person writes from, each as `channel:id`: a GitLab or GitHub login, a Telegram id or username, a WhatsApp number. Display names are not matched. An identity belongs to one person only. |
 | `people[].agents` | list of strings | `[]` | The agents this person may reach, by id. Empty: every agent. A message to any other agent, on this node or on another, is answered with a note and no run starts. The limit follows the person's work through delegations. Ignored for an `owner`. |

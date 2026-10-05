@@ -25,6 +25,7 @@ import { resolveAgentVoice, voiceRef, label } from "@/voice/agent-voice"
 import type { SystemVoice } from "@/voice/system-voices"
 import type { VoiceRef } from "@/voice/speaker"
 import { DEFAULT_HOTKEYS, describeHotkey, parseHotkey } from "@/voice/hotkey"
+import type { Pronunciation } from "@/voice/pronounce"
 
 type Provider = "system" | "elevenlabs"
 type Narrate = "off" | "on" | "all"
@@ -59,6 +60,8 @@ export interface VoiceSettingsPatch {
     startReduced?: boolean
     stroll?: boolean
     animations?: VoiceAnimations
+    /** The whole list, replacing the saved one; null or [] clears it. */
+    pronunciations?: Pronunciation[] | null
   }
   agents?: Record<string, AgentVoicePatch>
 }
@@ -87,6 +90,8 @@ export interface VoiceSettingsView {
     stroll: boolean
     /** How often the character plays a small animation by itself. */
     animations: VoiceAnimations
+    /** How words are said aloud without changing how they are written. */
+    pronunciations: Pronunciation[]
   }
   agents: Array<{
     id: string
@@ -135,6 +140,7 @@ export function voiceSettingsView(config: DaemonConfig, installed: SystemVoice[]
       startReduced: v.startReduced,
       stroll: v.stroll,
       animations: v.animations,
+      pronunciations: v.pronunciations ?? [],
     },
     agents: Object.entries(config.agents).map(([id, a]) => {
       const av = a.voice ?? {}
@@ -182,7 +188,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   for (const k of Object.keys(patch)) if (k !== "general" && k !== "agents") err(k, `"${k}" is not a voice setting`)
 
   const g = patch.general ?? {}
-  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced", "stroll", "animations"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
+  for (const k of Object.keys(g)) if (!["provider", "stt", "localStt", "endOfTurn", "hotkeys", "card", "look", "startReduced", "stroll", "animations", "pronunciations"].includes(k)) err(`general.${k}`, `"${k}" is not a general voice setting`)
   if (g.provider !== undefined && !["system", "elevenlabs"].includes(g.provider)) err("general.provider", "Voice provider must be system or elevenlabs")
   if (g.stt !== undefined && !["auto", "elevenlabs", "local"].includes(g.stt)) err("general.stt", "Speech to text must be auto, elevenlabs or local")
   if (g.localStt !== undefined && !["mlx-whisper", "parakeet"].includes(g.localStt)) err("general.localStt", "The engine on this Mac must be mlx-whisper or parakeet")
@@ -191,6 +197,7 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   if (g.startReduced !== undefined && typeof g.startReduced !== "boolean") err("general.startReduced", "Start reduced must be on or off")
   if (g.stroll !== undefined && typeof g.stroll !== "boolean") err("general.stroll", "Character strolls when idle must be on or off")
   if (g.animations !== undefined && !VOICE_ANIMATIONS.includes(g.animations)) err("general.animations", `Character plays when idle must be ${VOICE_ANIMATIONS.slice(0, -1).join(", ")} or ${VOICE_ANIMATIONS.at(-1)}`)
+  if (g.pronunciations != null) errors.push(...checkPronunciations(g.pronunciations))
   for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
     if (!["talk", "stop", "paste"].includes(k)) { err(`general.hotkeys.${k}`, `"${k}" is not a shortcut the window sets`); continue }
     const r = parseHotkey(String(value ?? ""))
@@ -244,6 +251,32 @@ export function checkVoiceSettings(patch: VoiceSettingsPatch, config: DaemonConf
   return errors
 }
 
+/** The most pairs voice.pronunciations holds, as the config schema has it. */
+export const PRONUNCIATIONS_MAX = 200
+
+/** A pronunciation list as the window or the CLI sends it. */
+export function checkPronunciations(list: unknown): SettingsError[] {
+  const errors: SettingsError[] = []
+  if (!Array.isArray(list)) return [{ path: "general.pronunciations", message: "Pronunciations must be a list of written and spoken pairs" }]
+  if (list.length > PRONUNCIATIONS_MAX) errors.push({ path: "general.pronunciations", message: `At most ${PRONUNCIATIONS_MAX} pronunciations` })
+  const seen = new Set<string>()
+  list.forEach((p: any, i) => {
+    const at = `general.pronunciations.${i}`
+    const written = typeof p?.written === "string" ? p.written.trim() : ""
+    const spoken = typeof p?.spoken === "string" ? p.spoken.trim() : ""
+    if (!written || written.length > 80) errors.push({ path: `${at}.written`, message: `Pronunciation ${i + 1}: the written form must be 1 to 80 characters` })
+    if (!spoken || spoken.length > 120) errors.push({ path: `${at}.spoken`, message: `Pronunciation ${i + 1}: the spoken form must be 1 to 120 characters` })
+    if (p?.languages !== undefined && (!Array.isArray(p.languages) || p.languages.some((l: unknown) => !["en", "fr", "ar"].includes(l as string)))) {
+      errors.push({ path: `${at}.languages`, message: `Pronunciation ${i + 1}: languages must be en, fr or ar` })
+    }
+    for (const k of Object.keys(p ?? {})) if (!["written", "spoken", "languages"].includes(k)) errors.push({ path: `${at}.${k}`, message: `Pronunciation ${i + 1}: "${k}" is not a field (written, spoken, languages)` })
+    const key = written.toLowerCase().replace(/\s+/g, " ")
+    if (key && seen.has(key)) errors.push({ path: `${at}.written`, message: `"${written}" has two pronunciations; keep one` })
+    seen.add(key)
+  })
+  return errors
+}
+
 /** Apply a checked patch to the raw agentx.json object, in place. */
 export function applyVoiceSettings(raw: any, patch: VoiceSettingsPatch): void {
   const g = patch.general
@@ -257,6 +290,14 @@ export function applyVoiceSettings(raw: any, patch: VoiceSettingsPatch): void {
     if (g.startReduced !== undefined) raw.voice.startReduced = g.startReduced
     if (g.stroll !== undefined) raw.voice.stroll = g.stroll
     if (g.animations !== undefined) raw.voice.animations = g.animations
+    if (g.pronunciations !== undefined) {
+      const list = (g.pronunciations ?? []).map((p) => ({
+        written: p.written.trim(), spoken: p.spoken.trim(),
+        ...(p.languages?.length ? { languages: p.languages } : {}),
+      }))
+      if (list.length) raw.voice.pronunciations = list
+      else delete raw.voice.pronunciations
+    }
     for (const [k, value] of Object.entries(g.hotkeys ?? {})) {
       const r = parseHotkey(String(value))
       if (!r.ok) continue
