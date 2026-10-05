@@ -72,6 +72,27 @@ export interface AgentXEvents {
     sender?: { name?: string; id?: string; username?: string }
     /** See task:started. */
     humanRoot?: boolean
+    /** The person who sent it (people, #384), so the member page can count
+     *  the messages ahead of theirs (#443). */
+    person?: string | null
+    /** The first 200 characters of the message. */
+    messagePreview?: string
+    /** When it joined the line (ms). */
+    queuedAt?: number
+  }
+
+  /** The line of one chat was handed over: every message queued up to
+   *  `flushedAt` now runs as a turn of its own, or as one combined turn
+   *  (#443). Fires before those turns start. */
+  "task:queue-flushed": {
+    agentId: string
+    channel: string
+    chatId: string
+    /** When the queue handed its messages over (ms). */
+    flushedAt: number
+    /** How many messages it handed over. */
+    count: number
+    at: string
   }
 
   /** The turn a queued message was handed to has ended, or the hand-over
@@ -120,7 +141,7 @@ export interface AgentXEvents {
     sender?: { name?: string; id?: string; username?: string }
     /** The known person who started this chain (people, #384). Absent for
      *  an unknown sender and for turns software starts. */
-    person?: { id: string; role?: "owner" | "member" | "guest" }
+    person?: { id: string; role?: "owner" | "member" | "client" | "guest" }
     /** True for the turn that talks to the person: not a delegated hop,
      *  not a callback (a2a/initiator isHumanFacingTurn). */
     humanRoot?: boolean
@@ -407,6 +428,8 @@ function lifecycleEnvelope<E extends EventName>(event: E, payload: AgentXEvents[
       return { ...base, kind: "message", ref: p.msgId, summary: `${p.channel} ${p.chatId} dropped at ${p.decidingStage}: ${p.reason}` }
     case "task:queued":
       return { ...base, kind: "agent", summary: `queued on ${p.channel} ${p.chatId}` }
+    case "task:queue-flushed":
+      return { ...base, kind: "agent", summary: `${p.count} queued message(s) handed over on ${p.channel} ${p.chatId}` }
     case "task:queue-ended":
       return { ...base, kind: "agent", summary: `queued turn ended on ${p.channel} ${p.chatId}` }
     case "task:started":

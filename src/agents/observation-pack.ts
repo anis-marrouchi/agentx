@@ -11,6 +11,12 @@
 // covers what is between its limit and that one, and the tools Claude Code
 // does not preview.
 //
+// A file read (the Read tool) is packed too, since the owner's decision of
+// 2026-10-05 on #621. The file is its own original, so nothing is copied:
+// the model keeps the first and last lines, with the file's path and the
+// line numbers of what was left out, and reads those again with offset and
+// limit when it needs them.
+//
 // The hook replaces the result before the model sees it for the first time.
 // The paper this follows (arXiv 2609.20519) shows the full result for two
 // requests first; a hook cannot do that, because it runs once per tool call.
@@ -129,6 +135,78 @@ export function buildExcerpt(text: string, path: string, config: Pick<Observatio
   ].join("\n")
 }
 
+/** The text shape of a Read result in Claude Code's PostToolUse payload. */
+interface ReadTextResult {
+  type: "text"
+  file: { filePath?: string; content: string; numLines?: number; startLine?: number; totalLines?: number }
+}
+
+function isReadTextResult(value: unknown): value is ReadTextResult {
+  const obj = value as Partial<ReadTextResult> | null
+  return !!obj && typeof obj === "object" && obj.type === "text" && typeof obj.file?.content === "string"
+}
+
+/** How many lines `text` spans, counting a final unterminated line. */
+function lineCount(text: string): number {
+  if (text === "") return 0
+  let n = 1
+  for (let i = text.indexOf("\n"); i !== -1; i = text.indexOf("\n", i + 1)) n++
+  if (text.endsWith("\n")) n--
+  return n
+}
+
+/**
+ * The text the model gets in place of a file read. The file itself is the
+ * original, so nothing is copied: the excerpt keeps whole lines from both
+ * ends and names the file and the exact line numbers of what is not shown,
+ * so the model asks for the part it needs with offset and limit.
+ *
+ * Claude Code prints its line numbers beside the content it is given, from
+ * `startLine` on. The head comes first and ends on a line break, so its
+ * numbers are the file's; the notice and the tail that follow are numbered
+ * on from there, so the notice states the tail's real first line.
+ */
+export function buildReadExcerpt(
+  content: string,
+  file: { path: string; startLine: number; totalLines?: number },
+  config: Pick<ObservationPackConfig, "headBytes" | "tailBytes">,
+): string {
+  const buf = Buffer.from(content, "utf-8")
+  const lines = lineCount(content)
+
+  // Whole lines within the budget. A line longer than the budget is cut,
+  // and then counts as not shown, since part of it is not.
+  let head = decodeSlice(buf, 0, config.headBytes)
+  const headBreak = head.lastIndexOf("\n")
+  head = headBreak === -1 ? head : head.slice(0, headBreak + 1)
+  let tail = config.tailBytes > 0 ? decodeSlice(buf, buf.length - config.tailBytes, buf.length) : ""
+  const tailBreak = tail.indexOf("\n")
+  tail = tailBreak === -1 ? tail : tail.slice(tailBreak + 1)
+
+  const headLines = headBreak === -1 ? 0 : lineCount(head)
+  const tailLines = tailBreak === -1 ? 0 : lineCount(tail)
+  const first = file.startLine
+  const last = first + lines - 1
+  const hiddenFrom = first + headLines
+  const hiddenTo = last - tailLines
+  const withheld = buf.length - Buffer.byteLength(head, "utf-8") - Buffer.byteLength(tail, "utf-8")
+  const whole = typeof file.totalLines === "number" && file.totalLines > lines ? ` (${file.totalLines} lines in all)` : ""
+  const hidden = hiddenFrom === hiddenTo ? `Line ${hiddenFrom} (${withheld} bytes) is` : `Lines ${hiddenFrom} to ${hiddenTo} (${withheld} bytes) are`
+  const cut = [headLines === 0 && head !== "" ? first : null, tailLines === 0 && tail !== "" ? last : null].filter((n) => n !== null)
+  const partly = cut.length === 0 ? "" : cut.length === 1 || cut[0] === cut[1] ? ` (line ${cut[0]} only in part)` : ` (lines ${cut[0]} and ${cut[1]} only in part)`
+  const tailNote = tailLines > 0 ? ` Lines ${hiddenTo + 1} to ${last} follow; the numbers beside them are not the file's.` : ""
+
+  return [
+    head,
+    `[ObservationPack: this read is ${buf.length} bytes, lines ${first} to ${last} of ${file.path}${whole}.`,
+    `${hidden} not shown${partly}.${tailNote}`,
+    `Read the file again with offset and limit for the lines you need, or Grep it. Do not guess at what is not shown.]`,
+    tail,
+  ]
+    .filter((part) => part !== "")
+    .join("\n")
+}
+
 /** Write the original where the model can read it back. Same text, same file. */
 function storeOriginal(dir: string, text: string): { sha: string; path: string } {
   const sha = createHash("sha256").update(text).digest("hex")
@@ -149,7 +227,8 @@ function storeOriginal(dir: string, text: string): { sha: string; path: string }
  * tool's own shape, and one record per packed text; or null when nothing is
  * to change (pack off, tool not listed, nothing over the limit, a picture,
  * sound or other base64 item, a result Claude Code already saved to a file,
- * or a read of an original we saved ourselves).
+ * or a read of an original we saved ourselves). For a file read the record's
+ * `path` is the file itself.
  */
 export function packToolOutput(
   payload: PostToolUsePayload,
@@ -167,6 +246,30 @@ export function packToolOutput(
 
   // An excerpt has to be smaller than what it replaces.
   if (config.limitBytes <= config.headBytes + config.tailBytes) return null
+
+  // A file read: the file is the original, so none is copied. Only the text
+  // shape is cut; a notebook, a PDF or a picture is left whole.
+  if (tool === "Read") {
+    const response = payload.tool_response
+    if (!isReadTextResult(response)) return null
+    const content = response.file.content
+    const bytes = Buffer.byteLength(content, "utf-8")
+    if (bytes <= config.limitBytes) return null
+    const path = typeof filePath === "string" ? filePath : (response.file.filePath ?? "the file you read")
+    const offset = payload.tool_input?.["offset"]
+    const startLine =
+      typeof response.file.startLine === "number" && response.file.startLine >= 1
+        ? response.file.startLine
+        : typeof offset === "number" && offset >= 1
+          ? offset
+          : 1
+    const excerpt = buildReadExcerpt(content, { path, startLine, totalLines: response.file.totalLines }, config)
+    const sha = createHash("sha256").update(content).digest("hex")
+    return {
+      updated: { ...response, file: { ...response.file, content: excerpt } },
+      packs: [{ sha, path, bytes, keptBytes: Buffer.byteLength(excerpt, "utf-8") }],
+    }
+  }
 
   const packs: PackRecord[] = []
   const walk = (value: unknown): unknown => {
@@ -221,6 +324,8 @@ export function answerPackHook(
     const rows = result.packs.map((p) =>
       JSON.stringify({ at, agent: opts.agentId, session: payload.session_id, tool: payload.tool_name, sha: p.sha, bytes: p.bytes, keptBytes: p.keptBytes }),
     )
+    // A packed file read copies nothing, so the folder may not exist yet.
+    mkdirSync(opts.dir, { recursive: true, mode: 0o700 })
     appendFileSync(resolve(opts.dir, "index.jsonl"), rows.join("\n") + "\n", { mode: 0o600 })
   } catch {
     // The index is a count, not the evidence. The original is already saved.

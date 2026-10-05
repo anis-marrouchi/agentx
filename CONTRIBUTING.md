@@ -199,6 +199,31 @@ on the Live tab, starts a scripted task that takes a minute. The capture script 
 at `http://127.0.0.1:18931`. Set `CHROME_PATH` if your browser is elsewhere, or
 `DOCS_SHOTS=live,operations` to capture a subset. Stop the demo with Ctrl-C.
 
+#### The phone app
+
+The phone pictures under `docs/public/screenshots/mobile-app/` come from a
+small stand-in server, not from the demo: it answers the app's API with
+scripted data (two computers, two agents, a few conversations) and binds only
+to this machine. No agent runs and no device is paired. In a terminal, from
+the repo root:
+
+```sh
+pnpm docs:shots:mobile
+```
+
+It starts the stand-in (`test/fixtures/mobile-app-preview.ts`), opens the
+app in a headless browser at the size of a 390 × 844 phone, walks through
+every documented screen (chat, voice, fleet, activity, alerts, the camera
+sheet and the pairing page) and writes the pictures. The camera pictures use
+the browser's built-in test pattern, never a real camera.
+`DOCS_SHOTS=chat,fleet pnpm docs:shots:mobile` captures a subset; the names
+are the file names without `.png`. One picture, `camera-watch.png`, is the
+watch page on a computer and is not part of this set.
+
+The same stand-in serves `node scripts/check-mobile-ui.mjs`, the browser
+regression check for the phone app (it expects a browser listening for
+DevTools on port 9222).
+
 ## Filing issues
 
 People are the heart of this project, and every contribution is equally welcome, however it was written. There are two ways to open an issue.

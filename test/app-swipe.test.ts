@@ -90,9 +90,17 @@ function page(opts: { reduce?: boolean; selected?: number } = {}) {
     click: () => { clicks.push(n); selected = i; panels.forEach((p, j) => { p.hidden = j !== i }) },
   }))
   const handlers: Record<string, (ev: any) => void> = {}
+  // What a redraw took out of the page, as the swipe's watcher sees it.
+  const gone = new Set<any>()
   const main = {
     clientWidth: 390, scrollTop: 120, classList: classes(), parentElement: null,
     addEventListener: (type: string, fn: (ev: any) => void) => { handlers[type] = fn },
+    contains: (el: any) => !gone.has(el),
+  }
+  const watchers: Array<() => void> = []
+  class MutationObserver {
+    constructor(private fn: () => void) {}
+    observe() { watchers.push(this.fn) }
   }
   const tabPosition: string[] = []
   const document = {
@@ -104,14 +112,16 @@ function page(opts: { reduce?: boolean; selected?: number } = {}) {
   const styleOf = (el: any) => el.computed || { touchAction: "auto", overflowX: "visible" }
   new Function("document", "window", "getComputedStyle", "matchMedia", "setTimeout",
     "swipeMayStart", "swipeAxis", "swipeOffset", "swipeLanding", APP_SWIPE_SCRIPT)(
-    document, { matchMedia: true }, styleOf, () => ({ matches: !!opts.reduce }), (fn: () => void) => { timers.push(fn) },
+    document, { matchMedia: true, MutationObserver }, styleOf, () => ({ matches: !!opts.reduce }), (fn: () => void) => { timers.push(fn) },
     swipeMayStart, swipeAxis, swipeOffset, swipeLanding,
   )
   const content = { tagName: "P", parentElement: main, isContentEditable: false, scrollWidth: 300, clientWidth: 300 }
   let prevented = 0
   const touch = (type: string, x: number, y: number, target: any = content) =>
     handlers[type]({ target, touches: type === "touchend" ? [] : [{ clientX: x, clientY: y }], cancelable: true, preventDefault: () => { prevented++ } })
-  return { main, panels, clicks, timers, tabPosition, touch, content, prevented: () => prevented, settle: () => { while (timers.length) timers.shift()!() } }
+  // A redraw replaces `el`; the touch's later events never reach <main>.
+  const redraw = (el: any) => { gone.add(el); watchers.forEach((w) => w()) }
+  return { main, panels, clicks, timers, tabPosition, touch, redraw, content, prevented: () => prevented, settle: () => { while (timers.length) timers.shift()!() } }
 }
 
 describe("the swipe script", () => {
@@ -267,6 +277,54 @@ describe("the swipe script", () => {
     p.settle()
     expect(p.clicks).toEqual([])
     expect(p.panels[1].classList.has("sw-peek")).toBe(false)
+  })
+
+  it("lands the swipe when a redraw takes the touched content away", () => {
+    const p = page()
+    p.touch("touchstart", 300, 400)
+    p.touch("touchmove", 120, 404)
+    expect(p.panels[0].style.transform).toBe("translateX(-180px)")
+    p.redraw(p.content)
+    // Far enough: it goes on to the neighbour, as if the finger had lifted.
+    expect(p.main.classList.has("sw-slide")).toBe(true)
+    p.settle()
+    expect(p.clicks).toEqual(["fleet"])
+    expect(p.panels[0].style.transform).toBe("")
+    expect(p.panels[1].classList.has("sw-peek")).toBe(false)
+  })
+
+  it("springs back when a redraw interrupts a short pull, and forgets a touch that never became one", () => {
+    const now = Date.now
+    let t = 1000
+    Date.now = () => t
+    try {
+      const p = page()
+      p.touch("touchstart", 300, 400)
+      t += 300; p.touch("touchmove", 260, 400)
+      t += 300; p.redraw(p.content)
+      expect(p.panels[0].style.transform).toBe("translateX(0px)")
+      p.settle()
+      expect(p.clicks).toEqual([])
+      expect(p.main.classList.has("sw-on")).toBe(false)
+
+      const q = page()
+      q.touch("touchstart", 300, 400)
+      q.redraw(q.content)
+      // The next touch is a fresh one, not the end of the lost one.
+      q.touch("touchstart", 300, 400)
+      q.touch("touchmove", 120, 404)
+      expect(q.main.classList.has("sw-on")).toBe(true)
+    } finally { Date.now = now }
+  })
+
+  it("leaves a redraw elsewhere on the page alone", () => {
+    const p = page()
+    p.touch("touchstart", 300, 400)
+    p.touch("touchmove", 240, 404)
+    p.redraw({ tagName: "LI" })
+    expect(p.main.classList.has("sw-on")).toBe(true)
+    expect(p.main.classList.has("sw-slide")).toBe(false)
+    expect(p.panels[0].style.transform).toBe("translateX(-60px)")
   })
 
   it("keeps the neighbour's hidden attribute and shows it by class", () => {

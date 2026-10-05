@@ -20,7 +20,7 @@ const config = (overrides: Partial<ObservationPackConfig> = {}): ObservationPack
   limitBytes: 10_240,
   headBytes: 1024,
   tailBytes: 1024,
-  tools: ["Bash", "Grep", "WebFetch", "mcp__.*"],
+  tools: ["Bash", "Grep", "Read", "WebFetch", "mcp__.*"],
   retentionDays: 0,
   ...overrides,
 })
@@ -31,6 +31,16 @@ const bash = (stdout: string) => ({
   tool_name: "Bash",
   tool_input: { command: "make test" },
   tool_response: { stdout, stderr: "", interrupted: false, isImage: false },
+})
+/** A Read result as Claude Code hands it to a PostToolUse hook. */
+const read = (content: string, input: { file_path: string; offset?: number; limit?: number } = { file_path: "/src/app.ts" }, startLine = input.offset ?? 1) => ({
+  session_id: "s1",
+  tool_name: "Read",
+  tool_input: input,
+  tool_response: {
+    type: "text",
+    file: { filePath: input.file_path, content, numLines: content.split("\n").length, startLine, totalLines: content.split("\n").length },
+  },
 })
 
 describe("ObservationPack", () => {
@@ -45,14 +55,106 @@ describe("ObservationPack", () => {
   it("is off by default and has the paper's sizes as its starting values", () => {
     const pack = daemonConfigSchema.parse({ node: { id: "n", name: "N" } }).session.observationPack
     expect(pack).toMatchObject({ enabled: false, limitBytes: 10_240, headBytes: 1024, tailBytes: 1024, retentionDays: 0 })
-    expect(pack.tools).not.toContain("Read")
+    // Owner decision on #621 (2026-10-05): file reads are packed too.
+    expect(pack.tools).toEqual(["Bash", "Grep", "Read", "WebFetch", "mcp__.*"])
   })
 
   it("leaves everything alone when off, under the limit or for a tool not listed", () => {
     expect(packToolOutput(bash(big), config({ enabled: false }), dir)).toBeNull()
     expect(packToolOutput(bash("short"), config(), dir)).toBeNull()
-    expect(packToolOutput({ ...bash(big), tool_name: "Read" }, config(), dir)).toBeNull()
+    expect(packToolOutput({ ...bash(big), tool_name: "Glob" }, config(), dir)).toBeNull()
+    expect(packToolOutput(read(big), config({ tools: ["Bash"] }), dir)).toBeNull()
     expect(existsSync(dir)).toBe(false)
+  })
+
+  describe("file reads", () => {
+    it("keeps whole lines from both ends, names the file and the lines left out, and copies nothing", () => {
+      const result = packToolOutput(read(big), config(), dir)!
+      const updated = result.updated as { type: string; file: { filePath: string; content: string; startLine: number; totalLines: number } }
+      const [pack] = result.packs
+
+      // Same shape around the content; the file's own path, not a copy.
+      expect(updated.type).toBe("text")
+      expect(updated.file.filePath).toBe("/src/app.ts")
+      expect(updated.file.startLine).toBe(1)
+      expect(updated.file.totalLines).toBe(600)
+      expect(pack.path).toBe("/src/app.ts")
+      expect(pack.bytes).toBe(Buffer.byteLength(big))
+      expect(existsSync(dir)).toBe(false)
+
+      // Whole lines: 1024 bytes is 21 lines of 48 bytes plus a break.
+      const content = updated.file.content
+      expect(Buffer.byteLength(content)).toBeLessThan(3000)
+      expect(content.startsWith("line 0 ")).toBe(true)
+      expect(content).toContain("line 20 x")
+      expect(content).not.toContain("line 21 x")
+      expect(content).not.toContain("line 300 ")
+      expect(content).toContain("\nline 580 x")
+      expect(content).not.toContain("line 579 x")
+      expect(content.endsWith("line 599 " + "x".repeat(40))).toBe(true)
+
+      // The head comes first, so Claude Code's own line numbers hold for it;
+      // the notice says where the rest is and which lines follow it.
+      const notice = content.split("\n").find((l) => l.startsWith("[ObservationPack"))!
+      expect(content.indexOf("[ObservationPack")).toBeGreaterThan(content.indexOf("line 20 x"))
+      expect(notice).toContain("lines 1 to 600 of /src/app.ts")
+      expect(content).toContain("Lines 22 to 580 (")
+      expect(content).toContain("Lines 581 to 600 follow")
+      expect(content).toContain("offset and limit")
+      expect(content).not.toContain("saved at")
+    })
+
+    it("counts lines from the offset of a paged read", () => {
+      const page = read(big, { file_path: "/src/app.ts", offset: 1001, limit: 600 })
+      page.tool_response.file.totalLines = 2400
+      const updated = (packToolOutput(page, config(), dir)!.updated as { file: { content: string } }).file.content
+      expect(updated).toContain("lines 1001 to 1600 of /src/app.ts (2400 lines in all)")
+      expect(updated).toContain("Lines 1022 to 1580 (")
+      expect(updated).toContain("Lines 1581 to 1600 follow")
+    })
+
+    it("says so when a line longer than the budget is cut", () => {
+      const oneLine = "x".repeat(20_000)
+      const updated = (packToolOutput(read(oneLine), config(), dir)!.updated as { file: { content: string } }).file.content
+      expect(updated).toContain("lines 1 to 1 of /src/app.ts")
+      expect(updated).toContain("Line 1 (17952 bytes) is not shown (line 1 only in part)")
+      expect(updated).not.toContain("follow")
+
+      const longEnds = ["y".repeat(3000), ...big.split("\n"), "z".repeat(3000)].join("\n")
+      const cut = (packToolOutput(read(longEnds), config(), dir)!.updated as { file: { content: string } }).file.content
+      expect(cut).toContain("Lines 1 to 602 (")
+      expect(cut).toContain("(lines 1 and 602 only in part)")
+      expect(cut.startsWith("yyyy")).toBe(true)
+      expect(cut.endsWith("zzzz")).toBe(true)
+    })
+
+    it("starts with the notice when no head is kept, and ends with it when no tail is", () => {
+      const noHead = (packToolOutput(read(big), config({ headBytes: 0 }), dir)!.updated as { file: { content: string } }).file.content
+      expect(noHead.startsWith("[ObservationPack")).toBe(true)
+      expect(noHead).toContain("Lines 1 to 580 (")
+      const noTail = (packToolOutput(read(big), config({ tailBytes: 0 }), dir)!.updated as { file: { content: string } }).file.content
+      expect(noTail.endsWith("Do not guess at what is not shown.]")).toBe(true)
+      expect(noTail).toContain("Lines 22 to 600 (")
+      expect(noTail).not.toContain("follow")
+    })
+
+    it("leaves a notebook, a PDF or a picture read alone", () => {
+      const cells = { type: "notebook", file: { filePath: "/n.ipynb", cells: [{ cellType: "code", source: big }] } }
+      const pdf = { type: "pdf", file: { filePath: "/d.pdf", base64: "A".repeat(50_000), originalSize: 37_500 } }
+      const image = { type: "image", file: { base64: "A".repeat(50_000), type: "image/png" } }
+      for (const tool_response of [cells, pdf, image]) {
+        expect(packToolOutput({ tool_name: "Read", tool_input: { file_path: "/x" }, tool_response }, config(), dir)).toBeNull()
+      }
+      expect(existsSync(dir)).toBe(false)
+    })
+
+    it("counts a packed read in the index like any other pack", () => {
+      const out = JSON.parse(answerPackHook(read(big), config(), { dir, agentId: "coder-agent" }))
+      expect(out.hookSpecificOutput.updatedToolOutput.file.content).toContain("ObservationPack")
+      const row = JSON.parse(readFileSync(resolve(dir, "index.jsonl"), "utf-8").trim())
+      expect(row).toMatchObject({ agent: "coder-agent", tool: "Read", bytes: Buffer.byteLength(big) })
+      expect(row.keptBytes).toBeLessThan(3000)
+    })
   })
 
   it("replaces a large Bash result with an excerpt and keeps the exact original", () => {
@@ -111,20 +213,16 @@ describe("ObservationPack", () => {
   })
 
   it("returns a saved original whole when the agent reads it back", () => {
-    const cfg = config({ tools: ["Bash", "Read"] })
+    const cfg = config()
     const { packs } = packToolOutput(bash(big), cfg, dir)!
-    const read = (file_path: string) => ({
-      tool_name: "Read",
-      tool_input: { file_path },
-      tool_response: { type: "text", file: { filePath: file_path, content: big } },
-    })
-    expect(packToolOutput(read(packs[0].path), cfg, dir)).toBeNull()
-    expect(packToolOutput(read("/somewhere/else.log"), cfg, dir)).not.toBeNull()
+    const readBack = (file_path: string) => read(big, { file_path })
+    expect(packToolOutput(readBack(packs[0].path), cfg, dir)).toBeNull()
+    expect(packToolOutput(readBack("/somewhere/else.log"), cfg, dir)).not.toBeNull()
 
     // The same file reached through a symlink is still the original.
     const link = resolve(dir, "../link")
     symlinkSync(dir, link)
-    expect(packToolOutput(read(packs[0].path.replace(dir, link)), cfg, dir)).toBeNull()
+    expect(packToolOutput(readBack(packs[0].path.replace(dir, link)), cfg, dir)).toBeNull()
   })
 
   it("points at byte ranges, not lines, when the original is a few very long lines", () => {

@@ -1167,6 +1167,51 @@ Pressing **Command–Option–.** also ends a lesson. In the terminal where it r
 
 ![The Live tab with the cx agent's card showing a running lesson: "on screen · teach · step 0", the lesson's goal, and its ✕ stop button](/screenshots/voice/live-tab-lesson.png)
 
+### Check a hands-free lesson
+
+A hands-free lesson is one you start by voice, with [presence mode](#presence-mode) on, and speak to without holding a key. This check shows that speaking to it pauses it instead of ending it, that a spoken stop ends it, and how long its first step took. It needs the daemon at version 0.94.0 or later and a build of the app made from the same version: update the daemon first, then run `agentx desktop install` again.
+
+1. **Terminal:** run `agentx --version`. It prints `0.94.0` or later.
+2. **Mac:** open the app you want to be taught in, for example Numbers, and leave it in front.
+3. **Mac:** click the pill, and say "show me how to make a table of monthly expenses".
+4. **Mac:** the agent says "Sure, I'll show you on screen." Within a second or two its pointer appears and says **Looking at Numbers…**. It stays until the first step is spoken, a few seconds later.
+5. **Mac:** after the first step, click the pill and say "it's not having any effect". The lesson goes quiet while you speak. Its next step answers what you said; the lesson does not end.
+6. **Mac:** click the pill and say "okay, stop now". The pointer goes and the lesson ends.
+7. **Terminal:** run the check:
+   ```sh
+   agentx voice lessons
+   ```
+   It reads the daemon's log and prints the last lesson: when it started, each step with how long its screen read and its plan took, what it heard, and one line per point of the check. Every line but **by eye** reads **ok**.
+
+<!-- Screenshot needed: the agent's pointer saying "Looking at Numbers…" beside the Numbers window, before the first step (native macOS app). Not captured: the pointer only appears during a real lesson on a Mac with the helper installed and a person speaking to a demo-only install. -->
+
+```
+  Last lesson in ~/.agentx/logs/daemon-stderr.log
+
+  2026-10-05T09:00:00Z  helper (teach): "show me how to make a table of monthly expenses"
+    started by a voice turn: the presence seat chose teach (p=0.90)
+    2 steps, 2 hushes, ended after 33.0 s (stopped by the listener)
+      1. highlight "Table": Click Table in the toolbar. (screen 120 ms, plan 6200 ms)
+      2. wait_for_user: It's the grid-shaped button, top left. (screen 90 ms, plan 2900 ms)
+      heard "it's not having any effect" → the lesson's next step
+      heard "Okay, stop now." → the lesson ended
+    by eye   "Looking at …" shows from the start until the first step: the first step came after 7.4 s
+    ok       Words said mid-lesson pause it and reach the next step: "it's not having any effect": the lesson went on, and a step followed each
+    ok       A spoken stop ends it: "Okay, stop now." ended it (stopped by the listener)
+    ok       [teach] lines carry a time and the screen-read and plan durations: step 1: screen 0.1 s, plan 6.2 s
+    ok       First step under 10.0 s on an idle Mac: 7.4 s from the start to step 1
+```
+
+Each check line starts with one of four words. **ok**: the log shows it. **not ok**: the log shows the opposite. **not seen**: the lesson did not reach that point, for example nothing was said to it. **by eye**: only the screen can tell, so it is for you to confirm in step 4.
+
+| Option | What it does |
+|---|---|
+| `--log <path>` | The daemon log to read, or `-` to read what is piped in. Default: `~/.agentx/logs/daemon-stderr.log` (the daemon started at login), else `/tmp/agentx-daemon.log` (`agentx daemon start`) |
+| `-n, --last <n>` | How many lessons to show, oldest first (default 3) |
+| `--json` | Print the lessons and their checks as JSON, for a script |
+
+The command reads the log and changes nothing. A lesson started from the terminal is listed too, as **started by the terminal or the API**.
+
 ## For automations (Siri, Shortcuts, scripts)
 
 The daemon offers these addresses for talks, lessons and narration. Requests from the same Mac need nothing more. Requests from another computer need the mesh token, the same as `/ask`.
@@ -1227,6 +1272,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 24. **Terminal:** run `agentx voice palette <agent-id> forest`, then open the AgentX menu and hold **Option–Space**. The orb is moss to fern green. Run `agentx voice palette <agent-id> default` to undo it.
 25. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
 26. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
+27. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
 
 ## If something is wrong
 
@@ -1250,6 +1296,10 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **A shortcut does nothing:** another app already uses it. The app log (`~/Library/Logs/agentx-desktop.err.log`) says `is taken by another app`. Pick another one in **Settings…**.
 - **A preview is silent:** another line is playing first, or the voice is ElevenLabs without a key. Check `curl -s http://127.0.0.1:18800/voice/queue`.
 - **Launch at login is greyed out:** `agentx desktop install` starts the app at login. **Terminal:** run `agentx desktop stop` to stop it.
+- **`agentx voice lessons` says no daemon log was found:** the daemon writes its log where it was started from. Give the file with `--log <path>`, or pipe the log in: `agentx daemon logs -n 2000 | agentx voice lessons --log -`.
+- **`agentx voice lessons` finds no lesson, or its lines have no time:** the daemon running is older than 0.94.0, or the lesson never started (the presence seat chose `talk`, which the daemon log shows on a `[presence]` line). Update the daemon, restart it, then run `agentx desktop install` again so the app matches.
+- **A lesson ended as soon as you spoke to it:** the check prints **not ok** with *a hush ended it*. The daemon is older than 0.94.0; update and restart it. On a current daemon, a lesson that hears nothing for a minute after you clicked the pill ends on its own (*no words after the hush*).
+- **The first step took more than 10 seconds:** the check names the slow part. A long **plan** means the planning model was slow, which happens on a Mac that is busy or has just started; try again once it is idle. A long **screen** read means the app's window had to be read from a screenshot, which takes a second or two more.
 - **The pill doesn't appear:** it was hidden with **×**, **Esc** or **Hide pill**. Hold **Option–Space**, or choose **Show floating pill** in the menu, to bring it back. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
 - **The pill is off screen or in an odd place:** click the AgentX icon in the menu bar and choose **Reset position**.
 - **The character runs from the pointer and can't be dragged:** hold **Command** first. It then waits, and you can drag it. See [Move or hide the character](#move-or-hide-the-character).

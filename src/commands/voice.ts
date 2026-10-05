@@ -1,7 +1,8 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { existsSync, readFileSync, writeFileSync } from "fs"
-import { resolve } from "path"
+import { homedir } from "os"
+import { join, resolve } from "path"
 import { loadDaemonConfig } from "@/daemon/config"
 import { OS_DEFAULT, label, languageVoices, localSystemVoices } from "@/voice/agent-voice"
 import { candidates, findVoice, listSystemVoices, type SystemVoice } from "@/voice/system-voices"
@@ -9,6 +10,7 @@ import { ORB_PALETTES, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS, agentPale
 import { presenceLook } from "@/voice/presence"
 import { findMissingVoices, REINSTALL_HINT, voiceDisplayName } from "@/voice/voice-health"
 import { CARD_LIMITS, applyVoiceSettings, checkVoiceSettings, type VoiceSettingsPatch } from "@/daemon/voice-settings-api"
+import { formatLesson, gradeLesson, readLessons, type Verdict } from "@/voice/lesson-log"
 
 // --- agentx voice: which voice each agent speaks with ---
 //
@@ -285,6 +287,44 @@ voice
       console.log(`  When idle: ${now.stroll ? "the character takes a slow stroll now and then" : "the character stays where it rests"}`)
       if (now.stroll && now.look !== "character") console.log(chalk.dim("  No effect while the orb is shown."))
       if (state !== undefined) console.log(chalk.dim("  AgentX Voice picks this up within a few seconds."))
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message}`))
+      process.exit(1)
+    }
+  })
+
+/** Where the daemon's log is on this Mac: the launchd service writes
+ *  ~/.agentx/logs/daemon-stderr.log, `agentx daemon start` /tmp/agentx-daemon.log. */
+export function lessonLogCandidates(home = homedir()): string[] {
+  return [join(home, ".agentx", "logs", "daemon-stderr.log"), "/tmp/agentx-daemon.log"]
+}
+
+voice
+  .command("lessons")
+  .description("what the last live lessons did, read from the daemon log and graded against the hands-free check")
+  .option("--log <path>", "the daemon log to read, or - for standard input (default: the first of ~/.agentx/logs/daemon-stderr.log and /tmp/agentx-daemon.log that exists)")
+  .option("-n, --last <n>", "how many lessons to show, oldest first", "3")
+  .option("--json", "print the lessons and their checks as JSON")
+  .action((opts) => {
+    try {
+      const file = opts.log === "-" ? 0 : opts.log ? resolve(opts.log) : lessonLogCandidates().find((p) => existsSync(p))
+      if (file === undefined) throw new Error(`No daemon log found. Searched: ${lessonLogCandidates().join(", ")}. Give one with --log <path>.`)
+      const last = Math.max(1, Number(opts.last) || 3)
+      const lessons = readLessons(readFileSync(file, "utf8")).slice(-last)
+      if (opts.json) {
+        console.log(JSON.stringify(lessons.map((l) => ({ ...l, checks: gradeLesson(l) })), null, 2))
+        return
+      }
+      if (!lessons.length) {
+        console.log(chalk.yellow(`  No lesson in ${file === 0 ? "the input" : file}.`))
+        console.log(chalk.dim("  A lesson writes [teach] lines there as it runs. Start one by voice (\"show me how…\") or with agentx teach --live."))
+        return
+      }
+      const paint = (v: Verdict, t: string) => (v === "ok" ? chalk.green(t) : v === "not ok" ? chalk.red(t) : v === "by eye" ? chalk.yellow(t) : chalk.dim(t))
+      console.log(chalk.bold(`\n  Last ${lessons.length === 1 ? "lesson" : `${lessons.length} lessons`} in ${file === 0 ? "the input" : file}\n`))
+      for (const l of lessons) console.log(formatLesson(l, paint) + "\n")
+      console.log(chalk.dim("  ok: the log shows it.  not ok: the log shows the opposite.  not seen: the lesson did not reach that point.  by eye: only the screen can tell."))
+      console.log()
     } catch (e: any) {
       console.log(chalk.red(`  ${e.message}`))
       process.exit(1)

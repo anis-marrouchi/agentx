@@ -22,6 +22,7 @@ The npm package is `agentix-cli`; the executable is `agentx`. Run `agentx <comma
 | Ask a typed question and get a calibrated answer | `agentx decide` |
 | Let agents ring you for a voice call | `agentx call allow <agent>`, `agentx call list` |
 | Pick each agent's voice | `agentx voice list`, `agentx voice set` |
+| Check what a live lesson did | `agentx voice lessons` |
 | Shell tab-completion | `agentx completion` |
 | Expose MCP over stdio | `agentx serve --stdio` |
 | Run a scripted tour | `agentx demo` |

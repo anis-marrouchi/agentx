@@ -1,6 +1,9 @@
-// Approved phone design, Chat 1a. Scoped to /app, leaving pairing and the
-// desktop tokens alone. System fonts keep the cached app self-contained.
-export const APP_REDESIGN_CSS = `
+// Approved phone design, Chat 1a (#488). Scoped to the phone pages, leaving
+// the desktop tokens alone. System fonts keep the cached app self-contained.
+
+// The colours, for every phone page: the app, and the pairing pages before
+// it. Blue text is #1f66e5 on white and #6aa0ff on dark, both above 4.5:1.
+export const APP_PHONE_PALETTE_CSS = `
 :root {
   --ax-bg: #fff; --ax-surface: #fff; --ax-surface-2: #f4f5f7; --ax-surface-3: #f6f7f9;
   --ax-text: #0b0d10; --ax-text-2: #5a616c; --ax-border: #e5e7eb;
@@ -14,6 +17,10 @@ export const APP_REDESIGN_CSS = `
   --ax-accent: #6aa0ff; --ax-accent-2: #6aa0ff; --ax-accent-t: #1c2b47;
   --phone-bubble: #1d2f52; --phone-green: #3dbe74;
 }
+`
+
+// The app's layout: the header, tabs, chat, voice dock, cards and sheets.
+export const APP_REDESIGN_CSS = `
 [hidden] { display: none !important; }
 main > .sw-peek[hidden] { display: block !important; }
 main > #panel-chat.sw-peek[hidden] { display: flex !important; }
