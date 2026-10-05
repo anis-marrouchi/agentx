@@ -1,6 +1,6 @@
 import { Command } from "commander"
 import chalk from "chalk"
-import { createCard, IF_SILENT_VALUES } from "@/approvals/cards"
+import { createCard, IF_SILENT_VALUES, type DecisionCard } from "@/approvals/cards"
 import { registerCardCommands } from "./approvals-card"
 import { decide, listInbox, type InboxAction, type InboxItem } from "@/approvals/inbox"
 import { parseDestination, readApprovalSettings, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
@@ -115,16 +115,35 @@ approvals
   .option("--draft <message>", "a suggested message; {choice} is replaced by the pick")
   .option("--say <line>", "the short line the Mac popup speaks (default: the title)")
   .option("--context <text>", "a few lines of background, shown above the question")
-  .action((opts: { agent: string; title: string; ask: string; recommend: string; ifSilent: string; expires?: string; source?: string; choice?: string[]; draft?: string; say?: string; context?: string }) => {
+  .action(async (opts: { agent: string; title: string; ask: string; recommend: string; ifSilent: string; expires?: string; source?: string; choice?: string[]; draft?: string; say?: string; context?: string }) => {
     const settings = readApprovalSettings()
-    const r = createCard(process.cwd(), {
+    const input = {
       raised_by: opts.agent, title: opts.title, ask: opts.ask, recommend: opts.recommend,
       if_silent: opts.ifSilent, expires: opts.expires, source: opts.source,
       choices: opts.choice, draft: opts.draft, say: opts.say, context: opts.context,
-    }, { settings })
+    }
+    // This node's cards go to another machine (approvals.forwardTo): the
+    // daemon does the forwarding, so the card goes through it (#668).
+    const r = settings.forwardTo ? await raiseThroughDaemon(input) : createCard(process.cwd(), input, { settings })
     if (!r.ok) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
-    console.log(chalk.green(`  ✓ card:${r.card.id} raised; expires ${when(r.card.expires)}, then: ${r.card.if_silent}`))
+    const where = settings.forwardTo ? ` on ${settings.forwardTo}` : ""
+    console.log(chalk.green(`  ✓ card:${r.card.id} raised${where}; expires ${when(r.card.expires)}, then: ${r.card.if_silent}`))
   })
+
+/** POST /approvals on this node's daemon, which forwards it. */
+async function raiseThroughDaemon(input: Record<string, unknown>): Promise<{ ok: true; card: DecisionCard } | { ok: false; error: string }> {
+  const base = (process.env.AGENTX_DAEMON_URL || "http://127.0.0.1:18800").replace(/\/+$/, "")
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (process.env.MESH_TOKEN) headers.Authorization = `Bearer ${process.env.MESH_TOKEN}`
+  try {
+    const res = await fetch(`${base}/approvals`, { method: "POST", headers, body: JSON.stringify(input), signal: AbortSignal.timeout(15_000) })
+    const data: any = await res.json().catch(() => ({}))
+    if (!res.ok) return { ok: false, error: data.error ?? `HTTP ${res.status}` }
+    return { ok: true, card: data.card as DecisionCard }
+  } catch (e: any) {
+    return { ok: false, error: `couldn't reach the daemon at ${base} (it forwards cards when approvals.forwardTo is set): ${e?.message ?? e}` }
+  }
+}
 
 registerCardCommands(approvals)
 
@@ -135,6 +154,7 @@ approvals
   .option("--max-expiry-days <n>", "longest a card may wait")
   .option("--later-hours <n>", "how long `later` hides an item")
   .option("--notify-agent <on|off>", "tell the agent that raised a card its result")
+  .option("--forward-to <peer>", "send this machine's cards to that mesh peer's inbox and popup; \"none\" to keep them here")
   .option("--digest <on|off>", "the daily message about what is waiting")
   .option("--digest-time <HH:MM>", "when the digest goes out, 24-hour local time")
   .option("--digest-timezone <zone>", "IANA timezone for --digest-time; \"local\" for this machine's")
@@ -170,6 +190,7 @@ approvals
       patch.maxExpiryDays = num("--max-expiry-days", opts.maxExpiryDays)
       patch.laterHours = num("--later-hours", opts.laterHours)
       patch.notifyAgent = onOff("--notify-agent", opts.notifyAgent)
+      if (opts.forwardTo !== undefined) patch.forwardTo = opts.forwardTo === "none" ? null : opts.forwardTo
       patch.digestEnabled = onOff("--digest", opts.digest)
       patch.popupEnabled = onOff("--popup", opts.popup)
       patch.popupSpeak = onOff("--popup-speak", opts.popupSpeak)
@@ -208,6 +229,7 @@ approvals
     console.log(`  Cards expire after      ${s.defaultExpiryDays} day(s) unless they say (at most ${s.maxExpiryDays})`)
     console.log(`  "Later" hides an item   ${s.laterHours} hour(s)`)
     console.log(`  Tell the agent          ${s.notifyAgent ? "on" : "off"}`)
+    console.log(`  Cards go to             ${s.forwardTo ? `${s.forwardTo} (mesh peer)` : "this machine"}`)
     console.log(`  Daily digest            ${s.digest.enabled ? `on, at ${s.digest.time}${s.digest.timezone ? ` (${s.digest.timezone})` : " (this machine's time)"}` : "off"}`)
     console.log(`  Digest goes to          ${dest ? `${dest.channel} ${dest.chatId}` : "notifications.destination"}`)
     const p = s.popup!

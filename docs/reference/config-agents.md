@@ -223,14 +223,14 @@ A **lean** session gets only what the task needs up front. The rest is one tool 
 
 | What a full session gets | What a lean session gets instead |
 |---|---|
-| Every connected tool server | Only the `agentx` tool server, plus the ones named in `session.lean.mcpServers`. |
+| Every connected tool server, and the `agentx` tool server with them | Only the `agentx` tool server, plus the ones named in `session.lean.mcpServers`. |
 | User-level settings: global `CLAUDE.md`, user skills, plugins | Only the workspace's own settings and skills (`session.lean.settingSources`). |
 | The landscape in the prompt | The `agentx_agents` tool with `landscape: true`. |
 | Today's history of this chat in the prompt | The `agentx_recent` tool with the chat's `channel` and `chatId`. |
 | A summary of the agent's other chats today | The `agentx_recent` tool without a `chatId`. |
 | (both) Stored knowledge, as before | The `agentx_wiki_query` tool, as before. |
 
-Both kinds of session send a `claude-code` agent's project `CLAUDE.md` once: Claude Code reads it from the workspace, and AgentX does not add a second copy.
+Both kinds of session send a `claude-code` agent's project `CLAUDE.md` once: Claude Code reads it from the workspace, and AgentX does not add a second copy. Both kinds also load the `agentx` tool server (the `agentx_approval`, `agentx_request`, `agentx_recent` and other `agentx_` tools): a full session gets it next to the tool servers the workspace and the computer's user connect, a lean one gets it in their place. An `agentx` entry in the workspace's `.mcp.json` is used as written.
 
 The prompt keeps one line, `[Context on demand]`, naming these tools. Chat channels (Telegram, WhatsApp, voice, the dashboard and the phone app) are not changed: they stay full unless you list them. Only `claude-code` and `codex-cli` agents have a lean start; other engines always start full. The daemon log shows `session profile for github: lean (…)` when a lean session starts.
 

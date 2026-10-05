@@ -21,6 +21,8 @@ export interface ApprovalSettings {
   maxExpiryDays: number
   laterHours: number
   notifyAgent: boolean
+  /** The mesh peer this node's cards go to (forward.ts, #668). Unset: they stay here. */
+  forwardTo?: string
   digest: {
     enabled: boolean
     /** Local time, HH:MM. */
@@ -42,6 +44,9 @@ export interface SweepDeps {
   tellAgent?: (agentId: string, text: string, card: DecisionCard) => Promise<void>
   /** True when the agent exists on this node. */
   hasAgent?: (agentId: string) => boolean
+  /** Hand a card forwarded from `node` back there with its result
+   *  (forward.ts deliverResult). Rejects when that node did not take it. */
+  tellPeer?: (node: string, card: DecisionCard) => Promise<void>
   sendDigest?: (dest: { channel: string; chatId: string; accountId?: string }, text: string) => Promise<void>
   /** Told about every decided or expired card, once (open requests, #356). */
   onCardResult?: (card: DecisionCard) => void
@@ -85,6 +90,36 @@ export function digestText(items: InboxItem[], dashboardUrl?: string): string {
   return lines.join("\n")
 }
 
+/** How long a result for a card from another node is retried when that
+ *  node cannot be reached. After that the card is marked told, like one
+ *  whose agent is gone. */
+export const FORWARDED_RESULT_RETRY_MS = 24 * 3_600_000
+
+/** A card forwarded here from another node (#668): the result goes back
+ *  over the mesh, and the card is marked told only once that node took
+ *  it. A peer that is down for a minute must not lose a verdict; the
+ *  handoff is one quick request, not a model turn, so a retry is cheap.
+ *  Returns true when the node took it this time. */
+async function tellForwardedCard(card: DecisionCard, deps: SweepDeps, now: number): Promise<boolean> {
+  const { ctx, settings, log } = deps
+  const done = () => {
+    markAgentNotified(ctx.root, card.id, now)
+    try { deps.onCardResult?.(card) } catch (e: any) { log(`[approvals] ${card.id}: result listener failed: ${e?.message ?? e}`) }
+  }
+  if (!settings.notifyAgent || !deps.tellPeer) { done(); return false }
+  try {
+    await deps.tellPeer(card.node!, card)
+    done()
+    return true
+  } catch (e: any) {
+    const since = Date.parse(card.decided_at ?? card.created_at)
+    const giveUp = Number.isFinite(since) && now - since > FORWARDED_RESULT_RETRY_MS
+    log(`[approvals] couldn't send ${card.id}'s result to ${card.node} for ${card.raised_by}: ${e?.message ?? e}${giveUp ? "; giving up" : "; will retry"}`)
+    if (giveUp) done()
+    return false
+  }
+}
+
 export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
   const { ctx, settings, log } = deps
   const now = ctx.now ?? Date.now()
@@ -101,6 +136,10 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
 
   try {
     for (const card of cardsAwaitingAgentNotice(ctx.root)) {
+      if (card.node) {
+        if (await tellForwardedCard(card, deps, now)) result.notified++
+        continue
+      }
       // Marked first: a turn that hangs or crashes must not tell it twice.
       markAgentNotified(ctx.root, card.id, now)
       try { deps.onCardResult?.(card) } catch (e: any) { log(`[approvals] ${card.id}: result listener failed: ${e?.message ?? e}`) }

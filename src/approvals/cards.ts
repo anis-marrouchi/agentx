@@ -41,6 +41,9 @@ export interface DecisionCard extends CardChoices {
   /** Link to the draft, PR or issue. */
   source?: string
   raised_by: string
+  /** The mesh node the raising agent is on, when the card was forwarded
+   *  here from there (forward.ts, #668). Unset: this node. */
+  node?: string
   created_at: string
   reply?: ReplyTarget
   status: CardStatus
@@ -172,9 +175,18 @@ export interface CardInput {
 }
 
 /** Validate what an agent sent and build a pending card. Never saves. */
+export interface BuildCardOptions {
+  now?: number
+  settings?: CardSettings
+  origin?: CardOrigin
+  /** The peer the card was forwarded from. The daemon sets it after
+   *  checking the name against its mesh peers; never taken as sent. */
+  node?: string
+}
+
 export function buildCard(
   input: CardInput,
-  opts: { now?: number; settings?: CardSettings; origin?: CardOrigin } = {},
+  opts: BuildCardOptions = {},
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const now = opts.now ?? Date.now()
   const settings = opts.settings ?? DEFAULT_CARD_SETTINGS
@@ -218,6 +230,7 @@ export function buildCard(
       expires: expiry.at,
       ...(source ? { source } : {}),
       raised_by: raisedBy,
+      ...(opts.node ? { node: opts.node } : {}),
       created_at: new Date(now).toISOString(),
       ...(reply ? { reply } : {}),
       ...extras.value,
@@ -232,7 +245,7 @@ export function buildCard(
 export function createCard(
   root: string,
   input: CardInput,
-  opts: { now?: number; settings?: CardSettings; origin?: CardOrigin } = {},
+  opts: BuildCardOptions = {},
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const built = buildCard(input, opts)
   if (!built.ok) return built
@@ -315,6 +328,7 @@ export function verdictMessage(card: DecisionCard): string {
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)
+  if (card.node) lines.push(`The operator answered it on another machine; the card was forwarded from ${card.node}.`)
   lines.push("Act on this result now. Do not raise the same card again.")
   return lines.join("\n")
 }

@@ -194,7 +194,7 @@ function item(i){
   if (i.more) more.push('<p>Full record: <code>' + esc(i.more) + '</code></p>');
   more.push('<p>Yes: ' + esc(i.yes) + '. No: ' + esc(i.no) + '.</p>');
   return '<li class="apv__item" data-key="' + esc(i.key) + '">'
-    + '<div class="apv__meta"><span class="apv__kind">' + esc(LABEL[i.kind] || i.kind) + '</span><span>from ' + esc(i.raised_by) + '</span>'
+    + '<div class="apv__meta"><span class="apv__kind">' + esc(LABEL[i.kind] || i.kind) + '</span><span>from ' + esc(i.raised_by) + (i.node ? ' on ' + esc(i.node) : '') + '</span>'
     + (i.created_at ? '<span>' + esc(rel(i.created_at)) + '</span>' : '')
     + (i.snoozed_until ? '<span>put off until ' + esc(new Date(i.snoozed_until).toLocaleString()) + '</span>' : '') + '</div>'
     + '<h2 class="apv__title">' + esc(i.title) + '</h2>'

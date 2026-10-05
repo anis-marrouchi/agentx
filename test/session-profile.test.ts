@@ -6,6 +6,7 @@ import {
   DEFAULT_LEAN,
   DEFAULT_LEAN_CHANNELS,
   describeProfile,
+  fullClaudeArgs,
   leanClaudeArgs,
   leanConfig,
   leanLoadsWorkspace,
@@ -86,6 +87,22 @@ describe("leanMcpServers / leanClaudeArgs", () => {
     expect(args[args.indexOf("--setting-sources") + 1]).toBe("project,local")
     expect(leanClaudeArgs(ws, { ...DEFAULT_LEAN, settingSources: [] }, agentx)).toContain("")
     expect(leanClaudeArgs(ws, { ...DEFAULT_LEAN, settingSources: ["project"] }, agentx)).toContain("project")
+  })
+
+  // Full sessions add the agentx tool server to what they load anyway, so
+  // agentx_approval is there on a node with no user-level servers (#668).
+  it("full sessions get the agentx server on top of the rest, never instead of it", () => {
+    const args = fullClaudeArgs(ws, agentx)
+    expect(args).toEqual(["--mcp-config", JSON.stringify({ mcpServers: { agentx } })])
+    expect(args).not.toContain("--strict-mcp-config")
+    expect(args).not.toContain("--setting-sources")
+    // The operator's own agentx entry wins here as in lean sessions; the
+    // workspace's other servers are left to Claude Code to load.
+    const own = { command: "/opt/agentx/bin/agentx", args: ["serve", "--stdio"] }
+    writeFileSync(join(ws, ".mcp.json"), JSON.stringify({ mcpServers: { agentx: own, codegraph: { command: "codegraph" } } }))
+    expect(JSON.parse(fullClaudeArgs(ws, agentx)[1])).toEqual({ mcpServers: { agentx: own } })
+    writeFileSync(join(ws, ".mcp.json"), "{ not json")
+    expect(JSON.parse(fullClaudeArgs(ws, agentx)[1])).toEqual({ mcpServers: { agentx } })
   })
 
   it("knows when Claude Code reads the workspace itself", () => {

@@ -138,8 +138,10 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
     const now = ctx.now ?? Date.now()
     const repeat = !!request && now - requestSaidAt < REQUEST_SAY_GAP_MS
     if (request && settings.speak) requestSaidAt = now
+    // An agent on another node has no name here: say which node it is on.
+    const from = deps.agentName?.(card.raised_by) ?? (card.node ? `${card.raised_by} on ${card.node}` : undefined)
     const answer = await (deps.show ?? showPopup)(card, repeat ? { ...settings, speak: false } : settings,
-      { from: deps.agentName?.(card.raised_by), speak: deps.speak })
+      { from, speak: deps.speak })
     if (answer.action === "dismiss") {
       log(`[approvals] popup: ${key} left waiting: ${answer.why ?? "no answer"} (${focusLabel(focus)} when shown)`)
       return "shown"

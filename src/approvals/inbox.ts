@@ -52,6 +52,8 @@ export interface InboxItem {
   expires?: string
   source?: string
   raised_by: string
+  /** Cards from an agent on another node of the mesh: that node (#668). */
+  node?: string
   created_at: string
   /** A short excerpt of what is being decided. */
   detail?: string
@@ -113,6 +115,7 @@ function cardItem(c: DecisionCard): InboxItem {
     expires: c.expires,
     ...(c.source ? { source: c.source } : {}),
     raised_by: c.raised_by,
+    ...(c.node ? { node: c.node } : {}),
     created_at: c.created_at,
     ...(c.choices ? { choices: c.choices, more: `agentx approvals popup card:${c.id}` } : {}),
     ...(c.context || c.draft ? { detail: clip([c.context, c.draft ? `Suggested message: ${c.draft}` : ""].filter(Boolean).join(" · ")) } : {}),

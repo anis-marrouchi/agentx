@@ -113,6 +113,22 @@ To show one real card now:
 
 You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. On the dashboard, a card with choices lists them under **Choices**. Answer it on the Mac or in the terminal, because **Yes** alone doesn't say which one you picked.
 
+## Agents on another machine
+
+With [a second machine](../jobs/second-machine.md) in your mesh, its agents raise cards too, but that machine has no screen of yours: its cards would sit in its own inbox, unseen. Tell it to send them here instead. Its daemon then hands every card to this machine's inbox and popup, and your answer travels back to the agent that asked, on its own machine.
+
+1. **Terminal, on the machine with your screen:** make sure the other machine is a peer here. `agentx mesh list` shows it with its name.
+2. **Terminal, on the other machine:** send its cards to this machine, using the name this machine has in that machine's peer list (`agentx mesh list` there shows it):
+   ```sh
+   agentx approvals settings --forward-to studio-mac
+   ```
+   The setting is refused for a name that is not a peer. The daemon picks the change up by itself.
+3. **Terminal, on the other machine:** raise a test card, as in [For agents: raise a card](#for-agents-raise-a-card). It is listed as raised on the peer.
+4. **Browser or Mac, on the machine with your screen:** the card is in **Approvals**, shown as `from <agent> on <machine>`, and the Mac card opens for it like any other. Answer it.
+5. Within a minute the other machine's daemon gets the answer and runs the agent's short turn on the `approvals` channel.
+
+The same mesh token that protects the rest of the mesh protects this: the forwarding machine sends the card with its peer token, and it accepts an answer only from a request that carries one of its own mesh tokens, never from a program on the same machine. Agents on the other machine keep `agentx_approval` and the status check: a status check for a forwarded card is answered from this machine. If this machine is unreachable when a card is raised, the agent is told so and nothing is lost in between; if it is unreachable when you answer, the answer is sent again every minute for a day. To keep cards on the other machine again, run `agentx approvals settings --forward-to none` there.
+
 ## Requests that are not finished
 
 When [open requests](../jobs/open-requests.md) are on, a request you gave an agent that failed, ran out of time, was cut off or went quiet shows in the inbox as a **Request**:
@@ -204,6 +220,7 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
 | `maxExpiryDays` | The longest any card may wait | `--max-expiry-days` |
 | `laterHours` | How long **Later** hides an item | `--later-hours` |
 | `notifyAgent` | Tell the agent the result | `--notify-agent on\|off` |
+| `forwardTo` | The machine (a `mesh.peers` name) whose inbox and popup take this machine's cards. Unset: they stay here. See [Agents on another machine](#agents-on-another-machine) | `--forward-to <peer>`, `--forward-to none` |
 | `digest.enabled` | Send the daily message | `--digest on\|off` |
 | `digest.time` | When, as 24-hour `HH:MM` | `--digest-time` |
 | `digest.timezone` | Time zone for `time`, such as `Europe/Paris`. Unset: this machine's | `--digest-timezone` |
@@ -258,7 +275,9 @@ agentx approvals request --agent helper --title "New meeting date" \
 
 When you answer yes, the agent's result message includes **Chosen:** and the approved message. The agent sends exactly that text.
 
-The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires`, `source`, `choices`, `draft`, `say` and `context`, plus `raised_by` (the agent id). `GET /approvals` lists what is waiting. `POST /approvals/checkin` starts a check-in. Answering is refused on that API on purpose.
+The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires`, `source`, `choices`, `draft`, `say` and `context`, plus `raised_by` (the agent id). A card from another machine of the mesh also carries `node`, that machine's name; the daemon keeps it only for a name in its peer list. `GET /approvals` lists what is waiting. `POST /approvals/checkin` starts a check-in. `POST /approvals/result` is how the machine that answered a forwarded card hands the answer back; it needs a mesh token. Answering is refused on that API on purpose.
+
+Agents on a `claude-code` engine get the `agentx_approval` tool in every session, whichever channel started it: the daemon adds its own tool server to each session it starts, next to the tool servers the workspace and the computer's user already load.
 
 ## Check it worked
 
@@ -274,6 +293,13 @@ For the popup (Mac):
 2. **Terminal:** raise the meeting card from [For agents: raise a card](#for-agents-raise-a-card).
 3. **Mac:** within a minute you hear the chime and the spoken line, and the card opens at the top right of the screen. Click a time. The message fills in with it. Click **Send**.
 4. **Terminal:** `agentx approvals list` no longer shows the card, and the agent's run on the `approvals` channel starts with your pick.
+
+For a second machine:
+
+1. **Terminal, on the other machine:** run `agentx approvals settings`. The line **Cards go to** names this machine.
+2. **Terminal, on the other machine:** raise a test card with `agentx approvals request`. The confirmation says `raised on <machine>`.
+3. **Browser, on the machine with your screen:** open **Approvals**. The card is there, `from <agent> on <machine>`. Click **No**.
+4. **Browser, on the other machine:** within a minute, the **Activity** tab of its dashboard shows a short run for that agent on the `approvals` channel, and its daemon log has a line `result back from <machine>`.
 
 For check-ins (Mac):
 
@@ -298,3 +324,7 @@ For check-ins (Mac):
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
 - **"This card offers choices: pick one":** you clicked **Yes** on the dashboard for a card with choices. Answer it in the popup, or with `agentx approvals approve <key> --choice <n>`.
 - **The agent never heard the result:** check `notifyAgent` is on, and that the agent still exists on this machine. The daemon log line starting `[approvals]` says what happened.
+- **An agent on another machine says the `agentx_approval` tool is missing:** its daemon is older than this feature, or the agent is not on a `claude-code` engine. Update AgentX there and restart its daemon; a session started after that has the tool.
+- **A card raised on another machine never shows here:** on that machine, `agentx approvals settings` must say **Cards go to** this machine, and `agentx mesh list` must show this machine as `healthy`. Its daemon log says `forwarded to <machine>` for each card it sent, or names the machine it could not reach. `approvals.forwardTo names "…", which is not in mesh.peers` means the name is wrong: use the name from that machine's `agentx mesh list`.
+- **`unknown node` when a card is forwarded:** this machine does not list the other one as a peer, or knows it under another name. Pair in this direction too, as in [Add a second machine](../jobs/second-machine.md).
+- **The answer never reached the other machine's agent:** this machine's daemon log says `couldn't send … to <machine>` with the reason, and tries again every minute for a day. `a card result needs a mesh token` means the two machines hold different mesh tokens.

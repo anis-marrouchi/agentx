@@ -59,7 +59,8 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
-import type { DecisionCard } from "@/approvals/cards"
+import { verdictMessage, type DecisionCard } from "@/approvals/cards"
+import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
@@ -1801,12 +1802,13 @@ export class AgentXDaemon {
           onCardResult: (card) => { this.requests?.tracker.cardResolved(card); this.status?.board.cardResolved(card) },
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
-          tellAgent: async (agentId, text, card) => {
-            void this.registry.execute({
-              agentId,
-              message: text,
-              context: { channel: "approvals", chatId: card.id, sender: "operator" },
-            }).catch((e: any) => this.log(`[approvals] ${card.id}: turn on ${agentId} failed: ${e?.message ?? e}`))
+          tellAgent: async (_agentId, text, card) => this.tellAgentCardResult(card, text),
+          // A card from an agent on another node goes back there with its
+          // result; that node runs the turn (#668).
+          tellPeer: async (node, card) => {
+            const peer = this.approvalsPeer(node)
+            if (!peer) throw new Error(`no mesh peer named "${node}"`)
+            await deliverResult(card, { self: this.config.node.name, peer })
           },
           sendDigest: async (d, text) => {
             await this.router.sendOutbound({ channel: d.channel, chatId: d.chatId, accountId: d.accountId, text })
@@ -1847,6 +1849,51 @@ export class AgentXDaemon {
     }
     this.approvalsTimer = setInterval(() => { void tick() }, 60_000)
     this.approvalsTimer.unref?.()
+  }
+
+  /** The result turn on the agent that raised a card. Fire and forget:
+   *  neither the sweep nor a peer's request waits on a model. */
+  private tellAgentCardResult(card: DecisionCard, text: string = verdictMessage(card)): void {
+    void this.registry.execute({
+      agentId: card.raised_by,
+      message: text,
+      context: { channel: "approvals", chatId: card.id, sender: "operator" },
+    }).catch((e: any) => this.log(`[approvals] ${card.id}: turn on ${card.raised_by} failed: ${e?.message ?? e}`))
+  }
+
+  /** The mesh peer a card's `node` names (src/approvals/forward.ts, #668):
+   *  by its name in `mesh.peers`, or by the node name its agent card
+   *  advertises. Undefined for a name that is no peer of this node. */
+  private approvalsPeer(node: string): ForwardPeer | undefined {
+    return resolvePeerForNode(node, this.config.mesh.peers, this.mesh?.directory() ?? [])
+  }
+
+  private forwardToWarned?: string
+
+  /** Where this node's cards go when `approvals.forwardTo` is set: the
+   *  named peer, or undefined (with one log line per name) when the name
+   *  is no peer, so cards stay here rather than vanish. */
+  private approvalsForward(): ForwardDeps | undefined {
+    const name = this.config.approvals.forwardTo
+    if (!name) return undefined
+    const peer = this.approvalsPeer(name)
+    if (!peer) {
+      if (this.forwardToWarned !== name) {
+        this.forwardToWarned = name
+        this.log(`[approvals] approvals.forwardTo names "${name}", which is not in mesh.peers; cards stay on this node`)
+      }
+      return undefined
+    }
+    return { self: this.config.node.name, peer }
+  }
+
+  /** True when the request carries one of this node's mesh tokens. Unlike
+   *  checkMeshAuth, loopback is not enough: agents on this node reach
+   *  loopback themselves, and a card result must come from a peer. */
+  private carriesMeshToken(req: IncomingMessage): boolean {
+    const header = String(req.headers["authorization"] || "")
+    const token = header.startsWith("Bearer ") ? header.slice(7).trim() : ""
+    return !!token && collectAcceptedMeshTokens(this.config).has(token)
   }
 
   /** Requests that went quiet come back, each is raised once, and old
@@ -3451,23 +3498,67 @@ export class AgentXDaemon {
       // by isMeshGatedPath above.
       if (path === "/approvals" || path.startsWith("/approvals/")) {
         const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
-        const reply = handleApprovalsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, url.searchParams, {
-          ctx: { root: process.cwd() },
-          settings: this.config.approvals,
-          hasAgent: (id) => !!this.registry.getAgent(id),
-          ...(process.platform === "darwin" ? {
-            runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
-          } : {}),
-        })
+        const hasAgent = (id: string) => !!this.registry.getAgent(id)
+        // The result of a card this node forwarded, back from the
+        // operator's node (src/approvals/forward.ts, #668). Believed only
+        // with a mesh token: loopback is where this node's own agents are.
+        if (path === "/approvals/result" && req.method === "POST") {
+          const r = receiveResult(body as Record<string, unknown> | undefined, {
+            self: this.config.node.name, forwardTo: this.config.approvals.forwardTo, hasAgent,
+            authorized: this.carriesMeshToken(req),
+          })
+          if (!r.ok) { this.json(res, r.status, { error: r.error }); return }
+          this.log(`[approvals] ${r.card.id}: result back from ${this.config.approvals.forwardTo} for ${r.card.raised_by}: ${r.card.status === "decided" ? r.card.verdict : `expired, ${r.card.outcome}`}`)
+          this.requests?.tracker.cardResolved(r.card)
+          this.status?.board.cardResolved(r.card)
+          if (this.config.approvals.notifyAgent) this.tellAgentCardResult(r.card)
+          this.json(res, 202, { ok: true })
+          return
+        }
         // A card raised from the turn of an open request makes it wait on
         // the owner. The turn is the one the call proves, not the one the
         // card names.
-        if (reply.status === 201) {
+        const raised = (reply: { status: number; body: unknown }) => {
+          if (reply.status !== 201) return
           const card = (reply.body as { card: DecisionCard }).card
           const turn = this.provenTurn(card.raised_by, this.callerProof(req))
           this.requests?.tracker.cardRaised(card, turn)
           this.status?.board.cardRaised(card, turn)
         }
+        // With approvals.forwardTo, a card raised here goes to the
+        // operator's node; only an agent of this node may raise one.
+        const forward = this.approvalsForward()
+        if (forward && path === "/approvals" && req.method === "POST") {
+          const input = (body ?? {}) as Record<string, unknown>
+          const raisedBy = typeof input.raised_by === "string" ? input.raised_by.trim() : ""
+          if (raisedBy && !hasAgent(raisedBy)) {
+            this.json(res, 400, { error: `unknown agent "${raisedBy}": raised_by must be an agent on this node` })
+            return
+          }
+          const reply = await forwardCard(input, forward)
+          if (reply.status === 201) this.log(`[approvals] ${(reply.body as { card: DecisionCard }).card.id} from ${raisedBy} forwarded to ${forward.peer.name}`)
+          raised(reply)
+          this.json(res, reply.status, reply.body)
+          return
+        }
+        const reply = handleApprovalsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, url.searchParams, {
+          ctx: { root: process.cwd() },
+          settings: this.config.approvals,
+          hasAgent,
+          hasPeer: (node) => !!this.approvalsPeer(node),
+          ...(process.platform === "darwin" ? {
+            runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
+          } : {}),
+        })
+        // A card this node forwarded lives on the operator's node: an
+        // agent's status check for it is answered from there.
+        const one = /^\/approvals\/([^/]+)$/.exec(path)
+        if (forward && one && req.method === "GET" && reply.status === 404) {
+          const remote = await readForwardedCard(decodeURIComponent(one[1]), forward)
+          this.json(res, remote.status, remote.body)
+          return
+        }
+        raised(reply)
         this.json(res, reply.status, reply.body)
         return
       }
