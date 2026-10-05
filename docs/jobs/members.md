@@ -1,8 +1,8 @@
 # Invite a teammate to their work page
 
-A teammate who asks your agents for things on GitLab, Telegram or WhatsApp has no dashboard. They cannot see whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see what an agent is busy with right now, in a short preview, and nothing of it once it is done.
+**This page is for you, the owner.** A teammate who asks your agents for things on GitLab, Telegram or WhatsApp cannot see, from that channel, whether the agent is working, waiting or stuck. This page gives them one small window of their own: **My work**, the agents they use and what they asked for, and where it stands. Of your own work they see what an agent is busy with right now, in a short preview, and nothing of it once it is done. The teammate's own steps are on [Join My work](./join-my-work.md), a short page you can send them as it is.
 
-This page is for a teammate, a person with the role `member`. A **client**, someone you do work for, goes through the same door but gets a different page, **Your project**: see [Give a client a page of their own](./clients.md).
+It covers a teammate, a person with the role `member`. A **client**, someone you do work for, goes through the same door but gets a different page, **Your project**: see [Give a client a page of their own](./clients.md).
 
 It works like the [phone app](../dashboard/mobile-app.md): one page served on your private network, a one-time code to pair, a key per machine. Two things are stricter, because a teammate is not you:
 
@@ -70,21 +70,15 @@ The dashboard trusts anything that reaches it from your own computer, so only th
    I then approve your machine, and the page opens by itself.
    ```
 3. **Browser (Tailscale admin console):** open **Machines**, this computer, **Share**, and send the link to the teammate. Do this once per person; the invite reminds you.
-4. Copy the message between the two dashed lines and send it to the teammate on WhatsApp, Telegram or mail, on a channel you know is theirs. Only the lines between the dashes are for them; the rest of the output is for you.
+4. Copy the message between the two dashed lines and send it to the teammate on WhatsApp, Telegram or mail, on a channel you know is theirs. Only the lines between the dashes are for them; the rest of the output is for you. If they want more than the message, send them [Join My work](./join-my-work.md), which has only their steps.
 
 If the teammate's Tailscale login is on their person entry as `tailscale:<login>` (for example `agentx people link sara tailscale:sara@example.com`), pairing is refused unless the network reports that very login. Without the entry, the login the network reports is recorded and shown to you on the card instead.
 
 ## The teammate pairs their machine
 
-1. **Their machine:** install Tailscale and accept the share.
-2. **Their machine:** wait until Tailscale says **Connected** before opening the address. Opened earlier, the browser says the address does not exist, and it may keep saying so until it is restarted.
-3. **Their browser:** open the address, for example `https://your-mac.tailnet-name.ts.net/member`.
-4. The page asks for a name for the machine and the code. They type both and press **Pair**.
+The teammate follows [Join My work](./join-my-work.md), which walks them through these four steps with a screenshot of each page: they install Tailscale and accept the share, open the address (for example `https://your-mac.tailnet-name.ts.net/member`), type a name for the machine and the code, and the page says **Waiting for the owner**. Opening the address before Tailscale on their machine says **Connected** gives them "site can't be reached", the most common stumble.
 
-   ![The "Pair this machine" page with a field for the machine's name and one for the code](/screenshots/members/pair.png)
-5. The page says **Waiting for the owner**.
-
-   ![The "Waiting for the owner" page](/screenshots/members/waiting.png)
+![The "Waiting for the owner" page](/screenshots/members/waiting.png)
 
 ## Approve the machine
 
