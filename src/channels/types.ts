@@ -15,6 +15,9 @@ export interface ChannelMeta {
   issue?: { type: string; iid: string; title: string }
   /** Channel-specific facts (e.g., pipeline status, group description) */
   facts?: string[]
+  /** Platform event actions this run answers, e.g. ["opened", "labeled"]
+   *  for a GitHub issue burst (#612). Read by the triage model (#615). */
+  eventActions?: string[]
 }
 
 export interface IncomingMessage {

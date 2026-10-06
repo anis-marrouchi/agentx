@@ -1,5 +1,5 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
-import { cheapModelForEngine } from "./routing"
+import { cheapModelForEngine, triageModelFor } from "./routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
 import { askSeat } from "@/decisions/seat"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
@@ -2469,32 +2469,47 @@ export class AgentRegistry {
     // Started before the context selection and awaited after it: neither
     // reads the other's answer, so the two seat calls overlap instead of
     // queueing (#455). The answer is still in hand before the task runs.
+    // A run started only by triage events (a label, a close) goes to the
+    // configured triage model first: a fixed rule, no seat asked (#615).
+    const triage = !task.model
+      ? triageModelFor({
+          tier: state.def.tier,
+          channel,
+          eventActions: task.context?.channelMeta?.eventActions,
+          triage: this.config.session.triage,
+          isFollowUp: Boolean(resumeSessionId),
+          sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
+        })
+      : undefined
+    if (triage?.downgraded) this.log(`[${task.agentId}] ${triage.reason}`)
     const cheapModel = cheapModelForEngine(state.def.tier, this.config.decisions.routing)
     const routedModelPending: Promise<string | undefined> =
-      !task.model && cheapModel && (!requestGate.active || requestGate.preprocess)
-        ? (async () => {
-            try {
-              const { routeTaskModel } = await import("./routing")
-              const route = await step("route-model", () => routeTaskModel({
-                message: task.message,
-                agent: task.agentId,
-                channel,
-                isFollowUp: Boolean(resumeSessionId),
-                // Idle time decides whether the cache this would give up still
-                // exists. See routing.ts for the arithmetic.
-                sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
-                cheapModel,
-              }))
-              if (route.downgraded) {
-                this.log(`[${task.agentId}] ${route.reason}`)
-                return route.model
+      triage?.downgraded
+        ? Promise.resolve(triage.model)
+        : !task.model && cheapModel && (!requestGate.active || requestGate.preprocess)
+          ? (async () => {
+              try {
+                const { routeTaskModel } = await import("./routing")
+                const route = await step("route-model", () => routeTaskModel({
+                  message: task.message,
+                  agent: task.agentId,
+                  channel,
+                  isFollowUp: Boolean(resumeSessionId),
+                  // Idle time decides whether the cache this would give up still
+                  // exists. See routing.ts for the arithmetic.
+                  sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
+                  cheapModel,
+                }))
+                if (route.downgraded) {
+                  this.log(`[${task.agentId}] ${route.reason}`)
+                  return route.model
+                }
+              } catch {
+                /* routing is an optimisation; never let it stop a task */
               }
-            } catch {
-              /* routing is an optimisation; never let it stop a task */
-            }
-            return undefined
-          })()
-        : Promise.resolve(undefined)
+              return undefined
+            })()
+          : Promise.resolve(undefined)
     let routedModelSettled = false
     routedModelPending.then(() => { routedModelSettled = true })
 
