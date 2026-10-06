@@ -17,6 +17,8 @@ mkdir -p workspaces/{intake,caseworker}
 agentx daemon start          # then pair WhatsApp: dashboard → Channels → QR
 ```
 
+**Use a dedicated WhatsApp number for the intake bot.** This example sets `"allowFrom": ["*"]` so the bot answers any member of the public, which means it answers every chat on the paired number. Never pair a personal or staff number. WhatsApp can also ban a number it thinks is automated. Read [Before you pair WhatsApp](../../docs/reference/channels.md#before-you-pair-whatsapp) first.
+
 Put the service's procedure docs (required documents, fees, office hours) in `workspaces/intake/references/`.
 
 ## Grow it
