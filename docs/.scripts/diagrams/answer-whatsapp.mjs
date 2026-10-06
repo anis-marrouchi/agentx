@@ -11,7 +11,7 @@ const d = createDiagram({
   height: 900,
   title: "How an agent answers customers on WhatsApp",
   desc:
-    "Seven steps in two parts. You set it up once: get a separate WhatsApp number, pair it with AgentX by scanning a QR code, then list the customers who may write. " +
+    "Seven steps in two parts. You set it up once: get a separate WhatsApp number, pair it with AgentX by scanning a QR code, then fill the allow-list: a star for every customer, or a list of numbers. Until it is filled, no one is answered. " +
     "Then, for every message: a customer writes to that number, AgentX checks the list, the agent writes an answer, and the answer goes back at once, in the same chat, with no approval step. " +
     "A message from a number that is not on the list is ignored.",
 })
@@ -28,7 +28,7 @@ const setup = d.row(
   [
     { title: ["Get a spare number"], note: ["a second phone or SIM,", "not your personal number"] },
     { title: ["Pair it with AgentX"], note: ["agentx connect whatsapp,", "then scan the QR code"] },
-    { title: ["List who may write"], note: ["the allow-list: customers'", "phone numbers"] },
+    { title: ["List who may write"], note: ["the allow-list: \"*\" for every", "customer, or their numbers"] },
   ],
   y,
   { who: "accent" },
@@ -71,8 +71,8 @@ d.list(d.x0, y + ROW + 56, {
   columns: 2,
   items: [
     ["No QR code appears", "Stop the daemon, then pair again."],
-    ["The customer gets no answer", "Add their number to the allow-list."],
-    ["It answers everyone", "The allow-list is empty: fill it."],
+    ["No one gets an answer", "The allow-list is empty: fill it."],
+    ["“not in allowlist” in the log", "Add the number, or use \"*\"."],
     ["“Logged out” in the log", "Delete the session folder, pair again."],
   ],
   delay: end + 1.6,

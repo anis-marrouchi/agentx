@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 900" width="920" height="900" role="img" aria-labelledby="t d" style="--cycle:4.9s">
 <title id="t">How an agent answers customers on WhatsApp</title>
-<desc id="d">Seven steps in two parts. You set it up once: get a separate WhatsApp number, pair it with AgentX by scanning a QR code, then list the customers who may write. Then, for every message: a customer writes to that number, AgentX checks the list, the agent writes an answer, and the answer goes back at once, in the same chat, with no approval step. A message from a number that is not on the list is ignored.</desc>
+<desc id="d">Seven steps in two parts. You set it up once: get a separate WhatsApp number, pair it with AgentX by scanning a QR code, then fill the allow-list: a star for every customer, or a list of numbers. Until it is filled, no one is answered. Then, for every message: a customer writes to that number, AgentX checks the list, the agent writes an answer, and the answer goes back at once, in the same chat, with no approval step. A message from a number that is not on the list is ignored.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
@@ -65,8 +65,8 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="638" cy="176" r="15" fill="#1A66FF"/>
 <text x="638" y="181" class="num" text-anchor="middle">3</text>
 <text x="628" y="220" class="title" text-anchor="start">List who may write</text>
-<text x="628" y="242" class="note" text-anchor="start">the allow-list: customers'</text>
-<text x="628" y="259" class="note" text-anchor="start">phone numbers</text>
+<text x="628" y="242" class="note" text-anchor="start">the allow-list: &quot;*&quot; for every</text>
+<text x="628" y="259" class="note" text-anchor="start">customer, or their numbers</text>
 </g>
 <g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
 <rect x="20" y="320" width="880" height="372" rx="20" fill="#F6F7F9"/>
@@ -125,7 +125,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <g class="rise" style="animation-delay:3.29s"><text x="630" y="644" class="rowname" text-anchor="start">Yes, 9:00 to 13:00.</text><rect x="630" y="653" width="65" height="22" rx="11" fill="#1A66FF" fill-opacity="0.1"/><circle cx="641" cy="664" r="3.5" fill="#1A66FF"/><text x="650" y="668.5" class="state" style="fill:#1A66FF">Helper</text></g>
 <g class="rise" style="animation-delay:3.84s"><text x="44" y="728" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
 <g class="rise" style="animation-delay:4.04s"><circle cx="49" cy="754.5" r="4" fill="#B45309"/><text x="62" y="760" class="symptom" text-anchor="start">No QR code appears</text><text x="62" y="780" class="note" text-anchor="start">Stop the daemon, then pair again.</text></g>
-<g class="rise" style="animation-delay:4.29s"><circle cx="465" cy="754.5" r="4" fill="#B45309"/><text x="478" y="760" class="symptom" text-anchor="start">The customer gets no answer</text><text x="478" y="780" class="note" text-anchor="start">Add their number to the allow-list.</text></g>
-<g class="rise" style="animation-delay:4.54s"><circle cx="49" cy="806.5" r="4" fill="#B45309"/><text x="62" y="812" class="symptom" text-anchor="start">It answers everyone</text><text x="62" y="832" class="note" text-anchor="start">The allow-list is empty: fill it.</text></g>
+<g class="rise" style="animation-delay:4.29s"><circle cx="465" cy="754.5" r="4" fill="#B45309"/><text x="478" y="760" class="symptom" text-anchor="start">No one gets an answer</text><text x="478" y="780" class="note" text-anchor="start">The allow-list is empty: fill it.</text></g>
+<g class="rise" style="animation-delay:4.54s"><circle cx="49" cy="806.5" r="4" fill="#B45309"/><text x="62" y="812" class="symptom" text-anchor="start">“not in allowlist” in the log</text><text x="62" y="832" class="note" text-anchor="start">Add the number, or use &quot;*&quot;.</text></g>
 <g class="rise" style="animation-delay:4.79s"><circle cx="465" cy="806.5" r="4" fill="#B45309"/><text x="478" y="812" class="symptom" text-anchor="start">“Logged out” in the log</text><text x="478" y="832" class="note" text-anchor="start">Delete the session folder, pair again.</text></g>
 </svg>
