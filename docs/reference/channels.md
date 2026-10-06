@@ -5,7 +5,7 @@ A channel receives a message from another tool and routes it to an agent, then c
 | Channel | What it does | Where to set it up |
 |---|---|---|
 | Telegram | Chats with a bot, in private messages or in groups when the bot is tagged | **Settings › Channels › Telegram**, the setup wizard, or `agentx connect telegram`. See [Connect Telegram](../connect-telegram.md) |
-| WhatsApp | Answers from a WhatsApp account that AgentX pairs with by QR code | **Settings › Channels › WhatsApp**, or `agentx connect whatsapp` |
+| WhatsApp | Answers from a WhatsApp account that AgentX pairs with by QR code. See [Answer customers on WhatsApp](../jobs/answer-whatsapp.md) | **Settings › Channels › WhatsApp**, or `agentx connect whatsapp` |
 | GitLab | Reacts to issues, merge requests and comments sent by a GitLab webhook | **Settings › Channels › GitLab**. See [Watch GitLab](../jobs/watch-gitlab.md) |
 | GitHub | Reacts to GitHub webhook events, such as pull requests | **Settings › Channels › GitHub** |
 | Webhooks | Starts workflows from other services (for example Sentry, Stripe, Vercel, or your own) | **Settings › Webhooks**, or `agentx webhook add`. `agentx webhook sources` lists the known sources |
@@ -14,6 +14,8 @@ A channel receives a message from another tool and routes it to an agent, then c
 | Calls (WebRTC) | Voice calls with an agent in the browser, at `/call` on the daemon | **Settings › Channels › Calls (WebRTC)**, or `channels.webrtc` |
 
 **Telegram ignores everyone until you allow them.** A new Telegram bot drops every message unless the sender is on an allow list: `channels.telegram.policy.allowFrom` for all bots, or `allowFrom` on one bot's account. Each entry is a Telegram user ID, a chat ID, or an `@username`. A dropped message shows in `agentx daemon logs` as `not in allowlist`.
+
+**WhatsApp answers everyone until you limit it.** The opposite of Telegram: with `channels.whatsapp.allowFrom` empty or unset, the agent replies to every chat and group on the paired number. Pair a separate number and fill the list first; see [Answer customers on WhatsApp](../jobs/answer-whatsapp.md#_1-before-you-pair).
 
 **Slack and Discord are not supported as live channel adapters in this build.** Do not paste their tokens into a stale prompt or example. A connection record alone does not make an adapter run.
 
