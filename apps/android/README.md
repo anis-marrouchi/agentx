@@ -16,6 +16,10 @@ How to build, install, pair and use it, step by step:
   Activity, so the phone app runs unchanged: Chrome's cookies, camera,
   microphone and Web Push. The computer vouches for the app at
   `/.well-known/assetlinks.json` (`app.android` in `agentx.json`).
+- `DelegationService` is what Chrome asks before it shows the phone app's
+  notifications as this app's, and before it gives the page the location
+  (**Use where I am now** on the Places card). Chrome reads the location
+  through this app's permission (#684).
 - The app pairs once, with a code from `agentx app pair`, and keeps the
   device key in app-private storage that is excluded from backups. It hands
   Chrome the same key the first time through `/app/pair#token=…`.

@@ -150,7 +150,7 @@ On the phone:
    ![The Places card in the Alerts tab, with two places and their reminders](/screenshots/mobile-app/places.png)
 2. **Phone:** tap **Add a place**.
 3. **Phone:** type a **Name**, such as `School`.
-4. **Phone:** stand at the place and tap **Use where I am now**, or type its **Latitude, longitude** (in most map apps, long-press the spot and copy the numbers).
+4. **Phone:** stand at the place and tap **Use where I am now**, or type its **Latitude, longitude** (in most map apps, long-press the spot and copy the numbers). The first time, Android may ask whether AgentX can use the location: tap **While using the app**.
 5. **Phone:** leave **Radius in metres** empty to use 150 metres, or type another size. A bigger circle fires more reliably; 150 metres or more works best.
 6. **Phone:** tap **Save place**.
    ![The Add a place form with a name and coordinates filled in](/screenshots/mobile-app/places-add.png)
@@ -227,6 +227,10 @@ All in `agentx.json`, under `app`. Each one is described in the [configuration r
   2. **Phone:** make the place bigger: 150 metres or more. Android notices small circles late, or not at all.
   3. **Phone:** in Android settings, open **Apps**, then **AgentX**, then **Battery**, and choose **Unrestricted**. Some phones stop background apps to save battery.
 - **No notification after restarting the phone** — the places are watched again as soon as the phone has started, without opening the app. If you changed places while the phone was off, open **AgentX** once, or tap **Check for new places now**.
+- **"Location is blocked for this app" when you tap Use where I am now** — the Android app doesn't have the location permission yet, or it is an older build. Then:
+  1. **Phone:** on the **Place reminders** screen, check that **Precise location** says **allowed**. If it doesn't, allow it as in [Turn on place reminders](#turn-on-place-reminders).
+  2. **Phone:** if it already says **allowed**, install the latest Android app (see [Get the Android app](#get-the-android-app)): builds before this fix could not pass the location to the phone app.
+  3. **Phone:** until then, type the place's coordinates instead.
 - **"Location is off on this phone"** — Location was turned off, so Android dropped every place. Turn it on in quick settings; the places are watched again at the next check, or at once when you tap **Check for new places now**.
 - **"This phone is no longer paired with the computer"** — the Android app's key was removed with `agentx app revoke`. Tap **Forget this computer**, then [pair again](#pair-the-android-app).
 - **"Could not reach the computer"** — Tailscale is off on the phone or on the computer. Turn it on; the app tries again by itself.
