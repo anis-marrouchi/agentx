@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.119.0](https://github.com/anis-marrouchi/agentx/compare/v0.118.1...v0.119.0) (2026-10-06)
+
+
+### Features
+
+* **retro:** nightly sweep raises retro cards for the day's worst runs (P1 of [#743](https://github.com/anis-marrouchi/agentx/issues/743)) ([#772](https://github.com/anis-marrouchi/agentx/issues/772)) ([1f2f9aa](https://github.com/anis-marrouchi/agentx/commit/1f2f9aa84a9abbda52b61f8281cb2f26ff232de6))
+
 ## [0.118.1](https://github.com/anis-marrouchi/agentx/compare/v0.118.0...v0.118.1) (2026-10-06)
 
 
