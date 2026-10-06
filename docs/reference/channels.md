@@ -13,7 +13,7 @@ A channel receives a message from another tool and routes it to an agent, then c
 | ntfy | Sends push notifications to your phone through the ntfy app. Outbound only | `channels.ntfy`, or `agentx notifications ntfy`. See [Get notified](../jobs/notifications.md) |
 | Calls (WebRTC) | Voice calls with an agent in the browser, at `/call` on the daemon | **Settings › Channels › Calls (WebRTC)**, or `channels.webrtc` |
 
-**Telegram ignores everyone until you allow them.** A new Telegram bot drops every message unless the sender is on an allow list: `channels.telegram.policy.allowFrom` for all bots, or `allowFrom` on one bot's account. Each entry is a Telegram user ID, a chat ID, or an `@username`. A dropped message shows in `agentx daemon logs` as `not in allowlist`.
+**Telegram ignores everyone until you allow them.** A new Telegram bot drops every message unless the sender is on an allow list: `channels.telegram.policy.allowFrom` for all bots, or `allowFrom` on one bot's account. Each entry is a Telegram user ID, a chat ID, or an `@username`. To run a public bot that answers anyone, such as customers, use the entry `"*"` on that bot's account: see [Let anyone talk to the bot](../connect-telegram.md#let-anyone-talk-to-the-bot-a-public-bot). A dropped message shows in `agentx daemon logs` as `not in allowlist`.
 
 **Slack and Discord are not supported as live channel adapters in this build.** Do not paste their tokens into a stale prompt or example. A connection record alone does not make an adapter run.
 

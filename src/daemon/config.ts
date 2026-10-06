@@ -415,6 +415,7 @@ const telegramAccountSchema = z.object({
    *    - numeric user id  ("1816212449")         — matches sender (from.id)
    *    - numeric chat id  ("-1003861455814")     — matches chat (chat.id)
    *    - "@username"                             — matches sender username
+   *    - "*"                                     — matches everyone (public bot)
    *  A message is dispatched iff at least one entry matches. */
   allowFrom: z.array(z.string()).optional(),
   /** When false, the daemon keeps the bot token registered so outbound
@@ -461,7 +462,7 @@ const channelsConfigSchema = z.object({
       /** Global sender allowlist applied to every account that doesn't set
        *  its own `allowFrom`. When neither is configured, every incoming
        *  message is dropped — closed by default. Same entry forms as the
-       *  per-account list (user id, chat id, @username). */
+       *  per-account list (user id, chat id, @username, or "*" for everyone). */
       allowFrom: z.array(z.string()).optional(),
     }).default({}),
   }).default({}),
