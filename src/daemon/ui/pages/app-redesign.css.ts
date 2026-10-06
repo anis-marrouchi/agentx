@@ -20,11 +20,18 @@ export const APP_PHONE_PALETTE_CSS = `
 `
 
 // The app's layout: the header, tabs, chat, voice dock, cards and sheets.
+// The body is pinned to the screen (position: fixed; inset: 0), not sized
+// by min-height: 100dvh: in the Android app (Trusted Web Activity) the body
+// could end up taller than the screen and push the tab bar under the bottom
+// edge, where overflow: hidden made it unreachable (#709). Pinned, the
+// header, main (the one scroller) and the tabs always share the screen.
+// height: auto undoes the Chat tab's height: 100dvh: a fixed box with top,
+// bottom and a height ignores bottom, so that height would still win.
 export const APP_REDESIGN_CSS = `
 [hidden] { display: none !important; }
 main > .sw-peek[hidden] { display: block !important; }
 main > #panel-chat.sw-peek[hidden] { display: flex !important; }
-body { overflow: hidden; font-size: 16px; -webkit-font-smoothing: antialiased; }
+body { position: fixed; inset: 0; height: auto; min-height: 0; overflow: hidden; font-size: 16px; -webkit-font-smoothing: antialiased; }
 body > * { flex-shrink: 0; }
 .bar { min-height: 56px; gap: 8px; padding: calc(4px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 4px calc(20px + env(safe-area-inset-left)); background: var(--ax-bg); border: 0; }
 .bar > div:first-child { min-width: 0; flex: 1; }
