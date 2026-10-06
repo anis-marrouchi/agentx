@@ -1104,6 +1104,8 @@ Compile unabsorbed entries into typed per-agent wiki articles.
 | `--max <n>` | `10` | Max entries per agent. |
 | `--since <date>` | — | Only entries dated on or after YYYY-MM-DD. |
 
+Absorb reads entries oldest first. Each run takes the next `--max` entries it has not read yet. An entry leaves the queue once absorb has read it, even if no article cites it, so repeated runs keep moving forward. The list of entries already read is kept per agent and mode in `_absorb-reviewed.json`, inside that agent's wiki folder. A run that fails before writing articles leaves its entries in the queue. To offer every passed-over entry to absorb again, delete that file.
+
 ### `agentx wiki promote`
 
 Promote per-agent memories into shared, authoritative wiki articles.

@@ -440,6 +440,12 @@ wiki
           }
         }
 
+        // Absorb read the whole batch, so the entries it did not cite are
+        // decided too. Without this they stay at the head of the
+        // oldest-first queue and every run re-reads them (#762). Only a
+        // parsed response gets here: a failed run leaves its batch queued.
+        hub.markEntriesReviewed(agentId, unabsorbed.map((e) => e.id))
+
         agentWiki.rebuildIndex()
       } catch (e: any) {
         console.log(chalk.red(`    Absorb failed: ${e.message?.slice(0, 200)}`))

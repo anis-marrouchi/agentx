@@ -1,9 +1,12 @@
 import { WikiStore } from "./store"
-import { resolve } from "path"
-import { existsSync, readdirSync, mkdirSync } from "fs"
+import { dirname, resolve } from "path"
+import { existsSync, readdirSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import type { WikiEntry } from "./types"
 
 export type WikiMode = "flat" | "graph" | "unified"
+
+/** Per agent and mode: entry ids absorb has read, whether or not it cited them. */
+export const ABSORB_REVIEWED_FILE = "_absorb-reviewed.json"
 
 /**
  * WikiHub: manages per-agent wikis with a shared raw entry pool.
@@ -84,19 +87,62 @@ export class WikiHub {
     return this.sharedStore.listEntries({ agentId })
   }
 
+  /**
+   * Entries absorb has not looked at yet.
+   *
+   * An entry leaves the queue when an article cites it in `sources`, or
+   * when absorb read it and passed it over (the reviewed ledger). Citation
+   * alone is not enough: most entries absorb reads are never cited, and
+   * without the ledger they stay at the head of the oldest-first queue and
+   * every `--max` batch re-reads them (#762).
+   */
   getUnabsorbedEntries(agentId: string): WikiEntry[] {
-    const agentWiki = this.getAgentWiki(agentId)
-    const agentEntries = this.getAgentEntries(agentId)
+    const done = this.getReviewedEntryIds(agentId)
+    for (const id of this.getCitedEntryIds(agentId)) done.add(id)
+    return this.getAgentEntries(agentId).filter(e => !done.has(e.id))
+  }
 
-    const absorbedIds = new Set<string>()
-    const index = agentWiki.rebuildIndex()
+  /** Entry ids cited by this agent's articles in the current mode. */
+  getCitedEntryIds(agentId: string): Set<string> {
+    const cited = new Set<string>()
+    const index = this.getAgentWiki(agentId).rebuildIndex()
     for (const article of index.articles) {
       if (article.sources) {
-        for (const s of article.sources) absorbedIds.add(s)
+        for (const s of article.sources) cited.add(s)
       }
     }
+    return cited
+  }
 
-    return agentEntries.filter(e => !absorbedIds.has(e.id))
+  /** Entry ids absorb has read for this agent in the current mode, cited or not. */
+  getReviewedEntryIds(agentId: string): Set<string> {
+    const path = this.reviewedLedgerPath(agentId)
+    if (!existsSync(path)) return new Set()
+    try {
+      const parsed = JSON.parse(readFileSync(path, "utf-8"))
+      const ids = Array.isArray(parsed?.ids) ? parsed.ids : []
+      return new Set(ids.filter((id: unknown): id is string => typeof id === "string"))
+    } catch {
+      // Corrupt ledger → treat as empty. Worst case: passed-over entries
+      // are offered to absorb once more. Cited entries stay out via sources.
+      return new Set()
+    }
+  }
+
+  /** Record that absorb read these entries, so they are not offered again. */
+  markEntriesReviewed(agentId: string, ids: string[]): void {
+    if (ids.length === 0) return
+    const reviewed = this.getReviewedEntryIds(agentId)
+    for (const id of ids) reviewed.add(id)
+    const path = this.reviewedLedgerPath(agentId)
+    mkdirSync(dirname(path), { recursive: true })
+    const tmp = `${path}.tmp`
+    writeFileSync(tmp, JSON.stringify({ version: 1, ids: [...reviewed].sort() }, null, 2))
+    renameSync(tmp, path)
+  }
+
+  private reviewedLedgerPath(agentId: string): string {
+    return resolve(this.agentsDir, agentId, this.mode, ABSORB_REVIEWED_FILE)
   }
 
   summary(): AgentWikiSummary[] {
