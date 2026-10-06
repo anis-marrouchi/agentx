@@ -6,7 +6,7 @@ import { join } from "path"
 import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
 import { RelayedPushState, validEndpoint, type AppPushDeps } from "../src/daemon/app-push"
-import { handlePushBridge, peerOrigins, pushBridgeCaller, pushOrigin, PushRosterSync, ROSTER_RESEND_MS } from "../src/daemon/push-bridge"
+import { handlePushBridge, peerOrigins, pushBridgeCaller, pushOrigin, PushRosterSync, relayTokenProblem, ROSTER_RESEND_MS, scopedPushTarget } from "../src/daemon/push-bridge"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { PushStore } from "../src/channels/push-store"
 import { APP_SERVICE_WORKER, renderAppPage } from "../src/daemon/ui/pages/app"
@@ -233,8 +233,25 @@ describe("pushBridgeCaller", () => {
     expect(pushBridgeCaller("Bearer t1", [{ name: "my mac", token: "t1" }, { name: "my-mac", token: "t2" }])).toMatchObject({ error: expect.stringContaining('"my-mac"') })
   })
 
+  it("lets only the owning relay address one of its phones", () => {
+    expect(scopedPushTarget("tok_a", { error: "no token" })).toEqual({ ok: true })
+    expect(scopedPushTarget("default", { error: "no token" })).toEqual({ ok: true })
+    expect(scopedPushTarget("laptop:tok_a", { origin: "laptop" })).toEqual({ ok: true })
+    expect(scopedPushTarget("laptop:tok_a", { origin: "mac" })).toMatchObject({ error: expect.stringContaining("another computer") })
+    expect(scopedPushTarget("laptop:tok_a", { error: "no token" })).toEqual({ error: "no token" })
+  })
+
   it("lists the configured peers' origins", () => {
     expect([...peerOrigins([{ name: "My Laptop" }, { name: "mac" }])]).toEqual(["My-Laptop", "mac"])
+  })
+})
+
+describe("relayTokenProblem", () => {
+  it("warns a relay whose token to the host can't name it", () => {
+    expect(relayTokenProblem("Host", [{ name: "host", token: "t-pair" }], "t-mesh")).toBeNull()
+    expect(relayTokenProblem("host", [{ name: "host", token: "t-mesh" }], "t-mesh")).toContain("shared MESH_TOKEN")
+    expect(relayTokenProblem("host", [{ name: "host" }], "t-mesh")).toContain("has no token")
+    expect(relayTokenProblem("host", [{ name: "other", token: "t" }], "t-mesh")).toBeNull()
   })
 })
 
@@ -290,6 +307,18 @@ describe("PushRosterSync", () => {
     now += ROSTER_RESEND_MS
     expect(await sync.tick()).toBe(true)
     expect(sent).toEqual([["tok_a", "tok_b"], ["tok_a"], ["tok_a"]])
+  })
+
+  it("counts a refusal from the host as not sent, and logs it once", async () => {
+    const logs: string[] = []
+    let answer: unknown = { status: 403, body: { error: "needs a peer token" } }
+    const sync = new PushRosterSync({ active: () => ["tok_a"], send: async () => answer, log: (m) => logs.push(String(m)) })
+    expect(await sync.tick()).toBe(false)
+    expect(await sync.tick()).toBe(false)
+    expect(logs).toEqual([expect.stringContaining("403 needs a peer token")])
+    answer = { status: 200, body: { ok: true, removed: 0 } }
+    expect(await sync.tick()).toBe(true)
+    expect(logs).toHaveLength(2)
   })
 
   it("sends nothing when the phone list can't be read", async () => {
