@@ -183,7 +183,7 @@ import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import type { DelegationManager } from "@/a2a/delegation"
-import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -1452,34 +1452,50 @@ export class AgentXDaemon {
    * and hot reload so the two can't drift.
    */
   private wireCronCallbacks(cron: CronScheduler, config: DaemonConfig): void {
+    // Through the same path as delegation replies, so a phone-app or voice
+    // `notify` target is reached too; router.sendOutbound alone has no
+    // adapter for either.
+    const wiring = { config, registry: this.registry, router: this.router, replies: this.callbackReplies }
     cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
       this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`)
       this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
 
-      const cronDef = config.crons[jobId]
-      if (cronDef?.notify) {
+      const dest = config.crons[jobId]?.notify
+      if (dest) {
         try {
-          await this.router.sendOutbound({
-            channel: cronDef.notify.channel,
-            chatId: cronDef.notify.chatId,
-            text: `🔴 **Cron "${jobId}" failed** (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
+          await deliverToChat(wiring, {
+            channel: dest.channel,
+            chatId: dest.chatId,
+            accountId: dest.accountId,
             agentId: agent,
-            accountId: cronDef.notify.accountId,
+            text: `🔴 **Cron "${jobId}" failed** (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
+            record: true,
+            // No "/", like the result path: one segment of the reply URL.
+            taskId: `cron-fail:${jobId.replace(/\//g, ":")}:${Date.now()}`,
+            outcome: "error",
+            summary: `Cron "${jobId}" failed (${consecutiveErrors}x)`,
           })
         } catch (e: any) {
           this.log(`[CRON ALERT] notify send failed: ${e.message}`)
         }
       }
     })
-    cron.setDeliverCallback(async (jobId, agent, text) => {
+    cron.setDeliverCallback(async (jobId, agent, text, runId) => {
       const dest = config.crons[jobId]?.notify
       if (!dest) return
-      await this.router.sendOutbound({
+      await deliverToChat(wiring, {
         channel: dest.channel,
         chatId: dest.chatId,
-        text,
-        agentId: agent,
         accountId: dest.accountId,
+        agentId: agent,
+        text,
+        record: true,
+        // One message per run: the phone files it once, the router drops a
+        // repeat. No "/" so it stays one segment of the reply URL.
+        taskId: `cron:${runId.replace(/\//g, ":")}`,
+        idempotencyKey: runId,
+        outcome: "done",
+        summary: `Cron "${jobId}" result`,
       })
     })
   }
