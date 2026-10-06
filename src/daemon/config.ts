@@ -10,6 +10,7 @@ import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { NOISE_MARKERS } from "@/voice/noise"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
+import { unknownAgentxTools } from "@/mcp/tool-names"
 
 /**
  * Load .env file into process.env (simple, no dependency).
@@ -33,6 +34,19 @@ function loadDotEnv(dir: string): void {
 }
 
 // --- Daemon configuration schema & loader ---
+
+/** A list of agentx MCP tool names (session.lean.agentxTools). An unknown
+ *  name is an error, not ignored: a misspelt `agentx_channel_reply` would
+ *  otherwise leave a lean GitHub session with no way to reply. */
+const agentxToolListSchema = z.array(z.string().min(1)).superRefine((list, ctx) => {
+  const unknown = unknownAgentxTools(list)
+  if (unknown.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `not an agentx tool: ${unknown.join(", ")}. Use the names the agentx server lists, without "mcp__agentx__".`,
+    })
+  }
+})
 
 const providerConfigSchema = z.object({
   apiKey: z.string().optional(),
@@ -1616,6 +1630,22 @@ export const daemonConfigSchema = z.object({
       /** The same per channel; a channel's non-empty list wins over
        *  `tools`. */
       toolsByChannel: z.record(z.array(z.string().min(1))).default({}),
+      /** The `agentx_` MCP tools a lean session lists (#699). Empty, the
+       *  default, lists every agentx tool. Claude Code already defers
+       *  them while ToolSearch is available, so a list saves only their
+       *  names (about 300 tokens) unless tool search is off. A tool left
+       *  off cannot be found even through ToolSearch. `agentx_approval`,
+       *  `agentx_request`, `agentx_events` and `agentx_attach_next` are
+       *  always kept, and so are `agentx_agents`, `agentx_recent` and
+       *  `agentx_wiki_query` while `contextOnDemand` is on. A name that is
+       *  not an agentx tool is rejected, so a typo cannot silently drop a
+       *  reply tool. Only an agentx server started as a command (stdio)
+       *  can be told; an http entry lists every tool. claude-code agents
+       *  only. */
+      agentxTools: agentxToolListSchema.default([]),
+      /** The same per channel; a channel's non-empty list wins over
+       *  `agentxTools`. */
+      agentxToolsByChannel: z.record(agentxToolListSchema).default({}),
     }).default({}),
     /** A cheaper model for runs started only by triage events (#615): a
      *  GitHub label added or removed, an issue or PR closed. A run that

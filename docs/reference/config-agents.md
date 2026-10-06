@@ -208,6 +208,8 @@ When a conversation's memory is rotated or treated as stale.
 | `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. |
 | `session.lean.tools` | list of string | `[]` | Built-in Claude Code tools a lean session gets, such as `Bash`, `Read`, `Edit`. Empty keeps every built-in tool. A short list is what brings a lean start under 20k tokens; an agent that lacks a tool it needs fails mid-task. The `agentx` tools are not affected. `claude-code` agents only. See [Fewer built-in tools](#fewer-built-in-tools). |
 | `session.lean.toolsByChannel` | object of channel → list of string | `{}` | The same list per channel. A channel's own list wins over `session.lean.tools`; an empty list falls back to it. |
+| `session.lean.agentxTools` | list of string | `[]` | The `agentx_` tools a lean session is told about, such as `agentx_channel_reply`. Empty lists every `agentx` tool. Saves little while `ToolSearch` is on. A name that is not an `agentx` tool fails `agentx config check`. `agentx_approval`, `agentx_request`, `agentx_events` and `agentx_attach_next` are always kept, and so are `agentx_agents`, `agentx_recent` and `agentx_wiki_query` while `session.lean.contextOnDemand` is on. `claude-code` agents only. See [Fewer agentx tools](#fewer-agentx-tools). |
+| `session.lean.agentxToolsByChannel` | object of channel → list of string | `{}` | The same list per channel. A channel's own list wins over `session.lean.agentxTools`; an empty list falls back to it. |
 | `session.triage.models.claude-code` | string | unset (off) | A cheaper Claude model, such as `claude-haiku-4-5-20251001`, for runs a GitHub triage event started. See [A cheaper model for triage events](#a-cheaper-model-for-triage-events). |
 | `session.triage.models.codex-cli` | string | unset (off) | The same for `codex-cli` agents, such as a `gpt-` model. |
 | `session.triage.actions` | list of string | `["labeled", "unlabeled", "closed"]` | GitHub issue and pull request actions that count as triage. A run uses the triage model only when every event it collected is in this list. |
@@ -283,6 +285,35 @@ To give lean sessions a short tool list:
 The list applies to `claude-code` agents on lean channels only, and never to the `agentx` tools, which stay available. An empty list means every tool: there is no way to start a session with no tools at all, because Claude Code then loads every tool server's full description instead, which costs more, not less.
 
 AgentX always adds `ToolSearch` to the list, even when you leave it out. `ToolSearch` is the Claude Code tool that looks up a tool's full description when the agent first needs it. While it is there, the session starts with only the names of the `agentx` tools. Without it, Claude Code puts the full description of all `agentx` tools into every first turn: about 9k tokens, measured on Claude Code 2.1.291, which is more than a short list saves.
+
+#### Fewer agentx tools
+
+You can also tell lean sessions about fewer of the `agentx_` tools, the AgentX tools the agent uses to reply, send messages and look things up. **On most setups this saves very little, so leave it off unless you have measured a reason.**
+
+- While `ToolSearch` is in the session (always, see above), Claude Code sends only the `agentx` tool *names* in the first turn. A list of nine tools instead of all 29 saved about 330 tokens of an 8,000-token first turn, measured on Claude Code 2.1.291.
+- It saves more, about 5,500 tokens, only where Claude Code's tool search is off, for example when `ENABLE_TOOL_SEARCH=false` is set or `ANTHROPIC_BASE_URL` points to a server other than Anthropic's. Then Claude Code sends every tool's full description.
+- The cost: a tool left off the list is gone for that session. The agent cannot find it, not even with `ToolSearch`.
+
+Some tools are always kept, because AgentX's own messages to the agent ask for them by name: `agentx_approval`, `agentx_request`, `agentx_events` and `agentx_attach_next`, plus `agentx_agents`, `agentx_recent` and `agentx_wiki_query` while `session.lean.contextOnDemand` is on.
+
+To tell lean sessions about fewer `agentx` tools:
+
+1. **Terminal:** look at what the agent's tasks on that channel use. Run `agentx trace show <taskId>` on a few recent runs; the `tool_use` steps name each one as `mcp__agentx__agentx_…`.
+2. **Terminal:** open `agentx.json` and set the list, for all lean channels or for one. Use the names without the `mcp__agentx__` start:
+
+   ```json
+   "session": {
+     "lean": {
+       "agentxTools": ["agentx_channel_reply", "agentx_channel_label"],
+       "agentxToolsByChannel": { "a2a": ["agentx_send_agent"] }
+     }
+   }
+   ```
+
+3. **Terminal:** run `agentx config check`. It prints `✓ Config valid`. A misspelt name stops here with `not an agentx tool: …`.
+4. **Terminal:** run `agentx daemon restart --when-idle`. The daemon log line for the next lean session ends with `agentx-tools=N`, the number of `agentx` tools it was told about.
+
+The list applies to `claude-code` agents on lean channels only. It works when the `agentx` tool server is started as a command, which is the default. If the workspace's `.mcp.json` points `agentx` at a web address (`"type": "http"`) instead, the session still gets every `agentx` tool.
 
 #### A shorter memory index
 
@@ -414,8 +445,9 @@ A warm process answers only the question it was asked. When a background task of
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
 4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
-5. **Terminal:** with `session.triage.models` set, after a label event on an issue nobody has worked on for an hour, run `agentx daemon logs`. A line `triage event (labeled) → <model>` shows the cheaper model was used.
-6. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
+5. **Terminal:** with `session.lean.agentxTools` set, after a lean session starts, run `agentx daemon logs`. The `session profile for …: lean (…)` line ends with `agentx-tools=N`.
+6. **Terminal:** with `session.triage.models` set, after a label event on an issue nobody has worked on for an hour, run `agentx daemon logs`. A line `triage event (labeled) → <model>` shows the cheaper model was used.
+7. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
 
 ## If something is wrong
 
@@ -429,4 +461,7 @@ A warm process answers only the question it was asked. When a background task of
 - **An agent reads the same large file again and again in pages, or its edit fails with `old_string not found` right after a read:** the read was packed and the agent is fetching the lines it needs. That is expected once per file; if the agent spends most of a task on one large file, set `session.observationPack.tools` to `["Bash", "Grep", "WebFetch", "mcp__.*"]` and restart the daemon, so file reads stay whole.
 - **`session.observationPack.enabled` is on and nothing is packed:** restart the daemon; the hook is written into the workspaces at start. Then check that the agent's `tier` is `claude-code`, that its `permissionMode` is `bypassPermissions` and that the result was over `limitBytes`.
 - **A lean session with `session.lean.tools` set starts no smaller than one without it:** update AgentX. Versions up to 0.114.1 left `ToolSearch` out of the list, so Claude Code loaded every `agentx` tool description in full.
+- **An agent on a lean channel says it has no tool to reply, label or send a message:** that `agentx` tool is not in `session.lean.agentxTools` (or the channel's own list). Add it, or empty the list, and run `agentx daemon restart --when-idle`.
+- **`agentx config check` says `not an agentx tool: …`:** a name in `session.lean.agentxTools` or `agentxToolsByChannel` is misspelt, or starts with `mcp__agentx__`. Use the name exactly as `agentx trace show` prints it after `mcp__agentx__`.
+- **The daemon log shows no `agentx-tools=` for a lean session with a list set:** the channel's own list in `session.lean.agentxToolsByChannel` and the shared list are both empty, or the agent's `tier` is not `claude-code`.
 - **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.
