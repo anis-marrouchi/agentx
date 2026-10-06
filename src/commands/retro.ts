@@ -6,6 +6,7 @@ import Database from "better-sqlite3"
 import { readApprovalSettings } from "@/approvals/settings"
 import { reviewWithClaude } from "@/daemon/session-monitor"
 import { prepareRetro, raiseRetroCard, RETRO_PROMPT } from "@/retro/retro"
+import { DEFAULT_RETRO_PER_DAY, DEFAULT_SWEEP_HOURS, sweepRetros } from "@/retro/sweep"
 
 // --- agentx retro <taskId> (#743) ---
 //
@@ -14,6 +15,27 @@ import { prepareRetro, raiseRetroCard, RETRO_PROMPT } from "@/retro/retro"
 // changes until the operator picks: unanswered, the card is discarded.
 // The pick goes back to the agent that ran the task, which builds the fix
 // for a second review (src/approvals/origin.ts retroLines).
+
+function reviewerModel(model?: string): string {
+  return model || process.env.AGENTX_RETRO_MODEL || process.env.AGENTX_MONITOR_MODEL || "opus"
+}
+
+/** The trace database, or undefined (with the error printed) when missing. */
+function openTraceDb(root: string, path?: string): Database.Database | undefined {
+  const dbPath = resolve(root, path ?? ".agentx/db.sqlite")
+  if (!existsSync(dbPath)) {
+    console.error(chalk.red(`  No trace database at ${dbPath}. Run this in the folder the daemon runs from.`))
+    process.exitCode = 1
+    return undefined
+  }
+  return new Database(dbPath, { readonly: true })
+}
+
+/** "24h", "2d" → milliseconds; null when it isn't one of those. */
+export function sweepWindowMs(input: string): number | null {
+  const m = /^(\d+)\s*([hd])$/.exec(input.trim())
+  return m && Number(m[1]) > 0 ? Number(m[1]) * (m[2] === "h" ? 3_600_000 : 86_400_000) : null
+}
 
 export const retro = new Command("retro")
   .description("turn one run that struggled into fix choices on a decision card")
@@ -24,14 +46,9 @@ export const retro = new Command("retro")
   .option("--path <db>", "trace database (default: .agentx/db.sqlite)")
   .action(async (taskId: string, opts: { model?: string; dryRun?: boolean; force?: boolean; path?: string }) => {
     const root = process.cwd()
-    const dbPath = resolve(root, opts.path ?? ".agentx/db.sqlite")
-    if (!existsSync(dbPath)) {
-      console.error(chalk.red(`  No trace database at ${dbPath}. Run this in the folder the daemon runs from.`))
-      process.exitCode = 1
-      return
-    }
-    const db = new Database(dbPath, { readonly: true })
-    const model = opts.model || process.env.AGENTX_RETRO_MODEL || process.env.AGENTX_MONITOR_MODEL || "opus"
+    const db = openTraceDb(root, opts.path)
+    if (!db) return
+    const model = reviewerModel(opts.model)
     console.log(chalk.dim(`  Reading run ${taskId} and asking ${model} for fixes…`))
     const r = await prepareRetro({
       root, db, taskId, force: opts.force,
@@ -66,4 +83,59 @@ export const retro = new Command("retro")
     }
     console.log(chalk.green(`\n  ✓ card:${raised.card.id} raised for ${raised.card.raised_by}. Pick a fix on /approvals, in the phone app, or with`))
     console.log(chalk.green(`    agentx approvals approve card:${raised.card.id} --choice <n>`))
+  })
+
+// --- agentx retro sweep (#743, P1) ---
+//
+// The nightly pass: ranks the window's struggled runs and, with --commit,
+// raises cards for the worst few, within the daily limit. Without --commit
+// it only ranks, so it is safe to run by hand to see what tonight would do.
+
+retro
+  .command("sweep")
+  .description("rank the day's struggled runs and raise retro cards for the worst (preview unless --commit)")
+  .option("--since <window>", `how far back to read, e.g. 24h or 2d (default: ${DEFAULT_SWEEP_HOURS}h)`)
+  .option("--max <n>", `retro cards allowed in any 24 hours, counting ones raised by hand (default: ${DEFAULT_RETRO_PER_DAY})`)
+  .option("--commit", "ask the reviewer and raise the cards (default: rank only)")
+  .option("--model <model>", "the reviewer model (default: AGENTX_RETRO_MODEL, else AGENTX_MONITOR_MODEL, else opus)")
+  .option("--path <db>", "trace database (default: .agentx/db.sqlite)")
+  .action(async (opts: { since?: string; max?: string; commit?: boolean; model?: string; path?: string }) => {
+    const windowMs = sweepWindowMs(opts.since ?? `${DEFAULT_SWEEP_HOURS}h`)
+    if (windowMs === null) {
+      console.error(chalk.red(`  Invalid --since "${opts.since}". Use hours or days, such as 24h or 2d.`))
+      process.exitCode = 1
+      return
+    }
+    const max = opts.max === undefined ? DEFAULT_RETRO_PER_DAY : Number(opts.max)
+    if (!Number.isInteger(max) || max < 0) {
+      console.error(chalk.red(`  Invalid --max "${opts.max}". Use a whole number, 0 or more.`))
+      process.exitCode = 1
+      return
+    }
+    const root = process.cwd()
+    const db = openTraceDb(root, opts.path)
+    if (!db) return
+    const model = reviewerModel(opts.model)
+    const r = await sweepRetros({
+      root, db, max, commit: opts.commit,
+      since: Date.now() - windowMs,
+      settings: readApprovalSettings(),
+      propose: (input) => reviewWithClaude(input, model, undefined, RETRO_PROMPT),
+    }).finally(() => db.close())
+
+    console.log(`  ${r.ranked.length} struggled run(s), one per failure. Room for ${r.room} more retro card(s) today (limit ${max}).`)
+    for (const run of r.ranked.slice(0, 10)) {
+      console.log(chalk.dim(`  ${String(run.score).padStart(2)}  ${run.task.taskId}  ${run.task.agentId}  ${run.signals.map((s) => s.kind).join(", ")}`))
+    }
+    if (r.error) {
+      console.error(chalk.red(`  ${r.error}`))
+      process.exitCode = 1
+      return
+    }
+    for (const o of r.outcomes) {
+      if (o.result === "raised") console.log(chalk.green(`  ✓ card:${o.cardId} raised for ${o.agentId} (run ${o.taskId})`))
+      else if (o.result === "would-try") console.log(`  → would retro ${o.taskId} (${o.agentId})`)
+      else console.log(chalk.dim(`  ✗ ${o.taskId}: ${o.why}`))
+    }
+    if (!opts.commit) console.log(chalk.dim("\n  Preview: no reviewer asked, no card raised. Add --commit to raise them."))
   })
