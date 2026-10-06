@@ -280,6 +280,26 @@ describe("agentx app pair: tailscale serve guard", () => {
     expect(exposedDashboardMounts({ Services: { "svc:db": { TCP: { "5432": { TCPForward: "127.0.0.1:5432" } } } } }, 4202)).toEqual([])
   })
 
+  it("sees through userinfo and other spellings of an address (#710)", () => {
+    const local = new Set(["localhost", "0.0.0.0", "::", "::1", "192.168.1.20", "fe80::1"])
+    for (const target of [
+      "http://user@127.0.0.1:4202",
+      "https+insecure://user:secret@localhost:4202",
+      "http://[0:0:0:0:0:0:0:1]:4202",
+      "http://[::ffff:7f00:1]:4202",
+      "http://[0:0:0:0:0:ffff:127.0.0.1]:4202",
+      "http://[::ffff:c0a8:114]:4202",
+      "http://[FE80:0:0:0:0:0:0:1]:4202",
+      "http://[0:0:0:0:0:0:0:0]:4202",
+      "http://127.1:4202",
+    ]) {
+      expect(exposedDashboardMounts(web({ "/": target }), 4202, local), target).toEqual(["mac.tail1.ts.net:443/"])
+    }
+    expect(exposedDashboardMounts(web({ "/": "http://user@192.168.1.99:4202" }), 4202, local)).toEqual([])
+    expect(exposedDashboardMounts(web({ "/": "http://[::ffff:c0a8:163]:4202" }), 4202, local)).toEqual([])
+    expect(exposedDashboardMounts(web({ "/app": "http://user@127.0.0.1:4202/app" }), 4202, local)).toEqual([])
+  })
+
   it("reads this machine's real interface addresses by default (#707)", () => {
     const lan = Object.values(networkInterfaces()).flat().find((a) => a && a.family === "IPv4" && !a.internal)
     if (!lan) return

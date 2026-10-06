@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { PushStore } from "../src/channels/push-store"
-import { PushAdapter, PushRelayAdapter, buildPushPayload, DEFAULT_OPEN_URL, MAX_PAYLOAD_BYTES, type PushSender } from "../src/channels/push"
+import { PushAdapter, PushRelayAdapter, buildPushPayload, isRemoteDevice, remoteDeviceId, DEFAULT_OPEN_URL, MAX_PAYLOAD_BYTES, type PushSender } from "../src/channels/push"
 import { readPushKeys, writePushKeys } from "../src/channels/push-keys"
 import { patchPush, defaultNotifyChannel } from "../src/notify/push-settings"
 import { daemonConfigSchema } from "../src/daemon/config"
@@ -138,12 +138,51 @@ describe("PushStore", () => {
   })
 })
 
+describe("PushAdapter, phones paired with a relaying node (#711)", () => {
+  it("maps a relay's device id to the scoped id it has here", async () => {
+    store.subscribe(sub(1, "tok_a")); store.subscribe(sub(2, remoteDeviceId("laptop", "tok_a")))
+    const hit: string[] = []
+    await adapter(async (s) => { hit.push(s.endpoint) }).send({ channel: "push", chatId: "tok_a", text: "hi", origin: "laptop" } as any)
+    expect(hit).toEqual(["https://push.example.com/2"])
+    expect(store.recent(10, "laptop:tok_a")).toMatchObject([{ deviceId: "laptop:tok_a" }])
+  })
+
+  it("never falls back to a phone paired here with the same token id", async () => {
+    store.subscribe(sub(1, "tok_a"))
+    const hit: string[] = []
+    await expect(adapter(async (s) => { hit.push(s.endpoint) }).send({ channel: "push", chatId: "tok_a", text: "hi", origin: "laptop" } as any))
+      .rejects.toThrow("laptop:tok_a has not turned on notifications")
+    expect(hit).toEqual([])
+  })
+
+  it("sends to every phone, wherever it is paired", async () => {
+    store.subscribe(sub(1, "tok_a")); store.subscribe(sub(2, remoteDeviceId("laptop", "tok_b")))
+    expect(await adapter(async () => {}).send({ channel: "push", chatId: "default", text: "hi" })).toBe("2")
+  })
+
+  it("prunes a relay's phones that left its roster, and no one else's", () => {
+    store.subscribe(sub(1, "tok_a"))
+    store.subscribe(sub(2, "laptop:tok_a")); store.subscribe(sub(3, "laptop:tok_b")); store.subscribe(sub(4, "desk:tok_c"))
+    expect(store.pruneOrigin("laptop", ["tok_b"])).toBe(1)
+    expect(store.list().map((s) => s.deviceId)).toEqual(["tok_a", "laptop:tok_b", "desk:tok_c"])
+    expect(isRemoteDevice("laptop:tok_b")).toBe(true)
+    expect(isRemoteDevice("tok_a")).toBe(false)
+  })
+})
+
 describe("PushRelayAdapter", () => {
   it("forwards to the host with buttons, marked relayed", async () => {
     const sent: any[] = []
     const relay = new PushRelayAdapter("host-node", async (peer, p) => { sent.push({ peer, p }); return "1" }, () => {})
     await relay.send({ channel: "push", chatId: "", text: "hi", buttons: [{ label: "Open", url: "https://x" }] })
     expect(sent).toEqual([{ peer: "host-node", p: { channel: "push", chatId: "default", text: "hi", buttons: [{ label: "Open", url: "https://x" }], relayed: true } }])
+  })
+
+  it("names itself as the origin, so the host can address its phones (#711)", async () => {
+    const sent: any[] = []
+    const relay = new PushRelayAdapter("host-node", async (_peer, p) => { sent.push(p); return "1" }, () => {}, "laptop")
+    await relay.send({ channel: "push", chatId: "tok_a", text: "done" })
+    expect(sent[0]).toMatchObject({ chatId: "tok_a", relayed: true, origin: "laptop" })
   })
 
   it("refuses a message another relay already forwarded", async () => {
