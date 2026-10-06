@@ -116,7 +116,7 @@ Pair a phone — prints a QR code to scan and a one-time code to type in the ins
 
 The pairing code has 8 characters (shown as `XXXX-XXXX`), works once and expires after 10 minutes. It pairs the same device as the QR code.
 
-Refuses to run while `tailscale serve` shares the whole dashboard (for example after `tailscale serve --bg 4202`) rather than only `/app` and `/api/app`.
+Refuses to run while `tailscale serve` shares the whole dashboard (for example after `tailscale serve --bg 4202`) rather than only `/app` and `/api/app`. Serving `/.well-known/assetlinks.json` for the Android app is fine, as long as it points to that same path, as in [Open it without an address bar](/dashboard/mobile-places#open-it-without-an-address-bar-optional).
 
 | Flag | Default | What it does |
 |---|---|---|
