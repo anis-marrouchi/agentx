@@ -48,8 +48,9 @@ function openPage(answers: { me?: Answer[]; work?: Answer[] }, opts: { online?: 
   const windowListeners: Record<string, () => void> = {}
   const navigatorStub = { onLine: opts.online ?? true, userAgent: "Macintosh" }
   const left: string[] = []
+  const doc = { getElementById: el, documentElement: { getAttribute: () => "light", setAttribute: () => {} }, activeElement: null as unknown }
   new Function("document", "window", "navigator", "fetch", "location", "localStorage", "matchMedia", "setTimeout", "clearTimeout", "AbortController", "Notification", script)(
-    { getElementById: el, documentElement: { getAttribute: () => "light", setAttribute: () => {} } },
+    doc,
     { addEventListener: (t: string, f: () => void) => { windowListeners[t] = f } },
     navigatorStub, fetchStub, { replace: (to: string) => { left.push(to) } },
     { setItem: () => {} }, () => ({ matches: false }), setTimeoutStub, clearTimeoutStub, AbortController, opts.Notification,
@@ -63,7 +64,7 @@ function openPage(answers: { me?: Answer[]; work?: Answer[] }, opts: { online?: 
     await settle()
   }
   const network = async (on: boolean) => { navigatorStub.onLine = on; windowListeners[on ? "online" : "offline"](); await settle() }
-  return { el, calls, left, settle, fire, network, pending: () => timers.map((t) => t.ms) }
+  return { el, doc, calls, left, settle, fire, network, pending: () => timers.map((t) => t.ms) }
 }
 
 describe("the name line", () => {
@@ -265,6 +266,49 @@ describe("the agent cards and what needs a person (#443)", () => {
     expect(sent).toContain(">In line<")
     expect(sent).toContain("1 message ahead of it")
     expect(p.el("sum").textContent).toBe("coder is working on your task. ops is busy with someone else's task.")
+  })
+
+  // A keyboard or screen-reader user must not lose their place, or hear
+  // the summary again, every 30 seconds.
+  it("leave the lists and the summary alone when a round brings nothing new", async () => {
+    const p = openPage({ work: [{ status: 200, body }, { status: 200, body }] })
+    await p.settle()
+    const writes: string[] = []
+    for (const id of ["sum", "agents", "need-list", "sent"]) {
+      const e = p.el(id)
+      let html = e.innerHTML, text = e.textContent
+      Object.defineProperty(e, "innerHTML", { get: () => html, set: (v: string) => { writes.push(id); html = v } })
+      Object.defineProperty(e, "textContent", { get: () => text, set: (v: string) => { writes.push(id); text = v } })
+    }
+    await p.fire(30_000)
+    expect(writes).toEqual([])
+  })
+
+  it("keep focus on the same agent's button when the cards change", async () => {
+    const later = { ...body, agents: [{ agentId: "qa", state: "free", by: null, at: now, text: null, fullText: null, where: null }, ...body.agents] }
+    const p = openPage({ work: [{ status: 200, body }, { status: 200, body: later }] })
+    await p.settle()
+    const list = p.el("agents")
+    let focused: unknown = null
+    // The buttons in the list's current markup, as the browser would give
+    // them: the same objects until the markup is replaced.
+    const made = new Map<string, unknown[]>()
+    const buttons = () => {
+      const html = String(list.innerHTML)
+      if (!made.has(html)) {
+        made.set(html, [...html.matchAll(/<button[^>]*data-agent="([^"]*)"/g)].map((m) => {
+          const b = { inList: true, getAttribute: (n: string) => (n === "data-agent" ? m[1] : null), focus: () => { focused = b } }
+          return b
+        }))
+      }
+      return made.get(html)!
+    }
+    list.contains = (x: { inList?: boolean }) => !!x?.inList
+    list.querySelectorAll = buttons
+    p.doc.activeElement = buttons()[0]
+    await p.fire(30_000)
+    expect(list.innerHTML).toContain(">qa<")
+    expect((focused as { getAttribute: (n: string) => string } | null)?.getAttribute("data-agent")).toBe("coder")
   })
 
   it("say the state is from the last load when a round fails", async () => {

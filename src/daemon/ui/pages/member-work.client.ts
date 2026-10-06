@@ -11,6 +11,9 @@
 // A busy card says what the agent is doing whoever started it, and what
 // waits in line behind it (the owner's decisions on #443, 2026-10-05).
 //
+// A round leaves keyboard focus where it was and does not make a screen
+// reader read out the summary line again when its words are the same.
+//
 // One round every 30 seconds loads the work lists, and the name line too
 // until it has loaded once. A round that fails is tried again after 20
 // seconds, and the strip says which it is: the browser offline, or the
@@ -75,6 +78,25 @@ export const WORK_SCRIPT = `
   var standalone = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
   if (!standalone && /Windows|Macintosh|Linux/.test(navigator.userAgent) && !/Mobile/.test(navigator.userAgent)) install.hidden = false;
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  // Each round rebuilds the lists. A list whose markup did not change is
+  // left alone; one that did keeps the keyboard where it was: the same
+  // agent's button, else the link or button at the same place (#443).
+  function fill(list, html) {
+    if (list.axHtml === html) return;
+    list.axHtml = html;
+    var f = document.activeElement, at = -1, key = null, i;
+    if (f && list.contains && list.contains(f)) {
+      var was = list.querySelectorAll('a, button');
+      for (i = 0; i < was.length; i++) if (was[i] === f) at = i;
+      key = f.getAttribute('data-agent');
+    }
+    list.innerHTML = html;
+    if (at < 0) return;
+    var now = list.querySelectorAll('a, button'), to = null;
+    for (i = 0; i < now.length && key; i++) if (now[i].getAttribute('data-agent') === key) to = now[i];
+    if (!to && !key && now.length) to = now[Math.min(at, now.length - 1)];
+    if (to) to.focus();
+  }
   function showConn() {
     var note = connectionNote(failed, navigator.onLine !== false, RETRY_S, loaded);
     strip.hidden = !note;
@@ -83,7 +105,7 @@ export const WORK_SCRIPT = `
     if (stripText.textContent !== note.text) stripText.textContent = note.text;
     retry.hidden = !note.retry;
     // Agent states are now from the last load, not live.
-    if (last && !shownStale) { shownStale = true; agentsList.innerHTML = (last.agents || []).map(function (a) { return agent(a, Date.now(), true); }).join(''); }
+    if (last && !shownStale) { shownStale = true; fill(agentsList, (last.agents || []).map(function (a) { return agent(a, Date.now(), true); }).join('')); }
   }
   window.addEventListener('online', function () { failed = false; showConn(); load(); });
   window.addEventListener('offline', function () { failed = true; showConn(); });
@@ -170,16 +192,18 @@ export const WORK_SCRIPT = `
   }
   function show(w, now) {
     var agents = w.agents || [], waiting = w.queued || [];
-    sum.textContent = summaryLine(agents, w.runs.length + waiting.length);
+    // The line is read out by a screen reader: same words, no new announcement.
+    var line = summaryLine(agents, w.runs.length + waiting.length);
+    if (sum.textContent !== line) sum.textContent = line;
     agentsBox.hidden = !agents.length;
-    agentsList.innerHTML = agents.map(function (a) { return agent(a, now, false); }).join('');
+    fill(agentsList, agents.map(function (a) { return agent(a, now, false); }).join(''));
     var asks = w.open.filter(function (r) { return r.state === 'waiting_owner' || r.state === 'needs_attention'; });
     need.hidden = !asks.length;
-    document.getElementById('need-list').innerHTML = asks.map(function (r) { return needRow(r, now); }).join('');
-    document.getElementById('sent').innerHTML = waiting.map(function (r) { return queued(r, now); }).join('') +
+    fill(document.getElementById('need-list'), asks.map(function (r) { return needRow(r, now); }).join(''));
+    fill(document.getElementById('sent'), waiting.map(function (r) { return queued(r, now); }).join('') +
       w.runs.map(function (r) { return sent(r, now); }).join('') +
       (w.other || []).map(function (r) { return request(r, now); }).join('') ||
-      '<li class="blank"><p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here as soon as the agent starts on it.</p><p>You see when it is running, when it is finished, and when the agent is free again.</p></li>';
+      '<li class="blank"><p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here as soon as the agent starts on it.</p><p>You see when it is running, when it is finished, and when the agent is free again.</p></li>');
   }
   function loadName() {
     if (named) return;
