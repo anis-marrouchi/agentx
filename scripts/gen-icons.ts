@@ -9,6 +9,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "fs"
 import { dirname, join } from "path"
 import { fileURLToPath } from "url"
+import { inflateSync } from "zlib"
 import { AX_INK, AX_LAYOUT, AX_PAPER, axIconSvg, axSymbolPathData } from "../src/brand/ax-symbol"
 import { renderIconPng } from "../src/daemon/app-icon"
 
@@ -73,13 +74,41 @@ files.set("integrations/raycast/assets/icon.png", renderIconPng({ size: 512, wid
 // The docs' spare SVG favicons, so no older mark lingers.
 for (const f of ["docs/public/favicon.svg", "docs-holding/favicon.svg"]) files.set(f, axIconSvg() + "\n")
 
+// PNGs are compared by header and pixels, not bytes: zlib builds differ
+// between Node versions and compress the same pixels differently.
+function same(a: Buffer, b: Buffer): boolean {
+  if (a.equals(b)) return true
+  const pa = pngPixels(a)
+  const pb = pngPixels(b)
+  return !!pa && !!pb && pa.equals(pb)
+}
+
+function pngPixels(png: Buffer): Buffer | null {
+  if (png.subarray(1, 4).toString() !== "PNG") return null
+  const parts: Buffer[] = []
+  let ihdr: Buffer | null = null
+  for (let o = 8; o + 8 <= png.length; ) {
+    const len = png.readUInt32BE(o)
+    const type = png.subarray(o + 4, o + 8).toString("ascii")
+    const data = png.subarray(o + 8, o + 8 + len)
+    if (type === "IHDR") ihdr = data
+    if (type === "IDAT") parts.push(data)
+    o += 12 + len
+  }
+  try {
+    return ihdr ? Buffer.concat([ihdr, inflateSync(Buffer.concat(parts))]) : null
+  } catch {
+    return null // not a PNG we can read: treat as different
+  }
+}
+
 const check = process.argv.includes("--check")
 const stale: string[] = []
 for (const [rel, body] of files) {
   const path = join(ROOT, rel)
   let current: Buffer | null = null
   try { current = readFileSync(path) } catch { /* new file */ }
-  if (current && current.equals(Buffer.from(body))) continue
+  if (current && same(current, Buffer.from(body))) continue
   stale.push(rel)
   if (!check) {
     mkdirSync(dirname(path), { recursive: true })
