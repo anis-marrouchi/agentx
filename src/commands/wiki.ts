@@ -5,6 +5,7 @@ import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
+import { recordAbsorbed } from "@/wiki/absorb-ledger"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
@@ -54,9 +55,10 @@ wiki
     console.log()
 
     for (const agent of agents) {
-      const status = agent.unabsorbed > 0
+      const status = (agent.unabsorbed > 0
         ? chalk.yellow(`${agent.unabsorbed} unabsorbed`)
-        : chalk.green("up to date")
+        : chalk.green("up to date"))
+        + (agent.skipped ? chalk.dim(`  ${agent.skipped} skipped`) : "")
 
       console.log(`  ${chalk.cyan(agent.agentId)}`)
       console.log(`    Entries: ${agent.totalEntries}  Articles: ${agent.totalArticles}  ${status}`)
@@ -138,6 +140,7 @@ wiki
   .option("--no-facts", "skip the system-of-record lookups")
   .option("--max <n>", "max entries per agent", "10")
   .option("--since <date>", "only entries dated on or after YYYY-MM-DD")
+  .option("--reprocess", "also re-read entries a past run read and did not cite")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
@@ -216,7 +219,7 @@ wiki
       // never carry graphPath, zeroing 0.6 of their retrieval score.
       const sinceDate = typeof opts.since === "string" ? opts.since.trim() : ""
       const unabsorbed = hub
-        .getUnabsorbedEntries(agentId)
+        .getUnabsorbedEntries(agentId, { includeProcessed: !!opts.reprocess })
         .filter((e) => !sinceDate || (e.date ?? "") >= sinceDate)
         .slice(0, maxEntries)
 
@@ -441,6 +444,14 @@ wiki
         }
 
         agentWiki.rebuildIndex()
+
+        // The run finished: every entry it read leaves the queue, cited or
+        // not (#761). The early `continue`s above and the catch below skip
+        // this, so a failed run is retried on the same entries.
+        const cited = new Set(articles.flatMap((a) => a.sources || []))
+        const recorded = recordAbsorbed(wikiDir(opts.dir), agentId, mode, unabsorbed.map((e) => e.id), cited)
+        const skippedCount = recorded.filter((r) => r.outcome === "skipped").length
+        if (skippedCount > 0) console.log(chalk.dim(`    ${skippedCount} entries read and not cited — marked skipped`))
       } catch (e: any) {
         console.log(chalk.red(`    Absorb failed: ${e.message?.slice(0, 200)}`))
         if (e.stderr) console.log(chalk.dim(String(e.stderr).slice(0, 300)))

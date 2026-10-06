@@ -1073,7 +1073,7 @@ Turn a draft JSON file ({category, title, fields}) into a pre-filled issue form 
 
 ### `agentx wiki status`
 
-Show wiki status per agent.
+Show wiki status per agent. **Unabsorbed** counts raw entries (saved conversation snippets) that `wiki absorb` has not read yet. **Skipped** counts entries absorb read but did not turn into an article, such as small talk or duplicates.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1103,6 +1103,13 @@ Compile unabsorbed entries into typed per-agent wiki articles.
 | `--no-facts` | — | Skip the system-of-record lookups. |
 | `--max <n>` | `10` | Max entries per agent. |
 | `--since <date>` | — | Only entries dated on or after YYYY-MM-DD. |
+| `--reprocess` | — | Also re-read entries a past run read and did not cite. |
+
+Each run reads the oldest entries absorb has not read yet. When a run finishes, every entry it read leaves the queue, whether an article cites it or not. AgentX records them in `.absorb-processed.jsonl` in the wiki directory. If a run fails partway, nothing is recorded, so the next run reads the same entries again. To read skipped entries again, pass `--reprocess` or delete that file.
+
+**Check it worked:** run `agentx wiki status` before and after an absorb. The **unabsorbed** count drops by the number of entries read, and running absorb again picks up newer entries.
+
+**If something is wrong:** if the same entries come back every run, check the absorb output for `Absorb failed`, `No JSON found` or `JSON parse error`. Those runs record nothing on purpose.
 
 ### `agentx wiki promote`
 

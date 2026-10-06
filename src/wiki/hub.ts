@@ -2,6 +2,7 @@ import { WikiStore } from "./store"
 import { resolve } from "path"
 import { existsSync, readdirSync, mkdirSync } from "fs"
 import type { WikiEntry } from "./types"
+import { readAbsorbLedger } from "./absorb-ledger"
 
 export type WikiMode = "flat" | "graph" | "unified"
 
@@ -84,19 +85,47 @@ export class WikiHub {
     return this.sharedStore.listEntries({ agentId })
   }
 
-  getUnabsorbedEntries(agentId: string): WikiEntry[] {
+  /**
+   * Entries absorb has not read yet: not cited by any article, and not in
+   * the absorb ledger (#761). `includeProcessed` ignores the ledger, so
+   * entries a past run read and skipped come back (`absorb --reprocess`).
+   */
+  getUnabsorbedEntries(agentId: string, opts: { includeProcessed?: boolean } = {}): WikiEntry[] {
+    const { unabsorbed } = this.classifyEntries(agentId, opts)
+    return unabsorbed
+  }
+
+  /** Entries a finished absorb run read and no article cites. */
+  getSkippedEntries(agentId: string): WikiEntry[] {
+    return this.classifyEntries(agentId).skipped
+  }
+
+  private classifyEntries(
+    agentId: string,
+    opts: { includeProcessed?: boolean } = {},
+  ): { unabsorbed: WikiEntry[]; skipped: WikiEntry[] } {
     const agentWiki = this.getAgentWiki(agentId)
     const agentEntries = this.getAgentEntries(agentId)
 
-    const absorbedIds = new Set<string>()
+    const citedIds = new Set<string>()
     const index = agentWiki.rebuildIndex()
     for (const article of index.articles) {
       if (article.sources) {
-        for (const s of article.sources) absorbedIds.add(s)
+        for (const s of article.sources) citedIds.add(s)
       }
     }
+    const processed = opts.includeProcessed
+      ? new Map<string, unknown>()
+      : readAbsorbLedger(this.baseDir, agentId, this.mode)
 
-    return agentEntries.filter(e => !absorbedIds.has(e.id))
+    const unabsorbed: WikiEntry[] = []
+    const skipped: WikiEntry[] = []
+    for (const e of agentEntries) {
+      if (citedIds.has(e.id)) continue
+      if (processed.has(e.id)) skipped.push(e)
+      else unabsorbed.push(e)
+    }
+    return { unabsorbed, skipped }
   }
 
   summary(): AgentWikiSummary[] {
@@ -105,13 +134,14 @@ export class WikiHub {
       const entries = this.getAgentEntries(agentId)
       const wiki = this.getAgentWiki(agentId)
       const index = wiki.rebuildIndex()
-      const unabsorbed = this.getUnabsorbedEntries(agentId)
+      const { unabsorbed, skipped } = this.classifyEntries(agentId)
 
       return {
         agentId,
         totalEntries: entries.length,
         totalArticles: index.articles.length,
         unabsorbed: unabsorbed.length,
+        skipped: skipped.length,
         articles: index.articles,
       }
     })
@@ -123,5 +153,7 @@ export interface AgentWikiSummary {
   totalEntries: number
   totalArticles: number
   unabsorbed: number
+  /** Read by absorb, cited by nothing. Optional: older peers omit it. */
+  skipped?: number
   articles: Array<{ title: string; path: string; tags?: string[] }>
 }

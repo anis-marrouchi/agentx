@@ -1136,6 +1136,7 @@ export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage,
               ...remote,
               totalEntries: Math.max(local.totalEntries, remote.totalEntries),
               unabsorbed: Math.max(local.unabsorbed, remote.unabsorbed),
+              skipped: Math.max(local.skipped ?? 0, remote.skipped ?? 0),
             })
           } else {
             allAgents.push(local)
