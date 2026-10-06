@@ -4,7 +4,7 @@ The [phone app](./mobile-app.md) can show what your phone's camera sees to anoth
 
 The camera opens only when you tap **Start camera** or **Show**, and a red bar with a **Stop** button stays on screen the whole time it is live. The app never uses the camera in the background: leaving the app stops the share.
 
-When you show the camera to another computer, the picture goes straight from the phone to that computer and isn't saved. When you show it to an agent, the agent doesn't get a video: it gets one picture each time you ask it something (or when it asks for one), and the pictures are deleted when the share ends unless you turn `keepFrames` on. Each picture goes to the agent's model provider, an online service, to be read (see [Your data](../your-data.md)). If you ask nothing, the agent gets no pictures at all.
+When you show the camera to another computer, the picture goes straight from the phone to that computer and isn't saved. If relay servers are set (`channels.webrtc.turnServers`), it can pass through them when the two can't connect directly. When you show it to an agent, the agent doesn't get a video: it gets one picture each time you ask it something (or when it asks for one), and the pictures are deleted when the share ends unless you turn `keepFrames` on. Each picture goes to the agent's model provider, an online service, to be read (see [Your data](../your-data.md)). If you ask nothing, the agent gets no pictures at all.
 
 With an agent, you ask by voice: hold **Talk**, say your question, let go. The agent's answer shows on the sheet and is read aloud, in one or two short sentences. The microphone is on only while you talk, and your voice is never part of the camera share.
 

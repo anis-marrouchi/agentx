@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 820" width="920" height="820" role="img" aria-labelledby="t d" style="--cycle:4.2s">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 908" width="920" height="908" role="img" aria-labelledby="t d" style="--cycle:4.2s">
 <title id="t">What leaves your machine</title>
-<desc id="d">Three steps, then three optional features. Every time an agent works: you send a message, AgentX on your machine adds the agent's instructions and the files it needs, and the model provider reads all of it and writes the reply. Only for features you turn on: your voice goes to ElevenLabs when a key is set, screen and camera pictures go to the model or a vision service, and phone notifications pass through your phone browser's push service. The demo is the exception: its replies are scripted and nothing leaves the computer.</desc>
+<desc id="d">Three steps, then three optional features. Every time an agent works: you send a message, AgentX on your machine adds the agent's instructions and the files it needs, and the model provider reads all of it and writes the reply. After most tasks, AgentX also sends the message, the reply and the last steps to Anthropic's Claude for a review, whatever provider the agent uses, when Claude Code is installed and signed in. Only for features you turn on: your voice goes to ElevenLabs when a key is set, screen and camera pictures go to the model or a vision service, and phone notifications pass through your phone browser's push service, or ntfy when it is on. The demo is the exception: its replies are scripted and nothing leaves the computer.</desc>
 <defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
 <style>
 text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
@@ -33,7 +33,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 @keyframes blink { 50% { opacity: .25; } }
 @media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
 </style>
-<rect width="920" height="820" rx="24" fill="#FFFFFF"/>
+<rect width="920" height="908" rx="24" fill="#FFFFFF"/>
 <text x="44" y="56" class="h1" text-anchor="start">What leaves your machine</text>
 <text x="44" y="82" class="sub" text-anchor="start">AgentX runs on your machine. The model that writes the replies does not.</text>
 <circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You</text>
@@ -97,13 +97,14 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="638" cy="392" r="15" fill="#0B0D12"/>
 <text x="638" y="397" class="num" text-anchor="middle">6</text>
 <text x="628" y="436" class="title" text-anchor="start">Phone notifications</text>
-<text x="628" y="458" class="note" text-anchor="start">through your phone</text>
-<text x="628" y="475" class="note" text-anchor="start">browser's push service</text>
+<text x="628" y="458" class="note" text-anchor="start">your browser's push service,</text>
+<text x="628" y="475" class="note" text-anchor="start">or ntfy if you turn it on</text>
 </g>
-<g class="rise" style="animation-delay:2.32s"><rect x="44" y="536" width="528" height="68" rx="14" class="card"/><rect x="44" y="536" width="6" height="68" rx="3" fill="#0F766E"/><text x="66" y="565" class="title" text-anchor="start">The demo sends nothing out</text><text x="66" y="587" class="note" text-anchor="start">Its replies are scripted: no model account, no provider.</text></g>
-<g class="rise" style="animation-delay:3.12s"><text x="44" y="660" class="band warn" text-anchor="start">TO KEEP SOMETHING ON YOUR MACHINE</text></g>
-<g class="rise" style="animation-delay:3.32s"><circle cx="49" cy="686.5" r="4" fill="#B45309"/><text x="62" y="692" class="symptom" text-anchor="start">Secrets and private files</text><text x="62" y="712" class="note" text-anchor="start">Keep them out of the agent's workspace.</text></g>
-<g class="rise" style="animation-delay:3.57s"><circle cx="465" cy="686.5" r="4" fill="#B45309"/><text x="478" y="692" class="symptom" text-anchor="start">Your voice</text><text x="478" y="712" class="note" text-anchor="start">Set voice.stt to local.</text></g>
-<g class="rise" style="animation-delay:3.82s"><circle cx="49" cy="738.5" r="4" fill="#B45309"/><text x="62" y="744" class="symptom" text-anchor="start">Pictures</text><text x="62" y="764" class="note" text-anchor="start">Don't share the screen or camera.</text></g>
-<g class="rise" style="animation-delay:4.07s"><circle cx="465" cy="738.5" r="4" fill="#B45309"/><text x="478" y="744" class="symptom" text-anchor="start">The whole conversation</text><text x="478" y="764" class="note" text-anchor="start">Use a model that runs on your machine.</text></g>
+<g class="rise" style="animation-delay:2.32s"><rect x="44" y="536" width="832" height="68" rx="14" class="card"/><rect x="44" y="536" width="6" height="68" rx="3" fill="#DC2626"/><text x="66" y="565" class="title" text-anchor="start">After most tasks, a review by Claude</text><text x="66" y="587" class="note" text-anchor="start">The message, the reply and the last steps go to Anthropic, whatever the provider, when Claude Code is signed in.</text></g>
+<g class="rise" style="animation-delay:2.72s"><rect x="44" y="624" width="528" height="68" rx="14" class="card"/><rect x="44" y="624" width="6" height="68" rx="3" fill="#0F766E"/><text x="66" y="653" class="title" text-anchor="start">The demo sends nothing out</text><text x="66" y="675" class="note" text-anchor="start">Its replies are scripted: no model account, no provider, no reviews.</text></g>
+<g class="rise" style="animation-delay:3.12s"><text x="44" y="748" class="band warn" text-anchor="start">TO KEEP SOMETHING ON YOUR MACHINE</text></g>
+<g class="rise" style="animation-delay:3.32s"><circle cx="49" cy="774.5" r="4" fill="#B45309"/><text x="62" y="780" class="symptom" text-anchor="start">Secrets and private files</text><text x="62" y="800" class="note" text-anchor="start">Keep them out of the agent's workspace.</text></g>
+<g class="rise" style="animation-delay:3.57s"><circle cx="465" cy="774.5" r="4" fill="#B45309"/><text x="478" y="780" class="symptom" text-anchor="start">Your voice</text><text x="478" y="800" class="note" text-anchor="start">Set voice.stt to local.</text></g>
+<g class="rise" style="animation-delay:3.82s"><circle cx="49" cy="826.5" r="4" fill="#B45309"/><text x="62" y="832" class="symptom" text-anchor="start">Pictures</text><text x="62" y="852" class="note" text-anchor="start">Don't share the screen or camera.</text></g>
+<g class="rise" style="animation-delay:4.07s"><circle cx="465" cy="826.5" r="4" fill="#B45309"/><text x="478" y="832" class="symptom" text-anchor="start">Between your machines</text><text x="478" y="852" class="note" text-anchor="start">Use private addresses, such as Tailscale.</text></g>
 </svg>
