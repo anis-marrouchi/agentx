@@ -23,5 +23,5 @@ DM your bot, then try:
 
 ## Grow it
 
-- Add WhatsApp for customer-facing intake ([watch a WhatsApp chat](../../docs/jobs/watch-whatsapp.md))
+- Let an agent answer customers on WhatsApp ([answer customers on WhatsApp](../../docs/jobs/answer-whatsapp.md)), or get summaries and drafts of chats you answer yourself ([watch a WhatsApp chat](../../docs/jobs/watch-whatsapp.md))
 - Give @ops a wiki so context compounds ([approve lessons for the shared wiki](../../docs/jobs/agent-memory.md#7-approve-the-lessons-proposed-for-the-shared-wiki))

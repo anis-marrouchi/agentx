@@ -11,6 +11,8 @@ For action items, AgentX sends you a notification. The agent can also open or up
 
 **Nothing is sent to the contact on its own.** A draft reply waits in **Approvals** until you approve it.
 
+**Want an agent that replies to customers by itself?** That is a different setup: see [Answer customers on WhatsApp](./answer-whatsapp.md). Use this page when you keep answering yourself and want summaries and drafts.
+
 AgentX gets the messages from [wacli](https://github.com/openclaw/wacli), a WhatsApp command-line tool that runs on the same machine. Chats you don't watch are dropped and never stored.
 
 Try it first with a test contact: a second phone of your own, or a colleague who agreed to help.
@@ -20,6 +22,14 @@ This page does not use the WhatsApp card under **Settings › Channels**. That c
 :::
 
 Each message the agent reads uses your model account. See [What this costs](../help/costs.md).
+
+> **Before you pair.** wacli joins your WhatsApp account as a linked device, like WhatsApp on a computer, so it sees every chat on that number.
+>
+> - Use a dedicated number, not your personal one.
+> - wacli is unofficial software. WhatsApp can restrict or ban a number it thinks is automated, so don't pair a number you cannot afford to lose.
+> - This is not the WhatsApp Business API, WhatsApp's official service for companies.
+>
+> Triage only reads the chats a watch rule names. The separate WhatsApp channel, which answers chats directly, is closed the same way: see [Before you pair WhatsApp](../reference/channels.md#before-you-pair-whatsapp).
 
 ## 1. Install and pair wacli
 
@@ -152,6 +162,7 @@ See every setting in [Settings: channels › WhatsApp triage](../reference/confi
 - **wacli prints `post webhook: 503`:** the daemon doesn't have the secret. Check `.env`, then run `agentx daemon restart`.
 - **wacli prints `post webhook: 404`:** triage is off. Run `agentx whatsapp triage on`.
 - **wacli refuses the URL as private:** add `--webhook-allow-private`.
+- **You wanted the agent to reply by itself:** see [Answer customers on WhatsApp](./answer-whatsapp.md).
 - **Nothing shows in the log:** no rule matches the chat. Run `wacli chats list` and compare the JID with `agentx whatsapp triage status`.
 - **The log says `agent gave no triage block`:** the agent didn't finish its answer the expected way. Check that the rule's agent exists and is running, then send the test message again. You get a notification for every batch it couldn't read.
 - **Approving says `wacli send failed`:** wacli is not running or not paired. Start it again (step 4, from the AgentX folder). If it needs to pair again, run `wacli auth`.
