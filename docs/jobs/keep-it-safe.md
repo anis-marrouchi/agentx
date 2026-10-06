@@ -40,7 +40,7 @@ To keep an agent from acting on something, don't rely on its instructions: leave
 
 Every decision card expires, after 3 days unless the agent asked for another time. When it expires, the agent is told that nobody answered and what it said it would do then: `discard` (drop it), `keep` (leave things as they are) or `pause` (stop that piece of work). The agent picks one of the three when it raises the card.
 
-**A card never says yes by itself.** Only you can approve. A card an agent raised asking for `approve` on expiry, or one saved by an older version of AgentX, is treated as `keep`.
+**A card never says yes by itself.** Only you can approve. A card an agent raised asking for `approve` on expiry, or one saved by an older version of AgentX, is treated as `keep`. That includes a card that already expired as `approve` before you upgraded: its agent is told `keep`. The card's file still records that `approve` was asked for, in the `if_silent_asked` field.
 
 ## Who gets which way in
 
