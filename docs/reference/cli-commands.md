@@ -1103,6 +1103,9 @@ Compile unabsorbed entries into typed per-agent wiki articles.
 | `--no-facts` | — | Skip the system-of-record lookups. |
 | `--max <n>` | `10` | Max entries per agent. |
 | `--since <date>` | — | Only entries dated on or after YYYY-MM-DD. |
+| `--reprocess` | — | Also re-read entries an earlier run processed but no article cites. |
+
+A run that finishes records every entry it read in `agents/<id>/<mode>/_absorb-processed.jsonl`, as `cited` or `skipped`, so the next run moves on to newer entries. A failed run records nothing. `agentx wiki status` counts skipped entries separately from unabsorbed ones.
 
 ### `agentx wiki promote`
 

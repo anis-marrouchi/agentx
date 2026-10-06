@@ -2,6 +2,7 @@ import { WikiStore } from "./store"
 import { resolve } from "path"
 import { existsSync, readdirSync, mkdirSync } from "fs"
 import type { WikiEntry } from "./types"
+import { ABSORB_LEDGER_FILE, appendAbsorbLedger, readAbsorbLedger, type AbsorbLedgerRecord, type AbsorbOutcome } from "./absorb-ledger"
 
 export type WikiMode = "flat" | "graph" | "unified"
 
@@ -84,34 +85,67 @@ export class WikiHub {
     return this.sharedStore.listEntries({ agentId })
   }
 
-  getUnabsorbedEntries(agentId: string): WikiEntry[] {
-    const agentWiki = this.getAgentWiki(agentId)
-    const agentEntries = this.getAgentEntries(agentId)
+  /**
+   * Entries absorb has not finished with: not cited by any article and,
+   * unless `reprocess`, not recorded in the processed-entry ledger (#761).
+   */
+  getUnabsorbedEntries(agentId: string, opts: { reprocess?: boolean } = {}): WikiEntry[] {
+    const { cited, ledger } = this.absorbState(agentId)
+    return this.getAgentEntries(agentId)
+      .filter(e => !cited.has(e.id) && (opts.reprocess || !ledger.has(e.id)))
+  }
 
-    const absorbedIds = new Set<string>()
-    const index = agentWiki.rebuildIndex()
+  /** Entries an absorb run read and no article cites. */
+  getSkippedEntries(agentId: string): WikiEntry[] {
+    const { cited, ledger } = this.absorbState(agentId)
+    return this.getAgentEntries(agentId)
+      .filter(e => !cited.has(e.id) && ledger.get(e.id) === "skipped")
+  }
+
+  /**
+   * Mark a batch processed once its absorb run has succeeded. Call it
+   * after the articles are written, never on a failed run, so a retry
+   * still sees the batch.
+   */
+  recordAbsorbed(agentId: string, entryIds: string[], citedIds: Set<string>): AbsorbLedgerRecord[] {
+    this.getAgentWiki(agentId)
+    return appendAbsorbLedger(this.ledgerPath(agentId), agentId, entryIds, citedIds)
+  }
+
+  private ledgerPath(agentId: string): string {
+    return resolve(this.agentsDir, agentId, this.mode, ABSORB_LEDGER_FILE)
+  }
+
+  private absorbState(agentId: string): { cited: Set<string>; ledger: Map<string, AbsorbOutcome> } {
+    const cited = new Set<string>()
+    const index = this.getAgentWiki(agentId).rebuildIndex()
     for (const article of index.articles) {
-      if (article.sources) {
-        for (const s of article.sources) absorbedIds.add(s)
-      }
+      for (const s of article.sources ?? []) cited.add(s)
     }
-
-    return agentEntries.filter(e => !absorbedIds.has(e.id))
+    return { cited, ledger: readAbsorbLedger(this.ledgerPath(agentId)) }
   }
 
   summary(): AgentWikiSummary[] {
     const agents = this.listAgents()
     return agents.map(agentId => {
       const entries = this.getAgentEntries(agentId)
-      const wiki = this.getAgentWiki(agentId)
-      const index = wiki.rebuildIndex()
-      const unabsorbed = this.getUnabsorbedEntries(agentId)
+      const index = this.getAgentWiki(agentId).rebuildIndex()
+      const { cited, ledger } = this.absorbState(agentId)
+      let unabsorbed = 0
+      let skipped = 0
+      for (const e of entries) {
+        if (cited.has(e.id)) continue
+        const outcome = ledger.get(e.id)
+        if (!outcome) unabsorbed++
+        else if (outcome === "skipped") skipped++
+      }
 
       return {
         agentId,
         totalEntries: entries.length,
         totalArticles: index.articles.length,
-        unabsorbed: unabsorbed.length,
+        unabsorbed,
+        skipped,
         articles: index.articles,
       }
     })
@@ -123,5 +157,7 @@ export interface AgentWikiSummary {
   totalEntries: number
   totalArticles: number
   unabsorbed: number
+  /** Read by absorb, cited by no article. Optional: remote peers may predate it. */
+  skipped?: number
   articles: Array<{ title: string; path: string; tags?: string[] }>
 }

@@ -57,9 +57,10 @@ wiki
       const status = agent.unabsorbed > 0
         ? chalk.yellow(`${agent.unabsorbed} unabsorbed`)
         : chalk.green("up to date")
+      const skipped = agent.skipped ? chalk.dim(`  ${agent.skipped} skipped`) : ""
 
       console.log(`  ${chalk.cyan(agent.agentId)}`)
-      console.log(`    Entries: ${agent.totalEntries}  Articles: ${agent.totalArticles}  ${status}`)
+      console.log(`    Entries: ${agent.totalEntries}  Articles: ${agent.totalArticles}  ${status}${skipped}`)
 
       if (agent.articles.length > 0) {
         for (const a of agent.articles.slice(0, 3)) {
@@ -138,6 +139,7 @@ wiki
   .option("--no-facts", "skip the system-of-record lookups")
   .option("--max <n>", "max entries per agent", "10")
   .option("--since <date>", "only entries dated on or after YYYY-MM-DD")
+  .option("--reprocess", "also re-read entries an earlier run processed but no article cites")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
@@ -216,7 +218,7 @@ wiki
       // never carry graphPath, zeroing 0.6 of their retrieval score.
       const sinceDate = typeof opts.since === "string" ? opts.since.trim() : ""
       const unabsorbed = hub
-        .getUnabsorbedEntries(agentId)
+        .getUnabsorbedEntries(agentId, { reprocess: opts.reprocess === true })
         .filter((e) => !sinceDate || (e.date ?? "") >= sinceDate)
         .slice(0, maxEntries)
 
@@ -441,6 +443,14 @@ wiki
         }
 
         agentWiki.rebuildIndex()
+
+        // The run succeeded, so the whole batch leaves the queue, cited
+        // or not (#761). The failure paths above `continue` or throw
+        // before this line and mark nothing.
+        const cited = new Set(articles.flatMap((a) => a.sources || []))
+        const marked = hub.recordAbsorbed(agentId, unabsorbed.map((e) => e.id), cited)
+        const skippedCount = marked.filter((r) => r.outcome === "skipped").length
+        console.log(chalk.dim(`    Processed ${marked.length}: ${marked.length - skippedCount} cited, ${skippedCount} skipped`))
       } catch (e: any) {
         console.log(chalk.red(`    Absorb failed: ${e.message?.slice(0, 200)}`))
         if (e.stderr) console.log(chalk.dim(String(e.stderr).slice(0, 300)))
