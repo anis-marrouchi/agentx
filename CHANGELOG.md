@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.118.1](https://github.com/anis-marrouchi/agentx/compare/v0.118.0...v0.118.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **members:** screen reader fixes from a headless accessibility pass ([#443](https://github.com/anis-marrouchi/agentx/issues/443)) ([#770](https://github.com/anis-marrouchi/agentx/issues/770)) ([cb099d3](https://github.com/anis-marrouchi/agentx/commit/cb099d3f788229216e205bf4c7b22f029cd070a7))
+
 ## [0.118.0](https://github.com/anis-marrouchi/agentx/compare/v0.117.0...v0.118.0) (2026-10-06)
 
 
