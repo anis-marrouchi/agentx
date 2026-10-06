@@ -1678,6 +1678,17 @@ export async function startMcpServer(): Promise<void> {
   })
 }
 
+/** The tools `tools/list` returns. A lean session names a short list in
+ *  AGENTX_MCP_TOOLS (#699; see src/agents/session-profile.ts) so its first
+ *  turn carries fewer descriptions. Unset, or naming no known tool: every
+ *  tool. Calls are not filtered; the list only decides what is described. */
+export function listedTools(env: NodeJS.ProcessEnv = process.env): typeof TOOLS {
+  const wanted = new Set((env.AGENTX_MCP_TOOLS ?? "").split(",").map((t) => t.trim()).filter(Boolean))
+  if (!wanted.size) return TOOLS
+  const kept = TOOLS.filter((t) => wanted.has(t.name))
+  return kept.length ? kept : TOOLS
+}
+
 function send(message: JsonRpcResponse | JsonRpcNotification): void {
   // MCP stdio: newline-delimited JSON. Modern MCP clients (Claude Code,
   // Cursor, Windsurf) all expect this. Content-Length framing is LSP-era
@@ -1717,7 +1728,7 @@ async function handleMessage(
       send({
         jsonrpc: "2.0",
         id,
-        result: { tools: TOOLS },
+        result: { tools: listedTools() },
       })
       break
     }
