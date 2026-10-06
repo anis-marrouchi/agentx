@@ -75,7 +75,7 @@ schedule
   .option("--do <prompt>", "prompt to run at each tick (required unless --id exists)")
   .option("--id <name>", "explicit cron id (default: auto-slug of <when>-<agent>)")
   .option("--notify <target>", '"me" (use notifications.destination) or "channel:chatId[:accountId]"')
-  .option("--deliver", "also send each successful run's answer to --notify (default: failures only)")
+  .option("--no-deliver", "send only failures to --notify, not each run's answer")
   .option("--on-error <modes>", 'comma list of "log|notify|disable" (default: log; notify implies "notify")')
   .option("--timezone <tz>", `IANA timezone (default: ${DEFAULT_SCHEDULE_TIMEZONE})`, DEFAULT_SCHEDULE_TIMEZONE)
   .option("--timeout <seconds>", "max run time", "600")
@@ -127,7 +127,7 @@ schedule
       timeout: parseInt(opts.timeout, 10),
       model: opts.model,
       notify,
-      deliverResult: !!opts.deliver,
+      deliverResult: opts.deliver,
       onError: parseOnError(opts.onError),
       enabled: !opts.disabled,
     })
@@ -147,8 +147,7 @@ schedule
     console.log(chalk.green(`  ✓ ${verb} cron ${chalk.cyan(id)}`))
     console.log(chalk.dim(`    Schedule: ${parsed.cron}  (${parsed.human}, ${opts.timezone})`))
     console.log(chalk.dim(`    Agent: ${opts.agent}`))
-    if (notify) console.log(chalk.dim(`    Notify: ${notify.channel} ${notify.chatId}${job.deliverResult ? " (results and failures)" : " (failures only)"}`))
-    if (opts.deliver && !notify) console.log(chalk.yellow("    --deliver has no effect without --notify; results stay in the run log."))
+    if (notify) console.log(chalk.dim(`    Notify: ${notify.channel} ${notify.chatId}${job.deliverResult === false ? " (failures only)" : " (results and failures)"}`))
     if (onErrorModes.length) console.log(chalk.dim(`    On error: ${onErrorModes.join(", ")}`))
     if (!opts.dryRun && result.reloaded) console.log(chalk.dim("    Daemon hot-reloaded."))
   })
@@ -178,7 +177,7 @@ schedule
       console.log(`  ${tag} ${chalk.cyan(id.padEnd(32))} ${chalk.dim(def.schedule.padEnd(14))} ${chalk.dim("→")} ${def.agent}`)
       console.log(chalk.dim(`      ${human} (${def.timezone || "UTC"})`))
       if (def.notify) {
-        console.log(chalk.dim(`      notify: ${def.notify.channel} ${def.notify.chatId}${def.deliverResult ? " (results and failures)" : " (failures only)"}`))
+        console.log(chalk.dim(`      notify: ${def.notify.channel} ${def.notify.chatId}${def.deliverResult === false ? " (failures only)" : " (results and failures)"}`))
       }
       if (def.createdBy) console.log(chalk.dim(`      created by agent: ${def.createdBy}`))
       if (def.approval) {

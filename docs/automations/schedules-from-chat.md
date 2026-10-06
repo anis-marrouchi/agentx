@@ -22,7 +22,7 @@ agentx schedule parse "weekdays at 6pm"
 
 By default, the job runs as the agent you asked, and after each run its answer is posted back to the chat you asked from. If a run fails, a short failure message goes to the same chat. You can ask for another agent, a time zone, somewhere else to send results, or no chat at all ("don't send me the results"). Without a chat, the results stay in the run history in the dashboard.
 
-In `agentx.json`, this shows up on the job as a `notify` destination with `"deliverResult": true`. See [Configuration: automation](../reference/config-automation.md#crons).
+In `agentx.json`, this shows up on the job as its `notify` destination. See [Configuration: automation](../reference/config-automation.md#crons).
 
 ## 2. Approve or reject it
 
@@ -76,7 +76,7 @@ If an agent withdraws its own request before you approve it, the request is simp
 - **The agent can't pause a job:** it didn't make that job. Make the change yourself, or give the agent `"admin": true`.
 - **The job ran but no answer arrived in the chat:**
   1. **Terminal:** run `agentx schedule list`. The job's `notify:` line should name the chat and say `(results and failures)`.
-  2. If it says `(failures only)`, open `agentx.json` and add `"deliverResult": true` to the job.
-  3. If there is no `notify:` line, the request was made from a place that isn't a chat (for example another schedule). Add a `notify` destination and `"deliverResult": true` to the job, as in [Send a daily report](../jobs/daily-report.md#deliver-the-report-to-a-chat).
+  2. If it says `(failures only)`, open `agentx.json` and remove `"deliverResult": false` from the job.
+  3. If there is no `notify:` line, the request was made from a place that isn't a chat (for example another schedule). Add a `notify` destination to the job, as in [Send a daily report](../jobs/daily-report.md#deliver-the-report-to-a-chat).
   4. A run that ends with an empty answer sends nothing. Check the run in the dashboard's **Operations** tab.
 - **The timing is wrong:** check the phrase with `agentx schedule parse "<phrase>"`, then ask the agent to change it.

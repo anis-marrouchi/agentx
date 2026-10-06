@@ -23,7 +23,8 @@ export interface CronJobState {
   /** Routine autonomy level; unset = act (full agent permissions). */
   autonomy?: AutonomyLevel
   onError: Array<"log" | "notify" | "disable">
-  /** Send each successful run's answer to the job's `notify` target. */
+  /** Send each successful run's answer to the job's `notify` target.
+   *  True whenever the job has `notify`, unless `deliverResult: false`. */
   deliverResult?: boolean
   lastRun?: Date
   nextRun?: Date

@@ -16,7 +16,7 @@ DM your bot, then try:
 
 - `what's on my plate this week?`
 - `@books draft an invoice for ACME, 3 days of consulting`
-- The Monday 9:00 cron posts the weekly report to your chat (`TG_CHAT_ID`) without being asked. That's the `notify` destination with `"deliverResult": true` in `agentx.json`; without it, the report only lands in the run history.
+- The Monday 9:00 cron posts the weekly report to your chat (`TG_CHAT_ID`) without being asked. That's its `notify` destination in `agentx.json`; without one, the report only lands in the run history.
 
 ## Grow it
 

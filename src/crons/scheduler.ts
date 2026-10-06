@@ -165,7 +165,7 @@ export function cronRunId(jobId: string, startedAt: Date): string {
 export type CronNotifyCallback = (jobId: string, agent: string, error: string, consecutiveErrors: number) => Promise<void>
 
 /** Result callback — injected by daemon to send a successful run's answer
- *  to the job's `notify` target. Only called for jobs with `deliverResult`. */
+ *  to the job's `notify` target. Not called when `deliverResult` is false. */
 export type CronDeliverCallback = (jobId: string, agent: string, text: string) => Promise<void>
 
 export class CronScheduler {
@@ -211,7 +211,7 @@ export class CronScheduler {
         maxOutputTokens: def.maxOutputTokens,
         autonomy: def.autonomy,
         onError: def.onError,
-        deliverResult: def.deliverResult === true && Boolean(def.notify),
+        deliverResult: def.deliverResult !== false && Boolean(def.notify),
         consecutiveErrors: 0,
         totalRuns: 0,
         totalFailures: 0,
@@ -259,7 +259,7 @@ export class CronScheduler {
 
   /**
    * Set the callback that sends a successful run's answer to the job's
-   * `notify` target. Called only for jobs with `deliverResult`.
+   * `notify` target. Not called for jobs with `deliverResult: false`.
    */
   setDeliverCallback(cb: CronDeliverCallback): void {
     this.deliverCallback = cb

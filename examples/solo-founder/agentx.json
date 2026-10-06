@@ -49,8 +49,7 @@
       "prompt": "Compile the weekly status: open tasks, stalled follow-ups, and invoices due this week (ask @books). Your answer is posted to my Telegram as-is.",
       "timeout": 600,
       "onError": "notify",
-      "notify": { "channel": "telegram", "chatId": "${TG_CHAT_ID}" },
-      "deliverResult": true
+      "notify": { "channel": "telegram", "chatId": "${TG_CHAT_ID}" }
     },
     "invoice-chase": {
       "enabled": true,
@@ -60,8 +59,7 @@
       "prompt": "List overdue invoices and draft reminder messages for each. Your answer is posted to my Telegram for approval — do not send the reminders yourself.",
       "timeout": 600,
       "onError": "notify",
-      "notify": { "channel": "telegram", "chatId": "${TG_CHAT_ID}" },
-      "deliverResult": true
+      "notify": { "channel": "telegram", "chatId": "${TG_CHAT_ID}" }
     }
   }
 }

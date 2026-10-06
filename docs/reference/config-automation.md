@@ -21,11 +21,11 @@ Scheduled jobs (also called routines), keyed by job id: `crons.<id>`. Each job e
 | `maxOutputTokens` | number (50–8000) | — | Asks the agent to keep its answer under about this many tokens. A soft cap added to the prompt. |
 | `autonomy` | `"report"` \| `"propose"` \| `"act"` | — (acts as `act`) | How much the run may do. See [routine autonomy](./config.md#routine-autonomy). Not allowed on command jobs. |
 | `onError` | `"log"` \| `"notify"` \| `"disable"`, or a list of them | `"log"` | What happens when a run fails: log it, send a message, or turn the job off after 3 failures in a row. From the second failure in a row a message is sent anyway. |
-| `notify` | object | — | Where this job's messages go. On its own, only failure messages are sent there. |
+| `notify` | object | — | Where this job's messages go: the answer from each successful run, and failure messages. |
 | `notify.channel` | string | required | Channel for the job's messages, for example `telegram`. |
 | `notify.chatId` | string | required | The chat on that channel. |
 | `notify.accountId` | string | — | Which account on that channel, when you have more than one. |
-| `deliverResult` | boolean | `false` | Also sends the answer of every successful run to `notify`. Has no effect without `notify`. Schedules an agent creates from a chat turn this on. |
+| `deliverResult` | boolean | `true` | Sends the answer from each successful run to `notify`. Set `false` to send only failure messages there. Has no effect without `notify`. |
 | `fireToken` | string | — | Secret that lets another system start the job now. See [fire a routine](/jobs/fire-a-routine). |
 | `createdBy` | string | — | The agent that created the job from chat. Set by AgentX; an agent may only manage jobs it created, unless it is an admin. |
 | `approval` | object | — | A change an agent asked for that waits for you. Set by AgentX; cleared by `agentx schedule approve` or `agentx schedule reject`. |
@@ -41,8 +41,7 @@ Scheduled jobs (also called routines), keyed by job id: `crons.<id>`. Each job e
     "agent": "writer",
     "prompt": "Summarise last week's merged changes",
     "onError": ["notify", "disable"],
-    "notify": { "channel": "telegram", "chatId": "123456789" },
-    "deliverResult": true
+    "notify": { "channel": "telegram", "chatId": "123456789" }
   }
 }
 ```
