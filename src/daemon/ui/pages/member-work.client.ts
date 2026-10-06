@@ -80,21 +80,26 @@ export const WORK_SCRIPT = `
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   // Each round rebuilds the lists. A list whose markup did not change is
   // left alone; one that did keeps the keyboard where it was: the same
-  // agent's button, else the link or button at the same place (#443).
-  function fill(list, html) {
+  // agent's button or the same link, else the link or button at the same
+  // place, else the list's heading when nothing in it can take focus. A
+  // heading whose section is now hidden hands over to "What you sent",
+  // which is always shown (#443).
+  function fill(list, html, head, box) {
     if (list.axHtml === html) return;
     list.axHtml = html;
-    var f = document.activeElement, at = -1, key = null, i;
+    var f = document.activeElement, at = -1, attr = null, key = null, i;
     if (f && list.contains && list.contains(f)) {
       var was = list.querySelectorAll('a, button');
       for (i = 0; i < was.length; i++) if (was[i] === f) at = i;
-      key = f.getAttribute('data-agent');
+      attr = f.getAttribute('data-agent') != null ? 'data-agent' : 'href';
+      key = f.getAttribute(attr);
     }
     list.innerHTML = html;
     if (at < 0) return;
     var now = list.querySelectorAll('a, button'), to = null;
-    for (i = 0; i < now.length && key; i++) if (now[i].getAttribute('data-agent') === key) to = now[i];
-    if (!to && !key && now.length) to = now[Math.min(at, now.length - 1)];
+    // Several rows can link the same thread: take the one nearest the old place.
+    for (i = 0; i < now.length && key != null; i++) if (now[i].getAttribute(attr) === key && (!to || Math.abs(i - at) < Math.abs(to.i - at))) to = { el: now[i], i: i };
+    to = to ? to.el : now.length ? now[Math.min(at, now.length - 1)] : box && box.hidden ? document.getElementById('h-sent') : document.getElementById(head);
     if (to) to.focus();
   }
   function showConn() {
@@ -105,7 +110,7 @@ export const WORK_SCRIPT = `
     if (stripText.textContent !== note.text) stripText.textContent = note.text;
     retry.hidden = !note.retry;
     // Agent states are now from the last load, not live.
-    if (last && !shownStale) { shownStale = true; fill(agentsList, (last.agents || []).map(function (a) { return agent(a, Date.now(), true); }).join('')); }
+    if (last && !shownStale) { shownStale = true; fill(agentsList, (last.agents || []).map(function (a) { return agent(a, Date.now(), true); }).join(''), 'h-agents', agentsBox); }
   }
   window.addEventListener('online', function () { failed = false; showConn(); load(); });
   window.addEventListener('offline', function () { failed = true; showConn(); });
@@ -196,14 +201,14 @@ export const WORK_SCRIPT = `
     var line = summaryLine(agents, w.runs.length + waiting.length);
     if (sum.textContent !== line) sum.textContent = line;
     agentsBox.hidden = !agents.length;
-    fill(agentsList, agents.map(function (a) { return agent(a, now, false); }).join(''));
+    fill(agentsList, agents.map(function (a) { return agent(a, now, false); }).join(''), 'h-agents', agentsBox);
     var asks = w.open.filter(function (r) { return r.state === 'waiting_owner' || r.state === 'needs_attention'; });
     need.hidden = !asks.length;
-    fill(document.getElementById('need-list'), asks.map(function (r) { return needRow(r, now); }).join(''));
+    fill(document.getElementById('need-list'), asks.map(function (r) { return needRow(r, now); }).join(''), 'h-need', need);
     fill(document.getElementById('sent'), waiting.map(function (r) { return queued(r, now); }).join('') +
       w.runs.map(function (r) { return sent(r, now); }).join('') +
       (w.other || []).map(function (r) { return request(r, now); }).join('') ||
-      '<li class="blank"><p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here as soon as the agent starts on it.</p><p>You see when it is running, when it is finished, and when the agent is free again.</p></li>');
+      '<li class="blank"><p>Ask an agent for something on WhatsApp, Telegram, GitLab or GitHub. It shows up here as soon as the agent starts on it.</p><p>You see when it is running, when it is finished, and when the agent is free again.</p></li>', 'h-sent');
   }
   function loadName() {
     if (named) return;
