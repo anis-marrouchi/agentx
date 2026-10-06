@@ -675,7 +675,11 @@ export class AgentRegistry {
       tierTwoThresholdTokens: config.session.tierTwoThresholdTokens,
       tierTwoThresholdTokensByChannel: config.session.tierTwoThresholdTokensByChannel,
     })
-    this.wikiHub = new WikiHub(undefined, undefined, "unified")
+    // graph/ is the canonical article folder: the CLI, the MCP wiki tool
+    // and `agentx wiki prune` all use it. Reading "unified" here gave fresh
+    // sessions an empty catalog and the mesh /wiki endpoints no articles
+    // (#603).
+    this.wikiHub = new WikiHub(undefined, undefined, "graph")
     this.memoryStore = new MemoryStore()
     this.patternStore = new PatternStore()
     this.rateLimiter = new RateLimiter()

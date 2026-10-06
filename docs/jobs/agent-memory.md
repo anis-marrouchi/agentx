@@ -280,4 +280,7 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 - **A command says the fact ledger is busy:** another `agentx` command is writing to it. Try again. If nothing else is running, delete the lock file named in the message.
 - **A command says the fact ledger is unreadable:** the file `.agentx/wiki/_facts.json` is damaged, so AgentX writes nothing to it rather than replace it. The same applies to `.agentx/wiki/_questions.json`. Fix the file, or move it aside to start an empty list; agents keep working without it.
 - **You want the old memory back after `flag-unsourced --apply`:** copy the file from `.agentx/memory/_backup/` over the agent's file in `.agentx/memory/`.
+- **Wiki articles saved before version 0.115 are missing from an agent's answers:** older versions of the background service (the daemon) kept some articles in a separate `unified` folder. The service now reads only the `graph` folder, which the `agentx wiki` commands use.
+  1. **Terminal:** run `agentx wiki prune` to list the articles that would move into `graph`.
+  2. **Terminal:** run `agentx wiki prune --commit` to move them.
 - **Memory changes are refused with `403`:** the request named a task from another agent. Each agent can only change its own memories.
