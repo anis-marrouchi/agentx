@@ -52,6 +52,9 @@ The typed `request-gate` decision evaluates whether a new request benefits from 
 | Computer perception and verification | `src/computer-use/` |
 | Native desktop app and helper | `apps/mac-voice/`, `apps/mac-helper/` |
 | Peer tasks and standalone A2A | `src/a2a/` |
+| The AX symbol behind every app icon | `src/brand/ax-symbol.ts` |
+
+Every AgentX icon is drawn from one source, the AX symbol in `src/brand/ax-symbol.ts`. The dashboard, the phone app and the member page draw theirs from it when asked. The Android, iPhone, Mac and Raycast icons are files written from it by `npx tsx scripts/gen-icons.ts`, and the test suite fails if one of them no longer matches. To change the mark, edit that source and rerun the script.
 
 Continue to [Jev](jev.md), [A2A](../reference/a2a.md), or the [terminal command reference](../reference/cli.md).
 
@@ -63,8 +66,10 @@ You can follow one request through the parts above:
 2. **Browser:** open **Live** while it runs; the agent shows as working.
 3. **Browser:** open **Activity** afterwards; the run is recorded with its channel and agent.
 4. **Browser:** open `/admin/health` and select **Routing** to see which agent the daemon chose for it.
+5. **Browser:** the dashboard's tab shows the AX symbol, and `/favicon.svg` opens it on its own.
 
 ## If something is wrong
 
 - **The dashboard loads but nothing runs:** the dashboard and the daemon are separate programs. Run `agentx daemon status`, then follow [It's not answering](../help/its-not-answering.md).
+- **An app shows an older icon:** run `npx tsx scripts/gen-icons.ts --check`. It names any icon file that no longer matches the source; run it without `--check` to rewrite them. Phones and browsers keep icons for a while, so reinstall the app or clear the page's site data to see the new one.
 - **Work meant for another machine never arrives:** check the pairing with `agentx mesh list` (each peer should show `healthy`). See [Add a second machine](../jobs/second-machine.md).

@@ -48,6 +48,7 @@ import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
+import { dashboardIcon } from "./app-icon"
 import { assetLinks, handleDashboardPlaces, placesDeps, type PlacesDeps } from "./app-places"
 import { daemonFireDeps } from "@/places/fire"
 import { renderPlacesPage } from "./ui/pages/places"
@@ -242,6 +243,15 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
   if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), assetLinks: () => assetLinks(ctx.config) })) return
+
+  // The AX symbol as favicon and touch icon. Public: browsers fetch icons
+  // without credentials, and they hold no data.
+  const icon = method === "GET" ? dashboardIcon(path) : null
+  if (icon) {
+    res.writeHead(200, { "Content-Type": icon.type, "Cache-Control": "public, max-age=86400" })
+    res.end(icon.body)
+    return
+  }
 
   // Count which dashboard pages operators actually open. Page paths only —
   // no query strings, no ids, and nothing under /api (those are XHR from a
