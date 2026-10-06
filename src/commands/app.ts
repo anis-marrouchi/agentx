@@ -29,7 +29,7 @@ appCmd
         throw new Error([
           `tailscale serve publishes the whole dashboard, not only the phone app: ${exposed.join(", ")}`,
           `  Anyone on your tailnet can open it without a key. Serve only the app paths instead:`,
-          `    tailscale serve reset   (removes every served path; add the /member lines back if you use them)`,
+          `    tailscale serve reset   (removes every served path; add the /member and /.well-known/assetlinks.json lines back if you use them)`,
           `    tailscale serve --bg --set-path /app http://127.0.0.1:${dashboardPort()}/app`,
           `    tailscale serve --bg --set-path /api/app http://127.0.0.1:${dashboardPort()}/api/app`,
         ].join("\n"))
@@ -143,6 +143,11 @@ export function tailscaleOrigin(): string {
  *  machine's own key on every request. Everything else stays off the tailnet. */
 const APP_MOUNTS = new Set(["/app", "/api/app", "/member", "/api/member"])
 
+/** Public by design (the Android app's signing statement, no data), and the
+ *  Android guide serves it. Allowed only when it proxies to that same path,
+ *  so the mount can't hand out another dashboard page under this name. */
+const ASSET_LINKS = "/.well-known/assetlinks.json"
+
 /**
  * Lists `tailscale serve` mounts (host + path) that proxy to the dashboard
  * port outside the app and member paths. `tailscale serve 4202` mounts "/", which
@@ -155,9 +160,10 @@ export function exposedDashboardMounts(status: any, port: number): string[] {
   for (const cfg of configs) {
     for (const [host, web] of Object.entries<any>(cfg?.Web ?? {})) {
       for (const [mount, h] of Object.entries<any>(web?.Handlers ?? {})) {
-        const target = String(h?.Proxy ?? "").match(/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)/)
+        const target = String(h?.Proxy ?? "").match(/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)([^?#]*)/)
         const clean = mount.replace(/\/+$/, "") || "/"
-        if (target && Number(target[1]) === port && !APP_MOUNTS.has(clean)) found.push(`${host}${mount}`)
+        const assetLinks = clean === ASSET_LINKS && target?.[2] === ASSET_LINKS
+        if (target && Number(target[1]) === port && !APP_MOUNTS.has(clean) && !assetLinks) found.push(`${host}${mount}`)
       }
     }
   }
