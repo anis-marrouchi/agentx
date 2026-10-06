@@ -91,6 +91,25 @@ export class PushStore {
     }))
   }
 
+  /** Removes the subscriptions of phones paired with relaying node
+   *  `origin` whose token id isn't in `active` (revoked, expired or
+   *  removed there). Returns how many rows went. */
+  pruneOrigin(origin: string, active: Iterable<string>): number {
+    const keep = new Set([...active].map((id) => `${origin}:${id}`))
+    let removed = 0
+    for (const s of this.list()) {
+      if (s.deviceId.startsWith(`${origin}:`) && !keep.has(s.deviceId)) {
+        if (this.unsubscribe(s.endpoint)) removed++
+      }
+    }
+    return removed
+  }
+
+  /** Removes every subscription of one device id. Returns how many went. */
+  forgetDevice(deviceId: string): number {
+    return this.db.prepare("DELETE FROM push_subscriptions WHERE device_id = ?").run(deviceId).changes
+  }
+
   /** Records a sent push and keeps only the newest `keep` rows. */
   log(entry: Omit<PushLogRow, "id" | "at">, keep: number, now = Date.now()): void {
     this.db.prepare("INSERT INTO push_log (at, title, body, url, delivered, device_id) VALUES (?, ?, ?, ?, ?, ?)")

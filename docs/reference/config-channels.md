@@ -196,12 +196,12 @@ Sends notifications to the AgentX [phone app](../dashboard/mobile-alerts.md). It
 | `channels.push.enabled` | boolean | `false` | Turns phone app notifications on. |
 | `channels.push.subject` | string | — | Contact the push services can reach you at: `mailto:you@example.com` or an `https://` address. Required on the computer that hosts the phone app. |
 | `channels.push.keysFile` | string | `".agentx/push-keys.json"` | Where `agentx app push-keys` saves the key pair, relative to the folder AgentX runs in (the one that holds `agentx.json`). |
-| `channels.push.relayTo` | string | — | Mesh peer that hosts the phone app. Set it on every other computer; leave it out on the host. |
+| `channels.push.relayTo` | string | — | Mesh peer that hosts the phone app. Set it on every other computer; leave it out on the host. A phone paired with a computer that sets it turns notifications on through that computer, and the host sends them. That needs a `token` of its own for the host in this computer's `mesh.peers`, with the same `token` for this computer in the host's: `MESH_TOKEN` alone is refused. |
 | `channels.push.ttlSeconds` | number | `86400` | How long the push service keeps trying a phone that is offline. |
 | `channels.push.keepRecent` | number | `50` | How many recent notifications the app's **Alerts** tab keeps. |
 | `channels.push.allowedHosts` | list of strings | `["fcm.googleapis.com", "push.services.mozilla.com", "push.apple.com", "notify.windows.com"]` | Push services a phone may turn notifications on with. Each entry also covers its subdomains. The defaults cover Chrome and Android, Firefox, Safari and iPhone, and Edge. AgentX refuses any other address, because it sends to whatever address the phone gives. |
 
-A message's chat ID picks the phones: `default` sends to every phone that turned notifications on, and a device id from `agentx app devices` (it starts with `tok_`) sends to that phone only.
+A message's chat ID picks the phones: `default` sends to every phone that turned notifications on, and a device id from `agentx app devices` (it starts with `tok_`) sends to that phone only. On the host, a phone paired with another computer has the id `<computer>:tok_…`, where `<computer>` is the name the host gives that computer in `mesh.peers`.
 
 ## app
 

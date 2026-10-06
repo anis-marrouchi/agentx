@@ -2,6 +2,25 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.116.0](https://github.com/anis-marrouchi/agentx/compare/v0.115.0...v0.116.0) (2026-10-06)
+
+
+### Features
+
+* **app:** notifications for a phone paired with a relay node ([#711](https://github.com/anis-marrouchi/agentx/issues/711)) ([#717](https://github.com/anis-marrouchi/agentx/issues/717)) ([4e30243](https://github.com/anis-marrouchi/agentx/commit/4e302430088b4f688f1edf971813e084a801b2e7))
+* **voice:** Listen again button beside Copy the answer ([#492](https://github.com/anis-marrouchi/agentx/issues/492)) ([#702](https://github.com/anis-marrouchi/agentx/issues/702)) ([313ab88](https://github.com/anis-marrouchi/agentx/commit/313ab885fdeba69270cbf9a179e1eaf7fa28e9a0))
+
+
+### Bug Fixes
+
+* **app:** allow the assetlinks.json serve mount in the pairing guard ([#704](https://github.com/anis-marrouchi/agentx/issues/704)) ([0567ffe](https://github.com/anis-marrouchi/agentx/commit/0567ffebca6f356424345c2a83c1385b355f0412))
+* **app:** name Don't allow as a cause in the shell location text ([#712](https://github.com/anis-marrouchi/agentx/issues/712)) ([#716](https://github.com/anis-marrouchi/agentx/issues/716)) ([ca6a95c](https://github.com/anis-marrouchi/agentx/commit/ca6a95c6a63ce4d673bb8eddc9fcf7b7254abfc6))
+* **app:** pin the phone app to the screen so the tab bar stays visible ([#709](https://github.com/anis-marrouchi/agentx/issues/709)) ([#713](https://github.com/anis-marrouchi/agentx/issues/713)) ([f7f3240](https://github.com/anis-marrouchi/agentx/commit/f7f3240b3ac0082d9e4c4eec1018512c043c51e7))
+* **app:** say when Chrome hasn't linked the Android app for location ([#708](https://github.com/anis-marrouchi/agentx/issues/708)) ([#712](https://github.com/anis-marrouchi/agentx/issues/712)) ([8530b07](https://github.com/anis-marrouchi/agentx/commit/8530b07f82fd77a51dcf6e229a811f4fb7a9eb13))
+* **members:** keep keyboard focus and stop repeat announcements on refresh ([#443](https://github.com/anis-marrouchi/agentx/issues/443)) ([#701](https://github.com/anis-marrouchi/agentx/issues/701)) ([3616383](https://github.com/anis-marrouchi/agentx/commit/3616383723985fb3b21f4de5f1e0681be44bb35c))
+* **session:** keep ToolSearch in a lean tool list so agentx tools stay deferred ([#615](https://github.com/anis-marrouchi/agentx/issues/615)) ([#700](https://github.com/anis-marrouchi/agentx/issues/700)) ([4dc294b](https://github.com/anis-marrouchi/agentx/commit/4dc294b63af21a98fc63a3651c750998cb62d9c8))
+* **session:** log the real lean tool list and name 0.115.0 in docs ([#700](https://github.com/anis-marrouchi/agentx/issues/700) review) ([#729](https://github.com/anis-marrouchi/agentx/issues/729)) ([db747e2](https://github.com/anis-marrouchi/agentx/commit/db747e23d64e89159493dd93bf741aebc0e2b30b))
+
 ## [0.115.0](https://github.com/anis-marrouchi/agentx/compare/v0.114.1...v0.115.0) (2026-10-06)
 
 

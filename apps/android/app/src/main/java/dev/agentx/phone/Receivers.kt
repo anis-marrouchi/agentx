@@ -28,11 +28,7 @@ class GeofenceReceiver : BroadcastReceiver() {
             }
             return
         }
-        val transition = when (event.geofenceTransition) {
-            Geofence.GEOFENCE_TRANSITION_ENTER -> "enter"
-            Geofence.GEOFENCE_TRANSITION_EXIT -> "exit"
-            else -> return
-        }
+        val transition = transitionName(event.geofenceTransition) ?: return
         // The time of the fix that triggered it; the position itself is never read.
         val time = event.triggeringLocation?.time ?: System.currentTimeMillis()
         val crossings = (event.triggeringGeofences ?: emptyList()).map {
@@ -54,6 +50,15 @@ class GeofenceReceiver : BroadcastReceiver() {
             } finally {
                 pending.finish()
             }
+        }
+    }
+
+    companion object {
+        /** The word the computer expects, or null for a crossing it doesn't take (dwell). */
+        fun transitionName(code: Int): String? = when (code) {
+            Geofence.GEOFENCE_TRANSITION_ENTER -> "enter"
+            Geofence.GEOFENCE_TRANSITION_EXIT -> "exit"
+            else -> null
         }
     }
 }

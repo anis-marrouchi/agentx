@@ -83,9 +83,9 @@ describe("describeProfile with tools", () => {
   it("names the tools only when a list applies", () => {
     expect(describeProfile("lean", DEFAULT_LEAN, "github")).toBe("lean (mcp=agentx settings=project,local context=on-demand)")
     const lean = { ...DEFAULT_LEAN, tools: ["Bash", "Read"], toolsByChannel: { cron: ["Bash"] } }
-    expect(describeProfile("lean", lean, "github")).toContain("tools=Bash+Read")
-    expect(describeProfile("lean", lean, "cron")).toContain("tools=Bash")
-    expect(describeProfile("lean", lean, "cron")).not.toContain("tools=Bash+Read")
+    expect(describeProfile("lean", lean, "github")).toContain("tools=Bash+Read+ToolSearch")
+    expect(describeProfile("lean", lean, "cron")).toContain("tools=Bash+ToolSearch")
+    expect(describeProfile("lean", lean, "cron")).not.toContain("Read")
     expect(describeProfile("full", lean, "cron")).toBe("full")
   })
 })
