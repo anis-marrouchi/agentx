@@ -283,6 +283,48 @@ describe("pages", () => {
     expect(renderAppPage()).toContain(APP_PLACES_SCRIPT)
     expect(() => new Function(APP_PLACES_SCRIPT)).not.toThrow()
   })
+  describe("Use where I am now refused (#708)", () => {
+    // Runs the card's script against a minimal fake page and returns the
+    // error line after the location is refused with code 1.
+    async function refused(opts: { referrer: string; permission: string }): Promise<string> {
+      const els = new Map<string, any>()
+      const el = (id: string) => {
+        if (!els.has(id)) {
+          const handlers: Record<string, (ev?: unknown) => void> = {}
+          els.set(id, {
+            id, textContent: "", innerHTML: "", hidden: false, disabled: false, className: "",
+            handlers, addEventListener: (t: string, f: (ev?: unknown) => void) => { handlers[t] = f },
+            insertBefore: () => {}, elements: { namedItem: () => ({ value: "" }) },
+          })
+        }
+        return els.get(id)
+      }
+      const store = new Map<string, string>()
+      const document = {
+        referrer: opts.referrer, hidden: false,
+        getElementById: el, createElement: () => ({}), addEventListener: () => {},
+      }
+      const navigator = {
+        geolocation: { getCurrentPosition: (_ok: unknown, fail: (e: { code: number }) => void) => fail({ code: 1 }) },
+        permissions: { query: async () => ({ state: opts.permission }) },
+      }
+      const localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v) } }
+      const fetch = () => new Promise(() => {})
+      new Function("document", "navigator", "localStorage", "fetch", APP_PLACES_SCRIPT)(document, navigator, localStorage, fetch)
+      el("pl-here").handlers.click.call(el("pl-here"))
+      await new Promise((r) => setTimeout(r, 0))
+      return el("pl-error").textContent
+    }
+    it("in the Android app with the permission still 'prompt', says to force-stop Chrome", async () => {
+      expect(await refused({ referrer: "android-app://dev.agentx.phone/", permission: "prompt" })).toContain("Force stop")
+    })
+    it("keeps the blocked message when the permission is denied", async () => {
+      expect(await refused({ referrer: "android-app://dev.agentx.phone/", permission: "denied" })).toContain("Location is blocked")
+    })
+    it("keeps the blocked message in a browser", async () => {
+      expect(await refused({ referrer: "", permission: "prompt" })).toContain("Location is blocked")
+    })
+  })
   it("the dashboard page renders with a parseable script", () => {
     const html = renderPlacesPage({})
     expect(html).toContain("Add a place")

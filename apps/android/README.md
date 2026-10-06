@@ -39,6 +39,18 @@ How to build, install, pair and use it, step by step:
   places watched, and the way out. The phone app links to it with
   `intent://places#Intent;scheme=agentx;package=<package>;end`.
 
+## Troubleshooting
+
+- **Use where I am now fails at once after a reinstall** (logcat:
+  `cr_TWAClient: Unable to request location permission.`, the page's
+  `navigator.permissions` state stays `prompt`). Chrome caches the
+  `package:origin` pairs it has registered in memory and skips a repeat;
+  an uninstall drops the stored registration but not that cache. Until
+  Chrome restarts it finds no `DelegationService` for the origin. The app
+  can't clear Chrome's cache: force-stop Chrome once (Settings › Apps ›
+  Chrome › Force stop) and open the app again. The Places card says so
+  when it sees this case (#708).
+
 ## Build
 
 Java 17 and the Android SDK (Android Studio has both).

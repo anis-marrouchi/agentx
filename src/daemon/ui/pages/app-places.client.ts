@@ -127,8 +127,19 @@ export const APP_PLACES_SCRIPT = `
       field(form, 'coords').value = pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6);
       b.disabled = false; b.textContent = 'Use where I am now';
     }, function (e) {
-      err.textContent = e.code === 1 ? 'Location is blocked for this app. Allow it in the phone’s settings, or type the coordinates.' : 'Could not find where you are. Try again outdoors, or type the coordinates.';
       b.disabled = false; b.textContent = 'Use where I am now';
+      if (e.code !== 1) { err.textContent = 'Could not find where you are. Try again outdoors, or type the coordinates.'; return; }
+      var blocked = 'Location is blocked for this app. Allow it in the phone’s settings, or type the coordinates.';
+      err.textContent = blocked;
+      // In the Android app a refusal while the permission is still 'prompt'
+      // means Chrome never asked the app: it keeps a per-process cache of the
+      // apps it linked, so after a reinstall it finds none until Chrome
+      // restarts (#708).
+      if (!inShell || !navigator.permissions || !navigator.permissions.query) return;
+      navigator.permissions.query({ name: 'geolocation' }).then(function (p) {
+        if (p.state === 'denied' || err.textContent !== blocked) return;
+        err.textContent = 'Chrome hasn’t linked this app yet, often after a reinstall. In Android settings, open Apps, then Chrome, tap Force stop, then open AgentX again. Or type the coordinates.';
+      }).catch(function () {});
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   });
   form.addEventListener('submit', function (ev) {

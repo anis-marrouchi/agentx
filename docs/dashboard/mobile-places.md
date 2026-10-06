@@ -231,6 +231,10 @@ All in `agentx.json`, under `app`. Each one is described in the [configuration r
   1. **Phone:** on the **Place reminders** screen, check that **Precise location** says **allowed**. If it doesn't, allow it as in [Turn on place reminders](#turn-on-place-reminders).
   2. **Phone:** if it already says **allowed**, install the latest Android app (see [Get the Android app](#get-the-android-app)): builds before this fix could not pass the location to the phone app.
   3. **Phone:** until then, type the place's coordinates instead.
+- **"Chrome hasn't linked this app yet" when you tap Use where I am now** — Chrome remembers which apps it may ask for the location only while it runs. After you reinstall the Android app, Chrome keeps looking for the old one until it restarts. Then:
+  1. **Phone:** open Android **Settings**, then **Apps**, then **Chrome**.
+  2. **Phone:** tap **Force stop**, then **OK**.
+  3. **Phone:** open **AgentX** again and tap **Use where I am now**.
 - **"Location is off on this phone"** — Location was turned off, so Android dropped every place. Turn it on in quick settings; the places are watched again at the next check, or at once when you tap **Check for new places now**.
 - **"This phone is no longer paired with the computer"** — the Android app's key was removed with `agentx app revoke`. Tap **Forget this computer**, then [pair again](#pair-the-android-app).
 - **"Could not reach the computer"** — Tailscale is off on the phone or on the computer. Turn it on; the app tries again by itself.
