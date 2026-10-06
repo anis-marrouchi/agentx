@@ -3,9 +3,15 @@ import { isWhatsAppSenderAllowed } from "../src/channels/whatsapp"
 
 // #736: the WhatsApp channel is closed by default, like Telegram.
 describe("isWhatsAppSenderAllowed", () => {
-  it("drops every chat when allowFrom is unset or empty", () => {
+  it("drops every chat when allowFrom is unset or empty, self-chat included", () => {
     expect(isWhatsAppSenderAllowed(undefined, "15550001111", "15550001111")).toBe(false)
     expect(isWhatsAppSenderAllowed([], "15550001111", "15550001111")).toBe(false)
+    expect(isWhatsAppSenderAllowed(undefined, "15550001111", "15550001111", true)).toBe(false)
+    expect(isWhatsAppSenderAllowed([], "15550001111", "15550001111", true)).toBe(false)
+  })
+
+  it("answers the owner's self-chat once the list has entries", () => {
+    expect(isWhatsAppSenderAllowed(["+15550009999"], "15550001111", "15550001111", true)).toBe(true)
   })
 
   it("accepts a sender or chat that matches an entry, with or without +", () => {

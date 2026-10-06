@@ -203,7 +203,7 @@ export async function connectWhatsApp(opts: ConnectWhatsAppOpts = {}): Promise<v
   console.log(chalk.dim(`    Session: ${sessionDir}`))
   console.log(chalk.dim("    Start the daemon to begin receiving:"))
   console.log(chalk.dim("      agentx daemon start"))
-  console.log(chalk.yellow("    Only your own self-chat is answered until you allow other chats:"))
+  console.log(chalk.yellow("    No chat is answered until you list the allowed numbers (add your own to talk from your self-chat):"))
   console.log(chalk.dim(`      agentx config set channels.whatsapp.allowFrom '["+15550001111"]'`))
   console.log(chalk.dim("    Add routes later with:"))
   console.log(chalk.dim(`      agentx config set channels.whatsapp.routes '[{"contact":"+1234567890","agent":"${agent}"}]'`))

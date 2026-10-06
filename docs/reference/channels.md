@@ -15,7 +15,7 @@ A channel receives a message from another tool and routes it to an agent, then c
 
 **Telegram ignores everyone until you allow them.** A new Telegram bot drops every message unless the sender is on an allow list: `channels.telegram.policy.allowFrom` for all bots, or `allowFrom` on one bot's account. Each entry is a Telegram user ID, a chat ID, or an `@username`. A dropped message shows in `agentx daemon logs` as `not in allowlist`.
 
-**WhatsApp also ignores everyone until you allow them.** With `channels.whatsapp.allowFrom` unset, the agent answers only your own self-chat (the "message yourself" chat on the paired phone). Add each phone number (with or without `+`) or chat ID the agent may answer. `"*"` answers every chat on the account; use it only on a dedicated number. A dropped message shows in `agentx daemon logs` as `not in allowlist`. Read [Before you pair WhatsApp](#before-you-pair-whatsapp) first.
+**WhatsApp also ignores everyone until you allow them.** With `channels.whatsapp.allowFrom` unset or empty, the agent answers no one. List each phone number (with or without `+`) or chat ID the agent may answer. Once the list has an entry, your own "message yourself" chat on the paired phone is answered too. `"*"` answers every chat on the account; use it only on a dedicated number. A dropped message shows in `agentx daemon logs` as `not in allowlist`. Read [Before you pair WhatsApp](#before-you-pair-whatsapp) first.
 
 **Slack and Discord are not supported as live channel adapters in this build.** Do not paste their tokens into a stale prompt or example. A connection record alone does not make an adapter run.
 
@@ -30,11 +30,12 @@ Both WhatsApp routes, the WhatsApp channel above and [Watch a WhatsApp chat](../
 - **Use a dedicated number.** The linked device sees every chat on the account. On a personal number, an agent could answer your family and friends.
 - **There is a risk of a ban.** AgentX talks to WhatsApp through unofficial software, not a WhatsApp product. WhatsApp can restrict or ban a number it thinks is automated. Do not pair a number you cannot afford to lose.
 - **This is not the WhatsApp Business API.** AgentX does not use WhatsApp's official business service, so its rules, templates and verified badges do not apply.
-- **An unset allow list answers no one else.** With `channels.whatsapp.allowFrom` unset, the agent answers only your self-chat. To let a contact in:
+- **An unset allow list answers no one.** With `channels.whatsapp.allowFrom` unset or empty, every message is dropped. To list the numbers the agent may answer:
   1. **Terminal:** in the folder with `agentx.json`, run:
      ```sh
-     agentx config set channels.whatsapp.allowFrom '["+15550001111"]'
+     agentx config set channels.whatsapp.allowFrom '["+15550001111", "+15550002222"]'
      ```
+     Put each allowed number in quotes, separated by commas. A group's chat ID, ending in `@g.us`, works too.
   2. **Terminal:** restart the daemon:
      ```sh
      agentx daemon restart

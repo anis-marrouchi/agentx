@@ -54,15 +54,19 @@ export interface WhatsAppRoute {
 }
 
 /** Sender allowlist for the WhatsApp channel. Closed by default (#736): an
- *  unset or empty list drops every chat, matching Telegram. `"*"` opts in to
- *  answering every chat. Other entries are phone numbers (with or without
- *  `+`) or JIDs, matched as a substring of the sender's or the chat's id. */
+ *  unset or empty list drops every chat, self-chat included, matching
+ *  Telegram. Once the list has entries, the owner's self-chat (`fromMe`)
+ *  passes. `"*"` opts in to answering every chat. Other entries are phone
+ *  numbers (with or without `+`) or JIDs, matched as a substring of the
+ *  sender's or the chat's id. */
 export function isWhatsAppSenderAllowed(
   allowFrom: string[] | undefined,
   senderPhone: string,
   chatPhone: string,
+  fromMe = false,
 ): boolean {
   if (!allowFrom || allowFrom.length === 0) return false
+  if (fromMe) return true
   for (const entry of allowFrom) {
     const normalized = entry.trim().replace(/\+/g, "").replace(/@.*$/, "")
     if (entry.trim() === "*") return true
@@ -411,9 +415,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
         const senderJid = isGroup ? (msg.key.participant || "") : jid
         const senderPhone = senderJid.replace(/@.*$/, "")
 
-        // Allowlist check — closed by default, like Telegram (#736). Self-chat
-        // (fromMe) always passes so the owner can talk to their agent.
-        if (!msg.key.fromMe && !isWhatsAppSenderAllowed(this.allowFrom, senderPhone, chatPhone)) {
+        // Allowlist check — closed by default, like Telegram (#736).
+        if (!isWhatsAppSenderAllowed(this.allowFrom, senderPhone, chatPhone, !!msg.key.fromMe)) {
           this.log(`dropped message from ${senderPhone.slice(-6)} in ${isGroup ? "group" : "chat"} ${chatPhone.slice(-6)} — not in allowlist`)
           continue
         }

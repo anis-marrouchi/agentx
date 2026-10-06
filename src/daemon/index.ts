@@ -2114,7 +2114,7 @@ export class AgentXDaemon {
       const waAllow = this.config.channels.whatsapp.allowFrom ?? []
       if (waAllow.length === 0) {
         this.log(
-          `  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes) — WARNING: no allowFrom. Only your own self-chat is answered; messages from other chats will be DROPPED.`,
+          `  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes) — WARNING: no allowFrom. All incoming messages will be DROPPED.`,
         )
       } else if (waAllow.some((e) => e.trim() === "*")) {
         this.log(
