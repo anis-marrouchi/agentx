@@ -88,7 +88,11 @@ Some tasks need more than one picture, for example "tell me if I miss a screw wh
 3. **Phone:** carry on. The agent gets a picture every few seconds (`streamFrameSeconds`) and speaks up only when something matters.
 4. **Phone:** it stops by itself after `streamMaxSeconds` (60 by default). Tap **Stop watching** to end it sooner. After that, the agent is back to one picture per question.
 
-Each picture during this time is a turn of the agent, so it is never on unless you tap the button.
+Each picture during this time is a turn of the agent, so it is never on unless you tap the button. A turn uses the agent's AI plan or credits, just like a chat message. With the default settings, one minute of **Keep watching** is about 12 turns (one every 5 seconds). At the longest allowed time, 600 seconds (10 minutes), that becomes about 120 turns. To spend less, raise `streamFrameSeconds` or lower `streamMaxSeconds` (see [Settings](#settings)).
+
+The agent answers one picture at a time. If you ask a question with **Talk** while it is still looking at a picture, your question waits until that answer is done, then goes next.
+
+Replaying an answer you have already heard does not use the agent's voice credits again: the computer keeps the last few spoken answers for a while.
 
 While you share, the agent can also take a picture by itself from inside its own work, for example when you ask it something in chat or by voice: it runs `agentx camera look`, gets the newest picture, and opens it. Its answer comes back where you asked. An agent gets a picture by itself on a timer only if you set `frameIntervalSeconds` (see [Settings](#settings)); each of those pictures is a turn of the agent, so the default is off.
 

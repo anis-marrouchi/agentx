@@ -129,6 +129,9 @@ interface Watch {
   ending: boolean
   /** "Keep watching": what the owner asked for, and the timer that ends it. */
   stream: { note: string | null; timer: ReturnType<typeof setTimeout> } | null
+  /** The agent's turns on this share, one at a time: a question asked while
+   *  a streamed or interval turn runs waits for it, on the same session. */
+  turns: Promise<void>
 }
 
 export class CameraWatchManager {
@@ -183,7 +186,7 @@ export class CameraWatchManager {
     }
     const timer = setTimeout(() => this.stop(callId, `time limit (${cfg.maxSessionMinutes} min)`), cfg.maxSessionMinutes * 60_000)
     timer.unref?.()
-    this.watches.set(callId, { view, sampler, bot, dir, timer, files: new Map(), ending: false, stream: null })
+    this.watches.set(callId, { view, sampler, bot, dir, timer, files: new Map(), ending: false, stream: null, turns: Promise.resolve() })
     sampler.start()
     this.log(`${agentId} is watching share ${callId}` + (cfg.frameIntervalSeconds ? ` (a frame every ${cfg.frameIntervalSeconds} s)` : " (frames on demand)"))
     return { ok: true, watch: this.snapshotView(view) }
@@ -315,8 +318,17 @@ export class CameraWatchManager {
     catch (e: any) { this.log(`deliver for ${callId} failed: ${e?.message ?? e}`) }
   }
 
+  /** Queue a hand-over behind the turn already running on this share. */
+  private handOver(w: Watch, s: Sampled<VideoFrame>, note: string | null, why: HandOverWhy): Promise<WatchResult<{ reply: WatchReply; frame: FrameFile }>> {
+    const run = w.turns.then(() => this.runTurn(w, s, note, why))
+    w.turns = run.then(() => undefined, () => undefined)
+    return run
+  }
+
   /** Write the frame, run the agent's turn on it, record the reply. */
-  private async handOver(w: Watch, s: Sampled<VideoFrame>, note: string | null, why: HandOverWhy): Promise<WatchResult<{ reply: WatchReply; frame: FrameFile }>> {
+  private async runTurn(w: Watch, s: Sampled<VideoFrame>, note: string | null, why: HandOverWhy): Promise<WatchResult<{ reply: WatchReply; frame: FrameFile }>> {
+    // The share ended while this waited for the turn before it.
+    if (w.ending) return { ok: false, status: 404, error: `No agent is watching share ${w.view.callId}` }
     let frame: FrameFile
     try {
       frame = this.writeFrame(w, s)
