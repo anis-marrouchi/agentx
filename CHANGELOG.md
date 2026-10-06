@@ -2,6 +2,16 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.114.1](https://github.com/anis-marrouchi/agentx/compare/v0.114.0...v0.114.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **app:** let Chrome give the phone app the location in the Android app ([#684](https://github.com/anis-marrouchi/agentx/issues/684)) ([#685](https://github.com/anis-marrouchi/agentx/issues/685)) ([fafa2a8](https://github.com/anis-marrouchi/agentx/commit/fafa2a86dfbe60ac30d20e499ec729eb2f9e5c40))
+* **brand:** finish the AX icon follow-ups left out of [#689](https://github.com/anis-marrouchi/agentx/issues/689) ([#693](https://github.com/anis-marrouchi/agentx/issues/693)) ([89274f0](https://github.com/anis-marrouchi/agentx/commit/89274f0e8f1b9ce7527661d74de9b9473f286a5f))
+* **camera:** one turn at a time per share, keep spoken answers, document Keep watching cost ([#690](https://github.com/anis-marrouchi/agentx/issues/690)) ([#694](https://github.com/anis-marrouchi/agentx/issues/694)) ([2bb2642](https://github.com/anis-marrouchi/agentx/commit/2bb2642b4ff7172a11b823541e7c8f8c10649873))
+* **decisions:** describe each intent category to the intent-path seat ([#691](https://github.com/anis-marrouchi/agentx/issues/691)) ([f8d8185](https://github.com/anis-marrouchi/agentx/commit/f8d818522639bee9f6d8c36e4f2284cd86923dd0)), closes [#308](https://github.com/anis-marrouchi/agentx/issues/308)
+
 ## [0.114.0](https://github.com/anis-marrouchi/agentx/compare/v0.113.0...v0.114.0) (2026-10-06)
 
 
