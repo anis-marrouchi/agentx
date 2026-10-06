@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { answerLines, buildChoices, resolveAnswer, type CardChoices } from "./choices"
-import { originLines, type CardOrigin } from "./origin"
+import { originLines, retroLines, type CardOrigin } from "./origin"
 
 // --- Decision cards: what an agent asks the operator ---
 //
@@ -327,6 +327,7 @@ export function verdictMessage(card: DecisionCard): string {
   if (card.note) lines.push(`Operator note: ${card.note}`)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
+  if (card.origin?.kind === "retro") lines.push(...retroLines(card.origin, card.status === "decided" && card.verdict === "yes", card.choice))
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)
   if (card.node) lines.push(`The operator answered it on another machine; the card was forwarded from ${card.node}.`)
   lines.push("Act on this result now. Do not raise the same card again.")

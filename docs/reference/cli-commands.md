@@ -2557,6 +2557,17 @@ Re-run a recorded task against the current agent config.
 | `--diff` | — | Show original input + output vs new output side-by-side. |
 | `--no-fresh` | — | Do NOT freshSession (default is fresh — required for clean replay). |
 
+## retro (advanced)
+
+`agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** See [Stop a mistake from coming back](../jobs/retro.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--model <model>` | `AGENTX_RETRO_MODEL`, else `AGENTX_MONITOR_MODEL`, else `opus` | The reviewer model. |
+| `--dry-run` | — | Show the card without raising it. |
+| `--force` | — | Raise a card even when the run shows no struggle, or one about the same failure is open. |
+| `--path <db>` | `.agentx/db.sqlite` | Trace database. |
+
 ## process (advanced)
 
 `agentx process`: Inspect / rotate persistent claude processes (--persistentProcess agents). **Advanced.**

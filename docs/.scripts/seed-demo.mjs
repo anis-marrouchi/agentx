@@ -114,6 +114,15 @@ for (const [channel, chatId] of [["gitlab", "demo/shop:issue:47"], ["telegram", 
 for (const card of [
   { title: "Send the demo shop newsletter", ask: "Send the October newsletter to the demo shop list on Monday?", recommend: "Yes: the draft is reviewed and the links are checked", if_silent: "discard", expires: "20h", source: "https://example.com/drafts/newsletter-october" },
   { title: "Merge the demo office FAQ update", ask: "Merge MR !12 with the new support hours?", recommend: "Yes: the hours match what the office confirmed", if_silent: "keep", expires: "3d" },
+  // A retro card (#743): fixes to choose from, and a spec the operator may edit.
+  {
+    title: "Demo service left stopped after a deploy", ask: "What should change so this can't happen again?",
+    recommend: "Deploy script: restart and check health: the most severe (high)", if_silent: "discard", expires: "3d",
+    context: "The deploy stopped the demo service (step 4) and never started it again; the health check was refused (step 6).",
+    choices: ["Deploy script: restart and check health", "Watchdog: alert when the service is down", "Guard rule: warn on a stop without a start", "None of these"],
+    draft: "Build: {choice}\n\n1. Deploy script [script, high]\n   One script; CI runs it dry.\n2. Watchdog [watchdog, medium]\n3. Guard rule [guard-rule, medium]",
+    source: "agentx trace show demo-task-1",
+  },
 ]) await post("/approvals", { ...card, raised_by: "cx" })
 
 const db = new Database(resolve(root, ".agentx/db.sqlite"))
@@ -164,4 +173,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded two workflows, three disabled schedules with one scheduled run, one schedule request, two decision cards, two clients, six fictional reviews, a webhook, a board, an action, two places, and two real scripted task runs.")
+console.log("Seeded two workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, a webhook, a board, an action, two places, and two real scripted task runs.")

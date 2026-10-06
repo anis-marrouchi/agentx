@@ -89,7 +89,9 @@ function detailFromStdout(out: string | Buffer | undefined): string {
   } catch { return text.slice(-200) }
 }
 
-export async function reviewWithClaude(input: string, model: string, signal?: AbortSignal): Promise<string> {
+/** One tool-less `claude -p` call. `systemPrompt` defaults to the session
+ *  review; the retro (src/retro) passes its own. */
+export async function reviewWithClaude(input: string, model: string, signal?: AbortSignal, systemPrompt: string = REVIEW_PROMPT): Promise<string> {
   const cwd = mkdtempSync(join(tmpdir(), "agentx-review-"))
   try {
     // Force the CLI onto subscription auth. The daemon injects
@@ -99,7 +101,7 @@ export async function reviewWithClaude(input: string, model: string, signal?: Ab
     const env = stripAnthropicApiKey({ ...process.env })
     delete env.CLAUDECODE
     const stdout = await new Promise<string>((resolve, reject) => {
-      const child = execFile("claude", ["-p", "--model", model, "--output-format", "json", "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--settings", '{"disableAllHooks":true}', "--no-session-persistence", "--setting-sources", "", "--system-prompt", REVIEW_PROMPT], {
+      const child = execFile("claude", ["-p", "--model", model, "--output-format", "json", "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}', "--settings", '{"disableAllHooks":true}', "--no-session-persistence", "--setting-sources", "", "--system-prompt", systemPrompt], {
         cwd, env, signal, timeout: 180000, maxBuffer: 1024 * 1024,
       }, (err, out, serr) => {
         if (!err) return resolve(out)

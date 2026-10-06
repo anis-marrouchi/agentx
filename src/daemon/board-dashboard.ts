@@ -2371,11 +2371,11 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
       }))
       return [local, ...remote]
     },
-    async decide(nodeUrl, key, action, by) {
+    async decide(nodeUrl, key, action, by, answer = {}) {
       const target = nodeUrl.replace(/\/+$/, "")
       if (target === primary) {
         const settings = readApprovalSettings()
-        const r = await decide({ root: process.cwd() }, key, action, { laterHours: settings.laterHours, by })
+        const r = await decide({ root: process.cwd() }, key, action, { laterHours: settings.laterHours, by, ...answer })
         return r.ok ? { status: 200, body: { ok: true, message: r.message } } : { status: 409, body: { error: r.error } }
       }
       const peer = findPeer(target, config)
@@ -2389,7 +2389,7 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
             "X-Agentx-Peer": "primary",
             ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}),
           },
-          body: JSON.stringify({ key, action }),
+          body: JSON.stringify({ key, action, ...answer }),
           signal: AbortSignal.timeout(10000),
         })
         return { status: r.status, body: parse(await r.text()) }
@@ -2541,6 +2541,8 @@ function toApprovalItem(i: InboxItem): ApprovalItem {
     no: i.no,
     raisedBy: i.raised_by,
     expires: i.expires,
+    ...(i.choices ? { choices: i.choices } : {}),
+    ...(i.draft ? { draft: i.draft } : {}),
   }
 }
 
