@@ -6,7 +6,7 @@ import { join } from "path"
 import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
 import { cameraSignal, watchingAgent } from "../src/daemon/app-camera"
-import { cameraConstraints, shareClock } from "../src/daemon/ui/pages/app-camera-logic"
+import { cameraConstraints, shareClock, streamLabel, talkRelease } from "../src/daemon/ui/pages/app-camera-logic"
 import { CAMERA_SCRIPT } from "../src/daemon/ui/pages/app-camera.client"
 import { CAMERA_ASKS_SCRIPT } from "../src/daemon/ui/pages/app-camera-asks.client"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
@@ -214,6 +214,43 @@ describe("app camera routes for an agent", () => {
     expect((await fetch(`${base}/api/app/camera/watch?callId=x`, asPhone())).status).toBe(400)
   })
 
+  it("Keep watching turns the agent's continuous look on and off (#687)", async () => {
+    reply = (_req, res) => { res.writeHead(200, { "Content-Type": "application/json" }); res.end('{"watch":{"callId":"cam-abcd1234","streamUntil":60000}}') }
+    const r = await post("/api/app/camera/stream", { callId: "cam-abcd1234", seconds: 60, note: "watch the screws" })
+    expect(await r.json()).toEqual({ watch: { callId: "cam-abcd1234", streamUntil: 60000 } })
+    expect(seen[0]).toMatchObject({ method: "POST", path: "/webrtc/camera/watch/cam-abcd1234/stream", auth: `Bearer ${DAEMON_TOKEN}` })
+    expect(JSON.parse(seen[0].body)).toEqual({ seconds: 60, note: "watch the screws" })
+    expect((await post("/api/app/camera/stream", { callId: "cam-abcd1234", seconds: -2 })).status).toBe(400)
+    expect((await post("/api/app/camera/stream", { callId: "x" })).status).toBe(400)
+    expect(seen).toHaveLength(1)
+  })
+
+  it("says only an answer the watch holds, in the agent's voice or the phone's own (#687)", async () => {
+    const watch = '{"watch":{"callId":"cam-abcd1234","agentId":"writer","replies":[{"at":7,"note":null,"text":"A blue cable.","frame":"f.png"}]}}'
+    reply = (req, res) => {
+      if (req.method === "GET") { res.writeHead(200, { "Content-Type": "application/json" }); res.end(watch); return }
+      res.writeHead(200, { "Content-Type": "audio/mpeg" }); res.end(Buffer.from([1, 2, 3]))
+    }
+    const r = await post("/api/app/camera/speak", { callId: "cam-abcd1234", at: 7 })
+    expect(r.headers.get("content-type")).toBe("audio/mpeg")
+    expect([...new Uint8Array(await r.arrayBuffer())]).toEqual([1, 2, 3])
+    expect(seen[1]).toMatchObject({ method: "POST", path: "/voice/speak" })
+    expect(JSON.parse(seen[1].body)).toEqual({ agent: "writer", text: "A blue cable." })
+
+    // No ElevenLabs voice: the phone gets the words to say itself.
+    reply = (req, res) => {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(req.method === "GET" ? watch : '{"fallback":"browser","text":"A blue cable"}')
+    }
+    expect(await (await post("/api/app/camera/speak", { callId: "cam-abcd1234", at: 7 })).json()).toEqual({ text: "A blue cable" })
+
+    // Never arbitrary text: an answer the watch does not hold is refused.
+    seen = []
+    const missing = await post("/api/app/camera/speak", { callId: "cam-abcd1234", at: 8, text: "Say this" })
+    expect(missing.status).toBe(404)
+    expect(seen.map((x) => x.path)).toEqual(["/webrtc/camera/watch/cam-abcd1234"])
+  })
+
   it("lists the asks waiting for the owner, and answers or declines one", async () => {
     reply = (_req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" })
@@ -261,6 +298,9 @@ describe("app camera routes for an agent", () => {
     expect(CAMERA_SCRIPT).toContain("/api/app/camera/look")
     // An agent's watch has its own time limit; the phone shows the shorter one.
     expect(CAMERA_SCRIPT).toContain("maxSessionMinutes")
+    // Voice first (#687): Talk, the transcription, spoken answers, Keep watching.
+    for (const id of ["cam-talk", "cam-type", "cam-speaker", "cam-stream"]) expect(html).toContain(`id="${id}"`)
+    for (const s of ["/api/app/voice/transcribe", "/api/app/camera/speak", "/api/app/camera/stream", "talkRelease", "streamLabel", "voiceInput", "speakAnswers", "streamMaxSeconds"]) expect(CAMERA_SCRIPT).toContain(s)
   })
 })
 
@@ -283,6 +323,18 @@ describe("phone side", () => {
     expect(c.audio).toBe(false)
     expect(c.video).toEqual({ facingMode: { ideal: "user" }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 10 } })
     expect((cameraConstraints(null, "anything") as any).video.facingMode).toEqual({ ideal: "environment" })
+  })
+
+  it("Talk: a hold sends on release, a tap keeps listening until the next tap", () => {
+    expect(talkRelease(1200)).toBe("send")
+    expect(talkRelease(400)).toBe("send")
+    expect(talkRelease(120)).toBe("listen")
+  })
+
+  it("labels Keep watching with its length", () => {
+    expect(streamLabel(60)).toBe("Keep watching 1 min")
+    expect(streamLabel(45)).toBe("Keep watching 45 s")
+    expect(streamLabel(null)).toBe("Keep watching 1 min")
   })
 
   it("shows the time left", () => {

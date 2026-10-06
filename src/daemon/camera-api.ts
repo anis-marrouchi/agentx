@@ -14,6 +14,11 @@
 //   POST /webrtc/camera/watch/:id/look  {note?}: the owner asks what the agent
 //                                       sees. Runs one turn; 200 {reply, frame};
 //                                       409 before the first frame
+//   POST /webrtc/camera/watch/:id/stream {seconds, note?}: "Keep watching"
+//                                       (#687): a frame every
+//                                       streamFrameSeconds for that long, at
+//                                       most streamMaxSeconds; 0 stops it.
+//                                       200 {watch}
 //   POST /webrtc/camera/watch/:id/stop  ends the watch
 //   POST /webrtc/camera/look            {agentId} with X-AgentX-Task, or
 //                                       X-AgentX-Channel + X-AgentX-Chat: a
@@ -99,6 +104,10 @@ export async function handleCamera(
       // The owner sees the answer; the file's path is the agent's business.
       const { width, height, takenAt, seq } = r.frame
       return { status: 200, body: { reply: r.reply, frame: { width, height, takenAt, seq } } }
+    }
+    case "stream": {
+      const r = watch.stream(id, body.seconds, body.note)
+      return r.ok ? { status: 200, body: { watch: r.watch } } : { status: r.status, body: { error: r.error } }
     }
     case "stop":
       return watch.stop(id, "stopped by the owner")
