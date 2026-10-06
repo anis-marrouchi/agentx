@@ -97,4 +97,5 @@ To give one bot its own list, add `"allowFrom"` to that account instead, next to
 - **The bot doesn't reply at all:** check that the daemon runs. **Terminal:** `agentx daemon status` must say `Status: running`. The dashboard alone doesn't receive Telegram messages.
 - **The log says `not in allowlist`:** **Terminal:** run `agentx daemon logs`. A line like `dropped message from 123456789 (@your_username) … not in allowlist` means you're not in `allowFrom`. Copy the number or `@username` from that line into `allowFrom`, as in step 4.
 - **The daemon complains about the token, or the bot never connects:** the name in **Bot token env-var** must match the name in `.env` exactly. After fixing `.env`, restart the daemon. **Terminal:** run `agentx daemon restart` (with Docker: `docker compose up -d --force-recreate`).
-- **The bot answers in a private chat but not in a group:** start the message with the agent's `@` name, such as `@helper`, and add the group's chat id to `allowFrom`.- **Still nothing:** run `agentx doctor`, then follow [It's not answering](./help/its-not-answering.md).
+- **The bot answers in a private chat but not in a group:** start the message with the agent's `@` name, such as `@helper`, and add the group's chat id to `allowFrom`.
+- **Still nothing:** run `agentx doctor`, then follow [It's not answering](./help/its-not-answering.md).

@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.sh | bash
 #
 # What it does:
-#   1. Checks for Node.js 22.19 up to 26 (installs via nvm if missing and nvm is present).
+#   1. Checks for Node.js 22.19 up to 26 (installs via nvm and sets it as the default if missing and nvm is present).
 #   2. Installs agentix-cli globally via npm.
 #   3. Runs `agentx setup` — opens the web wizard in the browser.
 #
@@ -49,6 +49,8 @@ if [[ "${need_node_install}" -eq 1 ]]; then
     [[ -s "${HOME}/.nvm/nvm.sh" ]] && . "${HOME}/.nvm/nvm.sh"
     nvm install 22 >/dev/null
     nvm use 22 >/dev/null
+    # Keep Node 22 for new shells too; `nvm use` only lasts for this script.
+    nvm alias default 22 >/dev/null
     ok "Node $(node -v) now active"
   else
     err "Install Node.js 22.19 or newer (up to 26) first (https://nodejs.org or https://github.com/nvm-sh/nvm), then rerun this script."
