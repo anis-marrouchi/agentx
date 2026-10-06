@@ -1615,6 +1615,18 @@ export const daemonConfigSchema = z.object({
       /** The same per channel; a channel's non-empty list wins over
        *  `tools`. */
       toolsByChannel: z.record(z.array(z.string().min(1))).default({}),
+      /** The `agentx_` MCP tools a lean session lists (#696). Empty, the
+       *  default, lists every agentx tool. Their descriptions are about
+       *  10k tokens of a lean first turn, the largest share once built-in
+       *  tools are deferred. `agentx_approval` and `agentx_request` are
+       *  always kept, and so are `agentx_agents`, `agentx_recent` and
+       *  `agentx_wiki_query` while `contextOnDemand` is on. Only an agentx
+       *  server started as a command (stdio) can be told; an http entry
+       *  lists every tool. claude-code agents only. */
+      agentxTools: z.array(z.string().min(1)).default([]),
+      /** The same per channel; a channel's non-empty list wins over
+       *  `agentxTools`. */
+      agentxToolsByChannel: z.record(z.array(z.string().min(1))).default({}),
     }).default({}),
     /** A cheaper model for runs started only by triage events (#615): a
      *  GitHub label added or removed, an issue or PR closed. A run that

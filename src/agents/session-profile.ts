@@ -45,6 +45,15 @@ export interface LeanProfileConfig {
   tools: string[]
   /** Per-channel tool lists; a non-empty entry wins over `tools`. */
   toolsByChannel: Record<string, string[]>
+  /** The `agentx_` MCP tools a lean session lists (#696). Empty: every
+   *  agentx tool, as today. Their descriptions are about 10k tokens of a
+   *  lean first turn on Claude Code 2.1.291, now the largest share, so a
+   *  short list is the next lever after `tools`. Opt-in for the same
+   *  reason. */
+  agentxTools: string[]
+  /** Per-channel agentx tool lists; a non-empty entry wins over
+   *  `agentxTools`. */
+  agentxToolsByChannel: Record<string, string[]>
 }
 
 export interface SessionProfileConfig {
@@ -65,7 +74,21 @@ export const DEFAULT_LEAN: LeanProfileConfig = {
   contextOnDemand: true,
   tools: [],
   toolsByChannel: {},
+  agentxTools: [],
+  agentxToolsByChannel: {},
 }
+
+/** The agentx tool server reads its tool list from this variable. */
+export const AGENTX_MCP_TOOLS_ENV = "AGENTX_MCP_TOOLS"
+
+/** agentx tools a shortened list always keeps: daemon prompts ask for
+ *  them by name (request follow-ups, approval cards), whatever started
+ *  the session. */
+const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request"]
+
+/** The tools the `[Context on demand]` line names; kept whenever a lean
+ *  start relies on that line. */
+const AGENTX_ON_DEMAND_TOOLS: readonly string[] = ["agentx_agents", "agentx_recent", "agentx_wiki_query"]
 
 /** The built-in tools a lean session on `channel` gets: the channel's own
  *  list when one is set, else the shared `tools` list. Empty means every
@@ -76,6 +99,25 @@ export function leanTools(lean: LeanProfileConfig, channel?: string): string[] {
   const own = channel ? lean.toolsByChannel?.[channel] : undefined
   const list = own && own.length ? own : (lean.tools ?? [])
   return Array.from(new Set(list.map((t) => t.trim()).filter(Boolean)))
+}
+
+/** The agentx MCP tools a lean session on `channel` lists: the channel's
+ *  own list when one is set, else the shared `agentxTools` list, plus the
+ *  tools daemon prompts name (AGENTX_CORE_TOOLS, and the on-demand context
+ *  tools when `contextOnDemand` is on). Empty means every agentx tool. */
+export function leanAgentxTools(lean: LeanProfileConfig, channel?: string): string[] {
+  const own = channel ? lean.agentxToolsByChannel?.[channel] : undefined
+  const list = (own && own.length ? own : (lean.agentxTools ?? [])).map((t) => t.trim()).filter(Boolean)
+  if (!list.length) return []
+  const kept = [...AGENTX_CORE_TOOLS, ...(lean.contextOnDemand ? AGENTX_ON_DEMAND_TOOLS : []), ...list]
+  return Array.from(new Set(kept))
+}
+
+/** `server` told to list only `tools`. Only a stdio server can be told:
+ *  an http entry is returned as it is and lists every tool. */
+export function withAgentxToolList(server: McpServerConfig, tools: string[]): McpServerConfig {
+  if (!tools.length || server.type === "http") return server
+  return { ...server, env: { ...(server.env ?? {}), [AGENTX_MCP_TOOLS_ENV]: tools.join(",") } }
 }
 
 /** The profile a channel's sessions start with. Listed channels win;
@@ -109,13 +151,14 @@ export function leanMcpServers(
   workspace: string,
   lean: LeanProfileConfig,
   agentx: McpServerConfig = agentxToolServer(),
+  channel?: string,
 ): McpServerMap {
   const declared = readWorkspaceMcp(workspace)
   const kept: McpServerMap = {}
   for (const name of lean.mcpServers) {
     if (declared[name]) kept[name] = declared[name]
   }
-  if (!kept.agentx) kept.agentx = declared.agentx ?? agentx
+  kept.agentx = withAgentxToolList(kept.agentx ?? declared.agentx ?? agentx, leanAgentxTools(lean, channel))
   return kept
 }
 
@@ -142,7 +185,7 @@ export function leanClaudeArgs(
   agentx: McpServerConfig = agentxToolServer(),
   channel?: string,
 ): string[] {
-  const mcp = leanMcpServers(workspace, lean, agentx)
+  const mcp = leanMcpServers(workspace, lean, agentx, channel)
   const args = [
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers: mcp }),
@@ -192,5 +235,7 @@ export function describeProfile(profile: SessionProfileName, lean: LeanProfileCo
   ]
   const tools = leanTools(lean, channel)
   if (tools.length) parts.push(`tools=${tools.join("+")}`)
+  const agentxTools = leanAgentxTools(lean, channel)
+  if (agentxTools.length) parts.push(`agentx-tools=${agentxTools.length}`)
   return `lean (${parts.join(" ")})`
 }
