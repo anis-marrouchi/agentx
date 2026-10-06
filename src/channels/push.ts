@@ -17,6 +17,22 @@ import { splitTitle } from "./ntfy"
 // Addressing: `chatId` "default" (or empty) means every subscribed phone;
 // anything else is one phone's device id (the tok_… id from
 // `agentx app devices`).
+//
+// A phone paired with a relaying node subscribes on the host too, through
+// that node (push-bridge.ts). Its rows carry a scoped device id,
+// "<node>:<tok_…>", so two nodes' token ids never collide, and a push the
+// relay addresses to one of its phones (chatId tok_…, origin <node>) is
+// mapped to that id here (#711).
+
+/** Device id on the host for a phone paired with relaying node `origin`. */
+export function remoteDeviceId(origin: string, deviceId: string): string {
+  return `${origin}:${deviceId}`
+}
+
+/** True for a scoped id (remoteDeviceId); local token ids have no colon. */
+export function isRemoteDevice(deviceId: string): boolean {
+  return deviceId.includes(":")
+}
 
 /** Where a tap lands when the message has no button of its own. */
 export const DEFAULT_OPEN_URL = "/app#alerts"
@@ -108,11 +124,14 @@ export class PushAdapter implements ChannelAdapter {
 
   onMessage(_handler: (msg: IncomingMessage) => Promise<void>): void {}
 
-  async send(msg: OutgoingMessage): Promise<string | void> {
+  async send(msg: OutgoingMessage & { origin?: string }): Promise<string | void> {
     const keys = this.deps.keys()
     if (!keys) throw new Error("push: no keys — run `agentx app push-keys` on this node")
     const requested = (msg.chatId || "").trim()
-    const device = requested && requested !== "default" ? requested : undefined
+    let device = requested && requested !== "default" ? requested : undefined
+    // A relay addressed one of its own phones: only the id it has here, so
+    // a token id that happens to match a phone paired here never gets it.
+    if (device && msg.origin && !isRemoteDevice(device)) device = remoteDeviceId(msg.origin, device)
 
     const subs: PushSubscriptionRow[] = []
     for (const s of this.deps.store.list(device)) {
@@ -167,6 +186,8 @@ export interface PushRelayPayload {
   text: string
   buttons?: OutgoingMessage["buttons"]
   relayed: true
+  /** The relaying node's name, so the host can find its phones. */
+  origin?: string
 }
 
 /** The `push` channel on a node that doesn't host the phone app: forwards
@@ -178,6 +199,7 @@ export class PushRelayAdapter implements ChannelAdapter {
     private peer: string,
     private forward: (peer: string, payload: PushRelayPayload) => Promise<string | void>,
     private log: (...args: unknown[]) => void = console.error.bind(console, "[push]"),
+    private origin?: string,
   ) {}
 
   async start(): Promise<void> {
@@ -197,6 +219,7 @@ export class PushRelayAdapter implements ChannelAdapter {
       text: msg.text,
       ...(msg.buttons?.length ? { buttons: msg.buttons } : {}),
       relayed: true,
+      ...(this.origin ? { origin: this.origin } : {}),
     })
   }
 }

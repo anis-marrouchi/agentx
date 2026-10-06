@@ -171,12 +171,19 @@ object Places {
     private fun restoreLocked(context: Context, prefs: Prefs) {
         // A check already ran since the phone started: it registered the
         // current places, which may be newer than the ones kept.
-        if (prefs.lastSyncAt >= System.currentTimeMillis() - SystemClock.elapsedRealtime()) return
+        if (checkedSinceBoot(prefs.lastSyncAt, System.currentTimeMillis(), SystemClock.elapsedRealtime())) return
         val kept = prefs.watched ?: return
         val fences = try { parse(JSONArray(kept)) } catch (_: Exception) { emptyList() }
         if (fences.isEmpty()) return
         register(context, fences, timeoutSeconds = 8)?.let { prefs.lastError = it.message }
     }
+
+    /** True when the last check ran after the phone started (now - uptime). */
+    fun checkedSinceBoot(lastSyncAt: Long, now: Long, uptime: Long): Boolean = lastSyncAt >= now - uptime
+
+    /** Whether registering again later can help after Play services refused
+     *  with this status code. Too many places never clears up by itself. */
+    fun retryRegister(code: Int?): Boolean = code != GeofenceStatusCodes.GEOFENCE_TOO_MANY_GEOFENCES
 
     private class RegisterError(val message: String, val retry: Boolean)
 
@@ -202,11 +209,12 @@ object Places {
             null
         } catch (e: Exception) {
             val code = ((e.cause ?: e) as? ApiException)?.statusCode
-            when (code) {
-                GeofenceStatusCodes.GEOFENCE_NOT_AVAILABLE -> RegisterError(context.getString(R.string.err_location_off), true)
-                GeofenceStatusCodes.GEOFENCE_TOO_MANY_GEOFENCES -> RegisterError(context.getString(R.string.err_too_many), false)
-                else -> RegisterError(context.getString(R.string.err_register, e.message ?: e.toString()), true)
+            val message = when (code) {
+                GeofenceStatusCodes.GEOFENCE_NOT_AVAILABLE -> context.getString(R.string.err_location_off)
+                GeofenceStatusCodes.GEOFENCE_TOO_MANY_GEOFENCES -> context.getString(R.string.err_too_many)
+                else -> context.getString(R.string.err_register, e.message ?: e.toString())
             }
+            RegisterError(message, retryRegister(code))
         }
     }
 }

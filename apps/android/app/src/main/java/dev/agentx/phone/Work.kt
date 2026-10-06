@@ -80,28 +80,33 @@ object Report {
         val token = prefs.token ?: return true
         // Turned off since the crossing: drop it.
         if (!prefs.placesOn) return true
-        // The computer drops old reports anyway (app.places.maxEventAgeMinutes);
-        // stop retrying one that can only be dropped.
-        if (System.currentTimeMillis() - crossing.time > TimeUnit.DAYS.toMillis(1)) return true
-        val event = JSONObject()
-            .put("id", crossing.id)
-            .put("place", crossing.place)
-            .put("transition", crossing.transition)
-            .put("time", crossing.time)
+        if (tooOld(crossing.time, System.currentTimeMillis())) return true
         return try {
-            when (val status = Api.postEvent(base, token, event, quick)) {
-                in 200..299 -> true
-                401 -> {
-                    prefs.lastError = context.getString(R.string.err_unpaired)
-                    true
-                }
-                // Malformed or refused for good (places turned off there): don't retry.
-                400, 403, 404 -> true
-                else -> !(status >= 500 || status == 429)
-            }
+            val status = Api.postEvent(base, token, body(crossing), quick)
+            if (status == 401) prefs.lastError = context.getString(R.string.err_unpaired)
+            done(status)
         } catch (e: IOException) {
             false
         }
+    }
+
+    /** The computer drops old reports anyway (app.places.maxEventAgeMinutes);
+     *  stop retrying one that can only be dropped. */
+    fun tooOld(time: Long, now: Long): Boolean = now - time > TimeUnit.DAYS.toMillis(1)
+
+    /** What POST /api/app/places/event receives: these four fields, nothing else. */
+    fun body(crossing: Crossing): JSONObject = JSONObject()
+        .put("id", crossing.id)
+        .put("place", crossing.place)
+        .put("transition", crossing.transition)
+        .put("time", crossing.time)
+
+    /** True when a crossing answered with this status needs no retry. */
+    fun done(status: Int): Boolean = when (status) {
+        in 200..299 -> true
+        // Unpaired, malformed or refused for good (places turned off there): don't retry.
+        400, 401, 403, 404 -> true
+        else -> !(status >= 500 || status == 429)
     }
 }
 

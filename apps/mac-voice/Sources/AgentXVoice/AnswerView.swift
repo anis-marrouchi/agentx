@@ -31,6 +31,10 @@ final class AnswerView: NSView {
     var onHeight: ((CGFloat) -> Void)?
     /// "Open in chat". Set by the app.
     var onOpenChat: (() -> Void)?
+    /// "Listen again" (#492): say the answer again, or stop saying it.
+    /// Set by the app, which owns the speaking.
+    var onListenAgain: (() -> Void)?
+    private var listenButton: NSButton?
 
     private static let linkRow: CGFloat = 34
     private static let imageHeight: CGFloat = 120
@@ -50,9 +54,14 @@ final class AnswerView: NSView {
         links.edgeInsets = NSEdgeInsets(top: 4, left: 12, bottom: 8, right: 12)
         addSubview(links)
 
-        // Copy and Open in chat, shown while the pointer is over the answer.
+        // Listen again, Copy and Open in chat, shown while the pointer is
+        // over the answer.
         actions.orientation = .horizontal
         actions.spacing = 2
+        let idle = ListenAgain.look(replaying: false)
+        let listen = actionButton(idle.symbol, idle.label, #selector(listenAgain))
+        listenButton = listen
+        actions.addArrangedSubview(listen)
         actions.addArrangedSubview(actionButton("doc.on.doc", "Copy the answer", #selector(copyAnswer)))
         actions.addArrangedSubview(actionButton("bubble.left.and.bubble.right", "Open in chat", #selector(openChat)))
         actions.isHidden = true
@@ -93,7 +102,8 @@ final class AnswerView: NSView {
         thumb.frame = NSRect(x: 12, y: h - imgH - 10, width: w - 24, height: imgH)
         web.frame = NSRect(x: 0, y: linkH, width: w, height: max(0, h - linkH - imgH - (imgH > 0 ? 16 : 0)))
         links.frame = NSRect(x: 0, y: 0, width: w, height: linkH)
-        actions.frame = NSRect(x: w - 64, y: h - 32, width: 56, height: 26)
+        // Three 24-point buttons, 2 apart, with 3 points each side.
+        actions.frame = NSRect(x: w - 90, y: h - 32, width: 82, height: 26)
     }
 
     /// Does this turn have anything the spoken answer did not already
@@ -197,6 +207,18 @@ final class AnswerView: NSView {
     }
 
     @objc private func openChat() { onOpenChat?() }
+
+    @objc private func listenAgain() { onListenAgain?() }
+
+    /// The speaker while the answer is being said again: a stop button,
+    /// so a second click stops it.
+    func setReplaying(_ on: Bool) {
+        guard let b = listenButton else { return }
+        let look = ListenAgain.look(replaying: on)
+        b.image = NSImage(systemSymbolName: look.symbol, accessibilityDescription: look.label)
+        b.toolTip = look.label
+        b.setAccessibilityLabel(look.label)
+    }
 
     /// Select-and-⌘C: the pill has no Edit menu to route the shortcut.
     func copySelection() { NSApp.sendAction(#selector(NSText.copy(_:)), to: web, from: nil) }

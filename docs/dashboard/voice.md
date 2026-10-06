@@ -172,7 +172,8 @@ When an answer has a link, a picture, or more text than was read aloud, the pill
 1. **Mac:** hold **Option–Space** and ask something with a longer answer, for example "Give me the release checklist with links."
 2. Let go. When the answer arrives, the pill grows into it while the answer is spoken.
 3. **Mac:** read, scroll, or select text in the answer. Click a link or a button to open it in your browser.
-4. **Mac:** move the pointer over the answer. Two buttons appear at its top-right corner:
+4. **Mac:** move the pointer over the answer. Three buttons appear at its top-right corner:
+   - **Listen again** (a speaker) says the answer again from its start, in the agent's voice. It waits for anything already speaking, and the microphone stays closed while it plays. While it plays the button shows a stop square: click it again, or press **Command–Option–.**, to stop it. Like that shortcut, stopping it also drops answers from other agents still waiting to be spoken. It works the same in the character's speech bubble.
    - **Copy the answer** (the two pages) copies the whole answer.
    - **Open in chat** (the two speech bubbles) opens the agent's page in the dashboard with its chat open.
 
@@ -1269,10 +1270,11 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 21. **Terminal:** to check the on-device models, run `~/Applications/"AgentX Desktop.app"/Contents/MacOS/agentx-voice-local status`. `vad: installed` appears once the microphone has been used; `parakeet: installed` once Parakeet has been chosen and downloaded.
 22. **Mac:** click the pill so the microphone opens without a key, say a sentence with a short pause in the middle, then stop. The question is sent about a second after your last word, not during the pause.
 23. **Mac:** ask "Give me three links about macOS design." The pill grows into the answer, with no second window. Once it has been spoken and you move the pointer away, it shrinks back after the time set in **Keep the answer open**.
-24. **Terminal:** run `agentx voice palette <agent-id> forest`, then open the AgentX menu and hold **Option–Space**. The orb is moss to fern green. Run `agentx voice palette <agent-id> default` to undo it.
-25. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
-26. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
-27. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
+24. **Mac:** while that answer is open, move the pointer over it and click **Listen again**. It is spoken again from the start, and the button shows a stop square. Click it again: the voice stops.
+25. **Terminal:** run `agentx voice palette <agent-id> forest`, then open the AgentX menu and hold **Option–Space**. The orb is moss to fern green. Run `agentx voice palette <agent-id> default` to undo it.
+26. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
+27. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
+28. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
 
 ## If something is wrong
 

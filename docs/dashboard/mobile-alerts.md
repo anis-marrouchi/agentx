@@ -42,7 +42,9 @@ Do this once, on the computer the phone pairs with.
 
 ## Set up your other computers
 
-If you run AgentX on more than one computer (a *mesh*), the other computers send their notifications through the host. Do this on each of them.
+If you run AgentX on more than one computer (a *mesh*), one computer is the notification *host*: it holds the keys and the list of phones. The other computers pass their notifications to it. Do this on each of them.
+
+A phone can be paired with any of these computers. A phone paired with another computer turns notifications on through it, and the host sends them. It gets the same notifications as a phone paired with the host: from every computer in the mesh, plus its own chat answers.
 
 1. **Terminal (other computer):** find the host's name in the mesh:
    ```sh
@@ -56,6 +58,23 @@ If you run AgentX on more than one computer (a *mesh*), the other computers send
    ```sh
    agentx daemon stop && agentx daemon start --detach
    ```
+
+### Pair a phone with one of these computers
+
+The host only accepts a phone from another computer when that computer proves who it is. It does that with a *peer token*: a password that the two computers share and no other computer has. A token every computer knows, such as `MESH_TOKEN`, is not enough.
+
+1. **Terminal (other computer):** create a long random password, and keep it for the next steps:
+   ```sh
+   openssl rand -hex 32
+   ```
+2. **Browser (other computer):** open the dashboard, then **Settings › Advanced**. In `mesh.peers`, find the host's entry and set its `token` to the password from step 1. Save.
+3. **Browser (host):** open the dashboard, then **Settings › Advanced**. In `mesh.peers`, find this other computer's entry and set its `token` to the same password. Save.
+4. **Terminal (both computers):** restart AgentX:
+   ```sh
+   agentx daemon stop && agentx daemon start --detach
+   ```
+
+Give every other computer a password of its own. The host files each phone under the name it gave that computer in `mesh.peers`. Two names that differ only in spaces or punctuation, such as `my mac` and `my-mac`, are refused: rename one.
 
 ## Turn on notifications on the phone
 
@@ -72,7 +91,8 @@ Each phone turns notifications on for itself. Repeat these steps on every phone 
 - Tap a notification to open the app on the **Alerts** tab. When the message carries a link, for example to a failed job, tapping opens that link instead. A notification about a chat answer opens that conversation (see below).
 - Some notifications have buttons. Each button opens its own link.
 - To stop notifications on one phone, open **Alerts** and tap **Turn off**.
-- Removing a phone with `agentx app revoke` also stops its notifications.
+- Removing a phone with `agentx app revoke` also stops its notifications. For a phone paired with another computer, the host hears about it within about a minute, while that computer is running.
+- On the host, `agentx app devices` also lists the phones paired with other computers, with ids like `laptop:tok_…`. To stop notifications to one of them from the host, run `agentx app revoke laptop:tok_…`. To stop them for every phone of a computer, run `agentx app forget-computer laptop`. Removing a computer from `mesh.peers` on the host also stops its phones' notifications.
 - Once notifications are on, `agentx notify` sends to the phone app. To send somewhere else by default, run `agentx notifications channel ntfy` (or another channel's name). For ntfy, see [Get notified](../jobs/notifications.md).
 
 ## Notifications when a chat answer finishes
@@ -113,7 +133,7 @@ To stop announcement notifications on one phone, and keep the others:
 1. **Phone:** open the app and tap **Alerts**.
 2. **Phone:** in the **Announcements** card, turn off **Notify me of announcements**.
 
-The switch only shows when this computer sends the notifications itself (see [Set up the computer that hosts the phone app](#set-up-the-computer-that-hosts-the-phone-app)). More about announcements: [Events › Announcements](../reference/events.md#announcements).
+The switch shows on any computer with notifications turned on. On a computer that passes its notifications to the host, it reads the host's setting as of the last time this phone opened **Alerts**. More about announcements: [Events › Announcements](../reference/events.md#announcements).
 
 ## Check it worked
 
@@ -125,14 +145,21 @@ The switch only shows when this computer sends the notifications itself (see [Se
 3. **Phone:** a notification titled **Test** appears within a few seconds.
 4. **Phone:** open the app and tap **Alerts**. **Test** is at the top of **Recent**.
 5. **Terminal (other computer):** if you set up a second computer, run the same `agentx notify` there. The phone gets it too.
-6. **Phone:** in **Chat**, ask an agent something that takes a while, then close the app. When the answer is ready, a notification with the agent's name appears. Tap it: the app opens on that conversation.
-7. **Terminal (any computer):** run `agentx mesh announce "Hello from the mesh"`. Within a few seconds the phone shows an **Announcement** notification, and the text is at the top of the **Announcements** card in **Alerts**.
+6. **Phone (paired with the other computer):** if a phone is paired with the second computer, open **Alerts** on it and tap **Turn on**. Then run `agentx notify "Hello" --title "Test"` on the host. That phone gets it too, and `agentx app devices` on the host lists it under **Paired with another computer**.
+7. **Phone:** in **Chat**, ask an agent something that takes a while, then close the app. When the answer is ready, a notification with the agent's name appears. Tap it: the app opens on that conversation.
+8. **Terminal (any computer):** run `agentx mesh announce "Hello from the mesh"`. Within a few seconds the phone shows an **Announcement** notification, and the text is at the top of the **Announcements** card in **Alerts**.
 
 ## If something is wrong
 
 - **The card says "Notifications are off"** — the host isn't set up yet. Follow [Set up the computer that hosts the phone app](#set-up-the-computer-that-hosts-the-phone-app).
 - **The card says "This computer has no push keys yet"** — run `agentx app push-keys` in the folder that holds `agentx.json`, then restart AgentX.
-- **The card says "Notifications are set up on …"** — this phone is paired with a computer that relays to another. Pair the phone with the host named on the card.
+- **The card says "Can't reach …, the computer that sends notifications"** — this phone is paired with a computer that passes notifications to the host, and the host doesn't answer. Run `agentx mesh list` on the phone's computer and check the host is listed as healthy. Both computers need an AgentX version that supports this; update the older one.
+- **The card says "need that computer's own peer token"** — the host doesn't know which computer this phone's computer is. Follow [Pair a phone with one of these computers](#pair-a-phone-with-one-of-these-computers).
+- **The other computer's log says "uses the shared MESH_TOKEN" or "has no token"** — at startup, a computer that passes notifications to the host checks the token it uses for the host. `agentx connect mesh join` sets that token to `MESH_TOKEN`, which can't pair phones. Follow [Pair a phone with one of these computers](#pair-a-phone-with-one-of-these-computers).
+- **The log says "phone list not sent to the push host"** — the host refused this computer's list of paired phones, usually for one of the token reasons above. The message after the number says which. Until it is fixed, a phone you unpair here keeps its notifications from the host.
+- **A message to `laptop:tok_…` is refused with "paired with another computer"** — only the computer a phone is paired with can send to it by that id. Send from that computer, or use the phone's own `tok_…` id there.
+- **The card says "Several mesh.peers entries share this token"** — on the host, two computers have the same `token`. Give each one its own password.
+- **The card says "too close to this computer's name"** — on the host, two entries in `mesh.peers` have names that differ only in spaces or punctuation. Rename one.
 - **The card says "This browser can't receive notifications here"** — on an iPhone, add the app to the Home Screen and open it from there.
 - **The card says notifications are blocked** — you tapped **Don't Allow** earlier. Allow notifications for the AgentX app in the phone's settings, then tap **Turn on** again.
 - **`agentx notify` says "no phone has turned on notifications"** — turn notifications on in the **Alerts** tab on at least one phone.

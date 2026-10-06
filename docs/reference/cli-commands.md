@@ -125,13 +125,19 @@ Refuses to run while `tailscale serve` shares the whole dashboard (for example a
 
 ### `agentx app devices`
 
-List paired phones.
+List paired phones. On the computer that sends notifications, it also lists the phones paired with other computers that turned notifications on here, with ids like `laptop:tok_…`.
 
 No flags.
 
 ### `agentx app revoke <id>`
 
-Unpair a phone immediately. The phone also stops getting notifications.
+Unpair a phone immediately. The phone also stops getting notifications. With an id like `laptop:tok_…`, it only stops notifications from this computer; the phone stays paired with `laptop`.
+
+No flags.
+
+### `agentx app forget-computer <name>`
+
+Stop notifications from this computer to every phone paired with computer `<name>`. While `<name>` is still in `mesh.peers`, its phones can turn notifications on again. Use the name as it appears in `mesh.peers` or in `agentx app devices`: spaces and punctuation are matched the same way, so `my mac` and `my-mac` both work. See [Notifications on your phone](../dashboard/mobile-alerts.md).
 
 No flags.
 
