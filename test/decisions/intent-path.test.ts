@@ -44,6 +44,16 @@ describe("intent-path questions", () => {
   })
 })
 
+describe("intent-path category text", () => {
+  it("describes a category seeded with only its kind, keeping a node's own text", () => {
+    const bare = (id: string): GraphNode => ({ id, level: "category", parentId: null, axes: { kind: id }, createdAt: "2026-01-01T00:00:00Z" })
+    const q = categoryQuestions([bare("support"), bare("social"), node("code", null, "Our own words")]).category
+    expect(q.criteria.support).toMatch(/person talking to an agent/)
+    expect(q.criteria.social).toMatch(/audience/)
+    expect(q.criteria.code).toBe("Our own words")
+  })
+})
+
 describe("proposePathViaSeat", () => {
   it("returns null when the seat is off", async () => {
     seat("off", {})

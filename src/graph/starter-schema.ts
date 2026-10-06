@@ -94,12 +94,29 @@ export const STARTER_SCHEMA: GraphSchema = {
   },
 }
 
+/** What each category covers, in the words a reviewer would use to file a
+ *  message. Category nodes were seeded with only their `kind`, so a model
+ *  picking between them saw bare ids; the boundaries below are the ones a
+ *  labelled sample of seat answers got wrong most (support read as social
+ *  or admin, code read as system). */
+export const CATEGORY_DESCRIPTIONS: Record<StarterCategory, string> = {
+  code: "Work on source code: review a PR or MR, fix a bug, build a feature, refactor, write a spec, or answer a question about code. Includes changes to AgentX's own code.",
+  ops: "Running systems: deploy, roll back, monitor, scale, restart a service, or handle a production incident.",
+  support: "A person talking to an agent: a greeting, casual chat, thanks, a question to answer, a request for help, a follow-up or complaint about an earlier request, or routing a request to someone else. The default for conversation that is not itself one of the other kinds of work.",
+  admin: "Changing how the agents are set up: configuration, schedules, tokens, roles, adding an agent or a channel. Not a question about the setup or a complaint that something did not run.",
+  knowledge: "Writing or gathering knowledge to keep: documentation, wiki articles, research, summarising a thread.",
+  social: "Content made for an audience other than the agent: posts, announcements, daily briefs, weekly reports. Not a conversation with the agent.",
+  system: "Internal sub-calls made by the platform itself, such as the intent classifier. A message from a person is almost never this.",
+}
+
 /** Pre-seeded verbs shipped with v2. The classifier picks from these
  *  first; new verbs go through the review queue before they're
  *  committed (so the taxonomy doesn't drift). Adding to this list is
  *  cheap — the seed runs once when nodes.json is empty. */
+export type StarterCategory = "code" | "ops" | "support" | "admin" | "knowledge" | "social" | "system"
+
 export const STARTER_VERB_NODES: Array<{
-  category: "code" | "ops" | "support" | "admin" | "knowledge" | "social" | "system"
+  category: StarterCategory
   verb: string
   description?: string
 }> = [

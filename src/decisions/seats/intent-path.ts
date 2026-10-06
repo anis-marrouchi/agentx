@@ -3,6 +3,7 @@ import { askSeat, getSeatMode } from "../seat"
 import type { SeatMode } from "../store"
 import type { ChoiceAnswer, StateValue } from "../types"
 import type { GraphNode } from "@/graph/types"
+import { CATEGORY_DESCRIPTIONS } from "@/graph/starter-schema"
 
 // Which intent-graph path a message belongs to.
 //
@@ -75,9 +76,15 @@ export function nodeChoice(nodes: GraphNode[], instructions: string) {
 }
 
 export function categoryQuestions(categories: GraphNode[]) {
+  // Stores seeded before categories carried a description still hold bare
+  // `{ kind }` nodes; the shipped text fills in so the options are not ids.
+  const described = categories.map((n) => {
+    const fallback = (CATEGORY_DESCRIPTIONS as Record<string, string | undefined>)[n.id]
+    return n.axes?.description?.trim() || !fallback ? n : { ...n, axes: { ...n.axes, description: fallback } }
+  })
   return {
     category: nodeChoice(
-      categories,
+      described,
       "Which category of work does this message ask for or report on? Pick the one a reviewer would file it under.",
     ),
   }
