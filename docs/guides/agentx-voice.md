@@ -98,6 +98,7 @@ Most answers are only spoken. A long answer is read aloud up to the end of a sen
 1. **Mac:** read or scroll the answer. Click a link or a button to open it in your browser.
 2. **Mac:** move the pointer over the answer. Three small buttons appear at its top-right corner: **Listen again** (a speaker), **Copy the answer** and **Open in chat** (which opens the agent's chat in the dashboard).
 3. **Mac:** to hear the answer again, click **Listen again**. It is said from the start in the agent's voice, after anything already speaking. Click it again (it shows a stop square), or press **Command–Option–.**, to stop it.
+   Stopping it is the same stop as **Command–Option–.**: answers from other agents still waiting to be spoken are dropped too. If you speak while it plays, it pauses and plays again once your turn is over, and the button keeps its stop square until then.
 4. **Mac:** to copy only part of it, select the text and press **Command–C**.
 5. Move the pointer away. The pill shrinks back 30 seconds after the answer has been spoken, never while the pointer is over it.
 

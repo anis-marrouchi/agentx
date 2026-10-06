@@ -733,8 +733,9 @@ final class App: NSObject, NSApplicationDelegate {
         Speech.stop()
         speaking?.cancel()
         speaking = nil
-        // A replay waits, hushed, like any answer; the button lets go of it.
-        endReplay()
+        // A replay waits, hushed, like any answer, and plays again on
+        // resume: the button keeps it, so a click stops it rather than
+        // queueing a second copy. It lets go when the daemon's wait ends.
         lastSpokeAt = Date()
         talkCheck = Task { await AgentClient.hush() }
         Log.info("door: opened\(busy ? " (a turn is running)" : "")")
