@@ -1470,7 +1470,8 @@ export class AgentXDaemon {
             agentId: agent,
             text: `🔴 **Cron "${jobId}" failed** (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
             record: true,
-            taskId: `cron-fail:${jobId}:${Date.now()}`,
+            // No "/", like the result path: one segment of the reply URL.
+            taskId: `cron-fail:${jobId.replace(/\//g, ":")}:${Date.now()}`,
             outcome: "error",
             summary: `Cron "${jobId}" failed (${consecutiveErrors}x)`,
           })
