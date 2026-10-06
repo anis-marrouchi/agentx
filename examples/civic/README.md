@@ -20,6 +20,8 @@ agentx daemon start          # then pair WhatsApp: dashboard → Channels → QR
 
 Before `agentx daemon start`, put your own Telegram username in `agentx.json`: replace `@REPLACE-WITH-YOUR-USERNAME` under `channels.telegram.policy.allowFrom` with yours (for example `@jane_doe`). The internal bot ignores every message from anyone not on that list ([Connect Telegram](../../docs/connect-telegram.md#4-allow-people-to-talk-to-the-bot)).
 
+**Use a dedicated WhatsApp number for the intake bot.** This example sets `"allowFrom": ["*"]` so the bot answers any member of the public, which means it answers every chat on the paired number. Never pair a personal or staff number. WhatsApp can also ban a number it thinks is automated. Read [Before you pair WhatsApp](../../docs/reference/channels.md#before-you-pair-whatsapp) first.
+
 Put the service's procedure docs (required documents, fees, office hours) in `workspaces/intake/references/`.
 
 ## Grow it
