@@ -7,6 +7,10 @@ import { getCursorStore, type CursorStore } from "./cursor-store"
 
 // --- Telegram Bot API adapter (long-polling, no dependencies) ---
 
+/** Allowlist entry that admits every sender: a public, customer-facing bot.
+ *  Never the default — an owner must add it on purpose. */
+export const TELEGRAM_ALLOW_EVERYONE = "*"
+
 type OutPoll = { name: string; values: string[]; selectableCount?: number }
 type OutMedia = { type: "image" | "document" | "audio" | "video"; url: string; caption?: string }
 
@@ -273,7 +277,8 @@ export class TelegramAdapter implements ChannelAdapter {
   }
 
   /** Accept a message only when at least one allowlist entry matches the
-   *  sender's user id, the chat id, or the sender's @username. */
+   *  sender's user id, the chat id, or the sender's @username. The entry
+   *  `"*"` matches everyone — an explicit opt-in for a public bot. */
   private isAllowed(
     accountId: string,
     fromId: number | string | undefined,
@@ -287,6 +292,7 @@ export class TelegramAdapter implements ChannelAdapter {
     const userLc = fromUsername?.toLowerCase()
     for (const entry of list) {
       if (!entry) continue
+      if (entry === TELEGRAM_ALLOW_EVERYONE) return true
       if (entry === fromStr || entry === chatStr) return true
       if (entry.startsWith("@") && userLc && entry.slice(1).toLowerCase() === userLc) return true
     }

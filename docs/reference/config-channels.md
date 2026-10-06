@@ -14,11 +14,11 @@ Set up with `agentx connect telegram` ([connect Telegram](/connect-telegram)). O
 | `channels.telegram.accounts` | map of accounts | `{}` | One entry per bot, keyed by an account name you choose. |
 | `token` | string | required | The bot token from BotFather. Use a `${…}` reference. |
 | `agentBinding` | string | required | The agent that answers this bot's messages. |
-| `allowFrom` | list of strings | — | Who may message this bot: user ids, chat ids (negative numbers) or `@username`. Replaces `channels.telegram.policy.allowFrom` for this account. |
+| `allowFrom` | list of strings | — | Who may message this bot: user ids, chat ids (negative numbers), `@username`, or `"*"` for everyone (a public bot). Replaces `channels.telegram.policy.allowFrom` for this account. |
 | `pollInbound` | boolean | `true` | When `false`, the bot only sends (notifications, replies) and does not read new messages. Use it when the bound agent lives on another machine, so two daemons don't read the same bot. |
 | `channels.telegram.policy.dm` | `"pair"` \| `"block"` | `"pair"` | Direct-message policy. Written by setup; who may write is decided by `allowFrom`. |
 | `channels.telegram.policy.group` | `"mention-required"` \| `"all"` | `"mention-required"` | In groups, `mention-required` answers only messages that `@`-mention an agent. |
-| `channels.telegram.policy.allowFrom` | list of strings | — | Allowlist used by every account without its own `allowFrom`. If neither is set, all messages are ignored. |
+| `channels.telegram.policy.allowFrom` | list of strings | — | Allowlist used by every account without its own `allowFrom`. Same entries, including `"*"`. If neither is set, all messages are ignored. |
 
 ```json
 "telegram": {

@@ -22,7 +22,7 @@ import { configureDecisions } from "@/decisions/seat"
 import { DecisionStore } from "@/decisions/store"
 import { MessageRouter } from "@/channels/router"
 import { setMessageRouter } from "@/channels/router-instance"
-import { TelegramAdapter } from "@/channels/telegram"
+import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { GitLabAdapter } from "@/channels/gitlab"
 import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
@@ -2083,6 +2083,14 @@ export class AgentXDaemon {
           )
         } else {
           this.log(`  Telegram: enabled — global allowFrom entries: ${globalSize}`)
+        }
+        const openAccts = Object.entries(accounts)
+          .filter(([, c]) => (c.allowFrom ?? policy?.allowFrom ?? []).includes(TELEGRAM_ALLOW_EVERYONE))
+          .map(([id]) => id)
+        if (openAccts.length > 0) {
+          this.log(
+            `  Telegram: public — anyone can message ${openAccts.join(", ")} (allowFrom contains "${TELEGRAM_ALLOW_EVERYONE}")`,
+          )
         }
       }
     }
