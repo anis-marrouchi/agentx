@@ -22,7 +22,7 @@ import {
   type Classification,
   type FingerprintEntry,
 } from "./types"
-import { STARTER_SCHEMA, STARTER_VERB_NODES } from "./starter-schema"
+import { CATEGORY_DESCRIPTIONS, STARTER_SCHEMA, STARTER_VERB_NODES } from "./starter-schema"
 
 // --- Intent Knowledge Graph filesystem store ---
 //
@@ -609,7 +609,7 @@ function seedNodesFile(): NodesFile {
         id: v.category,
         level: "category",
         parentId: null,
-        axes: { kind: v.category },
+        axes: { kind: v.category, description: CATEGORY_DESCRIPTIONS[v.category] },
         createdAt: now,
         createdBy: "starter",
       })
