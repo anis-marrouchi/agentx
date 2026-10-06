@@ -231,9 +231,10 @@ All in `agentx.json`, under `app`. Each one is described in the [configuration r
   1. **Phone:** on the **Place reminders** screen, check that **Precise location** says **allowed**. If it doesn't, allow it as in [Turn on place reminders](#turn-on-place-reminders).
   2. **Phone:** if it already says **allowed**, install the latest Android app (see [Get the Android app](#get-the-android-app)): builds before this fix could not pass the location to the phone app.
   3. **Phone:** until then, type the place's coordinates instead.
-- **"Chrome hasn't linked the AgentX app yet" when you tap Use where I am now** — the Android app was installed again (for example after a new signing key) while Chrome kept running, and Chrome only links an app the first time it opens it in a run. Then:
-  1. **Phone:** open Android settings, then **Apps**, then **Chrome**, and tap **Force stop**. Your Chrome tabs come back the next time you open it.
-  2. **Phone:** open **AgentX** from the app list and tap **Use where I am now** again. Allow the location if the phone asks.
+- **"The location was refused" when you tap Use where I am now** — either you tapped **Don't allow** when the phone asked, or the Android app was installed again (for example after a new signing key) while Chrome kept running. Chrome only links an app the first time it opens it in a run. Then:
+  1. **Phone:** if you tapped **Don't allow**, open Android settings, then **Apps**, then **AgentX**, then **Permissions**, and allow **Location**. Then try again.
+  2. **Phone:** if you didn't, open Android settings, then **Apps**, then **Chrome**, and tap **Force stop**. Your Chrome tabs come back the next time you open it.
+  3. **Phone:** open **AgentX** from the app list and tap **Use where I am now** again. Allow the location if the phone asks.
 - **"Location is off on this phone"** — Location was turned off, so Android dropped every place. Turn it on in quick settings; the places are watched again at the next check, or at once when you tap **Check for new places now**.
 - **"This phone is no longer paired with the computer"** — the Android app's key was removed with `agentx app revoke`. Tap **Forget this computer**, then [pair again](#pair-the-android-app).
 - **"Could not reach the computer"** — Tailscale is off on the phone or on the computer. Turn it on; the app tries again by itself.
