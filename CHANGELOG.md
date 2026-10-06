@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.117.0](https://github.com/anis-marrouchi/agentx/compare/v0.116.0...v0.117.0) (2026-10-06)
+
+
+### Features
+
+* **session:** list fewer agentx tools in lean sessions, rebased on main + [#722](https://github.com/anis-marrouchi/agentx/issues/722) ([#726](https://github.com/anis-marrouchi/agentx/issues/726)) ([#728](https://github.com/anis-marrouchi/agentx/issues/728)) ([6854dcd](https://github.com/anis-marrouchi/agentx/commit/6854dcd51d7081252ab00af50c13ba295fcaa6e3))
+
+
+### Bug Fixes
+
+* **push:** close the [#725](https://github.com/anis-marrouchi/agentx/issues/725) review follow-ups for relay-paired phones ([#733](https://github.com/anis-marrouchi/agentx/issues/733)) ([f4d6c8a](https://github.com/anis-marrouchi/agentx/commit/f4d6c8a962a9caacf582a037a0b2032a5f2c11bd))
+
 ## [0.116.0](https://github.com/anis-marrouchi/agentx/compare/v0.115.0...v0.116.0) (2026-10-06)
 
 
