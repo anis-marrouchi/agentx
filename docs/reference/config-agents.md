@@ -282,6 +282,8 @@ To give lean sessions a short tool list:
 
 The list applies to `claude-code` agents on lean channels only, and never to the `agentx` tools, which stay available. An empty list means every tool: there is no way to start a session with no tools at all, because Claude Code then loads every tool server's full description instead, which costs more, not less.
 
+AgentX always adds `ToolSearch` to the list, even when you leave it out. `ToolSearch` is the Claude Code tool that looks up a tool's full description when the agent first needs it. While it is there, the session starts with only the names of the `agentx` tools. Without it, Claude Code puts the full description of all `agentx` tools into every first turn: about 9k tokens, measured on Claude Code 2.1.291, which is more than a short list saves.
+
 #### A shorter memory index
 
 The index of what an agent remembers (`agentx memory index`) is loaded on every session, twice: merged into the agent's workspace `CLAUDE.md`, and inlined in the system prompt. An agent with many memories pays for the whole list on every task. `session.memoryIndexMaxChars` caps it:
@@ -426,4 +428,5 @@ A warm process answers only the question it was asked. When a background task of
 - **The daemon log says `N agent(s) not packed`:** those agents do not run with `permissionMode: "bypassPermissions"`. They could not open a saved original, so they keep getting full results. This is by design; nothing to fix.
 - **An agent reads the same large file again and again in pages, or its edit fails with `old_string not found` right after a read:** the read was packed and the agent is fetching the lines it needs. That is expected once per file; if the agent spends most of a task on one large file, set `session.observationPack.tools` to `["Bash", "Grep", "WebFetch", "mcp__.*"]` and restart the daemon, so file reads stay whole.
 - **`session.observationPack.enabled` is on and nothing is packed:** restart the daemon; the hook is written into the workspaces at start. Then check that the agent's `tier` is `claude-code`, that its `permissionMode` is `bypassPermissions` and that the result was over `limitBytes`.
+- **A lean session with `session.lean.tools` set starts no smaller than one without it:** update AgentX. Versions up to 0.114.1 left `ToolSearch` out of the list, so Claude Code loaded every `agentx` tool description in full.
 - **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.

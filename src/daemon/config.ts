@@ -1610,7 +1610,8 @@ export const daemonConfigSchema = z.object({
        *  14k tokens of a first turn, so a short list is what brings a lean
        *  start under 20k; an agent that lacks a tool it needs fails
        *  mid-task, so this stays opt-in. The agentx MCP tools are not
-       *  affected. claude-code agents only. */
+       *  affected: ToolSearch is always added to the list, so they stay
+       *  deferred. claude-code agents only. */
       tools: z.array(z.string().min(1)).default([]),
       /** The same per channel; a channel's non-empty list wins over
        *  `tools`. */
