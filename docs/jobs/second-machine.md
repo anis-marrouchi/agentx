@@ -19,7 +19,7 @@ Each machine runs its own AgentX daemon (the background service). Connected mach
    ```sh
    agentx connect mesh join '<link>'
    ```
-5. **Terminal, on both machines:** restart the daemon so it loads the new mesh settings: `agentx daemon stop`, then `agentx daemon start --detach`.
+5. **Terminal, on both machines:** restart the daemon so it loads the new mesh settings: `agentx daemon restart`.
 
 Joining adds the first machine to the second machine's peer list. For each machine to see the other, repeat steps 1–5 in the other direction. See [Tailscale setup › Pair AgentX in both directions](tailscale.md#_3-pair-agentx-in-both-directions).
 

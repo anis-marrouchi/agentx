@@ -49,7 +49,7 @@ A **topic** is the name of your private message box on ntfy. On the public `ntfy
 10. Restart AgentX so the change takes effect. In the terminal, run:
 
     ```sh
-    agentx daemon stop && agentx daemon start --detach
+    agentx daemon restart
     ```
 
 11. Only if phone app notifications are also on: make ntfy the default for `agentx notify`. In the terminal, run:
@@ -69,7 +69,7 @@ Put its address in **Server** (for example `https://ntfy.example.com`). If your 
 agentx notifications ntfy --topic '${NTFY_TOPIC}' --enable
 agentx notifications ntfy --server https://ntfy.example.com --token '${NTFY_TOKEN}'   # own server only
 agentx notifications channel ntfy   # only if phone app notifications are also on
-agentx daemon stop && agentx daemon start --detach
+agentx daemon restart
 ```
 Keep the single quotes, so your shell does not replace `${…}` itself. `--token ""` removes a token, and `--disable` turns phone push off.
 :::
@@ -93,7 +93,7 @@ Before you start, check that:
 - your Mac has an Apple chip (M1 or newer) and runs macOS 14 Sonoma or newer;
 - Apple's command-line tools are installed. If you are not sure, run `xcode-select --install` in the Terminal. It either starts the install or says they are already there.
 
-`agentx desktop install` also installs the [AgentX Desktop voice assistant](../dashboard/voice.md) and starts it when you log in. Run `agentx desktop install --dry-run` first to see what it will install, without changing anything.
+`agentx desktop install` also installs the [AgentX Voice assistant](../dashboard/voice.md) and starts it when you log in. Run `agentx desktop install --dry-run` first to see what it will install, without changing anything.
 
 1. Open the Terminal.
 2. Go to the folder that holds your `agentx.json`, for example:

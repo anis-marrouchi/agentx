@@ -4,9 +4,11 @@ A good first job for an agent is answering one narrow kind of question: support 
 
 You need an agent (see [Your first agent](../first-agent.md)) and a connected channel (see [Connect Telegram](../connect-telegram.md)).
 
+Every question the agent answers uses your model account. See [What this costs](../help/costs.md) before you open it to many people.
+
 ## Set the agent up
 
-1. Put the approved source material (FAQ, policy pages, price list) in the agent's workspace folder, so the agent can read it.
+1. Put the approved source material (FAQ, policy pages, price list) in the agent's **workspace**, the folder the agent works in, so the agent can read it. For an agent added from the dashboard or the setup page, that is `agents/<id>/` next to `agentx.json`, for example `agents/helper/`. If you chose another folder, it is the `workspace` value of the agent in `agentx.json`.
 2. **Browser:** open **Settings** and stay on the **Agents** tab.
 3. Select **Manage** next to the agent.
 4. Select the **Personality** tab and open the instructions file.

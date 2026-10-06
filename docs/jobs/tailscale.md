@@ -34,7 +34,7 @@ By default the daemon only listens on the machine itself (`127.0.0.1`, also call
 1. Open `agentx.json`.
 2. Set `node.bind` to the machine's Tailscale address and the daemon port, for example `"bind": "100.64.0.10:18800"` inside `"node"`.
 3. If a local tool used `http://127.0.0.1:18800` to reach the daemon, including `dashboard.daemonUrl`, change it to the new address.
-4. **Terminal:** restart the daemon: `agentx daemon stop`, then `agentx daemon start --detach`.
+4. **Terminal:** restart the daemon: `agentx daemon restart`.
 5. **Terminal, on the other machine:** check that the daemon answers:
    ```sh
    curl http://100.64.0.10:18800/health
@@ -59,7 +59,7 @@ Run these commands in the folder that holds `agentx.json` on each machine. For D
    ```
 4. **Terminal, on machine B:** create an invite with B's own address (`agentx connect mesh invite --url http://<B's address>:18800`). It reuses the shared password.
 5. **Terminal, on machine A:** join with B's link.
-6. **Terminal, on both machines:** restart the daemon so it loads the new password from `.env`. For Docker, restart the services.
+6. **Terminal, on both machines:** restart the daemon so it loads the new password from `.env`: `agentx daemon restart`. For Docker, restart the services.
 
 Joining only adds the inviting machine to the joining machine's list, which is why steps 4 and 5 repeat it the other way.
 

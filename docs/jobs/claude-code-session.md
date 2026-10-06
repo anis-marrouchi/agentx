@@ -71,7 +71,7 @@ Watching survives a daemon restart. It ends when you run `agentx attach detach`,
 
 - **`Attach hooks are not installed yet`:** run `agentx attach install` in a terminal, then restart the Claude Code session.
 - **`Could not determine the Claude Code session id`:** the command ran outside Claude Code. Ask Claude to run it, or pass `--session <id>` (find the id with `agentx attach list`).
-- **`daemon not reachable`:** start AgentX with `agentx daemon start`. While the daemon is stopped, a watching session simply gets no digest; Claude Code shows no error.
+- **`daemon not reachable`:** start AgentX with `agentx daemon start --detach`. While the daemon is stopped, a watching session simply gets no digest; Claude Code shows no error.
 - **No digest ever appears:** only events on this machine are included, and the list starts empty after a daemon restart. Run `agentx events` to see what the machine has. If those events don't match the default list, name them with `--kinds`.
 - **The digest is always cut short:** a lot is happening. Narrow it with `--kinds`, `--agents` or `--match`, or run the `agentx events --since` command on its last line.
 - **The session answers messages again:** someone ran `agentx attach as <agent>` in it, which ends watching. Run `agentx attach watch` again.

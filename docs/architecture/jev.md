@@ -61,8 +61,7 @@ Turn a seat on in three stages: watch it, check it, then let it act.
    ```
 3. **Terminal:** restart the daemon so it reads the change:
    ```sh
-   agentx daemon stop
-   agentx daemon start --detach
+   agentx daemon restart
    ```
 4. Use the feature for a while (for `ui-element`, run `agentx point` a few times).
 5. **Terminal:** check that the backend answers:
@@ -74,7 +73,7 @@ Turn a seat on in three stages: watch it, check it, then let it act.
    agentx decisions stats --since 1d
    ```
 7. When the answers look right, change `"mode": "shadow"` to `"mode": "active"`.
-8. **Terminal:** restart the daemon again.
+8. **Terminal:** restart the daemon again with `agentx daemon restart`.
 
 For deeper inspection and calibration, see:
 

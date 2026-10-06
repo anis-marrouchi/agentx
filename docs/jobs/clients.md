@@ -18,6 +18,10 @@ The whole path, from your first step to the client's desktop:
 - Only the member page published on the network, and shared users limited to port 443: follow [Serve only the member page](./members.md#serve-only-the-member-page) once. The client's page lives under the same two paths, `/member` and `/api/member`, so nothing more is published for it.
 - The dashboard running from the folder that holds `agentx.json`.
 
+::: tip What is Tailscale?
+[Tailscale](https://tailscale.com) is an app that links computers into a small private network over the internet, so they can reach each other without opening anything to the public. A **share** lets someone outside your network reach one of your computers, and nothing else. To install it and connect your own machines, see [Connect machines with Tailscale](./tailscale.md).
+:::
+
 ## Invite
 
 1. **Terminal (computer):** from the folder that holds `agentx.json`, list the client with their role and the identity they write from:

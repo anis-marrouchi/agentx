@@ -10,7 +10,7 @@ The person who installed AgentX needs to do this once:
    ```sh
    agentx config set workflows.enabled true
    ```
-2. **Terminal:** restart the daemon (the AgentX background service): `agentx daemon stop`, then `agentx daemon start --detach`.
+2. **Terminal:** restart the daemon (the AgentX background service): `agentx daemon restart`.
 
 You also need at least one agent with a working model connection. It drafts the workflow.
 
