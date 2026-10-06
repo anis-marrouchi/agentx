@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { createServer, type Server } from "http"
 import { mkdtempSync, rmSync } from "fs"
-import { tmpdir } from "os"
+import { networkInterfaces, tmpdir } from "os"
 import { join } from "path"
 import { inflateSync } from "zlib"
 import { TokenStore } from "../src/daemon/token-store"
@@ -208,5 +208,40 @@ describe("agentx app pair: tailscale serve guard", () => {
   it("also checks foreground serve sessions", () => {
     const status = { Foreground: { abc: web({ "/admin": "localhost:4202/admin" }) } }
     expect(exposedDashboardMounts(status, 4202)).toEqual(["mac.tail1.ts.net:443/admin"])
+  })
+
+  it("flags https+insecure and other schemes (#707)", () => {
+    expect(exposedDashboardMounts(web({ "/": "https+insecure://127.0.0.1:4202" }), 4202)).toEqual(["mac.tail1.ts.net:443/"])
+    expect(exposedDashboardMounts(web({ "/": "HTTPS+INSECURE://localhost:4202/" }), 4202)).toEqual(["mac.tail1.ts.net:443/"])
+    expect(exposedDashboardMounts(web({ "/": "https://[::1]:4202" }), 4202)).toEqual(["mac.tail1.ts.net:443/"])
+    expect(exposedDashboardMounts(web({ "/": "4202" }), 4202)).toEqual(["mac.tail1.ts.net:443/"])
+    const app = { "/app": "https+insecure://127.0.0.1:4202/app", "/api/app": "https+insecure://127.0.0.1:4202/api/app" }
+    expect(exposedDashboardMounts(web(app), 4202)).toEqual([])
+  })
+
+  it("flags any address of this machine, not only loopback (#707)", () => {
+    const local = new Set(["localhost", "0.0.0.0", "::", "::1", "192.168.1.20", "100.101.102.103", "fe80::1", "mac"])
+    for (const target of [
+      "http://192.168.1.20:4202",
+      "http://100.101.102.103:4202",
+      "http://0.0.0.0:4202",
+      "http://[::]:4202",
+      "http://[fe80::1%en0]:4202",
+      "http://[::ffff:127.0.0.1]:4202",
+      "http://127.0.1.1:4202",
+      "http://mac:4202",
+      "https+insecure://mac.tail1.ts.net:4202",
+    ]) {
+      expect(exposedDashboardMounts(web({ "/": target }), 4202, local), target).toEqual(["mac.tail1.ts.net:443/"])
+    }
+    // Another machine's dashboard, or this machine on another port, is not this dashboard.
+    expect(exposedDashboardMounts(web({ "/": "http://192.168.1.99:4202" }), 4202, local)).toEqual([])
+    expect(exposedDashboardMounts(web({ "/": "http://192.168.1.20:3000" }), 4202, local)).toEqual([])
+  })
+
+  it("reads this machine's real interface addresses by default (#707)", () => {
+    const lan = Object.values(networkInterfaces()).flat().find((a) => a && a.family === "IPv4" && !a.internal)
+    if (!lan) return
+    expect(exposedDashboardMounts(web({ "/": `http://${lan.address}:4202` }), 4202)).toEqual(["mac.tail1.ts.net:443/"])
   })
 })
