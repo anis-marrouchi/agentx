@@ -99,7 +99,7 @@ You can also do steps 1 and 2 with one command. **Terminal:**
 curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.sh | bash
 ```
 
-It installs the same npm package and opens the setup page. Install the right Node.js version first: the script checks only for an older minimum.
+It installs the same npm package and opens the setup page. The script checks for Node.js 22.19 or newer, up to 26. If your Node.js is missing or outside that range, it installs Node 22 for you when nvm (a tool that manages Node.js versions) is on your computer, and makes it the default. Without nvm, it stops and tells you which version to install.
 
 Continue with [Your first agent](./first-agent.md).
 
