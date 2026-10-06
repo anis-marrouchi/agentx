@@ -715,7 +715,7 @@ export class GitHubAdapter implements ChannelAdapter {
       raw: event,
       resolvedAgent: agentId,
       preferNode: mapping?.node,
-      channelMeta: await this.getChannelMeta(chatId),
+      channelMeta: { channel: "github", ...(await this.getChannelMeta(chatId)), eventActions: actions },
       runbookPath: projectRule?.runbook,
       runbookFiles: projectRule?.runbookFiles,
     }))
@@ -832,6 +832,9 @@ export class GitHubAdapter implements ChannelAdapter {
       raw: event,
       resolvedAgent: agentId,
       preferNode: mapping?.node,
+      // Only the actions: an issue run carries no scope facts today, and
+      // a meta with nothing else in it adds nothing to the prompt.
+      channelMeta: { channel: "github", eventActions: actions },
       runbookPath: projectRule?.runbook,
       runbookFiles: projectRule?.runbookFiles,
     }))

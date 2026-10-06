@@ -209,6 +209,7 @@ export interface AgentTask {
       project?: string
       issue?: { type: string; iid: string; title: string }
       facts?: string[]
+      eventActions?: string[]
     }
     /** Path to the project root whose runbook (CLAUDE.md / AGENTS.md / etc.)
      *  should be injected into the agent's system prefix for this task.

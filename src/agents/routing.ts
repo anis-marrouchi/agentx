@@ -184,3 +184,65 @@ export async function routeTaskModel(opts: RouteOptions): Promise<RouteResult> {
     reason: `mechanical task (${p.toFixed(2)} below ${threshold}) → ${opts.cheapModel}`,
   }
 }
+
+// --- Triage model (#615) ---
+//
+// A fixed rule next to the seat above: a run started only by triage
+// events (a label added or removed, an issue closed) goes to a cheaper
+// model named in config. Nothing is asked; the event kind decides. Off
+// until `session.triage.models` names a model for the agent's engine.
+//
+// The warm-cache arithmetic above holds here too: a label event on an
+// issue whose session ran a few minutes ago keeps the session's model,
+// because swapping would re-read the whole transcript uncached.
+
+/** Event actions that count as triage when `session.triage.actions` is
+ *  not set. */
+export const DEFAULT_TRIAGE_ACTIONS: readonly string[] = ["labeled", "unlabeled", "closed"]
+
+export interface TriageModelConfig {
+  /** The model per CLI engine. Unset for an engine: no triage model. */
+  models?: { "claude-code"?: string; "codex-cli"?: string }
+  /** Event actions that count as triage. */
+  actions?: string[]
+}
+
+export interface TriageModelOptions {
+  tier: string
+  channel: string
+  /** Every event action this run collapsed (GitHub debounce, #612).
+   *  Unset or empty: the run did not start from a platform event. */
+  eventActions?: string[]
+  triage?: TriageModelConfig
+  isFollowUp: boolean
+  sessionIdleMs?: number | null
+  cacheTtlMs?: number
+}
+
+/**
+ * The triage model for this run, or a kept result. Pure: no seat, no I/O.
+ * A run counts as triage only when every action it collapsed is a triage
+ * action, so "opened, labeled" stays on the agent's own model.
+ */
+export function triageModelFor(opts: TriageModelOptions): RouteResult {
+  const keep = (reason: string): RouteResult => ({ downgraded: false, needsFlagship: null, reason })
+  if (channelKeepsConfiguredModel(opts.channel)) return keep(`${opts.channel} requests retain the configured model`)
+  const actions = opts.eventActions ?? []
+  if (!actions.length) return keep("not started by a platform event")
+  const triageActions = opts.triage?.actions ?? DEFAULT_TRIAGE_ACTIONS
+  const other = actions.find((a) => !triageActions.includes(a))
+  if (other) return keep(`"${other}" is not a triage action`)
+  const model = cheapModelForEngine(opts.tier, { cheapModels: opts.triage?.models })
+  if (!model) return keep(`no triage model set for ${opts.tier}`)
+  if (opts.isFollowUp) {
+    const idle = opts.sessionIdleMs ?? 0
+    const ttl = opts.cacheTtlMs ?? CACHE_TTL_MS
+    if (idle < ttl) return keep(`follow-up on a warm cache (idle ${Math.round(idle / 1000)}s) — keeping the session's model`)
+  }
+  return {
+    model,
+    downgraded: true,
+    needsFlagship: null,
+    reason: `triage event (${actions.join(", ")}) → ${model}`,
+  }
+}

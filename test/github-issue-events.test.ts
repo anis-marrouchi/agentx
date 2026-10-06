@@ -131,6 +131,8 @@ describe("GitHub issue events (#612)", () => {
     expect(runs[0].text).toMatch(/^\[GitHub Issue #7 opened, labeled, assigned\]/)
     expect((runs[0].raw as { action: string }).action).toBe("assigned")
     expect(runs[0].resolvedAgent).toBe("coder")
+    // The triage model (#615) reads every collapsed action, not the last.
+    expect(runs[0].channelMeta?.eventActions).toEqual(["opened", "labeled", "assigned"])
   })
 
   it("the window restarts with each event and ends on its own", async () => {
@@ -270,6 +272,8 @@ describe("GitHub pull request events (#612)", () => {
     await settle()
     expect(runs).toHaveLength(1)
     expect(runs[0].text).toMatch(/^\[GitHub PR #9 opened\]/)
+    expect(runs[0].channelMeta?.eventActions).toEqual(["opened"])
+    expect(runs[0].channelMeta?.project).toBeTruthy()
   })
 
   it("closed does not start a run unless pullRequestActions lists it", async () => {

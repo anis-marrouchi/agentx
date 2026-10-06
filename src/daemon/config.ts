@@ -1616,6 +1616,25 @@ export const daemonConfigSchema = z.object({
        *  `tools`. */
       toolsByChannel: z.record(z.array(z.string().min(1))).default({}),
     }).default({}),
+    /** A cheaper model for runs started only by triage events (#615): a
+     *  GitHub label added or removed, an issue or PR closed. A run that
+     *  collapsed any other action ("opened, labeled") keeps the agent's
+     *  model, and so does a follow-up whose session ran within the last
+     *  hour (swapping models drops the prompt cache). A model set on the
+     *  task itself, such as a cron job's, wins. Off until a model is set
+     *  for the agent's engine. See triageModelFor in src/agents/routing.ts. */
+    triage: z.object({
+      /** The model per CLI engine: a Claude model for claude-code agents,
+       *  an OpenAI model for codex-cli agents. Unset: no triage model. */
+      models: z.object({
+        "claude-code": z.string().min(1).optional(),
+        "codex-cli": z.string().min(1).optional(),
+      }).default({}),
+      /** Event actions that count as triage. An action only reaches an
+       *  agent when `channels.github.issueActions` /
+       *  `pullRequestActions` (or a project rule) let it through. */
+      actions: z.array(z.string().min(1)).default(["labeled", "unlabeled", "closed"]),
+    }).default({}),
     /** Longest the agent-memory index (MEMORY.md) may be where it is
      *  loaded on every session: merged into each workspace's CLAUDE.md
      *  and inlined in the system prompt (#615). 0, the default, keeps the

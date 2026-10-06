@@ -208,6 +208,9 @@ When a conversation's memory is rotated or treated as stale.
 | `session.lean.contextOnDemand` | boolean | `true` | Leave the agent landscape, the chat history and the cross-chat context out of the prompt, and name the tools that fetch them instead. `false` pushes them as a full session does. |
 | `session.lean.tools` | list of string | `[]` | Built-in Claude Code tools a lean session gets, such as `Bash`, `Read`, `Edit`. Empty keeps every built-in tool. A short list is what brings a lean start under 20k tokens; an agent that lacks a tool it needs fails mid-task. The `agentx` tools are not affected. `claude-code` agents only. See [Fewer built-in tools](#fewer-built-in-tools). |
 | `session.lean.toolsByChannel` | object of channel → list of string | `{}` | The same list per channel. A channel's own list wins over `session.lean.tools`; an empty list falls back to it. |
+| `session.triage.models.claude-code` | string | unset (off) | A cheaper Claude model, such as `claude-haiku-4-5-20251001`, for runs a GitHub triage event started. See [A cheaper model for triage events](#a-cheaper-model-for-triage-events). |
+| `session.triage.models.codex-cli` | string | unset (off) | The same for `codex-cli` agents, such as a `gpt-` model. |
+| `session.triage.actions` | list of string | `["labeled", "unlabeled", "closed"]` | GitHub issue and pull request actions that count as triage. A run uses the triage model only when every event it collected is in this list. |
 | `session.memoryIndexMaxChars` | number | `0` | Longest the agent-memory index may be where every session loads it: in the workspace `CLAUDE.md` and in the system prompt. `0` keeps the whole index. The cut keeps whole lines and ends with a line counting the entries left out; the full index stays in `.agentx-memory.md` in the workspace. See [A shorter memory index](#a-shorter-memory-index). |
 | `session.observationPack.enabled` | boolean | `false` | Keep large tool results out of the conversation: the agent sees the start and the end of the result and the path of a file with the exact original. See [Large tool results](#large-tool-results). Turning it on takes a daemon restart; turning it off applies on save. |
 | `session.observationPack.limitBytes` | number (1024–1048576) | `10240` | A text result larger than this many bytes is replaced by an excerpt. |
@@ -288,6 +291,39 @@ The index of what an agent remembers (`agentx memory index`) is loaded on every 
 3. **Terminal:** run `agentx daemon restart --when-idle`. The prompt uses the cap at once; the `CLAUDE.md` block is rewritten at the restart and after every memory change.
 
 The cut keeps whole lines, in the index's own order (user, feedback, project, reference), and ends with a line such as `_(12 more memories not shown here. The full index is in .agentx-memory.md in this workspace, or run \`agentx memory index\`.)_`. The file it names always holds the whole index, so the agent can read it when a task needs more.
+
+#### A cheaper model for triage events
+
+A GitHub event such as a label being added or an issue being closed usually needs a short answer, not the agent's strongest model. `session.triage` sends those runs to a cheaper model you name. It is off until you set a model.
+
+A run counts as triage only when every event it collected is a triage action. AgentX collects the events one issue raises in a few seconds into one run, so an issue that is opened and then labeled keeps the agent's own model. Three more cases keep it too:
+
+- a model set on the task itself, such as a scheduled job's `model`;
+- a follow-up on an issue whose conversation ran within the last hour, because changing model there re-reads the whole conversation at full price;
+- a model that does not fit the agent's engine, such as a `gpt-` model for a `claude-code` agent.
+
+An action only reaches an agent when `channels.github.issueActions` or `pullRequestActions` (or a project rule) lets it through. `labeled` and `closed` are not in the default lists.
+
+To send label and close events to a cheaper model:
+
+1. **Terminal:** open `agentx.json` and set the model, and the actions if you want different ones:
+
+   ```json
+   "session": {
+     "triage": {
+       "models": { "claude-code": "claude-haiku-4-5-20251001" },
+       "actions": ["labeled", "unlabeled", "closed"]
+     }
+   },
+   "channels": {
+     "github": { "issueActions": ["opened", "reopened", "assigned", "labeled"] }
+   }
+   ```
+
+2. **Terminal:** run `agentx config check`. It prints `✓ Config valid`.
+3. **Terminal:** run `agentx daemon restart --when-idle`.
+
+This is a fixed rule. The task-tier decision under `decisions.routing` is a separate, learned way to pick a cheaper model; when a triage model applies, that decision is not asked.
 
 ### Large tool results
 
@@ -376,7 +412,8 @@ A warm process answers only the question it was asked. When a background task of
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
 4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
-5. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
+5. **Terminal:** with `session.triage.models` set, after a label event on an issue nobody has worked on for an hour, run `agentx daemon logs`. A line `triage event (labeled) → <model>` shows the cheaper model was used.
+6. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
 
 ## If something is wrong
 
@@ -385,6 +422,7 @@ A warm process answers only the question it was asked. When a background task of
 - **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.
 - **An agent on GitHub, a schedule or a workflow says it cannot see another agent, an earlier message or a tool it had before:** its channel starts lean. Either tell the agent to use the `agentx_agents`, `agentx_recent` and `agentx_wiki_query` tools, add the tool server it misses to `session.lean.mcpServers`, or set that channel to `"full"` in `session.profileByChannel`.
+- **A label or close event still runs on the agent's own model:** check the daemon log. A run that used the triage model logs `triage event (labeled) → <model>`. If it is missing, the run also collected another action (such as `opened`), the issue's conversation ran within the last hour, or the model does not start with `claude-` (for `claude-code` agents) or `gpt-` (for `codex-cli` agents).
 - **The daemon log says `N agent(s) not packed`:** those agents do not run with `permissionMode: "bypassPermissions"`. They could not open a saved original, so they keep getting full results. This is by design; nothing to fix.
 - **An agent reads the same large file again and again in pages, or its edit fails with `old_string not found` right after a read:** the read was packed and the agent is fetching the lines it needs. That is expected once per file; if the agent spends most of a task on one large file, set `session.observationPack.tools` to `["Bash", "Grep", "WebFetch", "mcp__.*"]` and restart the daemon, so file reads stay whole.
 - **`session.observationPack.enabled` is on and nothing is packed:** restart the daemon; the hook is written into the workspaces at start. Then check that the agent's `tier` is `claude-code`, that its `permissionMode` is `bypassPermissions` and that the result was over `limitBytes`.
