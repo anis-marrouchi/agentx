@@ -226,7 +226,7 @@ export function localAddresses(): Set<string> {
   } catch {}
   try {
     for (const list of Object.values(networkInterfaces())) {
-      for (const a of list ?? []) local.add(a.address.toLowerCase().replace(/%.*$/, ""))
+      for (const a of list ?? []) local.add(normalizeAddress(a.address.toLowerCase().replace(/%.*$/, "")))
     }
   } catch {}
   return local
@@ -239,12 +239,30 @@ const DEFAULT_PORTS: Record<string, number> = { http: 80, https: 443, "https+ins
 function proxyTarget(proxy: string): { host: string; port: number; path: string } | null {
   const bare = proxy.match(/^(\d+)(\/[^?#]*)?$/)
   if (bare) return { host: "localhost", port: Number(bare[1]), path: bare[2] ?? "" }
-  const m = proxy.match(/^(?:([a-z][a-z0-9+.-]*):\/\/)?(\[[^\]]*\]|[^/:?#]*)(?::(\d+))?([^?#]*)/i)
+  const m = proxy.match(/^(?:([a-z][a-z0-9+.-]*):\/\/)?(?:[^@/?#]*@)?(\[[^\]]*\]|[^/:?#]*)(?::(\d+))?([^?#]*)/i)
   if (!m) return null
   const port = m[3] ? Number(m[3]) : DEFAULT_PORTS[(m[1] ?? "http").toLowerCase()]
   if (!port) return null
-  const host = m[2].replace(/^\[|\]$/g, "").replace(/%.*$/, "").replace(/\.$/, "").toLowerCase()
+  const host = normalizeAddress(m[2].replace(/^\[|\]$/g, "").replace(/%.*$/, "").replace(/\.$/, "").toLowerCase())
   return { host, port, path: m[4] }
+}
+
+/** Canonical form of an IP literal, so `0:0:0:0:0:0:0:1` matches `::1`,
+ *  `127.1` matches `127.0.0.1` and `::ffff:7f00:1` matches `::ffff:127.0.0.1`.
+ *  Host names are returned as they are. */
+function normalizeAddress(host: string): string {
+  const v6 = host.includes(":")
+  if (!v6 && !/^[0-9a-fx.]+$/.test(host)) return host
+  let out: string
+  try {
+    out = new URL(`http://${v6 ? `[${host}]` : host}/`).hostname.replace(/^\[|\]$/g, "")
+  } catch {
+    return host
+  }
+  const mapped = out.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+  if (!mapped) return out
+  const [hi, lo] = [parseInt(mapped[1], 16), parseInt(mapped[2], 16)]
+  return `::ffff:${hi >> 8}.${hi & 255}.${lo >> 8}.${lo & 255}`
 }
 
 function isLocalHost(host: string, local: Set<string>): boolean {
