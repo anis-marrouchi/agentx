@@ -8,6 +8,8 @@ Before installing, go through [Before you start](requirements.md) to choose an i
 - **From source** builds AgentX from its code with Node.js.
 - **From npm** installs the published package with Node.js.
 
+AgentX runs on macOS and Linux. Windows is untested; try WSL or Docker (see [Before you start › Operating systems](requirements.md#operating-systems)). Plan on about 10 to 20 minutes for a first install, most of it downloads, plus the time to get a model key.
+
 AgentX runs as two programs: the **daemon** (the background service that runs agents) and the **dashboard** (the website you open in the browser). Every method below starts both.
 
 ## Docker
@@ -50,7 +52,7 @@ Back up your data first. An existing `agentx.json` needs `node.bind: "0.0.0.0:18
 
 ## Run from source
 
-1. Install **Node.js 22** and **pnpm 10**.
+1. Install **Node.js 22.19 or newer, up to 26**, and **pnpm 10**.
 2. **Terminal:** download AgentX and go into the folder:
    ```sh
    git clone https://github.com/anis-marrouchi/agentx.git
@@ -84,15 +86,51 @@ The npm package is called `agentix-cli`; the command it installs is `agentx`. It
    ```sh
    npm install -g agentix-cli@latest
    ```
+   It takes a minute or two and may print `npm warn deprecated …` lines. Those warnings are harmless.
 2. **Terminal:** open the setup page:
    ```sh
    agentx setup
    ```
 3. **Browser:** fill in the setup page as described in [Your first agent](./first-agent.md), select **Save and continue**, then **Start daemon now**.
 
-The one-line `install.sh` installer installs the same npm package and opens setup.
+You can also do steps 1 and 2 with one command. **Terminal:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.sh | bash
+```
+
+It installs the same npm package and opens the setup page. Install the right Node.js version first: the script checks only for an older minimum.
 
 Continue with [Your first agent](./first-agent.md).
+
+## Uninstall
+
+These steps delete your settings, agents and task history. Copy anything you want to keep first.
+
+**Docker:**
+
+1. **Terminal:** in the `agentx` folder, stop AgentX and remove its containers:
+   ```sh
+   docker compose down -v
+   ```
+2. **Terminal:** delete the data folder:
+   ```sh
+   rm -rf agentx-data
+   ```
+3. Delete the `agentx` folder itself if you no longer need it.
+
+**npm or source:**
+
+1. **Terminal:** in the folder that holds your `agentx.json`, stop the daemon (from source: `node dist/cli.js daemon stop`):
+   ```sh
+   agentx daemon stop
+   ```
+2. **Terminal:** for an npm install, remove the package:
+   ```sh
+   npm uninstall -g agentix-cli
+   ```
+   For a source install, delete the `agentx` source folder instead.
+3. Delete `agentx.json`, `.env` and the `.agentx` folder from that folder. Agent folders (each agent's `workspace` in `agentx.json`) are yours to keep or delete.
 
 ## Check it worked
 
@@ -104,5 +142,6 @@ Continue with [Your first agent](./first-agent.md).
 - **Docker: something failed to start:** read the last lines of the logs with `docker compose logs --tail=50 daemon dashboard`.
 - **The agent doesn't appear in Live:** the daemon was already running when you added it. Restart the daemon (Docker: `docker compose restart daemon dashboard`; otherwise `agentx daemon stop`, then `agentx daemon start --detach`).
 - **npm install fails with `MODULE_NOT_FOUND`:** you have version 0.27.0, which was published with a missing file. Install `agentix-cli@latest`.
-- **`Unsupported engine` or other Node.js errors:** check `node --version`. AgentX needs 22.
+- **`Unsupported engine` or other Node.js errors:** check `node --version`. AgentX needs 22.19 or newer, up to 26.
+- **Uninstall: `rm -rf agentx-data` says `Permission denied`:** the containers created some files as another user. On Linux, run `sudo rm -rf agentx-data`.
 - **The page loads but messages get no reply:** follow [It's not answering](./help/its-not-answering.md).

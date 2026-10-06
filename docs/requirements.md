@@ -6,7 +6,7 @@
 
 | I want to… | What I need | Start here |
 |---|---|---|
-| Explore without a model account | Node.js 22 only; `npx agentix-cli demo` uses scripted replies | [Demo](see-it-first.md) |
+| Explore without a model account | Node.js only (see [below](#install-node-js-for-the-demo)); `npx agentix-cli demo` uses scripted replies | [Demo](see-it-first.md) |
 | Run agents and use the browser dashboard | Docker **or** Node.js; a model connection | [Core setup](#core-setup) |
 | Chat inside the dashboard | Running dashboard, daemon, and configured agent | [In-page chat](dashboard/chat.md) |
 | Use the OpenCode terminal interface | Core setup + OpenCode v2 or newer | [Terminal setup](#terminal-interface) |
@@ -15,6 +15,23 @@
 | Connect agents on two machines | Core setup on both + private network + pairing the machines | [Networking](#two-machines-and-a2a) |
 
 The **daemon** is the background service that runs agents. The **dashboard** is the browser interface connected to it. A **provider** supplies the AI model. An **API key** is a private credential for that provider. The examples below use an agent with the ID `support`; use your own agent's ID.
+
+## Operating systems
+
+AgentX runs on **macOS and Linux**. Windows is untested: on Windows, try it inside [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) (Windows Subsystem for Linux, a Linux system that runs inside Windows), or use Docker. The desktop assistant needs a Mac.
+
+## Install Node.js for the demo
+
+The demo needs only Node.js (the program that runs AgentX), version **22.19 or newer, up to 26**. It doesn't need Git, pnpm or Docker.
+
+1. **Browser:** download Node.js from [nodejs.org](https://nodejs.org/en/download) and install it. Any version from 22.19 up to 26 works; the "LTS" (long-term support) version offered there is a safe choice.
+2. **Terminal:** check the version:
+
+   ```sh
+   node --version
+   ```
+
+3. Confirm it prints `v22.19` or higher, up to `v26`, then follow [See it first](see-it-first.md).
 
 ## Core setup
 
@@ -47,12 +64,12 @@ Choose **one** installation path. Docker runs the daemon and dashboard in contai
    pnpm --version
    ```
 
-3. Confirm Node reports `v22.…` and pnpm reports `10.…`, then follow [Run from source](install.md#run-from-source).
+3. Confirm Node reports a version from `v22.19` up to `v26`, and pnpm reports `10.…`, then follow [Run from source](install.md#run-from-source).
 
 **Help:** [pnpm installation](https://pnpm.io/installation). If installation reports a native compilation error, follow [node-gyp's platform prerequisites](https://github.com/nodejs/node-gyp#installation) for Python and a C/C++ toolchain.
 
 ::: tip Commands in these guides
-`agentx` means an installed CLI. When running from source, use `node dist/cli.js` in its place after `pnpm build`. Run commands from the directory containing your `agentx.json`. The [install page](install.md) explains the 0.27.0 package limitation.
+`agentx` is the command an npm install adds. If you run AgentX from source, type `node dist/cli.js` in its place, after `pnpm build`. Run commands from the folder that holds your settings file, `agentx.json`.
 :::
 
 ### Connect one model
@@ -68,7 +85,7 @@ For a first setup, the browser wizard's **Anthropic API (BYO key)** option is a 
 
 ## Desktop assistant
 
-**Required:** Apple Silicon Mac, macOS **14 or newer**, Node.js 22, configured AgentX agent, and Apple's command-line tools. Check **Apple menu → About This Mac** for your chip and macOS version.
+**Required:** Apple Silicon Mac, macOS **14 or newer**, Node.js 22.19 or newer (up to 26), configured AgentX agent, and Apple's command-line tools. Check **Apple menu → About This Mac** for your chip and macOS version.
 
 1. **Terminal:** install Apple's tools if needed:
 
@@ -260,7 +277,7 @@ There is no measured universal RAM or disk minimum for AgentX yet. Local speech 
 ## If something is wrong
 
 - **`docker version` shows no server:** Docker Desktop isn't running. Start it and try again.
-- **`node --version` is below `v22.19` or above `v26`:** install Node.js 22. AgentX doesn't run on other versions: every `agentx` command stops with `AgentX needs Node.js 22.19 or newer, up to 26`.
+- **`node --version` is below `v22.19` or above `v26`:** install Node.js 22 from [nodejs.org](https://nodejs.org/en/download). AgentX doesn't run on other versions: every `agentx` command stops with `AgentX needs Node.js 22.19 or newer, up to 26`.
 - **Installing reports a native compilation error:** install the [node-gyp platform prerequisites](https://github.com/nodejs/node-gyp#installation), then install again.
 - **An app is missing from System Settings › Privacy & Security:** use the feature once so the app asks for access, then look again.
 - **`ffmpeg was not found` during `agentx desktop install`:** finish the FFmpeg step under local Whisper, then run the install again.

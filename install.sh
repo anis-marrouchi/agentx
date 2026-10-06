@@ -5,7 +5,7 @@
 #   curl -fsSL https://raw.githubusercontent.com/anis-marrouchi/agentx/main/install.sh | bash
 #
 # What it does:
-#   1. Checks for Node.js >= 20 (installs via nvm if missing and nvm is present).
+#   1. Checks for Node.js 22.19 up to 26 (installs via nvm if missing and nvm is present).
 #   2. Installs agentix-cli globally via npm.
 #   3. Runs `agentx setup` — opens the web wizard in the browser.
 #
@@ -33,9 +33,9 @@ if ! command -v node >/dev/null 2>&1; then
   warn "Node.js is not installed."
   need_node_install=1
 else
-  node_major="$(node -p 'process.versions.node.split(".")[0]')"
-  if [[ "${node_major}" -lt 20 ]]; then
-    warn "Node.js ${node_major} is too old — AgentX needs >= 20."
+  node_ok="$(node -p 'const [a,b]=process.versions.node.split(".").map(Number); (a>22||(a===22&&b>=19))&&a<27?1:0')"
+  if [[ "${node_ok}" != "1" ]]; then
+    warn "Node.js $(node -v) is not supported — AgentX needs 22.19 or newer, up to 26."
     need_node_install=1
   else
     ok "Node.js $(node -v) detected"
@@ -44,14 +44,14 @@ fi
 
 if [[ "${need_node_install}" -eq 1 ]]; then
   if command -v nvm >/dev/null 2>&1 || [[ -s "${HOME}/.nvm/nvm.sh" ]]; then
-    info "Found nvm — installing Node 20…"
+    info "Found nvm — installing Node 22…"
     # shellcheck disable=SC1090,SC1091
     [[ -s "${HOME}/.nvm/nvm.sh" ]] && . "${HOME}/.nvm/nvm.sh"
-    nvm install 20 >/dev/null
-    nvm use 20 >/dev/null
+    nvm install 22 >/dev/null
+    nvm use 22 >/dev/null
     ok "Node $(node -v) now active"
   else
-    err "Install Node.js 20+ first (https://nodejs.org or https://github.com/nvm-sh/nvm), then rerun this script."
+    err "Install Node.js 22.19 or newer (up to 26) first (https://nodejs.org or https://github.com/nvm-sh/nvm), then rerun this script."
     exit 1
   fi
 fi
