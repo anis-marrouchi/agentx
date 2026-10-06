@@ -38,6 +38,7 @@ const shots = [
   { name: "monitor-agents-handle", path: "/monitor", wait: "#agents .bf-act", steps: [{ scroll: "#agents" }] },
   { name: "approvals/inbox", path: "/approvals", wait: ".apv__item" },
   { name: "approvals/details", path: "/approvals", wait: ".apv__item", steps: [{ click: ".apv__detail summary" }] },
+  { name: "approvals/settings", path: "/approvals", wait: ".apv__item", steps: [{ click: "#apv-settings summary" }, { wait: "#apv-form" }, { scroll: "#apv-settings" }] },
   { name: "settings", path: "/admin", wait: "#agent-list" },
   { name: "settings-channels", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="channels"]' }] },
   { name: "settings-crons", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="crons"]' }] },

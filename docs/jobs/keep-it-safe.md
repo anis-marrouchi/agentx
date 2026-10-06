@@ -1,6 +1,6 @@
 # Keep it safe
 
-AgentX agents act for real: they post messages, change issues and run commands. A few habits keep that under control.
+AgentX agents act for real: they post messages, change issues and run commands. Most of that happens without asking you first. [What always waits for you](#what-always-waits-for-you) says exactly which actions stop for your yes, and a few habits keep the rest under control.
 
 - Give each agent only the credentials and access it needs.
 - Keep secrets (bot tokens, API keys, passwords) in the `.env` file next to `agentx.json`. `agentx.json` only refers to them by name, such as `${GITLAB_TOKEN}`. Never put a secret in a public document, an issue or a screenshot.
@@ -10,6 +10,46 @@ AgentX agents act for real: they post messages, change issues and run commands. 
 - Review [Activity](../dashboard/activity.md) after the first run.
 - Keep the daemon on a trusted local or private network. See [Tailscale setup](tailscale.md) for a private network between machines, and [Dashboard on your own address](reverse-proxy.md) if you put the dashboard behind a web server.
 - Let a person or a machine in the way that fits them, and no wider. The table below says which.
+
+## What always waits for you
+
+An agent does most of its work on its own. Only the actions below stop and wait in **Approvals** until you say yes (see [Approvals](../dashboard/approvals.md)):
+
+| The agent wants to… | What happens |
+|---|---|
+| Ask you a question with a **decision card** | It waits for your yes or no. If nobody answers before it expires, the card applies its own default: see [When nobody answers a card](#when-nobody-answers-a-card). |
+| Create or remove a **schedule** | Nothing runs or stops until you approve it. See [Ask an agent to schedule something](../automations/schedules-from-chat.md). |
+| Keep a **fact it learned from an outside source** | The agent can't use it until you approve it. See [Review what your agents learn](agent-memory.md). |
+| Add a **lesson to the shared wiki** | Nothing is written until you approve it. |
+| **Reply in a watched WhatsApp chat** | The draft waits; nothing is sent until you approve it. A rule can allow short acknowledgements without asking. See [Watch a WhatsApp chat](watch-whatsapp.md). |
+| Pick up a **request of yours that was not finished** | It is only handed back to the agent when you say yes. See [Keep track of what you asked for](open-requests.md). |
+
+Everything else, the agent does **without asking**: replying in chat, posting comments, changing issues, editing files in its folder, running commands, and calling the tools and services you connected to it. A rule in an agent's instructions, such as "send nothing", is something the agent is told, not a lock.
+
+What limits those actions is the agent's **tool permissions** (`permissionMode` in `agentx.json`, **Tool permissions** on the agent's page in the dashboard). An agent runs with nobody at its keyboard, so no step ever comes to you for a yes:
+
+| Tool permissions | `permissionMode` | What the agent may do without asking |
+|---|---|---|
+| **Ask first** (the default) | `"default"` | Only the steps its engine allows without asking. A step that would need permission is refused, not sent to you. On a `claude-code` agent, dangerous commands, such as wiping a disk, are always blocked. |
+| **Accept edits**, **Plan only** | `"acceptEdits"`, `"plan"` | The same as **Ask first**. **Plan only** also blocks commands that delete files or data. |
+| **Trusted** | `"bypassPermissions"` | Anything its engine can do, without asking. On a `claude-code` agent, only the always-blocked dangerous commands are still refused. |
+
+To keep an agent from acting on something, don't rely on its instructions: leave out the credential or tool it would need, or keep it on **Ask first**.
+
+### When nobody answers a card
+
+Every decision card expires, after 3 days unless the agent asked for another time. The **agent** chooses, when it raises the card, what happens then: `discard`, `keep`, `pause` or `approve`. With `approve`, an unanswered card says yes by itself.
+
+To stop that on this machine:
+
+1. **Terminal:** turn off yes on expiry:
+   ```sh
+   agentx approvals settings --expiry-approve off
+   ```
+   Or **Browser:** on the Approvals page, open **Settings** at the bottom, clear **A card may say yes by itself when nobody answers**, and click **Save settings**.
+
+   ![The Approvals settings with the box "A card may say yes by itself when nobody answers"](/screenshots/approvals/settings.png)
+2. From then on, an agent that raises a card with `approve` is refused and told to pick `keep`, `discard` or `pause`. A card raised earlier with `approve` gets `keep` when it expires instead.
 
 ## Who gets which way in
 
@@ -53,10 +93,13 @@ For a bot token or API key that leaked, create a new one with the service that i
 
 1. **Browser:** **Settings › Tokens** lists each token by name. A revoked token no longer has a **Revoke** button.
 2. **Terminal:** `grep -n "token" agentx.json` shows only references such as `${GITLAB_TOKEN}`, never a real secret.
-3. **Terminal:** `agentx mesh list` and `agentx app devices` name only machines and phones of your own, and `agentx people devices` names only people you invited on purpose.
+3. **Terminal:** `agentx approvals settings` shows **Yes on expiry off** if you turned it off.
+4. **Terminal:** `agentx mesh list` and `agentx app devices` name only machines and phones of your own, and `agentx people devices` names only people you invited on purpose.
 
 ## If something is wrong
 
+- **An agent did something you expected it to ask about:** only the actions in [What always waits for you](#what-always-waits-for-you) wait for you. Check the agent's **Tool permissions** and what it has access to.
+- **An agent says its card was refused because of `approve`:** that is expected when yes on expiry is off. The agent should raise it again with `keep`, `discard` or `pause`.
 - **A tool is refused after you revoked a token:** that is expected. Give it the new token.
 - **A tool is refused with a new token:** the token may lack the scope it needs, or have expired. Create a new token with that scope and revoke the old one.
 - **A real secret is in `agentx.json`:** move it to `.env`, replace it in `agentx.json` with `${NAME}`, and treat the old value as leaked.

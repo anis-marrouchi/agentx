@@ -125,6 +125,7 @@ export async function handleApprovalsPanelApi(
       patch.maxExpiryDays = num("maxExpiryDays")
       patch.laterHours = num("laterHours")
       if (typeof body.notifyAgent === "boolean") patch.notifyAgent = body.notifyAgent
+      if (typeof body.allowApproveOnExpiry === "boolean") patch.allowApproveOnExpiry = body.allowApproveOnExpiry
       if (typeof body.digestEnabled === "boolean") patch.digestEnabled = body.digestEnabled
       if (typeof body.digestTime === "string") patch.digestTime = body.digestTime
       if (typeof body.destination === "string") {

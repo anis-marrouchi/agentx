@@ -133,6 +133,16 @@ describe("decision cards", () => {
     expect(expireCards(root, NOW + 3 * HOUR)).toHaveLength(0)
     expect(decideCard(root, r.card.id, "yes")).toMatchObject({ ok: false })
   })
+
+  it("allowApproveOnExpiry off: no card may approve itself (#741)", () => {
+    const off = { ...DEFAULT_CARD_SETTINGS, allowApproveOnExpiry: false }
+    expect(buildCard(card({ if_silent: "approve" }), { now: NOW, settings: off })).toMatchObject({ ok: false, error: expect.stringMatching(/allowApproveOnExpiry/) })
+    expect(buildCard(card({ if_silent: "keep" }), { now: NOW, settings: off }).ok).toBe(true)
+    expect(buildCard(card({ if_silent: "approve" }), { now: NOW }).ok).toBe(true)
+    // A card raised while it was on gets "keep" once it is turned off.
+    createCard(root, card({ if_silent: "approve", expires: "1h" }), { now: NOW })
+    expect(expireCards(root, NOW + 2 * HOUR, { allowApprove: false })[0]).toMatchObject({ if_silent: "approve", outcome: "keep" })
+  })
 })
 
 describe("the inbox read model", () => {
@@ -251,6 +261,15 @@ describe("the daemon sweep", () => {
     const r2 = await runApprovalsSweep({ ctx: later, settings: SETTINGS, tellAgent, hasAgent: () => true, log })
     expect(r2).toMatchObject({ expired: 0, notified: 0 })
     expect(tellAgent).toHaveBeenCalledTimes(1)
+  })
+
+  it("tells the agent \"keep\", not \"approve\", when allowApproveOnExpiry is off", async () => {
+    createCard(root, card({ if_silent: "approve", expires: "1h" }), { now: NOW })
+    const tellAgent = vi.fn(async () => {})
+    const log = vi.fn()
+    await runApprovalsSweep({ ctx: { ...ctx(), now: NOW + 2 * HOUR }, settings: { ...SETTINGS, allowApproveOnExpiry: false }, tellAgent, hasAgent: () => true, log })
+    expect(tellAgent.mock.calls[0][1]).toMatch(/default applied: keep/)
+    expect(log.mock.calls.flat().join("\n")).toMatch(/default applied: keep \(asked for approve/)
   })
 
   it("delivers decisions made elsewhere (CLI, dashboard)", async () => {
@@ -454,6 +473,8 @@ describe("the dashboard (operator) API", () => {
     expect(cfg.approvals).toMatchObject({ defaultExpiryDays: 5, digest: { time: "07:30", destination: { channel: "telegram", chatId: "42" } } })
     expect((await post({ digestTime: "25:00" })).status).toBe(400)
     expect((await post({ defaultExpiryDays: 90 })).status).toBe(400) // above maxExpiryDays
+    expect((await post({ allowApproveOnExpiry: false })).status).toBe(200)
+    expect(JSON.parse(readFileSync(configPath, "utf-8")).approvals.allowApproveOnExpiry).toBe(false)
     expect((await post({ destination: "" })).status).toBe(200)
     expect(JSON.parse(readFileSync(configPath, "utf-8")).approvals.digest.destination).toBeUndefined()
   })
@@ -463,7 +484,7 @@ describe("config", () => {
   it("has defaults and validates the digest time", () => {
     const base = { node: { id: "t", name: "T" } }
     const parsed = daemonConfigSchema.parse(base)
-    expect(parsed.approvals).toMatchObject({ defaultExpiryDays: 3, maxExpiryDays: 30, laterHours: 24, notifyAgent: true, digest: { enabled: true, time: "09:00" } })
+    expect(parsed.approvals).toMatchObject({ defaultExpiryDays: 3, maxExpiryDays: 30, laterHours: 24, notifyAgent: true, allowApproveOnExpiry: true, digest: { enabled: true, time: "09:00" } })
     expect(daemonConfigSchema.safeParse({ ...base, approvals: { digest: { time: "9am" } } }).success).toBe(false)
     expect(daemonConfigSchema.safeParse({ ...base, approvals: { digest: { timezone: "Mars/Olympus" } } }).success).toBe(false)
     expect(existsSync(join(root, ".agentx", "approvals"))).toBe(false)

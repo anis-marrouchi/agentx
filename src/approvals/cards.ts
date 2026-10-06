@@ -77,6 +77,9 @@ export const CARD_LIMITS = {
 export interface CardSettings {
   defaultExpiryDays: number
   maxExpiryDays: number
+  /** false: no card may say "approve" for when nobody answers, and a card
+   *  that already does gets "keep" on expiry instead (#741). Unset: allowed. */
+  allowApproveOnExpiry?: boolean
 }
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = { defaultExpiryDays: 3, maxExpiryDays: 30 }
@@ -205,6 +208,9 @@ export function buildCard(
   if (!IF_SILENT_VALUES.includes(ifSilent as IfSilent)) {
     return { ok: false, error: `if_silent must be one of ${IF_SILENT_VALUES.join(", ")}` }
   }
+  if (ifSilent === "approve" && settings.allowApproveOnExpiry === false) {
+    return { ok: false, error: 'if_silent "approve" is turned off on this machine (approvals.allowApproveOnExpiry): a card may not approve itself. Use keep, discard or pause' }
+  }
   const expiry = resolveExpiry(input.expires, now, settings)
   if (!expiry.ok) return expiry
   const source = oneLine(input.source)
@@ -284,15 +290,18 @@ export function decideCard(
   return { ok: true, card: decided }
 }
 
-/** Apply `if_silent` to every pending card past its expiry. */
-export function expireCards(root: string, now: number = Date.now()): DecisionCard[] {
+/** Apply `if_silent` to every pending card past its expiry. With
+ *  `allowApprove: false`, a card raised as "approve" before the setting was
+ *  turned off gets "keep" instead: nothing approves itself. */
+export function expireCards(root: string, now: number = Date.now(), opts: { allowApprove?: boolean } = {}): DecisionCard[] {
   const out: DecisionCard[] = []
   for (const card of listCards(root, "pending")) {
     if (Date.parse(card.expires) > now) continue
+    const outcome: IfSilent = card.if_silent === "approve" && opts.allowApprove === false ? "keep" : card.if_silent
     const expired: DecisionCard = {
       ...card,
       status: "expired",
-      outcome: card.if_silent,
+      outcome,
       decided_by: "expiry",
       decided_at: new Date(now).toISOString(),
     }

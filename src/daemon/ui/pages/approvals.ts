@@ -50,12 +50,13 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
 ${REQUESTS_HTML}
 
   <details class="apv__settings" id="apv-settings">
-    <summary>Settings: expiry, later, daily digest</summary>
+    <summary>Settings: expiry, yes on expiry, later, daily digest</summary>
     <form id="apv-form" class="apv__form">
       <label>Cards expire after (days)<input type="number" min="1" step="1" name="defaultExpiryDays" required></label>
       <label>Longest a card may wait (days)<input type="number" min="1" step="1" name="maxExpiryDays" required></label>
       <label>"Later" hides an item for (hours)<input type="number" min="1" step="1" name="laterHours" required></label>
       <label class="apv__check"><input type="checkbox" name="notifyAgent"> Tell the agent the result</label>
+      <label class="apv__check"><input type="checkbox" name="allowApproveOnExpiry"> A card may say yes by itself when nobody answers</label>
       <label class="apv__check"><input type="checkbox" name="digestEnabled"> Send one digest a day</label>
       <label>Digest time (24-hour)<input type="time" name="digestTime" required></label>
       <label>Digest goes to (channel:chat id, empty for the notifications destination)<input type="text" name="destination" placeholder="telegram:123456" autocomplete="off"></label>
@@ -249,6 +250,7 @@ function fillSettings(s){
   f.maxExpiryDays.value = s.maxExpiryDays;
   f.laterHours.value = s.laterHours;
   f.notifyAgent.checked = !!s.notifyAgent;
+  f.allowApproveOnExpiry.checked = s.allowApproveOnExpiry !== false;
   f.digestEnabled.checked = !!(s.digest && s.digest.enabled);
   f.digestTime.value = (s.digest && s.digest.time) || '09:00';
   var d = s.digest && s.digest.destination;
@@ -279,6 +281,7 @@ $('apv-form').addEventListener('submit', async function(ev){
     maxExpiryDays: Number(f.maxExpiryDays.value),
     laterHours: Number(f.laterHours.value),
     notifyAgent: f.notifyAgent.checked,
+    allowApproveOnExpiry: f.allowApproveOnExpiry.checked,
     digestEnabled: f.digestEnabled.checked,
     digestTime: f.digestTime.value,
     destination: f.destination.value.trim()
