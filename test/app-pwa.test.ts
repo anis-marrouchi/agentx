@@ -116,7 +116,7 @@ describe("public shell assets", () => {
     expect(png.subarray(1, 4).toString()).toBe("PNG")
     const idatLen = png.readUInt32BE(33)
     const raw = inflateSync(png.subarray(41, 41 + idatLen))
-    expect(raw.length).toBe(192 * (1 + 192 * 3))
+    expect(raw.length).toBe(192 * (1 + 192 * 4))
   })
 })
 

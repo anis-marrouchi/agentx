@@ -32,6 +32,16 @@ swiftc -O \
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 
+# The AX symbol (written by scripts/gen-icons.ts), as Finder and the
+# permission prompts show it.
+SET="build/AppIcon.iconset" && mkdir -p "$SET"
+for n in 16 32 128 256 512; do
+  sips -s format png -z $n $n Resources/AppIcon.png --out "$SET/icon_${n}x${n}.png" >/dev/null
+  sips -s format png -z $((n * 2)) $((n * 2)) Resources/AppIcon.png --out "$SET/icon_${n}x${n}@2x.png" >/dev/null
+done
+iconutil -c icns "$SET" -o "$APP/Contents/Resources/AppIcon.icns"
+rm -rf "$SET"
+
 # Signing. Unsigned bundles get a fresh TCC identity on every launch. An
 # ad-hoc signature (the default) holds only for this one build: macOS keys
 # a permission to the build's hash, so every new build is asked again for
