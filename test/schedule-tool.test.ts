@@ -90,6 +90,10 @@ describe("agentx_schedule tool", () => {
     })
     expect(job).toEqual(expected)
     expect(job.onError).toContain("notify")
+    // Asked for from a chat: notify is that chat, and results go there by
+    // default (no opt-out written).
+    expect(job.notify).toEqual({ channel: "telegram", chatId: "2000" })
+    expect(job.deliverResult).toBeUndefined()
     // The written job passes the daemon schema and keeps the new fields.
     const parsed = daemonConfigSchema.parse(JSON.parse(readFileSync(configPath, "utf-8")))
     expect(parsed.crons["weekly-x"].createdBy).toBe("alpha")
