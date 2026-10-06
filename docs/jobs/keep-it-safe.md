@@ -2,6 +2,7 @@
 
 AgentX agents act for real: they post messages, change issues and run commands. A few habits keep that under control.
 
+- Know what leaves your machine. Your messages, the agent's instructions and the files it reads go to the model provider. See [Your data](../your-data.md).
 - Give each agent only the credentials and access it needs.
 - Keep secrets (bot tokens, API keys, passwords) in the `.env` file next to `agentx.json`. `agentx.json` only refers to them by name, such as `${GITLAB_TOKEN}`. Never put a secret in a public document, an issue or a screenshot.
 - Try new automations on a test channel and a test project before they touch real work.
