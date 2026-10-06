@@ -195,7 +195,8 @@ export function onDemandContextNote(channel: string, chatId: string): string {
   ].join("\n")
 }
 
-/** What a lean start changes, for logs and the context benchmark. */
+/** What a lean start changes, for logs and the context benchmark. The
+ *  tool list is the one passed to `--tools`, ToolSearch included. */
 export function describeProfile(profile: SessionProfileName, lean: LeanProfileConfig, channel?: string): string {
   if (profile === "full") return "full"
   const parts = [
@@ -204,6 +205,6 @@ export function describeProfile(profile: SessionProfileName, lean: LeanProfileCo
     lean.contextOnDemand ? "context=on-demand" : "context=pushed",
   ]
   const tools = leanTools(lean, channel)
-  if (tools.length) parts.push(`tools=${tools.join("+")}`)
+  if (tools.length) parts.push(`tools=${withToolSearch(tools).join("+")}`)
   return `lean (${parts.join(" ")})`
 }
