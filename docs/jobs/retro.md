@@ -92,12 +92,35 @@ Within a minute the agent that ran the task is told your pick, with the descript
 - **Never on its own runs.** The run in which an agent builds a picked fix is never read by a retro.
 - **Never applied by silence.** Every retro card is discarded when it expires.
 - **Separate from the agent's own cards.** Retro cards are counted apart from the cards an agent raises itself, so they never use up its room for its own questions.
+- **At most three a day.** The nightly pass below raises no more than three retro cards in any 24 hours, and cards you raised by hand count toward that limit. Change it with `--max`.
 
-`agentx retro` is started by hand for now. A nightly pass that picks the day's worst runs by itself, with a daily limit, is planned.
+## Let it run every night
+
+`agentx retro sweep` finds the runs that struggled without you picking them. It reads the last 24 hours of runs and gives each one points for its signs of struggling:
+
+| Sign | Points |
+|---|---|
+| Failed, or cut off by a restart | 3 |
+| Recurring, or a delegation failed | 2 |
+| Slow, many tool calls, or each friction note | 1 |
+
+It keeps one run per failure (the one with the most points), skips failures that already have a card waiting, and takes the worst first. On its own it only shows the list. With `--commit` it runs a retro on each of the worst runs and raises their cards, up to the daily limit. A run whose fixes can't be used makes room for the next one in line.
+
+1. **Terminal:** go to the folder the daemon runs from, and preview tonight's pass:
+   ```sh
+   agentx retro sweep
+   ```
+   It prints how many runs struggled, the worst ten with their points and signs, and a line starting `→ would retro` for each run it would read. Nothing is raised.
+2. **Terminal:** add a nightly job that runs it for real. Use any agent that can run commands in this folder:
+   ```sh
+   agentx schedule "daily at 2am" --agent <agent> --do "Run: agentx retro sweep --commit" --dry-run
+   ```
+   Check the job it prints, then run the same command without `--dry-run`.
+3. **Browser:** the next morning, open **Approvals**. The night's retro cards are waiting there, at most three.
 
 ## Settings
 
-A retro has no settings in `agentx.json`. These options and environment variables change how it runs:
+A retro has no settings in `agentx.json`. These options and environment variables change how `agentx retro` and `agentx retro sweep` run:
 
 | Option or variable | What it does |
 |---|---|
@@ -105,6 +128,9 @@ A retro has no settings in `agentx.json`. These options and environment variable
 | `--force` | Raise a card even when the run shows no sign of struggling, or a card about the same failure is still waiting |
 | `--model <model>` | The reviewer model |
 | `--path <db>` | The trace database. Default: `.agentx/db.sqlite` |
+| `sweep --since <window>` | How far back the nightly pass reads, in hours or days, such as `24h` or `2d`. Default: `24h` |
+| `sweep --max <n>` | Retro cards allowed in any 24 hours, counting the ones raised by hand. Default: `3`. `0` raises none |
+| `sweep --commit` | Run the retros and raise the cards. Without it, the sweep only shows what it would do |
 | `AGENTX_RETRO_MODEL` | The reviewer model when `--model` is not given. Unset: `AGENTX_MONITOR_MODEL`, else `opus` |
 
 Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings), such as how long they wait. Retro cards can't be sent to another machine yet: when `approvals.forwardTo` is set, `agentx retro` refuses to raise the card. Run it on a machine that keeps its own cards, or use `--dry-run` to read the fixes.
@@ -116,6 +142,7 @@ Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings)
 3. **Browser:** open **Approvals**. The card is there with its fixes and **Expires in 3 days, then: discard**.
 4. **Browser:** pick a fix and click **Yes**. The page says `<agent> will be told yes (<your pick>)`.
 5. **Browser:** within a minute, the **Activity** tab shows a run for that agent on the `approvals` channel. That is the agent starting on the fix.
+6. **Terminal:** run `agentx retro sweep`. It prints `struggled run(s), one per failure` and how much room is left today, and raises nothing.
 
 ## If something is wrong
 
@@ -125,6 +152,9 @@ Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings)
 - **"was itself started by a retro":** that run is an agent building a fix you picked. Retros never read those.
 - **"the reviewer's answer could not be used":** the reviewer failed or returned something that isn't the expected answer. `claude CLI not found` means Claude Code is not installed for the user running the command. Run it again; if it keeps failing, run `claude -p "hello"` to check that Claude Code works.
 - **"retro cards can't be forwarded to another machine yet":** this machine sends its cards to another one (`approvals.forwardTo`). Run the retro on a machine that keeps its own cards, or use `--dry-run` to read the fixes.
+- **The sweep says `Room for 0 more retro card(s) today`:** three retro cards (or your `--max`) were raised in the last 24 hours, by the sweep or by hand. Answer them, or wait; the next night's pass has room again.
+- **The sweep lists runs but raises nothing:** check the `✗` lines. `already asks about this failure` means a card is waiting for you. Other reasons are the same as for `agentx retro` above.
+- **The sweep says `Invalid --since`:** use hours or days, such as `24h` or `2d`.
 - **"No trace database":** run the command in the folder the daemon runs from, or pass `--path`.
 - **Yes does nothing on the dashboard:** the card offers choices. Pick one first; the page says so in red.
 - **The agent never started on the fix:** check the daemon log for a line starting `[approvals]`, and that `notifyAgent` is on in [Approvals settings](../dashboard/approvals.md#settings).

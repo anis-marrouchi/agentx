@@ -2572,6 +2572,18 @@ Re-run a recorded task against the current agent config.
 | `--force` | — | Raise a card even when the run shows no struggle, or one about the same failure is open. |
 | `--path <db>` | `.agentx/db.sqlite` | Trace database. |
 
+### `agentx retro sweep`
+
+Rank the day's struggled runs and raise retro cards for the worst, at most `--max` in any 24 hours. Only previews unless `--commit` is given. Refused with `--commit` when `approvals.forwardTo` is set.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <window>` | `24h` | How far back to read, in hours or days (`24h`, `2d`). |
+| `--max <n>` | `3` | Retro cards allowed in any 24 hours, counting ones raised by hand. |
+| `--commit` | — | Ask the reviewer and raise the cards (default: rank only). |
+| `--model <model>` | `AGENTX_RETRO_MODEL`, else `AGENTX_MONITOR_MODEL`, else `opus` | The reviewer model. |
+| `--path <db>` | `.agentx/db.sqlite` | Trace database. |
+
 ## process (advanced)
 
 `agentx process`: Inspect / rotate persistent claude processes (--persistentProcess agents). **Advanced.**
