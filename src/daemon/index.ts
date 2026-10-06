@@ -50,6 +50,7 @@ import { attachProcedureWatcher } from "./procedure-watcher"
 import { attachFocusWatcher } from "./focus-watcher"
 import { TokenStore } from "./token-store"
 import type { AppPushDeps, AppPushResult } from "./app-push"
+import { pushBridgeCaller } from "./push-bridge"
 import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
 import { localAlert, localSettings, notify, type Sender } from "@/notify"
@@ -2309,7 +2310,8 @@ export class AgentXDaemon {
         // their notifications there too.
         const tokens = new TokenStore()
         const roster = new PushRosterSync({
-          active: () => tokens.list().filter((t) => tokens.isActive(t.id)).map((t) => t.id),
+          // Throws on an unreadable tokens file: the tick then sends nothing.
+          active: () => tokens.activePhoneIds(),
           send: (active) => this.postToPushHost(relayTo, "/push/app", { op: "roster", origin, active }),
           log: this.log,
         })
@@ -2324,6 +2326,7 @@ export class AgentXDaemon {
           this.log(`  push: enabled but the SQLite database is unavailable — skipping`)
         } else {
           const { PushAdapter, isRemoteDevice } = await import("@/channels/push")
+          const { peerOrigins } = await import("./push-bridge")
           const { PushStore } = await import("@/channels/push-store")
           const { pushKeysPath, readPushKeys } = await import("@/channels/push-keys")
           const { default: webpush } = await import("web-push")
@@ -2337,7 +2340,11 @@ export class AgentXDaemon {
             keepRecent: pushCfg.keepRecent,
             // A phone paired with a relaying node is checked there: its
             // rows are pruned when it leaves that node's roster (#711).
-            deviceActive: (id) => isRemoteDevice(id) || tokens.isActive(id),
+            // While that node is still a peer here, so a node removed
+            // from mesh.peers stops getting its phones' pushes.
+            deviceActive: (id) => isRemoteDevice(id)
+              ? peerOrigins(this.config.mesh.peers).has(id.slice(0, id.indexOf(":")))
+              : tokens.isActive(id),
             sender: (sub, payload, opts) => webpush.sendNotification(sub, payload, opts),
             log: this.log,
           })
@@ -7118,10 +7125,18 @@ export class AgentXDaemon {
       }
       return
     }
-    // Here, only a relay names its origin; this node's own dashboard
-    // reads the table directly.
-    this.json(res, 200, handlePushBridge(body, this.pushHost ?? null, this.pushHost ? undefined
+    // On the host the relay is who its peer token says, never what the
+    // body says; this node's own dashboard reads the table directly.
+    const caller = this.pushBridgeCaller(req)
+    // Not for the roster, which a relay without a peer token sends every minute.
+    if ("error" in caller && body?.op !== "roster") this.log(`[push] /push/app from ${req.socket?.remoteAddress || "?"} refused: ${caller.error}`)
+    this.json(res, 200, handlePushBridge(body, caller, this.pushHost ?? null, this.pushHost ? undefined
       : `Notifications are not running on ${this.config.node.name}. Check channels.push.subject and the database there.`))
+  }
+
+  /** The relaying node a mesh call comes from, by its peer token (#711). */
+  private pushBridgeCaller(req: IncomingMessage): import("./push-bridge").PushBridgeCaller {
+    return pushBridgeCaller(String(req.headers["authorization"] || ""), this.config.mesh.peers, process.env.MESH_TOKEN)
   }
 
   /** Mesh-callable outbound send. A peer's workflow `action.send` invokes
@@ -7145,6 +7160,14 @@ export class AgentXDaemon {
     if (!adapter) {
       this.json(res, 404, { error: `channel "${channel}" not hosted on this node` }); return
     }
+    let origin: string | undefined
+    if (body.relayed === true && body.origin !== undefined) {
+      // Only a push to one of the relay's phones needs to know which relay
+      // it is; one for every phone goes out without it.
+      const caller = this.pushBridgeCaller(req)
+      if ("origin" in caller) origin = caller.origin
+      else if (chatId !== "default") { this.json(res, 403, { error: caller.error }); return }
+    }
     try {
       const messageId = await this.router.sendOutbound({
         channel,
@@ -7158,8 +7181,9 @@ export class AgentXDaemon {
         agentId: typeof body.agentId === "string" ? body.agentId : undefined,
         // Set by a push relay, so a relay never forwards a relayed message.
         relayed: body.relayed === true ? true : undefined,
-        // The relaying node, so the host can address that node's phones.
-        origin: body.relayed === true && typeof body.origin === "string" ? body.origin.slice(0, 64) : undefined,
+        // The relaying node, so the host can address that node's phones:
+        // the peer its token belongs to, not the name it gives (#711).
+        origin,
       } as any, { recordInSession: false })
       this.json(res, 200, { ok: true, messageId: messageId ?? null })
     } catch (e: any) {

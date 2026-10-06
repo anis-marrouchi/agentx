@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "crypto"
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve, dirname } from "path"
 
 // --- Scoped API tokens ---
@@ -56,7 +56,24 @@ export class TokenStore {
 
   private save(records: TokenRecord[]): void {
     mkdirSync(dirname(this.file), { recursive: true })
-    writeFileSync(this.file, JSON.stringify(records, null, 2) + "\n", "utf-8")
+    // Write then rename, so a reader in another process (the dashboard, the
+    // daemon's push roster) never sees a half-written file.
+    const tmp = `${this.file}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(records, null, 2) + "\n", "utf-8")
+    renameSync(tmp, this.file)
+  }
+
+  /** Ids of the paired phones that are neither revoked nor expired. Unlike
+   *  list(), throws when the file is there but can't be read or parsed,
+   *  so a bad read is never taken for "no phones" (the push roster would
+   *  then unsubscribe every one of them on the host, #711). */
+  activePhoneIds(now = Date.now()): string[] {
+    if (!existsSync(this.file)) return []
+    const records = JSON.parse(readFileSync(this.file, "utf-8"))
+    if (!Array.isArray(records)) throw new Error(`${this.file} is not a list of tokens`)
+    return (records as TokenRecord[])
+      .filter((r) => r?.scopes?.includes("app") && !r.revokedAt && !(r.expiresAt && Date.parse(r.expiresAt) < now))
+      .map((r) => r.id)
   }
 
   /**
