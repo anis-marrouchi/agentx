@@ -32,7 +32,7 @@ The phone reaches your computer over [Tailscale](https://tailscale.com/kb/1017/i
 5. **Phone:** add the app to the home screen:
    - **iPhone (Safari):** tap **Share**, then **Add to Home Screen**, then **Add**.
    - **Android (Chrome):** tap the **⋮** menu, then **Install app** (or **Add to Home screen**), then **Install**.
-6. **Phone:** open **AgentX** from the home screen.
+6. **Phone:** open **AgentX** from the home screen. Its icon is the AgentX symbol: a black **AX** on white.
 7. **Phone:** if the app says **This phone isn't paired**, pair it from inside the app. On iPhone this step is always needed, because an app on the home screen doesn't share the browser's pairing. Either:
    - tap **Scan QR code**, allow the camera if the phone asks, and point it at the QR code from step 3. The app pairs by itself; or
    - tap the **Pairing code** field, type the code from step 3, and tap **Pair**. You don't need capitals or the dash: the field adds them as you type, so `abcdefgh` shows as `ABCD-EFGH`.
@@ -95,7 +95,7 @@ The pairing code gives the phone the same key. The computer keeps only a scrambl
 ## Check it worked
 
 1. **Terminal (computer):** run `agentx app devices`. Your phone is listed as `active`.
-2. **Phone:** open the app from the home screen. Your phone's name and the computer's name show under **AgentX**.
+2. **Phone:** the app's icon on the home screen is the black **AX** on white. Open the app from it. Your phone's name and the computer's name show under **AgentX**.
 3. **Phone:** close the app completely and open it again from the home screen. It opens without asking for a code.
 4. **Phone:** open `https://<computer's Tailscale name>/` (the same address without `/app`). The page says `404 page not found`, so the rest of the dashboard isn't shared.
 
