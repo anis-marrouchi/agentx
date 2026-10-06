@@ -2,6 +2,27 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.118.0](https://github.com/anis-marrouchi/agentx/compare/v0.117.0...v0.118.0) (2026-10-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* **whatsapp:** a WhatsApp channel without channels.whatsapp.allowFrom answers no one. Set allowFrom (numbers, chat IDs or "*") before upgrading.
+
+### Features
+
+* **retro:** turn a struggled run into fix choices on a decision card (P0 of [#743](https://github.com/anis-marrouchi/agentx/issues/743)) ([#751](https://github.com/anis-marrouchi/agentx/issues/751)) ([d42070e](https://github.com/anis-marrouchi/agentx/commit/d42070eaa4c8d27dc42f3a52af8d29caaa40ddc1))
+
+
+### Bug Fixes
+
+* **approvals:** say what waits for a yes; a card never approves itself ([#750](https://github.com/anis-marrouchi/agentx/issues/750)) ([d896303](https://github.com/anis-marrouchi/agentx/commit/d89630303bcc011f3f35c595c29ec8f8acfb0bf7))
+* **crons:** deliver schedule results to the notify chat ([#738](https://github.com/anis-marrouchi/agentx/issues/738)) ([#749](https://github.com/anis-marrouchi/agentx/issues/749)) ([d012779](https://github.com/anis-marrouchi/agentx/commit/d012779a917767844c1c243bc2f3f03b79c8c277))
+* **examples:** add Telegram allowFrom so example bots answer DMs ([#744](https://github.com/anis-marrouchi/agentx/issues/744)) ([ffa3b6e](https://github.com/anis-marrouchi/agentx/commit/ffa3b6ee66e1e78b9726e5c29d615f8bf77ca3ee))
+* **telegram:** allow a public bot with allowFrom "*" and document it ([#748](https://github.com/anis-marrouchi/agentx/issues/748)) ([7e4cbea](https://github.com/anis-marrouchi/agentx/commit/7e4cbea773d0f084c8993aac0789130344772981))
+* **whatsapp:** close the channel by default when allowFrom is unset ([#745](https://github.com/anis-marrouchi/agentx/issues/745)) ([fa68740](https://github.com/anis-marrouchi/agentx/commit/fa68740ad45d2bfb43adf55f562417a1ca3ca754))
+* **wiki:** record entries absorb read so uncited ones leave the queue ([#766](https://github.com/anis-marrouchi/agentx/issues/766)) ([eea4e58](https://github.com/anis-marrouchi/agentx/commit/eea4e58d53845db0715b33e526251827c703906c)), closes [#762](https://github.com/anis-marrouchi/agentx/issues/762)
+
 ## [0.117.0](https://github.com/anis-marrouchi/agentx/compare/v0.116.0...v0.117.0) (2026-10-06)
 
 
