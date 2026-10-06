@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.115.0](https://github.com/anis-marrouchi/agentx/compare/v0.114.1...v0.115.0) (2026-10-06)
+
+
+### Features
+
+* **session:** cheaper model for GitHub triage events ([#615](https://github.com/anis-marrouchi/agentx/issues/615)) ([#696](https://github.com/anis-marrouchi/agentx/issues/696)) ([3214174](https://github.com/anis-marrouchi/agentx/commit/32141741465c9b1f9119a940723afc162fe28138))
+
+
+### Bug Fixes
+
+* **wiki:** the daemon reads the graph/ articles the CLI writes ([#603](https://github.com/anis-marrouchi/agentx/issues/603)) ([#698](https://github.com/anis-marrouchi/agentx/issues/698)) ([31e938b](https://github.com/anis-marrouchi/agentx/commit/31e938ba7831bb5b2b458e5c656888805b893f00))
+
 ## [0.114.1](https://github.com/anis-marrouchi/agentx/compare/v0.114.0...v0.114.1) (2026-10-06)
 
 
