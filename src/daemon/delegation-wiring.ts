@@ -376,13 +376,27 @@ export async function deliverToChat(
     )
     return
   }
-  // A push is a notification about the chat, not a message in it; the
-  // reply is already in the agent's session for the next turn there.
+  // A push is a notification about the chat, not a message in it. The full
+  // text goes in the agent's session for that chat, so the next turn there
+  // can read out what the push had to cut.
+  if (msg.record) {
+    try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the push still goes */ }
+  }
   const name = w.config.agents[msg.agentId]?.name || msg.agentId
   await w.router.sendOutbound(
-    { channel: r.channel, chatId: r.chatId || "default", text: `${name}: ${msg.text}` },
+    { channel: r.channel, chatId: r.chatId || "default", text: `${name}: ${pushPreview(msg.text)}` },
     { recordInSession: false, ...dedupe },
   )
+}
+
+/** Longest text a push carries; a phone shows a few lines of it anyway. */
+export const PUSH_PREVIEW_MAX = 500
+
+/** A long answer, cut to fit a notification, saying where the rest is. */
+export function pushPreview(text: string): string {
+  const chars = [...text]
+  if (chars.length <= PUSH_PREVIEW_MAX) return text
+  return `${chars.slice(0, PUSH_PREVIEW_MAX).join("").trimEnd()}… (shortened; ask the agent for the full answer)`
 }
 
 export function createDelegations(w: DelegationWiring): DelegationManager {

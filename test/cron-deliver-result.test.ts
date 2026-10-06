@@ -6,7 +6,7 @@ import { CronScheduler } from "../src/crons/scheduler"
 import { buildScheduleJob } from "../src/crons/schedule-ops"
 import { parseEnglishToCron } from "../src/utils/nl-cron"
 import { daemonConfigSchema } from "../src/daemon/config"
-import { CallbackReplies, canDeliverToChat, deliverToChat } from "../src/daemon/delegation-wiring"
+import { CallbackReplies, canDeliverToChat, deliverToChat, PUSH_PREVIEW_MAX, pushPreview } from "../src/daemon/delegation-wiring"
 import { getEventBus } from "../src/events/bus"
 
 // #738: docs promised a schedule's results reach a chat; nothing sent them.
@@ -138,12 +138,22 @@ describe("deliverToChat reaches app and voice notify targets", () => {
   })
 
   it("sends a voice result as a push notification, with the run as idempotency key", async () => {
-    const { w, sent } = wire(["push"])
+    const { w, sent, recorded } = wire(["push"])
     await deliverToChat(w, result("voice", "voice:ops-agent"))
     expect(sent).toEqual([{
       msg: { channel: "push", chatId: "default", text: "Ops: Report: all good" },
       opts: { recordInSession: false, idempotencyKey: "weekly/2026-10-06T09-00-00-000Z" },
     }])
+    expect(recorded).toEqual([["ops-agent", "voice", "voice:ops-agent", "Report: all good"]])
+  })
+
+  it("shortens a long voice result in the push and keeps the whole text in the session", async () => {
+    const { w, sent, recorded } = wire(["push"])
+    const long = "é".repeat(PUSH_PREVIEW_MAX + 50)
+    await deliverToChat(w, { ...result("voice", "voice:ops-agent"), text: long })
+    expect(sent[0].msg.text).toBe(`Ops: ${"é".repeat(PUSH_PREVIEW_MAX)}… (shortened; ask the agent for the full answer)`)
+    expect(recorded[0][3]).toBe(long)
+    expect(pushPreview("short")).toBe("short")
   })
 
   it("sends a chat channel through its adapter", async () => {
