@@ -4,6 +4,7 @@ const groups = [
   { text: "Start here", collapsed: true, items: [
     { text: "Meet AgentX", link: "/" },
     { text: "What it is", link: "/what-it-is" },
+    { text: "Your data", link: "/your-data" },
     { text: "See it first", link: "/see-it-first" },
     { text: "Visual walkthrough", link: "/tutorials/first-workflow" },
     { text: "Before you start", link: "/requirements" },
@@ -77,6 +78,7 @@ const groups = [
   { text: "When something goes wrong", collapsed: true, items: [
     { text: "It's not answering", link: "/help/its-not-answering" },
     { text: "Run a health check", link: "/help/doctor" },
+    { text: "Stop a mistake from coming back", link: "/jobs/retro" },
     { text: "Understand costs", link: "/help/costs" },
   ] },
   { text: "Go deeper", collapsed: true, items: [

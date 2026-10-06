@@ -4,8 +4,8 @@ import { createServer, type Server } from "http"
 import { tmpdir } from "os"
 import { join } from "path"
 import {
-  buildCard, createCard, decideCard, expireCards, readCard, resolveExpiry, cardsAwaitingAgentNotice,
-  CARD_LIMITS, DEFAULT_CARD_SETTINGS,
+  buildCard, createCard, decideCard, expireCards, readCard, resolveExpiry, cardsAwaitingAgentNotice, verdictMessage,
+  CARD_LIMITS, DEFAULT_CARD_SETTINGS, IF_SILENT_VALUES,
 } from "../src/approvals/cards"
 import { decide, listInbox, parseKey } from "../src/approvals/inbox"
 import { runApprovalsSweep, digestDue, digestText, type ApprovalSettings } from "../src/approvals/sweep"
@@ -132,6 +132,33 @@ describe("decision cards", () => {
     expect(expired[0]).toMatchObject({ status: "expired", outcome: "discard", decided_by: "expiry" })
     expect(expireCards(root, NOW + 3 * HOUR)).toHaveLength(0)
     expect(decideCard(root, r.card.id, "yes")).toMatchObject({ ok: false })
+  })
+
+  it("never approves itself: \"approve\" is read as \"keep\" (#741)", () => {
+    expect(IF_SILENT_VALUES).not.toContain("approve")
+    const built = buildCard(card({ if_silent: "approve" }), { now: NOW })
+    expect(built).toMatchObject({ ok: true, card: { if_silent: "keep", if_silent_asked: "approve" } })
+    // A card stored by an older version still expires as "keep".
+    const r = createCard(root, card({ expires: "1h" }), { now: NOW })
+    if (!r.ok) throw new Error(r.error)
+    const file = join(root, ".agentx", "approvals", `${r.card.id}.json`)
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf-8")), if_silent: "approve" }))
+    expect(expireCards(root, NOW + 2 * HOUR)[0]).toMatchObject({ status: "expired", outcome: "keep" })
+    // The saved record keeps what was originally asked.
+    expect(JSON.parse(readFileSync(file, "utf-8"))).toMatchObject({ if_silent: "keep", if_silent_asked: "approve" })
+  })
+
+  it("an agent not yet told about a card that expired as \"approve\" hears \"keep\" (#741)", () => {
+    const r = createCard(root, card({ expires: "1h" }), { now: NOW })
+    if (!r.ok) throw new Error(r.error)
+    expireCards(root, NOW + 2 * HOUR)
+    const file = join(root, ".agentx", "approvals", `${r.card.id}.json`)
+    writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, "utf-8")), if_silent: "approve", outcome: "approve" }))
+    const stored = readCard(root, r.card.id)
+    expect(stored).toMatchObject({ outcome: "keep", if_silent: "keep", if_silent_asked: "approve" })
+    const [pending] = cardsAwaitingAgentNotice(root)
+    expect(verdictMessage(pending)).toContain("default applied: keep")
+    expect(verdictMessage(pending)).not.toContain("approve")
   })
 })
 
@@ -413,6 +440,27 @@ describe("the dashboard (operator) API", () => {
 
     const again = await fetch(`${base}/api/admin/approvals/decide`, { method: "POST", body, headers: { "X-Requested-With": "agentx-board" } })
     expect(again.status).toBe(409)
+  })
+
+  it("takes a card's pick and edited message, and refuses a yes without a pick (#743)", async () => {
+    const c = createCard(root, card({ choices: ["Script", "Watchdog"], draft: "Build: {choice}" }), { now: NOW })
+    if (!c.ok) throw new Error(c.error)
+    const key = `card:${c.card.id}`
+    const list = await (await fetch(`${base}/api/admin/approvals`)).json() as any
+    expect(list.items[0]).toMatchObject({ choices: ["Script", "Watchdog"], draft: "Build: {choice}" })
+    const post = (body: Record<string, unknown>) => fetch(`${base}/api/admin/approvals/decide`, {
+      method: "POST", body: JSON.stringify({ key, action: "yes", ...body }), headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" },
+    })
+    expect((await post({})).status).toBe(409)
+    expect(readCard(root, c.card.id)?.status).toBe("pending")
+    for (const choice of [3, 0, "Something else"]) {
+      const bad = await post({ choice })
+      expect(bad.status).toBeGreaterThanOrEqual(400)
+      expect(await bad.text()).toMatch(/choice must be 1-2/)
+      expect(readCard(root, c.card.id)?.status).toBe("pending")
+    }
+    expect((await post({ choice: 2, text: "Build: Watchdog, alert on the ops chat" })).status).toBe(200)
+    expect(readCard(root, c.card.id)).toMatchObject({ verdict: "yes", choice: "Watchdog", text: "Build: Watchdog, alert on the ops chat" })
   })
 
   it("puts a card back in line for the Mac popup, when the popup is on", async () => {

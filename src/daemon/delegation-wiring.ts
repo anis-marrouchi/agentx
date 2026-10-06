@@ -296,13 +296,111 @@ export interface DelegationWiring {
   callbackNote?: DelegationDeps["callbackNote"]
 }
 
+/** Where a message for `channel` goes on this machine: its own adapter,
+ *  or a push notification for a channel with no adapter of its own. */
+function routeFor(router: MessageRouter, channel: string): { channel: string; chatId?: string } | null {
+  if (router.getChannel(channel)) return { channel }
+  if (PUSH_FALLBACK_CHANNELS.has(channel) && router.getChannel("push")) return { channel: "push", chatId: "default" }
+  return null
+}
+
+/** Can a message on this channel reach the person from this machine? */
+export function canDeliverToChat(router: MessageRouter, channel: string): boolean {
+  return channel === "app" || routeFor(router, channel) !== null
+}
+
+/** A message for a person's chat that no turn in that chat produced: a
+ *  delegation's callback reply, or a schedule's result or failure (#738). */
+export interface ChatDelivery {
+  channel: string
+  chatId: string
+  text: string
+  agentId: string
+  accountId?: string
+  /** Also add the text to the agent's session for that chat. */
+  record: boolean
+  /** Unique per message: the phone files the reply under it once. */
+  taskId: string
+  outcome: "done" | "error"
+  /** Passed to the router so a repeat send of the same message is dropped. */
+  idempotencyKey?: string
+  /** The bus event's summary for a phone reply. No reply text: it reaches the mesh feed. */
+  summary?: string
+}
+
+/**
+ * Send a message to a person's chat on any channel this machine knows,
+ * including the two with no outbound adapter: the phone app (held in
+ * CallbackReplies and announced on the bus) and voice (a push
+ * notification). Throws when the channel can't be reached here.
+ */
+export async function deliverToChat(
+  w: Pick<DelegationWiring, "config" | "registry" | "router" | "replies">,
+  msg: ChatDelivery,
+): Promise<void> {
+  if (msg.channel === "app") {
+    // The phone app keeps its own thread in the dashboard's chat store.
+    // Hold the reply here and say so on the bus; the dashboard (which
+    // sees peers' events through the feed) fetches it and files it in
+    // the conversation, unread, with its finish notification.
+    if (msg.record) {
+      try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the thread still gets it */ }
+    }
+    const reply = w.replies.put({
+      taskId: msg.taskId,
+      channel: msg.channel,
+      chatId: msg.chatId,
+      agent: msg.agentId,
+      text: msg.text,
+      status: msg.outcome,
+      plain: w.config.agents[msg.agentId]?.richMessages === false,
+    })
+    getEventBus().publish({
+      kind: CALLBACK_REPLY_KIND,
+      type: CALLBACK_REPLY_TYPE,
+      agentId: msg.agentId,
+      // No reply text here: events reach the mesh feed; the text stays behind
+      // the mesh-gated GET /a2a/delegations/<id>/reply.
+      summary: msg.summary ?? `${msg.agentId} replied after a delegation (${msg.outcome})`,
+      ref: reply.taskId,
+    })
+    return
+  }
+  const r = routeFor(w.router, msg.channel)
+  if (!r) throw new Error(`no channel "${msg.channel}" on this machine`)
+  const dedupe = msg.idempotencyKey !== undefined ? { idempotencyKey: msg.idempotencyKey } : {}
+  if (r.channel === msg.channel) {
+    await w.router.sendOutbound(
+      { channel: msg.channel, chatId: msg.chatId, text: msg.text, agentId: msg.agentId, accountId: msg.accountId },
+      { recordInSession: msg.record, ...dedupe },
+    )
+    return
+  }
+  // A push is a notification about the chat, not a message in it. The full
+  // text goes in the agent's session for that chat, so the next turn there
+  // can read out what the push had to cut.
+  if (msg.record) {
+    try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the push still goes */ }
+  }
+  const name = w.config.agents[msg.agentId]?.name || msg.agentId
+  await w.router.sendOutbound(
+    { channel: r.channel, chatId: r.chatId || "default", text: `${name}: ${pushPreview(msg.text)}` },
+    { recordInSession: false, ...dedupe },
+  )
+}
+
+/** Longest text a push carries; a phone shows a few lines of it anyway. */
+export const PUSH_PREVIEW_MAX = 500
+
+/** A long answer, cut to fit a notification, saying where the rest is. */
+export function pushPreview(text: string): string {
+  const chars = [...text]
+  if (chars.length <= PUSH_PREVIEW_MAX) return text
+  return `${chars.slice(0, PUSH_PREVIEW_MAX).join("").trimEnd()}… (shortened; ask the agent for the full answer)`
+}
+
 export function createDelegations(w: DelegationWiring): DelegationManager {
   const cfg = w.config.mesh.delegation
-  const route = (channel: string): { channel: string; chatId?: string } | null => {
-    if (w.router.getChannel(channel)) return { channel }
-    if (PUSH_FALLBACK_CHANNELS.has(channel) && w.router.getChannel("push")) return { channel: "push", chatId: "default" }
-    return null
-  }
   return new DelegationManager({
     timeoutMs: cfg.timeoutMinutes * 60_000,
     asyncWhenHuman: cfg.asyncWhenHuman,
@@ -335,52 +433,7 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       return w.registry.execute({ agentId: turn.agentId, message: turn.message, context: turn.context as any, ...(intentRef ? { intentRef } : {}) })
     },
     isChatBusy: (agentId, channel, chatId) => w.registry.isChatBusy(agentId, channel, chatId),
-    canDeliver: (channel) => channel === "app" || route(channel) !== null,
-    deliver: async (msg) => {
-      if (msg.channel === "app") {
-        // The phone app keeps its own thread in the dashboard's chat store.
-        // Hold the reply here and say so on the bus; the dashboard (which
-        // sees peers' events through the feed) fetches it and files it in
-        // the conversation, unread, with its finish notification.
-        if (msg.record) {
-          try { w.registry.getSessionStore().addAgentMessage(msg.agentId, msg.channel, msg.chatId, msg.text) } catch { /* the thread still gets it */ }
-        }
-        const reply = w.replies.put({
-          taskId: msg.taskId,
-          channel: msg.channel,
-          chatId: msg.chatId,
-          agent: msg.agentId,
-          text: msg.text,
-          status: msg.outcome,
-          plain: w.config.agents[msg.agentId]?.richMessages === false,
-        })
-        getEventBus().publish({
-          kind: CALLBACK_REPLY_KIND,
-          type: CALLBACK_REPLY_TYPE,
-          agentId: msg.agentId,
-          // No reply text here: events reach the mesh feed; the text stays behind
-          // the mesh-gated GET /a2a/delegations/<id>/reply.
-          summary: `${msg.agentId} replied after a delegation (${msg.outcome})`,
-          ref: reply.taskId,
-        })
-        return
-      }
-      const r = route(msg.channel)
-      if (!r) throw new Error(`no channel "${msg.channel}" on this machine`)
-      if (r.channel === msg.channel) {
-        await w.router.sendOutbound(
-          { channel: msg.channel, chatId: msg.chatId, text: msg.text, agentId: msg.agentId, accountId: msg.accountId },
-          { recordInSession: msg.record },
-        )
-        return
-      }
-      // A push is a notification about the chat, not a message in it; the
-      // reply is already in the agent's session for the next turn there.
-      const name = w.config.agents[msg.agentId]?.name || msg.agentId
-      await w.router.sendOutbound(
-        { channel: r.channel, chatId: r.chatId || "default", text: `${name}: ${msg.text}` },
-        { recordInSession: false },
-      )
-    },
+    canDeliver: (channel) => canDeliverToChat(w.router, channel),
+    deliver: (msg) => deliverToChat(w, msg),
   })
 }

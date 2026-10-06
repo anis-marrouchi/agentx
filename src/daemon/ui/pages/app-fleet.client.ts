@@ -56,13 +56,30 @@ export const APP_FLEET_SCRIPT = `
   sheet.className = 'fx-sheet';
   sheet.setAttribute('aria-labelledby', 'fx-title');
   sheet.innerHTML = '<form method="dialog"><h3 id="fx-title"></h3><p id="fx-text"></p>' +
-    '<label id="fx-field" hidden><span>Message</span><textarea id="fx-input" rows="3"></textarea></label>' +
+    '<fieldset id="fx-choices" class="fx-choices" hidden></fieldset>' +
+    '<label id="fx-field" hidden><span id="fx-field-label">Message</span><textarea id="fx-input" rows="3"></textarea></label>' +
     '<p id="fx-error" class="fx-error" role="alert"></p>' +
-    '<div class="fx-actions"><button value="cancel" class="fx-btn">Cancel</button>' +
+    '<div class="fx-actions"><button value="cancel" class="fx-btn" formnovalidate>Cancel</button>' +
     '<button value="ok" id="fx-ok" class="fx-btn fx-primary">OK</button></div></form>';
   document.body.appendChild(sheet);
   window.AXSheet(sheet);
   var pending = null;
+  // The choice a card's advice names: it starts the line, followed by its
+  // end or a separator (same rule as the Mac card, approvals/card-page.ts).
+  function advised(it) {
+    var rec = String(it.recommend || '').trim(), low = rec.toLowerCase(), best = -1;
+    (it.choices || []).forEach(function (c, n) {
+      if (low.indexOf(c.toLowerCase()) !== 0) return;
+      var r = rec.slice(c.length).replace(/^ +/, '');
+      if (r && !(':,.;–—-'.indexOf(r.charAt(0)) >= 0 && (r.length === 1 || r.charAt(1) === ' '))) return;
+      if (best < 0 || c.length > it.choices[best].length) best = n;
+    });
+    return best;
+  }
+  function fill(draft, label) { return label ? String(draft).split('{choice}').join(label) : String(draft || ''); }
+  // opts.pick: { choices, draft, rec } for a card that offers choices. The
+  // radios are required, so OK does nothing until one is picked; Cancel
+  // skips the check (formnovalidate).
   function ask(opts) {
     document.getElementById('fx-title').textContent = opts.title;
     document.getElementById('fx-text').textContent = opts.text || '';
@@ -71,21 +88,39 @@ export const APP_FLEET_SCRIPT = `
     document.getElementById('fx-error').textContent = '';
     var field = document.getElementById('fx-field');
     var input = document.getElementById('fx-input');
-    field.hidden = !opts.input;
-    input.value = '';
+    var box = document.getElementById('fx-choices');
+    var p = opts.pick;
+    box.hidden = !p;
+    box.innerHTML = p ? '<legend>Pick one</legend>' + p.choices.map(function (c, n) {
+      return '<label class="fx-opt"><input type="radio" name="fx-choice" required value="' + (n + 1) + '"' + (n === p.rec ? ' checked' : '') + '><span>' + esc(c) + (n === p.rec ? ' <em>suggested</em>' : '') + '</span></label>';
+    }).join('') : '';
+    field.hidden = !opts.input && !(p && p.draft);
+    document.getElementById('fx-field-label').textContent = p && p.draft ? 'Message the agent gets (you can edit it)' : 'Message';
+    input.rows = p && p.draft ? 6 : 3;
+    input.value = p && p.draft ? fill(p.draft, p.rec >= 0 ? p.choices[p.rec] : '') : '';
+    delete input.dataset.edited;
     pending = opts;
     if (sheet.showModal) { sheet.showModal(); if (opts.input) input.focus(); }
+    else if (p) flash(opts.panel, 'This card offers choices: answer it on the dashboard.', true);
     else if (window.confirm(opts.title)) run(opts, opts.input ? window.prompt('Message') || '' : '');
   }
+  sheet.addEventListener('change', function (ev) {
+    var t = ev.target, p = pending && pending.pick, input = document.getElementById('fx-input');
+    if (!p || t.name !== 'fx-choice' || !p.draft || input.dataset.edited) return;
+    input.value = fill(p.draft, p.choices[+t.value - 1]);
+  });
+  document.getElementById('fx-input').addEventListener('input', function (ev) { ev.target.dataset.edited = '1'; });
   sheet.addEventListener('close', function () {
     var opts = pending;
     pending = null;
     if (!opts || sheet.returnValue !== 'ok') return;
-    run(opts, document.getElementById('fx-input').value.trim());
+    var picked = sheet.querySelector('input[name=fx-choice]:checked');
+    if (opts.pick && !picked) { flash(opts.panel, 'Nothing answered: pick one of the choices.', true); return; }
+    run(opts, document.getElementById('fx-input').value.trim(), picked ? +picked.value : undefined);
   });
-  function run(opts, text) {
+  function run(opts, text, choice) {
     if (opts.input && !text) { flash(opts.panel, 'Nothing sent: the message was empty.', true); return; }
-    api('POST', opts.path, opts.body(text)).then(function (b) {
+    api('POST', opts.path, opts.body(text, choice)).then(function (b) {
       flash(opts.panel, opts.done(b), false);
       refresh();
     }).catch(function (e) { flash(opts.panel, opts.title + ' failed: ' + e.message, true); });
@@ -162,7 +197,8 @@ export const APP_FLEET_SCRIPT = `
       html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(x.it.title) + '</h4><span class="fx-pill fx-warn">Ⅱ Waiting</span></div><p>' + esc(x.it.ask) + '</p>' +
         (x.it.recommend ? '<p class="fx-muted">Suggested: ' + esc(x.it.recommend) + '</p>' : '') +
         '<p class="fx-muted">' + esc(x.it.raisedBy || '') + ' · ' + esc(x.node.nodeName) + '</p>' +
-        '<div class="fx-row fx-gap"><button type="button" class="fx-btn fx-primary" data-act="decide" data-k="' + k + '" data-v="yes">Yes</button>' +
+        (x.it.choices ? '<p class="fx-muted">' + plural(x.it.choices.length, 'choice') + ' on offer</p>' : '') +
+        '<div class="fx-row fx-gap"><button type="button" class="fx-btn fx-primary" data-act="decide" data-k="' + k + '" data-v="yes">' + (x.it.choices ? 'Choose…' : 'Yes') + '</button>' +
         '<button type="button" class="fx-btn" data-act="decide" data-k="' + k + '" data-v="no">No</button>' +
         '<button type="button" class="fx-btn" data-act="decide" data-k="' + k + '" data-v="later">Later</button></div></article>';
     });
@@ -213,9 +249,15 @@ export const APP_FLEET_SCRIPT = `
       var x = activityPanel._items[k];
       var v = b.getAttribute('data-v');
       var word = { yes: 'Yes', no: 'No', later: 'Later' }[v];
-      ask({ panel: activityPanel, title: word + ': ' + x.it.title + '?', ok: word, danger: v === 'no',
-        text: v === 'yes' ? (x.it.yes || '') : v === 'no' ? (x.it.no || '') : 'Ask again later.',
-        path: '/api/app/approvals/decide', body: function () { return { node: x.node.node, key: x.it.key, action: v }; },
+      var pick = v === 'yes' && x.it.choices ? { choices: x.it.choices, draft: x.it.draft, rec: advised(x.it) } : null;
+      ask({ panel: activityPanel, title: pick ? x.it.title : word + ': ' + x.it.title + '?', ok: pick ? 'Choose' : word, danger: v === 'no', pick: pick,
+        text: pick ? x.it.ask : v === 'yes' ? (x.it.yes || '') : v === 'no' ? (x.it.no || '') : 'Ask again later.',
+        path: '/api/app/approvals/decide',
+        body: function (text, choice) {
+          var b = { node: x.node.node, key: x.it.key, action: v };
+          if (choice) { b.choice = choice; if (x.it.draft && text) b.text = text; }
+          return b;
+        },
         done: function () { return v === 'later' ? 'Put off: ' + x.it.title + '.' : 'Answered ' + word + ': ' + x.it.title + '.'; } });
       return;
     }

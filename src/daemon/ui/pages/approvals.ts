@@ -4,7 +4,9 @@
 // agents raise, schedule requests, held memory facts, wiki proposals,
 // WhatsApp reply drafts. Each
 // item answers "what is it, what is asked, what does the agent advise, and
-// what happens if I say nothing", with Yes / No / Later.
+// what happens if I say nothing", with Yes / No / Later. A card that offers
+// choices is answered by picking one (the agent's advice comes pre-picked),
+// and its suggested message can be edited before Yes (#743).
 //
 // API lives in approvals-panel.ts (dashboard side, token-gated like the
 // rest of /api/admin). This file owns only the HTML, CSS and client JS.
@@ -105,6 +107,14 @@ const APPROVALS_CSS = `
 .apv__detail p { margin: 6px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
 .apv__detail code { font-family: var(--ax-mono); font-size: 11px; }
 .apv__detail a { color: var(--ax-accent); overflow-wrap: anywhere; }
+.apv__choices { border: 0; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.apv__choices legend { font-size: 12px; color: var(--ax-muted); margin-bottom: 4px; padding: 0; }
+.apv__opt { display: flex; gap: 8px; align-items: flex-start; font-size: 14px; line-height: 1.4; padding: 8px 10px; border: 1px solid var(--ax-border); border-radius: var(--ax-radius-sm); cursor: pointer; overflow-wrap: anywhere; }
+.apv__opt:has(input:checked) { border-color: var(--ax-accent); background: var(--ax-accent-t); }
+.apv__opt input { margin-top: 3px; accent-color: var(--ax-accent); }
+.apv__opt em { font-style: normal; font-size: 11px; color: var(--ax-ok); white-space: nowrap; }
+.apv__draft { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ax-muted); margin: 0 0 10px; }
+.apv__draft textarea { font: inherit; font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: var(--ax-radius-sm); border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-text); resize: vertical; min-height: 96px; }
 .apv__acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .apv__acts .ax-btn { min-height: 40px; min-width: 88px; }
 .apv__hint { font-size: 11px; color: var(--ax-muted); margin-top: 6px; }
@@ -149,6 +159,20 @@ function rel(iso){
   return past ? t + ' ago' : 'in ' + t;
 }
 function safeLink(u){ return /^https?:[/][/]/i.test(u || '') ? u : ''; }
+// The choice the advice names: it must start the line, followed by its end
+// or a separator (same rule as the Mac card, approvals/card-page.ts).
+function advised(i){
+  var rec = String(i.recommend || '').trim(), low = rec.toLowerCase(), best = -1;
+  (i.choices || []).forEach(function(c, n){
+    if (low.indexOf(c.toLowerCase()) !== 0) return;
+    var r = rec.slice(c.length).replace(/^ +/, '');
+    if (r && !(':,.;–—-'.indexOf(r.charAt(0)) >= 0 && (r.length === 1 || r.charAt(1) === ' '))) return;
+    if (best < 0 || c.length > i.choices[best].length) best = n;
+  });
+  return best;
+}
+function fill(draft, label){ return label ? String(draft).split('{choice}').join(label) : String(draft); }
+function byKey(key){ return state.items.filter(function(x){ return x.key === key; })[0]; }
 
 async function load(){
   try {
@@ -178,6 +202,12 @@ function render(){
     ol.innerHTML = '<li class="apv__empty"><h2>Nothing waiting for you</h2><p>New requests from agents, schedules, memory and the wiki show up here.</p></li>';
   } else {
     ol.innerHTML = list.map(item).join('');
+    ol.querySelectorAll('.apv__item').forEach(function(li){
+      var it = byKey(li.getAttribute('data-key'));
+      var picked = li.querySelector('input[type=radio]:checked');
+      var ta = li.querySelector('textarea[data-draft]');
+      if (it && ta) ta.value = fill(it.draft, picked ? it.choices[+picked.value - 1] : '');
+    });
   }
   var foot = $('apv-snoozed');
   foot.innerHTML = state.snoozed && !state.showAll
@@ -200,7 +230,7 @@ function item(i){
     + '<h2 class="apv__title">' + esc(i.title) + '</h2>'
     + '<p class="apv__ask">' + esc(i.ask) + '</p>'
     + (i.recommend ? '<p class="apv__rec"><b>Recommends:</b> ' + esc(i.recommend) + '</p>' : '')
-    + (i.choices ? '<p class="apv__rec"><b>Choices</b> (pick one in the Mac popup or with <code>agentx approvals approve --choice</code>):</p><ol>' + i.choices.map(function(c){ return '<li>' + esc(c) + '</li>'; }).join('') + '</ol>' : '')
+    + (i.choices ? choices(i) : '')
     + (i.expires ? '<p class="apv__exp' + (soon ? ' is-soon' : '') + '" title="' + esc(new Date(i.expires).toLocaleString()) + '">Expires ' + esc(rel(i.expires)) + ', then: ' + esc(i.if_silent) + '</p>' : '')
     + '<details class="apv__detail"><summary>Details</summary>' + more.join('') + '</details>'
     + '<div class="apv__acts">'
@@ -211,12 +241,31 @@ function item(i){
     + '</div></li>';
 }
 
+function choices(i){
+  var rec = advised(i), name = 'apv-ch-' + esc(i.key);
+  return '<fieldset class="apv__choices"><legend>Pick one, then Yes</legend>'
+    + i.choices.map(function(c, n){
+      return '<label class="apv__opt"><input type="radio" name="' + name + '" value="' + (n + 1) + '"' + (n === rec ? ' checked' : '') + '><span>' + esc(c) + (n === rec ? ' <em>recommended</em>' : '') + '</span></label>';
+    }).join('')
+    + '</fieldset>'
+    + (i.draft ? '<label class="apv__draft">Message the agent gets (you can edit it)<textarea rows="5" data-draft></textarea></label>' : '');
+}
+
 async function act(li, action){
   var key = li.getAttribute('data-key');
+  var body = { key: key, action: action };
+  var it = byKey(key);
+  if (action === 'yes' && it && it.choices) {
+    var picked = li.querySelector('input[type=radio]:checked');
+    if (!picked) { say('Pick one of the choices first.', 'err'); var first = li.querySelector('input[type=radio]'); if (first) first.focus(); return; }
+    body.choice = Number(picked.value);
+    var ta = li.querySelector('textarea[data-draft]');
+    if (ta && ta.value.trim()) body.text = ta.value;
+  }
   var btns = li.querySelectorAll('button[data-act]');
   btns.forEach(function(b){ b.disabled = true; });
   try {
-    var r = await fetch('/api/admin/approvals/decide', { method: 'POST', headers: headers(true), body: JSON.stringify({ key: key, action: action }) });
+    var r = await fetch('/api/admin/approvals/decide', { method: 'POST', headers: headers(true), body: JSON.stringify(body) });
     var d = await r.json();
     if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
     say(d.message, 'ok');
@@ -271,6 +320,23 @@ document.addEventListener('click', function(ev){
   if (t.id === 'apv-hide-later') { state.showAll = false; load(); }
 });
 
+// Picking a choice fills it into the message, until the operator edits the
+// message by hand. Either marks the card as touched, so the minute refresh
+// does not throw the pick away.
+document.addEventListener('change', function(ev){
+  var t = ev.target;
+  if (!t.matches || !t.matches('.apv__opt input[type=radio]')) return;
+  var li = t.closest('.apv__item'); li.setAttribute('data-touched', '1');
+  var it = byKey(li.getAttribute('data-key')), ta = li.querySelector('textarea[data-draft]');
+  if (it && ta && !ta.hasAttribute('data-edited')) ta.value = fill(it.draft, it.choices[+t.value - 1]);
+});
+document.addEventListener('input', function(ev){
+  var t = ev.target;
+  if (!t.matches || !t.matches('textarea[data-draft]')) return;
+  t.setAttribute('data-edited', '1');
+  t.closest('.apv__item').setAttribute('data-touched', '1');
+});
+
 $('apv-form').addEventListener('submit', async function(ev){
   ev.preventDefault();
   var f = ev.target;
@@ -293,6 +359,6 @@ $('apv-form').addEventListener('submit', async function(ev){
 });
 
 load();
-setInterval(function(){ if (document.visibilityState === 'visible' && !document.querySelector('.apv__item:focus-within')) load(); }, 60000);
+setInterval(function(){ if (document.visibilityState === 'visible' && !document.querySelector('.apv__item:focus-within, .apv__item[data-touched]')) load(); }, 60000);
 })();
 `

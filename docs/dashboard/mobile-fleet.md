@@ -48,6 +48,15 @@ When an agent asks for your approval, it appears under **Needs you**.
 
 ![Decisions waiting on the Activity tab, dark theme](/screenshots/mobile-app/activity-dark.png)
 
+Some cards offer choices, such as the fixes a [retro](../jobs/retro.md) proposes. They show **Choose…** instead of **Yes**:
+
+1. **Phone:** tap **Choose…**.
+2. **Phone:** tap the choice you want. The suggested one is already picked.
+3. **Phone:** if the card has a message, it fills in with your pick. Change the wording if you like.
+4. **Phone:** tap **Choose**. **Choose** does nothing until a choice is picked.
+
+<img src="/screenshots/mobile-app/activity-choice-sheet.png" alt="Picking one of four fixes on the phone, with the message the agent gets below" width="320">
+
 This is the same inbox as the [Approvals page](./approvals.md) and `agentx approvals`.
 
 ## Stop or steer a running task

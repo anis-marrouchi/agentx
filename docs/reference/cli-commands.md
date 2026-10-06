@@ -339,6 +339,7 @@ No flags.
 | `--do <prompt>` | — | Prompt to run at each tick (required unless --id exists). |
 | `--id <name>` | — | Explicit cron id (default: auto-slug of &lt;when&gt;-&lt;agent&gt;). |
 | `--notify <target>` | — | "me" (use notifications.destination) or "channel:chatId[:accountId]". |
+| `--no-deliver` | — | Send only failures to `--notify`, not each run's answer. |
 | `--on-error <modes>` | — | Comma list of "log\|notify\|disable" (default: log; notify implies "notify"). |
 | `--timezone <tz>` | `Africa/Tunis` | IANA timezone (default: Africa/Tunis). |
 | `--timeout <seconds>` | `600` | Max run time. |
@@ -442,7 +443,7 @@ Raise a decision card yourself, for example to test the inbox (agents use the ag
 | `--title <text>` | required | What it is, in one line. |
 | `--ask <text>` | required | The yes/no question. |
 | `--recommend <text>` | required | The advice and why, in one line. |
-| `--if-silent <value>` | required | What applies if nobody answers: discard, keep, pause, approve. |
+| `--if-silent <value>` | required | What applies if nobody answers: discard, keep, pause. A card never approves itself. |
 | `--expires <when>` | — | ISO date or time, or like 12h / 3d (default: approvals.defaultExpiryDays). |
 | `--source <link>` | — | Link to the draft, PR or issue. |
 
@@ -1073,7 +1074,7 @@ Turn a draft JSON file ({category, title, fields}) into a pre-filled issue form 
 
 ### `agentx wiki status`
 
-Show wiki status per agent.
+Show wiki status per agent. For each agent it counts the raw entries an article cites, the entries absorb has read but did not cite, and the entries still waiting (unabsorbed).
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1094,6 +1095,8 @@ Check wiki for issues per agent.
 
 Compile unabsorbed entries into typed per-agent wiki articles.
 
+When a run succeeds, every entry it read is recorded in `agents/<id>/_absorbed.json` under the wiki directory, including entries no article cites, so the next run moves on to new entries. When a run fails, nothing is recorded and the same entries are offered again.
+
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
@@ -1103,6 +1106,7 @@ Compile unabsorbed entries into typed per-agent wiki articles.
 | `--no-facts` | — | Skip the system-of-record lookups. |
 | `--max <n>` | `10` | Max entries per agent. |
 | `--since <date>` | — | Only entries dated on or after YYYY-MM-DD. |
+| `--until <date>` | — | Only entries dated on or before YYYY-MM-DD. |
 
 ### `agentx wiki promote`
 
@@ -2556,6 +2560,17 @@ Re-run a recorded task against the current agent config.
 | `--daemon <url>` | `http://127.0.0.1:18800` | Daemon API base URL. |
 | `--diff` | — | Show original input + output vs new output side-by-side. |
 | `--no-fresh` | — | Do NOT freshSession (default is fresh — required for clean replay). |
+
+## retro (advanced)
+
+`agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--model <model>` | `AGENTX_RETRO_MODEL`, else `AGENTX_MONITOR_MODEL`, else `opus` | The reviewer model. |
+| `--dry-run` | — | Show the card without raising it. |
+| `--force` | — | Raise a card even when the run shows no struggle, or one about the same failure is open. |
+| `--path <db>` | `.agentx/db.sqlite` | Trace database. |
 
 ## process (advanced)
 

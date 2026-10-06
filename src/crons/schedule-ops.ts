@@ -69,6 +69,9 @@ export interface ScheduleJobInput {
   timeout?: number
   model?: string
   notify?: NotifyTarget
+  /** False keeps `notify` for failure alerts only. Default: each
+   *  successful run's answer is sent there too. */
+  deliverResult?: boolean
   onError?: OnErrorValue[]
   enabled?: boolean
   createdBy?: string
@@ -92,6 +95,7 @@ export function buildScheduleJob(input: ScheduleJobInput): Record<string, unknow
   }
   if (input.model) job.model = input.model
   if (input.notify) job.notify = input.notify
+  if (input.notify && input.deliverResult === false) job.deliverResult = false
   if (input.createdBy) job.createdBy = input.createdBy
   if (input.approval) job.approval = input.approval
   return job

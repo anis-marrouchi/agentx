@@ -16,7 +16,7 @@ import type { TopbarPeer } from "./topbar"
 //
 //   GET  /approvals                        the page
 //   GET  /api/admin/approvals[?all=1]      inbox + settings
-//   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force? }
+//   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force?, choice?, text? }
 //   POST /api/admin/approvals/popup        { key }: show the card on the Mac again
 //   POST /api/admin/approvals/settings     settings form
 
@@ -40,6 +40,16 @@ async function readJson(req: IncomingMessage, limit = 64 * 1024): Promise<Record
   const parsed = JSON.parse(raw)
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("expected a JSON object")
   return parsed
+}
+
+/** A card's pick and edited message, as the dashboard and the phone app
+ *  send them. resolveAnswer (choices.ts) checks them against the card. */
+export function choiceAnswer(body: Record<string, unknown>): { choice?: string | number; text?: string } {
+  const c = body.choice
+  return {
+    ...(typeof c === "number" || (typeof c === "string" && c.trim()) ? { choice: typeof c === "string" ? c.trim() : c } : {}),
+    ...(typeof body.text === "string" && body.text.trim() ? { text: body.text } : {}),
+  }
 }
 
 export function handleApprovalsPageGet(res: ServerResponse, peers: TopbarPeer[], localToken?: string): void {
@@ -98,6 +108,7 @@ export async function handleApprovalsPanelApi(
         force: body.force === true,
         laterHours: settings.laterHours,
         by: "operator (dashboard)",
+        ...choiceAnswer(body),
       })
       if (!r.ok) { sendJson(res, 409, { error: r.error }); return true }
       sendJson(res, 200, { ok: true, message: r.message })

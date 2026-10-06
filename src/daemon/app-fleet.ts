@@ -48,7 +48,14 @@ export interface ApprovalItem {
   no?: string
   raisedBy?: string
   expires?: string
+  /** Cards: the ready-made answers; yes must pick one (#743). */
+  choices?: string[]
+  /** Cards: the suggested message, `{choice}` not filled in yet. */
+  draft?: string
 }
+
+/** A card's pick (1-based number or label) and the message as edited. */
+export interface ChoiceAnswer { choice?: string | number; text?: string }
 
 export interface NodeApprovals {
   node: string
@@ -65,7 +72,7 @@ export interface AppFleetDeps {
   nodePost(nodeUrl: string, path: string, body: unknown): Promise<NodeReply>
   approvals(): Promise<NodeApprovals[]>
   /** `by` names the phone, e.g. "operator (phone: My phone)". */
-  decide(nodeUrl: string, key: string, action: "yes" | "no" | "later", by: string): Promise<NodeReply>
+  decide(nodeUrl: string, key: string, action: "yes" | "no" | "later", by: string, answer?: ChoiceAnswer): Promise<NodeReply>
 }
 
 export function clip(text: string | undefined, max = PREVIEW_CHARS): string | undefined {
@@ -209,7 +216,10 @@ export async function handleAppFleet(
     if (!key || (action !== "yes" && action !== "no" && action !== "later")) {
       return json(res, 400, { error: "key and action (yes, no or later) are required" })
     }
-    reply = await deps.decide(node, key, action, by)
+    const choice = typeof body.choice === "number" ? body.choice : str(body.choice)
+    const text = typeof body.text === "string" && body.text.trim() ? body.text : ""
+    const answer: ChoiceAnswer = { ...(choice !== "" ? { choice } : {}), ...(text ? { text } : {}) }
+    reply = await deps.decide(node, key, action, by, answer)
   }
   return json(res, reply.status, reply.body)
 }

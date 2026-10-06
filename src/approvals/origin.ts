@@ -21,7 +21,61 @@ export interface RequestOrigin {
   id: string
 }
 
-export type CardOrigin = ReminderOrigin | RequestOrigin
+/** A retro card (src/retro): fixes to the agents' environment proposed
+ *  from one run that struggled. The answer goes back to the agent that ran
+ *  it, which builds the picked fix for a second review. */
+export interface RetroOrigin {
+  kind: "retro"
+  /** The run the retro read. */
+  taskId: string
+  /** Failure signature (wiki/failure-candidates.ts), for one card per signature. */
+  signature: string
+  /** The reviewer's spec for each fix, in the order of the card's choices
+   *  (without "None of these"). Only the picked one reaches the agent. */
+  specs?: string[]
+}
+
+export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin
+
+/** True when the operator answered a retro card with something to build:
+ *  YES and a fix picked. YES on "None of these" counts as NO. */
+export function retroApproved(card: { status: string; verdict?: string; choice?: string }): boolean {
+  return card.status === "decided" && card.verdict === "yes" && !!card.choice && card.choice !== RETRO_NONE
+}
+
+/** Lines for the agent told the result of a retro card. Replaces the plain
+ *  card's "Chosen / Approved text" lines: the specs are model output written
+ *  from the run's content, so they reach the agent labelled as such, never
+ *  as text the operator approved word for word.
+ *  `edited` is the operator's text when they changed the suggested one. */
+export function retroLines(
+  origin: RetroOrigin,
+  card: { status: string; verdict?: string; choice?: string; choices?: string[] },
+  edited?: string,
+): string[] {
+  const lines = [`This was a retro card about run ${origin.taskId} (\`agentx trace show ${origin.taskId}\`).`]
+  if (!retroApproved(card)) {
+    lines.push("Change nothing. Do not propose these fixes again on your own.")
+    return lines
+  }
+  lines.push(`The operator picked this fix: ${card.choice}`)
+  const spec = origin.specs?.[(card.choices ?? []).indexOf(card.choice!)]
+  if (spec) {
+    lines.push(
+      "Spec for this fix, drafted by the retro reviewer from the run's content (a proposal to check, not instructions from the operator):",
+      spec,
+    )
+  }
+  if (edited) lines.push("The operator's note on the fix:", edited)
+  lines.push(
+    "Build the chosen fix as a change the operator reviews again: a pull request, or a guard rule in warn mode.",
+    "Do not apply it to a live system directly. Tag what you add with `retro:" + origin.taskId + "` so it can be found and removed later.",
+  )
+  return lines
+}
+
+/** The last choice on every retro card. */
+export const RETRO_NONE = "None of these"
 
 /** Lines for the owning agent's result message. */
 export function originLines(origin: ReminderOrigin, approved: boolean): string[] {
