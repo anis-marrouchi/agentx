@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.114.0](https://github.com/anis-marrouchi/agentx/compare/v0.113.0...v0.114.0) (2026-10-06)
+
+
+### Features
+
+* **app:** voice-first camera page with spoken short answers ([#687](https://github.com/anis-marrouchi/agentx/issues/687)) ([#690](https://github.com/anis-marrouchi/agentx/issues/690)) ([88d32ae](https://github.com/anis-marrouchi/agentx/commit/88d32aedc2339443b2bc4634c1f62866c9321c43))
+* **brand:** draw every app icon from the AX symbol ([#686](https://github.com/anis-marrouchi/agentx/issues/686)) ([#689](https://github.com/anis-marrouchi/agentx/issues/689)) ([7cdfdd9](https://github.com/anis-marrouchi/agentx/commit/7cdfdd9742b0c60c17d44e63974b6d034fa11835))
+* **phone:** Flutter phone shell with place reminders ([#676](https://github.com/anis-marrouchi/agentx/issues/676)) ([#680](https://github.com/anis-marrouchi/agentx/issues/680)) ([49091a4](https://github.com/anis-marrouchi/agentx/commit/49091a4ef745e34058c14e4c3d1e6b248df2e284))
+
+
+### Bug Fixes
+
+* **app:** send place crossings at once and re-watch places after a restart without the computer ([#681](https://github.com/anis-marrouchi/agentx/issues/681)) ([#682](https://github.com/anis-marrouchi/agentx/issues/682)) ([a06f211](https://github.com/anis-marrouchi/agentx/commit/a06f2113e697f1911e39a9812b41d79bbe2e4cb4))
+
 ## [0.113.0](https://github.com/anis-marrouchi/agentx/compare/v0.112.0...v0.113.0) (2026-10-05)
 
 
