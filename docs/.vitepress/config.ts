@@ -4,6 +4,7 @@ const groups = [
   { text: "Start here", collapsed: true, items: [
     { text: "Meet AgentX", link: "/" },
     { text: "What it is", link: "/what-it-is" },
+    { text: "Your data", link: "/your-data" },
     { text: "See it first", link: "/see-it-first" },
     { text: "Visual walkthrough", link: "/tutorials/first-workflow" },
     { text: "Before you start", link: "/requirements" },

@@ -7,7 +7,7 @@ An agent that checks your screen has to look **when** the thing it wants to see 
 - **When it settles.** `--until-stable` waits until part of the screen stops moving: animations, pages that are loading.
 - **A few seconds ago.** An optional buffer keeps the last few seconds of the screen in memory, for an agent that arrives late.
 
-Every picture is cut down to the part of the screen you asked for and shrunk to a size budget. An agent that sends the picture to an AI model then pays only for the pixels that matter.
+Every picture is cut down to the part of the screen you asked for and shrunk to a size budget. The picture stays on your Mac until an agent sends it to an AI model, which is an online service (see [Your data](../your-data.md)). The agent then pays only for the pixels that matter.
 
 ## What you need
 
