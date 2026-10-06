@@ -58,6 +58,10 @@ export interface DecisionCard extends CardChoices {
   verdict?: Verdict
   /** What applied on expiry (status "expired"). */
   outcome?: IfSilent
+  /** Set when the agent, or a card stored before #741, asked for
+   *  "approve" on expiry; `if_silent` then holds "keep". Kept so the
+   *  record still shows what was originally asked. */
+  if_silent_asked?: "approve"
   decided_by?: string
   decided_at?: string
   note?: string
@@ -121,7 +125,15 @@ export function readCard(root: string, id: string): DecisionCard | null {
   if (!isValidCardId(id)) return null
   try {
     const card = JSON.parse(readFileSync(fileFor(root, id), "utf-8")) as DecisionCard
-    return { ...card, if_silent: asIfSilent(card.if_silent) ?? "keep" }
+    // A card that expired as "approve" before #741 is read as "keep" too, so
+    // an agent not yet told never hears "default applied: approve".
+    const legacy = (card.if_silent as string) === "approve" || (card.outcome as string) === "approve"
+    return {
+      ...card,
+      if_silent: asIfSilent(card.if_silent) ?? "keep",
+      ...(card.outcome ? { outcome: asIfSilent(card.outcome) ?? "keep" } : {}),
+      ...(legacy ? { if_silent_asked: "approve" as const } : {}),
+    }
   } catch {
     return null
   }
@@ -209,7 +221,8 @@ export function buildCard(
   if (title.length > CARD_LIMITS.title) return { ok: false, error: `title is longer than ${CARD_LIMITS.title} characters` }
   if (ask.length > CARD_LIMITS.ask) return { ok: false, error: `ask is longer than ${CARD_LIMITS.ask} characters` }
   if (recommend.length > CARD_LIMITS.recommend) return { ok: false, error: `recommend is longer than ${CARD_LIMITS.recommend} characters` }
-  const ifSilent = asIfSilent(oneLine(input.if_silent).toLowerCase())
+  const ifSilentRaw = oneLine(input.if_silent).toLowerCase()
+  const ifSilent = asIfSilent(ifSilentRaw)
   if (!ifSilent) {
     return { ok: false, error: `if_silent must be one of ${IF_SILENT_VALUES.join(", ")}` }
   }
@@ -235,6 +248,7 @@ export function buildCard(
       ask,
       recommend,
       if_silent: ifSilent,
+      ...(ifSilentRaw === "approve" ? { if_silent_asked: "approve" as const } : {}),
       expires: expiry.at,
       ...(source ? { source } : {}),
       raised_by: raisedBy,
