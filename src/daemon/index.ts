@@ -2111,7 +2111,18 @@ export class AgentXDaemon {
         this.log,
       )
       this.router.addChannel(whatsapp)
-      this.log(`  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes)`)
+      const waAllow = this.config.channels.whatsapp.allowFrom ?? []
+      if (waAllow.length === 0) {
+        this.log(
+          `  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes) — WARNING: no allowFrom. Only your own self-chat is answered; messages from other chats will be DROPPED.`,
+        )
+      } else if (waAllow.some((e) => e.trim() === "*")) {
+        this.log(
+          `  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes) — WARNING: allowFrom contains "*". Every chat on the paired account is answered.`,
+        )
+      } else {
+        this.log(`  WhatsApp: enabled (${this.config.channels.whatsapp.routes.length} routes) — allowFrom entries: ${waAllow.length}`)
+      }
     }
 
     // GitLab

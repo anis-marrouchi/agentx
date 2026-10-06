@@ -38,7 +38,7 @@ Set up with `agentx connect whatsapp`, which pairs a phone by QR code.
 | `channels.whatsapp.enabled` | boolean | `false` | Turns the WhatsApp channel on. |
 | `channels.whatsapp.sessionDir` | string | `".agentx/whatsapp-sessions"` | Folder that keeps the paired session. Delete it to pair again. |
 | `channels.whatsapp.defaultAgent` | string | — | Agent that answers when no route matches. |
-| `channels.whatsapp.allowFrom` | list of strings | — | Phone numbers allowed to message the agent (partial match). Add your own number to talk to the agent from your own chat. |
+| `channels.whatsapp.allowFrom` | list of strings | — | Phone numbers (with or without `+`) or chat IDs the agent may answer (partial match). Unset or empty, only your own self-chat is answered and everything else is dropped. `"*"` answers every chat on the account. See [Before you pair WhatsApp](./channels.md#before-you-pair-whatsapp). |
 | `channels.whatsapp.routes` | list | `[]` | Send a contact or group to a specific agent. The first match wins. |
 | `contact` | string | — | Phone number to match (with or without `+`). |
 | `group` | string | — | Group name or id to match (case-insensitive, partial). |

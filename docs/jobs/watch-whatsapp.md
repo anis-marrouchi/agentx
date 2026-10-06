@@ -15,6 +15,14 @@ AgentX gets the messages from [wacli](https://github.com/openclaw/wacli), a What
 
 Try it first with a test contact: a second phone of your own, or a colleague who agreed to help.
 
+> **Before you pair.** wacli joins your WhatsApp account as a linked device, like WhatsApp on a computer, so it sees every chat on that number.
+>
+> - Use a dedicated number, not your personal one.
+> - wacli is unofficial software. WhatsApp can restrict or ban a number it thinks is automated, so don't pair a number you cannot afford to lose.
+> - This is not the WhatsApp Business API, WhatsApp's official service for companies.
+>
+> Triage only reads the chats a watch rule names. The separate WhatsApp channel, which answers chats directly, is closed the same way: see [Before you pair WhatsApp](../reference/channels.md#before-you-pair-whatsapp).
+
 ## 1. Install and pair wacli
 
 1. **Terminal:** install wacli:
