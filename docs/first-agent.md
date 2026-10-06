@@ -1,11 +1,11 @@
 # Create your first agent
 
-An agent is an AI helper with one job. This page creates one from the setup page, then checks that it answers. You need AgentX [installed](./install.md) and a model connection:
+An agent is an AI model set up to do one job. This page creates one from the setup page, then checks that it answers. You need AgentX [installed](./install.md) and a model connection:
 
 - **An API provider** (such as the Anthropic API) needs an API key.
 - **A command-line tool** (Claude Code, Codex CLI or OpenCode) must be installed and signed in on the machine that runs AgentX. The setup page calls these **CLI engines**.
 
-No model yet? The scripted [demo](./see-it-first.md) lets you look around without one.
+Not sure which to get, or what it costs? See [Choose a model account](./help/costs.md#choose-a-model-account). In short: a Claude subscription works through Claude Code, and an API key needs billing set up with the provider first. No model yet? The scripted [demo](./see-it-first.md) lets you look around without one.
 
 ## Fill in the setup page
 
@@ -56,5 +56,6 @@ Then [connect Telegram](./connect-telegram.md) if you want to talk to the agent 
 
 - **Save and continue shows an error about the Agent id:** use only lowercase letters, numbers, `-` and `_`, starting with a letter or number.
 - **The agent isn't listed in Settings or Live:** the daemon hasn't loaded it. Restart the daemon as above.
+- **Test drive returns `Credit balance is too low`:** the API key's account has no credits. Add a payment method and buy credits in the provider's console. See [Choose a model account](./help/costs.md#choose-a-model-account).
 - **Test drive returns an error about a key or login:** for **Anthropic API (BYO key)**, check `ANTHROPIC_API_KEY` in `.env`. For a CLI engine, check the tool on the machine, for example `claude --version`, and sign in to it.
 - **Nothing happens at all:** run `agentx daemon status`. If it says `Daemon is not running`, start it. Then see [It's not answering](./help/its-not-answering.md).

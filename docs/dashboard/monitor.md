@@ -15,7 +15,14 @@ Monitor groups work into **Only you**, **Agents can handle**, **In motion**, and
 
 After an agent finishes a task, AgentX reviews it and writes down what is left to do. An item appears only once the task has finished and its review has succeeded. Some routine work is never reviewed, such as successful scheduled jobs and internal workflow steps. Work done in a separate terminal tool (for example a Claude Code session outside AgentX) only appears if that tool is set up to report its sessions to AgentX.
 
-The review runs with Claude Code on the machine that runs the daemon (the AgentX background service). This is separate from the model the agent itself used, and reviews can use paid model usage. The scripted demo turns the real reviewer off and uses labelled fictional items.
+The review runs with Claude Code on the machine that runs the daemon (the AgentX background service). This is separate from the model the agent itself used, and reviews can use paid model usage:
+
+- It uses the account Claude Code is signed in to on that machine, never the `ANTHROPIC_API_KEY` in your `.env` file.
+- It uses the `opus` model by default. To use a cheaper one, set `AGENTX_MONITOR_MODEL` in the `.env` file next to `agentx.json`, for example `AGENTX_MONITOR_MODEL=sonnet`, then restart the daemon.
+- Without Claude Code on that machine (the Docker image doesn't include it by default), every review fails and costs nothing. Your agents keep working, but Monitor shows no new items, and **Reviews failed** goes up with the reason `Reviewer failed: claude CLI not found on the daemon PATH`.
+- There is no setting to turn the reviewer off. Only the scripted demo skips it; it uses labelled fictional items instead.
+
+See [Understand model costs](../help/costs.md#monitor-s-reviewer) for what the reviewer costs.
 
 ## Handle what needs you
 
@@ -51,7 +58,10 @@ The `agentx monitor` terminal command is something else: it connects external te
 
 ## If something is wrong
 
-- **Reviews failed goes up:** the reviewer couldn't run. **Terminal:** on the daemon's machine, run `claude --version` to check Claude Code is installed, then make sure it is signed in.
+- **Reviews failed goes up:** the reviewer couldn't run. To see why, select **Failed** under **Session briefings** and read the reason on a card. Then fix it:
+  1. **Terminal:** on the daemon's machine, run `claude --version` to check Claude Code is installed. If the reason is `claude CLI not found on the daemon PATH`, install it, or leave it: Monitor then stays empty, and nothing is charged.
+  2. **Terminal:** run `claude` once and sign in, if it asks you to.
+  3. **Browser:** select **Retry** on a failed card. It turns into a briefing once the review succeeds.
 - **Nothing ever appears:** the task may still be running, or it was routine work that isn't reviewed (such as a successful scheduled job). Check [Activity](./activity.md) to confirm the task finished.
 - **A machine is listed as not reporting:** its daemon or the connection to it is down. See [Add a second machine](../jobs/second-machine.md).
 - **Nothing ever becomes "past the clock":** no response time is set for that client, so waiting stays flat.

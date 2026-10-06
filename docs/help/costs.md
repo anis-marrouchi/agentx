@@ -7,19 +7,59 @@ The scripted [demo](../see-it-first.md) never calls a paid model, so it costs no
 Keep in mind:
 
 - A schedule (a job that runs at set times) spends money even when nobody sends a message. Start with a schedule that runs rarely, check its first runs, then make it more frequent.
-- Monitor's automatic reviewer also uses Claude Code, separately from the agents' own work. The demo turns that reviewer off.
+- Monitor's automatic reviewer also uses Claude Code, separately from the agents' own work. See [Monitor's reviewer](#monitor-s-reviewer) below.
 - AgentX doesn't change your provider's prices. Check your provider's billing page for the real amounts.
+
+## Choose a model account
+
+You pay the model provider in one of two ways. AgentX works with both.
+
+- **A subscription:** a fixed monthly plan, such as Claude Pro or Claude Max. Your agents use it through Claude Code, a command-line tool you install and sign in to once on the machine that runs AgentX. On the setup page, this is the engine **Claude Code (recommended)**. You pay the same amount each month, but the plan has usage limits; see [When the Claude plan runs out](#when-the-claude-plan-runs-out).
+- **An API key:** a private code from the provider that lets AgentX call the model directly. You pay for what your agents use. On the setup page, this is the engine **Anthropic API (BYO key)**. A Claude Code agent can also bill a key instead of the sign-in, with the agent setting [`billing`](../reference/config-agents.md#agents) set to `api`.
+
+An API key only works once billing is set up with the provider. Before the first request, sign in to the provider's console in your browser, add a payment method and buy credits. Without that, every request fails, often with a message like `Credit balance is too low`. If the console lets you set a monthly spending limit, set one.
+
+A personal subscription is for your own use. If other people can reach your agent, such as a guest from another team, bill an API key instead. See [Bill the guest's turns to your API key](../jobs/guest-mesh.md#host-bill-the-guest-s-turns-to-your-api-key).
+
+The other engines on the setup page, **Codex CLI** and **OpenCode CLI**, use that tool's own sign-in or key. Follow the tool's own instructions to set it up.
+
+### What it costs per month, roughly
+
+These are rough guides, not quotes. Prices change, and your use decides the real amount. Check the provider's pricing page before you choose.
+
+- **Subscription:** the plan's fixed price. At the time of writing, the entry Claude plan costs about USD 20 a month, and the larger plans about USD 100 to 200. A larger plan gives you more use before the limit.
+- **API key, one light agent:** one agent that answers a few dozen short messages a day, on a mid-size model, often costs a few dollars to a few tens of dollars a month.
+- **What makes it grow:** schedules that run often, the largest models (such as Opus), long conversations, many agents, and Monitor's reviewer. These can take an API bill into hundreds of dollars a month.
+
+Not sure? If you already pay for a Claude plan, start with **Claude Code (recommended)**. Otherwise, start with an API key, set a spending limit, and check the [Cost page](#see-what-your-agents-spent) after the first week.
 
 ## See what your agents spent
 
-1. **Browser:** open `/admin/cost` on your dashboard (for example `http://127.0.0.1:4202/admin/cost`).
+The Cost page has no tab in the top bar. You open it by its address.
+
+1. **Browser:** open `/admin/cost` on your dashboard (for example `http://127.0.0.1:4202/admin/cost`). The short address `/cost` takes you there too. From the **Health** page (`/admin/health`), you can also select the **Cost** link at the top.
 2. Pick a period at the top right: **7d**, **14d**, **30d**, **90d** or **All**.
 3. Read the totals, then **Top agents by spend**.
 4. To keep a copy or compare with your bill, select **Export CSV**.
 
 ![The Cost page with the period picker, the totals and Top agents by spend](/screenshots/costs/page.png)
 
-The Cost page shows Anthropic spend. Compare it with your provider's bill; the provider's figure is the one you pay.
+The Cost page doesn't read your bill. It counts the tokens (small pieces of text) each agent used, and multiplies them by fixed prices for Claude models (Opus, Sonnet and Haiku) built into AgentX. So what the dollar figures mean depends on how you pay:
+
+- **Anthropic API key:** the figures are an estimate of your bill. The built-in prices can be out of date; the provider's bill is the figure you pay.
+- **Claude subscription:** the figures show what the same work would cost with an API key. You pay the plan's fixed price, not these amounts. Use them to see which agents use the most.
+- **Another provider (such as Codex, GPT or Gemini models):** the tokens are counted, but the spend shows as `$0`. Check that provider's billing page for the cost.
+
+Monitor's reviewer is not on the Cost page, because it runs outside the agents' own work.
+
+## Monitor's reviewer
+
+After an agent finishes a task, AgentX asks Claude Code to review it and write the summary you see on [Monitor](../dashboard/monitor.md). Successful scheduled jobs, internal workflow steps and questions asked in the dashboard's **Ask** drawer are not reviewed.
+
+- **Which account pays:** the review runs the `claude` command on the machine that runs the daemon (the AgentX background service), with whatever account Claude Code is signed in to there. It never uses the `ANTHROPIC_API_KEY` from your `.env` file; AgentX removes the key for this call.
+- **Which model:** `opus` by default. To use a cheaper model, set the environment variable `AGENTX_MONITOR_MODEL` in the `.env` file next to `agentx.json`, for example `AGENTX_MONITOR_MODEL=sonnet`, then restart the daemon.
+- **Without Claude Code:** if `claude` isn't installed on the daemon's machine, as in the Docker image by default, each review fails and costs nothing. Your agents keep working. Monitor shows the failures under **Reviews failed**, with the reason `Reviewer failed: claude CLI not found on the daemon PATH`. If Claude Code is installed but not signed in, the reviews fail the same way, with Claude Code's own message.
+- **Turning it off:** there is no setting to turn the reviewer off; only the [demo](../see-it-first.md) skips it. To spend less on it, choose a cheaper model as above.
 
 ## See token use from the terminal
 
@@ -35,7 +75,9 @@ The daemon (the AgentX background service) must be running for this command to w
 
 `agentx usage` is short for `agentx usage today`. Despite the name, both show the last 7 days.
 
-## Get a detailed token report
+## For developers: get a detailed token report
+
+**This section is for developers only.** The command needs a copy of the AgentX source code (the files you get by downloading the project from its code repository). It doesn't work with AgentX installed from npm or Docker. If you installed AgentX the usual way, skip this section and use the [Cost page](#see-what-your-agents-spent) or `agentx usage` instead.
 
 `agentx usage report` answers "where did the tokens go, session by session?". It goes further than `agentx usage`: it also reads the conversation files Claude Code keeps on this machine (under `~/.claude/projects`), so it counts Claude Code work done outside AgentX too. It does not need the daemon.
 
@@ -159,7 +201,7 @@ Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a ch
 
 1. **Browser:** open `/admin/cost`. The page shows a **Last ingest** time and figures for the period you picked.
 2. **Terminal:** `agentx usage` prints `Token Usage (last 7 days)` followed by a total.
-3. **Terminal:** `agentx usage report` ends with `Report: .agentx/reports/token_report.md`, and that file exists.
+3. **Terminal (developers, in a source copy):** `agentx usage report` ends with `Report: .agentx/reports/token_report.md`, and that file exists.
 4. **Terminal:** `agentx usage surfaces` prints `Surface usage — last 30 days`. The commands you ran in the folder, such as `usage surfaces` itself, appear in the list.
 5. **Terminal:** `agentx usage plan` prints `Claude plan (as Claude Code last reported it)`, then a line per window once an agent has run a turn.
 
@@ -171,6 +213,10 @@ Leave a setting out, or set it to `0`, to turn that cap off. AgentX applies a ch
 - **`No surface usage recorded in the last 30 days.`:** nothing has been counted yet. Counting starts once this version has been running for a while, and only inside an AgentX folder. Check that `AGENTX_NO_TELEMETRY` is not set.
 - **`No tasks recorded yet`:** no agent has run yet on this machine. Send an agent a message first.
 - **The Cost page is empty:** it only counts work done since AgentX started recording on this machine. Pick **All** to see everything it has.
+- **Requests fail with `Credit balance is too low`:** the API key's account has no credits. In the provider's console, add a payment method and buy credits, then try again.
+- **The Cost page shows `$0` but your agents ran:** they use a model that isn't Claude, so AgentX has no price for it. Check that provider's billing page.
+- **The Cost page shows dollars, but you pay a subscription:** that's expected. The figures show what the work would cost with an API key; you pay the plan's fixed price.
+- **Monitor's Reviews failed keeps going up:** the reviewer can't run Claude Code on the daemon's machine. **Terminal:** on that machine, run `claude --version`. If it's not found, install Claude Code and sign in, or accept that Monitor stays empty; this costs nothing. See [Monitor's reviewer](#monitor-s-reviewer).
 - **The numbers don't match your bill:** your bill also covers use outside AgentX, and providers may round or group charges differently. Use the provider's figure.
 - **`Claude plan limit reached: Claude Code reports the … window as rejected`:** the subscription's rolling window is full. Wait for the reset time in the message; open conversations keep working. Run `agentx usage plan` to see every window, and `agentx usage plan --lift` if you know the plan is accepting work again. If this happens every day, consider a larger plan or fewer scheduled jobs.
 - **`agentx usage plan` says `Daemon answered 404`:** the running daemon is older than the command. Restart it with `agentx daemon restart`.
