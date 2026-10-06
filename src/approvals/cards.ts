@@ -338,7 +338,11 @@ export function verdictMessage(card: DecisionCard): string {
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
   if (retro) {
-    const edited = card.text && card.text !== draftFor(card.draft, card.choice) ? card.text : undefined
+    // Compare ignoring whitespace so a dashboard that only reflows the draft
+    // does not resend the whole draft as the operator's note.
+    const squash = (s: string) => s.replace(/\s+/g, " ").trim()
+    const draft = draftFor(card.draft, card.choice)
+    const edited = card.text && squash(card.text) !== squash(draft) ? card.text : undefined
     lines.push(...retroLines(retro, card, edited))
   }
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)

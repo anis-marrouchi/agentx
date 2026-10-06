@@ -7,6 +7,7 @@ import { openDb, closeDb } from "../src/storage/sqlite"
 import { recordTraceStart, recordTraceEnd, recordTraceStep } from "../src/storage/traces"
 import { CARD_LIMITS, createCard, decideCard, listCards, readCard, verdictMessage } from "../src/approvals/cards"
 import { RETRO_NONE } from "../src/approvals/origin"
+import { draftFor } from "../src/approvals/choices"
 import { groundCandidates, parseProposal, prepareRetro, raiseRetroCard, RETRO_ASK, type RetroProposal } from "../src/retro/retro"
 import type { ApprovalSettings } from "../src/approvals/sweep"
 import { approvalsConfigSchema } from "../src/daemon/config"
@@ -193,6 +194,18 @@ describe("the result the agent gets", () => {
     const msg = await decided("yes", 2, "Build the guard rule, but only for the release script")
     expect(msg).toContain("The operator's note on the fix:\nBuild the guard rule, but only for the release script")
     expect(msg).toContain("Warn mode first.")
+  })
+
+  it("does not treat a whitespace-only change to the draft as a note", async () => {
+    const r = await prepareRetro({ root: tmp, db, taskId: failedDeploy(), propose: propose() })
+    if (!r.ok) throw new Error(r.error)
+    const c = createCard(tmp, r.card, { origin: r.card.origin })
+    if (!c.ok) throw new Error(c.error)
+    const draft = draftFor(c.card.draft, c.card.choices?.[1])
+    const reflowed = `  ${draft.replace(/ /g, "\n")}\n`
+    const d = decideCard(tmp, c.card.id, "yes", { choice: 2, text: reflowed })
+    if (!d.ok) throw new Error(d.error)
+    expect(verdictMessage(d.card)).not.toContain("The operator's note")
   })
 
   it("treats YES on None of these as NO: one instruction, change nothing", async () => {
