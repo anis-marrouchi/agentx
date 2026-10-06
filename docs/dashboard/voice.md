@@ -1,8 +1,8 @@
-# Desktop assistant for macOS
+# AgentX Voice: full reference
 
 First complete the [desktop prerequisites](../requirements.md#desktop-assistant), choose a [speech backend](../requirements.md#voice-input-and-spoken-replies), and review [macOS permissions](../requirements.md#macos-permissions). Each section includes setup steps and official help.
 
-AgentX Desktop is a menu-bar assistant with voice, smart paste, and native computer-use tools. Hold **Option–Space**, speak, then release to send your question to an AgentX agent. The response appears in a small floating pill and is spoken aloud. The daemon and the selected agent do the work.
+AgentX Voice is a menu-bar assistant for your Mac with voice, smart paste, and native computer-use tools. Hold **Option–Space**, speak, then release to send your question to an AgentX agent. The response appears in a small floating pill and is spoken aloud. The daemon and the selected agent do the work. macOS lists the app as **AgentX Desktop**, and some pages call it the *desktop assistant*: both mean AgentX Voice. For a gentler start, read the [AgentX Voice guide](../guides/agentx-voice.md).
 
 ## Install and activate
 
@@ -1009,7 +1009,7 @@ Narration is off until you switch it on.
 ### Switch narration on for an agent
 
 1. **Terminal:** open `agentx.json` in a text editor.
-2. In the agent's `voice` block, add `"narrate": "on"`. Use `"all"` instead to narrate scheduled jobs too (jobs that run on a timer, such as routines).
+2. In the agent's `voice` block, add `"narrate": "on"`. Use `"all"` instead to narrate schedules too (work that starts at set times).
 3. Save the file. A running daemon reloads it.
 
 ```json

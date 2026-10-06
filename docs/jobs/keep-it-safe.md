@@ -5,7 +5,7 @@ AgentX agents act for real: they post messages, change issues and run commands. 
 - Know what leaves your machine. Your messages, the agent's instructions and the files it reads go to the model provider. See [Your data](../your-data.md).
 - Give each agent only the credentials and access it needs.
 - Keep secrets (bot tokens, API keys, passwords) in the `.env` file next to `agentx.json`. `agentx.json` only refers to them by name, such as `${GITLAB_TOKEN}`. Never put a secret in a public document, an issue or a screenshot.
-- Try new automations on a test channel and a test project before they touch real work.
+- Try new schedules and workflows on a test channel and a test project before they touch real work.
 - For a generated workflow, check every step and destination before saving. **Apply to canvas** replaces the whole current workflow.
 - For a schedule, check its timezone and what happens when it fails.
 - Review [Activity](../dashboard/activity.md) after the first run.
@@ -79,7 +79,7 @@ From the terminal, `agentx token create --name "<label>" --scope dashboard:read`
 2. Create a new token as above.
 3. Put the new token in the tool that used the old one.
 
-For a bot token or API key that leaked, create a new one with the service that issued it (for example, BotFather for Telegram), replace the value in `.env`, and restart the daemon.
+For a bot token or API key that leaked, create a new one with the service that issued it (for example, BotFather for Telegram), replace the value in `.env`, and restart the daemon (`agentx daemon restart`).
 
 ## Check it worked
 

@@ -64,7 +64,10 @@ export function recordSurfaceUse(kind: SurfaceKind, name: string, now = new Date
   try {
     if (!name) return
     if (underTest()) return
-    if (!installRoot()) return
+    // openDb() writes under the cwd and caches one handle per process, so only
+    // record when the cwd *is* the install. Recording from a subfolder would
+    // leave a stray .agentx/db.sqlite there.
+    if (installRoot() !== process.cwd()) return
     const db = openDb({ quiet: true })
     if (!db) return
     db.prepare(
@@ -133,7 +136,7 @@ export function commandPath(cmd: { name(): string; parent?: unknown } | null | u
 
 /** Hook entrypoints fire per tool call, not per human decision. Counting them
  *  would swamp the table and tell us nothing about operator behaviour. */
-const NOT_A_SURFACE = new Set(["guard check", "completion", "serve"])
+const NOT_A_SURFACE = new Set(["guard check", "completion", "serve", "demo"])
 
 export function shouldRecordCommand(path: string): boolean {
   return Boolean(path) && !NOT_A_SURFACE.has(path)

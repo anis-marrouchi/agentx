@@ -8,7 +8,7 @@ AgentX runs AI agents for a team. Connect a channel (a chat or work tool such as
 
 AgentX has two parts that run side by side:
 
-- The **daemon** is the background service that receives messages, runs agents and runs scheduled jobs.
+- The **daemon** is the background service that receives messages, runs agents and runs schedules (work that starts at set times).
 - The **dashboard** is the website you open in your browser to set things up and watch the work.
 
 ![The Live tab of the dashboard in the demo](/screenshots/live.png)
@@ -22,13 +22,15 @@ AgentX has two parts that run side by side:
   2. [Create your first agent](./first-agent.md).
   3. [Connect Telegram](./connect-telegram.md).
 
-The dashboard has six main tabs: [Live](./dashboard/live.md), [Operations](./dashboard/operations.md), [Monitor](./dashboard/monitor.md), [Activity](./dashboard/activity.md), [Workflows](./dashboard/workflows.md), and [Settings](./dashboard/settings.md). Start with Monitor to understand what still needs a person and what agents can handle.
+The dashboard has eight main tabs: [Live](./dashboard/live.md), [Operations](./dashboard/operations.md), [Monitor](./dashboard/monitor.md), [Approvals](./dashboard/approvals.md), [People](./dashboard/people.md), [Activity](./dashboard/activity.md), [Workflows](./dashboard/workflows.md), and [Settings](./dashboard/settings.md). Start with Monitor to understand what still needs a person and what agents can handle.
+
+New words, such as *node*, *mesh* or *schedule*, are explained in plain terms in the [glossary](reference/glossary.md).
 
 ## More ways to work with your agents
 
 - [In-page chat](dashboard/chat.md): ask about the dashboard view you are looking at.
 - [AgentX Voice](guides/agentx-voice.md): talk to any agent from anywhere on your Mac, and hear it answer in its own voice.
-- [Desktop assistant](dashboard/voice.md): talks between agents, live lessons, narration and automations.
+- [AgentX Voice reference](dashboard/voice.md): the full reference for AgentX Voice, with talks between agents, live lessons, narration and automations.
 - [Terminal UI](dashboard/tui.md): use OpenCode as the conversation interface.
 - [Tailscale setup](jobs/tailscale.md): connect machines privately.
 - [Agent-to-agent communication](reference/a2a.md): send work to agents on other machines, or connect an outside tool that speaks A2A (an open standard for agents talking to each other).

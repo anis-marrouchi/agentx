@@ -92,7 +92,7 @@ To forget an open session before its time is up:
 
 1. **Terminal:** run `agentx daemon stop`.
 2. **Terminal:** open `.agentx/cloud-sessions.json` and remove the session's entry.
-3. **Terminal:** run `agentx daemon start`.
+3. **Terminal:** run `agentx daemon start --detach`.
 
 ## Check it worked
 

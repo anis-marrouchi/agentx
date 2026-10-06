@@ -4,6 +4,10 @@ A *place reminder* is a note that reaches your phone when you arrive at a place 
 
 A web app can't do this on its own: Android lets a web page read the location only while it is open on screen. So place reminders come with the **AgentX Android app**, a small app that opens the same [phone app](./mobile-app.md) and adds one thing a web page can't have: it asks Android to watch your saved places, even with the app closed and the screen off.
 
+::: info You only need this app for place reminders
+It is not in Google Play: you build it yourself, as shown below. Everything else (chat, fleet, activity, alerts) works in the browser [phone app](./mobile-app.md) without it. The iPhone version is not built or tested yet, so iPhone has no place reminders.
+:::
+
 ![How a place reminder reaches you: you set it up once; then Android watches the place, the phone reports only which place and whether you arrived or left, and the computer pushes the reminder](/diagrams/place-reminder.svg)
 
 ## What leaves your phone

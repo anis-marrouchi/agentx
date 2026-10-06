@@ -76,7 +76,7 @@ If an agent withdraws its own request before you approve it, the request is simp
 
 ## If something is wrong
 
-- **The agent says it can't schedule things:** it doesn't have the AgentX tools. Add the AgentX server to its `mcp` settings, then restart the daemon.
+- **The agent says it can't schedule things:** it doesn't have the AgentX tools. Add the AgentX server to its `mcp` settings, then restart the daemon (`agentx daemon restart`).
 - **You never got the approval message:** set `notifications.destination` in `agentx.json`. The request is still waiting in `agentx schedule list`.
 - **`approve` says the job isn't waiting:** it was already approved or rejected. Check `agentx schedule list`.
 - **The agent can't pause a job:** it didn't make that job. Make the change yourself, or give the agent `"admin": true`.

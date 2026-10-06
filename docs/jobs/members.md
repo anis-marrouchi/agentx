@@ -20,6 +20,10 @@ The whole path, from your first step to the teammate's desktop:
 - Tailscale on your computer and on theirs. Their machine joins your network through a **share** of this one computer; no public address is used.
 - The dashboard running from the folder that holds `agentx.json`.
 
+::: tip What is Tailscale?
+[Tailscale](https://tailscale.com) is an app that links computers into a small private network over the internet, so they can reach each other without opening anything to the public. A **share** lets someone outside your network reach one of your computers, and nothing else. To install it and connect your own machines, see [Connect machines with Tailscale](./tailscale.md).
+:::
+
 ## Serve only the member page
 
 The dashboard trusts anything that reaches it from your own computer, so only the member page may be published on the network.

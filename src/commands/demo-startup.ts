@@ -5,9 +5,35 @@
 // the limit is a setting with a load-aware default (#315).
 
 import { existsSync, readFileSync } from "fs"
+import { connect } from "net"
 import { cpus, loadavg } from "os"
-import { resolve } from "path"
+import { basename, resolve } from "path"
 import { daemonConfigSchema } from "@/daemon/config"
+
+/** How the person who started the demo runs AgentX, so the commands the
+ *  demo suggests work as printed. `npx agentix-cli demo` installs no
+ *  `agentx` command; a source checkout runs `node dist/cli.js`. */
+export function cliCommand(argv1: string = process.argv[1] ?? "", env: NodeJS.ProcessEnv = process.env): string {
+  const path = argv1.replace(/\\/g, "/")
+  if (env.npm_command === "exec" || path.includes("/_npx/")) return "npx agentix-cli"
+  if (basename(path) === "cli.js" && !path.includes("/node_modules/")) return "node dist/cli.js"
+  return "agentx"
+}
+
+/** The ports in `ports` that something on this machine already answers on.
+ *  The demo checks before it starts: its own daemons would fail to bind,
+ *  and its health checks would then reach whatever holds the port, such
+ *  as an earlier demo, and play the scenario against that one. */
+export async function busyPorts(ports: number[], host = "127.0.0.1"): Promise<number[]> {
+  const inUse = await Promise.all(ports.map((port) => new Promise<boolean>((done) => {
+    const socket = connect({ port, host })
+    const finish = (busy: boolean) => { socket.destroy(); done(busy) }
+    socket.setTimeout(1000, () => finish(false))
+    socket.once("connect", () => finish(true))
+    socket.once("error", () => finish(false))
+  })))
+  return ports.filter((_, i) => inUse[i])
+}
 
 export const STARTUP_TIMEOUT_ENV = "AGENTX_DEMO_STARTUP_TIMEOUT"
 export const BASE_STARTUP_TIMEOUT_S = 60

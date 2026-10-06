@@ -11,7 +11,7 @@
 [![npm](https://img.shields.io/npm/v/agentix-cli?label=npm%20%C2%B7%20agentix-cli)](https://www.npmjs.com/package/agentix-cli)
 [![CI](https://github.com/anis-marrouchi/agentx/actions/workflows/ci.yml/badge.svg)](https://github.com/anis-marrouchi/agentx/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Node](https://img.shields.io/badge/node-22.x-brightgreen)](package.json)
+[![Node](https://img.shields.io/badge/node-22.19%E2%80%9326-brightgreen)](package.json)
 
 [Watch it](#watch-it) · [See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
 
@@ -48,13 +48,13 @@ Releases ship often; see the [changelog](CHANGELOG.md) for what changed. Our pri
 
 ## See it without an account
 
-With Node.js 22.19 or newer (tested on 22, 24, 25 and 26), run:
+With Node.js 22.19 or newer, up to 26 (tested on 22, 24, 25 and 26), run:
 
 ```sh
 npx agentix-cli demo
 ```
 
-No clone, account, or API key is needed. The first run downloads the package, which takes a minute or two. From a built source checkout, `node dist/cli.js demo` does the same.
+No clone, account, or API key is needed. The first run downloads the package, which takes a minute or two; `npm warn deprecated` lines during the download are harmless. From a built source checkout, `node dist/cli.js demo` does the same.
 
 The demo starts three local AgentX daemons and sends a task between them. Routing, network calls, and the event record are real. Model responses are scripted, so the demo makes no billable model calls. The terminal prints the dashboard addresses. [What to expect](docs/see-it-first.md).
 
@@ -74,7 +74,7 @@ The Workflows editor has a chat control. Describe the timing, source, and destin
 
 ## Install
 
-A technical teammate needs a terminal for installation, model setup, and starting the services. The web wizard handles the rest of the initial setup; daily inspection is in the browser. AgentX requires **Node.js 22.19 or newer, up to 26**.
+A technical teammate needs a terminal for installation, model setup, and starting the services. The web wizard handles the rest of the initial setup; daily inspection is in the browser. Plan on about 10 to 20 minutes for a first install, plus the time to get a model key. AgentX runs on **macOS and Linux** (Windows is untested; try WSL) and requires **Node.js 22.19 or newer, up to 26**.
 
 ```sh
 git clone https://github.com/anis-marrouchi/agentx.git
@@ -86,7 +86,7 @@ docker compose up --build -d
 
 Open **http://127.0.0.1:4202/setup**. Compose builds this checkout and starts both services; its default image uses an API model rather than a preinstalled model CLI.
 
-Without Docker, install Node 22.x and pnpm 10, then build and open the wizard:
+Without Docker, install Node.js 22.19 or newer (up to 26) and pnpm 10, then build and open the wizard:
 
 ```sh
 pnpm install

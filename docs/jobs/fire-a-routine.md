@@ -45,7 +45,7 @@ A routine can't be started from outside until you give it a **token**, a long se
    For a workflow, put `"fireToken": "${DEPLOY_CHECK_TOKEN}"` in the `config` of its trigger node instead. For a workflow it **must** be written this way, with `${…}`. Anyone who can list workflows can read their definitions, so a secret typed directly into a workflow is ignored and a warning is logged.
 4. **Terminal:** restart the daemon so it reads the new setting.
    ```sh
-   agentx daemon stop && agentx daemon start --detach
+   agentx daemon restart
    ```
 
 ## 2. Start the routine from the other system
@@ -93,7 +93,7 @@ The daemon's answer tells you what happened:
 | `202` | It started | Nothing |
 | `400` | The message isn't valid JSON | Check the quotes in your JSON |
 | `401` | The token is missing or wrong | Compare it with `.env`, and check the header name |
-| `403` | The routine has no `fireToken` | Do [step 1](#_1-give-the-routine-a-token), then restart the daemon |
+| `403` | The routine has no `fireToken` | Do [step 1](#_1-give-the-routine-a-token), then run `agentx daemon restart` |
 | `404` | No schedule or timer/event workflow has that ID | Check the ID; other workflows can't be started this way |
 | `409` | The routine is turned off, or a schedule and a workflow share the ID | Turn it on, or rename one of them |
 | `413` | The message is larger than 64 KB | Send less, or send a link to the data |

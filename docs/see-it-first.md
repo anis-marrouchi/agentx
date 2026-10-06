@@ -2,7 +2,7 @@
 
 The demo shows AgentX passing a task from one agent to an agent on another machine. It runs three AgentX daemons (background services) on your own computer and needs no model account: the network connection, routing and records are real, but **the model replies are scripted**, so nothing calls a paid model. It doesn't touch your real agents or credentials.
 
-You need Node.js 22.19 or newer, up to 26. Nothing else: no download of the source code, no account and no API key. See [Before you start](./requirements.md#option-b-run-from-source) if Node.js isn't installed yet.
+You need Node.js 22.19 or newer, up to 26. Nothing else: no download of the source code, no account and no API key. If Node.js isn't installed yet, follow [Install Node.js for the demo](./requirements.md#install-node-js-for-the-demo). The demo runs on macOS and Linux; on Windows, try it inside WSL.
 
 ## Run the demo
 
@@ -10,10 +10,23 @@ You need Node.js 22.19 or newer, up to 26. Nothing else: no download of the sour
    ```sh
    npx agentix-cli demo
    ```
-   The first run downloads the AgentX package, which takes a minute or two. The demo writes its files to a folder called `.agentx-demo` in the folder you ran it from.
+   The first run downloads the AgentX package, which takes a minute or two. The terminal may stay quiet during that time, or print `npm warn deprecated …` lines: those warnings are harmless. The demo writes its files to a folder called `.agentx-demo` in the folder you ran it from, and deletes it when you stop the demo (unless you use `--keep`).
 2. Wait for the line `Dashboard: http://127.0.0.1:18931/live`. The demo opens it in your browser. On a machine with no browser, such as a server, it prints `Couldn't open a browser. Visit http://127.0.0.1:18931/live` and carries on.
 3. **Browser:** watch the **Live** tab. The task moves from one machine to another.
 4. **Terminal:** press Enter to play the scenario again, or Ctrl-C to stop the demo.
+
+### Options
+
+Add these after `npx agentix-cli demo`, for example `npx agentix-cli demo --once`.
+
+| Option | What it does |
+|---|---|
+| `--once` | Plays the scenario once, then stops everything. |
+| `--no-open` | Doesn't open the dashboard in your browser. |
+| `--keep` | Keeps the `.agentx-demo` folder when the demo stops, so you can read its logs. |
+| `--base-port <port>` | Uses other ports. The three demo machines use this port and the next two; the dashboard uses this port plus 10. The default is `18921`. |
+
+The demo also prints the command to connect a real model, written the way you started it: `npx agentix-cli setup` after `npx`, `agentx setup` after an npm install.
 
 If you already have a built copy of the source code (see [Install › Run from source](./install.md#run-from-source)), `node dist/cli.js demo` in that folder does the same.
 
@@ -71,6 +84,7 @@ Next: [follow the annotated workflow walkthrough](tutorials/first-workflow.md), 
 
 - **`npx` asks `Need to install the following packages: agentix-cli`:** answer `y`. It's the download mentioned in step 1.
 - **`Cannot find module … dist/cli.js`:** you ran the source version and the source hasn't been built. Run `pnpm install`, then `pnpm build`. Or use `npx agentix-cli demo`, which needs no build.
-- **The demo won't start because a port is busy:** another demo is already running, perhaps in another terminal. Stop that one with Ctrl-C, or start this one elsewhere with `npx agentix-cli demo --base-port 19021` (the dashboard is then on the base port plus 10).
+- **`Ports … already in use on this machine. Another demo is probably running.`:** the demo stopped before starting anything. Another demo, or another program, uses its ports. Stop the other demo with Ctrl-C in its terminal, or start this one on other ports with `npx agentix-cli demo --base-port 19021` (the dashboard is then on port 19031).
 - **`AgentX needs Node.js 22.19 or newer, up to 26`:** the command stopped because this Node.js is too old or too new. Install Node.js 22, check with `node --version`, and run it again.
+- **Nothing happens for a minute or two after `npx agentix-cli demo`:** the first run is downloading the package. Wait; `npm warn deprecated` lines along the way are harmless.
 - **The Docker demo shows old data:** run `docker compose -f docker-compose.demo.yml down -v` to start fresh.

@@ -61,5 +61,5 @@ requests before drawing conclusions about end-to-end response speed.
 ## If something is wrong
 
 - **Nothing changed after editing the setting:** the daemon only reads `persistentProcess` when it starts. Restart it once running tasks have finished (see [Restart without losing work](../jobs/restart-safely.md)).
-- **Every request shows `. opencode using CLI fallback: …`:** the reason follows the colon. Check `opencode --version` reports v2 or newer and that a provider is configured, then restart the daemon.
+- **Every request shows `. opencode using CLI fallback: …`:** the reason follows the colon. Check `opencode --version` reports v2 or newer and that a provider is configured, then restart the daemon (`agentx daemon restart`).
 - **Replies use the wrong model:** check the agent's `model` is available through your OpenCode provider. This setting never changes the model.

@@ -20,7 +20,7 @@ A busy agent shows a **running** card with the channel the task came from, how l
 
 When an agent is idle, its card shows its **last reply**. Select **history →** to see its recent tasks.
 
-If the agent is running an on-screen lesson through the [desktop assistant](./voice.md), the card shows **on screen** with the step number. Select **✕ stop** on that line to end the lesson and give the screen back.
+If the agent is running an on-screen lesson through [AgentX Voice](./voice.md), the card shows **on screen** with the step number. Select **✕ stop** on that line to end the lesson and give the screen back.
 
 ![A Live agent card with a running task and its ✎ update and ✕ stop buttons](/screenshots/live/running-task.png)
 

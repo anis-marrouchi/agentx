@@ -29,7 +29,7 @@ Many proxies pass the original address along in a header called `X-Forwarded-Hos
    For several addresses, separate them with commas: `https://ops.example.com,https://agents.example.org`.
 3. **Terminal:** restart the daemon and the dashboard so they read the file.
    ```sh
-   agentx daemon stop && agentx daemon start --detach
+   agentx daemon restart
    ```
    The dashboard runs as its own service: restart it the way you started it (for example, stop and run `agentx board serve` again).
 

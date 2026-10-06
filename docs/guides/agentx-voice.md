@@ -39,7 +39,7 @@ Speech to text (turning your voice into words) runs through ElevenLabs if you ha
    ```sh
    agentx desktop install
    ```
-   This builds the app and puts it in the Applications folder of your home folder as **AgentX Desktop** (`~/Applications/AgentX Desktop.app`), with its helper, **AgentX Helper**, next to it. It starts AgentX Desktop every time you log in; the helper starts when an agent needs it. If Apple's command-line tools are missing, it tells you how to install them. If `ffmpeg` is missing, it warns you: Whisper on your Mac needs it.
+   This builds the app and puts it in the Applications folder of your home folder as **AgentX Desktop** (`~/Applications/AgentX Desktop.app`), with its helper, **AgentX Helper**, next to it. It starts AgentX Voice every time you log in; the helper starts when an agent needs it. If Apple's command-line tools are missing, it tells you how to install them. If `ffmpeg` is missing, it warns you: Whisper on your Mac needs it.
 4. **Mac:** when macOS asks to let **AgentX Desktop** use the microphone, choose **Allow**.
 5. **Mac:** when the AgentX Helper asks, open **System Settings › Privacy & Security** and switch on **Accessibility** and **Screen Recording** for **AgentX Helper**. The helper lets agents point at things on your screen. See [macOS permissions](../requirements.md#macos-permissions).
 6. **Mac:** look for the AgentX icon (a small waveform) in the menu bar at the top of the screen.

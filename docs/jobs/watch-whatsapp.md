@@ -17,6 +17,12 @@ AgentX gets the messages from [wacli](https://github.com/openclaw/wacli), a What
 
 Try it first with a test contact: a second phone of your own, or a colleague who agreed to help.
 
+::: info Where things are in the dashboard
+This page does not use the WhatsApp card under **Settings › Channels**. That card connects WhatsApp so agents can chat. Watching chats, called **WhatsApp triage**, lives under **Settings › Webhooks**, because the messages reach AgentX through wacli, not through that channel.
+:::
+
+Each message the agent reads uses your model account. See [What this costs](../help/costs.md).
+
 > **Before you pair.** wacli joins your WhatsApp account as a linked device, like WhatsApp on a computer, so it sees every chat on that number.
 >
 > - Use a dedicated number, not your personal one.
@@ -46,7 +52,7 @@ wacli signs every message it passes on with a secret. AgentX refuses any message
    ```sh
    openssl rand -hex 32
    ```
-2. Open the `.env` file next to `agentx.json`.
+2. Open the `.env` file next to `agentx.json`. This folder, the one that holds `agentx.json` and `.env`, is called **the AgentX folder** below.
 3. Add a line with the value, then save the file:
    ```sh
    WACLI_WEBHOOK_SECRET=paste-the-value-here
@@ -79,17 +85,29 @@ agentx whatsapp triage on
 
 ## 4. Start wacli with the webhook
 
-1. **Terminal:** load the secret into this terminal:
+1. **Terminal:** go to the AgentX folder, the one that holds `agentx.json` and `.env`. For example:
+   ```sh
+   cd ~/agentx
+   ```
+   Use your own folder's path if it is somewhere else.
+2. **Terminal:** load the secret into this terminal. This reads `.env` in the current folder, so it only works from the AgentX folder:
    ```sh
    export $(grep WACLI_WEBHOOK_SECRET .env)
    ```
-2. **Terminal:** start wacli so it passes each new message to AgentX. `18800` is the daemon's port; change it if yours is different:
+3. **Terminal:** start wacli in the background, so it passes each new message to AgentX and gives you the terminal back. `18800` is the daemon's port; change it if yours is different:
    ```sh
-   wacli sync --follow --webhook http://127.0.0.1:18800/webhook/wacli --webhook-secret "$WACLI_WEBHOOK_SECRET" --webhook-allow-private
+   nohup wacli sync --follow --webhook http://127.0.0.1:18800/webhook/wacli --webhook-secret "$WACLI_WEBHOOK_SECRET" --webhook-allow-private > wacli.log 2>&1 &
    ```
-3. Leave it running. When it stops, AgentX stops hearing about new messages.
+   Its messages go to `wacli.log` in the AgentX folder. It keeps running when you close the terminal.
 
 `--webhook-allow-private` is needed because the address is on the same machine.
+
+wacli must keep running: when it stops, AgentX stops hearing about new messages. It does not start again by itself when the computer restarts. After a restart:
+
+1. **Terminal:** check that the AgentX daemon is back with `agentx daemon status`. If it is not running, start it with `agentx daemon start --detach`. To have it start by itself, see [Restart AgentX safely](./restart-safely.md).
+2. **Terminal:** repeat steps 1 to 3 above to start wacli again.
+
+To stop wacli, run `pkill -f "wacli sync"`.
 
 ## 5. Approve a reply
 
@@ -100,6 +118,16 @@ agentx whatsapp triage on
 Or in a terminal: `agentx approvals list`, then `agentx approvals yes whatsapp:<id>` or `agentx approvals no whatsapp:<id>`.
 
 To change the wording, select **No** and reply from your phone.
+
+## Where the notification goes
+
+An action item uses the same path as `agentx notify`. On a Mac it can also show a banner, as set up in [Get notified](./notifications.md). The message for your phone goes:
+
+1. to the channel you chose with `agentx notifications channel <name>` (the `notifications.channel` setting), if you chose one;
+2. otherwise to the AgentX phone app, when phone app notifications are on;
+3. otherwise to ntfy, which then needs a topic.
+
+If none of these is set up, the triage still runs and the log still shows the item, but nothing reaches your phone. Set one up with [Get notified](./notifications.md) before you rely on this page.
 
 ## Automatic acknowledgements
 
@@ -124,19 +152,21 @@ See every setting in [Settings: channels › WhatsApp triage](../reference/confi
 1. **Phone:** from the test contact, send "The export button shows an error".
 2. Wait about half a minute: AgentX waits 20 seconds for more messages from the same chat, then the agent reads them.
 3. **Terminal:** run `agentx whatsapp triage log`. The message shows with its class, for example `action`, and a one-line summary.
-4. For an action item, you get a notification.
+4. For an action item, you get a notification (see [Where the notification goes](#where-the-notification-goes)).
 5. If the agent wrote a reply, **Approvals** shows it. Approve it; the test phone receives it.
 6. **Phone:** from a chat you don't watch, send a message. It does not appear in `agentx whatsapp triage log`.
 
 ## If something is wrong
 
-- **wacli prints `post webhook: 401`:** the secret wacli uses differs from `WACLI_WEBHOOK_SECRET` in `.env`. Load it again (step 4.1) and restart wacli.
+- **wacli prints `post webhook: 401`** (in `wacli.log`): the secret wacli uses differs from `WACLI_WEBHOOK_SECRET` in `.env`. Stop wacli, load the secret again from the AgentX folder (step 4.2) and start wacli again (step 4.3).
 - **wacli prints `post webhook: 503`:** the daemon doesn't have the secret. Check `.env`, then run `agentx daemon restart`.
 - **wacli prints `post webhook: 404`:** triage is off. Run `agentx whatsapp triage on`.
 - **wacli refuses the URL as private:** add `--webhook-allow-private`.
 - **You wanted the agent to reply by itself:** see [Answer customers on WhatsApp](./answer-whatsapp.md).
 - **Nothing shows in the log:** no rule matches the chat. Run `wacli chats list` and compare the JID with `agentx whatsapp triage status`.
 - **The log says `agent gave no triage block`:** the agent didn't finish its answer the expected way. Check that the rule's agent exists and is running, then send the test message again. You get a notification for every batch it couldn't read.
-- **Approving says `wacli send failed`:** wacli is not running or not paired. Start it again (step 4.2). If it needs to pair again, run `wacli auth`.
+- **Approving says `wacli send failed`:** wacli is not running or not paired. Start it again (step 4, from the AgentX folder). If it needs to pair again, run `wacli auth`.
+- **No notification arrives, but the log shows `action`:** no notification path is set up, or the time is inside the rule's quiet hours. Run `agentx notify "test"`; if that doesn't reach you either, follow [Get notified](./notifications.md).
+- **Nothing arrives after the computer restarted:** wacli is not running. Start it again (step 4).
 - **Still stuck:** follow [It's not answering](../help/its-not-answering.md).
 

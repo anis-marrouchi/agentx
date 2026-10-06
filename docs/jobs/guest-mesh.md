@@ -15,7 +15,7 @@ A grant is one named opening, for example *Support session for Company X*. It ho
 | guest | The other organisation's name. |
 | agent | The agent of yours that works for them. |
 | folders, skills, commands | What that agent may touch for them. Empty means none named: the agent is told to stay away unless your own instructions already allow it. |
-| level | How much freedom the agent has on the guest's turns: `report` reads and answers only; `propose` may prepare changes and open a merge request but never merge, deploy or delete; `act` works freely inside the grant. `report` and `propose` are enforced on the run, the same way as for [routines](../reference/config.md#routine-autonomy). |
+| level | How much freedom the agent has on the guest's turns: `report` reads and answers only; `propose` may prepare changes and open a merge request but never merge, deploy or delete; `act` works freely inside the grant. `report` and `propose` are enforced on the run, the same way as for [schedules and workflows](../reference/config.md#routine-autonomy). |
 | until | The grant ends on its date and does not renew by itself. Default 7 days. |
 
 Nothing is shared until you open a grant, and a grant opens nothing until the guest has joined and you have said yes.
@@ -107,5 +107,5 @@ Every turn the guest takes shows in your normal activity as channel `guest`, and
 - **`no grant opens this`:** the host said no, ended the grant, or it reached its end date. Ask the host.
 - **`agent must be an agent on this node`:** the `--agent` id is not in your `agentx.json`. Run `agentx agents`.
 - **`Could not reach the daemon`:** `pause`, `resume`, `set` and `end` go through the running daemon, which also stops the guest's running turns. Start it.
-- **The guest's turn fails with `billing "api" needs ANTHROPIC_API_KEY in the agent's environment`:** the agent is set to bill your API key, but the daemon has none. Add `ANTHROPIC_API_KEY=…` to `.env` next to `agentx.json` and restart the daemon. The run does not fall back to your sign-in.
+- **The guest's turn fails with `billing "api" needs ANTHROPIC_API_KEY in the agent's environment`:** the agent is set to bill your API key, but the daemon has none. Add `ANTHROPIC_API_KEY=…` to `.env` next to `agentx.json` and restart the daemon (`agentx daemon restart`). The run does not fall back to your sign-in.
 - **The guest's turns are refused with `autonomy "report" is only enforceable on the claude-code tier`:** `report` and `propose` need the agent on the `claude-code` tier. Use such an agent, or `act` with a narrow grant.

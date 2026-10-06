@@ -17,7 +17,7 @@ import { mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync, openSync, 
 import { resolve, join } from "path"
 import { randomBytes } from "crypto"
 import { demoReportWorkflow } from "./demo-workflow"
-import { configStartupTimeout, resolveStartupTimeout } from "./demo-startup"
+import { busyPorts, cliCommand, configStartupTimeout, resolveStartupTimeout } from "./demo-startup"
 import { openBrowser } from "@/utils/open-browser"
 
 interface NodeSpec {
@@ -34,7 +34,7 @@ interface NodeSpec {
 const KICKOFF = "[demo] Customer reports checkout is broken and CI is red on demo/shop. Handle it."
 const DELEGATION = "CI is red on demo/shop — checkout.test.ts failing on Node 22. Diagnose, fix, and report back."
 
-function buildSpecs(root: string, basePort: number): NodeSpec[] {
+function buildSpecs(root: string, basePort: number, cmd: string): NodeSpec[] {
   return [
     {
       dir: join(root, "node-a"),
@@ -68,12 +68,12 @@ function buildSpecs(root: string, basePort: number): NodeSpec[] {
             match: "Builder reports",
             thinking: "Fix confirmed and pipeline green — close the loop with the customer.",
             reply:
-              "Resolved ✅ — builder patched checkout.test.ts (Node 22 crypto import), MR !47 merged, pipeline green. Customer thread updated. Every hop of this run is in the ledger: `agentx ledger`.",
+              "Resolved ✅ — builder patched checkout.test.ts (Node 22 crypto import), MR !47 merged, pipeline green. Customer thread updated. Every hop of this run is in the ledger: `" + cmd + " ledger`.",
             delayMs: 800,
           },
         ],
         fallback: {
-          reply: "Demo mode — I answer from a script. Try the scripted scenario, or run `agentx setup` to connect a real model.",
+          reply: "Demo mode — I answer from a script. Try the scripted scenario, or run `" + cmd + " setup` to connect a real model.",
         },
       },
     },
@@ -206,7 +206,8 @@ export const demo = new Command()
       process.exit(1)
     }
     const startupMs = startup.seconds * 1000
-    const specs = buildSpecs(root, basePort)
+    const cmd = cliCommand()
+    const specs = buildSpecs(root, basePort, cmd)
     const tokenFile = join(root, "mesh-token")
     // A resumed demo keeps its history, so a container restart or a lesson
     // re-run lands on the same screen. Peers carry the token in config, so
@@ -222,6 +223,17 @@ export const demo = new Command()
       process.exit(1)
     }
 
+    // Before touching .agentx-demo: a second demo in the same folder would
+    // otherwise wipe the first one's files, and its health checks would be
+    // answered by the first one's daemons.
+    const ports = [...specs.map((s) => s.port), basePort + 10]
+    const busy = await busyPorts(ports)
+    if (busy.length) {
+      console.error(chalk.red(`  Port${busy.length > 1 ? "s" : ""} ${busy.join(", ")} already in use on this machine. Another demo is probably running.`))
+      console.error(`  Stop it with Ctrl-C in its terminal, or use other ports: ${cmd} demo --base-port ${basePort + 100}`)
+      process.exit(1)
+    }
+
     if (!reuse) {
       // Empty rather than remove: in the demo container the directory is a
       // volume mount point, which cannot be deleted.
@@ -233,7 +245,7 @@ export const demo = new Command()
     console.log()
     console.log(chalk.bold("  agentx demo — one message, three machines (simulated on loopback)"))
     console.log(chalk.yellow("  Canned model responses. Real daemons, real A2A mesh, real ledger."))
-    console.log(chalk.dim("  Run `agentx setup` to wire real agents.\n"))
+    console.log(chalk.dim(`  Run \`${cmd} setup\` to wire real agents.\n`))
     console.log(chalk.dim(`  Startup limit: ${startup.seconds}s per step (${startup.source})`))
 
     let tearingDown = false
@@ -345,7 +357,9 @@ export const demo = new Command()
         say("@cx (laptop-paris)", s3.content || "(no content)", chalk.green)
 
         console.log()
-        console.log(chalk.dim(`  Inspect the run: ${liveUrl}  ·  ledger rows on each node record every dispatch`))
+        // --once stops the dashboard right after this line, so its address
+        // would be a dead link.
+        if (!opts.once) console.log(chalk.dim(`  Inspect the run: ${liveUrl}  ·  ledger rows on each node record every dispatch`))
         console.log(chalk.dim(`  Worth your time? A star helps others find it: ${chalk.cyan("https://github.com/anis-marrouchi/agentx")}`))
       }
 
