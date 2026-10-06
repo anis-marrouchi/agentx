@@ -23,6 +23,7 @@ import { APP_FLEET_SCRIPT } from "./app-fleet.client"
 import { APP_FLEET_CSS } from "./app-fleet.css"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
 import { APP_PLACES_CSS, APP_PLACES_SCRIPT } from "./app-places.client"
+import { locationErrorText } from "./app-places-logic"
 import { APP_ANNOUNCE_SCRIPT } from "./app-announce.client"
 import { APP_CHAT_SCRIPT } from "./app-chat.client"
 import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
@@ -113,7 +114,7 @@ ${CAMERA_BODY}
 <script>${APP_SHEET_SCRIPT}</script>
 <script>${APP_FLEET_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
-<script>${APP_PLACES_SCRIPT}</script>
+<script>${injectFns({ locationErrorText })}${APP_PLACES_SCRIPT}</script>
 <script>${APP_ANNOUNCE_SCRIPT}</script>
 <script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_LOG_SCRIPT}${APP_CHAT_SHEETS_SCRIPT}${APP_CHAT_SCRIPT}</script>
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>

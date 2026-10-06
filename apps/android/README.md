@@ -19,7 +19,14 @@ How to build, install, pair and use it, step by step:
 - `DelegationService` is what Chrome asks before it shows the phone app's
   notifications as this app's, and before it gives the page the location
   (**Use where I am now** on the Places card). Chrome reads the location
-  through this app's permission (#684).
+  through this app's permission (#684). Chrome only asks an app it has
+  registered for the address, and it registers it once per Chrome run. If
+  the app is uninstalled and installed again while Chrome keeps running
+  (for example with a new signing key), Chrome has dropped the old
+  registration but won't register the new install until it restarts, so
+  the location fails at once with `Unable to request location permission.`
+  in logcat. Force stop Chrome once (Settings › Apps › Chrome › Force stop)
+  and open the app again (#708). The Places card says so when it sees this.
 - The app pairs once, with a code from `agentx app pair`, and keeps the
   device key in app-private storage that is excluded from backups. It hands
   Chrome the same key the first time through `/app/pair#token=…`.
