@@ -84,7 +84,7 @@ For a bot that answers customers or the public, use the single entry `"*"`. It m
 
 Put `"*"` on the public bot's account, not in `"policy"`, so your other bots stay private. Anyone who finds the bot can then use its agent, and every reply costs your model account. Give a public bot an agent made for that job: no access to your private files, tools or other channels. When the daemon starts, `agentx daemon logs` shows a line `Telegram: public — anyone can message support`, so you can see which bots are open.
 
-In groups, the bot answers only when a message mentions it or uses one of the agent's trigger words.
+`"*"` also lets the bot work in any group someone adds it to, not only in private chats. There, the `"group": "mention-required"` setting in `"policy"` is the only limit: the bot answers only when a message mentions it or uses one of the agent's trigger words. Keep that setting for a public bot, and don't change it to `"all"`. To keep the bot out of groups entirely, send `/setjoingroups` to @BotFather in Telegram and choose **Disable**.
 
 ## Check it worked
 
