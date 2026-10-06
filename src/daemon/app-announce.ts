@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import type { TokenRecord } from "./token-store"
 import type { DaemonConfig } from "./config"
 import { PushPrefs } from "@/channels/push-prefs"
+import { relayedPush } from "./app-push"
 import { openDb } from "@/storage/sqlite"
 import { dashboardTokenForNode } from "./mesh-auth"
 
@@ -34,7 +35,7 @@ export interface AppAnnounceDeps {
   /** Recent announce envelopes, in any order. Throws when unreachable. */
   recent: (limit: number) => Promise<unknown[]>
   /** Null when this computer doesn't send notifications. */
-  prefs: () => PushPrefs | null
+  prefs: () => Pick<PushPrefs, "on"> | null
 }
 
 export async function handleAppAnnounce(
@@ -61,8 +62,8 @@ export async function handleAppAnnounce(
 }
 
 /** Built per request by the dashboard, so a config reload is picked up.
- *  The setting is only offered where the phone's pushes are sent from:
- *  push enabled here and not relayed to another node. */
+ *  The setting is offered wherever push is on: read here on the host, or
+ *  as the host last reported it on a relaying node. */
 export function appAnnounceDeps(config: DaemonConfig): AppAnnounceDeps {
   const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
   const token = process.env.MESH_TOKEN || dashboardTokenForNode(config.dashboard, primary)
@@ -78,7 +79,9 @@ export function appAnnounceDeps(config: DaemonConfig): AppAnnounceDeps {
       return body.events ?? []
     },
     prefs: () => {
-      if (!push.enabled || push.relayTo) return null
+      if (!push.enabled) return null
+      // A relay shows the switch as the push host last reported it (#711).
+      if (push.relayTo) return relayedPush
       const db = openDb()
       return db ? new PushPrefs(db) : null
     },

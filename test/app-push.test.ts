@@ -5,7 +5,8 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
-import { validEndpoint, type AppPushDeps } from "../src/daemon/app-push"
+import { RelayedPushState, validEndpoint, type AppPushDeps } from "../src/daemon/app-push"
+import { handlePushBridge, pushOrigin, PushRosterSync, ROSTER_RESEND_MS } from "../src/daemon/push-bridge"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { PushStore } from "../src/channels/push-store"
 import { APP_SERVICE_WORKER, renderAppPage } from "../src/daemon/ui/pages/app"
@@ -127,6 +128,114 @@ describe("phone app notifications", () => {
     } finally {
       push = saved
     }
+  })
+})
+
+describe("a phone paired with a relaying node (#711)", () => {
+  // The relay's dashboard forwards; here the host's half (handlePushBridge)
+  // answers from `store`, after a JSON round trip like the mesh hop.
+  const relayed = (origin = "laptop"): AppPushDeps => {
+    const host = push
+    return {
+      store: () => null, publicKey: () => null, keepRecent: 0, allowedHosts: [], reason: "Can't reach host-node",
+      forward: async (call) => handlePushBridge(JSON.parse(JSON.stringify({ op: "app", origin, call })), host),
+    }
+  }
+
+  it("subscribes on the host under a device id scoped to the relay", async () => {
+    const saved = push
+    push = relayed()
+    try {
+      const a = phone("Relay phone")
+      expect(await (await a.call("GET", "/api/app/push")).json()).toMatchObject({ available: true, publicKey: "BPUBLICKEY", subscriptions: 0 })
+      expect((await a.call("POST", "/api/app/push/subscribe", SUB)).status).toBe(200)
+      expect(store.list()).toMatchObject([{ deviceId: `laptop:${a.id}`, deviceName: "Relay phone (laptop)", publicKey: "BPUBLICKEY" }])
+      expect((await (await a.call("GET", "/api/app/push")).json()).subscriptions).toBe(1)
+      // A stale page still gets the 409 that asks it to subscribe again.
+      expect((await a.call("POST", "/api/app/push/subscribe", { ...SUB, publicKey: "OLDKEY" })).status).toBe(409)
+      expect(await (await a.call("POST", "/api/app/push/prefs", { announce: false })).json()).toEqual({ ok: true, announce: false })
+      expect(store.prefs.on(`laptop:${a.id}`, "announce")).toBe(false)
+      store.log({ title: "For this phone", body: "x", url: null, delivered: 1, deviceId: `laptop:${a.id}` }, 10)
+      expect((await (await a.call("GET", "/api/app/alerts")).json()).items[0]).toMatchObject({ title: "For this phone" })
+      expect(await (await a.call("POST", "/api/app/push/unsubscribe", { endpoint: SUB.endpoint })).json()).toEqual({ ok: true, removed: true })
+      expect(store.list()).toHaveLength(0)
+    } finally {
+      push = saved
+    }
+  })
+
+  it("says why when the host can't be reached", async () => {
+    const saved = push
+    push = { ...relayed(), forward: async () => { throw new Error("connect ECONNREFUSED") } }
+    try {
+      const a = phone("Offline relay phone")
+      expect(await (await a.call("GET", "/api/app/push")).json()).toMatchObject({ available: false, reason: "Can't reach host-node: connect ECONNREFUSED" })
+      expect((await (await a.call("GET", "/api/app/alerts")).json()).items).toEqual([])
+      expect((await a.call("POST", "/api/app/push/subscribe", SUB)).status).toBe(502)
+    } finally {
+      push = saved
+    }
+  })
+
+  it("drops a relay's phones that left its roster", () => {
+    store.subscribe({ endpoint: "https://push.example.com/r1", p256dh: "k", auth: "a", deviceId: "laptop:tok_gone", deviceName: "Gone", publicKey: "BPUBLICKEY" })
+    store.subscribe({ endpoint: "https://push.example.com/r2", p256dh: "k", auth: "a", deviceId: "laptop:tok_kept", deviceName: "Kept", publicKey: "BPUBLICKEY" })
+    expect(handlePushBridge({ op: "roster", origin: "laptop", active: ["tok_kept"] }, push)).toEqual({ status: 200, body: { ok: true, removed: 1 } })
+    expect(store.list().map((s) => s.deviceId)).toEqual(["laptop:tok_kept"])
+    store.unsubscribe("https://push.example.com/r2")
+  })
+
+  it("refuses a bad origin, device id or path, and answers when push is off", () => {
+    const call = { path: "/api/app/push", method: "GET", body: {}, device: { id: "tok_1", name: "P" } }
+    expect(handlePushBridge({ op: "app", origin: "bad:name", call }, push).status).toBe(400)
+    expect(handlePushBridge({ op: "app", origin: "laptop", call: { ...call, device: { id: "x:y", name: "P" } } }, push).status).toBe(400)
+    expect(handlePushBridge({ op: "app", origin: "laptop", call: { ...call, path: "/api/app/chat" } }, push).status).toBe(404)
+    expect(handlePushBridge({ op: "roster", origin: "laptop", active: "tok_1" }, push).status).toBe(400)
+    expect(handlePushBridge({ op: "app", origin: "laptop", call }, null, "push is off")).toEqual({ status: 503, body: { error: "push is off" } })
+    expect(pushOrigin("My Laptop:1")).toBe("My-Laptop-1")
+  })
+})
+
+describe("RelayedPushState", () => {
+  it("remembers what the host said, for finish notifications and the announcement switch", () => {
+    const st = new RelayedPushState()
+    const call = (path: string, method = "POST") => ({ path, method, body: {}, device: { id: "tok_r", name: "R" } })
+    expect(st.finishOn("tok_r")).toBe(false)
+    expect(st.on("tok_r", "announce")).toBe(true)
+    st.note(call("/api/app/push", "GET"), { status: 200, body: { available: true, subscriptions: 1, chatFinish: true, announce: false } })
+    expect(st.finishOn("tok_r")).toBe(true)
+    expect(st.on("tok_r", "announce")).toBe(false)
+    st.note(call("/api/app/push/prefs"), { status: 200, body: { ok: true, chatFinish: false } })
+    expect(st.finishOn("tok_r")).toBe(false)
+    expect(st.on("tok_r", "announce")).toBe(false)
+    st.note(call("/api/app/push/prefs"), { status: 400, body: { error: "x", chatFinish: true } })
+    expect(st.on("tok_r", "finish")).toBe(false)
+    st.note(call("/api/app/push/prefs"), { status: 200, body: { ok: true, chatFinish: true } })
+    st.note(call("/api/app/push/unsubscribe"), { status: 200, body: { ok: true, removed: true } })
+    expect(st.finishOn("tok_r")).toBe(false)
+    st.note(call("/api/app/push/subscribe"), { status: 200, body: { ok: true } })
+    expect(st.finishOn("tok_r")).toBe(true)
+  })
+})
+
+describe("PushRosterSync", () => {
+  it("sends when the roster changes or is due, and retries a failure", async () => {
+    let now = 0
+    let active = ["tok_b", "tok_a"]
+    let fail = false
+    const sent: string[][] = []
+    const sync = new PushRosterSync({ active: () => active, now: () => now, send: async (a) => { if (fail) throw new Error("down"); sent.push(a) } })
+    expect(await sync.tick()).toBe(true)
+    expect(sent).toEqual([["tok_a", "tok_b"]])
+    expect(await sync.tick()).toBe(false)
+    active = ["tok_a"]
+    fail = true
+    expect(await sync.tick()).toBe(false)
+    fail = false
+    expect(await sync.tick()).toBe(true)
+    now += ROSTER_RESEND_MS
+    expect(await sync.tick()).toBe(true)
+    expect(sent).toEqual([["tok_a", "tok_b"], ["tok_a"], ["tok_a"]])
   })
 })
 

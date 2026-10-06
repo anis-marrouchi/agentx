@@ -52,7 +52,7 @@ import { dashboardIcon } from "./app-icon"
 import { assetLinks, handleDashboardPlaces, placesDeps, type PlacesDeps } from "./app-places"
 import { daemonFireDeps } from "@/places/fire"
 import { renderPlacesPage } from "./ui/pages/places"
-import type { AppPushDeps } from "./app-push"
+import { relayedPush, type AppPushDeps } from "./app-push"
 import { appAnnounceDeps } from "./app-announce"
 import { PushStore } from "@/channels/push-store"
 import { AppChatStore } from "./app-chat-store"
@@ -2288,7 +2288,26 @@ function appPushDeps(config: DaemonConfig): AppPushDeps {
   const push = config.channels.push
   const off = (reason: string): AppPushDeps => ({ store: () => null, publicKey: () => null, keepRecent: 0, allowedHosts: [], reason })
   if (!push.enabled) return off("Notifications are off. On the computer, run: agentx notifications push --enable")
-  if (push.relayTo) return off(`Notifications are set up on ${push.relayTo}. Pair this phone with that computer instead.`)
+  if (push.relayTo) {
+    // #711 — this node relays: the phone subscribes on the push host,
+    // through this node's daemon (POST /push/app, push-bridge.ts).
+    const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
+    const token = process.env.MESH_TOKEN || dashboardTokenForNode(config.dashboard, primary)
+    return {
+      ...off(`Can't reach ${push.relayTo}, the computer that sends notifications`),
+      async forward(call) {
+        const r = await fetch(`${primary}/push/app`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ op: "app", call }),
+          signal: AbortSignal.timeout(20_000),
+        })
+        const body = await r.json().catch(() => ({})) as { status?: unknown; body?: unknown; error?: string }
+        if (!r.ok || typeof body.status !== "number") throw new Error(body.error || `the daemon answered ${r.status}`)
+        return { status: body.status, body: body.body ?? {} }
+      },
+    }
+  }
   const keysPath = pushKeysPath(push.keysFile)
   return {
     store: () => {
@@ -2311,7 +2330,10 @@ function appPlacesDeps(config: DaemonConfig): PlacesDeps {
   const fire = push.enabled && !push.relayTo
     ? daemonFireDeps({ url, token: dashboardTokenForNode(config.dashboard, url), operatorKey: loadOperatorKey(process.cwd()) ?? undefined })
     : null
-  return placesDeps(config, process.cwd(), fire, appPushDeps(config).reason)
+  const reason = push.relayTo
+    ? `this computer relays notifications to ${push.relayTo}; place reminders work on a phone paired with ${push.relayTo}.`
+    : appPushDeps(config).reason
+  return placesDeps(config, process.cwd(), fire, reason)
 }
 
 /** What the phone app's Fleet and Activity tabs read and act through
@@ -2414,12 +2436,15 @@ function appChatDeps(config: DaemonConfig): AppChatDeps {
 /** Finish notifications for the phone app (#265). The push channel runs in
  *  the daemon, so the dashboard asks it through POST /channel/send with the
  *  phone's device id as the chat id: that addresses one phone, never all.
- *  Off when this computer doesn't send pushes itself, when the phone has
- *  no subscription, or when it turned the setting off in Alerts. */
+ *  Off when push is off here, when the phone has no subscription, or when
+ *  it turned the setting off in Alerts. On a relaying node the daemon
+ *  forwards it to the host, which finds the phone by this node's name. */
 function finishAlertDeps(config: DaemonConfig, url: string, token: string | undefined): Pick<AppChatDeps, "finishAlerts" | "notifyFinish"> {
   const pushDeps = appPushDeps(config)
   return {
     finishAlerts: (deviceId) => {
+      // A relay asks the host's answer it last passed on (#711).
+      if (pushDeps.forward) return relayedPush.finishOn(deviceId)
       const store = pushDeps.store()
       return !!store && store.chatFinishOn(deviceId) && store.list(deviceId).length > 0
     },
