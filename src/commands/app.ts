@@ -143,6 +143,10 @@ export function tailscaleOrigin(): string {
  *  machine's own key on every request. Everything else stays off the tailnet. */
 const APP_MOUNTS = new Set(["/app", "/api/app", "/member", "/api/member"])
 
+/** Public files the guides publish on their own path. Allowed only when the
+ *  mount proxies to that same file, never to "/" or another dashboard path. */
+const PUBLIC_FILE_MOUNTS = new Set(["/.well-known/assetlinks.json"])
+
 /**
  * Lists `tailscale serve` mounts (host + path) that proxy to the dashboard
  * port outside the app and member paths. `tailscale serve 4202` mounts "/", which
@@ -155,9 +159,12 @@ export function exposedDashboardMounts(status: any, port: number): string[] {
   for (const cfg of configs) {
     for (const [host, web] of Object.entries<any>(cfg?.Web ?? {})) {
       for (const [mount, h] of Object.entries<any>(web?.Handlers ?? {})) {
-        const target = String(h?.Proxy ?? "").match(/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)/)
+        const target = String(h?.Proxy ?? "").match(/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)([/?#].*)?$/)
+        if (!target || Number(target[1]) !== port) continue
         const clean = mount.replace(/\/+$/, "") || "/"
-        if (target && Number(target[1]) === port && !APP_MOUNTS.has(clean)) found.push(`${host}${mount}`)
+        const targetPath = (target[2] ?? "").replace(/\/+$/, "")
+        if (APP_MOUNTS.has(clean) || (PUBLIC_FILE_MOUNTS.has(clean) && targetPath === clean)) continue
+        found.push(`${host}${mount}`)
       }
     }
   }

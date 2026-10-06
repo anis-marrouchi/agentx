@@ -184,6 +184,16 @@ describe("agentx app pair: tailscale serve guard", () => {
     expect(exposedDashboardMounts(web({ ...member, "/members": "http://127.0.0.1:4202/members" }), 4202)).toEqual(["mac.tail1.ts.net:443/members"])
   })
 
+  it("accepts the Android guide's assetlinks.json path only when it proxies to that same file", () => {
+    const app = { "/app": "http://127.0.0.1:4202/app", "/api/app": "http://127.0.0.1:4202/api/app" }
+    const links = "/.well-known/assetlinks.json"
+    expect(exposedDashboardMounts(web({ ...app, [links]: `http://127.0.0.1:4202${links}` }), 4202)).toEqual([])
+    expect(exposedDashboardMounts(web({ [links]: `http://127.0.0.1:4202/` }), 4202)).toEqual([`mac.tail1.ts.net:443${links}`])
+    expect(exposedDashboardMounts(web({ [links]: "http://127.0.0.1:4202" }), 4202)).toEqual([`mac.tail1.ts.net:443${links}`])
+    expect(exposedDashboardMounts(web({ [links]: "http://127.0.0.1:4202/api/admin/people" }), 4202)).toEqual([`mac.tail1.ts.net:443${links}`])
+    expect(exposedDashboardMounts(web({ "/.well-known": `http://127.0.0.1:4202${links}` }), 4202)).toEqual(["mac.tail1.ts.net:443/.well-known"])
+  })
+
   it("ignores other local services and a missing tailscale", () => {
     expect(exposedDashboardMounts(web({ "/": "http://localhost:3000" }), 4202)).toEqual([])
     expect(exposedDashboardMounts(null, 4202)).toEqual([])
