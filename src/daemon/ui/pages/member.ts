@@ -105,7 +105,7 @@ const bar = memberBar
 /** The three steps from a code to the work page. */
 function pairSteps(at: 0 | 1): string {
   const names = ["Type the code", "The owner says yes", "Your work opens"]
-  return `<ol class="steps" aria-label="Steps">${names.map((n, i) =>
+  return `<ol class="steps" role="list" aria-label="Steps">${names.map((n, i) =>
     i < at ? `<li class="done"><span class="sr">Done: </span>${n}</li>` : i === at ? `<li class="now" aria-current="step">${n}</li>` : `<li>${n}</li>`,
   ).join("")}</ol>`
 }
@@ -118,12 +118,12 @@ export function renderMemberPage(): string {
 ${bar("Connecting…", `
   <button type="button" id="theme" class="icon-btn" aria-label="Switch theme">◐</button>`)}
 <p id="offline" class="strip" role="status" hidden><span id="offline-text"></span><button type="button" id="retry" hidden>Try now</button></p>
-<p id="install" class="install" hidden>To keep this window on your desktop: in Edge or Chrome open the browser menu, then <b>Apps</b>, then <b>Install this site as an app</b>.</p>
+<aside id="install" class="install" aria-label="Keep this window" hidden>To keep this window on your desktop: in Edge or Chrome open the browser menu, then <b>Apps</b>, then <b>Install this site as an app</b>.</aside>
 <main class="wrap">
   <p id="sum" class="sum" aria-live="polite">Loading…</p>
-  <section id="need" class="need" aria-labelledby="h-need" hidden><h2 id="h-need" tabindex="-1">Needs a person</h2><ul id="need-list"></ul></section>
-  <section id="agents-box" aria-labelledby="h-agents" hidden><h2 id="h-agents" tabindex="-1">Your agents</h2><ul id="agents" class="agents"></ul><button type="button" id="notify" class="notify" hidden>Tell me when an agent is free</button></section>
-  <section aria-labelledby="h-sent"><h2 id="h-sent" tabindex="-1">What you sent <span class="n">(last 7 days)</span></h2><ul id="sent" class="rows"></ul></section>
+  <section id="need" class="need" aria-labelledby="h-need" hidden><h2 id="h-need" tabindex="-1">Needs a person</h2><ul id="need-list" role="list"></ul></section>
+  <section id="agents-box" aria-labelledby="h-agents" hidden><h2 id="h-agents" tabindex="-1">Your agents</h2><ul id="agents" class="agents" role="list"></ul><button type="button" id="notify" class="notify" hidden>Tell me when an agent is free</button></section>
+  <section aria-labelledby="h-sent"><h2 id="h-sent" tabindex="-1">What you sent <span class="n">(last 7 days)</span></h2><ul id="sent" class="rows" role="list"></ul></section>
   <p id="updated" class="foot"></p>
 </main>
 <script>${injectFns({ workState, ageText, connectionNote, plainPreview, agentLine, sentState, requestState, summaryLine, freedAgents })}${WORK_SCRIPT}</script>
@@ -196,16 +196,18 @@ export function workState(state: string): { label: string; tone: "ok" | "warn" |
   return { label: s.replace(/_/g, " "), tone: "muted" }
 }
 
-/** "3 min", "2 h 10 min", "4 d": how long since `at`. */
+/** "3 min ago", "2 h 10 min ago", "4 d 1 h ago", or "just now": how long
+ *  since `at`. The word "ago" is part of it, so a fresh row never reads
+ *  "just now ago". */
 export function ageText(at: number, now: number): string {
   const ms = Math.max(0, Number(now) - Number(at))
   const min = Math.floor(ms / 60000)
   if (min < 1) return "just now"
-  if (min < 60) return min + " min"
+  if (min < 60) return min + " min ago"
   const h = Math.floor(min / 60)
-  if (h < 24) return h + " h " + (min % 60) + " min"
+  if (h < 24) return h + " h " + (min % 60) + " min ago"
   const d = Math.floor(h / 24)
-  return d + " d " + (h % 24) + " h"
+  return d + " d " + (h % 24) + " h ago"
 }
 
 // ── Scripts ────────────────────────────────────────────────────────────────────────────────────────────────────────────────

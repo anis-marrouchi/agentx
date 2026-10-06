@@ -138,7 +138,7 @@ export const WORK_SCRIPT = `
     var line = !q.waiting ? 'Nothing waits behind this.' :
       q.waiting + (q.waiting === 1 ? ' message waits' : ' messages wait') + ' behind this' + (q.yours ? ', ' + (q.yours === q.waiting ? (q.yours === 1 ? 'yours' : 'all yours') : q.yours + ' of them yours') : '') + '.';
     var id = 'd-' + esc(a.agentId).replace(/[^A-Za-z0-9_-]/g, '_');
-    var moved = a.at ? (a.state === 'working' ? '' : a.state === 'blocked' ? 'stopped ' : 'finished ') + ageText(a.at, now) + ' ago' : '';
+    var moved = a.at ? (a.state === 'working' ? '' : a.state === 'blocked' ? 'stopped ' : 'finished ') + ageText(a.at, now) : '';
     var meta = (v.by ? '<span>started by ' + esc(v.by) + '</span>' : '') + (moved ? '<span class="moved">' + moved + '</span>' : '') + (a.where ? '<span>from ' + where(a) + '</span>' : '');
     var hint = stale ? v.label + ' when this page last loaded, at ' + clock(lastAt) + '.' : v.hint;
     var html = '<li class="agent' + (v.tone === 'free' ? ' free' : '') + (mine && opened[a.agentId] ? ' open' : '') + '">' +
@@ -148,10 +148,10 @@ export const WORK_SCRIPT = `
     if (mine) {
       html += '<button type="button" class="more" data-agent="' + esc(a.agentId) + '" aria-expanded="' + (opened[a.agentId] ? 'true' : 'false') + '" aria-controls="' + id + '">' + (opened[a.agentId] ? 'Hide' : 'Show') + ' this request</button>' +
         '<div class="detail" id="' + id + '">' +
-        '<ol class="steps" aria-label="Where this request is"><li class="done"><span class="sr">Done: </span>Received</li><li class="now" aria-current="step">Working</li><li>Finished</li></ol>' +
+        '<ol class="steps" role="list" aria-label="Where this request is"><li class="done"><span class="sr">Done: </span>Received</li><li class="now" aria-current="step">Working</li><li>Finished</li></ol>' +
         '<p class="full">' + esc(a.fullText) + '</p><dl>' +
         '<dt>Started by</dt><dd>you</dd>' +
-        '<dt>Sent</dt><dd>' + clock(a.at) + ', ' + ageText(a.at, now) + ' ago</dd>' +
+        '<dt>Sent</dt><dd>' + clock(a.at) + ', ' + ageText(a.at, now) + '</dd>' +
         (a.where ? '<dt>Asked on</dt><dd>' + where(a) + '</dd><dt>Answer</dt><dd>It arrives on ' + where(a) + ' when the agent finishes.</dd>' : '') +
         '<dt>In line</dt><dd>' + line + '</dd>' +
         '</dl></div>';
@@ -163,7 +163,7 @@ export const WORK_SCRIPT = `
     return '<li><span class="state ' + (r.state === 'waiting_owner' ? 'wait' : 'stuck') + '">' + esc(workState(r.state).label) + '</span>' +
       (ask ? '<p class="q">' + esc(ask) + '</p>' : '') +
       '<p class="for">For <b>' + esc(plainPreview(r.text)) + '</b></p>' +
-      '<p class="meta"><span>' + esc(r.agentId) + '</span><span class="moved">' + (r.state === 'waiting_owner' ? 'asked ' : 'stuck ') + ageText(r.updatedAt || r.createdAt, now) + ' ago</span><span>from ' + where(r) + '</span></p></li>';
+      '<p class="meta"><span>' + esc(r.agentId) + '</span><span class="moved">' + (r.state === 'waiting_owner' ? 'asked ' : 'stuck ') + ageText(r.updatedAt || r.createdAt, now) + '</span><span>from ' + where(r) + '</span></p></li>';
   }
   function delivered(ev) {
     if (!ev) return '';
@@ -174,7 +174,7 @@ export const WORK_SCRIPT = `
   function sent(r, now) {
     var st = sentState(r);
     var note = delivered(r.request && r.request.evidence);
-    var moved = st.tone === 'work' ? 'started ' + ageText(r.startedAt, now) + ' ago' : ageText(r.finishedAt || r.startedAt, now) + ' ago';
+    var moved = st.tone === 'work' ? 'started ' + ageText(r.startedAt, now) : ageText(r.finishedAt || r.startedAt, now);
     return '<li class="row"><p class="text">' + esc(plainPreview(r.messagePreview)) + '</p>' + note +
       '<p class="meta"><span>' + esc(r.agentId) + '</span>' + (r.where ? '<span>from ' + where(r) + '</span>' : '') + '</p>' +
       '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + moved + '</span></p></li>';
@@ -185,7 +185,7 @@ export const WORK_SCRIPT = `
     var place = r.ahead === 0 ? 'next when the agent is free' : r.ahead + (r.ahead === 1 ? ' message' : ' messages') + ' ahead of it';
     return '<li class="row"><p class="text">' + esc(plainPreview(r.messagePreview)) + '</p>' +
       '<p class="meta"><span>' + esc(r.agentId) + '</span>' + (r.where ? '<span>from ' + where(r) + '</span>' : '') + '</p>' +
-      '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + place + '</span><span class="moved">sent ' + ageText(r.queuedAt, now) + ' ago</span></p></li>';
+      '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + place + '</span><span class="moved">sent ' + ageText(r.queuedAt, now) + '</span></p></li>';
   }
   // A request no turn of the list stands for: its turn is older, or it has none.
   function request(r, now) {
@@ -193,7 +193,7 @@ export const WORK_SCRIPT = `
     var note = delivered(r.evidence);
     return '<li class="row"><p class="text">' + esc(plainPreview(r.text)) + '</p>' + note +
       '<p class="meta"><span>' + esc(r.agentId) + '</span><span>from ' + where(r) + '</span></p>' +
-      '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + ageText(r.closedAt || r.updatedAt || r.createdAt, now) + ' ago</span></p></li>';
+      '<p class="side"><span class="state ' + st.tone + '">' + esc(st.label) + '</span><span class="moved">' + ageText(r.closedAt || r.updatedAt || r.createdAt, now) + '</span></p></li>';
   }
   function show(w, now) {
     var agents = w.agents || [], waiting = w.queued || [];

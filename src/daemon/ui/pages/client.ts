@@ -56,10 +56,10 @@ export function renderClientPage(): string {
 ${memberBar("Connecting…", `
   <button type="button" id="theme" class="icon-btn" aria-label="Switch theme">◐</button>`, CLIENT_PAGE_TITLE)}
 <p id="offline" class="strip" role="status" hidden><span id="offline-text"></span><button type="button" id="retry" hidden>Try now</button></p>
-<p id="install" class="install" hidden>To keep this window on your desktop: in Edge or Chrome open the browser menu, then <b>Apps</b>, then <b>Install this site as an app</b>.</p>
+<aside id="install" class="install" aria-label="Keep this window" hidden>To keep this window on your desktop: in Edge or Chrome open the browser menu, then <b>Apps</b>, then <b>Install this site as an app</b>.</aside>
 <main class="wrap">
   <p id="sum" class="sum" aria-live="polite">Loading…</p>
-  <section aria-labelledby="h-asked"><h2 id="h-asked">What you asked for <span class="n">(last 7 days)</span></h2><ul id="asked" class="rows"></ul></section>
+  <section aria-labelledby="h-asked"><h2 id="h-asked">What you asked for <span class="n">(last 7 days)</span></h2><ul id="asked" class="rows" role="list"></ul></section>
   <section class="about" aria-labelledby="h-about"><h2 id="h-about">About this page</h2>
     <p>This page shows what you asked us for and where it stands. Nothing else of yours is here, and nothing of yours is read through it.</p>
     <p>Something looks wrong? Ask the person who invited you.</p>
@@ -138,12 +138,12 @@ export const CLIENT_SCRIPT = `
   }
   function sent(r, now) {
     var st = clientSentState(r);
-    var when = st.tone === 'work' ? 'started ' + ageText(r.startedAt, now) + ' ago' : ageText(r.finishedAt || r.startedAt, now) + ' ago';
+    var when = st.tone === 'work' ? 'started ' + ageText(r.startedAt, now) : ageText(r.finishedAt || r.startedAt, now);
     return row(r.messagePreview, delivered(r.request && r.request.evidence), where(r), st, when);
   }
   function request(r, now) {
     var st = clientRequestState(r.state);
-    return row(r.text, delivered(r.evidence), where(r), st, ageText(r.closedAt || r.updatedAt || r.createdAt, now) + ' ago');
+    return row(r.text, delivered(r.evidence), where(r), st, ageText(r.closedAt || r.updatedAt || r.createdAt, now));
   }
   function show(w, now) {
     var runs = w.runs || [];

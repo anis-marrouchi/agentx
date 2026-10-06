@@ -3,6 +3,12 @@
 // Drawn from the approved concept (branch 443-member-page-concept). Only
 // token values: --link and --tick are names for existing tokens, chosen so
 // small text keeps its contrast (plain blue on white is under 4.5:1).
+//
+// Lists drawn without bullets carry role="list" in the markup: Safari, and
+// so VoiceOver, drops list semantics from a list-style: none list. The
+// triangle after "Show this request" has empty alt text, so a screen reader
+// reads the button's words only; a browser without the "/ alt" syntax keeps
+// the first declaration.
 
 export const BASE_CSS = `
 :root { --link: var(--ax-blue-d); --ring: var(--ax-blue); --tick: var(--ax-green-d); }
@@ -86,8 +92,8 @@ export const WORK_CSS = `
 .agent .more { justify-self: start; min-height: 44px; padding: 0; font: inherit; font-size: 14px; font-weight: 700; color: var(--link); background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .notify { min-height: 44px; margin-top: 4px; padding: 0; font: inherit; font-size: 14px; font-weight: 700; color: var(--link); background: none; border: 0; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .notify[hidden] { display: none; }
-.agent .more::after { content: " \\25BE"; }
-.agent .more[aria-expanded="true"]::after { content: " \\25B4"; }
+.agent .more::after { content: " \\25BE"; content: " \\25BE" / ""; }
+.agent .more[aria-expanded="true"]::after { content: " \\25B4"; content: " \\25B4" / ""; }
 .agent .detail { display: none; gap: 14px; padding-top: 14px; border-top: var(--ax-border-w) solid var(--ax-border); }
 .agent.open .detail { display: grid; }
 .agent.open { border-color: var(--ax-blue); }

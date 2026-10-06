@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { renderMemberPage } from "../src/daemon/ui/pages/member"
+import { ageText, renderMemberPage } from "../src/daemon/ui/pages/member"
+import { WORK_CSS } from "../src/daemon/ui/pages/member-styles"
 import { connectionNote, freedAgents, plainPreview } from "../src/daemon/ui/pages/member-logic"
 
 // #489: the work page said "Offline" for any failed load and never asked
@@ -421,5 +422,26 @@ describe("Saber's answers on #443: order and a notification when an agent is fre
       expect(q.el("notify").hidden).toBe(true)
     }
     expect(openPage({}).el("notify").hidden).toBe(true)
+  })
+})
+
+// The headless accessibility pass on #443 (axe-core and Chromium's
+// accessibility tree, desktop and phone sizes, both themes).
+describe("what a screen reader reads (#443)", () => {
+  it("says how long ago without a doubled word", () => {
+    const now = Date.UTC(2026, 9, 6, 12)
+    expect(ageText(now - 10_000, now)).toBe("just now")
+    expect(ageText(now - 3 * 60_000, now)).toBe("3 min ago")
+    expect(ageText(now - 130 * 60_000, now)).toBe("2 h 10 min ago")
+    expect(ageText(now - 25 * 3_600_000, now)).toBe("1 d 1 h ago")
+  })
+
+  it("keeps list semantics, a landmark for the install hint, and the triangle out of the button's name", () => {
+    const page = renderMemberPage()
+    for (const id of ["need-list", "agents", "sent"]) expect(page).toMatch(new RegExp(`<ul id="${id}"[^>]* role="list"`))
+    expect(page).toMatch(/<aside id="install"[^>]* aria-label="Keep this window"/)
+    expect(page).toContain('<ol class="steps" role="list" aria-label="Where this request is">')
+    expect(WORK_CSS).toContain('content: " \\25BE" / "";')
+    expect(WORK_CSS).toContain('content: " \\25B4" / "";')
   })
 })
