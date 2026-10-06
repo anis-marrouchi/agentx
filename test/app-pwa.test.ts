@@ -239,6 +239,47 @@ describe("agentx app pair: tailscale serve guard", () => {
     expect(exposedDashboardMounts(web({ "/": "http://192.168.1.20:3000" }), 4202, local)).toEqual([])
   })
 
+  it("flags TCP forwards to the dashboard port (#730)", () => {
+    // `tailscale serve --bg --tls-terminated-tcp=5432 tcp://localhost:4202`
+    const tls = { TCP: { "5432": { TCPForward: "127.0.0.1:4202", TerminateTLS: "mac.tail1.ts.net" } } }
+    expect(exposedDashboardMounts(tls, 4202)).toEqual(["TCP port 5432"])
+    // `tailscale serve --bg --tcp=2222 tcp://localhost:4202`
+    expect(exposedDashboardMounts({ TCP: { "2222": { TCPForward: "127.0.0.1:4202" } } }, 4202)).toEqual(["TCP port 2222"])
+    expect(exposedDashboardMounts({ TCP: { "2222": { TCPForward: "[::1]:4202" } } }, 4202)).toEqual(["TCP port 2222"])
+    expect(exposedDashboardMounts({ TCP: { "2222": { TCPForward: "mac.tail1.ts.net:4202", TerminateTLS: "mac.tail1.ts.net" } } }, 4202))
+      .toEqual(["TCP port 2222"])
+    const local = new Set(["localhost", "192.168.1.20"])
+    expect(exposedDashboardMounts({ TCP: { "2222": { TCPForward: "192.168.1.20:4202" } } }, 4202, local)).toEqual(["TCP port 2222"])
+    expect(exposedDashboardMounts({ Foreground: { abc: { TCP: { "2222": { TCPForward: "localhost:4202" } } } } }, 4202)).toEqual(["TCP port 2222"])
+  })
+
+  it("ignores TCP forwards to another port or host, and plain HTTPS listeners (#730)", () => {
+    const local = new Set(["localhost", "192.168.1.20"])
+    expect(exposedDashboardMounts({ TCP: { "2222": { TCPForward: "127.0.0.1:22" } } }, 4202, local)).toEqual([])
+    expect(exposedDashboardMounts({ TCP: { "2222": { TCPForward: "192.168.1.99:4202" } } }, 4202, local)).toEqual([])
+    expect(exposedDashboardMounts({ TCP: { "2222": { TCPForward: "127.0.0.1:42020" } } }, 4202, local)).toEqual([])
+    // What `tailscale serve --bg --set-path /app ...` writes next to its Web entry.
+    const app = { "/app": "http://127.0.0.1:4202/app", "/api/app": "http://127.0.0.1:4202/api/app" }
+    expect(exposedDashboardMounts({ TCP: { "443": { HTTPS: true } }, ...web(app) }, 4202, local)).toEqual([])
+  })
+
+  it("checks Tailscale Services, Web and TCP alike (#730)", () => {
+    // `tailscale serve --bg --service=svc:dash --https=443 127.0.0.1:4202`
+    const svc = (handlers: Record<string, string>) => ({
+      Services: { "svc:dash": {
+        TCP: { "443": { HTTPS: true } },
+        Web: { "dash.tail1.ts.net:443": { Handlers: Object.fromEntries(Object.entries(handlers).map(([m, p]) => [m, { Proxy: p }])) } },
+      } },
+    })
+    expect(exposedDashboardMounts(svc({ "/": "http://127.0.0.1:4202" }), 4202)).toEqual(["svc:dash dash.tail1.ts.net:443/"])
+    expect(exposedDashboardMounts(svc({ "/app": "http://127.0.0.1:4202/app", "/api/app": "http://127.0.0.1:4202/api/app" }), 4202)).toEqual([])
+    expect(exposedDashboardMounts(svc({ "/": "http://127.0.0.1:3000" }), 4202)).toEqual([])
+    // `tailscale serve --bg --service=svc:dash --tcp=2222 tcp://localhost:4202`
+    const tcp = { Services: { "svc:dash": { TCP: { "2222": { TCPForward: "127.0.0.1:4202" } } } } }
+    expect(exposedDashboardMounts(tcp, 4202)).toEqual(["svc:dash TCP port 2222"])
+    expect(exposedDashboardMounts({ Services: { "svc:db": { TCP: { "5432": { TCPForward: "127.0.0.1:5432" } } } } }, 4202)).toEqual([])
+  })
+
   it("sees through userinfo and other spellings of an address (#710)", () => {
     const local = new Set(["localhost", "0.0.0.0", "::", "::1", "192.168.1.20", "fe80::1"])
     for (const target of [

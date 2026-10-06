@@ -280,25 +280,46 @@ function isLocalHost(host: string, local: Set<string>): boolean {
  * from 127.0.0.1, so the dashboard's loopback trust lets those requests in.
  * The dashboard listens on every interface, so a target on any of this
  * machine's addresses counts, whatever the scheme (#707).
+ *
+ * TCP forwards (`--tcp`, `--tls-terminated-tcp`) pass every path through,
+ * so one that reaches the dashboard port always counts. Tailscale Services
+ * (`--service=svc:<name>`) carry their own Web and TCP entries and are
+ * checked the same way (#730).
  */
 export function exposedDashboardMounts(status: any, port: number, local: Set<string> = localAddresses()): string[] {
-  const configs = [status, ...Object.values(status?.Foreground ?? {})]
-  // The served host names (MagicDNS) are this machine too.
+  const top = [status, ...Object.values<any>(status?.Foreground ?? {})]
+  const configs: { label: string; cfg: any }[] = []
+  for (const cfg of top) {
+    configs.push({ label: "", cfg })
+    for (const [name, svc] of Object.entries<any>(cfg?.Services ?? {})) configs.push({ label: `${name} `, cfg: svc })
+  }
+  // The served host names (MagicDNS, Service names) are this machine too.
   const self = new Set(local)
-  for (const cfg of configs) {
+  for (const { cfg } of configs) {
     for (const host of Object.keys(cfg?.Web ?? {})) self.add(host.replace(/:\d+$/, "").replace(/\.$/, "").toLowerCase())
+    for (const h of Object.values<any>(cfg?.TCP ?? {})) {
+      if (h?.TerminateTLS) self.add(String(h.TerminateTLS).replace(/\.$/, "").toLowerCase())
+    }
+  }
+  const reaches = (proxy: string) => {
+    const target = proxyTarget(proxy.trim())
+    return target && target.port === port && isLocalHost(target.host, self) ? target : null
   }
   const found: string[] = []
-  for (const cfg of configs) {
+  for (const { label, cfg } of configs) {
     for (const [host, web] of Object.entries<any>(cfg?.Web ?? {})) {
       for (const [mount, h] of Object.entries<any>(web?.Handlers ?? {})) {
         if (h?.Proxy == null) continue
-        const target = proxyTarget(String(h.Proxy).trim())
-        if (!target || target.port !== port || !isLocalHost(target.host, self)) continue
+        const target = reaches(String(h.Proxy))
+        if (!target) continue
         const clean = mount.replace(/\/+$/, "") || "/"
         const assetLinks = clean === ASSET_LINKS && target.path === ASSET_LINKS
-        if (!APP_MOUNTS.has(clean) && !assetLinks) found.push(`${host}${mount}`)
+        if (!APP_MOUNTS.has(clean) && !assetLinks) found.push(`${label}${host}${mount}`)
       }
+    }
+    for (const [listen, h] of Object.entries<any>(cfg?.TCP ?? {})) {
+      if (h?.TCPForward == null || !reaches(String(h.TCPForward))) continue
+      found.push(`${label}TCP port ${listen}`)
     }
   }
   return found
