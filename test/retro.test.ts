@@ -5,9 +5,12 @@ import path from "path"
 import type Database from "better-sqlite3"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { recordTraceStart, recordTraceEnd, recordTraceStep } from "../src/storage/traces"
-import { createCard, decideCard, readCard, verdictMessage } from "../src/approvals/cards"
+import { CARD_LIMITS, createCard, decideCard, listCards, readCard, verdictMessage } from "../src/approvals/cards"
 import { RETRO_NONE } from "../src/approvals/origin"
-import { groundCandidates, parseProposal, prepareRetro, RETRO_ASK, type RetroProposal } from "../src/retro/retro"
+import { draftFor } from "../src/approvals/choices"
+import { groundCandidates, parseProposal, prepareRetro, raiseRetroCard, RETRO_ASK, type RetroProposal } from "../src/retro/retro"
+import type { ApprovalSettings } from "../src/approvals/sweep"
+import { approvalsConfigSchema } from "../src/daemon/config"
 
 let tmp: string
 let db: Database.Database
@@ -26,6 +29,8 @@ afterEach(() => {
 /** A deploy run that stopped the daemon job and never started it again. */
 function failedDeploy(taskId = "T-deploy", chatId = "ops") {
   recordTraceStart(db, { agentId: "builder", channel: "telegram", chatId, messagePreview: "deploy the new release" }, taskId)
+  // seq 0, so the two Bash calls below are steps 1 and 2.
+  recordTraceStep(db, taskId, { name: "preflight", status: "ok", inputSummary: "deploy the new release" })
   recordTraceStep(db, taskId, { name: "tool_use", action: "Bash", status: "ok", inputSummary: "launchctl bootout gui/501/com.example.daemon" })
   recordTraceStep(db, taskId, { name: "tool_use", action: "Bash", status: "error", inputSummary: "curl localhost:18800/health", error: "connection refused on the health check" })
   recordTraceEnd(db, taskId, { status: "error", error: "health check failed: connection refused" })
@@ -56,6 +61,19 @@ describe("groundCandidates", () => {
       { label: "Note in CLAUDE.md to restart the daemon", why: "a mechanical problem is not fixed with a pointer" },
       { label: "Watchdog on the daemon job", why: "does not point to a moment in the run" },
     ])
+  })
+
+  it("drops a real step number with a quote that is not in that step", () => {
+    const p = parseProposal(JSON.stringify({ title: "t", candidates: [
+      { label: "Invented", kind: "infra", fix: "watchdog", step: 1, evidence: "something that never happened" },
+      { label: "Wrong step", kind: "infra", fix: "watchdog", step: 1, evidence: "connection refused" },
+    ] }))
+    const { kept, dropped } = groundCandidates(p, { error: "boom" } as any, [
+      { seq: 1, inputSummary: "launchctl bootout", outputSummary: null, error: null } as any,
+      { seq: 2, inputSummary: null, outputSummary: null, error: "connection refused" } as any,
+    ])
+    expect(kept).toEqual([])
+    expect(dropped.map((d) => d.why)).toEqual(["does not point to a moment in the run", "does not point to a moment in the run"])
   })
 
   it("accepts an exact quote from the run's error when there is no step", () => {
@@ -123,20 +141,85 @@ describe("prepareRetro", () => {
   })
 })
 
+describe("raising the card", () => {
+  const settings = (forwardTo?: string) => ({ ...approvalsConfigSchema.parse(undefined), ...(forwardTo ? { forwardTo } : {}) }) as ApprovalSettings
+
+  it("refuses to forward a retro card to another machine", async () => {
+    const r = await prepareRetro({ root: tmp, db, taskId: failedDeploy(), propose: propose() })
+    if (!r.ok) throw new Error(r.error)
+    expect(raiseRetroCard(tmp, r.card, settings("other-node"))).toMatchObject({ ok: false, error: expect.stringMatching(/forwardTo is set \(other-node\)/) })
+    expect(listCards(tmp)).toEqual([])
+    const local = raiseRetroCard(tmp, r.card, settings())
+    if (!local.ok) throw new Error(local.error)
+    expect(readCard(tmp, local.card.id)?.origin).toMatchObject({ kind: "retro", taskId: "T-deploy" })
+  })
+
+  it("does not count retro cards against the agent's own open cards", async () => {
+    for (let i = 0; i < CARD_LIMITS.pendingPerAgent; i++) {
+      const own = createCard(tmp, { title: `own ${i}`, ask: "ok?", recommend: "yes", if_silent: "discard", raised_by: "builder" })
+      if (!own.ok) throw new Error(own.error)
+    }
+    expect(createCard(tmp, { title: "one more", ask: "ok?", recommend: "yes", if_silent: "discard", raised_by: "builder" }).ok).toBe(false)
+    const r = await prepareRetro({ root: tmp, db, taskId: failedDeploy(), propose: propose() })
+    if (!r.ok) throw new Error(r.error)
+    expect(raiseRetroCard(tmp, r.card, settings()).ok).toBe(true)
+  })
+})
+
 describe("the result the agent gets", () => {
-  it("says to build the pick for review, or to change nothing", async () => {
+  async function decided(verdict: "yes" | "no", choice?: number, text?: string) {
     const r = await prepareRetro({ root: tmp, db, taskId: failedDeploy(), propose: propose() })
     if (!r.ok) throw new Error(r.error)
     const c = createCard(tmp, r.card, { origin: r.card.origin })
     if (!c.ok) throw new Error(c.error)
-    const picked = decideCard(tmp, c.card.id, "yes", { choice: 1 })
-    if (!picked.ok) throw new Error(picked.error)
-    const msg = verdictMessage(picked.card)
-    expect(msg).toContain(`Chosen: ${PROPOSAL.candidates[1].label}`)
+    const d = decideCard(tmp, c.card.id, verdict, { ...(choice ? { choice } : {}), ...(text ? { text } : {}) })
+    if (!d.ok) throw new Error(d.error)
+    return verdictMessage(d.card)
+  }
+
+  it("sends only the picked fix's spec, labelled as the reviewer's proposal", async () => {
+    const msg = await decided("yes", 1)
+    expect(msg).toContain("The operator said YES.")
+    expect(msg).toContain(`The operator picked this fix: ${PROPOSAL.candidates[1].label}`)
+    expect(msg).toMatch(/drafted by the retro reviewer .*not instructions from the operator/)
+    expect(msg).toContain("One script; CI runs it in a dry run.")
+    expect(msg).not.toContain("Warn mode first.")
+    expect(msg).not.toMatch(/Approved text|send exactly this/)
+    expect(msg).not.toContain("The operator's note")
     expect(msg).toMatch(/pull request, or a guard rule in warn mode/)
     expect(msg).toContain("retro:T-deploy")
+  })
 
-    const none = { ...readCard(tmp, c.card.id)!, choice: RETRO_NONE }
-    expect(verdictMessage(none)).toMatch(/Change nothing/)
+  it("passes the operator's edited text as their note", async () => {
+    const msg = await decided("yes", 2, "Build the guard rule, but only for the release script")
+    expect(msg).toContain("The operator's note on the fix:\nBuild the guard rule, but only for the release script")
+    expect(msg).toContain("Warn mode first.")
+  })
+
+  it("does not treat a whitespace-only change to the draft as a note", async () => {
+    const r = await prepareRetro({ root: tmp, db, taskId: failedDeploy(), propose: propose() })
+    if (!r.ok) throw new Error(r.error)
+    const c = createCard(tmp, r.card, { origin: r.card.origin })
+    if (!c.ok) throw new Error(c.error)
+    const draft = draftFor(c.card.draft, c.card.choices?.[1])
+    const reflowed = `  ${draft.replace(/ /g, "\n")}\n`
+    const d = decideCard(tmp, c.card.id, "yes", { choice: 2, text: reflowed })
+    if (!d.ok) throw new Error(d.error)
+    expect(verdictMessage(d.card)).not.toContain("The operator's note")
+  })
+
+  it("treats YES on None of these as NO: one instruction, change nothing", async () => {
+    const msg = await decided("yes", 3)
+    expect(msg).toContain(`The operator picked "${RETRO_NONE}", which counts as NO.`)
+    expect(msg).not.toContain("The operator said YES.")
+    expect(msg).not.toMatch(/Chosen:|Approved text|Build:|picked this fix|pull request/)
+    expect(msg).toMatch(/Change nothing/)
+  })
+
+  it("says to change nothing on NO", async () => {
+    const msg = await decided("no")
+    expect(msg).toContain("The operator said NO.")
+    expect(msg).not.toMatch(/Approved text|Build:/)
+    expect(msg).toMatch(/Change nothing/)
   })
 })

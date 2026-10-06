@@ -3,11 +3,9 @@ import chalk from "chalk"
 import { existsSync } from "fs"
 import { resolve } from "path"
 import Database from "better-sqlite3"
-import { createCard } from "@/approvals/cards"
 import { readApprovalSettings } from "@/approvals/settings"
 import { reviewWithClaude } from "@/daemon/session-monitor"
-import { prepareRetro, RETRO_PROMPT } from "@/retro/retro"
-import { raiseThroughDaemon } from "./approvals"
+import { prepareRetro, raiseRetroCard, RETRO_PROMPT } from "@/retro/retro"
 
 // --- agentx retro <taskId> (#743) ---
 //
@@ -60,13 +58,7 @@ export const retro = new Command("retro")
       return
     }
 
-    const settings = readApprovalSettings()
-    // Cards forwarded to another machine go through the daemon (#668); the
-    // receiving node does not keep the retro origin, so the agent still
-    // gets the pick and the spec, without the retro instructions.
-    const raised = settings.forwardTo
-      ? await raiseThroughDaemon({ ...c })
-      : createCard(root, c, { settings, origin: c.origin })
+    const raised = raiseRetroCard(root, c, readApprovalSettings())
     if (!raised.ok) {
       console.error(chalk.red(`  ${raised.error}`))
       process.exitCode = 1

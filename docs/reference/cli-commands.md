@@ -2559,7 +2559,7 @@ Re-run a recorded task against the current agent config.
 
 ## retro (advanced)
 
-`agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** See [Stop a mistake from coming back](../jobs/retro.md).
+`agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).
 
 | Flag | Default | What it does |
 |---|---|---|

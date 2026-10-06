@@ -426,6 +426,12 @@ describe("the dashboard (operator) API", () => {
     })
     expect((await post({})).status).toBe(409)
     expect(readCard(root, c.card.id)?.status).toBe("pending")
+    for (const choice of [3, 0, "Something else"]) {
+      const bad = await post({ choice })
+      expect(bad.status).toBeGreaterThanOrEqual(400)
+      expect(await bad.text()).toMatch(/choice must be 1-2/)
+      expect(readCard(root, c.card.id)?.status).toBe("pending")
+    }
     expect((await post({ choice: 2, text: "Build: Watchdog, alert on the ops chat" })).status).toBe(200)
     expect(readCard(root, c.card.id)).toMatchObject({ verdict: "yes", choice: "Watchdog", text: "Build: Watchdog, alert on the ops chat" })
   })

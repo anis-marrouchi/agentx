@@ -2,7 +2,8 @@ import type Database from "better-sqlite3"
 import { z } from "zod"
 import { getTrace, listTraces, type TraceRecord, type TraceStepRecord } from "@/storage/traces"
 import { errorClass, failingTool, failureSignature, loadFailedTraces } from "@/wiki/failure-candidates"
-import { CARD_LIMITS, listCards, readCard, type CardInput, type DecisionCard } from "@/approvals/cards"
+import { CARD_LIMITS, createCard, listCards, readCard, type CardInput, type DecisionCard } from "@/approvals/cards"
+import type { ApprovalSettings } from "@/approvals/sweep"
 import { CHOICE_LIMITS } from "@/approvals/choices"
 import { RETRO_NONE, type RetroOrigin } from "@/approvals/origin"
 
@@ -110,7 +111,6 @@ function median(xs: number[]): number | null {
  *  picked fix runs in the card's own chat (channel `approvals`, chat id =
  *  card id). Same rule as the procedure miner's self-chat filter. */
 export function isRetroRun(root: string, t: Pick<TraceRecord, "channel" | "chatId">): boolean {
-  if ((t.chatId ?? "").startsWith("retro")) return true
   return t.channel === "approvals" && !!t.chatId && readCard(root, t.chatId)?.origin?.kind === "retro"
 }
 
@@ -213,17 +213,19 @@ export function groundCandidates(
   task: TraceRecord,
   steps: TraceStepRecord[],
 ): { kept: RetroCandidate[]; dropped: Array<{ label: string; why: string }> } {
-  const seqs = new Set(steps.map((s) => s.seq))
-  const haystack = [task.error, ...steps.flatMap((s) => [s.inputSummary, s.outputSummary, s.error])].map((x) => flat(x).toLowerCase()).join("\n")
+  const text = (xs: Array<string | null | undefined>) => xs.map((x) => flat(x).toLowerCase()).join("\n")
+  const atSeq = new Map(steps.map((s) => [s.seq, text([s.inputSummary, s.outputSummary, s.error])]))
   const kept: RetroCandidate[] = []
   const dropped: Array<{ label: string; why: string }> = []
   const seen = new Set<string>()
   for (const c of proposal.candidates) {
     const label = clip(c.label, CHOICE_LIMITS.label)
     const quote = flat(c.evidence).toLowerCase()
-    const atStep = c.step != null && seqs.has(c.step)
-    const quoted = quote.length >= 12 && haystack.includes(quote)
-    if (!atStep && !quoted) { dropped.push({ label, why: "does not point to a moment in the run" }); continue }
+    // The quote must be found where the candidate says it is: in the named
+    // step, or in the run's error when it names no step. A real step number
+    // with an invented quote does not count.
+    const where = c.step != null ? atSeq.get(c.step) : text([task.error])
+    if (where === undefined || quote.length < 12 || !where.includes(quote)) { dropped.push({ label, why: "does not point to a moment in the run" }); continue }
     if (!(FIX_TARGETS[c.kind] as readonly string[]).includes(c.fix)) {
       dropped.push({ label, why: `a ${c.kind} problem is not fixed with a ${c.fix}` })
       continue
@@ -270,7 +272,7 @@ export function retroCard(task: TraceRecord, proposal: RetroProposal, candidates
     if_silent: "discard",
     source: `agentx trace show ${task.taskId}`,
     raised_by: task.agentId,
-    origin: { kind: "retro", taskId: task.taskId, signature },
+    origin: { kind: "retro", taskId: task.taskId, signature, specs: candidates.map((c) => clip(c.spec, 400)) },
   }
 }
 
@@ -330,4 +332,23 @@ export async function prepareRetro(opts: PrepareRetroOptions): Promise<PrepareRe
   const dropped = quiet > 0 ? [...grounded.dropped, { label: `${quiet} candidate(s)`, why: `turned down in the last ${REJECT_QUIET_DAYS} days` }] : grounded.dropped
   if (!grounded.kept.length) return { ok: false, error: "no candidate fix points to a moment in the run; no card raised", signals, dropped }
   return { ok: true, card: retroCard(task, proposal, grounded.kept, signature), signals, dropped }
+}
+
+/** Save the card on this machine. Refused when cards are forwarded to a
+ *  peer (`approvals.forwardTo`): the receiving node does not keep the retro
+ *  origin, so the agent would get every spec as plain approved text without
+ *  the retro rules, and this node could not apply one open card per failure
+ *  or the 30-day rule to a card it never sees. */
+export function raiseRetroCard(
+  root: string,
+  card: CardInput & { origin: RetroOrigin },
+  settings: ApprovalSettings,
+): { ok: true; card: DecisionCard } | { ok: false; error: string } {
+  if (settings.forwardTo) {
+    return {
+      ok: false,
+      error: `approvals.forwardTo is set (${settings.forwardTo}): retro cards can't be forwarded to another machine yet. Run the retro on a machine that keeps its own cards, or use --dry-run to see the fixes.`,
+    }
+  }
+  return createCard(root, card, { settings, origin: card.origin })
 }
