@@ -16,6 +16,9 @@ describe("phone app layout", () => {
     expect(last("inset")).toBe("0")
     expect(last("min-height")).toBe("0")
     expect(last("overflow")).toBe("hidden")
+    // A fixed box with top, bottom and a height ignores bottom, so a
+    // leftover height: 100dvh would still size the body past the screen.
+    expect(last("height")).toBe("auto")
   })
 
   it("keeps the tabs as the last thing in the body's flex column, after main", () => {
