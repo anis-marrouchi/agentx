@@ -19,8 +19,11 @@ GITLAB_TOKEN_ACME=glpat-...     # project-scoped to ACME's group
 GITLAB_TOKEN_GLOBEX=glpat-...   # project-scoped to Globex's group
 EOF
 mkdir -p workspaces/{acme,globex,pm}
+# edit agentx.json: replace @your_username with your Telegram username
 agentx daemon start
 ```
+
+Before `agentx daemon start`, put your own Telegram username in `agentx.json`: replace `@your_username` under `channels.telegram.policy.allowFrom` with yours (for example `@jane_doe`). The bot ignores every message from anyone not on that list ([Connect Telegram](../../docs/connect-telegram.md#4-allow-people-to-talk-to-the-bot)).
 
 ## Grow it
 

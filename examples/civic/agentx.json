@@ -40,7 +40,8 @@
       },
       "policy": {
         "dm": "pair",
-        "group": "mention-required"
+        "group": "mention-required",
+        "allowFrom": ["@your_username"]
       }
     }
   },
