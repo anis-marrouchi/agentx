@@ -2,6 +2,7 @@ import { Command } from "commander"
 import chalk from "chalk"
 import { execFileSync } from "child_process"
 import { existsSync } from "fs"
+import { hostname, networkInterfaces } from "os"
 import { TokenStore } from "@/daemon/token-store"
 import { CODE_TTL_MS, PairCodeStore, formatCode } from "@/daemon/pair-codes"
 import { loadDaemonConfig } from "@/daemon/config"
@@ -148,22 +149,69 @@ const APP_MOUNTS = new Set(["/app", "/api/app", "/member", "/api/member"])
  *  so the mount can't hand out another dashboard page under this name. */
 const ASSET_LINKS = "/.well-known/assetlinks.json"
 
+/** Names and addresses that reach this machine: loopback, the wildcard
+ *  addresses, the host name and every interface address (LAN, tailnet).
+ *  Loopback ranges and `*.localhost` are matched separately. */
+export function localAddresses(): Set<string> {
+  const local = new Set(["localhost", "0.0.0.0", "::", "::1"])
+  try {
+    const name = hostname().toLowerCase().replace(/\.$/, "")
+    if (name) local.add(name).add(name.replace(/\.local$/, "")).add(`${name.replace(/\.local$/, "")}.local`)
+  } catch {}
+  try {
+    for (const list of Object.values(networkInterfaces())) {
+      for (const a of list ?? []) local.add(a.address.toLowerCase().replace(/%.*$/, ""))
+    }
+  } catch {}
+  return local
+}
+
+const DEFAULT_PORTS: Record<string, number> = { http: 80, https: 443, "https+insecure": 443 }
+
+/** Host, port and path of a serve proxy target. Accepts every form tailscale
+ *  takes: a bare port, host:port, or any scheme (http, https, https+insecure). */
+function proxyTarget(proxy: string): { host: string; port: number; path: string } | null {
+  const bare = proxy.match(/^(\d+)(\/[^?#]*)?$/)
+  if (bare) return { host: "localhost", port: Number(bare[1]), path: bare[2] ?? "" }
+  const m = proxy.match(/^(?:([a-z][a-z0-9+.-]*):\/\/)?(\[[^\]]*\]|[^/:?#]*)(?::(\d+))?([^?#]*)/i)
+  if (!m) return null
+  const port = m[3] ? Number(m[3]) : DEFAULT_PORTS[(m[1] ?? "http").toLowerCase()]
+  if (!port) return null
+  const host = m[2].replace(/^\[|\]$/g, "").replace(/%.*$/, "").replace(/\.$/, "").toLowerCase()
+  return { host, port, path: m[4] }
+}
+
+function isLocalHost(host: string, local: Set<string>): boolean {
+  const v4 = host.replace(/^::ffff:/, "")
+  return local.has(host) || local.has(v4) || host === "" || host.endsWith(".localhost")
+    || /^127\.\d+\.\d+\.\d+$/.test(v4) || v4 === "0.0.0.0"
+}
+
 /**
  * Lists `tailscale serve` mounts (host + path) that proxy to the dashboard
  * port outside the app and member paths. `tailscale serve 4202` mounts "/", which
  * publishes every dashboard page and API to the tailnet, and serve proxies
  * from 127.0.0.1, so the dashboard's loopback trust lets those requests in.
+ * The dashboard listens on every interface, so a target on any of this
+ * machine's addresses counts, whatever the scheme (#707).
  */
-export function exposedDashboardMounts(status: any, port: number): string[] {
+export function exposedDashboardMounts(status: any, port: number, local: Set<string> = localAddresses()): string[] {
   const configs = [status, ...Object.values(status?.Foreground ?? {})]
+  // The served host names (MagicDNS) are this machine too.
+  const self = new Set(local)
+  for (const cfg of configs) {
+    for (const host of Object.keys(cfg?.Web ?? {})) self.add(host.replace(/:\d+$/, "").replace(/\.$/, "").toLowerCase())
+  }
   const found: string[] = []
   for (const cfg of configs) {
     for (const [host, web] of Object.entries<any>(cfg?.Web ?? {})) {
       for (const [mount, h] of Object.entries<any>(web?.Handlers ?? {})) {
-        const target = String(h?.Proxy ?? "").match(/^(?:https?:\/\/)?(?:127\.0\.0\.1|localhost|\[::1\]):(\d+)([^?#]*)/)
+        if (h?.Proxy == null) continue
+        const target = proxyTarget(String(h.Proxy).trim())
+        if (!target || target.port !== port || !isLocalHost(target.host, self)) continue
         const clean = mount.replace(/\/+$/, "") || "/"
-        const assetLinks = clean === ASSET_LINKS && target?.[2] === ASSET_LINKS
-        if (target && Number(target[1]) === port && !APP_MOUNTS.has(clean) && !assetLinks) found.push(`${host}${mount}`)
+        const assetLinks = clean === ASSET_LINKS && target.path === ASSET_LINKS
+        if (!APP_MOUNTS.has(clean) && !assetLinks) found.push(`${host}${mount}`)
       }
     }
   }
