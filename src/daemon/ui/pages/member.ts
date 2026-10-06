@@ -46,7 +46,7 @@ export function renderMemberManifest(): string {
     start_url: "/member",
     scope: "/member",
     display: "standalone",
-    background_color: "#2979FF",
+    background_color: "#FFFFFF",
     theme_color: "#2979FF",
     icons: [
       { src: "/member/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },

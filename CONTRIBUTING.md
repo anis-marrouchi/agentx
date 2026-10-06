@@ -26,6 +26,7 @@ The [maintainer runbook](.github/maintainer/TRIAGE.md) defines priorities and th
 src/
 ├── agent/ · agents/      # registry, runtime, landscape, heartbeat, bootstrap
 ├── a2a/                  # mesh client + server
+├── brand/                # the AX symbol: one source for every app icon
 ├── business/             # day-cycle, work-pool, KPI, reporter (optional layer)
 ├── channels/             # Telegram, WhatsApp, GitLab, GitHub, webhooks, router
 ├── commands/             # Commander CLI subcommands
@@ -73,6 +74,28 @@ pnpm docs:dev       # http://localhost:5173
 pnpm docs:build     # static site → docs/.vitepress/dist/
 pnpm docs:preview
 ```
+
+## App icons
+
+Every AgentX icon is the AX symbol from the README. Its one source is `src/brand/ax-symbol.ts`: the mark as four straight-edged shapes, traced from `docs/public/agentx-symbol.png`. Nothing else is drawn by hand.
+
+- **Drawn when the dashboard runs:** the phone app and member page home-screen icons (`/app/icon-192.png`, `/app/icon-512.png`, `/member/icon-*.png`), and the dashboard's tab icon and touch icon (`/favicon.svg`, `/apple-touch-icon.png`).
+- **Written by `pnpm icons`:** the Android launcher icons (`apps/android`, `apps/phone/android`), the iPhone icon set (`apps/phone/ios`), the Mac helper's `AppIcon.png`, the Raycast icon, and `docs/public/agentx-symbol.svg` and `favicon.svg`. The Mac voice app has no Dock icon, so it has none.
+
+To change an icon:
+
+1. Edit `src/brand/ax-symbol.ts` (the shapes, colours or sizes) or `src/brand/icon-files.ts` (which files are written).
+2. In a terminal, run `pnpm icons`. It rewrites only the files that changed.
+3. Commit the source and the rewritten files together.
+
+### Check it worked
+
+In a terminal, run `pnpm icons --check`. It prints `All icons up to date.` The test `test/brand-icons.test.ts` passes.
+
+### If something is wrong
+
+- **`out of date: …` in the check or the test.** Someone edited an icon file by hand or changed the source without running `pnpm icons`. Run `pnpm icons` and commit the result.
+- **The phone still shows the old icon.** Phones cache home-screen icons. Remove the app from the home screen and add it again.
 
 ## Commit style
 

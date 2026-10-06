@@ -111,6 +111,15 @@ describe("public shell assets", () => {
     expect((await fetch(`${base}/app/pair`)).status).toBe(200)
   })
 
+  it("serves the dashboard favicon and touch icon without a token", async () => {
+    const svg = await fetch(`${base}/favicon.svg`)
+    expect(svg.headers.get("content-type")).toBe("image/svg+xml")
+    expect(await svg.text()).toMatch(/^<svg [^>]*viewBox="0 0 100 100"/)
+    const touch = await fetch(`${base}/apple-touch-icon.png`)
+    expect(touch.headers.get("content-type")).toBe("image/png")
+    expect(Buffer.from(await touch.arrayBuffer()).readUInt32BE(16)).toBe(180)
+  })
+
   it("draws a decodable icon of the right size", () => {
     const png = appIconPng(192)
     expect(png.subarray(1, 4).toString()).toBe("PNG")

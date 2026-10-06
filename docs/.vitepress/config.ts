@@ -116,7 +116,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   head: [
-    ["link", { rel: "icon", href: "/agentx-symbol.png", type: "image/png" }],
+    ["link", { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" }],
     ["meta", { property: "og:title", content: "AgentX — an AI teammate for your team" }],
     ["meta", { property: "og:description", content: "Set up agents, connect your tools, and see what needs you." }],
     ["meta", { property: "og:image", content: "/agentx-symbol.png" }],

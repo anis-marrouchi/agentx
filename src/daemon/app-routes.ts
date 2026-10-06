@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import { readFileSync } from "fs"
 import { createRequire } from "module"
 import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
-import { appIconPng } from "./app-icon"
+import { appIconPng, FAVICON_SVG } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
 import { handleAppPush, type AppPushDeps } from "./app-push"
 import { handleAppAnnounce, type AppAnnounceDeps } from "./app-announce"
@@ -85,6 +85,9 @@ export async function handleAppRequest(
     const links = ctx.assetLinks?.() ?? null
     return links ? send(res, 200, "application/json", JSON.stringify(links), "public, max-age=300") : sendJson(res, 404, { error: "not found" })
   }
+  // The AX symbol for every dashboard tab and bookmark. Public: no data.
+  if (method === "GET" && path === "/favicon.svg") return send(res, 200, "image/svg+xml", FAVICON_SVG, "public, max-age=86400")
+  if (method === "GET" && path === "/apple-touch-icon.png") return send(res, 200, "image/png", appIconPng(180), "public, max-age=86400")
   if (path !== "/app" && !path.startsWith("/app/") && !path.startsWith("/api/app/")) return false
   const tokens = ctx.tokens ?? new TokenStore()
 

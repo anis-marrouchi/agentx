@@ -70,7 +70,9 @@ export interface TopbarOpts {
 // The theme bootstrap runs before first paint to avoid a flash. A stored
 // "crt" from before that theme was removed falls back to dark rather than
 // leaving data-theme set to a value no stylesheet defines.
-export const TOPBAR_HEAD = `<link rel="preconnect" href="https://fonts.googleapis.com">
+export const TOPBAR_HEAD = `<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <script>(function(){try{var t=localStorage.getItem('ax-theme');if(t!=='light'&&t!=='dark'){t='dark';localStorage.setItem('ax-theme',t)}document.documentElement.setAttribute('data-theme',t)}catch(e){document.documentElement.setAttribute('data-theme','dark')}})();</script>`

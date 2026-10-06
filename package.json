@@ -57,6 +57,7 @@
     "build:web": "tsup --config tsup.web.config.ts",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
+    "icons": "tsx scripts/brand-icons.ts",
     "bench:context": "tsx bench/context-size.ts",
     "bench:profiles": "tsx bench/context-profiles.ts",
     "bench:compare": "tsx bench/compare-claude-code.ts",
