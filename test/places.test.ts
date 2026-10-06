@@ -284,6 +284,8 @@ describe("location error text (#708)", () => {
     expect(locationErrorText(1, true, "prompt")).toContain("Force stop Chrome")
     expect(locationErrorText(1, true, "granted")).toContain("Force stop Chrome")
     expect(locationErrorText(1, true, "")).toContain("Force stop Chrome")
+    // "Don't allow" can leave the state at prompt, so the text covers it too.
+    expect(locationErrorText(1, true, "prompt")).toContain("If you tapped Don’t allow")
   })
   it("a real denial, or a refusal in a browser, says the location is blocked", () => {
     expect(locationErrorText(1, true, "denied")).toContain("Location is blocked")
