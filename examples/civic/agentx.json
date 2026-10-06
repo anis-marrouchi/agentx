@@ -28,7 +28,8 @@
     "whatsapp": {
       "enabled": true,
       "sessionDir": ".agentx/whatsapp-sessions",
-      "agentBinding": "intake"
+      "defaultAgent": "intake",
+      "allowFrom": ["*"]
     },
     "telegram": {
       "enabled": true,
