@@ -25,7 +25,6 @@ export interface ApprovalSettingsPatch {
   maxExpiryDays?: number
   laterHours?: number
   notifyAgent?: boolean
-  allowApproveOnExpiry?: boolean
   /** The mesh peer that takes this node's cards; null clears it (cards stay here). */
   forwardTo?: string | null
   digestEnabled?: boolean
@@ -66,7 +65,6 @@ export async function updateApprovalSettings(
     if (patch.maxExpiryDays !== undefined) a.maxExpiryDays = patch.maxExpiryDays
     if (patch.laterHours !== undefined) a.laterHours = patch.laterHours
     if (patch.notifyAgent !== undefined) a.notifyAgent = patch.notifyAgent
-    if (patch.allowApproveOnExpiry !== undefined) a.allowApproveOnExpiry = patch.allowApproveOnExpiry
     if (patch.forwardTo === null) delete a.forwardTo
     else if (patch.forwardTo !== undefined) {
       const peers: Array<{ name?: string }> = Array.isArray(cfg.mesh?.peers) ? cfg.mesh.peers : []

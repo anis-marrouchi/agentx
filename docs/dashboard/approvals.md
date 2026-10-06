@@ -25,13 +25,13 @@ An agent that needs you raises a card instead of asking in chat. Every card has:
 | Question | The yes/no question |
 | Recommends | What the agent advises, and why, in one line |
 | Expires | When the card decides itself if nobody answers. Every card has one |
-| Then | What happens at that point: `discard`, `keep`, `pause` or `approve`. The agent picks it. `approve` means an unanswered card says yes by itself; turn it off with `allowApproveOnExpiry` (see [Settings](#settings)) |
+| Then | What the agent does at that point: `discard`, `keep` or `pause`. The agent picks it. A card never says yes by itself: `approve` is not a choice, and an older card that asked for it gets `keep` |
 | Source | A link to the draft, merge request or issue |
 | From | The agent that asked |
 
 When you answer, or when a card expires, the agent that asked gets a message with the result and can carry on.
 
-Only you can answer. Agents can raise cards and read the list, but nothing they can reach approves anything. The one way a card says yes without you is when it expires with `approve`. To forbid that, run `agentx approvals settings --expiry-approve off`.
+Only you can answer. Agents can raise cards and read the list, but nothing they can reach approves anything, and a card that expires never counts as a yes.
 
 ## Answer from the dashboard
 
@@ -183,11 +183,9 @@ Once a day AgentX sends you one message: how many decisions are waiting, and the
 
 To change the time, or where it goes:
 
-1. **Browser:** on the Approvals page, open **Settings: expiry, yes on expiry, later, daily digest** at the bottom.
+1. **Browser:** on the Approvals page, open **Settings: expiry, later, daily digest** at the bottom.
 2. **Browser:** change **Digest time**, or type a destination such as `telegram:123456` in **Digest goes to**.
 3. **Browser:** click **Save settings**.
-
-![The Approvals settings, opened at the bottom of the page](/screenshots/approvals/settings.png)
 
 Or in the terminal:
 
@@ -207,7 +205,6 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
   "maxExpiryDays": 30,
   "laterHours": 24,
   "notifyAgent": true,
-  "allowApproveOnExpiry": true,
   "digest": { "enabled": true, "time": "09:00" },
   "popup": { "enabled": false, "style": "card", "theme": "system", "speak": true, "sound": "chime", "volume": 0.4, "timeoutSeconds": 600 },
   "checkin": {
@@ -223,7 +220,6 @@ These live under `approvals` in `agentx.json`. Every value shown is the default:
 | `maxExpiryDays` | The longest any card may wait | `--max-expiry-days` |
 | `laterHours` | How long **Later** hides an item | `--later-hours` |
 | `notifyAgent` | Tell the agent the result | `--notify-agent on\|off` |
-| `allowApproveOnExpiry` | Let a card say yes by itself when nobody answers (`if_silent: approve`). `false`: an agent can't raise such a card, and one raised before gets `keep` when it expires. Also **A card may say yes by itself when nobody answers** in the dashboard's settings | `--expiry-approve on\|off` |
 | `forwardTo` | The machine (a `mesh.peers` name) whose inbox and popup take this machine's cards. Unset: they stay here. See [Agents on another machine](#agents-on-another-machine) | `--forward-to <peer>`, `--forward-to none` |
 | `digest.enabled` | Send the daily message | `--digest on\|off` |
 | `digest.time` | When, as 24-hour `HH:MM` | `--digest-time` |
@@ -318,7 +314,7 @@ For check-ins (Mac):
 - **"Couldn't read …" above the list:** one of the sources couldn't be read, so the list may be incomplete. The message says which one; the other kinds still work.
 - **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it.
 - **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.
-- **An agent gets `if_silent "approve" is turned off on this machine`:** that is expected when `allowApproveOnExpiry` is off. The agent should raise the card again with `keep`, `discard` or `pause`.
+- **A card says `then: keep` although the agent asked for `approve`:** that is expected. A card never approves itself; answer it yourself if the work should go ahead.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
 - **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>`, or **Show on Mac** on the Approvals tab, to show it again. The daemon log has a line starting `[approvals] popup`.

@@ -38,18 +38,9 @@ To keep an agent from acting on something, don't rely on its instructions: leave
 
 ### When nobody answers a card
 
-Every decision card expires, after 3 days unless the agent asked for another time. The **agent** chooses, when it raises the card, what happens then: `discard`, `keep`, `pause` or `approve`. With `approve`, an unanswered card says yes by itself.
+Every decision card expires, after 3 days unless the agent asked for another time. When it expires, the agent is told that nobody answered and what it said it would do then: `discard` (drop it), `keep` (leave things as they are) or `pause` (stop that piece of work). The agent picks one of the three when it raises the card.
 
-To stop that on this machine:
-
-1. **Terminal:** turn off yes on expiry:
-   ```sh
-   agentx approvals settings --expiry-approve off
-   ```
-   Or **Browser:** on the Approvals page, open **Settings** at the bottom, clear **A card may say yes by itself when nobody answers**, and click **Save settings**.
-
-   ![The Approvals settings with the box "A card may say yes by itself when nobody answers"](/screenshots/approvals/settings.png)
-2. From then on, an agent that raises a card with `approve` is refused and told to pick `keep`, `discard` or `pause`. A card raised earlier with `approve` gets `keep` when it expires instead.
+**A card never says yes by itself.** Only you can approve. A card an agent raised asking for `approve` on expiry, or one saved by an older version of AgentX, is treated as `keep`.
 
 ## Who gets which way in
 
@@ -93,13 +84,12 @@ For a bot token or API key that leaked, create a new one with the service that i
 
 1. **Browser:** **Settings › Tokens** lists each token by name. A revoked token no longer has a **Revoke** button.
 2. **Terminal:** `grep -n "token" agentx.json` shows only references such as `${GITLAB_TOKEN}`, never a real secret.
-3. **Terminal:** `agentx approvals settings` shows **Yes on expiry off** if you turned it off.
-4. **Terminal:** `agentx mesh list` and `agentx app devices` name only machines and phones of your own, and `agentx people devices` names only people you invited on purpose.
+3. **Terminal:** `agentx mesh list` and `agentx app devices` name only machines and phones of your own, and `agentx people devices` names only people you invited on purpose.
 
 ## If something is wrong
 
 - **An agent did something you expected it to ask about:** only the actions in [What always waits for you](#what-always-waits-for-you) wait for you. Check the agent's **Tool permissions** and what it has access to.
-- **An agent says its card was refused because of `approve`:** that is expected when yes on expiry is off. The agent should raise it again with `keep`, `discard` or `pause`.
+- **A card shows `then: keep` although the agent asked for `approve`:** that is expected. A card never approves itself; answer it yourself if the work should go ahead.
 - **A tool is refused after you revoked a token:** that is expected. Give it the new token.
 - **A tool is refused with a new token:** the token may lack the scope it needs, or have expired. Create a new token with that scope and revoke the old one.
 - **A real secret is in `agentx.json`:** move it to `.env`, replace it in `agentx.json` with `${NAME}`, and treat the old value as leaked.

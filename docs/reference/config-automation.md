@@ -169,7 +169,6 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.maxExpiryDays` | number (up to 365) | `30` | The longest any card may wait. |
 | `approvals.laterHours` | number (up to 720) | `24` | Hours **Later** hides an item. |
 | `approvals.notifyAgent` | boolean | `true` | Tells the agent that raised a card when it is decided or expires. |
-| `approvals.allowApproveOnExpiry` | boolean | `true` | Lets a card say yes by itself when nobody answers (`if_silent: "approve"`). `false`: agents can't raise such a card, and one raised before gets `keep` on expiry. See [When nobody answers a card](/jobs/keep-it-safe#when-nobody-answers-a-card). |
 | `approvals.forwardTo` | string | — | The name of a machine in `mesh.peers` whose inbox and popup take the cards agents on this machine raise. The answer comes back to the agent here. Unset: cards stay on this machine. See [Agents on another machine](/dashboard/approvals#agents-on-another-machine). |
 | `approvals.digest` | object | `{}` | One reminder a day of what is waiting. |
 | `approvals.digest.enabled` | boolean | `true` | Sends the daily reminder. |

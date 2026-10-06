@@ -530,10 +530,10 @@ describe("waiting on the owner", () => {
     })
   })
 
-  it("stays in progress when the card's default on expiry is approve", () => {
+  it("needs attention on expiry even for an old card that said approve: no card approves itself (#741)", () => {
     start("t1"); tracker.cardRaised(card({ if_silent: "approve" }), turn); end("t1")
     tracker.cardResolved(card({ status: "expired", outcome: "approve", if_silent: "approve" }))
-    expect(store.get("req-t1")?.state).toBe("in_progress")
+    expect(store.get("req-t1")?.state).toBe("needs_attention")
   })
 
   it("goes back to in progress once work continues, and the question is cleared", () => {

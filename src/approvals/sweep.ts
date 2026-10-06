@@ -21,9 +21,6 @@ export interface ApprovalSettings {
   maxExpiryDays: number
   laterHours: number
   notifyAgent: boolean
-  /** false: a card that expires never applies "approve" (#741). Optional
-   *  so older callers keep compiling; the config always sets it. */
-  allowApproveOnExpiry?: boolean
   /** The mesh peer this node's cards go to (forward.ts, #668). Unset: they stay here. */
   forwardTo?: string
   digest: {
@@ -129,10 +126,9 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
   const result: SweepResult = { expired: 0, notified: 0, digest: "not-due" }
 
   try {
-    for (const card of expireCards(ctx.root, now, { allowApprove: settings.allowApproveOnExpiry })) {
+    for (const card of expireCards(ctx.root, now)) {
       result.expired++
-      const swapped = card.outcome !== card.if_silent ? ` (asked for ${card.if_silent}, which approvals.allowApproveOnExpiry turns off)` : ""
-      log(`[approvals] ${card.id} from ${card.raised_by} expired; default applied: ${card.outcome}${swapped}`)
+      log(`[approvals] ${card.id} from ${card.raised_by} expired; default applied: ${card.if_silent}`)
     }
   } catch (e: any) {
     log(`[approvals] expiry failed: ${e?.message ?? e}`)

@@ -17,8 +17,15 @@ import { originLines, type CardOrigin } from "./origin"
 // Field names match the API (`if_silent`, `raised_by`), so a stored card is
 // exactly what `POST /approvals` accepted.
 
-export type IfSilent = "discard" | "keep" | "pause" | "approve"
-export const IF_SILENT_VALUES: readonly IfSilent[] = ["discard", "keep", "pause", "approve"]
+// No card approves itself (#741): only the operator says yes. "approve",
+// which older agents and stored cards may still carry, is read as "keep".
+export type IfSilent = "discard" | "keep" | "pause"
+export const IF_SILENT_VALUES: readonly IfSilent[] = ["discard", "keep", "pause"]
+
+function asIfSilent(v: string): IfSilent | null {
+  if (v === "approve") return "keep"
+  return IF_SILENT_VALUES.includes(v as IfSilent) ? (v as IfSilent) : null
+}
 
 export type CardStatus = "pending" | "decided" | "expired"
 export type Verdict = "yes" | "no"
@@ -77,9 +84,6 @@ export const CARD_LIMITS = {
 export interface CardSettings {
   defaultExpiryDays: number
   maxExpiryDays: number
-  /** false: no card may say "approve" for when nobody answers, and a card
-   *  that already does gets "keep" on expiry instead (#741). Unset: allowed. */
-  allowApproveOnExpiry?: boolean
 }
 
 export const DEFAULT_CARD_SETTINGS: CardSettings = { defaultExpiryDays: 3, maxExpiryDays: 30 }
@@ -116,7 +120,8 @@ export function saveCard(root: string, card: DecisionCard): void {
 export function readCard(root: string, id: string): DecisionCard | null {
   if (!isValidCardId(id)) return null
   try {
-    return JSON.parse(readFileSync(fileFor(root, id), "utf-8")) as DecisionCard
+    const card = JSON.parse(readFileSync(fileFor(root, id), "utf-8")) as DecisionCard
+    return { ...card, if_silent: asIfSilent(card.if_silent) ?? "keep" }
   } catch {
     return null
   }
@@ -204,12 +209,9 @@ export function buildCard(
   if (title.length > CARD_LIMITS.title) return { ok: false, error: `title is longer than ${CARD_LIMITS.title} characters` }
   if (ask.length > CARD_LIMITS.ask) return { ok: false, error: `ask is longer than ${CARD_LIMITS.ask} characters` }
   if (recommend.length > CARD_LIMITS.recommend) return { ok: false, error: `recommend is longer than ${CARD_LIMITS.recommend} characters` }
-  const ifSilent = oneLine(input.if_silent).toLowerCase()
-  if (!IF_SILENT_VALUES.includes(ifSilent as IfSilent)) {
+  const ifSilent = asIfSilent(oneLine(input.if_silent).toLowerCase())
+  if (!ifSilent) {
     return { ok: false, error: `if_silent must be one of ${IF_SILENT_VALUES.join(", ")}` }
-  }
-  if (ifSilent === "approve" && settings.allowApproveOnExpiry === false) {
-    return { ok: false, error: 'if_silent "approve" is turned off on this machine (approvals.allowApproveOnExpiry): a card may not approve itself. Use keep, discard or pause' }
   }
   const expiry = resolveExpiry(input.expires, now, settings)
   if (!expiry.ok) return expiry
@@ -232,7 +234,7 @@ export function buildCard(
       title,
       ask,
       recommend,
-      if_silent: ifSilent as IfSilent,
+      if_silent: ifSilent,
       expires: expiry.at,
       ...(source ? { source } : {}),
       raised_by: raisedBy,
@@ -290,18 +292,15 @@ export function decideCard(
   return { ok: true, card: decided }
 }
 
-/** Apply `if_silent` to every pending card past its expiry. With
- *  `allowApprove: false`, a card raised as "approve" before the setting was
- *  turned off gets "keep" instead: nothing approves itself. */
-export function expireCards(root: string, now: number = Date.now(), opts: { allowApprove?: boolean } = {}): DecisionCard[] {
+/** Apply `if_silent` to every pending card past its expiry. */
+export function expireCards(root: string, now: number = Date.now()): DecisionCard[] {
   const out: DecisionCard[] = []
   for (const card of listCards(root, "pending")) {
     if (Date.parse(card.expires) > now) continue
-    const outcome: IfSilent = card.if_silent === "approve" && opts.allowApprove === false ? "keep" : card.if_silent
     const expired: DecisionCard = {
       ...card,
       status: "expired",
-      outcome,
+      outcome: card.if_silent,
       decided_by: "expiry",
       decided_at: new Date(now).toISOString(),
     }

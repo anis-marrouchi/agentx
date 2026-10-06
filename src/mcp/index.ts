@@ -722,7 +722,7 @@ const TOOLS = [
         title: { type: "string", description: "create: what it is, in one line (max 120 characters)." },
         ask: { type: "string", description: "create: the yes/no question (max 300 characters)." },
         recommend: { type: "string", description: "create: your advice and why, in one line (max 300 characters). With choices, start with the exact label you advise: the Mac card marks it and opens with it picked." },
-        if_silent: { type: "string", enum: ["discard", "keep", "pause", "approve"], description: "create: what applies if nobody answers before it expires. 'approve' is refused when the operator turned it off (approvals.allowApproveOnExpiry)." },
+        if_silent: { type: "string", enum: ["discard", "keep", "pause"], description: "create: what applies if nobody answers before it expires. A card never approves itself: only the operator says yes." },
         expires: { type: "string", description: "create: when the default applies. ISO date/time, or relative like '12h' or '3d'. Default: the node's setting (3 days)." },
         source: { type: "string", description: "create: link to the draft, PR or issue." },
         choices: { type: "array", items: { type: "string" }, description: "create, optional: 1-5 ready-made answers the operator picks from (e.g. three free meeting slots). A yes then carries the pick." },

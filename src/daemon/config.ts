@@ -1155,10 +1155,6 @@ export const approvalsConfigSchema = z.object({
   laterHours: z.number().positive().max(24 * 30).default(24),
   /** Tell the agent that raised a card when it is decided or expires. */
   notifyAgent: z.boolean().default(true),
-  /** false: no card may approve itself when nobody answers. Agents can't
-   *  raise one with `if_silent: "approve"`, and one raised before gets
-   *  "keep" on expiry (#741). */
-  allowApproveOnExpiry: z.boolean().default(true),
   /** The mesh peer (`mesh.peers[].name`) whose inbox and popup take the
    *  cards agents on this node raise (#668). The result comes back here
    *  and reaches the agent. Unset: cards stay on this node. */

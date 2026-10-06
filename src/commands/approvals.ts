@@ -154,7 +154,6 @@ approvals
   .option("--max-expiry-days <n>", "longest a card may wait")
   .option("--later-hours <n>", "how long `later` hides an item")
   .option("--notify-agent <on|off>", "tell the agent that raised a card its result")
-  .option("--expiry-approve <on|off>", "let a card say yes by itself when nobody answers (if_silent approve)")
   .option("--forward-to <peer>", "send this machine's cards to that mesh peer's inbox and popup; \"none\" to keep them here")
   .option("--digest <on|off>", "the daily message about what is waiting")
   .option("--digest-time <HH:MM>", "when the digest goes out, 24-hour local time")
@@ -191,7 +190,6 @@ approvals
       patch.maxExpiryDays = num("--max-expiry-days", opts.maxExpiryDays)
       patch.laterHours = num("--later-hours", opts.laterHours)
       patch.notifyAgent = onOff("--notify-agent", opts.notifyAgent)
-      patch.allowApproveOnExpiry = onOff("--expiry-approve", opts.expiryApprove)
       if (opts.forwardTo !== undefined) patch.forwardTo = opts.forwardTo === "none" ? null : opts.forwardTo
       patch.digestEnabled = onOff("--digest", opts.digest)
       patch.popupEnabled = onOff("--popup", opts.popup)
@@ -229,7 +227,6 @@ approvals
     const s = readApprovalSettings()
     const dest = s.digest.destination
     console.log(`  Cards expire after      ${s.defaultExpiryDays} day(s) unless they say (at most ${s.maxExpiryDays})`)
-    console.log(`  Yes on expiry           ${s.allowApproveOnExpiry === false ? "off: a card never approves itself" : "on: a card may say approve for when nobody answers"}`)
     console.log(`  "Later" hides an item   ${s.laterHours} hour(s)`)
     console.log(`  Tell the agent          ${s.notifyAgent ? "on" : "off"}`)
     console.log(`  Cards go to             ${s.forwardTo ? `${s.forwardTo} (mesh peer)` : "this machine"}`)

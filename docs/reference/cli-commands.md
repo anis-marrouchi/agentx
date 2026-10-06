@@ -442,7 +442,7 @@ Raise a decision card yourself, for example to test the inbox (agents use the ag
 | `--title <text>` | required | What it is, in one line. |
 | `--ask <text>` | required | The yes/no question. |
 | `--recommend <text>` | required | The advice and why, in one line. |
-| `--if-silent <value>` | required | What applies if nobody answers: discard, keep, pause, approve. |
+| `--if-silent <value>` | required | What applies if nobody answers: discard, keep, pause. A card never approves itself. |
 | `--expires <when>` | — | ISO date or time, or like 12h / 3d (default: approvals.defaultExpiryDays). |
 | `--source <link>` | — | Link to the draft, PR or issue. |
 
