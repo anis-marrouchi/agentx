@@ -84,12 +84,15 @@ describe("agentx_schedule tool", () => {
       agent: "alpha",
       prompt: "Check X and ping me",
       notify: { channel: "telegram", chatId: "2000" },
+      deliverResult: true,
       enabled: false,
       createdBy: "alpha",
       approval: { action: "create", requestedBy: "alpha", requestedAt: FIXED_NOW.toISOString() },
     })
     expect(job).toEqual(expected)
     expect(job.onError).toContain("notify")
+    // Asked for from a chat, so its results come back to that chat.
+    expect(job.deliverResult).toBe(true)
     // The written job passes the daemon schema and keeps the new fields.
     const parsed = daemonConfigSchema.parse(JSON.parse(readFileSync(configPath, "utf-8")))
     expect(parsed.crons["weekly-x"].createdBy).toBe("alpha")
@@ -111,6 +114,7 @@ describe("agentx_schedule tool", () => {
       deps(),
     )
     expect(readCrons()["a1"].notify).toBeUndefined()
+    expect(readCrons()["a1"].deliverResult).toBeUndefined()
     await runScheduleTool(
       { action: "create", when: "daily at 9", prompt: "p", id: "a2", notify: "gitlab:org/repo:issue:4" },
       alpha,

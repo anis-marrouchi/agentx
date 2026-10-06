@@ -461,27 +461,7 @@ export class AgentXDaemon {
 
     // Initialize cron scheduler with failure notifications
     this.cron = new CronScheduler(this.config, this.registry, this.hooks, this.log)
-    this.cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
-      const msg = `Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`
-      this.log(`[CRON ALERT] ${msg}`)
-      this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
-
-      // Send to the cron job's configured notify destination (if set)
-      const cronDef = this.config.crons[jobId]
-      if (cronDef?.notify) {
-        try {
-          await this.router.sendOutbound({
-            channel: cronDef.notify.channel,
-            chatId: cronDef.notify.chatId,
-            text: `🔴 **Cron "${jobId}" failed** (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
-            agentId: agent,
-            accountId: cronDef.notify.accountId,
-          })
-        } catch (e: any) {
-          this.log(`[CRON ALERT] notify send failed: ${e.message}`)
-        }
-      }
-    })
+    this.wireCronCallbacks(this.cron, this.config)
 
     // Initialize mesh (if enabled)
     if (this.config.mesh.enabled) {
@@ -1467,6 +1447,44 @@ export class AgentXDaemon {
   }
 
   /**
+   * Point a scheduler's failure alerts and (for `deliverResult` jobs)
+   * successful answers at each job's `notify` destination. Shared by start
+   * and hot reload so the two can't drift.
+   */
+  private wireCronCallbacks(cron: CronScheduler, config: DaemonConfig): void {
+    cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
+      this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`)
+      this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
+
+      const cronDef = config.crons[jobId]
+      if (cronDef?.notify) {
+        try {
+          await this.router.sendOutbound({
+            channel: cronDef.notify.channel,
+            chatId: cronDef.notify.chatId,
+            text: `🔴 **Cron "${jobId}" failed** (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
+            agentId: agent,
+            accountId: cronDef.notify.accountId,
+          })
+        } catch (e: any) {
+          this.log(`[CRON ALERT] notify send failed: ${e.message}`)
+        }
+      }
+    })
+    cron.setDeliverCallback(async (jobId, agent, text) => {
+      const dest = config.crons[jobId]?.notify
+      if (!dest) return
+      await this.router.sendOutbound({
+        channel: dest.channel,
+        chatId: dest.chatId,
+        text,
+        agentId: agent,
+        accountId: dest.accountId,
+      })
+    })
+  }
+
+  /**
    * Re-read agentx.json, diff against the in-memory config, apply what we
    * can hot-reload (crons, notify-destination, business metadata), and warn
    * about sections that require a daemon restart (channels, agents, mesh,
@@ -1500,24 +1518,7 @@ export class AgentXDaemon {
       try {
         await this.cron.stop()
         this.cron = new CronScheduler(next, this.registry, this.hooks, this.log)
-        this.cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
-          this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x) — ${error.slice(0, 200)}`)
-          this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
-          const cronDef = next.crons[jobId]
-          if (cronDef?.notify) {
-            try {
-              await this.router.sendOutbound({
-                channel: cronDef.notify.channel,
-                chatId: cronDef.notify.chatId,
-                text: `Cron "${jobId}" failed (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
-                agentId: agent,
-                accountId: cronDef.notify.accountId,
-              })
-            } catch (e: any) {
-              this.log(`[CRON ALERT] notify send failed: ${e.message}`)
-            }
-          }
-        })
+        this.wireCronCallbacks(this.cron, next)
         await this.cron.start()
         applied.push("crons")
       } catch (e: any) {

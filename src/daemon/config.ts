@@ -752,6 +752,11 @@ const cronJobSchema = z.object({
     chatId: z.string(),
     accountId: z.string().optional(),
   }).optional(),
+  /** Send the answer of every successful run to `notify`, not only
+   *  failure alerts. Off by default so a `notify` set up for alerts never
+   *  starts receiving reports on upgrade. Schedules an agent creates from a
+   *  chat turn it on, so their results come back to that chat. */
+  deliverResult: z.boolean().optional(),
   /** Secret that lets an external system fire this job now via
    *  `POST /routines/<id>/fire`. Reference an env var (`"${MY_TOKEN}"`);
    *  a job without one cannot be fired. See src/daemon/routine-fire.ts. */

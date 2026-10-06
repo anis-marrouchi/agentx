@@ -69,6 +69,9 @@ export interface ScheduleJobInput {
   timeout?: number
   model?: string
   notify?: NotifyTarget
+  /** Also send each successful run's answer to `notify`. Ignored without
+   *  a notify target. */
+  deliverResult?: boolean
   onError?: OnErrorValue[]
   enabled?: boolean
   createdBy?: string
@@ -92,6 +95,7 @@ export function buildScheduleJob(input: ScheduleJobInput): Record<string, unknow
   }
   if (input.model) job.model = input.model
   if (input.notify) job.notify = input.notify
+  if (input.notify && input.deliverResult) job.deliverResult = true
   if (input.createdBy) job.createdBy = input.createdBy
   if (input.approval) job.approval = input.approval
   return job

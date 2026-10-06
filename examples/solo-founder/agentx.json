@@ -46,18 +46,22 @@
       "schedule": "0 9 * * 1",
       "timezone": "Africa/Tunis",
       "agent": "ops",
-      "prompt": "Compile the weekly status: open tasks, stalled follow-ups, and invoices due this week (ask @books). Send it to my Telegram.",
+      "prompt": "Compile the weekly status: open tasks, stalled follow-ups, and invoices due this week (ask @books). Your answer is posted to my Telegram as-is.",
       "timeout": 600,
-      "onError": "notify"
+      "onError": "notify",
+      "notify": { "channel": "telegram", "chatId": "${TG_CHAT_ID}" },
+      "deliverResult": true
     },
     "invoice-chase": {
       "enabled": true,
       "schedule": "0 10 * * 2,4",
       "timezone": "Africa/Tunis",
       "agent": "books",
-      "prompt": "List overdue invoices and draft reminder messages for each. Post the drafts to my Telegram for approval — do not send them yourself.",
+      "prompt": "List overdue invoices and draft reminder messages for each. Your answer is posted to my Telegram for approval — do not send the reminders yourself.",
       "timeout": 600,
-      "onError": "notify"
+      "onError": "notify",
+      "notify": { "channel": "telegram", "chatId": "${TG_CHAT_ID}" },
+      "deliverResult": true
     }
   }
 }
