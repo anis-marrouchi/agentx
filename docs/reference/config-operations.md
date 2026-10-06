@@ -73,7 +73,7 @@ The daemon keeps its most recent events in memory so a late reader can catch up.
 
 ## voice and meshVoices
 
-How agents speak aloud. See [Desktop assistant](/dashboard/voice).
+How agents speak aloud. See [AgentX Voice](/dashboard/voice).
 
 | Key | Type | Default | What it does |
 |---|---|---|---|

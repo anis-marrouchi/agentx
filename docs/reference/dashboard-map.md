@@ -1,17 +1,18 @@
 # Dashboard map
 
-The seven top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals**, **Activity**, **Workflows**, and **Settings**. Each tab answers a different question. The dashboard also has deeper pages, reached from those tabs or by typing the address. Add each path to your dashboard's address, for example `http://127.0.0.1:4202/live`.
+The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals**, **People**, **Activity**, **Workflows**, and **Settings**. Each tab answers a different question. The dashboard also has deeper pages, reached from those tabs or by typing the address. Add each path to your dashboard's address, for example `http://127.0.0.1:4202/live`.
 
 ## Tabs
 
 | Need | Tab | Path |
 |---|---|---|
 | See current agent work | **Live** | `/live` |
-| See machines, peer work and routines | **Operations** | `/mesh` |
+| See machines, peer work and schedules | **Operations** | `/mesh` |
 | See what needs a person | **Monitor** | `/monitor` |
 | Answer what agents ask you | **Approvals** | `/approvals` |
+| See who is connected, their machines and what they asked for | **People** | `/people` |
 | Investigate past work | **Activity** | `/activity` |
-| Edit an automation | **Workflows** | `/workflows` (editor: `/workflows/editor`) |
+| Edit a workflow | **Workflows** | `/workflows` (editor: `/workflows/editor`) |
 | Configure agents, channels, schedules, webhooks and tokens | **Settings** | `/admin` |
 
 ## Other pages
@@ -25,7 +26,7 @@ The seven top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 | See token spend | `/admin/cost` |
 | Browse the shared wiki | `/admin/wiki/` |
 | See work grouped by project | `/admin/projects` |
-| Review the intent ledger | `/admin/ledger` |
+| Review the intent ledger (the record of incoming work and which agent it was sent to) | `/admin/ledger` |
 | Review the intent graph | `/admin/graph` (also `/graph`) |
 | Kanban boards, when configured | `/boards` |
 | Procedures learned from activity | `/procedures` |
@@ -39,7 +40,7 @@ The route list is a navigation aid, not a list of separate products. A view may 
 
 ## Check it worked
 
-1. **Browser:** open `/live` on your dashboard. The top bar shows the seven tabs.
+1. **Browser:** open `/live` on your dashboard. The top bar shows the eight tabs.
 2. Open `/admin/health`. It loads, or redirects there from `/admin/observability`.
 
 ## If something is wrong

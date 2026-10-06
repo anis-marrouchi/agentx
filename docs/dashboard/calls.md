@@ -1,14 +1,14 @@
 # Calls from your agents
 
-An agent that needs you directly can **ring you**. The call shows up on the [desktop assistant](voice.md) pill, much like a phone call. You see who is calling and why, and you hear a ring. Answer, and the agent speaks first and tells you why it called. Then you talk hands-free until you hang up. The agent writes a short summary of the call afterwards.
+An agent that needs you directly can **ring you**. The call shows up on the [AgentX Voice](voice.md) pill, much like a phone call. You see who is calling and why, and you hear a ring. Answer, and the agent speaks first and tells you why it called. Then you talk hands-free until you hang up. The agent writes a short summary of the call afterwards.
 
 Nobody can call you until you allow them. Calls that aren't urgent don't ring during Focus. Each agent can call only a few times an hour.
 
-The same permission lets an agent ask to **see** through your phone camera. That request shows on the phone, not on the desktop assistant. See [Share your phone camera](mobile-camera.md#when-an-agent-asks-to-see).
+The same permission lets an agent ask to **see** through your phone camera. That request shows on the phone, not on AgentX Voice. See [Share your phone camera](mobile-camera.md#when-an-agent-asks-to-see).
 
 ## Before you start
 
-- The [desktop assistant](voice.md) is installed and running on your Mac.
+- [AgentX Voice](voice.md) is installed and running on your Mac.
 - AgentX is running (`agentx daemon status` says it is up).
 - You know the id of the agent you want to allow. `agentx agent list` shows it.
 
@@ -51,8 +51,8 @@ A call counts only when it comes from a turn of that agent that is running now. 
 ## Focus, missed calls and limits
 
 - **Focus (Do Not Disturb), or the widget's hold switch:** a call that isn't urgent doesn't ring. It is recorded as a missed call, and you get a notice once Focus ends. Urgent calls ring anyway, the same way `agentx notify --urgent` does.
-- **The desktop assistant isn't running:** you get a notification instead, with the caller and the reason. If you open the desktop assistant while the call is still ringing, the pill rings.
-- **The desktop assistant is busy:** while it runs a turn of yours, records, or is in another call, a new call can't ring. It waits, and you get a notification at once with the caller and the reason. The pill rings as soon as it is free, and the ring time starts then. A call waits 10 minutes at most. If the desktop assistant is still busy then, the ring time runs out and the call counts as missed, with the note `widget busy`. This needs a desktop assistant built from this version: run `agentx desktop install` after an update.
+- **AgentX Voice isn't running:** you get a notification instead, with the caller and the reason. If you open AgentX Voice while the call is still ringing, the pill rings.
+- **AgentX Voice is busy:** while it runs a turn of yours, records, or is in another call, a new call can't ring. It waits, and you get a notification at once with the caller and the reason. The pill rings as soon as it is free, and the ring time starts then. A call waits 10 minutes at most. If AgentX Voice is still busy then, the ring time runs out and the call counts as missed, with the note `widget busy`. This needs AgentX Voice built from this version: run `agentx desktop install` after an update.
 - **Missed calls:** run `agentx call list --status missed`.
 - **Limits:** one call in progress per agent, and at most `calls.maxPerHour` calls per agent in an hour (3 by default).
 
@@ -65,7 +65,7 @@ All settings are under `calls` in `agentx.json`:
 | `calls.allow` | `[]` | Agents that may call you: ids, or `"*"` for all. Empty means nobody. |
 | `calls.maxPerHour` | `3` | Most calls one agent may place in an hour. |
 | `calls.ringSeconds` | `45` | How long a call rings before it counts as missed. |
-| `calls.maxCallMinutes` | `30` | An answered call that was never hung up ends after this many minutes, for example when the desktop assistant quit or the Mac slept. Until then the agent can't call again. |
+| `calls.maxCallMinutes` | `30` | An answered call that was never hung up ends after this many minutes, for example when AgentX Voice quit or the Mac slept. Until then the agent can't call again. |
 | `calls.ringSound` | `"Submarine"` | The ring: a sound name from `/System/Library/Sounds`, without `.aiff`. |
 | `calls.summary` | `true` | After you hang up, ask the agent for a short summary. |
 
@@ -90,8 +90,8 @@ For example:
 - **`No running turn of <agent> placed this call`**: the call didn't come from inside that agent's run, for example from a terminal. Ask the agent to call you instead. On version 0.81.0 or earlier, a run started with `agentx daemon send` or `POST /task` and no chat was refused the same way: update AgentX.
 - **`has placed 3 calls in the last hour`**: the agent hit `calls.maxPerHour`. Wait, or raise the limit.
 - **`already has a call in progress`**: answer, decline or hang up that call first. An answered call that was never hung up ends by itself after `calls.maxCallMinutes`. `agentx call list` shows it, and `agentx call decline <id>` ends it.
-- **The command says `sent a notification instead`**: the desktop assistant isn't running. Start it with `agentx desktop start`.
+- **The command says `sent a notification instead`**: AgentX Voice isn't running. Start it with `agentx desktop start`.
 - **The command says `not rung`**: you are in Focus, or the widget's hold switch is on, and the call wasn't urgent. It is listed as a missed call.
-- **A call is missed while the pill was busy and never rang**: the desktop assistant is from an older version. Run `agentx desktop install`.
+- **A call is missed while the pill was busy and never rang**: AgentX Voice is from an older version. Run `agentx desktop install`.
 - **No ring sound**: check that `calls.ringSound` names a sound in `/System/Library/Sounds`, and that the Mac isn't muted.
 - **`calls require SQLite`**: AgentX could not open its database. Run `agentx doctor`.

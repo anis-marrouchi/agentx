@@ -10,7 +10,7 @@ If a remote node is missing, check both hosts' daemon status and their mesh conn
 
 ## Routines
 
-**Routines** lists everything AgentX runs on its own, on every machine: schedules (jobs that run at set times) and workflows that start on a timer or an event. Use it to find automations that are broken or forgotten.
+**Routines** lists everything AgentX runs on its own, on every machine: schedules (work that starts at set times) and workflows that start on a timer or an event. The dashboard calls each of these a *routine*. Use the list to find schedules and workflows that are broken or forgotten.
 
 ![The Routines section of the Operations tab](/screenshots/operations/routines.png)
 
@@ -18,7 +18,7 @@ If a remote node is missing, check both hosts' daemon status and their mesh conn
 2. Below the summary cards, switch the view from **Activity** to **Operations**.
 3. Scroll to **Routines**. Each machine has its own group.
 4. To see only the ones that need attention, select **Flagged**. **Schedules** and **Events** filter by kind. The dashboard remembers your choice.
-5. Select a routine's name to open its details: when it runs, which agent runs it, its last result and error, and why it's flagged.
+5. Select a name in the list to open its details: when it runs, which agent runs it, its last result and error, and why it's flagged.
 
 A flag tells you what's wrong:
 
@@ -91,8 +91,8 @@ Without `agent`, it only reaches a running task. With `agent`, a finished schedu
 
 ## Check it worked
 
-1. **Browser:** in the Operations tab's **Operations** view, each reachable machine lists its routines under **Routines**.
-2. Select **Flagged**. Only routines with a flag stay in the list.
+1. **Browser:** in the Operations tab's **Operations** view, each reachable machine lists its schedules and workflows under **Routines**.
+2. Select **Flagged**. Only items with a flag stay in the list.
 3. Select a schedule's row under **Today's automations**. Its drawer lists **Runs today**, each with an **Open** link.
 4. **Terminal:** run `agentx mesh announce "Hello from the terminal"`. Within 5 seconds it appears under **Mesh feed** with an **Announcement** badge.
 

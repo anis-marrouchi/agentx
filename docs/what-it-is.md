@@ -2,7 +2,7 @@
 
 AgentX runs and keeps track of AI agents for a team. Four words cover most of it:
 
-- An **agent** is an AI helper with its own folder of files (its workspace), written instructions, and a model (the AI service that writes its replies).
+- An **agent** is an AI assistant that does work for you. It has its own folder of files (its workspace), written instructions, and a model (the AI service that writes its replies).
 - A **channel** brings in a message from a tool your team already uses, such as Telegram or GitLab.
 - A **schedule** starts work at set times, without anyone sending a message.
 - A **workflow** is a series of steps, such as "read the report, then post a summary".
@@ -23,6 +23,8 @@ The dashboard can be open while the daemon is stopped. When work isn't arriving,
 ## One machine or several
 
 You can begin with one agent on one machine. If some work belongs on another computer, AgentX can connect machines so that they pass tasks to each other. Each connected machine is a **node**, and the connected group is the **mesh**. You don't need a second machine for your first agent.
+
+Other words you'll meet are explained in the [glossary](reference/glossary.md).
 
 Next: [see it in a demo](./see-it-first.md) or [install it](./install.md).
 

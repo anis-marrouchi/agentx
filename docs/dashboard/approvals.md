@@ -1,6 +1,6 @@
 # Approvals — every decision waiting for you, in one place
 
-Agents sometimes need your yes or no before they go ahead: publishing a draft, merging a change, running a new schedule. **Approvals** is one list of everything waiting for you, most urgent first. You can answer from the dashboard (it works on a phone) or from the terminal.
+Agents sometimes need your yes or no before they go ahead: publishing a draft, merging a change, running a new schedule. **Approvals** is one list of everything waiting for you, most urgent first. You can answer from the dashboard, from the terminal, or from the [phone app](./mobile-app.md). The phone app doesn't show this page: on the phone, the same list is under **Activity › Needs you** ([Fleet and Activity on your phone](./mobile-fleet.md)).
 
 The list brings together six kinds of item:
 
@@ -10,7 +10,7 @@ The list brings together six kinds of item:
 | **Schedule** | A schedule an agent asked to create or remove ([schedules from chat](../automations/schedules-from-chat.md)) | Turns it on, or removes it | Drops the request, or keeps the schedule |
 | **Memory fact** | Something an agent learned from an outside source ([review what agents learn](../jobs/agent-memory.md)) | Lets the agent use it | Keeps it out for good |
 | **Wiki lesson** | A lesson proposed for the shared wiki | Writes the article | Declines it |
-| **WhatsApp reply** | A reply an agent drafted for a watched WhatsApp chat ([watch a WhatsApp chat](../jobs/watch-whatsapp.md)) | Sends it through wacli | Drops the draft; nothing is sent |
+| **WhatsApp reply** | A reply an agent drafted for a watched WhatsApp chat ([watch a WhatsApp chat](../jobs/watch-whatsapp.md)) | Sends it through [wacli](../reference/glossary.md) (the WhatsApp tool AgentX uses) | Drops the draft; nothing is sent |
 | **Request** | Something you asked an agent for that failed, ran out of time, was cut off or went quiet ([keep track of what you asked for](../jobs/open-requests.md)) | Hands it back to the agent | Drops the request |
 
 Answering here is the same as answering with the older commands (`agentx schedule approve`, `agentx memory facts approve`, `agentx wiki proposals approve`). They keep working, and both ways stay in step.
@@ -38,7 +38,7 @@ Only you can answer. Agents can raise cards and read the list, but nothing they 
 1. **Browser:** open the dashboard and click the **Approvals** tab (or go to `/approvals`).
 2. **Browser:** read the card. Click **Details** to see the excerpt, the source link and exactly what yes and no will do.
 3. **Browser:** click **Yes**, **No** or **Later**. **Later** hides the item for a day; a card still expires on time.
-4. **Browser:** when the Mac popup is on, a card also has **Show on Mac**. Click it to bring the card back on the Mac after you closed it or its wait ran out. It shows within a minute.
+4. **Browser (Mac only):** when the Mac popup is on, a card also has **Show on Mac**. Click it to bring the card back on the Mac after you closed it or its wait ran out. It shows within a minute.
 
 ![The Approvals tab with two decision cards and a schedule request](/screenshots/approvals/inbox.png)
 
@@ -46,7 +46,7 @@ Only you can answer. Agents can raise cards and read the list, but nothing they 
 
 ![A card with its details open](/screenshots/approvals/details.png)
 
-On a phone the buttons fill the width of the card:
+In a narrow browser window the buttons fill the width of the card:
 
 <img src="/screenshots/approvals/phone.png" alt="The Approvals tab on a phone" width="320">
 
@@ -69,7 +69,7 @@ To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki** or **
 
 ## Answer from a card on your Mac
 
-With the popup switched on, your Mac shows a waiting card by itself: a soft chime, one short spoken line, and a small card at the top right of the screen. It follows your light or dark mode.
+**Mac only.** With the popup switched on, your Mac shows a waiting card by itself: a soft chime, one short spoken line, and a small card at the top right of the screen. It follows your light or dark mode.
 
 ![The Mac card: who is asking, the question, three meeting times with the recommended one picked, and the suggested message](/screenshots/approvals/mac-card.png)
 
@@ -141,12 +141,14 @@ Under the inbox, **Open requests** lists everything you asked for that is not fi
 
 ## Check-ins: a few times a day
 
+**Mac only.** Check-ins read Apple Reminders and show Mac cards, so they need a Mac.
+
 Check-ins go through what is open for you on a schedule, and put each item that needs you on a Mac card. They are off until you switch them on, and they need the popup on too.
 
 At each check-in the daemon:
 
 1. **Brings back waiting cards.** Every card still waiting shows once more, oldest first, one at a time.
-2. **Looks at your open reminders** in Apple Reminders. A normal check-in takes the ones due in the next 24 hours or overdue. The daily check-in takes every open one, dated or not.
+2. **Looks at your open reminders** in Apple Reminders (Mac only). A normal check-in takes the ones due in the next 24 hours or overdue. The daily check-in takes every open one, dated or not.
 3. **Asks the agent that owns each reminder to write its card.** The owner is the agent named in the reminder's `agentx:` line (reminders agents create through the mac-pim skill have one). For other reminders, it is the agent you choose with `checkin.agent`. The agent does the homework, such as finding free times in your calendar, and writes the context, the question, two to four answers and a suggested message. It may also say the reminder doesn't need you. It sends nothing. That rule is an instruction in its prompt, not a lock: while it writes the card the agent has its usual tools, the same trust as the [reminders poller](../automations/reminders.md).
 4. **Your click goes back to that agent.** It is told your pick, the exact message and the reminder, does what you chose, and ticks the reminder off.
 

@@ -68,7 +68,7 @@ These are callable but hidden from `agentx --help` (its footer names them all). 
 
 Run commands from the directory containing your `agentx.json`, unless a command provides a configuration flag. From a source checkout, use `node dist/cli.js` instead of `agentx`. Arguments in angle brackets are placeholders; replace them without the brackets. Commands that dispatch work can incur model usage.
 
-## Desktop assistant
+## AgentX Voice
 
 ```sh
 agentx desktop install --agent helper
@@ -252,7 +252,7 @@ How to use these, step by step: [Review what your agents learn](../jobs/agent-me
 
 ## Computer use and teaching
 
-Install the [desktop assistant](../dashboard/voice.md) first. These tools interact with the current macOS desktop, not the browser tab displaying this documentation.
+Install [AgentX Voice](../dashboard/voice.md), the voice assistant for your Mac, first. These tools interact with the current macOS desktop, not the browser tab displaying this documentation.
 
 | Command | What it does |
 |---|---|

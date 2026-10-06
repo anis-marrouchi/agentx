@@ -1,12 +1,12 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: scheduled jobs, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, resuming after a restart and due reminders. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, resuming after a restart and due reminders. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
 ## `crons`
 
-Scheduled jobs (also called routines), keyed by job id: `crons.<id>`. Each job either asks an agent to run a prompt or runs a shell command.
+Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: `crons.<id>`. Each job either asks an agent to run a prompt or runs a shell command.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -148,7 +148,7 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 
 ## `calls`
 
-Agents ringing you for a live voice call on the desktop assistant. See [Calls from your agents](/dashboard/calls). The same settings cover an agent asking to see through your phone camera ([Share your phone camera](/dashboard/mobile-camera#when-an-agent-asks-to-see)): a camera ask counts as a call here.
+Agents ringing you for a live voice call on AgentX Voice. See [Calls from your agents](/dashboard/calls). The same settings cover an agent asking to see through your phone camera ([Share your phone camera](/dashboard/mobile-camera#when-an-agent-asks-to-see)): a camera ask counts as a call here.
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -283,7 +283,7 @@ How a daemon stop treats tasks that are still running. See [restart without losi
 
 ## `resume`
 
-What happens to work a restart cut off. Chat messages are picked up again in their chat; scheduled jobs never are, because their next run covers them. See [restart without losing work](/jobs/restart-safely).
+What happens to work a restart cut off. Chat messages are picked up again in their chat; schedules never are, because their next run covers them. See [restart without losing work](/jobs/restart-safely).
 
 | Key | Type | Default | What it does |
 |---|---|---|---|

@@ -1,5 +1,13 @@
 # Phone app
 
+::: tip Is there an app to download?
+No. There is no AgentX app in the App Store or Google Play.
+
+- **Use your phone's browser.** Open the address that ends in `/app` (set up below), then add it to your home screen. It then opens like any other app. This works on Android and iPhone.
+- **Android only, optional:** an extra Android app adds [place reminders](./mobile-places.md) (a note when you arrive at or leave a place). You build it yourself from the AgentX source code. You don't need it for anything else.
+- **iPhone:** use the browser app. Place reminders don't work on iPhone: an iPhone version of that extra app exists in the source code, but it has not been built or tested yet.
+:::
+
 The phone app is a small version of the dashboard that you install on an Android phone or an iPhone straight from the browser. There is no app store. It has four tabs: **Chat**, **Fleet**, **Activity** and **Alerts**. This page installs the app and pairs your phone with a short pairing code. To talk to your agents from it, see [Chat on your phone](./mobile-chat.md). To watch and manage your computers from it, see [Fleet and Activity on your phone](./mobile-fleet.md). To get notifications on it, see [Notifications on your phone](./mobile-alerts.md). On Android, to get reminders when you arrive at or leave a place, see [Place reminders](./mobile-places.md).
 
 **This app is for your own phone.** Its key is not tied to a person and opens chat with every agent of yours, so never pair a teammate's or a client's phone with it. A teammate gets [their own work page](../jobs/members.md), which shows only their own requests, and a client [a project page of their own](../jobs/clients.md); another organisation gets [a guest grant](../jobs/guest-mesh.md). The five ways side by side: [Who gets which way in](../jobs/keep-it-safe.md#who-gets-which-way-in).

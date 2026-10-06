@@ -2,6 +2,10 @@
 
 The dashboard is the AgentX website that runs on your own machine. You use it in a browser to see what agents are doing and to change settings. It is a separate program from the daemon (the AgentX background service that actually runs the agents), so the dashboard can load while the daemon is stopped.
 
+::: warning There is no login on the computer itself
+The dashboard trusts every browser on the computer it runs on. It asks for no password there. Anyone who can use that computer can open the dashboard, change settings and answer [approvals](./approvals.md). Lock the computer when you step away: that is what keeps others out. A dashboard token (`dashboard.token`) doesn't change this, because pages opened on the computer carry it. Other devices can't reach the dashboard unless you share it: see [Open the dashboard through your own web address](../jobs/reverse-proxy.md).
+:::
+
 ## Open it
 
 1. **Browser:** go to the address printed by `agentx setup`. It is normally `http://127.0.0.1:4202`.
@@ -30,7 +34,7 @@ The top bar has eight tabs:
 | [Workflows](./workflows.md) | Saved automations and the editor |
 | [Settings](./settings.md) | Agents, channels, schedules, and connections |
 
-Start in Monitor for an overview of the work, then open Activity when you need to look into a particular run. Some views stay empty until the matching app (for example GitLab) is connected. On the right of the top bar, **Dark** and **Light** switch the colour theme, and **Managing** picks which connected machine you are looking at.
+Start in Monitor for an overview of the work, then open Activity when you need to look into a particular run. Some views stay empty until the matching app (for example GitLab) is connected. On the right of the top bar, **Dark** and **Light** switch the colour theme, and **Managing** picks which connected machine you are looking at. With one machine, ignore it.
 
 ## See which version is running
 
@@ -48,7 +52,7 @@ This is the daemon the dashboard is attached to (`dashboard.daemonUrl`), not the
 
 ## Talk to your agents
 
-Use [in-page chat](chat.md) to ask about the current view. You can also work through the [macOS desktop assistant](voice.md) or the [OpenCode terminal UI](tui.md).
+Use [in-page chat](chat.md) to ask about the current view. You can also talk to them through [AgentX Voice](voice.md), the voice assistant for your Mac, or the [OpenCode terminal UI](tui.md).
 
 To open the dashboard through your own web address, see [Open the dashboard through your own web address](../jobs/reverse-proxy.md).
 

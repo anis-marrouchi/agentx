@@ -25,7 +25,7 @@ const groups = [
   ] },
   { text: "Voice and desktop", collapsed: true, items: [
     { text: "AgentX Voice guide", link: "/guides/agentx-voice" },
-    { text: "Desktop assistant", link: "/dashboard/voice" },
+    { text: "AgentX Voice reference", link: "/dashboard/voice" },
     { text: "Calls from your agents", link: "/dashboard/calls" },
     { text: "Terminal UI (OpenCode)", link: "/dashboard/tui" },
   ] },

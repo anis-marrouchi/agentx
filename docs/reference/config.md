@@ -17,7 +17,7 @@ Changing a setting does not install a missing provider CLI or sign it in. Restar
 | `notifications` | Where AgentX pings you about finished, failed or long tasks ([get notified](/jobs/notifications)) |
 | `shutdown` | How long a stop waits for running tasks ([restart without losing work](/jobs/restart-safely#change-how-long-it-waits)) |
 | `resume` | What happens to work a restart cut off ([restart without losing work](/jobs/restart-safely)) |
-| `voice`, `meshVoices` | How agents speak aloud ([desktop assistant](/dashboard/voice)) |
+| `voice`, `meshVoices` | How agents speak aloud ([AgentX Voice](/dashboard/voice)) |
 | `workflows` | Whether the workflow engine is enabled, where definitions live, and the editor mode |
 | `webhooks` | Incoming webhook sources and the workflows they start |
 | `session` | When a conversation's memory is rotated or considered stale |
@@ -50,9 +50,9 @@ Use `agentx config get <path>` to inspect one value and `agentx config set <path
 
 ## Routine autonomy
 
-A cron job, or an `agent` step in a workflow, can run with less than its agent's full permissions by setting `autonomy`:
+A schedule (an entry under `crons`), or an `agent` step in a workflow, can run with less than its agent's full permissions by setting `autonomy`:
 
-| Level | What the routine may do |
+| Level | What the schedule or step may do |
 |---|---|
 | `report` | Read only. No file writes, no mutating shell commands, no posting through tools. Its final answer is the only output. |
 | `propose` | Edit files, commit, push a named feature branch, open a merge request or draft. It cannot merge, deploy, delete, force-push, push to protected branches or operate hosts. |
@@ -70,9 +70,9 @@ Only the `claude-code` tier can enforce `report` and `propose`. On any other tie
 
 ## Time limits and cancel
 
-A run is one piece of work an agent does, such as answering a message or running a scheduled job. Each run takes one of the agent's slots (`maxConcurrent`). A run that never finishes keeps its slot, so AgentX gives runs a time limit and lets you stop them.
+A run is one piece of work an agent does, such as answering a message or running a schedule. Each run takes one of the agent's slots (`maxConcurrent`). A run that never finishes keeps its slot, so AgentX gives runs a time limit and lets you stop them.
 
-**Scheduled jobs (`crons`).** Every job has a `timeout` in seconds (default 600).
+**Schedules (`crons`).** Every job has a `timeout` in seconds (default 600).
 
 - For a **command** job, `timeout` is the limit for the shell command.
 - For an **agent** job, the limit is the larger of `timeout` and 2 hours. Agent jobs often take longer than their `timeout`, so a short `timeout` does not cut them off. The 2-hour minimum exists to end a run that is stuck.

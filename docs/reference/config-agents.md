@@ -134,7 +134,7 @@ Each item in `agents.<id>.integrations` declares one service. Secrets never go i
 
 ### Voice
 
-`agents.<id>.voice` overrides the global `voice` settings for one agent ([desktop assistant](/dashboard/voice)).
+`agents.<id>.voice` overrides the global `voice` settings for one agent ([AgentX Voice](/dashboard/voice)).
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -331,7 +331,7 @@ A GitHub event such as a label being added or an issue being closed usually need
 
 A run counts as triage only when every event it collected is a triage action. AgentX collects the events one issue raises in a few seconds into one run, so an issue that is opened and then labeled keeps the agent's own model. Three more cases keep it too:
 
-- a model set on the task itself, such as a scheduled job's `model`;
+- a model set on the task itself, such as a schedule's `model`;
 - a follow-up on an issue whose conversation ran within the last hour, because changing model there re-reads the whole conversation at full price;
 - a model that does not fit the agent's engine, such as a `gpt-` model for a `claude-code` agent.
 
@@ -444,7 +444,7 @@ A warm process answers only the question it was asked. When a background task of
 1. **Terminal:** in the folder with `agentx.json`, run `agentx config check`. It prints `✓ Config valid`.
 2. **Terminal:** run `agentx config get agents.helper.maxConcurrent`, using your own agent id. It prints the value you set.
 3. **Terminal:** run `agentx agent list`. The agent appears with its engine and model.
-4. **Terminal:** after a GitHub event or a scheduled job runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
+4. **Terminal:** after a GitHub event or a schedule runs, run `agentx daemon logs`. A line `session profile for github: lean (mcp=agentx settings=project,local context=on-demand)` shows the lean start took effect.
 5. **Terminal:** with `session.lean.agentxTools` set, after a lean session starts, run `agentx daemon logs`. The `session profile for …: lean (…)` line ends with `agentx-tools=N`.
 6. **Terminal:** with `session.triage.models` set, after a label event on an issue nobody has worked on for an hour, run `agentx daemon logs`. A line `triage event (labeled) → <model>` shows the cheaper model was used.
 7. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
