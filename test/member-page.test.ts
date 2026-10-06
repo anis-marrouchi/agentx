@@ -311,6 +311,56 @@ describe("the agent cards and what needs a person (#443)", () => {
     expect((focused as { getAttribute: (n: string) => string } | null)?.getAttribute("data-agent")).toBe("coder")
   })
 
+  // The links and buttons in a list's current markup, as the browser would
+  // give them: the same objects until the markup is replaced.
+  function focusables(list: any, onFocus: (b: unknown) => void) {
+    const made = new Map<string, unknown[]>()
+    const all = () => {
+      const html = String(list.innerHTML)
+      if (!made.has(html)) {
+        made.set(html, [...html.matchAll(/<(a|button)\b([^>]*)>/g)].map((m) => {
+          const attrs = Object.fromEntries([...m[2].matchAll(/([\w-]+)="([^"]*)"/g)].map((a) => [a[1], a[2]]))
+          const b = { inList: true, getAttribute: (n: string) => attrs[n] ?? null, focus: () => onFocus(b) }
+          return b
+        }))
+      }
+      return made.get(html)!
+    }
+    list.contains = (x: { inList?: boolean }) => !!x?.inList
+    list.querySelectorAll = all
+    return all
+  }
+
+  it("move focus to the heading when the focused button goes and nothing in the list can take it", async () => {
+    const done = { ...body, agents: [{ ...body.agents[0], state: "free", by: null, text: null, fullText: null, where: null }, body.agents[1]] }
+    const p = openPage({ work: [{ status: 200, body }, { status: 200, body: done }] })
+    await p.settle()
+    let focused: unknown = null
+    const heading = p.el("h-agents")
+    heading.focus = () => { focused = heading }
+    const all = focusables(p.el("agents"), (b) => { focused = b })
+    p.doc.activeElement = all().find((b: any) => b.getAttribute("data-agent") === "coder")
+    expect(p.doc.activeElement).toBeTruthy()
+    await p.fire(30_000)
+    expect(p.el("agents").innerHTML).not.toContain("Show this request")
+    expect(focused).toBe(heading)
+  })
+
+  it("keep focus on the same link when a new row comes in above it", async () => {
+    const run = (taskId: string, url: string) => ({ ...body.runs[0], taskId, messagePreview: taskId, where: { label: "Telegram", url } })
+    const first = { ...body, runs: [run("t1", "https://example.test/one"), run("t2", "https://example.test/two")] }
+    const later = { ...first, runs: [run("t0", "https://example.test/new"), ...first.runs] }
+    const p = openPage({ work: [{ status: 200, body: first }, { status: 200, body: later }] })
+    await p.settle()
+    let focused: any = null
+    const all = focusables(p.el("sent"), (b) => { focused = b })
+    p.doc.activeElement = all().find((b: any) => b.getAttribute("href") === "https://example.test/two")
+    expect(p.doc.activeElement).toBeTruthy()
+    await p.fire(30_000)
+    expect(p.el("sent").innerHTML).toContain("example.test/new")
+    expect(focused?.getAttribute("href")).toBe("https://example.test/two")
+  })
+
   it("say the state is from the last load when a round fails", async () => {
     const p = openPage({ work: [{ status: 200, body }, "fail"] })
     await p.settle()

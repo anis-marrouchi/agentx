@@ -101,7 +101,7 @@ The line is read from the daemon, which notes who sent each message that waits b
 
 It refreshes every 30 seconds. Opened without a connection, it shows what was last loaded and says it is offline. When the connection is up but your computer does not answer, the page says it can't reach the server, tries again every 20 seconds, and shows a **Try now** button. Either notice goes away as soon as a load works.
 
-A refresh does not move someone who uses the keyboard or a screen reader. A button or link they are on keeps their place, and the top sentence is read out again only when its words change.
+A refresh does not move someone who uses the keyboard or a screen reader. A button or link they are on keeps their place. If it goes away, for example **Show this request** when their task finishes, they land on the section's heading instead of the top of the page. The top sentence is read out again only when its words change.
 
 ### Keep it on the desktop
 
