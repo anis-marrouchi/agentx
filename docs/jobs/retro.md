@@ -38,7 +38,7 @@ The reviewer must match each fix to what went wrong. A fix in the wrong place is
 | The agent could not reach information | A token, mesh access or a log file |
 | A problem the fleet can't see | A health watchdog or alert |
 
-Every fix must also point to a moment in the run: a step number from the trace, or an exact quote from the run's error. A fix that can't is dropped.
+Every fix must also point to a moment in the run: a step number from the trace together with an exact quote from that step, or an exact quote from the run's error. A fix that can't is dropped.
 
 ## Run a retro
 
@@ -83,7 +83,7 @@ Or in the terminal:
 
 *Fictional demo data. No real agents, people or machines.*
 
-Within a minute the agent that ran the task is told your pick. It builds the fix as a pull request, or as a guard rule in warn mode, so you review it a second time before anything is enforced. What it adds is tagged `retro:<taskId>`, so you can find it later. If you pick **None of these** or answer **No**, the agent is told to change nothing.
+Within a minute the agent that ran the task is told your pick, with the description of that one fix only. The description was written by the reviewer, so the agent is told to check it rather than follow it word for word. If you edited the message, the agent gets your text as your note. It builds the fix as a pull request, or as a guard rule in warn mode, so you review it a second time before anything is enforced. What it adds is tagged `retro:<taskId>`, so you can find it later. If you pick **None of these** (even with **Yes**) or answer **No**, the agent is told to change nothing.
 
 ## Limits on noise
 
@@ -91,6 +91,7 @@ Within a minute the agent that ran the task is told your pick. It builds the fix
 - **No second asking.** A fix you passed over on an answered card is not offered again for the same failure for 30 days.
 - **Never on its own runs.** The run in which an agent builds a picked fix is never read by a retro.
 - **Never applied by silence.** Every retro card is discarded when it expires.
+- **Separate from the agent's own cards.** Retro cards are counted apart from the cards an agent raises itself, so they never use up its room for its own questions.
 
 `agentx retro` is started by hand for now. A nightly pass that picks the day's worst runs by itself, with a daily limit, is planned.
 
@@ -106,7 +107,7 @@ A retro has no settings in `agentx.json`. These options and environment variable
 | `--path <db>` | The trace database. Default: `.agentx/db.sqlite` |
 | `AGENTX_RETRO_MODEL` | The reviewer model when `--model` is not given. Unset: `AGENTX_MONITOR_MODEL`, else `opus` |
 
-Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings): how long they wait, and, with `approvals.forwardTo`, which machine shows them.
+Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings), such as how long they wait. Retro cards can't be sent to another machine yet: when `approvals.forwardTo` is set, `agentx retro` refuses to raise the card. Run it on a machine that keeps its own cards, or use `--dry-run` to read the fixes.
 
 ## Check it worked
 
@@ -123,6 +124,7 @@ Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings)
 - **"already asks about this failure":** a retro card about the same failure is still waiting. Answer it first, or add `--force`.
 - **"was itself started by a retro":** that run is an agent building a fix you picked. Retros never read those.
 - **"the reviewer's answer could not be used":** the reviewer failed or returned something that isn't the expected answer. `claude CLI not found` means Claude Code is not installed for the user running the command. Run it again; if it keeps failing, run `claude -p "hello"` to check that Claude Code works.
+- **"retro cards can't be forwarded to another machine yet":** this machine sends its cards to another one (`approvals.forwardTo`). Run the retro on a machine that keeps its own cards, or use `--dry-run` to read the fixes.
 - **"No trace database":** run the command in the folder the daemon runs from, or pass `--path`.
 - **Yes does nothing on the dashboard:** the card offers choices. Pick one first; the page says so in red.
 - **The agent never started on the fix:** check the daemon log for a line starting `[approvals]`, and that `notifyAgent` is on in [Approvals settings](../dashboard/approvals.md#settings).
