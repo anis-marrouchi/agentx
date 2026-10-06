@@ -110,7 +110,7 @@ function describeJob(id: string, job: any, now: Date): string {
     `- ${id} [${state}] ${job.schedule} — ${humanizeCron(job.schedule)} (${tz})`,
     `  agent: ${job.agent}; created by: ${job.createdBy || "operator"}; next: ${next}`,
   ]
-  if (job.notify) lines.push(`  notify: ${job.notify.channel} ${job.notify.chatId}`)
+  if (job.notify) lines.push(`  notify: ${job.notify.channel} ${job.notify.chatId}${job.deliverResult === false ? " (failures only)" : " (results and failures)"}`)
   if (job.command) lines.push(`  command: ${preview(String(job.command))}`)
   else if (job.prompt) lines.push(`  prompt: ${preview(String(job.prompt))}`)
   return lines.join("\n")
@@ -219,7 +219,7 @@ export async function runScheduleTool(
       `When: ${parsed.human} — cron \`${parsed.cron}\` (${timezone})`,
       `Next fire: ${next}`,
       `Agent: ${agent}`,
-      notify ? `Notify: ${notify.channel} ${notify.chatId}` : "Notify: none",
+      notify ? `Results and failures go to: ${notify.channel} ${notify.chatId}${notify.channel === "voice" ? " (as a push notification)" : ""}` : "Results go to: run log only (no chat)",
       `Prompt: ${preview(prompt, 400)}`,
       "",
       `Approve: agentx schedule approve ${jobId}`,

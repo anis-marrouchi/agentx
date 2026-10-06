@@ -16,6 +16,7 @@ AgentX has two parts that run side by side:
 ## Where to start
 
 - **Try it without a model account:** [see the demo](./see-it-first.md). It uses real AgentX daemons and scripted model replies, so it makes no paid model calls.
+- **Know what leaves your machine:** [Your data](./your-data.md) lists what goes to the model provider and other services, and how to keep it at home.
 - **Set up your own team:**
   1. [Install AgentX](./install.md).
   2. [Create your first agent](./first-agent.md).

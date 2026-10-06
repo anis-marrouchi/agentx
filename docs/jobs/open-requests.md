@@ -23,7 +23,7 @@ Each request has one state:
 | Needs attention | The work failed, ran out of time, was cut off and not picked up again, or nothing happened for a day. |
 | Done, declined, dropped | Closed. Done has a link to the proof. Declined and dropped have a reason. |
 
-A request waits on you when the agent raises a [decision card](../dashboard/approvals.md) for it, or says so with its tool. The card reminds you the usual way: the Approvals inbox, the Mac card, check-ins and the daily digest. When you answer, the request goes on. If the card expires without your answer, the request needs attention; it does not close. The one exception is a card whose default is "approve": the work goes on.
+A request waits on you when the agent raises a [decision card](../dashboard/approvals.md) for it, or says so with its tool. The card reminds you the usual way: the Approvals inbox, the Mac card, check-ins and the daily digest. When you answer, the request goes on. If the card expires without your answer, the request needs attention; it does not close. A card never approves itself.
 
 When a request needs attention you are told once, through your normal [notifications](./notifications.md). They are held while Focus is on. After that the request stays on the list. Nothing is retried for you, and nothing closes because it got old.
 

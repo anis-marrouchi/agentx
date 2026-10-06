@@ -178,12 +178,11 @@ export class StatusBoard {
     })
   }
 
-  /** A linked card was answered or expired. An answer, or an expiry whose
-   *  default is "approve", lets the work go on; any other expiry means
-   *  the answer never came. */
+  /** A linked card was answered or expired. An answer lets the work go
+   *  on; an expiry means the answer never came (no card approves itself, #741). */
   cardResolved(card: { id: string; status: string; if_silent?: string; outcome?: string }): void {
     this.guard("card result", () => {
-      const went = card.status === "decided" || (card.outcome ?? card.if_silent) === "approve"
+      const went = card.status === "decided"
       this.handedBack(this.store.byRef("card", card.id), went ? "done" : "timeout")
     })
   }

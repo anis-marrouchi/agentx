@@ -233,6 +233,11 @@ try {
       await wait(".fx-sheet[open]"); await sleep(200); await shot("fleet-schedule-sheet"); await key("Escape")
     },
     "activity-dark": async () => { await open("/app", { theme: "dark" }); await tab("activity", "#panel-activity .fx-card"); await shot("activity-dark") },
+    "activity-choice-sheet": async () => {
+      await open("/app"); await tab("activity", "#panel-activity .fx-card")
+      await click('[data-act="decide"][data-k="1"][data-v="yes"]')
+      await wait(".fx-sheet[open]"); await sleep(200); await shot("activity-choice-sheet"); await key("Escape")
+    },
     // --- Alerts ---
     "alerts": async () => { await scene({ push: "off" }); await open("/app"); await alerts("#al-btn:not([hidden])"); await shot("alerts") },
     "alerts-chat-finish": async () => {

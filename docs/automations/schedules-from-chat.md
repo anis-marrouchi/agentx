@@ -20,7 +20,15 @@ Timing can be written the way you'd say it: "every morning at 9", "weekdays at 6
 agentx schedule parse "weekdays at 6pm"
 ```
 
-By default, the job runs as the agent you asked, and its results go back to the chat you asked from. You can ask for another agent, a time zone, or somewhere else to send results.
+By default, the job runs as the agent you asked, and after each run its answer is posted back to the chat you asked from. If a run fails, a short failure message goes to the same chat. You can ask for another agent, a time zone, somewhere else to send results, or no chat at all ("don't send me the results"). Without a chat, the results stay in the run history in the dashboard.
+
+If you asked from the AgentX phone app, the answer appears in the same conversation, marked unread. If you asked by voice, it arrives as a push notification on your phone (this needs push notifications set up on this computer). A long answer is shortened to fit the notification; ask the agent by voice and it reads you the full answer.
+
+If you asked from a GitHub or GitLab issue, each answer is posted there as a comment. On a public project anyone can read it. Ask for a private chat instead, or for no chat at all.
+
+If your old schedule prompt already says "send it to my Telegram", remove that line. Otherwise the answer arrives twice: once from the agent, once from the schedule.
+
+In `agentx.json`, this shows up on the job as its `notify` destination. See [Configuration: automation](../reference/config-automation.md#crons).
 
 ## 2. Approve or reject it
 
@@ -64,7 +72,7 @@ If an agent withdraws its own request before you approve it, the request is simp
 
 1. **Terminal:** run `agentx schedule list`. Your new job is listed without the `◐` mark and with a next run time.
 2. **Browser:** open the dashboard's **Operations** tab. The job appears under **Routines** as a schedule. See [Routines](../dashboard/operations.md#routines).
-3. After its first run, the results arrive in the chat you asked from.
+3. After its first run, the agent's answer arrives in the chat you asked from.
 
 ## If something is wrong
 
@@ -72,4 +80,10 @@ If an agent withdraws its own request before you approve it, the request is simp
 - **You never got the approval message:** set `notifications.destination` in `agentx.json`. The request is still waiting in `agentx schedule list`.
 - **`approve` says the job isn't waiting:** it was already approved or rejected. Check `agentx schedule list`.
 - **The agent can't pause a job:** it didn't make that job. Make the change yourself, or give the agent `"admin": true`.
+- **The job ran but no answer arrived in the chat:**
+  1. **Terminal:** run `agentx schedule list`. The job's `notify:` line should name the chat and say `(results and failures)`.
+  2. If it says `(failures only)`, open `agentx.json` and remove `"deliverResult": false` from the job.
+  3. If there is no `notify:` line, the request was made from a place that isn't a chat (for example another schedule). Add a `notify` destination to the job, as in [Send a daily report](../jobs/daily-report.md#deliver-the-report-to-a-chat).
+  4. A run that ends with an empty answer sends nothing. Check the run in the dashboard's **Operations** tab.
+  5. If the `notify:` line says `voice`, check that push notifications reach your phone. Without them a voice result can't be sent, and the daemon log shows `result delivery failed`.
 - **The timing is wrong:** check the phrase with `agentx schedule parse "<phrase>"`, then ask the agent to change it.

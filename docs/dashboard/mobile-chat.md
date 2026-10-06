@@ -214,7 +214,7 @@ To set up voice input:
 
 4. **Terminal (computer):** restart AgentX so it picks up the key: `agentx daemon restart`.
 
-`voice.stt` in `agentx.json` chooses between them: `auto` (default) and `elevenlabs` try ElevenLabs first and Whisper if that fails; `local` never sends your voice off the computer. Spoken answers in an agent's own voice need the ElevenLabs key too.
+`voice.stt` in `agentx.json` chooses between them: `auto` (default) and `elevenlabs` try ElevenLabs first and Whisper if that fails; `local` never sends your voice off the computer. So with a key set, your voice goes to ElevenLabs unless you choose `local` (see [Your data](../your-data.md)). Spoken answers in an agent's own voice need the ElevenLabs key too.
 
 | Setting | What it does |
 |---|---|

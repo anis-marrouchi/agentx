@@ -241,7 +241,7 @@ const AGENT_PAGE_BODY = `
         </div>
         <div class="ax-slider-row">
           <label>Tool permissions</label>
-          <span class="ax-hint"><b>Ask first</b> = you approve each tool call. <b>Trusted</b> = it just goes.</span>
+          <span class="ax-hint"><b>Ask first</b> = a step that needs permission is refused, since nobody is there to answer; it does not come to Approvals. <b>Trusted</b> = it just goes.</span>
           <div class="ax-opts" data-field="permissionMode">
             <button data-v="default">Ask first</button>
             <button data-v="acceptEdits">Accept edits</button>

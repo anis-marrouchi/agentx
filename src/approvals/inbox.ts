@@ -61,6 +61,9 @@ export interface InboxItem {
   more?: string
   /** Cards: the ready-made answers on offer; yes must pick one. */
   choices?: string[]
+  /** Cards: the suggested message, `{choice}` not yet filled in. The
+   *  operator may edit it before saying yes. Bounded by CHOICE_LIMITS. */
+  draft?: string
   snoozed_until?: string
 }
 
@@ -118,6 +121,7 @@ function cardItem(c: DecisionCard): InboxItem {
     ...(c.node ? { node: c.node } : {}),
     created_at: c.created_at,
     ...(c.choices ? { choices: c.choices, more: `agentx approvals popup card:${c.id}` } : {}),
+    ...(c.draft ? { draft: c.draft } : {}),
     ...(c.context || c.draft ? { detail: clip([c.context, c.draft ? `Suggested message: ${c.draft}` : ""].filter(Boolean).join(" · ")) } : {}),
   }
 }

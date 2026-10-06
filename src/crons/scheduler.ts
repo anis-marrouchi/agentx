@@ -164,6 +164,10 @@ export function cronRunId(jobId: string, startedAt: Date): string {
 /** Notification callback — injected by daemon to send alerts via channels */
 export type CronNotifyCallback = (jobId: string, agent: string, error: string, consecutiveErrors: number) => Promise<void>
 
+/** Result callback — injected by daemon to send a successful run's answer
+ *  to the job's `notify` target. Not called when `deliverResult` is false. */
+export type CronDeliverCallback = (jobId: string, agent: string, text: string, runId: string) => Promise<void>
+
 export class CronScheduler {
   private jobs: Map<string, CronJobState> = new Map()
   /** Kept apart from `jobs`, which is served as-is by GET /crons. */
@@ -175,6 +179,7 @@ export class CronScheduler {
   private lastRunFile: string
   private running = false
   private notifyCallback?: CronNotifyCallback
+  private deliverCallback?: CronDeliverCallback
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -206,6 +211,7 @@ export class CronScheduler {
         maxOutputTokens: def.maxOutputTokens,
         autonomy: def.autonomy,
         onError: def.onError,
+        deliverResult: def.deliverResult !== false && Boolean(def.notify),
         consecutiveErrors: 0,
         totalRuns: 0,
         totalFailures: 0,
@@ -249,6 +255,14 @@ export class CronScheduler {
    */
   setNotifyCallback(cb: CronNotifyCallback): void {
     this.notifyCallback = cb
+  }
+
+  /**
+   * Set the callback that sends a successful run's answer to the job's
+   * `notify` target. Not called for jobs with `deliverResult: false`.
+   */
+  setDeliverCallback(cb: CronDeliverCallback): void {
+    this.deliverCallback = cb
   }
 
   async start(): Promise<void> {
@@ -500,6 +514,7 @@ export class CronScheduler {
     job.retryPending = false
     this.log(`Command job "${job.id}" completed in ${result.duration}ms`)
     this.logRun(result)
+    await this.deliverResult(job, output, startedAt)
     if (!fire) this.scheduleNext(job.id)
   }
 
@@ -648,6 +663,7 @@ export class CronScheduler {
 
       // Log run
       this.logRun(result)
+      await this.deliverResult(job, response.content, startedAt)
 
       // Post-hook
       if (this.hooks?.has("post:cron-run" as any)) {
@@ -770,6 +786,20 @@ export class CronScheduler {
   }
 
   // --- Notification ---
+
+  private async deliverResult(job: CronJobState, text: string | undefined, startedAt: Date): Promise<void> {
+    if (!job.deliverResult || !text?.trim()) return
+    if (!this.deliverCallback) {
+      this.log(`Job "${job.id}" result not delivered: no delivery path in this context`)
+      return
+    }
+    try {
+      await this.deliverCallback(job.id, job.agent, text, cronRunId(job.id, startedAt))
+    } catch (e: any) {
+      // The run succeeded and is logged; a failed send must not turn it red.
+      this.log(`Job "${job.id}" result delivery failed: ${e?.message ?? e}`)
+    }
+  }
 
   private async notifyFailure(job: CronJobState, error: string): Promise<void> {
     if (!job.onError.includes("notify") && job.consecutiveErrors < 2) return

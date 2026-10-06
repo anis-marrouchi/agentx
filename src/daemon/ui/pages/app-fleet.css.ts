@@ -57,6 +57,14 @@ details[open] > summary::before { transform: rotate(90deg); }
   width: 100%; box-sizing: border-box; font: inherit; font-size: 16px; padding: 10px;
   border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); background: var(--ax-bg); color: var(--ax-text);
 }
+.fx-sheet { max-height: 92dvh; overflow-y: auto; }
+.fx-choices { border: 0; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.fx-choices legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
+.fx-sheet label.fx-opt { display: flex; gap: 10px; align-items: flex-start; min-height: 44px; box-sizing: border-box; padding: 10px 12px; border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); line-height: 1.4; overflow-wrap: anywhere; cursor: pointer; }
+.fx-sheet label.fx-opt:has(input:checked) { border-color: var(--ax-accent); background: var(--ax-accent-t); }
+.fx-sheet label.fx-opt span { display: inline; font-weight: 400; margin: 0; }
+.fx-opt input { margin-top: 3px; accent-color: var(--ax-accent); }
+.fx-opt em { font-style: normal; font-size: 12px; color: var(--ax-ok); white-space: nowrap; }
 .fx-error:empty { display: none; }
 .fx-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 `
