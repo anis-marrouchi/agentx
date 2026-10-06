@@ -78,6 +78,7 @@ const groups = [
   { text: "When something goes wrong", collapsed: true, items: [
     { text: "It's not answering", link: "/help/its-not-answering" },
     { text: "Run a health check", link: "/help/doctor" },
+    { text: "Stop a mistake from coming back", link: "/jobs/retro" },
     { text: "Understand costs", link: "/help/costs" },
   ] },
   { text: "Go deeper", collapsed: true, items: [

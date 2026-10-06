@@ -131,7 +131,7 @@ approvals
   })
 
 /** POST /approvals on this node's daemon, which forwards it. */
-async function raiseThroughDaemon(input: Record<string, unknown>): Promise<{ ok: true; card: DecisionCard } | { ok: false; error: string }> {
+export async function raiseThroughDaemon(input: Record<string, unknown>): Promise<{ ok: true; card: DecisionCard } | { ok: false; error: string }> {
   const base = (process.env.AGENTX_DAEMON_URL || "http://127.0.0.1:18800").replace(/\/+$/, "")
   const headers: Record<string, string> = { "Content-Type": "application/json" }
   if (process.env.MESH_TOKEN) headers.Authorization = `Bearer ${process.env.MESH_TOKEN}`

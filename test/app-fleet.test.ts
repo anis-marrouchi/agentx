@@ -103,7 +103,15 @@ describe("handleAppFleet", () => {
     await call(d, "POST", "/api/app/crons/toggle", { node: "n", cronId: "digest", enabled: false })
     expect(d.nodePost).toHaveBeenLastCalledWith("n", "/crons/digest/enabled", { enabled: false })
     await call(d, "POST", "/api/app/approvals/decide", { node: "n", key: "card:c1", action: "yes" })
-    expect(d.decide).toHaveBeenLastCalledWith("n", "card:c1", "yes", "operator (phone: My phone)")
+    expect(d.decide).toHaveBeenLastCalledWith("n", "card:c1", "yes", "operator (phone: My phone)", {})
+  })
+
+  it("passes a card's pick and edited message through (#743)", async () => {
+    const d = deps()
+    await call(d, "POST", "/api/app/approvals/decide", { node: "n", key: "card:c1", action: "yes", choice: 2, text: "Build: the watchdog" })
+    expect(d.decide).toHaveBeenLastCalledWith("n", "card:c1", "yes", "operator (phone: My phone)", { choice: 2, text: "Build: the watchdog" })
+    await call(d, "POST", "/api/app/approvals/decide", { node: "n", key: "card:c1", action: "yes", choice: "Watchdog", text: "  " })
+    expect(d.decide).toHaveBeenLastCalledWith("n", "card:c1", "yes", "operator (phone: My phone)", { choice: "Watchdog" })
   })
 
   it("passes the node's status and body through", async () => {

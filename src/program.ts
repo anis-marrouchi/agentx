@@ -13,6 +13,7 @@ import { db as dbCmd } from "@/commands/db"
 import { ledger as ledgerCmd } from "@/commands/ledger"
 import { decisions as decisionsCmd } from "@/commands/decisions"
 import { trace as traceCmd } from "@/commands/trace"
+import { retro as retroCmd } from "@/commands/retro"
 import { guard as guardCmd } from "@/commands/guard"
 import { point as pointCmd } from "@/commands/point"
 import { express as expressCmd } from "@/commands/express"
@@ -159,7 +160,7 @@ const ADVANCED = [
   // Workflow / BPM
   workflow, webhook, board, backlog, business, plan,
   // Observability + forensics
-  ledgerCmd, decisionsCmd, traceCmd, processCmd, watch, eventsCmd, dbCmd,
+  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, watch, eventsCmd, dbCmd,
   // Fleet + extension
   mesh, a2a, skillCmd, pluginCmd, hook, actionsCmd, people,
   // Scheduling internals (`schedule` is the friendly front door)

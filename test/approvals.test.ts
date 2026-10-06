@@ -442,6 +442,27 @@ describe("the dashboard (operator) API", () => {
     expect(again.status).toBe(409)
   })
 
+  it("takes a card's pick and edited message, and refuses a yes without a pick (#743)", async () => {
+    const c = createCard(root, card({ choices: ["Script", "Watchdog"], draft: "Build: {choice}" }), { now: NOW })
+    if (!c.ok) throw new Error(c.error)
+    const key = `card:${c.card.id}`
+    const list = await (await fetch(`${base}/api/admin/approvals`)).json() as any
+    expect(list.items[0]).toMatchObject({ choices: ["Script", "Watchdog"], draft: "Build: {choice}" })
+    const post = (body: Record<string, unknown>) => fetch(`${base}/api/admin/approvals/decide`, {
+      method: "POST", body: JSON.stringify({ key, action: "yes", ...body }), headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" },
+    })
+    expect((await post({})).status).toBe(409)
+    expect(readCard(root, c.card.id)?.status).toBe("pending")
+    for (const choice of [3, 0, "Something else"]) {
+      const bad = await post({ choice })
+      expect(bad.status).toBeGreaterThanOrEqual(400)
+      expect(await bad.text()).toMatch(/choice must be 1-2/)
+      expect(readCard(root, c.card.id)?.status).toBe("pending")
+    }
+    expect((await post({ choice: 2, text: "Build: Watchdog, alert on the ops chat" })).status).toBe(200)
+    expect(readCard(root, c.card.id)).toMatchObject({ verdict: "yes", choice: "Watchdog", text: "Build: Watchdog, alert on the ops chat" })
+  })
+
   it("puts a card back in line for the Mac popup, when the popup is on", async () => {
     const c = createCard(root, card(), { now: NOW })
     if (!c.ok) throw new Error(c.error)

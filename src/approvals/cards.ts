@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve } from "path"
-import { answerLines, buildChoices, resolveAnswer, type CardChoices } from "./choices"
-import { originLines, type CardOrigin } from "./origin"
+import { answerLines, buildChoices, draftFor, resolveAnswer, type CardChoices } from "./choices"
+import { originLines, RETRO_NONE, retroApproved, retroLines, type CardOrigin } from "./origin"
 
 // --- Decision cards: what an agent asks the operator ---
 //
@@ -271,9 +271,14 @@ export function createCard(
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const built = buildCard(input, opts)
   if (!built.ok) return built
-  const open = listCards(root, "pending").filter((c) => c.raised_by === built.card.raised_by).length
+  // Retro cards are raised for an agent, not by it: they get their own
+  // count, so they never use up the agent's room for its own cards.
+  const isRetro = (c: { origin?: CardOrigin }) => c.origin?.kind === "retro"
+  const retro = isRetro(built.card)
+  const open = listCards(root, "pending").filter((c) => c.raised_by === built.card.raised_by && isRetro(c) === retro).length
   if (open >= CARD_LIMITS.pendingPerAgent) {
-    return { ok: false, error: `${built.card.raised_by} already has ${open} cards waiting; wait for decisions before raising more` }
+    const what = retro ? "retro cards" : "cards"
+    return { ok: false, error: `${built.card.raised_by} already has ${open} ${what} waiting; wait for decisions before raising more` }
   }
   saveCard(root, built.card)
   return built
@@ -337,18 +342,31 @@ export function markAgentNotified(root: string, id: string, now: number = Date.n
 
 /** What the raising agent is told. Plain text, one short message. */
 export function verdictMessage(card: DecisionCard): string {
+  const retro = card.origin?.kind === "retro" ? card.origin : undefined
   const result = card.status === "decided"
-    ? (card.verdict === "yes" ? "The operator said YES." : "The operator said NO.")
+    ? (card.verdict === "yes"
+        ? (retro && !retroApproved(card) ? `The operator picked "${RETRO_NONE}", which counts as NO.` : "The operator said YES.")
+        : "The operator said NO.")
     : `Nobody answered before it expired, so the default applied: ${card.outcome ?? card.if_silent}.`
   const lines = [
     `[Approval result] Your decision card "${card.title}" (${card.id}) is closed.`,
     `Question: ${card.ask}`,
     result,
   ]
-  if (card.status === "decided" && card.verdict === "yes") lines.push(...answerLines(card))
+  // A retro card's pick and spec go through retroLines, labelled as the
+  // reviewer's proposal: never "Approved text (send exactly this)".
+  if (card.status === "decided" && card.verdict === "yes" && !retro) lines.push(...answerLines(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
+  if (retro) {
+    // Compare ignoring whitespace so a dashboard that only reflows the draft
+    // does not resend the whole draft as the operator's note.
+    const squash = (s: string) => s.replace(/\s+/g, " ").trim()
+    const draft = draftFor(card.draft, card.choice)
+    const edited = card.text && squash(card.text) !== squash(draft) ? card.text : undefined
+    lines.push(...retroLines(retro, card, edited))
+  }
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)
   if (card.node) lines.push(`The operator answered it on another machine; the card was forwarded from ${card.node}.`)
   lines.push("Act on this result now. Do not raise the same card again.")
