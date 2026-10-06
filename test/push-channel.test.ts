@@ -147,11 +147,12 @@ describe("PushAdapter, phones paired with a relaying node (#711)", () => {
     expect(store.recent(10, "laptop:tok_a")).toMatchObject([{ deviceId: "laptop:tok_a" }])
   })
 
-  it("keeps a plain device id when the relay has no phone by that id here", async () => {
+  it("never falls back to a phone paired here with the same token id", async () => {
     store.subscribe(sub(1, "tok_a"))
     const hit: string[] = []
-    await adapter(async (s) => { hit.push(s.endpoint) }).send({ channel: "push", chatId: "tok_a", text: "hi", origin: "laptop" } as any)
-    expect(hit).toEqual(["https://push.example.com/1"])
+    await expect(adapter(async (s) => { hit.push(s.endpoint) }).send({ channel: "push", chatId: "tok_a", text: "hi", origin: "laptop" } as any))
+      .rejects.toThrow("laptop:tok_a has not turned on notifications")
+    expect(hit).toEqual([])
   })
 
   it("sends to every phone, wherever it is paired", async () => {

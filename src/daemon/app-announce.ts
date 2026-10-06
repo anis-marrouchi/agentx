@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "http"
 import type { TokenRecord } from "./token-store"
 import type { DaemonConfig } from "./config"
 import { PushPrefs } from "@/channels/push-prefs"
-import { relayedPush } from "./app-push"
+import { relayedPushHere } from "./app-push"
 import { openDb } from "@/storage/sqlite"
 import { dashboardTokenForNode } from "./mesh-auth"
 
@@ -81,7 +81,7 @@ export function appAnnounceDeps(config: DaemonConfig): AppAnnounceDeps {
     prefs: () => {
       if (!push.enabled) return null
       // A relay shows the switch as the push host last reported it (#711).
-      if (push.relayTo) return relayedPush
+      if (push.relayTo) return relayedPushHere()
       const db = openDb()
       return db ? new PushPrefs(db) : null
     },

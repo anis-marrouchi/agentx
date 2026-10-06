@@ -105,6 +105,11 @@ export class PushStore {
     return removed
   }
 
+  /** Removes every subscription of one device id. Returns how many went. */
+  forgetDevice(deviceId: string): number {
+    return this.db.prepare("DELETE FROM push_subscriptions WHERE device_id = ?").run(deviceId).changes
+  }
+
   /** Records a sent push and keeps only the newest `keep` rows. */
   log(entry: Omit<PushLogRow, "id" | "at">, keep: number, now = Date.now()): void {
     this.db.prepare("INSERT INTO push_log (at, title, body, url, delivered, device_id) VALUES (?, ?, ?, ?, ?, ?)")

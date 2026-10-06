@@ -1,4 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "http"
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
+import { dirname, resolve } from "path"
 import type { TokenRecord } from "./token-store"
 import type { PushStore } from "@/channels/push-store"
 import { PUSH_PREFS, type PushPrefName } from "@/channels/push-prefs"
@@ -84,6 +86,23 @@ export async function handleAppPush(
  *  through, so it is as fresh as the phone's last look at Alerts. */
 export class RelayedPushState {
   private phones = new Map<string, { subscribed: boolean; prefs: Record<string, boolean> }>()
+  private file: string | null = null
+
+  /** Keeps the state in `file` too, so a dashboard restart doesn't stop
+   *  finish notifications until the phone next opens Alerts. Loads it the
+   *  first time; later calls with the same file do nothing. */
+  persistTo(file: string): void {
+    if (this.file === file) return
+    this.file = file
+    try {
+      const saved = JSON.parse(readFileSync(file, "utf-8")) as Record<string, any>
+      for (const [id, p] of Object.entries(saved ?? {})) {
+        if (p && typeof p === "object" && typeof p.subscribed === "boolean") {
+          this.phones.set(id, { subscribed: p.subscribed, prefs: pickPrefsFrom(p.prefs) })
+        }
+      }
+    } catch { /* none yet, or unreadable: start empty */ }
+  }
 
   note(call: AppPushCall, out: AppPushResult): void {
     if (out.status !== 200 || !out.body || typeof out.body !== "object") return
@@ -102,6 +121,17 @@ export class RelayedPushState {
       return
     }
     this.phones.set(call.device.id, phone)
+    this.save()
+  }
+
+  private save(): void {
+    if (!this.file) return
+    try {
+      mkdirSync(dirname(this.file), { recursive: true })
+      const tmp = `${this.file}.${process.pid}.tmp`
+      writeFileSync(tmp, JSON.stringify(Object.fromEntries(this.phones)) + "\n", { encoding: "utf-8", mode: 0o600 })
+      renameSync(tmp, this.file)
+    } catch { /* kept in memory; written again at the next change */ }
   }
 
   /** A switch as last seen, or its default. */
@@ -118,10 +148,20 @@ export class RelayedPushState {
 /** One per dashboard process. */
 export const relayedPush = new RelayedPushState()
 
+/** relayedPush, kept in .agentx/ of the folder the dashboard runs in. */
+export function relayedPushHere(): RelayedPushState {
+  relayedPush.persistTo(resolve(process.cwd(), ".agentx/push-relayed.json"))
+  return relayedPush
+}
+
 function pickPrefs(body: Record<string, any>): Record<string, boolean> {
   const out: Record<string, boolean> = {}
   for (const p of Object.values(PUSH_PREFS)) if (typeof body[p.field] === "boolean") out[p.field] = body[p.field]
   return out
+}
+
+function pickPrefsFrom(v: unknown): Record<string, boolean> {
+  return v && typeof v === "object" && !Array.isArray(v) ? pickPrefs(v as Record<string, any>) : {}
 }
 
 /** What a relaying node answers when the push host can't be reached: the

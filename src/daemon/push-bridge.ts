@@ -11,8 +11,14 @@ import type { PushStore } from "@/channels/push-store"
 //
 //   phone → relay dashboard /api/app/push*  (device token checked there)
 //         → relay daemon POST /push/app     (loopback)
-//         → host daemon  POST /push/app     (mesh token, origin = relay name)
+//         → host daemon  POST /push/app     (the relay's peer token)
 //         → runAppPush on the host's table, device id "<origin>:<tok_…>"
+//
+// The host never takes the origin from the request: it is the name of the
+// mesh.peers entry whose token the caller presented (pushBridgeCaller). A
+// caller holding only MESH_TOKEN, which every node accepts, names no node
+// and is refused, so one node can't subscribe, read or prune under
+// another's name.
 //
 // The relay also sends its roster of active token ids ("roster" op). The
 // host drops that node's rows whose phone is no longer in it, so
@@ -44,12 +50,44 @@ export function pushOrigin(nodeName: string): string {
   return (nodeName.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "node").slice(0, 64)
 }
 
-/** On the host: answers one bridged request. `deps` is null when this node
- *  is not sending pushes itself; `reason` then says why. */
-export function handlePushBridge(raw: unknown, deps: (AppPushDeps & { store: () => PushStore | null }) | null, reason?: string): AppPushResult {
+/** Who is calling, on the host: the origin of the mesh.peers entry whose
+ *  token the caller presented, or why the call can't be tied to one. */
+export type PushBridgeCaller = { origin: string } | { error: string }
+
+export function pushBridgeCaller(
+  authorization: string,
+  peers: ReadonlyArray<{ name: string; token?: string }>,
+  meshToken?: string,
+): PushBridgeCaller {
+  const token = /^bearer /i.test(authorization) ? authorization.slice(7).trim() : ""
+  const needs = "Phones paired with another computer need that computer's own peer token: give it a token in mesh.peers on both computers."
+  // MESH_TOKEN is shared by the whole mesh, so it says nothing about who sent it.
+  if (!token || (meshToken && token === meshToken)) return { error: needs }
+  const origins = new Set(peers.filter((p) => p.token === token).map((p) => pushOrigin(p.name)))
+  if (origins.size === 0) return { error: needs }
+  if (origins.size > 1) return { error: `Several mesh.peers entries share this token (${[...origins].join(", ")}). Give each computer its own token.` }
+  const [origin] = origins
+  // Two peers whose names map to one origin would share, and prune, each
+  // other's phones ("my mac" and "my-mac").
+  const clash = peers.filter((p) => p.token !== token && pushOrigin(p.name) === origin).map((p) => p.name)
+  if (clash.length) return { error: `mesh.peers names ${clash.map((n) => `"${n}"`).join(", ")} too close to this computer's name: rename one so they differ in letters or digits.` }
+  return { origin }
+}
+
+/** The origins of the configured peers, for checking a scoped device id on
+ *  the host: a row whose node left mesh.peers is no longer delivered. */
+export function peerOrigins(peers: ReadonlyArray<{ name: string }>): Set<string> {
+  return new Set(peers.map((p) => pushOrigin(p.name)))
+}
+
+/** On the host: answers one bridged request from `caller` (pushBridgeCaller).
+ *  `deps` is null when this node is not sending pushes itself; `reason`
+ *  then says why. An `origin` in the request itself is ignored. */
+export function handlePushBridge(raw: unknown, caller: PushBridgeCaller, deps: (AppPushDeps & { store: () => PushStore | null }) | null, reason?: string): AppPushResult {
   const req = (raw && typeof raw === "object" ? raw : {}) as Record<string, any>
-  const origin = typeof req.origin === "string" ? req.origin : ""
-  if (!ORIGIN.test(origin)) return { status: 400, body: { error: "origin must be the relaying node's name" } }
+  if ("error" in caller) return { status: 403, body: { error: caller.error } }
+  const origin = caller.origin
+  if (!ORIGIN.test(origin)) return { status: 403, body: { error: "this peer's name can't be used as a notification origin" } }
   if (!deps) return { status: 503, body: { error: reason ?? "Notifications are not set up on the computer that sends them." } }
 
   if (req.op === "roster") {
@@ -96,7 +134,15 @@ export class PushRosterSync {
 
   async tick(): Promise<boolean> {
     const now = (this.deps.now ?? Date.now)()
-    const active = [...new Set(this.deps.active())].sort()
+    let active: string[]
+    try {
+      active = [...new Set(this.deps.active())].sort()
+    } catch (e: any) {
+      // A torn or failed read of the phone list: sending nothing keeps the
+      // host's rows; sending [] would unsubscribe every phone paired here.
+      this.deps.log?.(`push: phone list not read, not sent this time: ${e?.message ?? e}`)
+      return false
+    }
     const key = active.join(",")
     if (key === this.lastKey && now - this.lastSentAt < ROSTER_RESEND_MS) return false
     try {

@@ -52,7 +52,7 @@ import { dashboardIcon } from "./app-icon"
 import { assetLinks, handleDashboardPlaces, placesDeps, type PlacesDeps } from "./app-places"
 import { daemonFireDeps } from "@/places/fire"
 import { renderPlacesPage } from "./ui/pages/places"
-import { relayedPush, type AppPushDeps } from "./app-push"
+import { relayedPush, relayedPushHere, type AppPushDeps } from "./app-push"
 import { appAnnounceDeps } from "./app-announce"
 import { PushStore } from "@/channels/push-store"
 import { AppChatStore } from "./app-chat-store"
@@ -2293,6 +2293,7 @@ function appPushDeps(config: DaemonConfig): AppPushDeps {
     // through this node's daemon (POST /push/app, push-bridge.ts).
     const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
     const token = process.env.MESH_TOKEN || dashboardTokenForNode(config.dashboard, primary)
+    relayedPushHere()
     return {
       ...off(`Can't reach ${push.relayTo}, the computer that sends notifications`),
       async forward(call) {

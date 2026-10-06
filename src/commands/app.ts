@@ -6,6 +6,9 @@ import { TokenStore } from "@/daemon/token-store"
 import { CODE_TTL_MS, PairCodeStore, formatCode } from "@/daemon/pair-codes"
 import { loadDaemonConfig } from "@/daemon/config"
 import { DEFAULT_PUSH_KEYS_FILE, pushKeysPath, readPushKeys, writePushKeys } from "@/channels/push-keys"
+import { isRemoteDevice } from "@/channels/push"
+import { PushStore } from "@/channels/push-store"
+import { openDb } from "@/storage/sqlite"
 
 // --- agentx app: pair phones with the /app PWA ---
 //
@@ -61,7 +64,8 @@ appCmd
   .description("list paired phones")
   .action(() => {
     const devices = new TokenStore().list().filter((r) => r.scopes.includes("app"))
-    if (devices.length === 0) {
+    const relayed = relayedPhones()
+    if (devices.length === 0 && relayed.length === 0) {
       console.log(chalk.dim("\n  No paired phones. Run `agentx app pair`.\n"))
       return
     }
@@ -71,6 +75,15 @@ appCmd
       console.log(`  ${chalk.cyan(d.id)}  ${status}  ${d.name}`)
       console.log(chalk.dim(`    paired: ${d.createdAt}${d.lastUsedAt ? `  last used: ${d.lastUsedAt}` : ""}`))
     }
+    if (relayed.length > 0) {
+      if (devices.length > 0) console.log()
+      console.log(chalk.bold("  Paired with another computer, notifications sent from here:"))
+      for (const r of relayed) {
+        console.log(`  ${chalk.cyan(r.deviceId)}  ${r.deviceName}`)
+        console.log(chalk.dim(`    subscribed: ${new Date(r.createdAt).toISOString()}  browsers: ${r.subscriptions}`))
+      }
+      console.log(chalk.dim("  Remove one with `agentx app revoke <computer>:<tok_…>`, or every phone of a computer with `agentx app forget-computer <computer>`."))
+    }
     console.log()
   })
 
@@ -78,6 +91,19 @@ appCmd
   .command("revoke <id>")
   .description("unpair a phone immediately")
   .action((id: string) => {
+    if (isRemoteDevice(id)) {
+      // A phone paired with another computer: only its notifications are
+      // here. Unpairing it is done on that computer.
+      const removed = withPushStore((push) => push.forgetDevice(id))
+      if (!removed) {
+        console.log(chalk.red(`  No notifications for ${id} here. See \`agentx app devices\`.`))
+        process.exit(1)
+      }
+      const node = id.slice(0, id.indexOf(":"))
+      console.log(chalk.green(`\n  ✓ Stopped notifications to ${id}`))
+      console.log(chalk.dim(`  The phone is still paired with ${node}. To unpair it, run there: agentx app revoke ${id.slice(node.length + 1)}\n`))
+      return
+    }
     const store = new TokenStore()
     const device = store.list().find((r) => r.id === id && r.scopes.includes("app"))
     if (!device) {
@@ -86,6 +112,20 @@ appCmd
     }
     store.revoke(id)
     console.log(chalk.green(`\n  ✓ Unpaired ${id} (${device.name})\n`))
+  })
+
+appCmd
+  .command("forget-computer <name>")
+  .description("stop notifications to every phone paired with another computer (by its name in `agentx app devices`)")
+  .action((name: string) => {
+    const origin = String(name).replace(/:$/, "")
+    const removed = withPushStore((push) => push.pruneOrigin(origin, []))
+    if (!removed) {
+      console.log(chalk.red(`  No phones of ${origin} get notifications here. See \`agentx app devices\`.`))
+      process.exit(1)
+    }
+    console.log(chalk.green(`\n  ✓ Stopped notifications to ${removed} subscription${removed === 1 ? "" : "s"} of phones paired with ${origin}`))
+    console.log(chalk.dim(`  While ${origin} is still in mesh.peers, its phones can turn notifications on again. Remove it there to keep them off.\n`))
   })
 
 appCmd
@@ -109,6 +149,32 @@ appCmd
     if (existing) console.log(chalk.yellow(`  ⚠ Old keys replaced: open Alerts on each phone and turn notifications on again.`))
     console.log(chalk.dim(`  Restart the daemon so it picks up the keys.\n`))
   })
+
+/** Runs `fn` on this folder's subscriptions table. */
+function withPushStore<T>(fn: (push: PushStore) => T): T {
+  const db = openDb()
+  if (!db) {
+    console.log(chalk.red("  The database (.agentx/db.sqlite) can't be opened here."))
+    process.exit(1)
+  }
+  return fn(new PushStore(db))
+}
+
+/** Phones paired with a relaying computer that subscribed here (#711),
+ *  one line per device id. Empty when the database can't be opened. */
+function relayedPhones(): Array<{ deviceId: string; deviceName: string; createdAt: number; subscriptions: number }> {
+  const db = openDb({ quiet: true })
+  if (!db) return []
+  const byId = new Map<string, { deviceId: string; deviceName: string; createdAt: number; subscriptions: number }>()
+  for (const s of new PushStore(db).list()) {
+    if (!isRemoteDevice(s.deviceId)) continue
+    const row = byId.get(s.deviceId) ?? { deviceId: s.deviceId, deviceName: s.deviceName, createdAt: s.createdAt, subscriptions: 0 }
+    row.subscriptions++
+    row.createdAt = Math.max(row.createdAt, s.createdAt)
+    byId.set(s.deviceId, row)
+  }
+  return [...byId.values()]
+}
 
 /** What `agentx app pair` prints under the QR code. */
 export function pairingLines(p: { code: string; origin: string; deviceId: string; deviceName: string }): string[] {

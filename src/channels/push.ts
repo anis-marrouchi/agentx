@@ -129,11 +129,9 @@ export class PushAdapter implements ChannelAdapter {
     if (!keys) throw new Error("push: no keys — run `agentx app push-keys` on this node")
     const requested = (msg.chatId || "").trim()
     let device = requested && requested !== "default" ? requested : undefined
-    // A relay addressed one of its own phones: use the id it has here.
-    if (device && msg.origin && !isRemoteDevice(device)) {
-      const scoped = remoteDeviceId(msg.origin, device)
-      if (this.deps.store.list(scoped).length > 0) device = scoped
-    }
+    // A relay addressed one of its own phones: only the id it has here, so
+    // a token id that happens to match a phone paired here never gets it.
+    if (device && msg.origin && !isRemoteDevice(device)) device = remoteDeviceId(msg.origin, device)
 
     const subs: PushSubscriptionRow[] = []
     for (const s of this.deps.store.list(device)) {
