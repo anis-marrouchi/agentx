@@ -8,8 +8,11 @@ Run a one-person company from Telegram: an **@ops** agent for triage, tasks, and
 cp examples/solo-founder/agentx.json agentx.json
 echo "TG_BOT_TOKEN=..." >> .env          # from @BotFather
 mkdir -p workspaces/ops workspaces/books
+# edit agentx.json: replace @REPLACE-WITH-YOUR-USERNAME with your Telegram username
 agentx daemon start
 ```
+
+Before `agentx daemon start`, put your own Telegram username in `agentx.json`: replace `@REPLACE-WITH-YOUR-USERNAME` under `channels.telegram.policy.allowFrom` with yours (for example `@jane_doe`). The bot ignores every message from anyone not on that list ([Connect Telegram](../../docs/connect-telegram.md#4-allow-people-to-talk-to-the-bot)).
 
 DM your bot, then try:
 
