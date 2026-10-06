@@ -59,6 +59,19 @@ export class FrameSampler<T> {
     this.timer.unref?.()
   }
 
+  /** Change the interval while running: 0 turns it off, a positive value
+   *  (re)starts it. A watch uses it for a short continuous look. */
+  retime(intervalMs: number): void {
+    if (this.stopped) return
+    if (this.timer) clearInterval(this.timer)
+    this.timer = undefined
+    this.opts.intervalMs = intervalMs
+    this.start()
+  }
+
+  /** The interval now in force, 0 when off. */
+  get intervalMs(): number { return this.timer ? this.opts.intervalMs : 0 }
+
   private async tick(): Promise<void> {
     if (this.busy || this.stopped) return
     const latest = this.latest

@@ -53,7 +53,7 @@ describe.skipIf(!wrtc)("camera watch over WebRTC", () => {
     const feed = setInterval(() => source.onFrame({ width: W, height: H, data: i420 }), 50)
 
     const mgr = new CameraWatchManager({
-      config: () => ({ frameIntervalSeconds: 0, maxSessionMinutes: 1, maxFrameEdge: 160, keepFrames: false }),
+      config: () => ({ frameIntervalSeconds: 0, maxSessionMinutes: 1, maxFrameEdge: 160, keepFrames: false, streamFrameSeconds: 5, streamMaxSeconds: 60 }),
       startBot: async ({ callId, agentId, onFrame, onClosed }) => {
         const bot = new WebRtcBot({ callId, botName: `bot:${agentId}`, target: "Node-A", iceServers: [], broker, log: (...a) => logs.push(a.join(" ")), onVideoFrame: onFrame, alwaysOffer: true, onClosed })
         await bot.start()

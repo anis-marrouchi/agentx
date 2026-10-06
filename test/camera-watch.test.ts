@@ -69,7 +69,7 @@ const frames = (callId: string) => join(dir, "writer-ws", ".agentx", "camera", c
 
 describe("config", () => {
   it("defaults: on demand only, 10 minutes, 1024 px, frames not kept", () => {
-    expect(cameraBotSchema.parse(undefined)).toEqual({ frameIntervalSeconds: 0, maxSessionMinutes: 10, maxFrameEdge: 1024, keepFrames: false })
+    expect(cameraBotSchema.parse(undefined)).toEqual({ frameIntervalSeconds: 0, maxSessionMinutes: 10, maxFrameEdge: 1024, keepFrames: false, streamFrameSeconds: 5, streamMaxSeconds: 60 })
     expect(() => cameraBotSchema.parse({ maxFrameEdge: 10 })).toThrow()
   })
 })
@@ -220,6 +220,82 @@ describe("interval frames", () => {
     await vi.advanceTimersByTimeAsync(45_000)
     expect(turns).toHaveLength(1)                   // nothing new: no turn
     expect(mgr.get("cam-1234")?.replies).toHaveLength(1)
+  })
+})
+
+describe("frames reach the agent only when needed (#687)", () => {
+  it("with nothing asked, no frame reaches the agent, and every hand-over is logged with why", async () => {
+    vi.useFakeTimers()
+    const logs: string[] = []
+    const m2 = new CameraWatchManager({
+      config: () => cfg,
+      startBot: async (o) => { const b: FakeBot = { ...o, closed: null }; bots.push(b); return { close: () => {} } },
+      workspaceOf: () => join(dir, "writer-ws"), agentName: () => "Writer",
+      turn: async (t) => { turns.push(t); return "ok" }, cwd: () => dir, now: () => now,
+      log: (l) => logs.push(l),
+    })
+    await m2.start({ callId: "cam-quiet", agentId: "writer" })
+    for (let i = 0; i < 50; i++) bots[0].onFrame(frame())
+    await vi.advanceTimersByTimeAsync(90_000)       // under maxSessionMinutes (2)
+    expect(turns).toEqual([])
+    expect(logs.filter((l) => /gets frame/.test(l))).toEqual([])
+    expect(logs.some((l) => /frames on demand/.test(l))).toBe(true)
+    await m2.look("cam-quiet", "what is it?")
+    expect(turns).toHaveLength(1)
+    expect(logs.filter((l) => /gets frame/.test(l))).toEqual(["[camera] writer gets frame 50 of share cam-quiet (asked)"])
+    m2.shutdown()
+  })
+
+  it("asks for a short answer that can be read aloud", () => {
+    const p = framePrompt({ path: "/tmp/f.png", width: 10, height: 5, takenAt: 0, note: "what cable?" })
+    expect(p).toContain('The owner asks: "what cable?"')
+    expect(p).toMatch(/read aloud/)
+    expect(p).toMatch(/one or two short plain sentences/)
+    expect(framePrompt({ path: "/tmp/f.png", width: 10, height: 5, takenAt: 0, note: "tell me if I miss a screw", stream: true })).toMatch(/watching while the owner works.*tell me if I miss a screw/)
+  })
+})
+
+describe("keep watching (stream)", () => {
+  it("hands over a frame every streamFrameSeconds, only while on, then stops by itself", async () => {
+    vi.useFakeTimers()
+    cfg = { ...cfg, streamFrameSeconds: 5, streamMaxSeconds: 20 }
+    await mgr.start({ callId: "cam-1234", agentId: "writer" })
+    expect(mgr.stream("nope", 10)).toMatchObject({ ok: false, status: 404 })
+    expect(mgr.stream("cam-1234", -1)).toMatchObject({ ok: false, status: 400 })
+    const r = mgr.stream("cam-1234", 999, "watch the screws")
+    expect(r.ok && r.watch.streamUntil).toBe(now + 20_000)        // capped at streamMaxSeconds
+    for (let i = 0; i < 3; i++) { bots[0].onFrame(frame()); await vi.advanceTimersByTimeAsync(5_000) }
+    expect(turns).toHaveLength(3)
+    expect(turns[0].message).toContain("watch the screws")
+    expect(delivered).toEqual([])                                 // the phone on screen shows them
+    expect(mgr.get("cam-1234")?.replies).toHaveLength(3)
+    expect(mgr.get("cam-1234")?.streamUntil).toBe(now + 20_000)
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(mgr.get("cam-1234")?.streamUntil).toBeNull()           // stopped by itself
+    bots[0].onFrame(frame())
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(turns).toHaveLength(3)                                 // back to on demand
+  })
+
+  it("seconds 0 stops it at once", async () => {
+    vi.useFakeTimers()
+    await mgr.start({ callId: "cam-1234", agentId: "writer" })
+    mgr.stream("cam-1234", 60)
+    expect(mgr.stream("cam-1234", 0)).toMatchObject({ ok: true, watch: { streamUntil: null } })
+    bots[0].onFrame(frame())
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(turns).toEqual([])
+  })
+
+  it("the route turns it on and off", async () => {
+    await mgr.start({ callId: "cam-1234", agentId: "writer" })
+    const deps = { watch: mgr, isRunningTurn: () => false }
+    const on = await handleCamera(deps, "POST", "/webrtc/camera/watch/cam-1234/stream", { seconds: 30, note: "x" })
+    expect(on.status).toBe(200)
+    expect((on.body as any).watch.streamUntil).toBe(now + 30_000)
+    const off = await handleCamera(deps, "POST", "/webrtc/camera/watch/cam-1234/stream", { seconds: 0 })
+    expect((off.body as any).watch.streamUntil).toBeNull()
+    expect((await handleCamera(deps, "POST", "/webrtc/camera/watch/cam-9999/stream", { seconds: 5 })).status).toBe(404)
   })
 })
 

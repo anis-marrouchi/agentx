@@ -42,4 +42,21 @@ export const CAMERA_CSS = `
   border: var(--ax-border-w) solid var(--ax-border); line-height: 1.5; max-height: 30vh; overflow: auto;
 }
 .cam-reply strong { display: block; font-size: 13px; color: var(--ax-text-2); margin-bottom: 4px; }
+/* Talk: the way to ask by default (#687). Big, one thumb, its state in colour and words. */
+.cam-talk[hidden] { display: none; }
+.cam-talk {
+  display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 64px; margin: 0 0 12px;
+  border-radius: var(--ax-radius-pill); border: 2px solid var(--ax-accent); background: var(--ax-accent); color: #fff;
+  font: inherit; font-size: 18px; font-weight: 700; cursor: pointer;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.cam-talk.is-on { background: var(--ax-red); border-color: var(--ax-red); }
+.cam-talk[disabled] { opacity: .6; cursor: default; }
+.cam-talk:focus-visible { outline: 3px solid var(--ax-text); outline-offset: 2px; }
+.cam-mic { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; flex: none; }
+/* Keep watching is on: the red bar says so with a second countdown. */
+.cam-live.is-stream .cam-dot { animation: cam-pulse 1s ease-in-out infinite; }
+@keyframes cam-pulse { 50% { opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .cam-live.is-stream .cam-dot { animation: none; } }
+#cam-stream[aria-pressed="true"] { border-color: var(--ax-red); color: var(--ax-red-ink); }
 `

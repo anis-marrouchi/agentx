@@ -119,6 +119,8 @@ const defaults = {
   announcements: "none" as "none" | "two",
   // An agent asking to see through the camera.
   ask: false,
+  // What the microphone "heard" (speech to text answers this).
+  heard: "Voice test message",
   // The pairing page: the phone is not known, and the code may be rate limited.
   locked: false,
   pair: "ok" as "ok" | "too-many",
@@ -126,6 +128,8 @@ const defaults = {
   slow: false,
 }
 let scene = { ...defaults }
+// Keep watching on the camera sheet: when it stops by itself.
+let streamUntil = 0
 
 function api(path: string): any {
   switch (path) {
@@ -186,9 +190,12 @@ function api(path: string): any {
     case "/api/app/camera/asks":
       return { asks: scene.ask ? [{ id: "cam-ask-demo", agentId: "helper", reason: "Show me the switch at the top of the rack" }] : [] }
     case "/api/app/camera/config":
-      return { peers: [{ name: "Workshop" }], agents: [{ id: "helper", name: "Helper" }], camera: { width: 1280, height: 720, frameRate: 15, maxSeconds: 600 } }
+      return {
+        peers: [{ name: "Workshop" }], agents: [{ id: "helper", name: "Helper" }],
+        camera: { width: 1280, height: 720, frameRate: 15, maxSeconds: 600, voiceInput: true, speakAnswers: true, bot: { maxSessionMinutes: 10, streamMaxSeconds: 60 } },
+      }
     case "/api/app/camera/watch":
-      return { watch: { replies: [] } }
+      return { watch: { replies: [], streamUntil: streamUntil > Date.now() ? streamUntil : null } }
     case "/api/app/places":
       return {
         enabled: true, reason: null, pushAvailable: true, pushReason: null,
@@ -280,7 +287,7 @@ createServer(async (req, res) => {
     return
   }
   if (path === "/api/app/voice/transcribe") {
-    json(200, { text: "Voice test message" })
+    json(200, { text: scene.heard })
     return
   }
   if (path === "/api/app/pair-code" && req.method === "POST") {
@@ -309,6 +316,12 @@ createServer(async (req, res) => {
         at: Date.now(),
       },
     })
+    return
+  }
+  if (path === "/api/app/camera/stream" && req.method === "POST") {
+    const body = await read()
+    streamUntil = body.seconds > 0 ? Date.now() + body.seconds * 1000 : 0
+    json(200, { watch: { streamUntil: streamUntil || null } })
     return
   }
   if (req.method === "POST") {

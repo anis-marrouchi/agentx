@@ -427,6 +427,12 @@ export const cameraBotSchema = z.object({
   /** Keep the frame files in the agent's workspace after the share ends.
    *  Off: every frame is deleted when the share ends. */
   keepFrames: z.boolean().default(false),
+  /** "Keep watching" on the phone (#687): for a task that needs a stream
+   *  ("watch while I do this"), the agent gets a frame every this many
+   *  seconds, only while the owner has it on. */
+  streamFrameSeconds: z.number().int().min(2).max(60).default(5),
+  /** "Keep watching" stops by itself after this many seconds. */
+  streamMaxSeconds: z.number().int().min(10).max(600).default(60),
 }).default({})
 
 export type CameraBotConfig = z.infer<typeof cameraBotSchema>
@@ -672,6 +678,13 @@ const channelsConfigSchema = z.object({
       height: z.number().int().min(120).max(2160).default(720),
       frameRate: z.number().int().min(1).max(60).default(15),
       maxSeconds: z.number().int().min(10).max(7200).default(600),
+      /** Ask the watching agent by voice: hold or tap Talk (#687). Off: the
+       *  phone shows the text box only. The microphone opens only while
+       *  you talk and is never part of the share. */
+      voiceInput: z.boolean().default(true),
+      /** Say the watching agent's answers aloud on the phone, in the
+       *  agent's voice or the phone's own. The owner can mute it there. */
+      speakAnswers: z.boolean().default(true),
       /** An agent watching the phone camera. The bot keeps only the newest
        *  frame; the agent gets one when asked, and every
        *  frameIntervalSeconds when that is set. */

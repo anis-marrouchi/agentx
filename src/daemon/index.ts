@@ -6797,6 +6797,7 @@ export class AgentXDaemon {
               "POST /webrtc/camera/watch { callId, agentId }  — an agent watches the phone camera share",
               "GET  /webrtc/camera/watch  — agents watching a camera now",
               "POST /webrtc/camera/watch/:id/look { note? }  — ask the watching agent what it sees",
+              "POST /webrtc/camera/watch/:id/stream { seconds, note? }  — the agent keeps watching for a while (0 stops)",
               "POST /webrtc/camera/look { agentId }  — from an agent's run: the newest frame as a PNG path",
             ],
           })

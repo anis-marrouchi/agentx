@@ -257,10 +257,14 @@ WebRTC lets people call an agent from a browser.
 | `channels.webrtc.camera.height` | number (120–2160) | `720` | Picture height the phone asks for. |
 | `channels.webrtc.camera.frameRate` | number (1–60) | `15` | Frames per second the phone asks for. |
 | `channels.webrtc.camera.maxSeconds` | number (10–7200) | `600` | The phone stops sharing its camera after this many seconds. |
+| `channels.webrtc.camera.voiceInput` | boolean | `true` | Ask a [watching agent](../dashboard/mobile-camera.md#let-an-agent-look) by voice with **Talk**. The microphone is on only while you talk and is never part of the share. `false` shows only the text box. |
+| `channels.webrtc.camera.speakAnswers` | boolean | `true` | Read a watching agent's answers aloud on the phone, in the agent's ElevenLabs voice or the phone's own. Each phone can turn it off with **Answers aloud**. |
 | `channels.webrtc.camera.bot.frameIntervalSeconds` | number (0–3600) | `0` | When an [agent watches the camera](../dashboard/mobile-camera.md#let-an-agent-look), how often it gets a picture by itself, in seconds. `0` means only when you tap **Look now** or the agent asks for one. Each picture the agent gets by itself is a turn of the agent, so keep this high or at `0`. |
 | `channels.webrtc.camera.bot.maxSessionMinutes` | number (1–240) | `10` | An agent's watch ends after this many minutes, whatever the phone does. |
 | `channels.webrtc.camera.bot.maxFrameEdge` | number (160–3840) | `1024` | Pictures are shrunk so their longer side is at most this many pixels before the agent sees them. |
 | `channels.webrtc.camera.bot.keepFrames` | boolean | `false` | Keep the picture files in the agent's workspace (`.agentx/camera/`) after the share ends. Off: every picture is deleted when the share ends. |
+| `channels.webrtc.camera.bot.streamFrameSeconds` | number (2–60) | `5` | While **Keep watching** is on, the agent gets a picture this often, in seconds. Each picture is a turn of the agent. |
+| `channels.webrtc.camera.bot.streamMaxSeconds` | number (10–600) | `60` | **Keep watching** stops by itself after this many seconds. |
 
 ### Call bot
 

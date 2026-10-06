@@ -176,6 +176,7 @@ try {
     await wait("js:!document.querySelector('#cam-pick').hidden")
     await ev(`(() => { const s = document.querySelector('#cam-peer'); s.value = ${JSON.stringify(peer)}; s.dispatchEvent(new Event('change')) })()`)
   }
+  const talk = (type) => ev(`document.querySelector('#cam-talk').dispatchEvent(new PointerEvent('${type}', { button: 0, pointerId: 1, bubbles: true }))`)
   const stopCamera = async () => { await click("#cam-stop"); await wait("#cam-live[hidden]"); await click("#cam-close") }
   const qr = await QRCode.toDataURL("https://example.com/menu", { width: 320, margin: 0, color: { light: "#8a8a8aff" } })
 
@@ -267,12 +268,28 @@ try {
       await wait("js:(() => document.querySelector('#cam-msg').textContent.includes('is watching'))()"); await sleep(600)
       await shot("camera-live"); await stopCamera()
     },
-    "camera-agent-reply": async () => {
-      await open("/app", { conv: "cdemo" }); await camera("bot:helper"); await click("#cam-start")
+    "camera-talk": async () => {
+      await open("/app", { conv: "cdemo" }); await ev(fakeMic); await camera("bot:helper"); await click("#cam-start")
       await wait("js:(() => document.querySelector('#cam-msg').textContent.includes('can see the camera'))()")
-      await type("#cam-note", "What is plugged into the switch?"); await click("#cam-look")
+      await talk("pointerdown"); await wait("#cam-talk.is-on"); await sleep(300)
+      await shot("camera-talk"); await ev("document.querySelector('#cam-talk').dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, bubbles: true }))")
+      await stopCamera()
+    },
+    "camera-agent-reply": async () => {
+      await scene({ heard: "What is plugged into the switch?" })
+      await open("/app", { conv: "cdemo" }); await ev(fakeMic); await camera("bot:helper"); await click("#cam-start")
+      await wait("js:(() => document.querySelector('#cam-msg').textContent.includes('can see the camera'))()")
+      await talk("pointerdown"); await sleep(600); await talk("pointerup")
       await wait("#cam-reply:not([hidden]) div"); await ev("document.activeElement.blur()"); await sleep(600)
-      await shot("camera-agent-reply"); await stopCamera()
+      await shot("camera-agent-reply")
+      await click("#cam-stream"); await wait('#cam-stream[aria-pressed="true"]'); await sleep(1200)
+      await shot("camera-keep-watching"); await stopCamera(); await scene({ heard: "Voice test message" })
+    },
+    "camera-typing": async () => {
+      await open("/app", { conv: "cdemo" }); await ev(fakeMic); await camera("bot:helper"); await click("#cam-start")
+      await wait("js:(() => document.querySelector('#cam-msg').textContent.includes('can see the camera'))()")
+      await click("#cam-type"); await type("#cam-note", "What is plugged into the switch?"); await ev("document.activeElement.blur()"); await sleep(300)
+      await shot("camera-typing"); await click("#cam-type"); await stopCamera()
     },
     "camera-ask-bar": async () => { await scene({ ask: true }); await open("/app", { conv: "cdemo" }); await wait("#cam-ask-bar:not([hidden])"); await shot("camera-ask-bar"); await scene({ ask: false }) },
     "camera-ask-live": async () => {

@@ -12,7 +12,12 @@ import { frameToPng, type I420Frame, type RgbaImage } from "./frame-image"
 // in two ways, never as a stream:
 //   - on demand: the owner taps "Look now" (look), or the agent asks for
 //     the newest frame from inside its own turn (snapshot);
-//   - by itself, every camera.bot.frameIntervalSeconds when that is set.
+//   - by itself, every camera.bot.frameIntervalSeconds when that is set;
+//   - for a short while, every camera.bot.streamFrameSeconds, when the owner
+//     taps "Keep watching" for a task that needs it (stream, #687). It
+//     stops by itself after camera.bot.streamMaxSeconds.
+// Every frame handed over is logged with why, so a share where nothing was
+// asked shows that no frame reached the agent.
 // A frame is written as a PNG under <workspace>/.agentx/camera/<callId>/
 // and its absolute path goes in the agent's message, so a Claude Code
 // tier agent opens it with its Read tool. Unless camera.bot.keepFrames is
@@ -60,6 +65,8 @@ export interface WatchView {
   session: TurnSession
   /** The camera ask this watch answers (phase 3), or null for a share the owner started. */
   callRecordId: string | null
+  /** While "Keep watching" is on: when it stops by itself. Null when off. */
+  streamUntil: number | null
 }
 
 export interface CameraBotHandle {
@@ -97,13 +104,19 @@ export const CALL_ID = /^[A-Za-z0-9_-]{4,64}$/
 export const defaultSession = (agentId: string): TurnSession => ({ channel: "voice", chatId: `voice:${agentId}`, sender: "Camera" })
 
 /** The agent's message for one frame. */
-export function framePrompt(o: { path: string; width: number; height: number; takenAt: number; note?: string | null }): string {
-  const ask = o.note ? `The owner asks: "${o.note}"` : "Describe what you see, briefly."
+export function framePrompt(o: { path: string; width: number; height: number; takenAt: number; note?: string | null; stream?: boolean }): string {
+  const ask = o.stream
+    ? (o.note ? `You are watching while the owner works. They asked: "${o.note}" ` : "You are watching while the owner works. ") +
+      "Say only what matters now; if nothing changed or nothing needs saying, answer with one short sentence."
+    : o.note ? `The owner asks: "${o.note}"` : "Describe what you see, briefly."
   return "[Camera] The owner is showing you their phone camera. " +
     `The newest frame (${o.width}x${o.height} PNG, taken ${new Date(o.takenAt).toLocaleTimeString()}) is saved at:\n${o.path}\n` +
-    `Open it with your Read tool and look at it. ${ask} Answer in two or three plain sentences, ` +
-    "and say so if the picture is too dark or blurred to tell."
+    `Open it with your Read tool and look at it. ${ask} Your answer is read aloud on the phone, so keep it to ` +
+    "one or two short plain sentences, with no lists or formatting, and say so if the picture is too dark or blurred to tell."
 }
+
+/** Why a frame reached the agent, for the log. */
+type HandOverWhy = "asked" | "interval" | "stream"
 
 interface Watch {
   view: WatchView
@@ -114,6 +127,8 @@ interface Watch {
   /** Frame files written, by seq, so a look and a snapshot of the same frame share one file. */
   files: Map<number, FrameFile>
   ending: boolean
+  /** "Keep watching": what the owner asked for, and the timer that ends it. */
+  stream: { note: string | null; timer: ReturnType<typeof setTimeout> } | null
 }
 
 export class CameraWatchManager {
@@ -147,7 +162,7 @@ export class CameraWatchManager {
     const view: WatchView = {
       callId, agentId, agentName, startedAt, until: startedAt + cfg.maxSessionMinutes * 60_000,
       frames: 0, looks: 0, replies: [], session: input.session ?? defaultSession(agentId),
-      callRecordId: input.callRecordId ?? null,
+      callRecordId: input.callRecordId ?? null, streamUntil: null,
     }
     const sampler = new FrameSampler<VideoFrame>({
       intervalMs: cfg.frameIntervalSeconds * 1000,
@@ -168,7 +183,7 @@ export class CameraWatchManager {
     }
     const timer = setTimeout(() => this.stop(callId, `time limit (${cfg.maxSessionMinutes} min)`), cfg.maxSessionMinutes * 60_000)
     timer.unref?.()
-    this.watches.set(callId, { view, sampler, bot, dir, timer, files: new Map(), ending: false })
+    this.watches.set(callId, { view, sampler, bot, dir, timer, files: new Map(), ending: false, stream: null })
     sampler.start()
     this.log(`${agentId} is watching share ${callId}` + (cfg.frameIntervalSeconds ? ` (a frame every ${cfg.frameIntervalSeconds} s)` : " (frames on demand)"))
     return { ok: true, watch: this.snapshotView(view) }
@@ -182,9 +197,45 @@ export class CameraWatchManager {
     if (text.length > NOTE_MAX) return { ok: false, status: 413, error: `the note is over ${NOTE_MAX} characters` }
     const latest = w.sampler.take()
     if (!latest) return { ok: false, status: 409, error: "no picture has arrived from the phone yet" }
-    const r = await this.handOver(w, latest, text || null)
+    const r = await this.handOver(w, latest, text || null, "asked")
     if (!r.ok) return r
     return { ok: true, reply: r.reply, frame: r.frame }
+  }
+
+  /** "Keep watching" (#687): the agent gets a frame every
+   *  streamFrameSeconds for `seconds` (at most streamMaxSeconds), then it
+   *  stops by itself. `seconds` 0 stops it now. Only the owner turns it on. */
+  stream(callId: string, seconds: unknown, note?: unknown): WatchResult<{ watch: WatchView }> {
+    const w = this.watches.get(callId)
+    if (!w) return { ok: false, status: 404, error: `No agent is watching share ${callId}` }
+    const secs = Number(seconds ?? 0)
+    if (!Number.isFinite(secs) || secs < 0) return { ok: false, status: 400, error: "seconds must be 0 or more" }
+    if (secs === 0) {
+      this.endStream(w, "stopped by the owner")
+      return { ok: true, watch: this.snapshotView(w.view) }
+    }
+    const text = String(note ?? "").replace(/\s+/g, " ").trim()
+    if (text.length > NOTE_MAX) return { ok: false, status: 413, error: `the note is over ${NOTE_MAX} characters` }
+    const cfg = this.deps.config()
+    const ms = Math.min(Math.ceil(secs), cfg.streamMaxSeconds) * 1000
+    if (w.stream) clearTimeout(w.stream.timer)
+    const timer = setTimeout(() => this.endStream(w, "time limit"), ms)
+    timer.unref?.()
+    w.stream = { note: text || null, timer }
+    w.view.streamUntil = Math.min(this.now() + ms, w.view.until)
+    w.sampler.retime(cfg.streamFrameSeconds * 1000)
+    this.log(`${w.view.agentId} keeps watching share ${callId}: a frame every ${cfg.streamFrameSeconds} s for ${ms / 1000} s`)
+    return { ok: true, watch: this.snapshotView(w.view) }
+  }
+
+  /** Back to frames on demand (or the configured interval). */
+  private endStream(w: Watch, reason: string): void {
+    if (!w.stream) return
+    clearTimeout(w.stream.timer)
+    w.stream = null
+    w.view.streamUntil = null
+    if (!w.ending) w.sampler.retime(this.deps.config().frameIntervalSeconds * 1000)
+    this.log(`${w.view.agentId} stopped watching continuously on share ${w.view.callId} (${reason})`)
   }
 
   /** The agent, from inside its own turn, asks for the newest frame. The
@@ -197,6 +248,7 @@ export class CameraWatchManager {
     try {
       const frame = this.writeFrame(w, latest)
       w.view.looks++
+      this.log(`${agentId} gets frame ${frame.seq} of share ${w.view.callId} (its own look)`)
       return { ok: true, frame, callId: w.view.callId }
     } catch (e: any) {
       return { ok: false, status: 500, error: `could not save the frame: ${e?.message ?? e}` }
@@ -210,6 +262,7 @@ export class CameraWatchManager {
     w.ending = true
     this.watches.delete(callId)
     clearTimeout(w.timer)
+    if (w.stream) clearTimeout(w.stream.timer)
     w.sampler.stop()
     try { w.bot.close(reason) } catch { /* already closed */ }
     if (!this.deps.config().keepFrames) {
@@ -248,18 +301,22 @@ export class CameraWatchManager {
     return { ...v, replies: [...v.replies], session: { ...v.session } }
   }
 
-  /** A frame handed over by itself, on the interval. */
+  /** A frame handed over by itself, on the interval or while "Keep
+   *  watching" is on. A streamed answer is for the phone on screen, which
+   *  shows and says it; it is not delivered anywhere else. */
   private async sample(callId: string, s: Sampled<VideoFrame>): Promise<void> {
     const w = this.watches.get(callId)
     if (!w) return
-    const r = await this.handOver(w, s, null)
+    const stream = w.stream
+    const r = await this.handOver(w, s, stream ? stream.note : null, stream ? "stream" : "interval")
     if (!r.ok) { this.log(`interval frame for ${callId} not handed over: ${r.error}`); return }
+    if (stream) return
     try { await this.deps.deliver?.(this.snapshotView(w.view), r.reply) }
     catch (e: any) { this.log(`deliver for ${callId} failed: ${e?.message ?? e}`) }
   }
 
   /** Write the frame, run the agent's turn on it, record the reply. */
-  private async handOver(w: Watch, s: Sampled<VideoFrame>, note: string | null): Promise<WatchResult<{ reply: WatchReply; frame: FrameFile }>> {
+  private async handOver(w: Watch, s: Sampled<VideoFrame>, note: string | null, why: HandOverWhy): Promise<WatchResult<{ reply: WatchReply; frame: FrameFile }>> {
     let frame: FrameFile
     try {
       frame = this.writeFrame(w, s)
@@ -267,7 +324,8 @@ export class CameraWatchManager {
       return { ok: false, status: 500, error: `could not save the frame: ${e?.message ?? e}` }
     }
     w.view.looks++
-    const message = framePrompt({ ...frame, note })
+    this.log(`${w.view.agentId} gets frame ${frame.seq} of share ${w.view.callId} (${why})`)
+    const message = framePrompt({ ...frame, note, stream: why === "stream" })
     let text: string | null
     try {
       text = await this.deps.turn({ agentId: w.view.agentId, message, session: w.view.session })

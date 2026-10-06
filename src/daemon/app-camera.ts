@@ -18,6 +18,9 @@ import { normalizeName as normal } from "@/channels/webrtc-signal"
 // phase 2). Its ring starts the agent's bot through /webrtc/camera/watch;
 // the rest of the signalling reaches the bot through the same broker, in
 // process. /api/app/camera/look asks that agent what it sees.
+// /api/app/camera/stream turns "Keep watching" on or off (#687), and
+// /api/app/camera/speak says one of the agent's answers aloud: only an
+// answer the watch holds, in the agent's voice when it has one.
 
 export interface AppCameraDeps {
   daemon: DaemonTarget
@@ -111,6 +114,37 @@ export async function handleAppCamera(
     return json(res, r.status, r.status < 300 ? { reply: r.body.reply, frame: r.body.frame } : { error: r.body.error })
   }
 
+  // "Keep watching" (#687): a frame every few seconds for a short while,
+  // only while the owner has it on. seconds 0 stops it.
+  if (path === "/api/app/camera/stream") {
+    if (method !== "POST") return json(res, 405, { error: "POST" })
+    const body = await readJson(req, 4096)
+    if (!body) return json(res, 400, { error: "expected JSON" })
+    const callId = String(body.callId ?? "")
+    if (!CALL_ID.test(callId)) return json(res, 400, { error: "callId is required" })
+    const seconds = Number(body.seconds ?? 0)
+    if (!Number.isFinite(seconds) || seconds < 0) return json(res, 400, { error: "seconds must be 0 or more" })
+    const note = typeof body.note === "string" ? body.note : ""
+    const r = await relay(base, auth, "POST", `/webrtc/camera/watch/${encodeURIComponent(callId)}/stream`, { seconds, note })
+    return json(res, r.status, r.status < 300 ? { watch: r.body.watch } : { error: r.body.error })
+  }
+
+  // Say one of the watching agent's answers aloud (#687). The text comes
+  // from the watch, never from the phone, so a phone can't have arbitrary
+  // words said in an agent's voice.
+  if (path === "/api/app/camera/speak") {
+    if (method !== "POST") return json(res, 405, { error: "POST" })
+    const body = await readJson(req, 4096)
+    if (!body) return json(res, 400, { error: "expected JSON" })
+    const callId = String(body.callId ?? "")
+    if (!CALL_ID.test(callId)) return json(res, 400, { error: "callId is required" })
+    const w = await relay(base, auth, "GET", `/webrtc/camera/watch/${encodeURIComponent(callId)}`)
+    if (w.status >= 300) return json(res, w.status, { error: w.body.error })
+    const reply = (Array.isArray(w.body.watch?.replies) ? w.body.watch.replies : []).find((x: any) => x && x.at === body.at)
+    if (!reply || typeof reply.text !== "string") return json(res, 404, { error: "no such answer on this share" })
+    return speakThrough(res, base, auth, { agent: String(w.body.watch.agentId ?? ""), text: reply.text })
+  }
+
   // Camera asks waiting for the owner (#325 phase 3): the app polls this
   // and shows a Show / Decline bar. Show answers the ask, then the phone
   // starts a share with the ask's id and the agent as the destination.
@@ -161,6 +195,41 @@ async function relay(base: string, auth: Record<string, string>, method: string,
     return { status: r.ok ? r.status : r.status >= 500 ? 502 : r.status, body: r.ok ? out : { error: out?.error || `AgentX answered HTTP ${r.status}.` } }
   } catch {
     return { status: 502, body: { error: "Could not reach AgentX on this computer." } }
+  }
+}
+
+async function readJson(req: IncomingMessage, max: number): Promise<Record<string, any> | null> {
+  const raw = await readRaw(req, max)
+  if (!raw) return null
+  try {
+    const v = JSON.parse(raw.toString("utf8") || "{}")
+    return v && typeof v === "object" && !Array.isArray(v) ? v : null
+  } catch { return null }
+}
+
+/** POSTs to the daemon's /voice/speak and passes its answer on: audio as
+ *  bytes, or JSON telling the phone to speak the text with its own voice. */
+async function speakThrough(res: ServerResponse, base: string, auth: Record<string, string>, body: { agent: string; text: string }): Promise<true> {
+  try {
+    const r = await fetch(`${base}/voice/speak`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...auth },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(90_000),
+    })
+    const type = r.headers.get("content-type") || ""
+    if (r.ok && type.startsWith("audio/")) {
+      const bytes = Buffer.from(await r.arrayBuffer())
+      res.writeHead(200, { "Content-Type": type, "Content-Length": String(bytes.length), "Cache-Control": "no-store" })
+      res.end(bytes)
+      return true
+    }
+    const out = await r.json().catch(() => ({})) as any
+    // No voice for the agent here: the phone says it with its own.
+    if (r.ok || typeof out?.text === "string") return json(res, 200, { text: typeof out?.text === "string" ? out.text : body.text })
+    return json(res, 200, { text: body.text, error: out?.error || `AgentX answered HTTP ${r.status}.` })
+  } catch {
+    return json(res, 200, { text: body.text, error: "Could not reach AgentX on this computer." })
   }
 }
 

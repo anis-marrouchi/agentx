@@ -43,7 +43,7 @@ import { SCAN_BODY, SCAN_CSS, SCAN_SCRIPT } from "./app-scan.client"
 import { markdownToHtml } from "@/utils/markdown-html"
 import { CAMERA_BODY, CAMERA_BUTTON, CAMERA_CSS, CAMERA_SCRIPT } from "./app-camera.client"
 import { CAMERA_ASKS_BODY, CAMERA_ASKS_CSS, CAMERA_ASKS_SCRIPT } from "./app-camera-asks.client"
-import { cameraConstraints, shareClock } from "./app-camera-logic"
+import { cameraConstraints, shareClock, streamLabel, talkRelease } from "./app-camera-logic"
 import { APP_SWIPE_CSS, APP_SWIPE_SCRIPT } from "./app-swipe.client"
 import { swipeAxis, swipeLanding, swipeMayStart, swipeOffset } from "./app-swipe-logic"
 
@@ -118,7 +118,7 @@ ${CAMERA_BODY}
 <script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_LOG_SCRIPT}${APP_CHAT_SHEETS_SCRIPT}${APP_CHAT_SCRIPT}</script>
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>
 <script>${APP_CHAT_STRIP_SCRIPT}</script>
-<script>${injectFns({ cameraConstraints, shareClock })}${CAMERA_SCRIPT}</script>
+<script>${injectFns({ cameraConstraints, shareClock, streamLabel, talkRelease })}${CAMERA_SCRIPT}</script>
 <script>${CAMERA_ASKS_SCRIPT}</script>
 </body>
 </html>`
