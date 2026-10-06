@@ -164,7 +164,7 @@ export function renderAppManifest(): string {
     start_url: "/app",
     scope: "/app",
     display: "standalone",
-    background_color: "#2979FF",
+    background_color: "#FFFFFF",
     theme_color: "#2979FF",
     icons: [
       { src: "/app/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
