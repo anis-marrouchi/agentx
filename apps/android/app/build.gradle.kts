@@ -54,6 +54,8 @@ android {
 dependencies {
     // Trusted Web Activity: runs the phone app in Chrome, unchanged.
     implementation("com.google.androidbrowserhelper:androidbrowserhelper:2.5.0")
+    // Lets Chrome give the phone app the location through this app (#684).
+    implementation("com.google.androidbrowserhelper:locationdelegation:1.1.1")
     // OS geofences: the phone, not the app, watches the places.
     implementation("com.google.android.gms:play-services-location:21.3.0")
     // Reports and place checks that survive the app being closed.

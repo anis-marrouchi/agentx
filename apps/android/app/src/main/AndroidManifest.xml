@@ -69,9 +69,10 @@
         </activity>
 
         <!-- Shows the phone app's notifications as this app's (Android 13+
-             asks for the notification permission through it). -->
+             asks for the notification permission through it) and gives the
+             phone app the location through this app's permission. -->
         <service
-            android:name="com.google.androidbrowserhelper.trusted.DelegationService"
+            android:name=".DelegationService"
             android:enabled="true"
             android:exported="true">
             <intent-filter>
@@ -82,6 +83,12 @@
         <activity
             android:name="com.google.androidbrowserhelper.trusted.NotificationPermissionRequestActivity"
             android:exported="false" />
+        <!-- Asks for the location when the phone app wants it and this app
+             doesn't have it yet. -->
+        <activity
+            android:name="com.google.androidbrowserhelper.locationdelegation.PermissionRequestActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <receiver
             android:name=".GeofenceReceiver"
