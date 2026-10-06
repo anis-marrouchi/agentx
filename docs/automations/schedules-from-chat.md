@@ -22,6 +22,12 @@ agentx schedule parse "weekdays at 6pm"
 
 By default, the job runs as the agent you asked, and after each run its answer is posted back to the chat you asked from. If a run fails, a short failure message goes to the same chat. You can ask for another agent, a time zone, somewhere else to send results, or no chat at all ("don't send me the results"). Without a chat, the results stay in the run history in the dashboard.
 
+If you asked from the AgentX phone app, the answer appears in the same conversation, marked unread. If you asked by voice, it arrives as a push notification on your phone (this needs push notifications set up on this computer).
+
+If you asked from a GitHub or GitLab issue, each answer is posted there as a comment. On a public project anyone can read it. Ask for a private chat instead, or for no chat at all.
+
+If your old schedule prompt already says "send it to my Telegram", remove that line. Otherwise the answer arrives twice: once from the agent, once from the schedule.
+
 In `agentx.json`, this shows up on the job as its `notify` destination. See [Configuration: automation](../reference/config-automation.md#crons).
 
 ## 2. Approve or reject it
@@ -79,4 +85,5 @@ If an agent withdraws its own request before you approve it, the request is simp
   2. If it says `(failures only)`, open `agentx.json` and remove `"deliverResult": false` from the job.
   3. If there is no `notify:` line, the request was made from a place that isn't a chat (for example another schedule). Add a `notify` destination to the job, as in [Send a daily report](../jobs/daily-report.md#deliver-the-report-to-a-chat).
   4. A run that ends with an empty answer sends nothing. Check the run in the dashboard's **Operations** tab.
+  5. If the `notify:` line says `voice`, check that push notifications reach your phone. Without them a voice result can't be sent, and the daemon log shows `result delivery failed`.
 - **The timing is wrong:** check the phrase with `agentx schedule parse "<phrase>"`, then ask the agent to change it.

@@ -219,7 +219,7 @@ export async function runScheduleTool(
       `When: ${parsed.human} — cron \`${parsed.cron}\` (${timezone})`,
       `Next fire: ${next}`,
       `Agent: ${agent}`,
-      notify ? `Results and failures go to: ${notify.channel} ${notify.chatId}` : "Results go to: run log only (no chat)",
+      notify ? `Results and failures go to: ${notify.channel} ${notify.chatId}${notify.channel === "voice" ? " (as a push notification)" : ""}` : "Results go to: run log only (no chat)",
       `Prompt: ${preview(prompt, 400)}`,
       "",
       `Approve: agentx schedule approve ${jobId}`,
