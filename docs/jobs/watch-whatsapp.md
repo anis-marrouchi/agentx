@@ -11,6 +11,8 @@ For action items, AgentX sends you a notification. The agent can also open or up
 
 **Nothing is sent to the contact on its own.** A draft reply waits in **Approvals** until you approve it.
 
+**Want an agent that replies to customers by itself?** That is a different setup: see [Answer customers on WhatsApp](./answer-whatsapp.md). Use this page when you keep answering yourself and want summaries and drafts.
+
 AgentX gets the messages from [wacli](https://github.com/openclaw/wacli), a WhatsApp command-line tool that runs on the same machine. Chats you don't watch are dropped and never stored.
 
 Try it first with a test contact: a second phone of your own, or a colleague who agreed to help.
@@ -132,6 +134,7 @@ See every setting in [Settings: channels › WhatsApp triage](../reference/confi
 - **wacli prints `post webhook: 503`:** the daemon doesn't have the secret. Check `.env`, then run `agentx daemon restart`.
 - **wacli prints `post webhook: 404`:** triage is off. Run `agentx whatsapp triage on`.
 - **wacli refuses the URL as private:** add `--webhook-allow-private`.
+- **You wanted the agent to reply by itself:** see [Answer customers on WhatsApp](./answer-whatsapp.md).
 - **Nothing shows in the log:** no rule matches the chat. Run `wacli chats list` and compare the JID with `agentx whatsapp triage status`.
 - **The log says `agent gave no triage block`:** the agent didn't finish its answer the expected way. Check that the rule's agent exists and is running, then send the test message again. You get a notification for every batch it couldn't read.
 - **Approving says `wacli send failed`:** wacli is not running or not paired. Start it again (step 4.2). If it needs to pair again, run `wacli auth`.

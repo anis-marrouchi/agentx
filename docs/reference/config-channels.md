@@ -31,7 +31,7 @@ Set up with `agentx connect telegram` ([connect Telegram](/connect-telegram)). O
 
 ## WhatsApp
 
-Set up with `agentx connect whatsapp`, which pairs a phone by QR code.
+Set up with `agentx connect whatsapp`, which pairs a phone by QR code. Step by step: [Answer customers on WhatsApp](../jobs/answer-whatsapp.md).
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
