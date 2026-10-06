@@ -25,6 +25,9 @@ export const APP_REDESIGN_CSS = `
 main > .sw-peek[hidden] { display: block !important; }
 main > #panel-chat.sw-peek[hidden] { display: flex !important; }
 body { overflow: hidden; font-size: 16px; -webkit-font-smoothing: antialiased; }
+/* Pin the shell to the layout viewport so the tab bar never slides below the
+ * screen when 100dvh disagrees with it (Android TWA) or the root scrolls (#709). */
+body { position: fixed; inset: 0; min-height: 0; }
 body > * { flex-shrink: 0; }
 .bar { min-height: 56px; gap: 8px; padding: calc(4px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) 4px calc(20px + env(safe-area-inset-left)); background: var(--ax-bg); border: 0; }
 .bar > div:first-child { min-width: 0; flex: 1; }

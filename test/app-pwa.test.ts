@@ -145,6 +145,13 @@ describe("page scripts parse", () => {
     expect(html).toContain('id="theme"')
   })
 
+  it("pins the shell to the viewport so the tab bar stays on screen (#709)", () => {
+    const html = renderAppPage()
+    expect(html).toContain("body { position: fixed; inset: 0; min-height: 0; }")
+    // The pin comes after the base 100dvh rule, so it wins.
+    expect(html.indexOf("body { min-height: 100dvh")).toBeLessThan(html.indexOf("body { position: fixed"))
+  })
+
   it("every phone page shares the approved palette, with readable blue text (#488)", () => {
     for (const html of [renderAppPage(), renderAppPairPage(), renderAppLockedPage()]) {
       // 5.13:1 on white and 6.4:1 on the dark ground; #2979FF would be 3.98:1.
