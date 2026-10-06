@@ -149,7 +149,7 @@ Every invite, pairing, approval, refusal, sign-in and removal, every message a p
 
 ## If something is wrong
 
-- **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above. The reset removes every served path, so add the phone app's two `/app` lines back if you use it.
+- **`tailscale serve publishes the whole dashboard`:** run `tailscale serve reset`, then the two `--set-path` lines above. The reset removes every served path, so add the phone app's two `/app` lines, and its `/.well-known/assetlinks.json` line, back if you use them.
 - **`Could not read this machine's Tailscale name`:** Tailscale is not running on your computer. Start it, or pass `--url https://<address>` to `agentx people invite`.
 - **The browser says the address does not exist** (`DNS_PROBE_FINISHED_NXDOMAIN` or similar): the share is not accepted yet, or Tailscale on their machine is not connected. Accept the share, wait for **Connected**, then restart the browser and open the address again.
 - **"That code didn't work":** the code was mistyped, is older than 10 minutes, or was already used. Run `agentx people invite` again and forward the new message. The page and the message both tell the teammate to ask you for a new code; neither sends them to a terminal.

@@ -54,7 +54,7 @@ The full path, with the network setup, is in [Invite a teammate to their work pa
 
 Only you. The page is part of the dashboard, which listens on your own computer. A teammate's machine reaches two paths and nothing else, `/member` and `/api/member`, and this page is under neither. If you set a dashboard token (`dashboard.token`), the page's data needs it, like the rest of the dashboard.
 
-Never publish `/people` or the whole dashboard with `tailscale serve`. `agentx people invite` refuses to make a code while a path other than the member page's and the phone app's is published.
+Never publish `/people` or the whole dashboard with `tailscale serve`. `agentx people invite` refuses to make a code while a path other than the member page's and the phone app's (including the Android app's `/.well-known/assetlinks.json`) is published.
 
 ## Check it worked
 
