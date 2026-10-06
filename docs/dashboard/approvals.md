@@ -1,6 +1,6 @@
 # Approvals — every decision waiting for you, in one place
 
-Agents sometimes need your yes or no before they go ahead: publishing a draft, merging a change, running a new schedule. **Approvals** is one list of everything waiting for you, most urgent first. You can answer from the dashboard (it works on a phone) or from the terminal.
+Some actions wait for your yes or no before an agent goes ahead: the six kinds below. Everything else an agent does without asking; [Keep it safe › What always waits for you](../jobs/keep-it-safe.md#what-always-waits-for-you) has the full list. **Approvals** is one list of everything waiting for you, most urgent first. You can answer from the dashboard (it works on a phone) or from the terminal.
 
 The list brings together six kinds of item:
 
@@ -25,13 +25,13 @@ An agent that needs you raises a card instead of asking in chat. Every card has:
 | Question | The yes/no question |
 | Recommends | What the agent advises, and why, in one line |
 | Expires | When the card decides itself if nobody answers. Every card has one |
-| Then | What happens at that point: `discard`, `keep`, `pause` or `approve` |
+| Then | What the agent does at that point: `discard`, `keep` or `pause`. The agent picks it. A card never says yes by itself: `approve` is not a choice, and an older card that asked for it gets `keep` |
 | Source | A link to the draft, merge request or issue |
 | From | The agent that asked |
 
 When you answer, or when a card expires, the agent that asked gets a message with the result and can carry on.
 
-Only you can answer. Agents can raise cards and read the list, but nothing they can reach approves anything.
+Only you can answer. Agents can raise cards and read the list, but nothing they can reach approves anything, and a card that expires never counts as a yes.
 
 ## Answer from the dashboard
 
@@ -314,6 +314,7 @@ For check-ins (Mac):
 - **"Couldn't read …" above the list:** one of the sources couldn't be read, so the list may be incomplete. The message says which one; the other kinds still work.
 - **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it.
 - **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.
+- **A card says `then: keep` although the agent asked for `approve`:** that is expected. A card never approves itself; answer it yourself if the work should go ahead.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
 - **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>`, or **Show on Mac** on the Approvals tab, to show it again. The daemon log has a line starting `[approvals] popup`.

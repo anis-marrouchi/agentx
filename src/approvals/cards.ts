@@ -17,8 +17,15 @@ import { originLines, type CardOrigin } from "./origin"
 // Field names match the API (`if_silent`, `raised_by`), so a stored card is
 // exactly what `POST /approvals` accepted.
 
-export type IfSilent = "discard" | "keep" | "pause" | "approve"
-export const IF_SILENT_VALUES: readonly IfSilent[] = ["discard", "keep", "pause", "approve"]
+// No card approves itself (#741): only the operator says yes. "approve",
+// which older agents and stored cards may still carry, is read as "keep".
+export type IfSilent = "discard" | "keep" | "pause"
+export const IF_SILENT_VALUES: readonly IfSilent[] = ["discard", "keep", "pause"]
+
+function asIfSilent(v: string): IfSilent | null {
+  if (v === "approve") return "keep"
+  return IF_SILENT_VALUES.includes(v as IfSilent) ? (v as IfSilent) : null
+}
 
 export type CardStatus = "pending" | "decided" | "expired"
 export type Verdict = "yes" | "no"
@@ -51,6 +58,10 @@ export interface DecisionCard extends CardChoices {
   verdict?: Verdict
   /** What applied on expiry (status "expired"). */
   outcome?: IfSilent
+  /** Set when the agent, or a card stored before #741, asked for
+   *  "approve" on expiry; `if_silent` then holds "keep". Kept so the
+   *  record still shows what was originally asked. */
+  if_silent_asked?: "approve"
   decided_by?: string
   decided_at?: string
   note?: string
@@ -113,7 +124,16 @@ export function saveCard(root: string, card: DecisionCard): void {
 export function readCard(root: string, id: string): DecisionCard | null {
   if (!isValidCardId(id)) return null
   try {
-    return JSON.parse(readFileSync(fileFor(root, id), "utf-8")) as DecisionCard
+    const card = JSON.parse(readFileSync(fileFor(root, id), "utf-8")) as DecisionCard
+    // A card that expired as "approve" before #741 is read as "keep" too, so
+    // an agent not yet told never hears "default applied: approve".
+    const legacy = (card.if_silent as string) === "approve" || (card.outcome as string) === "approve"
+    return {
+      ...card,
+      if_silent: asIfSilent(card.if_silent) ?? "keep",
+      ...(card.outcome ? { outcome: asIfSilent(card.outcome) ?? "keep" } : {}),
+      ...(legacy ? { if_silent_asked: "approve" as const } : {}),
+    }
   } catch {
     return null
   }
@@ -201,8 +221,9 @@ export function buildCard(
   if (title.length > CARD_LIMITS.title) return { ok: false, error: `title is longer than ${CARD_LIMITS.title} characters` }
   if (ask.length > CARD_LIMITS.ask) return { ok: false, error: `ask is longer than ${CARD_LIMITS.ask} characters` }
   if (recommend.length > CARD_LIMITS.recommend) return { ok: false, error: `recommend is longer than ${CARD_LIMITS.recommend} characters` }
-  const ifSilent = oneLine(input.if_silent).toLowerCase()
-  if (!IF_SILENT_VALUES.includes(ifSilent as IfSilent)) {
+  const ifSilentRaw = oneLine(input.if_silent).toLowerCase()
+  const ifSilent = asIfSilent(ifSilentRaw)
+  if (!ifSilent) {
     return { ok: false, error: `if_silent must be one of ${IF_SILENT_VALUES.join(", ")}` }
   }
   const expiry = resolveExpiry(input.expires, now, settings)
@@ -226,7 +247,8 @@ export function buildCard(
       title,
       ask,
       recommend,
-      if_silent: ifSilent as IfSilent,
+      if_silent: ifSilent,
+      ...(ifSilentRaw === "approve" ? { if_silent_asked: "approve" as const } : {}),
       expires: expiry.at,
       ...(source ? { source } : {}),
       raised_by: raisedBy,
