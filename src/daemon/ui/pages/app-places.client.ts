@@ -127,8 +127,13 @@ export const APP_PLACES_SCRIPT = `
       field(form, 'coords').value = pos.coords.latitude.toFixed(6) + ', ' + pos.coords.longitude.toFixed(6);
       b.disabled = false; b.textContent = 'Use where I am now';
     }, function (e) {
-      err.textContent = e.code === 1 ? 'Location is blocked for this app. Allow it in the phone’s settings, or type the coordinates.' : 'Could not find where you are. Try again outdoors, or type the coordinates.';
-      b.disabled = false; b.textContent = 'Use where I am now';
+      var show = function (permission) {
+        err.textContent = locationErrorText(e.code, inShell, permission);
+        b.disabled = false; b.textContent = 'Use where I am now';
+      };
+      if (e.code !== 1 || !navigator.permissions) { show(''); return; }
+      navigator.permissions.query({ name: 'geolocation' })
+        .then(function (p) { show(p.state); }, function () { show(''); });
     }, { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 });
   });
   form.addEventListener('submit', function (ev) {

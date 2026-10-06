@@ -10,6 +10,7 @@ import { PlaceStore, parsePlaceEvent, parsePlaceInput, parseRuleInput, type Plac
 import { fireRules, placeTitle, taskMessage, type FireDeps } from "../src/places/fire"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { APP_PLACES_SCRIPT } from "../src/daemon/ui/pages/app-places.client"
+import { locationErrorText } from "../src/daemon/ui/pages/app-places-logic"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
 import { renderPlacesPage } from "../src/daemon/ui/pages/places"
 
@@ -278,10 +279,31 @@ describe("assetLinks", () => {
   })
 })
 
+describe("location error text (#708)", () => {
+  it("in the Android app, a refusal while the permission reads prompt means Chrome hasn't linked the app", () => {
+    expect(locationErrorText(1, true, "prompt")).toContain("Force stop Chrome")
+    expect(locationErrorText(1, true, "granted")).toContain("Force stop Chrome")
+    expect(locationErrorText(1, true, "")).toContain("Force stop Chrome")
+  })
+  it("a real denial, or a refusal in a browser, says the location is blocked", () => {
+    expect(locationErrorText(1, true, "denied")).toContain("Location is blocked")
+    expect(locationErrorText(1, false, "prompt")).toContain("Location is blocked")
+  })
+  it("other failures say the position wasn't found", () => {
+    expect(locationErrorText(2, true, "prompt")).toContain("Could not find where you are")
+    expect(locationErrorText(3, false, "")).toContain("Could not find where you are")
+  })
+})
+
 describe("pages", () => {
   it("the phone app carries the Places card", () => {
-    expect(renderAppPage()).toContain(APP_PLACES_SCRIPT)
+    const html = renderAppPage()
+    expect(html).toContain(APP_PLACES_SCRIPT)
     expect(() => new Function(APP_PLACES_SCRIPT)).not.toThrow()
+    // The card calls the helper; it must ship in the same script.
+    const script = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1]).find((js) => js.includes("pl-here"))!
+    expect(script).toContain("const locationErrorText=")
+    expect(() => new Function(script)).not.toThrow()
   })
   it("the dashboard page renders with a parseable script", () => {
     const html = renderPlacesPage({})
