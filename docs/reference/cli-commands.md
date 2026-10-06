@@ -1073,7 +1073,7 @@ Turn a draft JSON file ({category, title, fields}) into a pre-filled issue form 
 
 ### `agentx wiki status`
 
-Show wiki status per agent.
+Show wiki status per agent. For each agent it counts the raw entries an article cites, the entries absorb has read but did not cite, and the entries still waiting (unabsorbed).
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1094,6 +1094,8 @@ Check wiki for issues per agent.
 
 Compile unabsorbed entries into typed per-agent wiki articles.
 
+When a run succeeds, every entry it read is recorded in `agents/<id>/_absorbed.json` under the wiki directory, including entries no article cites, so the next run moves on to new entries. When a run fails, nothing is recorded and the same entries are offered again.
+
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
@@ -1103,6 +1105,7 @@ Compile unabsorbed entries into typed per-agent wiki articles.
 | `--no-facts` | — | Skip the system-of-record lookups. |
 | `--max <n>` | `10` | Max entries per agent. |
 | `--since <date>` | — | Only entries dated on or after YYYY-MM-DD. |
+| `--until <date>` | — | Only entries dated on or before YYYY-MM-DD. |
 
 ### `agentx wiki promote`
 

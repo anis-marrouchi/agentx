@@ -60,6 +60,7 @@ wiki
 
       console.log(`  ${chalk.cyan(agent.agentId)}`)
       console.log(`    Entries: ${agent.totalEntries}  Articles: ${agent.totalArticles}  ${status}`)
+      console.log(chalk.dim(`    Cited by an article: ${agent.cited}  Read, not cited: ${agent.readNotCited}`))
 
       if (agent.articles.length > 0) {
         for (const a of agent.articles.slice(0, 3)) {
@@ -138,6 +139,7 @@ wiki
   .option("--no-facts", "skip the system-of-record lookups")
   .option("--max <n>", "max entries per agent", "10")
   .option("--since <date>", "only entries dated on or after YYYY-MM-DD")
+  .option("--until <date>", "only entries dated on or before YYYY-MM-DD")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
@@ -215,9 +217,11 @@ wiki
       // onward with one — so an unfiltered run compiles articles that can
       // never carry graphPath, zeroing 0.6 of their retrieval score.
       const sinceDate = typeof opts.since === "string" ? opts.since.trim() : ""
+      const untilDate = typeof opts.until === "string" ? opts.until.trim() : ""
       const unabsorbed = hub
         .getUnabsorbedEntries(agentId)
         .filter((e) => !sinceDate || (e.date ?? "") >= sinceDate)
+        .filter((e) => !untilDate || (e.date ?? "").slice(0, 10) <= untilDate)
         .slice(0, maxEntries)
 
       if (unabsorbed.length === 0) {
@@ -313,6 +317,9 @@ wiki
 
       try {
         let rawOutput: string
+        // Whatever it printed, a run that exited non-zero or reported an
+        // error must not mark its entries as read (#762).
+        let runFailed = false
         try {
           rawOutput = execSync(
             `cat '${promptPath}' | claude -p - --output-format json --max-turns 3 --model sonnet --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`,
@@ -321,6 +328,7 @@ wiki
         } catch (execErr: any) {
           rawOutput = execErr.stdout || ""
           if (!rawOutput) throw execErr
+          runFailed = true
         }
 
         // Parse Claude's response — may be JSON envelope or raw text
@@ -329,6 +337,7 @@ wiki
         // Try to extract "result" from Claude's JSON envelope
         try {
           const envelope = JSON.parse(rawOutput)
+          if (envelope.is_error === true) runFailed = true
           responseText = envelope.result || envelope.content || ""
           if (!responseText) {
             console.log(chalk.dim(`    Claude envelope keys: ${Object.keys(envelope).join(", ")}`))
@@ -408,6 +417,14 @@ wiki
             totalWithPath++
           }
           totalAbsorbed++
+        }
+
+        // Every entry the model read leaves the queue, cited or not.
+        // Otherwise uncited entries come back on every run (#762).
+        if (runFailed) {
+          console.log(chalk.yellow(`    Run reported an error — ${unabsorbed.length} entries stay queued`))
+        } else {
+          hub.markProcessed(agentId, unabsorbed.map((e) => e.id), articles.flatMap((a) => a.sources || []))
         }
 
         // Gaps: entities absorb referenced but has no article for.
