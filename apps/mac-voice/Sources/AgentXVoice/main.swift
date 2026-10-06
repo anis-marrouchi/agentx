@@ -62,6 +62,11 @@ final class App: NSObject, NSApplicationDelegate {
     /// Waiting for our answer to be spoken by the daemon's queue. The door
     /// lets go of it: the answer stays queued and plays after the turn.
     private var speaking: Task<Void, Never>?
+    /// The answer in the pill, for Listen again (#492): what was said, by
+    /// which agent, in which voice.
+    private var shownAnswer: (text: String, agentID: String?, voice: VoiceChoice?)?
+    /// Listen again in progress; a second click stops it.
+    private var replaying: Task<Void, Never>?
     /// Words said while our own turn was still running: they go next, and
     /// the stale answer is not spoken.
     private var followUp: String?
@@ -437,6 +442,7 @@ final class App: NSObject, NSApplicationDelegate {
             return self.statusMenu.palette(of: self.shownAgent)
         }
         panel.answer.onOpenChat = { [weak self] in self?.openChat() }
+        panel.answer.onListenAgain = { [weak self] in self?.listenAgain() }
         statusMenu.pillVisible = { [weak self] in self?.panel.isVisible ?? false }
         statusMenu.onHidePill = { [weak self] in self?.dismissPill() }
         statusMenu.pillReduced = { [weak self] in self?.panel.reduced ?? false }
@@ -590,6 +596,8 @@ final class App: NSObject, NSApplicationDelegate {
     /// Open the microphone with no key held.
     private func listenHandsFree(followUp: Bool) {
         guard !busy, !recorder.isRecording else { return }
+        // A replay is playing (#492): the follow-up window would hear it.
+        if followUp && replaying != nil { return }
         recorder.endOfTurn = settings?.general.endOfTurn ?? "vad"
         do {
             try recorder.start()
@@ -665,7 +673,48 @@ final class App: NSObject, NSApplicationDelegate {
         asideSpeaker = nil
         lastSpokeAt = Date()
         Task { await Speech.stopAll() }
+        endReplay()
         if !recorder.isRecording { panel.render(rest) }
+    }
+
+    /// Listen again (#492): the answer in the pill, said again from its
+    /// start in its agent's voice. It waits its turn on the daemon's
+    /// speaking queue like any line. A second click stops it, the same
+    /// stop as the stop shortcut.
+    private func listenAgain() {
+        switch ListenAgain.click(replaying: replaying != nil, text: shownAnswer?.text) {
+        case .nothing: return
+        case .stop: stopSpeaking(); return
+        case .speak: break
+        }
+        guard let shown = shownAnswer else { return }
+        // An open microphone would take the replay for the listener's
+        // words: it closes without sending.
+        if recorder.isRecording {
+            stopPolling()
+            _ = recorder.stop()
+            panel.render(rest)
+        }
+        Log.info("listen again (\(shown.agentID ?? "?"))")
+        // Nothing else on screen: the orb speaks while it is said.
+        let onScreen = !busy && asideSpeaker == nil
+        if onScreen { panel.render(.saying(shown.text)) }
+        panel.answer.setReplaying(true)
+        let line = Task { await Speech.say(shown.text, agentID: shown.agentID, kind: "answer", voice: shown.voice) }
+        replaying = line
+        Task { @MainActor [weak self] in
+            await line.value
+            guard let self, self.replaying == line else { return }
+            self.endReplay()
+            if onScreen && !self.busy && !self.recorder.isRecording && self.asideSpeaker == nil { self.panel.render(self.rest) }
+        }
+    }
+
+    /// The speaker button back to Listen again.
+    private func endReplay() {
+        replaying?.cancel()
+        replaying = nil
+        panel.answer.setReplaying(false)
     }
 
     private func startListening() {
@@ -684,6 +733,9 @@ final class App: NSObject, NSApplicationDelegate {
         Speech.stop()
         speaking?.cancel()
         speaking = nil
+        // A replay waits, hushed, like any answer, and plays again on
+        // resume: the button keeps it, so a click stops it rather than
+        // queueing a second copy. It lets go when the daemon's wait ends.
         lastSpokeAt = Date()
         talkCheck = Task { await AgentClient.hush() }
         Log.info("door: opened\(busy ? " (a turn is running)" : "")")
@@ -831,6 +883,7 @@ final class App: NSObject, NSApplicationDelegate {
                                              buttons: answer.buttons, imageURL: answer.imageURL) {
                     panel.showAnswer(spoken: answer.text, written: answer.written,
                                      buttons: answer.buttons, imageURL: answer.imageURL)
+                    shownAnswer = (answer.text, answer.agentID ?? agent, answer.voice)
                 }
                 // Nothing else on screen: the pill shows this answer, its
                 // orb in this agent's colour, while it is spoken.
@@ -896,6 +949,7 @@ final class App: NSObject, NSApplicationDelegate {
                                          buttons: answer.buttons, imageURL: answer.imageURL) {
                 panel.showAnswer(spoken: answer.text, written: answer.written,
                                  buttons: answer.buttons, imageURL: answer.imageURL)
+                shownAnswer = (answer.text, answer.agentID, voice)
             } else {
                 panel.collapse()
             }
