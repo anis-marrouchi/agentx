@@ -173,7 +173,7 @@ When an answer has a link, a picture, or more text than was read aloud, the pill
 2. Let go. When the answer arrives, the pill grows into it while the answer is spoken.
 3. **Mac:** read, scroll, or select text in the answer. Click a link or a button to open it in your browser.
 4. **Mac:** move the pointer over the answer. Three buttons appear at its top-right corner:
-   - **Listen again** (a speaker) says the answer again from its start, in the agent's voice. It waits for anything already speaking, and the microphone stays closed while it plays. While it plays the button shows a stop square: click it again, or press **Command–Option–.**, to stop it. It works the same in the character's speech bubble.
+   - **Listen again** (a speaker) says the answer again from its start, in the agent's voice. It waits for anything already speaking, and the microphone stays closed while it plays. While it plays the button shows a stop square: click it again, or press **Command–Option–.**, to stop it. Like that shortcut, stopping it also drops answers from other agents still waiting to be spoken. It works the same in the character's speech bubble.
    - **Copy the answer** (the two pages) copies the whole answer.
    - **Open in chat** (the two speech bubbles) opens the agent's page in the dashboard with its chat open.
 
