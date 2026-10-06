@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { DEFAULT_LEAN, describeProfile, leanClaudeArgs, leanConfig, leanTools } from "../src/agents/session-profile"
+import { DEFAULT_LEAN, describeProfile, leanClaudeArgs, leanConfig, leanTools, withToolSearch } from "../src/agents/session-profile"
 import { daemonConfigSchema } from "../src/daemon/config"
 
 // #615 — a lean session may get a short list of built-in tools (`--tools`).
@@ -49,7 +49,7 @@ describe("leanClaudeArgs with tools", () => {
     const args = leanClaudeArgs(ws, lean, agentx, "github")
     expect(args.indexOf("--strict-mcp-config")).toBeGreaterThanOrEqual(0)
     expect(args.indexOf("--tools")).toBeGreaterThan(args.indexOf("--strict-mcp-config"))
-    expect(args[args.indexOf("--tools") + 1]).toBe("Bash,Read,Edit,Write,Grep,Glob")
+    expect(args[args.indexOf("--tools") + 1]).toBe("Bash,Read,Edit,Write,Grep,Glob,ToolSearch")
     // The strict MCP config and the setting sources are unchanged.
     expect(JSON.parse(args[args.indexOf("--mcp-config") + 1])).toEqual({ mcpServers: { agentx } })
     expect(args[args.indexOf("--setting-sources") + 1]).toBe("project,local")
@@ -57,9 +57,20 @@ describe("leanClaudeArgs with tools", () => {
 
   it("picks the channel's own list", () => {
     const lean = { ...DEFAULT_LEAN, tools: ["Bash", "Read"], toolsByChannel: { cron: ["Bash"] } }
-    expect(leanClaudeArgs(ws, lean, agentx, "cron")).toContain("Bash")
-    expect(leanClaudeArgs(ws, lean, agentx, "cron")[leanClaudeArgs(ws, lean, agentx, "cron").indexOf("--tools") + 1]).toBe("Bash")
-    expect(leanClaudeArgs(ws, lean, agentx, "workflow")[leanClaudeArgs(ws, lean, agentx, "workflow").indexOf("--tools") + 1]).toBe("Bash,Read")
+    expect(leanClaudeArgs(ws, lean, agentx, "cron")[leanClaudeArgs(ws, lean, agentx, "cron").indexOf("--tools") + 1]).toBe("Bash,ToolSearch")
+    expect(leanClaudeArgs(ws, lean, agentx, "workflow")[leanClaudeArgs(ws, lean, agentx, "workflow").indexOf("--tools") + 1]).toBe("Bash,Read,ToolSearch")
+  })
+
+  // Without ToolSearch, Claude Code loads every agentx tool description in
+  // full instead of deferring it: about 9k tokens measured on 2.1.291.
+  it("always keeps ToolSearch in the list, once", () => {
+    const tools = (lean: typeof DEFAULT_LEAN) => {
+      const args = leanClaudeArgs(ws, lean, agentx, "github")
+      return args[args.indexOf("--tools") + 1].split(",")
+    }
+    expect(tools({ ...DEFAULT_LEAN, tools: ["Bash"] })).toEqual(["Bash", "ToolSearch"])
+    expect(tools({ ...DEFAULT_LEAN, tools: ["ToolSearch", "Bash"] })).toEqual(["ToolSearch", "Bash"])
+    expect(withToolSearch(["Bash", "ToolSearch"])).toEqual(["Bash", "ToolSearch"])
   })
 
   it("never passes an empty --tools: that loads every MCP schema instead of saving", () => {

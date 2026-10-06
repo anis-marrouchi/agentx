@@ -41,7 +41,8 @@ export interface LeanProfileConfig {
    *  every built-in tool, as today. The built-in tool schemas are about
    *  14k tokens of the first turn, so this is the lever that gets a lean
    *  start under 20k; an agent that lacks a tool it needs fails mid-task,
-   *  so lists stay opt-in. */
+   *  so lists stay opt-in. ToolSearch is always added to a list, so the
+   *  agentx MCP tools stay deferred (see withToolSearch). */
   tools: string[]
   /** Per-channel tool lists; a non-empty entry wins over `tools`. */
   toolsByChannel: Record<string, string[]>
@@ -151,8 +152,20 @@ export function leanClaudeArgs(
   // Only ever next to --strict-mcp-config above: measured on its own,
   // `--tools` tripled the first turn by loading every MCP schema (#615).
   const tools = leanTools(lean, channel)
-  if (tools.length) args.push("--tools", tools.join(","))
+  if (tools.length) args.push("--tools", withToolSearch(tools).join(","))
   return args
+}
+
+/** Claude Code tool that loads a deferred tool's description on demand. */
+export const TOOL_SEARCH = "ToolSearch"
+
+/** A `--tools` list with ToolSearch kept in it. Claude Code defers MCP
+ *  tools (names only in the prompt) only while ToolSearch is available; a
+ *  list without it loads every agentx tool description in full, about 9k
+ *  tokens on Claude Code 2.1.291, which cancelled what the short list
+ *  saved (#615). */
+export function withToolSearch(tools: string[]): string[] {
+  return tools.includes(TOOL_SEARCH) ? tools : [...tools, TOOL_SEARCH]
 }
 
 /** Flags appended to a full `claude` spawn: this install's agentx tool
