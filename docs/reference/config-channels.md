@@ -24,7 +24,7 @@ Set up with `agentx connect telegram` ([connect Telegram](/connect-telegram)). O
 "telegram": {
   "enabled": true,
   "accounts": {
-    "helper": { "token": "${TELEGRAM_BOT_TOKEN}", "agentBinding": "helper", "allowFrom": ["@your_username"] }
+    "helper": { "token": "${TELEGRAM_BOT_TOKEN}", "agentBinding": "helper", "allowFrom": ["@REPLACE-WITH-YOUR-USERNAME"] }
   }
 }
 ```

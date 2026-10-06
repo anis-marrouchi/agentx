@@ -18,11 +18,11 @@ GITHUB_WEBHOOK_SECRET=...
 TG_BOT_TOKEN=...
 EOF
 mkdir -p workspaces/{triage,repro}
-# edit agentx.json: replace @your_username with your Telegram username
+# edit agentx.json: replace @REPLACE-WITH-YOUR-USERNAME with your Telegram username
 agentx daemon start
 ```
 
-Before `agentx daemon start`, put your own Telegram username in `agentx.json`: replace `@your_username` under `channels.telegram.policy.allowFrom` with yours (for example `@jane_doe`). The bot ignores every message from anyone not on that list ([Connect Telegram](../../docs/connect-telegram.md#4-allow-people-to-talk-to-the-bot)).
+Before `agentx daemon start`, put your own Telegram username in `agentx.json`: replace `@REPLACE-WITH-YOUR-USERNAME` under `channels.telegram.policy.allowFrom` with yours (for example `@jane_doe`). The bot ignores every message from anyone not on that list ([Connect Telegram](../../docs/connect-telegram.md#4-allow-people-to-talk-to-the-bot)).
 
 Point your repos' webhooks (issues, issue_comment, pull_request) at the daemon — see the [GitHub channel settings](../../docs/reference/config-channels.md#github) for the receiver + signing setup.
 

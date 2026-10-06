@@ -58,9 +58,10 @@ A new bot ignores everyone until you list who may use it. This stops strangers w
    "policy": {
      "dm": "pair",
      "group": "mention-required",
-     "allowFrom": ["@your_username"]
+     "allowFrom": ["@REPLACE-WITH-YOUR-USERNAME"]
    }
    ```
+   Replace `@REPLACE-WITH-YOUR-USERNAME` with your own username. Until you do, the bot answers nobody: real Telegram usernames can't contain hyphens, so the placeholder never matches anyone.
    An entry can be a `@username`, a numeric Telegram user id, or a chat id (for a group).
 4. Select **Save**.
 

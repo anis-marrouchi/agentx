@@ -48,7 +48,7 @@
       "policy": {
         "dm": "pair",
         "group": "mention-required",
-        "allowFrom": ["@your_username"]
+        "allowFrom": ["@REPLACE-WITH-YOUR-USERNAME"]
       }
     },
     "whatsapp": { "enabled": false },
