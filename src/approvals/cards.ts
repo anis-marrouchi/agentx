@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve } from "path"
-import { answerLines, buildChoices, resolveAnswer, type CardChoices } from "./choices"
-import { originLines, type CardOrigin } from "./origin"
+import { answerLines, buildChoices, draftFor, resolveAnswer, type CardChoices } from "./choices"
+import { originLines, RETRO_NONE, retroApproved, retroLines, type CardOrigin } from "./origin"
 
 // --- Decision cards: what an agent asks the operator ---
 //
@@ -17,8 +17,15 @@ import { originLines, type CardOrigin } from "./origin"
 // Field names match the API (`if_silent`, `raised_by`), so a stored card is
 // exactly what `POST /approvals` accepted.
 
-export type IfSilent = "discard" | "keep" | "pause" | "approve"
-export const IF_SILENT_VALUES: readonly IfSilent[] = ["discard", "keep", "pause", "approve"]
+// No card approves itself (#741): only the operator says yes. "approve",
+// which older agents and stored cards may still carry, is read as "keep".
+export type IfSilent = "discard" | "keep" | "pause"
+export const IF_SILENT_VALUES: readonly IfSilent[] = ["discard", "keep", "pause"]
+
+function asIfSilent(v: string): IfSilent | null {
+  if (v === "approve") return "keep"
+  return IF_SILENT_VALUES.includes(v as IfSilent) ? (v as IfSilent) : null
+}
 
 export type CardStatus = "pending" | "decided" | "expired"
 export type Verdict = "yes" | "no"
@@ -51,6 +58,10 @@ export interface DecisionCard extends CardChoices {
   verdict?: Verdict
   /** What applied on expiry (status "expired"). */
   outcome?: IfSilent
+  /** Set when the agent, or a card stored before #741, asked for
+   *  "approve" on expiry; `if_silent` then holds "keep". Kept so the
+   *  record still shows what was originally asked. */
+  if_silent_asked?: "approve"
   decided_by?: string
   decided_at?: string
   note?: string
@@ -113,7 +124,16 @@ export function saveCard(root: string, card: DecisionCard): void {
 export function readCard(root: string, id: string): DecisionCard | null {
   if (!isValidCardId(id)) return null
   try {
-    return JSON.parse(readFileSync(fileFor(root, id), "utf-8")) as DecisionCard
+    const card = JSON.parse(readFileSync(fileFor(root, id), "utf-8")) as DecisionCard
+    // A card that expired as "approve" before #741 is read as "keep" too, so
+    // an agent not yet told never hears "default applied: approve".
+    const legacy = (card.if_silent as string) === "approve" || (card.outcome as string) === "approve"
+    return {
+      ...card,
+      if_silent: asIfSilent(card.if_silent) ?? "keep",
+      ...(card.outcome ? { outcome: asIfSilent(card.outcome) ?? "keep" } : {}),
+      ...(legacy ? { if_silent_asked: "approve" as const } : {}),
+    }
   } catch {
     return null
   }
@@ -201,8 +221,9 @@ export function buildCard(
   if (title.length > CARD_LIMITS.title) return { ok: false, error: `title is longer than ${CARD_LIMITS.title} characters` }
   if (ask.length > CARD_LIMITS.ask) return { ok: false, error: `ask is longer than ${CARD_LIMITS.ask} characters` }
   if (recommend.length > CARD_LIMITS.recommend) return { ok: false, error: `recommend is longer than ${CARD_LIMITS.recommend} characters` }
-  const ifSilent = oneLine(input.if_silent).toLowerCase()
-  if (!IF_SILENT_VALUES.includes(ifSilent as IfSilent)) {
+  const ifSilentRaw = oneLine(input.if_silent).toLowerCase()
+  const ifSilent = asIfSilent(ifSilentRaw)
+  if (!ifSilent) {
     return { ok: false, error: `if_silent must be one of ${IF_SILENT_VALUES.join(", ")}` }
   }
   const expiry = resolveExpiry(input.expires, now, settings)
@@ -226,7 +247,8 @@ export function buildCard(
       title,
       ask,
       recommend,
-      if_silent: ifSilent as IfSilent,
+      if_silent: ifSilent,
+      ...(ifSilentRaw === "approve" ? { if_silent_asked: "approve" as const } : {}),
       expires: expiry.at,
       ...(source ? { source } : {}),
       raised_by: raisedBy,
@@ -249,9 +271,14 @@ export function createCard(
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const built = buildCard(input, opts)
   if (!built.ok) return built
-  const open = listCards(root, "pending").filter((c) => c.raised_by === built.card.raised_by).length
+  // Retro cards are raised for an agent, not by it: they get their own
+  // count, so they never use up the agent's room for its own cards.
+  const isRetro = (c: { origin?: CardOrigin }) => c.origin?.kind === "retro"
+  const retro = isRetro(built.card)
+  const open = listCards(root, "pending").filter((c) => c.raised_by === built.card.raised_by && isRetro(c) === retro).length
   if (open >= CARD_LIMITS.pendingPerAgent) {
-    return { ok: false, error: `${built.card.raised_by} already has ${open} cards waiting; wait for decisions before raising more` }
+    const what = retro ? "retro cards" : "cards"
+    return { ok: false, error: `${built.card.raised_by} already has ${open} ${what} waiting; wait for decisions before raising more` }
   }
   saveCard(root, built.card)
   return built
@@ -315,18 +342,31 @@ export function markAgentNotified(root: string, id: string, now: number = Date.n
 
 /** What the raising agent is told. Plain text, one short message. */
 export function verdictMessage(card: DecisionCard): string {
+  const retro = card.origin?.kind === "retro" ? card.origin : undefined
   const result = card.status === "decided"
-    ? (card.verdict === "yes" ? "The operator said YES." : "The operator said NO.")
+    ? (card.verdict === "yes"
+        ? (retro && !retroApproved(card) ? `The operator picked "${RETRO_NONE}", which counts as NO.` : "The operator said YES.")
+        : "The operator said NO.")
     : `Nobody answered before it expired, so the default applied: ${card.outcome ?? card.if_silent}.`
   const lines = [
     `[Approval result] Your decision card "${card.title}" (${card.id}) is closed.`,
     `Question: ${card.ask}`,
     result,
   ]
-  if (card.status === "decided" && card.verdict === "yes") lines.push(...answerLines(card))
+  // A retro card's pick and spec go through retroLines, labelled as the
+  // reviewer's proposal: never "Approved text (send exactly this)".
+  if (card.status === "decided" && card.verdict === "yes" && !retro) lines.push(...answerLines(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
+  if (retro) {
+    // Compare ignoring whitespace so a dashboard that only reflows the draft
+    // does not resend the whole draft as the operator's note.
+    const squash = (s: string) => s.replace(/\s+/g, " ").trim()
+    const draft = draftFor(card.draft, card.choice)
+    const edited = card.text && squash(card.text) !== squash(draft) ? card.text : undefined
+    lines.push(...retroLines(retro, card, edited))
+  }
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)
   if (card.node) lines.push(`The operator answered it on another machine; the card was forwarded from ${card.node}.`)
   lines.push("Act on this result now. Do not raise the same card again.")

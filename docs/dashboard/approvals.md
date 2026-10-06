@@ -1,6 +1,6 @@
 # Approvals — every decision waiting for you, in one place
 
-Agents sometimes need your yes or no before they go ahead: publishing a draft, merging a change, running a new schedule. **Approvals** is one list of everything waiting for you, most urgent first. You can answer from the dashboard (it works on a phone) or from the terminal.
+Some actions wait for your yes or no before an agent goes ahead: the six kinds below. Everything else an agent does without asking; [Keep it safe › What always waits for you](../jobs/keep-it-safe.md#what-always-waits-for-you) has the full list. **Approvals** is one list of everything waiting for you, most urgent first. You can answer from the dashboard (it works on a phone) or from the terminal.
 
 The list brings together six kinds of item:
 
@@ -25,26 +25,31 @@ An agent that needs you raises a card instead of asking in chat. Every card has:
 | Question | The yes/no question |
 | Recommends | What the agent advises, and why, in one line |
 | Expires | When the card decides itself if nobody answers. Every card has one |
-| Then | What happens at that point: `discard`, `keep`, `pause` or `approve` |
+| Then | What the agent does at that point: `discard`, `keep` or `pause`. The agent picks it. A card never says yes by itself: `approve` is not a choice, and an older card that asked for it gets `keep` |
 | Source | A link to the draft, merge request or issue |
 | From | The agent that asked |
 
 When you answer, or when a card expires, the agent that asked gets a message with the result and can carry on.
 
-Only you can answer. Agents can raise cards and read the list, but nothing they can reach approves anything.
+Only you can answer. Agents can raise cards and read the list, but nothing they can reach approves anything, and a card that expires never counts as a yes.
 
 ## Answer from the dashboard
 
 1. **Browser:** open the dashboard and click the **Approvals** tab (or go to `/approvals`).
 2. **Browser:** read the card. Click **Details** to see the excerpt, the source link and exactly what yes and no will do.
-3. **Browser:** click **Yes**, **No** or **Later**. **Later** hides the item for a day; a card still expires on time.
-4. **Browser:** when the Mac popup is on, a card also has **Show on Mac**. Click it to bring the card back on the Mac after you closed it or its wait ran out. It shows within a minute.
+3. **Browser:** if the card lists choices under **Pick one, then Yes**, click the one you want. The agent's recommended choice is already picked. When the card has a message below the choices, it fills in with your pick; change the wording if you like.
+4. **Browser:** click **Yes**, **No** or **Later**. **Later** hides the item for a day; a card still expires on time.
+5. **Browser:** when the Mac popup is on, a card also has **Show on Mac**. Click it to bring the card back on the Mac after you closed it or its wait ran out. It shows within a minute.
 
 ![The Approvals tab with two decision cards and a schedule request](/screenshots/approvals/inbox.png)
 
 **Details** shows the source link and what each answer does:
 
 ![A card with its details open](/screenshots/approvals/details.png)
+
+A card with choices, such as one from a [retro](../jobs/retro.md):
+
+![A card with four choices, the recommended one picked, and the message the agent gets](/screenshots/approvals/choices.png)
 
 On a phone the buttons fill the width of the card:
 
@@ -111,7 +116,7 @@ To show one real card now:
 
 1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
 
-You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. On the dashboard, a card with choices lists them under **Choices**. Answer it on the Mac or in the terminal, because **Yes** alone doesn't say which one you picked.
+You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer from the dashboard](#answer-from-the-dashboard) and [the phone app](./mobile-fleet.md#answer-a-decision).
 
 ## Agents on another machine
 
@@ -314,6 +319,7 @@ For check-ins (Mac):
 - **"Couldn't read …" above the list:** one of the sources couldn't be read, so the list may be incomplete. The message says which one; the other kinds still work.
 - **`unauthorized` when you click a button:** the dashboard has a login token (`dashboard.token`). Open the dashboard through its usual address so the page carries it.
 - **An agent gets "Decisions are made by the operator only":** that is expected. Agents can raise cards; only you can answer.
+- **A card says `then: keep` although the agent asked for `approve`:** that is expected. A card never approves itself; answer it yourself if the work should go ahead.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
 - **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>`, or **Show on Mac** on the Approvals tab, to show it again. The daemon log has a line starting `[approvals] popup`.
@@ -322,7 +328,8 @@ For check-ins (Mac):
 - **Check-ins raise no cards:** check that `agentx approvals settings` shows **Check-ins on**, that `remindctl show today` lists your reminders, and that `checkin.agent` names an agent from `agentx agent list`. The daemon log lines starting `[checkin]` say what happened to each reminder: "no agent owns it", "couldn't compose a card", or the pass totals.
 - **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
-- **"This card offers choices: pick one":** you clicked **Yes** on the dashboard for a card with choices. Answer it in the popup, or with `agentx approvals approve <key> --choice <n>`.
+- **"Pick one of the choices first":** you clicked **Yes** on a card with choices without picking one. Click a choice, then **Yes**.
+- **"This card offers choices: pick one":** the answer reached the machine without a choice, for example from an older phone app page. Reload the page, or answer with `agentx approvals approve <key> --choice <n>`.
 - **The agent never heard the result:** check `notifyAgent` is on, and that the agent still exists on this machine. The daemon log line starting `[approvals]` says what happened.
 - **An agent on another machine says the `agentx_approval` tool is missing:** its daemon is older than this feature, or the agent is not on a `claude-code` engine. Update AgentX there and restart its daemon; a session started after that has the tool.
 - **A card raised on another machine never shows here:** on that machine, `agentx approvals settings` must say **Cards go to** this machine, and `agentx mesh list` must show this machine as `healthy`. Its daemon log says `forwarded to <machine>` for each card it sent, or names the machine it could not reach. `approvals.forwardTo names "…", which is not in mesh.peers` means the name is wrong: use the name from that machine's `agentx mesh list`.

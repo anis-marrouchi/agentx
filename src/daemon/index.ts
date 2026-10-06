@@ -22,7 +22,7 @@ import { configureDecisions } from "@/decisions/seat"
 import { DecisionStore } from "@/decisions/store"
 import { MessageRouter } from "@/channels/router"
 import { setMessageRouter } from "@/channels/router-instance"
-import { TelegramAdapter } from "@/channels/telegram"
+import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
 import { GitLabAdapter } from "@/channels/gitlab"
 import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
@@ -183,7 +183,7 @@ import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import type { DelegationManager } from "@/a2a/delegation"
-import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -461,27 +461,7 @@ export class AgentXDaemon {
 
     // Initialize cron scheduler with failure notifications
     this.cron = new CronScheduler(this.config, this.registry, this.hooks, this.log)
-    this.cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
-      const msg = `Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`
-      this.log(`[CRON ALERT] ${msg}`)
-      this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
-
-      // Send to the cron job's configured notify destination (if set)
-      const cronDef = this.config.crons[jobId]
-      if (cronDef?.notify) {
-        try {
-          await this.router.sendOutbound({
-            channel: cronDef.notify.channel,
-            chatId: cronDef.notify.chatId,
-            text: `🔴 **Cron "${jobId}" failed** (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
-            agentId: agent,
-            accountId: cronDef.notify.accountId,
-          })
-        } catch (e: any) {
-          this.log(`[CRON ALERT] notify send failed: ${e.message}`)
-        }
-      }
-    })
+    this.wireCronCallbacks(this.cron, this.config)
 
     // Initialize mesh (if enabled)
     if (this.config.mesh.enabled) {
@@ -1467,6 +1447,60 @@ export class AgentXDaemon {
   }
 
   /**
+   * Point a scheduler's failure alerts and (for `deliverResult` jobs)
+   * successful answers at each job's `notify` destination. Shared by start
+   * and hot reload so the two can't drift.
+   */
+  private wireCronCallbacks(cron: CronScheduler, config: DaemonConfig): void {
+    // Through the same path as delegation replies, so a phone-app or voice
+    // `notify` target is reached too; router.sendOutbound alone has no
+    // adapter for either.
+    const wiring = { config, registry: this.registry, router: this.router, replies: this.callbackReplies }
+    cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
+      this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x)\nAgent: ${agent}\nError: ${error.slice(0, 300)}`)
+      this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
+
+      const dest = config.crons[jobId]?.notify
+      if (dest) {
+        try {
+          await deliverToChat(wiring, {
+            channel: dest.channel,
+            chatId: dest.chatId,
+            accountId: dest.accountId,
+            agentId: agent,
+            text: `🔴 **Cron "${jobId}" failed** (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
+            record: true,
+            // No "/", like the result path: one segment of the reply URL.
+            taskId: `cron-fail:${jobId.replace(/\//g, ":")}:${Date.now()}`,
+            outcome: "error",
+            summary: `Cron "${jobId}" failed (${consecutiveErrors}x)`,
+          })
+        } catch (e: any) {
+          this.log(`[CRON ALERT] notify send failed: ${e.message}`)
+        }
+      }
+    })
+    cron.setDeliverCallback(async (jobId, agent, text, runId) => {
+      const dest = config.crons[jobId]?.notify
+      if (!dest) return
+      await deliverToChat(wiring, {
+        channel: dest.channel,
+        chatId: dest.chatId,
+        accountId: dest.accountId,
+        agentId: agent,
+        text,
+        record: true,
+        // One message per run: the phone files it once, the router drops a
+        // repeat. No "/" so it stays one segment of the reply URL.
+        taskId: `cron:${runId.replace(/\//g, ":")}`,
+        idempotencyKey: runId,
+        outcome: "done",
+        summary: `Cron "${jobId}" result`,
+      })
+    })
+  }
+
+  /**
    * Re-read agentx.json, diff against the in-memory config, apply what we
    * can hot-reload (crons, notify-destination, business metadata), and warn
    * about sections that require a daemon restart (channels, agents, mesh,
@@ -1500,24 +1534,7 @@ export class AgentXDaemon {
       try {
         await this.cron.stop()
         this.cron = new CronScheduler(next, this.registry, this.hooks, this.log)
-        this.cron.setNotifyCallback(async (jobId, agent, error, consecutiveErrors) => {
-          this.log(`[CRON ALERT] Cron "${jobId}" failed (${consecutiveErrors}x) — ${error.slice(0, 200)}`)
-          this.broadcastSSE("cron-failure", JSON.stringify({ jobId, agent, error, consecutiveErrors }))
-          const cronDef = next.crons[jobId]
-          if (cronDef?.notify) {
-            try {
-              await this.router.sendOutbound({
-                channel: cronDef.notify.channel,
-                chatId: cronDef.notify.chatId,
-                text: `Cron "${jobId}" failed (${consecutiveErrors}x)\n${error.slice(0, 300)}`,
-                agentId: agent,
-                accountId: cronDef.notify.accountId,
-              })
-            } catch (e: any) {
-              this.log(`[CRON ALERT] notify send failed: ${e.message}`)
-            }
-          }
-        })
+        this.wireCronCallbacks(this.cron, next)
         await this.cron.start()
         applied.push("crons")
       } catch (e: any) {
@@ -2083,6 +2100,14 @@ export class AgentXDaemon {
           )
         } else {
           this.log(`  Telegram: enabled — global allowFrom entries: ${globalSize}`)
+        }
+        const openAccts = Object.entries(accounts)
+          .filter(([, c]) => (c.allowFrom ?? policy?.allowFrom ?? []).includes(TELEGRAM_ALLOW_EVERYONE))
+          .map(([id]) => id)
+        if (openAccts.length > 0) {
+          this.log(
+            `  Telegram: public — anyone can message ${openAccts.join(", ")} (allowFrom contains "${TELEGRAM_ALLOW_EVERYONE}")`,
+          )
         }
       }
     }

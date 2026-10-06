@@ -58,26 +58,47 @@ A new bot ignores everyone until you list who may use it. This stops strangers w
    "policy": {
      "dm": "pair",
      "group": "mention-required",
-     "allowFrom": ["@your_username"]
+     "allowFrom": ["@REPLACE-WITH-YOUR-USERNAME"]
    }
    ```
+   Replace `@REPLACE-WITH-YOUR-USERNAME` with your own username. Until you do, the bot answers nobody: real Telegram usernames can't contain hyphens, so the placeholder never matches anyone.
    An entry can be a `@username`, a numeric Telegram user id, or a chat id (for a group).
 4. Select **Save**.
 
 To give one bot its own list, add `"allowFrom"` to that account instead, next to its `"token"`.
 
-In groups, the bot answers only when a message mentions it or uses one of the agent's trigger words.
+### Let anyone talk to the bot (a public bot)
+
+For a bot that answers customers or the public, use the single entry `"*"`. It means "everyone".
+
+1. **Browser:** in **Settings**, open the **Advanced** tab.
+2. Select **Edit**.
+3. Find the account of the public bot under `"channels"` › `"telegram"` › `"accounts"`, and add `"allowFrom": ["*"]` next to its `"token"`:
+   ```json
+   "support": {
+     "token": "${TG_SUPPORT_BOT_TOKEN}",
+     "agentBinding": "support-agent",
+     "allowFrom": ["*"]
+   }
+   ```
+4. Select **Save**.
+
+Put `"*"` on the public bot's account, not in `"policy"`, so your other bots stay private. Anyone who finds the bot can then use its agent, and every reply costs your model account. Give a public bot an agent made for that job: no access to your private files, tools or other channels. When the daemon starts, `agentx daemon logs` shows a line `Telegram: public — anyone can message support`, so you can see which bots are open.
+
+`"*"` also lets the bot work in any group someone adds it to, not only in private chats. There, the `"group": "mention-required"` setting in `"policy"` is the only limit: the bot answers only when a message mentions it or uses one of the agent's trigger words. Keep that setting for a public bot, and don't change it to `"all"`. To keep the bot out of groups entirely, send `/setjoingroups` to @BotFather in Telegram and choose **Disable**.
 
 ## Check it worked
 
 1. **Telegram app:** send your bot a short message, such as `hello`.
 2. The bot replies in the same chat, within a minute.
 3. **Browser:** the **Activity** tab lists the conversation.
+4. For a public bot: ask someone who is not on any list to message it. The bot answers them too.
 
 ## If something is wrong
 
 - **The bot doesn't reply at all:** check that the daemon runs. **Terminal:** `agentx daemon status` must say `Status: running`. The dashboard alone doesn't receive Telegram messages.
 - **The log says `not in allowlist`:** **Terminal:** run `agentx daemon logs`. A line like `dropped message from 123456789 (@your_username) … not in allowlist` means you're not in `allowFrom`. Copy the number or `@username` from that line into `allowFrom`, as in step 4.
+- **A public bot still ignores strangers:** the entry must be exactly `"*"`, on the bot's own account or in `"policy"`. A bot with its own `"allowFrom"` ignores the list in `"policy"`, so a `"*"` in `"policy"` doesn't open a bot that has its own list.
 - **The daemon complains about the token, or the bot never connects:** the name in **Bot token env-var** must match the name in `.env` exactly. After fixing `.env`, restart the daemon (`agentx daemon stop`, then `agentx daemon start --detach`).
 - **The bot answers in a private chat but not in a group:** mention the bot or use a trigger word, and add the group's chat id to `allowFrom`.
 - **Still nothing:** run `agentx doctor`, then follow [It's not answering](./help/its-not-answering.md).

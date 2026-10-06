@@ -9,6 +9,8 @@ AgentX runs and keeps track of AI agents for a team. Four words cover most of it
 
 AgentX receives the message, picks the right agent, starts it, and records what happened.
 
+The model is an online service. Each time an agent works, your message, the agent's instructions and the files it reads go to that model's provider so it can write the reply. [Your data](./your-data.md) lists everything that leaves your machine and how to keep it at home.
+
 ## The two parts you run
 
 You host AgentX yourself, on a machine you control.

@@ -165,7 +165,16 @@ function api(path: string): any {
     case "/api/app/activity":
       return { ts, tasks: [{ taskId: "t1", agentName: "Helper", node: "local", nodeName: "Studio", channel: "app", startedAt: ts, preview: "Making the website photos smaller." }] }
     case "/api/app/approvals":
-      return { nodes: [{ node: "local", nodeName: "Studio", items: [{ key: "a1", title: "Review the draft", ask: "Is this ready to share?", recommend: "Read the changes first", raisedBy: "Support" }] }] }
+      return { nodes: [{ node: "local", nodeName: "Studio", items: [
+        { key: "a1", title: "Review the draft", ask: "Is this ready to share?", recommend: "Read the changes first", raisedBy: "Support" },
+        // A retro card (#743): pick a fix, edit the spec, then Choose.
+        {
+          key: "card:retro-1", title: "Service left stopped after a deploy", ask: "What should change so this can't happen again?",
+          recommend: "Deploy script: restart and check health: the most severe (high)", raisedBy: "Builder",
+          choices: ["Deploy script: restart and check health", "Watchdog: alert when the service is down", "Guard rule: warn on a stop without a start", "None of these"],
+          draft: "Build: {choice}\n\n1. Deploy script [script, high]\n   One script; CI runs it dry.\n2. Watchdog [watchdog, medium]\n3. Guard rule [guard-rule, medium]",
+        },
+      ] }] }
     case "/api/app/push":
       return scene.push === "na"
         ? { available: false, reason: "Notifications are off in this demo." }

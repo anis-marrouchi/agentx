@@ -1,6 +1,6 @@
 import { WikiStore } from "./store"
 import { resolve } from "path"
-import { existsSync, readdirSync, mkdirSync } from "fs"
+import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "fs"
 import type { WikiEntry } from "./types"
 
 export type WikiMode = "flat" | "graph" | "unified"
@@ -84,44 +84,106 @@ export class WikiHub {
     return this.sharedStore.listEntries({ agentId })
   }
 
+  /**
+   * Entries absorb has not dealt with yet: no article cites them and no
+   * successful absorb run has read them. Without the second check an
+   * entry absorb read and chose not to cite came back on every run, and
+   * a backfill kept re-reading the head of the queue (#762).
+   */
   getUnabsorbedEntries(agentId: string): WikiEntry[] {
-    const agentWiki = this.getAgentWiki(agentId)
-    const agentEntries = this.getAgentEntries(agentId)
+    return this.classifyEntries(agentId).pending
+  }
 
-    const absorbedIds = new Set<string>()
-    const index = agentWiki.rebuildIndex()
-    for (const article of index.articles) {
-      if (article.sources) {
-        for (const s of article.sources) absorbedIds.add(s)
-      }
-    }
+  /**
+   * Record every entry handed to the model in a successful absorb run,
+   * cited or not. Callers must not call this for a failed run, so those
+   * entries are offered again.
+   */
+  markProcessed(agentId: string, entryIds: string[], citedIds: Iterable<string>): void {
+    const cited = new Set(citedIds)
+    const ledger = this.readLedger(agentId)
+    const at = new Date().toISOString()
+    for (const id of entryIds) ledger.entries[id] = { at, cited: cited.has(id) }
 
-    return agentEntries.filter(e => !absorbedIds.has(e.id))
+    const file = this.ledgerPath(agentId)
+    mkdirSync(resolve(file, ".."), { recursive: true })
+    const tmp = `${file}.tmp`
+    writeFileSync(tmp, `${JSON.stringify(ledger, null, 2)}\n`)
+    renameSync(tmp, file)
   }
 
   summary(): AgentWikiSummary[] {
     const agents = this.listAgents()
     return agents.map(agentId => {
-      const entries = this.getAgentEntries(agentId)
-      const wiki = this.getAgentWiki(agentId)
-      const index = wiki.rebuildIndex()
-      const unabsorbed = this.getUnabsorbedEntries(agentId)
-
+      const { all, cited, read, pending, articles } = this.classifyEntries(agentId)
       return {
         agentId,
-        totalEntries: entries.length,
-        totalArticles: index.articles.length,
-        unabsorbed: unabsorbed.length,
-        articles: index.articles,
+        totalEntries: all.length,
+        totalArticles: articles.length,
+        cited: cited.length,
+        readNotCited: read.length,
+        unabsorbed: pending.length,
+        articles,
       }
     })
   }
+
+  /** Split an agent's entries into cited by an article, read but not cited, and pending. */
+  private classifyEntries(agentId: string) {
+    const all = this.getAgentEntries(agentId)
+    const articles = this.getAgentWiki(agentId).rebuildIndex().articles
+
+    const citedIds = new Set<string>()
+    for (const article of articles) {
+      if (article.sources) {
+        for (const s of article.sources) citedIds.add(s)
+      }
+    }
+    const ledger = this.readLedger(agentId).entries
+
+    const cited: WikiEntry[] = []
+    const read: WikiEntry[] = []
+    const pending: WikiEntry[] = []
+    for (const e of all) {
+      if (citedIds.has(e.id)) cited.push(e)
+      else if (ledger[e.id]) read.push(e)
+      else pending.push(e)
+    }
+    return { all, cited, read, pending, articles }
+  }
+
+  /** agents/<id>/_absorbed.json — shared by every mode, like the raw entries. */
+  private ledgerPath(agentId: string): string {
+    return resolve(this.agentsDir, agentId, "_absorbed.json")
+  }
+
+  private readLedger(agentId: string): AbsorbLedger {
+    const file = this.ledgerPath(agentId)
+    if (!existsSync(file)) return { entries: {} }
+    try {
+      const parsed = JSON.parse(readFileSync(file, "utf-8")) as AbsorbLedger
+      return { entries: parsed.entries ?? {} }
+    } catch (err) {
+      // Treating a damaged ledger as empty would let the next run
+      // overwrite it and re-queue everything it recorded.
+      throw new Error(`absorb ledger ${file} is not valid JSON: ${(err as Error).message}`)
+    }
+  }
+}
+
+interface AbsorbLedger {
+  entries: Record<string, { at: string; cited: boolean }>
 }
 
 export interface AgentWikiSummary {
   agentId: string
   totalEntries: number
   totalArticles: number
+  /** Entries an article cites. */
+  cited: number
+  /** Entries a successful absorb run read and did not cite. */
+  readNotCited: number
+  /** Entries absorb has not read yet. */
   unabsorbed: number
   articles: Array<{ title: string; path: string; tags?: string[] }>
 }

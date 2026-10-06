@@ -253,9 +253,9 @@ export class RequestTracker {
     })
   }
 
-  /** A linked card was answered or expired. An answer, or an expiry whose
-   *  default is "approve", lets the work go on. Any other expiry means the
-   *  answer never came: the request needs attention, whatever an earlier
+  /** A linked card was answered or expired. An answer lets the work go
+   *  on. An expiry means the answer never came (no card approves itself,
+   *  #741): the request needs attention, whatever an earlier
    *  card's answer moved it to. It does not close. */
   cardResolved(card: { id: string; status: string; ask: string; if_silent?: string; outcome?: string }): void {
     this.guard("card result", () => {
@@ -263,7 +263,7 @@ export class RequestTracker {
       if (!req) return
       const now = this.now()
       const applied = card.outcome ?? card.if_silent
-      if (card.status === "decided" || applied === "approve") {
+      if (card.status === "decided") {
         if (req.state === "waiting_owner") this.store.progress(req.id, now)
       } else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
         this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)
