@@ -237,12 +237,23 @@ describe("app camera routes for an agent", () => {
     expect(seen[1]).toMatchObject({ method: "POST", path: "/voice/speak" })
     expect(JSON.parse(seen[1].body)).toEqual({ agent: "writer", text: "A blue cable." })
 
-    // No ElevenLabs voice: the phone gets the words to say itself.
+    // A replay of the same answer is said from the kept audio: no new voice call.
+    seen = []
+    const again = await post("/api/app/camera/speak", { callId: "cam-abcd1234", at: 7 })
+    expect([...new Uint8Array(await again.arrayBuffer())]).toEqual([1, 2, 3])
+    expect(seen.map((x) => x.path)).toEqual(["/webrtc/camera/watch/cam-abcd1234"])
+
+    // No ElevenLabs voice: the phone gets the words to say itself, and
+    // nothing is kept, so the next ask tries the voice again.
+    const other = '{"watch":{"callId":"cam-abcd1234","agentId":"writer","replies":[{"at":9,"note":null,"text":"A red cable.","frame":"g.png"}]}}'
     reply = (req, res) => {
       res.writeHead(200, { "Content-Type": "application/json" })
-      res.end(req.method === "GET" ? watch : '{"fallback":"browser","text":"A blue cable"}')
+      res.end(req.method === "GET" ? other : '{"fallback":"browser","text":"A red cable"}')
     }
-    expect(await (await post("/api/app/camera/speak", { callId: "cam-abcd1234", at: 7 })).json()).toEqual({ text: "A blue cable" })
+    expect(await (await post("/api/app/camera/speak", { callId: "cam-abcd1234", at: 9 })).json()).toEqual({ text: "A red cable" })
+    seen = []
+    expect(await (await post("/api/app/camera/speak", { callId: "cam-abcd1234", at: 9 })).json()).toEqual({ text: "A red cable" })
+    expect(seen.map((x) => x.path)).toEqual(["/webrtc/camera/watch/cam-abcd1234", "/voice/speak"])
 
     // Never arbitrary text: an answer the watch does not hold is refused.
     seen = []

@@ -156,6 +156,35 @@ describe("look", () => {
     m2.shutdown()
   })
 
+  it("a question asked while a turn runs waits for it: one turn at a time on the share", async () => {
+    const running: Array<() => void> = []
+    let inTurn = 0, most = 0
+    const m2 = new CameraWatchManager({
+      config: () => cfg, startBot: async (o) => { bots.push({ ...o, closed: null }); return { close: () => {} } },
+      workspaceOf: () => join(dir, "writer-ws"), agentName: () => "Writer", cwd: () => dir, now: () => now,
+      turn: async ({ message }) => {
+        inTurn++; most = Math.max(most, inTurn)
+        // The frame is there for each turn, even when both got the same one.
+        expect(existsSync(message.split("\n")[1])).toBe(true)
+        await new Promise<void>((done) => running.push(done))
+        inTurn--
+        return "ok"
+      },
+    })
+    await m2.start({ callId: "cam-3333", agentId: "writer" })
+    bots[0].onFrame(frame())
+    const first = m2.look("cam-3333", "one")
+    const second = m2.look("cam-3333", "two")
+    await vi.waitFor(() => expect(running).toHaveLength(1))
+    running[0]()
+    await vi.waitFor(() => expect(running).toHaveLength(2))
+    running[1]()
+    expect((await first).ok).toBe(true)
+    expect((await second).ok).toBe(true)
+    expect(most).toBe(1)
+    m2.shutdown()
+  })
+
   it("a prompt without a note asks for a description", () => {
     const p = framePrompt({ path: "/tmp/f.png", width: 10, height: 5, takenAt: 0 })
     expect(p).toContain("/tmp/f.png")

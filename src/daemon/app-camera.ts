@@ -20,7 +20,8 @@ import { normalizeName as normal } from "@/channels/webrtc-signal"
 // process. /api/app/camera/look asks that agent what it sees.
 // /api/app/camera/stream turns "Keep watching" on or off (#687), and
 // /api/app/camera/speak says one of the agent's answers aloud: only an
-// answer the watch holds, in the agent's voice when it has one.
+// answer the watch holds, in the agent's voice when it has one. The audio
+// is kept for a short while, so a replay does not pay for a new voice call.
 
 export interface AppCameraDeps {
   daemon: DaemonTarget
@@ -32,6 +33,10 @@ const KINDS = new Set(["ring", "offer", "answer", "ice", "hangup"])
 const CALL_ID = /^[A-Za-z0-9_-]{4,64}$/
 /** An SDP offer for one video track is a few KB; this leaves ample room. */
 const SIGNAL_MAX_BYTES = 128 * 1024
+/** Spoken answers kept for replays: one or two short sentences each. */
+const SPOKEN_KEPT = 24
+const SPOKEN_MAX_BYTES = 2 * 1024 * 1024
+const spoken = new Map<string, { type: string; bytes: Buffer }>()
 
 export async function handleAppCamera(
   req: IncomingMessage,
@@ -142,7 +147,19 @@ export async function handleAppCamera(
     if (w.status >= 300) return json(res, w.status, { error: w.body.error })
     const reply = (Array.isArray(w.body.watch?.replies) ? w.body.watch.replies : []).find((x: any) => x && x.at === body.at)
     if (!reply || typeof reply.text !== "string") return json(res, 404, { error: "no such answer on this share" })
-    return speakThrough(res, base, auth, { agent: String(w.body.watch.agentId ?? ""), text: reply.text })
+    const agent = String(w.body.watch.agentId ?? "")
+    const key = JSON.stringify([callId, reply.at, agent, reply.text])
+    const kept = spoken.get(key)
+    if (kept) {
+      spoken.delete(key)
+      spoken.set(key, kept)
+      return sendAudio(res, kept.type, kept.bytes)
+    }
+    return speakThrough(res, base, auth, { agent, text: reply.text }, (type, bytes) => {
+      if (bytes.length > SPOKEN_MAX_BYTES) return
+      spoken.set(key, { type, bytes })
+      while (spoken.size > SPOKEN_KEPT) spoken.delete(spoken.keys().next().value as string)
+    })
   }
 
   // Camera asks waiting for the owner (#325 phase 3): the app polls this
@@ -208,8 +225,9 @@ async function readJson(req: IncomingMessage, max: number): Promise<Record<strin
 }
 
 /** POSTs to the daemon's /voice/speak and passes its answer on: audio as
- *  bytes, or JSON telling the phone to speak the text with its own voice. */
-async function speakThrough(res: ServerResponse, base: string, auth: Record<string, string>, body: { agent: string; text: string }): Promise<true> {
+ *  bytes (also handed to `keep`), or JSON telling the phone to speak the
+ *  text with its own voice. */
+async function speakThrough(res: ServerResponse, base: string, auth: Record<string, string>, body: { agent: string; text: string }, keep: (type: string, bytes: Buffer) => void): Promise<true> {
   try {
     const r = await fetch(`${base}/voice/speak`, {
       method: "POST",
@@ -220,9 +238,8 @@ async function speakThrough(res: ServerResponse, base: string, auth: Record<stri
     const type = r.headers.get("content-type") || ""
     if (r.ok && type.startsWith("audio/")) {
       const bytes = Buffer.from(await r.arrayBuffer())
-      res.writeHead(200, { "Content-Type": type, "Content-Length": String(bytes.length), "Cache-Control": "no-store" })
-      res.end(bytes)
-      return true
+      keep(type, bytes)
+      return sendAudio(res, type, bytes)
     }
     const out = await r.json().catch(() => ({})) as any
     // No voice for the agent here: the phone says it with its own.
@@ -231,6 +248,12 @@ async function speakThrough(res: ServerResponse, base: string, auth: Record<stri
   } catch {
     return json(res, 200, { text: body.text, error: "Could not reach AgentX on this computer." })
   }
+}
+
+function sendAudio(res: ServerResponse, type: string, bytes: Buffer): true {
+  res.writeHead(200, { "Content-Type": type, "Content-Length": String(bytes.length), "Cache-Control": "no-store" })
+  res.end(bytes)
+  return true
 }
 
 /** The signal to relay, or why it was refused. */

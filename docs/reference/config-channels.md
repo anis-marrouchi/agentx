@@ -264,7 +264,7 @@ WebRTC lets people call an agent from a browser.
 | `channels.webrtc.camera.bot.maxFrameEdge` | number (160–3840) | `1024` | Pictures are shrunk so their longer side is at most this many pixels before the agent sees them. |
 | `channels.webrtc.camera.bot.keepFrames` | boolean | `false` | Keep the picture files in the agent's workspace (`.agentx/camera/`) after the share ends. Off: every picture is deleted when the share ends. |
 | `channels.webrtc.camera.bot.streamFrameSeconds` | number (2–60) | `5` | While **Keep watching** is on, the agent gets a picture this often, in seconds. Each picture is a turn of the agent. |
-| `channels.webrtc.camera.bot.streamMaxSeconds` | number (10–600) | `60` | **Keep watching** stops by itself after this many seconds. |
+| `channels.webrtc.camera.bot.streamMaxSeconds` | number (10–600) | `60` | **Keep watching** stops by itself after this many seconds. With 5-second pictures, 60 seconds is about 12 turns and 600 seconds about 120. |
 
 ### Call bot
 
