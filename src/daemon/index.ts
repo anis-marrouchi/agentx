@@ -2299,9 +2299,11 @@ export class AgentXDaemon {
       const pushCfg = this.config.channels.push
       if (pushCfg.relayTo) {
         const { PushRelayAdapter } = await import("@/channels/push")
-        const { pushOrigin, PushRosterSync, ROSTER_CHECK_MS } = await import("./push-bridge")
+        const { pushOrigin, PushRosterSync, ROSTER_CHECK_MS, relayTokenProblem } = await import("./push-bridge")
         const relayTo = pushCfg.relayTo
         const origin = pushOrigin(this.config.node.name)
+        const tokenProblem = relayTokenProblem(relayTo, this.config.mesh.peers, process.env.MESH_TOKEN)
+        if (tokenProblem) this.log(`  push: ${tokenProblem}`)
         const relay = new PushRelayAdapter(relayTo, (peer, payload) => this.postToPushHost(peer, "/channel/send", payload), this.log, origin)
         this.router.addChannel(relay)
         await relay.start()
@@ -7167,6 +7169,13 @@ export class AgentXDaemon {
       const caller = this.pushBridgeCaller(req)
       if ("origin" in caller) origin = caller.origin
       else if (chatId !== "default") { this.json(res, 403, { error: caller.error }); return }
+    }
+    if (channel === "push" && chatId.includes(":")) {
+      // "<node>:tok_…" is one phone of one relay: only that relay, by its
+      // peer token, may address it, with or without an origin in the body.
+      const { scopedPushTarget } = await import("./push-bridge")
+      const target = scopedPushTarget(chatId, this.pushBridgeCaller(req))
+      if ("error" in target) { this.json(res, 403, { error: target.error }); return }
     }
     try {
       const messageId = await this.router.sendOutbound({

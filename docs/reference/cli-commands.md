@@ -137,7 +137,7 @@ No flags.
 
 ### `agentx app forget-computer <name>`
 
-Stop notifications from this computer to every phone paired with computer `<name>`. While `<name>` is still in `mesh.peers`, its phones can turn notifications on again. See [Notifications on your phone](../dashboard/mobile-alerts.md).
+Stop notifications from this computer to every phone paired with computer `<name>`. While `<name>` is still in `mesh.peers`, its phones can turn notifications on again. Use the name as it appears in `mesh.peers` or in `agentx app devices`: spaces and punctuation are matched the same way, so `my mac` and `my-mac` both work. See [Notifications on your phone](../dashboard/mobile-alerts.md).
 
 No flags.
 

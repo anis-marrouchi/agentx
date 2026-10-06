@@ -74,6 +74,29 @@ export function pushBridgeCaller(
   return { origin }
 }
 
+/** On the host: may `caller` send a /channel/send push to `chatId`? A
+ *  scoped id ("<node>:tok_…") is one phone of one relay, so only that relay
+ *  may address it; a plain id or "default" is unaffected here. */
+export function scopedPushTarget(chatId: string, caller: PushBridgeCaller): { ok: true } | { error: string } {
+  const i = chatId.indexOf(":")
+  if (i < 0) return { ok: true }
+  if ("error" in caller) return { error: caller.error }
+  if (chatId.slice(0, i) !== caller.origin) return { error: `${chatId} is a phone paired with another computer; only that computer can send to it.` }
+  return { ok: true }
+}
+
+/** On a relay: why phones paired here can't get notifications through
+ *  `relayTo`, or null. The host ties a relay to its own peer token, so the
+ *  token this node presents must be set and not the shared MESH_TOKEN. */
+export function relayTokenProblem(relayTo: string, peers: ReadonlyArray<{ name: string; token?: string }>, meshToken?: string): string | null {
+  const want = relayTo.toLowerCase()
+  const peer = peers.find((p) => p.name.toLowerCase() === want)
+  if (!peer) return null // reported when the first push is sent
+  if (!peer.token) return `mesh.peers "${peer.name}" has no token, so phones paired here can't turn notifications on. Give it a token of its own on both computers.`
+  if (meshToken && peer.token === meshToken) return `mesh.peers "${peer.name}" uses the shared MESH_TOKEN, so phones paired here can't turn notifications on. Give this pair a token of its own on both computers.`
+  return null
+}
+
 /** The origins of the configured peers, for checking a scoped device id on
  *  the host: a row whose node left mesh.peers is no longer delivered. */
 export function peerOrigins(peers: ReadonlyArray<{ name: string }>): Set<string> {
@@ -146,7 +169,12 @@ export class PushRosterSync {
     const key = active.join(",")
     if (key === this.lastKey && now - this.lastSentAt < ROSTER_RESEND_MS) return false
     try {
-      await this.deps.send(active)
+      const r = await this.deps.send(active) as { status?: unknown; body?: { error?: unknown } } | undefined
+      // The host answers a refusal (no peer token, a name clash) inside a
+      // 200: that is not a sent roster, and nothing was pruned.
+      if (r && typeof r === "object" && typeof r.status === "number" && r.status !== 200) {
+        throw new Error(`${r.status} ${typeof r.body?.error === "string" ? r.body.error : "refused"}`)
+      }
       this.lastKey = key
       this.lastSentAt = now
       if (this.failing) this.deps.log?.("push: phone list sent to the push host again")

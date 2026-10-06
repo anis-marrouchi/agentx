@@ -9,6 +9,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 import { DEFAULT_PUSH_KEYS_FILE, pushKeysPath, readPushKeys, writePushKeys } from "@/channels/push-keys"
 import { isRemoteDevice } from "@/channels/push"
 import { PushStore } from "@/channels/push-store"
+import { pushOrigin } from "@/daemon/push-bridge"
 import { openDb } from "@/storage/sqlite"
 
 // --- agentx app: pair phones with the /app PWA ---
@@ -119,7 +120,8 @@ appCmd
   .command("forget-computer <name>")
   .description("stop notifications to every phone paired with another computer (by its name in `agentx app devices`)")
   .action((name: string) => {
-    const origin = String(name).replace(/:$/, "")
+    // The name as the host files it: "my mac" in mesh.peers is "my-mac" here.
+    const origin = pushOrigin(String(name).replace(/:$/, ""))
     const removed = withPushStore((push) => push.pruneOrigin(origin, []))
     if (!removed) {
       console.log(chalk.red(`  No phones of ${origin} get notifications here. See \`agentx app devices\`.`))
