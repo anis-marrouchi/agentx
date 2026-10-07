@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { WikiStore } from "../src/wiki/store"
-import { mkdirSync, rmSync, existsSync } from "fs"
+import { mkdirSync, rmSync, existsSync, writeFileSync } from "fs"
 import { resolve } from "path"
 
 const TEST_DIR = resolve(__dirname, "../.test-wiki")
@@ -70,6 +70,40 @@ describe("WikiStore", () => {
       expect(article).not.toBeNull()
       expect(article!.meta.title).toBe("Test Article")
       expect(article!.content).toBe("This is a test article.")
+    })
+
+    // A related title with a comma came back as two broken halves, and an
+    // absorb update that unions `related` wrote them back out (#801).
+    it("reads list items that contain commas", () => {
+      const title = "AgentX PR #197 Reviewed: NOT READY, Then READY (2026-09-27)"
+      store.writeArticle("events/pr-198.md", {
+        title: "PR 198", related: ["DevOps Agent", title], tags: ["a, b"], owner: "atlas",
+        access: "public", created: "2026-09-27", lastUpdated: "2026-09-27", sources: ["e1", "e2"],
+      }, "body", "atlas")
+      const meta = store.readArticle("events/pr-198.md")!.meta
+      expect(meta.related).toEqual(["DevOps Agent", title])
+      expect(meta.tags).toEqual(["a, b"])
+      expect(meta.sources).toEqual(["e1", "e2"])
+    })
+
+    it("still reads unquoted legacy lists", () => {
+      mkdirSync(resolve(TEST_DIR, "concepts"), { recursive: true })
+      writeFileSync(resolve(TEST_DIR, "concepts/legacy.md"), "---\ntitle: Legacy\ntags: [ops, deploy]\nowner: atlas\naccess: public\ncreated: 2026-04-06\nlast_updated: 2026-04-06\nsources: []\n---\n\nbody")
+      const meta = store.readArticle("concepts/legacy.md")!.meta
+      expect(meta.tags).toEqual(["ops", "deploy"])
+      expect(meta.sources).toEqual([])
+    })
+
+    // Titles quoting an error message are written unescaped; 11 live
+    // articles have such a related item.
+    it("reads quoted list items that contain quotes", () => {
+      const quoted = 'Hasanah V1 MR !4 Carbon "12 M" Fix Verified (2026-04-26)'
+      const both = 'Signup 500 "fetch failed": Env Clean, Judged a Blip'
+      store.writeArticle("events/quoted.md", {
+        title: "Quoted", related: [quoted, both, "Hasanah V1"], tags: [], owner: "atlas",
+        access: "public", created: "2026-04-26", lastUpdated: "2026-04-26", sources: [],
+      }, "body", "atlas")
+      expect(store.readArticle("events/quoted.md")!.meta.related).toEqual([quoted, both, "Hasanah V1"])
     })
 
     it("enforces write permissions", () => {
