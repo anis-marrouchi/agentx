@@ -1400,6 +1400,10 @@ export const daemonConfigSchema = z.object({
     system: systemVoiceSchema.optional(),
     /** Language for assigned system voices, e.g. "en", "fr-FR". */
     locale: z.string().default("en"),
+    /** macOS purges downloaded Siri and Premium voices when the disk runs
+     *  low. Below this many GB free on the Data volume, with such a voice
+     *  in use, the owner is told once (#791). 0 turns the warning off. */
+    lowDiskGB: z.number().min(0).max(1000).default(10),
     /** What agents call the person they talk with, e.g. a first name.
      *  Unset: "the user". */
     listener: z.string().optional(),

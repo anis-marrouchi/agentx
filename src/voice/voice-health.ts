@@ -8,8 +8,12 @@
 // when it is back. The state lives in a small file, so a restart does not
 // repeat the notice, and so the dashboard and `agentx voice list` can show
 // it.
+//
+// It also warns BEFORE that happens (#791): when free space on the Data
+// volume drops under `voice.lowDiskGB` while a Siri or Premium voice is in
+// use, the owner is told once, until space recovers and drops again.
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, readFileSync, renameSync, statfsSync, writeFileSync } from "fs"
 import { homedir } from "os"
 import { dirname, join } from "path"
 import type { DaemonConfig } from "@/daemon/config"
@@ -33,9 +37,25 @@ export interface MissingVoice {
   notifiedAt?: string
 }
 
+/** Free space is low while voices macOS may purge are in use. */
+export interface LowDisk {
+  /** Free bytes on the Data volume when first found low. */
+  freeBytes: number
+  /** The threshold then, in bytes. */
+  thresholdBytes: number
+  /** The configured Siri and Premium voices at risk. */
+  voices: string[]
+  /** When free space was first found low (ISO). */
+  since: string
+  /** When the owner was told (ISO); absent until a notice went out. */
+  notifiedAt?: string
+}
+
 export interface VoiceHealthState {
   checkedAt: string
   missing: MissingVoice[]
+  /** Present while the disk is low and a purgeable voice is in use. */
+  lowDisk?: LowDisk
 }
 
 export const voiceHealthPath = (home = homedir()) => join(home, ".agentx", "voice", "health.json")
@@ -92,6 +112,78 @@ export function findMissingVoices(config: Config, installed: SystemVoice[]): Arr
   return [...byVoice.values()]
 }
 
+/** Default `voice.lowDiskGB`. macOS purged four Siri voices at 5.4 GB free. */
+export const LOW_DISK_GB = 10
+/** Space must climb this far above the threshold before a low-disk state
+ *  clears, so hovering around it does not repeat the notice. */
+export const LOW_DISK_RECOVER_BYTES = 1e9
+/** The APFS volume that holds user data on macOS 10.15 and later. */
+const DATA_VOLUME = "/System/Volumes/Data"
+
+/** Whether macOS may purge a voice: Siri voices, and Premium ones. */
+const purgeable = (v: SystemVoice | null | undefined) => !!v && (v.siri || v.quality === "premium")
+
+/**
+ * The configured voices macOS may purge when the disk runs low: Siri and
+ * Premium names, whether installed or already gone, plus any Siri or
+ * Premium voice an agent is assigned without naming one.
+ */
+export function purgeableVoices(config: Config, installed: SystemVoice[]): string[] {
+  const out = new Map<string, string>() // name → its locale
+  for (const { name, locale } of configuredNames(config)) {
+    const q = name.trim()
+    if (q.toLowerCase().startsWith(SIRI_PREFIX) || parseSiriId(q) || /\(premium\)$/i.test(q) || purgeable(findVoice(q, installed, locale))) out.set(q, locale)
+  }
+  if (installed.length) {
+    for (const v of localSystemVoices(config.agents, config.voice, installed).values()) {
+      // Skip a voice already listed by the name that chose it ("siri:nora").
+      if (purgeable(v) && ![...out].some(([q, l]) => isInstalled(q, [v!], l))) out.set(v!.id, v!.locale)
+    }
+  }
+  return [...out.keys()]
+}
+
+/** Free bytes on the Data volume; null off macOS or when unreadable. */
+export function dataVolumeFreeBytes(): number | null {
+  if (process.platform !== "darwin") return null
+  for (const path of [DATA_VOLUME, "/"]) {
+    try {
+      const s = statfsSync(path)
+      return Number(s.bavail) * Number(s.bsize)
+    } catch { /* older macOS: no Data volume, try the root */ }
+  }
+  return null
+}
+
+/**
+ * The next low-disk state. Low (under the threshold) with a purgeable
+ * voice in use starts or keeps it; it clears once space is back above the
+ * threshold by LOW_DISK_RECOVER_BYTES, or when no such voice is in use or
+ * the warning is off. Unknown free space keeps whatever was there.
+ */
+export function nextLowDisk(prev: LowDisk | undefined, freeBytes: number | null, thresholdGB: number, voices: string[], now: Date): LowDisk | undefined {
+  const thresholdBytes = thresholdGB * 1e9
+  if (thresholdBytes <= 0 || !voices.length) return undefined
+  if (freeBytes === null) return prev
+  const low = freeBytes < thresholdBytes || (prev !== undefined && freeBytes < thresholdBytes + LOW_DISK_RECOVER_BYTES)
+  if (!low) return undefined
+  return prev
+    ? { ...prev, thresholdBytes, voices }
+    : { freeBytes, thresholdBytes, voices, since: now.toISOString() }
+}
+
+const gb = (bytes: number) => `${(bytes / 1e9).toFixed(1)} GB`
+
+/** The low-disk notice: how much is free, and which voices are at risk. */
+export function lowDiskNotice(freeBytes: number, low: LowDisk): { title: string; message: string } {
+  return {
+    title: "AgentX: disk almost full, voices at risk",
+    message: `Only ${gb(freeBytes)} is free on this Mac (warning below ${gb(low.thresholdBytes)}). ` +
+      `macOS may soon remove these downloaded voices: ${low.voices.map(voiceDisplayName).join(", ")}.\n` +
+      "Free up space to keep them. If one goes, agents speak with a stand-in until you reinstall it.",
+  }
+}
+
 /** "Siri Nora (en-US)" for a Siri id, "Siri Nora" for siri:nora, else as is. */
 export function voiceDisplayName(name: string): string {
   const siri = parseSiriId(name)
@@ -137,6 +229,8 @@ export interface VoiceHealthDeps {
   notify: (title: string, message: string) => Promise<void>
   log: (msg: string) => void
   file?: string
+  /** Free bytes on the Data volume; dataVolumeFreeBytes by default. */
+  freeBytes?: () => number | null
 }
 
 /** Checks configured voices, notifies once per missing voice, and logs
@@ -155,7 +249,8 @@ export class VoiceHealth {
     this.running = true
     try {
       const file = this.deps.file ?? voiceHealthPath()
-      const before = new Map((readVoiceHealth(file)?.missing ?? []).map((m) => [m.voice, m]))
+      const prev = readVoiceHealth(file)
+      const before = new Map((prev?.missing ?? []).map((m) => [m.voice, m]))
       const found = findMissingVoices(config, installed)
       const missing: MissingVoice[] = found.map((m) => ({ ...m, since: before.get(m.voice)?.since ?? now.toISOString(), ...(before.get(m.voice)?.notifiedAt ? { notifiedAt: before.get(m.voice)!.notifiedAt } : {}) }))
       const back = [...before.keys()].filter((v) => !found.some((m) => m.voice === v))
@@ -175,12 +270,35 @@ export class VoiceHealth {
         }
       }
       this.missingNow = missing.length > 0
-      const state = { checkedAt: now.toISOString(), missing }
+      const lowDisk = await this.checkDisk(config, installed, prev?.lowDisk, now)
+      const state: VoiceHealthState = { checkedAt: now.toISOString(), missing, ...(lowDisk ? { lowDisk } : {}) }
       // Only on a change: this runs every minute, often on a nearly full disk.
-      if (!existsSync(file) || JSON.stringify(missing) !== JSON.stringify([...before.values()])) writeVoiceHealth(file, state)
+      const changed = JSON.stringify(missing) !== JSON.stringify([...before.values()]) || JSON.stringify(lowDisk) !== JSON.stringify(prev?.lowDisk)
+      if (!existsSync(file) || changed) writeVoiceHealth(file, state)
       return state
     } finally {
       this.running = false
+    }
+  }
+
+  /** Warns once while free space is low and a purgeable voice is in use. */
+  private async checkDisk(config: Config, installed: SystemVoice[], prev: LowDisk | undefined, now: Date): Promise<LowDisk | undefined> {
+    const free = (this.deps.freeBytes ?? dataVolumeFreeBytes)()
+    const threshold = config.voice?.lowDiskGB ?? LOW_DISK_GB
+    // No reading, no verdict: skip working out the voices every minute.
+    const voices = free === null && !prev ? [] : purgeableVoices(config, installed)
+    const low = nextLowDisk(prev, free, threshold, voices, now)
+    if (prev && !low) this.deps.log("[voice] the low-disk warning is cleared (space recovered, or no Siri or Premium voice in use)")
+    if (!low || low.notifiedAt || free === null) return low
+    const { title, message } = lowDiskNotice(free, low)
+    try {
+      await this.deps.notify(title, message)
+      this.deps.log(`[voice] told the owner: ${gb(free)} free, ${low.voices.length} purgeable voice(s) at risk`)
+      return { ...low, notifiedAt: now.toISOString() }
+    } catch (e: any) {
+      // Left untold, so the next check tries again.
+      this.deps.log(`[voice] could not send the low-disk notice: ${e?.message ?? e}`)
+      return low
     }
   }
 }

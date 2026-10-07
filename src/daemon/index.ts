@@ -775,7 +775,8 @@ export class AgentXDaemon {
 
     // Configured voices macOS took away (it purges downloaded voices when
     // the disk is low): tell the owner once per voice, and look again
-    // every minute so a reinstalled one is used without a restart. After
+    // every minute so a reinstalled one is used without a restart, and warn
+    // once when the disk runs low enough to put them at risk. After
     // the channels start, so the first notice has somewhere to go.
     if (process.platform === "darwin") {
       restoreSpokenVoice()

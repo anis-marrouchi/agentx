@@ -354,6 +354,7 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.fallback` | `"system"` | When ElevenLabs can't speak: `"system"` uses a Mac voice, `"none"` stays silent |
 | `voice.system` | not set: each agent gets its own voice | A Mac voice for every agent without its own. `"system"` means the Mac's default voice |
 | `voice.locale` | `"en"` | The language of automatically assigned voices, for example `"fr-FR"` |
+| `voice.lowDiskGB` | `10` | Below this much free disk space, in GB, you get one warning that macOS may remove your Siri and Premium voices. `0` turns it off |
 | `voice.listener` | not set: "the user" | What agents call you, for example your first name |
 | `voice.pronunciations` | `[]` | How a word is said aloud without changing how it is written. See [Say a word the way it is said](#say-a-word-the-way-it-is-said) |
 | `voice.pointer` | `true` | `false` never draws an agent's pointer and name tag on screen; a lesson is then spoken only |

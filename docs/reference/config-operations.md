@@ -81,6 +81,7 @@ How agents speak aloud. See [AgentX Voice](/dashboard/voice).
 | `voice.fallback` | `"system"` \| `"none"` | `"system"` | What happens when ElevenLabs cannot speak: use the system voice, or stay silent. |
 | `voice.system` | string or map of strings | — | System voice for agents without their own. A name, `"system"` for the OS default, or one per language such as `{ "en": "Samantha", "fr": "Thomas" }`. Unset gives each agent its own. |
 | `voice.locale` | string | `"en"` | Language used when voices are assigned, for example `"fr-FR"`. |
+| `voice.lowDiskGB` | number | `10` | On a Mac, warn once when free disk space drops below this many GB while a Siri or Premium voice is in use. `0` turns the warning off. |
 | `voice.listener` | string | — | What agents call you, for example a first name. Unset means "the user". |
 | `voice.pronunciations` | list | `[]` | How a word is said aloud without changing how it is written. Each entry is `{ "written": "Okafor", "spoken": "Oh-kah-for" }`, with an optional `"languages"` list (`"en"`, `"fr"`, `"ar"`) that limits it to lines in those languages. The written form matches whole words, without case. At most 200. See [Say a word the way it is said](/guides/agentx-voice#say-a-word-the-way-it-is-said). |
 | `voice.pointer` | boolean | `true` | Draw the agent's pointer and name tag on screen during a lesson. `false` never draws it; a lesson is then spoken only. A plain spoken answer never shows it. |

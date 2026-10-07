@@ -5,7 +5,7 @@ import { join } from "path"
 import { fallbackVoice, parseVoiceList, setMissingVoiceHook, setVoiceLog, type SystemVoice } from "../src/voice/system-voices"
 import { parseSiriAssets } from "../src/voice/siri"
 import { localSystemVoices, resolveAgentVoice } from "../src/voice/agent-voice"
-import { findMissingVoices, missingNotice, readVoiceHealth, VoiceHealth, REINSTALL_HINT } from "../src/voice/voice-health"
+import { dataVolumeFreeBytes, findMissingVoices, lowDiskNotice, missingNotice, nextLowDisk, purgeableVoices, readVoiceHealth, VoiceHealth, REINSTALL_HINT } from "../src/voice/voice-health"
 
 // What the Mac had after macOS purged the Siri voices: one Enhanced voice,
 // a few compact ones, and the Eloquence family.
@@ -186,5 +186,124 @@ describe("VoiceHealth", () => {
   it("does nothing without a voice list", async () => {
     expect(await health().check(cfg, [])).toBeNull()
     expect(readVoiceHealth(file)).toBeNull()
+  })
+})
+
+describe("low disk before macOS purges voices (#791)", () => {
+  const GB = 1e9
+  const now = new Date("2026-10-07T11:00:00Z")
+  const siri = { agents: agents({ secretary: { system: "siri:nora" } }), voice: {} }
+  const plain = { agents: agents({ pm: { system: "Samantha" } }), voice: { system: "Samantha" } }
+
+  it("counts Siri and Premium voices as purgeable, not compact or Enhanced ones", () => {
+    expect(purgeableVoices(siri, RESTORED)).toEqual(["siri:nora"])
+    expect(purgeableVoices({ agents: agents({ s: { system: NORA_ID } }), voice: {} }, PURGED)).toEqual([NORA_ID])
+    expect(purgeableVoices({ agents: agents({ s: { system: "Ava (Premium)" } }), voice: {} }, PURGED)).toContain("Ava (Premium)")
+    expect(purgeableVoices(plain, PURGED)).toEqual([])
+    expect(purgeableVoices({ agents: agents({ s: { system: "Allison" } }), voice: { system: "Allison" } }, PURGED)).toEqual([])
+  })
+
+  it("counts a Premium voice an agent is assigned without naming one", () => {
+    const ava = parseVoiceList("com.apple.voice.premium.en-US.Ava\tAva\ten-US\t3\t2")
+    expect(purgeableVoices({ agents: agents({ s: {} }), voice: {} }, [...STANDARD, ...ava])).toEqual(["com.apple.voice.premium.en-US.Ava"])
+  })
+
+  it("is low under the threshold, and clears only once space is back above it by 1 GB", () => {
+    const low = nextLowDisk(undefined, 5.4 * GB, 10, ["siri:nora"], now)
+    expect(low).toMatchObject({ freeBytes: 5.4 * GB, thresholdBytes: 10 * GB, voices: ["siri:nora"], since: now.toISOString() })
+    expect(nextLowDisk(undefined, 10.5 * GB, 10, ["siri:nora"], now)).toBeUndefined()
+    expect(nextLowDisk(low, 10.5 * GB, 10, ["siri:nora"], now)?.since).toBe(low!.since)
+    expect(nextLowDisk(low, 11.2 * GB, 10, ["siri:nora"], now)).toBeUndefined()
+  })
+
+  it("is never low with no purgeable voice, the warning off, or an unknown reading", () => {
+    expect(nextLowDisk(undefined, 1 * GB, 10, [], now)).toBeUndefined()
+    expect(nextLowDisk(undefined, 1 * GB, 0, ["siri:nora"], now)).toBeUndefined()
+    expect(nextLowDisk(undefined, null, 10, ["siri:nora"], now)).toBeUndefined()
+    const low = nextLowDisk(undefined, 1 * GB, 10, ["siri:nora"], now)
+    expect(nextLowDisk(low, null, 10, ["siri:nora"], now)).toBe(low)
+  })
+
+  it("the notice says how much is free and which voices are at risk", () => {
+    const n = lowDiskNotice(5.4 * GB, { freeBytes: 5.4 * GB, thresholdBytes: 10 * GB, voices: ["siri:nora", NORA_ID], since: "" })
+    expect(n.title).toBe("AgentX: disk almost full, voices at risk")
+    expect(n.message).toContain("Only 5.4 GB is free")
+    expect(n.message).toContain("Siri Nora, Siri Nora (en-US)")
+  })
+
+  it("reads no free space off macOS", () => {
+    if (process.platform !== "darwin") expect(dataVolumeFreeBytes()).toBeNull()
+  })
+
+  describe("VoiceHealth", () => {
+    let dir: string, file: string, sent: string[], free: number | null, fail: boolean
+    const health = () => new VoiceHealth({
+      file, log: (m) => log.push(m), freeBytes: () => free,
+      notify: async (_t, m) => { if (fail) throw new Error("offline"); sent.push(m) },
+    })
+    beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "voice-disk-")); file = join(dir, "health.json"); sent = []; free = 5.4 * GB; fail = false })
+    afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+    it("tells the owner once, across checks and restarts, and again after space recovers and drops", async () => {
+      const h = health()
+      await h.check(siri, RESTORED)
+      await h.check(siri, RESTORED)
+      await health().check(siri, RESTORED)
+      expect(sent).toHaveLength(1)
+      expect(sent[0]).toContain("Only 5.4 GB is free")
+      expect(readVoiceHealth(file)?.lowDisk).toMatchObject({ voices: ["siri:nora"], notifiedAt: expect.any(String) })
+      free = 9.5 * GB // under the threshold plus the margin: still low
+      await h.check(siri, RESTORED)
+      expect(readVoiceHealth(file)?.lowDisk).toBeDefined()
+      free = 20 * GB
+      await h.check(siri, RESTORED)
+      expect(readVoiceHealth(file)?.lowDisk).toBeUndefined()
+      expect(sent).toHaveLength(1)
+      free = 4 * GB
+      await h.check(siri, RESTORED)
+      expect(sent).toHaveLength(2)
+    })
+
+    it("sends nothing when no Siri or Premium voice is configured", async () => {
+      await health().check(plain, PURGED)
+      expect(sent).toHaveLength(0)
+      expect(readVoiceHealth(file)?.lowDisk).toBeUndefined()
+    })
+
+    it("sends nothing off macOS, where free space is not read", async () => {
+      free = null
+      await health().check(siri, RESTORED)
+      expect(sent).toHaveLength(0)
+    })
+
+    it("sends nothing above the threshold, or with voice.lowDiskGB set to 0", async () => {
+      free = 50 * GB
+      await health().check(siri, RESTORED)
+      free = 1 * GB
+      await health().check({ ...siri, voice: { lowDiskGB: 0 } }, RESTORED)
+      expect(sent).toHaveLength(0)
+    })
+
+    it("follows voice.lowDiskGB", async () => {
+      free = 15 * GB
+      await health().check({ ...siri, voice: { lowDiskGB: 20 } }, RESTORED)
+      expect(sent).toHaveLength(1)
+      expect(sent[0]).toContain("warning below 20.0 GB")
+    })
+
+    it("retries a notice that could not be sent", async () => {
+      fail = true
+      await health().check(siri, RESTORED)
+      expect(readVoiceHealth(file)?.lowDisk?.notifiedAt).toBeUndefined()
+      fail = false
+      await health().check(siri, RESTORED)
+      expect(sent).toHaveLength(1)
+    })
+
+    it("keeps the missing-voice notice separate", async () => {
+      await health().check(siri, PURGED)
+      expect(sent).toHaveLength(2)
+      expect(readVoiceHealth(file)).toMatchObject({ missing: [{ voice: "siri:nora" }], lowDisk: { voices: ["siri:nora"] } })
+    })
   })
 })

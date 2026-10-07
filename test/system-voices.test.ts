@@ -192,6 +192,7 @@ describe("config", () => {
       provider: "system", fallback: "system", locale: "en", pronunciations: [], pointer: true, stt: "auto", allowUnmeasured: false, spokenMaxChars: 500, noiseFilter: { enabled: true, markers: NOISE_MARKERS }, localStt: "mlx-whisper", endOfTurn: "vad",
       hotkeys: { talk: "opt+space", stop: "cmd+opt+period", paste: "cmd+opt+v" },
       look: "orb",
+      lowDiskGB: 10,
       startReduced: false,
       stroll: false,
       animations: "sometimes",

@@ -828,6 +828,7 @@ agentx voice set helper <voice-id> --provider elevenlabs   # this agent speaks t
 | `voice.fallback` | `system` (default): when ElevenLabs cannot speak (no key, quota, network), use the system voice. `none`: stay silent |
 | `voice.system` | One system voice (or one per language) for every agent without its own. Unset: each agent gets its own |
 | `voice.locale` | Language of assigned voices, e.g. `en`, `fr`, `en-GB` (default `en`) |
+| `voice.lowDiskGB` | Free disk space, in GB, below which you are warned that macOS may remove your Siri and Premium voices (default `10`, `0` turns the warning off; see [Before a voice goes missing](#before-a-voice-goes-missing)) |
 | `voice.listener` | Who agents address in talk and live teach, e.g. `"Sam"`. Unset: they say "the user" |
 | `voice.pointer` | `false` never draws an agent's [pointer and name tag](#presence-on-screen); lessons are then spoken only (default `true`) |
 | agent `voice.provider` | Overrides the global provider for this agent |
@@ -862,6 +863,22 @@ To see which voices are missing:
 - **Dashboard:** the Settings page counts missing voices under **Needs attention** and lists them in a notice.
 
 When you install the voice again, agents switch back to it within about a minute. You don't need to restart.
+
+### Before a voice goes missing
+
+Siri and Premium voices are large downloads, and macOS removes them first when the disk fills up. The daemon warns you before that happens.
+
+Every minute, the Mac daemon reads how much free space the disk has (the "Data" part of the disk, where your files live). When free space is under `voice.lowDiskGB` (10 GB by default) and at least one agent uses a Siri or Premium voice, you get one notification. It says how much space is free and which voices are at risk. You don't get it again until free space has climbed back at least 1 GB above the limit and then dropped under it again. A restart does not repeat it. Nothing is sent when no Siri or Premium voice is in use, or on a computer that is not a Mac.
+
+To get the warning earlier, raise the limit. To turn it off, set it to `0`:
+
+1. **Terminal:** open `agentx.json` in a text editor.
+2. **Terminal:** in the `voice` block, add `"lowDiskGB": 20` (or `0` to turn it off), then save the file.
+3. **Terminal:** run `agentx daemon restart`.
+
+While the disk is low, the **Dashboard** Settings page counts it under **Needs attention** and shows a notice next to any missing voices.
+
+To free up space, empty the Trash and delete caches you can rebuild (for example a package manager's download cache). A tool such as `du` can report much more space than it actually frees: macOS shares the space of identical copies of a file, so deleting such a copy frees almost nothing. Check **System Settings › General › Storage** for the real free space.
 
 An agent introduces itself the first time it speaks in a voice session, or after eight hours of silence, and talks casually after that. Without `intro`, the line is derived from the first sentence of its system prompt.
 
@@ -1275,6 +1292,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 26. **Mac:** right-click the pill and choose **Reduce to orb**. The pill is a small circle in the middle of the bottom edge. Ask "Give me three links about macOS design." again: the full pill opens with the answer, and once the answer has closed the circle is back where it was. Choose **Show full pill** to keep the pill.
 27. **Mac:** with **Shown as** set to **Character**, open the AgentX menu and choose **Reduce to character**. Hold **Option–Space** and ask something short: the character listens, works and speaks with no bubble above it. Choose **Show speech bubble** to get the bubble back.
 28. **Terminal:** after a lesson (see [Check a hands-free lesson](#check-a-hands-free-lesson)), run `agentx voice lessons`. It prints that lesson with its steps, what it heard, and an **ok** on every check line but **by eye**.
+29. **Terminal:** to check the low-disk warning on a Mac with a Siri or Premium voice in use, set `"lowDiskGB": 1000` in the `voice` block of `agentx.json` and run `agentx daemon restart`. Within a minute you get one notification titled "AgentX: disk almost full, voices at risk", and `cat ~/.agentx/voice/health.json` shows a `lowDisk` entry with a `notifiedAt` time. Set the value back afterwards and restart again.
 
 ## If something is wrong
 
@@ -1302,6 +1320,7 @@ Every change to the speaking queue is also sent on the live event stream (`GET /
 - **`agentx voice lessons` finds no lesson, or its lines have no time:** the daemon running is older than 0.94.0, or the lesson never started (the presence seat chose `talk`, which the daemon log shows on a `[presence]` line). Update the daemon, restart it, then run `agentx desktop install` again so the app matches.
 - **A lesson ended as soon as you spoke to it:** the check prints **not ok** with *a hush ended it*. The daemon is older than 0.94.0; update and restart it. On a current daemon, a lesson that hears nothing for a minute after you clicked the pill ends on its own (*no words after the hush*).
 - **The first step took more than 10 seconds:** the check names the slow part. A long **plan** means the planning model was slow, which happens on a Mac that is busy or has just started; try again once it is idle. A long **screen** read means the app's window had to be read from a screenshot, which takes a second or two more.
+- **No low-disk warning although the disk is nearly full:** the warning needs a Siri or Premium voice in use (`agentx voice list` marks them `siri` or `premium`), a Mac, and `voice.lowDiskGB` above `0`. It is sent only once per low spell: delete the `lowDisk` entry from `~/.agentx/voice/health.json` to get it again. **Terminal:** run `agentx daemon logs` and look for lines that start with `[voice]`; `could not send the low-disk notice` means the notification channel failed, and it is retried every minute.
 - **The pill doesn't appear:** it was hidden with **×**, **Esc** or **Hide pill**. Hold **Option–Space**, or choose **Show floating pill** in the menu, to bring it back. The orb needs macOS 14 or later; on macOS 14 it uses a simpler gradient than on macOS 15.
 - **The pill is off screen or in an odd place:** click the AgentX icon in the menu bar and choose **Reset position**.
 - **The character runs from the pointer and can't be dragged:** hold **Command** first. It then waits, and you can drag it. See [Move or hide the character](#move-or-hide-the-character).

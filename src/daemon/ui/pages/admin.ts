@@ -85,23 +85,32 @@ export function renderAdminPage(opts: AdminPageOpts = {}): string {
 const ADMIN_HEALTH_SCRIPT = `
 (function(){
   function fmt(n) { return n == null ? '—' : String(n); }
-  async function voiceMissing() {
+  async function voiceHealth() {
     try {
       const headers = {};
       if (window.AX_LOCAL_TOKEN) headers['Authorization'] = 'Bearer ' + window.AX_LOCAL_TOKEN;
       const r = await fetch('/api/admin/voice-health', { headers });
-      if (!r.ok) return [];
+      if (!r.ok) return { missing: [] };
       const body = await r.json();
-      return Array.isArray(body.missing) ? body.missing : [];
-    } catch (e) { return []; }
+      return { missing: Array.isArray(body.missing) ? body.missing : [], lowDisk: body.lowDisk || null };
+    } catch (e) { return { missing: [] }; }
   }
   // Built with textContent: voice names and agent ids come from config.
-  function showVoiceMissing(missing) {
+  function showVoiceMissing(missing, lowDisk) {
     const box = document.getElementById('ax-voice-missing');
     if (!box) return;
-    box.style.display = missing.length ? '' : 'none';
+    box.style.display = missing.length || lowDisk ? '' : 'none';
     const text = box.querySelector('div');
     text.textContent = '';
+    if (lowDisk) {
+      // Before macOS purges the Siri and Premium voices (#791).
+      const low = document.createElement('strong');
+      low.textContent = 'The disk is almost full: macOS may soon remove downloaded voices';
+      text.appendChild(low);
+      const line = document.createElement('div');
+      line.textContent = (lowDisk.freeBytes / 1e9).toFixed(1) + ' GB was free when found (warning below ' + (lowDisk.thresholdBytes / 1e9).toFixed(1) + ' GB). At risk: ' + (lowDisk.voices || []).join(', ') + '. Free up space to keep them.';
+      text.appendChild(line);
+    }
     if (!missing.length) return;
     const head = document.createElement('strong');
     head.textContent = missing.length === 1 ? 'A configured voice is not installed' : missing.length + ' configured voices are not installed';
@@ -143,10 +152,12 @@ const ADMIN_HEALTH_SCRIPT = `
         };
         setCard(0, agents.length, agents.length > 0 ? 'ok' : 'off');
         setCard(1, enabled + '/' + channelDefs.length, enabled > 0 ? 'ok' : 'off');
-        // "Needs attention": configured voices that are not installed.
-        const missing = await voiceMissing();
-        setCard(2, missing.length, missing.length ? 'warn' : 'off');
-        showVoiceMissing(missing);
+        // "Needs attention": configured voices that are not installed, and a low disk that puts them at risk.
+        const vh = await voiceHealth();
+        const missing = vh.missing;
+        const attention = missing.length + (vh.lowDisk ? 1 : 0);
+        setCard(2, attention, attention ? 'warn' : 'off');
+        showVoiceMissing(missing, vh.lowDisk);
         const tokenCount = Array.isArray(cfg.tokens) ? cfg.tokens.length : 0;
         setCard(3, tokenCount, tokenCount > 0 ? 'ok' : 'off');
       }
