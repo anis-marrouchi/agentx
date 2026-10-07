@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import { mkdirSync, writeFileSync, rmSync } from "fs"
 import { resolve } from "path"
-import { loadWorkspaceEnv, buildAgentEnv, claudeBillingEnv, _resetDaemonEnvKeysCache } from "../src/utils/workspace-env"
+import { loadWorkspaceEnv, buildAgentEnv, claudeBillingEnv, withToolPath, _resetDaemonEnvKeysCache } from "../src/utils/workspace-env"
 
 const TMP = resolve(__dirname, "../.test-workspace-env")
 const WORKSPACE = resolve(TMP, "agent-workspace")
@@ -127,5 +127,17 @@ describe("claudeBillingEnv", () => {
 
   it("billing api without a key refuses instead of silently using the subscription", () => {
     expect(() => claudeBillingEnv({ CLAUDE_CODE_OAUTH_TOKEN: "oauth" }, "api")).toThrow(/ANTHROPIC_API_KEY/)
+  })
+})
+
+describe("withToolPath", () => {
+  it("adds ~/.local/bin so a launchd or MCP-server PATH can find claude", () => {
+    const env = withToolPath({ HOME: "/home/a", PATH: "/opt/homebrew/bin:/usr/bin:/bin" })
+    expect(env.PATH!.split(":")).toEqual(["/opt/homebrew/bin", "/usr/bin", "/bin", "/home/a/.local/bin", "/usr/local/bin"])
+  })
+
+  it("keeps the caller's order and adds nothing twice", () => {
+    const env = withToolPath({ HOME: "/home/a", PATH: "/home/a/.local/bin:/usr/bin" })
+    expect(env.PATH).toBe("/home/a/.local/bin:/usr/bin:/opt/homebrew/bin:/usr/local/bin")
   })
 })

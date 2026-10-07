@@ -121,6 +121,28 @@ export function stripAnthropicApiKey(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv 
   return env
 }
 
+/** `env` with the folders the fleet's CLIs install to added to PATH. A
+ *  process started by launchd, or the MCP server Claude Code starts, does
+ *  not get a login shell's PATH, and `claude` usually lives in
+ *  ~/.local/bin. */
+export function withToolPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const home = env.HOME || process.env.HOME
+  const parts = [
+    env.PATH || "",
+    home ? `${home}/.local/bin` : "",
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+  ]
+  env.PATH = Array.from(new Set(parts.flatMap((p) => p.split(":")).filter(Boolean))).join(":")
+  return env
+}
+
+/** The env for a one-shot `claude -p` call: subscription billing and a
+ *  PATH that can find the CLI. */
+export function claudeCliEnv(): NodeJS.ProcessEnv {
+  return withToolPath(stripAnthropicApiKey({ ...process.env }))
+}
+
 /** How an agent's `claude` CLI is billed. "subscription" (the default) is
  *  the OAuth login shared by the fleet. "api" bills ANTHROPIC_API_KEY
  *  instead, for agents that must not draw on that shared quota, such as
