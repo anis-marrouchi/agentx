@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.120.0](https://github.com/anis-marrouchi/agentx/compare/v0.119.0...v0.120.0) (2026-10-07)
+
+
+### Features
+
+* **retro:** monthly review of the checks retros added (P2 of [#743](https://github.com/anis-marrouchi/agentx/issues/743)) ([#774](https://github.com/anis-marrouchi/agentx/issues/774)) ([00aedc0](https://github.com/anis-marrouchi/agentx/commit/00aedc0977cdd0aa6d1911023797121711ae6204))
+
+
+### Bug Fixes
+
+* **wiki:** find the claude CLI from the MCP server; drop stale absorb notice ([#775](https://github.com/anis-marrouchi/agentx/issues/775)) ([2ea4839](https://github.com/anis-marrouchi/agentx/commit/2ea4839a71bb3701f21ea9d07373077b91ef9af5))
+
 ## [0.119.0](https://github.com/anis-marrouchi/agentx/compare/v0.118.1...v0.119.0) (2026-10-06)
 
 
