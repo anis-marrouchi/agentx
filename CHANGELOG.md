@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.123.1](https://github.com/anis-marrouchi/agentx/compare/v0.123.0...v0.123.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **wiki:** parse absorb replies with a string-aware scan, make the model configurable ([4293348](https://github.com/anis-marrouchi/agentx/commit/429334821d64d890102695f43ecc8d0fc4e3bb1f)), closes [#799](https://github.com/anis-marrouchi/agentx/issues/799)
+
 ## [0.123.0](https://github.com/anis-marrouchi/agentx/compare/v0.122.0...v0.123.0) (2026-10-07)
 
 
