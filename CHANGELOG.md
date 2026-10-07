@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.122.0](https://github.com/anis-marrouchi/agentx/compare/v0.121.1...v0.122.0) (2026-10-07)
+
+
+### Features
+
+* **requests:** tracked multi-step plans with auto-nudge ([#788](https://github.com/anis-marrouchi/agentx/issues/788)) ([#789](https://github.com/anis-marrouchi/agentx/issues/789)) ([a2438e6](https://github.com/anis-marrouchi/agentx/commit/a2438e66d81ce0ef0af583853d45efee7dc0b209))
+
 ## [0.121.1](https://github.com/anis-marrouchi/agentx/compare/v0.121.0...v0.121.1) (2026-10-07)
 
 
