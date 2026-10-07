@@ -1,6 +1,7 @@
 import { handleError } from "@/utils/handle-error"
 import { logger } from "@/utils/logger"
 import { startMcpServer } from "@/mcp"
+import { isMcpToolSet, MCP_TOOL_SETS } from "@/mcp/tool-names"
 import chalk from "chalk"
 import { Command } from "commander"
 import { resolve } from "path"
@@ -12,16 +13,26 @@ export const serve = new Command()
   .description("run agentx as an MCP server for AI editors (Claude Code, Cursor, Windsurf, etc.)")
   .option("--stdio", "use stdio transport (default)", true)
   .option(
+    "--tools <set>",
+    `which tools to offer: ${MCP_TOOL_SETS.join(" or ")} ("read" only looks; it sends, starts and changes nothing)`,
+    "full"
+  )
+  .option(
     "-c, --cwd <cwd>",
     "working directory",
     process.cwd()
   )
   .action(async (opts) => {
     try {
+      if (!isMcpToolSet(opts.tools)) {
+        logger.error(`Unknown tool set "${opts.tools}". Use one of: ${MCP_TOOL_SETS.join(", ")}.`)
+        process.exitCode = 1
+        return
+      }
       process.chdir(resolve(opts.cwd))
       if (opts.stdio !== false) {
         // stdio mode — all logging goes to stderr, stdout is JSON-RPC
-        await startMcpServer()
+        await startMcpServer({ tools: opts.tools })
       } else {
         logger.error("Only stdio transport is currently supported.")
         logger.info(

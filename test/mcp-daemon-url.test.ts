@@ -60,17 +60,17 @@ describe("MCP daemon URL resolution", () => {
     expect(_resolveDaemonUrlForTesting()).toBe("http://peer.internal:19900")
   })
 
-  it("keeps the legacy default when there is no config at all", () => {
-    expect(_resolveDaemonUrlForTesting()).toBe("http://localhost:19900")
+  it("falls back to the default port when there is no config at all", () => {
+    expect(_resolveDaemonUrlForTesting()).toBe("http://localhost:18800")
   })
 
-  it("keeps the legacy default when the config is unparseable", () => {
+  it("falls back to the default port when the config is unparseable", () => {
     writeFileSync(join(dir, "agentx.json"), "{ not json")
-    expect(_resolveDaemonUrlForTesting()).toBe("http://localhost:19900")
+    expect(_resolveDaemonUrlForTesting()).toBe("http://localhost:18800")
   })
 
-  it("keeps the legacy default when bind is missing or malformed", () => {
+  it("falls back to the default port when bind is missing or malformed", () => {
     writeConfig("18800")
-    expect(_resolveDaemonUrlForTesting()).toBe("http://localhost:19900")
+    expect(_resolveDaemonUrlForTesting()).toBe("http://localhost:18800")
   })
 })
