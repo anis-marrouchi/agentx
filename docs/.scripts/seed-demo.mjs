@@ -63,6 +63,8 @@ cfg.boards = [{
     { id: "review", title: "Review", kind: "scoped-label", scopedPrefix: "Status", scopedLabel: "Status::Review" },
   ],
 }]
+// Open requests on, for the tracked plan seeded below (#788).
+cfg.requests = { enabled: true }
 writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n")
 
 // Two places with reminders for the /places shot (place reminders, #676).
@@ -149,6 +151,23 @@ db.transaction(() => {
     insert.run(`external:docs-${index}`, session, "cx", Date.now() - minutesAgo * 60000, JSON.stringify(result))
   }
 })()
+
+// One open request with a tracked plan (#788), for the Approvals shot. The
+// daemon made the tables at start. Step 2 was handed over just now, so the
+// plan check neither nudges it nor sends the message before the shot.
+const ago = (minutes) => Date.now() - minutes * 60000
+db.transaction(() => {
+  db.prepare("DELETE FROM requests WHERE id = 'req-docs-plan'").run()
+  db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at)
+    VALUES ('req-docs-plan', 'in_progress', 'dashboard', 'demo', 'Demo operator', 'cx', ?, ?, ?)`)
+    .run("Fix the demo shop checkout button, ship it, and tell the shop it is live.", ago(95), ago(2))
+  db.prepare("INSERT INTO request_plans (request_id, created_by, created_at, state) VALUES ('req-docs-plan', 'cx', ?, 'active')").run(ago(94))
+  const step = db.prepare(`INSERT INTO request_plan_steps (request_id, idx, name, kind, agent_id, done_when, state, needs_approval, approval,
+    message, to_channel, to_chat, evidence, dispatched_at, updated_at) VALUES ('req-docs-plan', ?, ?, ?, 'cx', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+  step.run(1, "Build the fix", "task", "pull request merged", "done", 0, "none", null, null, null, "https://example.com/demo/shop/pull/48", ago(94), ago(40))
+  step.run(2, "Deploy and check it is live", "deploy", "the shop shows version 2.4.1", "active", 0, "none", null, null, null, null, ago(2), ago(2))
+  step.run(3, "Tell the shop", "message", "sent to telegram chat demo-shop", "pending", 1, "approved", "The checkout fix is live. Thank you for your patience.", "telegram", "demo-shop", null, null, ago(94))
+})()
 db.close()
 
 // One real scheduled run, for the schedule drawer's Runs today: switch the
@@ -173,4 +192,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded two workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, a webhook, a board, an action, two places, and two real scripted task runs.")
+console.log("Seeded two workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, a webhook, a board, an action, two places, and two real scripted task runs.")

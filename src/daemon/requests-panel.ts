@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "fs"
-import { requestStoreFor, type InboxContext } from "@/approvals/inbox"
+import { planStoreFor, requestStoreFor, type InboxContext } from "@/approvals/inbox"
 import { requestCard } from "@/requests/card-view"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { findConfigPath } from "./config-mutator"
@@ -12,7 +12,7 @@ import { findConfigPath } from "./config-mutator"
 //   POST /api/admin/approvals/requests/close     { id, action: done | drop, evidence?, reason? }
 //   POST /api/admin/approvals/requests/reply     { id, text }: the agent that has it gets the reply and goes on
 //   POST /api/admin/approvals/requests/handoff   { id, agentId, note? }: that agent has it from now on
-//   POST /api/admin/approvals/requests/settings  the settings form
+//   POST /api/admin/approvals/requests/settings  the settings form, plans included (#788)
 // An owner surface: it can drop a request, which agents cannot.
 
 export const REQUESTS_PANEL_PREFIX = "/api/admin/approvals/requests"
@@ -56,7 +56,7 @@ async function route(
     return {
       status: 200,
       body: {
-        items: store ? store.listOpen().map((r) => requestCard(r, store)) : [],
+        items: store ? store.listOpen().map((r) => requestCard(r, store, planStoreFor(ctx))) : [],
         agents: agentsOf(ctx.configPath),
         settings: readRequestSettings(ctx.configPath),
       },
@@ -114,6 +114,16 @@ async function route(
     patch.channels = list(body.channels)
     patch.staleAfterHours = num("staleAfterHours")
     patch.retentionDays = num("retentionDays")
+    const plans: NonNullable<RequestSettingsPatch["plans"]> = {}
+    if (typeof body.plansEnabled === "boolean") plans.enabled = body.plansEnabled
+    plans.stallMinutes = num("stallMinutes")
+    if (body.maxNudges !== undefined) {
+      if (typeof body.maxNudges !== "number" || !Number.isInteger(body.maxNudges) || body.maxNudges < 0) throw new Error("maxNudges must be a whole number, 0 or more")
+      plans.maxNudges = body.maxNudges
+    }
+    plans.approveKinds = list(body.approveKinds)
+    plans.disabledAgents = list(body.plansOffFor)
+    if (Object.values(plans).some((v) => v !== undefined)) patch.plans = plans
     const r = await updateRequestSettings(patch, { configPath: ctx.configPath, reload: ctx.reload })
     if (!r.success) return { status: 400, body: { error: r.error } }
     return { status: 200, body: { ok: true, settings: readRequestSettings(ctx.configPath) } }

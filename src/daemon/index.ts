@@ -64,7 +64,7 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
-import { createCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
+import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import type { OwnerPort } from "@/workflows/nodes/types"
@@ -72,6 +72,9 @@ import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
+import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
+import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
+import { isQueued } from "@/agents/queued"
 import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
 import { isOperatorTurn, loadOperatorKey, operatorContext, operatorVouch, ownerProven } from "@/requests/operator"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
@@ -1938,30 +1941,97 @@ export class AgentXDaemon {
     return !!token && collectAcceptedMeshTokens(this.config).has(token)
   }
 
+  /** Tell the owner about a request: a push, and the Mac banner. */
+  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }): Promise<void> {
+    await notify({ title, message, from: r.agentId, priority: 4 }, async (m) => {
+      // A push that fails must not take the Mac banner with it.
+      try {
+        await this.router.sendOutbound({
+          channel: m.channel ?? defaultNotifyChannel(this.config),
+          chatId: m.chatId ?? "default",
+          text: `${m.title}\n${m.message}`,
+          priority: m.priority,
+          agentId: r.agentId,
+        } as any)
+      } catch (e: any) {
+        this.log(`[requests] push for ${r.id} failed: ${e?.message ?? e}`)
+        // No Mac banner to fall back on: nothing reached the owner.
+        if (process.platform !== "darwin") throw e
+      }
+    }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+  }
+
+  private plansSweeping = false
+  private plansKick?: ReturnType<typeof setTimeout>
+
+  /** A plan was made or a step moved: follow it in a second rather than
+   *  at the next minute's check. */
+  private kickPlans(): void {
+    if (this.plansKick || !this.requests) return
+    this.plansKick = setTimeout(() => {
+      this.plansKick = undefined
+      if (this.requests && !this.shuttingDown) void this.sweepPlans(this.requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
+    }, 1_000)
+    this.plansKick.unref?.()
+  }
+
+  /** Tracked plans move on: steps handed over, quiet ones nudged,
+   *  approved messages sent, the owner told at the end or on a block
+   *  (src/requests/plan-sweep.ts, #788). One check at a time. */
+  private async sweepPlans(requests: AttachedRequests): Promise<void> {
+    if (this.plansSweeping || !this.config.requests.enabled) return
+    this.plansSweeping = true
+    try {
+      await runPlansSweep({
+        requests: requests.store,
+        plans: requests.plans,
+        settings: this.config.requests.plans ?? DEFAULT_PLAN_SETTINGS,
+        // Fire and forget, like a pick-up. A turn that could not start
+        // comes back as { error }: the step is blocked and the owner told.
+        tellAgent: async (agentId, text, r, step) => {
+          const fail = (error: string) => {
+            const cur = requests.plans.step(step.requestId, step.idx)
+            if (cur?.state === "active") blockStep(requests.store, requests.plans, cur, `could not hand it to ${agentId}: ${error}`, Date.now())
+            this.log(`[plans] ${r.id} step ${step.idx}: turn on ${agentId} failed: ${error}`)
+          }
+          void this.registry.execute({ agentId, message: text, context: pickupContext(r.id) })
+            .then((res) => { if (res?.error && !isQueued(res.error)) fail(res.error) })
+            .catch((e: any) => fail(e?.message ?? String(e)))
+        },
+        // Keyed by the step: a retry within a day never sends it twice.
+        send: async (step, text) => {
+          await this.router.sendOutbound(
+            { channel: step.toChannel!, chatId: step.toChat!, text, agentId: step.agentId, ...(step.toAccount ? { accountId: step.toAccount } : {}) } as any,
+            { idempotencyKey: `plan:${step.requestId}:${step.idx}`, dedupeWindowMs: 24 * 3_600_000 },
+          )
+        },
+        notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
+        raiseCard: (r, step, input) => {
+          const res = createCard(process.cwd(), { ...input, if_silent: "discard", raised_by: step.agentId }, {
+            settings: this.config.approvals,
+            origin: { kind: "plan-step", requestId: r.id, step: step.idx },
+          })
+          if (!res.ok) throw new Error(res.error)
+          return res.card.id
+        },
+        readCard: (id) => readCard(process.cwd(), id),
+        hasAgent: (id) => !!this.registry.getAgent(id),
+        log: this.log,
+      })
+    } finally {
+      this.plansSweeping = false
+    }
+  }
+
   /** Requests that went quiet come back, each is raised once, and old
-   *  closed ones are deleted (src/requests/sweep.ts). */
+   *  closed ones are deleted (src/requests/sweep.ts). Plans first: a
+   *  blocked step marks its request told, so the owner hears once. */
   private async sweepRequests(requests: AttachedRequests): Promise<void> {
+    await this.sweepPlans(requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
-      notify: async (title, message, r) => {
-        await notify({ title, message, from: r.agentId, priority: 4 }, async (m) => {
-          // A push that fails must not take the Mac banner with it.
-          try {
-            await this.router.sendOutbound({
-              channel: m.channel ?? defaultNotifyChannel(this.config),
-              chatId: m.chatId ?? "default",
-              text: `${m.title}\n${m.message}`,
-              priority: m.priority,
-              agentId: r.agentId,
-            } as any)
-          } catch (e: any) {
-            this.log(`[requests] push for ${r.id} failed: ${e?.message ?? e}`)
-            // No Mac banner to fall back on: nothing reached the owner.
-            if (process.platform !== "darwin") throw e
-          }
-        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
-      },
+      notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
@@ -3767,6 +3837,9 @@ export class AgentXDaemon {
           enabled: this.config.requests.enabled,
           hasAgent: (id) => !!this.registry.getAgent(id),
           runningTurn: (id, p) => this.provenTurn(id, p),
+          plans: this.requests.plans,
+          planSettings: this.config.requests.plans,
+          onPlanChange: () => this.kickPlans(),
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return

@@ -3,6 +3,7 @@ import { applyConfigMutation, findConfigPath, type MutationResult } from "@/daem
 import { expandEnvVars, requestsConfigSchema } from "@/daemon/config"
 import { HUMAN_CHANNELS } from "@/a2a/initiator"
 import type { RequestSettings } from "./tracker"
+import type { PlanSettings } from "./plans"
 
 // --- Requests settings: read and change `requests` in agentx.json ---
 //
@@ -19,7 +20,7 @@ export function readRequestSettings(configPath?: string): RequestSettings {
   return parsed.success ? parsed.data : requestsConfigSchema.parse(undefined)
 }
 
-export type RequestSettingsPatch = Partial<RequestSettings>
+export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans">> & { plans?: Partial<PlanSettings> }
 
 export async function updateRequestSettings(
   patch: RequestSettingsPatch,
@@ -35,6 +36,12 @@ export async function updateRequestSettings(
     const r = (cfg.requests ??= {})
     for (const key of ["enabled", "channels", "from", "staleAfterHours", "retentionDays"] as const) {
       if (patch[key] !== undefined) r[key] = patch[key]
+    }
+    if (patch.plans) {
+      const p = (r.plans ??= {})
+      for (const key of ["enabled", "stallMinutes", "maxNudges", "approveKinds", "disabledAgents"] as const) {
+        if (patch.plans[key] !== undefined) p[key] = patch.plans[key]
+      }
     }
   }, { configPath: opts.configPath, reload: opts.reload })
 }

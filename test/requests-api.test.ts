@@ -202,7 +202,7 @@ describe("settings", () => {
   it("reads defaults, saves changes through the config schema and rejects bad values", async () => {
     const configPath = path.join(tmp, "agentx.json")
     writeFileSync(configPath, JSON.stringify({ node: { id: "n", name: "n" }, agents: {} }))
-    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90 })
+    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [] } })
     const ok = await updateRequestSettings({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 }, { configPath, reload: false })
     expect(ok.success).toBe(true)
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests).toEqual({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 })
@@ -211,5 +211,10 @@ describe("settings", () => {
     expect(bad.success).toBe(false)
     expect((await updateRequestSettings({ from: ["no-channel"] }, { configPath, reload: false })).success).toBe(false)
     expect(readRequestSettings(configPath).staleAfterHours).toBe(12)
+    // Plans (#788): only the fields given are written.
+    expect((await updateRequestSettings({ plans: { stallMinutes: 45, disabledAgents: ["bot"] } }, { configPath, reload: false })).success).toBe(true)
+    expect(JSON.parse(readFileSync(configPath, "utf-8")).requests.plans).toEqual({ stallMinutes: 45, disabledAgents: ["bot"] })
+    expect(readRequestSettings(configPath).plans).toEqual({ enabled: true, stallMinutes: 45, maxNudges: 3, approveKinds: ["message"], disabledAgents: ["bot"] })
+    expect((await updateRequestSettings({ plans: { maxNudges: -1 } }, { configPath, reload: false })).success).toBe(false)
   })
 })

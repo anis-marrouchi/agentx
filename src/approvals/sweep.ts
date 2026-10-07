@@ -146,6 +146,8 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
       // A workflow step's card resumes its run (onCardResult): the run
       // is what acts on it, not a turn on the agent (#788).
       if (card.origin?.kind === "workflow") continue
+      // A plan step's card is acted on by the plan check (#788), not by a turn.
+      if (card.origin?.kind === "plan-step") continue
       if (!settings.notifyAgent || !deps.tellAgent) continue
       if (deps.hasAgent && !deps.hasAgent(card.raised_by)) {
         log(`[approvals] ${card.id}: agent "${card.raised_by}" isn't on this node; result not delivered`)

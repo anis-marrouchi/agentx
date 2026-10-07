@@ -65,7 +65,16 @@ export interface WorkflowProposalOrigin {
   workflowId: string
 }
 
-export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | WorkflowOrigin | WorkflowProposalOrigin
+/** A step of a tracked plan the owner approves when the plan is made
+ *  (src/requests/plan-sweep.ts, #788). The plan check reads the answer
+ *  and acts on it; the agent is not sent a result turn. */
+export interface PlanStepOrigin {
+  kind: "plan-step"
+  requestId: string
+  step: number
+}
+
+export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

@@ -222,10 +222,11 @@ What you asked agents for that is not finished: [Keep track of what you asked fo
 | Command | What it does |
 |---|---|
 | `agentx requests list [--json]` | Open requests, oldest first |
-| `agentx requests show <id>` | One request and the runs, delegations and cards linked to it |
+| `agentx requests show <id>` | One request and the runs, delegations and cards linked to it; its plan, step by step, and the plan's log |
+| `agentx requests step <id> <step> --retry\|--skip\|--done [--note]` | Move a step of a request's plan on: hand it over again, skip it, or mark it done |
 | `agentx requests done <id> --evidence <link>` | Close a request as finished, with a link to the proof |
 | `agentx requests drop <id> [--reason]` | Drop a request you no longer want |
-| `agentx requests settings [options]` | Show or change who counts as you, the channels, the quiet time and how long closed requests are kept |
+| `agentx requests settings [options]` | Show or change who counts as you, the channels, the quiet time, how long closed requests are kept, and the plan settings (`--plans`, `--stall-minutes`, `--max-nudges`, `--approve-kinds`, `--plans-off-for`) |
 
 ## Agent memory
 

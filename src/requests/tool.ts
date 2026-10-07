@@ -5,7 +5,9 @@ import { callerHeaders } from "@/calls/service"
 //
 // Lets an agent say what it is doing with the owner's request, so the
 // request stays visible until it is closed:
-//   accept   I am taking this on; keep it open after this turn
+//   accept   I am taking this on; keep it open after this turn. With
+//            `steps` (two or more): a tracked plan the daemon follows (#788)
+//   step     report on one step of a plan: progress, done, blocked
 //   wait     the next step is the owner's answer to this question
 //   done     finished, with a link to the evidence
 //   decline  I will not do it, with the reason
@@ -40,6 +42,11 @@ export function describeOpen(items: any[]): string {
   }).join("\n")
 }
 
+/** One line per plan step. */
+export function describeSteps(steps: any[]): string[] {
+  return (steps ?? []).map((s) => `${s.idx}. ${s.name} (${s.agentId}, ${s.kind}) [${s.state}]${s.needsApproval ? ` approval: ${s.approval}` : ""}`)
+}
+
 /** Returns the text the agent sees. Every refusal is text, never a throw. */
 export async function runRequestTool(args: Record<string, unknown>, deps: RequestToolDeps): Promise<string> {
   const doFetch = deps.fetch ?? fetch
@@ -66,12 +73,21 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       body: JSON.stringify({
         action, agentId: caller.agentId,
         id: args.id, question: args.question, evidence: args.evidence, reason: args.reason,
+        steps: args.steps, step: args.step, status: args.status, note: args.note,
       }),
       signal: AbortSignal.timeout(10_000),
     })
     const data = await res.json().catch(() => ({})) as any
     if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
     const r = data.request
+    if (action === "accept" && data.plan) {
+      return [
+        `Request ${r.id} is open with a plan of ${data.steps.length} steps. The daemon hands each step to its agent in order, nudges a step that goes quiet, and tells the owner when it is finished or blocked.`,
+        ...describeSteps(data.steps),
+        `Steps the owner approves get a decision card now; an approved message is sent by the daemon itself. Report your own steps with {action:"step", id:"${r.id}", step:<n>, status:"progress"|"done"|"blocked"}.`,
+      ].join("\n")
+    }
+    if (action === "step") return [`Step reported. Plan of ${r.id}:`, ...describeSteps(data.steps)].join("\n")
     if (action === "accept") return `Request ${r.id} is open and in progress. Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.`
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`
     if (action === "done") return `Request ${r.id} is closed as done. Evidence: ${r.evidence}`
