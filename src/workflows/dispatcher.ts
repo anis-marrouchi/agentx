@@ -1,12 +1,14 @@
+import { randomUUID } from "crypto"
 import { evaluateBranch, findNode, initialPendingFromTrigger, nextNodes } from "./engine"
-import { resolveHandler } from "./nodes/handlers"
-import type { AgentExecuteRequest, AgentExecuteResponse, NodeResult } from "./nodes/types"
+import { parseResultToken, resolveHandler } from "./nodes/handlers"
+import { deliver, followUpFor, nextWakeAt, nudgeText } from "./nodes/follow-up"
+import { DEFAULT_FOLLOW_UP, type AgentExecuteRequest, type AgentExecuteResponse, type FollowUpDefaults, type NodeResult, type OwnerPort } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
 import type { WorkflowStore } from "./store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
 import type { EventBus } from "../daemon/event-bus"
-import type { EntityRef, NodeExecutionEntry, Workflow, WorkflowRun } from "./types"
+import { FOLLOW_UP_PORTS, type EntityRef, type NodeExecutionEntry, type PausedAt, type RunMeta, type Workflow, type WorkflowRun } from "./types"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordWorkflowDispatch } from "@/intent/sources/workflow"
@@ -86,7 +88,30 @@ export interface DispatcherOptions {
    *  completed) so operators can watch live via SSE or CLI. No-op when
    *  absent — the dispatcher runs exactly as before. */
   events?: EventBus
+  /** Follow-up (#788): how the engine tells and asks the owner. */
+  owner?: OwnerPort
+  /** Follow-up defaults, read at each use so a settings change applies. */
+  followUp?: () => FollowUpDefaults
+  /** A follow-up run ended (completed, failed, canceled). Called once. */
+  onRunEnded?: (run: WorkflowRun, workflow: Workflow | null) => void | Promise<void>
+  /** A follow-up step is blocked and needs the owner. Called once per block. */
+  onBlocked?: (run: WorkflowRun, workflow: Workflow, nodeId: string, reason: string) => void | Promise<void>
 }
+
+/** An inbound message a `person.wait` step may be waiting for. */
+export interface InboundReply {
+  channel: string
+  chatId: string
+  accountId?: string
+  /** Who wrote it, in a group. */
+  senderId?: string
+  senderName?: string
+  text: string
+  media?: unknown
+  messageId?: string
+}
+
+const TERMINAL = new Set(["completed", "failed", "canceled"])
 
 /** Subset of channel adapter API used for the auto-acknowledge lifecycle on
  *  channel-triggered runs. Duck-typed so any adapter implementing react +
@@ -117,6 +142,10 @@ export class WorkflowDispatcher {
   readonly timers: TimerService
   readonly signals: SignalBus
   readonly events?: EventBus
+  owner?: OwnerPort
+  private readonly followUpDefaults: () => FollowUpDefaults
+  private readonly onRunEnded?: DispatcherOptions["onRunEnded"]
+  private readonly onBlocked?: DispatcherOptions["onBlocked"]
   /** Per-run typing timer. Started when a channel-triggered run is created or
    *  resumed; stopped when the run terminates (completed / failed / canceled
    *  / paused). Keyed by runId so concurrent channel runs don't stomp on each
@@ -143,6 +172,10 @@ export class WorkflowDispatcher {
     this.timers = opts.timers ?? new TimerService({ log: (m) => this.log(m) })
     this.signals = opts.signals ?? new SignalBus()
     this.events = opts.events
+    this.owner = opts.owner
+    this.followUpDefaults = opts.followUp ?? (() => DEFAULT_FOLLOW_UP)
+    this.onRunEnded = opts.onRunEnded
+    this.onBlocked = opts.onBlocked
 
     // Register the timer-fire callback once. TimerService is a per-node
     // singleton; re-registration would clobber prior instances, but the
@@ -270,6 +303,8 @@ export class WorkflowDispatcher {
   private async resumeFromTimer(t: TimerRecord): Promise<void> {
     const wf = this.store.list().find((w) => w.id === (this.runs.get(t.runId)?.workflowId ?? ""))
     if (!wf) return
+    const kind = this.runs.get(t.runId)?.pausedAt?.kind
+    if (kind === "replyWait" || kind === "agentStep") { await this.followUpTimer(wf, t); return }
     await this.commit(t.runId, () => {
       const fresh = this.runs.get(t.runId)
       if (!fresh || fresh.status !== "paused") return
@@ -626,7 +661,10 @@ export class WorkflowDispatcher {
     const rootId = this.runs.get(runId)?.eventRootId
     const inner = () => this.walkInner(workflow, runId, triggeringEventId)
     try { await (rootId ? withRoot({ rootId }, inner) : inner()) }
-    finally { this.stopChannelAck(runId) }
+    finally {
+      this.stopChannelAck(runId)
+      await this.settle(runId)
+    }
   }
 
   private async walkInner(workflow: Workflow, runId: string, triggeringEventId: string): Promise<void> {
@@ -756,6 +794,8 @@ export class WorkflowDispatcher {
           agents: this.agents,
           forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder),
           log: this.log,
+          owner: this.owner,
+          followUp: this.followUpDefaults(),
         })
       } catch (e: any) {
         this.log(`[workflow:${workflow.id}] handler "${node.type}" threw: ${e.message}`)
@@ -833,12 +873,17 @@ export class WorkflowDispatcher {
         this.runs.recordExecution({
           runId, entry: {
             at: now, nodeId, inputKeys, status: "paused", idempotencyKey: key,
+            ...(result.blocked ? { note: `blocked: ${result.blocked}`.slice(0, 200) } : {}),
           },
           nextPending: remainingFromPending,
           status: "paused",
           pausedAt,
+          // A followed agent step keeps what its turn said.
+          ...(result.output ? { context: { ...fresh.context, [nodeId]: result.output } } : {}),
         })
         this.emitRunEvent({ runId, workflowId: workflow.id, nodeId, phase: "paused", status: "paused", note: pausedAt.kind })
+        this.scheduleWake(runId, workflow.id, pausedAt)
+        if (result.blocked) this.markBlocked(runId, workflow, nodeId, result.blocked)
         if (spawnedChild) this.kickChildWalk(spawnedChild)
         if (pausedAt.kind === "timerWait") {
           try {
@@ -916,6 +961,346 @@ export class WorkflowDispatcher {
         }).catch((e: any) => this.log(`[workflow:${workflow.id}] resumeParent failed: ${e.message}`))
       }
     })
+  }
+
+  // ---------------- Follow-up (#788) ----------------
+  //
+  // A follow-up run is one an agent, the CLI or the dashboard started for
+  // a request (startRun). The run itself is the follow-up: each pause has
+  // a resume path here (a card answer, a person's reply, a step reported
+  // done, a timer), so nothing needs its own watcher.
+
+  /** Start a run of `workflowId` with these inputs as the trigger's
+   *  output. With approval at start (and messages to people in it), the
+   *  run waits for the owner's yes before its first step. */
+  async startRun(args: {
+    workflowId: string
+    inputs?: Record<string, unknown>
+    meta?: Partial<RunMeta>
+    entityRef?: EntityRef
+  }): Promise<{ run: WorkflowRun | null; error?: string; awaitingApproval?: boolean }> {
+    const wf = this.store.get(args.workflowId)
+    if (!wf) return { run: null, error: `workflow "${args.workflowId}" not found` }
+    const init = initialPendingFromTrigger(wf)
+    if (!init) return { run: null, error: `workflow "${wf.id}" has no trigger node` }
+    const entityRef = args.entityRef ?? { backend: "follow-up", id: `${wf.id}:${randomUUID()}` }
+    const meta: RunMeta = { tags: [], approvedAtStart: false, ...args.meta, followUp: args.meta?.followUp ?? true }
+    const run = this.runs.create({
+      workflowId: wf.id,
+      initialPending: init.pending,
+      entityRef,
+      initialContext: { [init.triggerId]: args.inputs ?? {} },
+      meta,
+    })
+    this.log(`[workflow:${wf.id}] follow-up run ${run.id} started${meta.startedBy ? ` by ${meta.startedBy}` : ""}`)
+    this.emitRunEvent({ runId: run.id, workflowId: wf.id, phase: "created", status: run.status, homeNode: run.homeNode, rootId: run.eventRootId })
+
+    const messages = wf.nodes.filter((n) => n.type === "person.message")
+    const approval = wf.approval ?? this.followUpDefaults().approval
+    if (approval === "start" && messages.length && !meta.approvedAtStart) {
+      if (!this.owner) {
+        this.runs.setStatus(run.id, "failed")
+        return { run: this.runs.get(run.id), error: "this workflow needs the owner's approval at start, and there is no owner to ask on this node" }
+      }
+      const lines = messages.map((n) => {
+        const c = n.config as { to?: unknown; channel?: unknown; chatId?: unknown; text?: unknown }
+        const who = String(c.to ?? `${String(c.channel ?? "?")} ${String(c.chatId ?? "?")}`)
+        return `- ${n.id} to ${who}: ${String(c.text ?? "").replace(/\s+/g, " ").slice(0, 160)}`
+      })
+      try {
+        const { cardId } = await this.owner.ask({
+          title: (meta.title ?? wf.title).slice(0, 120),
+          ask: `Start "${wf.title}" and let it send its ${messages.length} message(s) to people without asking again?`.slice(0, 300),
+          recommend: "Yes if the messages below are right. Text in {{…}} is filled in from earlier steps.".slice(0, 300),
+          context: lines.join("\n").slice(0, 600),
+        }, run, init.triggerId)
+        this.runs.recordExecution({
+          runId: run.id,
+          entry: { at: new Date().toISOString(), nodeId: init.triggerId, inputKeys: [], status: "paused", idempotencyKey: idempotencyKey(run.id, init.triggerId, "start-approval"), note: "waiting for the owner's approval at start" },
+          nextPending: init.pending,
+          status: "paused",
+          pausedAt: { kind: "ownerDecision", nodeId: init.triggerId, cardId, purpose: "start" },
+        })
+        return { run: this.runs.get(run.id), awaitingApproval: true }
+      } catch (e: any) {
+        this.runs.setStatus(run.id, "failed")
+        return { run: this.runs.get(run.id), error: `could not ask the owner: ${e?.message ?? e}` }
+      }
+    }
+    void this.walk(wf, run.id, `start:${run.id}`)
+      .catch((e: any) => this.log(`[workflow:${wf.id}] walk after start failed: ${e.message}`))
+    return { run }
+  }
+
+  /** A decision card raised for a run was answered or expired. Returns
+   *  true when it belonged to a run waiting on it. */
+  async resumeFromCard(card: { id: string; status: string; verdict?: string; text?: string; choice?: string; note?: string; origin?: { kind: string; runId?: string; nodeId?: string } }): Promise<boolean> {
+    const runId = card.origin?.kind === "workflow" ? card.origin.runId : undefined
+    if (!runId || card.status === "pending") return false
+    const run0 = this.runs.get(runId)
+    const wf = run0 ? this.store.get(run0.workflowId) : null
+    if (!run0 || !wf) return false
+    const port = card.status === "decided" ? (card.verdict === "yes" ? "yes" : "no") : "expired"
+    let handled = false
+    let walk = false
+    let sendFailure: string | undefined
+    // Sending happens outside the commit: a slow channel must not hold it.
+    const p0 = run0.pausedAt
+    let sent: { messageId: string | null } | { error: string } | null = null
+    if (p0?.kind === "ownerDecision" && p0.cardId === card.id && p0.purpose === "send" && port === "yes" && p0.message) {
+      sent = await deliver({ channels: this.channels, forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder) }, { ...p0.message, text: card.text?.trim() || p0.message.text })
+    }
+    await this.commit(runId, () => {
+      const fresh = this.runs.get(runId)
+      const p = fresh?.pausedAt
+      if (!fresh || fresh.status !== "paused" || p?.kind !== "ownerDecision" || p.cardId !== card.id) return
+      handled = true
+      const at = new Date().toISOString()
+      const key = idempotencyKey(fresh.id, p.nodeId, `card:${card.id}`)
+      if (p.purpose === "start") {
+        if (port === "yes") {
+          this.runs.setMeta(fresh.id, { approvedAtStart: true })
+          this.runs.recordExecution({ runId: fresh.id, entry: { at, nodeId: p.nodeId, inputKeys: [], status: "resumed", idempotencyKey: key, note: "approved at start" }, nextPending: fresh.pending, status: "running", pausedAt: null })
+          walk = true
+        } else {
+          this.runs.recordExecution({ runId: fresh.id, entry: { at, nodeId: p.nodeId, inputKeys: [], status: "failed", idempotencyKey: key, note: port === "no" ? "the owner said no at start" : "the owner did not answer before the start card expired" }, nextPending: [], status: "canceled", pausedAt: null })
+        }
+        return
+      }
+      const decision = { cardId: card.id, verdict: card.verdict ?? null, status: card.status, choice: card.choice ?? null, text: card.text ?? null, note: card.note ?? null }
+      if (p.purpose === "send") {
+        if (port === "yes" && sent && "error" in sent) {
+          sendFailure = sent.error
+          this.runs.recordExecution({ runId: fresh.id, entry: { at, nodeId: p.nodeId, inputKeys: [], status: "failed", idempotencyKey: key, note: sent.error.slice(0, 200) }, nextPending: [], status: "failed", pausedAt: null })
+          return
+        }
+        const output = port === "yes"
+          ? { ...decision, ...p.message, text: card.text?.trim() || p.message?.text, messageId: sent && "messageId" in sent ? sent.messageId : null, approved: "step" }
+          : { ...decision, ...p.message, declined: true }
+        walk = this.resumeOn(wf, fresh, p.nodeId, output, port === "yes" ? "sent" : "declined", key, port === "yes" ? "sent after approval" : `not sent: ${port === "no" ? "the owner said no" : "the card expired"}`)
+        return
+      }
+      walk = this.resumeOn(wf, fresh, p.nodeId, decision, port, key, `owner answered: ${port}`)
+    })
+    if (sendFailure) this.log(`[workflow:${wf.id}] run ${runId}: approved message not sent: ${sendFailure}`)
+    if (walk) void this.walk(wf, runId, `card:${card.id}`).catch((e: any) => this.log(`[workflow:${wf.id}] walk after card failed: ${e.message}`))
+    else if (handled) await this.settle(runId)
+    return handled
+  }
+
+  /** An inbound message: the oldest run waiting for a reply in this chat
+   *  (from this sender, in a group) takes it. Returns that run's id, or
+   *  null when no run was waiting for it. */
+  async resumeFromReply(msg: InboundReply): Promise<string | null> {
+    const source = `${msg.channel}-message`
+    const waiting = this.runs.list({ limit: 500 })
+      .filter((r) => r.status === "paused" && r.pausedAt?.kind === "replyWait")
+      .filter((r) => {
+        const p = r.pausedAt as Extract<PausedAt, { kind: "replyWait" }>
+        if (p.channel !== msg.channel) return false
+        if (normalizeChat(source, p.chatId) !== normalizeChat(source, msg.chatId)) return false
+        if (p.accountId && msg.accountId && p.accountId !== msg.accountId) return false
+        if (p.from && normalizeChat(source, p.from) !== normalizeChat(source, msg.senderId ?? "")) return false
+        return true
+      })
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    for (const candidate of waiting) {
+      const wf = this.store.get(candidate.workflowId)
+      if (!wf) continue
+      let taken = false
+      await this.commit(candidate.id, () => {
+        const fresh = this.runs.get(candidate.id)
+        const p = fresh?.pausedAt
+        if (!fresh || fresh.status !== "paused" || p?.kind !== "replyWait" || p.nodeId !== (candidate.pausedAt as { nodeId: string }).nodeId) return
+        taken = true
+        const output = { text: msg.text, from: msg.senderId ?? null, fromName: msg.senderName ?? null, media: msg.media ?? null, channel: msg.channel, chatId: msg.chatId, at: new Date().toISOString(), reminders: p.reminders }
+        this.timers.cancel({ cancelKey: `${fresh.id}:${p.nodeId}` })
+        this.resumeOn(wf, fresh, p.nodeId, output, "reply", idempotencyKey(fresh.id, p.nodeId, `reply:${msg.messageId ?? output.at}`), "reply received")
+      })
+      if (!taken) continue
+      void this.walk(wf, candidate.id, `reply:${msg.messageId ?? Date.now()}`).catch((e: any) => this.log(`[workflow:${wf.id}] walk after reply failed: ${e.message}`))
+      return candidate.id
+    }
+    return null
+  }
+
+  /** An agent says its step is done (agentx_workflow step_done), or that
+   *  it is blocked. `nodeId` may be left out: the step the run waits on. */
+  async stepDone(args: { runId: string; nodeId?: string; agentId?: string; output?: Record<string, unknown>; blocked?: string }): Promise<{ ok: boolean; error?: string }> {
+    const run0 = this.runs.get(args.runId)
+    if (!run0) return { ok: false, error: `no run "${args.runId}"` }
+    const wf = this.store.get(run0.workflowId)
+    if (!wf) return { ok: false, error: `workflow "${run0.workflowId}" is gone` }
+    let error: string | undefined
+    let walk = false
+    await this.commit(args.runId, () => {
+      const fresh = this.runs.get(args.runId)
+      const p = fresh?.pausedAt
+      if (!fresh || fresh.status !== "paused" || p?.kind !== "agentStep") { error = `run ${args.runId} is not waiting on an agent step (it is ${fresh?.status ?? "gone"}${p ? `, on ${p.kind} ${p.nodeId}` : ""})`; return }
+      if (args.nodeId && args.nodeId !== p.nodeId) { error = `run ${args.runId} waits on step "${p.nodeId}", not "${args.nodeId}"`; return }
+      if (args.agentId && args.agentId !== p.agentId && args.agentId !== fresh.meta?.startedBy) { error = `step "${p.nodeId}" belongs to ${p.agentId}`; return }
+      if (args.blocked) {
+        this.blockStep(wf, fresh, p, args.blocked)
+        return
+      }
+      this.timers.cancel({ cancelKey: `${fresh.id}:${p.nodeId}` })
+      if (fresh.meta?.blocked) this.runs.setMeta(fresh.id, { blocked: undefined })
+      const output = { ...(fresh.context[p.nodeId] ?? {}), ...(args.output ?? {}), result: (args.output?.result as string | undefined) ?? "done", doneAt: new Date().toISOString() }
+      walk = this.resumeOn(wf, this.runs.get(fresh.id)!, p.nodeId, output, undefined, idempotencyKey(fresh.id, p.nodeId, `done:${output.doneAt}`), "reported done")
+    })
+    if (error) return { ok: false, error }
+    if (walk) void this.walk(wf, args.runId, `done:${args.runId}`).catch((e: any) => this.log(`[workflow:${wf.id}] walk after step done failed: ${e.message}`))
+    else await this.settle(args.runId)
+    return { ok: true }
+  }
+
+  /** The owner stops a run (CLI, dashboard). */
+  async cancelRun(runId: string, reason = "canceled by the owner"): Promise<boolean> {
+    let done = false
+    await this.commit(runId, () => {
+      const fresh = this.runs.get(runId)
+      if (!fresh || TERMINAL.has(fresh.status)) return
+      const nodeId = fresh.pausedAt?.nodeId ?? fresh.pending[0] ?? "run"
+      this.timers.cancel({ runId })
+      this.runs.recordExecution({ runId, entry: { at: new Date().toISOString(), nodeId, inputKeys: [], status: "skipped", idempotencyKey: idempotencyKey(runId, nodeId, `cancel:${Date.now()}`), note: reason.slice(0, 200) }, nextPending: [], status: "canceled", pausedAt: null })
+      done = true
+    })
+    if (done) await this.settle(runId)
+    return done
+  }
+
+  /** Resume a paused follow-up step on `port`. Inside a commit. Returns
+   *  true when there is a next step to walk. A step that ended on a port
+   *  with nowhere to go stops the run (the summary says why). */
+  private resumeOn(wf: Workflow, run: WorkflowRun, nodeId: string, output: Record<string, unknown>, port: string | undefined, key: string, note: string): boolean {
+    const node = findNode(wf, nodeId)
+    const { nextPending } = node ? nextNodes({ workflow: wf, fromNodeId: nodeId, selectedPort: port }) : { nextPending: [] as string[] }
+    const ports = node ? FOLLOW_UP_PORTS[node.type] : undefined
+    const dead = !!ports && port !== undefined && port !== ports.main && nextPending.length === 0
+    const pending = [...run.pending.filter((x) => x !== nodeId), ...nextPending]
+    this.runs.recordExecution({
+      runId: run.id,
+      entry: { at: new Date().toISOString(), nodeId, inputKeys: [], status: dead ? "failed" : "resumed", output: port ? { ...output, port } : output, idempotencyKey: key, note: dead ? `stopped: ${note}` : note },
+      nextPending: dead ? [] : pending,
+      status: dead ? "failed" : "running",
+      pausedAt: null,
+      context: { ...run.context, [nodeId]: port ? { ...output, port } : output },
+    })
+    this.emitRunEvent({ runId: run.id, workflowId: wf.id, nodeId, phase: dead ? "failed" : "resumed", status: dead ? "failed" : "running", note, rootId: run.eventRootId })
+    return !dead
+  }
+
+  /** Reminders, deadlines and nudges. */
+  private async followUpTimer(wf: Workflow, t: TimerRecord): Promise<void> {
+    // Filled inside the commit, acted on after it.
+    const after: {
+      nudge?: { agentId: string; text: string }
+      reminder?: { to: "person"; msg: { channel: string; chatId: string; accountId?: string; text: string } } | { to: "owner"; text: string }
+      walk?: boolean
+    } = {}
+    await this.commit(t.runId, () => {
+      const fresh = this.runs.get(t.runId)
+      const p = fresh?.pausedAt
+      if (!fresh || fresh.status !== "paused" || !p || p.nodeId !== t.nodeId) return
+      const now = Date.now()
+      const at = new Date(now).toISOString()
+      if (p.kind === "replyWait") {
+        if (now >= Date.parse(p.deadline)) {
+          after.walk = this.resumeOn(wf, fresh, p.nodeId, { timedOut: true, reminders: p.reminders, deadline: p.deadline }, "timeout", idempotencyKey(fresh.id, p.nodeId, `deadline:${p.deadline}`), "no reply before the deadline")
+          return
+        }
+        if (!p.nextRemindAt || now < Date.parse(p.nextRemindAt) || p.reminders >= p.maxReminders) { this.scheduleWake(fresh.id, wf.id, p); return }
+        const n = p.reminders + 1
+        const next: PausedAt = { ...p, reminders: n, ...(n < p.maxReminders && p.remindEveryMs ? { nextRemindAt: new Date(now + p.remindEveryMs).toISOString() } : { nextRemindAt: undefined }) }
+        const sent = p.reminds ? fresh.context[p.reminds] as { text?: unknown } | undefined : undefined
+        const reminder: NonNullable<typeof after.reminder> = sent && typeof sent.text === "string" && sent.text
+          ? { to: "person", msg: { channel: p.channel, chatId: p.chatId, ...(p.accountId ? { accountId: p.accountId } : {}), text: `Reminder: ${sent.text}` } }
+          : { to: "owner", text: `Still waiting for a reply on ${p.channel} (${p.chatId}) for step "${p.nodeId}" of ${fresh.meta?.title ? `"${fresh.meta.title}"` : `workflow ${wf.id}`}. Deadline: ${p.deadline.slice(0, 16).replace("T", " ")} UTC.` }
+        this.runs.recordExecution({ runId: fresh.id, entry: { at, nodeId: p.nodeId, inputKeys: [], status: "paused", idempotencyKey: idempotencyKey(fresh.id, p.nodeId, `remind:${n}`), note: `reminder ${n}/${p.maxReminders} to ${reminder.to}` }, nextPending: fresh.pending, status: "paused", pausedAt: next })
+        this.scheduleWake(fresh.id, wf.id, next)
+        after.reminder = reminder
+        return
+      }
+      if (p.kind === "agentStep") {
+        if (p.blocked || !p.nextNudgeAt) return
+        if (now < Date.parse(p.nextNudgeAt)) { this.scheduleWake(fresh.id, wf.id, p); return }
+        if (p.nudges >= p.maxNudges) {
+          this.blockStep(wf, fresh, p, p.maxNudges ? `no progress after ${p.maxNudges} reminder(s) to ${p.agentId}` : `no progress from ${p.agentId} for ${Math.round(p.stallMs / 60_000)} minute(s)`)
+          return
+        }
+        const n = p.nudges + 1
+        const next: PausedAt = { ...p, nudges: n, nextNudgeAt: new Date(now + p.stallMs).toISOString() }
+        this.runs.recordExecution({ runId: fresh.id, entry: { at, nodeId: p.nodeId, inputKeys: [], status: "paused", idempotencyKey: idempotencyKey(fresh.id, p.nodeId, `nudge:${n}`), note: `nudge ${n}/${p.maxNudges} to ${p.agentId}` }, nextPending: fresh.pending, status: "paused", pausedAt: next })
+        this.scheduleWake(fresh.id, wf.id, next)
+        after.nudge = { agentId: p.agentId, text: nudgeText(fresh, p.nodeId, n, p.maxNudges, p.stallMs * n) }
+        this.log(`[workflow:${wf.id}] run ${fresh.id}: nudge ${n}/${p.maxNudges} to ${p.agentId} on step "${p.nodeId}"`)
+      }
+    })
+    if (after.walk) { void this.walk(wf, t.runId, `timer:${t.id}`).catch((e: any) => this.log(`[workflow:${wf.id}] walk after deadline failed: ${e.message}`)); return }
+    await this.settle(t.runId)
+    const r = after.reminder
+    if (r?.to === "person") {
+      const res = await deliver({ channels: this.channels, forwardChannelSend: this.forwarder?.forwardChannelSend?.bind(this.forwarder) }, r.msg)
+      if ("error" in res) this.log(`[workflow:${wf.id}] run ${t.runId}: reminder not sent: ${res.error}`)
+    } else if (r?.to === "owner") {
+      const run = this.runs.get(t.runId)
+      if (run) await this.owner?.notify(r.text, run).catch((e: any) => this.log(`[workflow:${wf.id}] run ${t.runId}: reminder to the owner failed: ${e?.message ?? e}`))
+    }
+    const nd = after.nudge
+    if (nd) {
+      // Fire and forget: the turn may take minutes. What it says decides.
+      void this.agents.execute({ agentId: nd.agentId, message: nd.text, workflowRunId: t.runId })
+        .then(async (resp) => {
+          if (resp.error) { this.log(`[workflow:${wf.id}] run ${t.runId}: nudge turn on ${nd.agentId} failed: ${resp.error}`); return }
+          const token = parseResultToken(resp.content).result
+          if (token === "blocked") await this.stepDone({ runId: t.runId, nodeId: t.nodeId, blocked: lastLine(resp.content) || `${nd.agentId} says the step is blocked` })
+          else if (token) await this.stepDone({ runId: t.runId, nodeId: t.nodeId, output: { reply: resp.content, result: token, via: "nudge" } })
+        })
+        .catch((e: any) => this.log(`[workflow:${wf.id}] run ${t.runId}: nudge turn failed: ${e?.message ?? e}`))
+    }
+  }
+
+  /** Inside a commit: the agent step can't go on without the owner. */
+  private blockStep(wf: Workflow, run: WorkflowRun, p: Extract<PausedAt, { kind: "agentStep" }>, reason: string): void {
+    const next: PausedAt = { ...p, blocked: reason.slice(0, 300), nextNudgeAt: undefined }
+    this.timers.cancel({ cancelKey: `${run.id}:${p.nodeId}` })
+    this.runs.recordExecution({ runId: run.id, entry: { at: new Date().toISOString(), nodeId: p.nodeId, inputKeys: [], status: "paused", idempotencyKey: idempotencyKey(run.id, p.nodeId, `blocked:${Date.now()}`), note: `blocked: ${reason}`.slice(0, 200) }, nextPending: run.pending, status: "paused", pausedAt: next })
+    this.markBlocked(run.id, wf, p.nodeId, reason)
+  }
+
+  /** Record the block and tell the owner once. */
+  private markBlocked(runId: string, wf: Workflow, nodeId: string, reason: string): void {
+    const run = this.runs.setMeta(runId, { blocked: { nodeId, reason: reason.slice(0, 300), at: new Date().toISOString() } })
+    this.log(`[workflow:${wf.id}] run ${runId} blocked on "${nodeId}": ${reason}`)
+    if (!run || !this.onBlocked) return
+    void Promise.resolve(this.onBlocked(run, wf, nodeId, reason)).catch((e: any) => this.log(`[workflow:${wf.id}] blocked notice failed: ${e?.message ?? e}`))
+  }
+
+  /** Schedule the timer for a follow-up pause's next moment. */
+  private scheduleWake(runId: string, workflowId: string, p: PausedAt): void {
+    const at = nextWakeAt(p)
+    if (!at) return
+    try {
+      this.timers.cancel({ cancelKey: `${runId}:${p.nodeId}` })
+      this.timers.schedule({ runId, workflowId, nodeId: p.nodeId, fireAt: at, cancelKey: `${runId}:${p.nodeId}` })
+    } catch (e: any) {
+      this.log(`[workflow:${workflowId}] timer schedule failed: ${e.message}`)
+    }
+  }
+
+  /** After a walk or a resume: a follow-up run that ran out of steps is
+   *  complete, and a run that ended gets its one summary. */
+  private async settle(runId: string): Promise<void> {
+    let run = this.runs.get(runId)
+    if (!run?.meta?.followUp) return
+    if (run.status === "running" && run.pending.length === 0) run = this.runs.setStatus(runId, "completed") ?? run
+    if (!TERMINAL.has(run.status) || run.meta?.endNotifiedAt) return
+    run = this.runs.setMeta(runId, { endNotifiedAt: new Date().toISOString() }) ?? run
+    this.timers.cancel({ runId })
+    this.emitRunEvent({ runId, workflowId: run.workflowId, phase: "ended", status: run.status, rootId: run.eventRootId })
+    if (!this.onRunEnded) return
+    try { await this.onRunEnded(run, this.store.get(run.workflowId)) }
+    catch (e: any) { this.log(`[workflow:${run.workflowId}] end notice for ${runId} failed: ${e?.message ?? e}`) }
   }
 
   // ---------------- Sub-process helpers ----------------
@@ -1088,6 +1473,13 @@ function normalizeChat(source: string | undefined, value: string | undefined): s
     return value.replace(/@s\.whatsapp\.net$|@g\.us$/i, "").replace(/[\s+()]/g, "")
   }
   return value
+}
+
+/** The last line of a reply that is not the RESULT token. */
+function lastLine(text: string | undefined): string {
+  if (!text) return ""
+  const lines = text.split("\n").map((l) => l.trim()).filter((l) => l && !/^RESULT:/i.test(l))
+  return (lines.at(-1) ?? "").slice(0, 300)
 }
 
 export { idempotencyKey } from "./run-store"
