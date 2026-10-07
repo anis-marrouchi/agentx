@@ -1681,6 +1681,26 @@ export const daemonConfigSchema = z.object({
      *  prompt on save; the CLAUDE.md block follows at the next daemon
      *  start or memory change. */
     memoryIndexMaxChars: z.number().int().min(0).max(200_000).default(0),
+    /** Resume or start fresh (#621, step 3). Before a claude-code session
+     *  is resumed, compare what the coming turn costs when it replays the
+     *  transcript with what a fresh lean start costs, and start fresh when
+     *  that is cheaper by `margin`. Runs after the stale, tier-2 and
+     *  max-turns rules and can only rotate earlier than they would.
+     *  `shadow` only logs what it would do. Off by default. Applies on
+     *  save. See src/agents/resume-gate.ts. */
+    resumeGate: z.object({
+      mode: z.enum(["off", "shadow", "active"]).default("off"),
+      /** Tokens a fresh lean session starts with (~27k measured in #615). */
+      freshTokens: z.number().int().min(1000).max(200_000).default(30_000),
+      /** How long the cached transcript is assumed to survive. Longer is the
+       *  safe side: it treats more sessions as warm, and keeps them. */
+      cacheTtlMinutes: z.number().int().min(1).max(1440).default(60),
+      /** Cache-write price as a multiple of the input price (2 for the
+       *  one-hour cache, 1.25 for the five-minute one). */
+      cacheWriteFactor: z.number().min(1).max(4).default(2),
+      /** A fresh start must be at least this many times cheaper. */
+      margin: z.number().min(1).max(10).default(1.5),
+    }).default({}),
     /** ObservationPack (#621). A large tool result stays in the context
      *  and is re-read on every later request. With this on, a Claude Code
      *  PostToolUse hook saves a text result over `limitBytes` to

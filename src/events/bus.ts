@@ -237,7 +237,7 @@ export interface AgentXEvents {
     at: string
   }
 
-  /** Claude session rotation fired (stale / max-turns / tier-2). */
+  /** Claude session rotation fired (stale / max-turns / tier-2 / continuity / cost). */
   "session:rotated": {
     /** Trace ULID of the in-flight task at rotation time, when known.
      *  When set, the rotation is recorded as a step on that trace. */
@@ -245,7 +245,7 @@ export interface AgentXEvents {
     agentId: string
     channel: string
     chatId: string
-    reason: "stale" | "max-turns" | "tier-2" | "continuity"
+    reason: "stale" | "max-turns" | "tier-2" | "continuity" | "cost"
     lastTurnInputTokens?: number
     at: string
   }

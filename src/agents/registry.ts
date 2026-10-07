@@ -1,6 +1,7 @@
 import type { DaemonConfig, AgentDef } from "@/daemon/config"
 import { cheapModelForEngine, triageModelFor } from "./routing"
 import { labelToolSetRun, startToolSetShadow } from "./tool-set"
+import { decideResume, describeResume } from "./resume-gate"
 import { askSeat } from "@/decisions/seat"
 import { PRE_SPAWN_SEAT_TIMEOUT_MS } from "@/decisions/limits"
 import {
@@ -1971,6 +1972,36 @@ export class AgentRegistry {
         at: new Date().toISOString(),
       })
       resumeSessionId = undefined
+    }
+
+    // Resume or start fresh (#621, step 3): a price comparison in code, not
+    // a model. Like the continuity seat below it can only rotate earlier
+    // than the rules above, never keep a session they dropped.
+    if (resumeSessionId && state.def.tier === "claude-code") {
+      // Optional chaining: hand-built configs (tests, older callers) may
+      // not carry the block the schema defaults in.
+      const gate = this.config.session?.resumeGate
+      if (gate && gate.mode !== "off") {
+        const r = decideResume({
+          contextTokens: this.sessions.getLastTurnContextTokens(task.agentId, channel, chatId),
+          turnInputTokens: this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId),
+          idleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId) ?? 0,
+        }, gate)
+        if (r.rotate && gate.mode === "active") {
+          this.log(`[${task.agentId}] cost rotation for ${channel}:${chatId}: ${describeResume(r)}`)
+          void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "cost")
+          this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
+          getEventBus().emit("session:rotated", {
+            agentId: task.agentId, channel, chatId,
+            reason: "cost",
+            lastTurnInputTokens: this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId),
+            at: new Date().toISOString(),
+          })
+          resumeSessionId = undefined
+        } else if (gate.mode === "shadow") {
+          this.log(`[${task.agentId}] resume gate (shadow) for ${channel}:${chatId}: would ${describeResume(r)}`)
+        }
+      }
     }
 
     // --- Session-continuity seat -----------------------------------------
