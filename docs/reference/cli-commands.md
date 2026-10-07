@@ -1074,7 +1074,7 @@ Turn a draft JSON file ({category, title, fields}) into a pre-filled issue form 
 
 ### `agentx wiki status`
 
-Show wiki status per agent. For each agent it counts the raw entries an article cites, the entries absorb has read but did not cite, and the entries still waiting (unabsorbed).
+Show wiki status per agent. For each agent it counts the raw entries an article cites, the entries absorb has read but did not cite, and the entries still waiting (unabsorbed). When entries are waiting, the last line gives the total and tells you to run `agentx wiki absorb`.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1096,6 +1096,8 @@ Check wiki for issues per agent.
 Compile unabsorbed entries into typed per-agent wiki articles.
 
 When a run succeeds, every entry it read is recorded in `agents/<id>/_absorbed.json` under the wiki directory, including entries no article cites, so the next run moves on to new entries. When a run fails, nothing is recorded and the same entries are offered again.
+
+Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (absorb uses Sonnet). They look for it on your PATH and also in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, so they work from the daemon and from the `agentx_wiki_query` tool without a login shell's PATH.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -3400,6 +3402,7 @@ No flags.
 ## If something is wrong
 
 - **`unknown option`:** your installed version is older or newer than these docs. Use the flags that `agentx <command> --help` shows.
+- **`claude: command not found` from a wiki command:** the `claude` CLI isn't installed in any of the folders listed under `agentx wiki absorb`. Install it, or add its folder to the daemon's PATH.
 - **`unknown command`:** check the spelling and the command group. Advanced commands don't appear in `agentx --help`, but they still run.
 - **`error: required option … not specified`:** the flag is marked **required** above. Add it and run the command again.
 - **A command can't find your agents or settings:** run it from the folder that holds `agentx.json`, or pass `--config <path>` where the command offers it.
