@@ -46,6 +46,7 @@ import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
+import { progressGroups } from "@/workflows/follow-up"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import { dashboardIcon } from "./app-icon"
@@ -1151,6 +1152,32 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
+  // Follow-up runs still going, on this node and its peers, grouped by
+  // what they concern (#788). Unreachable peers are skipped and named.
+  if (method === "GET" && path === "/api/workflows/follow-ups") {
+    const targets: Array<{ url: string; token?: string }> = [
+      { url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
+      ...(ctx.config.dashboard.daemons || []).map((d) => ({ url: d.url, token: d.token })),
+    ]
+    const unreachable: string[] = []
+    const remote = await Promise.all(targets.map(async (t) => {
+      const headers: Record<string, string> = {}
+      if (t.token) headers["Authorization"] = `Bearer ${t.token}`
+      try {
+        const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs?limit=500&summary=1`, { headers, signal: AbortSignal.timeout(5000) })
+        if (!r.ok) { unreachable.push(t.url); return [] }
+        const data = await r.json() as { runs?: WorkflowRun[] }
+        return Array.isArray(data.runs) ? data.runs : []
+      } catch { unreachable.push(t.url); return [] }
+    }))
+    const byId = new Map<string, WorkflowRun>()
+    for (const r of ctx.workflowRuns.list({ limit: 500 })) byId.set(r.id, r)
+    for (const list of remote) for (const r of list) byId.set(r.id, { ...r, history: r.history ?? [], pending: r.pending ?? [] })
+    const titles = new Map(ctx.workflowStore.list().map((w) => [w.id, w.title] as const))
+    sendJson(res, 200, { groups: progressGroups([...byId.values()], (id) => titles.get(id)), unreachable })
+    return
+  }
+
   if (method === "GET" && path === "/api/workflows/runs") {
     try {
       const url = new URL(req.url || "/", "http://localhost")
@@ -1578,6 +1605,9 @@ function slimRun(r: WorkflowRun): Partial<WorkflowRun> {
     parentNodeId: r.parentNodeId,
     rootRunId: r.rootRunId,
     depth: r.depth,
+    // Follow-up runs (#788): what it is about, and what it waits on.
+    ...(r.meta ? { meta: r.meta } : {}),
+    ...(r.pausedAt ? { pausedAt: r.pausedAt } : {}),
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }

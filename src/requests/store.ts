@@ -19,7 +19,7 @@ export type RequestState = "candidate" | OpenState | ClosedState
 export const OPEN_STATES: readonly OpenState[] = ["in_progress", "waiting_owner", "waiting_other", "needs_attention"]
 export const CLOSED_STATES: readonly ClosedState[] = ["done", "declined", "dropped"]
 
-export type LinkKind = "run" | "delegation" | "card"
+export type LinkKind = "run" | "delegation" | "card" | "workflow"
 
 export interface RequestRecord {
   id: string

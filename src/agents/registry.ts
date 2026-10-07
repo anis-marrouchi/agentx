@@ -56,6 +56,7 @@ import { describeProfile, fullClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsW
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
+import { workflowHintText } from "@/workflows/follow-up"
 import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
@@ -1850,6 +1851,20 @@ export class AgentRegistry {
     // the workflow yet — that happens inside the outer try/finally so
     // runningTask + activeTasks bookkeeping always cleans up.
     let pendingAutoRun: { workflowId: string; confidence: number } | undefined
+    // Follow-up (#788): a saved workflow that fits this request is named to
+    // the agent, which starts it with agentx_workflow instead of running
+    // the steps by hand.
+    let workflowHint: string | undefined
+    const followUp = this.config.workflows?.followUp
+    if (this.config.workflows?.enabled && followUp?.enabled && (followUp.agents[task.agentId] ?? true) && !restricted && isHumanFacingTurn(task.context as any)) {
+      try {
+        const store = new WorkflowStore({ baseDir: resolve(process.cwd(), this.config.workflows.dir) })
+        const match = matchWorkflow({ agentId: task.agentId, channel, message: task.message, intentPath: intent?.path }, store.list())
+        if (match && match.confidence >= (wfMatching?.suggestThreshold ?? 0.65)) workflowHint = workflowHintText(match.workflow)
+      } catch (e: any) {
+        this.log(`[${task.agentId}] workflow hint failed (non-fatal): ${e?.message || e}`)
+      }
+    }
     // Restricted routines never auto-run a workflow: its agent steps would
     // run at their own autonomy, not this task's.
     if (this.config.workflows?.enabled && wfMatching?.enabled && !restricted) {
@@ -2467,7 +2482,7 @@ export class AgentRegistry {
       replyToText: task.context?.replyToText,
       // bootstrapContext intentionally omitted — delivered via system prompt.
       patternContext: isCodexCli ? undefined : patternContext || undefined,
-      procedureContext,
+      procedureContext: [procedureContext, workflowHint].filter(Boolean).join("\n\n") || undefined,
       references: referencesBlock,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router

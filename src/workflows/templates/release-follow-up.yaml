@@ -1,0 +1,74 @@
+# Release follow-up — build, put live, check it, tell the client (#788).
+#
+# The case that started this: a release went live, and the client heard
+# about it two hours later, only after the owner asked. Here each step
+# starts as soon as the one before it is done, nobody has to chase it,
+# and the owner hears once, at the end, with the proof from each step.
+#
+# Start it with the details of one release:
+#   agentx workflow run __ID__ --follow --title "Release 2.4" --tag client:example-co \
+#     --input '{"release":"2.4","url":"https://example.com","client":"Example Co","clientChannel":"telegram","clientChatId":"123456"}'
+# or let an agent start it: agentx_workflow {action:"start", workflowId:"__ID__", inputs:{…}}.
+#
+# The agent steps are followed: an agent that says nothing for
+# workflows.followUp.stallMinutes gets a reminder, and after the last
+# reminder you are told the step is blocked.
+# The message to the client waits for your yes (on its own card, or
+# once at the start with `approval: start`), then goes out by itself.
+
+id: __ID__
+version: 2
+title: __TITLE__
+description: Put a release live, check it is live, tell the client. You hear once, when it is done.
+autoStart: false
+
+flow:
+  - start
+  - deploy
+  - verify
+  - tell_client
+  - done
+
+nodes:
+  - id: start
+    type: trigger.manual
+    config:
+      inputSchema:
+        type: object
+        properties:
+          release:       { type: string, description: "Which release, e.g. 2.4" }
+          url:           { type: string, description: "Where it should be live" }
+          client:        { type: string, description: "The client's name" }
+          clientChannel: { type: string, description: "telegram, whatsapp, slack…" }
+          clientChatId:  { type: string, description: "The client's chat on that channel" }
+        required: [release, url, client, clientChannel, clientChatId]
+
+  - id: deploy
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Put release {{start.release}} live at {{start.url}}.
+        When it is deployed, give the link to the deploy or the pipeline as the proof.
+
+  - id: verify
+    type: agent
+    config:
+      agentId: __AGENT__
+      prompt: |
+        Check that {{start.url}} now serves release {{start.release}}.
+        Deploy step said: {{deploy.reply}}
+        Only say it is done once you have seen it live yourself, and say what you checked.
+
+  - id: tell_client
+    type: person.message
+    config:
+      to: "{{start.client}}"
+      channel: "{{start.clientChannel}}"
+      chatId: "{{start.clientChatId}}"
+      text: "Hello {{start.client}}, release {{start.release}} is now live at {{start.url}}."
+
+  - id: done
+    type: end
+    config:
+      status: completed

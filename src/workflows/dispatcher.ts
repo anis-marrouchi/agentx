@@ -146,6 +146,11 @@ export class WorkflowDispatcher {
   private readonly followUpDefaults: () => FollowUpDefaults
   private readonly onRunEnded?: DispatcherOptions["onRunEnded"]
   private readonly onBlocked?: DispatcherOptions["onBlocked"]
+  /** Runs paused on person.wait, by channel. Read on every inbound
+   *  message, so it is kept in memory: built from disk once, then kept up
+   *  to date as runs pause. A stale entry costs one read; the run's own
+   *  pause is checked before it takes a message. */
+  private replyWaiters: Map<string, Set<string>> | null = null
   /** Per-run typing timer. Started when a channel-triggered run is created or
    *  resumed; stopped when the run terminates (completed / failed / canceled
    *  / paused). Keyed by runId so concurrent channel runs don't stomp on each
@@ -1093,8 +1098,21 @@ export class WorkflowDispatcher {
    *  null when no run was waiting for it. */
   async resumeFromReply(msg: InboundReply): Promise<string | null> {
     const source = `${msg.channel}-message`
-    const waiting = this.runs.list({ limit: 500 })
-      .filter((r) => r.status === "paused" && r.pausedAt?.kind === "replyWait")
+    if (!this.replyWaiters) {
+      this.replyWaiters = new Map()
+      for (const r of this.runs.list({ limit: 500 })) {
+        if (r.status === "paused" && r.pausedAt?.kind === "replyWait") this.noteReplyWaiter(r.id, r.pausedAt.channel)
+      }
+    }
+    const ids = this.replyWaiters.get(msg.channel)
+    if (!ids?.size) return null
+    const waiting = [...ids]
+      .map((id) => this.runs.get(id))
+      .filter((r): r is WorkflowRun => {
+        if (r?.status === "paused" && r.pausedAt?.kind === "replyWait") return true
+        if (r) ids.delete(r.id)
+        return false
+      })
       .filter((r) => {
         const p = r.pausedAt as Extract<PausedAt, { kind: "replyWait" }>
         if (p.channel !== msg.channel) return false
@@ -1118,6 +1136,7 @@ export class WorkflowDispatcher {
         this.resumeOn(wf, fresh, p.nodeId, output, "reply", idempotencyKey(fresh.id, p.nodeId, `reply:${msg.messageId ?? output.at}`), "reply received")
       })
       if (!taken) continue
+      ids.delete(candidate.id)
       void this.walk(wf, candidate.id, `reply:${msg.messageId ?? Date.now()}`).catch((e: any) => this.log(`[workflow:${wf.id}] walk after reply failed: ${e.message}`))
       return candidate.id
     }
@@ -1276,8 +1295,15 @@ export class WorkflowDispatcher {
     void Promise.resolve(this.onBlocked(run, wf, nodeId, reason)).catch((e: any) => this.log(`[workflow:${wf.id}] blocked notice failed: ${e?.message ?? e}`))
   }
 
+  private noteReplyWaiter(runId: string, channel: string): void {
+    if (!this.replyWaiters) return
+    if (!this.replyWaiters.has(channel)) this.replyWaiters.set(channel, new Set())
+    this.replyWaiters.get(channel)!.add(runId)
+  }
+
   /** Schedule the timer for a follow-up pause's next moment. */
   private scheduleWake(runId: string, workflowId: string, p: PausedAt): void {
+    if (p.kind === "replyWait") this.noteReplyWaiter(runId, p.channel)
     const at = nextWakeAt(p)
     if (!at) return
     try {

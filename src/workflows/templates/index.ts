@@ -23,6 +23,7 @@ export type TemplateName =
   | "branching"
   | "extract"
   | "retry"
+  | "release-follow-up"
 
 export interface TemplateMeta {
   name: TemplateName
@@ -35,6 +36,7 @@ export const TEMPLATES: TemplateMeta[] = [
   { name: "branching",         title: "Branching",             description: "Classify, then route on the result via a branch node." },
   { name: "extract",           title: "Structured extraction", description: "Pull typed fields from free-form text via extract.structured." },
   { name: "retry",             title: "Retry + fallback",      description: "Per-node retry policy with a branch fallback path." },
+  { name: "release-follow-up", title: "Release follow-up",     description: "Deploy, check it is live, tell the client (with your approval). Followed to the end; one summary for you." },
 ]
 
 /** Read a template's raw YAML. Tries a small set of candidate paths

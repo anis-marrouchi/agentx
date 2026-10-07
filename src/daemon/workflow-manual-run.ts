@@ -22,12 +22,15 @@ export interface ManualRunDeps {
     event: TriggerEvent
     trigger?: { source?: string; project?: string; repo?: string; chat?: string; labels?: string[] }
   }): Promise<{ claimed: boolean; run: WorkflowRun | null }>
+  /** Follow-up runs (#788): started with a title and tags, followed to
+   *  the end. Absent: `follow` in the body is refused. */
+  startRun?(args: { workflowId: string; inputs?: Record<string, unknown>; meta?: { title?: string; tags?: string[] } }): Promise<{ run: WorkflowRun | null; error?: string; awaitingApproval?: boolean }>
 }
 
 export async function startManualWorkflowRun(
   deps: ManualRunDeps,
   workflowId: string,
-  body: { force?: unknown; payload?: Record<string, unknown> } | null | undefined,
+  body: { force?: unknown; payload?: Record<string, unknown>; follow?: { title?: unknown; tags?: unknown } } | null | undefined,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
   const wf = deps.get(workflowId)
   if (!wf) return { status: 404, body: { error: `unknown workflow "${workflowId}"` } }
@@ -57,6 +60,16 @@ export async function startManualWorkflowRun(
   // workflows take no new runs.
   if (wf.state && wf.state !== "active") {
     return { status: 409, body: { error: `workflow "${workflowId}" is ${wf.state}` } }
+  }
+
+  // Followed: tags and a title, nudges and one summary at the end.
+  if (body?.follow && typeof body.follow === "object") {
+    if (!deps.startRun) return { status: 501, body: { error: "follow-up runs are not available here" } }
+    const title = typeof body.follow.title === "string" && body.follow.title.trim() ? body.follow.title.trim().slice(0, 200) : undefined
+    const tags = Array.isArray(body.follow.tags) ? body.follow.tags.filter((t): t is string => typeof t === "string" && !!t.trim()).map((t) => t.trim().toLowerCase()).slice(0, 10) : []
+    const r = await deps.startRun({ workflowId, inputs: payload, meta: { ...(title ? { title } : {}), tags } })
+    if (!r.run) return { status: 409, body: { error: r.error ?? "did not start" } }
+    return { status: 200, body: { ok: true, runId: r.run.id, followUp: true, awaitingApproval: !!r.awaitingApproval } }
   }
 
   const cfg = (triggerNode.config ?? {}) as {

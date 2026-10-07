@@ -49,7 +49,23 @@ export interface RetroCheckOrigin {
   file: string
 }
 
-export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin
+/** A step of a workflow run asks the owner (src/workflows, #788): an
+ *  owner.ask step, a person.message to approve, or a run's approval at
+ *  start. The answer resumes the run; the agent that started it is not
+ *  told separately, the run is. */
+export interface WorkflowOrigin {
+  kind: "workflow"
+  runId: string
+  nodeId: string
+}
+
+/** An agent proposed a reusable workflow (#788). Yes turns it on. */
+export interface WorkflowProposalOrigin {
+  kind: "workflow-proposal"
+  workflowId: string
+}
+
+export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | WorkflowOrigin | WorkflowProposalOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {
