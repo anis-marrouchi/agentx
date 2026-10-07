@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.125.0](https://github.com/anis-marrouchi/agentx/compare/v0.124.0...v0.125.0) (2026-10-07)
+
+
+### Features
+
+* **wiki:** absorb reads the articles it updates and refuses fact-dropping saves ([#801](https://github.com/anis-marrouchi/agentx/issues/801)) ([#804](https://github.com/anis-marrouchi/agentx/issues/804)) ([2c90096](https://github.com/anis-marrouchi/agentx/commit/2c90096e84bb25b4a113eda2f1aa6e1f7099a267))
+
 ## [0.124.0](https://github.com/anis-marrouchi/agentx/compare/v0.123.1...v0.124.0) (2026-10-07)
 
 
