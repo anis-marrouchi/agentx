@@ -946,7 +946,10 @@ Which CLI commands and dashboard pages are actually used.
 | Flag | Default | What it does |
 |---|---|---|
 | `--stdio` | `true` | Use stdio transport (default). |
+| `--tools <set>` | `full` | Which tools to offer: `read` (looks only; sends, starts and changes nothing) or `full`. A tool outside the set is refused. |
 | `-c, --cwd <cwd>` | current folder | Working directory. |
+
+Every call to the node carries `Authorization: Bearer <token>`, taken from `AGENTX_TOKEN`, then `MESH_TOKEN`, then `dashboard.token`. Without `AGENTX_DAEMON_URL` or `node.bind`, the node is `http://localhost:18800`. Setup for each editor: [Use AgentX from your code editor](/jobs/connect-an-editor).
 
 ## token
 

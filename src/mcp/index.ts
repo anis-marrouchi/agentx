@@ -10,6 +10,7 @@ import { describeQueue } from "@/daemon/voice-queue-api"
 import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
 import { callerHeaders } from "@/calls/service"
+import { READ_TOOL_NAMES, type McpToolSet } from "./tool-names"
 
 // --- MCP Server: expose agentx as a Model Context Protocol server ---
 // This allows Claude Code, Cursor, Windsurf, and any MCP client to use
@@ -42,7 +43,17 @@ const SERVER_INFO = {
   version: "0.1.0",
 }
 
-const PROTOCOL_VERSION = "2024-11-05"
+/** The protocol versions this server speaks, oldest first. `initialize`
+ *  answers with the client's version when it is one of these, and with
+ *  the fallback otherwise (#794). */
+export const SUPPORTED_PROTOCOL_VERSIONS: readonly string[] = ["2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"]
+const FALLBACK_PROTOCOL_VERSION = "2024-11-05"
+
+export function negotiateProtocolVersion(requested: unknown): string {
+  return typeof requested === "string" && SUPPORTED_PROTOCOL_VERSIONS.includes(requested)
+    ? requested
+    : FALLBACK_PROTOCOL_VERSION
+}
 
 const CAPABILITIES = {
   tools: {},
@@ -110,12 +121,13 @@ const elicitationResolvers = new Map<string, (result: any) => void>()
 //
 //   1. AGENTX_DAEMON_URL      — explicit wins, incl. pointing at a remote node
 //   2. node.bind in the config — what the daemon is actually listening on
-//   3. localhost:19900         — last-resort default, unchanged
+//   3. localhost:18800         — last-resort default, the daemon's own
+//                                default port (#794)
 //
 // Resolved lazily and memoized: this module is imported before
 // commands/serve.ts applies `process.chdir(--cwd)`, so reading the config at
 // import time would look in the wrong directory.
-const DEFAULT_DAEMON_URL = "http://localhost:19900"
+const DEFAULT_DAEMON_URL = "http://localhost:18800"
 
 let daemonUrlCache: string | undefined
 
@@ -150,6 +162,64 @@ function daemonUrl(): string {
   return daemonUrlCache
 }
 
+// --- The token every daemon call carries (#794) ---
+//
+// Loopback callers pass the daemon's mesh gate without one, but a node
+// reached through AGENTX_DAEMON_URL, or one that gates a route for every
+// caller, answers 401 to a call with no Authorization header. Resolution:
+//
+//   1. AGENTX_TOKEN            — explicit wins
+//   2. MESH_TOKEN              — the environment, then the install's .env
+//   3. dashboard.token         — from the same config the URL came from
+//
+// Memoized like the URL, for the same chdir reason.
+let daemonTokenCache: string | undefined
+
+function readDotEnvValue(key: string): string {
+  try {
+    const path = resolve(process.cwd(), ".env")
+    if (!existsSync(path)) return ""
+    for (const raw of readFileSync(path, "utf-8").split("\n")) {
+      const line = raw.trim().replace(/^export\s+/, "")
+      if (!line.startsWith(`${key}=`)) continue
+      const value = line.slice(key.length + 1).trim()
+      return /^(["']).*\1$/.test(value) ? value.slice(1, -1) : value
+    }
+  } catch { /* unreadable — no token from here */ }
+  return ""
+}
+
+function resolveDaemonToken(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.AGENTX_TOKEN) return env.AGENTX_TOKEN
+  if (env.MESH_TOKEN) return env.MESH_TOKEN
+  const fromDotEnv = readDotEnvValue("MESH_TOKEN")
+  if (fromDotEnv) return fromDotEnv
+  for (const rel of ["agentx.json", ".agentx/config.json"]) {
+    try {
+      const path = resolve(process.cwd(), rel)
+      if (!existsSync(path)) continue
+      const token = JSON.parse(readFileSync(path, "utf-8"))?.dashboard?.token
+      if (typeof token === "string" && token) return token
+    } catch { /* try the next candidate */ }
+  }
+  return ""
+}
+
+function daemonToken(): string {
+  if (daemonTokenCache === undefined) daemonTokenCache = resolveDaemonToken()
+  return daemonTokenCache
+}
+
+/** `fetch` for daemon calls: adds `Authorization: Bearer <token>` when a
+ *  token is known. A header the caller set itself is kept. */
+const daemonFetch: typeof fetch = (input, init) => {
+  const token = daemonToken()
+  if (!token) return fetch(input, init)
+  const headers = new Headers(init?.headers)
+  if (!headers.has("Authorization")) headers.set("Authorization", `Bearer ${token}`)
+  return fetch(input, { ...init, headers })
+}
+
 /** Which running turn is delegating (#277). The AgentX runtime exports
  *  these to the processes an agent launches; the daemon uses them to find
  *  the caller's turn and, when a person started it, answer at once and
@@ -171,7 +241,7 @@ async function runningIntentPath(): Promise<{ path?: string[]; graphWeight?: num
   if (!agent || !caller.callerChannel || !caller.callerChatId) return undefined
   try {
     const q = new URLSearchParams({ channel: caller.callerChannel, chatId: caller.callerChatId })
-    const res = await fetch(`${daemonUrl()}/agents/${encodeURIComponent(agent)}/intent-path?${q}`, {
+    const res = await daemonFetch(`${daemonUrl()}/agents/${encodeURIComponent(agent)}/intent-path?${q}`, {
       signal: AbortSignal.timeout(2000),
     })
     if (!res.ok) return undefined
@@ -189,11 +259,18 @@ async function runningIntentPath(): Promise<{ path?: string[]; graphWeight?: num
  *  env/cwd; `_resolve…` exposes the uncached resolution itself. */
 export function _resetDaemonUrlForTesting(): void {
   daemonUrlCache = undefined
+  daemonTokenCache = undefined
 }
 
 export function _resolveDaemonUrlForTesting(): string {
   return resolveDaemonUrl()
 }
+
+export function _resolveDaemonTokenForTesting(env: NodeJS.ProcessEnv = process.env): string {
+  return resolveDaemonToken(env)
+}
+
+export const _daemonFetchForTesting = daemonFetch
 
 // Strip ANSI escape codes from CLI output (we re-invoke the CLI for tools
 // that shell out — chalk colors its output, MCP clients want plain text).
@@ -205,7 +282,7 @@ function stripAnsi(s: string): string { return s.replace(ANSI_RE, "") }
  *  newest first, grouped by chat. Stands in for the cross-chat context a
  *  lean session (#615) is not handed up front. */
 async function recentAcrossChats(agent: string, channel: string | undefined, limit: number | undefined) {
-  const res = await fetch(`${daemonUrl()}/recall`, {
+  const res = await daemonFetch(`${daemonUrl()}/recall`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ agent, channel, limit: Math.min(Math.max(limit ?? 30, 1), 100) }),
@@ -243,7 +320,7 @@ export function renderTurnsByChat(
 
 /** The landscape text an agent would have been given in its prompt. */
 async function fetchLandscape(agent: string): Promise<string> {
-  const res = await fetch(`${daemonUrl()}/agents/${encodeURIComponent(agent)}/landscape`)
+  const res = await daemonFetch(`${daemonUrl()}/agents/${encodeURIComponent(agent)}/landscape`)
   const data = await res.json().catch(() => ({})) as any
   if (!res.ok) return `No landscape: ${data.error || res.statusText}`
   return (data.landscape as string) || `No landscape for ${agent}.`
@@ -1071,7 +1148,7 @@ async function handleToolCall(
       if (!channel || !chatId || !text) {
         return { content: [{ type: "text", text: "Error: channel, chatId, and text are required." }] }
       }
-      const res = await fetch(`${daemonUrl()}/api/actions/builtin/channel.reply`, {
+      const res = await daemonFetch(`${daemonUrl()}/api/actions/builtin/channel.reply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1098,7 +1175,7 @@ async function handleToolCall(
       if (!project || !kind || !iid) {
         return { content: [{ type: "text", text: "Error: project, kind, and iid are required." }] }
       }
-      const res = await fetch(`${daemonUrl()}/api/actions/builtin/channel.label`, {
+      const res = await daemonFetch(`${daemonUrl()}/api/actions/builtin/channel.label`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1123,7 +1200,7 @@ async function handleToolCall(
 
       // Elicit missing required params
       if (!channel || !chatId || !text) {
-        const channelsRes = await fetch(`${daemonUrl()}/channels`).catch(() => null)
+        const channelsRes = await daemonFetch(`${daemonUrl()}/channels`).catch(() => null)
         const channels = channelsRes ? await channelsRes.json() as string[] : ["telegram", "whatsapp", "gitlab", "discord"]
 
         const response = await elicit(
@@ -1144,7 +1221,7 @@ async function handleToolCall(
         text = response.text as string
       }
 
-      const res = await fetch(`${daemonUrl()}/send`, {
+      const res = await daemonFetch(`${daemonUrl()}/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, chatId, text, agentId: args.agentId }),
@@ -1163,7 +1240,7 @@ async function handleToolCall(
       if (!agentId || !text) {
         return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
       }
-      const res = await fetch(`${daemonUrl()}/send/agent`, {
+      const res = await daemonFetch(`${daemonUrl()}/send/agent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...callerFields() }),
@@ -1193,7 +1270,7 @@ async function handleToolCall(
       if (!channel) {
         return { content: [{ type: "text", text: "Error: channel is required with chatId." }] }
       }
-      const res = await fetch(`${daemonUrl()}/chat/recent`, {
+      const res = await daemonFetch(`${daemonUrl()}/chat/recent`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, chatId, sinceISO, limit }),
@@ -1226,7 +1303,7 @@ async function handleToolCall(
       if (!contactName || !text) {
         return { content: [{ type: "text", text: "Error: contactName and text are required." }] }
       }
-      const res = await fetch(`${daemonUrl()}/send/contact`, {
+      const res = await daemonFetch(`${daemonUrl()}/send/contact`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ contactName, text, channel, confirmed, agentId }),
@@ -1252,7 +1329,7 @@ async function handleToolCall(
 
       // Elicit missing params
       if (!agent || !message) {
-        const agentsRes = await fetch(`${daemonUrl()}/agents`).catch(() => null)
+        const agentsRes = await daemonFetch(`${daemonUrl()}/agents`).catch(() => null)
         const agentList = agentsRes ? (await agentsRes.json() as any[]).map((a: any) => a.id) : []
 
         const response = await elicit(
@@ -1280,7 +1357,7 @@ async function handleToolCall(
         chatId,
       } : undefined
 
-      const res = await fetch(`${daemonUrl()}/task`, {
+      const res = await daemonFetch(`${daemonUrl()}/task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agent, message, senderAgentId, freshSession, context, ...callerFields() }),
@@ -1298,7 +1375,7 @@ async function handleToolCall(
     }
 
     case "agentx_agents": {
-      const res = await fetch(`${daemonUrl()}/agents`)
+      const res = await daemonFetch(`${daemonUrl()}/agents`)
       const agents = await res.json() as any[]
       const lines = agents.map((a: any) =>
         `${a.id} (${a.name}) — ${a.tier}, active: ${a.active}/${a.total}, errors: ${a.errors}`
@@ -1311,7 +1388,7 @@ async function handleToolCall(
     }
 
     case "agentx_voice_queue": {
-      const res = await fetch(`${daemonUrl()}/voice/queue`)
+      const res = await daemonFetch(`${daemonUrl()}/voice/queue`)
       if (!res.ok) return { content: [{ type: "text", text: `Could not read the speaking queue: HTTP ${res.status}` }] }
       return { content: [{ type: "text", text: describeQueue(await res.json() as QueueView) }] }
     }
@@ -1320,7 +1397,7 @@ async function handleToolCall(
       // The daemon checks this against a running turn of the agent.
       const agentId = process.env.AGENTX_AGENT_ID
       if (!agentId) return { content: [{ type: "text", text: "Call not placed: only an agent's own run can call (AGENTX_AGENT_ID is not set)." }] }
-      const res = await fetch(`${daemonUrl()}/calls`, {
+      const res = await daemonFetch(`${daemonUrl()}/calls`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...callerHeaders() },
         body: JSON.stringify({ agentId, reason: args.reason, urgency: args.urgency }),
@@ -1336,7 +1413,7 @@ async function handleToolCall(
     case "agentx_camera_ask": {
       const agentId = process.env.AGENTX_AGENT_ID
       if (!agentId) return { content: [{ type: "text", text: "Not asked: only an agent's own run can ask to see (AGENTX_AGENT_ID is not set)." }] }
-      const res = await fetch(`${daemonUrl()}/calls`, {
+      const res = await daemonFetch(`${daemonUrl()}/calls`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...callerHeaders() },
         body: JSON.stringify({ agentId, reason: args.reason, urgency: args.urgency, kind: "camera" }),
@@ -1352,7 +1429,7 @@ async function handleToolCall(
     case "agentx_camera_look": {
       const agentId = process.env.AGENTX_AGENT_ID
       if (!agentId) return { content: [{ type: "text", text: "No picture: only an agent's own run can look (AGENTX_AGENT_ID is not set)." }] }
-      const res = await fetch(`${daemonUrl()}/webrtc/camera/look`, {
+      const res = await daemonFetch(`${daemonUrl()}/webrtc/camera/look`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...callerHeaders() },
         body: JSON.stringify({ agentId }),
@@ -1364,7 +1441,7 @@ async function handleToolCall(
     }
 
     case "agentx_health": {
-      const res = await fetch(`${daemonUrl()}/health`)
+      const res = await daemonFetch(`${daemonUrl()}/health`)
       const data = await res.json() as any
       return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] }
     }
@@ -1377,7 +1454,7 @@ async function handleToolCall(
       if (!sessionId) {
         return { content: [{ type: "text", text: "Not running inside a Claude Code session — attach mode is unavailable here." }] }
       }
-      const res = await fetch(`${daemonUrl()}/attach/next`, {
+      const res = await daemonFetch(`${daemonUrl()}/attach/next`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId }),
@@ -1403,7 +1480,7 @@ async function handleToolCall(
       if (!sessionId) {
         return { content: [{ type: "text", text: "Not running inside a Claude Code session — attach mode is unavailable here." }] }
       }
-      const res = await fetch(`${daemonUrl()}/attach/answer`, {
+      const res = await daemonFetch(`${daemonUrl()}/attach/answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sessionId, text: String(args.text ?? "") }),
@@ -1424,7 +1501,7 @@ async function handleToolCall(
       const qs = new URLSearchParams()
       if (typeof args.since === "string" && args.since) qs.set("since", args.since)
       if (typeof args.limit === "number") qs.set("limit", String(args.limit))
-      const res = await fetch(`${daemonUrl()}/agents/${encodeURIComponent(agentId)}/events?${qs}`, { signal: AbortSignal.timeout(10_000) })
+      const res = await daemonFetch(`${daemonUrl()}/agents/${encodeURIComponent(agentId)}/events?${qs}`, { signal: AbortSignal.timeout(10_000) })
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok) {
         return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
@@ -1434,7 +1511,7 @@ async function handleToolCall(
     }
 
     case "agentx_crons": {
-      const res = await fetch(`${daemonUrl()}/crons/health`)
+      const res = await daemonFetch(`${daemonUrl()}/crons/health`)
       const data = await res.json() as any
       const summary = `Healthy: ${data.healthy}, Failing: ${data.failing}, Disabled: ${data.disabled}, Missed: ${data.missed}`
       const jobs = (data.jobs || []).map((j: any) =>
@@ -1447,7 +1524,7 @@ async function handleToolCall(
       const { runScheduleTool, resolveScheduleCaller } = await import("@/crons/schedule-tool")
       const text = await runScheduleTool(args, resolveScheduleCaller(args), {
         notifyOperator: async (dest, message) => {
-          const res = await fetch(`${daemonUrl()}/send`, {
+          const res = await daemonFetch(`${daemonUrl()}/send`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text: message }),
@@ -1464,13 +1541,13 @@ async function handleToolCall(
 
     case "agentx_approval": {
       const { runApprovalTool } = await import("@/approvals/tool")
-      const text = await runApprovalTool(args, { daemonUrl: daemonUrl() })
+      const text = await runApprovalTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 
     case "agentx_request": {
       const { runRequestTool } = await import("@/requests/tool")
-      const text = await runRequestTool(args, { daemonUrl: daemonUrl() })
+      const text = await runRequestTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 
@@ -1612,13 +1689,13 @@ async function handleToolCall(
       const action = (args.action as string) || "status"
       if (action === "on") {
         const cats = (args.categories as string) || "all"
-        await fetch(`${daemonUrl()}/debug/on?categories=${cats}`, { method: "POST" })
+        await daemonFetch(`${daemonUrl()}/debug/on?categories=${cats}`, { method: "POST" })
         return { content: [{ type: "text", text: `Debug enabled: ${cats}` }] }
       } else if (action === "off") {
-        await fetch(`${daemonUrl()}/debug/off`, { method: "POST" })
+        await daemonFetch(`${daemonUrl()}/debug/off`, { method: "POST" })
         return { content: [{ type: "text", text: "Debug disabled." }] }
       } else {
-        const res = await fetch(`${daemonUrl()}/debug`)
+        const res = await daemonFetch(`${daemonUrl()}/debug`)
         const data = await res.json() as any
         return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] }
       }
@@ -1652,11 +1729,15 @@ function dispatch(raw: string, log: (...args: unknown[]) => void): void {
   handleMessage(msg, log).catch((e) => log("Error:", e))
 }
 
-export async function startMcpServer(): Promise<void> {
+/** The tool set this server runs with, from `agentx serve --tools`. */
+let activeToolSet: McpToolSet = "full"
+
+export async function startMcpServer(opts: { tools?: McpToolSet } = {}): Promise<void> {
   // Use stderr for logging (stdout is reserved for JSON-RPC)
   const log = (...args: unknown[]) => console.error("[agentx-mcp]", ...args)
+  activeToolSet = opts.tools ?? "full"
 
-  log("Starting MCP server (stdio transport)...")
+  log(`Starting MCP server (stdio transport, ${activeToolSet} tools)...`)
 
   let buffer = ""
 
@@ -1707,11 +1788,24 @@ export async function startMcpServer(): Promise<void> {
  *  AGENTX_MCP_TOOLS (#699; see src/agents/session-profile.ts) so its first
  *  turn carries fewer descriptions. Unset, or naming no known tool: every
  *  tool. Calls are not filtered; the list only decides what is described. */
-export function listedTools(env: NodeJS.ProcessEnv = process.env): typeof TOOLS {
+export function listedTools(env: NodeJS.ProcessEnv = process.env, toolSet: McpToolSet = activeToolSet): typeof TOOLS {
+  const offered = toolSetTools(toolSet)
   const wanted = new Set((env.AGENTX_MCP_TOOLS ?? "").split(",").map((t) => t.trim()).filter(Boolean))
-  if (!wanted.size) return TOOLS
-  const kept = TOOLS.filter((t) => wanted.has(t.name))
-  return kept.length ? kept : TOOLS
+  if (!wanted.size) return offered
+  const kept = offered.filter((t) => wanted.has(t.name))
+  return kept.length ? kept : offered
+}
+
+/** Every tool in a set (#794). Unlike AGENTX_MCP_TOOLS, a set is a
+ *  boundary: a call to a tool outside it is refused, not only unlisted. */
+export function toolSetTools(toolSet: McpToolSet): typeof TOOLS {
+  if (toolSet === "full") return TOOLS
+  const allowed = new Set(READ_TOOL_NAMES)
+  return TOOLS.filter((t) => allowed.has(t.name))
+}
+
+export function toolInSet(name: string, toolSet: McpToolSet = activeToolSet): boolean {
+  return toolSet === "full" || READ_TOOL_NAMES.includes(name)
 }
 
 function send(message: JsonRpcResponse | JsonRpcNotification): void {
@@ -1736,7 +1830,7 @@ async function handleMessage(
         jsonrpc: "2.0",
         id,
         result: {
-          protocolVersion: PROTOCOL_VERSION,
+          protocolVersion: negotiateProtocolVersion((params as any)?.protocolVersion),
           capabilities: CAPABILITIES,
           serverInfo: SERVER_INFO,
         },
@@ -1763,6 +1857,9 @@ async function handleMessage(
       const toolArgs = ((params as any)?.arguments || {}) as Record<string, unknown>
 
       try {
+        if (!toolInSet(toolName)) {
+          throw new Error(`${toolName} is not in the "${activeToolSet}" tool set. Restart the server with --tools full to use it.`)
+        }
         const result = await handleToolCall(toolName, toolArgs)
         send({
           jsonrpc: "2.0",
