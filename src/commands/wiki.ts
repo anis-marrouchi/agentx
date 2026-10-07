@@ -2574,7 +2574,8 @@ wiki
             if (a.skipped === "local") { console.log(chalk.dim(`      ${a.agentId}: runs here, not copied`)); continue }
             if (a.skipped) { console.log(chalk.yellow(`      ${a.agentId}: skipped (${a.skipped})`)); continue }
             const parts = [`${a.copied} ${opts.dryRun ? "to copy" : "copied"}`, `${a.unchanged} unchanged`]
-            if (a.rejected) parts.push(`${a.rejected} refused (unsafe path)`)
+            if (a.removed) parts.push(`${a.removed} removed (gone on the peer)`)
+            if (a.rejected) parts.push(`${a.rejected} refused`)
             console.log(`      ${chalk.cyan(a.agentId)}: ${parts.join(", ")}${a.error ? chalk.red(` — stopped: ${a.error}`) : ""}`)
             if (a.error) process.exitCode = 1
           }

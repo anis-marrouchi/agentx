@@ -1410,7 +1410,7 @@ Populate graphPath on existing articles by looking up source-entry classificatio
 
 Pull raw entries from mesh peers into local wiki. With `--articles`, copy the articles of the agents that run on each peer instead, so this node can query them.
 
-Copied articles are read-only on this node: `wiki absorb` skips the agent, and `wiki patch`, `wiki edit`, `wiki interview` and `wiki quiz` refuse to change it. Change them on the node that runs the agent, then sync again. Agents listed in this node's `agentx.json` are never copied over. An article whose last-updated date matches the local copy is not downloaded again.
+Copied articles are read-only on this node: `wiki absorb` skips the agent, and `wiki patch`, `wiki edit`, `wiki interview` and `wiki quiz` refuse to change it. Change them on the node that runs the agent, then sync again. Agents listed in this node's `agentx.json` are never copied over. An article whose last-updated date matches the local copy is not downloaded again, and a copied article the peer no longer has is deleted. A dry run does not count those deletions.
 
 The command sends the peer's token from `mesh.peers` in `agentx.json`. Peers ask for it on their `/wiki/*` routes; a request from the same machine needs no token.
 

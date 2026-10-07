@@ -83,6 +83,27 @@ describe("syncPeerArticles", () => {
     expect(second.calls.some((u) => u.startsWith("/wiki/article?"))).toBe(false)
   })
 
+  it("removes a copied article the peer no longer lists", async () => {
+    await syncPeerArticles({ hub, peer: PEER, localAgents: new Set(), fetchJson: fakePeer().fetchJson })
+    const renamed = fakePeer({ path: "decisions/postgres.md" })
+    const result = await syncPeerArticles({ hub, peer: PEER, localAgents: new Set(), fetchJson: renamed.fetchJson })
+
+    expect(result.agents.find((a) => a.agentId === "ops")).toMatchObject({ copied: 1, removed: 1 })
+    const store = hub.getAgentWiki("ops")
+    expect(store.readArticle("decisions/use-postgres.md")).toBeNull()
+    expect(store.rebuildIndex().articles.map((a) => a.path)).toEqual(["decisions/postgres.md"])
+  })
+
+  it("keeps local copies when the peer's article list is malformed", async () => {
+    await syncPeerArticles({ hub, peer: PEER, localAgents: new Set(), fetchJson: fakePeer().fetchJson })
+    const broken: PeerFetch = async (peer, url, ms) =>
+      url.startsWith("/wiki/articles?") ? { error: "boom" } : fakePeer().fetchJson(peer, url, ms)
+    const result = await syncPeerArticles({ hub, peer: PEER, localAgents: new Set(), fetchJson: broken })
+
+    expect(result.agents.find((a) => a.agentId === "ops")?.error).toMatch(/article list missing/)
+    expect(hub.getAgentWiki("ops").readArticle("decisions/use-postgres.md")).not.toBeNull()
+  })
+
   it("refuses an article path that leaves the agent's folder", async () => {
     const { fetchJson } = fakePeer({ path: "../coder/graph/evil.md" })
     const result = await syncPeerArticles({ hub, peer: PEER, localAgents: new Set(), fetchJson })
