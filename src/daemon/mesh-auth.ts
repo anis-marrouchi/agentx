@@ -65,7 +65,11 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/webrtc/camera" || path.startsWith("/webrtc/camera/") ||
     // The host's panel of guest meshes (guests/daemon-api.ts): names the
     // other organisations let in, what they may reach and what they did.
-    path === "/mesh/guests" || path.startsWith("/mesh/guests/")
+    path === "/mesh/guests" || path.startsWith("/mesh/guests/") ||
+    // The wiki routes peers sync from: every raw entry is a task's text,
+    // and articles include ones marked private to their agent.
+    path === "/wiki/agents" || path === "/wiki/entries" ||
+    path === "/wiki/articles" || path === "/wiki/article"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a

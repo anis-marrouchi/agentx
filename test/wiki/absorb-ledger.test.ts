@@ -142,4 +142,28 @@ describe("wiki absorb", () => {
     expect(out).toContain("1 entries to absorb")
     expect(mocks.execSync).not.toHaveBeenCalled()
   })
+
+  it("leaves an agent copied from a peer to its home node", async () => {
+    addEntries([["e1", "2026-09-08"]])
+    hub.markSynced(AGENT, { node: "peer-node", peerUrl: "http://peer:19900", at: "2026-10-07T00:00:00Z" })
+
+    await absorb()
+
+    const out = vi.mocked(console.log).mock.calls.map((c) => String(c[0])).join("\n")
+    expect(out).toContain("copied from peer-node, read-only here")
+    expect(mocks.execSync).not.toHaveBeenCalled()
+    expect(existsSync(ledgerFile())).toBe(false)
+  })
+
+  it("refuses to patch an article of an agent copied from a peer", async () => {
+    hub.markSynced(AGENT, { node: "peer-node", peerUrl: "http://peer:19900", at: "2026-10-07T00:00:00Z" })
+
+    await wiki.parseAsync(["patch", AGENT, "One", "fix it", "--dir", dir, "--yes"], { from: "user" })
+
+    const out = vi.mocked(console.log).mock.calls.map((c) => String(c[0])).join("\n")
+    expect(out).toContain("read-only here")
+    expect(mocks.execSync).not.toHaveBeenCalled()
+    expect(process.exitCode).toBe(1)
+    process.exitCode = 0
+  })
 })

@@ -3,6 +3,7 @@ import { markdownToHtml } from "@/utils/markdown-html"
 import { WikiStore } from "./store"
 import { WikiHub } from "./hub"
 import { MeshWikiClient } from "./mesh"
+import type { WikiPeer } from "./article-sync"
 import type { AgentWikiSummary } from "./hub"
 
 // --- Lightweight Markdown → HTML (no deps) ---
@@ -993,7 +994,7 @@ function agentSidebar(store: WikiStore, agentId: string, activePath?: string): s
 export interface WikiHandlerOpts {
   wikiDir: string
   agentFilter?: string
-  peerUrls?: string[]
+  peers?: WikiPeer[]
   mode?: "flat" | "graph" | "unified"
   /** Mount this handler under a URL prefix (e.g. "/admin/wiki" when
    *  embedded in the dashboard). Routes are matched against the path
@@ -1006,10 +1007,10 @@ export interface WikiHandlerOpts {
  *  but factored out so the dashboard can mount it at `/admin/wiki/*` —
  *  one HTTP listener instead of two. */
 export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
-  const { wikiDir, agentFilter, peerUrls = [], mode = "graph", pathPrefix = "" } = opts
+  const { wikiDir, agentFilter, peers = [], mode = "graph", pathPrefix = "" } = opts
   const prefix = pathPrefix.replace(/\/+$/, "")
   const hub = new WikiHub(wikiDir, undefined, mode)
-  const mesh = peerUrls.length > 0 ? new MeshWikiClient(peerUrls) : null
+  const mesh = peers.length > 0 ? new MeshWikiClient(peers) : null
 
   return async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url || "/", `http://localhost`)
@@ -1235,8 +1236,8 @@ function prefixHrefs(html: string, prefix: string): string {
 /** Thin wrapper that runs the handler on its own port. Kept for the
  *  `agentx wiki serve` CLI; the dashboard uses `createWikiHandler`
  *  directly. */
-export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peerUrls: string[] = [], mode: "flat" | "graph" | "unified" = "graph"): void {
-  const handler = createWikiHandler({ wikiDir, agentFilter, peerUrls, mode })
+export function startWikiServer(wikiDir: string, port: number = 4200, agentFilter?: string, peers: WikiPeer[] = [], mode: "flat" | "graph" | "unified" = "graph"): void {
+  const handler = createWikiHandler({ wikiDir, agentFilter, peers, mode })
   const server = createServer((req, res) => { void handler(req, res) })
   server.listen(port)
 }

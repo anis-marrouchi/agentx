@@ -152,6 +152,31 @@ export class WikiHub {
     return { all, cited, read, pending, articles }
   }
 
+  /**
+   * The peer an agent's articles were copied from by `wiki sync --articles`,
+   * or null for an agent this node absorbs itself. A copied agent is
+   * read-only here: absorb and patch leave it to its home node.
+   */
+  syncedFrom(agentId: string): SyncedFrom | null {
+    const file = resolve(this.agentsDir, agentId, "_synced.json")
+    if (!existsSync(file)) return null
+    try {
+      return JSON.parse(readFileSync(file, "utf-8")) as SyncedFrom
+    } catch (err) {
+      // A damaged marker still means the agent lives elsewhere.
+      this.log(`synced marker ${file} is not valid JSON: ${(err as Error).message}`)
+      return { node: "unknown", peerUrl: "", at: "" }
+    }
+  }
+
+  markSynced(agentId: string, from: SyncedFrom): void {
+    const file = resolve(this.agentsDir, agentId, "_synced.json")
+    mkdirSync(resolve(file, ".."), { recursive: true })
+    const tmp = `${file}.tmp`
+    writeFileSync(tmp, `${JSON.stringify(from, null, 2)}\n`)
+    renameSync(tmp, file)
+  }
+
   /** agents/<id>/_absorbed.json — shared by every mode, like the raw entries. */
   private ledgerPath(agentId: string): string {
     return resolve(this.agentsDir, agentId, "_absorbed.json")
@@ -169,6 +194,14 @@ export class WikiHub {
       throw new Error(`absorb ledger ${file} is not valid JSON: ${(err as Error).message}`)
     }
   }
+}
+
+export interface SyncedFrom {
+  /** The peer's node id. */
+  node: string
+  peerUrl: string
+  /** When the last copy finished. */
+  at: string
 }
 
 interface AbsorbLedger {

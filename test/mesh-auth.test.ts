@@ -129,6 +129,13 @@ describe("isMeshGatedPath — routes gated for every method", () => {
     expect(isMeshGatedPath("/tracesx")).toBe(false)
   })
 
+  it("gates the wiki routes peers sync entries and articles from", () => {
+    for (const p of ["/wiki/agents", "/wiki/entries", "/wiki/articles", "/wiki/article"]) {
+      expect(isMeshGatedPath(p)).toBe(true)
+    }
+    expect(isMeshGatedPath("/wiki/articlesx")).toBe(false)
+  })
+
   it("does not gate look-alike or unrelated paths", () => {
     expect(isMeshGatedPath("/api/memoryx")).toBe(false)
     expect(isMeshGatedPath("/api/mesh")).toBe(false)
