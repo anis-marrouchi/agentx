@@ -1934,7 +1934,10 @@ export class AgentXDaemon {
 
   /** True when the request carries one of this node's mesh tokens. Unlike
    *  checkMeshAuth, loopback is not enough: agents on this node reach
-   *  loopback themselves, and a card result must come from a peer. */
+   *  loopback themselves, and a card result must come from a peer.
+   *  The token proves the caller holds the mesh secret, not that it is a
+   *  peer: this node's agents have MESH_TOKEN in their environment, and
+   *  the MCP server sends it on every daemon call (#797). */
   private carriesMeshToken(req: IncomingMessage): boolean {
     const header = String(req.headers["authorization"] || "")
     const token = header.startsWith("Bearer ") ? header.slice(7).trim() : ""
