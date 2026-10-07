@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.121.0](https://github.com/anis-marrouchi/agentx/compare/v0.120.0...v0.121.0) (2026-10-07)
+
+
+### Features
+
+* **session:** resume-or-fresh cost gate, shadow first (step 3 of [#621](https://github.com/anis-marrouchi/agentx/issues/621)) ([#778](https://github.com/anis-marrouchi/agentx/issues/778)) ([7203318](https://github.com/anis-marrouchi/agentx/commit/7203318b3ae3f909cfe98dee026c21f5ad900c69))
+* **wiki:** each node absorbs its own agents; copy peer articles read-only ([#777](https://github.com/anis-marrouchi/agentx/issues/777)) ([8925bdf](https://github.com/anis-marrouchi/agentx/commit/8925bdfd3ff55057aaaa692f89cbf1bdf0d74b8d))
+
 ## [0.120.0](https://github.com/anis-marrouchi/agentx/compare/v0.119.0...v0.120.0) (2026-10-07)
 
 
