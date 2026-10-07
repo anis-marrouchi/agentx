@@ -58,7 +58,7 @@ const dlg = (id: string) => ({ id, caller: "coder", callee: "devops", origin: { 
 
 describe("settings", () => {
   it("is off by default, with a 24 hour quiet time and 90 day retention", () => {
-    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90 })
+    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [] } })
   })
 
   it("records nothing while it is off", () => {

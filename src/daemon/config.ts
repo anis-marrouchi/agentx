@@ -1104,6 +1104,21 @@ export const requestsConfigSchema = z.object({
   staleAfterHours: z.number().positive().max(24 * 365).default(24),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
+  /** Tracked plans (src/requests/plans.ts, #788): a request with two or
+   *  more steps, each with an owner agent, followed until every step is
+   *  done. Needs `enabled` above. */
+  plans: z.object({
+    enabled: z.boolean().default(true),
+    /** A step with no progress for this long gets a nudge. */
+    stallMinutes: z.number().positive().max(7 * 24 * 60).default(30),
+    /** Nudges per step before it counts as blocked and the owner is told. */
+    maxNudges: z.number().int().min(0).max(20).default(3),
+    /** Step kinds the owner approves once, when the plan is made. A
+     *  "message" step is then sent without asking again. */
+    approveKinds: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,30}$/, "a step kind: a short lower-case word")).default(["message"]),
+    /** Agents that may not open a plan. */
+    disabledAgents: z.array(z.string().min(1)).default([]),
+  }).default({}),
 }).default({})
 
 /** People (src/people, #384): the humans who talk to the agents, one entry

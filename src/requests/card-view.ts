@@ -1,5 +1,6 @@
 import { markdownToHtml } from "@/utils/markdown-html"
 import type { RequestRecord, RequestStore } from "./store"
+import type { PlanState, PlanStore, StepState } from "./plan-store"
 
 // --- One open request as a card the owner can read in seconds (#459) ---
 //
@@ -22,6 +23,11 @@ export interface RequestCard extends RequestRecord {
   why: string | null
   ownerNoteHtml: string | null
   lastAnswer: { agentId: string; at: number; html: string } | null
+  /** Its tracked plan (#788), step by step. Null: no plan. */
+  plan: {
+    state: PlanState
+    steps: Array<{ idx: number; name: string; kind: string; agentId: string; state: StepState; approval: string | null; evidence: string | null; note: string | null; nudges: number }>
+  } | null
 }
 
 /** Markdown to the words alone, on one line. */
@@ -44,7 +50,8 @@ export function summarize(md: string, max = SUMMARY_MAX): string {
   return end > max / 2 ? cut.slice(0, end + 1) : `${cut.slice(0, max - 1).trimEnd()}…`
 }
 
-export function requestCard(r: RequestRecord, store: Pick<RequestStore, "lastAnswer">): RequestCard {
+export function requestCard(r: RequestRecord, store: Pick<RequestStore, "lastAnswer">, plans?: Pick<PlanStore, "get" | "steps"> | null): RequestCard {
+  const plan = plans?.get(r.id)
   const answer = store.lastAnswer(r.id)
   const cutAnswer = answer && answer.text.length > ANSWER_MAX ? `${answer.text.slice(0, ANSWER_MAX)}\n\n…` : answer?.text
   return {
@@ -54,5 +61,12 @@ export function requestCard(r: RequestRecord, store: Pick<RequestStore, "lastAns
     why: r.state === "waiting_owner" ? r.question : r.state === "needs_attention" ? r.attentionReason : null,
     ownerNoteHtml: r.ownerNote ? markdownToHtml(r.ownerNote) : null,
     lastAnswer: answer ? { agentId: answer.agentId, at: answer.at, html: markdownToHtml(cutAnswer!) } : null,
+    plan: plan ? {
+      state: plan.state,
+      steps: plans!.steps(r.id).map((s) => ({
+        idx: s.idx, name: s.name, kind: s.kind, agentId: s.agentId, state: s.state,
+        approval: s.needsApproval ? s.approval : null, evidence: s.evidence, note: s.note, nudges: s.nudges,
+      })),
+    } : null,
   }
 }
