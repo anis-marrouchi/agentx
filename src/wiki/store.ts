@@ -329,7 +329,11 @@ export class WikiStore {
     const getArray = (key: string): string[] => {
       const m = fm.match(new RegExp(`^${key}:\\s*\\[(.*)\\]$`, "m"))
       if (!m) return []
-      return m[1].split(",").map(s => s.trim().replace(/^"(.*)"$/, "$1")).filter(Boolean)
+      // Quoted items may hold commas — related titles often do, e.g.
+      // "Reviewed: NOT READY, Then READY". Unquoted legacy items may not.
+      return [...m[1].matchAll(/\s*(?:"([^"]*)"|([^,]+))/g)]
+        .map(x => (x[1] ?? x[2]).trim())
+        .filter(Boolean)
     }
 
     // `type` and `kind` are the new structural spine; no longer stuffed into tags.

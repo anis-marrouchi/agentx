@@ -103,7 +103,7 @@ For each of the ${entryCount} raw entries below, ask in this order:
 3. **Does it belong in an existing \`event\` or \`decision\`?** Most work entries fold into one of these.
 4. **Can you skip it?** If the entry is small talk, a transient status ping, or already covered elsewhere — skip. The wiki is curated, not exhaustive.
 
-**How to UPDATE.** An UPDATE replaces the whole article, so write the full merged content: everything the old article says plus what the entries add. Keep every commit hash, URL, \`[[wikilink]]\`, number, count and date of the old text verbatim; when an entry supersedes a value, keep the old one as history ("16/16 at the first review, 27 at the re-review"). Keep its title unless the subject itself changed. A save that drops any of these is refused and the entries come back next run. Only UPDATE articles shown in full below: for an article you know only by its catalog title, write a new article that links to it instead of rewriting it blind.
+**How to UPDATE.** An UPDATE replaces the whole article, so write the full merged content: everything the old article says plus what the entries add. Keep every commit hash, URL, \`[[wikilink]]\`, number, count and date of the old text verbatim; when an entry supersedes a value, keep the old one as history ("16/16 at the first review, 27 at the re-review"). Keep its path; change its title only where the entries make it wrong (a verdict or status that changed). A save that drops any of these is refused and the entries come back next run. Only UPDATE articles shown in full below: for an article you know only by its catalog title, write a new article that links to it instead of rewriting it blind.
 
 ## Writing standards
 
