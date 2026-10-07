@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.125.1](https://github.com/anis-marrouchi/agentx/compare/v0.125.0...v0.125.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **wiki:** read frontmatter list items that contain commas or quotes ([#801](https://github.com/anis-marrouchi/agentx/issues/801) follow-up) ([#806](https://github.com/anis-marrouchi/agentx/issues/806)) ([0b3cdfa](https://github.com/anis-marrouchi/agentx/commit/0b3cdfac03ad38098f16f92e1aba339826d3b4a1))
+
 ## [0.125.0](https://github.com/anis-marrouchi/agentx/compare/v0.124.0...v0.125.0) (2026-10-07)
 
 
