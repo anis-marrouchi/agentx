@@ -1099,7 +1099,7 @@ When a run succeeds, every entry it read is recorded in `agents/<id>/_absorbed.j
 
 Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
 
-Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (absorb uses Sonnet). They look for it on your PATH and also in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, so they work from the daemon and from the `agentx_wiki_query` tool without a login shell's PATH.
+Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (absorb uses Sonnet unless `--model` or `AGENTX_WIKI_ABSORB_MODEL` names another model). They look for it on your PATH and also in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, so they work from the daemon and from the `agentx_wiki_query` tool without a login shell's PATH.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1111,6 +1111,7 @@ Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (
 | `--max <n>` | `10` | Max entries per agent. |
 | `--since <date>` | — | Only entries dated on or after YYYY-MM-DD. |
 | `--until <date>` | — | Only entries dated on or before YYYY-MM-DD. |
+| `--model <model>` | `AGENTX_WIKI_ABSORB_MODEL`, else `sonnet` | The model that compiles the articles. |
 
 ### `agentx wiki promote`
 

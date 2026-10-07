@@ -6,6 +6,7 @@ import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
 import type { WikiPeer } from "@/wiki/article-sync"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
+import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
@@ -177,8 +178,17 @@ wiki
   .option("--max <n>", "max entries per agent", "10")
   .option("--since <date>", "only entries dated on or after YYYY-MM-DD")
   .option("--until <date>", "only entries dated on or before YYYY-MM-DD")
+  .option("--model <model>", "compile model (default: AGENTX_WIKI_ABSORB_MODEL, else sonnet)")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
+    let model: string
+    try {
+      model = absorbModel(opts.model)
+    } catch (err: any) {
+      console.log(chalk.red(`  ${err.message}`))
+      process.exitCode = 1
+      return
+    }
     const hub = getHub(opts.dir, mode)
     // Each node absorbs its own agents. A peer's agents are absorbed on the
     // peer and reach this node through `wiki sync --articles`.
@@ -358,7 +368,7 @@ wiki
       const promptPath = resolve(tmpDir, "absorb-prompt.txt")
       writeFileSync(promptPath, prompt)
 
-      console.log(chalk.dim(`    Compiling with Claude...`))
+      console.log(chalk.dim(`    Compiling with Claude (${model})...`))
 
       try {
         let rawOutput: string
@@ -367,7 +377,7 @@ wiki
         let runFailed = false
         try {
           rawOutput = execSync(
-            `cat '${promptPath}' | claude -p - --output-format json --max-turns 3 --model sonnet --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`,
+            `cat '${promptPath}' | claude -p - --output-format json --max-turns 3 --model '${model}' --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`,
             { env: claudeCliEnv(), encoding: "utf-8", timeout: 900_000, maxBuffer: 10 * 1024 * 1024 },
           )
         } catch (execErr: any) {
@@ -392,47 +402,14 @@ wiki
           // Not a JSON envelope — use as-is
         }
 
-        // Parse response — could be { articles: [...], gaps: [...] } or bare [...]
-        let articles: Array<{ path: string; title: string; tags: string[]; content: string; sources: string[]; type?: string; related?: string[] }>
-        let gaps: string[] = []
-
-        // Find outermost JSON object or array. New prompt emits { articles, gaps };
-        // legacy arrays are tolerated for back-compat during migration.
-        const objStart = responseText.indexOf("{")
-        const arrStart = responseText.indexOf("[")
-        const jsonStart = (objStart >= 0 && (arrStart < 0 || objStart < arrStart)) ? objStart : arrStart
-
-        if (jsonStart === -1) {
-          console.log(chalk.red(`    No JSON found in response`))
-          console.log(chalk.dim(responseText.slice(0, 500)))
+        // { articles, gaps }, or a legacy bare array of articles.
+        const response = parseAbsorbResponse(responseText)
+        if ("error" in response) {
+          console.log(chalk.red(`    ${response.error}`))
+          console.log(chalk.dim(`    First 500 chars: ${responseText.slice(0, 500)}`))
           continue
         }
-
-        const openChar = responseText[jsonStart]
-        const closeChar = openChar === "{" ? "}" : "]"
-        let depth = 0
-        let jsonEnd = -1
-        for (let i = jsonStart; i < responseText.length; i++) {
-          if (responseText[i] === openChar) depth++
-          else if (responseText[i] === closeChar) { depth--; if (depth === 0) { jsonEnd = i + 1; break } }
-        }
-
-        if (jsonEnd === -1) { console.log(chalk.red(`    Unbalanced JSON`)); continue }
-
-        const jsonStr = responseText.slice(jsonStart, jsonEnd)
-        try {
-          const parsed = JSON.parse(jsonStr)
-          if (Array.isArray(parsed)) {
-            articles = parsed
-          } else {
-            articles = parsed.articles || []
-            gaps = parsed.gaps || []
-          }
-        } catch (parseErr: any) {
-          console.log(chalk.red(`    JSON parse error: ${parseErr.message}`))
-          console.log(chalk.dim(`    First 300 chars: ${jsonStr.slice(0, 300)}`))
-          continue
-        }
+        const { articles, gaps } = response
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)
