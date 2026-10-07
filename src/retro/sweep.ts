@@ -9,6 +9,7 @@ import {
   raiseRetroCard,
   readMonitorReview,
   signatureOf,
+  newSignalCache,
   struggleSignals,
   type StruggleSignal,
 } from "./retro"
@@ -60,10 +61,11 @@ export function rankStruggledRuns(
 ): RankedRun[] {
   const now = opts.now ?? Date.now()
   const best = new Map<string, RankedRun>()
+  const cache = newSignalCache()
   for (const task of listTraces(db, { since: opts.since, limit: MAX_RUNS_READ })) {
     if (task.status === "in-flight" || isRetroRun(root, task)) continue
     const steps = getTrace(db, task.taskId)?.steps ?? []
-    const signals = struggleSignals(db, task, steps, readMonitorReview(db, task.taskId), now)
+    const signals = struggleSignals(db, task, steps, readMonitorReview(db, task.taskId), now, cache)
     if (!signals.length) continue
     const run: RankedRun = { task, signals, score: signals.reduce((n, s) => n + SIGNAL_WEIGHT[s.kind], 0), signature: signatureOf(task, steps) }
     const prev = best.get(run.signature)

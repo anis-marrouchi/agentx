@@ -134,6 +134,55 @@ function toolCalls(steps: Pick<TraceStepRecord, "name">[]): number {
   return steps.filter((s) => s.name === "tool_use").length
 }
 
+/** An agent's successful runs in the baseline window, with their tool calls. */
+interface BaselineRun {
+  taskId: string
+  durationMs: number | null
+  toolCalls: number
+}
+
+/** What every run in one sweep shares: each agent's baseline and the
+ *  window's failures by signature. Read once per sweep, not once per run;
+ *  without it a busy day's sweep reread the same traces hundreds of times. */
+export interface SignalCache {
+  baselines: Map<string, BaselineRun[]>
+  failedSessions?: Map<string, Set<string>>
+}
+
+export function newSignalCache(): SignalCache {
+  return { baselines: new Map() }
+}
+
+function baselineOf(db: Database.Database, agentId: string, since: number, cache?: SignalCache): BaselineRun[] {
+  const hit = cache?.baselines.get(agentId)
+  if (hit) return hit
+  const runs = listTraces(db, { agentId, status: "ok", since, limit: 200 })
+  const counts = new Map<string, number>()
+  if (runs.length) {
+    // Look steps up by task id (the primary key). Matched on `name` first,
+    // SQLite picks the name index and walks every tool step in the table:
+    // 12 s a call on a 200k-step database, against 60 ms.
+    const rows = db.prepare(`SELECT task_id, COUNT(*) AS n FROM task_trace_steps WHERE task_id IN (${runs.map(() => "?").join(",")}) AND +name = 'tool_use' GROUP BY task_id`)
+      .all(...runs.map((t) => t.taskId)) as { task_id: string; n: number }[]
+    for (const r of rows) counts.set(r.task_id, r.n)
+  }
+  const out = runs.map((t) => ({ taskId: t.taskId, durationMs: t.durationMs, toolCalls: counts.get(t.taskId) ?? 0 }))
+  cache?.baselines.set(agentId, out)
+  return out
+}
+
+function failedSessionsOf(db: Database.Database, since: number, cache?: SignalCache): Map<string, Set<string>> {
+  if (cache?.failedSessions) return cache.failedSessions
+  const bySig = new Map<string, Set<string>>()
+  for (const t of loadFailedTraces(db, { since })) {
+    const sig = failureSignature(t)
+    if (!bySig.has(sig)) bySig.set(sig, new Set())
+    bySig.get(sig)!.add(t.sessionId)
+  }
+  if (cache) cache.failedSessions = bySig
+  return bySig
+}
+
 /** Why this run counts as struggling. Empty: it did not. */
 export function struggleSignals(
   db: Database.Database,
@@ -141,6 +190,7 @@ export function struggleSignals(
   steps: TraceStepRecord[],
   review: MonitorReview | null,
   now = Date.now(),
+  cache?: SignalCache,
 ): StruggleSignal[] {
   const out: StruggleSignal[] = []
   if (task.status === "error" || task.status === "timeout") {
@@ -149,15 +199,13 @@ export function struggleSignals(
   if (/daemon-restart/.test(task.error ?? "")) out.push({ kind: "restart-killed", text: "the run was killed when the daemon restarted" })
 
   const since = now - BASELINE_DAYS * 86_400_000
-  const usual = listTraces(db, { agentId: task.agentId, status: "ok", since, limit: 200 }).filter((t) => t.taskId !== task.taskId)
+  const usual = baselineOf(db, task.agentId, since, cache).filter((t) => t.taskId !== task.taskId)
   if (usual.length >= MIN_BASELINE) {
     const d = median(usual.map((t) => t.durationMs).filter((x): x is number => x != null))
     if (d && task.durationMs && task.durationMs > OUTLIER_FACTOR * d) {
       out.push({ kind: "slow", text: `took ${Math.round(task.durationMs / 1000)}s; ${task.agentId} usually takes ${Math.round(d / 1000)}s` })
     }
-    const counts = db.prepare(`SELECT COUNT(*) AS n FROM task_trace_steps WHERE name = 'tool_use' AND task_id IN (${usual.map(() => "?").join(",")}) GROUP BY task_id`)
-      .all(...usual.map((t) => t.taskId)) as { n: number }[]
-    const c = median([...counts.map((r) => r.n), ...Array(Math.max(0, usual.length - counts.length)).fill(0)])
+    const c = median(usual.map((t) => t.toolCalls))
     const mine = toolCalls(steps)
     if (c != null && mine > Math.max(OUTLIER_FACTOR * c, c + 5)) {
       out.push({ kind: "many-tools", text: `made ${mine} tool calls; ${task.agentId} usually makes ${c}` })
@@ -170,8 +218,7 @@ export function struggleSignals(
   if (delegation) out.push({ kind: "delegation", text: `a delegation failed at step ${delegation.seq} (${delegation.action})` })
 
   if (out.some((s) => s.kind === "failed")) {
-    const sig = signatureOf(task, steps)
-    const sessions = new Set(loadFailedTraces(db, { since }).filter((t) => failureSignature(t) === sig).map((t) => t.sessionId))
+    const sessions = failedSessionsOf(db, since, cache).get(signatureOf(task, steps)) ?? new Set()
     if (sessions.size >= 2) out.push({ kind: "recurring", text: `the same failure hit ${sessions.size} sessions in ${BASELINE_DAYS} days` })
   }
   return out

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -90,6 +90,32 @@ describe("rankStruggledRuns", () => {
     failedRun("T-building-fix", "builder", "lint failed in the new script file", { channel: "approvals", chatId: raised.card.id })
 
     expect(rankStruggledRuns(db, tmp, { since: since() }).map((r) => r.task.taskId)).toEqual(["T-first"])
+  })
+
+  it("reads each agent's baseline and the failures once per sweep, with the same signals", () => {
+    for (let i = 0; i < 6; i++) {
+      okRun(`T-ok-${i}`)
+      recordTraceStep(db, `T-ok-${i}`, { name: "tool_use", action: "Read", status: "ok", inputSummary: "a file" })
+    }
+    // Many tool calls against a baseline of one each.
+    recordTraceStart(db, { agentId: "builder", channel: "telegram", chatId: "ops", messagePreview: "busy" }, "T-busy")
+    for (let i = 0; i < 12; i++) recordTraceStep(db, "T-busy", { name: "tool_use", action: "Read", status: "ok", inputSummary: "a file" })
+    recordTraceEnd(db, "T-busy", { status: "ok" })
+    // The same failure in two sessions.
+    failedRun("T-fail-1", "builder", "connection refused on the health check", { chatId: "one" })
+    failedRun("T-fail-2", "builder", "connection refused on the health check", { chatId: "two" })
+
+    const prepare = vi.spyOn(db, "prepare")
+    const ranked = rankStruggledRuns(db, tmp, { since: since() })
+    const stepCounts = prepare.mock.calls.filter(([sql]) => /FROM task_trace_steps WHERE task_id IN/.test(String(sql)))
+    prepare.mockRestore()
+
+    // One agent, one baseline read, however many of its runs are ranked.
+    expect(stepCounts).toHaveLength(1)
+    const kinds = (id: string) => ranked.find((r) => r.task.taskId === id)?.signals.map((s) => s.kind) ?? []
+    expect(kinds("T-busy")).toContain("many-tools")
+    const failed = ranked.find((r) => r.task.taskId.startsWith("T-fail"))
+    expect(failed?.signals.map((s) => s.kind)).toContain("recurring")
   })
 })
 
