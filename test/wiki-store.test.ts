@@ -94,6 +94,18 @@ describe("WikiStore", () => {
       expect(meta.sources).toEqual([])
     })
 
+    // Titles quoting an error message are written unescaped; 11 live
+    // articles have such a related item.
+    it("reads quoted list items that contain quotes", () => {
+      const quoted = 'Hasanah V1 MR !4 Carbon "12 M" Fix Verified (2026-04-26)'
+      const both = 'Signup 500 "fetch failed": Env Clean, Judged a Blip'
+      store.writeArticle("events/quoted.md", {
+        title: "Quoted", related: [quoted, both, "Hasanah V1"], tags: [], owner: "atlas",
+        access: "public", created: "2026-04-26", lastUpdated: "2026-04-26", sources: [],
+      }, "body", "atlas")
+      expect(store.readArticle("events/quoted.md")!.meta.related).toEqual([quoted, both, "Hasanah V1"])
+    })
+
     it("enforces write permissions", () => {
       const meta = {
         title: "Private",

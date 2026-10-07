@@ -331,7 +331,9 @@ export class WikiStore {
       if (!m) return []
       // Quoted items may hold commas — related titles often do, e.g.
       // "Reviewed: NOT READY, Then READY". Unquoted legacy items may not.
-      return [...m[1].matchAll(/\s*(?:"([^"]*)"|([^,]+))/g)]
+      // Items are written unescaped, so a quoted item may also hold quotes
+      // ("Carbon "12 M" Fix"): it ends only at a quote before a comma or the end.
+      return [...m[1].matchAll(/\s*(?:"(.*?)"(?=\s*(?:,|$))|([^,]+))/g)]
         .map(x => (x[1] ?? x[2]).trim())
         .filter(Boolean)
     }
