@@ -238,6 +238,29 @@ try {
       await click('[data-act="decide"][data-k="1"][data-v="yes"]')
       await wait(".fx-sheet[open]"); await sleep(200); await shot("activity-choice-sheet"); await key("Escape")
     },
+    // --- Followed workflows (#796) ---
+    "activity-workflows": async () => {
+      await open("/app"); await tab("activity", "#panel-activity .fx-card")
+      await ev("[...document.querySelectorAll('#panel-activity .fx-sub')].find((h) => h.textContent.startsWith('Workflows')).scrollIntoView()"); await sleep(200)
+      await shot("activity-workflows")
+    },
+    "activity-workflow-answer": async () => {
+      await open("/app"); await tab("activity", "#panel-activity .fx-card")
+      await click('[data-act="wf"][data-v="reply"]'); await wait(".fx-sheet[open]")
+      await type("#fx-input", "The password is in the shared vault under blog server."); await ev("document.activeElement.blur()")
+      await sleep(200); await shot("activity-workflow-answer"); await key("Escape")
+    },
+    // The desktop widget, at the size of its small window. Saved with the
+    // Workflows pictures, not the phone's.
+    "workflow-widget": async () => {
+      await cdp("Emulation.setDeviceMetricsOverride", { width: 360, height: 560, deviceScaleFactor: 2, mobile: false })
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: false })
+      await open("/workflows/widget"); await wait("#wg-list .wg__row")
+      mkdirSync(resolve(out, "../workflows"), { recursive: true })
+      await shot("../workflows/widget")
+      await cdp("Emulation.setDeviceMetricsOverride", { width: 390, height: 844, deviceScaleFactor: 2, mobile: true })
+      await cdp("Emulation.setTouchEmulationEnabled", { enabled: true })
+    },
     // --- Alerts ---
     "alerts": async () => { await scene({ push: "off" }); await open("/app"); await alerts("#al-btn:not([hidden])"); await shot("alerts") },
     "alerts-chat-finish": async () => {

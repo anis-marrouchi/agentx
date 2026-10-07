@@ -3,7 +3,7 @@
 Two tabs of the [phone app](./mobile-app.md) let you watch and manage every computer that runs AgentX from your phone:
 
 - **Fleet** shows each computer (a *node*): whether it is online, its agents, and its schedules (the jobs that run at set times, also called *crons*). You can reload a computer's settings, restart it, and turn schedules on or off.
-- **Activity** shows the decisions waiting for you and the tasks agents are working on right now. You can answer a decision, stop a task, or send a follow-up message to it.
+- **Activity** shows the decisions waiting for you, the [workflows being followed](../jobs/progress-widget.md#on-your-phone) and the tasks agents are working on right now. You can answer a decision, stop a task, or send a follow-up message to it.
 
 The app shows every computer the dashboard can see, including those it finds through your *mesh* (the private link between your AgentX computers). Both tabs refresh on their own every 15 seconds while they are open.
 

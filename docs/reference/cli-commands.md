@@ -1991,6 +1991,20 @@ Show or change how follow-up workflows run: reminders, approvals, which agents m
 | `--agent <id>` | — | With `--agent-enabled`: the agent to turn it on or off for. |
 | `--agent-enabled <on\|off>` | — | Turn follow-up workflows on or off for `--agent`. |
 
+### `agentx workflow widget`
+
+Open the floating progress widget in the browser: running follow-up workflows, live, with a way to answer a step that waits on you. With a settings flag, it saves the change instead of opening the browser. See [Follow workflows in a floating window](../jobs/progress-widget.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--enabled <on\|off>` | — | Turn the widget on or off, on the computer and in the phone app. |
+| `--position <corner>` | — | Where its small window opens: `top-right`, `top-left`, `bottom-right` or `bottom-left`. |
+| `--tags <list>` | — | Only runs with one of these tags, comma separated. Empty: all. |
+| `--size <WxH>` | — | Window size in pixels, e.g. `360x420`. |
+| `--refresh-seconds <n>` | — | How often it reads again when no live update arrives (3 to 600). |
+| `--tag <kind:name>` | — | Open it showing only this tag, e.g. `client:example-co`. |
+| `--no-open` | — | Print the address instead of opening the browser. |
+
 ## webhook (advanced)
 
 `agentx webhook`: Manage webhook entries (gitlab, github, sentry, stripe, vercel, custom). **Advanced.**

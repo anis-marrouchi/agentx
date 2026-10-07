@@ -22,6 +22,7 @@ Workflows that agents started for your requests are listed under **Follow-ups**,
 1. **Browser:** in the Workflows tab, look at **Follow-ups**. Groups with a blocked run are open.
 2. **Browser:** click a group's name to open it. Each run shows the step it is on, what it waits on and since when.
 3. **Browser:** click a run to open its steps.
+4. **Browser:** to keep them in view while you work elsewhere, click **Floating view** next to **Follow-ups**. See [Follow workflows in a floating window](../jobs/progress-widget.md).
 
 See [Let a workflow follow a request](../jobs/follow-up-workflows.md).
 

@@ -145,6 +145,8 @@ A blocked step stays where it is until the agent reports it done or you stop the
 
 The dashboard collects runs from every computer it is connected to. If one cannot be reached, the heading says how many.
 
+**In a floating window:** run `agentx workflow widget` for a small window that stays above your other windows, updates by itself and lets you answer a step that waits on you. The phone app shows the same list on its Activity tab. See [Follow workflows in a floating window](./progress-widget.md).
+
 **Agents** see the same list with their `agentx_workflow` tool, so you can also ask an agent "what is still being followed for Example Co?".
 
 ## Change the settings

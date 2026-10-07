@@ -108,6 +108,13 @@ The workflow engine. See [Workflows](/dashboard/workflows).
 | `workflows.followUp.stallMinutes` | number | `30` | Minutes without progress before an agent step gets a reminder (a nudge). At most 10080 (7 days). |
 | `workflows.followUp.maxNudges` | integer (0–20) | `2` | Nudges before the step counts as blocked and you are told. |
 | `workflows.followUp.approval` | `"step"` \| `"start"` | `"step"` | When you approve messages to people: each before it is sent, or all at once when a run starts. A workflow's own `approval` wins. |
+| `workflows.widget` | object | `{}` | The floating progress widget, on the computer and in the phone app. See [Follow workflows in a floating window](/jobs/progress-widget). |
+| `workflows.widget.enabled` | boolean | `true` | Show followed runs in the widget and on the phone app's Activity tab, and accept answers from them. |
+| `workflows.widget.tags` | string[] | `[]` | Only runs with one of these tags, e.g. `["client:example-co"]`. Empty: every followed run. |
+| `workflows.widget.position` | `"top-right"` \| `"top-left"` \| `"bottom-right"` \| `"bottom-left"` | `"top-right"` | Where the small window opens in browsers that cannot keep it on top. |
+| `workflows.widget.width` | integer (240–1200) | `360` | Width of the small window, in pixels. |
+| `workflows.widget.height` | integer (160–1600) | `420` | Height of the small window, in pixels. |
+| `workflows.widget.refreshSeconds` | integer (3–600) | `10` | How often the widget reads again when no live update arrives. |
 | `workflows.editor` | `"disabled"` \| `"readonly"` \| `"edit"` | `"edit"` | The dashboard's workflow editor: hidden, view only, or editable. |
 
 ## `procedures`
