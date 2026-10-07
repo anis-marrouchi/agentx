@@ -1097,6 +1097,8 @@ Compile unabsorbed entries into typed per-agent wiki articles.
 
 When a run succeeds, every entry it read is recorded in `agents/<id>/_absorbed.json` under the wiki directory, including entries no article cites, so the next run moves on to new entries. When a run fails, nothing is recorded and the same entries are offered again.
 
+Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
+
 Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (absorb uses Sonnet). They look for it on your PATH and also in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, so they work from the daemon and from the `agentx_wiki_query` tool without a login shell's PATH.
 
 | Flag | Default | What it does |
@@ -1406,13 +1408,25 @@ Populate graphPath on existing articles by looking up source-entry classificatio
 
 ### `agentx wiki sync`
 
-Pull raw entries from mesh peers into local wiki.
+Pull raw entries from mesh peers into local wiki. With `--articles`, copy the articles of the agents that run on each peer instead, so this node can query them.
+
+Copied articles are read-only on this node: `wiki absorb` skips the agent, and `wiki patch`, `wiki edit`, `wiki interview` and `wiki quiz` refuse to change it. Change them on the node that runs the agent, then sync again. Agents listed in this node's `agentx.json` are never copied over. An article whose last-updated date matches the local copy is not downloaded again.
+
+The command sends the peer's token from `mesh.peers` in `agentx.json`. Peers ask for it on their `/wiki/*` routes; a request from the same machine needs no token.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
 | `--peer <url>` | — | Sync from a specific peer URL (e.g., `http://peer.example.com:19900`). |
+| `--articles` | — | Copy the articles of agents this node does not run, instead of raw entries. |
 | `--dry-run` | — | Show what would be synced without writing. |
+
+To copy a peer's articles:
+
+1. In a terminal on this node, go to the folder that holds `agentx.json`.
+2. Preview the copy: `agentx wiki sync --articles --dry-run`. Each peer agent is listed with how many articles it would copy.
+3. Run it: `agentx wiki sync --articles`.
+4. Query a copied agent: `agentx wiki query "your question" --agent <peer-agent-id>`.
 
 ### `agentx wiki compare`
 

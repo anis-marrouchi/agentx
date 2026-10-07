@@ -4,6 +4,7 @@ import chalk from "chalk"
 import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
+import type { WikiPeer } from "@/wiki/article-sync"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
@@ -14,6 +15,42 @@ import { writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync
 
 function getHub(dir?: string, mode?: WikiMode): WikiHub {
   return new WikiHub(wikiDir(dir), undefined, mode || "graph")
+}
+
+/**
+ * Mesh peers for the wiki commands, each with the token its /wiki/* routes
+ * ask for. A --peer URL takes the token of the configured peer at that URL.
+ */
+async function wikiPeers(urls?: string[]): Promise<WikiPeer[]> {
+  let configured: WikiPeer[] = []
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    configured = (loadDaemonConfig().mesh?.peers || []).map((p) => ({ url: p.url, token: p.token }))
+  } catch { /* no config: --peer URLs go without a token */ }
+  if (!urls?.length) return configured
+  const strip = (u: string) => u.replace(/\/$/, "")
+  return urls.map((url) => ({ url, token: configured.find((p) => strip(p.url) === strip(url))?.token }))
+}
+
+/** Agents this node runs, from its daemon config; null when there is none. */
+async function localAgentIds(): Promise<Set<string> | null> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    const ids = Object.keys(loadDaemonConfig().agents || {})
+    return ids.length ? new Set(ids) : null
+  } catch {
+    return null
+  }
+}
+
+/** True, with a message, when the agent's articles are a read-only copy
+ *  from a peer: the next sync would overwrite any edit made here. */
+function refuseCopiedAgent(hub: WikiHub, agentId: string): boolean {
+  const from = hub.syncedFrom(agentId)
+  if (!from) return false
+  console.log(chalk.yellow(`  ${agentId}'s articles are copied from ${from.node} and read-only here; change them on ${from.node}.`))
+  process.exitCode = 1
+  return true
 }
 
 /** The wiki root, resolved the same way everywhere that needs it. */
@@ -143,7 +180,15 @@ wiki
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     const hub = getHub(opts.dir, mode)
-    const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    // Each node absorbs its own agents. A peer's agents are absorbed on the
+    // peer and reach this node through `wiki sync --articles`.
+    const local = await localAgentIds()
+    const agents = (opts.agent ? [opts.agent] : hub.listAgents().filter((id) => !local || local.has(id)))
+      .filter((id) => {
+        const from = hub.syncedFrom(id)
+        if (from) console.log(`  ${chalk.cyan(id)}: ${chalk.dim(`copied from ${from.node}, read-only here; absorb it there`)}`)
+        return !from
+      })
     const maxEntries = parseInt(opts.max)
 
     // Build a lookup so each absorbed article can carry the intent path
@@ -907,6 +952,7 @@ wiki
       return
     }
     const hub = getHub(opts.dir)
+    if (refuseCopiedAgent(hub, opts.agent)) return
     let store
     try { store = hub.getAgentWiki(opts.agent) } catch (e: any) {
       console.log(chalk.red(`  can't open wiki for agent "${opts.agent}": ${e.message}`))
@@ -1263,6 +1309,7 @@ wiki
       return
     }
     const hub = getHub(opts.dir)
+    if (opts.commit !== false && refuseCopiedAgent(hub, opts.agent)) return
     let store
     try { store = hub.getAgentWiki(opts.agent) } catch (e: any) {
       console.log(chalk.red(`  can't open wiki for agent "${opts.agent}": ${e.message}`))
@@ -1463,6 +1510,7 @@ wiki
   .option("--editor <cmd>", "override $EDITOR for this run")
   .action((agentId, titleOrPath, opts) => {
     const hub = getHub(opts.dir)
+    if (refuseCopiedAgent(hub, agentId)) return
     let store
     try { store = hub.getAgentWiki(agentId) } catch (e: any) {
       console.log(chalk.red(`  can't open wiki for agent "${agentId}": ${e.message}`))
@@ -1532,6 +1580,7 @@ wiki
     const readline = await import("node:readline/promises")
     const { randomUUID } = await import("node:crypto")
     const hub = getHub(opts.dir)
+    if (refuseCopiedAgent(hub, agentId)) return
     let store
     try { store = hub.getAgentWiki(agentId) } catch (e: any) {
       console.log(chalk.red(`  can't open wiki for agent "${agentId}": ${e.message}`))
@@ -2162,14 +2211,8 @@ wiki
     const port = parseInt(opts.port)
 
     // Auto-discover peers from daemon config if not specified
-    let peerUrls: string[] = opts.peer || []
-    if (peerUrls.length === 0) {
-      try {
-        const { loadDaemonConfig } = await import("@/daemon/config")
-        const config = loadDaemonConfig()
-        peerUrls = (config.mesh?.peers || []).map((p: any) => p.url)
-      } catch { /* no config */ }
-    }
+    const peers = await wikiPeers(opts.peer)
+    const peerUrls = peers.map((p) => p.url)
 
     console.log()
     console.log(chalk.bold("  AgentX Wiki Server"))
@@ -2187,7 +2230,7 @@ wiki
     console.log(chalk.dim("  Press Ctrl+C to stop"))
     console.log()
 
-    startWikiServer(dir, port, opts.agent, peerUrls, opts.mode as WikiMode)
+    startWikiServer(dir, port, opts.agent, peers, opts.mode as WikiMode)
   })
 
 // agentx wiki query <question> — Phase 3 agentic query.
@@ -2495,34 +2538,52 @@ wiki
 // agentx wiki sync — pull entries from mesh peers
 wiki
   .command("sync")
-  .description("pull raw entries from mesh peers into local wiki")
+  .description("pull raw entries from mesh peers into local wiki, or with --articles copy their agents' articles (read-only)")
   .option("--dir <path>", "wiki directory")
   .option("--peer <url>", "sync from a specific peer URL (e.g., http://100.64.0.11:19900)")
+  .option("--articles", "copy the articles of agents this node does not run, instead of raw entries")
   .option("--dry-run", "show what would be synced without writing")
   .action(async (opts) => {
     const hub = getHub(opts.dir)
     const shared = hub.getSharedStore()
 
     // Discover peers: from --peer flag, or from local daemon config
-    let peerUrls: string[] = []
-
-    if (opts.peer) {
-      peerUrls = [opts.peer]
-    } else {
-      // Try to read mesh peers from local daemon
-      try {
-        const { loadDaemonConfig } = await import("@/daemon/config")
-        const config = loadDaemonConfig()
-        peerUrls = (config.mesh?.peers || []).map((p: any) => p.url)
-      } catch {
-        console.log(chalk.red("  No --peer specified and no daemon config found"))
-        console.log(chalk.dim("  Usage: agentx wiki sync --peer http://100.64.0.11:19900"))
-        return
-      }
+    const peers = await wikiPeers(opts.peer ? [opts.peer] : undefined)
+    if (peers.length === 0) {
+      console.log(chalk.dim("  No mesh peers configured"))
+      console.log(chalk.dim("  Usage: agentx wiki sync --peer http://100.64.0.11:19900"))
+      return
     }
 
-    if (peerUrls.length === 0) {
-      console.log(chalk.dim("  No mesh peers configured"))
+    if (opts.articles) {
+      const local = await localAgentIds()
+      if (!local) {
+        // Without the list, a peer's copy could overwrite this node's own agents.
+        console.log(chalk.red("  No agents in this node's daemon config; run it where agentx.json is."))
+        process.exitCode = 1
+        return
+      }
+      const { syncPeerArticles } = await import("@/wiki/article-sync")
+      for (const peer of peers) {
+        console.log()
+        console.log(chalk.bold(`  Copying articles from ${peer.url}...`))
+        try {
+          const result = await syncPeerArticles({ hub, peer, localAgents: local, dryRun: opts.dryRun })
+          console.log(chalk.dim(`    Node: ${result.node}`))
+          for (const a of result.agents) {
+            if (a.skipped === "local") { console.log(chalk.dim(`      ${a.agentId}: runs here, not copied`)); continue }
+            if (a.skipped) { console.log(chalk.yellow(`      ${a.agentId}: skipped (${a.skipped})`)); continue }
+            const parts = [`${a.copied} ${opts.dryRun ? "to copy" : "copied"}`, `${a.unchanged} unchanged`]
+            if (a.rejected) parts.push(`${a.rejected} refused (unsafe path)`)
+            console.log(`      ${chalk.cyan(a.agentId)}: ${parts.join(", ")}${a.error ? chalk.red(` — stopped: ${a.error}`) : ""}`)
+            if (a.error) process.exitCode = 1
+          }
+        } catch (e: any) {
+          console.log(chalk.red(`    ${e.cause?.code === "ECONNREFUSED" ? "Connection refused" : e.message}`))
+          process.exitCode = 1
+        }
+      }
+      console.log()
       return
     }
 
@@ -2531,13 +2592,14 @@ wiki
 
     let totalSynced = 0
 
-    for (const peerUrl of peerUrls) {
+    for (const { url: peerUrl, token } of peers) {
       console.log()
       console.log(chalk.bold(`  Syncing from ${peerUrl}...`))
+      const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
 
       try {
         // Fetch entries from peer
-        const res = await fetch(`${peerUrl}/wiki/entries`, { signal: AbortSignal.timeout(120000) })
+        const res = await fetch(`${peerUrl}/wiki/entries`, { headers, signal: AbortSignal.timeout(120000) })
         if (!res.ok) {
           console.log(chalk.red(`    HTTP ${res.status}`))
           continue
@@ -2577,7 +2639,7 @@ wiki
 
         // Also show remote agents summary
         try {
-          const agentsRes = await fetch(`${peerUrl}/wiki/agents`, { signal: AbortSignal.timeout(5000) })
+          const agentsRes = await fetch(`${peerUrl}/wiki/agents`, { headers, signal: AbortSignal.timeout(5000) })
           if (agentsRes.ok) {
             const agentsData = await agentsRes.json() as any
             for (const agent of (agentsData.agents || [])) {

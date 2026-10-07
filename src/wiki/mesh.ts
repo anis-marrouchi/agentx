@@ -1,17 +1,19 @@
 import type { AgentWikiSummary } from "./hub"
 import type { WikiArticle } from "./types"
+import type { WikiPeer } from "./article-sync"
 
 /**
  * Fetches wiki data from mesh peers over HTTP.
- * Each peer exposes /wiki/agents, /wiki/entries, /wiki/articles.
+ * Each peer exposes /wiki/agents, /wiki/entries, /wiki/articles, behind
+ * its mesh token.
  */
 export class MeshWikiClient {
-  private peers: Array<{ url: string; nodeId?: string }>
+  private peers: Array<WikiPeer & { nodeId?: string }>
   private cache: Map<string, { data: any; ts: number }> = new Map()
   private ttl = 30_000 // 30s cache
 
-  constructor(peerUrls: string[]) {
-    this.peers = peerUrls.map(url => ({ url: url.replace(/\/$/, "") }))
+  constructor(peers: WikiPeer[]) {
+    this.peers = peers.map(p => ({ ...p, url: p.url.replace(/\/$/, "") }))
   }
 
   /**
@@ -80,7 +82,11 @@ export class MeshWikiClient {
     const cached = this.cache.get(url)
     if (cached && Date.now() - cached.ts < this.ttl) return cached.data
 
-    const res = await fetch(url, { signal: AbortSignal.timeout(5000) })
+    const token = this.peers.find(p => url.startsWith(`${p.url}/`))?.token
+    const res = await fetch(url, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      signal: AbortSignal.timeout(5000),
+    })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const data = await res.json()
     this.cache.set(url, { data, ts: Date.now() })
