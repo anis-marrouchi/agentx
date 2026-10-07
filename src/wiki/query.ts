@@ -13,7 +13,7 @@ import {
 import { claudeCliEnv } from "@/utils/workspace-env"
 import { resolve } from "path"
 import { execSync } from "child_process"
-import type { WikiArticle } from "./types"
+import type { WikiArticle, WikiIndex } from "./types"
 import type { WikiStore } from "./store"
 
 /**
@@ -105,7 +105,7 @@ export async function agenticQuery(
   let candidates: Array<{ title: string; path: string }> = []
   let selectorOutput = ""
   try {
-    const viaSeat = await selectCandidatesViaSeat(question, store, requesterId, maxCandidates, messagePath, graphWeight)
+    const viaSeat = await selectCandidatesViaSeat(question, catalogPool(store), requesterId, maxCandidates, messagePath, graphWeight)
     if (viaSeat) {
       candidates = viaSeat
       selectorOutput = `[wiki-rerank seat] ${viaSeat.map((c) => c.title).join(" | ")}`
@@ -156,6 +156,69 @@ export async function agenticQuery(
     walked: walked.map(w => ({ title: w.meta.title, path: w.path, type: w.meta.type, hop: (w as any).hop ?? 0 })),
     status: "ok",
     trace: { selectorMs, synthesisMs, selectorOutput },
+  }
+}
+
+export interface RetrieveOptions {
+  /** Articles picked before the walk. Default 3. */
+  maxCandidates?: number
+  /** Wikilink hops from the picked articles. Default 1. */
+  maxHops?: number
+  /** Hard cap on articles returned. Default 6. */
+  maxArticles?: number
+  messagePath?: string[]
+  graphWeight?: number
+  /** The catalog to pick from. Pass it when retrieving many times in a row,
+   *  so the index is not rebuilt for every call. */
+  pool?: CatalogEntry[]
+  /** Seat telemetry label. */
+  stage?: string
+}
+
+/**
+ * The retrieval half of agenticQuery, without the synthesis call: BM25
+ * shortlist, rerank seat, then the `related` wikilink walk. Returns the
+ * walked articles, hop 0 first.
+ *
+ * When the seat is off or fails, the BM25 order decides on its own, and
+ * only articles the text matched are picked: an article chosen for
+ * nothing but its catalog position is noise here, not a candidate. There
+ * is no CLI fallback, so this never spends an LLM call.
+ */
+export async function retrieveArticles(
+  question: string,
+  store: WikiStore,
+  requesterId: string | undefined,
+  opts: RetrieveOptions = {},
+): Promise<Array<WikiArticle & { hop: number }>> {
+  const maxCandidates = opts.maxCandidates ?? 3
+  const graphWeight = opts.graphWeight ?? DEFAULT_GRAPH_WEIGHT
+  const messagePath = opts.messagePath?.length ? opts.messagePath : undefined
+  const pool = opts.pool ?? catalogPool(store)
+  if (pool.length === 0 || !question.trim()) return []
+
+  let candidates = await selectCandidatesViaSeat(
+    question, pool, requesterId, maxCandidates, messagePath, graphWeight, opts.stage ?? "retrieve",
+  )
+  if (!candidates) {
+    const matched = new Set(scoreAll(question, buildIndex(pool.map(catalogDoc))).map((r) => r.docIndex))
+    candidates = rankCatalogPool(question, pool, messagePath, graphWeight)
+      .filter((i) => matched.has(i))
+      .slice(0, maxCandidates)
+      .map((i) => ({ title: pool[i].title, path: pool[i].path }))
+  }
+  if (candidates.length === 0) return []
+  return walkSubgraph(candidates, store, requesterId, opts.maxHops ?? 1, opts.maxArticles ?? 6)
+}
+
+export type CatalogEntry = WikiIndex["articles"][number]
+
+/** The catalog retrieval picks from: every indexed article but old versions. */
+export function catalogPool(store: WikiStore): CatalogEntry[] {
+  try {
+    return (store.rebuildIndex().articles ?? []).filter((a) => a.path && !a.path.includes("/_versions/"))
+  } catch {
+    return []
   }
 }
 
@@ -240,15 +303,14 @@ function walkSubgraph(
  */
 async function selectCandidatesViaSeat(
   question: string,
-  store: WikiStore,
+  pool: CatalogEntry[],
   requesterId: string | undefined,
   maxCandidates: number,
   messagePath?: string[],
   graphWeight: number = DEFAULT_GRAPH_WEIGHT,
+  stage = "catalog-selector",
 ): Promise<Array<{ title: string; path: string }> | null> {
   try {
-    const index = store.rebuildIndex()
-    const pool = (index.articles ?? []).filter((a) => a.path && !a.path.includes("/_versions/"))
     if (pool.length < 2) return null
 
     const shortlist = rankCatalogPool(question, pool, messagePath, graphWeight).slice(0, DEFAULT_SHORTLIST)
@@ -270,7 +332,7 @@ async function selectCandidatesViaSeat(
       WIKI_RERANK_SEAT,
       rerankState({ query: question, candidates, excerptChars: 300 }),
       rerankQuestions(candidates),
-      { features: { agent: requesterId ?? "unknown", stage: "catalog-selector" } },
+      { features: { agent: requesterId ?? "unknown", stage } },
     )
     if (!result || result.mode !== "active") return null
 
@@ -313,10 +375,7 @@ export function rankCatalogPool(
   messagePath?: string[],
   graphWeight: number = DEFAULT_GRAPH_WEIGHT,
 ): number[] {
-  const docs = pool.map((a) =>
-    [a.title, (a.tags ?? []).join(" "), (a.related ?? []).join(" ")].join(" "),
-  )
-  const bm25 = scoreAll(question, buildIndex(docs))
+  const bm25 = scoreAll(question, buildIndex(pool.map(catalogDoc)))
   const maxBm25 = bm25.reduce((m, r) => Math.max(m, r.score), 0)
   const text = new Map(bm25.map((r) => [r.docIndex, maxBm25 > 0 ? r.score / maxBm25 : 0]))
   const useGraph = !!messagePath?.length
@@ -335,6 +394,11 @@ export function rankCatalogPool(
   const ranked = [...matched, ...branchOnly].map((c) => c.i)
   for (let i = 0; i < pool.length; i++) if (!ranked.includes(i)) ranked.push(i)
   return ranked
+}
+
+/** What BM25 sees of a catalog entry: the catalog carries no body. */
+function catalogDoc(a: { title: string; tags?: string[]; related?: string[] }): string {
+  return [a.title, (a.tags ?? []).join(" "), (a.related ?? []).join(" ")].join(" ")
 }
 
 function buildSelectorPrompt(question: string, catalog: string, maxCandidates: number, messagePath?: string[]): string {
