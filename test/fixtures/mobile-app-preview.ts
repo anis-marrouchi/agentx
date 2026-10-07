@@ -12,6 +12,8 @@ import { createServer } from "node:http"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { renderAppLockedPage, renderAppPage } from "../../src/daemon/ui/pages/app"
+import { renderWorkflowWidgetPage } from "../../src/daemon/ui/pages/workflow-widget"
+import { DEFAULT_WIDGET_SETTINGS } from "../../src/workflows/widget"
 
 const now = Date.now(),
   ts = new Date(now).toISOString()
@@ -128,6 +130,18 @@ const defaults = {
   slow: false,
 }
 let scene = { ...defaults }
+
+// Followed workflows (#796): the rows the phone's Activity tab and the
+// desktop progress widget (/workflows/widget, served here too) both show.
+const workflows = {
+  ts, enabled: true, settings: DEFAULT_WIDGET_SETTINGS, unreachable: [],
+  rows: [
+    { runId: "run-1", workflowId: "release", node: "local", nodeName: "Studio", title: "Website release 2.4", step: "approve_release", owner: "you", state: "waiting-on-you", waitingOn: "your answer", since: iso(240000), tags: ["client:example-shop"], answer: { kind: "card", key: "card:wf-1" } },
+    { runId: "run-2", workflowId: "deploy", node: "local", nodeName: "Studio", title: "Move the blog to the new server", step: "copy_files", owner: "helper", state: "blocked", waitingOn: "blocked: the new server asks for a password I do not have", since: iso(900000), tags: ["project:blog"], answer: { kind: "reply", agentId: "helper" } },
+    { runId: "run-3", workflowId: "newsletter", node: "local", nodeName: "Studio", title: "Spring newsletter", step: "client_reply", owner: "client-1", state: "waiting", waitingOn: "a reply on telegram (client-1) until 2026-01-09 17:00 UTC, 1 reminder(s) sent", since: iso(3600000), tags: ["client:example-shop"], answer: null },
+    { runId: "run-4", workflowId: "photos", node: "local", nodeName: "Studio", title: "Resize the shop photos", step: "resize", owner: "support", state: "running", waitingOn: "running resize", since: iso(60000), tags: [], answer: null },
+  ],
+}
 // Keep watching on the camera sheet: when it stops by itself.
 let streamUntil = 0
 
@@ -175,6 +189,9 @@ function api(path: string): any {
           draft: "Build: {choice}\n\n1. Deploy script [script, high]\n   One script; CI runs it dry.\n2. Watchdog [watchdog, medium]\n3. Guard rule [guard-rule, medium]",
         },
       ] }] }
+    case "/api/app/workflows":
+    case "/api/workflows/widget":
+      return workflows
     case "/api/app/push":
       return scene.push === "na"
         ? { available: false, reason: "Notifications are off in this demo." }
@@ -253,6 +270,12 @@ createServer(async (req, res) => {
   if (path === "/app") {
     res.setHeader("Content-Type", "text/html")
     res.end(renderAppPage())
+    return
+  }
+  // The desktop progress widget, on the dashboard in a real install.
+  if (path === "/workflows/widget") {
+    res.setHeader("Content-Type", "text/html")
+    res.end(renderWorkflowWidgetPage(DEFAULT_WIDGET_SETTINGS))
     return
   }
   // The real daemon serves this page at /app with a 401; here it has its

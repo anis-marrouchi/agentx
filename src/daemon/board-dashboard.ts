@@ -47,6 +47,9 @@ import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
+import { DEFAULT_WIDGET_SETTINGS, type NodeRun } from "@/workflows/widget"
+import { handleDashboardWidget, type WidgetApiDeps } from "./workflow-widget-api"
+import { renderWorkflowWidgetPage } from "./ui/pages/workflow-widget"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import { dashboardIcon } from "./app-icon"
@@ -180,6 +183,7 @@ const DASHBOARD_PAGES = new Set([
   "/glossary",
   "/workflows",
   "/workflows/editor",
+  "/workflows/widget",
   "/procedures",
   "/processes",
   "/graph",
@@ -243,7 +247,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), assetLinks: () => assetLinks(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), workflows: workflowWidgetDeps(ctx), assetLinks: () => assetLinks(ctx.config) })) return
 
   // The AX symbol as favicon and touch icon. Public: browsers fetch icons
   // without credentials, and they hold no data.
@@ -462,6 +466,13 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   if (method === "GET" && path === "/workflows") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" })
     res.end(renderWorkflowsPage({ peers: buildTopbarPeers(ctx.config) }))
+    return
+  }
+  // The floating progress widget (#796): a small page that follows running
+  // workflows and floats on top of other windows where the browser allows.
+  if (method === "GET" && path === "/workflows/widget") {
+    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" })
+    res.end(renderWorkflowWidgetPage({ ...DEFAULT_WIDGET_SETTINGS, ...ctx.config.workflows.widget }))
     return
   }
   if (method === "GET" && path === "/procedures") {
@@ -1155,28 +1166,14 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // Follow-up runs still going, on this node and its peers, grouped by
   // what they concern (#788). Unreachable peers are skipped and named.
   if (method === "GET" && path === "/api/workflows/follow-ups") {
-    const targets: Array<{ url: string; token?: string }> = [
-      { url: ctx.config.dashboard.daemonUrl, token: ctx.config.dashboard.token },
-      ...(ctx.config.dashboard.daemons || []).map((d) => ({ url: d.url, token: d.token })),
-    ]
-    const unreachable: string[] = []
-    const remote = await Promise.all(targets.map(async (t) => {
-      const headers: Record<string, string> = {}
-      if (t.token) headers["Authorization"] = `Bearer ${t.token}`
-      try {
-        const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs?limit=500&summary=1`, { headers, signal: AbortSignal.timeout(5000) })
-        if (!r.ok) { unreachable.push(t.url); return [] }
-        const data = await r.json() as { runs?: WorkflowRun[] }
-        return Array.isArray(data.runs) ? data.runs : []
-      } catch { unreachable.push(t.url); return [] }
-    }))
-    const byId = new Map<string, WorkflowRun>()
-    for (const r of ctx.workflowRuns.list({ limit: 500 })) byId.set(r.id, r)
-    for (const list of remote) for (const r of list) byId.set(r.id, { ...r, history: r.history ?? [], pending: r.pending ?? [] })
+    const { runs, unreachable } = await collectNodeRuns(ctx)
     const titles = new Map(ctx.workflowStore.list().map((w) => [w.id, w.title] as const))
-    sendJson(res, 200, { groups: progressGroups([...byId.values()], (id) => titles.get(id)), unreachable })
+    sendJson(res, 200, { groups: progressGroups(runs.map((r) => r.run), (id) => titles.get(id)), unreachable })
     return
   }
+
+  // The floating progress widget's rows and answers (#796).
+  if (await handleDashboardWidget(req, res, path, method, workflowWidgetDeps(ctx))) return
 
   if (method === "GET" && path === "/api/workflows/runs") {
     try {
@@ -2365,6 +2362,55 @@ function appPlacesDeps(config: DaemonConfig): PlacesDeps {
     ? `this computer relays notifications to ${push.relayTo}; place reminders work on a phone paired with ${push.relayTo}.`
     : appPushDeps(config).reason
   return placesDeps(config, process.cwd(), fire, reason)
+}
+
+/** Every workflow run the dashboard can read, with the daemon it lives on:
+ *  this node's store, then each daemon's summary list (a run both list is
+ *  the daemon's copy). Unreachable daemons are skipped and named. */
+async function collectNodeRuns(ctx: Pick<Ctx, "config" | "workflowRuns">): Promise<{ runs: NodeRun[]; unreachable: string[] }> {
+  const primary = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const targets: Array<{ url: string; name: string; token?: string }> = [
+    { url: primary, name: ctx.config.node?.name || "this computer", token: ctx.config.dashboard.token },
+    ...(ctx.config.dashboard.daemons || []).map((d) => ({ url: d.url.replace(/\/+$/, ""), name: d.name, token: d.token })),
+  ]
+  const unreachable: string[] = []
+  const remote = await Promise.all(targets.map(async (t) => {
+    const headers: Record<string, string> = {}
+    if (t.token) headers["Authorization"] = `Bearer ${t.token}`
+    try {
+      const r = await fetch(`${t.url}/api/workflows/runs?limit=500&summary=1`, { headers, signal: AbortSignal.timeout(5000) })
+      if (!r.ok) { unreachable.push(t.url); return [] }
+      const data = await r.json() as { runs?: WorkflowRun[] }
+      return (Array.isArray(data.runs) ? data.runs : []).map((run): NodeRun => ({ node: t.url, nodeName: t.name, run: { ...run, history: run.history ?? [], pending: run.pending ?? [] } }))
+    } catch { unreachable.push(t.url); return [] }
+  }))
+  const byId = new Map<string, NodeRun>()
+  for (const run of ctx.workflowRuns.list({ limit: 500 })) byId.set(run.id, { node: primary, nodeName: targets[0].name, run })
+  for (const list of remote) for (const r of list) byId.set(r.run.id, r)
+  return { runs: [...byId.values()], unreachable }
+}
+
+/** What the progress widget and the phone app's workflow rows read and
+ *  answer through (workflow-widget-api.ts). Built per request, so a
+ *  config reload is picked up. */
+function workflowWidgetDeps(ctx: Pick<Ctx, "config" | "workflowRuns" | "workflowStore">): WidgetApiDeps {
+  const fleet = appFleetDeps(ctx.config)
+  const parse = (text: string) => { try { return JSON.parse(text) } catch { return { error: text.slice(0, 200) } } }
+  return {
+    settings: () => ({ ...DEFAULT_WIDGET_SETTINGS, ...ctx.config.workflows.widget }),
+    nodeRuns: () => collectNodeRuns(ctx),
+    title: (id) => ctx.workflowStore.get(id)?.title,
+    stepAgent: (workflowId, nodeId) => {
+      const node = ctx.workflowStore.get(workflowId)?.nodes.find((n) => n.id === nodeId)
+      const agentId = node?.type === "agent" ? (node.config as { agentId?: unknown }).agentId : undefined
+      return typeof agentId === "string" && agentId ? agentId : undefined
+    },
+    decide: (node, key, action, by) => fleet.decide(node, key, action, by),
+    async reply(node, runId, text, by) {
+      const r = await postToNode(ctx.config, node, `/workflow-runs/${encodeURIComponent(runId)}/answer`, { text, by })
+      return { status: r.status, body: parse(r.text) }
+    },
+  }
 }
 
 /** What the phone app's Fleet and Activity tabs read and act through

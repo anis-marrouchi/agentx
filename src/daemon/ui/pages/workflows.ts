@@ -42,6 +42,7 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
       <header>
         <h3 id="wf-followups-title">Follow-ups</h3>
         <span class="hint" id="wf-followups-note"></span>
+        <a class="hint" id="wf-followups-widget" href="/workflows/widget" target="agentx-workflow-widget" rel="noopener" title="A small window that follows these runs live and can stay on top">Floating view</a>
       </header>
       <p class="hint">Workflows agents started for your requests, grouped by who or what they concern. Open a group to see which step each one is on and what it waits for.</p>
       <div id="wf-followups-body" aria-live="polite"><span class="hint">Loading&hellip;</span></div>

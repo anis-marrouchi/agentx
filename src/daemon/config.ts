@@ -1522,6 +1522,21 @@ export const daemonConfigSchema = z.object({
        *  can set its own `approval`. */
       approval: z.enum(["start", "step"]).default("step"),
     }).default({}),
+    /** The floating progress widget (#796): a small window that follows
+     *  running follow-up workflows, on the desktop (/workflows/widget)
+     *  and in the phone app's Activity tab. */
+    widget: z.object({
+      enabled: z.boolean().default(true),
+      /** Only runs with one of these tags, e.g. ["client:acme"]; empty: all. */
+      tags: z.array(z.string()).default([]),
+      /** The screen corner the window opens in, when the browser lets the
+       *  page place it. */
+      position: z.enum(["top-right", "top-left", "bottom-right", "bottom-left"]).default("top-right"),
+      width: z.number().int().min(240).max(1200).default(360),
+      height: z.number().int().min(160).max(1600).default(420),
+      /** Reads again this often when no live update arrives. */
+      refreshSeconds: z.number().int().min(3).max(600).default(10),
+    }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the
      *  page. "disabled" hides the tab entirely. */

@@ -9,6 +9,7 @@ import { getTrace } from "@/storage/traces"
 import { progressGroups } from "@/workflows/follow-up"
 import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
 import { expandEnvVars } from "@/daemon/config"
+import { registerWidgetCommand } from "./workflow-widget"
 
 // --- agentx workflow — declarative state machines for channel events ---
 //
@@ -713,3 +714,5 @@ workflow
     console.log(`  Reminders before block  ${s.maxNudges}`)
     console.log(`  Messages to people      ${s.approval === "start" ? "approved all at once when a run starts" : "approved one by one, before each is sent"}`)
   })
+
+registerWidgetCommand(workflow)

@@ -11,6 +11,7 @@ import { handleAppFiles } from "./app-files"
 import { handleAppVoice, type AppVoiceDeps } from "./app-voice"
 import { handleAppCamera, type AppCameraDeps } from "./app-camera"
 import { handleAppPlaces, type PlacesDeps } from "./app-places"
+import { handleAppWorkflows, type WidgetApiDeps } from "./workflow-widget-api"
 import { PairAttemptLimiter, redeemPairCode } from "./app-pair-code"
 import { PairCodeStore } from "./pair-codes"
 import { RejectLog, credentialState, rejectFields } from "./app-auth-log"
@@ -56,6 +57,8 @@ export interface AppRouteCtx {
   voice?: AppVoiceDeps
   camera?: AppCameraDeps
   places?: PlacesDeps
+  /** Followed workflows on the Activity tab (#796). */
+  workflows?: WidgetApiDeps
   /** The statement served at /.well-known/assetlinks.json, or null for 404. */
   assetLinks?: () => unknown[] | null
   pairCodes?: PairCodeStore
@@ -157,6 +160,7 @@ export async function handleAppRequest(
   if (ctx.voice && await handleAppVoice(req, res, path, method, rec, ctx.voice)) return true
   if (ctx.camera && await handleAppCamera(req, res, path, method, ctx.camera)) return true
   if (ctx.places && await handleAppPlaces(req, res, path, method, rec, ctx.places)) return true
+  if (ctx.workflows && await handleAppWorkflows(req, res, path, method, rec.name, ctx.workflows)) return true
   return sendJson(res, 404, { error: "not found" })
 }
 

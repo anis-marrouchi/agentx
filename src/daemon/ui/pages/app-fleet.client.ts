@@ -1,8 +1,9 @@
 // --- Phone app: Fleet and Activity tab bodies ---
 //
 // Vanilla browser JS inlined into /app (app.ts). Reads /api/app/fleet,
-// /api/app/activity and /api/app/approvals; acts through the POST routes in
-// app-fleet.ts. Every action asks first in a bottom sheet, because on a phone
+// /api/app/activity, /api/app/approvals and /api/app/workflows (the
+// progress widget's rows, #796); acts through the POST routes in
+// app-fleet.ts and workflow-widget-api.ts. Every action asks first in a bottom sheet, because on a phone
 // a mis-tap should never restart a machine.
 //
 // This string lives inside a TypeScript template literal: no backslashes,
@@ -186,7 +187,31 @@ export const APP_FLEET_SCRIPT = `
     fleetPanel._data = data;
   }
 
-  function renderActivity(act, appr) {
+  // Followed workflows (#796): the same rows as the desktop widget.
+  function workflowsHtml(wf) {
+    if (!wf || !wf.enabled) return '';
+    var html = '<h3 class="fx-sub">Workflows (' + wf.rows.length + ')</h3>';
+    if (!wf.rows.length) return html + '<p class="fx-muted">Nothing is being followed right now.</p>';
+    wf.rows.forEach(function (r, k) {
+      var you = r.state === 'waiting-on-you' || r.state === 'blocked';
+      var pill = { 'waiting-on-you': 'Needs you', blocked: 'Blocked', running: 'Running' }[r.state] || 'Waiting';
+      html += '<article class="fx-card"><div class="fx-row"><h4>' + esc(r.title) + '</h4><span class="fx-pill' + (you ? ' fx-warn' : '') + '">' + esc(pill) + '</span></div>' +
+        '<p>Step ' + esc(r.step) + ' · ' + esc(r.owner === 'you' ? 'waiting on you' : r.owner) + '</p>' +
+        '<p class="fx-muted">' + esc(r.waitingOn) + '</p>' +
+        '<p class="fx-muted">' + esc(ago(r.since)) + (r.tags.length ? ' · ' + esc(r.tags.join(', ')) : '') + ' · ' + esc(r.nodeName) + '</p>';
+      if (r.answer && r.answer.kind === 'card') {
+        html += '<div class="fx-row fx-gap"><button type="button" class="fx-btn fx-primary" data-act="wf" data-k="' + k + '" data-v="yes">Yes</button>' +
+          '<button type="button" class="fx-btn" data-act="wf" data-k="' + k + '" data-v="no">No</button></div>';
+      } else if (r.answer && r.answer.kind === 'reply') {
+        html += '<div class="fx-row fx-gap"><button type="button" class="fx-btn fx-primary" data-act="wf" data-k="' + k + '" data-v="reply">Answer ' + esc(r.answer.agentId) + '</button></div>';
+      }
+      html += '</article>';
+    });
+    if (wf.unreachable && wf.unreachable.length) html += '<p class="fx-muted fx-bad">' + plural(wf.unreachable.length, 'node') + ' could not be read.</p>';
+    return html;
+  }
+
+  function renderActivity(act, appr, wf) {
     var html = '<div class="fx-head"><h2>Activity</h2><button type="button" class="fx-btn" data-act="refresh">Refresh</button></div>' +
       statusLine(activityPanel, act.ts);
     var items = [];
@@ -203,6 +228,7 @@ export const APP_FLEET_SCRIPT = `
         '<button type="button" class="fx-btn" data-act="decide" data-k="' + k + '" data-v="later">Later</button></div></article>';
     });
     appr.nodes.forEach(function (n) { if (n.error) html += '<p class="fx-muted fx-bad">Approvals on ' + esc(n.nodeName) + ' could not be read: ' + esc(n.error) + '</p>'; });
+    html += workflowsHtml(wf);
     html += '<h3 class="fx-sub">Running now (' + act.tasks.length + ')</h3>';
     if (!act.tasks.length) html += '<p class="fx-muted">No agent is working right now.</p>';
     act.tasks.forEach(function (t, k) {
@@ -214,6 +240,7 @@ export const APP_FLEET_SCRIPT = `
     activityPanel.innerHTML = html;
     activityPanel._act = act;
     activityPanel._items = items;
+    activityPanel._wf = wf && wf.rows ? wf.rows : [];
   }
 
   fleetPanel.addEventListener('click', function (ev) {
@@ -261,6 +288,20 @@ export const APP_FLEET_SCRIPT = `
         done: function () { return v === 'later' ? 'Put off: ' + x.it.title + '.' : 'Answered ' + word + ': ' + x.it.title + '.'; } });
       return;
     }
+    if (act === 'wf') {
+      var r = activityPanel._wf[k];
+      var how = b.getAttribute('data-v');
+      if (!r) return;
+      if (how === 'reply') ask({ panel: activityPanel, title: 'Answer ' + r.answer.agentId, input: true, ok: 'Send',
+        text: r.title + ': ' + r.waitingOn,
+        path: '/api/app/workflows/answer', body: function (text) { return { node: r.node, runId: r.runId, action: 'reply', text: text }; },
+        done: function () { return 'Sent to ' + r.answer.agentId + '.'; } });
+      else ask({ panel: activityPanel, title: (how === 'yes' ? 'Yes' : 'No') + ': ' + r.title + '?', ok: how === 'yes' ? 'Yes' : 'No', danger: how === 'no',
+        text: 'Step ' + r.step + ' waits on ' + r.waitingOn + '.',
+        path: '/api/app/workflows/answer', body: function () { return { node: r.node, runId: r.runId, action: how }; },
+        done: function () { return 'Answered ' + how + ': ' + r.title + '.'; } });
+      return;
+    }
     var t = activityPanel._act.tasks[k];
     if (act === 'cancel') ask({ panel: activityPanel, title: 'Stop ' + t.agentName + '?', danger: true, ok: 'Stop',
       text: 'The current task is stopped. The agent keeps the conversation.',
@@ -284,8 +325,10 @@ export const APP_FLEET_SCRIPT = `
       jobs.push(api('GET', '/api/app/fleet' + q).then(renderFleet).catch(function (e) { flash(fleetPanel, 'Could not load the fleet: ' + e.message, true); }));
     }
     if (visible(activityPanel)) {
-      jobs.push(Promise.all([api('GET', '/api/app/activity' + q), api('GET', '/api/app/approvals')])
-        .then(function (r) { renderActivity(r[0], r[1]); })
+      // Workflows are extra: an older computer without the route still shows the rest.
+      var wf = api('GET', '/api/app/workflows').catch(function () { return null; });
+      jobs.push(Promise.all([api('GET', '/api/app/activity' + q), api('GET', '/api/app/approvals'), wf])
+        .then(function (r) { renderActivity(r[0], r[1], r[2]); })
         .catch(function (e) { flash(activityPanel, 'Could not load activity: ' + e.message, true); }));
     }
     Promise.all(jobs).then(function () { loading = false; }, function () { loading = false; });

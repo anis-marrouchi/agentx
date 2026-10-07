@@ -4,6 +4,7 @@ import { parseResultToken, resolveHandler } from "./nodes/handlers"
 import { deliver, messageKey, nextWakeAt, nudgeText, renderPersonMessage, stepVerdict } from "./nodes/follow-up"
 import { DEFAULT_FOLLOW_UP, type AgentExecuteRequest, type AgentExecuteResponse, type FollowUpDefaults, type NodeResult, type OwnerPort } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
+import { ownerReplyText } from "./widget"
 import type { WorkflowStore } from "./store"
 import { TimerService, type TimerRecord } from "./timers"
 import { SignalBus, matchesSignal, type SignalEmission } from "./signals"
@@ -1313,18 +1314,55 @@ export class WorkflowDispatcher {
       if (run) await this.owner?.notify(r.text, run).catch((e: any) => this.log(`[workflow:${wf.id}] run ${t.runId}: reminder to the owner failed: ${e?.message ?? e}`))
     }
     const nd = after.nudge
-    if (nd) {
-      // Fire and forget: the turn may take minutes. What it says decides.
-      void this.agents.execute({ agentId: nd.agentId, message: nd.text, workflowRunId: t.runId })
-        .then(async (resp) => {
-          if (resp.error) { this.log(`[workflow:${wf.id}] run ${t.runId}: nudge turn on ${nd.agentId} failed: ${resp.error}`); return }
-          const token = parseResultToken(resp.content).result
-          const verdict = stepVerdict(token)
-          if (verdict === "blocked") await this.stepDone({ runId: t.runId, nodeId: t.nodeId, blocked: lastLine(resp.content) || `${nd.agentId} says the step is ${token}` })
-          else if (verdict === "done") await this.stepDone({ runId: t.runId, nodeId: t.nodeId, output: { reply: resp.content, result: token, via: "nudge" } })
-        })
-        .catch((e: any) => this.log(`[workflow:${wf.id}] run ${t.runId}: nudge turn failed: ${e?.message ?? e}`))
-    }
+    if (nd) this.stepTurn(wf, t.runId, t.nodeId, nd.agentId, nd.text, "nudge")
+  }
+
+  /** A turn on the agent that owns a paused step: a nudge, or the owner's
+   *  answer to a block. Fire and forget: the turn may take minutes. What
+   *  it says decides. */
+  private stepTurn(wf: Workflow, runId: string, nodeId: string, agentId: string, text: string, via: "nudge" | "owner"): void {
+    void this.agents.execute({ agentId, message: text, workflowRunId: runId })
+      .then(async (resp) => {
+        if (resp.error) { this.log(`[workflow:${wf.id}] run ${runId}: ${via} turn on ${agentId} failed: ${resp.error}`); return }
+        const token = parseResultToken(resp.content).result
+        const verdict = stepVerdict(token)
+        if (verdict === "blocked") await this.stepDone({ runId, nodeId, blocked: lastLine(resp.content) || `${agentId} says the step is ${token}` })
+        else if (verdict === "done") await this.stepDone({ runId, nodeId, output: { reply: resp.content, result: token, via } })
+      })
+      .catch((e: any) => this.log(`[workflow:${wf.id}] run ${runId}: ${via} turn failed: ${e?.message ?? e}`))
+  }
+
+  /** The owner answers a blocked agent step (#796, the progress widget).
+   *  The block is lifted, reminders start over, and the agent gets the
+   *  answer as a turn; it reports done or blocked as before. */
+  async ownerReply(args: { runId: string; text: string; by?: string }): Promise<{ ok: boolean; error?: string }> {
+    const text = args.text.trim()
+    if (!text) return { ok: false, error: "the answer is empty" }
+    const run0 = this.runs.get(args.runId)
+    if (!run0) return { ok: false, error: `no run "${args.runId}"` }
+    const wf = this.store.get(run0.workflowId)
+    if (!wf) return { ok: false, error: `workflow "${run0.workflowId}" is gone` }
+    let error: string | undefined
+    let turn: { nodeId: string; agentId: string; message: string } | undefined
+    await this.commit(args.runId, () => {
+      const fresh = this.runs.get(args.runId)
+      const p = fresh?.pausedAt
+      if (!fresh || fresh.status !== "paused" || p?.kind !== "agentStep" || !p.blocked) {
+        error = `run ${args.runId} has no blocked step to answer (it is ${fresh?.status ?? "gone"}${p ? `, on ${p.kind} ${p.nodeId}` : ""})`
+        return
+      }
+      const now = Date.now()
+      const next: PausedAt = { ...p, blocked: undefined, nudges: 0, nextNudgeAt: new Date(now + p.stallMs).toISOString() }
+      this.runs.recordExecution({ runId: fresh.id, entry: { at: new Date(now).toISOString(), nodeId: p.nodeId, inputKeys: [], status: "paused", idempotencyKey: idempotencyKey(fresh.id, p.nodeId, `answer:${now}`), note: `answered by ${args.by ?? "the owner"}`.slice(0, 200) }, nextPending: fresh.pending, status: "paused", pausedAt: next })
+      this.runs.setMeta(fresh.id, { blocked: undefined })
+      this.scheduleWake(fresh.id, wf.id, next)
+      turn = { nodeId: p.nodeId, agentId: p.agentId, message: ownerReplyText(fresh, p.nodeId, text.slice(0, 2000)) }
+    })
+    if (error || !turn) return { ok: false, error: error ?? "nothing to answer" }
+    this.emitRunEvent({ runId: args.runId, workflowId: wf.id, nodeId: turn.nodeId, phase: "resumed", status: "paused", note: "owner answered", rootId: run0.eventRootId })
+    this.log(`[workflow:${wf.id}] run ${args.runId}: owner answered blocked step "${turn.nodeId}"`)
+    this.stepTurn(wf, args.runId, turn.nodeId, turn.agentId, turn.message, "owner")
+    return { ok: true }
   }
 
   /** Inside a commit: the agent step can't go on without the owner. */

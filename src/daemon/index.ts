@@ -4294,6 +4294,18 @@ export class AgentXDaemon {
         this.json(res, ok ? 200 : 404, ok ? { ok: true } : { error: "no such run, or it has already ended" })
         return
       }
+      // The owner answers a blocked step (#796, the progress widget): the
+      // agent gets the answer as a turn. { text, by? }
+      const answerRun = req.method === "POST" && path.match(/^\/workflow-runs\/([^/]+)\/answer$/)
+      if (answerRun) {
+        if (!this.workflowDispatcher) { this.json(res, 503, { error: "workflow engine not enabled on this node" }); return }
+        const body = await readBody(req)
+        const text = typeof body.text === "string" ? body.text : ""
+        const by = typeof body.by === "string" && body.by.trim() ? body.by.trim().slice(0, 80) : undefined
+        const r = await this.workflowDispatcher.ownerReply({ runId: decodeURIComponent(answerRun[1]), text, by })
+        this.json(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error })
+        return
+      }
       const manualRun = req.method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
       if (manualRun) {
         await this.handleWorkflowManualRun(req, res, decodeURIComponent(manualRun[1]))

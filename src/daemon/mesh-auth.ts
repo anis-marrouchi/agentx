@@ -89,8 +89,8 @@ export function isControlPost(path: string): boolean {
     // Pausing, widening, narrowing or ending a guest mesh's grant.
     /^\/mesh\/guests\/[^/]+\/(pause|resume|end|update)$/.test(path) ||
     /^\/crons\/[^/]+\/enabled$/.test(path) ||
-    // Stopping a workflow run (#788).
-    /^\/workflow-runs\/[^/]+\/cancel$/.test(path)
+    // Stopping a workflow run (#788), or answering its blocked step (#796).
+    /^\/workflow-runs\/[^/]+\/(cancel|answer)$/.test(path)
 }
 
 /** True when the socket peer is on this host. Used by loopback-only
