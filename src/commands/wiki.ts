@@ -8,12 +8,16 @@ import type { WikiPeer } from "@/wiki/article-sync"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
+import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
 import { resolve, relative, dirname } from "path"
-import { execSync } from "child_process"
-import { writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from "fs"
+import { exec, execSync } from "child_process"
+import { promisify } from "util"
+import { appendFileSync, statSync, writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from "fs"
+
+const execAsync = promisify(exec)
 
 function getHub(dir?: string, mode?: WikiMode): WikiHub {
   return new WikiHub(wikiDir(dir), undefined, mode || "graph")
@@ -180,6 +184,7 @@ wiki
   .option("--since <date>", "only entries dated on or after YYYY-MM-DD")
   .option("--until <date>", "only entries dated on or before YYYY-MM-DD")
   .option("--model <model>", "compile model (default: AGENTX_WIKI_ABSORB_MODEL, else sonnet)")
+  .option("--run-label <label>", "tag this run's lines in _absorb-runs.jsonl, for `wiki absorb-runs`")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     let model: string
@@ -266,7 +271,23 @@ wiki
     let totalAbsorbed = 0
     let totalWithPath = 0
 
+    // One line per compile call in _absorb-runs.jsonl: time, cost, tokens
+    // and prompt size, so a change to the pipeline can be measured (#808).
+    // No entry or article text goes in it.
+    const telemetryPath = resolve(hub.getBaseDir(), "_absorb-runs.jsonl")
+    const label = typeof opts.runLabel === "string" && opts.runLabel.trim() ? opts.runLabel.trim() : undefined
+    const writeTelemetry = (record: AbsorbCallRecord | AbsorbRunRecord) => {
+      if (opts.dryRun) return
+      try {
+        appendFileSync(telemetryPath, `${JSON.stringify(record)}\n`)
+      } catch {
+        // Telemetry never fails an absorb.
+      }
+    }
+    const startedAt = new Date().toISOString()
+
     for (const agentId of agents) {
+      const agentStart = Date.now()
       // Oldest-first, so without a floor absorb spends every run on the
       // earliest entries. Those predate intent-path stamping — devops-agent
       // has 367 entries from April with no intentPath and 1,728 from May
@@ -369,7 +390,8 @@ wiki
         console.log(chalk.dim(`    Existing: ${covering.map((a) => a.path).join(", ")}`))
       }
 
-      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock, renderCoveringBlock(covering))
+      const coveringBlock = renderCoveringBlock(covering)
+      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock, coveringBlock)
       console.log(chalk.dim(`    Mode: ${modeLabel(mode)}`))
 
       // Write prompt and run Claude
@@ -379,6 +401,24 @@ wiki
       writeFileSync(promptPath, prompt)
 
       console.log(chalk.dim(`    Compiling with Claude (${model})...`))
+
+      const call: AbsorbCallRecord = {
+        kind: "call", at: "", label, agent: agentId, model,
+        entries: unabsorbed.length, articles: 0, refused: 0, failed: true, wallMs: 0,
+        promptChars: prompt.length,
+        promptParts: {
+          entries: entryTexts.length,
+          // The catalog lists every article title; its share is the prompt
+          // minus the same prompt built without it.
+          catalog: prompt.length - buildAbsorbPrompt(mode, agentId, worldview, [], entryTexts, unabsorbed.length, factsBlock, coveringBlock).length,
+          catalogArticles: existingIndex.articles.length,
+          covering: coveringBlock.length,
+          facts: factsBlock.length,
+          worldview: worldview.length,
+        },
+      }
+      const callStart = Date.now()
+      call.prepMs = callStart - agentStart
 
       try {
         let rawOutput: string
@@ -402,6 +442,7 @@ wiki
         // Try to extract "result" from Claude's JSON envelope
         try {
           const envelope = JSON.parse(rawOutput)
+          Object.assign(call, envelopeUsage(envelope))
           if (envelope.is_error === true) runFailed = true
           responseText = envelope.result || envelope.content || ""
           if (!responseText) {
@@ -422,6 +463,7 @@ wiki
         const { articles, gaps } = response
         // Entries behind a refused save stay queued for the next run.
         const held = new Set<string>()
+        const saved = new Set<string>()
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)
@@ -439,6 +481,7 @@ wiki
               console.log(chalk.yellow(`    ! refused ${article.path}: the rewrite drops ${dropped.length} fact(s) the article has`))
               console.log(chalk.dim(`       ${dropped.slice(0, 8).join("; ")}${dropped.length > 8 ? "; …" : ""}`))
               for (const id of sources) held.add(id)
+              call.refused++
               continue
             }
           }
@@ -470,7 +513,13 @@ wiki
             totalWithPath++
           }
           totalAbsorbed++
+          call.articles++
+          for (const id of sources) saved.add(id)
         }
+        call.failed = runFailed
+        // A held entry another saved article cites counts as absorbed and
+        // is not offered again (#808), so the refused update is lost.
+        call.heldCited = [...held].filter((id) => saved.has(id)).length
 
         // Every entry the model read leaves the queue, cited or not.
         // Otherwise uncited entries come back on every run (#762).
@@ -517,8 +566,13 @@ wiki
         console.log(chalk.red(`    Absorb failed: ${e.message?.slice(0, 200)}`))
         if (e.stderr) console.log(chalk.dim(String(e.stderr).slice(0, 300)))
         if (e.stdout) console.log(chalk.dim("stdout: " + String(e.stdout).slice(0, 300)))
+      } finally {
+        call.at = new Date().toISOString()
+        call.wallMs = Date.now() - callStart
+        writeTelemetry(call)
       }
     }
+    writeTelemetry({ kind: "run", label, startedAt, endedAt: new Date().toISOString(), max: maxEntries, model })
 
     console.log()
     if (opts.dryRun) {
@@ -530,6 +584,220 @@ wiki
         console.log(chalk.dim(`  ${totalWithPath}/${totalAbsorbed} carry graphPath (${pct}%) — wiki retrieval graph weight is now non-zero for those`))
       }
     }
+    console.log()
+  })
+
+// agentx wiki absorb-eval — the absorb scorecard (#808). A seeded sample
+// of absorbed articles checked against the entries they cite: citations,
+// ungrounded and lost identifiers, likely duplicates, and optionally a
+// model judge for claim support and wrong merges.
+wiki
+  .command("absorb-eval")
+  .description("score absorbed articles against the entries they cite")
+  .option("--dir <path>", "wiki directory")
+  .option("--mode <mode>", "graph | unified | flat", "graph")
+  .option("--agent <id>", "only this agent's articles")
+  .option("--since <date>", "only articles last updated on or after YYYY-MM-DD")
+  .option("--changed-after <time>", "only articles whose file changed after this time (ISO, e.g. 2026-10-07T20:05:00Z)")
+  .option("--n <n>", "articles in the sample", "40")
+  .option("--seed <seed>", "sample seed; the same seed picks the same articles", "absorb-eval")
+  .option("--sample <file>", "reuse the sample saved in this file, or save it there on first use")
+  .option("--judge", "also ask a model to check each article's claims (one call per article)")
+  .option("--judge-model <model>", "model for --judge", "sonnet")
+  .option("--out <file>", "write the scorecard as Markdown to this file")
+  .option("--json", "print the scorecard and every article's checks as JSON")
+  .action(async (opts) => {
+    const { pickSample, checkArticle, findDuplicates, buildJudgePrompt, parseJudgeReply, buildScorecard, renderScorecard, uncitedWithFacts } =
+      await import("@/wiki/absorb-eval")
+    const { extractJson } = await import("@/utils/extract-json")
+    const hub = getHub(opts.dir, opts.mode as WikiMode)
+    const agents: string[] = opts.agent ? [opts.agent] : hub.listAgents()
+    const since = typeof opts.since === "string" ? opts.since.trim() : ""
+    const changedAfter = typeof opts.changedAfter === "string" && opts.changedAfter.trim() ? new Date(opts.changedAfter.trim()) : null
+    if (changedAfter && Number.isNaN(changedAfter.getTime())) {
+      console.log(chalk.red(`  not a time: ${opts.changedAfter}`)); process.exitCode = 1; return
+    }
+    // Version files are named by when they were saved, as 2026-10-07T20:05:00-000Z.
+    const windowStart = changedAfter ? changedAfter.toISOString().slice(0, 19) : since
+
+    const entries = new Map<string, { id: string; date?: string; content: string }>()
+    for (const e of hub.getSharedStore().listEntries()) entries.set(e.id, { id: e.id, date: e.date, content: e.content })
+
+    // Every article on the node, keyed agent/path, so a fact moved to a
+    // sibling article is not counted as lost.
+    type Row = { key: string; agent: string; article: ReturnType<ReturnType<WikiHub["getAgentWiki"]>["listArticles"]>[number] }
+    const rows: Row[] = []
+    for (const agent of agents) {
+      for (const a of hub.getAgentWiki(agent).listArticles(agent)) rows.push({ key: `${agent}/${a.path}`, agent, article: a })
+    }
+    const citers = new Map<string, string[]>()
+    for (const r of rows) for (const id of r.article.meta.sources ?? []) {
+      const list = citers.get(id)
+      if (list) list.push(r.article.content)
+      else citers.set(id, [r.article.content])
+    }
+
+    const changedSince = (r: Row) => {
+      if (!changedAfter) return true
+      try { return statSync(resolve(hub.getAgentWiki(r.agent).baseDir, r.article.path)).mtimeMs > changedAfter.getTime() } catch { return false }
+    }
+    const candidates = rows
+      .filter((r) => !since || (r.article.meta.lastUpdated ?? "") >= since.slice(0, 10))
+      .filter(changedSince)
+    let seed = String(opts.seed)
+    let picked: Row[]
+    if (opts.sample && existsSync(opts.sample)) {
+      const saved = JSON.parse(readFileSync(opts.sample, "utf-8")) as { seed?: string; keys: string[] }
+      seed = saved.seed ?? seed
+      const byKey = new Map(rows.map((r) => [r.key, r]))
+      picked = saved.keys.map((k) => byKey.get(k)).filter((r): r is Row => !!r)
+      const gone = saved.keys.length - picked.length
+      if (gone > 0) console.error(chalk.yellow(`  ${gone} sampled article(s) no longer exist`))
+    } else {
+      picked = pickSample(candidates.map((r) => ({ ...r, path: r.key })), parseInt(opts.n), seed)
+      if (opts.sample) {
+        writeFileSync(opts.sample, `${JSON.stringify({ seed, since: windowStart || undefined, keys: picked.map((r) => r.key) }, null, 2)}\n`)
+        console.error(chalk.dim(`  sample saved to ${opts.sample}`))
+      }
+    }
+    if (picked.length === 0) {
+      console.log(chalk.yellow(`  no articles${windowStart ? ` changed since ${windowStart}` : ""} to score`))
+      return
+    }
+
+    // The article as it stood before the window: the oldest version saved
+    // after the window opened (each version is the content an absorb replaced).
+    const stripFrontmatter = (raw: string) => raw.replace(/^---\n[\s\S]*?\n---\n?/, "")
+    const previousOf = (r: Row): string | undefined => {
+      const versions = hub.getAgentWiki(r.agent).getVersions(r.article.path)
+      const inWindow = windowStart ? versions.filter((v) => v.timestamp >= windowStart) : versions.slice(0, 1)
+      const v = inWindow[inWindow.length - 1]
+      if (!v) return undefined
+      try { return stripFrontmatter(readFileSync(v.path, "utf-8")) } catch { return undefined }
+    }
+
+    const evalArticles = picked.map((r) => ({
+      path: r.key,
+      title: r.article.meta.title,
+      type: r.article.meta.type,
+      content: r.article.content,
+      sources: r.article.meta.sources ?? [],
+      lastUpdated: r.article.meta.lastUpdated,
+      previous: previousOf(r),
+    }))
+    const checks = evalArticles.map((a) => checkArticle(a, entries, (id) => citers.get(id) ?? []))
+
+    const focus = new Set(picked.map((r) => r.key))
+    const duplicates = agents.flatMap((agent) =>
+      findDuplicates(
+        rows.filter((r) => r.agent === agent).map((r) => ({
+          path: r.key, title: r.article.meta.title, type: r.article.meta.type, sources: r.article.meta.sources,
+        })),
+        focus,
+      ),
+    )
+
+    const judged: Array<{ path: string; verdict: NonNullable<ReturnType<typeof parseJudgeReply>> }> = []
+    if (opts.judge) {
+      let judgeModel: string
+      try { judgeModel = absorbModel(opts.judgeModel) } catch (err: any) {
+        console.log(chalk.red(`  ${err.message}`)); process.exitCode = 1; return
+      }
+      const tmpDir = resolve(hub.getBaseDir(), "_tmp")
+      mkdirSync(tmpDir, { recursive: true })
+      const queue = evalArticles.map((a, i) => ({ a, i }))
+      await Promise.all(Array.from({ length: Math.min(3, queue.length) }, async () => {
+        for (let item = queue.shift(); item; item = queue.shift()) {
+          const { a, i } = item
+          const cited = a.sources.map((id) => entries.get(id)).filter((e): e is { id: string; date?: string; content: string } => !!e)
+          const promptPath = resolve(tmpDir, `absorb-eval-${i}.txt`)
+          writeFileSync(promptPath, buildJudgePrompt(a, cited))
+          try {
+            const { stdout } = await execAsync(
+              `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --model '${judgeModel}' --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`,
+              { env: claudeCliEnv(), encoding: "utf-8", timeout: 300_000, maxBuffer: 4 * 1024 * 1024 },
+            )
+            let text = stdout
+            try { text = JSON.parse(stdout).result ?? stdout } catch { /* raw text */ }
+            const verdict = parseJudgeReply(extractJson(text))
+            if (verdict) judged.push({ path: a.path, verdict })
+            else console.error(chalk.yellow(`  judge reply for ${a.path} was not usable`))
+          } catch (e: any) {
+            console.error(chalk.yellow(`  judge failed for ${a.path}: ${String(e?.message ?? e).slice(0, 160)}`))
+          } finally {
+            rmSync(promptPath, { force: true })
+          }
+        }
+      }))
+      judged.sort((x, y) => x.path.localeCompare(y.path))
+    }
+
+    // Entries the ledger says absorb read in the window, cited by no article.
+    const citedIds = new Set(rows.flatMap((r) => r.article.meta.sources ?? []))
+    const uncited: Array<{ id: string; date?: string; content: string }> = []
+    for (const agent of agents) {
+      const file = resolve(hub.getBaseDir(), "agents", agent, "_absorbed.json")
+      if (!existsSync(file)) continue
+      let ledger: Record<string, { at?: string }> = {}
+      try { ledger = JSON.parse(readFileSync(file, "utf-8")).entries ?? {} } catch { continue }
+      for (const [id, rec] of Object.entries(ledger)) {
+        if (citedIds.has(id)) continue
+        if (windowStart && String(rec.at ?? "") < windowStart) continue
+        const entry = entries.get(id)
+        if (entry) uncited.push(entry)
+      }
+    }
+    const allText = rows.map((r) => r.article.content).join("\n")
+    const lostUncited = uncitedWithFacts(uncited, allText)
+
+    const card = buildScorecard(checks, duplicates, { seed, since: windowStart || undefined }, judged, 5, {
+      entries: uncited.length, lost: lostUncited,
+    })
+    const md = renderScorecard(card)
+    if (opts.out) writeFileSync(opts.out, md)
+    if (opts.json) console.log(JSON.stringify({ card, checks }, null, 2))
+    else if (opts.out) console.log(chalk.green(`  scorecard written to ${opts.out}`))
+    else console.log(md)
+  })
+
+// agentx wiki absorb-runs — time and cost per absorb run label, from
+// _absorb-runs.jsonl. The before/after half of #808.
+wiki
+  .command("absorb-runs")
+  .description("time, cost and throughput of absorb runs, grouped by --run-label")
+  .option("--dir <path>", "wiki directory")
+  .option("--label <label>", "only this run label")
+  .option("--json", "print the summary as JSON")
+  .action(async (opts) => {
+    const { summariseRuns } = await import("@/wiki/absorb-eval")
+    const file = resolve(wikiDir(opts.dir), "_absorb-runs.jsonl")
+    if (!existsSync(file)) {
+      console.log(chalk.yellow(`  no absorb runs recorded yet (${file})`))
+      return
+    }
+    const records = readFileSync(file, "utf-8").split("\n").filter(Boolean).flatMap((l) => {
+      try { return [JSON.parse(l)] } catch { return [] }
+    }).filter((r) => !opts.label || (r.label || "(none)") === opts.label)
+    const summary = summariseRuns(records)
+    if (opts.json) { console.log(JSON.stringify(summary, null, 2)); return }
+    if (summary.length === 0) { console.log(chalk.yellow("  no matching runs")); return }
+    const cols: Array<[string, (s: (typeof summary)[number]) => string]> = [
+      ["label", (s) => s.label],
+      ["calls", (s) => `${s.calls}${s.failed ? ` (${s.failed} failed)` : ""}`],
+      ["entries", (s) => String(s.entries)],
+      ["articles", (s) => `${s.articles}${s.refused ? ` (${s.refused} refused${s.heldCited ? `, ${s.heldCited} held entries lost` : ""})` : ""}`],
+      ["wall", (s) => `${(s.wallMs / 60_000).toFixed(1)} min`],
+      ["call p50/p95", (s) => `${Math.round(s.callMsP50 / 1000)}/${Math.round(s.callMsP95 / 1000)} s`],
+      ["entries/min", (s) => s.entriesPerMinute.toFixed(1)],
+      ["prep", (s) => `${(s.prepMs / 60_000).toFixed(1)} min`],
+      ["cost", (s) => `$${s.costUsd.toFixed(2)}`],
+      ["$/entry", (s) => `$${s.costPerEntry.toFixed(3)}`],
+    ]
+    const cells = summary.map((s) => cols.map(([, f]) => f(s)))
+    const w = cols.map(([h], i) => Math.max(h.length, ...cells.map((c) => c[i].length)))
+    console.log()
+    console.log(chalk.bold(cols.map(([h], i) => h.padEnd(w[i])).join("  ")))
+    for (const c of cells) console.log(c.map((v, i) => v.padEnd(w[i])).join("  "))
     console.log()
   })
 

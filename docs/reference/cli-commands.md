@@ -1124,6 +1124,48 @@ Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (
 | `--since <date>` | — | Only entries dated on or after YYYY-MM-DD. |
 | `--until <date>` | — | Only entries dated on or before YYYY-MM-DD. |
 | `--model <model>` | `AGENTX_WIKI_ABSORB_MODEL`, else `sonnet` | The model that compiles the articles. |
+| `--run-label <label>` | — | A name for this run in the run log, so `agentx wiki absorb-runs` can compare runs. |
+
+Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full and facts) and one for the whole run. The file holds no entry or article text.
+
+### `agentx wiki absorb-eval`
+
+Score what absorb wrote against the entries each article cites. It picks a fixed sample of articles and checks each one:
+
+- **Citations:** does the article cite entries, and does each cited entry exist and share words with the article?
+- **Ungrounded facts:** commit hashes, links and numbers in the article that no cited entry and no earlier version of the article contains. These are likely made up or taken from the wrong entry.
+- **Lost facts:** commit hashes and links in a cited entry that no article citing that entry contains.
+- **Uncited entries:** entries absorb read in the window that no article cites, and how many of them carry a commit hash or link that no article has. Absorb does not offer those entries again.
+- **Likely duplicates:** articles of the same type with nearly the same title, or with most of their sources in common.
+
+With `--judge`, a model also reads each sampled article next to its entries and lists claims the entries don't support, claims they contradict, entries about a different subject (a wrong merge) and facts left out. That is one model call per article.
+
+The same `--seed` and window always pick the same articles. `--sample <file>` saves the picked articles the first time and reuses them after, so you can score the same articles again after a change.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--mode <mode>` | `graph` | Graph \| unified \| flat. |
+| `--agent <id>` | — | Only this agent's articles. |
+| `--since <date>` | — | Only articles last updated on or after YYYY-MM-DD. |
+| `--changed-after <time>` | — | Only articles whose file changed after this time, for example `2026-10-07T20:05:00Z`. Use it to score one absorb run. |
+| `--n <n>` | `40` | Articles in the sample. |
+| `--seed <seed>` | `absorb-eval` | Sample seed. |
+| `--sample <file>` | — | Reuse the sample saved in this file, or save it there the first time. |
+| `--judge` | — | Also have a model check each article's claims. |
+| `--judge-model <model>` | `sonnet` | Model for `--judge`. |
+| `--out <file>` | — | Write the scorecard as Markdown to this file. |
+| `--json` | — | Print the scorecard and every article's checks as JSON. |
+
+### `agentx wiki absorb-runs`
+
+Show time, cost and throughput of absorb runs from `_absorb-runs.jsonl`, one row per run label: model calls (and how many failed), entries compiled, articles written and refused (and how many entries behind a refused update left the queue anyway because another article cites them), total time, typical and slowest call time, time spent finding articles and looking up facts before the calls, entries per minute, cost and cost per entry.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--label <label>` | — | Only this run label. Runs without a label are listed as `(none)`. |
+| `--json` | — | Print the summary as JSON. |
 
 ### `agentx wiki promote`
 
@@ -3468,6 +3510,8 @@ No flags.
 - **`unknown option`:** your installed version is older or newer than these docs. Use the flags that `agentx <command> --help` shows.
 - **`claude: command not found` from a wiki command:** the `claude` CLI isn't installed in any of the folders listed under `agentx wiki absorb`. Install it, or add its folder to the daemon's PATH.
 - **`wiki absorb` keeps printing `! refused <path>`:** the model's update left out facts the article already had, so the same entries come back each run. Check the facts listed under the message. If one is really wrong, correct it in the article with `agentx wiki edit`, then run absorb again.
+- **`wiki absorb-runs` prints `no absorb runs recorded yet`:** no absorb has run since the run log was added, or `--dir` points at another wiki. Run `agentx wiki absorb` once, then try again.
+- **`wiki absorb-eval` prints `no articles … to score`:** nothing changed in the window you gave. Widen `--since` or `--changed-after`, or leave both out to sample every article.
 - **`unknown command`:** check the spelling and the command group. Advanced commands don't appear in `agentx --help`, but they still run.
 - **`error: required option … not specified`:** the flag is marked **required** above. Add it and run the command again.
 - **A command can't find your agents or settings:** run it from the folder that holds `agentx.json`, or pass `--config <path>` where the command offers it.
