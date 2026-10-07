@@ -73,7 +73,7 @@ describe("dashboard progress widget", () => {
   it("forwards a reply to the run's daemon, and only from a dashboard page", async () => {
     const daemon = stubDaemon()
     const base = await start()
-    const answer = { node: "http://daemon.invalid:18800", runId: "run-b", action: "reply", text: "It is in the vault." }
+    const answer = { node: "http://daemon.invalid:18800", runId: "run-b", step: "copy", action: "reply", text: "It is in the vault." }
     const bare = await fetch(`${base}/api/workflows/widget/answer`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(answer) })
     expect(bare.status).toBe(400)
     const r = await fetch(`${base}/api/workflows/widget/answer`, {
@@ -82,7 +82,7 @@ describe("dashboard progress widget", () => {
     expect(r.status).toBe(200)
     const call = daemon.mock.calls.find((c) => String(c[0]).includes("/workflow-runs/"))!
     expect(String(call[0])).toBe("http://daemon.invalid:18800/workflow-runs/run-b/answer")
-    expect(JSON.parse(String(call[1]!.body))).toEqual({ text: "It is in the vault.", by: "operator (progress widget)" })
+    expect(JSON.parse(String(call[1]!.body))).toEqual({ step: "copy", text: "It is in the vault.", by: "operator (progress widget)" })
   })
 
   it("sits behind the dashboard token", async () => {

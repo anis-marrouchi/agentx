@@ -11,9 +11,11 @@ import { widgetRows, type NodeRun, type WidgetRow, type WidgetSettings } from "@
 //   POST /api/app/workflows/answer        same body
 //
 // `action` is "yes" or "no" for a row waiting on a decision card, or
-// "reply" with `text` for a blocked agent step. An answer is checked
-// against the rows as they are now, so one sent from a stale view after
-// the step moved on is refused instead of landing on something else.
+// "reply" with `text` for a blocked agent step. The body also names the
+// `step` (and, for a card, its `key`) the owner saw. An answer is checked
+// against the rows as they are now: one sent from a stale view after the
+// step moved on, or after a new card replaced the one on screen, is
+// refused instead of landing on something else.
 
 export interface WidgetReply { status: number; body: unknown }
 
@@ -23,10 +25,11 @@ export interface WidgetApiDeps {
   nodeRuns(): Promise<{ runs: NodeRun[]; unreachable: string[] }>
   title?: (workflowId: string) => string | undefined
   stepAgent?: (workflowId: string, nodeId: string) => string | undefined
+  hasChoices?: (workflowId: string, nodeId: string) => boolean
   /** Answer a decision card on the node that holds it. */
   decide(node: string, key: string, action: "yes" | "no", by: string): Promise<WidgetReply>
   /** Hand the owner's answer to the blocked step's agent, on its node. */
-  reply(node: string, runId: string, text: string, by: string): Promise<WidgetReply>
+  reply(node: string, runId: string, step: string, text: string, by: string): Promise<WidgetReply>
 }
 
 export interface WidgetSnapshot {
@@ -43,29 +46,34 @@ export async function widgetSnapshot(deps: WidgetApiDeps, tag?: string | null): 
   if (!settings.enabled) return { ts, enabled: false, settings, rows: [], unreachable: [] }
   const { runs, unreachable } = await deps.nodeRuns()
   const tags = tag ? [tag] : settings.tags
-  return { ts, enabled: true, settings, rows: widgetRows(runs, { title: deps.title, stepAgent: deps.stepAgent, tags }), unreachable }
+  return { ts, enabled: true, settings, rows: widgetRows(runs, { title: deps.title, stepAgent: deps.stepAgent, hasChoices: deps.hasChoices, tags }), unreachable }
 }
 
 export async function widgetAnswer(body: Record<string, unknown>, deps: WidgetApiDeps, by: string): Promise<WidgetReply> {
   const node = str(body.node)
   const runId = str(body.runId)
+  const step = str(body.step)
   const action = str(body.action)
-  if (!node || !runId) return { status: 400, body: { error: "node and runId are required" } }
+  if (!node || !runId || !step) return { status: 400, body: { error: "node, runId and step are required" } }
   if (action !== "yes" && action !== "no" && action !== "reply") return { status: 400, body: { error: "action is yes, no or reply" } }
   const settings = deps.settings()
   if (!settings.enabled) return { status: 409, body: { error: "the progress widget is off (workflows.widget.enabled)" } }
   // Every followed run, not only the tags shown: the row was on screen.
   const { runs } = await deps.nodeRuns()
-  const row = widgetRows(runs, { title: deps.title, stepAgent: deps.stepAgent }).find((r) => r.runId === runId && r.node === node)
-  if (!row?.answer) return { status: 409, body: { error: "this step no longer waits on you: it has moved on or ended" } }
+  const row = widgetRows(runs, { title: deps.title, stepAgent: deps.stepAgent, hasChoices: deps.hasChoices }).find((r) => r.runId === runId && r.node === node)
+  const moved = { status: 409, body: { error: "this step no longer waits on you: it has moved on or ended" } }
+  if (!row?.answer || row.step !== step) return moved
   if (row.answer.kind === "card") {
     if (action === "reply") return { status: 400, body: { error: "this step waits on a decision: answer yes or no" } }
+    // Another card on the same step (a new one raised after this was shown).
+    if (str(body.key) !== row.answer.key) return moved
+    if (row.answer.choices) return { status: 400, body: { error: "this card offers choices: answer it in the Approvals inbox" } }
     return deps.decide(node, row.answer.key, action, by)
   }
   if (action !== "reply") return { status: 400, body: { error: "this step is blocked: send a reply with text" } }
   const text = str(body.text)
   if (!text) return { status: 400, body: { error: "the reply is empty" } }
-  return deps.reply(node, runId, text.slice(0, 2000), by)
+  return deps.reply(node, runId, step, text.slice(0, 2000), by)
 }
 
 /** The dashboard's two routes. Below its /api token and X-Requested-With

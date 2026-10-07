@@ -122,10 +122,15 @@ const WIDGET_SCRIPT = `
   function stateClass(s) { return s === 'waiting-on-you' ? ' is-you' : s === 'blocked' ? ' is-blocked' : ''; }
 
   function render(data) {
-    // Never redraw under a half-typed answer: the next read after the box
-    // loses focus draws it (a redraw on blur would eat the Send click).
-    var active = root.ownerDocument.activeElement;
-    if (active && active.tagName === 'TEXTAREA' && root.contains(active)) return;
+    // Never redraw under an answer being typed: the next read after that
+    // draws it (a redraw on blur would eat the Send click). Only while this
+    // window has focus and the box holds text, so a box left focused when
+    // the owner went to another app does not freeze the list.
+    var doc = root.ownerDocument, active = doc.activeElement;
+    if (active && active.tagName === 'TEXTAREA' && root.contains(active) && active.value.trim() && doc.hasFocus()) {
+      status('Paused while you type', false);
+      return;
+    }
     // Keep what the owner typed across a redraw.
     root.querySelectorAll('textarea[data-run]').forEach(function (t) { drafts[t.getAttribute('data-run')] = t.value; });
     rows = data.rows || [];
@@ -139,7 +144,9 @@ const WIDGET_SCRIPT = `
     } else {
       list.innerHTML = rows.map(function (r, i) {
         var a = r.answer, html = '';
-        if (a && a.kind === 'card') {
+        if (a && a.kind === 'card' && a.choices) {
+          html = '<div class="wg__answer"><a class="wg__btn wg__btn--yes" href="/approvals" target="_blank" rel="noopener">Choose in Approvals</a></div>';
+        } else if (a && a.kind === 'card') {
           html = '<div class="wg__answer"><button type="button" class="wg__btn wg__btn--yes" data-i="' + i + '" data-act="yes">Yes</button>' +
             '<button type="button" class="wg__btn" data-i="' + i + '" data-act="no">No</button>' +
             '<a class="wg__btn" href="/approvals" target="_blank" rel="noopener">Details</a></div>';
@@ -180,7 +187,9 @@ const WIDGET_SCRIPT = `
   function answer(i, act, btn) {
     var r = rows[i];
     if (!r) return;
-    var body = { node: r.node, runId: r.runId, action: act };
+    // The step (and card) on screen: a run that moved on refuses the answer.
+    var body = { node: r.node, runId: r.runId, step: r.step, action: act };
+    if (r.answer && r.answer.kind === 'card') body.key = r.answer.key;
     if (act === 'reply') {
       var t = root.querySelector('textarea[data-run="' + CSS.escape(r.runId) + '"]');
       body.text = t ? t.value.trim() : '';

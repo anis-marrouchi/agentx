@@ -29,7 +29,7 @@ A workflow that waits on you has a yellow border.
 
 1. **Browser:** read the step and the question under the title.
 2. **Browser:** click **Yes** or **No**. The workflow goes on with your answer.
-3. If the card offers more than yes or no, click **Details** to answer it in the Approvals inbox.
+3. If the card offers more than yes or no, it shows **Choose in Approvals** instead: click it and pick in the Approvals inbox. **Details** opens the inbox for any card.
 
 **Blocked** means an agent step cannot go on without you, for example because it needs a password:
 
@@ -37,7 +37,9 @@ A workflow that waits on you has a yellow border.
 2. **Browser:** type what the agent should do in the box, for example where to find the password.
 3. **Browser:** click **Send**. The agent gets your answer with the workflow's name and step, and carries on. Its reminders start again, and if it still cannot go on it tells you once more.
 
-The widget does not redraw while you type in a box, so a new update never wipes your answer.
+While you type an answer, the widget holds its updates and the line under the heading says **Paused while you type**, so a new update never wipes your answer. It catches up as soon as you send, empty the box, or switch to another window.
+
+Each answer names the step you saw. If the workflow moved on in the meantime, for example someone answered first or a new question replaced the one on screen, your answer is refused rather than given to a different step.
 
 ## On your phone
 
@@ -46,7 +48,7 @@ The widget does not redraw while you type in a box, so a new update never wipes 
 1. **Phone:** open the AgentX phone app (see [the phone app](../dashboard/mobile-app.md)).
 2. **Phone:** tap **Activity**.
 3. **Phone:** scroll to **Workflows**. You see the same list as the widget.
-4. **Phone:** tap **Yes** or **No** on a workflow that needs you, then confirm.
+4. **Phone:** tap **Yes** or **No** on a workflow that needs you, then confirm. A card that offers choices says so; answer it under **Needs you** at the top of the tab.
 5. **Phone:** on a blocked workflow, tap **Answer** followed by the agent's name, type your answer and tap **Send**.
 
 ![The answer sheet on the phone: the blocked step's reason above a message box, with Cancel and Send.](/screenshots/mobile-app/activity-workflow-answer.png)

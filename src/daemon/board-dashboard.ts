@@ -2405,9 +2405,14 @@ function workflowWidgetDeps(ctx: Pick<Ctx, "config" | "workflowRuns" | "workflow
       const agentId = node?.type === "agent" ? (node.config as { agentId?: unknown }).agentId : undefined
       return typeof agentId === "string" && agentId ? agentId : undefined
     },
+    hasChoices: (workflowId, nodeId) => {
+      const node = ctx.workflowStore.get(workflowId)?.nodes.find((n) => n.id === nodeId)
+      const choices = (node?.config as { choices?: unknown } | undefined)?.choices
+      return node?.type === "owner.ask" && Array.isArray(choices) && choices.length > 0
+    },
     decide: (node, key, action, by) => fleet.decide(node, key, action, by),
-    async reply(node, runId, text, by) {
-      const r = await postToNode(ctx.config, node, `/workflow-runs/${encodeURIComponent(runId)}/answer`, { text, by })
+    async reply(node, runId, step, text, by) {
+      const r = await postToNode(ctx.config, node, `/workflow-runs/${encodeURIComponent(runId)}/answer`, { step, text, by })
       return { status: r.status, body: parse(r.text) }
     },
   }

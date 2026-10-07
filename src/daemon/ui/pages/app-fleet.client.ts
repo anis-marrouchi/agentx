@@ -199,7 +199,9 @@ export const APP_FLEET_SCRIPT = `
         '<p>Step ' + esc(r.step) + ' · ' + esc(r.owner === 'you' ? 'waiting on you' : r.owner) + '</p>' +
         '<p class="fx-muted">' + esc(r.waitingOn) + '</p>' +
         '<p class="fx-muted">' + esc(ago(r.since)) + (r.tags.length ? ' · ' + esc(r.tags.join(', ')) : '') + ' · ' + esc(r.nodeName) + '</p>';
-      if (r.answer && r.answer.kind === 'card') {
+      if (r.answer && r.answer.kind === 'card' && r.answer.choices) {
+        html += '<p class="fx-muted">This card offers choices: answer it under Needs you.</p>';
+      } else if (r.answer && r.answer.kind === 'card') {
         html += '<div class="fx-row fx-gap"><button type="button" class="fx-btn fx-primary" data-act="wf" data-k="' + k + '" data-v="yes">Yes</button>' +
           '<button type="button" class="fx-btn" data-act="wf" data-k="' + k + '" data-v="no">No</button></div>';
       } else if (r.answer && r.answer.kind === 'reply') {
@@ -294,11 +296,11 @@ export const APP_FLEET_SCRIPT = `
       if (!r) return;
       if (how === 'reply') ask({ panel: activityPanel, title: 'Answer ' + r.answer.agentId, input: true, ok: 'Send',
         text: r.title + ': ' + r.waitingOn,
-        path: '/api/app/workflows/answer', body: function (text) { return { node: r.node, runId: r.runId, action: 'reply', text: text }; },
+        path: '/api/app/workflows/answer', body: function (text) { return { node: r.node, runId: r.runId, step: r.step, action: 'reply', text: text }; },
         done: function () { return 'Sent to ' + r.answer.agentId + '.'; } });
       else ask({ panel: activityPanel, title: (how === 'yes' ? 'Yes' : 'No') + ': ' + r.title + '?', ok: how === 'yes' ? 'Yes' : 'No', danger: how === 'no',
         text: 'Step ' + r.step + ' waits on ' + r.waitingOn + '.',
-        path: '/api/app/workflows/answer', body: function () { return { node: r.node, runId: r.runId, action: how }; },
+        path: '/api/app/workflows/answer', body: function () { return { node: r.node, runId: r.runId, step: r.step, key: r.answer.key, action: how }; },
         done: function () { return 'Answered ' + how + ': ' + r.title + '.'; } });
       return;
     }

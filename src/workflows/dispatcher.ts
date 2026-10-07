@@ -1335,11 +1335,11 @@ export class WorkflowDispatcher {
   /** The owner answers a blocked agent step (#796, the progress widget).
    *  The block is lifted, reminders start over, and the agent gets the
    *  answer as a turn; it reports done or blocked as before. */
-  async ownerReply(args: { runId: string; text: string; by?: string }): Promise<{ ok: boolean; error?: string }> {
+  async ownerReply(args: { runId: string; nodeId?: string; text: string; by?: string }): Promise<{ ok: boolean; error?: string; missing?: boolean }> {
     const text = args.text.trim()
     if (!text) return { ok: false, error: "the answer is empty" }
     const run0 = this.runs.get(args.runId)
-    if (!run0) return { ok: false, error: `no run "${args.runId}"` }
+    if (!run0) return { ok: false, error: `no run "${args.runId}"`, missing: true }
     const wf = this.store.get(run0.workflowId)
     if (!wf) return { ok: false, error: `workflow "${run0.workflowId}" is gone` }
     let error: string | undefined
@@ -1351,6 +1351,7 @@ export class WorkflowDispatcher {
         error = `run ${args.runId} has no blocked step to answer (it is ${fresh?.status ?? "gone"}${p ? `, on ${p.kind} ${p.nodeId}` : ""})`
         return
       }
+      if (args.nodeId && args.nodeId !== p.nodeId) { error = `run ${args.runId} is blocked on step "${p.nodeId}", not "${args.nodeId}"`; return }
       const now = Date.now()
       const next: PausedAt = { ...p, blocked: undefined, nudges: 0, nextNudgeAt: new Date(now + p.stallMs).toISOString() }
       this.runs.recordExecution({ runId: fresh.id, entry: { at: new Date(now).toISOString(), nodeId: p.nodeId, inputKeys: [], status: "paused", idempotencyKey: idempotencyKey(fresh.id, p.nodeId, `answer:${now}`), note: `answered by ${args.by ?? "the owner"}`.slice(0, 200) }, nextPending: fresh.pending, status: "paused", pausedAt: next })

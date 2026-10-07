@@ -136,35 +136,51 @@ describe("widgetSnapshot", () => {
 describe("widgetAnswer", () => {
   it("answers a decision card on the node that holds it", async () => {
     const d = deps()
-    expect(await widgetAnswer({ node: A.node, runId: "card", action: "yes" }, d, "operator (test)")).toEqual({ status: 200, body: { ok: true } })
+    expect(await widgetAnswer({ node: A.node, runId: "card", step: "approve", key: "card:c1", action: "yes" }, d, "operator (test)")).toEqual({ status: 200, body: { ok: true } })
     expect(d.decide).toHaveBeenCalledWith(A.node, "card:c1", "yes", "operator (test)")
   })
   it("hands a reply to the blocked step's node", async () => {
     const d = deps()
-    await widgetAnswer({ node: B.node, runId: "blocked", action: "reply", text: "  It is in the vault. " }, d, "operator (test)")
-    expect(d.reply).toHaveBeenCalledWith(B.node, "blocked", "It is in the vault.", "operator (test)")
+    await widgetAnswer({ node: B.node, runId: "blocked", step: "deploy", action: "reply", text: "  It is in the vault. " }, d, "operator (test)")
+    expect(d.reply).toHaveBeenCalledWith(B.node, "blocked", "deploy", "It is in the vault.", "operator (test)")
   })
   it("refuses an answer to a step that no longer waits on the owner", async () => {
     const d = deps()
-    expect((await widgetAnswer({ node: A.node, runId: "working", action: "yes" }, d, "x")).status).toBe(409)
-    expect((await widgetAnswer({ node: A.node, runId: "gone", action: "yes" }, d, "x")).status).toBe(409)
+    expect((await widgetAnswer({ node: A.node, runId: "working", step: "verify", action: "yes" }, d, "x")).status).toBe(409)
+    expect((await widgetAnswer({ node: A.node, runId: "gone", step: "x", action: "yes" }, d, "x")).status).toBe(409)
     // The right run on the wrong node is not that run.
-    expect((await widgetAnswer({ node: B.node, runId: "card", action: "yes" }, d, "x")).status).toBe(409)
+    expect((await widgetAnswer({ node: B.node, runId: "card", step: "approve", key: "card:c1", action: "yes" }, d, "x")).status).toBe(409)
+    expect(d.decide).not.toHaveBeenCalled()
+  })
+  it("refuses an answer meant for another step or another card of the same run", async () => {
+    const d = deps()
+    // The run moved on to a new card (or a new step) since the view was drawn.
+    expect((await widgetAnswer({ node: A.node, runId: "card", step: "approve", key: "card:old", action: "yes" }, d, "x")).status).toBe(409)
+    expect((await widgetAnswer({ node: A.node, runId: "card", step: "earlier", key: "card:c1", action: "yes" }, d, "x")).status).toBe(409)
+    expect((await widgetAnswer({ node: B.node, runId: "blocked", step: "earlier", action: "reply", text: "go" }, d, "x")).status).toBe(409)
+    expect(d.decide).not.toHaveBeenCalled()
+    expect(d.reply).not.toHaveBeenCalled()
+  })
+  it("sends a card that offers choices to the Approvals inbox", async () => {
+    const d = deps({ hasChoices: (wf, step) => wf === "release" && step === "approve" })
+    const s = await widgetSnapshot(d)
+    expect(s.rows[0].answer).toEqual({ kind: "card", key: "card:c1", choices: true })
+    expect((await widgetAnswer({ node: A.node, runId: "card", step: "approve", key: "card:c1", action: "yes" }, d, "x")).status).toBe(400)
     expect(d.decide).not.toHaveBeenCalled()
   })
   it("refuses the wrong kind of answer, an empty reply and bad input", async () => {
     const d = deps()
-    expect((await widgetAnswer({ node: A.node, runId: "card", action: "reply", text: "hi" }, d, "x")).status).toBe(400)
-    expect((await widgetAnswer({ node: B.node, runId: "blocked", action: "yes" }, d, "x")).status).toBe(400)
-    expect((await widgetAnswer({ node: B.node, runId: "blocked", action: "reply", text: " " }, d, "x")).status).toBe(400)
-    expect((await widgetAnswer({ node: A.node, runId: "card", action: "later" }, d, "x")).status).toBe(400)
-    expect((await widgetAnswer({ runId: "card", action: "yes" }, d, "x")).status).toBe(400)
+    expect((await widgetAnswer({ node: A.node, runId: "card", step: "approve", key: "card:c1", action: "reply", text: "hi" }, d, "x")).status).toBe(400)
+    expect((await widgetAnswer({ node: B.node, runId: "blocked", step: "deploy", action: "yes" }, d, "x")).status).toBe(400)
+    expect((await widgetAnswer({ node: B.node, runId: "blocked", step: "deploy", action: "reply", text: " " }, d, "x")).status).toBe(400)
+    expect((await widgetAnswer({ node: A.node, runId: "card", step: "approve", key: "card:c1", action: "later" }, d, "x")).status).toBe(400)
+    expect((await widgetAnswer({ runId: "card", step: "approve", action: "yes" }, d, "x")).status).toBe(400)
     expect(d.decide).not.toHaveBeenCalled()
     expect(d.reply).not.toHaveBeenCalled()
   })
   it("refuses answers while the widget is off", async () => {
     const d = deps({ settings: () => ({ ...DEFAULT_WIDGET_SETTINGS, enabled: false }) })
-    expect((await widgetAnswer({ node: A.node, runId: "card", action: "yes" }, d, "x")).status).toBe(409)
+    expect((await widgetAnswer({ node: A.node, runId: "card", step: "approve", key: "card:c1", action: "yes" }, d, "x")).status).toBe(409)
   })
 })
 
@@ -186,15 +202,15 @@ describe("routes", () => {
     const got = await call(handleDashboardWidget, d, "GET", "/api/workflows/widget?tag=client:acme")
     expect(got.status).toBe(200)
     expect(got.body.rows.map((r: any) => r.runId)).toEqual(["blocked"])
-    await call(handleDashboardWidget, d, "POST", "/api/workflows/widget/answer", { node: A.node, runId: "card", action: "no" })
+    await call(handleDashboardWidget, d, "POST", "/api/workflows/widget/answer", { node: A.node, runId: "card", step: "approve", key: "card:c1", action: "no" })
     expect(d.decide).toHaveBeenCalledWith(A.node, "card:c1", "no", "operator (progress widget)")
     expect((await call(handleDashboardWidget, d, "GET", "/api/workflows/other")).handled).toBe(false)
   })
   it("serves the phone app and names the phone as who answered", async () => {
     const d = deps()
     expect((await call(handleAppWorkflows, d, "GET", "/api/app/workflows")).body.rows.length).toBe(3)
-    await call(handleAppWorkflows, d, "POST", "/api/app/workflows/answer", { node: B.node, runId: "blocked", action: "reply", text: "go" })
-    expect(d.reply).toHaveBeenCalledWith(B.node, "blocked", "go", "operator (phone: My phone)")
+    await call(handleAppWorkflows, d, "POST", "/api/app/workflows/answer", { node: B.node, runId: "blocked", step: "deploy", action: "reply", text: "go" })
+    expect(d.reply).toHaveBeenCalledWith(B.node, "blocked", "deploy", "go", "operator (phone: My phone)")
     expect((await call(handleAppWorkflows, d, "GET", "/api/app/fleet")).handled).toBe(false)
   })
   it("gates the daemon's answer route like cancel", () => {
@@ -322,5 +338,14 @@ describe("ownerReply", () => {
     expect((await h.dispatcher.ownerReply({ runId: id, text: "  " })).error).toMatch(/empty/)
     expect((await h.dispatcher.ownerReply({ runId: "nope", text: "hi" })).error).toMatch(/no run/)
     expect(h.turns.length).toBe(1)
+  })
+
+  it("refuses an answer meant for another step", async () => {
+    const h = setup(() => "No access.\nRESULT: blocked")
+    const { run: started } = await h.dispatcher.startRun({ workflowId: "one-step" })
+    const id = started!.id
+    await until(() => !!h.runs.get(id)?.meta?.blocked)
+    expect((await h.dispatcher.ownerReply({ runId: id, nodeId: "tell", text: "go" })).error).toMatch(/blocked on step "deploy", not "tell"/)
+    expect(await h.dispatcher.ownerReply({ runId: id, nodeId: "deploy", text: "go" })).toEqual({ ok: true })
   })
 })

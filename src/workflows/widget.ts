@@ -45,7 +45,9 @@ export type WidgetState = "waiting-on-you" | "blocked" | "waiting" | "running"
 
 /** How the owner answers a row from the widget, when it waits on them. */
 export type WidgetAnswer =
-  | { kind: "card"; key: string }
+  /** `choices`: the card offers more than yes or no, so it is answered
+   *  in the Approvals inbox (or the phone's Choose…), not with Yes/No. */
+  | { kind: "card"; key: string; choices?: boolean }
   | { kind: "reply"; agentId: string }
 
 export interface WidgetRow {
@@ -76,6 +78,8 @@ export interface WidgetRowOptions {
   title?: (workflowId: string) => string | undefined
   /** The agent a step belongs to, when the workflow is known here. */
   stepAgent?: (workflowId: string, nodeId: string) => string | undefined
+  /** Does this owner.ask step offer choices? Unknown (a peer's workflow): no. */
+  hasChoices?: (workflowId: string, nodeId: string) => boolean
   /** Only runs with one of these tags; empty or unset: all. */
   tags?: string[]
 }
@@ -83,15 +87,17 @@ export interface WidgetRowOptions {
 const ORDER: Record<WidgetState, number> = { "waiting-on-you": 0, blocked: 1, waiting: 2, running: 3 }
 
 /** Who a step waits for, what state that is, and how the owner answers. */
-export function stepOwnership(run: WorkflowRun, stepAgent?: (workflowId: string, nodeId: string) => string | undefined): Pick<WidgetRow, "owner" | "state" | "answer"> {
+export function stepOwnership(run: WorkflowRun, opts: Pick<WidgetRowOptions, "stepAgent" | "hasChoices"> = {}): Pick<WidgetRow, "owner" | "state" | "answer"> {
   const p = run.pausedAt
   if (run.status === "running" || !p) {
     const step = currentStep(run)
-    return { owner: stepAgent?.(run.workflowId, step) ?? "AgentX", state: "running", answer: null }
+    return { owner: opts.stepAgent?.(run.workflowId, step) ?? "AgentX", state: "running", answer: null }
   }
   switch (p.kind) {
-    case "ownerDecision":
-      return { owner: "you", state: "waiting-on-you", answer: { kind: "card", key: `card:${p.cardId}` } }
+    case "ownerDecision": {
+      const choices = p.purpose === "ask" && !!opts.hasChoices?.(run.workflowId, p.nodeId)
+      return { owner: "you", state: "waiting-on-you", answer: { kind: "card", key: `card:${p.cardId}`, ...(choices ? { choices } : {}) } }
+    }
     case "agentStep":
       return p.blocked
         ? { owner: p.agentId, state: "blocked", answer: { kind: "reply", agentId: p.agentId } }
@@ -124,7 +130,7 @@ export function widgetRows(runs: NodeRun[], opts: WidgetRowOptions = {}): Widget
       nodeName,
       title: run.meta.title ?? opts.title?.(run.workflowId) ?? run.workflowId,
       step: currentStep(run),
-      ...stepOwnership(run, opts.stepAgent),
+      ...stepOwnership(run, opts),
       waitingOn: waitingOn(run),
       since: run.updatedAt,
       tags,

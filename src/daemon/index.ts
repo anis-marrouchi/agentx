@@ -4295,15 +4295,17 @@ export class AgentXDaemon {
         return
       }
       // The owner answers a blocked step (#796, the progress widget): the
-      // agent gets the answer as a turn. { text, by? }
+      // agent gets the answer as a turn. { step, text, by? }: `step` is the
+      // one the owner saw; a run blocked on another step refuses it.
       const answerRun = req.method === "POST" && path.match(/^\/workflow-runs\/([^/]+)\/answer$/)
       if (answerRun) {
         if (!this.workflowDispatcher) { this.json(res, 503, { error: "workflow engine not enabled on this node" }); return }
         const body = await readBody(req)
         const text = typeof body.text === "string" ? body.text : ""
         const by = typeof body.by === "string" && body.by.trim() ? body.by.trim().slice(0, 80) : undefined
-        const r = await this.workflowDispatcher.ownerReply({ runId: decodeURIComponent(answerRun[1]), text, by })
-        this.json(res, r.ok ? 200 : 409, r.ok ? { ok: true } : { error: r.error })
+        const nodeId = typeof body.step === "string" && body.step.trim() ? body.step.trim() : undefined
+        const r = await this.workflowDispatcher.ownerReply({ runId: decodeURIComponent(answerRun[1]), nodeId, text, by })
+        this.json(res, r.ok ? 200 : r.missing ? 404 : 409, r.ok ? { ok: true } : { error: r.error })
         return
       }
       const manualRun = req.method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
