@@ -131,6 +131,8 @@ const WIDGET_SCRIPT = `
       status('Paused while you type', false);
       return;
     }
+    // An empty box the owner clicked into keeps its focus across the redraw.
+    var focusRun = active && active.tagName === 'TEXTAREA' && root.contains(active) ? active.getAttribute('data-run') : null;
     // Keep what the owner typed across a redraw.
     root.querySelectorAll('textarea[data-run]').forEach(function (t) { drafts[t.getAttribute('data-run')] = t.value; });
     rows = data.rows || [];
@@ -165,6 +167,7 @@ const WIDGET_SCRIPT = `
       root.querySelectorAll('textarea[data-run]').forEach(function (t) {
         var id = t.getAttribute('data-run');
         if (drafts[id]) t.value = drafts[id];
+        if (id === focusRun) t.focus();
       });
     }
     var note = 'Updated ' + new Date(data.ts || Date.now()).toLocaleTimeString();

@@ -37,7 +37,7 @@ A workflow that waits on you has a yellow border.
 2. **Browser:** type what the agent should do in the box, for example where to find the password.
 3. **Browser:** click **Send**. The agent gets your answer with the workflow's name and step, and carries on. Its reminders start again, and if it still cannot go on it tells you once more.
 
-While you type an answer, the widget holds its updates and the line under the heading says **Paused while you type**, so a new update never wipes your answer. It catches up as soon as you send, empty the box, or switch to another window.
+While you type an answer, the widget holds its updates and the line under the heading says **Paused while you type**, so a new update never wipes your answer. It catches up right after you send. If you empty the box or switch to another window instead, it catches up at its next read, within `refreshSeconds` (10 seconds by default).
 
 Each answer names the step you saw. If the workflow moved on in the meantime, for example someone answered first or a new question replaced the one on screen, your answer is refused rather than given to a different step.
 
