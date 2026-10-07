@@ -1097,6 +1097,15 @@ Compile unabsorbed entries into typed per-agent wiki articles.
 
 When a run succeeds, every entry it read is recorded in `agents/<id>/_absorbed.json` under the wiki directory, including entries no article cites, so the next run moves on to new entries. When a run fails, nothing is recorded and the same entries are offered again.
 
+Before it writes, absorb looks for the articles the entries are already about, using the same search as `agentx wiki query` (a word match against the catalog, the wiki-rerank seat when it is on, then one hop along each article's links). It gives the model those articles in full and asks it to update them rather than write new ones. The run prints them on an `Existing:` line.
+
+Absorb then protects those articles in two ways:
+
+- **No duplicates.** A new article whose title matches an existing one is written over the existing article. The run prints `~ <new path> → <existing path>`.
+- **No lost facts.** An update that leaves out a commit hash, a web link, a `[[wikilink]]` or a number (a count, an amount, a date) from the old article is refused. The run prints `! refused <path>` and the facts that were missing. The old article stays as it was, and the entries behind it stay queued for the next run.
+
+When an update is saved, the article keeps its creation date, its access setting and the entries it already cited.
+
 Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
 
 Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (absorb uses Sonnet unless `--model` or `AGENTX_WIKI_ABSORB_MODEL` names another model). They look for it on your PATH and also in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, so they work from the daemon and from the `agentx_wiki_query` tool without a login shell's PATH.
@@ -3455,6 +3464,7 @@ No flags.
 
 - **`unknown option`:** your installed version is older or newer than these docs. Use the flags that `agentx <command> --help` shows.
 - **`claude: command not found` from a wiki command:** the `claude` CLI isn't installed in any of the folders listed under `agentx wiki absorb`. Install it, or add its folder to the daemon's PATH.
+- **`wiki absorb` keeps printing `! refused <path>`:** the model's update left out facts the article already had, so the same entries come back each run. Check the facts listed under the message. If one is really wrong, correct it in the article with `agentx wiki edit`, then run absorb again.
 - **`unknown command`:** check the spelling and the command group. Advanced commands don't appear in `agentx --help`, but they still run.
 - **`error: required option … not specified`:** the flag is marked **required** above. Add it and run the command again.
 - **A command can't find your agents or settings:** run it from the folder that holds `agentx.json`, or pass `--config <path>` where the command offers it.

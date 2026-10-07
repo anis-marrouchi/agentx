@@ -7,6 +7,7 @@ import { startWikiServer } from "@/wiki/serve"
 import type { WikiPeer } from "@/wiki/article-sync"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
+import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
@@ -359,7 +360,16 @@ wiki
         }
       }
 
-      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock)
+      // The articles these entries are about, in full, so the model
+      // updates them instead of rewriting them blind or filing a
+      // duplicate beside them (#801).
+      const catalog = existingIndex.articles.filter((a) => a.path && !a.path.includes("/_versions/"))
+      const covering = await findCoveringArticles(unabsorbed, agentWiki, agentId, catalog)
+      if (covering.length > 0) {
+        console.log(chalk.dim(`    Existing: ${covering.map((a) => a.path).join(", ")}`))
+      }
+
+      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock, renderCoveringBlock(covering))
       console.log(chalk.dim(`    Mode: ${modeLabel(mode)}`))
 
       // Write prompt and run Claude
@@ -410,20 +420,41 @@ wiki
           continue
         }
         const { articles, gaps } = response
+        // Entries behind a refused save stay queued for the next run.
+        const held = new Set<string>()
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)
-          const graphPath = pickGraphPath(article.sources || [], unabsorbed)
+          const sources = Array.isArray(article.sources) ? article.sources : []
+          // Same title as an existing article: same subject, same file.
+          const target = absorbTargetPath(article, catalog)
+          if (target !== article.path) {
+            console.log(chalk.dim(`    ~ ${article.path} → ${target} (an article with this title exists)`))
+            article.path = target
+          }
+          const previous = agentWiki.readArticle(article.path)
+          if (previous) {
+            const dropped = droppedFacts(previous.content, String(article.content ?? ""))
+            if (dropped.length > 0) {
+              console.log(chalk.yellow(`    ! refused ${article.path}: the rewrite drops ${dropped.length} fact(s) the article has`))
+              console.log(chalk.dim(`       ${dropped.slice(0, 8).join("; ")}${dropped.length > 8 ? "; …" : ""}`))
+              for (const id of sources) held.add(id)
+              continue
+            }
+          }
+          const graphPath = pickGraphPath(sources, unabsorbed) ?? previous?.meta.graphPath
           agentWiki.writeArticle(article.path, {
             title: article.title,
             type: article.type as any,
             related: Array.isArray(article.related) ? article.related : undefined,
             tags: article.tags || [],
             owner: agentId,
-            access: "public",
-            created: now,
+            access: previous?.meta.access ?? "public",
+            sharedWith: previous?.meta.sharedWith?.length ? previous.meta.sharedWith : undefined,
+            created: previous?.meta.created || now,
             lastUpdated: now,
-            sources: article.sources || [],
+            // An update cites what the old article cited as well.
+            sources: [...new Set([...(previous?.meta.sources ?? []), ...sources])],
             graphPath,
           }, article.content, agentId)
 
@@ -431,7 +462,7 @@ wiki
           const relStr = Array.isArray(article.related) && article.related.length
             ? ` → ${article.related.slice(0, 3).join(", ")}${article.related.length > 3 ? ", …" : ""}`
             : ""
-          console.log(`    ${chalk.green("+")} ${typeTag}${article.path}: ${article.title}${chalk.dim(relStr)}`)
+          console.log(`    ${chalk.green(previous ? "~" : "+")} ${typeTag}${article.path}: ${article.title}${chalk.dim(relStr)}`)
           const tagStr = (article.tags || []).slice(0, 4).join(", ")
           if (tagStr) console.log(chalk.dim(`       tags: ${tagStr}`))
           if (graphPath?.length) {
@@ -446,7 +477,9 @@ wiki
         if (runFailed) {
           console.log(chalk.yellow(`    Run reported an error — ${unabsorbed.length} entries stay queued`))
         } else {
-          hub.markProcessed(agentId, unabsorbed.map((e) => e.id), articles.flatMap((a) => a.sources || []))
+          const done = unabsorbed.map((e) => e.id).filter((id) => !held.has(id))
+          if (held.size > 0) console.log(chalk.yellow(`    ${unabsorbed.length - done.length} entries stay queued behind refused saves`))
+          hub.markProcessed(agentId, done, articles.flatMap((a) => a.sources || []).filter((id) => !held.has(id)))
         }
 
         // Gaps: entities absorb referenced but has no article for.

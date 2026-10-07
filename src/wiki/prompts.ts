@@ -23,8 +23,9 @@ export function buildAbsorbPrompt(
   entryTexts: string,
   entryCount: number,
   factsBlock = "",
+  coveringBlock = "",
 ): string {
-  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount, factsBlock)
+  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount, factsBlock, coveringBlock)
 }
 
 function buildFarzapediaPrompt(
@@ -34,6 +35,7 @@ function buildFarzapediaPrompt(
   entryTexts: string,
   entryCount: number,
   factsBlock = "",
+  coveringBlock = "",
 ): string {
   const worldviewSection = worldview ? `\n## Worldview\n\n${worldview}\n` : ""
 
@@ -83,7 +85,7 @@ Path reflects type: \`<type>s/<slug>.md\` where slug is a kebab-case title.
 
 For each of the ${entryCount} raw entries below, ask in this order:
 
-1. **Does it extend an existing article?** If a person/project/concept mentioned in the entry already has an article in the catalog, produce an UPDATE with the full merged content. Prefer merging over proliferating.
+1. **Does it extend an existing article?** If a person/project/concept/event mentioned in the entry already has an article in the catalog, produce an UPDATE at that article's path with the full merged content. Prefer merging over proliferating. When the article is shown in full below, keep every fact it already has.
 2. **Does it deserve a new article?** Only if the subject is a persistent entity (a person, a project, a recurring concept, a specific event/decision) that future queries will need to find. Not every conversation deserves an article.
 3. **Does it belong in an existing \`event\` or \`decision\`?** Most work entries fold into one of these.
 4. **Can you skip it?** If the entry is small talk, a transient status ping, or already covered elsewhere — skip. The wiki is curated, not exhaustive.
@@ -156,7 +158,7 @@ sources: ["entry-id-1", "entry-id-2"]
 \`\`\`
 
 Access guidance: default \`public\`; \`private\` only for sensitive credentials or agent-specific learnings; \`shared\` with specific agent IDs when the article matters only to a subset.
-${worldviewSection}${existingList}${factsBlock}
+${worldviewSection}${existingList}${coveringBlock}${factsBlock}
 ## Gap Detection
 
 After compiling, populate a \`gaps\` array: wikilink targets you referenced but for which no article exists yet. Be specific:
