@@ -1743,6 +1743,12 @@ export class AgentRegistry {
       })
     }
 
+    // How long the session sat idle before this turn. Read it now: seeding,
+    // recording the user message and compaction below all bump updatedAt,
+    // after which the session always looks idle for ~0 ms. The stale rule,
+    // the resume gate and the router all need the pre-turn value.
+    const priorIdleMs = this.sessions.sessionIdleMs(task.agentId, channel, chatId)
+
     // Mirror the live channel before recording the new user message — on a
     // cold-create (fresh chatId, new day after rotation), this calls the
     // adapter's seedHistory and back-fills recent messages so the agent
@@ -1920,7 +1926,7 @@ export class AgentRegistry {
           : undefined
 
     // If session is stale (idle > staleMinutes), start fresh with full context rebuild
-    if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId)) {
+    if (resumeSessionId && this.sessions.isSessionStale(task.agentId, channel, chatId, priorIdleMs)) {
       this.log(`[${task.agentId}] session stale for ${channel}:${chatId}, starting fresh`)
       if (state.def.tier === "claude-code") {
         void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "stale")
@@ -1983,18 +1989,22 @@ export class AgentRegistry {
       const gate = this.config.session?.resumeGate
       if (gate && gate.mode !== "off") {
         const r = decideResume({
-          contextTokens: this.sessions.getLastTurnContextTokens(task.agentId, channel, chatId),
+          // Raw reading: the cumulative fallback would make C the turn's
+          // summed input, N ≈ 1, and the cold-cache cost about twice it.
+          contextTokens: this.sessions.getRawLastTurnContextTokens(task.agentId, channel, chatId),
           turnInputTokens: this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId),
-          idleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId) ?? 0,
+          idleMs: priorIdleMs ?? 0,
         }, gate)
         if (r.rotate && gate.mode === "active") {
           this.log(`[${task.agentId}] cost rotation for ${channel}:${chatId}: ${describeResume(r)}`)
           void this.captureRotationMemoAsync(task.agentId, state.def, resumeSessionId, channel, chatId, "cost")
+          // Read before clearing: clearClaudeSessionId resets the counters.
+          const lastTokens = this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId)
           this.sessions.clearClaudeSessionId(task.agentId, channel, chatId)
           getEventBus().emit("session:rotated", {
             agentId: task.agentId, channel, chatId,
             reason: "cost",
-            lastTurnInputTokens: this.sessions.getLastTurnInputTokens(task.agentId, channel, chatId),
+            lastTurnInputTokens: lastTokens,
             at: new Date().toISOString(),
           })
           resumeSessionId = undefined
@@ -2513,7 +2523,7 @@ export class AgentRegistry {
           eventActions: task.context?.channelMeta?.eventActions,
           triage: this.config.session.triage,
           isFollowUp: Boolean(resumeSessionId),
-          sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
+          sessionIdleMs: resumeSessionId ? priorIdleMs : null,
         })
       : undefined
     if (triage?.downgraded) this.log(`[${task.agentId}] ${triage.reason}`)
@@ -2532,7 +2542,7 @@ export class AgentRegistry {
                   isFollowUp: Boolean(resumeSessionId),
                   // Idle time decides whether the cache this would give up still
                   // exists. See routing.ts for the arithmetic.
-                  sessionIdleMs: this.sessions.sessionIdleMs(task.agentId, channel, chatId),
+                  sessionIdleMs: resumeSessionId ? priorIdleMs : null,
                   cheapModel,
                 }))
                 if (route.downgraded) {
