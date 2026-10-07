@@ -6,6 +6,7 @@ import {
   type EntityRef,
   type NodeExecutionEntry,
   type PausedAt,
+  type RunMeta,
   type RunStatus,
   type WorkflowRun,
 } from "./types"
@@ -98,6 +99,8 @@ export class RunStore {
     depth?: number
     /** Defaults to the current event root, if any. */
     eventRootId?: string
+    /** Follow-up runs (#788): title, tags, who started it. */
+    meta?: RunMeta
   }): WorkflowRun {
     const now = new Date().toISOString()
     const id = randomUUID()
@@ -118,6 +121,7 @@ export class RunStore {
       depth: args.depth ?? 0,
       eventRootId: args.eventRootId ?? currentRoot()?.rootId,
       joinCounters: {},
+      ...(args.meta ? { meta: args.meta } : {}),
       createdAt: now,
       updatedAt: now,
     }
@@ -233,6 +237,17 @@ export class RunStore {
     const updated: WorkflowRun = { ...run, status, updatedAt: new Date().toISOString() }
     this.appendSnapshot(updated)
     if (status !== "running" && status !== "paused") this.clearIndex(updated.entityRef)
+    return updated
+  }
+
+  /** Merge fields into a run's meta (#788). Appends a snapshot, like
+   *  setStatus; history and context are carried over as they are. */
+  setMeta(runId: string, patch: Partial<RunMeta>): WorkflowRun | null {
+    const run = this.get(runId)
+    if (!run) return null
+    const meta: RunMeta = { tags: [], followUp: false, approvedAtStart: false, ...run.meta, ...patch }
+    const updated: WorkflowRun = { ...run, meta, updatedAt: new Date().toISOString() }
+    this.appendSnapshot(updated)
     return updated
   }
 

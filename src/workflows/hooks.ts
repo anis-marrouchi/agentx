@@ -29,10 +29,25 @@ export function createWorkflowHookHandlers(dispatcher: WorkflowDispatcher): Part
     "pre:channel-message": async (ctx) => {
       const msg = ctx.msg as IncomingMessage | undefined
       if (!msg) return {}
+      const chatId = msg.group?.id ?? msg.sender.id
+
+      // A run waiting for this person's reply (person.wait, #788) takes
+      // it first, on any channel: the workflow owns that answer.
+      const waiting = await dispatcher.resumeFromReply({
+        channel: msg.channel,
+        chatId,
+        accountId: msg.accountId,
+        senderId: msg.sender.id,
+        senderName: msg.sender.name,
+        text: msg.text,
+        media: msg.media,
+        messageId: msg.id,
+      })
+      if (waiting) return { blocked: true, message: `reply taken by workflow run ${waiting}` }
+
       const source = channelToTriggerSource(msg.channel)
       if (!source) return {}
 
-      const chatId = msg.group?.id ?? msg.sender.id
       const entityRef: EntityRef = { backend: msg.channel, id: `${msg.channel}:${chatId}` }
 
       const { claimed } = await dispatcher.dispatch({

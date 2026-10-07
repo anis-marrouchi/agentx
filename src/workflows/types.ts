@@ -67,6 +67,13 @@ export const nodeTypeSchema = z.enum([
   "signal.emit",
   "signal.wait",
   "timer.boundary",
+  // Follow-up steps (#788): the owner and the people a workflow works
+  // with. Each has a main port (yes, sent, reply) and a fallback port
+  // (no / expired, declined, timeout); see FOLLOW_UP_PORTS.
+  "owner.notify",
+  "owner.ask",
+  "person.message",
+  "person.wait",
   // Persistence / pause
   "checkpoint",
   // Terminal
@@ -241,8 +248,33 @@ export const workflowSchema = z.object({
   // both shapes and normalise to an ISO string.
   created: isoDateString.optional(),
   updated: isoDateString.optional(),
+  /** Follow-up (#788): an agent that picks this workflow for a request
+   *  starts it at once. Off: the owner is told which workflow it chose
+   *  first. */
+  autoStart: z.boolean().default(false),
+  /** When the owner approves `person.message` steps: all at once when the
+   *  run starts, or each one before it is sent. Unset: the node's
+   *  `workflows.followUp.approval` setting. A message to a person never
+   *  goes out without one of the two. */
+  approval: z.enum(["start", "step"]).optional(),
+  /** Stall time and nudges for this workflow's agent steps, over the
+   *  node's `workflows.followUp` settings. */
+  followUp: z.object({
+    stallMinutes: z.number().positive().max(7 * 24 * 60).optional(),
+    maxNudges: z.number().int().min(0).max(20).optional(),
+  }).optional(),
 })
 export type Workflow = z.infer<typeof workflowSchema>
+
+/** The main port and the other ports of each follow-up step. An edge with
+ *  no `fromPort` leaves on the main port; an edge with one leaves on that
+ *  port only. A step that ends on another port with no edge for it stops
+ *  the run, and the owner is told why. */
+export const FOLLOW_UP_PORTS: Record<string, { main: string; other: string[] }> = {
+  "owner.ask": { main: "yes", other: ["no", "expired"] },
+  "person.message": { main: "sent", other: ["declined"] },
+  "person.wait": { main: "reply", other: ["timeout"] },
+}
 
 // --------------------------- DAG linter -----------------------------------
 //
@@ -340,6 +372,8 @@ function isPauseCapableNode(type: NodeType): boolean {
   // A cycle is safe if it crosses at least one such node — otherwise the
   // walker would spin forever.
   return type === "agent"
+      || type === "owner.ask"
+      || type === "person.wait"
       || type === "checkpoint"
       || type === "subProcess"
       || type === "signal.wait"
@@ -459,8 +493,88 @@ export const pausedAtSchema = z.discriminatedUnion("kind", [
     /** ISO-8601 instant when the timer should fire. */
     fireAt: z.string(),
   }),
+  // Follow-up (#788): waiting on the owner's answer to a decision card.
+  // `ask` is an owner.ask step, `send` a person.message waiting for its
+  // approval (the message is kept here), `start` the whole run waiting
+  // for its approval before the first step.
+  z.object({
+    kind: z.literal("ownerDecision"),
+    nodeId: z.string(),
+    cardId: z.string(),
+    purpose: z.enum(["ask", "send", "start"]),
+    message: z.object({
+      channel: z.string(),
+      chatId: z.string(),
+      accountId: z.string().optional(),
+      text: z.string(),
+      to: z.string().optional(),
+    }).optional(),
+  }),
+  // Waiting for a person to write back on a channel, with a deadline and
+  // reminders.
+  z.object({
+    kind: z.literal("replyWait"),
+    nodeId: z.string(),
+    channel: z.string(),
+    chatId: z.string(),
+    accountId: z.string().optional(),
+    /** In a group: only this sender's message counts. */
+    from: z.string().optional(),
+    deadline: z.string(),
+    nextRemindAt: z.string().optional(),
+    remindEveryMs: z.number().optional(),
+    reminders: z.number().int().default(0),
+    maxReminders: z.number().int().default(0),
+    /** A person.message step whose sent text the reminder repeats. Unset:
+     *  the reminder goes to the owner instead. */
+    reminds: z.string().optional(),
+  }),
+  // An agent step whose turn ended without saying it is done: the agent
+  // is nudged when it stalls, and the step is blocked after the last nudge.
+  z.object({
+    kind: z.literal("agentStep"),
+    nodeId: z.string(),
+    agentId: z.string(),
+    nudges: z.number().int().default(0),
+    maxNudges: z.number().int().default(0),
+    stallMs: z.number(),
+    nextNudgeAt: z.string().optional(),
+    /** Set once the step is blocked: no more nudges, the owner is told. */
+    blocked: z.string().optional(),
+  }),
 ])
 export type PausedAt = z.infer<typeof pausedAtSchema>
+
+/** What a follow-up run is about and who started it (#788). Runs that
+ *  triggers start have none. */
+export const runMetaSchema = z.object({
+  /** One line: what this run is doing, in the owner's words. */
+  title: z.string().optional(),
+  /** What the run concerns, as "kind:name" (client:acme, employee:sam,
+   *  project:site, idea:newsletter). The progress view groups by these. */
+  tags: z.array(z.string()).default([]),
+  /** The agent that started it. */
+  startedBy: z.string().optional(),
+  /** The open request (src/requests) this run serves. */
+  requestId: z.string().optional(),
+  /** Followed: nudges, reminders, a blocked notice and one summary at
+   *  the end. */
+  followUp: z.boolean().default(false),
+  /** The owner approved this run's messages when it started. */
+  approvedAtStart: z.boolean().default(false),
+  /** The messages that approval covers, by step id: recipient and text as
+   *  the owner saw them (messageKey). Any other message is asked again. */
+  approved: z.record(z.string()).optional(),
+  /** Why the run cannot go on without the owner, and when they were told. */
+  blocked: z.object({
+    nodeId: z.string(),
+    reason: z.string(),
+    at: z.string(),
+  }).optional(),
+  /** The owner got the end summary. Sent once. */
+  endNotifiedAt: z.string().optional(),
+})
+export type RunMeta = z.infer<typeof runMetaSchema>
 
 export const workflowRunSchema = z.object({
   id: z.string(),
@@ -497,6 +611,8 @@ export const workflowRunSchema = z.object({
   /** Event-bus root the run was started under (src/events/envelope.ts).
    *  Resumes after a pause or restart publish under it again. */
   eventRootId: z.string().optional(),
+  /** Follow-up runs only (#788). */
+  meta: runMetaSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

@@ -250,6 +250,31 @@ export const NODE_OUTPUTS: Record<NodeType, NodeOutputSchema> = {
   "timer.boundary":     { summary: "Paused until a timer elapses. Resumes with timing metadata.", fields: TIMER_BOUNDARY_OUTPUT },
   "checkpoint":         { summary: "Paused until a matching resume event arrives on this entity.", fields: CHECKPOINT_OUTPUT },
   "end":                { summary: "Terminal node — closes the run with the configured status. No output downstream.", fields: [] },
+  "owner.notify":       { summary: "Told the owner, through the node's notifications.", fields: [
+    { path: "text", type: "string", description: "What the owner was told." },
+    { path: "sentAt", type: "string", description: "When (ISO time)." },
+  ] },
+  "owner.ask":          { summary: "The owner's answer on a decision card. Leaves on port yes, no or expired.", fields: [
+    { path: "port", type: "string", description: "yes, no or expired.", example: `"yes"` },
+    { path: "choice", type: "string", description: "The option the owner picked, when the card offered choices." },
+    { path: "text", type: "string", description: "The draft as the owner approved it, after any edit." },
+    { path: "note", type: "string", description: "The owner's note on the card." },
+    { path: "cardId", type: "string", description: "The decision card's id." },
+  ] },
+  "person.message":     { summary: "A message to a person, sent once the owner approved it. Leaves on port sent or declined.", fields: [
+    { path: "text", type: "string", description: "The text that was sent (the owner may have edited it)." },
+    { path: "channel", type: "string", description: "Channel it went out on." },
+    { path: "chatId", type: "string", description: "The person's chat." },
+    { path: "messageId", type: "string", description: "Id of the sent message, when the channel gives one." },
+    { path: "approved", type: "string", description: "start (approved with the run) or step (on its own card)." },
+  ] },
+  "person.wait":        { summary: "A person's reply. Leaves on port reply, or timeout when the deadline passed.", fields: [
+    { path: "text", type: "string", description: "What the person wrote." },
+    { path: "from", type: "string", description: "Sender id." },
+    { path: "media", type: "any", description: "Attached file, when they sent one." },
+    { path: "reminders", type: "number", description: "Reminders sent before the reply came." },
+    { path: "timedOut", type: "bool", description: "True on the timeout port." },
+  ] },
 }
 
 /** Filter a node's fields by its current config (used for source-conditional

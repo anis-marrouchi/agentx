@@ -65,6 +65,8 @@ Reply and hand-off need open requests turned on, because the daemon's check is w
 
 You can also ask any agent "what is still open?". It reads the same list.
 
+A request with several steps can be run as a workflow that AgentX follows to the end; the request then closes by itself when the workflow is done. See [Let a workflow follow a request](./follow-up-workflows.md).
+
 ## When a request needs attention
 
 You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on, the request then shows as a card that stays on screen like a decision card, when no decision card is waiting: **Hand it back**, **Drop** or **Not now**. It shows once, and only for a request that came to need attention in the last day. After that it waits in the [Approvals inbox](../dashboard/approvals.md#requests-that-are-not-finished) as a **Request**, and counts in the daily digest:

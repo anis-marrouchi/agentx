@@ -1,4 +1,4 @@
-import type { Condition, Workflow, WorkflowEdge, WorkflowNode } from "./types"
+import { FOLLOW_UP_PORTS, type Condition, type Workflow, type WorkflowEdge, type WorkflowNode } from "./types"
 
 // --- Engine (V2 — dataflow walk driver) ---
 //
@@ -36,9 +36,13 @@ export function nextNodes(input: WalkInput): WalkResult {
 
   // Branch nodes: only the edge whose fromPort matches the selectedPort fires.
   // Linear nodes: all outgoing edges fire (rare in v1; defaults to one).
+  // Follow-up steps: an edge without a port leaves on the main port.
+  const ports = FOLLOW_UP_PORTS[fromNode.type]
   const firing = fromNode.type === "branch"
     ? outgoing.filter((e) => (e.fromPort ?? "") === (selectedPort ?? ""))
-    : outgoing
+    : ports
+      ? outgoing.filter((e) => (e.fromPort ?? ports.main) === (selectedPort ?? ports.main))
+      : outgoing
 
   return { nextPending: firing.map((e) => e.to) }
 }

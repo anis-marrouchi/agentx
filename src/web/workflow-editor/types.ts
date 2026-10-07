@@ -33,6 +33,10 @@ export type NodeType =
   | "signal.emit"
   | "signal.wait"
   | "timer.boundary"
+  | "owner.notify"
+  | "owner.ask"
+  | "person.message"
+  | "person.wait"
   | "checkpoint"
   | "end"
 

@@ -16,6 +16,8 @@ import { parseQueued } from "@/agents/queued"
 import { setDispatchBudget } from "@/agents/claude-code-quota"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
+import { isRestricted } from "@/guard/autonomy"
+import { OPEN_STATES, type OpenState } from "@/requests/store"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
 import { configureDecisions } from "@/decisions/seat"
@@ -63,6 +65,10 @@ import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/ag
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
+import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
+import { handleFollowUpApi } from "@/workflows/follow-up-api"
+import type { OwnerPort } from "@/workflows/nodes/types"
+import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
@@ -1834,7 +1840,11 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
           hasAgent: (id) => !!this.registry.getAgent(id),
-          onCardResult: (card) => { this.requests?.tracker.cardResolved(card); this.status?.board.cardResolved(card) },
+          onCardResult: (card) => {
+            this.requests?.tracker.cardResolved(card)
+            this.status?.board.cardResolved(card)
+            this.workflowCardResult(card)
+          },
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
           tellAgent: async (_agentId, text, card) => this.tellAgentCardResult(card, text),
@@ -2041,6 +2051,60 @@ export class AgentXDaemon {
       },
       log: this.log,
     })
+  }
+
+  /** Tell the owner through the notify path: a push to the default
+   *  channel, the Mac banner where there is one (#788). */
+  private async notifyOwner(title: string, message: string, from: string, priority = 4): Promise<void> {
+    await notify({ title, message, from, priority }, async (m) => {
+      try {
+        await this.router.sendOutbound({
+          channel: m.channel ?? defaultNotifyChannel(this.config),
+          chatId: m.chatId ?? "default",
+          text: `${m.title}\n${m.message}`,
+          priority: m.priority,
+          agentId: from,
+        } as any)
+      } catch (e: any) {
+        this.log(`[workflows] push "${title}" failed: ${e?.message ?? e}`)
+        // No Mac banner to fall back on: nothing reached the owner.
+        if (process.platform !== "darwin") throw e
+      }
+    }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+  }
+
+  /** A card raised for a workflow (#788): a step's answer resumes its
+   *  run; a proposed workflow is kept (switched on) on a yes. */
+  private workflowCardResult(card: DecisionCard): void {
+    if (card.origin?.kind === "workflow") {
+      void this.workflowDispatcher?.resumeFromCard(card)
+        .catch((e: any) => this.log(`[workflows] card ${card.id}: resume failed: ${e?.message ?? e}`))
+      return
+    }
+    if (card.origin?.kind !== "workflow-proposal" || !this.workflowStore) return
+    const wf = this.workflowStore.get(card.origin.workflowId)
+    if (!wf) return
+    if (card.status === "decided" && card.verdict === "yes") {
+      this.workflowStore.save({ ...wf, status: "active", state: "active" })
+      this.log(`[workflows] ${wf.id} kept as a reusable workflow (card ${card.id})`)
+    } else {
+      this.log(`[workflows] ${wf.id} not kept (card ${card.id} ${card.status === "decided" ? "no" : "expired"}); it stays switched off`)
+    }
+  }
+
+  /** A follow-up run ended: its request closes with the steps' evidence,
+   *  or needs attention (the summary already told the owner). */
+  private workflowRequestEnded(run: WorkflowRun): void {
+    const id = run.meta?.requestId
+    const store = this.requests?.store
+    if (!id || !store) return
+    const now = Date.now()
+    try {
+      if (run.status === "completed") store.close(id, "done", runEvidence(run), now)
+      else if (store.needsAttention(id, `Workflow run ${run.id} ${run.status === "canceled" ? "was stopped" : "did not finish"}: ${run.history.at(-1)?.note ?? run.status}`, now)) store.markNotified(id, now)
+    } catch (e: any) {
+      this.log(`[workflows] request ${id} after run ${run.id}: ${e?.message ?? e}`)
+    }
   }
 
   /** A check-in pass when one is due, or `force` now. macOS only. */
@@ -2723,6 +2787,22 @@ export class AgentXDaemon {
       log: (m) => this.log(m),
     })
 
+    // Follow-up (#788): the owner is told through the notify path and
+    // asked on decision cards; a card's answer resumes its run.
+    const owner: OwnerPort = {
+      notify: (text, run) => this.notifyOwner(run.meta?.title ? `Workflow: ${run.meta.title}`.slice(0, 120) : "Workflow", text, run.meta?.startedBy ?? "workflow", 3),
+      ask: async (input, run, nodeId) => {
+        const r = createCard(process.cwd(), {
+          ...input,
+          if_silent: "discard",
+          raised_by: run.meta?.startedBy ?? store.get(run.workflowId)?.ownerAgent ?? "workflow",
+        }, { settings: this.config.approvals, origin: { kind: "workflow", runId: run.id, nodeId } })
+        if (!r.ok) throw new Error(r.error)
+        this.log(`[workflows] run ${run.id}: card ${r.card.id} for step "${nodeId}"`)
+        return { cardId: r.card.id }
+      },
+    }
+
     const dispatcher = new WorkflowDispatcher({
       store, runs,
       nodeId: this.config.node.id,
@@ -2732,6 +2812,20 @@ export class AgentXDaemon {
       timers: timerService,
       events: this.events,
       log: (m) => this.log(m),
+      owner,
+      followUp: () => this.config.workflows.followUp,
+      onRunEnded: async (run, wf) => {
+        const { title, message } = runSummary(run, wf)
+        await this.notifyOwner(title, message, run.meta?.startedBy ?? "workflow", run.status === "completed" ? 3 : 4)
+        this.workflowRequestEnded(run)
+      },
+      onBlocked: async (run, wf, nodeId, reason) => {
+        const { title, message } = blockedText(run, wf, nodeId, reason)
+        await this.notifyOwner(title, message, run.meta?.startedBy ?? "workflow", 4)
+        const id = run.meta?.requestId
+        // Told just now: the request is not raised a second time.
+        if (id && this.requests?.store.needsAttention(id, `Workflow step "${nodeId}" is blocked: ${reason}`, Date.now())) this.requests.store.markNotified(id, Date.now())
+      },
     })
 
     // Start the tick loop now that the dispatcher has registered its
@@ -3751,6 +3845,52 @@ export class AgentXDaemon {
         return
       }
 
+      // Follow-up workflows, agent side (#788): agentx_workflow posts here.
+      if (path === "/follow-up" || path.startsWith("/follow-up/")) {
+        if (!this.workflowDispatcher || !this.workflowStore || !this.workflowRuns) {
+          this.json(res, 503, { error: "the workflow engine is off on this node (workflows.enabled)" }); return
+        }
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = await handleFollowUpApi(req.method || "GET", path + url.search, body as Record<string, unknown> | undefined, {
+          dispatcher: this.workflowDispatcher,
+          store: this.workflowStore,
+          runs: this.workflowRuns,
+          settings: this.config.workflows.followUp,
+          hasAgent: (id) => !!this.registry.getAgent(id),
+          runningTurn: (id, p) => {
+            const t = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
+            return t ? { ...warmProcessChat(t.context), restricted: isRestricted(t.autonomy) } : null
+          },
+          ownsRequest: (requestId, agentId) => {
+            const r = this.requests?.store.get(requestId)
+            return !!r && r.agentId === agentId && OPEN_STATES.includes(r.state as OpenState)
+          },
+          liveRequest: (agentId, channel, chatId) => this.requests?.tracker.liveRequestId(agentId, channel, chatId) ?? null,
+          linkRequest: (requestId, runId) => {
+            try {
+              this.requests?.store.link(requestId, "workflow", runId, Date.now())
+              this.requests?.store.progress(requestId, Date.now())
+            } catch (e: any) { this.log(`[workflows] link ${requestId} -> ${runId} failed: ${e?.message ?? e}`) }
+          },
+          notifyOwner: (text, from) => this.notifyOwner("Workflow started", text, from, 3),
+          proposeCard: async (wf, agentId) => {
+            const steps = wf.nodes.filter((n) => !n.type.startsWith("trigger.") && n.type !== "end").map((n) => `- ${n.id} (${n.type})`)
+            const r = createCard(process.cwd(), {
+              title: `Keep workflow: ${wf.title}`.slice(0, 120),
+              ask: "Keep this as a reusable workflow that agents can start?",
+              recommend: `${agentId} proposes it. Yes switches it on; no leaves it saved and switched off.`,
+              if_silent: "discard",
+              raised_by: agentId,
+              context: [wf.description ?? "", ...steps].filter(Boolean).join("\n").slice(0, 600),
+            }, { settings: this.config.approvals, origin: { kind: "workflow-proposal", workflowId: wf.id } })
+            if (!r.ok) throw new Error(r.error)
+            return { cardId: r.card.id }
+          },
+        }, this.callerProof(req))
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
       // Destructive-action guard (PreToolUse hook). Loopback ONLY: the hook
       // always runs on this host, and the verdict text names protected
       // hostnames, so it must never be reachable off-box. Answering here
@@ -4146,6 +4286,14 @@ export class AgentXDaemon {
         await this.handleChannelChats(res, decodeURIComponent(channelChatsMatch[1]), { localOnly })
         return
       }
+      // The owner stops a run (#788): its timers go and the summary is sent.
+      const cancelRun = req.method === "POST" && path.match(/^\/workflow-runs\/([^/]+)\/cancel$/)
+      if (cancelRun) {
+        if (!this.workflowDispatcher) { this.json(res, 503, { error: "workflow engine not enabled on this node" }); return }
+        const ok = await this.workflowDispatcher.cancelRun(decodeURIComponent(cancelRun[1]))
+        this.json(res, ok ? 200 : 404, ok ? { ok: true } : { error: "no such run, or it has already ended" })
+        return
+      }
       const manualRun = req.method === "POST" && path.match(/^\/workflows\/([^/]+)\/run$/)
       if (manualRun) {
         await this.handleWorkflowManualRun(req, res, decodeURIComponent(manualRun[1]))
@@ -4348,6 +4496,8 @@ export class AgentXDaemon {
             parentNodeId: r.parentNodeId,
             rootRunId: r.rootRunId,
             depth: r.depth,
+            ...(r.meta ? { meta: r.meta } : {}),
+            ...(r.pausedAt ? { pausedAt: slimPausedAt(r.pausedAt) } : {}),
             createdAt: r.createdAt,
             updatedAt: r.updatedAt,
           }))
@@ -7076,7 +7226,9 @@ export class AgentXDaemon {
       // While requests are on, every agent also gets this install's own
       // tool server, so it can say what it is doing with a request
       // (agentx_request) without the workspace being set up by hand (#400).
-      const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled ? agentxToolServer() : null)
+      // The same while follow-up workflows are on, for agentx_workflow (#788).
+      const followUp = this.config.workflows.enabled && this.config.workflows.followUp.enabled && (this.config.workflows.followUp.agents[agentId] ?? true)
+      const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled || followUp ? agentxToolServer() : null)
       try {
         const result = syncMcpToWorkspace(ws, mcp)
         switch (result) {
@@ -7389,7 +7541,7 @@ export class AgentXDaemon {
     try { body = await readJsonBody(req) } catch { body = {} }
     try {
       const r = await startManualWorkflowRun(
-        { get: (id) => this.workflowStore!.get(id), dispatchWorkflow: (a) => this.workflowDispatcher!.dispatchWorkflow(a) },
+        { get: (id) => this.workflowStore!.get(id), dispatchWorkflow: (a) => this.workflowDispatcher!.dispatchWorkflow(a), startRun: (a) => this.workflowDispatcher!.startRun(a) },
         workflowId,
         body,
       )

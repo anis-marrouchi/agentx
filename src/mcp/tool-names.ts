@@ -27,6 +27,7 @@ export const AGENTX_TOOL_NAMES: readonly string[] = [
   "agentx_schedule",
   "agentx_approval",
   "agentx_request",
+  "agentx_workflow",
   "agentx_debug",
   "agentx_wiki_query",
   "agentx_wiki_patch",

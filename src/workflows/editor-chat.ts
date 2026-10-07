@@ -180,6 +180,13 @@ const NODE_CATALOG = `# V2 Node catalog
 - \`signal.wait\` — pause until matching signal arrives. config: { "name": "approved", "scope": "workflow", "match": { "grantId": "{{trigger.id}}" } }
 - \`timer.boundary\` — pause for a duration. config: { "after": "PT2H" | "P1D" | 60 (minutes) }
 
+## The owner and other people (follow-up steps)
+An edge without fromPort leaves on the main port (yes / sent / reply); add edges with fromPort for the others.
+- \`owner.notify\` — tell the owner. config: { "text": "Deployed: {{deploy.reply}}" }
+- \`owner.ask\` — a decision card for the owner; ports yes / no / expired. config: { "ask": "Ship it?", "recommend": "…", "draft"?: "…", "choices"?: ["a","b"] }. Output: { port, choice, text, note }
+- \`person.message\` — message an employee or client once the owner approves the text (at start or on its own card); ports sent / declined. config: { "to": "Sam", "channel": "telegram", "chatId": "…", "text": "…" }
+- \`person.wait\` — wait for that person's reply; ports reply / timeout. config: { "reminds": "<person.message id>", "timeout": "2d", "remindAfter": "1d" } (or channel + chatId). Output: { text, from, media }
+
 ## Actions — side-effect sinks
 - \`action.send\` — post a message to any channel. config: { "channel": "telegram"|"whatsapp"|…, "chatId": "{{trigger.chatId}}", "text": "Hi {{classify.reply}}", "accountId"?: "…" }
 - \`action.createIssue\` — open a GitLab issue. config: { "channel": "gitlab", "project": "acme/web", "title": "…", "description": "…", "labels": ["x"], "assignees": ["user"] }

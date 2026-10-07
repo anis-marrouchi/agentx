@@ -49,6 +49,10 @@ export const PALETTE: PaletteSection[] = [
     { id: "node.userTask",   type: "userTask",   label: "Ask a person",  hint: "Send someone a form and wait for their answer", glyph: "g-state", icon: "box" },
     { id: "node.checkpoint", type: "checkpoint", label: "Wait for approval", hint: "Hold here until someone says go", glyph: "g-branch", icon: "flag" },
     { id: "node.timer.boundary", type: "timer.boundary", label: "Wait a while", hint: "Pause for an hour, a day, however long", glyph: "g-branch", icon: "clock" },
+    { id: "node.owner.notify",   type: "owner.notify",   label: "Tell me",            hint: "Send yourself a note through your notifications", glyph: "g-action", icon: "msg" },
+    { id: "node.owner.ask",      type: "owner.ask",      label: "Ask me to decide",   hint: "A decision card; goes on with yes, no or no answer", glyph: "g-branch", icon: "flag" },
+    { id: "node.person.message", type: "person.message", label: "Message someone",    hint: "Write to an employee or a client, once you approve the text", glyph: "g-action", icon: "msg" },
+    { id: "node.person.wait",    type: "person.wait",    label: "Wait for their reply", hint: "Hold until they answer or send a file, with a deadline and reminders", glyph: "g-branch", icon: "clock" },
   ]},
   { section: "Decide what happens next", items: [
     { id: "node.classify",   type: "classify",   label: "Sort it into buckets", hint: "Pick one of your labels — and take the \u201cnot sure\u201d path when it cannot tell", glyph: "g-branch", icon: "branch" },
@@ -183,6 +187,10 @@ export function nodeSummary(type: string, cfg: Record<string, unknown>): string 
     case "signal.wait":      return str("signal") ? `signal: ${str("signal")}` : ""
     case "timer.boundary":   return str("duration") ? `waits ${str("duration")}` : ""
     case "userTask":         return str("assignTo") ? `asks ${str("assignTo")}` : ""
+    case "owner.notify":     return clip(str("text"))
+    case "owner.ask":        return clip(str("ask"))
+    case "person.message":   return [str("to") && `to ${str("to")}`, clip(str("text"))].filter(Boolean).join(" — ")
+    case "person.wait":      return str("timeout") ? `waits up to ${str("timeout")}` : ""
     case "branch": {
       const n = Array.isArray(cfg.cases) ? (cfg.cases as unknown[]).length : 0
       return n ? `${n} way${n === 1 ? "" : "s"} out` : ""

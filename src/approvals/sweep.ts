@@ -143,6 +143,9 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
       // Marked first: a turn that hangs or crashes must not tell it twice.
       markAgentNotified(ctx.root, card.id, now)
       try { deps.onCardResult?.(card) } catch (e: any) { log(`[approvals] ${card.id}: result listener failed: ${e?.message ?? e}`) }
+      // A workflow step's card resumes its run (onCardResult): the run
+      // is what acts on it, not a turn on the agent (#788).
+      if (card.origin?.kind === "workflow") continue
       // A plan step's card is acted on by the plan check (#788), not by a turn.
       if (card.origin?.kind === "plan-step") continue
       if (!settings.notifyAgent || !deps.tellAgent) continue

@@ -6,6 +6,9 @@ import Database from "better-sqlite3"
 import { RunStore, WorkflowStore, lintWorkflow, workflowSchema, parseYamlWorkflow, renderWorkflowYaml, WorkflowYamlError } from "@/workflows"
 import { TEMPLATES, readTemplate, type TemplateName } from "@/workflows/templates"
 import { getTrace } from "@/storage/traces"
+import { progressGroups } from "@/workflows/follow-up"
+import { applyConfigMutation, findConfigPath } from "@/daemon/config-mutator"
+import { expandEnvVars } from "@/daemon/config"
 
 // --- agentx workflow — declarative state machines for channel events ---
 //
@@ -362,6 +365,9 @@ workflow
   .option("--force", "fire even if the trigger isn't `trigger.manual` (uses a synthesized event)", false)
   .option("--watch", "tail per-step traces while the run executes", false)
   .option("--daemon <url>", "daemon API base URL", "http://127.0.0.1:18800")
+  .option("--follow", "follow it to the end: reminders, nudges and one summary for you when it ends", false)
+  .option("--title <text>", "with --follow: what this run is for, in a few words")
+  .option("--tag <kind:name...>", "with --follow: what it concerns, e.g. client:acme employee:sam (repeatable)")
   .action(async (idOrFile: string, opts) => {
     let payload: unknown = {}
     if (opts.input) {
@@ -427,7 +433,7 @@ workflow
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ payload, force: !!opts.force }),
+        body: JSON.stringify({ payload, force: !!opts.force, ...(opts.follow ? { follow: { title: opts.title, tags: opts.tag ?? [] } } : {}) }),
       })
       if (!res.ok) {
         const text = await res.text()
@@ -435,9 +441,10 @@ workflow
         if (res.status === 409 && text.includes(`"hint"`)) console.log(chalk.dim(`  hint: pass --force to fire non-manual workflows for testing`))
         process.exit(1)
       }
-      const body = await res.json() as { runId?: string; source?: string; force?: boolean }
+      const body = await res.json() as { runId?: string; source?: string; force?: boolean; followUp?: boolean; awaitingApproval?: boolean }
       runId = body.runId
-      console.log(chalk.green(`  ✓ run started: ${runId || "(unknown id)"}${body.force ? chalk.dim(`  (forced, source=${body.source})`) : ""}`))
+      console.log(chalk.green(`  ✓ run started: ${runId || "(unknown id)"}${body.force ? chalk.dim(`  (forced, source=${body.source})`) : ""}${body.followUp ? chalk.dim("  (followed)") : ""}`))
+      if (body.awaitingApproval) console.log(chalk.yellow("  It waits for your approval (Approvals inbox) before the first step."))
     } catch (e: any) {
       console.log(chalk.red(`  request to daemon failed: ${e.message}`))
       process.exit(1)
@@ -593,10 +600,116 @@ workflow
   .command("cancel <runId>")
   .description("cancel an active run")
   .option("--node <id>", "home-node id")
-  .action((runId: string, opts) => {
+  .option("--daemon <url>", "daemon API base URL", "http://127.0.0.1:18800")
+  .action(async (runId: string, opts) => {
+    // Through the daemon when it runs: the run's reminders stop and you
+    // get its summary (#788). Straight on disk otherwise.
+    try {
+      const res = await fetch(`${String(opts.daemon).replace(/\/$/, "")}/workflow-runs/${encodeURIComponent(runId)}/cancel`, { method: "POST", signal: AbortSignal.timeout(5000) })
+      if (res.ok) { console.log(chalk.green(`  ✓ canceled ${runId}`)); return }
+      if (res.status === 404) { console.log(chalk.yellow(`  no running run ${runId}`)); process.exit(1) }
+    } catch { /* daemon not running: fall back to the file */ }
     const nodeId = opts.node || process.env.WF_NODE_ID || "local"
     const runs = new RunStore({ nodeId })
     const updated = runs.setStatus(runId, "canceled")
     if (!updated) { console.log(chalk.yellow(`  no such run: ${runId}`)); process.exit(1) }
     console.log(chalk.green(`  ✓ canceled ${runId}`))
+  })
+
+workflow
+  .command("progress")
+  .description("follow-up runs still going, grouped by who or what they concern")
+  .option("--tag <kind:name>", "only this tag, e.g. client:acme")
+  .option("--json", "machine-readable output", false)
+  .action((opts: { tag?: string; json?: boolean }) => {
+    const runs = new RunStore({ nodeId: process.env.WF_NODE_ID || "local" }).list({ limit: 500 })
+    const titles = new Map(new WorkflowStore().list().map((w) => [w.id, w.title] as const))
+    const groups = progressGroups(runs, (id) => titles.get(id)).filter((g) => !opts.tag || g.tag === opts.tag.toLowerCase())
+    if (opts.json) { console.log(JSON.stringify(groups, null, 2)); return }
+    if (!groups.length) { console.log(chalk.dim(`  nothing is being followed${opts.tag ? ` for ${opts.tag}` : ""}`)); return }
+    console.log()
+    for (const g of groups) {
+      console.log(`  ${chalk.bold(g.tag)} ${chalk.dim(`(${g.rows.length})`)}`)
+      for (const r of g.rows) {
+        const mark = r.blocked ? chalk.red("⚠ ") : ""
+        console.log(`    ${mark}${chalk.cyan(r.title)}  ${chalk.dim(r.runId.slice(0, 8))}`)
+        console.log(`      ${chalk.dim("step")} ${r.step}  ${chalk.dim("waiting on")} ${r.blocked ? chalk.red(r.waitingOn) : r.waitingOn}`)
+        console.log(`      ${chalk.dim(`since ${r.since.slice(0, 16).replace("T", " ")} UTC${r.startedBy ? ` · started by ${r.startedBy}` : ""}`)}`)
+      }
+    }
+    console.log()
+    console.log(chalk.dim("  Details: agentx workflow trace <runId> · Stop one: agentx workflow cancel <runId>"))
+  })
+
+function readFollowUpSettings(): Record<string, any> {
+  const path = findConfigPath()
+  let raw: any = {}
+  try { raw = expandEnvVars(JSON.parse(readFileSync(path, "utf-8"))) } catch { raw = {} }
+  const f = raw?.workflows?.followUp ?? {}
+  return {
+    enabled: f.enabled ?? true,
+    agents: f.agents ?? {},
+    stallMinutes: f.stallMinutes ?? 30,
+    maxNudges: f.maxNudges ?? 2,
+    approval: f.approval ?? "step",
+    engine: raw?.workflows?.enabled === true,
+  }
+}
+
+workflow
+  .command("follow-up")
+  .description("show or change how follow-up workflows run: reminders, approvals, which agents may start them")
+  .option("--enabled <on|off>", "agents may start follow-up workflows")
+  .option("--stall-minutes <n>", "minutes without progress before an agent step gets a reminder")
+  .option("--max-nudges <n>", "reminders before the step counts as blocked and you are told")
+  .option("--approval <start|step>", "approve messages to people all at once when a run starts, or each before it is sent")
+  .option("--agent <id>", "with --agent-enabled: the agent to turn it on or off for")
+  .option("--agent-enabled <on|off>", "turn follow-up workflows on or off for --agent")
+  .action(async (opts: Record<string, string | undefined>) => {
+    const onOff = (flag: string, v: string | undefined) => {
+      if (v === undefined) return undefined
+      if (v !== "on" && v !== "off") throw new Error(`${flag} takes on or off`)
+      return v === "on"
+    }
+    let patch: { enabled?: boolean; stallMinutes?: number; maxNudges?: number; approval?: string; agent?: [string, boolean] } = {}
+    try {
+      patch.enabled = onOff("--enabled", opts.enabled)
+      if (opts.stallMinutes !== undefined) {
+        const n = Number(opts.stallMinutes)
+        if (!(n > 0)) throw new Error("--stall-minutes must be a positive number")
+        patch.stallMinutes = n
+      }
+      if (opts.maxNudges !== undefined) {
+        const n = Number(opts.maxNudges)
+        if (!Number.isInteger(n) || n < 0 || n > 20) throw new Error("--max-nudges must be a whole number from 0 to 20")
+        patch.maxNudges = n
+      }
+      if (opts.approval !== undefined) {
+        if (opts.approval !== "start" && opts.approval !== "step") throw new Error("--approval takes start or step")
+        patch.approval = opts.approval
+      }
+      const agentOn = onOff("--agent-enabled", opts.agentEnabled)
+      if ((agentOn === undefined) !== (opts.agent === undefined)) throw new Error("--agent and --agent-enabled go together")
+      if (opts.agent && agentOn !== undefined) patch.agent = [opts.agent, agentOn]
+    } catch (e: any) {
+      console.error(chalk.red(`  ${e.message}`)); process.exitCode = 1; return
+    }
+    patch = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))
+    if (Object.keys(patch).length) {
+      const r = await applyConfigMutation((cfg: any) => {
+        const wf = (cfg.workflows ??= {})
+        const f = (wf.followUp ??= {})
+        for (const k of ["enabled", "stallMinutes", "maxNudges", "approval"] as const) if ((patch as any)[k] !== undefined) f[k] = (patch as any)[k]
+        if (patch.agent) (f.agents ??= {})[patch.agent[0]] = patch.agent[1]
+      })
+      if (!r.success) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
+      console.log(chalk.green("  ✓ saved") + (r.reloaded ? chalk.dim(" (daemon reloaded)") : ""))
+    }
+    const s = readFollowUpSettings()
+    const off = Object.entries(s.agents as Record<string, boolean>).filter(([, v]) => !v).map(([k]) => k)
+    if (!s.engine) console.log(chalk.yellow("  The workflow engine is off: set workflows.enabled to true first."))
+    console.log(`  Follow-up workflows     ${s.enabled ? "on" : "off"}${off.length ? chalk.dim(` (off for ${off.join(", ")})`) : ""}`)
+    console.log(`  Reminder after          ${s.stallMinutes} minute(s) without progress`)
+    console.log(`  Reminders before block  ${s.maxNudges}`)
+    console.log(`  Messages to people      ${s.approval === "start" ? "approved all at once when a run starts" : "approved one by one, before each is sent"}`)
   })

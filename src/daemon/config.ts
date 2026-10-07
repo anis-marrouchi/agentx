@@ -1504,6 +1504,24 @@ export const daemonConfigSchema = z.object({
       autoRunThreshold: z.number().min(0).max(1).default(0.85),
       suggestThreshold: z.number().min(0).max(1).default(0.65),
     }).default({}),
+    /** Follow-up workflows (#788): agents start a saved workflow for a
+     *  request, or build one from the owner's words, and the engine
+     *  follows each step to the end. */
+    followUp: z.object({
+      /** Agents get agentx_workflow and the hint naming a saved workflow
+       *  that fits the request. */
+      enabled: z.boolean().default(true),
+      /** Per agent, by id: false turns it off for that agent. */
+      agents: z.record(z.boolean()).default({}),
+      /** An agent step with no progress for this long gets a reminder. */
+      stallMinutes: z.number().positive().max(7 * 24 * 60).default(30),
+      /** Reminders before the step counts as blocked and you are told. */
+      maxNudges: z.number().int().min(0).max(20).default(2),
+      /** When you approve messages to people: all at once when a run
+       *  starts ("start"), or each before it is sent ("step"). A workflow
+       *  can set its own `approval`. */
+      approval: z.enum(["start", "step"]).default("step"),
+    }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the
      *  page. "disabled" hides the tab entirely. */
@@ -1656,8 +1674,8 @@ export const daemonConfigSchema = z.object({
        *  them while ToolSearch is available, so a list saves only their
        *  names (about 300 tokens) unless tool search is off. A tool left
        *  off cannot be found even through ToolSearch. `agentx_approval`,
-       *  `agentx_request`, `agentx_events` and `agentx_attach_next` are
-       *  always kept, and so are `agentx_agents`, `agentx_recent` and
+       *  `agentx_request`, `agentx_events`, `agentx_attach_next` and
+       *  `agentx_workflow` are always kept, and so are `agentx_agents`, `agentx_recent` and
        *  `agentx_wiki_query` while `contextOnDemand` is on. A name that is
        *  not an agentx tool is rejected, so a typo cannot silently drop a
        *  reply tool. Only an agentx server started as a command (stdio)

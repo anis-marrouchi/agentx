@@ -85,12 +85,13 @@ export const AGENTX_MCP_TOOLS_ENV = "AGENTX_MCP_TOOLS"
 /** agentx tools a shortened list always keeps: AgentX's own prompts ask
  *  for them by name, whatever started the session — request follow-ups
  *  (requests/sweep.ts, requests/tracker.ts), approval cards, the event
- *  digest and wake text (events/subscriptions.ts, events/wake.ts) and
- *  queued attachments (attach/service.ts). A tool left off the list is
+ *  digest and wake text (events/subscriptions.ts, events/wake.ts),
+ *  queued attachments (attach/service.ts) and workflow steps and nudges
+ *  (workflows/nodes/follow-up.ts). A tool left off the list is
  *  not even findable through ToolSearch, so a prompt naming it would
  *  send the agent after a tool it cannot call. The test scans src/ for
  *  prompts naming any other tool. */
-export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next"]
+export const AGENTX_CORE_TOOLS: readonly string[] = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow"]
 
 /** The tools the `[Context on demand]` line names; kept whenever a lean
  *  start relies on that line. */

@@ -3,6 +3,7 @@ import { classifyHandler } from "./classify"
 import { renderParams, render } from "../template"
 import { nodeConcurrencyGate, nodeKey } from "../node-concurrency"
 import type { NodeContext, NodeHandler, NodeResult } from "./types"
+import { FOLLOW_UP_HANDLERS, isSupervised, supervisedResult, supervisedSuffix } from "./follow-up"
 
 // --- Node handlers (Phase 1 set) ---
 //
@@ -29,7 +30,10 @@ const agentHandler: NodeHandler = async (ctx) => {
   const promptTemplate = String(cfg.prompt ?? "")
   if (!agentId) return { error: `agent node "${ctx.node.id}" missing config.agentId` }
 
+  // A followed step (#788) tells the agent how to say it is done.
+  const supervised = isSupervised(ctx)
   const prompt = render(promptTemplate, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
+    + (supervised ? supervisedSuffix(ctx.run, ctx.node.id) : "")
   const timeoutMinutes = typeof cfg.timeoutMinutes === "number" ? cfg.timeoutMinutes : undefined
   // Step autonomy. An unrecognised value fails the step rather than
   // silently running it at full power.
@@ -67,6 +71,8 @@ const agentHandler: NodeHandler = async (ctx) => {
     if (resp.error) {
       const kind = resp.errorKind ?? "unknown"
       ctx.log(`[node:${ctx.node.id}] agent "${agentId}" failed (${kind}): ${resp.error}`)
+      // Followed: a failed turn is a stall, nudged like any other.
+      if (supervised) return supervisedResult(ctx, agentId, { error: `[${kind}] ${resp.error}`, output: { error: `[${kind}] ${resp.error}` } })
       // Prefix the kind onto the run-level error string so the workflow
       // execution log and dashboard surface a stable, parseable token.
       // The friendly message follows verbatim for operators reading the log.
@@ -74,16 +80,16 @@ const agentHandler: NodeHandler = async (ctx) => {
     }
     const parser = String(cfg.resultParser ?? "acme-result-token")
     const parsed = parser === "json" ? extractJsonBlock(resp.content) : parseResultToken(resp.content)
-    return {
-      output: {
-        reply: resp.content,
-        result: parsed.result,
-        json: parsed.json,
-        taskId: resp.taskId,
-        durationMs,
-        ...(resp.autonomyBlocks?.length ? { autonomyBlocks: resp.autonomyBlocks } : {}),
-      },
+    const output = {
+      reply: resp.content,
+      result: parsed.result,
+      json: parsed.json,
+      taskId: resp.taskId,
+      durationMs,
+      ...(resp.autonomyBlocks?.length ? { autonomyBlocks: resp.autonomyBlocks } : {}),
     }
+    if (supervised) return supervisedResult(ctx, agentId, { output, result: parsed.result, reply: resp.content })
+    return { output }
   } catch (e: any) {
     ctx.log(`[node:${ctx.node.id}] agent "${agentId}" threw: ${e.message}`)
     return { error: e.message }
@@ -701,6 +707,7 @@ export const NODE_HANDLERS: Record<string, NodeHandler> = {
   "timer.boundary":  timerBoundaryHandler,
   "checkpoint":      checkpointHandler,
   "end":             endHandler,
+  ...FOLLOW_UP_HANDLERS,
 }
 
 export function resolveHandler(type: string): NodeHandler | undefined {
@@ -741,7 +748,7 @@ function findUpstreamAgentId(ctx: NodeContext): string | undefined {
  *  `[APPROVED]` to signal a workflow result. Same parser as the V1 engine
  *  (src/daemon/index.ts::parseAgentResult), lifted here so node handlers
  *  don't depend on daemon code. */
-function parseResultToken(content: string | undefined): { result?: string; json?: unknown } {
+export function parseResultToken(content: string | undefined): { result?: string; json?: unknown } {
   if (!content) return {}
   const explicit = content.match(/\bRESULT:\s*([a-z][a-z0-9_-]*)/i)
   if (explicit) return { result: explicit[1].toLowerCase() }

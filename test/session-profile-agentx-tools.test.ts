@@ -24,7 +24,7 @@ import { AGENTX_TOOL_NAMES } from "../src/mcp/tool-names"
 // misspelt name is rejected.
 
 const agentx = { type: "stdio" as const, command: "node", args: ["cli.js", "serve", "--stdio"] }
-const CORE = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next"]
+const CORE = ["agentx_approval", "agentx_request", "agentx_events", "agentx_attach_next", "agentx_workflow"]
 const ON_DEMAND = ["agentx_agents", "agentx_recent", "agentx_wiki_query"]
 
 describe("leanAgentxTools", () => {
@@ -90,7 +90,7 @@ describe("lean MCP config with an agentx tool list", () => {
 
   it("shows the count in the daemon log line", () => {
     const lean = { ...DEFAULT_LEAN, contextOnDemand: false, agentxTools: ["agentx_crons"] }
-    expect(describeProfile("lean", lean, "cron")).toContain("agentx-tools=5")
+    expect(describeProfile("lean", lean, "cron")).toContain("agentx-tools=6")
     expect(describeProfile("lean", DEFAULT_LEAN, "cron")).not.toContain("agentx-tools")
   })
 })

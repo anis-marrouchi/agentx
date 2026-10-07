@@ -59,7 +59,43 @@ export interface NodeContext {
   }) => Promise<{ messageId: string | null }>
   /** Structured log sink. */
   log: (msg: string) => void
+  /** The owner of this node: told things, asked things (#788). Absent
+   *  in tests and setups without a daemon; owner.* steps then fail. */
+  owner?: OwnerPort
+  /** Stall time, nudges and approval mode for follow-up steps. */
+  followUp?: FollowUpDefaults
 }
+
+/** How the engine reaches the owner. The daemon implements it with its
+ *  notify path and decision cards (src/approvals). */
+export interface OwnerPort {
+  /** Tell the owner. Resolves once it was handed to a channel. */
+  notify(text: string, run: { id: string; workflowId: string; meta?: { title?: string; startedBy?: string } }): Promise<void>
+  /** Raise a decision card about this run's step. The card's answer comes
+   *  back through WorkflowDispatcher.resumeFromCard. */
+  ask(card: OwnerCardInput, run: { id: string; workflowId: string; meta?: { startedBy?: string } }, nodeId: string): Promise<{ cardId: string }>
+}
+
+export interface OwnerCardInput {
+  title: string
+  ask: string
+  recommend: string
+  /** Text the owner may edit before saying yes (a message to a person). */
+  draft?: string
+  choices?: string[]
+  /** A few lines of background shown above the question. */
+  context?: string
+  /** ISO time, or relative like "2d". Default: the card setting. */
+  expires?: string
+}
+
+export interface FollowUpDefaults {
+  stallMinutes: number
+  maxNudges: number
+  approval: "start" | "step"
+}
+
+export const DEFAULT_FOLLOW_UP: FollowUpDefaults = { stallMinutes: 30, maxNudges: 2, approval: "step" }
 
 export interface NodeResult {
   /** Output bundle keyed under ctx.run.context[node.id] by the dispatcher. */
@@ -82,6 +118,9 @@ export interface NodeResult {
   emitSignal?: { name: string; scope: "workflow" | "global"; payload: Record<string, unknown> }
   /** On failure, a short message. Dispatcher logs it + marks the run failed. */
   error?: string
+  /** Follow-up (#788): the step is blocked and needs the owner. The run
+   *  pauses (pausedAt) and the owner is told this reason once. */
+  blocked?: string
 }
 
 export type NodeHandler = (ctx: NodeContext) => Promise<NodeResult>

@@ -38,6 +38,14 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
         <option value="">All projects</option>
       </select>
     </div>
+    <section class="ax-wf__followups" aria-labelledby="wf-followups-title">
+      <header>
+        <h3 id="wf-followups-title">Follow-ups</h3>
+        <span class="hint" id="wf-followups-note"></span>
+      </header>
+      <p class="hint">Workflows agents started for your requests, grouped by who or what they concern. Open a group to see which step each one is on and what it waits for.</p>
+      <div id="wf-followups-body" aria-live="polite"><span class="hint">Loading&hellip;</span></div>
+    </section>
     <ul id="wf-list" class="ax-wf__cards" aria-live="polite"></ul>
     <div id="wf-empty" class="ax-wf__empty" hidden>
       <p><b>No workflows yet.</b></p>
@@ -171,6 +179,28 @@ const WORKFLOWS_PAGE_CSS = `
 .ax-wf__state--quiet,
 .ax-wf__state--never   { color: var(--ax-text-2); }
 
+.ax-wf__followups {
+  border-bottom: var(--ax-border-w) solid var(--ax-border);
+  padding: 12px 16px; display: flex; flex-direction: column; gap: 6px;
+}
+.ax-wf__followups header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.ax-wf__followups h3 { font-size: 13px; font-weight: 600; margin: 0; }
+.ax-wf__followups details { border: var(--ax-border-w) solid var(--ax-border); border-radius: var(--ax-radius-sm); }
+.ax-wf__followups summary {
+  cursor: pointer; padding: 6px 8px; font-size: 12px; font-weight: 600;
+  display: flex; justify-content: space-between; gap: 8px;
+}
+.ax-wf__followups summary:focus-visible, .ax-wf__fu-row:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.ax-wf__followups ul { list-style: none; margin: 0; padding: 0 4px 4px; display: flex; flex-direction: column; gap: 2px; }
+.ax-wf__fu-row {
+  width: 100%; text-align: left; background: none; border: 0; border-radius: 4px;
+  padding: 6px; color: inherit; font: inherit; font-size: 12px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 2px; min-width: 0;
+}
+.ax-wf__fu-row:hover { background: var(--ax-surface-2); }
+.ax-wf__fu-row b { overflow-wrap: anywhere; }
+.ax-wf__fu-row .hint { overflow-wrap: anywhere; }
+.ax-wf__fu-row.is-blocked b::before { content: "⚠ "; color: var(--ax-err); }
 .ax-wf__n8n {
   border-top: var(--ax-border-w) solid var(--ax-border);
   padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
@@ -1207,6 +1237,42 @@ export const WORKFLOWS_PAGE_SCRIPT = `
     } catch (e) {
       toast("Failed to load workflows: " + e.message)
     }
+    loadFollowUps()
+  }
+
+  // Follow-ups (#788): running workflows grouped by tag. A group is a
+  // <details>, closed by default past the first three, so a long list
+  // stays one line per tag until opened.
+  async function loadFollowUps() {
+    const body = $("#wf-followups-body")
+    const note = $("#wf-followups-note")
+    if (!body) return
+    let data
+    try {
+      data = await fetchJSON("/api/workflows/follow-ups")
+    } catch (e) {
+      body.innerHTML = '<span class="hint">Could not load follow-ups: ' + esc(e.message) + '</span>'
+      return
+    }
+    const groups = data.groups || []
+    const runs = new Set()
+    for (const g of groups) for (const r of g.rows) runs.add(r.runId)
+    note.textContent = runs.size ? runs.size + " running" : ""
+    if (data.unreachable && data.unreachable.length) note.textContent += (runs.size ? " · " : "") + data.unreachable.length + " node(s) not reachable"
+    if (!groups.length) {
+      body.innerHTML = '<span class="hint">Nothing is being followed right now.</span>'
+      return
+    }
+    body.innerHTML = groups.map((g, i) => {
+      const blocked = g.rows.some((r) => r.blocked)
+      return '<details' + (i < 3 || blocked ? ' open' : '') + '><summary><span>' + esc(g.tag) + '</span><span class="hint">' + g.rows.length + (blocked ? ' · blocked' : '') + '</span></summary><ul>' +
+        g.rows.map((r) => '<li><button type="button" class="ax-wf__fu-row' + (r.blocked ? ' is-blocked' : '') + '" data-runid="' + esc(r.runId) + '">' +
+          '<b>' + esc(r.title) + '</b>' +
+          '<span class="hint">Step ' + esc(r.step) + ' · waiting on ' + esc(r.waitingOn) + '</span>' +
+          '<span class="hint">since ' + esc(relTime(r.since)) + (r.startedBy ? ' · started by ' + esc(r.startedBy) : '') + '</span>' +
+        '</button></li>').join("") + '</ul></details>'
+    }).join("")
+    body.querySelectorAll("[data-runid]").forEach((b) => b.addEventListener("click", () => openRun(b.getAttribute("data-runid"))))
   }
 
   function toast(msg) {

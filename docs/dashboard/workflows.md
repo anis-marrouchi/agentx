@@ -15,6 +15,16 @@ A workflow is a saved automation: something starts it (a message, a GitLab event
 5. Select **Run now**. A message shows **run started**, and a panel opens with the run's steps as they happen.
 6. To stop a run that is still going, select **Pause** or **Cancel** in that panel.
 
+## See what is being followed
+
+Workflows that agents started for your requests are listed under **Follow-ups**, at the top of the left column, one group per tag (such as `client:example-co`).
+
+1. **Browser:** in the Workflows tab, look at **Follow-ups**. Groups with a blocked run are open.
+2. **Browser:** click a group's name to open it. Each run shows the step it is on, what it waits on and since when.
+3. **Browser:** click a run to open its steps.
+
+See [Let a workflow follow a request](../jobs/follow-up-workflows.md).
+
 ## Edit a workflow
 
 ![The workflow editor with the Ask AI to build… button](/screenshots/editor-chat-closed.png)
