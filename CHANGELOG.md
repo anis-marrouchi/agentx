@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.123.0](https://github.com/anis-marrouchi/agentx/compare/v0.122.0...v0.123.0) (2026-10-07)
+
+
+### Features
+
+* **workflows:** follow-up workflows — agents run multi-step requests as workflows, followed to the end ([#788](https://github.com/anis-marrouchi/agentx/issues/788)) ([#793](https://github.com/anis-marrouchi/agentx/issues/793)) ([5b30935](https://github.com/anis-marrouchi/agentx/commit/5b309357ff91f228b35aa94f4272013afc4471cd))
+
 ## [0.122.0](https://github.com/anis-marrouchi/agentx/compare/v0.121.1...v0.122.0) (2026-10-07)
 
 
