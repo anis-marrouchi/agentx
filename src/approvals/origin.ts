@@ -35,7 +35,51 @@ export interface RetroOrigin {
   specs?: string[]
 }
 
-export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin
+/** A monthly review of a check a retro added (src/retro/checks.ts): a
+ *  guard rule tagged `retro:<taskId>` that fires often on runs that went
+ *  well. The answer goes back to the agent that built it, which keeps,
+ *  loosens or removes it for a second review. */
+export interface RetroCheckOrigin {
+  kind: "retro-check"
+  /** The guard rule's id. */
+  ruleId: string
+  /** The run whose retro asked for the rule. */
+  taskId: string
+  /** The policy file that holds the rule, relative to the daemon's folder. */
+  file: string
+}
+
+export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin
+
+/** Retro cards of either kind: raised for an agent, not by it. */
+export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {
+  return origin?.kind === "retro" || origin?.kind === "retro-check"
+}
+
+/** The choices on a check review card, in this order. */
+export const CHECK_CHOICES = { keep: "Keep it", loosen: "Loosen it", remove: "Remove it" } as const
+
+/** Lines for the agent told the result of a check review card. Keep, NO
+ *  and silence all leave the rule as it is. */
+export function retroCheckLines(
+  origin: RetroCheckOrigin,
+  card: { status: string; verdict?: string; choice?: string },
+  edited?: string,
+): string[] {
+  const rule = `guard rule \`${origin.ruleId}\` in \`${origin.file}\``
+  const lines = [`This was a monthly review of ${rule}, added by the retro on run ${origin.taskId}. It fires often on runs that went well.`]
+  const yes = card.status === "decided" && card.verdict === "yes"
+  if (!yes || card.choice === CHECK_CHOICES.keep || !card.choice) {
+    lines.push("Change nothing: the rule stays as it is.")
+    return lines
+  }
+  lines.push(card.choice === CHECK_CHOICES.remove
+    ? `The operator chose to remove it. Delete ${rule} as a pull request.`
+    : `The operator chose to loosen it. Narrow ${rule} (a tighter match, or \`applies_to\`) so it stops firing on good work, keep its \`retro:${origin.taskId}\` tag, and open it as a pull request.`)
+  if (edited) lines.push("The operator's note:", edited)
+  lines.push("Do not change the live policy directly: the operator reviews the pull request first.")
+  return lines
+}
 
 /** True when the operator answered a retro card with something to build:
  *  YES and a fix picked. YES on "None of these" counts as NO. */
@@ -69,7 +113,7 @@ export function retroLines(
   if (edited) lines.push("The operator's note on the fix:", edited)
   lines.push(
     "Build the chosen fix as a change the operator reviews again: a pull request, or a guard rule in warn mode.",
-    "Do not apply it to a live system directly. Tag what you add with `retro:" + origin.taskId + "` so it can be found and removed later.",
+    "Do not apply it to a live system directly. Tag what you add with `retro:" + origin.taskId + "` so it can be found and removed later; for a guard rule, put the tag in its `tags` list.",
   )
   return lines
 }

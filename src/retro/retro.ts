@@ -5,7 +5,7 @@ import { errorClass, failingTool, failureSignature, loadFailedTraces } from "@/w
 import { CARD_LIMITS, createCard, listCards, readCard, type CardInput, type DecisionCard } from "@/approvals/cards"
 import type { ApprovalSettings } from "@/approvals/sweep"
 import { CHOICE_LIMITS } from "@/approvals/choices"
-import { RETRO_NONE, type RetroOrigin } from "@/approvals/origin"
+import { isRetroOrigin, RETRO_NONE, type RetroCheckOrigin, type RetroOrigin } from "@/approvals/origin"
 
 // --- Fleet retro: one struggled run → fix choices on a decision card (#743) ---
 //
@@ -108,10 +108,10 @@ function median(xs: number[]): number | null {
 }
 
 /** Runs the retro itself caused never feed a retro: the turn that builds a
- *  picked fix runs in the card's own chat (channel `approvals`, chat id =
+ *  picked fix (or changes a reviewed check) runs in the card's own chat (channel `approvals`, chat id =
  *  card id). Same rule as the procedure miner's self-chat filter. */
 export function isRetroRun(root: string, t: Pick<TraceRecord, "channel" | "chatId">): boolean {
-  return t.channel === "approvals" && !!t.chatId && readCard(root, t.chatId)?.origin?.kind === "retro"
+  return t.channel === "approvals" && !!t.chatId && isRetroOrigin(readCard(root, t.chatId)?.origin)
 }
 
 export interface MonitorReview {
@@ -341,7 +341,7 @@ export async function prepareRetro(opts: PrepareRetroOptions): Promise<PrepareRe
  *  or the 30-day rule to a card it never sees. */
 export function raiseRetroCard(
   root: string,
-  card: CardInput & { origin: RetroOrigin },
+  card: CardInput & { origin: RetroOrigin | RetroCheckOrigin },
   settings: ApprovalSettings,
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   if (settings.forwardTo) {

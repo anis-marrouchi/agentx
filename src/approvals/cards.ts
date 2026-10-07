@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { answerLines, buildChoices, draftFor, resolveAnswer, type CardChoices } from "./choices"
-import { originLines, RETRO_NONE, retroApproved, retroLines, type CardOrigin } from "./origin"
+import { isRetroOrigin, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
 
 // --- Decision cards: what an agent asks the operator ---
 //
@@ -273,7 +273,7 @@ export function createCard(
   if (!built.ok) return built
   // Retro cards are raised for an agent, not by it: they get their own
   // count, so they never use up the agent's room for its own cards.
-  const isRetro = (c: { origin?: CardOrigin }) => c.origin?.kind === "retro"
+  const isRetro = (c: { origin?: CardOrigin }) => isRetroOrigin(c.origin)
   const retro = isRetro(built.card)
   const open = listCards(root, "pending").filter((c) => c.raised_by === built.card.raised_by && isRetro(c) === retro).length
   if (open >= CARD_LIMITS.pendingPerAgent) {
@@ -355,17 +355,18 @@ export function verdictMessage(card: DecisionCard): string {
   ]
   // A retro card's pick and spec go through retroLines, labelled as the
   // reviewer's proposal: never "Approved text (send exactly this)".
-  if (card.status === "decided" && card.verdict === "yes" && !retro) lines.push(...answerLines(card))
+  const check = card.origin?.kind === "retro-check" ? card.origin : undefined
+  if (card.status === "decided" && card.verdict === "yes" && !retro && !check) lines.push(...answerLines(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
-  if (retro) {
+  if (retro || check) {
     // Compare ignoring whitespace so a dashboard that only reflows the draft
     // does not resend the whole draft as the operator's note.
     const squash = (s: string) => s.replace(/\s+/g, " ").trim()
     const draft = draftFor(card.draft, card.choice)
     const edited = card.text && squash(card.text) !== squash(draft) ? card.text : undefined
-    lines.push(...retroLines(retro, card, edited))
+    lines.push(...(retro ? retroLines(retro, card, edited) : retroCheckLines(check!, card, edited)))
   }
   if (card.reply) lines.push(`You raised it from ${card.reply.channel} chat ${card.reply.chatId}; reply there if the requester should know.`)
   if (card.node) lines.push(`The operator answered it on another machine; the card was forwarded from ${card.node}.`)

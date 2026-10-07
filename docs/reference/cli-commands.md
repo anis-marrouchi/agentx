@@ -2584,6 +2584,17 @@ Rank the day's struggled runs and raise retro cards for the worst, at most `--ma
 | `--model <model>` | `AGENTX_RETRO_MODEL`, else `AGENTX_MONITOR_MODEL`, else `opus` | The reviewer model. |
 | `--path <db>` | `.agentx/db.sqlite` | Trace database. |
 
+### `agentx retro checks`
+
+List the guard rules a retro added (tagged `retro:<taskId>`), how often each fired in the last 30 days, and how the agent's runs did before and after it. With `--commit`, raise a keep / loosen / remove card for each rule that fired often on runs that went well, at most once every 30 days per rule. Refused with `--commit` when `approvals.forwardTo` is set.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--min-fires <n>` | `5` | Fires on runs that went well, in the last 30 days, before a rule is reviewed. |
+| `--max <n>` | `3` | Review cards raised in one pass. |
+| `--commit` | — | Raise the review cards (default: list only). |
+| `--path <db>` | `.agentx/db.sqlite` | Trace database. |
+
 ## process (advanced)
 
 `agentx process`: Inspect / rotate persistent claude processes (--persistentProcess agents). **Advanced.**

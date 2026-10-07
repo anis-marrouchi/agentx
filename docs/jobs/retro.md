@@ -118,9 +118,49 @@ It keeps one run per failure (the one with the most points), skips failures that
    Check the job it prints, then run the same command without `--dry-run`.
 3. **Browser:** the next morning, open **Approvals**. The night's retro cards are waiting there, at most three.
 
+## Review the checks a retro added
+
+A check that warns on work that went well wastes the agents' time, and they learn to ignore it. Once a month, `agentx retro checks` looks at every *guard rule* (a rule that checks each command an agent is about to run) that a retro asked for, and asks you about the ones that warn too often.
+
+It finds a rule by its tag. The agent that builds a picked fix puts `retro:<taskId>` in the rule's `tags` list, like this in `.agentx/guardrails/policy.yaml`:
+
+```yaml
+rules:
+  - id: no-stop-without-start
+    match: { tool: Bash, command_regex: "stop-the-service" }
+    action: warn
+    tags: ["retro:<taskId>"]
+```
+
+For each tagged rule it counts, over the last 30 days, how often the rule *fired* (matched a command), and how each of those runs ended. It also compares the agent's runs in the 30 days before the rule was added with the 30 days after: how many ended well, and how long they usually took. The rule counts as added on the day you picked the fix on its retro card.
+
+A rule that fired five times or more on runs that went well comes back as a card with three choices:
+
+| Choice | What happens |
+|---|---|
+| **Keep it** | Nothing changes |
+| **Loosen it** | The agent opens a pull request that narrows the rule so it stops firing on good work |
+| **Remove it** | The agent opens a pull request that deletes the rule |
+
+The card recommends **Loosen it** when the agent's runs went better after the rule was added, and **Remove it** when they did not. If nobody answers, the card is discarded and the rule stays. A rule is asked about at most once every 30 days.
+
+Only guard rules are reviewed here: they are the only checks that record each time they fire. A hook, CI check or script a retro added is changed through its own pull request.
+
+1. **Terminal:** go to the folder the daemon runs from, and list the checks:
+   ```sh
+   agentx retro checks
+   ```
+   Each rule shows its file, its tag, how often it fired, and the before and after numbers. A `!` marks a rule that fires often on good work, and a line starting `→ would ask about` names each card it would raise. Nothing is raised.
+2. **Terminal:** add a monthly job that raises the cards. Use any agent that can run commands in this folder:
+   ```sh
+   agentx schedule "first of every month at 3am" --agent <agent> --do "Run: agentx retro checks --commit" --dry-run
+   ```
+   Check that the job it prints says `on day 1 of the month`, then run the same command without `--dry-run`.
+3. **Browser:** after the job runs, open **Approvals** and answer the cards.
+
 ## Settings
 
-A retro has no settings in `agentx.json`. These options and environment variables change how `agentx retro` and `agentx retro sweep` run:
+A retro has no settings in `agentx.json`. These options and environment variables change how `agentx retro`, `agentx retro sweep` and `agentx retro checks` run:
 
 | Option or variable | What it does |
 |---|---|
@@ -131,6 +171,9 @@ A retro has no settings in `agentx.json`. These options and environment variable
 | `sweep --since <window>` | How far back the nightly pass reads, in hours or days, such as `24h` or `2d`. Default: `24h` |
 | `sweep --max <n>` | Retro cards allowed in any 24 hours, counting the ones raised by hand. Default: `3`. `0` raises none |
 | `sweep --commit` | Run the retros and raise the cards. Without it, the sweep only shows what it would do |
+| `checks --min-fires <n>` | Fires on runs that went well, in the last 30 days, before a rule is reviewed. Default: `5` |
+| `checks --max <n>` | Review cards raised in one pass. Default: `3` |
+| `checks --commit` | Raise the review cards. Without it, the command only lists the checks |
 | `AGENTX_RETRO_MODEL` | The reviewer model when `--model` is not given. Unset: `AGENTX_MONITOR_MODEL`, else `opus` |
 
 Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings), such as how long they wait. Retro cards can't be sent to another machine yet: when `approvals.forwardTo` is set, `agentx retro` refuses to raise the card. Run it on a machine that keeps its own cards, or use `--dry-run` to read the fixes.
@@ -143,6 +186,7 @@ Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings)
 4. **Browser:** pick a fix and click **Yes**. The page says `<agent> will be told yes (<your pick>)`.
 5. **Browser:** within a minute, the **Activity** tab shows a run for that agent on the `approvals` channel. That is the agent starting on the fix.
 6. **Terminal:** run `agentx retro sweep`. It prints `struggled run(s), one per failure` and how much room is left today, and raises nothing.
+7. **Terminal:** run `agentx retro checks`. It prints `check(s) added by a retro` with each tagged rule's numbers, or `No guard rule carries a retro:<taskId> tag yet`, and raises nothing.
 
 ## If something is wrong
 
@@ -155,6 +199,10 @@ Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings)
 - **The sweep says `Room for 0 more retro card(s) today`:** three retro cards (or your `--max`) were raised in the last 24 hours, by the sweep or by hand. Answer them, or wait; the next night's pass has room again.
 - **The sweep lists runs but raises nothing:** check the `✗` lines. `already asks about this failure` means a card is waiting for you. Other reasons are the same as for `agentx retro` above.
 - **The sweep says `Invalid --since`:** use hours or days, such as `24h` or `2d`.
+- **`agentx retro checks` says `No guard rule carries a retro:<taskId> tag yet`:** no rule in `.agentx/guardrails/` has a `retro:` tag in its `tags` list. Open the rule the agent built and add `tags: ["retro:<taskId>"]`. A rule in `agents/<id>.yml` is not read; rename the file to end in `.yaml`.
+- **A noisy rule shows `0 fire(s)`:** the guard writes a line to the trace database each time a rule fires. Check that the guard hook runs (`agentx guard log`), and that you run the command in the folder the daemon runs from.
+- **A check shows a `!` but no card is raised:** the `✗` line says why. `reviewed it on` means it was asked about in the last 30 days.
+- **The before and after numbers say `no runs`:** the agent ran nothing in that span, or the rule's retro card was never answered and it has never fired. The card then recommends **Loosen it**.
 - **"No trace database":** run the command in the folder the daemon runs from, or pass `--path`.
 - **Yes does nothing on the dashboard:** the card offers choices. Pick one first; the page says so in red.
 - **The agent never started on the fix:** check the daemon log for a line starting `[approvals]`, and that `notifyAgent` is on in [Approvals settings](../dashboard/approvals.md#settings).

@@ -7,6 +7,7 @@ import { readApprovalSettings } from "@/approvals/settings"
 import { reviewWithClaude } from "@/daemon/session-monitor"
 import { prepareRetro, raiseRetroCard, RETRO_PROMPT } from "@/retro/retro"
 import { DEFAULT_RETRO_PER_DAY, DEFAULT_SWEEP_HOURS, sweepRetros } from "@/retro/sweep"
+import { beforeAfter, CHECK_WINDOW_DAYS, DEFAULT_CHECK_REVIEWS, DEFAULT_MIN_GOOD_FIRES, reviewChecksPass } from "@/retro/checks"
 
 // --- agentx retro <taskId> (#743) ---
 //
@@ -138,4 +139,67 @@ retro
       else console.log(chalk.dim(`  ✗ ${o.taskId}: ${o.why}`))
     }
     if (!opts.commit) console.log(chalk.dim("\n  Preview: no reviewer asked, no card raised. Add --commit to raise them."))
+  })
+
+// --- agentx retro checks (#743, P2) ---
+//
+// The monthly pass: lists the guard rules retros added (tagged
+// `retro:<taskId>`), how often each fired on work that went well, and how
+// the agent's runs did before and after it. With --commit, a check that
+// fires often on good work comes back as a keep / loosen / remove card.
+
+/** A whole number, 0 or more; null otherwise. */
+function count(input: string | undefined, fallback: number): number | null {
+  const n = input === undefined ? fallback : Number(input)
+  return Number.isInteger(n) && n >= 0 ? n : null
+}
+
+retro
+  .command("checks")
+  .description("review the guard rules retros added; raise a keep/loosen/remove card for each that fires on good work (preview unless --commit)")
+  .option("--min-fires <n>", `fires on runs that went well, in the last ${CHECK_WINDOW_DAYS} days, before a check is reviewed (default: ${DEFAULT_MIN_GOOD_FIRES})`)
+  .option("--max <n>", `review cards raised in one pass (default: ${DEFAULT_CHECK_REVIEWS})`)
+  .option("--commit", "raise the review cards (default: list only)")
+  .option("--path <db>", "trace database (default: .agentx/db.sqlite)")
+  .action((opts: { minFires?: string; max?: string; commit?: boolean; path?: string }) => {
+    const minGoodFires = count(opts.minFires, DEFAULT_MIN_GOOD_FIRES)
+    const max = count(opts.max, DEFAULT_CHECK_REVIEWS)
+    if (minGoodFires === null || max === null) {
+      console.error(chalk.red(`  Invalid ${minGoodFires === null ? `--min-fires "${opts.minFires}"` : `--max "${opts.max}"`}. Use a whole number, 0 or more.`))
+      process.exitCode = 1
+      return
+    }
+    const root = process.cwd()
+    const db = openTraceDb(root, opts.path)
+    if (!db) return
+    let r
+    try {
+      r = reviewChecksPass({ root, db, minGoodFires, max, commit: opts.commit, settings: readApprovalSettings() })
+    } finally {
+      db.close()
+    }
+
+    if (!r.reviews.length) {
+      console.log("  No guard rule carries a retro:<taskId> tag yet. Nothing to review.")
+      return
+    }
+    console.log(`  ${r.reviews.length} check(s) added by a retro. Last ${CHECK_WINDOW_DAYS} days:`)
+    for (const v of r.reviews) {
+      const mark = v.noisy ? chalk.yellow("!") : " "
+      console.log(`  ${mark} ${v.check.rule.id}  ${chalk.dim(v.check.file)}  retro:${v.check.taskId}`)
+      console.log(chalk.dim(`      ${v.fires.total} fire(s): ${v.fires.good} on good runs, ${v.fires.failed} on failed runs, ${v.fires.unknown} unknown`))
+      console.log(chalk.dim(`      ${v.agents.join(", ") || "no agent"} ${beforeAfter(v)}`))
+    }
+    if (r.error) {
+      console.error(chalk.red(`  ${r.error}`))
+      process.exitCode = 1
+      return
+    }
+    for (const o of r.outcomes) {
+      if (o.result === "raised") console.log(chalk.green(`  ✓ card:${o.cardId} asks whether to keep, loosen or remove ${o.ruleId}`))
+      else if (o.result === "would-raise") console.log(`  → would ask about ${o.ruleId}`)
+      else console.log(chalk.dim(`  ✗ ${o.ruleId}: ${o.why}`))
+    }
+    if (!r.outcomes.length) console.log(chalk.dim(`  No check fired ${minGoodFires} or more times on good runs. No card needed.`))
+    if (!opts.commit) console.log(chalk.dim("\n  Preview: no card raised. Add --commit to raise them."))
   })

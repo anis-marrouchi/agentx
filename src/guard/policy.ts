@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, readdirSync } from "fs"
 import { resolve, join } from "path"
 import yaml from "js-yaml"
-import { guardPolicySchema, type GuardPolicy, type ResolvedPolicy, type ProtectedSet } from "./types"
+import { guardPolicySchema, type GuardPolicy, type GuardRule, type ResolvedPolicy, type ProtectedSet } from "./types"
 import { CATALOG_POLICY } from "./catalog"
 
 // --- Layered policy loader ---
@@ -17,7 +17,7 @@ import { CATALOG_POLICY } from "./catalog"
 
 export const GUARDRAILS_DIR = ".agentx/guardrails"
 
-function readPolicyFile(path: string): GuardPolicy | null {
+export function readPolicyFile(path: string): GuardPolicy | null {
   if (!existsSync(path)) return null
   try {
     const parsed = yaml.load(readFileSync(path, "utf8"))
@@ -129,4 +129,45 @@ export function flatten(policy: GuardPolicy, agentId?: string): ResolvedPolicy {
  *  with an inline policy) without touching disk. */
 export function resolveInMemory(policy: GuardPolicy, agentId?: string): ResolvedPolicy {
   return flatten(mergeLayer(CATALOG_POLICY, policy), agentId)
+}
+
+/** One rule as written in a policy file, before any merge. */
+export interface PolicyRuleEntry {
+  rule: GuardRule
+  /** The file, relative to `root`. */
+  file: string
+  /** Set when the rule only applies to one agent: an `agents/<id>.yaml`
+   *  file, or an `agents.<id>.rules` block. */
+  agentId?: string
+}
+
+/** Every rule in every policy file under `<root>/.agentx/guardrails/`, for
+ *  every agent. The built-in catalog is left out: nothing tags it. */
+export function listPolicyRules(root: string): PolicyRuleEntry[] {
+  const dir = resolve(root, GUARDRAILS_DIR)
+  const yamls = (d: string) => {
+    try {
+      return readdirSync(d).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml")).sort()
+    } catch {
+      return []
+    }
+  }
+  const files: Array<{ path: string; agentId?: string }> = [{ path: "policy.yaml" }]
+  for (const f of yamls(join(dir, "environments"))) files.push({ path: `environments/${f}` })
+  // loadPolicy reads only `agents/<id>.yaml`, so a `.yml` there is not live.
+  for (const f of yamls(join(dir, "agents")).filter((f) => f.endsWith(".yaml"))) {
+    files.push({ path: `agents/${f}`, agentId: f.slice(0, -".yaml".length) })
+  }
+
+  const out: PolicyRuleEntry[] = []
+  for (const f of files) {
+    const policy = readPolicyFile(join(dir, f.path))
+    if (!policy) continue
+    const file = `${GUARDRAILS_DIR}/${f.path}`
+    for (const rule of policy.rules ?? []) out.push({ rule, file, ...(f.agentId ? { agentId: f.agentId } : {}) })
+    for (const [agentId, block] of Object.entries(policy.agents ?? {})) {
+      for (const rule of block.rules ?? []) out.push({ rule, file, agentId })
+    }
+  }
+  return out
 }
