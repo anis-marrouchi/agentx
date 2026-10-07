@@ -846,10 +846,16 @@ export class SessionStore {
     return Date.now() - new Date(session.updatedAt).getTime()
   }
 
-  isSessionStale(agentId: string, channel: string, chatId: string): boolean {
+  /**
+   * Whether the session has been idle longer than staleMinutes. Pass the
+   * idle time read before this turn touched the session: recording the
+   * inbound message bumps updatedAt, so reading it afterwards always sees
+   * an idle time of about zero.
+   */
+  isSessionStale(agentId: string, channel: string, chatId: string, idleMs?: number | null): boolean {
     const session = this.getSession(agentId, channel, chatId)
     if (!session.claudeSessionId && !session.codexSessionId && !session.opencodeSessionId) return false
-    const elapsed = Date.now() - new Date(session.updatedAt).getTime()
+    const elapsed = idleMs ?? Date.now() - new Date(session.updatedAt).getTime()
     return elapsed > this.staleMinutes * 60 * 1000
   }
 
@@ -1115,6 +1121,11 @@ export class SessionStore {
   getLastTurnContextTokens(agentId: string, channel: string, chatId: string): number {
     const s = this.getSession(agentId, channel, chatId)
     return s.lastTurnContextTokens ?? s.lastTurnInputTokens ?? 0
+  }
+  /** The per-request context reading alone, with no cumulative fallback.
+   *  Null when the last turn left none (a non-streaming turn). */
+  getRawLastTurnContextTokens(agentId: string, channel: string, chatId: string): number | null {
+    return this.getSession(agentId, channel, chatId).lastTurnContextTokens ?? null
   }
   getMaxTurnsPerSession(): number { return this.maxTurnsPerSession }
   getTierTwoThresholdTokens(channel?: string): number {
