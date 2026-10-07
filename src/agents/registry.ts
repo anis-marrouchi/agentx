@@ -153,6 +153,8 @@ export interface RunningTask {
   /** Intent-graph path this request was classified under, once known.
    *  Classification runs alongside the turn, so it is absent until then. */
   intentPath?: string[]
+  /** Step autonomy the turn runs at (report | propose | act). Unset = act. */
+  autonomy?: AgentTask["autonomy"]
 }
 
 type TaskOutputSubscriber = (chunk: string) => void
@@ -1390,6 +1392,7 @@ export class AgentRegistry {
       chatId: task.context?.chatId || task.context?.group,
       sender: task.context?.sender,
       startedAt: new Date(),
+      ...(task.autonomy ? { autonomy: task.autonomy } : {}),
     }
     state.runningTasks.push(runningTask)
     task.runningTaskId = runningTask.id
@@ -3391,7 +3394,7 @@ export class AgentRegistry {
   findRunningTurn(
     agentId: string,
     by: { taskId?: string; channel?: string; chatId?: string } = {},
-  ): { taskId: string; context: NonNullable<AgentTask["context"]> } | null {
+  ): { taskId: string; context: NonNullable<AgentTask["context"]>; autonomy?: AgentTask["autonomy"] } | null {
     const state = this.agents.get(agentId)
     if (!state) return null
     let run: RunningTask | undefined
@@ -3408,7 +3411,7 @@ export class AgentRegistry {
     }
     if (!run) return null
     const context = this.runningContexts.get(run.id)
-    return context ? { taskId: run.id, context } : null
+    return context ? { taskId: run.id, context, ...(run.autonomy ? { autonomy: run.autonomy } : {}) } : null
   }
 
   /** Whether every slot of `agentId` is taken, and by which runs. Lets a

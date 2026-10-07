@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto"
 import { evaluateBranch, findNode, initialPendingFromTrigger, nextNodes } from "./engine"
 import { parseResultToken, resolveHandler } from "./nodes/handlers"
-import { deliver, followUpFor, nextWakeAt, nudgeText } from "./nodes/follow-up"
+import { deliver, messageKey, nextWakeAt, nudgeText, renderPersonMessage, stepVerdict } from "./nodes/follow-up"
 import { DEFAULT_FOLLOW_UP, type AgentExecuteRequest, type AgentExecuteResponse, type FollowUpDefaults, type NodeResult, type OwnerPort } from "./nodes/types"
 import { RunStore, idempotencyKey } from "./run-store"
 import type { WorkflowStore } from "./store"
@@ -151,6 +151,9 @@ export class WorkflowDispatcher {
    *  to date as runs pause. A stale entry costs one read; the run's own
    *  pause is checked before it takes a message. */
   private replyWaiters: Map<string, Set<string>> | null = null
+  /** "done" an agent reported from inside its own step's turn, before
+   *  the turn ended (runId:nodeId). Applied when the turn ends. */
+  private readonly earlyDone = new Map<string, Record<string, unknown>>()
   /** Per-run typing timer. Started when a channel-triggered run is created or
    *  resumed; stopped when the run terminates (completed / failed / canceled
    *  / paused). Keyed by runId so concurrent channel runs don't stomp on each
@@ -815,6 +818,15 @@ export class WorkflowDispatcher {
       }
     }
 
+    // The agent said "done" with agentx_workflow while its turn ran.
+    const early = this.earlyDone.get(`${runId}:${nodeId}`)
+    if (early) {
+      this.earlyDone.delete(`${runId}:${nodeId}`)
+      if (result.paused && result.pausedAt?.kind === "agentStep" && !result.blocked) {
+        result = { output: { ...(result.output ?? {}), ...early } }
+      }
+    }
+
     // Finalize the workflow-step trace row, regardless of result.
     // Status mirrors the result shape: error → "error", paused → "ok"
     // (the node ran successfully and is waiting on external input;
@@ -851,6 +863,14 @@ export class WorkflowDispatcher {
           status: statusUpdate,
         })
         this.emitRunEvent({ runId, workflowId: workflow.id, nodeId, phase: "failed", status: statusUpdate ?? fresh.status, note: result.error.slice(0, 200) })
+        return
+      }
+      if (result.paused && result.pausedAt && TERMINAL.has(fresh.status)) {
+        // Ended meanwhile (canceled while the step ran): note it, don't revive it.
+        this.runs.recordExecution({
+          runId, entry: { at: now, nodeId, inputKeys, status: "skipped", idempotencyKey: key, note: `step ended after the run was ${fresh.status}` },
+          nextPending: remainingFromPending,
+        })
         return
       }
       if (result.paused && result.pausedAt) {
@@ -1000,23 +1020,25 @@ export class WorkflowDispatcher {
     this.log(`[workflow:${wf.id}] follow-up run ${run.id} started${meta.startedBy ? ` by ${meta.startedBy}` : ""}`)
     this.emitRunEvent({ runId: run.id, workflowId: wf.id, phase: "created", status: run.status, homeNode: run.homeNode, rootId: run.eventRootId })
 
-    const messages = wf.nodes.filter((n) => n.type === "person.message")
+    const messages = this.startMessages(wf, run)
     const approval = wf.approval ?? this.followUpDefaults().approval
-    if (approval === "start" && messages.length && !meta.approvedAtStart) {
-      if (!this.owner) {
+    // Only messages known in full at the start can be approved then; one
+    // that uses what a later step produces is asked again before it goes.
+    if (approval === "start" && messages.some((m) => m.msg) && !meta.approvedAtStart) {
+      const fail = async (error: string) => {
         this.runs.setStatus(run.id, "failed")
-        return { run: this.runs.get(run.id), error: "this workflow needs the owner's approval at start, and there is no owner to ask on this node" }
+        await this.settle(run.id)
+        return { run: this.runs.get(run.id), error }
       }
-      const lines = messages.map((n) => {
-        const c = n.config as { to?: unknown; channel?: unknown; chatId?: unknown; text?: unknown }
-        const who = String(c.to ?? `${String(c.channel ?? "?")} ${String(c.chatId ?? "?")}`)
-        return `- ${n.id} to ${who}: ${String(c.text ?? "").replace(/\s+/g, " ").slice(0, 160)}`
-      })
+      if (!this.owner) return fail("this workflow needs the owner's approval at start, and there is no owner to ask on this node")
+      const lines = messages.map(({ nodeId, msg }) => msg
+        ? `- ${nodeId} to ${msg.to ? `${msg.to} ` : ""}(${msg.channel} ${msg.chatId}): ${msg.text.replace(/\s+/g, " ").slice(0, 160)}`
+        : `- ${nodeId}: asked again before it is sent (it uses what an earlier step produces)`)
       try {
         const { cardId } = await this.owner.ask({
           title: (meta.title ?? wf.title).slice(0, 120),
-          ask: `Start "${wf.title}" and let it send its ${messages.length} message(s) to people without asking again?`.slice(0, 300),
-          recommend: "Yes if the messages below are right. Text in {{…}} is filled in from earlier steps.".slice(0, 300),
+          ask: `Start "${wf.title}" and let it send the message(s) below without asking again?`.slice(0, 300),
+          recommend: "Yes if the recipients and the text below are right.",
           context: lines.join("\n").slice(0, 600),
         }, run, init.triggerId)
         this.runs.recordExecution({
@@ -1028,13 +1050,25 @@ export class WorkflowDispatcher {
         })
         return { run: this.runs.get(run.id), awaitingApproval: true }
       } catch (e: any) {
-        this.runs.setStatus(run.id, "failed")
-        return { run: this.runs.get(run.id), error: `could not ask the owner: ${e?.message ?? e}` }
+        return fail(`could not ask the owner: ${e?.message ?? e}`)
       }
     }
     void this.walk(wf, run.id, `start:${run.id}`)
       .catch((e: any) => this.log(`[workflow:${wf.id}] walk after start failed: ${e.message}`))
     return { run }
+  }
+
+  /** The run's person.message steps as they read at the start: in full
+   *  when they use only the run's inputs, else null (asked later). */
+  private startMessages(wf: Workflow, run: WorkflowRun): Array<{ nodeId: string; msg: ReturnType<typeof renderPersonMessage> | null }> {
+    const triggerId = wf.nodes.find((n) => n.type.startsWith("trigger."))?.id ?? ""
+    return wf.nodes.filter((n) => n.type === "person.message").map((node) => {
+      const c = node.config as Record<string, unknown>
+      const refs = [c.channel, c.chatId, c.text, c.to, c.accountId].flatMap((v) => typeof v === "string" ? [...v.matchAll(/\{\{\s*([A-Za-z_][\w-]*)/g)].map((m) => m[1]) : [])
+      if (refs.some((r) => r !== triggerId && r !== "env")) return { nodeId: node.id, msg: null }
+      const msg = renderPersonMessage({ node, run, workflow: wf })
+      return { nodeId: node.id, msg: msg.channel && msg.chatId && msg.text ? msg : null }
+    })
   }
 
   /** A decision card raised for a run was answered or expired. Returns
@@ -1064,7 +1098,9 @@ export class WorkflowDispatcher {
       const key = idempotencyKey(fresh.id, p.nodeId, `card:${card.id}`)
       if (p.purpose === "start") {
         if (port === "yes") {
-          this.runs.setMeta(fresh.id, { approvedAtStart: true })
+          const approved: Record<string, string> = {}
+          for (const { nodeId, msg } of this.startMessages(wf, fresh)) if (msg) approved[nodeId] = messageKey(msg)
+          this.runs.setMeta(fresh.id, { approvedAtStart: true, approved })
           this.runs.recordExecution({ runId: fresh.id, entry: { at, nodeId: p.nodeId, inputKeys: [], status: "resumed", idempotencyKey: key, note: "approved at start" }, nextPending: fresh.pending, status: "running", pausedAt: null })
           walk = true
         } else {
@@ -1143,7 +1179,7 @@ export class WorkflowDispatcher {
     return null
   }
 
-  /** An agent says its step is done (agentx_workflow step_done), or that
+  /** An agent says its step is done (agentx_workflow done), or that
    *  it is blocked. `nodeId` may be left out: the step the run waits on. */
   async stepDone(args: { runId: string; nodeId?: string; agentId?: string; output?: Record<string, unknown>; blocked?: string }): Promise<{ ok: boolean; error?: string }> {
     const run0 = this.runs.get(args.runId)
@@ -1155,11 +1191,22 @@ export class WorkflowDispatcher {
     await this.commit(args.runId, () => {
       const fresh = this.runs.get(args.runId)
       const p = fresh?.pausedAt
+      // Reported from inside the step's own turn: kept until the turn ends.
+      if (fresh?.status === "running" && !args.blocked) {
+        const nodeId = args.nodeId ?? fresh.pending.find((id) => findNode(wf, id)?.type === "agent")
+        const node = nodeId ? findNode(wf, nodeId) : undefined
+        const owner = node ? String((node.config as { agentId?: unknown }).agentId ?? "") : ""
+        if (node?.type === "agent" && fresh.pending.includes(node.id) && (!args.agentId || args.agentId === owner || args.agentId === fresh.meta?.startedBy)) {
+          this.earlyDone.set(`${fresh.id}:${node.id}`, { ...(args.output ?? {}), result: (args.output?.result as string | undefined) ?? "done", doneAt: new Date().toISOString() })
+          return
+        }
+      }
       if (!fresh || fresh.status !== "paused" || p?.kind !== "agentStep") { error = `run ${args.runId} is not waiting on an agent step (it is ${fresh?.status ?? "gone"}${p ? `, on ${p.kind} ${p.nodeId}` : ""})`; return }
       if (args.nodeId && args.nodeId !== p.nodeId) { error = `run ${args.runId} waits on step "${p.nodeId}", not "${args.nodeId}"`; return }
       if (args.agentId && args.agentId !== p.agentId && args.agentId !== fresh.meta?.startedBy) { error = `step "${p.nodeId}" belongs to ${p.agentId}`; return }
       if (args.blocked) {
-        this.blockStep(wf, fresh, p, args.blocked)
+        // Already blocked: the owner was told once.
+        if (!p.blocked) this.blockStep(wf, fresh, p, args.blocked)
         return
       }
       this.timers.cancel({ cancelKey: `${fresh.id}:${p.nodeId}` })
@@ -1272,8 +1319,9 @@ export class WorkflowDispatcher {
         .then(async (resp) => {
           if (resp.error) { this.log(`[workflow:${wf.id}] run ${t.runId}: nudge turn on ${nd.agentId} failed: ${resp.error}`); return }
           const token = parseResultToken(resp.content).result
-          if (token === "blocked") await this.stepDone({ runId: t.runId, nodeId: t.nodeId, blocked: lastLine(resp.content) || `${nd.agentId} says the step is blocked` })
-          else if (token) await this.stepDone({ runId: t.runId, nodeId: t.nodeId, output: { reply: resp.content, result: token, via: "nudge" } })
+          const verdict = stepVerdict(token)
+          if (verdict === "blocked") await this.stepDone({ runId: t.runId, nodeId: t.nodeId, blocked: lastLine(resp.content) || `${nd.agentId} says the step is ${token}` })
+          else if (verdict === "done") await this.stepDone({ runId: t.runId, nodeId: t.nodeId, output: { reply: resp.content, result: token, via: "nudge" } })
         })
         .catch((e: any) => this.log(`[workflow:${wf.id}] run ${t.runId}: nudge turn failed: ${e?.message ?? e}`))
     }

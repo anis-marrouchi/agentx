@@ -177,7 +177,10 @@ agentx attach as helper
 | `agentx workflow run <id-or-file>` | Execute the named workflow; may perform external actions. Fails if the workflow is not active |
 | `agentx workflow runs [id]` | Inspect runs |
 | `agentx workflow trace <id>` | Inspect execution details |
-| `agentx workflow cancel <runId>` | Request cancellation |
+| `agentx workflow cancel <runId>` | Stop a run; a followed run's reminders stop and you get its summary |
+| `agentx workflow run <id> --follow --title "…" --tag client:example-co` | Start a run AgentX follows to the end ([follow a request](../jobs/follow-up-workflows.md)) |
+| `agentx workflow progress [--tag <kind:name>]` | Followed runs still going, grouped by tag |
+| `agentx workflow follow-up` | Show or change the follow-up settings: nudges, approvals, which agents |
 | `agentx cron list` | List schedules |
 | `agentx cron disable <id>` | Disable a schedule |
 | `agentx cron enable <id>` | Enable a schedule |

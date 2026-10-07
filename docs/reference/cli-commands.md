@@ -1890,7 +1890,7 @@ Scaffold a new workflow YAML from a template (linear by default).
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--template <name>` | `linear` | Which template to use (linear \| branching \| extract \| retry). |
+| `--template <name>` | `linear` | Which template to use (linear \| branching \| extract \| retry \| release-follow-up). `release-follow-up` puts a release live, checks it and tells the client after your approval: [use the release template](../jobs/follow-up-workflows.md#use-the-release-template). |
 | `--agent <id>` | `default` | Fill the agent placeholder with this agent id. |
 | `--reviewer <id>` | `alice` | Fill the reviewer placeholder for human-in-the-loop templates. |
 | `--title <text>` | `` | Workflow title. |
@@ -1931,6 +1931,9 @@ Manually trigger a workflow by id, or load + register + run a YAML/JSON file.
 | `--force` | — | Fire even if the trigger isn't `trigger.manual` (uses a synthesized event). |
 | `--watch` | — | Tail per-step traces while the run executes. |
 | `--daemon <url>` | `http://127.0.0.1:18800` | Daemon API base URL. |
+| `--follow` | — | Follow it to the end: reminders, nudges and one summary for you when it ends. See [Let a workflow follow a request](../jobs/follow-up-workflows.md). |
+| `--title <text>` | — | With `--follow`: what this run is for, in a few words. |
+| `--tag <kind:name...>` | — | With `--follow`: what it concerns, e.g. `client:example-co employee:sam`. Repeatable. |
 
 ### `agentx workflow trace <id>`
 
@@ -1959,11 +1962,34 @@ Resume a paused run.
 
 ### `agentx workflow cancel <runId>`
 
-Cancel an active run.
+Cancel an active run. When the daemon runs, it cancels the run there: a followed run's reminders and nudges stop and you get its summary. Without a running daemon, it marks the run canceled on disk.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--node <id>` | — | Home-node id. |
+| `--daemon <url>` | `http://127.0.0.1:18800` | Daemon API base URL. |
+
+### `agentx workflow progress`
+
+Follow-up runs still going, grouped by who or what they concern (their tags). Reads the runs on this computer.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--tag <kind:name>` | — | Only this tag, e.g. `client:example-co`. |
+| `--json` | — | Machine-readable output. |
+
+### `agentx workflow follow-up`
+
+Show or change how follow-up workflows run: reminders, approvals, which agents may start them. With no flags it shows the settings. See [Let a workflow follow a request](../jobs/follow-up-workflows.md#change-the-settings).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--enabled <on\|off>` | — | Agents may start follow-up workflows. |
+| `--stall-minutes <n>` | — | Minutes without progress before an agent step gets a reminder. |
+| `--max-nudges <n>` | — | Reminders before the step counts as blocked and you are told (0 to 20). |
+| `--approval <start\|step>` | — | Approve messages to people all at once when a run starts, or each before it is sent. |
+| `--agent <id>` | — | With `--agent-enabled`: the agent to turn it on or off for. |
+| `--agent-enabled <on\|off>` | — | Turn follow-up workflows on or off for `--agent`. |
 
 ## webhook (advanced)
 

@@ -71,9 +71,19 @@ export function supervisedSuffix(run: Pick<WorkflowRun, "id">, nodeId: string): 
     "",
     `[agentx:workflow-step run=${run.id} step=${nodeId}]`,
     "This is one step of a workflow AgentX is following. When the step is finished, end your reply with a line `RESULT: done` and say what proves it (a link, an id, the text you checked).",
-    `If it will finish later (a deploy still running, an answer still due), say so and report it when it is done with agentx_workflow: {action:"step_done", runId:"${run.id}", step:"${nodeId}", evidence:"<proof>"}. You will be reminded if nothing happens.`,
+    `If it will finish later (a deploy still running, an answer still due), say so and report it when it is done with agentx_workflow: {action:"done", runId:"${run.id}", step:"${nodeId}", evidence:"<proof>"}. You will be reminded if nothing happens.`,
     "If you cannot do it without the owner, end with `RESULT: blocked` and the reason in one line.",
   ].join("\n")
+}
+
+/** What a RESULT word means for a followed step: finished, blocked (the
+ *  owner must act), or no word yet (wait, and remind when it stalls). A
+ *  failure is not a finish: the owner hears about it. */
+export function stepVerdict(word: string | undefined): "done" | "blocked" | "wait" {
+  if (!word) return "wait"
+  if (["done", "approved", "skipped", "ok", "complete", "completed"].includes(word)) return "done"
+  if (["blocked", "failed", "rejected", "changes-requested"].includes(word)) return "blocked"
+  return "wait"
 }
 
 /** Decide what a supervised agent step's turn means. `parsed.result` is
@@ -94,11 +104,12 @@ export function supervisedResult(
     stallMs,
     ...(blocked ? { blocked } : { nextNudgeAt: new Date(Date.now() + stallMs).toISOString() }),
   })
-  if (!turn.error && turn.result === "blocked") {
-    const reason = lastLine(turn.reply) || `${agentId} says the step is blocked`
+  const verdict = turn.error ? "wait" : stepVerdict(turn.result)
+  if (verdict === "blocked") {
+    const reason = lastLine(turn.reply) || `${agentId} says the step is ${turn.result}`
     return { paused: true, pausedAt: pausedAt(reason), blocked: reason, output: turn.output }
   }
-  if (!turn.error && turn.result) return { output: turn.output }
+  if (verdict === "done") return { output: turn.output }
   // No word that it is done, or the turn failed: wait, and nudge when it stalls.
   return { paused: true, pausedAt: pausedAt(), output: turn.output }
 }
@@ -116,7 +127,7 @@ export function nudgeText(run: Pick<WorkflowRun, "id" | "meta">, nodeId: string,
     `[agentx:workflow-nudge run=${run.id} step=${nodeId} nudge=${n}/${max}]`,
     `Reminder ${n} of ${max}: the workflow step "${nodeId}"${run.meta?.title ? ` of "${run.meta.title}"` : ""} has shown no progress for ${mins} minute(s).`,
     "Check where it stands and finish it now if you can.",
-    `When it is done, end your reply with \`RESULT: done\` and the proof, or call agentx_workflow {action:"step_done", runId:"${run.id}", step:"${nodeId}", evidence:"<proof>"}.`,
+    `When it is done, end your reply with \`RESULT: done\` and the proof, or call agentx_workflow {action:"done", runId:"${run.id}", step:"${nodeId}", evidence:"<proof>"}.`,
     "If you cannot finish it without the owner, end with `RESULT: blocked` and the reason.",
     n >= max ? "This is the last reminder: after it the owner is told the step is blocked." : "",
   ].filter(Boolean).join("\n")
@@ -181,18 +192,19 @@ const personMessageHandler: NodeHandler = async (ctx) => {
   if (!msg.channel || !msg.chatId || !msg.text) {
     return { error: `person.message "${ctx.node.id}" needs channel, chatId and text` }
   }
-  // Approved with the whole run: send it now.
-  if (ctx.run.meta?.approvedAtStart) {
+  // Approved with the whole run, exactly as it reads now: send it.
+  if (ctx.run.meta?.approved?.[ctx.node.id] === messageKey(msg)) {
     const sent = await deliver(ctx, msg)
     if ("error" in sent) return { error: sent.error }
     return { output: { ...msg, messageId: sent.messageId, approved: "start" }, port: "sent" }
   }
   if (!ctx.owner) return { error: `person.message "${ctx.node.id}": no owner to approve it on this node` }
-  const who = msg.to ?? `${msg.channel} ${msg.chatId}`
+  // The card always names the real chat: `to` alone could say anything.
+  const who = msg.to ? `${msg.to} (${msg.channel} ${msg.chatId})` : `${msg.channel} ${msg.chatId}`
   try {
     const { cardId } = await ctx.owner.ask({
       title: clip(`Send to ${who}`, 120),
-      ask: clip(`Send this message to ${who} on ${msg.channel}?`, 300),
+      ask: clip(`Send this message to ${who}?`, 300),
       recommend: clip(`It is step "${ctx.node.id}" of ${ctx.run.meta?.title ? `"${ctx.run.meta.title}"` : `workflow ${ctx.workflow.id}`}. Edit it if needed, then say yes.`, 300),
       draft: msg.text,
     }, ctx.run, ctx.node.id)
@@ -200,6 +212,12 @@ const personMessageHandler: NodeHandler = async (ctx) => {
   } catch (e: any) {
     return { error: `person.message "${ctx.node.id}": could not ask the owner: ${e?.message ?? e}` }
   }
+}
+
+/** What an approval at start covers: this recipient and this text. A
+ *  message that reads otherwise when its turn comes is asked again. */
+export function messageKey(msg: { channel: string; chatId: string; text: string }): string {
+  return `${msg.channel}\n${msg.chatId}\n${msg.text}`
 }
 
 /** Send through the local adapter, or a mesh peer that hosts the channel. */

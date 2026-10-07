@@ -560,8 +560,11 @@ export const runMetaSchema = z.object({
   /** Followed: nudges, reminders, a blocked notice and one summary at
    *  the end. */
   followUp: z.boolean().default(false),
-  /** The owner approved every message of this run when it started. */
+  /** The owner approved this run's messages when it started. */
   approvedAtStart: z.boolean().default(false),
+  /** The messages that approval covers, by step id: recipient and text as
+   *  the owner saw them (messageKey). Any other message is asked again. */
+  approved: z.record(z.string()).optional(),
   /** Why the run cannot go on without the owner, and when they were told. */
   blocked: z.object({
     nodeId: z.string(),

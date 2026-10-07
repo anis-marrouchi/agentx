@@ -46,7 +46,7 @@ import { renderHistoryPage } from "./ui/pages/history"
 import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
-import { progressGroups } from "@/workflows/follow-up"
+import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import { dashboardIcon } from "./app-icon"
@@ -1607,7 +1607,7 @@ function slimRun(r: WorkflowRun): Partial<WorkflowRun> {
     depth: r.depth,
     // Follow-up runs (#788): what it is about, and what it waits on.
     ...(r.meta ? { meta: r.meta } : {}),
-    ...(r.pausedAt ? { pausedAt: r.pausedAt } : {}),
+    ...(r.pausedAt ? { pausedAt: slimPausedAt(r.pausedAt) } : {}),
     createdAt: r.createdAt,
     updatedAt: r.updatedAt,
   }

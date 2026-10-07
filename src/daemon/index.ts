@@ -16,6 +16,8 @@ import { parseQueued } from "@/agents/queued"
 import { setDispatchBudget } from "@/agents/claude-code-quota"
 import { mappedForgeUsernames, markBody, UNKNOWN_AGENT } from "@/channels/outbound-marker"
 import { resolvePermission, warmProcessChat, type AgentTask } from "@/agents/runtime"
+import { isRestricted } from "@/guard/autonomy"
+import { OPEN_STATES, type OpenState } from "@/requests/store"
 import { registerAllBuiltins, listBuiltins, runBuiltin, getBuiltin } from "@/actions/builtin"
 import { registerBuiltinDecisionBackends } from "@/decisions"
 import { configureDecisions } from "@/decisions/seat"
@@ -63,7 +65,7 @@ import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/ag
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { createCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
-import { blockedText, runEvidence, runSummary } from "@/workflows/follow-up"
+import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
@@ -3782,7 +3784,14 @@ export class AgentXDaemon {
           runs: this.workflowRuns,
           settings: this.config.workflows.followUp,
           hasAgent: (id) => !!this.registry.getAgent(id),
-          runningTurn: (id, p) => this.provenTurn(id, p),
+          runningTurn: (id, p) => {
+            const t = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
+            return t ? { ...warmProcessChat(t.context), restricted: isRestricted(t.autonomy) } : null
+          },
+          ownsRequest: (requestId, agentId) => {
+            const r = this.requests?.store.get(requestId)
+            return !!r && r.agentId === agentId && OPEN_STATES.includes(r.state as OpenState)
+          },
           liveRequest: (agentId, channel, chatId) => this.requests?.tracker.liveRequestId(agentId, channel, chatId) ?? null,
           linkRequest: (requestId, runId) => {
             try {
@@ -4415,7 +4424,7 @@ export class AgentXDaemon {
             rootRunId: r.rootRunId,
             depth: r.depth,
             ...(r.meta ? { meta: r.meta } : {}),
-            ...(r.pausedAt ? { pausedAt: r.pausedAt } : {}),
+            ...(r.pausedAt ? { pausedAt: slimPausedAt(r.pausedAt) } : {}),
             createdAt: r.createdAt,
             updatedAt: r.updatedAt,
           }))
@@ -7144,7 +7153,9 @@ export class AgentXDaemon {
       // While requests are on, every agent also gets this install's own
       // tool server, so it can say what it is doing with a request
       // (agentx_request) without the workspace being set up by hand (#400).
-      const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled ? agentxToolServer() : null)
+      // The same while follow-up workflows are on, for agentx_workflow (#788).
+      const followUp = this.config.workflows.enabled && this.config.workflows.followUp.enabled && (this.config.workflows.followUp.agents[agentId] ?? true)
+      const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled || followUp ? agentxToolServer() : null)
       try {
         const result = syncMcpToWorkspace(ws, mcp)
         switch (result) {

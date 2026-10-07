@@ -193,7 +193,7 @@ describe("a release followed from start to end", () => {
     expect(awaitingApproval).toBe(true)
     expect(h.turns).toHaveLength(0)
     expect(h.cards).toHaveLength(1)
-    expect(h.cards[0].input.context).toContain("tell_client to the client")
+    expect(h.cards[0].input.context).toContain("tell_client to the client (telegram client-1): Release v3 is live.")
 
     await h.dispatcher.resumeFromCard({ id: "card-1", status: "decided", verdict: "yes", origin: { kind: "workflow", runId: run!.id, nodeId: "start" } })
     await until(() => h.runs.get(run!.id)?.pausedAt?.kind === "replyWait")
@@ -216,7 +216,8 @@ describe("waiting for a person", () => {
   it("reminds the person with the approved text, then stops at the deadline when nothing handles the timeout", async () => {
     const h = harness(() => "RESULT: done")
     saveRelease(h.store, { approval: "start" })
-    const { run } = await h.dispatcher.startRun({ workflowId: "release-follow-up", inputs: { release: "v9" }, meta: { approvedAtStart: true } })
+    const { run } = await h.dispatcher.startRun({ workflowId: "release-follow-up", inputs: { release: "v9" } })
+    await h.dispatcher.resumeFromCard({ id: "card-1", status: "decided", verdict: "yes", origin: { kind: "workflow", runId: run!.id, nodeId: "start" } })
     await until(() => h.runs.get(run!.id)?.pausedAt?.kind === "replyWait")
 
     // The reminder is due first: it repeats the message that was sent.
@@ -349,5 +350,79 @@ describe("cancel", () => {
     expect(h.runs.get(run!.id)?.status).toBe("canceled")
     expect(h.timers.list()).toHaveLength(0)
     expect(h.ended).toHaveLength(1)
+  })
+})
+
+describe("review fixes", () => {
+  function saveOneStep(store: WorkflowStore) {
+    store.save(workflowSchema.parse({
+      id: "one", title: "One",
+      nodes: [
+        { id: "start", type: "trigger.manual" },
+        { id: "deploy", type: "agent", config: { agentId: "builder", prompt: "Deploy" } },
+        { id: "tell", type: "owner.notify", config: { text: "Deployed" } },
+      ],
+      edges: [{ from: "start", to: "deploy" }, { from: "deploy", to: "tell" }],
+    }))
+  }
+
+  it("a run canceled while its agent step runs stays canceled", async () => {
+    let finish: (v: string) => void = () => {}
+    const h = harness(() => "")
+    ;(h.dispatcher as any).agents = { execute: () => new Promise((r) => { finish = (v) => r({ content: v }) }) }
+    saveOneStep(h.store)
+    const { run } = await h.dispatcher.startRun({ workflowId: "one" })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(await h.dispatcher.cancelRun(run!.id)).toBe(true)
+    finish("still working")
+    await new Promise((r) => setTimeout(r, 50))
+    expect(h.runs.get(run!.id)?.status).toBe("canceled")
+    expect(h.timers.list()).toHaveLength(0)
+    expect(h.ended).toHaveLength(1)
+  })
+
+  it("RESULT: failed is not a finish: the owner is told", async () => {
+    const h = harness(() => "The build broke.\nRESULT: failed")
+    saveOneStep(h.store)
+    const { run } = await h.dispatcher.startRun({ workflowId: "one" })
+    await until(() => h.blocked.length === 1)
+    expect(h.runs.get(run!.id)?.status).toBe("paused")
+    expect(h.told).toEqual([])
+  })
+
+  it("done reported from inside the step's own turn finishes the step when the turn ends", async () => {
+    let h: Harness
+    h = harness(() => "")
+    ;(h.dispatcher as any).agents = {
+      execute: async (req: AgentExecuteRequest) => {
+        expect(await h.dispatcher.stepDone({ runId: req.workflowRunId!, agentId: "builder", output: { evidence: "https://example.com/d/9" } })).toEqual({ ok: true })
+        return { content: "Deployed, see above." }
+      },
+    }
+    saveOneStep(h.store)
+    const { run } = await h.dispatcher.startRun({ workflowId: "one" })
+    await until(() => h.ended.length === 1)
+    expect(h.runs.get(run!.id)?.context.deploy).toMatchObject({ evidence: "https://example.com/d/9", result: "done" })
+  })
+
+  it("a message that uses a later step's output is asked again even after approval at start", async () => {
+    const h = harness(() => "Sam\nRESULT: done")
+    h.store.save(workflowSchema.parse({
+      id: "mixed", title: "Mixed", approval: "start",
+      nodes: [
+        { id: "start", type: "trigger.manual" },
+        { id: "first", type: "person.message", config: { to: "Client", channel: "telegram", chatId: "c1", text: "Hello {{start.name}}" } },
+        { id: "who", type: "agent", config: { agentId: "builder", prompt: "who?" } },
+        { id: "second", type: "person.message", config: { channel: "telegram", chatId: "c1", text: "From {{who.reply}}" } },
+      ],
+      edges: [{ from: "start", to: "first" }, { from: "first", to: "who" }, { from: "who", to: "second" }],
+    }))
+    const { run } = await h.dispatcher.startRun({ workflowId: "mixed", inputs: { name: "Ana" } })
+    expect(h.cards[0].input.context).toContain("second: asked again before it is sent")
+    await h.dispatcher.resumeFromCard({ id: "card-1", status: "decided", verdict: "yes", origin: { kind: "workflow", runId: run!.id, nodeId: "start" } })
+    await until(() => h.cards.length === 2)
+    expect(h.sends.map((m) => m.text)).toEqual(["Hello Ana"])
+    expect(h.cards[1].input.draft).toContain("From Sam")
+    expect(h.cards[1].input.ask).toContain("telegram c1")
   })
 })

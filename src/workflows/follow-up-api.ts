@@ -37,9 +37,12 @@ export interface FollowUpApiDeps {
   hasAgent: (agentId: string) => boolean
   /** The channel and chat of the running turn of `agentId` the call
    *  proves (requests/daemon-api CallerProof), or null. */
-  runningTurn: (agentId: string, proof: { taskId?: string; channel?: string; chatId?: string }) => { channel: string; chatId: string } | null
+  runningTurn: (agentId: string, proof: { taskId?: string; channel?: string; chatId?: string }) => { channel: string; chatId: string; restricted?: boolean } | null
   /** The open request of that turn, when there is one. */
   liveRequest?: (agentId: string, channel: string, chatId: string) => string | null
+  /** Is this open request one of this agent's? A run closes the request
+   *  it serves, so an agent may only name its own. */
+  ownsRequest?: (requestId: string, agentId: string) => boolean
   /** Link a run to the request it serves. */
   linkRequest?: (requestId: string, runId: string) => void
   /** Tell the owner which workflow an agent started. */
@@ -128,6 +131,10 @@ export async function handleFollowUpApi(
   }
   const turn = deps.runningTurn(agentId, proof)
   if (!turn) return { status: 403, body: { error: `no running turn of "${agentId}" matches this call: use the agentx_workflow tool from inside your run` } }
+  // A report- or propose-only turn may not set work going at full power.
+  if (turn.restricted && (action === "start" || action === "propose")) {
+    return { status: 403, body: { error: "this turn runs with restricted autonomy (report or propose): it cannot start or propose a workflow" } }
+  }
 
   if (action === "done" || action === "blocked") {
     const runId = str(input.runId)
@@ -190,7 +197,9 @@ export async function handleFollowUpApi(
     built = true
   }
   const inputs = input.inputs && typeof input.inputs === "object" && !Array.isArray(input.inputs) ? input.inputs as Record<string, unknown> : {}
-  const requestId = (str(input.requestId) || deps.liveRequest?.(agentId, turn.channel, turn.chatId)) ?? undefined
+  const named = str(input.requestId)
+  if (named && !deps.ownsRequest?.(named, agentId)) return { status: 403, body: { error: `request "${named}" is not an open request of ${agentId}` } }
+  const requestId = (named || deps.liveRequest?.(agentId, turn.channel, turn.chatId)) ?? undefined
   const res = await deps.dispatcher.startRun({
     workflowId: wf.id,
     inputs: { ...inputs, requestedBy: agentId, channel: turn.channel, chatId: turn.chatId },

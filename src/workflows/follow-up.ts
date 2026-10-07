@@ -110,6 +110,14 @@ export function cleanTags(raw: unknown): string[] {
   return out.slice(0, 10)
 }
 
+/** A pause as list APIs show it: a message waiting for approval keeps
+ *  its recipient, never its text (CLAUDE.md: bounded summaries). */
+export function slimPausedAt(p: WorkflowRun["pausedAt"]): WorkflowRun["pausedAt"] {
+  if (p?.kind !== "ownerDecision" || !p.message) return p
+  const { text: _text, ...recipient } = p.message
+  return { ...p, message: { ...recipient, text: "" } }
+}
+
 /** What a paused or running run is waiting on, in words. */
 export function waitingOn(run: Pick<WorkflowRun, "status" | "pausedAt" | "pending" | "meta">): string {
   const p = run.pausedAt

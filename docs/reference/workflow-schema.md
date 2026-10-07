@@ -22,6 +22,14 @@ A V2 workflow is a directed graph stored as JSON or YAML under `.agentx/workflow
 | `state` | Dispatch control: `active`, `disabled`, or `quarantined` |
 | `status` | Review metadata: `draft`, `review`, `active`, or `deprecated` |
 
+Optional fields for [follow-up workflows](../jobs/follow-up-workflows.md):
+
+| Field | Default | Meaning |
+|---|---|---|
+| `autoStart` | `false` | An agent that picks this workflow for a request starts it without telling you first. |
+| `approval` | the `workflows.followUp.approval` setting | When you approve `person.message` steps: `start` (all at once, when a run starts) or `step` (each before it is sent). |
+| `followUp` | — | `{ stallMinutes, maxNudges }`: nudge timing for this workflow's agent steps, over the `workflows.followUp` settings. `stallMinutes` is at most 10080; `maxNudges` is 0 to 20. |
+
 **`state` controls execution.** A workflow marked `status: "draft"` can still run if its `state` is active. Use `state: "disabled"` for a proposal that must not fire yet. A quarantined workflow is held because of a detected conflict; investigate that conflict before reactivating it.
 
 ## A small example
@@ -67,11 +75,37 @@ An `agent` node needs a registered `agentId`. It can also set `timeoutMinutes`. 
 | `action.run`, `action.builtin` | Runs a registered action, or a built-in one, by name |
 | `signal.emit`, `signal.wait` | Publishes a signal, or pauses until one arrives |
 | `timer.boundary` | Pauses until a timer runs out |
+| `owner.notify`, `owner.ask` | Tells you something, or asks you on a decision card |
+| `person.message`, `person.wait` | Sends a message to a person after your approval, or waits for a person's reply |
 | `subProcess` | Starts another workflow and waits for it to finish |
 | `checkpoint` | Pauses for review until a resume event arrives |
 | `end` | Closes the run with the given status |
 
 Each type's config is checked by its handler in `src/workflows/nodes/`.
+
+## Follow-up steps
+
+These steps let a workflow work with you and with other people. How they are used: [Let a workflow follow a request](../jobs/follow-up-workflows.md).
+
+| Type | Config | Ports |
+|---|---|---|
+| `owner.notify` | `text` (required) | — |
+| `owner.ask` | `ask` (required), `recommend`, `draft`, `choices`, `expires`, `title`, `context` | `yes`, `no`, `expired` |
+| `person.message` | `channel`, `chatId`, `text` (required), `to` (the person's name, shown on the card), `accountId` | `sent`, `declined` |
+| `person.wait` | `reminds` (a `person.message` step id) or `channel` and `chatId`; `from`, `timeout` (default one day), `remindAfter`, `maxReminders` (default 1 with `remindAfter`), `accountId` | `reply`, `timeout` |
+
+- **Ports.** The first port listed is the main one: an edge without `fromPort` leaves on it. A step that ends on another port with no edge for it stops the run, and the owner's summary says why.
+- **Durations.** `timeout` and `remindAfter` take minutes as a number, `"30m"`, `"4h"`, `"2d"`, or ISO `"PT4H"`, `"P2D"`.
+- **Approval.** A `person.message` is never sent without the owner's yes: on its own card, where the owner can edit the text, or on the run's start card when the workflow's `approval` is `start`. The start card covers only messages whose chat and text use nothing but the run's inputs (the values of its `start` step); any other message, or one that reads differently when its turn comes, gets its own card. Cards always show the real channel and chat id, whatever `to` says.
+- **Replies.** A `person.wait` step takes the next message in its chat, on its channel; that message is not routed to an agent. Its output has `text`, `from`, `fromName`, `media`, `channel`, `chatId` and `at`, so later steps read <code v-pre>{{reply.text}}</code> for a step with id `reply`.
+- **Reminders.** With `reminds`, a reminder repeats the approved text of that step to the person, starting `Reminder: `. Without it, the reminder goes to the owner.
+
+**Supervised agent steps.** In a followed run (started with `--follow`, or by an agent), an `agent` step's prompt asks the agent to end with `RESULT: done` and the proof, or `RESULT: blocked` and a reason (`failed` counts as blocked; `approved`, `skipped`, `ok` and `completed` count as done). A step with neither waits; after `stallMinutes` the agent gets a nudge, and after `maxNudges` nudges the step is blocked and the owner is told once. An agent step's config can set:
+
+| Key | Meaning |
+|---|---|
+| `supervise` | `false` turns supervision off for this step in a followed run; `true` turns it on in a run that is not followed. |
+| `stallMinutes`, `maxNudges` | Override the workflow's and the node's values for this step. |
 
 ## Event trigger filters
 
@@ -169,3 +203,4 @@ The script writes its local state file and prints `RESULT steps=…` followed by
 - **A poll trigger starts nothing:** look for `[workflows] <id> poll` in `agentx daemon logs`. `poll baseline` means the first poll recorded the existing items; `poll failed` shows the action's error; `poll skipped` means lines were not a JSON object with the `key` field.
 - **An event trigger doesn't fire:** look for `[workflows] <id> skipping` in `agentx daemon logs`; a filter or loop guard dropped the event.
 - **A run stops partway:** `agentx workflow trace <runId>` shows which step failed and why.
+- **A followed run stopped after `no`, `expired`, `declined` or `timeout`:** the step has no edge for that port. Add one with that `fromPort`.

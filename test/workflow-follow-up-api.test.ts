@@ -47,6 +47,7 @@ function setup(opts: { reply?: string; settings?: Partial<FollowUpApiDeps["setti
     hasAgent: (id) => ["lead", "builder", "quiet"].includes(id),
     runningTurn: (id, proof) => (proof.taskId === `task-${id}` ? { channel: "telegram", chatId: "owner-chat" } : null),
     liveRequest: () => "req-1",
+    ownsRequest: (id, agentId) => id === "req-mine" && agentId === "lead",
     linkRequest: (r, run) => { links.push([r, run]) },
     notifyOwner: async (text) => { told.push(text) },
     proposeCard: async (wf) => { proposals.push(wf.id); return { cardId: "p1" } },
@@ -106,6 +107,20 @@ describe("starting a saved workflow", () => {
     const off = await t.post({ action: "start", workflowId: "chase-document" }, "quiet")
     expect(off.status).toBe(409)
     expect((off.body as any).error).toMatch(/off for quiet/)
+  })
+})
+
+describe("who may start", () => {
+  it("refuses a restricted turn and a request that is not the agent's", async () => {
+    const t = setup()
+    saveChase(t.store)
+    t.deps.runningTurn = () => ({ channel: "cron", chatId: "x", restricted: true })
+    expect((await t.post({ action: "start", workflowId: "chase-document" })).status).toBe(403)
+    t.deps.runningTurn = () => ({ channel: "telegram", chatId: "x" })
+    const other = await t.post({ action: "start", workflowId: "chase-document", requestId: "req-someone-else" })
+    expect(other.status).toBe(403)
+    const mine = await t.post({ action: "start", workflowId: "chase-document", requestId: "req-mine", inputs: { chat: "1" } })
+    expect((mine.body as any).run.requestId).toBe("req-mine")
   })
 })
 
