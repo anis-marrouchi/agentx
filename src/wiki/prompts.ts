@@ -23,9 +23,22 @@ export function buildAbsorbPrompt(
   entryTexts: string,
   entryCount: number,
   factsBlock = "",
+  matches: AbsorbMatch[] = [],
 ): string {
-  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount, factsBlock)
+  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount, factsBlock, matches)
 }
+
+/** An existing article retrieval found for this batch, shown in full. */
+export interface AbsorbMatch {
+  path: string
+  title: string
+  type?: string
+  sources?: string[]
+  content: string
+}
+
+/** Full text shown of existing articles, all matches together. */
+export const ABSORB_MATCH_CHARS = 60_000
 
 function buildFarzapediaPrompt(
   agentId: string,
@@ -34,8 +47,10 @@ function buildFarzapediaPrompt(
   entryTexts: string,
   entryCount: number,
   factsBlock = "",
+  matches: AbsorbMatch[] = [],
 ): string {
   const worldviewSection = worldview ? `\n## Worldview\n\n${worldview}\n` : ""
+  const matchSection = renderMatches(matches)
 
   // Group the existing index by type so the LLM sees the structure.
   const byType = new Map<string, typeof existingArticles>()
@@ -83,10 +98,12 @@ Path reflects type: \`<type>s/<slug>.md\` where slug is a kebab-case title.
 
 For each of the ${entryCount} raw entries below, ask in this order:
 
-1. **Does it extend an existing article?** If a person/project/concept mentioned in the entry already has an article in the catalog, produce an UPDATE with the full merged content. Prefer merging over proliferating.
-2. **Does it deserve a new article?** Only if the subject is a persistent entity (a person, a project, a recurring concept, a specific event/decision) that future queries will need to find. Not every conversation deserves an article.
+1. **Does it extend an existing article?** Check "Articles that may already cover these entries" first: if one of them is about the same subject, event or decision — including a follow-up such as a re-review, a second deploy or a status change — produce an UPDATE at that article's EXISTING path, never a second article beside it. Prefer merging over proliferating.
+2. **Does it deserve a new article?** Only if the subject is a persistent entity (a person, a project, a recurring concept, a specific event/decision) that future queries will need to find, and no article shown in full already covers it. Not every conversation deserves an article.
 3. **Does it belong in an existing \`event\` or \`decision\`?** Most work entries fold into one of these.
 4. **Can you skip it?** If the entry is small talk, a transient status ping, or already covered elsewhere — skip. The wiki is curated, not exhaustive.
+
+**How to UPDATE.** An UPDATE replaces the whole article, so write the full merged content: everything the old article says plus what the entries add. Keep every commit hash, URL, \`[[wikilink]]\`, number, count and date of the old text verbatim; when an entry supersedes a value, keep the old one as history ("16/16 at the first review, 27 at the re-review"). Keep its title unless the subject itself changed. A save that drops any of these is refused and the entries come back next run. Only UPDATE articles shown in full below: for an article you know only by its catalog title, write a new article that links to it instead of rewriting it blind.
 
 ## Writing standards
 
@@ -156,7 +173,7 @@ sources: ["entry-id-1", "entry-id-2"]
 \`\`\`
 
 Access guidance: default \`public\`; \`private\` only for sensitive credentials or agent-specific learnings; \`shared\` with specific agent IDs when the article matters only to a subset.
-${worldviewSection}${existingList}${factsBlock}
+${worldviewSection}${existingList}${matchSection}${factsBlock}
 ## Gap Detection
 
 After compiling, populate a \`gaps\` array: wikilink targets you referenced but for which no article exists yet. Be specific:
@@ -188,6 +205,27 @@ After compiling, populate a \`gaps\` array: wikilink targets you referenced but 
 ENTRIES (${entryCount}):
 
 ${entryTexts}`
+}
+
+/** Matches in retrieval order until ABSORB_MATCH_CHARS is spent. An
+ *  article that does not fit is left out whole, never cut: the model would
+ *  rewrite a cut article from its first half. */
+function renderMatches(matches: AbsorbMatch[]): string {
+  const shown: string[] = []
+  let used = 0
+  for (const m of matches) {
+    const header = `### ${m.title} — ${m.type || "untyped"} (${m.path})` +
+      (m.sources?.length ? `\nsources: ${m.sources.join(", ")}` : "")
+    const block = `${header}\n\n${m.content.trim()}`
+    if (used + block.length > ABSORB_MATCH_CHARS) continue
+    shown.push(block)
+    used += block.length
+  }
+  if (shown.length === 0) return ""
+  return "\n## Articles that may already cover these entries (full text)\n\n" +
+    "Found by searching the wiki with each entry. Some may be unrelated; ignore those. " +
+    "If an entry is about the subject of one of these, UPDATE it at its path.\n\n" +
+    shown.join("\n\n---\n\n") + "\n"
 }
 
 /** Max chars of a memory body shown to the promotion judge. */

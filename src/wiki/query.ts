@@ -247,8 +247,30 @@ async function selectCandidatesViaSeat(
   graphWeight: number = DEFAULT_GRAPH_WEIGHT,
 ): Promise<Array<{ title: string; path: string }> | null> {
   try {
-    const index = store.rebuildIndex()
-    const pool = (index.articles ?? []).filter((a) => a.path && !a.path.includes("/_versions/"))
+    return await rerankPool(question, catalogPool(store), requesterId, maxCandidates, messagePath, graphWeight)
+  } catch {
+    return null
+  }
+}
+
+type CatalogEntry = { title: string; path: string; type?: string; tags?: string[]; related?: string[]; graphPath?: string[] }
+
+function catalogPool(store: WikiStore): CatalogEntry[] {
+  const index = store.rebuildIndex()
+  return (index.articles ?? []).filter((a) => a.path && !a.path.includes("/_versions/"))
+}
+
+/** BM25 shortlist of `pool`, re-ranked by the wiki-rerank seat. Null when
+ *  the seat is off, errors, or the pool is too small to rank. */
+async function rerankPool(
+  question: string,
+  pool: CatalogEntry[],
+  requesterId: string | undefined,
+  maxCandidates: number,
+  messagePath?: string[],
+  graphWeight: number = DEFAULT_GRAPH_WEIGHT,
+): Promise<Array<{ title: string; path: string }> | null> {
+  try {
     if (pool.length < 2) return null
 
     const shortlist = rankCatalogPool(question, pool, messagePath, graphWeight).slice(0, DEFAULT_SHORTLIST)
@@ -286,6 +308,47 @@ async function selectCandidatesViaSeat(
   }
 }
 
+export interface FindArticlesOptions {
+  /** Articles picked per query before the walk. Default 2. */
+  perQuery?: number
+  /** Wikilink hops from the picked articles. Default 1. */
+  maxHops?: number
+  /** Hard cap on articles returned across all queries. Default 8. */
+  maxArticles?: number
+}
+
+/**
+ * The retrieval half of `agenticQuery`, without the synthesis call: for
+ * each query, a BM25 shortlist re-ranked by the wiki-rerank seat, then the
+ * `related` wikilink walk. Picked articles come first, in query order.
+ *
+ * Absorb uses it to show the model the articles an entry may already be
+ * covered by. It never falls back to the CLI selector — that call reads the
+ * whole catalog per query — but to the BM25 text matches alone.
+ */
+export async function findArticles(
+  queries: string[],
+  store: WikiStore,
+  requesterId: string | undefined,
+  opts: FindArticlesOptions = {},
+): Promise<Array<WikiArticle & { hop: number }>> {
+  const perQuery = opts.perQuery ?? 2
+  const maxHops = opts.maxHops ?? 1
+  const maxArticles = opts.maxArticles ?? 8
+  const pool = catalogPool(store)
+  if (pool.length === 0) return []
+
+  const picked = new Map<string, { title: string; path: string }>()
+  for (const query of queries) {
+    const viaSeat = await rerankPool(query, pool, requesterId, perQuery)
+    const hits = viaSeat ?? bandCatalogPool(query, pool).matched
+      .slice(0, perQuery)
+      .map((i) => ({ title: pool[i].title, path: pool[i].path }))
+    for (const hit of hits) if (!picked.has(hit.path)) picked.set(hit.path, hit)
+  }
+  return walkSubgraph([...picked.values()], store, requesterId, maxHops, maxArticles)
+}
+
 /** Weight of the intent-graph branch match against the text match when
  *  shortlisting catalog candidates. Mirrors `graph.retrievalWeights.graph`. */
 export const DEFAULT_GRAPH_WEIGHT = 0.6
@@ -313,6 +376,20 @@ export function rankCatalogPool(
   messagePath?: string[],
   graphWeight: number = DEFAULT_GRAPH_WEIGHT,
 ): number[] {
+  const { matched, branchOnly } = bandCatalogPool(question, pool, messagePath, graphWeight)
+  const ranked = [...matched, ...branchOnly]
+  for (let i = 0; i < pool.length; i++) if (!ranked.includes(i)) ranked.push(i)
+  return ranked
+}
+
+/** Bands 1 and 2 of `rankCatalogPool`, kept apart: `matched` holds only
+ *  the articles the text match scored. */
+function bandCatalogPool(
+  question: string,
+  pool: Array<{ title: string; tags?: string[]; related?: string[]; graphPath?: string[] }>,
+  messagePath?: string[],
+  graphWeight: number = DEFAULT_GRAPH_WEIGHT,
+): { matched: number[]; branchOnly: number[] } {
   const docs = pool.map((a) =>
     [a.title, (a.tags ?? []).join(" "), (a.related ?? []).join(" ")].join(" "),
   )
@@ -332,9 +409,7 @@ export function rankCatalogPool(
     .map((a, i) => ({ i, score: branch(a) }))
     .filter((c) => !text.has(c.i) && c.score > 0)
     .sort(byScore)
-  const ranked = [...matched, ...branchOnly].map((c) => c.i)
-  for (let i = 0; i < pool.length; i++) if (!ranked.includes(i)) ranked.push(i)
-  return ranked
+  return { matched: matched.map((c) => c.i), branchOnly: branchOnly.map((c) => c.i) }
 }
 
 function buildSelectorPrompt(question: string, catalog: string, maxCandidates: number, messagePath?: string[]): string {

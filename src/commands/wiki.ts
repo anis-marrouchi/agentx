@@ -5,8 +5,11 @@ import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
 import type { WikiPeer } from "@/wiki/article-sync"
-import { buildAbsorbPrompt } from "@/wiki/prompts"
+import { buildAbsorbPrompt, type AbsorbMatch } from "@/wiki/prompts"
 import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
+import { describeDrops, droppedFacts, hasDrops, mergeUpdateMeta } from "@/wiki/absorb-guard"
+import { findArticles } from "@/wiki/query"
+import type { WikiArticleMeta } from "@/wiki/types"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
@@ -162,6 +165,11 @@ wiki
     }
     console.log()
   })
+
+/** Each entry's search query: its opening, which names the subject. */
+const ABSORB_QUERY_CHARS = 1500
+/** Existing articles looked up per batch, picks and their wikilink hop. */
+const ABSORB_MAX_MATCHES = 12
 
 // agentx wiki absorb — Farzapedia-faithful compilation.
 // Reads unabsorbed raw entries, classifies by type, writes articles with
@@ -359,7 +367,24 @@ wiki
         }
       }
 
-      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock)
+      // The articles these entries may already be covered by, in full. The
+      // catalog alone gives titles: the model then either wrote a second
+      // article on the same event or rewrote the old one blind (#801).
+      let matches: AbsorbMatch[] = []
+      try {
+        const found = await findArticles(
+          unabsorbed.map((e) => e.content.slice(0, ABSORB_QUERY_CHARS)),
+          agentWiki,
+          agentId,
+          { maxArticles: ABSORB_MAX_MATCHES },
+        )
+        matches = found.map((a) => ({ path: a.path, title: a.meta.title, type: a.meta.type, sources: a.meta.sources, content: a.content }))
+        if (matches.length) console.log(chalk.dim(`    Existing: ${matches.length} matched (${matches.slice(0, 3).map((m) => m.path).join(", ")}${matches.length > 3 ? ", …" : ""})`))
+      } catch (err: any) {
+        console.log(chalk.yellow(`    Existing-article lookup failed: ${err?.message ?? err}`))
+      }
+
+      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock, matches)
       console.log(chalk.dim(`    Mode: ${modeLabel(mode)}`))
 
       // Write prompt and run Claude
@@ -410,11 +435,15 @@ wiki
           continue
         }
         const { articles, gaps } = response
+        // Entries behind a refused update stay queued, so the next run
+        // retries them against the article as it stands.
+        const refusedSources = new Set<string>()
+        const written: typeof articles = []
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)
           const graphPath = pickGraphPath(article.sources || [], unabsorbed)
-          agentWiki.writeArticle(article.path, {
+          let meta: WikiArticleMeta = {
             title: article.title,
             type: article.type as any,
             related: Array.isArray(article.related) ? article.related : undefined,
@@ -425,13 +454,25 @@ wiki
             lastUpdated: now,
             sources: article.sources || [],
             graphPath,
-          }, article.content, agentId)
+          }
+          const existing = agentWiki.readArticle(article.path)
+          if (existing) {
+            const drops = droppedFacts(`${existing.meta.title}\n${existing.content}`, `${article.title}\n${article.content}`)
+            if (hasDrops(drops)) {
+              console.log(chalk.yellow(`    ! refused update of ${article.path}: drops ${describeDrops(drops)}`))
+              for (const s of article.sources || []) refusedSources.add(s)
+              continue
+            }
+            meta = mergeUpdateMeta(existing.meta, meta)
+          }
+          if (!agentWiki.writeArticle(article.path, meta, article.content, agentId)) continue
+          written.push(article)
 
           const typeTag = article.type ? chalk.magenta(`[${article.type}]`) + " " : ""
           const relStr = Array.isArray(article.related) && article.related.length
             ? ` → ${article.related.slice(0, 3).join(", ")}${article.related.length > 3 ? ", …" : ""}`
             : ""
-          console.log(`    ${chalk.green("+")} ${typeTag}${article.path}: ${article.title}${chalk.dim(relStr)}`)
+          console.log(`    ${existing ? chalk.cyan("~") : chalk.green("+")} ${typeTag}${article.path}: ${article.title}${chalk.dim(relStr)}`)
           const tagStr = (article.tags || []).slice(0, 4).join(", ")
           if (tagStr) console.log(chalk.dim(`       tags: ${tagStr}`))
           if (graphPath?.length) {
@@ -446,7 +487,13 @@ wiki
         if (runFailed) {
           console.log(chalk.yellow(`    Run reported an error — ${unabsorbed.length} entries stay queued`))
         } else {
-          hub.markProcessed(agentId, unabsorbed.map((e) => e.id), articles.flatMap((a) => a.sources || []))
+          hub.markProcessed(
+            agentId,
+            unabsorbed.map((e) => e.id).filter((id) => !refusedSources.has(id)),
+            written.flatMap((a) => a.sources || []),
+          )
+          const held = unabsorbed.filter((e) => refusedSources.has(e.id)).length
+          if (held > 0) console.log(chalk.yellow(`    ${held} entries stay queued behind refused updates`))
         }
 
         // Gaps: entities absorb referenced but has no article for.
