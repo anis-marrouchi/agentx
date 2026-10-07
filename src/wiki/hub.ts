@@ -63,10 +63,9 @@ export class WikiHub {
     return this.sharedStore
   }
 
-  listAgents(): string[] {
+  listAgents(entries: WikiEntry[] = this.sharedStore.listEntries()): string[] {
     const agents = new Set<string>()
 
-    const entries = this.sharedStore.listEntries()
     for (const e of entries) agents.add(e.agentId)
 
     if (existsSync(this.agentsDir)) {
@@ -112,10 +111,22 @@ export class WikiHub {
     renameSync(tmp, file)
   }
 
+  /**
+   * Counts and articles per agent, for `GET /wiki/agents` and the mesh.
+   * The raw entries are read once and grouped here: reading them again
+   * per agent made the endpoint take 25 to 75 s on a fleet with 30
+   * agents and 10k entries, past the mesh client's 5 s timeout (#603).
+   */
   summary(): AgentWikiSummary[] {
-    const agents = this.listAgents()
-    return agents.map(agentId => {
-      const { all, cited, read, pending, articles } = this.classifyEntries(agentId)
+    const entries = this.sharedStore.listEntries()
+    const byAgent = new Map<string, WikiEntry[]>()
+    for (const e of entries) {
+      const list = byAgent.get(e.agentId)
+      if (list) list.push(e)
+      else byAgent.set(e.agentId, [e])
+    }
+    return this.listAgents(entries).map(agentId => {
+      const { all, cited, read, pending, articles } = this.classifyEntries(agentId, byAgent.get(agentId) ?? [])
       return {
         agentId,
         totalEntries: all.length,
@@ -129,8 +140,7 @@ export class WikiHub {
   }
 
   /** Split an agent's entries into cited by an article, read but not cited, and pending. */
-  private classifyEntries(agentId: string) {
-    const all = this.getAgentEntries(agentId)
+  private classifyEntries(agentId: string, all: WikiEntry[] = this.getAgentEntries(agentId)) {
     const articles = this.getAgentWiki(agentId).rebuildIndex().articles
 
     const citedIds = new Set<string>()

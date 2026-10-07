@@ -264,6 +264,7 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 
 ## If something is wrong
 
+- **Another machine's wiki shows no agents or no articles, and `agentx wiki sync` finds nothing there:** update AgentX on that machine. Versions up to 0.120.0 took longer than the 5-second limit to list a large wiki (about 25 seconds for 30 agents and 10,000 entries), so the other machines gave up and showed it as empty.
 - **`approve` says the article changed since this proposal:** someone edited it after the suggestion was made. Read both, then approve with `--force` or reject.
 - **`approve` says the proposal is already approved or rejected:** it was decided earlier. Check `agentx wiki proposals list --all`.
 - **`--failures` finds no recurring failures:** the same failure has to happen in several separate sessions. Retries inside one conversation count once. Lower `--min-sessions` or widen `--since` to look further.
