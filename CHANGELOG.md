@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.121.1](https://github.com/anis-marrouchi/agentx/compare/v0.121.0...v0.121.1) (2026-10-07)
+
+
+### Bug Fixes
+
+* **retro:** read each agent's baseline once per sweep, look steps up by task id ([#785](https://github.com/anis-marrouchi/agentx/issues/785)) ([657f5dc](https://github.com/anis-marrouchi/agentx/commit/657f5dcb7d277ce9e9248413996cd6a3ff4dcc2e)), closes [#743](https://github.com/anis-marrouchi/agentx/issues/743)
+* **session:** feed the resume gate pre-turn idle time and the raw context reading ([#784](https://github.com/anis-marrouchi/agentx/issues/784)) ([eec7ce4](https://github.com/anis-marrouchi/agentx/commit/eec7ce489b3918ba0b913f360a03c5f5556b7687))
+* **wiki:** list the wiki in one read so peers stop timing out ([#603](https://github.com/anis-marrouchi/agentx/issues/603)) ([#780](https://github.com/anis-marrouchi/agentx/issues/780)) ([4e144a2](https://github.com/anis-marrouchi/agentx/commit/4e144a277e839a92a232a2924548ca5115509883))
+
 ## [0.121.0](https://github.com/anis-marrouchi/agentx/compare/v0.120.0...v0.121.0) (2026-10-07)
 
 
