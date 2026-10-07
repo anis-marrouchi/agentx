@@ -220,6 +220,11 @@ When a conversation's memory is rotated or treated as stale.
 | `session.observationPack.tailBytes` | number (0–65536) | `1024` | Bytes of the end of the original the agent sees. |
 | `session.observationPack.tools` | list of string | `["Bash", "Grep", "Read", "WebFetch", "mcp__.*"]` | Tools whose results are packed. Each entry must match the whole tool name and may be a regular expression. Requires a daemon restart. |
 | `session.observationPack.retentionDays` | number (0–3650) | `0` | Days a saved original is kept. `0` keeps every original. |
+| `session.resumeGate.mode` | `"off"` \| `"shadow"` \| `"active"` | `"off"` | Before an earlier conversation is picked up again, compare its price with a fresh start and start fresh when that is clearly cheaper. `shadow` only writes what it would do to the daemon log. See [Resume or start fresh](#resume-or-start-fresh). Applies on save. |
+| `session.resumeGate.freshTokens` | number (1000–200000) | `30000` | Tokens a fresh lean session starts with. |
+| `session.resumeGate.cacheTtlMinutes` | number (1–1440) | `60` | Minutes the saved conversation is assumed to stay in the provider's cache. |
+| `session.resumeGate.cacheWriteFactor` | number (1–4) | `2` | Price of writing to the cache, as a multiple of the normal input price. `2` for the one-hour cache, `1.25` for the five-minute one. |
+| `session.resumeGate.margin` | number (1–10) | `1.5` | How many times cheaper a fresh start must be before the gate picks it. |
 
 ### Lean sessions
 
@@ -421,6 +426,33 @@ To see what the pack does to your costs:
 
 The two ranges do not hold the same tasks, so compare the cost per task on the busy channels, not the totals. In the AgentX source folder, `python3 bench/observation-pack-replay.py --from <day> --to <day>` reads the Claude Code session logs of a range and prints how many tool-result bytes are over the limit, per tool and per channel, without calling a model.
 
+### Resume or start fresh
+
+A `claude-code` agent picks an earlier conversation up again by replaying it, and it replays the whole conversation on every step of the new task. The provider keeps a recent conversation in a *cache* (a short-term store it reads from at a tenth of the normal price). Once the cache has expired, the first step pays to store the whole conversation again, at more than the normal price.
+
+With `session.resumeGate.mode` set, AgentX compares two prices before it picks a conversation up:
+
+- **Picking it up:** the conversation's size, read cheaply if the cache is still there, or stored again if it is not, then read on every later step.
+- **Starting fresh:** a new session of `freshTokens`, stored once, then read on every later step.
+
+It counts the steps from the last task in the same conversation. When starting fresh is at least `margin` times cheaper, the conversation starts fresh, with the same note on what came before that the other rotation rules leave. Starting fresh loses the details of the earlier conversation, which no price shows, so the default margin asks for a clear saving.
+
+The gate runs after the rules that already start a conversation fresh (silence, size near the limit, too many turns), and can only start one sooner. `claude-code` agents only.
+
+```json
+"session": {
+  "resumeGate": { "mode": "shadow" }
+}
+```
+
+To try it without changing anything:
+
+1. **Terminal:** in the folder with `agentx.json`, run `agentx usage channels --from 2026-10-01 --to 2026-10-03 --save before.json` with three recent full days.
+2. Set `session.resumeGate.mode` to `"shadow"` and save. Let it run for a day.
+3. **Terminal:** run `agentx daemon logs | grep "resume gate"`. Each line says whether the conversation would have started fresh, with both prices.
+4. If the lines that say `would start fresh` are conversations you would not miss, set the mode to `"active"` and save.
+5. **Terminal:** after a few days, run `agentx usage channels --from <first day> --to <last day> --baseline before.json` and compare the cost per task on the busy channels.
+
 ## processPool
 
 How long warm `claude-code` processes (`persistentProcess`) are kept. Codex and OpenCode use fixed limits.
@@ -448,6 +480,7 @@ A warm process answers only the question it was asked. When a background task of
 5. **Terminal:** with `session.lean.agentxTools` set, after a lean session starts, run `agentx daemon logs`. The `session profile for …: lean (…)` line ends with `agentx-tools=N`.
 6. **Terminal:** with `session.triage.models` set, after a label event on an issue nobody has worked on for an hour, run `agentx daemon logs`. A line `triage event (labeled) → <model>` shows the cheaper model was used.
 7. **Terminal:** with `session.observationPack.enabled`, the daemon log shows `ObservationPack: PostToolUse hook written to N workspace(s)` at the first start (and `N agent(s) not packed` for agents outside `bypassPermissions`), and `.agentx/observations/<agent id>/index.jsonl` gets a line the first time that agent runs a command with more than 10 KB of output or reads a file of that size. A line with `"tool":"Read"` has no saved file next to it: the file the agent read is the original.
+8. **Terminal:** with `session.resumeGate.mode` set to `"shadow"`, after an agent picks a conversation up, run `agentx daemon logs`. A line `resume gate (shadow) for <channel>:<chat>: would resume: …` or `would start fresh: …` shows both prices. In `"active"` mode, a line `cost rotation for …` marks a conversation that started fresh.
 
 ## If something is wrong
 
@@ -465,3 +498,6 @@ A warm process answers only the question it was asked. When a background task of
 - **`agentx config check` says `not an agentx tool: …`:** a name in `session.lean.agentxTools` or `agentxToolsByChannel` is misspelt, or starts with `mcp__agentx__`. Use the name exactly as `agentx trace show` prints it after `mcp__agentx__`.
 - **The daemon log shows no `agentx-tools=` for a lean session with a list set:** the channel's own list in `session.lean.agentxToolsByChannel` and the shared list are both empty, or the agent's `tier` is not `claude-code`.
 - **A lean session still loads the user-level skills or the global `CLAUDE.md`:** `session.lean.settingSources` contains `user`. Remove it, or check that the agent's `tier` is `claude-code`; other engines ignore these settings.
+- **`session.resumeGate` is set and the log has no `resume gate` line:** the line only appears when a `claude-code` agent picks up an earlier conversation that no other rule ended. A conversation that is new, silent for longer than `staleMinutes`, near its size limit or past `maxTurnsPerSession` starts fresh before the gate looks at it.
+- **The gate starts conversations fresh that an agent still needed:** raise `session.resumeGate.margin`, for example to `3`, or set the mode back to `"shadow"`.
+- **Every line says `resume: no context reading`:** the agent's last task ran without per-step usage, so there is nothing to compare. The conversation is picked up as before.
