@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.124.0](https://github.com/anis-marrouchi/agentx/compare/v0.123.1...v0.124.0) (2026-10-07)
+
+
+### Features
+
+* **mcp:** daemon token, 18800 default, protocol negotiation, tool sets ([#794](https://github.com/anis-marrouchi/agentx/issues/794)) ([#797](https://github.com/anis-marrouchi/agentx/issues/797)) ([9f28e4b](https://github.com/anis-marrouchi/agentx/commit/9f28e4b6c30cfe057e7b2c29bb0a3c880a53b0bc))
+
 ## [0.123.1](https://github.com/anis-marrouchi/agentx/compare/v0.123.0...v0.123.1) (2026-10-07)
 
 
