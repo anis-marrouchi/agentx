@@ -153,6 +153,17 @@ describe("finding the covering articles", () => {
     expect(prompt).toContain("SAME path")
   })
 
+  // In the #801 A/B the review article stayed titled "NOT READY" after the
+  // entries said it became READY: the prompt told the model to keep the title.
+  it("lets an update retitle an article whose status changed", () => {
+    const block = renderCoveringBlock([{
+      path: "events/pr-198.md", entries: ["e1"], hop: 0, content: "body",
+      meta: { title: "AgentX PR #197 Reviewed: NOT READY" } as never,
+    }])
+    expect(block).not.toContain("SAME title")
+    expect(block).toContain("Keep its title unless the entries make it wrong")
+  })
+
   it("an absorb without retrieval is the old absorb", async () => {
     const failing = async () => { throw new Error("index unreadable") }
     expect(await findCoveringArticles([{ id: "e1", content: "x" }], store, "ops", [], { retrieve: failing })).toEqual([])

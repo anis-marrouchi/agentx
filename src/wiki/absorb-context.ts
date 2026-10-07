@@ -95,7 +95,7 @@ export function renderCoveringBlock(articles: CoveringArticle[]): string {
 
 These ${articles.length} articles were found by searching the wiki for each entry below. Read them before you write.
 
-- When an entry is about the subject of one of these articles, UPDATE that article: write it at the SAME path with the SAME title, carrying its full content merged with what the entry adds.
+- When an entry is about the subject of one of these articles, UPDATE that article: write it at the SAME path, carrying its full content merged with what the entry adds. Keep its title unless the entries make it wrong (a verdict or status that changed, e.g. "Reviewed: NOT READY" becomes "Reviewed: NOT READY, Then READY").
 - Keep every fact the article already has: commit hashes, URLs, numbers, dates and [[wikilinks]]. Restructure freely, but do not drop one unless an entry explicitly says it is wrong. A save that drops one is refused and the entries stay queued.
 - Do not create a second article (a new path or a near-identical title) for a subject one of these already covers.
 
