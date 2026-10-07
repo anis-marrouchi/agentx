@@ -80,6 +80,10 @@ You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on,
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
 
+## Requests of several steps
+
+When a request takes two or more steps (build, deploy, check it is live, tell the client), the agent can write it as a plan. The daemon then follows each step, nudges a step that goes quiet, sends a message you approved once, and tells you at the end. See [Follow a request of several steps](./tracked-plans.md).
+
 ## Change the settings
 
 | Command | What it does |

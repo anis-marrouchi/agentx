@@ -22,6 +22,11 @@ export const REQUESTS_HTML = `
         <label>Channels to record on (separated by commas; empty for all)<input type="text" name="channels" placeholder="voice, app, telegram" autocomplete="off"></label>
         <label>Comes back after this many hours without activity<input type="number" min="1" step="1" name="staleAfterHours" required></label>
         <label>Keep closed requests for (days)<input type="number" min="1" step="1" name="retentionDays" required></label>
+        <label class="apv__check"><input type="checkbox" name="plansEnabled"> Follow requests of two or more steps as plans</label>
+        <label>Nudge a plan step's agent after this many minutes without progress<input type="number" min="1" step="1" name="stallMinutes" required></label>
+        <label>Nudges per step before you are told it is blocked<input type="number" min="0" step="1" name="maxNudges" required></label>
+        <label>Step kinds you approve once, when the plan is made (separated by commas)<input type="text" name="approveKinds" placeholder="message" autocomplete="off"></label>
+        <label>Agents that may not open a plan (separated by commas)<input type="text" name="plansOffFor" autocomplete="off"></label>
         <div><button type="submit" class="ax-btn ax-btn--primary">Save settings</button></div>
       </form>
     </details>
@@ -49,6 +54,12 @@ export const REQUESTS_CSS = `
 .apv__req select { min-height: 40px; max-width: 100%; }
 .apv__mic.is-on { border-color: var(--ax-err); color: var(--ax-err); }
 .apv__acts + .apv__acts { margin-top: 8px; }
+.apv__plan { margin: 8px 0; padding-left: 22px; font-size: 13px; line-height: 1.5; }
+.apv__plan li { margin: 2px 0; overflow-wrap: anywhere; }
+.apv__plan .apv__state { font-size: 11px; margin-left: 4px; }
+.apv__plan .is-done { color: var(--ax-ok, inherit); }
+.apv__plan .is-blocked { color: var(--ax-err); }
+.apv__plan small { display: block; color: var(--ax-muted); }
 `
 
 export const REQUESTS_SCRIPT = `
@@ -68,6 +79,18 @@ function when(ms){ return new Date(ms).toISOString().slice(0, 16).replace('T', '
 var AGENTS = [];
 var SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 function agentName(id){ for (var i = 0; i < AGENTS.length; i++) if (AGENTS[i].id === id) return AGENTS[i].name; return id; }
+var STEP = { pending: 'Not started', active: 'In progress', done: 'Done', blocked: 'Blocked', skipped: 'Skipped' };
+// Each step of a tracked plan (#788), escaped here.
+function plan(p){
+  if (!p || !p.steps || !p.steps.length) return '';
+  return '<ol class="apv__plan" aria-label="Plan">' + p.steps.map(function(s){
+    var extra = s.state === 'done' && s.evidence ? s.evidence : (s.state === 'blocked' || s.state === 'skipped') && s.note ? s.note
+      : s.approval && s.approval !== 'approved' ? 'Your approval: ' + s.approval : s.nudges ? s.nudges + ' nudge' + (s.nudges === 1 ? '' : 's') : '';
+    return '<li>' + esc(s.name) + ' <span class="apv__with">(' + esc(agentName(s.agentId)) + ')</span>' +
+      '<span class="apv__state is-' + esc(s.state) + '">' + esc(STEP[s.state] || s.state) + '</span>' +
+      (extra ? '<small>' + esc(extra) + '</small>' : '') + '</li>';
+  }).join('') + '</ol>';
+}
 function more(label, html){ return html ? '<details class="apv__detail"><summary>' + esc(label) + '</summary><div class="apv__md">' + html + '</div></details>' : ''; }
 
 // summary, why and the ids are escaped here; textHtml, ownerNoteHtml and
@@ -80,7 +103,7 @@ function item(r){
     '<div class="apv__meta"><span class="apv__state is-' + esc(r.state) + '">' + esc(STATE[r.state] || r.state) + '</span>' +
     '<span class="apv__with">With <b>' + esc(agentName(r.agentId)) + '</b></span>' +
     '<span>' + esc(when(r.createdAt)) + '</span><span>' + esc(r.channel) + '</span><code>' + esc(r.id) + '</code></div>' +
-    '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' + why +
+    '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' + why + plan(r.plan) +
     more(r.channel === 'voice' ? 'What you said' : 'What you asked', r.textHtml) +
     more('Your last reply', r.ownerNoteHtml) +
     (r.lastAnswer ? more('Last answer from ' + agentName(r.lastAnswer.agentId) + ' (' + when(r.lastAnswer.at) + ')', r.lastAnswer.html) : '') +
@@ -106,6 +129,12 @@ function fill(s){
   f.channels.value = (s.channels || []).join(', ');
   f.staleAfterHours.value = s.staleAfterHours;
   f.retentionDays.value = s.retentionDays;
+  var p = s.plans || {};
+  f.plansEnabled.checked = p.enabled !== false;
+  f.stallMinutes.value = p.stallMinutes || 30;
+  f.maxNudges.value = p.maxNudges == null ? 3 : p.maxNudges;
+  f.approveKinds.value = (p.approveKinds || []).join(', ');
+  f.plansOffFor.value = (p.disabledAgents || []).join(', ');
   $('req-off').hidden = !!s.enabled;
 }
 
@@ -172,7 +201,12 @@ $('req-form').addEventListener('submit', async function(ev){
     from: f.from.value,
     channels: f.channels.value,
     staleAfterHours: Number(f.staleAfterHours.value),
-    retentionDays: Number(f.retentionDays.value)
+    retentionDays: Number(f.retentionDays.value),
+    plansEnabled: f.plansEnabled.checked,
+    stallMinutes: Number(f.stallMinutes.value),
+    maxNudges: Number(f.maxNudges.value),
+    approveKinds: f.approveKinds.value,
+    plansOffFor: f.plansOffFor.value
   };
   try {
     var r = await fetch('/api/admin/approvals/requests/settings', { method: 'POST', headers: headers(true), body: JSON.stringify(body) });

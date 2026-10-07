@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import { getEventBus } from "@/events/bus"
 import { RequestStore } from "./store"
+import { PlanStore } from "./plan-store"
 import { RequestTracker, type RequestSettings } from "./tracker"
 
 // --- Hook the request tracker to the daemon's event bus (#356) ---
@@ -8,6 +9,7 @@ import { RequestTracker, type RequestSettings } from "./tracker"
 export interface AttachedRequests {
   store: RequestStore
   tracker: RequestTracker
+  plans: PlanStore
   detach: () => void
 }
 
@@ -17,6 +19,7 @@ export function attachRequests(
   log: (msg: string) => void,
 ): AttachedRequests {
   const store = new RequestStore(db)
+  const plans = new PlanStore(db)
   const tracker = new RequestTracker(store, settings, log)
   const bus = getEventBus()
   const started = tracker.taskStarted.bind(tracker)
@@ -26,6 +29,7 @@ export function attachRequests(
   return {
     store,
     tracker,
+    plans,
     detach: () => {
       bus.off("task:started", started)
       bus.off("task:completed", completed)

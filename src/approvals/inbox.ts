@@ -9,6 +9,7 @@ import { decideCard, listCards, readCard, type DecisionCard, type IfSilent } fro
 import { readInboxState, snooze } from "./state"
 import { openDb } from "@/storage/sqlite"
 import { RequestStore, hasRequestTables } from "@/requests/store"
+import { PlanStore, hasPlanTables } from "@/requests/plan-store"
 import { readRequestSettings } from "@/requests/settings"
 
 // --- The Approvals inbox: one list over every pending decision ---
@@ -80,6 +81,8 @@ export interface InboxContext {
   /** Open requests. Default: .agentx/db.sqlite when `root` is the folder
    *  this process runs from. Tests pass their own. */
   requests?: RequestStore
+  /** Tracked plans (#788), beside the requests. Tests pass their own. */
+  plans?: PlanStore
 }
 
 export const DETAIL_MAX = 280
@@ -249,6 +252,19 @@ export function requestStoreFor(ctx: InboxContext): RequestStore | null {
   return store
 }
 const requestStores = new WeakMap<object, RequestStore>()
+
+/** The plans of the requests, read the same way. Null until the daemon
+ *  made the tables. */
+export function planStoreFor(ctx: InboxContext): PlanStore | null {
+  if (ctx.plans) return ctx.plans
+  if (ctx.requests || resolve(ctx.root) !== process.cwd() || !existsSync(resolve(ctx.root, ".agentx", "db.sqlite"))) return null
+  const db = openDb({ quiet: true })
+  if (!db || !hasPlanTables(db)) return null
+  let store = planStores.get(db)
+  if (!store) planStores.set(db, store = new PlanStore(db))
+  return store
+}
+const planStores = new WeakMap<object, PlanStore>()
 
 function requestItems(ctx: InboxContext): InboxItem[] {
   const store = requestStoreFor(ctx)

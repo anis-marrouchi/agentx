@@ -744,12 +744,37 @@ const TOOLS = [
       "done when it is finished (give a link to the evidence: PR, issue, message, deploy); decline when you will not do it (give the reason). " +
       "list shows what is still open, oldest first: use it when the owner asks what is still open. " +
       "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
-      "Example: {action:'done', evidence:'https://example.com/pull/42'}.",
+      "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
+      "The daemon hands each step to its agent in order, nudges a step that goes quiet, sends an owner-approved message itself, and tells the owner at the end or when a step is blocked. " +
+      "Report on a step you own with action step (status progress, done with evidence, or blocked with a note). " +
+      "Example: {action:'done', evidence:'https://example.com/pull/42'}. " +
+      "Plan example: {action:'accept', steps:[{name:'Build the fix', done:'PR merged'}, {name:'Deploy', agent:'devops', kind:'deploy', done:'release live', check:{url:'https://example.com/version', contains:'1.2.3'}}, {name:'Tell the client', kind:'message', message:'The fix is live.', to:{channel:'telegram', chatId:'123'}}]}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "list"], description: "list (default), accept, wait, done or decline." },
-        id: { type: "string", description: "The request id, when it is not the request of this turn." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "list"], description: "list (default), accept, wait, done, decline or step." },
+        id: { type: "string", description: "The request id, when it is not the request of this turn. Always pass it for step." },
+        steps: {
+          type: "array",
+          description: "accept, optional: two or more steps, in the order they run. Each: name; done (what proves it is finished); agent (owner, default you); kind (task, deploy, verify, message…, default task); for kind message: message (the text) and to {channel, chatId}; optional check {url, contains} the daemon polls; optional stallMinutes.",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              done: { type: "string" },
+              agent: { type: "string" },
+              kind: { type: "string" },
+              message: { type: "string" },
+              to: { type: "object", properties: { channel: { type: "string" }, chatId: { type: "string" }, accountId: { type: "string" } } },
+              check: { type: "object", properties: { url: { type: "string" }, contains: { type: "string" } } },
+              stallMinutes: { type: "number" },
+            },
+            required: ["name"],
+          },
+        },
+        step: { type: "number", description: "step: the step's number in the plan (1 is the first)." },
+        status: { type: "string", enum: ["progress", "done", "blocked"], description: "step: progress (still under way), done (give evidence) or blocked (give note)." },
+        note: { type: "string", description: "step: what is happening, or why it is blocked." },
         question: { type: "string", description: "wait: what you are asking the owner." },
         evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
         reason: { type: "string", description: "decline: why you will not do it." },

@@ -231,6 +231,12 @@ To turn it on by hand:
 | `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your id on that channel, as `channel:id`. That is your login on GitLab and GitHub, and the sender id everywhere else (the numeric id on Telegram, the number on WhatsApp). An entry only applies to its own channel. Usernames beside an id and display names are not matched, because the person chooses them. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
 | `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
+| `requests.plans` | object | `{}` | Tracked plans: a request of two or more steps, each with an owner agent, followed until every step is done. Needs `requests.enabled`. See [Follow a request of several steps](/jobs/tracked-plans). |
+| `requests.plans.enabled` | boolean | `true` | Agents may make plans, and the daemon follows them. |
+| `requests.plans.stallMinutes` | number (up to 10080) | `30` | Minutes without progress before a step's agent is nudged. |
+| `requests.plans.maxNudges` | whole number (0 to 20) | `3` | Nudges per step before it counts as blocked and you are told. |
+| `requests.plans.approveKinds` | list of strings | `["message"]` | Step kinds you approve once, on a decision card, when the plan is made. An approved `message` step is sent by the daemon without asking again. |
+| `requests.plans.disabledAgents` | list of strings | `[]` | Agents that may not make a plan. |
 
 ## `requestStatus`
 
