@@ -75,7 +75,7 @@ wiki
 
     const totalUnabsorbed = agents.reduce((s, a) => s + a.unabsorbed, 0)
     if (totalUnabsorbed > 0) {
-      console.log(chalk.dim(`  ${totalUnabsorbed} raw entries on disk. Absorb is deprecated — see 'agentx wiki absorb --help'.`))
+      console.log(chalk.dim(`  ${totalUnabsorbed} raw entries wait for absorb — run 'agentx wiki absorb'.`))
       console.log()
     }
   })
