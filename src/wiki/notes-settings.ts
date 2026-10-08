@@ -9,6 +9,7 @@ export interface WikiNotesPatch {
   /** Replace the list of schedules that read the inbox. */
   crons?: string[]
   maxNotesPerRun?: number
+  maxDeferrals?: number
 }
 
 export interface WikiNotesView {
@@ -16,6 +17,7 @@ export interface WikiNotesView {
   inbox: string
   crons: string[]
   maxNotesPerRun: number
+  maxDeferrals: number
 }
 
 const ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:@-]*$/
@@ -28,6 +30,7 @@ export function wikiNotesSettings(raw: any): WikiNotesView {
     inbox: typeof n.inbox === "string" ? n.inbox : "",
     crons: Array.isArray(n.crons) ? n.crons.filter((c: unknown) => typeof c === "string") : [],
     maxNotesPerRun: Number.isInteger(n.maxNotesPerRun) ? n.maxNotesPerRun : 20,
+    maxDeferrals: Number.isInteger(n.maxDeferrals) ? n.maxDeferrals : 3,
   }
 }
 
@@ -61,6 +64,12 @@ export function patchWikiNotes(cfg: any, patch: WikiNotesPatch): string {
     if (!Number.isInteger(n) || n < 1 || n > 100) throw new Error("max notes per run must be a whole number from 1 to 100")
     cur.maxNotesPerRun = n
     changes.push(`maxNotesPerRun=${n}`)
+  }
+  if (patch.maxDeferrals !== undefined) {
+    const n = Number(patch.maxDeferrals)
+    if (!Number.isInteger(n) || n < 1 || n > 20) throw new Error("deferrals before a note expires must be a whole number from 1 to 20")
+    cur.maxDeferrals = n
+    changes.push(`maxDeferrals=${n}`)
   }
   if (patch.enabled !== undefined) {
     cur.enabled = Boolean(patch.enabled)

@@ -97,12 +97,12 @@ export function registerWikiNotes(wiki: Command): void {
   notes
     .command("list")
     .description("notes in this node's inbox (waiting ones by default)")
-    .option("--status <status>", "waiting | open | patched | rejected | deferred | all", "waiting")
+    .option("--status <status>", "waiting | open | patched | rejected | deferred | expired | all", "waiting")
     .option("--dir <path>", "wiki directory")
     .option("--json")
     .action(safe(async (opts) => {
       const { NoteStore } = await import("@/wiki/notes")
-      const valid = ["waiting", "open", "patched", "rejected", "deferred", "all"]
+      const valid = ["waiting", "open", "patched", "rejected", "deferred", "expired", "all"]
       if (!valid.includes(opts.status)) { fail(`--status must be one of ${valid.join(", ")}`); return }
       const store = new NoteStore(wikiDir(opts.dir))
       const file = store.load()
@@ -116,7 +116,8 @@ export function registerWikiNotes(wiki: Command): void {
         console.log(`    ${n.change}`)
         console.log(chalk.dim(`    source: ${n.source}`))
         if (n.listedIn?.length) console.log(chalk.dim(`    given to: ${n.listedIn.at(-1)}${n.listedIn.length > 1 ? ` (+${n.listedIn.length - 1} earlier)` : ""}`))
-        if (n.handled) console.log(chalk.dim(`    ${n.handled.outcome} by ${n.handled.by} ${n.handled.at.slice(0, 10)}: ${n.handled.reason}`))
+        if (n.handled) console.log(chalk.dim(`    ${n.handled.outcome}${n.deferrals ? ` (deferred ${n.deferrals}x)` : ""} by ${n.handled.by} ${n.handled.at.slice(0, 10)}: ${n.handled.reason}`))
+        if (n.expired) console.log(chalk.dim(`    expired ${n.expired.at.slice(0, 10)} after ${n.expired.after} deferrals; no longer offered to the run`))
       }
     }))
 
@@ -140,6 +141,7 @@ export function registerWikiNotes(wiki: Command): void {
     .option("--inbox <agent>", "agent that runs the wiki observe/sweep schedule (\"\" clears it)")
     .option("--cron <ids>", "comma-separated schedule ids that read the inbox (\"\" for none)")
     .option("--max <n>", "most notes one run is given (1-100)")
+    .option("--max-deferrals <n>", "times a note may be deferred before it expires (1-20)")
     .option("--enable", "turn wiki notes on")
     .option("--disable", "turn wiki notes off")
     .option("--json")
@@ -149,6 +151,7 @@ export function registerWikiNotes(wiki: Command): void {
       if (opts.inbox !== undefined) patch.inbox = opts.inbox
       if (opts.cron !== undefined) patch.crons = String(opts.cron).split(",")
       if (opts.max !== undefined) patch.maxNotesPerRun = Number(opts.max)
+      if (opts.maxDeferrals !== undefined) patch.maxDeferrals = Number(opts.maxDeferrals)
       if (opts.enable && opts.disable) { fail("pick one of --enable and --disable"); return }
       if (opts.enable) patch.enabled = true
       if (opts.disable) patch.enabled = false
@@ -166,5 +169,6 @@ export function registerWikiNotes(wiki: Command): void {
       console.log(`  inbox agent: ${view.inbox || chalk.dim("not set")}`)
       console.log(`  schedules that read it: ${view.crons.length ? view.crons.join(", ") : chalk.dim("none on this node")}`)
       console.log(`  most notes per run: ${view.maxNotesPerRun}`)
+      console.log(`  deferrals before a note expires: ${view.maxDeferrals}`)
     }))
 }

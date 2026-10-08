@@ -891,7 +891,7 @@ export class CronScheduler {
       const wikiDir = this.registry.getWikiHub?.()?.getBaseDir?.()
       if (!wikiDir) return none
       const runId = cronRunId(job.id, startedAt)
-      const notes = new NoteStore(wikiDir).takeForRun(cfg.inbox, runId, cfg.maxNotesPerRun)
+      const notes = new NoteStore(wikiDir).takeForRun(cfg.inbox, runId, cfg.maxNotesPerRun, cfg.maxDeferrals)
       if (notes.length === 0) return none
       const cli = process.argv[1] || "dist/cli.js"
       const block = renderNotesInbox(notes, {

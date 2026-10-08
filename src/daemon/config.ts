@@ -795,6 +795,9 @@ const wikiNotesSchema = z.object({
   crons: z.array(z.string().min(1)).default([]),
   /** Most notes one run is given. The rest wait for the next run. */
   maxNotesPerRun: z.number().int().min(1).max(100).default(20),
+  /** A note deferred this many times stops being offered (status
+   *  `expired`), so notes nobody can check do not crowd out new ones. */
+  maxDeferrals: z.number().int().min(1).max(20).default(3),
 }).refine((n) => !n.enabled || Boolean(n.inbox), {
   message: "wikiNotes.enabled needs wikiNotes.inbox: the agent that runs the wiki observe/sweep schedule",
 })

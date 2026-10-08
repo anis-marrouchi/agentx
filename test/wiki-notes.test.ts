@@ -75,6 +75,35 @@ describe("NoteStore", () => {
     expect(add(store, { change: "one" }).note.status).toBe("rejected")
   })
 
+  it("offers new notes ahead of deferred ones, so deferred notes cannot starve them", () => {
+    const store = new NoteStore(dir)
+    // Two old notes no run can check, deferred on every run.
+    const stuck = [add(store, { change: "stuck one" }).note, add(store, { change: "stuck two" }).note]
+    for (const n of stuck) store.handle(n.id, "deferred", "source cannot be checked", "wiki-agent")
+    const fresh = add(store, { change: "new note" }).note
+    // Only two slots per run: the new note still gets one.
+    const got = store.takeForRun("wiki-agent", "sweep/run-1", 2)
+    expect(got.map((n) => n.id)).toEqual([fresh.id, stuck[0].id])
+  })
+
+  it("stops offering a note once it has been deferred maxDeferrals times", () => {
+    const store = new NoteStore(dir)
+    const n = add(store).note
+    for (let run = 1; run <= 3; run++) {
+      expect(store.takeForRun("wiki-agent", `sweep/run-${run}`, 5, 3).map((x) => x.id)).toEqual([n.id])
+      store.handle(n.id, "deferred", "source down", "wiki-agent", `sweep/run-${run}`)
+    }
+    expect(store.get(n.id)?.deferrals).toBe(3)
+    expect(store.takeForRun("wiki-agent", "sweep/run-4", 5, 3)).toEqual([])
+    const after = store.get(n.id)!
+    expect(after.status).toBe("expired")
+    expect(after.expired?.after).toBe(3)
+    // It keeps its last reason and no longer counts as waiting.
+    expect(after.handled?.reason).toBe("source down")
+    expect(store.list("waiting")).toEqual([])
+    expect(store.list("expired").map((x) => x.id)).toEqual([n.id])
+  })
+
   it("needs a reason and a known outcome", () => {
     const store = new NoteStore(dir)
     const a = add(store).note
@@ -118,7 +147,7 @@ describe("wiki notes settings", () => {
   it("sets the inbox and the schedules that read it", () => {
     const c = cfg()
     patchWikiNotes(c, { inbox: "wiki-agent", crons: ["sweep"], enabled: true })
-    expect(wikiNotesSettings(c.wikiNotes)).toEqual({ enabled: true, inbox: "wiki-agent", crons: ["sweep"], maxNotesPerRun: 20 })
+    expect(wikiNotesSettings(c.wikiNotes)).toEqual({ enabled: true, inbox: "wiki-agent", crons: ["sweep"], maxNotesPerRun: 20, maxDeferrals: 3 })
   })
 
   it("refuses settings that could not work", () => {
@@ -126,6 +155,7 @@ describe("wiki notes settings", () => {
     expect(() => patchWikiNotes(cfg(), { inbox: "wiki-agent", crons: ["missing"] })).toThrow(/no schedule/)
     expect(() => patchWikiNotes(cfg(), { inbox: "wiki-agent", crons: ["report"] })).toThrow(/runs as "agent-a"/)
     expect(() => patchWikiNotes(cfg(), { maxNotesPerRun: 0 })).toThrow(/1 to 100/)
+    expect(() => patchWikiNotes(cfg(), { maxDeferrals: 0 })).toThrow(/1 to 20/)
     expect(() => patchWikiNotes(cfg(), {})).toThrow(/nothing/)
   })
 
@@ -137,7 +167,7 @@ describe("wiki notes settings", () => {
 
   it("is off by default and validated by the config schema", () => {
     const base = { node: { id: "n1", name: "Node" } }
-    expect(daemonConfigSchema.parse(base).wikiNotes).toMatchObject({ enabled: false, crons: [], maxNotesPerRun: 20 })
+    expect(daemonConfigSchema.parse(base).wikiNotes).toMatchObject({ enabled: false, crons: [], maxNotesPerRun: 20, maxDeferrals: 3 })
     expect(() => daemonConfigSchema.parse({ ...base, wikiNotes: { enabled: true } })).toThrow(/inbox/)
   })
 })

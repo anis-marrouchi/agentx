@@ -1251,13 +1251,13 @@ Notes in this node's inbox.
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--status <status>` | `waiting` | waiting (open and deferred) \| open \| patched \| rejected \| deferred \| all. |
+| `--status <status>` | `waiting` | waiting (open and deferred) \| open \| patched \| rejected \| deferred \| expired \| all. |
 | `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
 | `--json` | — | Print JSON instead of a list. |
 
 ### `agentx wiki notes handle <id>`
 
-Record what the run did with a note. A deferred note is given to the next run again.
+Record what the run did with a note. A deferred note is given to the next run again, until it has been deferred `wikiNotes.maxDeferrals` times; then it expires.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1276,6 +1276,7 @@ Show or set the inbox agent and the schedules that read it (`wikiNotes` in `agen
 | `--inbox <agent>` | — | Agent that runs the wiki observe/sweep schedule. `""` clears it. |
 | `--cron <ids>` | — | Comma-separated schedule ids that read the inbox. `""` for none. |
 | `--max <n>` | — | Most notes one run is given (1-100). |
+| `--max-deferrals <n>` | — | Times a note may be deferred before it expires (1-20). |
 | `--enable` | — | Turn wiki notes on. |
 | `--disable` | — | Turn wiki notes off. |
 | `--json` | — | Print JSON. |

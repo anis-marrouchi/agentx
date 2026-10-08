@@ -7030,8 +7030,8 @@ export class AgentXDaemon {
         case "GET /wiki/notes": {
           const { NoteStore } = await import("@/wiki/notes")
           const status = url.searchParams.get("status") || "waiting"
-          if (!["waiting", "open", "patched", "rejected", "deferred", "all"].includes(status)) {
-            this.json(res, 400, { error: "status must be waiting, open, patched, rejected, deferred or all" })
+          if (!["waiting", "open", "patched", "rejected", "deferred", "expired", "all"].includes(status)) {
+            this.json(res, 400, { error: "status must be waiting, open, patched, rejected, deferred, expired or all" })
             break
           }
           const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get("limit") || "50", 10) || 50))
@@ -7151,7 +7151,7 @@ export class AgentXDaemon {
               "GET  /wiki/agents",
               "GET  /wiki/entries[?agent=X&after=YYYY-MM-DD]",
               "GET  /wiki/articles?agent=X",
-              "GET  /wiki/notes[?status=waiting|open|patched|rejected|deferred|all&limit=N]",
+              "GET  /wiki/notes[?status=waiting|open|patched|rejected|deferred|expired|all&limit=N]",
               "POST /wiki/notes { from, change, source, date? }  — a note for the wiki observe/sweep run",
               "GET  /graph/schema",
               "GET  /graph/nodes",

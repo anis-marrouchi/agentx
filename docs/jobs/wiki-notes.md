@@ -7,7 +7,7 @@ Many fleets have one agent that keeps the wiki honest on a timer: it looks over 
 With wiki notes, any agent can leave that run a short **note**: what changed, where it saw it (the **source**) and the date. The notes wait in the **inbox** of the agent that runs the schedule. When the schedule starts, the run reads its notes first.
 
 - **A note is a claim to check, not a fact to copy.** The run is told to confirm each note at its source, or against the wiki, before it changes anything.
-- **Every note gets an answer.** The run records each note as **patched** (the wiki was updated), **rejected** (the note was wrong), or **deferred** (not now), always with a reason. A deferred note comes back on the next run.
+- **Every note gets an answer.** The run records each note as **patched** (the wiki was updated), **rejected** (the note was wrong), or **deferred** (not now), always with a reason. A deferred note comes back on the next run. A note deferred three times (you can change this) **expires**: it stays on file with its last reason, but is no longer offered, so notes nobody can check never crowd out new ones.
 - **Notes stay inside your fleet.** They travel only between your own machines, over the same protected link your machines already use to talk to each other (the **mesh**). Nothing is posted anywhere public.
 
 Wiki notes are off until you turn them on.
@@ -16,6 +16,7 @@ Wiki notes are off until you turn them on.
 
 - You have a schedule that runs your wiki observe/sweep work. See [Send a daily report](./daily-report.md) to create a schedule.
 - You know which agent runs it. That agent is the **inbox agent**.
+- That agent can change the wiki itself and run `agentx wiki notes handle`. The notes go into the agent's own instructions. A schedule that only runs a command such as `agentx wiki absorb` passes nothing on to that command, so pick a schedule whose agent checks and edits the wiki.
 
 ## Turn it on from the dashboard
 
@@ -27,7 +28,7 @@ Wiki notes are off until you turn them on.
 6. Tick **Wiki notes on**.
 7. Click **Save**.
 
-![The Wiki notes inbox section on the Schedules tab: Wiki notes on is ticked, the inbox agent is filled in, the schedule wiki-sweep is ticked, and Most notes per run is 20](/screenshots/wiki-notes/settings.png)
+![The Wiki notes inbox section on the Schedules tab: Wiki notes on is ticked, the inbox agent is filled in, the schedule wiki-sweep is ticked, Most notes per run is 20 and Deferrals before a note expires is 3](/screenshots/wiki-notes/settings.png)
 
 ## Turn it on from the terminal
 
@@ -60,7 +61,7 @@ The same note posted twice is kept once. Re-posting a note the run already rejec
 
 ## What the run sees
 
-At the start of each listed schedule, the run gets up to **Most notes per run** waiting notes (open or deferred), oldest first, ahead of its own instructions. Each note shows who left it, its date, the change and the source, and the command to record what the run did:
+At the start of each listed schedule, the run gets up to **Most notes per run** waiting notes, ahead of its own instructions: new (open) notes first, then deferred ones, each oldest first. Each note shows who left it, its date, the change and the source, and the command to record what the run did:
 
 ```bash
 agentx wiki notes handle 3f2a91c04b7e --outcome patched \
@@ -87,6 +88,7 @@ On the dashboard, open **Recent notes** under **Wiki notes inbox**. Click **deta
 | `wikiNotes.inbox` | — | The agent that runs the wiki observe/sweep schedule. Notes are addressed to it and kept on its machine. |
 | `wikiNotes.crons` | `[]` | Schedule ids on this machine that read the inbox when they start. Each must run as the inbox agent. |
 | `wikiNotes.maxNotesPerRun` | `20` | Most notes one run is given (1 to 100). The rest wait for the next run. |
+| `wikiNotes.maxDeferrals` | `3` | Times a note may be deferred before it expires and is no longer offered (1 to 20). Set it on the **Deferrals before a note expires** field, or with `agentx wiki notes config --max-deferrals <n>`. |
 
 Notes are stored in `.agentx/wiki/_notes.json` on the inbox agent's machine.
 
@@ -106,4 +108,5 @@ Notes are stored in `.agentx/wiki/_notes.json` on the inbox agent's machine.
 - **`runs as "<agent>", not the inbox agent`:** only schedules that run as the inbox agent can read the inbox. Pick another schedule, or change the inbox agent.
 - **The run never mentions notes:** check that its schedule is ticked under **Wiki notes inbox** on the inbox agent's machine, and that wiki notes are on there.
 - **A note stays open after a run:** the run did not record it. Read the run's answer on the Operations page, or record it yourself with `agentx wiki notes handle <id> --outcome deferred --reason "<why>"`.
+- **A note shows `expired`:** runs deferred it too many times, usually because its source cannot be checked. Read its last reason with `agentx wiki notes list --status expired`. To try again, leave a new note with a source the run can check.
 - **`the inbox already holds 500 notes`:** the run is not keeping up. Handle or reject old notes, or raise **Most notes per run**.

@@ -18,8 +18,9 @@ import { dirname, resolve } from "path"
 // _facts.json) on the node that hosts the inbox agent. It never leaves
 // the fleet: posting goes through the mesh-gated daemon route.
 
-export type NoteStatus = "open" | "patched" | "rejected" | "deferred"
-export type NoteOutcome = Exclude<NoteStatus, "open">
+export type NoteStatus = "open" | "patched" | "rejected" | "deferred" | "expired"
+/** What a run may record. `expired` is set by the inbox, never by a run. */
+export type NoteOutcome = "patched" | "rejected" | "deferred"
 
 export const NOTE_OUTCOMES: readonly NoteOutcome[] = ["patched", "rejected", "deferred"]
 
@@ -34,6 +35,9 @@ export const NOTE_LIMITS = {
   /** Run ids remembered per note. */
   listedIn: 5,
 } as const
+
+/** Times a note may be deferred before the inbox stops offering it. */
+export const DEFAULT_MAX_DEFERRALS = 3
 
 export interface WikiNote {
   id: string
@@ -56,6 +60,10 @@ export interface WikiNote {
   listedIn?: string[]
   /** How the run used it. Kept for deferred notes too, which come back. */
   handled?: { at: string; by: string; outcome: NoteOutcome; reason: string; runId?: string }
+  /** How many times a run deferred it. */
+  deferrals?: number
+  /** Set when the note stopped being offered after too many deferrals. */
+  expired?: { at: string; after: number }
 }
 
 export interface NotesFile {
@@ -180,21 +188,37 @@ export class NoteStore {
   }
 
   /**
-   * The notes a run should read: open ones and ones an earlier run
-   * deferred, oldest first. Marks each as listed in `runId`.
+   * The notes a run should read: open ones first, then ones an earlier run
+   * deferred, each oldest first. Marks each as listed in `runId`.
+   *
+   * Open notes go first so that notes a run keeps deferring (a source that
+   * can never be checked) cannot fill every slot and hide new ones. A note
+   * deferred `maxDeferrals` times expires here: it stays on file with its
+   * last reason, but is no longer offered.
    */
-  takeForRun(inbox: string, runId: string, max: number): WikiNote[] {
+  takeForRun(inbox: string, runId: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS, now: Date = new Date()): WikiNote[] {
     const f = this.load()
     if (f.unreadable) return []
-    const picked = f.notes
-      .filter((n) => isWaiting(n) && n.to === inbox)
-      .sort((a, b) => a.posted.localeCompare(b.posted))
-      .slice(0, Math.max(0, max))
-    if (picked.length === 0) return []
+    let changed = false
+    for (const n of f.notes) {
+      if (n.to === inbox && n.status === "deferred" && (n.deferrals ?? 1) >= maxDeferrals) {
+        n.status = "expired"
+        n.expired = { at: now.toISOString(), after: n.deferrals ?? 1 }
+        changed = true
+      }
+    }
+    const oldestFirst = (a: WikiNote, b: WikiNote) => a.posted.localeCompare(b.posted)
+    const mine = f.notes.filter((n) => n.to === inbox)
+    const picked = [
+      ...mine.filter((n) => n.status === "open").sort(oldestFirst),
+      ...mine.filter((n) => n.status === "deferred").sort(oldestFirst),
+    ].slice(0, Math.max(0, max))
     for (const n of picked) {
       n.listedIn = [...(n.listedIn ?? []), runId].slice(-NOTE_LIMITS.listedIn)
     }
-    try { this.save(f) } catch { /* listing is best effort; the run still gets its notes */ }
+    if (picked.length > 0 || changed) {
+      try { this.save(f) } catch { /* listing is best effort; the run still gets its notes */ }
+    }
     return picked
   }
 
@@ -207,6 +231,7 @@ export class NoteStore {
     const f = this.load()
     const note = f.notes.find((n) => n.id === id) ?? matchPrefix(f.notes, id)
     if (!note) throw new Error(`no note "${id}"`)
+    if (outcome === "deferred") note.deferrals = (note.deferrals ?? 0) + 1
     note.status = outcome
     note.handled = { at: now.toISOString(), by, outcome, reason: why, ...(runId ? { runId } : {}) }
     this.save(f)
@@ -240,13 +265,13 @@ export function renderNotesInbox(notes: WikiNote[], opts: { runId: string; handl
     lines.push(`${i + 1}. note ${n.id} · from ${n.from}${n.fromNode ? ` on ${n.fromNode}` : ""} · dated ${n.date}${n.status === "deferred" ? " · deferred earlier" : ""}`)
     lines.push(`   change: ${JSON.stringify(n.change)}`)
     lines.push(`   source: ${JSON.stringify(n.source)}`)
-    if (n.status === "deferred" && n.handled) lines.push(`   deferred because: ${JSON.stringify(n.handled.reason)}`)
+    if (n.status === "deferred" && n.handled) lines.push(`   deferred ${n.deferrals ?? 1}x, last because: ${JSON.stringify(n.handled.reason)}`)
   })
   lines.push(
     "",
     "When you have used a note, record what you did with it (patched, rejected, or deferred), with a reason:",
     `  ${opts.handleCommand} <note id> --outcome patched|rejected|deferred --reason "<what you did and why>" --run ${opts.runId}`,
-    "Every note above must end this run handled. One you could not get to is deferred, with the reason; it comes back next run.",
+    "Every note above must end this run handled. One you could not get to is deferred, with the reason; it comes back next run, until it has been deferred too often and expires.",
     "[End wiki notes inbox]",
   )
   return lines.join("\n")

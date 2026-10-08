@@ -593,6 +593,8 @@ const ADMIN_PAGE_BODY = `
       </fieldset>
       <label for="wn-max">Most notes per run</label>
       <input id="wn-max" type="number" min="1" max="100" value="20" />
+      <label for="wn-max-deferrals">Deferrals before a note expires <span class="hint">(a note the run keeps putting off stops being offered)</span></label>
+      <input id="wn-max-deferrals" type="number" min="1" max="20" value="3" />
       <div class="actions"><button class="primary" onclick="saveWikiNotes()">Save</button><div id="wn-msg" class="msg" role="status"></div></div>
       <details style="margin-top:10px" ontoggle="if (this.open) loadWikiNotesList()">
         <summary>Recent notes</summary>
@@ -1825,6 +1827,7 @@ function renderWikiNotes() {
   $('wn-enabled').checked = !!n.enabled;
   $('wn-inbox').value = n.inbox || '';
   $('wn-max').value = n.maxNotesPerRun || 20;
+  $('wn-max-deferrals').value = n.maxDeferrals || 3;
   $('wn-agents').innerHTML = (state.agents || []).map(a => '<option value="' + escapeHtml(a.id) + '"></option>').join('');
   const picked = new Set(n.crons || []);
   const crons = state.crons || [];
@@ -1841,6 +1844,7 @@ async function saveWikiNotes() {
       inbox: $('wn-inbox').value.trim(),
       crons,
       maxNotesPerRun: Number($('wn-max').value),
+      maxDeferrals: Number($('wn-max-deferrals').value),
     });
     showMsg($('wn-msg'), 'ok', r.summary || 'saved');
     await refresh();

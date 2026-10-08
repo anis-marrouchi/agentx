@@ -1483,6 +1483,7 @@ async function updateWikiNotes(body: any) {
   if ("inbox" in body) patch.inbox = String(body.inbox ?? "")
   if ("crons" in body) patch.crons = Array.isArray(body.crons) ? body.crons.map(String) : String(body.crons ?? "").split(",")
   if ("maxNotesPerRun" in body) patch.maxNotesPerRun = Number(body.maxNotesPerRun)
+  if ("maxDeferrals" in body) patch.maxDeferrals = Number(body.maxDeferrals)
   const { summary } = mutateAgentxConfig((cfg) => patchWikiNotes(cfg, patch))
   return { summary }
 }
