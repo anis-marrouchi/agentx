@@ -74,6 +74,9 @@ export const ENRICH_LIMITS = {
   promptEntryChars: 24_000,
   pageChars: 6000,
   runsKept: 20,
+  /** Failed runs in a row, on the same inputs, before a page is left
+   *  alone until its inputs change. */
+  maxFailures: 3,
 } as const
 
 /** Properties a page of each type may state about itself. The other side
@@ -156,8 +159,9 @@ export interface Candidate {
   entity: Entity
   signature: string
   entries: WikiEntry[]
-  /** Never enriched, or its inputs changed since. */
-  reason: "new" | "changed"
+  /** Never enriched, its inputs changed since, or the last run on it
+   *  failed. */
+  reason: "new" | "changed" | "retry"
 }
 
 export interface PickOptions {
@@ -171,12 +175,13 @@ export interface PickOptions {
 
 /** Entities due a refresh: never done first, then changed ones; within
  *  each, by type order, then the most recent activity first. */
-export function pickCandidates(g: WikiGraph, entries: WikiEntry[], state: EnrichFile, opts: PickOptions): { due: Candidate[]; unchanged: number } {
+export function pickCandidates(g: WikiGraph, entries: WikiEntry[], state: EnrichFile, opts: PickOptions): { due: Candidate[]; unchanged: number; givenUp: number } {
   const types = new Set(opts.types.filter(t => t !== "agent"))
   const onlyId = opts.only ? g.names.get(normName(opts.only)) : undefined
-  if (opts.only && !onlyId) return { due: [], unchanged: 0 }
+  if (opts.only && !onlyId) return { due: [], unchanged: 0, givenUp: 0 }
   const due: Array<Candidate & { activity: string }> = []
   let unchanged = 0
+  let givenUp = 0
   for (const e of g.entities.values()) {
     if (onlyId ? e.id !== onlyId : !types.has(e.type)) continue
     if (e.type === "agent") continue
@@ -184,16 +189,23 @@ export function pickCandidates(g: WikiGraph, entries: WikiEntry[], state: Enrich
     const signature = entitySignature(g, e, matched)
     const last = state.pages[stateKey(e)]
     if (!opts.force && last?.signature === signature) { unchanged++; continue }
+    const failing = last?.outcome === "failed"
+    // A page that keeps failing on the same inputs is left alone until they
+    // change, so it cannot eat every run's budget.
+    if (!opts.force && failing && (last.failures ?? 1) >= ENRICH_LIMITS.maxFailures && last.failedSignature === signature) { givenUp++; continue }
     const activity = [matched[0]?.date ?? "", e.updated].sort().pop() ?? ""
-    due.push({ entity: e, signature, entries: matched, reason: last?.signature ? "changed" : "new", activity })
+    const reason = failing ? "retry" : last?.signature ? "changed" : "new"
+    due.push({ entity: e, signature, entries: matched, reason, activity })
   }
-  // Within each group, types in the order the settings list them: people
-  // first, then organisations, and so on.
+  // Never done first, then changed, then failed last time. Within each
+  // group, types in the order the settings list them: people first, then
+  // organisations, and so on.
+  const group = { new: 0, changed: 1, retry: 2 }
   const rank = (t: string) => { const i = opts.types.indexOf(t); return i === -1 ? opts.types.length : i }
-  due.sort((a, b) => (a.reason === b.reason ? 0 : a.reason === "new" ? -1 : 1)
+  due.sort((a, b) => group[a.reason] - group[b.reason]
     || rank(a.entity.type) - rank(b.entity.type)
     || b.activity.localeCompare(a.activity) || a.entity.title.localeCompare(b.entity.title))
-  return { due: due.map(({ activity: _a, ...c }) => c), unchanged }
+  return { due: due.map(({ activity: _a, ...c }) => c), unchanged, givenUp }
 }
 
 export function stateKey(e: Entity): string {
@@ -318,7 +330,7 @@ export function buildEnrichPrompt(b: BriefInput): string {
       overview: "3 to 6 full sentences.",
       basis: "based on 14 messages from 2026-01-02 to 2026-09-30",
       statements: [{ property: props[0] ?? "related", value: "Page title or value", role: "optional role", since: "YYYY-MM", until: "YYYY-MM", source: "entry:<id>" }],
-      history: [{ date: "YYYY-MM-DD", title: "What happened", event: "Title of its event page, if it has one" }],
+      history: [{ date: "YYYY-MM-DD", title: "What happened", event: "Title of its event page, if it has one", source: "entry:<id>" }],
       newEvents: [{ title: "Short event title", date: "YYYY-MM-DD", summary: "One or two full sentences.", source: "entry:<id>", importance: "normal" }],
     }, null, 2),
     "```",
@@ -331,7 +343,7 @@ export function buildEnrichPrompt(b: BriefInput): string {
     `  The value of every property except ${[...LITERAL_PROPS].filter(p => props.includes(p)).map(p => `\`${p}\``).join(", ") || "none"} must be the exact title of a page listed above; any other value is dropped.`,
     `- Every statement needs a \`source\`: ${sourceForms.join(", ")}. A statement without one is dropped.`,
     "- Agents (bots and AI assistants) are not people: never name one as a person's or organisation's relation.",
-    "- `history`: one item per event in the page's History, newest first. Set `event` to the title of its event page when it has one.",
+    "- `history`: one item per event, newest first. Set `event` to the title of its event page when it has one; otherwise give a `source` in the same forms as statements. An item with neither is dropped. Items already in the page's History are kept as they are, so return only what is new or what you can link to an event page.",
     `- \`newEvents\`: an event page for a History item that has none yet, at most ${b.maxNewEvents}. Each needs a date and a source. Importance is \`minor\` or \`normal\`.`,
     "- State only what the sources support. Leave out what you are not sure of. An empty list is a fine answer.",
     b.sources.includes("web") ? "- You may search the web for public facts; cite each page you use as `web:<url>`." : "- Do not search the web or use any other tool. Work only from what is above.",
@@ -346,6 +358,8 @@ export interface HistoryItem {
   text: string
   /** Title of the event page the item links to. */
   event?: string
+  /** Where it comes from, when it has no event page. */
+  source?: string
 }
 
 export interface NewEvent {
@@ -385,6 +399,12 @@ function str(v: unknown, max: number): string {
   if (typeof v !== "string") return ""
   const t = v.replace(/\s+/g, " ").trim()
   return t.length > max ? "" : t
+}
+
+/** A page title the model chose. It goes into `title: "..."` frontmatter
+ *  and into wikilinks, so quotes, backslashes and brackets are removed. */
+function titleOf(v: unknown, max: number): string {
+  return str(typeof v === "string" ? v.replace(/["\\[\]|#]/g, "") : v, max)
 }
 
 /** Whole sentences only. A trailing fragment is dropped; text with no
@@ -477,7 +497,7 @@ export function parseEnrichReply(raw: string, ctx: ReplyContext): EnrichResult |
     if (out.newEvents.length >= ctx.maxNewEvents) { dropped.push("newEvents: over the per-page cap"); break }
     if (!ev || typeof ev !== "object") continue
     const r = ev as Record<string, unknown>
-    const title = str(r.title, ENRICH_LIMITS.eventTitle)
+    const title = titleOf(r.title, ENRICH_LIMITS.eventTitle)
     const date = str(r.date, 10)
     const summary = typeof r.summary === "string" ? wholeSentences(r.summary, ENRICH_LIMITS.eventSummary) : ""
     const source = str(r.source, 400)
@@ -489,9 +509,11 @@ export function parseEnrichReply(raw: string, ctx: ReplyContext): EnrichResult |
     out.newEvents.push({ title, date, summary: summary || `${title}.`, source, importance: imp })
   }
 
-  for (const h of Array.isArray(o.history) ? o.history : []) {
-    if (!h || typeof h !== "object") continue
-    const r = h as Record<string, unknown>
+  const rawHistory = (Array.isArray(o.history) ? o.history : []).filter((h): h is Record<string, unknown> => !!h && typeof h === "object")
+  // New event pages some item names outright; never matched by date alone.
+  const named = new Set(rawHistory.flatMap(r => [str(r.event, 200), str(r.title, 200)]).filter(Boolean).map(normName))
+  for (const h of rawHistory) {
+    const r = h
     const text = str(r.title, 200)
     if (!text) continue
     const date = str(r.date, 10)
@@ -505,14 +527,16 @@ export function parseEnrichReply(raw: string, ctx: ReplyContext): EnrichResult |
       const made = out.newEvents.find(n => normName(n.title) === normName(name))
       if (made) { item.event = made.title; break }
     }
+    // An item worded apart from its new event page still links to it when
+    // they share the date and no other item took that page.
+    if (!item.event && item.date) {
+      const free = out.newEvents.filter(n => n.date === item.date && !named.has(normName(n.title)) && !out.history.some(x => x.event === n.title))
+      if (free.length === 1) item.event = free[0].title
+    }
+    const source = str(r.source, 400)
+    if (source && validSource(source, ctx)) item.source = source
+    if (!item.event && !item.source) { dropped.push(`history ${text}: no event page and no source the run can check`); continue }
     out.history.push(item)
-  }
-  // An item worded apart from its new event page still links to it when
-  // they share the date and no other item took that page.
-  for (const h of out.history) {
-    if (h.event || !h.date) continue
-    const free = out.newEvents.filter(n => n.date === h.date && !out.history.some(x => x.event === n.title))
-    if (free.length === 1) h.event = free[0].title
   }
   // A new event page belongs in the History even when the reply forgot it.
   for (const n of out.newEvents) {
@@ -566,20 +590,124 @@ export function mergeStatements(old: WikiStatement[], fresh: WikiStatement[]): W
   return out
 }
 
+function shownStatements(statements: WikiStatement[]): WikiStatement[] {
+  return statements.filter(s => s.access !== "private" && !NOT_STATED.has(s.property) && s.property !== "reading" && !s.metric)
+}
+
+/** The start of a statement's line: "- Label [[Value]]". */
+function statementHead(g: WikiGraph, s: WikiStatement, extra: Set<string>): string {
+  const label = g.ontology.properties.find(p => p.id === s.property)?.label ?? s.property.replace(/_/g, " ")
+  return `- ${label[0].toUpperCase()}${label.slice(1)} ${link(g, s.value, extra)}`
+}
+
 export function statementsSection(g: WikiGraph, statements: WikiStatement[], extra: Set<string>): string {
-  const shown = statements.filter(s => s.access !== "private" && !NOT_STATED.has(s.property) && s.property !== "reading" && !s.metric)
-  return shown.map(s => {
-    const label = g.ontology.properties.find(p => p.id === s.property)?.label ?? s.property.replace(/_/g, " ")
+  return shownStatements(statements).map(s => {
     const when = s.since || s.until ? `, ${s.since ?? "…"} to ${s.until ?? "now"}` : ""
-    return `- ${label[0].toUpperCase()}${label.slice(1)} ${link(g, s.value, extra)}${s.role ? ` (${s.role}${when})` : when ? ` (${when.slice(2)})` : ""}. Source: ${s.source ?? "not given"}.`
+    return `${statementHead(g, s, extra)}${s.role ? ` (${s.role}${when})` : when ? ` (${when.slice(2)})` : ""}. Source: ${s.source ?? "not given"}.`
   }).join("\n")
 }
 
+function historyLine(h: HistoryItem): string {
+  const text = h.event ? (h.event === h.text ? `[[${h.event}]]` : `[[${h.event}|${h.text}]]`) : h.text
+  return `- ${h.date ? `${h.date} — ` : ""}${text}${!h.event && h.source ? ` _(${h.source})_` : ""}`
+}
+
 export function historySection(items: HistoryItem[]): string {
-  return items.map(h => {
-    const text = h.event ? (h.event === h.text ? `[[${h.event}]]` : `[[${h.event}|${h.text}]]`) : h.text
-    return `- ${h.date ? `${h.date} — ` : ""}${text}`
-  }).join("\n")
+  return items.map(historyLine).join("\n")
+}
+
+/** The text under a `## Heading`, or null when the page has none. */
+export function sectionOf(body: string, heading: string): string | null {
+  const lines = body.split("\n")
+  const start = lines.findIndex(l => l.trim().toLowerCase() === `## ${heading}`.toLowerCase())
+  if (start === -1) return null
+  let end = lines.findIndex((l, i) => i > start && /^##\s/.test(l))
+  if (end === -1) end = lines.length
+  return lines.slice(start + 1, end).join("\n").trim()
+}
+
+const LIST_ITEM = /^\s*[-*]\s+/
+const HISTORY_ITEM = /^\s*[-*]\s+(?:(\d{4}(?:-\d{2}){0,2})\s*(?:—|–|-|:)?\s*)?(.*)$/
+
+/** Merge the run's History items into the History already on the page.
+ *  Nothing written there is lost: a line the reply did not return stays
+ *  as it is. An item the page already has (same event page, or same date
+ *  and wording) keeps the page's own line; when that line had no link,
+ *  it gains the link to the event page and keeps its words. An unlinked
+ *  line also takes the one new event page of its date when no other line
+ *  of that date could. Lines are kept newest first. */
+export function mergeHistory(existing: string, items: HistoryItem[]): string {
+  const prose: string[] = []
+  const rows: Array<{ date: string; line: string; event?: string; text: string }> = []
+  for (const line of existing.split("\n")) {
+    if (!line.trim()) continue
+    const m = LIST_ITEM.test(line) ? line.match(HISTORY_ITEM) : null
+    if (!m) { prose.push(line); continue }
+    const linked = wikilinks(m[2])[0]
+    rows.push({ date: m[1] ?? "", line: line.trimEnd(), ...(linked ? { event: normName(linked) } : {}), text: m[2] })
+  }
+  const plain = (t: string) => normName(t.replace(/\[\[([^\]|#]+)(?:[|#]([^\]]*))?\]\]/g, (_x, a, b) => b || a))
+  const linkInto = (row: (typeof rows)[number], h: HistoryItem) => {
+    row.line = historyLine({ date: row.date || h.date, text: row.text.trim(), event: h.event })
+    row.event = normName(h.event!)
+  }
+  const fresh: HistoryItem[] = []
+  for (const h of items) {
+    const ev = h.event ? normName(h.event) : ""
+    const same = rows.find(r => (ev && r.event === ev) || (r.date === (h.date ?? "") && plain(r.text) === plain(h.text)))
+    if (!same) { fresh.push(h); continue }
+    if (ev && !same.event) linkInto(same, h)
+  }
+  const left: HistoryItem[] = []
+  for (const h of fresh) {
+    const sameDay = h.event && h.date ? rows.filter(r => r.date === h.date) : []
+    if (sameDay.length === 1 && !sameDay[0].event && fresh.filter(x => x.date === h.date).length === 1) linkInto(sameDay[0], h)
+    else left.push(h)
+  }
+  for (const h of left) rows.push({ date: h.date ?? "", line: historyLine(h), ...(h.event ? { event: normName(h.event) } : {}), text: h.text })
+  // Newest first; undated lines keep their order after the dated ones.
+  const dated = rows.filter(r => r.date).sort((a, b) => b.date.localeCompare(a.date))
+  const undated = rows.filter(r => !r.date)
+  return [...prose, ...(prose.length && rows.length ? [""] : []), ...[...dated, ...undated].map(r => r.line)].join("\n")
+}
+
+/** A line the run writes from a statement: "- Label value. Source: x." It
+ *  is rebuilt from the page's statements on every run. */
+const STATEMENT_LINE = /^\s*[-*]\s+.*\. Source: [^\n]+\.\s*$/
+
+/** Lines in "Roles and relations" the run does not rebuild: anything a
+ *  person wrote, including a line shaped like a statement line that no
+ *  statement on the page accounts for. */
+function handWritten(g: WikiGraph, section: string | null, statements: WikiStatement[], extra: Set<string>): string[] {
+  const heads = shownStatements(statements).map(s => statementHead(g, s, extra))
+  return (section ?? "").split("\n").filter(l => l.trim() && !(STATEMENT_LINE.test(l) && heads.some(h => l.trim().startsWith(h))))
+}
+
+/** An Overview the run wrote ends with its basis line. */
+const RUN_OVERVIEW = /Refreshed \d{4}-\d{2}-\d{2}\._\s*$/
+
+/** The page text a refresh must never lose: everything but the Overview
+ *  and the lines the run rebuilds from statements. */
+export function keptText(body: string): { lines: number; chars: number } {
+  const all = body.split("\n")
+  const start = all.findIndex(l => l.trim().toLowerCase() === "## overview")
+  let end = start === -1 ? -1 : all.findIndex((l, i) => i > start && /^##\s/.test(l))
+  if (start !== -1 && end === -1) end = all.length
+  const lines = all.filter((_l, i) => start === -1 || i < start || i >= end)
+    .map(l => l.trim()).filter(l => l && !STATEMENT_LINE.test(l))
+  return { lines: lines.length, chars: lines.join("").replace(/\s+/g, "").length }
+}
+
+export class ShrinkError extends Error {}
+
+/** Throws when `after` holds fewer lines or characters than `before`,
+ *  leaving out the Overview and the statement lines. */
+export function assertNoShrink(before: string, after: string, path: string): void {
+  const a = keptText(before)
+  const b = keptText(after)
+  if (b.lines < a.lines || b.chars < a.chars) {
+    throw new ShrinkError(`refused: the refresh would shorten ${path} (${a.lines} → ${b.lines} lines, ${a.chars} → ${b.chars} characters outside the Overview)`)
+  }
 }
 
 function wikilinks(body: string): string[] {
@@ -596,12 +724,14 @@ export interface Written {
   created: string[]
   statements: number
   events: number
+  /** What the page kept instead of the reply's version, and why. */
+  kept: string[]
 }
 
 export function applyEnrichment(hub: WikiHub, agentId: string, g: WikiGraph, e: Entity, r: EnrichResult, today: string): Written {
   const store = hub.getAgentWiki(agentId)
   const target = targetFor(e, agentId)
-  const out: Written = { paths: [], created: [], statements: r.statements.length, events: 0 }
+  const out: Written = { paths: [], created: [], statements: r.statements.length, events: 0, kept: [] }
   const created = new Set(r.newEvents.map(n => normName(n.title)))
 
   const base: WikiArticle = target.page?.article ?? {
@@ -623,10 +753,21 @@ export function applyEnrichment(hub: WikiHub, agentId: string, g: WikiGraph, e: 
 
   const statements = mergeStatements(base.meta.statements ?? [], r.statements)
   let body = base.content
-  if (r.overview) body = replaceSection(body, "Overview", r.overview + (r.basis ? `\n\n_${r.basis[0].toUpperCase()}${r.basis.slice(1)}. Refreshed ${today}._` : ""), "top")
-  const facts = statementsSection(g, statements, created)
+  if (r.overview) {
+    // A hand-written Overview is only replaced by one at least as long.
+    const old = sectionOf(body, "Overview")
+    const text = r.overview + (r.basis ? `\n\n_${r.basis[0].toUpperCase()}${r.basis.slice(1)}. Refreshed ${today}._` : "")
+    if (!old || RUN_OVERVIEW.test(old) || text.length >= old.length) body = replaceSection(body, "Overview", text, "top")
+    else out.kept.push("overview: the page's own Overview is longer and was written by hand")
+  }
+  // Statement lines are rebuilt from the merged statements; lines a person
+  // added to the section stay.
+  const facts = [statementsSection(g, statements, created), ...handWritten(g, sectionOf(body, "Roles and relations"), statements, created)].filter(Boolean).join("\n")
   if (facts) body = replaceSection(body, "Roles and relations", facts, "end")
-  if (r.history.length) body = replaceSection(body, "History", historySection(r.history), "end")
+  if (r.history.length) body = replaceSection(body, "History", mergeHistory(sectionOf(body, "History") ?? "", r.history), "end")
+
+  // Last line of defence: a refresh adds to a page, it never shortens it.
+  assertNoShrink(base.content, body, path)
 
   const meta: WikiArticleMeta = {
     ...base.meta,
@@ -676,6 +817,11 @@ export interface EnrichPageState {
   outcome: PageOutcome
   reason?: string
   costUsd?: number
+  /** Failed runs in a row; reset by a run that does not fail. */
+  failures?: number
+  /** Inputs when it last failed. A page that failed `maxFailures` times
+   *  on the same inputs is left alone until they change. */
+  failedSignature?: string
 }
 
 export interface EnrichRunItem {
@@ -719,6 +865,8 @@ export interface EnrichRunRecord {
   due: number
   /** Pages skipped because nothing changed. */
   unchanged: number
+  /** Pages skipped because they failed too often on the same inputs. */
+  givenUp?: number
   refreshed: number
   failed: number
   spentUsd: number
@@ -810,13 +958,16 @@ export async function runEnrichment(o: RunOptions): Promise<EnrichRunRecord> {
 
   const g = graphOf(hub, o.agentIds)
   const entries = settings.sources.includes("entries") ? hub.getSharedStore().listEntries() : []
-  const { due, unchanged } = pickCandidates(g, entries, state, {
+  const { due, unchanged, givenUp } = pickCandidates(g, entries, state, {
     types: settings.types, maxEntriesPerPage: settings.maxEntriesPerPage, only: o.only, force: o.force,
   })
   const record: EnrichRunRecord = {
     id: runId, at: now.toISOString(), agent: settings.agent, ...(o.dryRun ? { dryRun: true } : {}),
-    due: due.length, unchanged, refreshed: 0, failed: 0, spentUsd: 0, costUnknown: 0, items: [],
+    due: due.length, unchanged, ...(givenUp ? { givenUp } : {}), refreshed: 0, failed: 0, spentUsd: 0, costUnknown: 0, items: [],
   }
+  // A limit that is not a whole number of pages is a caller's mistake; it
+  // must never lift the page cap (Math.min with NaN is NaN).
+  if (o.limit !== undefined && !(Number.isInteger(o.limit) && o.limit >= 1)) throw new Error("limit must be a whole number of pages, 1 or more")
   const maxPages = Math.min(settings.maxPages, o.limit ?? Infinity)
   const factSources = settings.sources.filter(s => FACT_SOURCES.includes(s))
   const agentIds = new Set((o.agentIds ?? []).map(normName))
@@ -855,6 +1006,7 @@ export async function runEnrichment(o: RunOptions): Promise<EnrichRunRecord> {
           const w = applyEnrichment(hub, settings.agent, g, e, parsed, today)
           item.paths = w.paths
           item.events = w.events
+          for (const k of w.kept) log(`${e.title}: kept ${k}`)
         }
         item.outcome = "refreshed"
         record.refreshed++
@@ -878,10 +1030,15 @@ export async function runEnrichment(o: RunOptions): Promise<EnrichRunRecord> {
     const key = stateKey(c.entity)
     const id = after.names.get(key) ?? c.entity.id
     const e = after.entities.get(id) ?? c.entity
-    const signature = item.outcome === "failed" ? "" : entitySignature(after, e, matchEntries(e, entries, settings.maxEntriesPerPage))
+    const failed = item.outcome === "failed"
+    const signature = failed ? "" : entitySignature(after, e, matchEntries(e, entries, settings.maxEntriesPerPage))
+    // Failures count up only while the inputs stay the same.
+    const prev = state.pages[key]
+    const failures = failed ? (prev?.outcome === "failed" && prev.failedSignature === c.signature ? (prev.failures ?? 1) : 0) + 1 : 0
     state.pages[key] = {
       title: c.entity.title, type: c.entity.type, signature, at: record.at, runId, outcome: item.outcome,
       ...(item.reason ? { reason: item.reason } : {}), ...(item.costUsd !== undefined ? { costUsd: item.costUsd } : {}),
+      ...(failed ? { failures, failedSignature: c.signature } : {}),
     }
   }
   if (after !== g) {

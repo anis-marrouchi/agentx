@@ -87,8 +87,8 @@ types:
 1. A page that sets `class:` in its header uses that type.
 2. Otherwise the `classify` rules decide, from the page's older `type`, its folder, its tags or its title.
 3. A page no rule matches goes to **Topics**, which is not in the sidebar. A growing Topics count means a type is missing.
-4. Agents are not people. A page whose title is an agent's name is an **Agent** page, whatever its header says. The names come from `agentx.json`: each agent's id, its `name`, and the `Name:` line in its workspace `IDENTITY.md`. You can add more names under `agent_names:` in `ontology.yaml`. A person's **Relations** and **Belongings** never list an agent.
-5. When an agent's name is also the first name of a person page (an agent called "Sam" and a person called "Sam Example"), the page keeps its type and shows under **Needs attention** with the chip **review**, so you can decide. Set `class:` on it to settle it.
+4. Agents are not people. A person page, or a page with no clear kind, whose title is an agent's name is an **Agent** page. The names come from `agentx.json`: each agent's id, its `name`, and the `Name:` line in its workspace `IDENTITY.md`. You can add more names under `agent_names:` in `ontology.yaml`. A person's **Relations** and **Belongings** never list an agent.
+5. When an agent's name is also the first name of a person page (an agent called "Sam" and a person called "Sam Example"), the page keeps its type and shows under **Needs attention** with the chip **review**, so you can decide. So does an organisation, project or other page that shares an agent's name: it keeps its kind. Set `class:` on it to settle it.
 
 ## The overview
 

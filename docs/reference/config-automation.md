@@ -75,7 +75,7 @@ Scheduled enrichment of person, organisation, project, place and asset pages: an
 | `wikiEnrich.types` | string[] | person, organization, project, place, device, server, app, domain, account | Page types refreshed, in this order. `agent` is refused. |
 | `wikiEnrich.sources` | string[] | `["entries", "contacts"]` | Where a run may read: `entries`, `contacts`, `wacli`, `gitlab`, `gog`, `web`. |
 | `wikiEnrich.maxPages` | number (1-200) | `10` | Most pages refreshed in one run. |
-| `wikiEnrich.maxSpendUsd` | number (0-1000) | `2` | Spending cap per run in US dollars; the run stops before a page that would likely pass it. `0` leaves only `maxPages`. |
+| `wikiEnrich.maxSpendUsd` | number (0-1000) | `2` | Spending cap per run in US dollars; the run stops before a page that would likely pass it. `0` leaves only `maxPages`. When the agent's runtime reports no cost, only `maxPages` applies. |
 | `wikiEnrich.maxEntriesPerPage` | number (1-200) | `40` | Most messages given for one page. |
 | `wikiEnrich.maxNewEvents` | number (0-20) | `5` | Most new event pages one page may create in a run. |
 | `wikiEnrich.model` | string | — | Model for the agent's calls. Unset, the agent's own model. Keep it on the agent's runtime. |

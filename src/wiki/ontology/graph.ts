@@ -78,9 +78,10 @@ function eventDate(a: WikiArticle): string {
 
 /**
  * Agents are not people (#819). A page whose title or alias is an agent's
- * name is an agent, whatever its frontmatter says, unless the name is
- * also the first name of a person page: then it stays as typed and is
- * flagged for a person to decide. Deterministic, no model involved.
+ * name is an agent when it is typed as a person or not typed at all,
+ * unless the name is also the first name of a person page. Any other
+ * page with that name stays as typed and is flagged for a person to
+ * decide. Deterministic, no model involved.
  */
 function typeAgents(entities: Map<string, Entity>, o: Ontology, agentNames: string[]): void {
   // A two-letter id would catch too many unrelated titles.
@@ -101,6 +102,13 @@ function typeAgents(entities: Map<string, Entity>, o: Ontology, agentNames: stri
     const person = firstNames.get(hit)
     if (person && normName(person) !== hit) {
       e.review = `"${e.title}" is an agent's name and the first name of ${person}`
+      continue
+    }
+    // Only a page typed as a person, or not typed at all, becomes an
+    // agent. An organisation, project or place that shares an agent's
+    // name keeps its type and is left for a person to decide.
+    if (e.type !== "person" && e.type !== o.fallback_type) {
+      e.review = `"${e.title}" is an agent's name, but the page is typed ${e.type}`
       continue
     }
     e.type = "agent"

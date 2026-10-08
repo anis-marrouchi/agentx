@@ -52,6 +52,11 @@ export function registerWikiEnrich(wiki: Command): void {
         if (!Number.isFinite(cap) || cap < 0) { fail("--max-cost must be a number of dollars, 0 or more"); return }
         settings.maxSpendUsd = cap
       }
+      let limit: number | undefined
+      if (opts.limit !== undefined) {
+        limit = Number(opts.limit)
+        if (!/^\d+$/.test(String(opts.limit).trim()) || !Number.isInteger(limit) || limit < 1) { fail("--limit must be a whole number of pages, 1 or more"); return }
+      }
       if (!settings.agent) { fail("no enrichment agent set; run `agentx wiki enrich config --agent <id>` first"); return }
       if (!config.agents[settings.agent]) { fail(`no agent "${settings.agent}" on this node`); return }
       if (!settings.enabled && !opts.page && !opts.dryRun) { fail("wiki enrichment is off on this node; turn it on with `agentx wiki enrich config --enable`, or name one page with --page"); return }
@@ -78,7 +83,7 @@ export function registerWikiEnrich(wiki: Command): void {
         dryRun: !!opts.dryRun,
         only: opts.page,
         force: !!opts.force || !!opts.page,
-        limit: opts.limit ? Number(opts.limit) : undefined,
+        limit,
         log: (m) => { if (!opts.json) console.log(chalk.dim(`  ${m}`)) },
         ask: async (message) => {
           const r = await registry.execute({
@@ -110,9 +115,11 @@ export function registerWikiEnrich(wiki: Command): void {
           for (const d of it.plan.dropped) console.log(chalk.dim(`  left out: ${d}`))
         }
         const cost = `$${record.spentUsd.toFixed(2)}${record.costUnknown ? ` (+${record.costUnknown} call${record.costUnknown === 1 ? "" : "s"} with no reported cost)` : ""}`
-        console.log(`  ${record.dryRun ? "dry run: " : ""}${record.refreshed} refreshed, ${record.failed} failed, ${record.unchanged} unchanged, ${Math.max(0, record.due - record.items.length)} left for the next run · spent ${cost}${record.stoppedBy ? ` · stopped by ${record.stoppedBy}` : ""}`)
+        console.log(`  ${record.dryRun ? "dry run: " : ""}${record.refreshed} refreshed, ${record.failed} failed, ${record.unchanged} unchanged${record.givenUp ? `, ${record.givenUp} left alone after repeated failures` : ""}, ${Math.max(0, record.due - record.items.length)} left for the next run · spent ${cost}${record.stoppedBy ? ` · stopped by ${record.stoppedBy}` : ""}`)
       }
-      if (record.failed && !record.refreshed) process.exitCode = 1
+      // A finished run exits 0 even when pages failed: the failures are in
+      // _enrich.json and `status`. A non-zero exit would make the command
+      // cron retry the whole run, each time with a fresh spending cap.
       // The registry holds timers and pooled CLI processes open.
       process.exit(process.exitCode ?? 0)
     }))

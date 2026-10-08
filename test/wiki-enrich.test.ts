@@ -5,7 +5,7 @@ import { join } from "path"
 import { WikiHub } from "../src/wiki/hub"
 import type { WikiArticleMeta } from "../src/wiki/types"
 import {
-  EnrichState, graphOf, parseEnrichReply, pickCandidates, replaceSection, runEnrichment, wholeSentences,
+  EnrichState, ENRICH_LIMITS, ShrinkError, assertNoShrink, graphOf, keptText, mergeHistory, parseEnrichReply, pickCandidates, replaceSection, runEnrichment, wholeSentences,
   type EnrichSettings, type ReplyContext,
 } from "../src/wiki/enrich"
 import { patchEnrichCron, patchWikiEnrich, wikiEnrichSettings } from "../src/wiki/enrich-settings"
@@ -154,6 +154,78 @@ describe("wiki enrichment", () => {
     expect(failed.signature).toBe("")
   })
 
+  it("keeps a long hand-written History, Overview and notes the model never saw", async () => {
+    const handHistory = Array.from({ length: 120 }, (_x, i) => `- 2025-${String(1 + (i % 12)).padStart(2, "0")}-${String(1 + (i % 28)).padStart(2, "0")} — hand note ${i} about the account and what was agreed on that call`)
+    const handOverview = "Sample Person has been our contact since 2024. ".repeat(12).trim()
+    const content = [
+      "## Overview", "", handOverview, "",
+      "## Roles and relations", "", "- Met at a trade fair in 2024.", "",
+      "## History", "", "- 2026-02-10 kickoff call notes", ...handHistory,
+    ].join("\n")
+    expect(content.length).toBeGreaterThan(ENRICH_LIMITS.pageChars)
+    hub.getAgentWiki("curator").writeArticle("people/sample-person.md", meta("Sample Person", { type: "person", owner: "curator" }), content, "curator")
+    const prompts: string[] = []
+    const run = await runEnrichment({
+      hub, settings: settings(), only: "Sample Person", force: true, today: "2026-10-08",
+      ask: async (p) => { prompts.push(p); return { text: personReply() } },
+    })
+    expect(run.items[0].outcome).toBe("refreshed")
+    expect(prompts[0]).not.toContain("hand note 119") // cut at pageChars
+    const page = hub.getAgentWiki("curator").readArticle("people/sample-person.md")!
+    for (const line of handHistory) expect(page.content).toContain(line)
+    // The unlinked line of the same day gains the event link and keeps its words.
+    expect(page.content).toContain("- 2026-02-10 — [[Website kickoff|kickoff call notes]]")
+    expect(page.content).not.toContain("[[Website kickoff|Kickoff]]")
+    expect(page.content).toContain("- 2026-09-30 — [[Invoice approved|The last invoice was approved]]")
+    // The longer hand-written Overview and the hand-written relation stay.
+    expect(page.content).toContain(handOverview)
+    expect(page.content).toContain("- Met at a trade fair in 2024.")
+    expect(page.content).toContain("- Role at [[Example Org]] (Finance lead, 2026-09 to now). Source: entry:e2.")
+    expect(keptText(page.content).lines).toBeGreaterThan(keptText(content).lines)
+  })
+
+  it("leaves a page alone after repeated failures, and lists failed pages last", async () => {
+    const asked: string[] = []
+    const failing = async (_p: string, e: { title: string }) => { asked.push(e.title); return e.title === "Sample Person" ? { text: "", error: "agent busy" } : { text: "{}" } }
+    await runEnrichment({ hub, settings: settings(), today: "2026-10-08", ask: failing })
+    hub.getAgentWiki("writer").writeArticle("people/other-person.md", meta("Other Person", { type: "person" }), "Another contact.", "writer")
+    asked.length = 0
+    await runEnrichment({ hub, settings: settings(), today: "2026-10-08", ask: failing })
+    expect(asked).toEqual(["Other Person", "Sample Person"]) // new first, the retry last
+    asked.length = 0
+    const third = await runEnrichment({ hub, settings: settings(), today: "2026-10-08", ask: failing })
+    expect(third.items.map(i => i.title)).toEqual(["Sample Person"])
+    expect(new EnrichState(dir).load().pages["sample person"]).toMatchObject({ outcome: "failed", failures: 3 })
+
+    asked.length = 0
+    const fourth = await runEnrichment({ hub, settings: settings(), today: "2026-10-08", ask: failing })
+    expect(asked).toEqual([])
+    expect(fourth.givenUp).toBe(1)
+
+    // New inputs give it another chance.
+    hub.getSharedStore().addEntry({ id: "e9", date: "2026-10-05", agentId: "writer", source: "email", content: "Sample Person sent the signed contract." })
+    const fifth = await runEnrichment({ hub, settings: settings(), today: "2026-10-08", ask: async () => ({ text: personReply() }) })
+    expect(fifth.items.map(i => i.title)).toContain("Sample Person")
+    expect(new EnrichState(dir).load().pages["sample person"]).toMatchObject({ outcome: "refreshed" })
+    expect(new EnrichState(dir).load().pages["sample person"].failures).toBeUndefined()
+  })
+
+  it("refuses a page limit that is not a whole number", async () => {
+    await expect(runEnrichment({ hub, settings: settings(), limit: Number("abc"), today: "2026-10-08", ask: async () => ({ text: "{}" }) })).rejects.toThrow(/whole number/)
+  })
+
+  it("drops History items with no source or event page, and quotes from new titles", async () => {
+    const reply = JSON.stringify({
+      history: [{ date: "2026-03-01", title: "Something we heard" }, { date: "2026-04-01", title: "Signed the order", source: "entry:e2" }],
+      newEvents: [{ title: 'The "big" launch', date: "2026-05-01", summary: "It launched.", source: "entry:e1" }],
+    })
+    const run = await runEnrichment({ hub, settings: settings(), dryRun: true, only: "Sample Person", force: true, today: "2026-10-08", ask: async () => ({ text: reply }) })
+    const plan = run.items[0].plan!
+    expect(plan.dropped).toContain("history Something we heard: no event page and no source the run can check")
+    expect(plan.history).toEqual(["2026-05-01 The big launch → The big launch", "2026-04-01 Signed the order"])
+    expect(plan.newEvents[0]).toBe("2026-05-01 The big launch (normal) · entry:e1")
+  })
+
   it("writes nothing on a dry run", async () => {
     const run = await runEnrichment({ hub, settings: settings(), dryRun: true, only: "Sample Person", force: true, today: "2026-10-08", ask: async () => ({ text: personReply() }) })
     expect(run.items).toHaveLength(1)
@@ -185,6 +257,14 @@ describe("wiki enrichment", () => {
     expect(sam.review).toMatch(/agent's name and the first name of Sam Example/)
   })
 
+  it("does not retype an organisation that shares an agent's name", () => {
+    hub.getAgentWiki("writer").writeArticle("clients/robo.md", meta("Robo", { class: "organization" }), "A client.", "writer")
+    const g = graphOf(hub, ["robo"])
+    const robo = g.entities.get(g.names.get("robo")!)!
+    expect(robo.type).toBe("organization")
+    expect(robo.review).toMatch(/typed organization/)
+  })
+
   it("picks never-enriched pages first, and leaves out agent pages", () => {
     const g = graphOf(hub)
     const { due } = pickCandidates(g, hub.getSharedStore().listEntries(), { version: 1, pages: {}, runs: [] }, { types: ["person", "agent", "organization"], maxEntriesPerPage: 10 })
@@ -204,6 +284,24 @@ describe("enrichment reply checks", () => {
   it("refuses a reply without JSON", () => {
     const ctx = { g: { names: new Map(), entities: new Map(), ontology: { properties: [], types: [], importance: { major_set_by: "owner" } } } } as unknown as ReplyContext
     expect(parseEnrichReply("I could not find anything.", ctx)).toEqual({ error: "the reply held no JSON object" })
+  })
+
+  it("merges History without losing a line", () => {
+    const old = "Written by hand.\n\n- 2026-01-05 — [[Planning day]]: long notes kept\n- 2026-02-10 kickoff\n- undated memory"
+    const merged = mergeHistory(old, [
+      { date: "2026-01-05", text: "Planning", event: "Planning day" },
+      { date: "2026-02-10", text: "Kickoff", event: "Website kickoff" },
+      { date: "2026-03-01", text: "Signed", source: "entry:e1" },
+    ])
+    expect(merged).toBe("Written by hand.\n\n- 2026-03-01 — Signed _(entry:e1)_\n- 2026-02-10 — [[Website kickoff|kickoff]]\n- 2026-01-05 — [[Planning day]]: long notes kept\n- undated memory")
+  })
+
+  it("refuses a write that shortens the page outside the Overview", () => {
+    const before = "## Overview\n\nOld story.\n\n## History\n\n- 2026-01-01 — one\n- 2026-01-02 — two"
+    expect(() => assertNoShrink(before, "## Overview\n\nA new, much longer story.\n\n## History\n\n- 2026-01-01 — one\n- 2026-01-02 — two", "p.md")).not.toThrow()
+    expect(() => assertNoShrink(before, "## Overview\n\nNew.\n\n## History\n\n- 2026-01-02 — two", "p.md")).toThrow(ShrinkError)
+    // Statement lines are rebuilt from the statements and do not count.
+    expect(keptText("## Roles and relations\n\n- Role at [[X]]. Source: entry:1.\n- Met at a fair.")).toEqual({ lines: 2, chars: "##Rolesandrelations-Metatafair.".length })
   })
 
   it("replaces a section in place or adds it", () => {

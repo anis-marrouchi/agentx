@@ -33,6 +33,8 @@ What it will not do:
 - **It only refreshes pages that changed.** A page is redone when a new message mentions it, a page about it changed, or a new page links to it.
 - **It writes no personal analysis**, and every statement keeps the access level of the page it is on. A page written from a private page stays private.
 - **It never overwrites your text.** The agent writes into its own page for each thing, which the wiki merges with the other pages of the same name. Each change keeps the old text as a past version. New statements are marked **proposed** until you confirm them.
+- **It never shortens a page.** New History items are added to the History already on the page. A line already there stays, even when the agent did not see it (a long page is cut short in what the agent reads). An item the page already has keeps your wording and only gains the link to its event page. Lines you wrote under **Roles and relations** stay. An Overview you wrote by hand is only replaced by a longer one. If a refresh would still leave the page with fewer lines or characters, the run refuses to write it and marks the page **failed**.
+- **Every History item needs a source**: an event page, or a message, record or page the run can check. Items without one are left out.
 
 Enrichment is off until you turn it on.
 
@@ -69,7 +71,11 @@ The sources are:
 - `contacts`, `wacli`, `gitlab`, `gog`: the contact book and the contact tools AgentX already knows (WhatsApp, GitLab, Google).
 - `web`: lets the agent search the web for public facts. Each fact from the web cites its address.
 
-The run stops before a page that would likely go over the spending cap. Pages it did not reach wait for the next run. People come first, then organisations, then the other kinds, in the order you list them.
+The run stops before a page that would likely go over the spending cap. It guesses the next page's cost from the average cost of the pages so far. Pages it did not reach wait for the next run. Pages never refreshed come first, then pages that changed, then pages that failed last time. Within each group, people come first, then organisations, then the other kinds, in the order you list them.
+
+Some agent runtimes do not report what a call cost. Then the spending cap cannot apply, and only the page count (`--max-pages`) limits the run. `agentx wiki enrich run` says how many calls had no reported cost.
+
+A finished run ends without an error, even when some pages failed. The failures are listed by `agentx wiki enrich status`. This way the schedule does not start the whole run again, with a fresh spending cap, because of one bad page. A page that fails 3 runs in a row is left alone until something about it changes: a new message, a page edit, or a new link.
 
 If you set a model, pick one the agent's runtime can run, the same family the agent already uses.
 
@@ -79,7 +85,9 @@ If you set a model, pick one the agent's runtime can run, the same family the ag
 2. **Terminal:** run `agentx wiki enrich run --page "Sample Person"` to write it.
 3. **Browser:** open the dashboard wiki and search for the page. The overview, the panels and the History show the new content.
 
-`--page` works even while enrichment is off. To cap one run's spending without changing the setting, add `--max-cost 0.50`.
+`--page` works even while enrichment is off. To cap one run's spending without changing the setting, add `--max-cost 0.50`. To refresh fewer pages this time, add `--limit 3` (a whole number, 1 or more).
+
+The agent is asked to only read, and with the `web` source off it is told not to browse. The run gives it its normal tools, though: nothing blocks a tool call. Pick an agent you trust with the wiki.
 
 ## See what each run did
 
@@ -117,6 +125,8 @@ The record is kept in `.agentx/wiki/_enrich.json`.
 - **`<agent>'s pages are copied from <machine>`:** that agent's pages come from another machine and are read-only here. Run the enrichment on that machine.
 - **Nothing is refreshed and it says `unchanged`:** no source changed since the last run. Use `--page "<title>"` to redo one page anyway, or add `--force` to redo all.
 - **It stops with `stopped by spend cap` or `stopped by max pages`:** the run reached its cap. The rest waits for the next run. Raise `--max-spend` or `--max-pages` if you want more per night.
+- **A page shows `failed` with `refused: the refresh would shorten`:** the new text would have lost lines you wrote. Nothing was written. Run `--page "<title>" --dry-run`, compare with the page, and fix the page by hand if needed.
+- **A page is skipped and the run says `left alone after repeated failures`:** it failed 3 runs in a row. Read the reason with `agentx wiki enrich status`, fix it, then run `--page "<title>"` to try it again.
 - **A statement you expected is missing:** run with `--dry-run` and read the `left out` lines. A fact is left out when it has no source the run can check, when its page does not exist yet, or when it names an agent.
 - **`the reply held no JSON object`:** the agent answered in prose instead of the expected format. Try again, or set `--model` to a stronger model.
 - **An agent still shows as a person:** see [Wiki › If something is wrong](../dashboard/wiki.md#if-something-is-wrong).

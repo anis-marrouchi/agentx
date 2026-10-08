@@ -1289,11 +1289,13 @@ Keep person, organisation, project, place and asset pages up to date on a schedu
 
 Refresh the pages whose sources changed since the last run, through the agent in `wikiEnrich.agent`. The `wiki-enrich` schedule runs this.
 
+It exits with an error only when the run cannot start (no agent, enrichment off, a bad flag). A run that finished exits 0 even when some pages failed; `agentx wiki enrich status` lists them. A page that fails 3 runs in a row on the same sources is skipped until they change.
+
 | Flag | Default | What it does |
 |---|---|---|
 | `--page <title>` | — | Refresh only this page, even when nothing changed and even when enrichment is off. |
 | `--force` | — | Refresh even when nothing changed. |
-| `--limit <n>` | — | Refresh at most this many pages this time. |
+| `--limit <n>` | — | Refresh at most this many pages this time. A whole number, 1 or more. |
 | `--max-cost <usd>` | `wikiEnrich.maxSpendUsd` | Spending cap for this run, in US dollars. |
 | `--dry-run` | — | Ask the agent and print what would be written, and what was left out and why, without writing. |
 | `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
