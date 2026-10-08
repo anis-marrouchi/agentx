@@ -219,6 +219,13 @@ describe("knowledge-graph routes", () => {
     expect((side.match(/class="ox-nav/g) ?? []).length).toBe(1 + 1 + 9)
   })
 
+  it("ignores an unknown importance level on the event list", () => {
+    const html = routes.handle("/p/events/event", new URLSearchParams("importance=%22%3E%3Cx"))!
+    expect(html).not.toContain('"><x')
+    expect(html).not.toContain("only</p>")
+    expect(html).toContain('class="on" href="/p/events/event">all')
+  })
+
   it("returns null for unknown pages and other routes", () => {
     expect(routes.handle("/e/nobody", new URLSearchParams())).toBeNull()
     expect(routes.handle("/agent/agent-a", new URLSearchParams())).toBeNull()
