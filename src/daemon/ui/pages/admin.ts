@@ -579,6 +579,26 @@ const ADMIN_PAGE_BODY = `
         </div>
       </div>
     </div>
+
+    <div class="ax-stack" id="wiki-notes-cfg" style="margin-top:22px">
+      <h3 style="margin:0 0 6px;font-size:13px">Wiki notes inbox</h3>
+      <p style="font-size:12px;color:var(--ax-muted);margin:0 0 10px">Agents leave short notes (what changed, the source, the date) for the agent that runs your wiki observe/sweep schedule. The schedules you pick read them first and record what they did with each one. Same as <code>agentx wiki notes config</code>.</p>
+      <label class="toggle-switch"><input type="checkbox" id="wn-enabled" /> <span>Wiki notes on</span></label>
+      <label for="wn-inbox">Inbox agent <span class="hint">(runs the observe/sweep schedule; may be on another node)</span></label>
+      <input id="wn-inbox" list="wn-agents" placeholder="agent id" autocomplete="off" />
+      <datalist id="wn-agents"></datalist>
+      <fieldset style="border:0;padding:0;margin:10px 0 0">
+        <legend style="font-size:12px">Schedules on this node that read the inbox</legend>
+        <div id="wn-crons"></div>
+      </fieldset>
+      <label for="wn-max">Most notes per run</label>
+      <input id="wn-max" type="number" min="1" max="100" value="20" />
+      <div class="actions"><button class="primary" onclick="saveWikiNotes()">Save</button><div id="wn-msg" class="msg" role="status"></div></div>
+      <details style="margin-top:10px" ontoggle="if (this.open) loadWikiNotesList()">
+        <summary>Recent notes</summary>
+        <div id="wn-list" style="margin-top:8px;font-size:12px"></div>
+      </details>
+    </div>
   </section>
 
   <section id="tab-webhooks" class="tab">
@@ -1183,6 +1203,7 @@ async function refresh() {
     renderBoardsCfg();
     wireBoardsCfgHandlers();
     renderNotifications();
+    renderWikiNotes();
     renderScreen();
     renderActions();
     wireActionsHandlers();
@@ -1795,6 +1816,56 @@ function wireBoardsCfgHandlers() {
 }
 
 // ---------------- Notifications + Webhook triggers ----------------
+
+// ---------------- Wiki notes inbox (#825) ----------------
+
+function renderWikiNotes() {
+  const n = state.wikiNotes || {};
+  if (!$('wn-enabled')) return;
+  $('wn-enabled').checked = !!n.enabled;
+  $('wn-inbox').value = n.inbox || '';
+  $('wn-max').value = n.maxNotesPerRun || 20;
+  $('wn-agents').innerHTML = (state.agents || []).map(a => '<option value="' + escapeHtml(a.id) + '"></option>').join('');
+  const picked = new Set(n.crons || []);
+  const crons = state.crons || [];
+  $('wn-crons').innerHTML = crons.length
+    ? crons.map(c => '<label class="toggle-switch" style="margin-bottom:6px"><input type="checkbox" data-wn-cron="' + escapeHtml(c.id) + '"' + (picked.has(c.id) ? ' checked' : '') + ' /> <code>' + escapeHtml(c.id) + '</code> <span style="color:var(--ax-muted)">runs as ' + escapeHtml(c.agent || '?') + '</span></label>').join('')
+    : '<i style="font-size:12px">No schedules on this node.</i>';
+}
+
+async function saveWikiNotes() {
+  const crons = Array.from(document.querySelectorAll('[data-wn-cron]')).filter(el => el.checked).map(el => el.getAttribute('data-wn-cron'));
+  try {
+    const r = await req('POST', '/api/admin/wiki-notes', {
+      enabled: $('wn-enabled').checked,
+      inbox: $('wn-inbox').value.trim(),
+      crons,
+      maxNotesPerRun: Number($('wn-max').value),
+    });
+    showMsg($('wn-msg'), 'ok', r.summary || 'saved');
+    await refresh();
+  } catch (e) { showMsg($('wn-msg'), 'err', e.message); }
+}
+
+async function loadWikiNotesList() {
+  const box = $('wn-list');
+  box.textContent = 'Loading…';
+  try {
+    const r = await req('GET', '/api/admin/wiki-notes/list');
+    const notes = r.notes || [];
+    if (!notes.length) { box.innerHTML = '<i>No notes on this node.</i>'; return; }
+    box.innerHTML = notes.map(n =>
+      '<div style="padding:6px 0;border-bottom:1px solid var(--ax-border)">' +
+        '<b>' + escapeHtml(n.status) + '</b> · <code>' + escapeHtml(n.id) + '</code> · from ' + escapeHtml(n.from) + ' · ' + escapeHtml(n.date) +
+        '<div>' + escapeHtml(n.change) + '</div>' +
+        '<details><summary style="color:var(--ax-muted)">details</summary>' +
+          '<div style="color:var(--ax-muted)">source: ' + escapeHtml(n.source) + '</div>' +
+          (n.listedIn && n.listedIn.length ? '<div style="color:var(--ax-muted)">given to run: ' + escapeHtml(n.listedIn[n.listedIn.length - 1]) + '</div>' : '') +
+          (n.handled ? '<div style="color:var(--ax-muted)">' + escapeHtml(n.handled.outcome) + ' by ' + escapeHtml(n.handled.by) + ': ' + escapeHtml(n.handled.reason) + '</div>' : '') +
+        '</details>' +
+      '</div>').join('');
+  } catch (e) { box.textContent = e.message; }
+}
 
 function renderNotifications() {
   const n = state.notifications || {};

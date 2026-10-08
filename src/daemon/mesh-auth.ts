@@ -71,7 +71,10 @@ export function isMeshGatedPath(path: string): boolean {
     // The wiki routes peers sync from: every raw entry is a task's text,
     // and articles include ones marked private to their agent.
     path === "/wiki/agents" || path === "/wiki/entries" ||
-    path === "/wiki/articles" || path === "/wiki/article"
+    path === "/wiki/articles" || path === "/wiki/article" ||
+    // Notes agents leave for the wiki observe/sweep run (#825): what an
+    // agent saw, kept inside the fleet. A peer forwards one with its token.
+    path === "/wiki/notes"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a

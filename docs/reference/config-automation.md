@@ -46,6 +46,23 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 }
 ```
 
+## `wikiNotes`
+
+Notes agents leave for the wiki observe/sweep run: what changed, the source and the date. The listed schedules read them first and record each one as patched, rejected or deferred. Off by default. Guide: [Let agents leave notes for the wiki run](/jobs/wiki-notes).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `wikiNotes.enabled` | boolean | `false` | Turns wiki notes on for this node. Needs `wikiNotes.inbox`. |
+| `wikiNotes.inbox` | string | — | Agent that runs the wiki observe/sweep schedule. Notes are kept on its node; other nodes forward theirs to it. |
+| `wikiNotes.crons` | string[] | `[]` | Schedule ids (keys of `crons`) that read the inbox when they start. Each must run as the inbox agent. |
+| `wikiNotes.maxNotesPerRun` | number (1-100) | `20` | Most notes one run is given. The rest wait for the next run. |
+
+```json
+{
+  "wikiNotes": { "enabled": true, "inbox": "wiki-agent", "crons": ["wiki-sweep"] }
+}
+```
+
 ## `services`
 
 Services answer a known kind of message with a fixed prompt, keyed by service id: `services.<id>`. When an incoming message matches a trigger, the service's prompt is sent to its agent.

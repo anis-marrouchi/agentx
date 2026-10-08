@@ -1,0 +1,109 @@
+# Let agents leave notes for the wiki run
+
+![You pick the inbox agent. An agent leaves a note with what changed, the source and the date, and its machine passes it to the machine that holds the inbox. The next run lists its notes ahead of its own instructions, checks each one at the source, and records it as patched, rejected or deferred with a reason.](/diagrams/wiki-notes.svg)
+
+Many fleets have one agent that keeps the wiki honest on a timer: it looks over recent work and sweeps out facts that went stale. We call that the **observe/sweep run**. On its own it only sees logs and saved conversations, so it has to guess at things another agent saw first-hand: a deploy that moved, a name a person corrected, a price that changed.
+
+With wiki notes, any agent can leave that run a short **note**: what changed, where it saw it (the **source**) and the date. The notes wait in the **inbox** of the agent that runs the schedule. When the schedule starts, the run reads its notes first.
+
+- **A note is a claim to check, not a fact to copy.** The run is told to confirm each note at its source, or against the wiki, before it changes anything.
+- **Every note gets an answer.** The run records each note as **patched** (the wiki was updated), **rejected** (the note was wrong), or **deferred** (not now), always with a reason. A deferred note comes back on the next run.
+- **Notes stay inside your fleet.** They travel only between your own machines, over the same protected link your machines already use to talk to each other (the **mesh**). Nothing is posted anywhere public.
+
+Wiki notes are off until you turn them on.
+
+## Before you start
+
+- You have a schedule that runs your wiki observe/sweep work. See [Send a daily report](./daily-report.md) to create a schedule.
+- You know which agent runs it. That agent is the **inbox agent**.
+
+## Turn it on from the dashboard
+
+1. **Browser:** open the dashboard and go to **Settings**.
+2. Click the **Schedules** tab.
+3. Scroll to **Wiki notes inbox**.
+4. Type the inbox agent's id in **Inbox agent**.
+5. Tick each schedule that should read the inbox. Only schedules that run as the inbox agent are accepted.
+6. Tick **Wiki notes on**.
+7. Click **Save**.
+
+![The Wiki notes inbox section on the Schedules tab: Wiki notes on is ticked, the inbox agent is filled in, the schedule wiki-sweep is ticked, and Most notes per run is 20](/screenshots/wiki-notes/settings.png)
+
+## Turn it on from the terminal
+
+1. **Terminal:** go to the folder that holds `agentx.json` on the machine where the inbox agent runs.
+2. **Terminal:** run `agentx wiki notes config --inbox wiki-agent --cron wiki-sweep --enable`, with your own agent id and schedule id. The command prints the new settings.
+
+## Let agents on your other machines post
+
+Each machine keeps its own settings. A machine whose agents should be able to post needs only the inbox agent's id. Its notes are passed to the machine that holds the inbox.
+
+1. **Terminal:** on each other machine, go to the folder that holds `agentx.json`.
+2. **Terminal:** run `agentx wiki notes config --inbox wiki-agent --enable`.
+
+You can also do this on that machine's dashboard: fill in **Inbox agent**, tick **Wiki notes on**, leave the schedules unticked, and click **Save**.
+
+## How agents leave a note
+
+Once wiki notes are on, each agent is told how to leave a note when it starts a new session. An agent leaves one like this:
+
+```bash
+agentx wiki notes add --from agent-a \
+  --change "The staging site moved to a new server." \
+  --source "deploy log, release 2.4" \
+  --date 2026-10-07
+```
+
+You can leave a note yourself the same way. Keep notes short (up to 1,000 characters), and never put passwords or keys in one.
+
+The same note posted twice is kept once. Re-posting a note the run already rejected does not reopen it.
+
+## What the run sees
+
+At the start of each listed schedule, the run gets up to **Most notes per run** waiting notes (open or deferred), oldest first, ahead of its own instructions. Each note shows who left it, its date, the change and the source, and the command to record what the run did:
+
+```bash
+agentx wiki notes handle 3f2a91c04b7e --outcome patched \
+  --reason "Updated the Staging article with the new server" \
+  --run wiki-sweep/2026-10-08T06-00-00-000Z
+```
+
+The run's record also lists the notes it was given, under `wikiNotes`.
+
+## See the notes
+
+1. **Terminal:** on the inbox agent's machine, run `agentx wiki notes list`. It shows the notes still waiting.
+2. **Terminal:** run `agentx wiki notes list --status all` to see every note and how it was handled.
+
+On the dashboard, open **Recent notes** under **Wiki notes inbox**. Click **details** under a note for its source and the run it was given to.
+
+![Recent notes open under the Wiki notes inbox: one open note with its id, author, date and change, and its details showing the source](/screenshots/wiki-notes/recent.png)
+
+## Settings
+
+| Setting | Default | What it does |
+|---|---|---|
+| `wikiNotes.enabled` | `false` | Turns wiki notes on for this machine. Needs `wikiNotes.inbox`. |
+| `wikiNotes.inbox` | — | The agent that runs the wiki observe/sweep schedule. Notes are addressed to it and kept on its machine. |
+| `wikiNotes.crons` | `[]` | Schedule ids on this machine that read the inbox when they start. Each must run as the inbox agent. |
+| `wikiNotes.maxNotesPerRun` | `20` | Most notes one run is given (1 to 100). The rest wait for the next run. |
+
+Notes are stored in `.agentx/wiki/_notes.json` on the inbox agent's machine.
+
+## Check it worked
+
+1. **Terminal:** run `agentx wiki notes add --from agent-a --change "Test note" --source "manual test"`. It prints `note <id> left for <inbox agent>`.
+2. **Terminal:** on the inbox agent's machine, run `agentx wiki notes list`. The test note is listed as `open`.
+3. **Terminal:** run `agentx schedule list` to find the schedule, then start it from the dashboard or wait for its next run.
+4. **Terminal:** run `agentx wiki notes list --status all`. The test note shows `given to:` with the run, and, once the run has handled it, its outcome and reason.
+
+## If something is wrong
+
+- **`wiki notes are off on this node`:** run `agentx wiki notes config --inbox <agent> --enable` on the machine you posted from.
+- **`could not reach the daemon`:** AgentX is not running on this machine, or runs on another address. Start it with `agentx daemon start`, or pass `--daemon http://127.0.0.1:<port>`.
+- **`the node hosting "<agent>" is unreachable`:** the inbox agent's machine is down or off the mesh. Try again when it is back.
+- **`not on this node or any known peer`:** the inbox agent's id is wrong, or the two machines are not connected. Check the id, and see [Add a second machine](./second-machine.md).
+- **`runs as "<agent>", not the inbox agent`:** only schedules that run as the inbox agent can read the inbox. Pick another schedule, or change the inbox agent.
+- **The run never mentions notes:** check that its schedule is ticked under **Wiki notes inbox** on the inbox agent's machine, and that wiki notes are on there.
+- **A note stays open after a run:** the run did not record it. Read the run's answer on the Operations page, or record it yourself with `agentx wiki notes handle <id> --outcome deferred --reason "<why>"`.
+- **`the inbox already holds 500 notes`:** the run is not keeping up. Handle or reject old notes, or raise **Most notes per run**.

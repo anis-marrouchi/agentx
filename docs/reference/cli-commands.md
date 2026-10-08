@@ -1226,6 +1226,60 @@ Decline a proposal; its sources aren't judged again until they change.
 | `--reason <text>` | — | Why, kept with the decision. |
 | `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
 
+### `agentx wiki notes`
+
+Notes agents leave for the wiki observe/sweep run: add, list, handle, config. See [Let agents leave notes for the wiki run](/jobs/wiki-notes).
+
+### `agentx wiki notes add`
+
+Leave a note for the wiki observe/sweep run. It goes through this node's daemon, which keeps it when the inbox agent is here and forwards it over the mesh otherwise.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--change <text>` | required | What changed, up to 1,000 characters. |
+| `--source <text>` | required | Where you saw it: a system, URL, command, or "owner said". |
+| `--date <YYYY-MM-DD>` | today | When it changed or when you saw it. |
+| `--from <agent>` | the agent running it (`AGENTX_AGENT_ID`) | Your agent id. |
+| `--daemon <url>` | `AGENTX_DAEMON_URL`, else `node.bind` in `agentx.json` | This node's daemon. |
+| `--dir <path>` | — | Write straight into this wiki directory instead of going through the daemon. Needs `--to`. |
+| `--to <agent>` | — | Inbox agent, with `--dir`. |
+| `--json` | — | Print JSON. |
+
+### `agentx wiki notes list`
+
+Notes in this node's inbox.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--status <status>` | `waiting` | waiting (open and deferred) \| open \| patched \| rejected \| deferred \| all. |
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+| `--json` | — | Print JSON instead of a list. |
+
+### `agentx wiki notes handle <id>`
+
+Record what the run did with a note. A deferred note is given to the next run again.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--outcome <outcome>` | required | patched \| rejected \| deferred. |
+| `--reason <text>` | required | What you patched, why you rejected it, or why it waits. |
+| `--run <id>` | — | The run that used it. |
+| `--by <agent>` | `operator`, or the agent running it (`AGENTX_AGENT_ID`) | Who handled it. |
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+
+### `agentx wiki notes config`
+
+Show or set the inbox agent and the schedules that read it (`wikiNotes` in `agentx.json`). With no flag, it prints the current settings.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--inbox <agent>` | — | Agent that runs the wiki observe/sweep schedule. `""` clears it. |
+| `--cron <ids>` | — | Comma-separated schedule ids that read the inbox. `""` for none. |
+| `--max <n>` | — | Most notes one run is given (1-100). |
+| `--enable` | — | Turn wiki notes on. |
+| `--disable` | — | Turn wiki notes off. |
+| `--json` | — | Print JSON. |
+
 ### `agentx wiki facts`
 
 Facts with a source and a check date: list, show, set, proposals. See [One rule for facts](/jobs/agent-memory#one-rule-for-facts-check-it-or-say-it-s-unverified).

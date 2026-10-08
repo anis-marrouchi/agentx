@@ -66,6 +66,8 @@ You get back: a synthesized answer + a list of cited articles. Every factual cla
 | `agentx wiki migrate --dry-run` | Backfill `type` + `related` on legacy articles (operator-run, one-shot) |
 | `agentx wiki prune --dry-run` | Collapse legacy mode dirs into graph/ (operator-run, one-shot) |
 | `agentx wiki absorb [--max N]` | Compile unabsorbed entries into typed articles (Farzapedia-faithful; nightly cron) |
+| `agentx wiki notes add --from <you> --change "..." --source "..." --date YYYY-MM-DD` | Tell the wiki observe/sweep run something only you know (a change, a correction, a stale fact). It checks the note before changing anything. No secrets. |
+| `agentx wiki notes handle <id> --outcome patched\|rejected\|deferred --reason "..."` | The observe/sweep run records what it did with a note it was given |
 
 ## Article types (the organizational spine)
 

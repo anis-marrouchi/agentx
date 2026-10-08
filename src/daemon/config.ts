@@ -781,6 +781,26 @@ const cronJobSchema = z.object({
   message: "autonomy applies to agent routines; a command cron runs no agent (remove autonomy or the command)",
 })
 
+/** Notes agents leave for the wiki observe/sweep run (#825, src/wiki/notes.ts).
+ *  Off by default. Every node that should be able to post sets the same
+ *  `inbox`; only the inbox agent's node lists `crons`. */
+const wikiNotesSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Agent that runs the wiki observe/sweep schedule. Notes are addressed
+   *  to it and kept on its node. */
+  inbox: z.string().min(1).optional(),
+  /** Schedule ids (keys of `crons`) that read the inbox when they start.
+   *  Each must run as the inbox agent. Empty: notes are kept but no run
+   *  reads them. */
+  crons: z.array(z.string().min(1)).default([]),
+  /** Most notes one run is given. The rest wait for the next run. */
+  maxNotesPerRun: z.number().int().min(1).max(100).default(20),
+}).refine((n) => !n.enabled || Boolean(n.inbox), {
+  message: "wikiNotes.enabled needs wikiNotes.inbox: the agent that runs the wiki observe/sweep schedule",
+})
+
+export type WikiNotesConfig = z.infer<typeof wikiNotesSchema>
+
 const serviceSchema = z.object({
   name: z.string(),
   triggers: z.array(z.object({
@@ -1254,6 +1274,8 @@ export const daemonConfigSchema = z.object({
   agents: z.record(z.string(), agentConfigSchema).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
+  /** Notes agents leave for the wiki observe/sweep run (#825). */
+  wikiNotes: wikiNotesSchema.default({}),
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
   calls: callsSchema,
