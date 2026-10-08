@@ -159,9 +159,34 @@ describe("applyNoteAnswers on a wiki copy", () => {
     expect(tryEdit({ path: PATH, find: BODY, replace: "A new page." }).reason).toMatch(/patch refused: .*only patches/)
     expect(tryEdit({ path: PATH, find: "Release manager", replace: "QA lead" }).reason).toMatch(/drops role "Release manager"/)
     expect(tryEdit({ path: PATH, find: "- **Port:** 8080\n", replace: "" }).reason).toMatch(/drops number 8080/)
-    expect(tryEdit({ path: "people/new.md", find: "x", replace: "y" }).reason).toMatch(/not an existing article/)
+    expect(tryEdit({ path: "people/new.md", find: "x", replace: "y" }).reason).toMatch(/not an article shown in full/)
     expect(tryEdit({ path: PATH, find: "not in the page", replace: "y" }).reason).toMatch(/not in/)
     expect(tryEdit({ path: PATH, find: "- **", replace: "* **" }).reason).toMatch(/more than once/)
+    expect(store.readArticle(PATH)!.content).toBe(BODY)
+  })
+
+  it("counts every edit to a page toward the rewrite limit", () => {
+    const n = addNote("Several things changed.")
+    const third = Math.ceil(BODY.length * 0.3)
+    const [a, b] = [BODY.slice(0, third), BODY.slice(BODY.length - third)]
+    const r = applyNoteAnswers([n], [{ id: n.id, outcome: "patched", reason: "r", edits: [
+      { path: PATH, find: a, replace: a }, { path: PATH, find: b, replace: b },
+    ] }], store, { agentId: AGENT, paths: paths() })[0]
+    expect(r.reason).toMatch(/the edits replace most of/)
+  })
+
+  it("writes nothing when one of the note's pages cannot be written", () => {
+    const n = addNote("The release manager changed.")
+    const second = "concepts/other.md"
+    store.writeArticle(second, { title: "Other", tags: [], owner: AGENT, access: "public", created: "2026-09-01", lastUpdated: "2026-09-01", sources: [] }, "Other runs on staging-1.example.test.", AGENT)
+    const locked = { ...store, readArticle: (p: string) => store.readArticle(p), writeArticle: store.writeArticle.bind(store),
+      canWrite: (meta: any) => meta.title !== "Other" }
+    const r = applyNoteAnswers([n], [{ id: n.id, outcome: "patched", reason: "r", edits: [
+      { path: PATH, find: "staging-1.example.test", replace: "staging-2.example.test" },
+      { path: second, find: "staging-1.example.test", replace: "staging-2.example.test" },
+    ] }], locked, { agentId: AGENT, paths: new Set([PATH, second]) })[0]
+    expect(r).toMatchObject({ outcome: "deferred", patched: [] })
+    expect(r.reason).toMatch(/no permission to write concepts\/other.md/)
     expect(store.readArticle(PATH)!.content).toBe(BODY)
   })
 })
@@ -214,6 +239,56 @@ describe("wiki absorb reads the notes inbox", () => {
 
     expect(hub.getAgentWiki(AGENT).readArticle("projects/orbit.md")).toBeNull()
     expect(new NoteStore(dir).get(n.id)!.status).toBe("deferred")
+  })
+
+  it("refuses an article citing nothing, or no entry from the batch, while notes are in the prompt", async () => {
+    seedArticle()
+    hub.getSharedStore().addEntry({ id: "e1", date: "2026-10-07", agentId: AGENT, source: "telegram", content: "entry e1" })
+    const n = addNote("There is a new project called Orbit.")
+    answer({
+      articles: [
+        { path: "projects/orbit.md", title: "Orbit", tags: [], content: "Orbit is new.", sources: [] },
+        { path: "projects/nova.md", title: "Nova", tags: [], content: "Nova is new.", sources: ["e-elsewhere"] },
+        { path: "events/e1.md", title: "E1", tags: [], content: "From the entry.", sources: ["e1", `note:${n.id}`] },
+      ],
+      gaps: [],
+      notes: [{ id: n.id, outcome: "deferred", reason: "Nothing here confirms it", edits: [] }],
+    })
+
+    await absorb()
+
+    const w = hub.getAgentWiki(AGENT)
+    expect(w.readArticle("projects/orbit.md")).toBeNull()
+    expect(w.readArticle("projects/nova.md")).toBeNull()
+    expect(w.readArticle("events/e1.md")!.meta.sources).toEqual(["e1"])
+  })
+
+  it("keeps an answer another run recorded while absorb was running", async () => {
+    seedArticle()
+    const n = addNote("Staging moved.")
+    mocks.execSync.mockImplementation((cmd: string) => {
+      if (!String(cmd).includes("absorb-prompt.txt")) throw new Error("no model in tests")
+      new NoteStore(dir).handle(n.id, "patched", "the sweep schedule fixed it", "wiki-agent", "sweep/run-1")
+      return JSON.stringify({ result: JSON.stringify({ articles: [], gaps: [], notes: [] }) })
+    })
+
+    await absorb()
+
+    expect(new NoteStore(dir).get(n.id)!.handled).toMatchObject({ outcome: "patched", by: "wiki-agent", runId: "sweep/run-1" })
+  })
+
+  // Through the store: commander keeps --dry-run set on the shared
+  // command for later tests.
+  it("previews notes in run order without taking them", () => {
+    seedArticle()
+    const first = addNote("First.")
+    const second = addNote("Second.")
+    new NoteStore(dir).handle(first.id, "deferred", "later", "x")
+
+    const store = new NoteStore(dir)
+    expect(store.peekForRun("wiki-agent", 20).map((x) => x.id)).toEqual([second.id, first.id])
+    expect(store.get(second.id)!.listedIn).toBeUndefined()
+    expect(store.peekForRun("wiki-agent", 20, 1).map((x) => x.id)).toEqual([second.id])
   })
 
   it("leaves notes waiting when the run fails", async () => {

@@ -196,6 +196,14 @@ export class NoteStore {
    * deferred `maxDeferrals` times expires here: it stays on file with its
    * last reason, but is no longer offered.
    */
+  /** The notes `takeForRun` would give, without marking or expiring any:
+   *  for a dry run's preview. */
+  peekForRun(inbox: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS): WikiNote[] {
+    const f = this.load()
+    if (f.unreadable) return []
+    return pickForRun(f.notes.filter((n) => !(n.status === "deferred" && (n.deferrals ?? 1) >= maxDeferrals)), inbox, max)
+  }
+
   takeForRun(inbox: string, runId: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS, now: Date = new Date()): WikiNote[] {
     const f = this.load()
     if (f.unreadable) return []
@@ -207,12 +215,7 @@ export class NoteStore {
         changed = true
       }
     }
-    const oldestFirst = (a: WikiNote, b: WikiNote) => a.posted.localeCompare(b.posted)
-    const mine = f.notes.filter((n) => n.to === inbox)
-    const picked = [
-      ...mine.filter((n) => n.status === "open").sort(oldestFirst),
-      ...mine.filter((n) => n.status === "deferred").sort(oldestFirst),
-    ].slice(0, Math.max(0, max))
+    const picked = pickForRun(f.notes, inbox, max)
     for (const n of picked) {
       n.listedIn = [...(n.listedIn ?? []), runId].slice(-NOTE_LIMITS.listedIn)
     }
@@ -237,6 +240,16 @@ export class NoteStore {
     this.save(f)
     return note
   }
+}
+
+/** Open notes first, then deferred ones, each oldest first. */
+function pickForRun(notes: WikiNote[], inbox: string, max: number): WikiNote[] {
+  const oldestFirst = (a: WikiNote, b: WikiNote) => a.posted.localeCompare(b.posted)
+  const mine = notes.filter((n) => n.to === inbox)
+  return [
+    ...mine.filter((n) => n.status === "open").sort(oldestFirst),
+    ...mine.filter((n) => n.status === "deferred").sort(oldestFirst),
+  ].slice(0, Math.max(0, max))
 }
 
 /** Open, or deferred by an earlier run: the run still owes it an answer. */

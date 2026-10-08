@@ -41,11 +41,11 @@ Wiki notes are off until you turn them on.
 
 **Wiki absorb** is the step that turns saved conversations into wiki articles, for one agent's part of the wiki at a time. You can name one agent whose absorb step also reads the notes. Absorb then lists the waiting notes for the model, which checks each one against the conversations and the articles it is shown, and answers it:
 
-- **patched**, with small corrections to articles that already exist. Absorb makes the corrections itself and refuses any that would rewrite most of a page, remove a contact detail (a phone, an email, a handle, an address) or a role or organisation, or delete a number or link. A refused correction leaves the page as it was, and the note is deferred with the reason.
+- **patched**, with small corrections to articles absorb showed it in full. Absorb makes the corrections itself and refuses any that would rewrite most of a page, remove a contact detail (a phone, an email, a handle, an address) or a role or organisation, or delete a number or link. A refused correction leaves the page as it was, and the note is deferred with the reason.
 - **rejected**, when the wiki or the conversations show the note is wrong.
 - **deferred**, when nothing it has can settle the note.
 
-A note never creates a new article. Every outcome is stored on the note with a reason and the run's id, which starts with `absorb/`. If the run fails, its notes stay waiting for the next one.
+A note never creates or rewrites an article: while notes are being answered, absorb only saves new or rewritten articles that come from the saved conversations. Every outcome is stored on the note with a reason and the run's id, which starts with `absorb/`. If the run fails, its notes stay waiting for the next one.
 
 **Browser:**
 

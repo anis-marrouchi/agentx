@@ -108,6 +108,9 @@ ${list}
 
 export interface NoteArticles {
   readArticle(path: string): WikiArticle | null
+  /** Checked for every path before any is written, so a note whose edits
+   *  cannot all be saved writes none. */
+  canWrite?(meta: WikiArticleMeta, agentId: string): boolean
   writeArticle(path: string, meta: WikiArticleMeta, content: string, agentId: string): boolean
 }
 
@@ -124,8 +127,10 @@ export interface NoteResult {
  * note ends as. Every note given comes back with an outcome: one the
  * model did not answer, or whose edits are refused, is deferred.
  *
- * Edits are checked in full before any is written, so a note is applied
- * whole or not at all.
+ * Edits, and permission to write every page they touch, are checked in
+ * full before any is written, so a note is applied whole or not at all.
+ * `paths` is what the model was shown in full: the only pages a note may
+ * patch.
  */
 export function applyNoteAnswers(
   notes: WikiNote[],
@@ -146,11 +151,12 @@ export function applyNoteAnswers(
     const said = clip(answer.reason || "no reason given")
     if (answer.outcome !== "patched") return { id: note.id, outcome: answer.outcome, reason: said, patched: [] }
 
-    const planned = planEdits(answer.edits, store, opts.paths)
+    const planned = planEdits(answer.edits, store, opts.paths, opts.agentId)
     if ("refused" in planned) {
       return { id: note.id, outcome: "deferred", reason: clip(`patch refused: ${planned.refused}. Absorb said: ${said}`), patched: [] }
     }
     const written: string[] = []
+    const failed: string[] = []
     for (const [path, { article, content }] of planned.articles) {
       const ok = store.writeArticle(path, {
         ...article.meta,
@@ -158,9 +164,13 @@ export function applyNoteAnswers(
         sources: [...new Set([...(article.meta.sources ?? []), noteSource(note.id)])],
       }, content, opts.agentId)
       if (ok) written.push(path)
+      else failed.push(path)
     }
-    if (written.length === 0) {
-      return { id: note.id, outcome: "deferred", reason: clip(`patch refused: no permission to write ${[...planned.articles.keys()].join(", ")}. Absorb said: ${said}`), patched: [] }
+    if (failed.length > 0) {
+      // Permission was checked first, so this is a write that failed
+      // anyway. Say what landed; the note comes back for the rest.
+      const landed = written.length ? `; edited ${written.join(", ")}` : ""
+      return { id: note.id, outcome: "deferred", reason: clip(`patch not saved: could not write ${failed.join(", ")}${landed}. Absorb said: ${said}`), patched: written }
     }
     return { id: note.id, outcome: "patched", reason: clip(`${said} (edited ${written.join(", ")})`), patched: written }
   })
@@ -170,25 +180,30 @@ function planEdits(
   edits: NoteEdit[],
   store: NoteArticles,
   paths: Set<string>,
+  agentId: string,
 ): { articles: Map<string, { article: WikiArticle; content: string }> } | { refused: string } {
   if (edits.length === 0) return { refused: "patched with no edits" }
   if (edits.length > NOTE_EDIT_LIMITS.edits) return { refused: `more than ${NOTE_EDIT_LIMITS.edits} edits` }
-  const articles = new Map<string, { article: WikiArticle; content: string }>()
+  const articles = new Map<string, { article: WikiArticle; content: string; replaced: number }>()
   for (const e of edits) {
-    if (!paths.has(e.path)) return { refused: `${e.path} is not an existing article` }
+    if (!paths.has(e.path)) return { refused: `${e.path} is not an article shown in full` }
     let cur = articles.get(e.path)
     if (!cur) {
       const article = store.readArticle(e.path)
       if (!article) return { refused: `${e.path} is not an existing article` }
-      cur = { article, content: article.content }
+      if (store.canWrite && !store.canWrite(article.meta, agentId)) return { refused: `no permission to write ${e.path}` }
+      cur = { article, content: article.content, replaced: 0 }
       articles.set(e.path, cur)
     }
     if (!e.find.trim()) return { refused: `an edit to ${e.path} quotes nothing` }
     if (e.find.length > NOTE_EDIT_LIMITS.find || e.replace.length > NOTE_EDIT_LIMITS.replace) {
       return { refused: `an edit to ${e.path} is too long for a patch` }
     }
-    if (e.find.length > cur.article.content.length * NOTE_EDIT_LIMITS.share) {
-      return { refused: `an edit replaces most of ${e.path}; a note only patches` }
+    // Counted across the note's edits to one page, so several edits
+    // cannot add up to a rewrite.
+    cur.replaced += e.find.length
+    if (cur.replaced > cur.article.content.length * NOTE_EDIT_LIMITS.share) {
+      return { refused: `the edits replace most of ${e.path}; a note only patches` }
     }
     const at = cur.content.indexOf(e.find)
     if (at < 0) return { refused: `the quoted passage is not in ${e.path}` }

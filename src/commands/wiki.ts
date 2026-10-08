@@ -331,7 +331,7 @@ wiki
       const noteRunId = `absorb/${agentId}/${startedAt.replace(/[:.]/g, "-")}`
       let notes: WikiNote[] = []
       if (readsNotes && opts.dryRun) {
-        notes = noteStore!.list("waiting").filter((n) => n.to === notesCfg!.inbox).slice(0, notesCfg!.max)
+        notes = noteStore!.peekForRun(notesCfg!.inbox, notesCfg!.max, notesCfg!.maxDeferrals)
       } else if (readsNotes) {
         notes = noteStore!.takeForRun(notesCfg!.inbox, noteRunId, notesCfg!.max, notesCfg!.maxDeferrals)
       }
@@ -509,17 +509,19 @@ wiki
         // Entries behind a refused save stay queued for the next run.
         const held = new Set<string>()
         const saved = new Set<string>()
+        const batchIds = new Set(unabsorbed.map((e) => e.id))
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)
           const cited = Array.isArray(article.sources) ? article.sources : []
-          // A note only patches, through its edits below. An article
-          // written for notes alone is refused; note ids are not entry
-          // sources.
-          const isNote = (s: string) => typeof s === "string" && (s.startsWith("note:") || notes.some((n) => n.id === s))
-          const sources = cited.filter((s) => !isNote(s))
-          if (sources.length === 0 && cited.length > 0) {
-            console.log(chalk.yellow(`    ! refused ${article.path}: written from wiki notes alone; a note only patches`))
+          // A note only patches, through its edits below. With notes in
+          // the prompt, an article must cite an entry from this batch: one
+          // citing nothing, or only notes, was written from a note and is
+          // refused (#832 review). In a notes-only run that is every
+          // article.
+          const sources = notes.length > 0 ? cited.filter((s) => batchIds.has(s)) : cited
+          if (notes.length > 0 && sources.length === 0) {
+            console.log(chalk.yellow(`    ! refused ${article.path}: cites no entry from this batch; a wiki note only patches`))
             call.refused++
             continue
           }
@@ -575,12 +577,24 @@ wiki
         // then record each note's outcome with this run's id. A failed run
         // records nothing: its notes stay waiting and come back.
         if (notes.length > 0 && !runFailed) {
+          // Only the articles shown in full may be patched.
           const results = applyNoteAnswers(notes, parseNoteAnswers(response.notes), agentWiki, {
             agentId,
-            paths: new Set(catalog.map((a) => a.path)),
+            paths: new Set(covering.map((a) => a.path)),
           })
           let recorded = 0
           for (const r of results) {
+            // A schedule reading the same inbox may have answered the note
+            // while this call ran; its answer stands.
+            const now = noteStore!.get(r.id)
+            if (now && now.status !== "open" && now.status !== "deferred") {
+              console.log(chalk.dim(`    note ${r.id} already ${now.status} by ${now.handled?.by ?? "another run"}; not recorded again`))
+              continue
+            }
+            if (now?.handled && now.handled.at > startedAt) {
+              console.log(chalk.dim(`    note ${r.id} already deferred by ${now.handled.by} during this run; not recorded again`))
+              continue
+            }
             try {
               noteStore!.handle(r.id, r.outcome, r.reason, agentId, noteRunId)
               recorded++
