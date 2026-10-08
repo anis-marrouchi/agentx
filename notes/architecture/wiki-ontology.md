@@ -1,8 +1,16 @@
 # Wiki ontology: pillars, statements, law and obligations
 
-Status: **draft v0.2, waiting for owner approval** (#811, step 1). It replaces v0.1. Nothing is built: no absorb code changed, no articles reshaped. This file must not be merged before the owner approves it.
+Status: **draft v0.3, waiting for owner approval** (#811, step 1). v0.3 adds to v0.2, and v0.2 replaced v0.1. Nothing is built: no absorb code changed, no articles reshaped. This file must not be merged before the owner approves it.
 
-Changes since v0.1:
+Changes in v0.3 (section 5): how each page is **viewed**, "the right level of view at each node, like a zoom".
+
+1. The sidebar is the widest view and stays short: Home, up to 5 pinned pages and the 9 pillars. No sub-types, counts or page lists.
+2. Five zoom levels, Z0 to Z4. Every click goes one level in.
+3. Each type has a **lens**: the panels its page opens with, in order. Lenses live in `ontology.yaml`, not in code.
+4. Conversations become sources linked to the things they mention, shown in a "Discussed" panel on each page.
+5. Devices and apps are Asset kinds with an `installed_on` relation; `owns` / `uses` are dated so belongings show on the person.
+
+Changes in v0.2 (since v0.1):
 
 1. The types come from established ontologies (section 1), not from the examples in the request. Each pillar names its source and gives a one-line reason.
 2. The "rule" pillar is now **Law & Obligations**. It covers the company's whole relationship with the state (tax, social security, registries, data protection, any authority), plus contracts and internal policies. Every obligation names who owes it, the authority, the due rule and the penalties. It also links to the article of the text that creates it, with the official gazette reference.
@@ -126,17 +134,73 @@ Each event has one `about` entity (exactly one primary) and one importance level
 - Absorb proposes the level with a one-line reason, and a person can change it.
 - **Roll-up:** repeated minor events of the same kind on the same entity merge into one line ("disk full ×6 since Aug"). After N repeats (configurable) the roll-up is raised to normal, because a recurring problem is no longer minor.
 
-Page layout follows the model: the sidebar lists the pillars in the order of section 2, then Major events, with the writing agent shown as a source badge, not a section. An entity page shows summary → typed links grouped by property → facts (value · source · checked date) → decisions → history (major and normal shown, minor folded).
+Page layout follows the model: the writing agent is shown as a source badge, never as a section. Section 5 sets what the sidebar and each page show.
 
-### Design mockups
+### Design mockups (v0.2)
 
-Three desktop mockups of this layout, with sample content only, are on #811:
+Three desktop mockups, with sample content only, are on #811:
 
-1. **Wiki home:** the sidebar lists the 9 pillars, with sub-types under Parties and Law & Obligations and Topics at the bottom. The home page shows generated due dates, proposed statements waiting for confirmation (Confirm / Reject), major and normal events only (minor ones folded into their pages, with a count), and one card per pillar.
+1. **Wiki home:** the sidebar lists the 9 pillars, with sub-types under Parties and Law & Obligations and Topics at the bottom (v0.3 moves sub-types to tabs on the pillar page and Topics to Home and search). The home page shows generated due dates, proposed statements waiting for confirmation (Confirm / Reject), major and normal events only (minor ones folded into their pages, with a count), and one card per pillar.
 2. **Organization page:** summary → typed links → facts → decisions → history. Roles sit on relations. Facts show source, validity dates and status; private values are masked; a superseded value stays visible, struck through, with `valid_to`. Minor events fold into one row with a count per kind. A side rail shows provenance (which agent wrote what), open questions and related procedures.
 3. **Obligation page:** a rule card reading WHO / MUST / TO / WHEN / HOW MUCH, built from the bearer, actions, authority, due rule and amount rule. The source with its gazette reference; a "Changed by" timeline that keeps superseded versions; penalties each with their own source article; relief with its condition and window, linked to the penalty it relieves; generated due dates per period with private receipt references.
 
-## 5. Pilot pages
+## 5. Zoom levels and lenses (v0.3)
+
+### 5.1 Zoom levels
+
+| Level | What you see | Answers | Limit |
+|---|---|---|---|
+| **Z0 Sidebar** | Home, pinned pages (≤5, chosen by the owner), the 9 pillars | "Where is it?" | No sub-types, no counts, no page lists. Topics and recent changes move to Home and search. |
+| **Z1 Pillar** | The kinds inside the pillar as tabs (Assets → Devices · Servers · Apps · Domains · Accounts · Agents), what needs attention, the most active pages | "What kinds do we have, and which need me?" | At most 5 pages per kind. The full list is Z3. |
+| **Z2 Page overview** | One thing, through the lens of its type: summary, then 4–6 panels, each with its top items and a "zoom in" link | "What matters about this thing?" | 3–6 items per panel. Minor events folded. Private values masked. |
+| **Z3 Panel** | One panel in full: every role, every event with minor ones unfolded under the event they rolled up into, every installed app. Filters kept in the URL. | "Show me all of this side" | No limit. Paginated. |
+| **Z4 Statement** | One fact, event or role: value, when it was true, when it was recorded, source, writer, confirmer, importance, access, past versions | "Where does this come from, and can I trust it?" | Same layout for every type |
+
+Rules:
+
+- A link to a page opens at Z2, and so does a pinned page. An agent can link to a Z3 view with its filters, or to a Z4 statement.
+- Breadcrumbs follow the zoom: Wiki / Pillar / Kind / Page / Panel.
+- What a page shows at Z2 depends on its type, not on how much data it has. A page with 2,000 events and a page with 3 events have the same panels.
+
+### 5.2 A lens per type (starting set)
+
+| Pillar · type | Z2 opens with (in order) | Typical Z3 zooms |
+|---|---|---|
+| Parties · **Person** | Roles over time (dated, on relations) · Relations to people and organizations · Belongings (owns / uses) · Obligations they carry, directly or through a role · History · Discussed | All roles · relation graph · each belonging with its own events |
+| Parties · **Organization** | Roles on relations · Key facts (with validity dates) · Obligations and next due dates · Agreements · Decisions · History · Discussed | All facts with versions · all due dates · all contacts |
+| Places & Jurisdictions · **Place** | What is located here (sites, assets, parties) · Laws that apply here · Authorities with reach · Events here | All laws in force for this jurisdiction |
+| Assets · **Device** | State now (latest readings) · Events (minor folded, repeated ones rolled up) · Installed apps · Discussed · Owner, user, location | All events · readings over time · all apps |
+| Assets · **Server** | Device lens + uptime and hosted services | Incidents · deploys |
+| Assets · **App / system** | Where it is installed or runs · Version and updates · Licence or subscription (→ Agreement) · Incidents · Discussed | All installs · version history |
+| Assets · **Domain / account** | Holder · Renewal and due dates · Linked services · Events | Renewal history |
+| Offerings & Projects · **Project** | Client and status · People and their roles · Milestones · Agreements · Decisions · Recent events | Full timeline · all deliverables |
+| Agreements · **Contract** | Parties and roles · Key terms · Obligations it creates · Dates (start, renewal, notice) · Amendments | All clauses · every obligation from it |
+| Law & Obligations · **Legal source** | Gazette reference and dates · Obligations, penalties and reliefs it creates, by article · Amends / amended by · Where it applies | Article by article |
+| Law & Obligations · **Obligation** | Who must do what, by when · Next due dates · Source articles · Penalties and reliefs · Procedure · Recent fulfilments | All due dates and their evidence · all versions |
+| Events · **Event** | What changed (before → after) · Who and what was involved · Source · What followed | Minor events it rolled up |
+| Decisions & Policies · **Decision** | Context · Options · Choice, by whom, when · What it affects · Obligations it creates · Replaced by | Full discussion record |
+| Procedures · **Procedure** | Steps · What triggers it (obligation, event) · Owner · Last runs | Every run |
+
+The owner can reorder a lens or hide a panel. Agents cannot change lenses; they can only propose a change.
+
+### 5.3 Model additions
+
+- **Devices and apps** are Asset kinds (`kind: device` with sub-kind laptop / phone / server / printer; `kind: app`), mapped to schema.org `Product` / `SoftwareApplication`.
+- **`installed_on`** (app → device) with `version`, `since`, `until`. By default the installed list is statements on the device. An app gets its own page only when something else points to it: a licence, incidents on several devices, or a decision.
+- **`owns` / `uses`** (party → asset), dated, mapped to Wikidata owned by (P127) / owner of (P1830). This puts belongings on the person page and the user on the device page.
+- **Readings** (disk used, uptime) are statements that change often. Only the latest shows at Z2; the history sits at Z3. A reading that crosses a threshold is a minor event, and repeated minor events roll up into one normal event (for example ≥5 in 30 days → "Recurring disk pressure").
+- **Conversations as sources:** absorb links each conversation summary to the entities it mentions (`mentions`). The "Discussed" panel lists summaries with date, channel and any decision or open question that came out of them. Summaries are private to the owner by default. Transcripts are never copied into the wiki.
+
+### 5.4 Design mockups (v0.3)
+
+Four desktop mockups, with sample content only, are on #811:
+
+1. **Sidebar (Z0) + Assets pillar (Z1):** Home, 3 pins and the 9 pillars; sub-types as tabs on the pillar page; a strip explaining Z0–Z4.
+2. **Person page (Z2):** roles over time as a dated timeline, relations with the role on each, belongings, obligations carried through a role, history with minor events folded, Discussed. A side rail shows the type's lens and where each panel zooms in.
+3. **Device page (Z2):** state now (disk gauge, 30-day readings), events with 14 disk warnings rolled up into one normal event, installed apps, Discussed (cleanup plan → decision → procedure), who uses and owns it.
+4. **Device events (Z3) and one statement (Z4):** every minor event visible under the event it rolled up into; a drawer with one statement's two times, source, writer, importance, access, where it was mentioned and its versions.
+
+## 6. Pilot pages
 
 Chosen to test the model. Values are placeholders; private data is left out.
 
@@ -147,8 +211,8 @@ Chosen to test the model. Values are placeholders; private data is left out.
 | P3 | **Décret 2024-503** (late-penalty remission, conditional on a payment schedule of at most 36 months) | **A new text that changes existing obligations**: Relief with a condition and a window, linked to the P1 penalty |
 | P4 | **Personal-data protection** (Loi organique 2004-63 and its authority) | A non-tax, non-social authority. Obligations triggered by an activity (processing personal data), not by a calendar. Relevant to AgentX itself. |
 | P5 | **A client contract** (anonymised) | The same Obligation and Penalty types sourced from an **Agreement** clause (payment terms, notice period, renewal). Roles on relations (client, supplier) |
-| P6 | **The owner + the company** | Roles as relations (founder, legal representative, approver). Merging the owner's 5 pages into 1. `subject_to` links to P1–P4 with private qualifiers |
-| P7 | **Internal policy "production deploys need owner approval"** + **a server with repeated disk-full events** | Internal rules as obligations sourced from a Decision. Minor-event roll-up on an Asset |
+| P6 | **The owner + the company** | Roles as relations (founder, legal representative, approver). Merging the owner's 5 pages into 1. `subject_to` links to P1–P4 with private qualifiers. The person lens. |
+| P7 | **Internal policy "production deploys need owner approval"** + **a server with repeated disk-full events** | Internal rules as obligations sourced from a Decision. Minor-event roll-up on an Asset. The device lens. |
 
 Shape of P1 (illustrative):
 
@@ -171,13 +235,43 @@ status: proposed   checked_at: <date>
 
 Before and after comparison per pilot: page count, duplicate pages merged, and whether an agent answers "what do we owe, to whom, by when, under which text, and what if we are late" from one page.
 
-## 6. Configurable, not hardcoded
+## 7. Configurable, not hardcoded
 
-`.agentx/wiki/ontology.yaml` holds the pillars, types (with schema.org / Wikidata mapping and kinds), properties (domain, range, qualifiers), obligation and penalty fields, importance levels and the roll-up threshold. When the file is missing, the wiki seeds it from a starter in code, the same way the intent graph seeds `.agentx/graph/schema.json` from `src/graph/starter-schema.ts`.
+`.agentx/wiki/ontology.yaml` holds the pillars, types (with schema.org / Wikidata mapping and kinds), properties (domain, range, qualifiers), obligation and penalty fields, importance levels, the roll-up threshold, the sidebar and the lens of each type. For example:
+
+```yaml
+sidebar: {pins_max: 5, show: [home, pins, pillars]}
+lenses:
+  person:
+    - {panel: roles_over_time, from: role_at, show: 6}
+    - {panel: relations, group_by: role, show: 5}
+    - {panel: belongings, from: [owns, uses], show: 5}
+    - {panel: obligations, from: subject_to, show: 3}
+    - {panel: history, importance: [major, normal], fold: minor}
+    - {panel: discussed, from: mentions, access: owner}
+  device:
+    - {panel: state_now, from: readings, latest: true}
+    - {panel: events, importance: [major, normal], fold: minor, rollup: {min: 5, days: 30}}
+    - {panel: installed_apps, from: installed_on, show: 5}
+    - {panel: discussed, from: mentions, access: owner}
+    - {panel: parties, from: [owns, uses]}
+```
+
+When the file is missing, the wiki seeds it from a starter in code, the same way the intent graph seeds `.agentx/graph/schema.json` from `src/graph/starter-schema.ts`.
 
 Jurisdiction packs, such as Tunisia (gazette = JORT, list of authorities, finance-law cycle), are data added on top, not code.
 
-## 7. Decisions needed from the owner
+## 8. Decisions needed from the owner
+
+New in v0.3:
+
+1. **Zoom levels Z0–Z4** as in 5.1? *Recommend yes.*
+2. **Sidebar:** Home + up to 5 pins + 9 pillars only; sub-types become tabs on the pillar page and Topics leaves the sidebar? *Recommend yes.* Who picks pins: *owner only, agents may suggest.*
+3. **Lens table** in 5.2 as the starting point, editable in `ontology.yaml` by the owner? *Recommend yes.*
+4. **Conversations as sources** with a "Discussed" panel, summaries private to the owner by default? *Recommend yes.*
+5. **Installed apps** as statements on the device, with an app page only when something else points to it? *Recommend yes.*
+
+Still open from v0.2:
 
 1. **Pillars:** approve the 9 names in section 2? *Recommend yes.*
 2. **One Obligation type** for law, contracts and internal policy, each with its source? *Recommend yes.*
@@ -192,4 +286,4 @@ Jurisdiction packs, such as Tunisia (gazette = JORT, list of authorities, financ
 2. Absorb writes into this model (one pipeline; #808 covers its quality).
 3. Pilots P1–P7, compared before and after with the owner.
 4. Full reshape of existing articles. Nothing is merged before the pilots are reviewed.
-5. Wiki layout by pillar.
+5. Wiki layout: sidebar, zoom levels and lenses.
