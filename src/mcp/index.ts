@@ -272,6 +272,39 @@ export function _resolveDaemonTokenForTesting(env: NodeJS.ProcessEnv = process.e
 
 export const _daemonFetchForTesting = daemonFetch
 
+export function _handleToolCallForTesting(name: string, args: Record<string, unknown>) {
+  return handleToolCall(name, args)
+}
+
+/** How long agentx_send_agent waits for the daemon. It answers once the
+ *  task is queued, which takes well under a second (#847). */
+export const SEND_AGENT_TIMEOUT_MS = 10_000
+
+/** Errors that mean the request never reached the daemon. */
+const UNREACHED_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"])
+
+/**
+ * What agentx_send_agent tells the agent when its fetch throws (#847). A
+ * daemon that could not be reached got nothing: that is a failure. Any
+ * other error (a timeout, a reset connection) came after the request was
+ * sent, so the task is most likely queued; resending it is safe anyway,
+ * since the daemon returns the first task id for a repeat.
+ */
+export function sendAgentFetchError(agentId: string, e: unknown): string {
+  const err = e as { name?: string; message?: string; code?: string; cause?: { code?: string } }
+  const code = err?.cause?.code ?? err?.code
+  if (code && UNREACHED_CODES.has(code)) {
+    return `Error: the AgentX daemon could not be reached (${code}); the message to ${agentId} was not sent.`
+  }
+  const why = err?.name === "TimeoutError" || err?.name === "AbortError" ? "no answer in time" : (err?.message || String(e))
+  return (
+    `Probably delivered to ${agentId}: the daemon did not confirm (${why}), but the request was sent and is most likely queued. ` +
+    `Do not treat this as a failure. If unsure, send the same message again: within 10 minutes a repeat returns the existing task id ` +
+    `instead of a second task, and delivers it if the first never arrived. ` +
+    `A busy ${agentId} shows no trace until its turn starts; later, \`agentx trace list --agent ${agentId} --since 1h\` or the daemon log ("[send/agent]") shows it.`
+  )
+}
+
 // Strip ANSI escape codes from CLI output (we re-invoke the CLI for tools
 // that shell out — chalk colors its output, MCP clients want plain text).
 // eslint-disable-next-line no-control-regex
@@ -508,7 +541,7 @@ const TOOLS = [
   {
     name: "agentx_send_agent",
     description:
-      "Send a message to ANOTHER AGENT by exact agentId — uses the AgentX A2A mesh (or local registry when the agent lives on this daemon). This is the deterministic path for agent-to-agent communication; it never falls through to a contact lookup, so an unknown agentId returns 404 with the list of known agents instead of silently sending to a similarly-named human. Use this when the target is a registered agent. When a person started this conversation, the call returns at once with a task id; tell the person who you asked, end your turn, and the answer arrives later as a new message in this conversation.",
+      "Send a message to ANOTHER AGENT by exact agentId — uses the AgentX A2A mesh (or local registry when the agent lives on this daemon). This is the deterministic path for agent-to-agent communication; it never falls through to a contact lookup, so an unknown agentId returns 404 with the list of known agents instead of silently sending to a similarly-named human. Use this when the target is a registered agent. The call returns at once with a task id once the message is queued; do not send the same message again. When a person started this conversation, tell the person who you asked, end your turn, and the answer arrives later as a new message in this conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1278,12 +1311,22 @@ async function handleToolCall(
       if (!agentId || !text) {
         return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
       }
-      const res = await daemonFetch(`${daemonUrl()}/send/agent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...callerFields() }),
-      })
-      const data = await res.json() as any
+      // retro:01M4DJTC01FK0BVCMFKT5K4SRQ (#847) — the daemon answers as soon
+      // as the task is queued, so a short timeout is enough. A timeout or a
+      // dropped connection after the request went out most likely means the
+      // task is queued: say so, never "failed", so the agent does not resend.
+      let res: Response
+      try {
+        res = await daemonFetch(`${daemonUrl()}/send/agent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...callerFields() }),
+          signal: AbortSignal.timeout(SEND_AGENT_TIMEOUT_MS),
+        })
+      } catch (e) {
+        return { content: [{ type: "text", text: sendAgentFetchError(agentId, e) }] }
+      }
+      const data = await res.json().catch(() => ({})) as any
       if (res.status === 202 && data?.accepted) {
         return { content: [{ type: "text", text: data.note || `Delegated to ${agentId} (task ${data.taskId}).` }] }
       }
