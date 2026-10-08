@@ -1109,7 +1109,7 @@ Absorb then protects those articles in two ways:
 
 When an update is saved, the article keeps its creation date, its access setting and the entries it already cited.
 
-Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
+Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. It also skips an agent whose `wiki.absorb.enabled` is `false` (it prints `absorb is off for this agent`). Naming the agent with `--agent` absorbs it anyway. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
 
 Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (absorb uses Sonnet unless `--model` or `AGENTX_WIKI_ABSORB_MODEL` names another model). They look for it on your PATH and also in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, so they work from the daemon and from the `agentx_wiki_query` tool without a login shell's PATH.
 
@@ -1856,6 +1856,17 @@ Remove a memory.
 | Flag | Default | What it does |
 |---|---|---|
 | `--agent <id>` | required | Agent id. |
+
+### `agentx memory check`
+
+List an agent's notes and whether each has a `source` and a `checked` date in its header. Read only. See [Check which notes say where and when they were checked](/jobs/agent-memory#_10-check-which-notes-say-where-and-when-they-were-checked).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | required | Agent id. |
+| `--dir <path>` | the AgentX store, `.agentx/agent-memory/<id>/` | Read notes from this folder instead, such as the one a `claude-code` agent keeps. |
+| `--missing` | — | List only notes missing a source or a check date. |
+| `--json` | — | Print the result as JSON. |
 
 ### `agentx memory index`
 

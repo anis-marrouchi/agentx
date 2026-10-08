@@ -66,6 +66,7 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `wiki.contribute.maxPatches` | number (1–200) | `30` | Most suggestions one daily run may make. |
 | `wiki.contribute.maxCostUsd` | number (0–20) | `wiki.contributions.maxCostUsd` | Most model spend one daily run may reach, in dollars. |
 | `wiki.contribute.model` | string | `wiki.contributions.model` | Model for this agent's daily run. |
+| `wiki.absorb.enabled` | boolean | `true` | `false` leaves the agent out of `agentx wiki absorb` unless it is named with `--agent`. Its conversations are still saved. See [Leave an agent out of the wiki absorb](/jobs/agent-memory#_11-leave-an-agent-out-of-the-wiki-absorb). |
 | `toolUseRequired` | list of string | `[]` | Tool names, such as `Write`, of which at least one must be used in a run; otherwise the run fails with `tool_required_not_called`. |
 | `gitlabAutoReply` | boolean | — | For this agent, overrides the GitLab or GitHub channel's `autoReplyLegacy`: `true` posts the agent's final answer as a comment, `false` does not. |
 | `persistentProcess` | boolean | `false` | Keeps a warm process per conversation for `claude-code`, `codex-cli` and `opencode` agents so replies start faster. |
