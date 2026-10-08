@@ -106,8 +106,8 @@ Leave at least 30 minutes between the two, so every agent has finished before th
 
 An agent's wiki search (`agentx wiki query`, and the `agentx_wiki_query` tool agents use) used to read only that agent's own pages. It now also reads other agents' pages it is allowed to see, and the shared lessons. The answer says which agent's page it used and how recent it is, and prefers the newer page when two disagree.
 
-- The agent's own pages come first. Other agents' pages take at most half of the pages one answer reads, so they can't push the agent's own pages out.
-- For each page the search picks, it also opens up to 3 of the newest pages that link to it. A decision about a person, for example, is found from the person's page.
+- The agent's own pages come first. Other agents' pages take at most half of the pages one answer reads, so they can't push the agent's own pages out. When the agent has fewer pages on the subject than that, other agents' pages fill the slots left.
+- For each page the search picks, it also opens up to 3 of the newest pages that link to it, by its title or by another name it goes by. A decision about a person, for example, is found from the person's page.
 
 To search only an agent's own pages, add `--own-only`. To switch shared search off for everyone, run `agentx config set wiki.query.shared false`.
 

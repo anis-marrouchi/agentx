@@ -445,7 +445,9 @@ describe("#824 review fixes", () => {
   }
 
   it("keeps at least half the walk for the agent's own pages", async () => {
-    page("agent-a", "own/one.md", "Own One", "Mine.")
+    page("agent-a", "own/one.md", "Own One", "Mine.", { related: ["Own Two", "Own Three"] })
+    page("agent-a", "own/two.md", "Own Two", "Mine.")
+    page("agent-a", "own/three.md", "Own Three", "Mine.")
     for (let i = 0; i < 6; i++) page("agent-b", `s/${i}.md`, `Shared ${i}`, "Theirs.")
     hub.getAgentWiki("agent-a").rebuildIndex()
     selectorReturns([
@@ -455,6 +457,28 @@ describe("#824 review fixes", () => {
     const r = await agenticQuery("q", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), maxCandidates: 7, maxArticles: 4 })
     expect(r.walked[0].path).toBe("own/one.md")
     expect(r.walked.filter((w) => w.path.startsWith("@")).length).toBe(2)
+    expect(r.walked).toHaveLength(4)
+  })
+
+  it("gives the slots own pages leave empty back to shared ones", async () => {
+    page("agent-a", "own/one.md", "Own One", "Mine.")
+    for (let i = 0; i < 6; i++) page("agent-b", `s/${i}.md`, `Shared ${i}`, "Theirs.")
+    hub.getAgentWiki("agent-a").rebuildIndex()
+    selectorReturns([
+      ...Array.from({ length: 6 }, (_, i) => ({ title: `Shared ${i}`, path: `@agent-b/s/${i}.md` })),
+      { title: "Own One", path: "own/one.md" },
+    ])
+    const r = await agenticQuery("q", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), maxCandidates: 7, maxArticles: 4 })
+    expect(r.walked.map((w) => w.path)).toEqual(["own/one.md", "@agent-b/s/0.md", "@agent-b/s/1.md", "@agent-b/s/2.md"])
+  })
+
+  it("finds pages that link to a picked page by one of its aliases", async () => {
+    page("agent-a", "people/sam.md", "Sam Doe", "A person.", { aliases: ["Sam D."] })
+    page("agent-b", "decisions/write.md", "Write to Sam by email", "Decided: email only.", { related: ["Sam D."] })
+    hub.getAgentWiki("agent-a").rebuildIndex()
+    selectorReturns([{ title: "Sam Doe", path: "people/sam.md" }])
+    const r = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a") })
+    expect(r.walked.map((w) => w.path)).toEqual(["people/sam.md", "@agent-b/decisions/write.md"])
   })
 
   it("opens the pages that link to a picked page", async () => {

@@ -1593,7 +1593,7 @@ Agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer
 | `--trace` | — | Print selector + walk trace. |
 | `--own-only` | — | Search only the agent's own articles, not the shared wiki. |
 
-Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles`; each picked page also opens up to 3 of the newest pages that link to it. `wiki.query.shared: false` in `agentx.json` turns this off for every query.
+Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query.
 
 ### `agentx wiki score`
 

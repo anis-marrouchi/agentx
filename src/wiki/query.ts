@@ -373,17 +373,26 @@ function walkSubgraph(
   // half the walk when it has any: in the #824 trial shared pages took
   // the slots of the agent's own correct pages and its score dropped.
   const ordered = [...candidates.filter((c) => !isShared(c.path)), ...candidates.filter((c) => isShared(c.path))]
-  const sharedCap = ordered.length > 0 && !isShared(ordered[0].path) ? Math.floor(maxArticles / 2) : maxArticles
+  let sharedCap = ordered.length > 0 && !isShared(ordered[0].path) ? Math.floor(maxArticles / 2) : maxArticles
 
   const opened = new Map<string, WikiArticle & { hop: number }>()
   let sharedOpened = 0
-  const frontier: Array<{ path: string; hop: number }> = ordered.map((c) => ({ path: c.path, hop: 0 }))
+  let frontier: Array<{ path: string; hop: number }> = ordered.map((c) => ({ path: c.path, hop: 0 }))
+  // Shared pages turned away by the cap, in walk order. When the agent's
+  // own pages run out first they get the slots left: an own pick with no
+  // own neighbours must not leave the walk short of shared pages that answer.
+  const deferred: Array<{ path: string; hop: number }> = []
 
-  while (frontier.length && opened.size < maxArticles) {
+  while (opened.size < maxArticles) {
+    if (!frontier.length) {
+      if (!deferred.length || sharedCap >= maxArticles) break
+      sharedCap = maxArticles
+      frontier = deferred.splice(0)
+    }
     const next = frontier.shift()!
     if (opened.has(next.path)) continue
     if (next.hop > maxHops) continue
-    if (isShared(next.path) && sharedOpened >= sharedCap) continue
+    if (isShared(next.path) && sharedOpened >= sharedCap) { deferred.push(next); continue }
 
     const article = view.read(next.path)
     if (!article) continue
@@ -393,9 +402,13 @@ function walkSubgraph(
     if (next.hop >= maxHops) continue
 
     if (next.hop === 0) {
-      for (const path of (view.backlinks.get(article.meta.title.toLowerCase()) ?? []).slice(0, BACKLINKS_PER_PICK)) {
-        if (!opened.has(path)) frontier.push({ path, hop: 1 })
-      }
+      // Pages link to a subject by any of its names; skip what is already
+      // open before taking the newest few, or an opened page uses a slot.
+      const names = [article.meta.title, ...(article.meta.aliases ?? [])].map((n) => n.toLowerCase())
+      const linking = [...new Set(names.flatMap((n) => view.backlinks.get(n) ?? []))]
+        .filter((path) => path !== next.path && !opened.has(path))
+        .slice(0, BACKLINKS_PER_PICK)
+      for (const path of linking) frontier.push({ path, hop: 1 })
     }
     for (const target of article.meta.related || []) {
       const path = titleIndex.get(target.toLowerCase())
