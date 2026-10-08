@@ -60,6 +60,7 @@ const groups = [
     { text: "Follow a request of several steps", link: "/jobs/tracked-plans" },
     { text: "Review what agents learn", link: "/jobs/agent-memory" },
     { text: "Let agents leave notes for the wiki run", link: "/jobs/wiki-notes" },
+    { text: "Keep wiki pages up to date on a schedule", link: "/jobs/wiki-enrich" },
     { text: "Capture the screen at the right moment", link: "/jobs/screen-capture" },
     { text: "Work from your Claude Code session", link: "/jobs/claude-code-session" },
     { text: "Use AgentX from your code editor", link: "/jobs/connect-an-editor" },

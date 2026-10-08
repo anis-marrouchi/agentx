@@ -64,6 +64,30 @@ Notes agents leave for the wiki observe/sweep run: what changed, the source and 
 }
 ```
 
+## `wikiEnrich`
+
+Scheduled enrichment of person, organisation, project, place and asset pages: an overview in full, typed statements with a source each, and a History linked to event pages. Only pages whose sources changed are refreshed. Off by default. Guide: [Keep wiki pages up to date on a schedule](/jobs/wiki-enrich).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `wikiEnrich.enabled` | boolean | `false` | Turns enrichment on for this node. Needs `wikiEnrich.agent`. |
+| `wikiEnrich.agent` | string | — | Agent that reads the sources, writes the pages and pays for the calls. |
+| `wikiEnrich.types` | string[] | person, organization, project, place, device, server, app, domain, account | Page types refreshed, in this order. `agent` is refused. |
+| `wikiEnrich.sources` | string[] | `["entries", "contacts"]` | Where a run may read: `entries`, `contacts`, `wacli`, `gitlab`, `gog`, `web`. |
+| `wikiEnrich.maxPages` | number (1-200) | `10` | Most pages refreshed in one run. |
+| `wikiEnrich.maxSpendUsd` | number (0-1000) | `2` | Spending cap per run in US dollars; the run stops before a page that would likely pass it. `0` leaves only `maxPages`. |
+| `wikiEnrich.maxEntriesPerPage` | number (1-200) | `40` | Most messages given for one page. |
+| `wikiEnrich.maxNewEvents` | number (0-20) | `5` | Most new event pages one page may create in a run. |
+| `wikiEnrich.model` | string | — | Model for the agent's calls. Unset, the agent's own model. Keep it on the agent's runtime. |
+
+The schedule is an ordinary cron job, `crons.wiki-enrich`, that runs `wiki enrich run`. `agentx wiki enrich config --schedule` writes it.
+
+```json
+{
+  "wikiEnrich": { "enabled": true, "agent": "wiki-agent", "sources": ["entries", "contacts"], "maxSpendUsd": 2 }
+}
+```
+
 ## `services`
 
 Services answer a known kind of message with a fixed prompt, keyed by service id: `services.<id>`. When an incoming message matches a trigger, the service's prompt is sent to its agent.

@@ -107,6 +107,9 @@ export interface Ontology {
   classify: ClassifyRule[]
   /** Type for pages no rule matches. */
   fallback_type: string
+  /** Names that are agents, not people (#819), besides the agents this
+   *  node runs: their ids, names and persona names. */
+  agent_names?: string[]
 }
 
 /** One typed fact about a page: subject (the page) → property → value. */

@@ -23,7 +23,7 @@ The sidebar holds only **Home**, up to five pinned pages and the pillars.
 | Level | What you see |
 |---|---|
 | **Z1 Pillar** | The types inside the pillar as tabs, the five most active pages of the open type, and what needs attention. **open list** shows every page of that type. |
-| **Z2 Page** | One thing through its type's **lens**: a summary, then the panels for that type, each with its first few items. |
+| **Z2 Page** | One thing through its type's **lens**: an overview, then the panels for that type, each with its first few items. |
 | **Z3 Panel** | One panel in full: every role, every event with minor ones unfolded, every installed app. Long lists have pages. |
 | **Z4 Statement** | One fact: its value, when it was true, when it was recorded, the source, which agent wrote it, who confirmed it and earlier versions. |
 
@@ -87,6 +87,22 @@ types:
 1. A page that sets `class:` in its header uses that type.
 2. Otherwise the `classify` rules decide, from the page's older `type`, its folder, its tags or its title.
 3. A page no rule matches goes to **Topics**, which is not in the sidebar. A growing Topics count means a type is missing.
+4. Agents are not people. A page whose title is an agent's name is an **Agent** page, whatever its header says. The names come from `agentx.json`: each agent's id, its `name`, and the `Name:` line in its workspace `IDENTITY.md`. You can add more names under `agent_names:` in `ontology.yaml`. A person's **Relations** and **Belongings** never list an agent.
+5. When an agent's name is also the first name of a person page (an agent called "Sam" and a person called "Sam Example"), the page keeps its type and shows under **Needs attention** with the chip **review**, so you can decide. Set `class:` on it to settle it.
+
+## The overview
+
+The card at the top of a page shows its **Overview** section in full: the page's story in a few sentences. When a page has none, the card shows the first paragraph, cut at the end of a sentence. The [scheduled enrichment](../jobs/wiki-enrich.md) writes an Overview for people, organisations, projects, places and assets.
+
+```markdown
+## Overview
+
+Sample Person is the finance lead at Example Org and our main contact for the website. …
+
+_Based on 4 messages from 2026-01-20 to 2026-09-29. Refreshed 2026-10-08._
+```
+
+The line in italics under the Overview says what it rests on. It shows under the overview on the card.
 
 Statements are written in the page header as one line of JSON:
 
@@ -108,3 +124,5 @@ statements: [{"property":"owns","value":"Office Laptop","since":"2025-02"},{"pro
 - **Two pages for the same thing are not merged.** Pages merge when their titles or `aliases` match. Add the other title to `aliases:` on one of them.
 - **A pinned page does not show.** The pin must match a page title or alias exactly, ignoring case and punctuation. Only the first five pins show.
 - **The old home page with agent cards is gone.** It moved to **Agent wikis** (`/agents`).
+- **An agent shows up as a person.** Its title is not one of the agent names this machine knows. Add the title under `agent_names:` in `ontology.yaml`, or set `class: agent` on the page.
+- **The overview stops after a sentence or two.** The page has no `## Overview` section, so the card shows its first paragraph. Add one, or let the [scheduled enrichment](../jobs/wiki-enrich.md) write it.

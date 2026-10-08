@@ -10,6 +10,7 @@
 //   /ontology              the ontology in use and its problems
 
 import type { WikiHub } from "../hub"
+import { registeredAgentNames } from "./agent-names"
 import { GraphCache } from "./graph"
 import { loadOntology } from "./load"
 import { entityPage, panelPage, statementPage, type EntityViewCtx } from "./view-entity"
@@ -25,7 +26,7 @@ export class OntologyRoutes {
   handle(path: string, params: URLSearchParams): string | null {
     if (!(path === "/" || path === "" || path.startsWith("/p/") || path.startsWith("/e/") || path === "/find" || path === "/ontology")) return null
     const { ontology, errors, file } = loadOntology(this.wikiDir)
-    const g = this.cache.get(this.hub, ontology)
+    const g = this.cache.get(this.hub, ontology, registeredAgentNames())
     const page = Math.max(1, Number(params.get("page")) || 1)
 
     if (path === "/" || path === "") return homePage(g, errors)

@@ -1281,6 +1281,55 @@ Show or set the inbox agent and the schedules that read it (`wikiNotes` in `agen
 | `--disable` | — | Turn wiki notes off. |
 | `--json` | — | Print JSON. |
 
+### `agentx wiki enrich`
+
+Keep person, organisation, project, place and asset pages up to date on a schedule: run, status, config. See [Keep wiki pages up to date on a schedule](/jobs/wiki-enrich).
+
+### `agentx wiki enrich run`
+
+Refresh the pages whose sources changed since the last run, through the agent in `wikiEnrich.agent`. The `wiki-enrich` schedule runs this.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--page <title>` | — | Refresh only this page, even when nothing changed and even when enrichment is off. |
+| `--force` | — | Refresh even when nothing changed. |
+| `--limit <n>` | — | Refresh at most this many pages this time. |
+| `--max-cost <usd>` | `wikiEnrich.maxSpendUsd` | Spending cap for this run, in US dollars. |
+| `--dry-run` | — | Ask the agent and print what would be written, and what was left out and why, without writing. |
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+| `-c, --config <path>` | `./agentx.json` | Config file. |
+| `--json` | — | Print the run record as JSON. |
+
+### `agentx wiki enrich status`
+
+The last runs: pages refreshed, failed and unchanged, what each run spent, and each page's outcome.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--runs <n>` | `5` | How many runs to show. |
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+| `--json` | — | Print the runs and the per-page state as JSON. |
+
+### `agentx wiki enrich config`
+
+Show or set `wikiEnrich` in `agentx.json`, and the `wiki-enrich` schedule. With no flag, it prints the current settings.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | Agent that runs it and owns the pages it writes. `""` clears it. |
+| `--types <ids>` | — | Comma-separated page types, for example `person,organization,project,place`. |
+| `--sources <ids>` | — | Comma-separated sources: `entries`, `contacts`, `wacli`, `gitlab`, `gog`, `web`. |
+| `--max-pages <n>` | — | Most pages refreshed in one run (1-200). |
+| `--max-spend <usd>` | — | Spending cap per run in US dollars (`0` = no cap). |
+| `--max-entries <n>` | — | Most messages given for one page (1-200). |
+| `--max-events <n>` | — | Most new event pages one page may create in a run (0-20). |
+| `--model <model>` | — | Model for the agent's calls. `""` uses the agent's own. |
+| `--schedule <cron>` | — | When it runs, as a five-field cron schedule. `""` removes the schedule. |
+| `--timezone <tz>` | `UTC` | Time zone for `--schedule`. |
+| `--enable` | — | Turn enrichment on. |
+| `--disable` | — | Turn enrichment off. |
+| `--json` | — | Print JSON. |
+
 ### `agentx wiki facts`
 
 Facts with a source and a check date: list, show, set, proposals. See [One rule for facts](/jobs/agent-memory#one-rule-for-facts-check-it-or-say-it-s-unverified).

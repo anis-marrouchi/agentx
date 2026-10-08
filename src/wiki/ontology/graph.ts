@@ -36,6 +36,8 @@ export interface Entity {
   rolledUpInto?: string
   /** Raw entry ids the pages were written from. */
   sources: string[]
+  /** Why a person should check how this page is typed. */
+  review?: string
 }
 
 export interface Edge {
@@ -74,8 +76,41 @@ function eventDate(a: WikiArticle): string {
   return (a.meta.created || a.meta.lastUpdated || "").slice(0, 10)
 }
 
-/** Build the graph from pages. Pure: tests call it directly. */
-export function buildGraph(pages: GraphPage[], o: Ontology): WikiGraph {
+/**
+ * Agents are not people (#819). A page whose title or alias is an agent's
+ * name is an agent, whatever its frontmatter says, unless the name is
+ * also the first name of a person page: then it stays as typed and is
+ * flagged for a person to decide. Deterministic, no model involved.
+ */
+function typeAgents(entities: Map<string, Entity>, o: Ontology, agentNames: string[]): void {
+  // A two-letter id would catch too many unrelated titles.
+  const agents = new Set([...(o.agent_names ?? []), ...agentNames].map(normName).filter(n => n.length >= 3))
+  if (agents.size === 0 || !o.types.some(t => t.id === "agent")) return
+  const firstNames = new Map<string, string>()
+  for (const e of entities.values()) {
+    if (e.type !== "person") continue
+    const words = normName(e.title).split(" ")
+    if (words.length > 1) firstNames.set(words[0], e.title)
+  }
+  const pillar = o.types.find(t => t.id === "agent")!.pillar
+  for (const e of entities.values()) {
+    if (e.type === "agent") continue
+    const keys = new Set(e.pages.flatMap(p => [p.article.meta.title, ...(p.article.meta.aliases ?? [])]).map(normName))
+    const hit = [...keys].find(k => agents.has(k))
+    if (!hit) continue
+    const person = firstNames.get(hit)
+    if (person && normName(person) !== hit) {
+      e.review = `"${e.title}" is an agent's name and the first name of ${person}`
+      continue
+    }
+    e.type = "agent"
+    e.pillar = pillar
+  }
+}
+
+/** Build the graph from pages. Pure: tests call it directly.
+ *  `agentNames`: the ids, names and persona names of known agents. */
+export function buildGraph(pages: GraphPage[], o: Ontology, agentNames: string[] = []): WikiGraph {
   const typeDef = new Map(o.types.map(t => [t.id, t]))
   const names = new Map<string, string>()
   const groups = new Map<string, GraphPage[]>()
@@ -125,6 +160,8 @@ export function buildGraph(pages: GraphPage[], o: Ontology): WikiGraph {
     })
   }
 
+  typeAgents(entities, o, agentNames)
+
   const resolveName = (s: string): string | undefined => names.get(normName(s))
   const outgoing = new Map<string, Edge[]>()
   const incoming = new Map<string, Edge[]>()
@@ -167,9 +204,9 @@ export function buildGraph(pages: GraphPage[], o: Ontology): WikiGraph {
 
 /** Builds from a hub, reusing the last graph while no page changed. */
 export class GraphCache {
-  private last: { refs: WikiArticle[]; ontology: Ontology; graph: WikiGraph } | null = null
+  private last: { refs: WikiArticle[]; ontology: Ontology; agents: string; graph: WikiGraph } | null = null
 
-  get(hub: WikiHub, o: Ontology): WikiGraph {
+  get(hub: WikiHub, o: Ontology, agentNames: string[] = []): WikiGraph {
     const pages: GraphPage[] = []
     for (const agentId of hub.listAgents([])) {
       for (const article of hub.getAgentWiki(agentId).listAllArticles()) pages.push({ agentId, article })
@@ -177,11 +214,12 @@ export class GraphCache {
     // The store hands back the same objects while files are unchanged.
     const refs = pages.map(p => p.article)
     const last = this.last
-    if (last && last.ontology === o && last.refs.length === refs.length && last.refs.every((r, i) => r === refs[i])) {
+    const agents = agentNames.join("\u0000")
+    if (last && last.ontology === o && last.agents === agents && last.refs.length === refs.length && last.refs.every((r, i) => r === refs[i])) {
       return last.graph
     }
-    const graph = buildGraph(pages, o)
-    this.last = { refs, ontology: o, graph }
+    const graph = buildGraph(pages, o, agentNames)
+    this.last = { refs, ontology: o, agents, graph }
     return graph
   }
 }

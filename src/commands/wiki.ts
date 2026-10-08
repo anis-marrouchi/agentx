@@ -13,6 +13,7 @@ import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
 import { registerWikiNotes } from "./wiki-notes"
+import { registerWikiEnrich } from "./wiki-enrich"
 import { registerWikiOntology } from "./wiki-ontology"
 import { resolve, relative, dirname } from "path"
 import { exec, execSync } from "child_process"
@@ -78,6 +79,7 @@ export const wiki = new Command()
 
 registerWikiFacts(wiki)
 registerWikiNotes(wiki)
+registerWikiEnrich(wiki)
 registerWikiOntology(wiki)
 
 // agentx wiki status

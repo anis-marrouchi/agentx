@@ -804,6 +804,33 @@ const wikiNotesSchema = z.object({
 
 export type WikiNotesConfig = z.infer<typeof wikiNotesSchema>
 
+/** Scheduled enrichment of entity pages (#820, src/wiki/enrich.ts). Off by
+ *  default. The schedule itself is a cron job running `wiki enrich run`. */
+const wikiEnrichSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Agent that reads the sources, writes the pages, and pays for it. */
+  agent: z.string().min(1).optional(),
+  /** Page types refreshed. Agents are never enriched (#819). */
+  types: z.array(z.string().min(1)).default(["person", "organization", "project", "place", "device", "server", "app", "domain", "account"]),
+  /** Where a run may read: message history, contact sources, the web. */
+  sources: z.array(z.enum(["entries", "contacts", "wacli", "gitlab", "gog", "web"])).default(["entries", "contacts"]),
+  /** Most pages refreshed in one run. */
+  maxPages: z.number().int().min(1).max(200).default(10),
+  /** Spending cap per run in US dollars; 0 leaves only maxPages. */
+  maxSpendUsd: z.number().min(0).max(1000).default(2),
+  /** Most messages given for one page. */
+  maxEntriesPerPage: z.number().int().min(1).max(200).default(40),
+  /** Most new event pages one page may create in a run. */
+  maxNewEvents: z.number().int().min(0).max(20).default(5),
+  /** Model for the agent's calls. Unset, the agent's own model; keep it
+   *  on the same runtime as the agent. */
+  model: z.string().min(1).optional(),
+}).refine((n) => !n.enabled || Boolean(n.agent), {
+  message: "wikiEnrich.enabled needs wikiEnrich.agent: the agent that runs the enrichment",
+})
+
+export type WikiEnrichConfig = z.infer<typeof wikiEnrichSchema>
+
 const serviceSchema = z.object({
   name: z.string(),
   triggers: z.array(z.object({
@@ -1279,6 +1306,8 @@ export const daemonConfigSchema = z.object({
   crons: z.record(z.string(), cronJobSchema).default({}),
   /** Notes agents leave for the wiki observe/sweep run (#825). */
   wikiNotes: wikiNotesSchema.default({}),
+  /** Scheduled enrichment of entity pages (#820). */
+  wikiEnrich: wikiEnrichSchema.default({}),
   services: z.record(z.string(), serviceSchema).default({}),
   notifications: notificationsSchema,
   calls: callsSchema,

@@ -2,7 +2,7 @@
 
 import { markdownToHtml } from "@/utils/markdown-html"
 import type { WikiEntry } from "../types"
-import { normName, type Entity, type WikiGraph } from "./graph"
+import { normName, type Entity, type GraphPage, type WikiGraph } from "./graph"
 import { lensFor, panelData } from "./lens"
 import { panelSource } from "./load"
 import type { LensPanel } from "./types"
@@ -33,18 +33,59 @@ export function bodyOf(content: string): string {
   return content.replace(/^---\n[\s\S]*?\n---\n?/, "").trim()
 }
 
-/** First paragraph of the first page, as plain text. */
-export function summaryOf(e: Entity, max = 360): string {
-  const body = bodyOf(e.pages[0]?.article.content ?? "")
-  const para = body.split(/\n\s*\n/).map(p => p.trim()).find(p => p && !p.startsWith("#") && !p.startsWith("|") && !p.startsWith("```")) ?? ""
-  const plain = para
+/** Shorten at the last full sentence that fits, else at a word, never
+ *  mid-word. A sentence cut in half reads as a broken page (#820). */
+export function clip(text: string, max: number): string {
+  if (text.length <= max) return text
+  const head = text.slice(0, max)
+  const ends = [...head.matchAll(/[.!?](?=\s|$)/g)].map(m => (m.index ?? 0) + 1)
+  const last = ends.pop()
+  if (last && last >= max * 0.4) return head.slice(0, last)
+  return `${head.slice(0, max - 1).replace(/\s+\S*$/, "")}…`
+}
+
+/** The page shown first: a page others may read before an owner-only one. */
+export function firstPage(e: Entity) {
+  return e.pages.find(p => p.article.meta.access !== "private") ?? e.pages[0]
+}
+
+/** Markdown to one line of plain text. */
+function plainText(md: string): string {
+  return md
     .replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_m, t, d) => d ?? t)
     .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
     .replace(/^[-*]\s+/gm, "")
     .replace(/[*_`]/g, "")
     .replace(/\s+/g, " ")
     .trim()
-  return plain.length > max ? `${plain.slice(0, max - 1)}…` : plain
+}
+
+const OVERVIEW = /^## Overview[ \t]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m
+
+/** The `## Overview` section of the newest page that has one, with the
+ *  italic line under it that says what it rests on (#820). */
+export function overviewOf(e: Entity): { text: string; basis?: string; page: GraphPage } | null {
+  const pages = [...e.pages].sort((a, b) => (b.article.meta.lastUpdated || "").localeCompare(a.article.meta.lastUpdated || ""))
+  for (const p of pages) {
+    const m = bodyOf(p.article.content).match(OVERVIEW)
+    if (!m) continue
+    const paras = m[1].split(/\n\s*\n/).map(x => x.trim()).filter(Boolean)
+    const basisAt = paras.findIndex(x => /^_[^_].*_$/s.test(x))
+    const basis = basisAt === -1 ? undefined : plainText(paras.splice(basisAt, 1)[0])
+    const text = plainText(paras.join(" "))
+    if (text) return { text, basis, page: p }
+  }
+  return null
+}
+
+/** The page's Overview section in full, else the first paragraph of the
+ *  first page, as plain text, cut at a sentence. */
+export function summaryOf(e: Entity, max = 360): string {
+  const written = overviewOf(e)
+  if (written) return clip(written.text, max)
+  const body = bodyOf(firstPage(e)?.article.content ?? "")
+  const para = body.split(/\n\s*\n/).map(p => p.trim()).find(p => p && !p.startsWith("#") && !p.startsWith("|") && !p.startsWith("```")) ?? ""
+  return clip(plainText(para), max)
 }
 
 function pillarOf(g: WikiGraph, e: Entity) {
@@ -63,9 +104,13 @@ function entityCrumbs(g: WikiGraph, e: Entity, tail: Array<{ label: string; href
 
 function notesHtml(g: WikiGraph, e: Entity, full: boolean): string {
   if (!full) {
-    const first = e.pages[0]
+    // The page with the overview is the curated one; the card above
+    // already shows its Overview section.
+    const written = overviewOf(e)
+    const first = written?.page ?? firstPage(e)
     if (!first) return ""
-    const text = bodyOf(first.article.content)
+    let text = bodyOf(first.article.content)
+    if (written) text = text.replace(OVERVIEW, "").trim()
     const short = text.length > 1600 ? `${text.slice(0, 1600).replace(/\n[^\n]*$/, "")}\n\n…` : text
     return `<div class="ox-prose">${wikiMd(g, short)}</div>`
   }
@@ -108,9 +153,11 @@ export function entityPage(ctx: EntityViewCtx, e: Entity): string {
   if (e.pages.length > 1) main += `<span class="ox-chip">${icon("merge")}merged from ${e.pages.length} pages</span>`
   main += `</div></div></div>`
 
-  const summary = summaryOf(e)
+  // The overview is shown whole: it is a few sentences by design (#820).
+  const summary = summaryOf(e, 1600)
   if (summary && lens[0]?.panel !== "notes") {
-    main += `<section class="ox-card"><p class="ox-summary">${esc(summary)}</p><div class="ox-meta"><span>updated ${esc(e.updated || "—")}</span><span>sources: ${e.sources.length}</span><span>${e.statements.length} statements</span></div></section>`
+    const basis = overviewOf(e)?.basis
+    main += `<section class="ox-card"><p class="ox-summary">${esc(summary)}</p><div class="ox-meta"><span>updated ${esc(e.updated || "—")}</span><span>sources: ${e.sources.length}</span><span>${e.statements.length} statements</span>${basis ? `<span>${esc(basis)}</span>` : ""}</div></section>`
   }
   main += `<div class="ox-grid2">`
   for (const def of lens) {

@@ -42,13 +42,15 @@ export function needsAttention(g: WikiGraph, entities: Entity[], now = Date.now(
       out.push({ e, chip: "late", why: `was due ${due.value}` })
     } else if (due && !fulfilled && due.value <= soon) {
       out.push({ e, chip: "due", why: `due ${due.value}` })
+    } else if (e.review) {
+      out.push({ e, chip: "review", why: e.review })
     } else if (e.statements.some(s => s.status === "proposed")) {
       out.push({ e, chip: "proposed", why: "statements wait for confirmation" })
     } else if (e.type === "event" && e.importance === "major" && e.date && now - Date.parse(e.date) <= 30 * DAY) {
       out.push({ e, chip: "major", why: `major event ${e.date}` })
     }
   }
-  const rank: Record<string, number> = { late: 0, due: 1, major: 2, proposed: 3 }
+  const rank: Record<string, number> = { late: 0, due: 1, major: 2, review: 3, proposed: 4 }
   return out.sort((a, b) => rank[a.chip] - rank[b.chip])
 }
 

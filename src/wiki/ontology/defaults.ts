@@ -16,6 +16,8 @@ const discussed: LensPanel = { panel: "discussed", title: "Discussed", source: "
 const notes = (show = 1): LensPanel => ({ panel: "notes", title: "Notes", source: "notes", show })
 
 const ASSET_TYPES = ["device", "server", "app", "domain", "account", "agent"]
+/** Agents are not people (#819): a person's belongings never list one. */
+const PERSON_ASSET_TYPES = ASSET_TYPES.filter(t => t !== "agent")
 
 const types: TypeDef[] = [
   // Parties
@@ -23,10 +25,12 @@ const types: TypeDef[] = [
     id: "person", label: "Person", plural: "People", pillar: "parties", schema: "Person", icon: "person",
     lens: [
       { panel: "roles", title: "Roles over time", from: ["role_at", "member_of", "founded"], show: 6, display: "timeline" },
-      { panel: "relations", title: "Relations", from: ["works_with", "reports_to", "client_of", "related"], types: ["person", "organization"], show: 5, group_by: "role" },
-      { panel: "belongings", title: "Belongings", from: ["owns", "uses", "related"], types: ASSET_TYPES, show: 5 },
+      { panel: "relations", title: "Relations", from: ["works_with", "reports_to", "client_of", "contact_for", "related"], types: ["person", "organization"], show: 5, group_by: "role" },
+      { panel: "projects", title: "Projects", from: ["works_on", "contact_for", "client_of", "client", "related"], types: ["project", "offering"], show: 5 },
+      { panel: "belongings", title: "Belongings", from: ["owns", "uses", "related"], types: PERSON_ASSET_TYPES, show: 5 },
       { panel: "obligations", title: "Obligations they carry", from: ["subject_to"], show: 3 },
       history(),
+      { panel: "contact", title: "How to reach them", from: ["contact"], show: 4 },
       discussed,
       notes(),
     ],
@@ -34,8 +38,9 @@ const types: TypeDef[] = [
   {
     id: "organization", label: "Organization", plural: "Organizations", pillar: "parties", schema: "Organization", icon: "org",
     lens: [
-      { panel: "people", title: "People and roles", from: ["role_at", "member_of", "founded"], show: 6, group_by: "role" },
-      { panel: "facts", title: "Key facts", from: ["registered_with", "located_in", "identifier", "legal_form"], show: 6 },
+      { panel: "people", title: "People and roles", from: ["role_at", "member_of", "founded", "contact_for"], show: 6, group_by: "role" },
+      { panel: "relations", title: "Relations", from: ["client", "client_of", "works_with", "related"], types: ["organization", "project", "offering"], show: 5 },
+      { panel: "facts", title: "Key facts", from: ["registered_with", "located_in", "identifier", "legal_form", "contact"], show: 6 },
       { panel: "obligations", title: "Obligations and next due dates", from: ["subject_to"], show: 4 },
       { panel: "agreements", title: "Agreements", source: "linked", types: ["contract"], show: 4 },
       { panel: "decisions", title: "Decisions", source: "linked", types: ["decision", "policy"], show: 4 },
@@ -129,7 +134,7 @@ const types: TypeDef[] = [
   {
     id: "project", label: "Project", plural: "Projects", pillar: "offerings", schema: "Project", icon: "project",
     lens: [
-      { panel: "people", title: "Client and people", from: ["client_of", "works_on", "related"], types: ["person", "organization", "agent"], show: 6, group_by: "role" },
+      { panel: "people", title: "Client and people", from: ["client", "client_of", "works_on", "contact_for", "related"], types: ["person", "organization", "agent"], show: 6, group_by: "role" },
       { panel: "agreements", title: "Agreements", source: "linked", types: ["contract"], show: 3 },
       { panel: "decisions", title: "Decisions", source: "linked", types: ["decision", "policy"], show: 4 },
       history(6),
@@ -140,7 +145,7 @@ const types: TypeDef[] = [
   {
     id: "offering", label: "Offering", plural: "Offerings", pillar: "offerings", schema: "Offer", icon: "project",
     lens: [
-      { panel: "clients", title: "Clients", from: ["client_of", "related"], types: ["organization", "person"], show: 5 },
+      { panel: "clients", title: "Clients", from: ["client", "client_of", "related"], types: ["organization", "person"], show: 5 },
       history(),
       notes(),
     ],
@@ -273,6 +278,9 @@ export const DEFAULT_ONTOLOGY: Ontology = {
     { id: "works_with", label: "works with", inverse: "works with" },
     { id: "reports_to", label: "reports to", inverse: "manages" },
     { id: "client_of", label: "client of", inverse: "clients", wikidata: "P1972" },
+    { id: "contact_for", label: "contact for", inverse: "contacts", range: ["organization", "project"] },
+    { id: "client", label: "for client", inverse: "projects", range: ["organization", "person"] },
+    { id: "contact", label: "contact" },
     { id: "works_on", label: "works on", inverse: "people" },
     { id: "works_for", label: "works for", inverse: "agents", wikidata: "P108" },
     { id: "owns", label: "owns", inverse: "owned by", wikidata: "P1830" },
@@ -364,4 +372,5 @@ export const DEFAULT_ONTOLOGY: Ontology = {
     { type: "procedure", tags: ["runbook", "procedure", "how-to"] },
   ],
   fallback_type: "topic",
+  agent_names: [],
 }
