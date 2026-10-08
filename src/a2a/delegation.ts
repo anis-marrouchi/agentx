@@ -146,7 +146,8 @@ export function isDelegationRelay(message: string | null | undefined): boolean {
 }
 
 /** Did a restart stop this turn before it answered? The process registry
- *  stops every live turn with the reason `registry-stop` on shutdown. */
+ *  stops every live turn with the reason `registry-stop` on shutdown.
+ *  Such a relay is re-run once (retro:01M4BZCSM8P9NSFBR2BC2JAJHH, #846). */
 export function stoppedByRestart(resp: { content: string; error?: string }): boolean {
   return !!resp.error && /\bregistry-stop\b/.test(resp.error) && resp.content.trim().length === 0
 }
