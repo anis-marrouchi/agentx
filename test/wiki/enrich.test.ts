@@ -151,6 +151,15 @@ describe("checking a reply", () => {
     expect(m.statements?.[1]).toMatchObject({ by: ENRICH_BY, checked_at: "2026-02-01" })
     expect(m.related).toEqual(["Acme Works", "Launch Day"])
   })
+
+  it("keeps a hand-written fact it also found, so a later run cannot drop it", () => {
+    const own = { property: "role_at", value: "Acme Works", role: "buyer", status: "confirmed" as const, confirmed_by: "pat", note: "met in March", since: "2025-03-01" }
+    const found = { overview: "", statements: [{ property: "role_at", value: "acme works", source: "e1" }], links: [], dropped: [] }
+    const m = mergedMeta(meta("Pat Doe", { statements: [own] }), found, "2026-02-01")
+    expect(m.statements).toEqual([own])
+    const later = mergedMeta(m, { ...found, statements: [] }, "2026-03-01")
+    expect(later.statements).toEqual([own])
+  })
 })
 
 describe("wiki enrich run", () => {
@@ -195,5 +204,11 @@ describe("wiki enrich run", () => {
     const e = g.entities.get("acme-works")!
     expect(e.type).toBe("organization")
     expect(enrichContext(g, e, () => []).mentions.map(m => m.page.article.meta.title)).toEqual(["Kim Roe"])
+  })
+
+  it("writes a title with quotes or line breaks that reads back the same", () => {
+    const path = createEntityPage(hub, 'The "Blue"\nVan', "organization", "agent-a", "2026-02-01")!
+    const page = hub.getAgentWiki("agent-a").readArticle(path, "agent-a")!
+    expect(page.meta).toMatchObject({ title: 'The "Blue" Van', owner: "agent-a", class: "organization" })
   })
 })

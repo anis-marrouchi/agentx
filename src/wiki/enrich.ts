@@ -277,11 +277,14 @@ export function withOverview(content: string, overview: string): string {
 /** Page meta with the new statements and links merged in. */
 export function mergedMeta(meta: WikiArticleMeta, r: EnrichResult, today: string): WikiArticleMeta {
   const key = (s: WikiStatement) => `${s.property}\n${normName(s.value)}`
-  const fresh = new Set(r.statements.map(key))
   // This job's earlier facts are replaced as a whole; others' are kept.
+  // A fact someone else already wrote stays theirs, with its status,
+  // note and dates: tagging it as ours would drop it on a later run.
+  const kept = (meta.statements ?? []).filter(s => s.by !== ENRICH_BY)
+  const taken = new Set(kept.map(key))
   const statements = [
-    ...(meta.statements ?? []).filter(s => s.by !== ENRICH_BY && !fresh.has(key(s))),
-    ...r.statements.map(s => ({ ...s, checked_at: today, by: ENRICH_BY })),
+    ...kept,
+    ...r.statements.filter(s => !taken.has(key(s))).map(s => ({ ...s, checked_at: today, by: ENRICH_BY })),
   ]
   const related = [...new Set([...(meta.related ?? []), ...r.links])]
   return { ...meta, statements: statements.length ? statements : undefined, related: related.length ? related : undefined, lastUpdated: today }
@@ -302,7 +305,9 @@ const FOLDERS: Record<string, string> = { person: "people", organization: "organ
  * follows writes its overview and facts from the pages that mention it.
  * Returns the page path, or null when the owner already has that title.
  */
-export function createEntityPage(hub: WikiHub, title: string, type: string, owner: string, today: string): string | null {
+export function createEntityPage(hub: WikiHub, name: string, type: string, owner: string, today: string): string | null {
+  // Frontmatter is one line per key: a line break would end the title.
+  const title = name.replace(/\s+/g, " ").trim()
   const store = hub.getAgentWiki(owner)
   if (store.listAllArticles().some(a => normName(a.meta.title) === normName(title))) return null
   const path = `${FOLDERS[type] ?? `${type}s`}/${normName(title).replace(/ /g, "-").slice(0, 80) || "page"}.md`
