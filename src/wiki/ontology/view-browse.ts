@@ -3,6 +3,7 @@
 import type { Entity, WikiGraph } from "./graph"
 import { linkedEntities } from "./lens"
 import { summaryOf } from "./view-entity"
+import { IMPORTANCE_LEVELS } from "./types"
 import { crumbs, entityHref, esc, icon, layout, sidebar, typeIcon, typeLabel, zoomBar } from "./view-layout"
 
 const DAY = 86_400_000
@@ -110,7 +111,9 @@ export function pillarPage(g: WikiGraph, pillarId: string, kind: string | null):
 }
 
 /** Every page of one kind, paginated. */
-export function kindListPage(g: WikiGraph, pillarId: string, typeId: string, page: number, importance: string | null): string | null {
+export function kindListPage(g: WikiGraph, pillarId: string, typeId: string, page: number, requested: string | null): string | null {
+  // Only known levels reach the filter and the pager hrefs; anything else lists every page.
+  const importance = requested && (IMPORTANCE_LEVELS as readonly string[]).includes(requested) ? requested : null
   const p = g.ontology.pillars.find(x => x.id === pillarId)
   const t = g.ontology.types.find(x => x.id === typeId && x.pillar === pillarId)
   if (!p || !t) return null
