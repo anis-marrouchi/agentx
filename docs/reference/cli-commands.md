@@ -1421,6 +1421,42 @@ LLM-patch an article from a free-form instruction; shows diff + confirms before 
 | `--yes` | — | Skip confirmation and write immediately. |
 | `--no-commit` | — | Show the patched body but don't write. |
 
+### `agentx wiki curate <agent> <titleOrPath> <instruction>`
+
+Ask the page curator to research and edit one page, as the chat button on the page does. Needs the daemon. Prints the reply, the changed lines and the sources. See [Wiki › Ask an agent to curate a page](../dashboard/wiki.md#ask-an-agent-to-curate-a-page).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--timeout <minutes>` | `30` | Stop waiting after this long. The change is still written when the agent finishes. |
+
+### `agentx wiki versions <agent> <titleOrPath>`
+
+List the saved earlier versions of one page, newest first.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki restore <agent> <titleOrPath> [version]`
+
+Put a page back to an earlier version. Without a version, the newest is used. The current text is kept as a version first.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki curator`
+
+Show or change the page curator: the chat button on wiki pages (`wiki.curator` in `agentx.json`).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--on` | — | Show the button on wiki pages. |
+| `--off` | — | Hide the button and refuse curator requests. |
+| `--agent <id>` | — | Let this agent answer on every page. |
+| `--owner` | — | Let each page's owner agent answer (the default). |
+
 ### `agentx wiki prune`
 
 Collapse legacy flat/unified mode dirs into graph/ (dedup by title; losers archived).

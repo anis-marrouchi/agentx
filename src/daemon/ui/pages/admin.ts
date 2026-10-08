@@ -343,6 +343,16 @@ const ADMIN_PAGE_BODY = `
       bodyHtml: `<b>What's an agent, exactly?</b> Think of it as a specialised teammate. A sales agent handles pricing questions, a support agent answers tickets, a reports agent sends a weekly summary. You decide what they do and what to say to wake them up (their "trigger words", like <code>@support</code>).`,
     })}
     <div id="agent-list" class="ax-stack"></div>
+    <details class="add-form" style="margin-top:14px" id="wiki-curator-section">
+      <summary class="primary">💬 Wiki page curator</summary>
+      <div style="margin-top:10px">
+        <p style="font-size:11px;color:var(--ax-muted);margin:0 0 10px">A chat bubble on every wiki page. Type an instruction and an agent researches it and edits the open page; every change can be undone. Mirrors <code>agentx wiki curator</code>.</p>
+        <label class="toggle-switch"><input type="checkbox" id="wc-enabled" /> <span>Show the bubble on wiki pages</span></label>
+        <label style="margin-top:10px">Agent that answers <span class="hint">(default: the agent that owns the page)</span></label>
+        <select id="wc-agent"></select>
+        <div class="actions"><button class="primary" onclick="saveWikiCurator()">Save</button><div id="wc-msg" class="msg"></div></div>
+      </div>
+    </details>
     <div class="add-form">
       <h3>Add a new agent</h3>
       <div class="rowf">
@@ -1206,6 +1216,7 @@ async function refresh() {
     wireBoardsCfgHandlers();
     renderNotifications();
     renderWikiNotes();
+    renderWikiCurator();
     renderScreen();
     renderActions();
     wireActionsHandlers();
@@ -1816,6 +1827,28 @@ function wireBoardsCfgHandlers() {
     }
   });
 }
+
+// ---------------- Wiki page curator (#818) ----------------
+
+function renderWikiCurator() {
+  const c = state.wikiCurator || { enabled: true, agent: '' };
+  if ($('wc-enabled')) $('wc-enabled').checked = c.enabled !== false;
+  const sel = $('wc-agent');
+  if (!sel) return;
+  const opts = ['<option value="">The page owner</option>'].concat((state.agents || []).map(function (a) {
+    return '<option value="' + escapeHtml(a.id) + '">' + escapeHtml(a.name ? a.name + ' (' + a.id + ')' : a.id) + '</option>';
+  }));
+  sel.innerHTML = opts.join('');
+  sel.value = c.agent || '';
+}
+
+window.saveWikiCurator = async function() {
+  try {
+    await req('POST', '/api/admin/wiki/curator', { enabled: $('wc-enabled').checked, agent: $('wc-agent').value });
+    showMsg($('wc-msg'), 'ok', 'Saved');
+    await refresh();
+  } catch (e) { showMsg($('wc-msg'), 'err', e.message); }
+};
 
 // ---------------- Notifications + Webhook triggers ----------------
 

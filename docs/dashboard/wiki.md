@@ -95,11 +95,79 @@ class: device
 statements: [{"property":"owns","value":"Office Laptop","since":"2025-02"},{"property":"reading","metric":"disk_used","value":"91%","at":"2026-10-02"}]
 ```
 
+## Ask an agent to curate a page
+
+Every page in the dashboard's wiki has a round chat button in the bottom-right corner. It opens a chat about the page that is open, so you never type the page's name. You write what you want, such as "find this venue's contact details", "rewrite the summary" or "add a photo". An agent researches it, rewrites the page and shows you what changed.
+
+- The agent may use the web and the sources your installation has connected: messages, mail and other wiki pages.
+- Every fact it adds cites its source right after it, as a link or a short label such as "(source: mail from the venue, 2026-03-02)". The sources are also listed in the chat and added to the page's source list.
+- Every change is saved through the normal wiki path. The page before the change is kept as an earlier version, so you can put it back.
+- By default the agent that owns the page answers. You can pick one agent for every page instead (see below).
+
+To curate a page:
+
+1. **Browser:** open a page in the wiki at `/admin/wiki/`, either a merged page or one under **Agent wikis**.
+2. Click the round button in the bottom-right corner.
+
+   ![A wiki page with the round chat button in its bottom-right corner](/screenshots/wiki/curator-bubble.png)
+
+3. Type what you want changed and press **Enter** (**Shift+Enter** starts a new line).
+4. Wait while the agent works. The chat shows "Working…" and you can close it and come back; the result is kept.
+5. Read the agent's reply. When it changed the page, the reply shows how many lines were added and removed, a **What changed** list and the **Sources** it used.
+
+   ![The chat open on the page: the instruction, the agent's reply, the changed lines in green and red, and the two sources it cited](/screenshots/wiki/curator-chat.png)
+
+6. Click **Show the updated page** to see the result.
+7. To undo the change, click **Restore the previous version**, then confirm. The page goes back to how it was; the undone text is itself kept as a version.
+
+When the agent only answers or asks you a question back, the page is not changed. When someone else edits the page while the agent works, nothing is written and the chat asks you to send the instruction again.
+
+Press **Esc** to close the chat. On a phone the chat fills the width of the screen. The chat follows the wiki's light or dark theme.
+
+The chat is kept by the agent's computer (the daemon) until it restarts; the page's earlier versions are kept on disk.
+
+### Turn the chat button off, or choose the agent
+
+In the dashboard:
+
+1. **Browser:** open **Settings** and stay on the **Agents** tab.
+2. Open **Wiki page curator**.
+
+   ![The Wiki page curator settings: a box to show the button on wiki pages, a list to pick the agent that answers, and Save](/screenshots/wiki/curator-settings.png)
+
+3. Untick **Show the bubble on wiki pages** to turn it off, or tick it to turn it on.
+4. Under **Agent that answers**, pick an agent, or **The page owner** for the default.
+5. Click **Save**. Reload the wiki page to see the change.
+
+In a terminal:
+
+1. **Terminal:** run `agentx wiki curator` to see the current settings.
+2. Run `agentx wiki curator --off` to turn it off, or `agentx wiki curator --on` to turn it back on.
+3. Run `agentx wiki curator --agent <agent-id>` to let one agent answer on every page, or `agentx wiki curator --owner` to go back to each page's owner.
+
+In `agentx.json`, the same settings are `wiki.curator.enabled` (default `true`) and `wiki.curator.agent` (default: unset, the page owner):
+
+```json
+{
+  "wiki": {
+    "curator": { "enabled": true, "agent": "research" }
+  }
+}
+```
+
+You can also curate a page and manage its versions from a terminal, with the daemon running:
+
+1. **Terminal:** run `agentx wiki curate <agent> "<page title>" "<what to change>"`. `<agent>` is the wiki the page is in. It prints the reply, the changed lines and the sources.
+2. Run `agentx wiki versions <agent> "<page title>"` to list the page's earlier versions, newest first.
+3. Run `agentx wiki restore <agent> "<page title>" [version]` to put one back. Without a version, the newest is used.
+
 ## Check it worked
 
 1. **Terminal:** run `agentx wiki ontology show`. It prints the number of pages per pillar and type.
 2. **Browser:** open `/admin/wiki/`. The sidebar shows Home, your pins and nine pillars.
 3. Open a person or a device. The panels match the lens for its type, listed on the right under **Lens for this type**.
+4. Open any page and click the round button in the bottom-right corner. A chat titled **Curate this page** opens and names the agent that answers.
+5. **Terminal:** run `agentx wiki versions <agent> "<page title>"` after a change. It lists the version saved before it.
 
 ## If something is wrong
 
@@ -108,3 +176,8 @@ statements: [{"property":"owns","value":"Office Laptop","since":"2025-02"},{"pro
 - **Two pages for the same thing are not merged.** Pages merge when their titles or `aliases` match. Add the other title to `aliases:` on one of them.
 - **A pinned page does not show.** The pin must match a page title or alias exactly, ignoring case and punctuation. Only the first five pins show.
 - **The old home page with agent cards is gone.** It moved to **Agent wikis** (`/agents`).
+- **There is no round button on wiki pages:** the curator is turned off, or the dashboard cannot reach the daemon. **Terminal:** run `agentx wiki curator`; if it says off, run `agentx wiki curator --on`. Then check that the daemon is running with `agentx daemon status`.
+- **The chat says there is no agent with that name:** the agent set under **Agent that answers** was removed, or the page's owner is not an agent on this computer. Pick another agent in **Settings**, or run `agentx wiki curator --agent <agent-id>`.
+- **The chat says the page is a copy from another node:** that agent's pages are copied from another computer and can only be changed there. Open the wiki on that computer.
+- **The chat says the page changed while the agent was working:** someone else saved the page meanwhile, so nothing was written. Send the instruction again.
+- **A change has no sources:** the chat marks it with "No sources were cited". Ask the agent to add its sources, or restore the previous version.

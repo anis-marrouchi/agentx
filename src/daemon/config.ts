@@ -912,6 +912,17 @@ const graphConfigSchema = z.object({
   }).default({}),
 }).default({})
 
+/** The wiki as seen from its pages (#818). */
+const wikiConfigSchema = z.object({
+  /** The chat bubble on every wiki page: the owner types an instruction and
+   *  an agent researches it and edits the open page. */
+  curator: z.object({
+    enabled: z.boolean().default(true),
+    /** Agent that answers. Unset: the page's owner agent. */
+    agent: z.string().min(1).optional(),
+  }).default({}),
+}).default({})
+
 // --- Typed-decision seats (src/decisions) ---
 //
 // Everything here defaults off. A seat in "shadow" runs alongside the
@@ -1509,6 +1520,7 @@ export const daemonConfigSchema = z.object({
   boards: boardsConfigSchema,
   dashboard: dashboardConfigSchema,
   graph: graphConfigSchema,
+  wiki: wikiConfigSchema,
   decisions: decisionsConfigSchema,
   /** Workflow engine — declarative state machines that bind channel events
    *  to agents. Off by default; existing installs see no change until

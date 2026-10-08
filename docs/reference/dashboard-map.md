@@ -27,6 +27,7 @@ The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 | Browse the shared wiki by pillar and type ([Wiki](../dashboard/wiki.md)) | `/admin/wiki/` |
 | Browse each agent's own wiki pages | `/admin/wiki/agents` |
 | Set the wiki notes inbox and see recent notes ([Wiki notes](../jobs/wiki-notes.md)) | `/admin`, **Schedules** tab, **Wiki notes inbox** |
+| Turn the wiki's page curator chat off, or choose its agent ([Wiki](../dashboard/wiki.md#ask-an-agent-to-curate-a-page)) | `/admin`, **Agents** tab, **Wiki page curator** |
 | See work grouped by project | `/admin/projects` |
 | Review the intent ledger (the record of incoming work and which agent it was sent to) | `/admin/ledger` |
 | Review the intent graph | `/admin/graph` (also `/graph`) |

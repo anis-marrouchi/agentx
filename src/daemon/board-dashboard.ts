@@ -343,6 +343,22 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
 
+  // Wiki page curator (#818). The wiki on this dashboard is the local
+  // node's, so the chat goes to the local daemon, which runs the agent.
+  if (path === "/api/wiki/curate" || path === "/api/wiki/curate/restore") {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const body = method === "POST" ? JSON.stringify((await readJson(req)) ?? {}) : undefined
+      const r = await fetch(`${daemonUrl}${path}${url.search}`, { method, headers, ...(body ? { body } : {}) })
+      sendJson(res, r.status, await r.json().catch(() => ({ error: `HTTP ${r.status}` })))
+    } catch (e: any) {
+      sendJson(res, 502, { error: "daemon unreachable", message: e?.message || String(e) })
+    }
+    return
+  }
+
   if (method === "POST" && path === "/api/workflows/editor/chat") {
     try {
       const body = await readJson(req)
@@ -1886,7 +1902,7 @@ export async function fetchDaemonAgents(
 // in-memory cache), so absorbs and edits from elsewhere show up
 // without a restart.
 let _wikiHandler: ((req: IncomingMessage, res: ServerResponse) => Promise<void>) | null = null
-function getOrCreateWikiHandler(ctx: { config: DaemonConfig; token?: string }): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+function getOrCreateWikiHandler(_ctx: { config: DaemonConfig; token?: string }): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   if (_wikiHandler) return _wikiHandler
   const wikiDir = resolve(process.cwd(), ".agentx/wiki")
   // Match the CLI defaults exactly so the embedded view renders the
@@ -1897,12 +1913,14 @@ function getOrCreateWikiHandler(ctx: { config: DaemonConfig; token?: string }): 
     wikiDir,
     pathPrefix: "/admin/wiki",
     mode: "graph",
+    // The page curator bubble (#818). It asks the daemon on load and
+    // stays hidden when wiki.curator.enabled is off there, so a settings
+    // change shows without restarting the dashboard.
+    curator: true,
     // No remote-peer browsing in the embedded view — keeps the dashboard
     // independent of mesh state. Operators who want cross-mesh wiki nav
     // can still run `agentx wiki serve --peer <url>`.
   })
-  // ctx is passed for future use (auth etc.) but unused right now.
-  void ctx
   return _wikiHandler
 }
 
