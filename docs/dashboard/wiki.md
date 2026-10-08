@@ -103,8 +103,8 @@ statements: [{"property":"owns","value":"Office Laptop","since":"2025-02"},{"pro
 
 ## If something is wrong
 
-- **A red box says ontology.yaml has problems.** Run `agentx wiki ontology check` and fix each line it prints. Until then the defaults are used where your file is wrong.
-- **A page sits in the wrong pillar.** Add `class: <type>` to its header, or add a `classify` rule for its folder, tag or title.
+- **A red box says ontology.yaml has problems:** your file has lines the wiki can't use, and the defaults are used for them until you fix them. **Terminal:** run `agentx wiki ontology check` and fix each line it prints.
+- **A page sits in the wrong pillar:** no rule gave it the right type. Add `class: <type>` to its header, or add a `classify` rule for its folder, tag or title.
 - **Two pages for the same thing are not merged.** Pages merge when their titles or `aliases` match. Add the other title to `aliases:` on one of them.
 - **A pinned page does not show.** The pin must match a page title or alias exactly, ignoring case and punctuation. Only the first five pins show.
 - **The old home page with agent cards is gone.** It moved to **Agent wikis** (`/agents`).
