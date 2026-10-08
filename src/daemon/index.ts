@@ -6244,6 +6244,13 @@ export class AgentXDaemon {
           // incremental visibility into the orchestrator's progress
           // instead of a 60-180s blank wait. Existing JSON callers are
           // untouched — they see the original single-response shape.
+          // A caller that gives up (curl -m 30, a client timeout) must not
+          // leave its request waiting for a busy agent's slot: a retrying
+          // script would have every attempt run once the slot frees (#822).
+          // Listens on `res` for the reason given below; guarded so a normal
+          // answer never trips it.
+          const callerGone = new AbortController()
+          res.on("close", () => { if (!res.writableEnded) callerGone.abort(new Error("caller disconnected")) })
           const acceptHeader = String(req.headers["accept"] || "")
           const wantStream = body.stream === true || acceptHeader.includes("text/event-stream")
           if (wantStream) {
@@ -6340,6 +6347,7 @@ export class AgentXDaemon {
                   intentRef,
                   freshSession,
                   onStart: track.onStart,
+                  callerSignal: callerGone.signal,
                 },
                 onDelta,
                 onThinking,
@@ -6381,6 +6389,7 @@ export class AgentXDaemon {
               systemPromptAppend: remoteVoiceAppend(body.context),
               origin,
               onStart: track.onStart,
+              callerSignal: callerGone.signal,
             },
             () => {},
           )).finally(track.end), origin)
