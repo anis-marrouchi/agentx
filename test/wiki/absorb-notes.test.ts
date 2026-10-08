@@ -189,6 +189,28 @@ describe("applyNoteAnswers on a wiki copy", () => {
     expect(r.reason).toMatch(/no permission to write concepts\/other.md/)
     expect(store.readArticle(PATH)!.content).toBe(BODY)
   })
+
+  it("puts back the pages already saved when a later write fails anyway", () => {
+    const n = addNote("Staging moved.")
+    const second = "concepts/other.md"
+    store.writeArticle(second, { title: "Other", tags: [], owner: AGENT, access: "public", created: "2026-09-01", lastUpdated: "2026-09-01", sources: [] }, "Other runs on staging-1.example.test. It is checked before every release and kept for two weeks.", AGENT)
+    const flaky = {
+      readArticle: (p: string) => store.readArticle(p),
+      writeArticle: (p: string, meta: any, content: string, agentId: string) => {
+        if (p === second) throw new Error("disk full")
+        return store.writeArticle(p, meta, content, agentId)
+      },
+    }
+    const r = applyNoteAnswers([n], [{ id: n.id, outcome: "patched", reason: "r", edits: [
+      { path: PATH, find: "staging-1.example.test", replace: "staging-2.example.test" },
+      { path: second, find: "staging-1.example.test", replace: "staging-2.example.test" },
+    ] }], flaky, { agentId: AGENT, paths: new Set([PATH, second]) })[0]
+    expect(r).toMatchObject({ outcome: "deferred", patched: [] })
+    expect(r.reason).toMatch(/could not write concepts\/other.md: disk full/)
+    const after = store.readArticle(PATH)!
+    expect(after.content).toBe(BODY)
+    expect(after.meta.sources).toEqual(["e0"])
+  })
 })
 
 describe("wiki absorb reads the notes inbox", () => {
@@ -275,6 +297,25 @@ describe("wiki absorb reads the notes inbox", () => {
     await absorb()
 
     expect(new NoteStore(dir).get(n.id)!.handled).toMatchObject({ outcome: "patched", by: "wiki-agent", runId: "sweep/run-1" })
+  })
+
+  it("does not apply a note's patch when another run rejected it during absorb", async () => {
+    seedArticle()
+    const n = addNote("Staging moved to staging-2.example.test.")
+    mocks.execSync.mockImplementation((cmd: string) => {
+      if (!String(cmd).includes("absorb-prompt.txt")) throw new Error("no model in tests")
+      new NoteStore(dir).handle(n.id, "rejected", "the sweep schedule found staging unchanged", "wiki-agent", "sweep/run-1")
+      return JSON.stringify({ result: JSON.stringify({ articles: [], gaps: [], notes: [
+        { id: n.id, outcome: "patched", reason: "r", edits: [{ path: PATH, find: "staging-1.example.test", replace: "staging-2.example.test" }] },
+      ] }) })
+    })
+
+    await absorb()
+
+    expect(new NoteStore(dir).get(n.id)!.handled).toMatchObject({ outcome: "rejected", runId: "sweep/run-1" })
+    const after = hub.getAgentWiki(AGENT).readArticle(PATH)!
+    expect(after.content).toBe(BODY)
+    expect(after.meta.sources).toEqual(["e0"])
   })
 
   // Through the store: commander keeps --dry-run set on the shared

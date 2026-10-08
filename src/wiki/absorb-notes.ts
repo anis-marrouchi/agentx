@@ -155,24 +155,36 @@ export function applyNoteAnswers(
     if ("refused" in planned) {
       return { id: note.id, outcome: "deferred", reason: clip(`patch refused: ${planned.refused}. Absorb said: ${said}`), patched: [] }
     }
-    const written: string[] = []
-    const failed: string[] = []
+    const written: Array<{ path: string; article: WikiArticle }> = []
+    let failed = ""
     for (const [path, { article, content }] of planned.articles) {
-      const ok = store.writeArticle(path, {
-        ...article.meta,
-        lastUpdated: today,
-        sources: [...new Set([...(article.meta.sources ?? []), noteSource(note.id)])],
-      }, content, opts.agentId)
-      if (ok) written.push(path)
-      else failed.push(path)
+      let ok = false
+      try {
+        ok = store.writeArticle(path, {
+          ...article.meta,
+          lastUpdated: today,
+          sources: [...new Set([...(article.meta.sources ?? []), noteSource(note.id)])],
+        }, content, opts.agentId)
+      } catch (e: any) {
+        failed = `${path}: ${e?.message ?? e}`
+      }
+      if (!ok) {
+        failed ||= path
+        break
+      }
+      written.push({ path, article })
     }
-    if (failed.length > 0) {
+    if (failed) {
       // Permission was checked first, so this is a write that failed
-      // anyway. Say what landed; the note comes back for the rest.
-      const landed = written.length ? `; edited ${written.join(", ")}` : ""
-      return { id: note.id, outcome: "deferred", reason: clip(`patch not saved: could not write ${failed.join(", ")}${landed}. Absorb said: ${said}`), patched: written }
+      // anyway. Put back the pages this note already changed: a note is
+      // applied whole or not at all. The old pages are in _versions/ too.
+      for (const w of written) {
+        try { store.writeArticle(w.path, w.article.meta, w.article.content, opts.agentId) } catch { /* kept in _versions/ */ }
+      }
+      return { id: note.id, outcome: "deferred", reason: clip(`patch not saved: could not write ${failed}. Absorb said: ${said}`), patched: [] }
     }
-    return { id: note.id, outcome: "patched", reason: clip(`${said} (edited ${written.join(", ")})`), patched: written }
+    const paths = written.map((w) => w.path)
+    return { id: note.id, outcome: "patched", reason: clip(`${said} (edited ${paths.join(", ")})`), patched: paths }
   })
 }
 
