@@ -62,6 +62,10 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `cloudSessions.maxPerDay` | number | `0` | Most cloud sessions this agent may start per day; `0` means no limit. Past it, tasks run locally. |
 | `cloudSessions.openHours` | number (1–168) | `24` | How long a started session counts as open: no local run starts for its issue, and comments on the issue are forwarded to it. |
 | `cloudSessions.launchTimeoutSeconds` | number (10–600) | `120` | How long `claude --cloud` may take to print the session id before the launch is given up and the task runs locally. |
+| `wiki.contribute.enabled` | boolean | `false` | Once a day, the agent reviews its own work and suggests sourced facts for the shared wiki. Adds the daily `wiki-contribute` and `wiki-contribute-merge` jobs. See [Let agents keep the wiki up to date](/jobs/wiki-contributions). |
+| `wiki.contribute.maxPatches` | number (1–200) | `30` | Most suggestions one daily run may make. |
+| `wiki.contribute.maxCostUsd` | number (0–20) | `wiki.contributions.maxCostUsd` | Most model spend one daily run may reach, in dollars. |
+| `wiki.contribute.model` | string | `wiki.contributions.model` | Model for this agent's daily run. |
 | `toolUseRequired` | list of string | `[]` | Tool names, such as `Write`, of which at least one must be used in a run; otherwise the run fails with `tool_required_not_called`. |
 | `gitlabAutoReply` | boolean | — | For this agent, overrides the GitLab or GitHub channel's `autoReplyLegacy`: `true` posts the agent's final answer as a comment, `false` does not. |
 | `persistentProcess` | boolean | `false` | Keeps a warm process per conversation for `claude-code`, `codex-cli` and `opencode` agents so replies start faster. |
