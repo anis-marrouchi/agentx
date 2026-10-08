@@ -8,6 +8,7 @@ against the cheap ones; use the expensive ones to confirm.
 | 0 | `pnpm bench:context` | free | How much context does agentx add before the model starts? |
 | 0 | `pnpm bench:profiles` | free | What does the lean session profile save per channel and prompt section? |
 | 1 | `bench/harbor/dev.sh` | ~$8 per run on Haiku | Does a change make agentx cheaper or worse on real tasks? |
+| 1 | `bench/wiki-absorb.sh <wiki snapshot>` | one absorb backlog per variant | Is a wiki absorb change faster, cheaper or worse? |
 | 2+ | `harbor run` directly, see [harbor/README.md](harbor/README.md) | $60 to $1,300+ | Publishable numbers on the full Terminal-Bench 2.0 |
 
 ## Level 0: context size
@@ -149,3 +150,28 @@ Reading `compare`:
   regression whatever it saves, and `compare` exits 1.
 - With 8 tasks, only changes of roughly 15% or more are detectable. That is
   the price of $8 runs.
+
+## Level 1: wiki absorb (#808)
+
+`bench/wiki-absorb.sh` copies a wiki snapshot once per variant, absorbs
+the same pending entries with that variant's flags until nothing is left,
+then writes a scorecard (`agentx wiki absorb-eval`) and a time and cost
+summary (`agentx wiki absorb-runs`) for each one. The snapshot is never
+written to.
+
+```bash
+cp -a .agentx/wiki /tmp/wiki-snapshot      # before the backlog is absorbed
+bench/wiki-absorb.sh /tmp/wiki-snapshot                                   # baseline (--max 10) and batch20 (--max 20)
+bench/wiki-absorb.sh /tmp/wiki-snapshot "baseline=--max 10" "batch15=--max 15"       # name=flags per variant
+JUDGE=1 SAMPLE_N=30 bench/wiki-absorb.sh /tmp/wiki-snapshot              # add the model judge to each scorecard
+```
+
+A variant is any set of `agentx wiki absorb` flags, so a pipeline change
+that adds a flag can be compared with today's run the same way.
+
+Each variant calls the model for real, so a 975-entry backlog costs about
+what one absorb of it costs, per variant. Use `SINCE`/`UNTIL` to bound the
+entries, and `EXTRA=--no-facts` to skip the system-of-record lookups.
+Results land in `$TMPDIR/wiki-absorb-<time>/<variant>/` (set `OUT` to
+change it). Each variant folder holds a full copy of the wiki, so don't
+commit it; copy only `scorecard.md` and `runs.json` into `bench/results/`.
