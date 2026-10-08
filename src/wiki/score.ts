@@ -11,7 +11,8 @@
 //
 // An answer scores the share of its expected facts it contains. Matching
 // ignores case and spacing; a fact with five or more digits (a phone,
-// an invoice number) also matches on its digits alone. Question sets
+// an invoice number) also matches on its digits alone. "a|b" accepts
+// either spelling (a date or an amount written two ways). Question sets
 // hold real facts, so they belong outside the repository.
 
 export interface ScoreQuestion {
@@ -71,8 +72,11 @@ export function matchFacts(answer: string, expect: string[]): { found: string[];
   const found: string[] = []
   const missing: string[] = []
   for (const fact of expect) {
-    const d = digits(fact)
-    const hit = text.includes(norm(fact)) || (d.length >= 5 && textDigits.includes(d))
+    // "2027-03-31|31/03/2027": any one spelling counts.
+    const hit = fact.split("|").some((alt) => {
+      const d = digits(alt)
+      return (!!alt.trim() && text.includes(norm(alt))) || (d.length >= 5 && textDigits.includes(d))
+    })
     ;(hit ? found : missing).push(fact)
   }
   return { found, missing }

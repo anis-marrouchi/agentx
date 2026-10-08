@@ -331,6 +331,12 @@ describe("wiki score", () => {
     const diff = compareReports(before, after)
     expect(diff.deltas.find((d) => d.id === "b")?.gained).toEqual(["paid"])
   })
+
+  it("accepts any one spelling of a fact written as a|b", () => {
+    const { found, missing } = matchFacts("Due 31/03/2027, total 24 148,725 DT.", ["2027-03-31|31/03/2027", "24148.725|24 148,725", "paid|settled"])
+    expect(found).toEqual(["2027-03-31|31/03/2027", "24148.725|24 148,725"])
+    expect(missing).toEqual(["paid|settled"])
+  })
 })
 
 describe("scheduled jobs", () => {

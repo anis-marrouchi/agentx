@@ -1597,7 +1597,7 @@ Besides the agent's own articles, the query reads other agents' articles the age
 
 ### `agentx wiki score`
 
-Score the wiki's answers to a question set, or compare two saved scores. A question file is a JSON array or one JSON object per line: `{"id": "q1", "question": "…", "expect": ["fact", "…"]}`. Each answer scores the share of its expected facts it contains (case and spacing ignored; a fact of five or more digits also matches on its digits). See [Measure the difference](/jobs/wiki-contributions#measure-the-difference).
+Score the wiki's answers to a question set, or compare two saved scores. A question file is a JSON array or one JSON object per line: `{"id": "q1", "question": "…", "expect": ["fact", "…"]}`. Each answer scores the share of its expected facts it contains (case and spacing ignored; a fact of five or more digits also matches on its digits; `"a|b"` accepts either spelling). See [Measure the difference](/jobs/wiki-contributions#measure-the-difference).
 
 | Flag | Default | What it does |
 |---|---|---|
