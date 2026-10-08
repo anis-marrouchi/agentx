@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.126.2](https://github.com/anis-marrouchi/agentx/compare/v0.126.1...v0.126.2) (2026-10-08)
+
+
+### Bug Fixes
+
+* **bench:** run wiki-absorb.sh on macOS bash 3.2 ([#809](https://github.com/anis-marrouchi/agentx/issues/809) review) ([#810](https://github.com/anis-marrouchi/agentx/issues/810)) ([654f12c](https://github.com/anis-marrouchi/agentx/commit/654f12cccfc30f26108dfeb72de801347497b445))
+
 ## [0.126.1](https://github.com/anis-marrouchi/agentx/compare/v0.126.0...v0.126.1) (2026-10-08)
 
 
