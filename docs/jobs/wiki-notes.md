@@ -61,7 +61,7 @@ The same note posted twice is kept once. Re-posting a note the run already rejec
 
 ## What the run sees
 
-At the start of each listed schedule, the run gets up to **Most notes per run** waiting notes, ahead of its own instructions: new (open) notes first, then deferred ones. Within each group, the notes given to the fewest runs come first, then the oldest, so a note a run keeps skipping does not hold its place ahead of newer ones. Each note shows who left it, its date, the change and the source, and the command to record what the run did:
+At the start of each listed schedule, the run gets up to **Most notes per run** waiting notes, ahead of its own instructions: new (open) notes first, then deferred ones. Within each group, notes take turns: a note no run has seen yet comes first, then the one a run saw longest ago, then the oldest. A note a run keeps skipping does not hold its place ahead of newer ones. Each note shows who left it, its date, the change and the source, and the command to record what the run did:
 
 ```bash
 agentx wiki notes handle 3f2a91c04b7e --outcome patched \
