@@ -189,7 +189,8 @@ export class NoteStore {
 
   /**
    * The notes a run should read: open ones first, then ones an earlier run
-   * deferred, each oldest first. Marks each as listed in `runId`.
+   * deferred; within each, the ones given to the fewest runs first, then the
+   * oldest. Marks each as listed in `runId`.
    *
    * Open notes go first so that notes a run keeps deferring (a source that
    * can never be checked) cannot fill every slot and hide new ones. A note
@@ -207,7 +208,11 @@ export class NoteStore {
         changed = true
       }
     }
-    const oldestFirst = (a: WikiNote, b: WikiNote) => a.posted.localeCompare(b.posted)
+    // Fewest runs first, then oldest: an open note a run keeps skipping is
+    // never deferred, so it never expires, and must not hold its place
+    // ahead of newer notes on every run.
+    const oldestFirst = (a: WikiNote, b: WikiNote) =>
+      (a.listedIn?.length ?? 0) - (b.listedIn?.length ?? 0) || a.posted.localeCompare(b.posted)
     const mine = f.notes.filter((n) => n.to === inbox)
     const picked = [
       ...mine.filter((n) => n.status === "open").sort(oldestFirst),
