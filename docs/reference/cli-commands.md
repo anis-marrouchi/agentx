@@ -1420,6 +1420,90 @@ LLM-patch an article from a free-form instruction; shows diff + confirms before 
 | `--patch-model <m>` | `sonnet` | Patch model. |
 | `--yes` | — | Skip confirmation and write immediately. |
 | `--no-commit` | — | Show the patched body but don't write. |
+| `--allow-fact-loss` | — | Save even when the patch shrinks the article or drops a phone number, email, role, link or number it had. |
+
+Before saving, the patch is checked: it is refused, with the reason, when the article gets much shorter, when the result contains the model's own commentary, when a heading appears twice, when it drops a phone number, email, role, "main contact" note, link or number, or when the article changed while the patch was being made. The article's existing related links are kept. See [`wiki patch` refuses to lose facts](/jobs/wiki-contributions#wiki-patch-refuses-to-lose-facts).
+
+### `agentx wiki contribute`
+
+Queue sourced wiki patches from an agent's work since its last run: its chat messages, and its tasks with the tool calls it ran. Each patch adds a fact, corrects a value or creates a short page, and names its source and check date. Nothing is written to the wiki until `agentx wiki contributions merge`. See [Let agents keep the wiki up to date](/jobs/wiki-contributions).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--agent <id>` | — | Contribute for this agent. |
+| `--all` | — | Every agent with `wiki.contribute.enabled` in `agentx.json`. |
+| `--since <time>` | the last 24 hours | First run only: read work from this date or time. Later runs start where the last one stopped. |
+| `--max-patches <n>` | the agent's `maxPatches`, else `30` | Patches per agent per run. |
+| `--max-cost <usd>` | the agent's `maxCostUsd`, else `wiki.contributions.maxCostUsd`, else `0.5` | Model spend per agent per run, in dollars. Each call is also capped at what is left. |
+| `--max-items <n>` | `60` | Chat messages and tasks read per agent per run. |
+| `--model <model>` | the agent's `model`, else `wiki.contributions.model`, else `AGENTX_WIKI_CONTRIBUTE_MODEL`, else `sonnet` | Model for the contribution call. |
+| `--db <path>` | `.agentx/db.sqlite` | Trace database with the agents' tasks. Without it, only chat messages are read. |
+| `--dry-run` | — | Show the patches without queueing them or moving the agent's starting point. |
+| `--json` | — | Print the batches as JSON. |
+
+### `agentx wiki contribute enable <agent>`
+
+Turn on an agent's daily wiki contribution (`agents.<id>.wiki.contribute.enabled`). The daily jobs `wiki-contribute` and `wiki-contribute-merge` are then added to the schedule.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--max-cost <usd>` | — | Model spend per run, in dollars. |
+| `--max-patches <n>` | — | Patches per run. |
+| `-c, --config <path>` | — | Path to `agentx.json`. |
+
+### `agentx wiki contribute disable <agent>`
+
+Turn off an agent's daily wiki contribution. Takes the same flags as `enable`.
+
+### `agentx wiki contributions`
+
+The daily merge of agents' wiki patches (list, merge, held, approve, reject). On its own it runs `list`.
+
+### `agentx wiki contributions list`
+
+Patches waiting for the merge, and what the last merge did.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--json` | — | Print as JSON. |
+
+### `agentx wiki contributions merge`
+
+Apply every queued patch. Facts go through the fact ledger, so the newest check wins and the older value stays in its history and on the page as "previously". A patch older than the wiki's value raises a question instead. Several new pages for the same subject become one page, and a new page whose title closely matches an existing one is held as a possible duplicate. A patch that removes a fact, or a change that would lose one, is held. Subjects with more than one page are listed.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--dry-run` | — | Show what would change without writing. |
+| `--json` | — | Print the report as JSON. |
+
+### `agentx wiki contributions held`
+
+Patches the merge held for a person, with the reason and the facts the change would lose.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--all` | — | Include approved and rejected. |
+| `--json` | — | Print as JSON. |
+
+### `agentx wiki contributions approve <id>`
+
+Apply a held patch as it is. The page's previous version is kept in its history.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki contributions reject <id>`
+
+Drop a held patch.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
 
 ### `agentx wiki prune`
 
@@ -1499,7 +1583,7 @@ Agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
-| `--agent <id>` | — | Which agent's wiki to query (default: first one with a catalog). |
+| `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`), else the first one with a catalog | Which agent's wiki to search first. |
 | `--selector-model <m>` | `haiku` | Candidate-selection model. |
 | `--synth-model <m>` | `sonnet` | Synthesis model. |
 | `--max-candidates <n>` | `3` | Candidates from selector. |
@@ -1507,6 +1591,25 @@ Agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer
 | `--max-articles <n>` | `8` | Cap on total articles walked. |
 | `--json` | — | Emit full result as JSON (for A/B harnesses). |
 | `--trace` | — | Print selector + walk trace. |
+| `--own-only` | — | Search only the agent's own articles, not the shared wiki. |
+
+Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query.
+
+### `agentx wiki score`
+
+Score the wiki's answers to a question set, or compare two saved scores. A question file is a JSON array or one JSON object per line: `{"id": "q1", "question": "…", "expect": ["fact", "…"]}`. Each answer scores the share of its expected facts it contains (case and spacing ignored; a fact of five or more digits also matches on its digits; `"a|b"` accepts either spelling). See [Measure the difference](/jobs/wiki-contributions#measure-the-difference).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--questions <file>` | — | The question set. Required unless `--compare`. |
+| `--agent <id>` | the calling agent | Ask as this agent. |
+| `--own-only` | — | Search only the agent's own articles. |
+| `--out <file>` | — | Save the report as JSON. |
+| `--compare <files...>` | — | Compare two saved reports: `before.json after.json`. |
+| `--selector-model <m>` | `haiku` | Candidate-selection model. |
+| `--synth-model <m>` | `sonnet` | Synthesis model. |
+| `--json` | — | Print the report as JSON. |
 
 ### `agentx wiki search <query>`
 

@@ -161,7 +161,18 @@ schedule
   .action(async (opts) => {
     const cfg = loadRawConfig(opts.config)
     const crons = cfg.crons || {}
-    const entries = Object.entries(crons)
+    const entries: Array<[string, any]> = Object.entries(crons)
+    // Jobs AgentX adds itself, such as the wiki's daily contribution
+    // (#824), are not in the file but run all the same.
+    const builtIn = new Set<string>()
+    try {
+      const { loadDaemonConfig } = await import("@/daemon/config")
+      for (const [id, def] of Object.entries(loadDaemonConfig(opts.config).crons)) {
+        if (crons[id]) continue
+        builtIn.add(id)
+        entries.push([id, def])
+      }
+    } catch { /* an invalid config still lists what the file holds */ }
     if (!entries.length) {
       console.log(chalk.dim("  No scheduled jobs"))
       return
@@ -180,6 +191,7 @@ schedule
         console.log(chalk.dim(`      notify: ${def.notify.channel} ${def.notify.chatId}${def.deliverResult === false ? " (failures only)" : " (results and failures)"}`))
       }
       if (def.createdBy) console.log(chalk.dim(`      created by agent: ${def.createdBy}`))
+      if (builtIn.has(id)) console.log(chalk.dim("      built in: added by AgentX from your settings; a job of the same id in crons replaces it"))
       if (def.approval) {
         const tz = def.timezone || "UTC"
         const next = formatFireTime(nextFireTime(def.schedule, tz), tz)

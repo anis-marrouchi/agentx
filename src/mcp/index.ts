@@ -931,7 +931,7 @@ const TOOLS = [
         },
         agent: {
           type: "string",
-          description: "Which agent's wiki to query (default: first agent with a catalog). Each agent has its own wiki dir under .agentx/wiki/agents/<id>/",
+          description: "Which agent's wiki to search first (default: the calling agent, else the first agent with a catalog). Each agent has its own wiki dir under .agentx/wiki/agents/<id>/; the shared wiki (other agents' readable articles) is always searched too.",
         },
         wiki_dir: {
           type: "string",
@@ -1601,11 +1601,13 @@ async function handleToolCall(
         return { content: [{ type: "text", text: "Error: `question` is required." }] }
       }
       const { WikiHub } = await import("@/wiki")
-      const { agenticQuery } = await import("@/wiki/query")
+      const { agenticQuery, sharedQueryEnabled } = await import("@/wiki/query")
       const { resolve } = await import("path")
       const wikiDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
       const hub = new WikiHub(wikiDir, undefined, "graph")
-      let agentId = (args.agent as string) || ""
+      // The calling agent, when the runtime says who it is: its own wiki
+      // first, then the shared wiki (#824).
+      let agentId = (args.agent as string) || process.env.AGENTX_AGENT_ID || ""
       if (!agentId) {
         // Fall back to first agent with a catalog
         const { existsSync } = await import("fs")
@@ -1629,6 +1631,7 @@ async function handleToolCall(
       const branch = await runningIntentPath()
       const result = await agenticQuery(question, store, agentId, {
         maxHops,
+        shared: (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined,
         messagePath: branch?.path,
         ...(branch?.graphWeight !== undefined ? { graphWeight: branch.graphWeight } : {}),
       })
