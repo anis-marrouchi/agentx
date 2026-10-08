@@ -5,6 +5,8 @@
 // surface. `_index.md` is the catalog; tags are a secondary hint, no longer
 // load-bearing. See blog/wiki-karpathy-review for the why.
 
+import type { Importance, WikiStatement } from "./ontology/types"
+
 export type WikiAccess = "private" | "shared" | "public"
 
 /**
@@ -62,6 +64,19 @@ export interface WikiArticleMeta {
    *  under an active intent graph. Empty for legacy articles — retrieval
    *  falls back to pure BM25 for those. */
   graphPath?: string[]
+  /** Ontology type (`organization`, `device`, `obligation`…), finer than
+   *  `type`. Unset, the ontology's classify rules decide (#811). */
+  class?: string
+  /** Event importance. Unset, the ontology default applies. */
+  importance?: Importance
+  /** When the event happened (YYYY-MM-DD). */
+  date?: string
+  /** Title of the event this minor event rolled up into. */
+  rolledUpInto?: string
+  /** Other names for the same thing; pages sharing a name merge. */
+  aliases?: string[]
+  /** Typed facts about this page's subject. */
+  statements?: WikiStatement[]
 }
 
 export interface WikiArticle {

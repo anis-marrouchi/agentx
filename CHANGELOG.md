@@ -2,6 +2,21 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.126.1](https://github.com/anis-marrouchi/agentx/compare/v0.126.0...v0.126.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **wiki:** accept only known importance levels on the event list ([#814](https://github.com/anis-marrouchi/agentx/issues/814) follow-up) ([#815](https://github.com/anis-marrouchi/agentx/issues/815)) ([6f575e1](https://github.com/anis-marrouchi/agentx/commit/6f575e166d25ad516cac97c346b5cbcb9c5cddbf))
+
+## [0.126.0](https://github.com/anis-marrouchi/agentx/compare/v0.125.1...v0.126.0) (2026-10-08)
+
+
+### Features
+
+* **wiki:** measure absorb output and run cost ([#808](https://github.com/anis-marrouchi/agentx/issues/808)) ([#809](https://github.com/anis-marrouchi/agentx/issues/809)) ([45c13b0](https://github.com/anis-marrouchi/agentx/commit/45c13b02437a36dfe2f8c978c606559eda733a9a))
+* **wiki:** typed knowledge-graph view with pillars, lenses and zoom levels ([#811](https://github.com/anis-marrouchi/agentx/issues/811)) ([#814](https://github.com/anis-marrouchi/agentx/issues/814)) ([ee6040c](https://github.com/anis-marrouchi/agentx/commit/ee6040c314c00a01f6c8226c0ec02c573ab7eeb7))
+
 ## [0.125.1](https://github.com/anis-marrouchi/agentx/compare/v0.125.0...v0.125.1) (2026-10-07)
 
 
