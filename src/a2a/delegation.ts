@@ -117,6 +117,13 @@ export interface DelegationDeps {
   /** A line added to the callback message, e.g. how to close the open
    *  request this delegation belongs to. */
   callbackNote?(record: DelegationRecord, result: DelegationResult): string | undefined
+  /** The callback turn was stopped by a restart and its one re-run failed
+   *  too: the person got the short notice; note it on the open request.
+   *  Errors thrown here are the listener's to handle. */
+  onRelayFailed?(record: DelegationRecord, result: DelegationResult, reason: string): void
+  /** Default true: a callback turn a restart stopped before it answered
+   *  (`registry-stop`, empty reply) runs once more after the next start. */
+  requeueRelayOnRestart?: boolean
   /** Upper bound for one delegation, start to answer. */
   timeoutMs: number
   /** Default true: a person-started delegation goes async on its own. */
@@ -127,6 +134,21 @@ export interface DelegationDeps {
   /** start/done log; omit to keep state in memory only (tests). */
   logPath?: string
   now?: () => number
+}
+
+/** How every callback message starts. A turn whose message starts with
+ *  this is the relay of a delegation's result to the person. */
+export const DELEGATION_RESULT_MARKER = "[agentx:delegation-result"
+
+/** Is this turn message the relay of a delegation result? */
+export function isDelegationRelay(message: string | null | undefined): boolean {
+  return typeof message === "string" && message.startsWith(DELEGATION_RESULT_MARKER)
+}
+
+/** Did a restart stop this turn before it answered? The process registry
+ *  stops every live turn with the reason `registry-stop` on shutdown. */
+export function stoppedByRestart(resp: { content: string; error?: string }): boolean {
+  return !!resp.error && /\bregistry-stop\b/.test(resp.error) && resp.content.trim().length === 0
 }
 
 const REQUEST_CLIP = 500
@@ -168,7 +190,7 @@ export function buildCallbackMessage(rec: DelegationRecord, result: DelegationRe
     lost: "was lost (this machine restarted before the answer came back)",
   }[result.status]
   return [
-    `[agentx:delegation-result task=${rec.id} from=${rec.callee}${rec.peer ? ` peer=${rec.peer}` : ""} status=${result.status}]`,
+    `${DELEGATION_RESULT_MARKER} task=${rec.id} from=${rec.callee}${rec.peer ? ` peer=${rec.peer}` : ""} status=${result.status}]`,
     `Earlier in this conversation you asked ${who} to help. That work ${outcome}.`,
     "",
     "What you asked:",
@@ -190,9 +212,27 @@ export function fallbackReply(rec: DelegationRecord, result: DelegationResult): 
   return `The request to ${who} did not complete (${result.status}): ${clip(result.text, 500)}`
 }
 
+/** What the person sees when the callback turn was stopped by a restart
+ *  and its one re-run did not answer either. */
+export function relayFailureNotice(rec: DelegationRecord, result: DelegationResult): string {
+  const who = rec.peer ? `${rec.callee} on ${rec.peer}` : rec.callee
+  return `${rec.caller} could not pass on the answer from ${who} (${result.status}) because of a restart. Ask ${rec.caller} for it again. Ref: ${rec.id}`
+}
+
+/** A callback turn a restart stopped, waiting for its one re-run. */
+interface HeldRelay {
+  record: DelegationRecord
+  result: DelegationResult
+  /** 1: stopped once, re-run on the next start. 2: the re-run has begun;
+   *  if it is stopped too, the next start sends the notice instead. */
+  attempt: number
+}
+
 type LogLine =
   | ({ type: "start"; ts: number } & DelegationRecord)
   | { type: "done"; id: string; status: DelegationStatus; ts: number }
+  | ({ type: "relay"; id: string; ts: number } & HeldRelay)
+  | { type: "relayed"; id: string; ts: number }
 
 export class DelegationManager {
   private pendingById = new Map<string, DelegationRecord>()
@@ -204,6 +244,8 @@ export class DelegationManager {
   private chains = new Map<string, Promise<void>>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private localRuns = new Map<string, string>()
+  /** Callback turns a restart stopped, by task id (see HeldRelay). */
+  private heldRelays = new Map<string, HeldRelay>()
   private readonly now: () => number
 
   constructor(private deps: DelegationDeps) {
@@ -324,20 +366,27 @@ export class DelegationManager {
     this.deps.log(`[delegation ${id}] ${rec.callee} ${result.status} after ${Math.round((this.now() - rec.startedAt) / 1000)}s`)
     try { this.deps.onDone?.(rec, result) } catch { /* a listener never stops a callback */ }
 
-    const key = `${rec.caller}\u0000${rec.origin.channel}\u0000${rec.origin.chatId}`
-    const prev = this.chains.get(key) ?? Promise.resolve()
-    const next = prev.then(() => this.callback(rec, result)).catch((e: any) => {
-      this.deps.log(`[delegation ${id}] callback failed: ${e?.message ?? e}`)
-    })
-    this.chains.set(key, next)
-    void next.finally(() => { if (this.chains.get(key) === next) this.chains.delete(key) })
-    await next
+    await this.enqueue(rec, () => this.callback(rec, result))
     return true
   }
 
+  /** One callback at a time per caller chat, in the order they come. */
+  private enqueue(rec: DelegationRecord, run: () => Promise<void>): Promise<void> {
+    const key = `${rec.caller}\u0000${rec.origin.channel}\u0000${rec.origin.chatId}`
+    const prev = this.chains.get(key) ?? Promise.resolve()
+    const next = prev.then(run).catch((e: any) => {
+      this.deps.log(`[delegation ${rec.id}] callback failed: ${e?.message ?? e}`)
+    })
+    this.chains.set(key, next)
+    void next.finally(() => { if (this.chains.get(key) === next) this.chains.delete(key) })
+    return next
+  }
+
   /** After a restart: every delegation that was started and never
-   *  finished is reported to its caller as lost. */
+   *  finished is reported to its caller as lost, and every callback turn
+   *  the restart stopped runs once more (see requeueRelays). */
   async recover(): Promise<number> {
+    const relays = this.requeueRelays()
     const lost = [...this.pendingById.values()]
     for (const rec of lost) {
       this.remember({ id: rec.id, caller: rec.caller, callee: rec.callee, peer: rec.peer, status: "running", startedAt: rec.startedAt })
@@ -346,8 +395,32 @@ export class DelegationManager {
       status: "lost",
       text: "This machine restarted while the work was in progress, so its answer never came back.",
     })))
+    await relays
     this.compact()
     return lost.length
+  }
+
+  /**
+   * Callback turns the last restart stopped before they answered. Each
+   * runs once more, at most once per task id: the re-run is written down
+   * before it starts, so a re-run stopped by yet another restart is not
+   * run a third time. That one, or a re-run that fails, gets the short
+   * notice instead. Returns how many were re-run.
+   */
+  async requeueRelays(): Promise<number> {
+    const held = [...this.heldRelays.values()]
+    let rerun = 0
+    await Promise.all(held.map((h) => {
+      const rec = h.record
+      if (h.attempt >= 2) {
+        return this.enqueue(rec, () => this.relayFailed(rec, h.result, "its re-run was stopped by another restart"))
+      }
+      rerun++
+      this.holdRelay({ ...h, attempt: 2 })
+      this.deps.log(`[delegation ${rec.id}] re-running the callback to ${rec.caller} a restart stopped`)
+      return this.enqueue(rec, () => this.callback(rec, h.result, 2))
+    }))
+    return rerun
   }
 
   /** Recent delegations, newest first. Ids, agents and status only. */
@@ -373,7 +446,8 @@ export class DelegationManager {
     this.timers.clear()
   }
 
-  private async callback(rec: DelegationRecord, result: DelegationResult): Promise<void> {
+  /** `attempt` 2 is the one re-run of a callback a restart stopped. */
+  private async callback(rec: DelegationRecord, result: DelegationResult, attempt = 1): Promise<void> {
     const { channel, chatId } = rec.origin
     await this.waitUntilFree(rec.caller, channel, chatId)
     const context: Record<string, unknown> = {
@@ -390,13 +464,34 @@ export class DelegationManager {
     } catch (e: any) {
       resp = { content: "", error: e?.message ?? String(e) }
     }
+    // A restart stopped the turn before it answered: the person would get
+    // nothing (the channels are already down). Keep it for one re-run after
+    // the next start; a re-run stopped too is told on the start after that.
+    if (stoppedByRestart(resp) && (attempt > 1 || this.deps.requeueRelayOnRestart !== false)) {
+      if (attempt === 1) {
+        this.holdRelay({ record: rec, result, attempt: 1 })
+        this.deps.log(`[delegation ${rec.id}] callback to ${rec.caller} stopped by a restart; it runs once more after the next start`)
+      } else {
+        this.deps.log(`[delegation ${rec.id}] re-run of the callback to ${rec.caller} stopped by a restart too; the person is told after the next start`)
+      }
+      return
+    }
     // The registry queued it behind other work; its flush replies on the
     // channel itself.
     if (isQueued(resp.error)) {
       this.deps.log(`[delegation ${rec.id}] callback queued behind other work for ${rec.caller}`)
+      if (attempt > 1) this.releaseRelay(rec.id)
       return
     }
     const own = !resp.error && resp.content.trim().length > 0
+    if (attempt > 1) {
+      if (!own) {
+        await this.relayFailed(rec, result, `its re-run gave no reply${resp.error ? ` (${clip(resp.error, 200)})` : ""}`)
+        return
+      }
+      this.releaseRelay(rec.id)
+      this.deps.log(`[delegation ${rec.id}] re-run of the callback to ${rec.caller} answered`)
+    }
     if (!own) this.deps.log(`[delegation ${rec.id}] ${rec.caller} gave no reply to the callback${resp.error ? `: ${resp.error}` : ""}; sending the plain result`)
     const text = own ? resp.content : fallbackReply(rec, result)
     if (!this.deps.canDeliver(channel)) {
@@ -413,6 +508,38 @@ export class DelegationManager {
     } catch (e: any) {
       this.deps.log(`[delegation ${rec.id}] delivery to ${channel}:${chatId} failed: ${e?.message ?? e}`)
     }
+  }
+
+  /** The re-run did not answer: send the short notice to the person and
+   *  note it on the open request. Never re-runs again. */
+  private async relayFailed(rec: DelegationRecord, result: DelegationResult, reason: string): Promise<void> {
+    this.releaseRelay(rec.id)
+    this.deps.log(`[delegation ${rec.id}] callback to ${rec.caller} not relayed: ${reason}; telling the person`)
+    try { this.deps.onRelayFailed?.(rec, result, reason) } catch { /* a listener never stops the notice */ }
+    const { channel, chatId } = rec.origin
+    if (!this.deps.canDeliver(channel)) {
+      this.deps.log(`[delegation ${rec.id}] no route to ${channel}:${chatId} for the notice`)
+      return
+    }
+    try {
+      await this.deps.deliver({
+        channel, chatId, text: relayFailureNotice(rec, result), agentId: rec.caller, accountId: rec.origin.accountId,
+        record: true, taskId: rec.id, outcome: "error",
+      })
+    } catch (e: any) {
+      this.deps.log(`[delegation ${rec.id}] notice to ${channel}:${chatId} failed: ${e?.message ?? e}`)
+    }
+  }
+
+  private holdRelay(h: HeldRelay): void {
+    const held: HeldRelay = { record: h.record, result: { status: h.result.status, text: clip(h.result.text, RESULT_CLIP) }, attempt: h.attempt }
+    this.heldRelays.set(h.record.id, held)
+    this.append({ type: "relay", id: h.record.id, ts: this.now(), ...held })
+  }
+
+  private releaseRelay(id: string): void {
+    if (!this.heldRelays.delete(id)) return
+    this.append({ type: "relayed", id, ts: this.now() })
   }
 
   private async waitUntilFree(agentId: string, channel: string, chatId: string): Promise<void> {
@@ -470,6 +597,10 @@ export class DelegationManager {
         } else if (line.type === "done" && typeof line.id === "string") {
           this.pendingById.delete(line.id)
           this.markDone(line.id, typeof line.status === "string" ? line.status : "done")
+        } else if (line.type === "relay" && typeof line.id === "string" && line.record && line.result) {
+          this.heldRelays.set(line.id, { record: line.record, result: line.result, attempt: Number(line.attempt) || 1 })
+        } else if (line.type === "relayed" && typeof line.id === "string") {
+          this.heldRelays.delete(line.id)
         }
       }
     } catch (e: any) {
@@ -477,8 +608,8 @@ export class DelegationManager {
     }
   }
 
-  /** Keep the log small: only unfinished starts and the recent done ids
-   *  (for duplicate suppression) are rewritten. */
+  /** Keep the log small: only unfinished starts, the recent done ids
+   *  (for duplicate suppression) and held callbacks are rewritten. */
   private compact(): void {
     this.appendsSinceCompact = 0
     const path = this.deps.logPath
@@ -488,6 +619,7 @@ export class DelegationManager {
       const lines: LogLine[] = [
         ...[...this.pendingById.values()].map((r) => ({ type: "start" as const, ts: r.startedAt, ...r })),
         ...[...this.doneIds].map(([id, status]) => ({ type: "done" as const, id, status, ts })),
+        ...[...this.heldRelays].map(([id, h]) => ({ type: "relay" as const, id, ts, ...h })),
       ]
       mkdirSync(dirname(path), { recursive: true })
       writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + (lines.length ? "\n" : ""))
