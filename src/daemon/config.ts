@@ -302,13 +302,21 @@ const agentConfigSchema = z.object({
    *  contribution (#824): `agentx wiki contribute --all` reviews the
    *  agent's work since its last run and queues sourced patches for the
    *  daily merge. Off by default. `maxPatches` and `maxCostUsd` cap one
-   *  run; `model` overrides the wiki-wide model. */
+   *  run; `model` overrides the wiki-wide model. `absorb` leaves the
+   *  agent out of the bulk absorb. */
   wiki: z.object({
     contribute: z.object({
       enabled: z.boolean().default(false),
       maxPatches: z.number().int().min(1).max(200).default(30),
       maxCostUsd: z.number().min(0).max(20).optional(),
       model: z.string().optional(),
+    }).default({}),
+    /** Whether `agentx wiki absorb` without `--agent` compiles this
+     *  agent's raw entries (#850). On by default. Off, the agent is skipped
+     *  and named; its raw entries are still captured, so absorb can resume
+     *  later with nothing lost. `--agent <id>` still runs it. */
+    absorb: z.object({
+      enabled: z.boolean().default(true),
     }).default({}),
   }).optional(),
   permissionMode: z.string().default("default"),

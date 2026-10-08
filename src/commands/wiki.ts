@@ -10,6 +10,7 @@ import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
 import { patchProblems } from "@/wiki/fact-guard"
 import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
+import { absorbOffAgents, selectAbsorbAgents } from "@/wiki/absorb-agents"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
@@ -49,6 +50,17 @@ async function localAgentIds(): Promise<Set<string> | null> {
     return ids.length ? new Set(ids) : null
   } catch {
     return null
+  }
+}
+
+/** Agents with the bulk absorb turned off in agentx.json (#850). Empty
+ *  when there is no config to read. */
+async function absorbOffAgentIds(): Promise<Set<string>> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    return absorbOffAgents(loadDaemonConfig().agents || {})
+  } catch {
+    return new Set()
   }
 }
 
@@ -210,7 +222,16 @@ wiki
     // Each node absorbs its own agents. A peer's agents are absorbed on the
     // peer and reach this node through `wiki sync --articles`.
     const local = await localAgentIds()
-    const agents = (opts.agent ? [opts.agent] : hub.listAgents().filter((id) => !local || local.has(id)))
+    // Agents with agents.<id>.wiki.absorb.enabled false are left out
+    // unless named with --agent (#850).
+    const { agents: selected, skipped } = selectAbsorbAgents(
+      hub.listAgents().filter((id) => !local || local.has(id)),
+      { only: opts.agent, off: await absorbOffAgentIds() },
+    )
+    for (const id of skipped) {
+      console.log(`  ${chalk.cyan(id)}: ${chalk.dim("absorb is off for this agent (agents." + id + ".wiki.absorb.enabled); skipped. Use --agent " + id + " to run it anyway.")}`)
+    }
+    const agents = selected
       .filter((id) => {
         const from = hub.syncedFrom(id)
         if (from) console.log(`  ${chalk.cyan(id)}: ${chalk.dim(`copied from ${from.node}, read-only here; absorb it there`)}`)
