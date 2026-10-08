@@ -231,6 +231,18 @@ describe("failure", () => {
     tracker.delegationDone(dlg("dlg-1"), "done", "all good")
     expect(store.get("req-t1")?.state).toBe("in_progress")
   })
+
+  it("notes the request when a delegated answer was not passed on after a restart (#846)", () => {
+    start("t1")
+    tracker.delegationStarted(dlg("dlg-1"))
+    end("t1")
+    tracker.delegationDone(dlg("dlg-1"), "done", "all good")
+    tracker.relayFailed(dlg("dlg-1"), "all good", "its re-run gave no reply")
+    expect(store.get("req-t1")).toMatchObject({
+      state: "needs_attention",
+      attentionReason: "The answer from devops was not passed on after a restart (its re-run gave no reply). It said: all good",
+    })
+  })
 })
 
 describe("timeout", () => {

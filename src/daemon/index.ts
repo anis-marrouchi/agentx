@@ -191,7 +191,7 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
-import type { DelegationManager } from "@/a2a/delegation"
+import { isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
@@ -524,6 +524,7 @@ export class AgentXDaemon {
         this.status?.board.delegationDone(rec, result.status)
       },
       callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
+      onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
     })
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)
@@ -1353,6 +1354,11 @@ export class AgentXDaemon {
         boots: this.bootTimes,
         log: this.log,
         staggerMs: 2_000,
+        // A delegation result's relay turn is re-run by the delegation
+        // manager (#846); resuming it here too would answer twice.
+        handledElsewhere: (run) => this.config.mesh.delegation.requeueRelayOnRestart && isDelegationRelay(run.originalMessage)
+          ? "delegation result relay: the delegation manager runs it again"
+          : null,
         notifyOperator: dest
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
           : undefined,

@@ -877,6 +877,10 @@ const meshConfigSchema = z.object({
     asyncWhenHuman: z.boolean().default(true),
     /** A delegation with no answer after this long is reported as timed out. */
     timeoutMinutes: z.number().int().min(1).max(240).default(30),
+    /** A restart that stops the turn passing a delegation's answer on to
+     *  the person (#846): run that turn once more after the next start,
+     *  and if it fails again, tell the person and note the open request. */
+    requeueRelayOnRestart: z.boolean().default(true),
   }).default({}),
 })
 
