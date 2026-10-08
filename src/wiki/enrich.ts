@@ -43,6 +43,8 @@ export interface EnrichContext {
   events: Entity[]
   projects: Entity[]
   entries: WikiEntry[]
+  /** Raw entry ids behind the pages the call may read. */
+  sources: string[]
   /** Other pages that name the subject in their text, with the passage. */
   mentions: Array<{ page: GraphPage; excerpt: string }>
 }
@@ -57,7 +59,13 @@ export interface EnrichResult {
 }
 
 export interface EnrichState {
-  entities: Record<string, { fingerprint: string; at: string; costUsd?: number }>
+  entities: Record<string, {
+    fingerprint: string
+    at: string
+    costUsd?: number
+    /** Calls that failed in a row; such entities go after the rest. */
+    failures?: number
+  }>
 }
 
 const PAGE_CHARS = 3500
@@ -87,29 +95,54 @@ function namedIn(g: WikiGraph, e: Entity, type: string): Entity[] {
   return [...g.entities.values()].filter(x => x.type === type && x.id !== e.id && ` ${normName(x.title)} `.includes(` ${name} `))
 }
 
-export function enrichContext(g: WikiGraph, e: Entity, readEntries: (ids: string[]) => WikiEntry[]): EnrichContext {
-  const linked = linkedEntities(g, e, null)
+/** Agents who can read a page; null means everyone. */
+function readers(m: WikiArticleMeta): Set<string> | null {
+  if (m.access === "public") return null
+  return new Set([m.owner, ...(m.access === "shared" ? m.sharedWith ?? [] : [])])
+}
+
+/** True when everyone who can read `target` can also read `source`, so
+ *  text from `source` may be written into `target` (#820). */
+export function readableAlongside(source: WikiArticleMeta, target: WikiArticleMeta): boolean {
+  const s = readers(source)
+  if (!s) return true
+  const t = readers(target)
+  return !!t && [...t].every(a => s.has(a))
+}
+
+/**
+ * What one call for `e` may read. With a target page, only pages its
+ * readers can already read are included: an owner-only page is never
+ * summarised into a shared or public one.
+ */
+export function enrichContext(g: WikiGraph, e: Entity, readEntries: (ids: string[]) => WikiEntry[], target?: GraphPage): EnrichContext {
+  const readable = (p: GraphPage) => !target || readableAlongside(p.article.meta, target.article.meta)
+  const visible = (x: Entity) => x.pages.some(readable)
+  const pages = e.pages.filter(readable)
+  const sources = target ? [...new Set(pages.flatMap(p => p.article.meta.sources ?? []))] : e.sources
+  const linked = linkedEntities(g, e, null).filter(visible)
   const byId = (list: Entity[]) => [...new Map(list.map(x => [x.id, x])).values()]
-  const events = byId([...linked.filter(x => x.type === "event"), ...namedIn(g, e, "event")])
+  const events = byId([...linked.filter(x => x.type === "event"), ...namedIn(g, e, "event").filter(visible)])
     .sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 30)
-  const projects = byId([...linked.filter(x => x.type === "project"), ...namedIn(g, e, "project")]).slice(0, 12)
+  const projects = byId([...linked.filter(x => x.type === "project"), ...namedIn(g, e, "project").filter(visible)]).slice(0, 12)
   const neighbours = linked
     .filter(x => x.type !== "event" && x.type !== "project")
+    .filter(visible)
     .filter(x => e.type !== "person" || PERSON_RELATION_TYPES.has(x.type))
     .slice(0, 40)
-  const entries = readEntries(e.sources).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14)
+  const entries = readEntries(sources).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 14)
   const properties = lensProperties(g, e.type)
   const ranges = new Map<string, string[]>()
   for (const id of properties.keys()) {
     const range = g.ontology.properties.find(p => p.id === id)?.range
     if (range?.length) ranges.set(id, range)
   }
-  return { entity: e, pages: e.pages, properties, ranges, neighbours, events, projects, entries, mentions: mentionsOf(g, e) }
+  return { entity: e, pages, properties, ranges, neighbours, events, projects, entries, sources, mentions: mentionsOf(g, e, 12, readable) }
 }
 
 /** Non-event pages whose text names the subject: what a new or thin page
  *  can be written from. The newest first, a passage around the first hit. */
-export function mentionsOf(g: WikiGraph, e: Entity, max = 12): Array<{ page: GraphPage; excerpt: string }> {
+export function mentionsOf(g: WikiGraph, e: Entity, max = 12, readable: (p: GraphPage) => boolean = () => true): Array<{ page: GraphPage; excerpt: string }> {
   const names = [e.title, ...e.pages.flatMap(p => p.article.meta.aliases ?? [])].filter(n => n.trim().length >= 3)
   if (names.length === 0) return []
   const escaped = names.map(n => n.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
@@ -118,6 +151,7 @@ export function mentionsOf(g: WikiGraph, e: Entity, max = 12): Array<{ page: Gra
   for (const other of g.entities.values()) {
     if (other.id === e.id || other.type === "event") continue
     for (const page of other.pages) {
+      if (!readable(page)) continue
       const body = bodyOf(page.article.content)
       const m = re.exec(body)
       if (!m) continue
@@ -133,7 +167,7 @@ export function mentionsOf(g: WikiGraph, e: Entity, max = 12): Array<{ page: Gra
 export function fingerprint(ctx: EnrichContext): string {
   const parts = [
     ...ctx.pages.map(p => `${p.agentId}/${p.article.path}`),
-    ...ctx.entity.sources,
+    ...ctx.sources,
     ...ctx.events.map(x => x.id),
     ...ctx.projects.map(x => x.id),
     ...ctx.mentions.map(m => `${m.page.agentId}/${m.page.article.path}`),
@@ -266,9 +300,11 @@ export function withOverview(content: string, overview: string): string {
   if (span) {
     const ours = content.slice(span.end, span.after) === OVERVIEW_END
     const followed = /^#{1,2}[ \t]/m.test(content.slice(span.end, span.end + 4))
-    // Replace the old text only when its end is certain: this job's
-    // marker or a heading. Otherwise keep it below, so nothing is lost.
-    const rest = (ours || followed ? content.slice(span.after) : content.slice(span.textStart)).trim()
+    // Replace the old text only when its end is certain (this job's marker,
+    // or a heading) and, for someone else's, the call was shown all of it.
+    // Otherwise keep it below, so nothing is lost.
+    const replace = ours || (followed && bodyOf(content).length <= PAGE_CHARS)
+    const rest = (replace ? content.slice(span.after) : content.slice(span.textStart)).trim()
     return `${content.slice(0, span.start)}${section}${rest ? `\n${rest}\n` : ""}`
   }
   return `${section}\n${content.trim()}\n`
@@ -346,6 +382,8 @@ export interface EnrichOptions {
   /** Redo entities whose sources did not change. */
   force: boolean
   today: string
+  /** Persists the state; called after every paid call. */
+  save?: (state: EnrichState) => void
 }
 
 export interface EnrichOutcome {
@@ -373,43 +411,65 @@ export interface EnrichRun {
 export async function runEnrich(hub: WikiHub, g: WikiGraph, call: EnrichCall, opts: EnrichOptions, state: EnrichState): Promise<EnrichRun> {
   const types = new Set(opts.types)
   const only = new Set(opts.only.map(normName))
+  const size = (e: Entity) => e.sources.length + e.pages.length
+  // Entities whose last calls failed go last, so they cannot starve the rest.
+  const failures = (e: Entity) => state.entities[e.id]?.failures ?? 0
   const candidates = [...g.entities.values()]
     .filter(e => types.has(e.type))
     .filter(e => only.size === 0 || only.has(normName(e.id)) || only.has(normName(e.title)))
-    .sort((a, b) => b.sources.length + b.pages.length - (a.sources.length + a.pages.length))
+    .sort((a, b) => failures(a) - failures(b) || size(b) - size(a))
   const readEntries = (ids: string[]) => hub.getSharedStore().readEntries(ids)
   const run: EnrichRun = { outcomes: [], costUsd: 0, capped: false }
   let calls = 0
+  // Saved after every paid call, so a run killed part-way (a job's
+  // timeout, then its retry) does not pay for the same entities again.
+  const remember = (id: string, fp: string, costUsd: number, failed = false) => {
+    if (opts.dryRun) return
+    const prev = state.entities[id]
+    state.entities[id] = failed
+      ? { fingerprint: prev?.fingerprint ?? "", at: new Date().toISOString(), costUsd, failures: (prev?.failures ?? 0) + 1 }
+      : { fingerprint: fp, at: new Date().toISOString(), costUsd }
+    opts.save?.(state)
+  }
 
   for (const e of candidates) {
     if (calls >= opts.max) break
     const base = { entity: e.id, title: e.title, statements: 0, links: 0, overview: false, costUsd: 0, dropped: [] as string[] }
-    const ctx = enrichContext(g, e, readEntries)
+    const page = targetPage(hub, e)
+    if (!page) { run.outcomes.push({ ...base, status: "no-page" }); continue }
+    const ctx = enrichContext(g, e, readEntries, page)
     const fp = fingerprint(ctx)
     if (!opts.force && state.entities[e.id]?.fingerprint === fp) {
       if (only.size) run.outcomes.push({ ...base, status: "unchanged" })
       continue
     }
-    const page = targetPage(hub, e)
-    if (!page) { run.outcomes.push({ ...base, status: "no-page" }); continue }
     if (run.costUsd >= opts.maxCostUsd) { run.capped = true; break }
 
     calls++
     const label = g.ontology.types.find(t => t.id === e.type)?.label ?? e.type
+    const where = `${page.agentId}/${page.article.path}`
     let reply: { text: string; costUsd: number }
     try {
       reply = await call(buildEnrichPrompt(ctx, label, opts.today))
     } catch (err) {
-      run.outcomes.push({ ...base, page: `${page.agentId}/${page.article.path}`, status: "failed", dropped: [(err as Error).message.slice(0, 200)] })
+      run.outcomes.push({ ...base, page: where, status: "failed", dropped: [(err as Error).message.slice(0, 200)] })
+      remember(e.id, fp, 0, true)
       continue
     }
     run.costUsd += reply.costUsd
     const parsed = parseEnrichReply(reply.text)
-    const outcome: EnrichOutcome = { ...base, page: `${page.agentId}/${page.article.path}`, status: "no-reply", costUsd: reply.costUsd }
-    if (!parsed) { run.outcomes.push(outcome); continue }
+    const outcome: EnrichOutcome = { ...base, page: where, status: "no-reply", costUsd: reply.costUsd }
+    // A paid answer with nothing usable is remembered too: the same
+    // sources would give the same answer.
+    if (!parsed) { run.outcomes.push(outcome); remember(e.id, fp, reply.costUsd); continue }
     const r = checkEnrichment(parsed, ctx, g)
     Object.assign(outcome, { statements: r.statements.length, links: r.links.length, overview: !!r.overview, dropped: r.dropped })
-    if (!r.overview && r.statements.length === 0 && r.links.length === 0) { outcome.status = "nothing-new"; run.outcomes.push(outcome); continue }
+    if (!r.overview && r.statements.length === 0 && r.links.length === 0) {
+      outcome.status = "nothing-new"
+      run.outcomes.push(outcome)
+      remember(e.id, fp, reply.costUsd)
+      continue
+    }
 
     const content = r.overview ? withOverview(page.article.content, r.overview) : page.article.content
     const meta = mergedMeta(page.article.meta, r, opts.today)
@@ -419,9 +479,15 @@ export async function runEnrich(hub: WikiHub, g: WikiGraph, call: EnrichCall, op
     }
     const store = hub.getAgentWiki(page.agentId)
     const ok = store.writeArticle(page.article.path, meta, content, page.article.meta.owner || page.agentId)
-    if (!ok) { outcome.status = "failed"; outcome.dropped.push("write refused"); run.outcomes.push(outcome); continue }
+    if (!ok) {
+      outcome.status = "failed"
+      outcome.dropped.push("write refused")
+      run.outcomes.push(outcome)
+      remember(e.id, fp, reply.costUsd, true)
+      continue
+    }
     store.rebuildIndex()
-    state.entities[e.id] = { fingerprint: fp, at: new Date().toISOString(), costUsd: reply.costUsd }
+    remember(e.id, fp, reply.costUsd)
     outcome.status = "written"
     run.outcomes.push(outcome)
   }
