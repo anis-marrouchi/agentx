@@ -324,7 +324,6 @@ function readablePages(hub: WikiHub, agentId: string): PageRef[] {
   return out
 }
 
-/** Pages the work most likely touches, by text match on titles and aliases. */
 /**
  * Pages the work most likely touches: half by title and alias, half by
  * body. Titles alone missed a stale page whose title was worded
@@ -567,7 +566,18 @@ export function mergeContributions(hub: WikiHub, wikiDir: string, opts: { now?: 
   for (const key of duplicateOf.keys()) newPages.delete(key)
 
   const ledger = new FactLedger(wikiDir)
+  // Keyed by the page itself, not by the name a patch used: a title patch
+  // and an alias patch to one page each started from the same stored
+  // body, and the second write dropped the first one's lines.
   const edits = new Map<string, PageEdit[]>()
+  const editTargets = new Map<string, PageTarget>()
+  const editKey = (key: string) => {
+    const t = targets.get(key)?.[0]
+    if (!t) return `new:${key}`
+    const k = `page:${t.agentId}:${t.path}`
+    editTargets.set(k, t)
+    return k
+  }
   for (const p of patches) {
     const key = pageKey(p.page)
     const dup = duplicateOf.get(key)
@@ -593,15 +603,15 @@ export function mergeContributions(hub: WikiHub, wikiDir: string, opts: { now?: 
       value = r.fact.value
     }
     report.applied.push({ page: subject, attribute: p.attribute!, value, by: p.agentId, status })
-    const list = edits.get(key) ?? []
+    const list = edits.get(editKey(key)) ?? []
     const previous = p.kind === "correct" ? p.previous : undefined
     list.push({ line: { attribute: p.attribute!, value, source: p.source, checkedAt: p.checkedAt, by: p.agentId, previous }, previous, patch: p })
-    edits.set(key, list)
+    edits.set(editKey(key), list)
   }
 
   const touched = new Set<WikiStore>()
   for (const [key, list] of edits) {
-    const target = targets.get(key)?.[0]
+    const target = editTargets.get(key)
     if (!target) continue
     const r = updatePage(target, list, { guard: true, today, dryRun: opts.dryRun })
     if (r.lost) for (const e of list) hold(e.patch, "the change would lose facts the page has", r.lost)
@@ -613,7 +623,7 @@ export function mergeContributions(hub: WikiHub, wikiDir: string, opts: { now?: 
   }
 
   for (const [key, draft] of newPages) {
-    const list = edits.get(key) ?? []
+    const list = edits.get(`new:${key}`) ?? []
     if (!draft.summaries.length && !list.length) continue
     const store = hub.getAgentWiki(draft.owner)
     const path = newPagePath(store, draft.title, draft.type)
@@ -743,13 +753,17 @@ function updatePage(
   return ok ? { changed: true } : { changed: false, denied: true }
 }
 
-/** Replace `old` with `next` when it occurs exactly once outside the
- *  "Checked facts" section; anything else is ambiguous and left alone. */
-function replaceOnce(body: string, old: string, next: string): string {
+/** Replace `old` with `next` when it occurs exactly once, as whole words,
+ *  outside the "Checked facts" section; anything else is ambiguous and
+ *  left alone. Whole words, so "paid" is not rewritten inside "unpaid". */
+export function replaceOnce(body: string, old: string, next: string): string {
+  if (!old) return body
   const at = body.indexOf(FACTS_HEADING)
   const prose = at === -1 ? body : body.slice(0, at)
-  const first = prose.indexOf(old)
-  if (first === -1 || prose.indexOf(old, first + old.length) !== -1) return body
+  const escaped = old.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  const hits = [...prose.matchAll(new RegExp(`(?<![\\p{L}\\p{N}])${escaped}(?![\\p{L}\\p{N}])`, "gu"))]
+  if (hits.length !== 1) return body
+  const first = hits[0].index!
   return body.slice(0, first) + next + body.slice(first + old.length)
 }
 

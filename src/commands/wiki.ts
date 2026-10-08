@@ -64,12 +64,8 @@ function refuseCopiedAgent(hub: WikiHub, agentId: string): boolean {
 
 /** `wiki.query.shared` from agentx.json; on when there is no config. */
 async function sharedQueryOn(): Promise<boolean> {
-  try {
-    const { loadDaemonConfig } = await import("@/daemon/config")
-    return loadDaemonConfig().wiki.query.shared
-  } catch {
-    return true
-  }
+  const { sharedQueryEnabled } = await import("@/wiki/query")
+  return sharedQueryEnabled()
 }
 
 /** The wiki root, resolved the same way everywhere that needs it. */

@@ -638,3 +638,15 @@ async function runClaude(prompt: string, model: string, timeoutMs: number): Prom
     try { rmSync(promptPath, { force: true }) } catch {}
   }
 }
+
+/** `wiki.query.shared` from agentx.json: whether a query also searches the
+ *  shared wiki. On when there is no config to read. The CLI and the
+ *  `agentx_wiki_query` tool both ask here, so the switch reaches both. */
+export async function sharedQueryEnabled(configPath?: string): Promise<boolean> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    return loadDaemonConfig(configPath).wiki.query.shared
+  } catch {
+    return true
+  }
+}

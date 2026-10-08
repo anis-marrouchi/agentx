@@ -1601,7 +1601,7 @@ async function handleToolCall(
         return { content: [{ type: "text", text: "Error: `question` is required." }] }
       }
       const { WikiHub } = await import("@/wiki")
-      const { agenticQuery } = await import("@/wiki/query")
+      const { agenticQuery, sharedQueryEnabled } = await import("@/wiki/query")
       const { resolve } = await import("path")
       const wikiDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
       const hub = new WikiHub(wikiDir, undefined, "graph")
@@ -1631,7 +1631,7 @@ async function handleToolCall(
       const branch = await runningIntentPath()
       const result = await agenticQuery(question, store, agentId, {
         maxHops,
-        shared: hub.sharedScope(agentId),
+        shared: (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined,
         messagePath: branch?.path,
         ...(branch?.graphWeight !== undefined ? { graphWeight: branch.graphWeight } : {}),
       })

@@ -15,6 +15,7 @@ Once a day, one **merge** applies everyone's suggestions:
 - When two suggestions disagree, the one checked most recently wins. The older value stays on the page as "previously" and in the page's history.
 - When an older check disagrees with what the wiki already holds, nothing changes and a question waits for you in `agentx wiki questions`.
 - Several suggestions for a new page with the same name become one page.
+- A page the merge creates is readable by every agent, like the lessons in the shared wiki. Don't switch this on for an agent whose work is private to it.
 - A new page whose name is close to an existing page's, such as "Tax Payment Plan Engagement 4471" next to "Tax Payment Plan", is **held** as a possible duplicate, with its facts, so you can choose.
 - A change that would remove a phone number, an email, a role, a "main contact" note, a link or a number is **held** for you to decide.
 

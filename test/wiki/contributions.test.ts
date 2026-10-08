@@ -499,3 +499,46 @@ describe("#824 review fixes", () => {
     expect(own.walked.map((w) => w.path)).toEqual(["people/sam.md"])
   })
 })
+
+describe("devops review of 800f0ee", () => {
+  const queue = async (agent: string, patches: unknown[]) => {
+    chat(agent, `w-${agent}-${Math.random().toString(36).slice(2, 8)}`, "2026-10-08", "work")
+    await runContribution(hub, dir, agent, { model: "m", call: model(patches), now: NOW })
+  }
+
+  it("keeps both facts when one patch names a page by title and another by alias", async () => {
+    page("agent-a", "people/sam.md", "Sam Doe", "Sam works on the portal.", { aliases: ["Sam D."] })
+    await queue("agent-a", [
+      { kind: "add", page: "Sam Doe", attribute: "phone", value: "+1 555 0100", source: "contacts app", checkedAt: "2026-10-08T09:00:00Z" },
+      { kind: "add", page: "Sam D.", attribute: "role", value: "developer", source: "chat", checkedAt: "2026-10-08T09:05:00Z" },
+    ])
+
+    const report = mergeContributions(hub, dir, { now: NOW })
+
+    const body = read("agent-a", "people/sam.md").content
+    expect(body).toContain("**phone:** +1 555 0100")
+    expect(body).toContain("**role:** developer")
+    expect(report.pagesUpdated).toEqual(["agent-a/people/sam.md"])
+  })
+
+  it("corrects whole words only", async () => {
+    const { replaceOnce } = await import("../../src/wiki/contributions")
+    expect(replaceOnce("Invoice 7 is unpaid.", "paid", "overdue")).toBe("Invoice 7 is unpaid.")
+    expect(replaceOnce("Invoice 7 is paid, invoice 8 is unpaid.", "paid", "overdue")).toBe("Invoice 7 is overdue, invoice 8 is unpaid.")
+    expect(replaceOnce("Paid (in full) and paid (in full).", "paid (in full)", "x")).toBe("Paid (in full) and x.")
+  })
+
+  it("reads wiki.query.shared for the CLI and the agentx_wiki_query tool alike", async () => {
+    const { writeFileSync } = await import("fs")
+    const { sharedQueryEnabled } = await import("../../src/wiki/query")
+    const file = resolve(dir, "agentx.json")
+    writeFileSync(file, JSON.stringify({ node: { id: "n", name: "N" }, wiki: { query: { shared: false } } }))
+    expect(await sharedQueryEnabled(file)).toBe(false)
+    writeFileSync(file, JSON.stringify({ node: { id: "n", name: "N" } }))
+    expect(await sharedQueryEnabled(file)).toBe(true)
+    expect(await sharedQueryEnabled(resolve(dir, "missing.json"))).toBe(true)
+
+    const mcp = readFileSync(resolve(__dirname, "../../src/mcp/index.ts"), "utf-8")
+    expect(mcp).toMatch(/shared: \(await sharedQueryEnabled\(\)\) \? hub\.sharedScope\(agentId\) : undefined/)
+  })
+})
