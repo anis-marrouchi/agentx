@@ -12,6 +12,7 @@ import { getDefaultLedger } from "@/intent/instance"
 import { recordCronDispatch } from "@/intent/sources/cron"
 import { withNewRoot } from "@/events/envelope"
 import { withEventPayload, serializePayload, ROUTINE_PAYLOAD_ENV } from "./event-payload"
+import { NoteStore, renderNotesInbox } from "@/wiki/notes"
 
 // --- Cron Scheduler: lightweight cron engine with timezone support ---
 // No external dependencies — uses setTimeout-based scheduling.
@@ -27,6 +28,12 @@ function withOutputCap(prompt: string, maxOutputTokens?: number): string {
   if (!maxOutputTokens) return prompt
   const approxChars = maxOutputTokens * 4
   return `${prompt}\n\n[Response budget]\nKeep your response under ~${maxOutputTokens} tokens (~${approxChars} chars). Be concise — this is automated batch work, not a conversation.`
+}
+
+/** Put the wiki notes inbox ahead of the job's own prompt: the run reads
+ *  its notes first (#825). */
+function withNotesFirst(block: string, prompt: string): string {
+  return block ? `${block}\n\n${prompt}` : prompt
 }
 
 /**
@@ -180,6 +187,7 @@ export class CronScheduler {
   private running = false
   private notifyCallback?: CronNotifyCallback
   private deliverCallback?: CronDeliverCallback
+  private wikiNotes?: DaemonConfig["wikiNotes"]
   private log: (...args: unknown[]) => void
 
   constructor(
@@ -193,6 +201,7 @@ export class CronScheduler {
     this.log = log
     this.runsDir = resolve(process.cwd(), ".agentx/cron/runs")
     this.lastRunFile = resolve(process.cwd(), ".agentx/cron/last-runs.json")
+    this.wikiNotes = config.wikiNotes
 
     for (const [id, def] of Object.entries(config.crons)) {
       this.jobs.set(id, {
@@ -578,9 +587,10 @@ export class CronScheduler {
 
     const timeout = agentRunTimeout(job.timeout)
     try {
+      const inbox = this.wikiNotesInbox(job, startedAt)
       const task: AgentTask = {
         message: withOutputCap(
-          fire ? withEventPayload(job.prompt, fire.payload) : job.prompt,
+          withNotesFirst(inbox.block, fire ? withEventPayload(job.prompt, fire.payload) : job.prompt),
           job.maxOutputTokens,
         ),
         agentId: job.agent,
@@ -608,6 +618,7 @@ export class CronScheduler {
         retryAttempt,
         timeout,
         ...(fire ? { fired: true } : {}),
+        ...(inbox.ids.length ? { wikiNotes: inbox.ids } : {}),
         ...runLinkIds(task, response),
         ...(response.autonomy ? { autonomy: response.autonomy } : {}),
         ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
@@ -737,10 +748,12 @@ export class CronScheduler {
       this.log(`Running missed job "${jobId}" (was due at ${missedAt.toISOString()})`)
 
       const timeout = agentRunTimeout(job.timeout)
+      const startedAt = new Date()
       try {
+        const inbox = this.wikiNotesInbox(job, startedAt)
         const task: AgentTask = {
           message: withOutputCap(
-            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${job.prompt}`,
+            `[MISSED RUN — was scheduled for ${missedAt.toISOString()}]\n\n${withNotesFirst(inbox.block, job.prompt)}`,
             job.maxOutputTokens,
           ),
           agentId: job.agent,
@@ -754,7 +767,7 @@ export class CronScheduler {
 
         const result: CronRunResult = {
           jobId,
-          startedAt: new Date(),
+          startedAt,
           completedAt: new Date(),
           success: !response.error,
           response: response.content,
@@ -762,6 +775,7 @@ export class CronScheduler {
           duration: response.duration || 0,
           isRetry: false,
           timeout,
+          ...(inbox.ids.length ? { wikiNotes: inbox.ids } : {}),
           ...runLinkIds(task, response),
           ...(response.autonomy ? { autonomy: response.autonomy } : {}),
           ...(response.autonomyBlocks?.length ? { autonomyBlocks: response.autonomyBlocks } : {}),
@@ -855,6 +869,40 @@ export class CronScheduler {
       return JSON.parse(readFileSync(this.lastRunFile, "utf-8"))
     } catch {
       return null
+    }
+  }
+
+  /**
+   * The wiki notes inbox for a run of `job` (#825): open and deferred notes
+   * agents left for the observe/sweep run, rendered as the block the run
+   * reads first. Empty unless the job is listed under `wikiNotes.crons`
+   * and runs as the inbox agent. Never throws: a broken inbox must not
+   * stop the run.
+   */
+  private wikiNotesInbox(job: CronJobState, startedAt: Date): { block: string; ids: string[] } {
+    const cfg = this.wikiNotes
+    const none = { block: "", ids: [] as string[] }
+    if (!cfg?.enabled || !cfg.inbox || !cfg.crons.includes(job.id)) return none
+    if (job.agent !== cfg.inbox) {
+      this.log(`Job "${job.id}" is listed under wikiNotes.crons but runs as "${job.agent}", not the inbox agent "${cfg.inbox}"; no notes given`)
+      return none
+    }
+    try {
+      const wikiDir = this.registry.getWikiHub?.()?.getBaseDir?.()
+      if (!wikiDir) return none
+      const runId = cronRunId(job.id, startedAt)
+      const notes = new NoteStore(wikiDir).takeForRun(cfg.inbox, runId, cfg.maxNotesPerRun, cfg.maxDeferrals)
+      if (notes.length === 0) return none
+      const cli = process.argv[1] || "dist/cli.js"
+      const block = renderNotesInbox(notes, {
+        runId,
+        handleCommand: `node ${cli} wiki notes handle --dir ${wikiDir} --by ${job.agent}`,
+      })
+      this.log(`Job "${job.id}": ${notes.length} wiki note(s) given as input`)
+      return { block, ids: notes.map((n) => n.id) }
+    } catch (e: any) {
+      this.log(`Job "${job.id}": wiki notes inbox unavailable: ${e?.message ?? e}`)
+      return none
     }
   }
 

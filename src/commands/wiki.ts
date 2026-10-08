@@ -12,6 +12,7 @@ import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wi
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
+import { registerWikiNotes } from "./wiki-notes"
 import { registerWikiOntology } from "./wiki-ontology"
 import { resolve, relative, dirname } from "path"
 import { exec, execSync } from "child_process"
@@ -76,6 +77,7 @@ export const wiki = new Command()
   .description("wiki knowledge base management")
 
 registerWikiFacts(wiki)
+registerWikiNotes(wiki)
 registerWikiOntology(wiki)
 
 // agentx wiki status

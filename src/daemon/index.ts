@@ -7021,6 +7021,87 @@ export class AgentXDaemon {
           break
         }
 
+        // --- Wiki notes for the observe/sweep run (#825) ---
+        //
+        // Mesh-gated (mesh-auth.ts): loopback for this node's agents and
+        // CLI, a mesh token for a peer forwarding a note. Notes never
+        // leave the fleet.
+
+        case "GET /wiki/notes": {
+          const { NoteStore } = await import("@/wiki/notes")
+          const status = url.searchParams.get("status") || "waiting"
+          if (!["waiting", "open", "patched", "rejected", "deferred", "expired", "all"].includes(status)) {
+            this.json(res, 400, { error: "status must be waiting, open, patched, rejected, deferred, expired or all" })
+            break
+          }
+          const limit = Math.max(1, Math.min(200, parseInt(url.searchParams.get("limit") || "50", 10) || 50))
+          const store = new NoteStore(this.registry.getWikiHub().getBaseDir())
+          const all = store.list(status === "all" ? undefined : status as any)
+          this.json(res, 200, {
+            nodeId: this.config.node.id,
+            enabled: this.config.wikiNotes.enabled,
+            inbox: this.config.wikiNotes.inbox ?? null,
+            crons: this.config.wikiNotes.crons,
+            total: all.length,
+            // Newest first, bounded: a list is a summary, not an export.
+            notes: all.slice(-limit).reverse(),
+          })
+          break
+        }
+
+        case "POST /wiki/notes": {
+          const { NoteStore, validateNote } = await import("@/wiki/notes")
+          const cfg = this.config.wikiNotes
+          if (!cfg.enabled || !cfg.inbox) {
+            this.json(res, 409, { error: "wiki notes are off on this node: set wikiNotes.enabled and wikiNotes.inbox" })
+            break
+          }
+          const body = await readBody(req)
+          const checked = validateNote({ ...body, to: cfg.inbox })
+          if ("error" in checked) { this.json(res, 400, { error: checked.error }); break }
+          const note = checked.note
+          // The inbox lives here: store it.
+          if (this.registry.getAgent(cfg.inbox)) {
+            try {
+              const { note: stored, added } = new NoteStore(this.registry.getWikiHub().getBaseDir()).add(note)
+              this.json(res, added ? 201 : 200, { ok: true, added, note: stored, node: this.config.node.id })
+            } catch (e: any) {
+              this.json(res, 507, { error: e?.message ?? String(e) })
+            }
+            break
+          }
+          // The inbox lives on a peer: forward once. A forwarded note that
+          // finds no local inbox stops here, so two nodes that disagree on
+          // where the inbox is cannot bounce it between them.
+          if (body.forwarded === true) {
+            this.json(res, 404, { error: `inbox agent "${cfg.inbox}" is not on this node` })
+            break
+          }
+          const peer = this.mesh?.findAgentPeer(cfg.inbox)
+          if (!peer) {
+            this.json(res, 404, { error: `inbox agent "${cfg.inbox}" is not on this node or any known peer` })
+            break
+          }
+          const peerUrl = this.mesh!.directory().find((p) => p.peer === peer.peer)?.peerUrl
+          if (!peer.healthy || !peerUrl) {
+            this.json(res, 503, { error: `the node hosting "${cfg.inbox}" (${peer.peer}) is unreachable; try again later` })
+            break
+          }
+          try {
+            const r = await fetch(`${peerUrl.replace(/\/$/, "")}/wiki/notes`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+              body: JSON.stringify({ ...note, fromNode: note.fromNode || this.config.node.id, forwarded: true }),
+              signal: AbortSignal.timeout(10_000),
+            })
+            const answer = await r.json().catch(() => ({}))
+            this.json(res, r.status, { ...answer, peer: peer.peer })
+          } catch (e: any) {
+            this.json(res, 502, { error: `forward to ${peer.peer} failed: ${e?.message ?? e}`, peer: peer.peer })
+          }
+          break
+        }
+
         // --- Graph API (read-only, for mesh sync) ---
 
         case "GET /graph/schema": {
@@ -7070,6 +7151,8 @@ export class AgentXDaemon {
               "GET  /wiki/agents",
               "GET  /wiki/entries[?agent=X&after=YYYY-MM-DD]",
               "GET  /wiki/articles?agent=X",
+              "GET  /wiki/notes[?status=waiting|open|patched|rejected|deferred|expired|all&limit=N]",
+              "POST /wiki/notes { from, change, source, date? }  — a note for the wiki observe/sweep run",
               "GET  /graph/schema",
               "GET  /graph/nodes",
               "GET  /graph/classifications[?status=approved|pending|rejected&limit=N]",

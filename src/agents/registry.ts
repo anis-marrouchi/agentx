@@ -294,10 +294,18 @@ export function buildEventDigest(agentId: string, subs: SubscriptionInput[] | un
   return renderDigest(shown, more)
 }
 
+/** Where an agent posts a wiki note (#825), when notes are on. */
+function wikiNotesHint(config: DaemonConfig): { inbox: string; daemonUrl: string } | undefined {
+  const n = config.wikiNotes
+  if (!n?.enabled || !n.inbox) return undefined
+  const [host, port] = (config.node?.bind || "127.0.0.1:18800").split(":")
+  return { inbox: n.inbox, daemonUrl: `http://${!host || host === "0.0.0.0" ? "127.0.0.1" : host}:${port || "18800"}` }
+}
+
 export function buildWikiContext(
   agentWiki: ReturnType<WikiHub["getAgentWiki"]>,
   agentId: string,
-  opts: { maxArticles?: number } = {},
+  opts: { maxArticles?: number; notesInbox?: { inbox: string; daemonUrl: string } } = {},
 ): string {
   let articles: Array<{ meta: { title: string; type?: string }; path: string }>
   try {
@@ -344,6 +352,10 @@ export function buildWikiContext(
     "It walks the catalog and the wikilink graph and returns a cited answer. Ask it before you grep the workspace or answer from your own recollection.",
     "",
     `Facts about outside systems (billing, accounts, outages, deploys) carry a source and a check date: \`node ${cli} wiki facts list --dir ${wikiDir}\`. Past its time limit a fact must be re-checked at the source before you state it; record what you checked with \`wiki facts set ... --checked-at now\`. If you can't check, say it is unverified and ask the owner.`,
+    ...(opts.notesInbox && opts.notesInbox.inbox !== agentId ? [
+      "",
+      `When you learn something the wiki should know (a change, a correction, a fact that went stale), leave a short note for the wiki run: \`node ${cli} wiki notes add --from ${agentId} --change "what changed" --source "where you saw it" --date YYYY-MM-DD --daemon ${opts.notesInbox.daemonUrl}\`. The run checks it before it changes anything. Notes stay inside the fleet; never put secrets in one.`,
+    ] : []),
     "[End Institutional Wiki]",
   ].join("\n")
 }
@@ -2095,7 +2107,7 @@ export class AgentRegistry {
     // Fresh sessions only — `--resume` replays the transcript, so the
     // catalog injected on turn one is still there.
     const wikiContext = !resumeSessionId && !isCodexCli
-      ? buildWikiContext(agentWiki, task.agentId)
+      ? buildWikiContext(agentWiki, task.agentId, { notesInbox: wikiNotesHint(this.config) })
       : undefined
 
     // Lean sessions fetch earlier turns with agentx_recent instead.

@@ -8,6 +8,7 @@ import { TokenStore } from "./token-store"
 import { loadDaemonConfig } from "./config"
 import { localSettings, patchLocal } from "@/notify/local"
 import { patchScreen, screenSettings } from "@/computer-use/capture-settings"
+import { patchWikiNotes, wikiNotesSettings, type WikiNotesPatch } from "@/wiki/notes-settings"
 import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
@@ -125,6 +126,10 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // (destination?, on?, longTaskThreshold?). Mirrors `agentx notifications`.
       "POST /api/admin/notifications":   () => updateNotifications(body),
       "POST /api/admin/screen":          () => updateScreen(body),
+      // Wiki notes inbox (#825) — mirrors `agentx wiki notes config`;
+      // the note list is read from the daemon, which owns the inbox.
+      "POST /api/admin/wiki-notes":      () => updateWikiNotes(body),
+      "GET /api/admin/wiki-notes/list":  () => proxyDaemonJson("/wiki/notes?status=all&limit=20"),
       // Webhook triggers + defaultWorkflow editor (in addition to existing
       // /api/admin/webhooks add/edit/delete).
       "POST /api/admin/webhooks/triggers": () => updateWebhookTriggers(body),
@@ -357,7 +362,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), actions }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions }
 }
 
 // ========================================================================
@@ -1467,6 +1472,19 @@ async function updateNotifications(body: any) {
     if (changes.length === 0) throw new Error("nothing to update")
     return `notifications updated (${changes.join(", ")})`
   })
+  return { summary }
+}
+
+// Wiki notes inbox — mirrors `agentx wiki notes config`.
+async function updateWikiNotes(body: any) {
+  if (!body || typeof body !== "object") throw new Error("nothing to update")
+  const patch: WikiNotesPatch = {}
+  if ("enabled" in body) patch.enabled = !!body.enabled
+  if ("inbox" in body) patch.inbox = String(body.inbox ?? "")
+  if ("crons" in body) patch.crons = Array.isArray(body.crons) ? body.crons.map(String) : String(body.crons ?? "").split(",")
+  if ("maxNotesPerRun" in body) patch.maxNotesPerRun = Number(body.maxNotesPerRun)
+  if ("maxDeferrals" in body) patch.maxDeferrals = Number(body.maxDeferrals)
+  const { summary } = mutateAgentxConfig((cfg) => patchWikiNotes(cfg, patch))
   return { summary }
 }
 

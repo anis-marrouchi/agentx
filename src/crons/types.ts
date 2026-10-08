@@ -61,6 +61,8 @@ export interface CronRunResult {
   traceId?: string
   /** Native provider session the run resumed or started, when reported. */
   sessionId?: string
+  /** Wiki notes (#825) the run was given as input, by note id. */
+  wikiNotes?: string[]
   /** Autonomy level the run was held to (absent = act). */
   autonomy?: AutonomyLevel
   /** Tool calls the autonomy guard blocked — what the routine would have
