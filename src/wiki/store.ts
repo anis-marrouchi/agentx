@@ -13,6 +13,30 @@ import {
   type RerankCandidate,
 } from "../decisions/seats/wiki-rerank"
 import { ancestryScore as ancestryOf } from "@/graph"
+import { IMPORTANCE_LEVELS, type Importance, type WikiStatement } from "./ontology/types"
+
+function isImportance(s: string): s is Importance {
+  return (IMPORTANCE_LEVELS as readonly string[]).includes(s)
+}
+
+/** Read the one-line JSON `statements:` value. A statement without a
+ *  property or value is dropped; a line that is not JSON drops them all,
+ *  since a half-read list would show wrong facts as complete. */
+export function parseStatements(line: string): WikiStatement[] | undefined {
+  if (!line) return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(line)
+  } catch {
+    return undefined // not JSON: treat the page as having no statements
+  }
+  if (!Array.isArray(parsed)) return undefined
+  const out = parsed.filter((s): s is WikiStatement =>
+    typeof s === "object" && s !== null
+    && typeof (s as WikiStatement).property === "string" && (s as WikiStatement).property !== ""
+    && typeof (s as WikiStatement).value === "string" && (s as WikiStatement).value !== "")
+  return out.length ? out : undefined
+}
 
 // --- Wiki Store: filesystem-based knowledge base with permissions ---
 //
@@ -95,6 +119,21 @@ export class WikiStore {
     writeFileSync(filepath, frontmatter.join("\n"))
     this.appendLog("ingest", `${entry.id} from ${entry.agentId} via ${entry.source}`)
     return filename
+  }
+
+  /** Read only the named entries. Files are `<date>_<id>.md`, so one
+   *  directory listing finds them without parsing the rest. */
+  readEntries(ids: string[]): WikiEntry[] {
+    if (ids.length === 0 || !existsSync(this.rawDir)) return []
+    const wanted = new Set(ids)
+    const out: WikiEntry[] = []
+    for (const file of readdirSync(this.rawDir)) {
+      const id = file.replace(/\.md$/, "").replace(/^\d{4}-\d{2}-\d{2}_/, "")
+      if (!wanted.has(id)) continue
+      const entry = this.parseEntry(readFileSync(resolve(this.rawDir, file), "utf-8"), file)
+      if (entry) out.push(entry)
+    }
+    return out
   }
 
   /**
@@ -224,6 +263,14 @@ export class WikiStore {
     if (meta.graphPath?.length) {
       frontmatter.push(`graph_path: [${meta.graphPath.map(s => `"${s}"`).join(", ")}]`)
     }
+    // Ontology fields (#811). Statements go on one line as JSON, which
+    // is also valid YAML, so the line-based reader below stays simple.
+    if (meta.class) frontmatter.push(`class: ${meta.class}`)
+    if (meta.importance) frontmatter.push(`importance: ${meta.importance}`)
+    if (meta.date) frontmatter.push(`date: ${meta.date}`)
+    if (meta.rolledUpInto) frontmatter.push(`rolled_up_into: ${JSON.stringify(meta.rolledUpInto)}`)
+    if (meta.aliases?.length) frontmatter.push(`aliases: ${JSON.stringify(meta.aliases)}`)
+    if (meta.statements?.length) frontmatter.push(`statements: ${JSON.stringify(meta.statements)}`)
     frontmatter.push("---", "", content)
 
     writeFileSync(fullPath, frontmatter.join("\n"))
@@ -350,6 +397,9 @@ export class WikiStore {
     const tags = getArray("tags").filter((v, i, a) => v && a.indexOf(v) === i)
     const related = getArray("related")
     const graphPath = getArray("graph_path")
+    const aliases = getArray("aliases")
+    const importance = get("importance")
+    const date = get("date")
     return {
       meta: {
         title: get("title"),
@@ -363,6 +413,12 @@ export class WikiStore {
         lastUpdated: get("last_updated"),
         sources: getArray("sources"),
         graphPath: graphPath.length ? graphPath : undefined,
+        class: /^[a-z][a-z0-9_]*$/.test(get("class")) ? get("class") : undefined,
+        importance: isImportance(importance) ? importance : undefined,
+        date: /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : undefined,
+        rolledUpInto: get("rolled_up_into") || undefined,
+        aliases: aliases.length ? aliases : undefined,
+        statements: parseStatements(get("statements")),
       },
       content,
       path,
@@ -381,6 +437,15 @@ export class WikiStore {
   private listCache = new Map<string, { signature: string; articles: WikiArticle[] }>()
 
   listArticles(agentId: string): WikiArticle[] {
+    return this.listCached(agentId)
+  }
+
+  /** Every article whatever its access, for the owner's own views. */
+  listAllArticles(): WikiArticle[] {
+    return this.listCached(null)
+  }
+
+  private listCached(agentId: string | null): WikiArticle[] {
     const relPaths: string[] = []
     const sig: string[] = []
     this.walkDir(this.baseDir, (filePath, stat) => {
@@ -391,17 +456,18 @@ export class WikiStore {
       sig.push(`${relPath}:${stat?.mtimeMs ?? "?"}:${stat?.size ?? "?"}`)
     })
     const signature = sig.join("|")
-    const hit = this.listCache.get(agentId)
+    const key = agentId ?? "\u0000all"
+    const hit = this.listCache.get(key)
     if (hit && hit.signature === signature) return hit.articles.slice()
 
     const articles: WikiArticle[] = []
     for (const relPath of relPaths) {
       const article = this.readArticle(relPath)
-      if (article && this.canRead(article.meta, agentId)) {
+      if (article && (agentId === null || this.canRead(article.meta, agentId))) {
         articles.push(article)
       }
     }
-    this.listCache.set(agentId, { signature, articles })
+    this.listCache.set(key, { signature, articles })
     return articles.slice()
   }
 

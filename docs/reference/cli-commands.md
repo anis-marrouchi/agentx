@@ -1398,9 +1398,21 @@ List raw entries.
 | `--dir <path>` | — | Wiki directory. |
 | `--agent <id>` | — | Filter by agent. |
 
+### `agentx wiki ontology`
+
+The wiki's pillars, types, typed relations, event importance and page lenses. See [Wiki](../dashboard/wiki.md).
+
+| Command | What it does |
+|---|---|
+| `agentx wiki ontology init` | Write the defaults to `ontology.yaml` in the wiki folder, to edit. Refuses to overwrite. |
+| `agentx wiki ontology check` | Report problems in `ontology.yaml`. Exits 1 when there are any. |
+| `agentx wiki ontology show` | Pages per pillar and type. `--json` prints JSON. |
+
+Each takes `--dir <path>` (default `.agentx/wiki`).
+
 ### `agentx wiki serve`
 
-Start a local web server to browse agent wikis (local + mesh).
+Start a local web server to browse the wiki by pillar and type, and each agent's pages under `/agents` (local + mesh).
 
 | Flag | Default | What it does |
 |---|---|---|
