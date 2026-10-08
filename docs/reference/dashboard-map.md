@@ -24,7 +24,8 @@ The eight top-level tabs are **Live**, **Operations**, **Monitor**, **Approvals*
 | Watch or reopen one task | `/tasks/<task-id>` |
 | Trace an inbound message, errors, and daemon health | `/admin/health` (the old `/admin/observability` redirects here) |
 | See token spend | `/admin/cost` |
-| Browse the shared wiki | `/admin/wiki/` |
+| Browse the shared wiki by pillar and type ([Wiki](../dashboard/wiki.md)) | `/admin/wiki/` |
+| Browse each agent's own wiki pages | `/admin/wiki/agents` |
 | See work grouped by project | `/admin/projects` |
 | Review the intent ledger (the record of incoming work and which agent it was sent to) | `/admin/ledger` |
 | Review the intent graph | `/admin/graph` (also `/graph`) |

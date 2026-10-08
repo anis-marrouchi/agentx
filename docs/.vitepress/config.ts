@@ -17,6 +17,7 @@ const groups = [
     { text: "Monitor", link: "/dashboard/monitor" },
     { text: "Approvals", link: "/dashboard/approvals" },
     { text: "People", link: "/dashboard/people" },
+    { text: "Wiki", link: "/dashboard/wiki" },
     { text: "Live", link: "/dashboard/live" },
     { text: "Operations", link: "/dashboard/operations" },
     { text: "Activity", link: "/dashboard/activity" },

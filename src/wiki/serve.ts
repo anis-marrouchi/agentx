@@ -5,6 +5,7 @@ import { WikiHub } from "./hub"
 import { MeshWikiClient } from "./mesh"
 import type { WikiPeer } from "./article-sync"
 import type { AgentWikiSummary } from "./hub"
+import { OntologyRoutes } from "./ontology/routes"
 
 // --- Lightweight Markdown → HTML (no deps) ---
 
@@ -1010,6 +1011,7 @@ export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage,
   const { wikiDir, agentFilter, peers = [], mode = "graph", pathPrefix = "" } = opts
   const prefix = pathPrefix.replace(/\/+$/, "")
   const hub = new WikiHub(wikiDir, undefined, mode)
+  const ontologyRoutes = new OntologyRoutes(hub, wikiDir)
   const mesh = peers.length > 0 ? new MeshWikiClient(peers) : null
 
   return async (req: IncomingMessage, res: ServerResponse) => {
@@ -1120,8 +1122,9 @@ export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage,
           if (matches.length === 0) content += '<p>No articles with this tag.</p>'
           html = pageLayout(`Tag: ${tag}`, agentSidebar(store, agentFilter), content)
         }
-      } else {
-        // Hub mode — merge local + remote agents
+      } else if (!html && (html = ontologyRoutes.handle(path, url.searchParams)) === null) {
+        // Hub mode — merge local + remote agents. The knowledge-graph
+        // routes above own "/"; the per-agent hub moved to "/agents".
         const remoteAgents = mesh ? await mesh.getRemoteAgents() : []
         const localAgents = hub.summary()
         // Merge: prefer whichever has more articles (local or remote)
@@ -1151,7 +1154,7 @@ export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage,
           }
         }
 
-        if (path === "/" || path === "") {
+        if (path === "/agents") {
           html = hubHome(hub, allAgents, remoteAgents)
         } else if (path === "/entries") {
           html = hubEntries(hub, allAgents)
