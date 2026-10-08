@@ -44,6 +44,9 @@ export interface PropertyDef {
   wikidata?: string
   /** Types the value is expected to be. Informational. */
   range?: string[]
+  /** Types the subject may be. A lens shows other subjects' statements
+   *  through the inverse; `wiki enrich` writes it only on these (#820). */
+  domain?: string[]
 }
 
 export type PanelSource = "statements" | "linked" | "history" | "discussed" | "readings" | "notes"
@@ -107,6 +110,10 @@ export interface Ontology {
   classify: ClassifyRule[]
   /** Type for pages no rule matches. */
   fallback_type: string
+  /** Extra names of the fleet's agents, for agents that run on another
+   *  node or answer to a persona name (#819). The node's own agent ids,
+   *  configured names and persona names are found without this. */
+  agent_names?: string[]
 }
 
 /** One typed fact about a page: subject (the page) → property → value. */
@@ -127,5 +134,7 @@ export interface WikiStatement {
   status?: "proposed" | "confirmed"
   confirmed_by?: string
   checked_at?: string
+  /** The job that wrote it, e.g. "wiki-enrich"; its next run replaces it. */
+  by?: string
   note?: string
 }

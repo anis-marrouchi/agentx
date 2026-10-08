@@ -1,0 +1,199 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs"
+import { tmpdir } from "os"
+import { join } from "path"
+import { WikiHub } from "../../src/wiki/hub"
+import type { WikiArticleMeta } from "../../src/wiki/types"
+import { DEFAULT_ONTOLOGY } from "../../src/wiki/ontology/defaults"
+import { buildGraph, type GraphPage } from "../../src/wiki/ontology/graph"
+import { panelData } from "../../src/wiki/ontology/lens"
+import { buildRoster, configuredAgents, personaName } from "../../src/wiki/ontology/roster"
+import { cutAtSentence, entityPage, overviewSection } from "../../src/wiki/ontology/view-entity"
+import {
+  checkEnrichment, createEntityPage, enrichContext, ENRICH_BY, loadEnrichState, mergedMeta, runEnrich, withOverview,
+  type EnrichCall,
+} from "../../src/wiki/enrich"
+
+function meta(title: string, extra: Partial<WikiArticleMeta> = {}): WikiArticleMeta {
+  return { title, tags: [], owner: "agent-a", access: "public", created: "2026-01-01", lastUpdated: "2026-01-02", sources: [], ...extra }
+}
+function page(agentId: string, path: string, m: WikiArticleMeta, content = "Body."): GraphPage {
+  return { agentId, article: { meta: { ...m, owner: agentId }, content, path } }
+}
+
+describe("agents are not people (#819)", () => {
+  const roster = buildRoster([{ id: "helper-agent", name: "Helper", persona: "Nova" }, { id: "sam", name: "Sam Agent" }])
+
+  it("puts a registered agent's page under Agents even without 'agent' in the title", () => {
+    const g = buildGraph([
+      page("agent-a", "people/nova.md", meta("Nova", { type: "person" })),
+      page("agent-a", "people/helper.md", meta("Helper", { type: "person" })),
+    ], DEFAULT_ONTOLOGY, roster)
+    expect(g.entities.get("nova")?.type).toBe("agent")
+    expect(g.entities.get("helper")?.type).toBe("agent")
+  })
+
+  it("keeps a real person who shares the agent's name, and flags the bare name", () => {
+    const g = buildGraph([
+      page("agent-a", "people/nova.md", meta("Nova", { type: "person" })),
+      page("agent-a", "people/nova-reyes.md", meta("Nova Reyes", { type: "person" })),
+      // Named after a person: the bare id is that person's name.
+      page("agent-a", "people/sam.md", meta("Sam", { type: "person" })),
+    ], DEFAULT_ONTOLOGY, roster)
+    expect(g.entities.get("nova-reyes")?.type).toBe("person")
+    expect(g.entities.get("nova")?.type).toBe("person")
+    expect(g.entities.get("nova")?.review).toMatch(/helper-agent/)
+    expect(g.entities.get("sam")?.type).toBe("person")
+  })
+
+  it("leaves a project that shares an agent's name alone", () => {
+    const g = buildGraph([page("agent-a", "projects/nova.md", meta("Nova", { type: "project" }))], DEFAULT_ONTOLOGY, roster)
+    expect(g.entities.get("nova")?.type).toBe("project")
+  })
+
+  it("never lists an agent among a person's relations", () => {
+    const g = buildGraph([
+      page("agent-a", "people/client.md", meta("Client Person", { type: "person", related: ["Nova", "Other Person"] })),
+      page("agent-a", "people/nova.md", meta("Nova", { type: "person" })),
+      page("agent-a", "people/other.md", meta("Other Person", { type: "person" })),
+    ], DEFAULT_ONTOLOGY, roster)
+    const e = g.entities.get("client-person")!
+    const def = DEFAULT_ONTOLOGY.types.find(t => t.id === "person")!.lens!.find(p => p.panel === "relations")!
+    const labels = panelData(g, e, def, { full: true, readEntries: () => [] }).items.map(i => i.label)
+    expect(labels).toEqual(["Other Person"])
+  })
+
+  it("reads a persona name and the configured agents next to the wiki", () => {
+    expect(personaName("# X\n\n**Name:** Nova (نوفا). A star.")).toBe("Nova")
+    const root = mkdtempSync(join(tmpdir(), "roster-"))
+    try {
+      mkdirSync(join(root, "ws"))
+      writeFileSync(join(root, "ws", "persona.md"), "**Name:** Nova\n")
+      writeFileSync(join(root, "agentx.json"), JSON.stringify({ agents: { "helper-agent": { name: "Helper", workspace: join(root, "ws") } } }))
+      expect(configuredAgents(join(root, ".agentx", "wiki"))).toEqual([{ id: "helper-agent", name: "Helper", persona: "Nova" }])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("overview", () => {
+  it("cuts a summary at a sentence end, not mid-word", () => {
+    expect(cutAtSentence("First sentence here. Second one is much longer than the limit allows.", 40)).toBe("First sentence here.")
+  })
+
+  it("shows the whole Overview section on the entity page", () => {
+    const long = "Story sentence. ".repeat(40).trim()
+    const g = buildGraph([page("agent-a", "people/p.md", meta("Pat Doe", { type: "person" }), withOverview("Old notes.", long))], DEFAULT_ONTOLOGY)
+    const html = entityPage({ g, readEntries: () => [], versions: () => [] }, g.entities.get("pat-doe")!)
+    expect(html).toContain(long)
+    expect(html).toContain("Old notes.")
+    expect(html).not.toContain("/overview")
+  })
+
+  it("replaces its own overview and keeps text it cannot bound", () => {
+    const once = withOverview("Notes stay.", "First.")
+    expect(overviewSection(once)).toBe("First.")
+    const twice = withOverview(once, "Second.")
+    expect(overviewSection(twice)).toBe("Second.")
+    expect(twice).not.toContain("First.")
+    expect(twice).toContain("Notes stay.")
+    // Someone else's Overview with nothing after it to mark its end.
+    const kept = withOverview("## Overview\n\nHand-written.\n\nMore text.", "New.")
+    expect(overviewSection(kept)).toBe("New.")
+    expect(kept).toContain("Hand-written.")
+    expect(kept).toContain("More text.")
+  })
+})
+
+describe("checking a reply", () => {
+  const g = buildGraph([
+    page("agent-a", "people/pat.md", meta("Pat Doe", { type: "person", related: ["Acme Works", "Nova", "Launch Day"], sources: ["e1"] })),
+    page("agent-a", "clients/acme.md", meta("Acme Works")),
+    page("agent-a", "people/nova.md", meta("Nova", { type: "person" })),
+    page("agent-a", "projects/site.md", meta("Site Build", { type: "project" })),
+    page("agent-a", "events/2026-01-05-launch.md", meta("Launch Day", { type: "event" })),
+  ], DEFAULT_ONTOLOGY, buildRoster([{ id: "nova-agent", name: "Nova" }]))
+  const ctx = enrichContext(g, g.entities.get("pat-doe")!, () => [{ id: "e1", date: "2026-01-04", agentId: "agent-a", source: "chat", content: "Pat joined Acme." }])
+
+  it("keeps sourced facts on allowed properties and drops the rest", () => {
+    const r = checkEnrichment({
+      overview: "Pat works at Acme Works. It started in January",
+      statements: [
+        { property: "role_at", value: "Acme Works", role: "buyer", since: "2026-01", source: "entry e1" },
+        { property: "role_at", value: "Acme Works", source: "a hunch" },
+        { property: "registrar", value: "Laptop", source: "e1" },
+        { property: "works_with", value: "Nova", source: "e1" },
+        { property: "works_on", value: "Acme Works", source: "e1" },
+        { property: "reports_to", value: "unknown", source: "e1" },
+      ],
+      history: ["2026-01-05 · Launch Day", "Made Up Event"],
+    }, ctx, g)
+    expect(r.overview).toBe("Pat works at Acme Works.")
+    expect(r.statements).toEqual([{ property: "role_at", value: "Acme Works", role: "buyer", since: "2026-01", source: "entry e1" }])
+    expect(r.links).toEqual(["Launch Day"])
+    expect(r.dropped.join("\n")).toMatch(/agent is not a person's relation/)
+    expect(r.dropped.join("\n")).toMatch(/expected project/)
+  })
+
+  it("does not offer an organisation the person-side role properties", () => {
+    const org = enrichContext(g, g.entities.get("acme-works")!, () => [])
+    expect(org.properties.has("role_at")).toBe(false)
+    expect(org.properties.has("located_in")).toBe(true)
+  })
+
+  it("replaces this job's earlier facts and keeps everyone else's", () => {
+    const m = mergedMeta(meta("Pat Doe", {
+      statements: [{ property: "role_at", value: "Old Co", by: ENRICH_BY }, { property: "owns", value: "Van" }],
+      related: ["Acme Works"],
+    }), { overview: "", statements: [{ property: "role_at", value: "Acme Works", source: "e1" }], links: ["Launch Day"], dropped: [] }, "2026-02-01")
+    expect(m.statements?.map(s => s.value)).toEqual(["Van", "Acme Works"])
+    expect(m.statements?.[1]).toMatchObject({ by: ENRICH_BY, checked_at: "2026-02-01" })
+    expect(m.related).toEqual(["Acme Works", "Launch Day"])
+  })
+})
+
+describe("wiki enrich run", () => {
+  let dir: string
+  let hub: WikiHub
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "enrich-"))
+    hub = new WikiHub(dir, () => {})
+    const store = hub.getAgentWiki("agent-a")
+    store.writeArticle("people/pat.md", meta("Pat Doe", { type: "person", owner: "agent-a", sources: ["e1"] }), "Pat is a buyer.", "agent-a")
+    store.writeArticle("people/kim.md", meta("Kim Roe", { type: "person", owner: "agent-a" }), "Kim mentions [[Acme Works]].", "agent-a")
+  })
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }) })
+
+  const graph = () => buildGraph(hub.listAgents([]).flatMap(a => hub.getAgentWiki(a).listAllArticles().map(article => ({ agentId: a, article }))), DEFAULT_ONTOLOGY)
+  const opts = { types: ["person", "organization"], only: [], max: 10, maxCostUsd: 1, dryRun: false, force: false, today: "2026-02-01" }
+  const reply = (overview: string): EnrichCall => async () => ({ text: JSON.stringify({ overview, statements: [] }), costUsd: 0.3 })
+
+  it("writes the overview, keeps the old version, and skips unchanged entities next time", async () => {
+    const state = loadEnrichState(dir)
+    const run = await runEnrich(hub, graph(), reply("Pat buys from us."), { ...opts, only: ["Pat Doe"] }, state)
+    expect(run.outcomes.map(o => o.status)).toEqual(["written"])
+    const store = hub.getAgentWiki("agent-a")
+    expect(overviewSection(store.readArticle("people/pat.md")!.content)).toBe("Pat buys from us.")
+    expect(store.getVersions("people/pat.md").length).toBe(1)
+    const again = await runEnrich(hub, graph(), reply("Changed."), { ...opts, only: ["Pat Doe"] }, state)
+    expect(again.outcomes.map(o => o.status)).toEqual(["unchanged"])
+  })
+
+  it("stops before the next call once the cap is spent, and a dry run writes nothing", async () => {
+    const run = await runEnrich(hub, graph(), reply("Story."), { ...opts, maxCostUsd: 0.2, dryRun: true }, { entities: {} })
+    expect(run.outcomes).toHaveLength(1)
+    expect(run.capped).toBe(true)
+    expect(run.outcomes[0].status).toBe("dry-run")
+    expect(hub.getAgentWiki("agent-a").getVersions("people/pat.md")).toHaveLength(0)
+  })
+
+  it("creates a typed page for a thing other pages only name", async () => {
+    expect(createEntityPage(hub, "Acme Works", "organization", "agent-a", "2026-02-01")).toBe("organizations/acme-works.md")
+    expect(createEntityPage(hub, "Acme Works", "organization", "agent-a", "2026-02-01")).toBeNull()
+    const g = graph()
+    const e = g.entities.get("acme-works")!
+    expect(e.type).toBe("organization")
+    expect(enrichContext(g, e, () => []).mentions.map(m => m.page.article.meta.title)).toEqual(["Kim Roe"])
+  })
+})

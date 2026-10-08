@@ -12,6 +12,7 @@
 import type { WikiHub } from "../hub"
 import { GraphCache } from "./graph"
 import { loadOntology } from "./load"
+import { loadRoster } from "./roster"
 import { entityPage, panelPage, statementPage, type EntityViewCtx } from "./view-entity"
 import { findPage, homePage, kindListPage, ontologyPage, pillarPage } from "./view-browse"
 
@@ -25,7 +26,8 @@ export class OntologyRoutes {
   handle(path: string, params: URLSearchParams): string | null {
     if (!(path === "/" || path === "" || path.startsWith("/p/") || path.startsWith("/e/") || path === "/find" || path === "/ontology")) return null
     const { ontology, errors, file } = loadOntology(this.wikiDir)
-    const g = this.cache.get(this.hub, ontology)
+    const roster = loadRoster(this.wikiDir, this.hub.listAgents([]), ontology.agent_names)
+    const g = this.cache.get(this.hub, ontology, roster)
     const page = Math.max(1, Number(params.get("page")) || 1)
 
     if (path === "/" || path === "") return homePage(g, errors)
