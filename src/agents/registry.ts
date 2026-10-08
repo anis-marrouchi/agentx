@@ -1099,6 +1099,14 @@ export class AgentRegistry {
     return { content: result.content, error: result.error, cloudSession: result.cloudSession, duration: Date.now() - started }
   }
 
+  /** The answer for a run whose HTTP caller left before it got a slot
+   *  (#822). Logged so the dropped request is visible on the node. */
+  private callerGone(task: AgentTask, during: string): AgentResponse {
+    const reason = abortReason(task.callerSignal!).message
+    this.log(`[${task.agentId}] caller gone during ${during} — not starting (${reason})`)
+    return { content: "", error: `Caller gone before agent "${task.agentId}" was free — not started` }
+  }
+
   /**
    * Execute a task on an agent. Respects maxConcurrent limit.
    *
@@ -1110,14 +1118,6 @@ export class AgentRegistry {
    * this, every dispatched decision sits in-flight forever and the
    * active-task check becomes vacuously over-aggressive.
    */
-  /** The answer for a run whose HTTP caller left before it got a slot
-   *  (#822). Logged so the dropped request is visible on the node. */
-  private callerGone(task: AgentTask, during: string): AgentResponse {
-    const reason = abortReason(task.callerSignal!).message
-    this.log(`[${task.agentId}] caller gone during ${during} — not starting (${reason})`)
-    return { content: "", error: `Caller gone before agent "${task.agentId}" was free — not started` }
-  }
-
   async execute(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, onEvent?: (event: any) => void): Promise<AgentResponse> {
     const startedAt = Date.now()
     let response: AgentResponse
@@ -1377,7 +1377,9 @@ export class AgentRegistry {
       this.log(`[${task.agentId}] ${rateResult.reason}`)
       return { content: "", error: rateResult.reason }
     }
-    // The rate-limit wait above can be minutes long too.
+    // The rate-limit wait above can be minutes long too. The token it
+    // took is spent even though this run never starts; that is accepted,
+    // since the next caller only waits one token interval longer.
     if (task.callerSignal?.aborted) return this.callerGone(task, "rate-limit wait")
 
     // A flushed queued message that waited long enough for its subject to
