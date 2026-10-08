@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.126.1](https://github.com/anis-marrouchi/agentx/compare/v0.126.0...v0.126.1) (2026-10-08)
+
+
+### Bug Fixes
+
+* **wiki:** accept only known importance levels on the event list ([#814](https://github.com/anis-marrouchi/agentx/issues/814) follow-up) ([#815](https://github.com/anis-marrouchi/agentx/issues/815)) ([6f575e1](https://github.com/anis-marrouchi/agentx/commit/6f575e166d25ad516cac97c346b5cbcb9c5cddbf))
+
 ## [0.126.0](https://github.com/anis-marrouchi/agentx/compare/v0.125.1...v0.126.0) (2026-10-08)
 
 
