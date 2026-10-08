@@ -4,7 +4,7 @@
 
 Many fleets have one agent that keeps the wiki honest on a timer: it looks over recent work and sweeps out facts that went stale. We call that the **observe/sweep run**. On its own it only sees logs and saved conversations, so it has to guess at things another agent saw first-hand: a deploy that moved, a name a person corrected, a price that changed.
 
-With wiki notes, any agent can leave that run a short **note**: what changed, where it saw it (the **source**) and the date. The notes wait in the **inbox** of the agent that runs the schedule. When the schedule starts, the run reads its notes first.
+With wiki notes, any agent can leave that run a short **note**: what changed, where it saw it (the **source**) and the date. The notes wait in the **inbox** of the agent that runs the schedule. When the schedule starts, the run reads its notes first. The step that writes wiki articles from saved conversations (**wiki absorb**) can read them too.
 
 - **A note is a claim to check, not a fact to copy.** The run is told to confirm each note at its source, or against the wiki, before it changes anything.
 - **Every note gets an answer.** The run records each note as **patched** (the wiki was updated), **rejected** (the note was wrong), or **deferred** (not now), always with a reason. A deferred note comes back on the next run. A note deferred three times (you can change this) **expires**: it stays on file with its last reason, but is no longer offered, so notes nobody can check never crowd out new ones.
@@ -16,7 +16,9 @@ Wiki notes are off until you turn them on.
 
 - You have a schedule that runs your wiki observe/sweep work. See [Send a daily report](./daily-report.md) to create a schedule.
 - You know which agent runs it. That agent is the **inbox agent**.
-- That agent can change the wiki itself and run `agentx wiki notes handle`. The notes go into the agent's own instructions. A schedule that only runs a command such as `agentx wiki absorb` passes nothing on to that command, so pick a schedule whose agent checks and edits the wiki.
+- Decide which step should answer the notes:
+  - **A schedule whose agent checks and edits the wiki.** The notes go into that agent's own instructions, so the agent must be able to change the wiki and run `agentx wiki notes handle`.
+  - **Wiki absorb.** If your wiki is written by a schedule that runs the command `agentx wiki absorb`, that command passes nothing on from the schedule's instructions. Name an agent under **Absorb that reads the inbox** instead (see [Let wiki absorb answer the notes](#let-wiki-absorb-answer-the-notes)).
 
 ## Turn it on from the dashboard
 
@@ -28,12 +30,43 @@ Wiki notes are off until you turn them on.
 6. Tick **Wiki notes on**.
 7. Click **Save**.
 
-![The Wiki notes inbox section on the Schedules tab: Wiki notes on is ticked, the inbox agent is filled in, the schedule wiki-sweep is ticked, Most notes per run is 20 and Deferrals before a note expires is 3](/screenshots/wiki-notes/settings.png)
+![The Wiki notes inbox section on the Schedules tab: Wiki notes on is ticked, the inbox agent is filled in, one schedule is ticked, Absorb that reads the inbox names an agent, Most notes per run is 20 and Deferrals before a note expires is 3](/screenshots/wiki-notes/settings.png)
 
 ## Turn it on from the terminal
 
 1. **Terminal:** go to the folder that holds `agentx.json` on the machine where the inbox agent runs.
 2. **Terminal:** run `agentx wiki notes config --inbox wiki-agent --cron wiki-sweep --enable`, with your own agent id and schedule id. The command prints the new settings.
+
+## Let wiki absorb answer the notes
+
+**Wiki absorb** is the step that turns saved conversations into wiki articles, for one agent's part of the wiki at a time. You can name one agent whose absorb step also reads the notes. Absorb then lists the waiting notes for the model, which checks each one against the conversations and the articles it is shown, and answers it:
+
+- **patched**, with small corrections to articles that already exist. Absorb makes the corrections itself and refuses any that would rewrite most of a page, remove a contact detail (a phone, an email, a handle, an address) or a role or organisation, or delete a number or link. A refused correction leaves the page as it was, and the note is deferred with the reason.
+- **rejected**, when the wiki or the conversations show the note is wrong.
+- **deferred**, when nothing it has can settle the note.
+
+A note never creates a new article. Every outcome is stored on the note with a reason and the run's id, which starts with `absorb/`. If the run fails, its notes stay waiting for the next one.
+
+**Browser:**
+
+1. Open the dashboard on the inbox agent's machine and go to **Settings**.
+2. Click the **Schedules** tab and scroll to **Wiki notes inbox**.
+3. Type the agent's id in **Absorb that reads the inbox**. It must be an agent on this machine.
+4. Click **Save**.
+
+![The Absorb that reads the inbox field below the schedules in the Wiki notes inbox section](/screenshots/wiki-notes/settings.png)
+
+**Terminal:**
+
+1. Go to the folder that holds `agentx.json` on the inbox agent's machine.
+2. Run `agentx wiki notes config --absorb wiki-agent`, with your own agent id.
+
+To see it work without waiting for the schedule:
+
+1. **Terminal:** run `agentx wiki absorb --agent wiki-agent --dry-run`. It prints `Wiki notes: <n> from the <inbox> inbox` when notes are waiting.
+2. **Terminal:** run `agentx wiki absorb --agent wiki-agent`. Each note is printed with its outcome and reason.
+
+To run absorb once without the notes, add `--no-notes`.
 
 ## Let agents on your other machines post
 
@@ -87,6 +120,7 @@ On the dashboard, open **Recent notes** under **Wiki notes inbox**. Click **deta
 | `wikiNotes.enabled` | `false` | Turns wiki notes on for this machine. Needs `wikiNotes.inbox`. |
 | `wikiNotes.inbox` | — | The agent that runs the wiki observe/sweep schedule. Notes are addressed to it and kept on its machine. |
 | `wikiNotes.crons` | `[]` | Schedule ids on this machine that read the inbox when they start. Each must run as the inbox agent. |
+| `wikiNotes.absorbAgent` | — | The agent whose wiki absorb step reads and answers the notes. Must be on the inbox agent's machine. Set it on the **Absorb that reads the inbox** field, or with `agentx wiki notes config --absorb <agent>`. |
 | `wikiNotes.maxNotesPerRun` | `20` | Most notes one run is given (1 to 100). The rest wait for the next run. |
 | `wikiNotes.maxDeferrals` | `3` | Times a note may be deferred before it expires and is no longer offered (1 to 20). Set it on the **Deferrals before a note expires** field, or with `agentx wiki notes config --max-deferrals <n>`. |
 
@@ -98,6 +132,7 @@ Notes are stored in `.agentx/wiki/_notes.json` on the inbox agent's machine.
 2. **Terminal:** on the inbox agent's machine, run `agentx wiki notes list`. The test note is listed as `open`.
 3. **Terminal:** run `agentx schedule list` to find the schedule, then start it from the dashboard or wait for its next run.
 4. **Terminal:** run `agentx wiki notes list --status all`. The test note shows `given to:` with the run, and, once the run has handled it, its outcome and reason.
+5. **Terminal:** if you set an absorb agent, run `agentx wiki absorb --agent <absorb agent>` and check that the test note is printed with an outcome. A test note like this one is usually deferred or rejected, since nothing confirms it.
 
 ## If something is wrong
 
@@ -106,6 +141,9 @@ Notes are stored in `.agentx/wiki/_notes.json` on the inbox agent's machine.
 - **`the node hosting "<agent>" is unreachable`:** the inbox agent's machine is down or off the mesh. Try again when it is back.
 - **`not on this node or any known peer`:** the inbox agent's id is wrong, or the two machines are not connected. Check the id, and see [Add a second machine](./second-machine.md).
 - **`runs as "<agent>", not the inbox agent`:** only schedules that run as the inbox agent can read the inbox. Pick another schedule, or change the inbox agent.
+- **Wiki absorb never prints `Wiki notes:`:** check that **Absorb that reads the inbox** names the agent you absorb, that wiki notes are on, and that you did not pass `--no-notes`.
+- **`no agent "<agent>" on this node to run the absorb`:** the absorb agent must be listed in this machine's `agentx.json`. Set it on the inbox agent's machine.
+- **A note shows `deferred` with `patch refused`:** absorb's correction broke a rule, so the page was left alone. The note comes back next run. If the note is right, fix the page yourself with `agentx wiki edit`, then record the note with `agentx wiki notes handle <id> --outcome patched --reason "<what you changed>"`.
 - **The run never mentions notes:** check that its schedule is ticked under **Wiki notes inbox** on the inbox agent's machine, and that wiki notes are on there.
 - **A note stays open after a run:** the run did not record it. Read the run's answer on the Operations page, or record it yourself with `agentx wiki notes handle <id> --outcome deferred --reason "<why>"`.
 - **A note shows `expired`:** runs deferred it too many times, usually because its source cannot be checked. Read its last reason with `agentx wiki notes list --status expired`. To try again, leave a new note with a source the run can check.
