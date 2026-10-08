@@ -128,6 +128,14 @@ Each event has one `about` entity (exactly one primary) and one importance level
 
 Page layout follows the model: the sidebar lists the pillars in the order of section 2, then Major events, with the writing agent shown as a source badge, not a section. An entity page shows summary → typed links grouped by property → facts (value · source · checked date) → decisions → history (major and normal shown, minor folded).
 
+### Design mockups
+
+Three desktop mockups of this layout, with sample content only, are on #811:
+
+1. **Wiki home:** the sidebar lists the 9 pillars, with sub-types under Parties and Law & Obligations and Topics at the bottom. The home page shows generated due dates, proposed statements waiting for confirmation (Confirm / Reject), major and normal events only (minor ones folded into their pages, with a count), and one card per pillar.
+2. **Organization page:** summary → typed links → facts → decisions → history. Roles sit on relations. Facts show source, validity dates and status; private values are masked; a superseded value stays visible, struck through, with `valid_to`. Minor events fold into one row with a count per kind. A side rail shows provenance (which agent wrote what), open questions and related procedures.
+3. **Obligation page:** a rule card reading WHO / MUST / TO / WHEN / HOW MUCH, built from the bearer, actions, authority, due rule and amount rule. The source with its gazette reference; a "Changed by" timeline that keeps superseded versions; penalties each with their own source article; relief with its condition and window, linked to the penalty it relieves; generated due dates per period with private receipt references.
+
 ## 5. Pilot pages
 
 Chosen to test the model. Values are placeholders; private data is left out.
