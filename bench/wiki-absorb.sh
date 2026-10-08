@@ -26,6 +26,8 @@
 #
 # The snapshot must hold pending entries: copy .agentx/wiki before a
 # backlog is absorbed (or from a backup). It is never written to.
+# Empty arrays are expanded as ${A[@]+"${A[@]}"}: with set -u, bash 3.2
+# (macOS /bin/bash) treats "${A[@]}" on an empty array as unbound.
 set -euo pipefail
 
 SNAP=${1:?usage: bench/wiki-absorb.sh <snapshot-wiki-dir> [name=flags ...]}
@@ -56,12 +58,12 @@ for variant in "${VARIANTS[@]}"; do
   echo "== $v ($flags) from $started"
   for round in $(seq 1 "$ROUNDS"); do
     # shellcheck disable=SC2086
-    $AGENTX wiki absorb --dir "$work" $flags ${EXTRA:-} "${WINDOW[@]}" --run-label "$v" > "$OUT/$v/round-$round.log" 2>&1 || true
+    $AGENTX wiki absorb --dir "$work" $flags ${EXTRA:-} ${WINDOW[@]+"${WINDOW[@]}"} --run-label "$v" > "$OUT/$v/round-$round.log" 2>&1 || true
     # Stop once no agent had anything left to absorb.
     grep -q "entries to absorb" "$OUT/$v/round-$round.log" || break
   done
   $AGENTX wiki absorb-eval --dir "$work" --changed-after "$started" --n "$SAMPLE_N" --seed "$SEED" \
-    "${JUDGE_FLAG[@]}" --out "$OUT/$v/scorecard.md" --json > "$OUT/$v/scorecard.json"
+    ${JUDGE_FLAG[@]+"${JUDGE_FLAG[@]}"} --out "$OUT/$v/scorecard.md" --json > "$OUT/$v/scorecard.json"
   $AGENTX wiki absorb-runs --dir "$work" --label "$v" --json > "$OUT/$v/runs.json"
   $AGENTX wiki absorb-runs --dir "$work" --label "$v"
 done

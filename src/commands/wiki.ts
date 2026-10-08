@@ -710,7 +710,7 @@ wiki
         for (let item = queue.shift(); item; item = queue.shift()) {
           const { a, i } = item
           const cited = a.sources.map((id) => entries.get(id)).filter((e): e is { id: string; date?: string; content: string } => !!e)
-          const promptPath = resolve(tmpDir, `absorb-eval-${i}.txt`)
+          const promptPath = resolve(tmpDir, `absorb-eval-${process.pid}-${i}.txt`)
           writeFileSync(promptPath, buildJudgePrompt(a, cited))
           try {
             const { stdout } = await execAsync(
