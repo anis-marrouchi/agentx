@@ -39,6 +39,9 @@ export const NOTE_LIMITS = {
 /** Times a note may be deferred before the inbox stops offering it. */
 export const DEFAULT_MAX_DEFERRALS = 3
 
+/** `handled.by` when the inbox, not a run, deferred a note a run skipped. */
+export const SKIPPED_BY = "agentx"
+
 export interface WikiNote {
   id: string
   /** Agent that posted the note. */
@@ -58,6 +61,8 @@ export interface WikiNote {
   status: NoteStatus
   /** The runs that were given this note as input, newest last. */
   listedIn?: string[]
+  /** The run last given this note, until something is recorded for it. */
+  awaiting?: string
   /** How the run used it. Kept for deferred notes too, which come back. */
   handled?: { at: string; by: string; outcome: NoteOutcome; reason: string; runId?: string }
   /** How many times a run deferred it. */
@@ -192,14 +197,33 @@ export class NoteStore {
    * deferred, each oldest first. Marks each as listed in `runId`.
    *
    * Open notes go first so that notes a run keeps deferring (a source that
-   * can never be checked) cannot fill every slot and hide new ones. A note
-   * deferred `maxDeferrals` times expires here: it stays on file with its
-   * last reason, but is no longer offered.
+   * can never be checked) cannot fill every slot and hide new ones. One
+   * slot is still kept for deferred notes when a run gets more than one,
+   * so a steady stream of new notes cannot hide them either (#836).
+   *
+   * A note an earlier run was given and recorded nothing for counts as
+   * deferred by that run: otherwise a run that keeps skipping notes would
+   * leave them open forever, holding every slot (#836). A note deferred
+   * `maxDeferrals` times expires here: it stays on file with its last
+   * reason, but is no longer offered.
    */
   takeForRun(inbox: string, runId: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS, now: Date = new Date()): WikiNote[] {
     const f = this.load()
     if (f.unreadable) return []
     let changed = false
+    for (const n of f.notes) {
+      if (n.to !== inbox || !n.awaiting || n.awaiting === runId) continue
+      if (isWaiting(n)) {
+        n.deferrals = (n.deferrals ?? 0) + 1
+        n.status = "deferred"
+        n.handled = {
+          at: now.toISOString(), by: SKIPPED_BY, outcome: "deferred",
+          reason: `run ${n.awaiting} was given this note and recorded nothing`, runId: n.awaiting,
+        }
+      }
+      delete n.awaiting
+      changed = true
+    }
     for (const n of f.notes) {
       if (n.to === inbox && n.status === "deferred" && (n.deferrals ?? 1) >= maxDeferrals) {
         n.status = "expired"
@@ -209,12 +233,14 @@ export class NoteStore {
     }
     const oldestFirst = (a: WikiNote, b: WikiNote) => a.posted.localeCompare(b.posted)
     const mine = f.notes.filter((n) => n.to === inbox)
-    const picked = [
-      ...mine.filter((n) => n.status === "open").sort(oldestFirst),
-      ...mine.filter((n) => n.status === "deferred").sort(oldestFirst),
-    ].slice(0, Math.max(0, max))
+    const open = mine.filter((n) => n.status === "open").sort(oldestFirst)
+    const deferred = mine.filter((n) => n.status === "deferred").sort(oldestFirst)
+    const slots = Math.max(0, max)
+    const openSlots = deferred.length > 0 && slots > 1 ? slots - 1 : slots
+    const picked = [...open.slice(0, openSlots), ...deferred].slice(0, slots)
     for (const n of picked) {
       n.listedIn = [...(n.listedIn ?? []), runId].slice(-NOTE_LIMITS.listedIn)
+      n.awaiting = runId
     }
     if (picked.length > 0 || changed) {
       try { this.save(f) } catch { /* listing is best effort; the run still gets its notes */ }
@@ -231,7 +257,11 @@ export class NoteStore {
     const f = this.load()
     const note = f.notes.find((n) => n.id === id) ?? matchPrefix(f.notes, id)
     if (!note) throw new Error(`no note "${id}"`)
-    if (outcome === "deferred") note.deferrals = (note.deferrals ?? 0) + 1
+    // A run that answers late, after the next run already counted its skip
+    // as a deferral, must not be counted twice.
+    const skipCounted = note.handled?.by === SKIPPED_BY && !note.awaiting && (!runId || note.handled.runId === runId)
+    if (outcome === "deferred" && !skipCounted) note.deferrals = (note.deferrals ?? 0) + 1
+    delete note.awaiting
     note.status = outcome
     note.handled = { at: now.toISOString(), by, outcome, reason: why, ...(runId ? { runId } : {}) }
     this.save(f)
