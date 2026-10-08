@@ -2,6 +2,7 @@ import { WikiStore } from "./store"
 import { resolve } from "path"
 import { existsSync, readdirSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "fs"
 import type { WikiEntry } from "./types"
+import type { SharedWikiStore } from "./query"
 
 export type WikiMode = "flat" | "graph" | "unified"
 
@@ -61,6 +62,29 @@ export class WikiHub {
 
   getSharedStore(): WikiStore {
     return this.sharedStore
+  }
+
+  /**
+   * The wikis a query by `agentId` reads besides its own: every other
+   * agent's articles and the root store's own (promoted lessons). Which
+   * articles of theirs it may read is still decided per article by access.
+   * Without this an agent's query missed answers the shared wiki had (#824).
+   */
+  sharedScope(agentId: string): SharedWikiStore[] {
+    const others = this.listAgentDirs()
+      .filter((id) => id !== agentId)
+      .map((id) => ({ id, store: this.getAgentWiki(id) }))
+    // The root store's walk also reaches agents/<id>/…; those are read
+    // through their own store above.
+    return [...others, { id: "shared", store: this.sharedStore, skip: (p: string) => p.startsWith("agents/") }]
+  }
+
+  /** Agents with a wiki folder here, without reading the raw entries. */
+  private listAgentDirs(): string[] {
+    if (!existsSync(this.agentsDir)) return []
+    return readdirSync(this.agentsDir)
+      .filter((d) => !d.startsWith("_") && !d.startsWith(".") && existsSync(resolve(this.agentsDir, d, this.mode)))
+      .sort()
   }
 
   listAgents(entries: WikiEntry[] = this.sharedStore.listEntries()): string[] {

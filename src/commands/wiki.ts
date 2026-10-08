@@ -8,6 +8,7 @@ import type { WikiPeer } from "@/wiki/article-sync"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
+import { patchProblems } from "@/wiki/fact-guard"
 import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
@@ -59,6 +60,16 @@ function refuseCopiedAgent(hub: WikiHub, agentId: string): boolean {
   console.log(chalk.yellow(`  ${agentId}'s articles are copied from ${from.node} and read-only here; change them on ${from.node}.`))
   process.exitCode = 1
   return true
+}
+
+/** `wiki.query.shared` from agentx.json; on when there is no config. */
+async function sharedQueryOn(): Promise<boolean> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    return loadDaemonConfig().wiki.query.shared
+  } catch {
+    return true
+  }
 }
 
 /** The wiki root, resolved the same way everywhere that needs it. */
@@ -1858,6 +1869,7 @@ wiki
   .option("--patch-model <m>", "patch model", "sonnet")
   .option("--yes", "skip confirmation and write immediately")
   .option("--no-commit", "show the patched body but don't write")
+  .option("--allow-fact-loss", "save even when the patch shrinks the article or drops a phone number, email, role, link or number it had")
   .action(async (agentId, titleOrPath, instruction, opts) => {
     const readline = await import("node:readline/promises")
     const { randomUUID } = await import("node:crypto")
@@ -1920,6 +1932,19 @@ wiki
     console.log(patched)
     console.log()
 
+    // A patch is a small edit. One that shrinks the page, pastes the
+    // model's reasoning into it or drops facts it had is a rewrite, and
+    // rewrites are what lost phone numbers and roles (#824).
+    const problems = patchProblems(article.content, patched)
+    if (problems.length) {
+      for (const p of problems) console.log(chalk.yellow(`  ! ${p}`))
+      if (opts.commit && !opts.allowFactLoss) {
+        console.log(chalk.yellow("  not saved. If this change is intended, run again with --allow-fact-loss."))
+        process.exitCode = 1
+        return
+      }
+    }
+
     if (!opts.commit) {
       console.log(chalk.dim("  --no-commit: preview only, not written."))
       return
@@ -1937,14 +1962,17 @@ wiki
       return
     }
 
-    // Auto-sync `related` from body wikilinks — after an edit the body's
-    // wikilinks are the source of truth, frontmatter.related should follow.
-    // Dedupe preserving first-occurrence order.
-    const seen = new Set<string>()
-    const syncedRelated = store.extractWikilinks(patched).filter((w: string) => {
-      if (seen.has(w)) return false
-      seen.add(w); return true
-    })
+    // Two patches on one page at once each read the old body; the second
+    // write silently undid the first (#824). Refuse when the page changed.
+    if (store.readArticle(relPath)?.content !== article.content) {
+      console.log(chalk.yellow(`  ${relPath} changed while this patch was made (another patch or edit). Not saved; run the patch again.`))
+      process.exitCode = 1
+      return
+    }
+
+    // Add the body's new wikilinks to `related`, and keep the ones it had:
+    // a patch pruning them silently cut pages out of the graph (#824).
+    const syncedRelated = [...new Set([...(article.meta.related || []), ...store.extractWikilinks(patched)])]
     const ok = store.writeArticle(relPath, {
       ...article.meta,
       related: syncedRelated.length ? syncedRelated : undefined,
@@ -1955,11 +1983,266 @@ wiki
       return
     }
     store.rebuildIndex()
-    const relDrift = (article.meta.related || []).filter(r => !syncedRelated.includes(r))
-    if (relDrift.length) {
-      console.log(chalk.dim(`  (pruned stale related: ${relDrift.slice(0, 3).join(", ")}${relDrift.length > 3 ? ", …" : ""})`))
-    }
     console.log(chalk.green(`  ✓ ${relPath} patched.`))
+  })
+
+// agentx wiki contribute — each agent's daily, sourced patches (#824).
+// Reads the agent's work since its last run (chat turns, and task traces
+// with the tool calls it ran) and queues small patches (add a fact,
+// correct a value, create a page for an entity with none) for the daily
+// `wiki contributions merge`. Never rewrites a page.
+const contribute = wiki
+  .command("contribute")
+  .description("queue sourced wiki patches from an agent's work since its last run (enable, disable)")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "contribute for this agent")
+  .option("--all", "every agent with wiki.contribute.enabled in agentx.json")
+  .option("--since <time>", "first run only: read work from this date or time (default: the last 24 hours)")
+  .option("--max-patches <n>", "patches per agent per run (default: the agent's setting, else 30)")
+  .option("--max-cost <usd>", "model spend per agent per run, in USD (default: the agent's setting, else wiki.contributions.maxCostUsd, else 0.5)")
+  .option("--max-items <n>", "chat entries and tasks read per agent per run", "60")
+  .option("--model <model>", "model (default: the agent's setting, else wiki.contributions.model, else sonnet)")
+  .option("--db <path>", "trace database with the agents' task runs", ".agentx/db.sqlite")
+  .option("--dry-run", "show the patches without queueing them or moving the cursor")
+  .option("--json", "print the batches as JSON")
+  .action(async (opts) => {
+    const { runContribution } = await import("@/wiki/contributions")
+    const hub = getHub(opts.dir)
+    const dir = wikiDir(opts.dir)
+    type Setting = { enabled?: boolean; maxPatches?: number; maxCostUsd?: number; model?: string }
+    let settings: Record<string, Setting | undefined> = {}
+    let defaults: { maxCostUsd?: number; model?: string } = {}
+    try {
+      const { loadDaemonConfig } = await import("@/daemon/config")
+      const config = loadDaemonConfig()
+      settings = Object.fromEntries(Object.entries(config.agents || {}).map(([id, a]) => [id, a.wiki?.contribute]))
+      defaults = config.wiki.contributions
+    } catch { /* no config: --agent still works */ }
+
+    const ids: string[] = opts.agent
+      ? [opts.agent]
+      : opts.all ? Object.keys(settings).filter((id) => settings[id]?.enabled).sort() : []
+    if (ids.length === 0) {
+      console.log(chalk.yellow(opts.all
+        ? "  No agent has wiki.contribute.enabled. Turn one on with `agentx wiki contribute enable <agent>`."
+        : "  Name an agent with --agent <id>, or use --all."))
+      if (!opts.all) process.exitCode = 1
+      return
+    }
+
+    // Task traces carry the tool calls an agent ran; without the
+    // database a run reads chat turns only.
+    let db: import("better-sqlite3").Database | undefined
+    const dbPath = resolve(process.cwd(), opts.db)
+    if (existsSync(dbPath)) {
+      const Database = (await import("better-sqlite3")).default
+      db = new Database(dbPath, { readonly: true })
+    } else if (!opts.json) {
+      console.log(chalk.dim(`  no trace database at ${dbPath}; reading chat turns only`))
+    }
+
+    const callWith = (model: string) => async (prompt: string, maxCostUsd: number) => {
+      const tmpDir = resolve(dir, "_tmp")
+      mkdirSync(tmpDir, { recursive: true })
+      const promptPath = resolve(tmpDir, `contribute-${process.pid}-${Date.now()}.txt`)
+      writeFileSync(promptPath, prompt)
+      try {
+        const { stdout } = await execAsync(
+          `cat '${promptPath}' | claude -p - --output-format json --max-turns 1 --max-budget-usd ${maxCostUsd.toFixed(2)} --model ${model} --disallowedTools "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"`,
+          { env: claudeCliEnv(), timeout: 180_000, maxBuffer: 4 * 1024 * 1024 },
+        )
+        try {
+          const envelope = JSON.parse(stdout)
+          return { text: String(envelope.result || envelope.content || ""), costUsd: envelopeUsage(envelope).costUsd }
+        } catch {
+          return { text: stdout }
+        }
+      } finally {
+        rmSync(promptPath, { force: true })
+      }
+    }
+
+    const batches = []
+    try {
+      for (const id of ids) {
+        if (refuseCopiedAgent(hub, id)) continue
+        const s = settings[id]
+        const model = opts.model || s?.model || defaults.model || process.env.AGENTX_WIKI_CONTRIBUTE_MODEL || "sonnet"
+        try {
+          const batch = await runContribution(hub, dir, id, {
+            model, call: callWith(model), db, since: opts.since, dryRun: !!opts.dryRun,
+            maxPatches: opts.maxPatches ? parseInt(opts.maxPatches) : s?.maxPatches,
+            maxCostUsd: opts.maxCost ? parseFloat(opts.maxCost) : s?.maxCostUsd ?? defaults.maxCostUsd,
+            maxItems: parseInt(opts.maxItems),
+          })
+          batches.push(batch)
+          if (opts.json) continue
+          const stop = batch.stoppedBy ? chalk.yellow(` · stopped at ${batch.stoppedBy}`) : ""
+          console.log(`  ${chalk.cyan(id)}: ${batch.patches.length} patch(es) from ${batch.workIds.length} item(s) of work · $${batch.costUsd.toFixed(4)}${stop}${opts.dryRun ? chalk.dim(" · dry run, not queued") : ""}`)
+          for (const p of batch.patches) {
+            const what = p.attribute ? `${p.attribute}: ${p.previous ? `${p.previous} → ` : ""}${p.value ?? ""}` : p.summary ?? ""
+            console.log(chalk.dim(`    ${p.kind.padEnd(8)} ${p.page} · ${what} (${p.source}, ${p.checkedAt.slice(0, 10)})`))
+          }
+        } catch (e: any) {
+          console.log(chalk.red(`  ${id}: ${e.message?.slice(0, 200)}`))
+          process.exitCode = 1
+        }
+      }
+    } finally {
+      db?.close()
+    }
+    if (opts.json) console.log(JSON.stringify(batches, null, 2))
+    else if (!opts.dryRun && batches.some((b) => b.patches.length)) console.log(chalk.dim("  queued; `agentx wiki contributions merge` applies them."))
+  })
+
+for (const [name, on] of [["enable", true], ["disable", false]] as const) {
+  contribute
+    .command(`${name} <agent>`)
+    .description(on ? "turn on an agent's daily wiki contribution in agentx.json" : "turn off an agent's daily wiki contribution")
+    .option("--max-cost <usd>", "model spend per run, in USD")
+    .option("--max-patches <n>", "patches per run")
+    .option("-c, --config <path>", "path to agentx.json")
+    .action(async (agentId: string, opts) => {
+      // Same path as `agentx config set`: validated against the schema,
+      // written with a backup, and the daemon reloads.
+      const { applyConfigMutation } = await import("@/daemon/config-mutator")
+      const r = await applyConfigMutation((cfg: any) => {
+        const agent = cfg.agents?.[agentId]
+        if (!agent) throw new Error(`no agent "${agentId}" in agentx.json`)
+        agent.wiki ??= {}
+        agent.wiki.contribute ??= {}
+        agent.wiki.contribute.enabled = on
+        if (opts.maxCost) agent.wiki.contribute.maxCostUsd = parseFloat(opts.maxCost)
+        if (opts.maxPatches) agent.wiki.contribute.maxPatches = parseInt(opts.maxPatches)
+      }, { configPath: opts.config })
+      if (!r.success) {
+        console.log(chalk.red(`  ✗ ${r.error}`))
+        process.exitCode = 1
+        return
+      }
+      console.log(chalk.green(`  ✓ ${agentId}: daily wiki contribution ${on ? "on" : "off"}`))
+      if (on) console.log(chalk.dim("  The daily jobs wiki-contribute and wiki-contribute-merge now show in `agentx schedule list`."))
+    })
+}
+
+const contributions = wiki
+  .command("contributions")
+  .description("the daily merge of agents' wiki patches (list, merge, held, approve, reject)")
+
+contributions
+  .command("list", { isDefault: true })
+  .description("patches waiting for the merge, and what the last merge did")
+  .option("--dir <path>", "wiki directory")
+  .option("--json")
+  .action(async (opts) => {
+    const { listPendingBatches, latestReport, listHeld } = await import("@/wiki/contributions")
+    const dir = wikiDir(opts.dir)
+    const pending = listPendingBatches(dir)
+    const last = latestReport(dir)
+    const held = listHeld(dir)
+    if (opts.json) {
+      console.log(JSON.stringify({ pending, lastMerge: last, held: held.length }, null, 2))
+      return
+    }
+    console.log()
+    console.log(chalk.bold(`  Waiting for the merge: ${pending.reduce((n, b) => n + b.patches.length, 0)} patch(es) in ${pending.length} batch(es)`))
+    for (const b of pending) console.log(chalk.dim(`    ${b.agentId} · ${b.runAt.slice(0, 16)} · ${b.patches.length} patch(es) · $${b.costUsd.toFixed(4)}`))
+    if (last) {
+      console.log(chalk.bold(`  Last merge ${last.at.slice(0, 16)}:`) + ` ${last.applied.length} fact(s) applied, ${last.pagesUpdated.length} page(s) updated, ${last.pagesCreated.length} created, ${last.contradictions.length} contradiction(s), ${last.held.length} held`)
+      if (last.duplicates.length) console.log(chalk.yellow(`  ${last.duplicates.length} subject(s) have more than one page: ${last.duplicates.slice(0, 5).map((d) => d.title).join(", ")}${last.duplicates.length > 5 ? ", …" : ""}`))
+    } else {
+      console.log(chalk.dim("  No merge has run yet."))
+    }
+    if (held.length) console.log(chalk.yellow(`  ${held.length} patch(es) held for a person: agentx wiki contributions held`))
+    console.log()
+  })
+
+contributions
+  .command("merge")
+  .description("apply the queued patches: newest checked fact wins, fact-losing changes are held")
+  .option("--dir <path>", "wiki directory")
+  .option("--dry-run", "show what would change without writing")
+  .option("--json", "print the report as JSON")
+  .action(async (opts) => {
+    const { mergeContributions } = await import("@/wiki/contributions")
+    const report = mergeContributions(getHub(opts.dir), wikiDir(opts.dir), { dryRun: !!opts.dryRun, log: (m) => console.error(m) })
+    if (opts.json) {
+      console.log(JSON.stringify(report, null, 2))
+      return
+    }
+    console.log()
+    if (report.batches.length === 0) {
+      console.log(chalk.dim("  Nothing to merge."))
+      console.log()
+      return
+    }
+    console.log(chalk.bold(`  ${report.patches} patch(es) from ${report.agents.join(", ")}${report.dryRun ? chalk.dim(" (dry run, nothing written)") : ""}`))
+    console.log(`  ${report.applied.length} fact(s) applied · ${report.pagesUpdated.length} page(s) updated · ${report.pagesCreated.length} page(s) created`)
+    for (const p of report.pagesCreated) console.log(chalk.green(`    + ${p}`))
+    for (const p of report.pagesUpdated) console.log(chalk.dim(`    ~ ${p}`))
+    for (const c of report.contradictions) {
+      console.log(chalk.yellow(`  ? ${c.page} · ${c.attribute}: ${c.by} reports "${c.value}" with an older check than the wiki's; a person is asked${c.questionId ? ` (${c.questionId})` : ""}`))
+    }
+    for (const h of report.held) {
+      console.log(chalk.yellow(`  ! held ${h.id} · ${h.page}${h.attribute ? ` · ${h.attribute}` : ""} from ${h.by}: ${h.reason}${h.lost?.length ? ` (${h.lost.slice(0, 4).join(", ")})` : ""}`))
+    }
+    for (const d of report.duplicates.slice(0, 10)) console.log(chalk.yellow(`  = ${d.title}: ${d.pages.join(" · ")}`))
+    console.log()
+  })
+
+contributions
+  .command("held")
+  .description("patches the merge held for a person, with the reason")
+  .option("--dir <path>", "wiki directory")
+  .option("--all", "include approved and rejected")
+  .option("--json")
+  .action(async (opts) => {
+    const { listHeld } = await import("@/wiki/contributions")
+    const held = listHeld(wikiDir(opts.dir), { all: !!opts.all })
+    if (opts.json) {
+      console.log(JSON.stringify(held, null, 2))
+      return
+    }
+    console.log()
+    if (held.length === 0) console.log(chalk.dim("  Nothing held."))
+    for (const h of held) {
+      const p = h.patch
+      const state = h.status === "held" ? "" : chalk.dim(` [${h.status}]`)
+      console.log(`  ${chalk.bold(h.id)}${state} · ${chalk.cyan(p.agentId)} · ${p.kind} · ${p.page}${p.attribute ? ` · ${p.attribute}` : ""}${p.value ? `: ${p.value}` : ""}`)
+      console.log(chalk.dim(`    ${h.reason}${h.lost?.length ? `: ${h.lost.join(", ")}` : ""} · source: ${p.source}, checked ${p.checkedAt.slice(0, 10)}`))
+    }
+    if (held.some((h) => h.status === "held")) console.log(chalk.dim("\n  agentx wiki contributions approve <id>  ·  agentx wiki contributions reject <id>"))
+    console.log()
+  })
+
+contributions
+  .command("approve <id>")
+  .description("apply a held patch as it is")
+  .option("--dir <path>", "wiki directory")
+  .action(async (id: string, opts) => {
+    const { approveHeld } = await import("@/wiki/contributions")
+    const r = approveHeld(getHub(opts.dir), wikiDir(opts.dir), id, { by: process.env.USER || "operator" })
+    if (!r.ok) {
+      console.log(chalk.red(`  ${r.error}`))
+      process.exitCode = 1
+      return
+    }
+    console.log(chalk.green(`  ✓ ${id} applied${r.page ? ` to ${r.page}` : ""}. The page's previous version is kept.`))
+  })
+
+contributions
+  .command("reject <id>")
+  .description("drop a held patch")
+  .option("--dir <path>", "wiki directory")
+  .action(async (id: string, opts) => {
+    const { rejectHeld } = await import("@/wiki/contributions")
+    const r = rejectHeld(wikiDir(opts.dir), id, { by: process.env.USER || "operator" })
+    if (!r.ok) {
+      console.log(chalk.red(`  ${r.error}`))
+      process.exitCode = 1
+      return
+    }
+    console.log(chalk.green(`  ✓ ${id} rejected.`))
   })
 
 /**
@@ -2609,7 +2892,7 @@ wiki
   .command("query <question>")
   .description("agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer")
   .option("--dir <path>", "wiki directory")
-  .option("--agent <id>", "which agent's wiki to query (default: first one with a catalog)")
+  .option("--agent <id>", "which agent's wiki to search first (default: the calling agent, else the first one with a catalog)")
   .option("--selector-model <m>", "candidate-selection model", "haiku")
   .option("--synth-model <m>", "synthesis model", "sonnet")
   .option("--max-candidates <n>", "candidates from selector", "3")
@@ -2617,14 +2900,17 @@ wiki
   .option("--max-articles <n>", "cap on total articles walked", "8")
   .option("--json", "emit full result as JSON (for A/B harnesses)")
   .option("--trace", "print selector + walk trace")
+  .option("--own-only", "search only the agent's own articles, not the shared wiki")
   .action(async (question, opts) => {
     const { agenticQuery } = await import("@/wiki/query")
     const hub = getHub(opts.dir)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
 
-    // Find the first agent that actually has a catalog.
-    let chosen: string | null = null
-    for (const id of agents) {
+    // The named (or calling) agent, or the first one that has a catalog. A named agent
+    // with no articles of its own still searches the shared wiki.
+    const named = opts.agent || process.env.AGENTX_AGENT_ID
+    let chosen: string | null = named && !opts.ownOnly && (await sharedQueryOn()) ? named : null
+    for (const id of chosen ? [] : agents) {
       const s = hub.getAgentWiki(id)
       const cat = resolve(s.baseDir, "_index.md")
       try {
@@ -2643,6 +2929,7 @@ wiki
       maxCandidates: parseInt(opts.maxCandidates),
       maxHops: parseInt(opts.maxHops),
       maxArticles: parseInt(opts.maxArticles),
+      shared: opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(chosen),
     })
 
     if (opts.json) {
@@ -2680,6 +2967,86 @@ wiki
       }
       console.log()
     }
+  })
+
+// agentx wiki score — run a question set through `wiki query` and check
+// each answer for the facts it should contain (#824). Run it before and
+// after a change and compare the two reports.
+wiki
+  .command("score")
+  .description("score the wiki's answers to a question set; compare two reports")
+  .option("--dir <path>", "wiki directory")
+  .option("--questions <file>", "question set: JSON array or JSON lines of {id, question, expect: [facts]}")
+  .option("--agent <id>", "ask as this agent (its own wiki first, then the shared wiki)")
+  .option("--own-only", "search only the agent's own articles, to measure without the shared wiki")
+  .option("--out <file>", "write the report as JSON to this file")
+  .option("--compare <files...>", "compare two saved reports (before after) instead of running")
+  .option("--selector-model <m>", "candidate-selection model", "haiku")
+  .option("--synth-model <m>", "synthesis model", "sonnet")
+  .option("--json", "print the report as JSON")
+  .action(async (opts) => {
+    const { parseQuestionSet, buildReport, compareReports } = await import("@/wiki/score")
+    const pct = (n: number) => `${Math.round(n * 100)}%`
+
+    if (opts.compare) {
+      if (opts.compare.length !== 2) {
+        console.log(chalk.red("  --compare takes two report files: before after"))
+        process.exitCode = 1
+        return
+      }
+      const [a, b] = opts.compare.map((f: string) => JSON.parse(readFileSync(resolve(f), "utf-8")))
+      const diff = compareReports(a, b)
+      if (opts.json) { console.log(JSON.stringify(diff, null, 2)); return }
+      console.log()
+      console.log(chalk.bold(`  ${pct(diff.before)} → ${pct(diff.after)}`))
+      for (const d of diff.deltas) {
+        if (d.before === d.after) continue
+        const mark = d.after > d.before ? chalk.green("▲") : chalk.red("▼")
+        console.log(`  ${mark} ${d.id} ${pct(d.before)} → ${pct(d.after)}  ${chalk.dim(d.question.slice(0, 80))}`)
+        if (d.gained.length) console.log(chalk.green(`      + ${d.gained.join(", ")}`))
+        if (d.lost.length) console.log(chalk.red(`      - ${d.lost.join(", ")}`))
+      }
+      console.log()
+      return
+    }
+
+    if (!opts.questions) {
+      console.log(chalk.red("  --questions <file> is required (or --compare before.json after.json)."))
+      process.exitCode = 1
+      return
+    }
+    const agent = opts.agent || process.env.AGENTX_AGENT_ID
+    if (!agent) {
+      console.log(chalk.red("  --agent <id> is required: the score is for one agent's view of the wiki."))
+      process.exitCode = 1
+      return
+    }
+    const questions = parseQuestionSet(readFileSync(resolve(opts.questions), "utf-8"))
+    const { agenticQuery } = await import("@/wiki/query")
+    const hub = getHub(opts.dir)
+    const shared = !opts.ownOnly
+    const answers = []
+    for (const q of questions) {
+      const r = await agenticQuery(q.question, hub.getAgentWiki(agent), agent, {
+        selectorModel: opts.selectorModel,
+        synthModel: opts.synthModel,
+        shared: shared ? hub.sharedScope(agent) : undefined,
+      })
+      answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path) })
+      if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status}\n`))
+    }
+    const report = buildReport({ questions: opts.questions, agent, shared }, answers)
+    if (opts.out) writeFileSync(resolve(opts.out), `${JSON.stringify(report, null, 2)}\n`)
+    if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
+    console.log()
+    console.log(chalk.bold(`  ${agent}: ${pct(report.score)} · ${report.full}/${report.results.length} questions fully answered${shared ? "" : " (own articles only)"}`))
+    for (const r of report.results) {
+      const mark = r.missing.length === 0 ? chalk.green("✓") : r.found.length ? chalk.yellow("~") : chalk.red("✗")
+      console.log(`  ${mark} ${r.id} ${pct(r.score)}  ${chalk.dim(r.question.slice(0, 80))}`)
+      if (r.missing.length) console.log(chalk.dim(`      missing: ${r.missing.join(", ")}`))
+    }
+    if (opts.out) console.log(chalk.dim(`\n  report saved to ${opts.out}`))
+    console.log()
   })
 
 // agentx wiki search <query>

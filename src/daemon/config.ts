@@ -298,6 +298,19 @@ const agentConfigSchema = z.object({
    *  them off, when that is longer than shutdown.drainTimeoutSeconds. For
    *  agents whose runs are long (renders, builds). */
   drainTimeoutSeconds: z.number().int().min(0).max(86_400).optional(),
+  /** Wiki settings for this agent. `contribute` turns on its daily wiki
+   *  contribution (#824): `agentx wiki contribute --all` reviews the
+   *  agent's work since its last run and queues sourced patches for the
+   *  daily merge. Off by default. `maxPatches` and `maxCostUsd` cap one
+   *  run; `model` overrides the wiki-wide model. */
+  wiki: z.object({
+    contribute: z.object({
+      enabled: z.boolean().default(false),
+      maxPatches: z.number().int().min(1).max(200).default(30),
+      maxCostUsd: z.number().min(0).max(20).optional(),
+      model: z.string().optional(),
+    }).default({}),
+  }).optional(),
   permissionMode: z.string().default("default"),
   /** How this agent's `claude` CLI is billed (claude-code tier). Default
    *  "subscription": the shared OAuth login, ANTHROPIC_API_KEY stripped.
@@ -1275,6 +1288,28 @@ export const daemonConfigSchema = z.object({
   }),
   providers: z.record(z.string(), providerConfigSchema).default({}),
   agents: z.record(z.string(), agentConfigSchema).default({}),
+  /** Wiki-wide settings (#824). */
+  wiki: z.object({
+    /** The daily per-agent contribution and the merge that applies it.
+     *  Both jobs are added to the schedule when at least one agent has
+     *  `wiki.contribute.enabled`; a cron with the same id overrides them. */
+    contributions: z.object({
+      /** When each enabled agent reviews its day (cron, 5 fields). */
+      schedule: z.string().default("40 22 * * *"),
+      /** When the queued patches are applied. */
+      mergeSchedule: z.string().default("20 23 * * *"),
+      timezone: z.string().default("UTC"),
+      /** Default per-agent, per-run model spend cap in USD. */
+      maxCostUsd: z.number().min(0).max(20).default(0.5),
+      /** Default model for the contribution call. */
+      model: z.string().default("sonnet"),
+    }).default({}),
+    query: z.object({
+      /** `wiki query` also searches other agents' readable pages and the
+       *  root wiki's own pages. */
+      shared: z.boolean().default(true),
+    }).default({}),
+  }).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
   /** Notes agents leave for the wiki observe/sweep run (#825). */
@@ -1927,7 +1962,7 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
-  return result.data
+  return withContributionJobs(result.data)
 }
 
 /**
@@ -1982,4 +2017,36 @@ export function validateWorkspaces(config: DaemonConfig): string[] {
   }
 
   return warnings
+}
+
+/** Cron ids of the daily wiki contribution jobs. */
+export const WIKI_CONTRIBUTE_JOB = "wiki-contribute"
+export const WIKI_CONTRIBUTE_MERGE_JOB = "wiki-contribute-merge"
+
+/**
+ * Add the daily wiki contribution and merge jobs when an agent has
+ * `wiki.contribute.enabled` (#824), so they show and run with the other
+ * schedules. A cron the operator defined under the same id wins. The
+ * commands call the CLI of the running release, so an upgrade needs no
+ * edit.
+ */
+export function withContributionJobs(config: DaemonConfig, cli: string = agentxCli()): DaemonConfig {
+  const enabled = Object.entries(config.agents).filter(([, a]) => a.wiki?.contribute?.enabled).map(([id]) => id).sort()
+  if (enabled.length === 0) return config
+  const c = config.wiki.contributions
+  const job = (schedule: string, command: string) => cronJobSchema.parse({
+    schedule, timezone: c.timezone, agent: enabled[0], command, timeout: 3600, onError: "log",
+  })
+  const generated: Record<string, z.infer<typeof cronJobSchema>> = {
+    [WIKI_CONTRIBUTE_JOB]: job(c.schedule, `${cli} wiki contribute --all`),
+    [WIKI_CONTRIBUTE_MERGE_JOB]: job(c.mergeSchedule, `${cli} wiki contributions merge`),
+  }
+  return { ...config, crons: { ...generated, ...config.crons } }
+}
+
+/** How to call this release's CLI from a shell. */
+function agentxCli(): string {
+  const entry = process.argv[1] ?? ""
+  if (/[\\/]cli\.(?:c|m)?js$/.test(entry)) return `"${process.execPath}" "${entry}"`
+  return "agentx"
 }
