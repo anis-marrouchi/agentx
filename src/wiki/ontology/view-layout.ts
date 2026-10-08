@@ -195,9 +195,10 @@ body>a[href="/admin"]+.ox-app .ox-top{padding-right:130px}
 .ox-grid3{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:14px;margin-top:16px}
 .ox-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--edge);font-size:13.5px;min-width:0}
 .ox-row:first-of-type{border-top:0}
-.ox-row .t{min-width:0;overflow:hidden}
+.ox-row .t{min-width:35%;overflow:hidden;flex:1 1 auto}
 .ox-row .t a,.ox-row .t span.l{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ox-row .r{margin-left:auto;display:flex;gap:6px;align-items:center;flex:none}
+.ox-row .r{margin-left:auto;display:flex;gap:6px;align-items:center;flex:0 1 auto;min-width:0;flex-wrap:wrap;justify-content:flex-end}
+.ox-row .r .ox-chip{max-width:240px;overflow:hidden;text-overflow:ellipsis}
 .ox-ic{width:28px;height:28px;border-radius:8px;background:var(--soft);border:1px solid var(--edge);display:flex;align-items:center;justify-content:center;flex:none;color:var(--muted)}
 .ox-ic svg{width:14px;height:14px}
 .ox-card-h .note svg,.ox-row .l svg{width:12px;height:12px;vertical-align:-2px}
