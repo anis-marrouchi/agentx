@@ -7,7 +7,9 @@
 // the daemon (wiki-curate-api.ts) runs the agent turn and the CLI
 // (`agentx wiki curate`) reuses the same steps.
 
-import { createHash } from "crypto"
+import { createHash, randomBytes } from "crypto"
+import { readFileSync, writeFileSync } from "fs"
+import { resolve } from "path"
 import type { WikiStore } from "./store"
 import type { WikiArticle } from "./types"
 
@@ -42,7 +44,8 @@ export interface DiffLine {
 
 export interface CurateApplied {
   ok: true
-  /** Timestamp of the version saved before the write; restore it to undo. */
+  /** Timestamp of the version saved before the write; restore it to undo.
+   *  Absent only for a reply that changed nothing. */
   version?: string
   diff: DiffLine[]
   added: number
@@ -78,9 +81,14 @@ export function buildCuratePrompt(input: {
   article: WikiArticle
   instruction: string
   history?: CuratorTurn[]
+  /** Fence suffix; tests pin it. Default: random per call. */
+  nonce?: string
 }): string {
   const { article, instruction } = input
   const m = article.meta
+  // A fresh fence name per call: page text cannot guess it, so a page that
+  // contains "</current_page>" cannot end the data block early.
+  const fence = `current_page_${input.nonce ?? randomBytes(6).toString("hex")}`
   const history = (input.history ?? []).slice(-8)
     .map(t => `${t.role === "owner" ? "OWNER" : "YOU"}: ${t.text.slice(0, 1500)}`).join("\n\n")
   return [
@@ -115,9 +123,9 @@ export function buildCuratePrompt(input: {
     `Wiki: ${input.agentId} · ${input.path}`,
     m.type ? `Type: ${m.type}` : "",
     `Updated: ${m.lastUpdated || "unknown"}`,
-    "<current_page>",
+    `<${fence}>`,
     article.content.trim(),
-    "</current_page>",
+    `</${fence}>`,
     "",
     history ? `EARLIER IN THIS CHAT\n${history}\n` : "",
     "THE OWNER'S INSTRUCTION",
@@ -190,6 +198,27 @@ export function compactDiff(diff: DiffLine[], context = 1): DiffLine[] {
   return diff.filter((_, i) => keep.has(i))
 }
 
+/** Words in an instruction that ask for text to go. Without one, a reply
+ *  that drops most of the page is refused (shrinkRefusal). */
+const REMOVAL_WORDS = /\b(remove|delete|drop|cut|shorten|trim|condense|summari[sz]e|clear|strip|prune|shrink|reduce|erase|wipe|empty)\b/i
+
+/** Below this share of the previous lines or characters, an edit counts as
+ *  a large shrink. */
+export const MIN_KEPT_SHARE = 0.5
+
+/** Why a reply that shrinks the page this much is refused, or undefined
+ *  when it may go ahead. Tiny pages (stubs) are not guarded. */
+export function shrinkRefusal(before: string, after: string, instruction: string): string | undefined {
+  if (before.length < 80) return undefined
+  if (REMOVAL_WORDS.test(instruction)) return undefined
+  const lines = (t: string) => t.split("\n").filter(l => l.trim()).length
+  const keptChars = after.length / before.length
+  const keptLines = lines(after) / Math.max(1, lines(before))
+  if (keptChars >= MIN_KEPT_SHARE && keptLines >= MIN_KEPT_SHARE) return undefined
+  return `the reply would cut the page to ${Math.round(Math.min(keptChars, keptLines) * 100)}% of its length, ` +
+    "and the instruction did not ask to remove anything; nothing was written. Ask again, or say what to remove."
+}
+
 /** Write the agent's page through the store. The store saves the previous
  *  text as a version first; its timestamp is returned so the chat can
  *  offer "restore". */
@@ -197,7 +226,7 @@ export function applyCuration(
   store: WikiStore,
   path: string,
   reply: CurateReply,
-  opts: { curator: string; expectedFingerprint?: string; now?: Date },
+  opts: { curator: string; instruction?: string; expectedFingerprint?: string; now?: Date },
 ): CurateApplyResult {
   if (reply.content === undefined) return { ok: false, error: "the agent sent no page" }
   const current = store.readArticle(path)
@@ -211,7 +240,13 @@ export function applyCuration(
   const added = diff.filter(d => d.op === "+").length
   const removed = diff.filter(d => d.op === "-").length
   if (added === 0 && removed === 0) return { ok: true, diff: [], added: 0, removed: 0, sources: reply.sources }
+  const shrink = shrinkRefusal(before, after, opts.instruction ?? "")
+  if (shrink) return { ok: false, error: shrink }
 
+  // The raw file as it is now, to put back if no version gets saved.
+  const fullPath = resolve(store.baseDir, path)
+  let raw: string
+  try { raw = readFileSync(fullPath, "utf-8") } catch { return { ok: false, error: "could not read the page" } }
   const versionsBefore = new Set(store.getVersions(path).map(v => v.timestamp))
   const now = (opts.now ?? new Date()).toISOString().slice(0, 10)
   const meta = {
@@ -223,7 +258,13 @@ export function applyCuration(
   // agent that did the work.
   const written = store.writeArticle(path, meta, after, current.meta.owner)
   if (!written) return { ok: false, error: "the wiki refused the write" }
-  store.appendLog("curate", `${current.meta.title} edited by ${opts.curator} at ${path} (+${added} −${removed})`)
+  // Saving the version is best-effort in the store. An edit with no
+  // version to restore is undone here rather than kept without an undo.
   const version = store.getVersions(path).find(v => !versionsBefore.has(v.timestamp))?.timestamp
+  if (!version) {
+    try { writeFileSync(fullPath, raw) } catch { /* reported below */ }
+    return { ok: false, error: "the wiki could not save the previous version, so the change was not kept" }
+  }
+  store.appendLog("curate", `${current.meta.title} edited by ${opts.curator} at ${path} (+${added} −${removed})`)
   return { ok: true, version, diff: compactDiff(diff), added, removed, sources: reply.sources }
 }

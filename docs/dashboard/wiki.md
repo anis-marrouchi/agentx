@@ -122,6 +122,11 @@ To curate a page:
 
 When the agent only answers or asks you a question back, the page is not changed. When someone else edits the page while the agent works, nothing is written and the chat asks you to send the instruction again.
 
+Two more checks protect the page:
+
+- If the agent's reply would cut the page to less than half its lines or length, nothing is written, unless your instruction asks for something to go (for example "remove", "delete", "shorten" or "summarise"). Very short pages are not checked.
+- If the wiki cannot save the page's earlier version, the change is not kept, so every change you see can be undone.
+
 Press **Esc** to close the chat. On a phone the chat fills the width of the screen. The chat follows the wiki's light or dark theme.
 
 The chat is kept by the agent's computer (the daemon) until it restarts; the page's earlier versions are kept on disk.
@@ -180,4 +185,7 @@ You can also curate a page and manage its versions from a terminal, with the dae
 - **The chat says there is no agent with that name:** the agent set under **Agent that answers** was removed, or the page's owner is not an agent on this computer. Pick another agent in **Settings**, or run `agentx wiki curator --agent <agent-id>`.
 - **The chat says the page is a copy from another node:** that agent's pages are copied from another computer and can only be changed there. Open the wiki on that computer.
 - **The chat says the page changed while the agent was working:** someone else saved the page meanwhile, so nothing was written. Send the instruction again.
+- **The chat says the reply would cut the page and nothing was written:** the agent sent back much less than the page held, and your instruction did not ask to remove anything. Send the instruction again, or say plainly what to remove, such as "remove the history section".
+- **The chat says the wiki could not save the previous version:** the wiki folder could not be written to, so the change was dropped. **Terminal:** check there is free disk space and that the daemon can write to `.agentx/wiki/`, then send the instruction again.
+- **Restore the previous version says the curator is turned off:** the chat's restore button only works while the curator is on. Turn it on, or **Terminal:** run `agentx wiki restore <agent> "<page title>" [version]`.
 - **A change has no sources:** the chat marks it with "No sources were cited". Ask the agent to add its sources, or restore the previous version.

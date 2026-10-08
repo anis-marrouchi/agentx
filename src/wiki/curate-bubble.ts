@@ -68,7 +68,10 @@ const SCRIPT = `
   function setOpen(o){panel.hidden=!o;fab.setAttribute('aria-expanded',String(o));try{sessionStorage.setItem(openKey,o?'1':'')}catch(e){}
     if(o){load();setTimeout(function(){input.focus()},0)}else{stop();fab.focus()}}
   function stop(){if(timer){clearTimeout(timer);timer=null}}
-  function api(method,url,body){return fetch(url,{method:method,headers:{'Content-Type':'application/json'},credentials:'same-origin',body:body?JSON.stringify(body):undefined})
+  // The same headers as the dashboard's other XHR: the write check and,
+  // when dashboard.token is set, the token.
+  function headers(){var h={'Content-Type':'application/json','X-Requested-With':'agentx-board'};if(cfg.token)h['Authorization']='Bearer '+cfg.token;return h}
+  function api(method,url,body){return fetch(url,{method:method,headers:headers(),credentials:'same-origin',body:body?JSON.stringify(body):undefined})
     .then(function(r){return r.json().catch(function(){return {}}).then(function(j){if(!r.ok)throw new Error(j.error||('HTTP '+r.status));return j})})}
   function render(state){
     sub.textContent=(state.curator||'The agent')+' edits “'+(state.title||cfg.title)+'”'+(state.readOnly?' · read-only copy':'');
@@ -129,9 +132,9 @@ function esc(s: string): string {
 }
 
 /** Markup, style and script for the bubble, inserted before </body>. */
-export function curatorBubble(page: BubblePage, endpoint = "/api/wiki/curate"): string {
+export function curatorBubble(page: BubblePage, endpoint = "/api/wiki/curate", token?: string): string {
   // JSON inside <script> must not close the tag.
-  const data = JSON.stringify({ agent: page.agentId, path: page.path, title: page.title, endpoint }).replace(/</g, "\\u003c")
+  const data = JSON.stringify({ agent: page.agentId, path: page.path, title: page.title, endpoint, ...(token ? { token } : {}) }).replace(/</g, "\\u003c")
   return `<style>${CSS}</style>
 <div class="wc-root" id="wc-root">
 <button class="wc-fab" type="button" hidden aria-label="Ask an agent to curate this page" aria-expanded="false" aria-controls="wc-panel" title="Curate this page">${ICON}</button>
@@ -146,7 +149,7 @@ export function curatorBubble(page: BubblePage, endpoint = "/api/wiki/curate"): 
 }
 
 /** Put the bubble on a rendered page. */
-export function withCuratorBubble(html: string, page: BubblePage, endpoint?: string): string {
-  const bubble = curatorBubble(page, endpoint)
-  return html.includes("</body>") ? html.replace(/<\/body>(?![\s\S]*<\/body>)/, `${bubble}\n</body>`) : html + bubble
+export function withCuratorBubble(html: string, page: BubblePage, endpoint?: string, token?: string): string {
+  const bubble = curatorBubble(page, endpoint, token)
+  return html.includes("</body>") ? html.replace(/<\/body>(?![\s\S]*<\/body>)/, () => `${bubble}\n</body>`) : html + bubble
 }

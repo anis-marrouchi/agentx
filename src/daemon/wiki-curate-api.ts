@@ -87,6 +87,8 @@ export class WikiCurateApi {
       const page = this.page(body?.agent, body?.path)
       if ("error" in page) return send(res, page.status, { error: page.error })
       if (page.readOnly) return send(res, 409, { error: "this page is a copy from another node; edit it there" })
+      const settings = this.deps.settings()
+      if (!settings.enabled) return send(res, 403, { error: "the wiki curator is turned off (wiki.curator.enabled)" })
 
       if (path === "/api/wiki/curate/restore") {
         const version = String(body?.version ?? "")
@@ -100,8 +102,6 @@ export class WikiCurateApi {
         return send(res, 200, { ok: true })
       }
 
-      const settings = this.deps.settings()
-      if (!settings.enabled) return send(res, 403, { error: "the wiki curator is turned off (wiki.curator.enabled)" })
       const message = String(body?.message ?? "").trim()
       if (!message) return send(res, 400, { error: "message required" })
       const curator = curatorAgentFor(settings, page.article, page.agentId, this.deps.agents())
@@ -126,7 +126,7 @@ export class WikiCurateApi {
           if (resp.error) { finish(reply, String(resp.error), "error"); return }
           const parsed = parseCurateReply(resp.content ?? "")
           if (parsed.content === undefined) { finish(reply, parsed.summary, "done"); return }
-          const applied = applyCuration(page.store, page.path, parsed, { curator, expectedFingerprint: fingerprint })
+          const applied = applyCuration(page.store, page.path, parsed, { curator, instruction: message, expectedFingerprint: fingerprint })
           if (!applied.ok) { finish(reply, `${parsed.summary}\n\n${applied.error}`, "error"); return }
           reply.edit = { version: applied.version, diff: applied.diff, added: applied.added, removed: applied.removed, sources: applied.sources }
           finish(reply, applied.added + applied.removed ? parsed.summary : `${parsed.summary}\n\nThe page text did not change.`, "done")

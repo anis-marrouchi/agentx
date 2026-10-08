@@ -1010,6 +1010,9 @@ export interface WikiHandlerOpts {
   curator?: boolean
   /** Where the bubble sends instructions. Default /api/wiki/curate. */
   curatorEndpoint?: string
+  /** The dashboard.token the bubble sends, like the dashboard's other
+   *  pages (window.AX_LOCAL_TOKEN). Read per request. */
+  curatorToken?: () => string | undefined
 }
 
 /** Build the wiki HTTP request handler. Same logic as `startWikiServer`,
@@ -1221,7 +1224,7 @@ export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage,
 
     if (status === 200 && opts.curator) {
       const page = curatedPageAt(hub, ontologyRoutes, path, agentFilter)
-      if (page) html = withCuratorBubble(html, page, opts.curatorEndpoint)
+      if (page) html = withCuratorBubble(html, page, opts.curatorEndpoint, opts.curatorToken?.())
     }
 
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" })
