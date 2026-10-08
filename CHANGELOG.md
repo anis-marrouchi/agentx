@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.128.0](https://github.com/anis-marrouchi/agentx/compare/v0.127.0...v0.128.0) (2026-10-08)
+
+
+### Features
+
+* **wiki:** daily per-agent contributions as sourced patches ([#824](https://github.com/anis-marrouchi/agentx/issues/824)) ([#826](https://github.com/anis-marrouchi/agentx/issues/826)) ([75fdd77](https://github.com/anis-marrouchi/agentx/commit/75fdd778d5ac6b8106c901da2bb15baf0ddf512c))
+
 ## [0.127.0](https://github.com/anis-marrouchi/agentx/compare/v0.126.2...v0.127.0) (2026-10-08)
 
 
