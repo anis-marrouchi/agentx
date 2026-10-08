@@ -138,6 +138,12 @@ export interface AgentTask {
   /** Called with `runningTaskId` as soon as the run starts. Never fires for
    *  a message that was queued or dropped instead of run. */
   onStart?: (runningTaskId: string) => void
+  /** Aborted when the HTTP caller waiting on this run has gone (timeout,
+   *  disconnect). A run still waiting for a busy agent's slot is then
+   *  dropped instead of started: nobody is left to read its answer, and a
+   *  retrying caller would otherwise have every attempt run once the slot
+   *  frees (#822). A run that already started is not affected. */
+  callerSignal?: AbortSignal
   /** How to re-enter this run if a restart cuts it off (agents/resume).
    *  Absent: recorded as a direct run with this task's context. */
   origin?: import("./resume/origin").RunOrigin

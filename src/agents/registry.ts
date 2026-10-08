@@ -1110,6 +1110,14 @@ export class AgentRegistry {
    * this, every dispatched decision sits in-flight forever and the
    * active-task check becomes vacuously over-aggressive.
    */
+  /** The answer for a run whose HTTP caller left before it got a slot
+   *  (#822). Logged so the dropped request is visible on the node. */
+  private callerGone(task: AgentTask, during: string): AgentResponse {
+    const reason = abortReason(task.callerSignal!).message
+    this.log(`[${task.agentId}] caller gone during ${during} — not starting (${reason})`)
+    return { content: "", error: `Caller gone before agent "${task.agentId}" was free — not started` }
+  }
+
   async execute(task: AgentTask, onDelta?: StreamCallback, onThinking?: ThinkingCallback, onEvent?: (event: any) => void): Promise<AgentResponse> {
     const startedAt = Date.now()
     let response: AgentResponse
@@ -1287,6 +1295,7 @@ export class AgentRegistry {
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
         while (state.activeTasks >= state.def.maxConcurrent) {
+          if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
           if (Date.now() - start > maxWaitMs) {
             return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
           }
@@ -1368,6 +1377,8 @@ export class AgentRegistry {
       this.log(`[${task.agentId}] ${rateResult.reason}`)
       return { content: "", error: rateResult.reason }
     }
+    // The rate-limit wait above can be minutes long too.
+    if (task.callerSignal?.aborted) return this.callerGone(task, "rate-limit wait")
 
     // A flushed queued message that waited long enough for its subject to
     // change is told so (#282). Added here, when it really starts, and
