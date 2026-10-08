@@ -124,6 +124,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // Notifications — single mutation endpoint that takes a partial body
       // (destination?, on?, longTaskThreshold?). Mirrors `agentx notifications`.
       "POST /api/admin/notifications":   () => updateNotifications(body),
+      "POST /api/admin/wiki/curator":    () => updateWikiCurator(body),
       "POST /api/admin/screen":          () => updateScreen(body),
       // Webhook triggers + defaultWorkflow editor (in addition to existing
       // /api/admin/webhooks add/edit/delete).
@@ -357,7 +358,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), actions }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), actions, wikiCurator: wikiCuratorSettings(cfg) }
 }
 
 // ========================================================================
@@ -1413,6 +1414,32 @@ async function updateMeshHealth(body: any) {
     if (interval !== undefined) cfg.mesh.healthCheck.interval = interval
     if (timeout !== undefined) cfg.mesh.healthCheck.timeout = timeout
     return `mesh.healthCheck updated (interval=${cfg.mesh.healthCheck.interval}s, timeout=${cfg.mesh.healthCheck.timeout}s)`
+  })
+  return { summary }
+}
+
+// ========================================================================
+// Wiki page curator (#818) — mirrors `agentx wiki curator`
+// ========================================================================
+
+function wikiCuratorSettings(cfg: any): { enabled: boolean; agent: string } {
+  const c = cfg?.wiki?.curator || {}
+  return { enabled: c.enabled !== false, agent: typeof c.agent === "string" ? c.agent : "" }
+}
+
+function updateWikiCurator(body: any) {
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.wiki = cfg.wiki || {}
+    cfg.wiki.curator = cfg.wiki.curator || {}
+    if (body && "enabled" in body) cfg.wiki.curator.enabled = !!body.enabled
+    if (body && "agent" in body) {
+      const agent = String(body.agent || "").trim()
+      if (!agent) delete cfg.wiki.curator.agent
+      else if (!cfg.agents?.[agent]) throw new Error(`no agent "${agent}"`)
+      else cfg.wiki.curator.agent = agent
+    }
+    const c = wikiCuratorSettings(cfg)
+    return `wiki.curator ${c.enabled ? "on" : "off"}, answered by ${c.agent || "the page owner"}`
   })
   return { summary }
 }
