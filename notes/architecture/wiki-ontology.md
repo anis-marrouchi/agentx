@@ -1,6 +1,6 @@
 # Wiki ontology: pillars, statements, law and obligations
 
-Status: **draft v0.3, waiting for owner approval** (#811, step 1). v0.3 adds to v0.2, and v0.2 replaced v0.1. Nothing is built: no absorb code changed, no articles reshaped. This file must not be merged before the owner approves it.
+Status: **approved** by the owner on 2026-10-08 (v0.2, the design mockups and v0.3, as a whole; #811). The decisions in section 8 were taken as recommended. The starter `ontology.yaml` is in `src/wiki/ontology/` (`agentx wiki ontology show | check | init`); the rest of the build follows the steps at the end.
 
 Changes in v0.3 (section 5): how each page is **viewed**, "the right level of view at each node, like a zoom".
 
@@ -257,32 +257,32 @@ lenses:
     - {panel: parties, from: [owns, uses]}
 ```
 
-When the file is missing, the wiki seeds it from a starter in code, the same way the intent graph seeds `.agentx/graph/schema.json` from `src/graph/starter-schema.ts`.
+When the file is missing, the wiki uses a starter in code (`src/wiki/ontology/starter.ts`), the same way the intent graph starts from `src/graph/starter-schema.ts`; `agentx wiki ontology init` writes it out for editing. A section the file leaves out comes from the starter, and lenses merge type by type. A file that does not check is not used: the wiki keeps the starter and `agentx wiki ontology check` lists why.
 
 Jurisdiction packs, such as Tunisia (gazette = JORT, list of authorities, finance-law cycle), are data added on top, not code.
 
-## 8. Decisions needed from the owner
+## 8. Owner decisions (all approved as recommended, 2026-10-08)
 
 New in v0.3:
 
-1. **Zoom levels Z0–Z4** as in 5.1? *Recommend yes.*
-2. **Sidebar:** Home + up to 5 pins + 9 pillars only; sub-types become tabs on the pillar page and Topics leaves the sidebar? *Recommend yes.* Who picks pins: *owner only, agents may suggest.*
-3. **Lens table** in 5.2 as the starting point, editable in `ontology.yaml` by the owner? *Recommend yes.*
-4. **Conversations as sources** with a "Discussed" panel, summaries private to the owner by default? *Recommend yes.*
-5. **Installed apps** as statements on the device, with an app page only when something else points to it? *Recommend yes.*
+1. **Zoom levels Z0–Z4** as in 5.1? **Yes.**
+2. **Sidebar:** Home + up to 5 pins + 9 pillars only; sub-types become tabs on the pillar page and Topics leaves the sidebar? **Yes.** **The owner picks pins; agents may suggest.**
+3. **Lens table** in 5.2 as the starting point, editable in `ontology.yaml` by the owner? **Yes.**
+4. **Conversations as sources** with a "Discussed" panel, summaries private to the owner by default? **Yes.**
+5. **Installed apps** as statements on the device, with an app page only when something else points to it? **Yes.**
 
 Still open from v0.2:
 
-1. **Pillars:** approve the 9 names in section 2? *Recommend yes.*
-2. **One Obligation type** for law, contracts and internal policy, each with its source? *Recommend yes.*
-3. **Confirmation:** legal obligations stay "proposed, unverified" until the owner or the accountant confirms. Which of them confirms, or either? *Recommend either; the confirmer is recorded.*
-4. **Gazette wiki:** link to it and watch it read-only for new fiscal and social acts, as in 3.3? *Recommend yes.*
-5. **Due-date instances:** generate them now for the pilot, and leave reminders and calendar for a later step? *Recommend yes.*
-6. Still open from v0.1: agents as Assets (`kind: agent`), per-statement access, original-language titles with English aliases, and who may set `major` (absorb may set it, with new majors in a weekly "check these" list). *Recommendations unchanged.*
+1. **Pillars:** approve the 9 names in section 2? **Yes.**
+2. **One Obligation type** for law, contracts and internal policy, each with its source? **Yes.**
+3. **Confirmation:** legal obligations stay "proposed, unverified" until the owner or the accountant confirms. Which of them confirms, or either? **Either; the confirmer is recorded.**
+4. **Gazette wiki:** link to it and watch it read-only for new fiscal and social acts, as in 3.3? **Yes.**
+5. **Due-date instances:** generate them now for the pilot, and leave reminders and calendar for a later step? **Yes.**
+6. Still open from v0.1: agents as Assets (`kind: agent`), per-statement access, original-language titles with English aliases, and who may set `major`: **only the owner (or a rule in `ontology.yaml`) sets it; agents may propose.**
 
-## Next steps after approval
+## Build steps
 
-1. Ship `ontology.yaml` and its starter (no behaviour change).
+1. Ship `ontology.yaml` and its starter (no behaviour change). **Done:** `src/wiki/ontology/`, `agentx wiki ontology`, [docs](../../docs/jobs/wiki-ontology.md).
 2. Absorb writes into this model (one pipeline; #808 covers its quality).
 3. Pilots P1–P7, compared before and after with the owner.
 4. Full reshape of existing articles. Nothing is merged before the pilots are reviewed.

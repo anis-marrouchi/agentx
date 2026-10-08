@@ -11,6 +11,7 @@ import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPa
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
+import { registerWikiOntology } from "./wiki-ontology"
 import { resolve, relative, dirname } from "path"
 import { execSync } from "child_process"
 import { writeFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, existsSync } from "fs"
@@ -71,6 +72,7 @@ export const wiki = new Command()
   .description("wiki knowledge base management")
 
 registerWikiFacts(wiki)
+registerWikiOntology(wiki)
 
 // agentx wiki status
 wiki

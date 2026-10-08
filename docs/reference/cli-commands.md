@@ -1491,6 +1491,37 @@ Write resolved identifiers into articles that are missing them.
 | `--apply` | — | Write the changes (default: show them only). |
 | `--json` | — | Print JSON instead of a table. |
 
+### `agentx wiki ontology`
+
+The wiki's page types, links, importance levels and page layouts (`ontology.yaml`). See [Shape the wiki](/jobs/wiki-ontology).
+
+### `agentx wiki ontology show`
+
+Print the ontology in use: pillars, types, links, importance levels, sidebar. The first line says whether it comes from `ontology.yaml` or the built-in defaults.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+| `--type <id>` | — | One type: its links and the panels its page opens with. |
+| `--json` | — | Print JSON. |
+
+### `agentx wiki ontology check`
+
+Check `ontology.yaml`. Lists every problem that keeps it from being used; until they are fixed the wiki uses the built-in defaults. Exits with an error when there are problems.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+
+### `agentx wiki ontology init`
+
+Write the built-in ontology to `ontology.yaml` so you can edit it. Never replaces an existing file without `--force`.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory (default .agentx/wiki). |
+| `--force` | — | Replace an existing ontology.yaml. |
+
 ### `agentx wiki questions`
 
 Gaps waiting on a person.
