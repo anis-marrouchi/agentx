@@ -268,7 +268,6 @@ interface ScopeView {
 }
 
 function scopeView(store: WikiStore, requesterId: string | undefined, shared: SharedWikiStore[] = []): ScopeView {
-  const own = catalogPool(store)
   const titleIndex = new Map<string, string>()
   for (const article of store.listArticles(requesterId || "")) {
     titleIndex.set(article.meta.title.toLowerCase(), article.path)
@@ -288,8 +287,11 @@ function scopeView(store: WikiStore, requesterId: string | undefined, shared: Sh
       if (!titleIndex.has(key)) titleIndex.set(key, path)
     }
   }
+  let pool: CatalogEntry[] | undefined
   return {
-    pool: [...own, ...sharedPool],
+    // Lazy: retrieveArticles brings its own pool, and building this one
+    // rebuilds the index.
+    get pool() { return (pool ??= [...catalogPool(store), ...sharedPool]) },
     sharedPool,
     titleIndex,
     read(path) {

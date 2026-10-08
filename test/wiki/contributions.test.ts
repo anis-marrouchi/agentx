@@ -361,3 +361,18 @@ it("keeps the held file off the article index", async () => {
   expect(existsSync(resolve(dir, "_contributions", "held.json"))).toBe(true)
   expect(hub.getSharedStore().rebuildIndex().articles.map((a) => a.path).filter((p) => p.includes("_contributions"))).toEqual([])
 })
+
+describe("wiki contribute enable", () => {
+  it("writes the switch and the limits given on the command line", async () => {
+    const { writeFileSync } = await import("fs")
+    const file = resolve(dir, "agentx.json")
+    writeFileSync(file, JSON.stringify({ node: { id: "n", name: "N" }, agents: { "agent-a": { name: "A", workspace: "/w" } } }))
+    vi.spyOn(console, "log").mockImplementation(() => {})
+    vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("ECONNREFUSED"))
+
+    await wiki.parseAsync(["contribute", "enable", "agent-a", "--max-cost", "0.3", "--max-patches", "20", "-c", file], { from: "user" })
+
+    const saved = JSON.parse(readFileSync(file, "utf-8"))
+    expect(saved.agents["agent-a"].wiki.contribute).toEqual({ enabled: true, maxCostUsd: 0.3, maxPatches: 20 })
+  })
+})

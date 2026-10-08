@@ -2112,8 +2112,10 @@ for (const [name, on] of [["enable", true], ["disable", false]] as const) {
         agent.wiki ??= {}
         agent.wiki.contribute ??= {}
         agent.wiki.contribute.enabled = on
-        if (opts.maxCost) agent.wiki.contribute.maxCostUsd = parseFloat(opts.maxCost)
-        if (opts.maxPatches) agent.wiki.contribute.maxPatches = parseInt(opts.maxPatches)
+        // `contribute` has the same flags, and commander hands them to it.
+        const flags = { ...contribute.opts(), ...opts }
+        if (flags.maxCost) agent.wiki.contribute.maxCostUsd = parseFloat(flags.maxCost)
+        if (flags.maxPatches) agent.wiki.contribute.maxPatches = parseInt(flags.maxPatches)
       }, { configPath: opts.config })
       if (!r.success) {
         console.log(chalk.red(`  ✗ ${r.error}`))
