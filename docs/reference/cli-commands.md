@@ -1471,7 +1471,7 @@ Patches waiting for the merge, and what the last merge did.
 
 ### `agentx wiki contributions merge`
 
-Apply every queued patch. Facts go through the fact ledger, so the newest check wins and the older value stays in its history and on the page as "previously". A patch older than the wiki's value raises a question instead. Several new pages for the same subject become one page. A patch that removes a fact, or a change that would lose one, is held. Subjects with more than one page are listed.
+Apply every queued patch. Facts go through the fact ledger, so the newest check wins and the older value stays in its history and on the page as "previously". A patch older than the wiki's value raises a question instead. Several new pages for the same subject become one page, and a new page whose title closely matches an existing one is held as a possible duplicate. A patch that removes a fact, or a change that would lose one, is held. Subjects with more than one page are listed.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1593,7 +1593,7 @@ Agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer
 | `--trace` | — | Print selector + walk trace. |
 | `--own-only` | — | Search only the agent's own articles, not the shared wiki. |
 
-Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. `wiki.query.shared: false` in `agentx.json` turns this off for every query.
+Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles`; each picked page also opens up to 3 of the newest pages that link to it. `wiki.query.shared: false` in `agentx.json` turns this off for every query.
 
 ### `agentx wiki score`
 

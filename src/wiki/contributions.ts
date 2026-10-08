@@ -325,11 +325,29 @@ function readablePages(hub: WikiHub, agentId: string): PageRef[] {
 }
 
 /** Pages the work most likely touches, by text match on titles and aliases. */
+/**
+ * Pages the work most likely touches: half by title and alias, half by
+ * body. Titles alone missed a stale page whose title was worded
+ * differently from the work, and the model created a duplicate instead
+ * of correcting it (#824 review).
+ */
 function relevantPages(pages: PageRef[], items: WorkItem[]): PageRef[] {
   if (pages.length === 0) return []
   const text = items.map((w) => `${w.title} ${w.text}`).join("\n")
-  const index = buildIndex(pages.map((p) => [p.title, ...p.aliases].join(" ")))
-  return scoreAll(text, index).slice(0, PAGES_PER_CALL).map((r) => pages[r.docIndex])
+  const byTitle = scoreAll(text, buildIndex(pages.map((p) => [p.title, ...p.aliases].join(" "))))
+  const byBody = scoreAll(text, buildIndex(pages.map((p) => `${p.title} ${p.aliases.join(" ")} ${clip(p.content, 4000)}`)))
+  const picked: number[] = []
+  const half = Math.ceil(PAGES_PER_CALL / 2)
+  for (const r of byTitle.slice(0, half)) picked.push(r.docIndex)
+  for (const r of byBody) {
+    if (picked.length >= PAGES_PER_CALL) break
+    if (!picked.includes(r.docIndex)) picked.push(r.docIndex)
+  }
+  for (const r of byTitle.slice(half)) {
+    if (picked.length >= PAGES_PER_CALL) break
+    if (!picked.includes(r.docIndex)) picked.push(r.docIndex)
+  }
+  return picked.map((i) => pages[i])
 }
 
 export function buildContributionPrompt(agentId: string, items: WorkItem[], pages: PageRef[], maxPatches: number): string {
@@ -361,6 +379,10 @@ ${wiki}
 - One fact per patch: an "attribute" ("phone", "role", "billing status", "due date") and its "value", copied exactly.
 - Never rewrite or summarise a page, and never propose removing a fact.
 - Skip facts a page already states with the same value.
+- Put each fact on the page about its subject. If a page above is about the same thing under another name, use that page (with "correct" when it is out of date) instead of creating a new one. Create a page only when none of the pages above is about the subject.
+- State the fact itself, not the story of how you found it.
+- Do not record facts about the wiki, AgentX, this contribution run or your own tools, unless that is your job.
+- Skip anything you could not verify. "Not checked" or "unknown" is not a fact.
 - At most ${maxPatches} patches. Return [] when there is nothing worth adding.
 
 Return ONLY a JSON array, no prose, no code fences:
@@ -387,7 +409,9 @@ export function parseContributionPatches(raw: string, agentId: string, opts: { n
     const kind = r.kind
     if (kind !== "add" && kind !== "correct" && kind !== "create" && kind !== "remove") continue
     const page = clean(r.page, 120)
-    const source = clean(r.source, FIELD_CHARS)
+    // The fact line adds "checked <date> by <agent>" itself.
+    const rawSource = clean(r.source, FIELD_CHARS)
+    const source = rawSource.replace(/[\s,;(–—-]*\bchecked\b[^;]*$/i, "").replace(/[\s,;(]+$/, "") || rawSource
     const checked = typeof r.checkedAt === "string" ? Date.parse(r.checkedAt) : NaN
     if (!page || !source || !Number.isFinite(checked)) continue
     const attribute = clean(r.attribute, 60)
@@ -523,18 +547,34 @@ export function mergeContributions(hub: WikiHub, wikiDir: string, opts: { now?: 
     for (const a of p.aliases ?? []) if (!draft.aliases.includes(a)) draft.aliases.push(a)
     newPages.set(key, draft)
   }
+  for (const p of patches) {
+    const key = pageKey(p.page)
+    if ((p.kind === "add" || p.kind === "correct") && !targets.has(key) && !newPages.has(key)) {
+      // A fact about a subject with no page and no `create`: start one.
+      newPages.set(key, { title: p.page, owner: p.agentId, summaries: [], sources: [p.source], aliases: [], at: p.checkedAt })
+    }
+  }
+
+  // A new page whose title is a near match of an existing one is probably
+  // that page under a longer or shorter name; creating it is how the
+  // first trial duplicated a stale page instead of correcting it.
+  const existing = [...targets.values()].map((list) => list[0])
+  const duplicateOf = new Map<string, string>()
+  for (const [key, draft] of newPages) {
+    const match = possibleDuplicate(draft.title, draft.type, existing.map((t) => ({ title: t.article.meta.title, type: t.article.meta.type, ref: `${t.agentId}/${t.path}` })))
+    if (match) duplicateOf.set(key, match)
+  }
+  for (const key of duplicateOf.keys()) newPages.delete(key)
 
   const ledger = new FactLedger(wikiDir)
   const edits = new Map<string, PageEdit[]>()
   for (const p of patches) {
+    const key = pageKey(p.page)
+    const dup = duplicateOf.get(key)
+    if (dup && p.kind !== "remove") { hold(p, `possible duplicate of ${dup}`); continue }
     if (p.kind === "create") continue
     if (p.kind === "remove") { hold(p, "removes a fact"); continue }
-    const key = pageKey(p.page)
     const target = targets.get(key)?.[0]
-    if (!target && !newPages.has(key)) {
-      // A fact about a subject with no page and no `create`: start one.
-      newPages.set(key, { title: p.page, owner: p.agentId, summaries: [], sources: [p.source], aliases: [], at: p.checkedAt })
-    }
     if (target && !target.store.canRead(target.article.meta, p.agentId)) {
       hold(p, "the contributing agent cannot read this page")
       continue
@@ -579,21 +619,7 @@ export function mergeContributions(hub: WikiHub, wikiDir: string, opts: { now?: 
     const path = newPagePath(store, draft.title, draft.type)
     report.pagesCreated.push(`${draft.owner}/${path}`)
     if (opts.dryRun) continue
-    const intro = draft.summaries.length ? draft.summaries.join(" ") : `${draft.title}.`
-    const { body } = applyFactLines(`${intro}\n\n_Sources: ${draft.sources.join("; ")}._`, list.map((e) => e.line))
-    const ok = store.writeArticle(path, {
-      title: draft.title,
-      ...(draft.type ? { type: draft.type } : {}),
-      ...(draft.aliases.length ? { aliases: draft.aliases } : {}),
-      tags: [],
-      owner: draft.owner,
-      access: "public",
-      created: today,
-      lastUpdated: today,
-      sources: [contributionStamp(draft.owner, draft.at), ...list.map((e) => contributionStamp(e.line.by, e.line.checkedAt))]
-        .filter((s, i, a) => a.indexOf(s) === i),
-    }, body, draft.owner)
-    if (ok) touched.add(store)
+    if (createPage(store, path, draft, list.map((e) => e.line), today)) touched.add(store)
   }
 
   if (!opts.dryRun) {
@@ -610,6 +636,60 @@ export function mergeContributions(hub: WikiHub, wikiDir: string, opts: { now?: 
     writeJson(resolve(dir, "reports", `${nowIso.replace(/[:.]/g, "-")}.json`), report)
   }
   return report
+}
+
+function createPage(store: WikiStore, path: string, draft: NewPage, lines: FactLine[], today: string): boolean {
+  const intro = draft.summaries.length ? draft.summaries.join(" ") : `${draft.title}.`
+  const { body } = applyFactLines(`${intro}\n\n_Sources: ${draft.sources.join("; ")}._`, lines)
+  return store.writeArticle(path, {
+    title: draft.title,
+    ...(draft.type ? { type: draft.type } : {}),
+    ...(draft.aliases.length ? { aliases: draft.aliases } : {}),
+    tags: [],
+    owner: draft.owner,
+    access: "public",
+    created: today,
+    lastUpdated: today,
+    sources: [contributionStamp(draft.owner, draft.at), ...lines.map((l) => contributionStamp(l.by, l.checkedAt))]
+      .filter((s, i, a) => a.indexOf(s) === i),
+  }, body, draft.owner)
+}
+
+const TITLE_STOPWORDS = new Set(["the", "and", "for", "with", "von", "des", "les", "der", "die", "das", "une", "pour", "page", "of", "de", "la", "le", "du", "et"])
+
+function titleTokens(title: string): Set<string> {
+  return new Set((title.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).filter((t) => (t.length > 2 || /\d/.test(t)) && !TITLE_STOPWORDS.has(t)))
+}
+
+/**
+ * The existing page a new title most likely means, or undefined. A match
+ * shares at least two significant words and most of the shorter title's
+ * words ("Tax Payment Plan" and "Tax Payment Plan Engagement 4471"). A
+ * person page never matches a page of another type, and titles carrying
+ * different numbers never match.
+ */
+export function possibleDuplicate(
+  title: string, type: WikiArticleType | undefined,
+  pages: Array<{ title: string; type?: WikiArticleType; ref: string }>,
+): string | undefined {
+  const mine = titleTokens(title)
+  if (mine.size < 2) return undefined
+  let best: { ref: string; title: string; score: number } | undefined
+  for (const p of pages) {
+    if (type && p.type && (type === "person") !== (p.type === "person")) continue
+    const theirs = titleTokens(p.title)
+    if (theirs.size < 2) continue
+    // Two numbered things (invoices, issues) with different numbers are
+    // different things, however alike the rest of the title.
+    const nums = (set: Set<string>) => [...set].filter((t) => /\d/.test(t))
+    const [a, b] = [nums(mine), nums(theirs)]
+    if (a.length && b.length && !a.some((n) => b.includes(n))) continue
+    let shared = 0
+    for (const t of mine) if (theirs.has(t)) shared++
+    const score = shared / Math.min(mine.size, theirs.size)
+    if (shared >= 2 && score >= 0.75 && (!best || score > best.score)) best = { ref: p.ref, title: p.title, score }
+  }
+  return best ? `"${best.title}" (${best.ref})` : undefined
 }
 
 interface NewPage {
@@ -699,9 +779,25 @@ export function approveHeld(hub: WikiHub, wikiDir: string, id: string, opts: { b
   if (h.status !== "held") return { ok: false, error: `"${id}" is already ${h.status}` }
   const p = h.patch
   const now = opts.now ?? Date.now()
-  const target = pageTargets(hub).get(pageKey(p.page))?.[0]
-  if (!target) return { ok: false, error: `no page "${p.page}" (it may have been renamed)` }
   const today = new Date(now).toISOString().slice(0, 10)
+  const target = pageTargets(hub).get(pageKey(p.page))?.[0]
+  if (!target) {
+    // A held `create` (a possible duplicate), or a fact for the page it
+    // would have made: a person said it is a new subject after all.
+    if (p.kind === "remove") return { ok: false, error: `no page "${p.page}" (it may have been renamed)` }
+    const lines: FactLine[] = []
+    if (p.attribute && p.value) {
+      const w = new FactLedger(wikiDir).write({ subject: p.page, attribute: p.attribute, value: p.value, source: p.source, verifiedBy: p.agentId, verifiedAt: p.checkedAt }, { now })
+      if (w.status === "contradiction") return { ok: false, error: `the wiki has a newer check of ${p.attribute}; answer question ${w.questionId ?? "(see wiki questions)"} instead` }
+      lines.push({ attribute: p.attribute, value: w.fact.value, source: p.source, checkedAt: p.checkedAt, by: p.agentId })
+    }
+    const store = hub.getAgentWiki(p.agentId)
+    const path = newPagePath(store, p.page, p.pageType)
+    const draft: NewPage = { title: p.page, type: p.pageType, owner: p.agentId, summaries: p.summary ? [p.summary] : [], sources: [p.source], aliases: p.aliases ?? [], at: p.checkedAt }
+    if (!createPage(store, path, draft, lines, today)) return { ok: false, error: `write denied for ${p.agentId}/${path}` }
+    try { store.rebuildIndex() } catch { /* the page is written; the next rebuild indexes it */ }
+    return decide(wikiDir, all, h, "approved", opts.by, now, `${p.agentId}/${path}`)
+  }
 
   let r: { changed: boolean; denied?: boolean }
   if (p.kind === "remove") {

@@ -15,6 +15,7 @@ Once a day, one **merge** applies everyone's suggestions:
 - When two suggestions disagree, the one checked most recently wins. The older value stays on the page as "previously" and in the page's history.
 - When an older check disagrees with what the wiki already holds, nothing changes and a question waits for you in `agentx wiki questions`.
 - Several suggestions for a new page with the same name become one page.
+- A new page whose name is close to an existing page's, such as "Tax Payment Plan Engagement 4471" next to "Tax Payment Plan", is **held** as a possible duplicate, with its facts, so you can choose.
 - A change that would remove a phone number, an email, a role, a "main contact" note, a link or a number is **held** for you to decide.
 
 Everything on this page happens in a **terminal** on the machine that runs AgentX, in the folder that holds `agentx.json`. It is off until you switch it on.
@@ -105,6 +106,9 @@ Leave at least 30 minutes between the two, so every agent has finished before th
 
 An agent's wiki search (`agentx wiki query`, and the `agentx_wiki_query` tool agents use) used to read only that agent's own pages. It now also reads other agents' pages it is allowed to see, and the shared lessons. The answer says which agent's page it used and how recent it is, and prefers the newer page when two disagree.
 
+- The agent's own pages come first. Other agents' pages take at most half of the pages one answer reads, so they can't push the agent's own pages out.
+- For each page the search picks, it also opens up to 3 of the newest pages that link to it. A decision about a person, for example, is found from the person's page.
+
 To search only an agent's own pages, add `--own-only`. To switch shared search off for everyone, run `agentx config set wiki.query.shared false`.
 
 ## Measure the difference
@@ -154,5 +158,6 @@ It also refuses when the page changed while the patch was being made, so two pat
 - **`no trace database … reading chat turns only`:** the command ran outside the folder the daemon runs from, so it couldn't read the agents' tasks. Run it from the folder that holds `agentx.json`, or pass `--db <path>`.
 - **A run says `stopped at max-cost` every day:** the agent has more work than its limit covers. Raise `maxCostUsd` for that agent, or accept that the rest is read the next day.
 - **The merge lists a subject with more than one page:** two agents wrote a page for the same thing. Merge them by hand in the wiki, and add the other name to the page you keep as an alias.
+- **A suggestion is held as "possible duplicate of …":** read both. If they are the same thing, reject the suggestion and correct the existing page with `agentx wiki patch`. If they are different, approve it and the new page is created.
 - **A suggestion is held with "the contributing agent cannot read this page":** the page is private to another agent. Share it with that agent, or approve the suggestion yourself.
 - **`claude: command not found`:** the daily job calls the `claude` command. Install it, or see [If something is wrong](/reference/cli-commands#if-something-is-wrong) in the command reference.

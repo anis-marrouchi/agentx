@@ -376,3 +376,96 @@ describe("wiki contribute enable", () => {
     expect(saved.agents["agent-a"].wiki.contribute).toEqual({ enabled: true, maxCostUsd: 0.3, maxPatches: 20 })
   })
 })
+
+describe("#824 review fixes", () => {
+  const queue = async (agent: string, patches: unknown[]) => {
+    chat(agent, `w-${agent}-${Math.random().toString(36).slice(2, 8)}`, "2026-10-08", "work")
+    await runContribution(hub, dir, agent, { model: "m", call: model(patches), now: NOW })
+  }
+
+  it("treats a longer title for an existing page as a possible duplicate, not a new subject", async () => {
+    const { possibleDuplicate } = await import("../../src/wiki/contributions")
+    const pages = [
+      { title: "Tax Payment Plan", type: "concept" as const, ref: "a/concepts/plan.md" },
+      { title: "Invoice 2041 Example Ltd", type: "event" as const, ref: "a/events/2041.md" },
+      { title: "Sam Doe", type: "person" as const, ref: "a/people/sam.md" },
+    ]
+    expect(possibleDuplicate("Tax Payment Plan (Échéancier) Engagement 4471", "project", pages)).toContain("Tax Payment Plan")
+    expect(possibleDuplicate("Invoice 2042 Example Ltd", "event", pages)).toBeUndefined()
+    expect(possibleDuplicate("Sam Doe Consulting", "project", pages)).toBeUndefined()
+    expect(possibleDuplicate("Payroll Calendar", "concept", pages)).toBeUndefined()
+  })
+
+  it("holds a create that looks like an existing page, with its facts; approving creates it", async () => {
+    page("agent-a", "concepts/plan.md", "Tax Payment Plan", "The plan amount is unknown.", { type: "concept" })
+    await queue("agent-a", [
+      { kind: "create", page: "Tax Payment Plan Engagement 4471", pageType: "project", summary: "A payment plan.", source: "tax portal", checkedAt: "2026-10-08T09:00:00Z" },
+      { kind: "add", page: "Tax Payment Plan Engagement 4471", attribute: "amount", value: "1200", source: "tax portal", checkedAt: "2026-10-08T09:00:00Z" },
+    ])
+
+    const report = mergeContributions(hub, dir, { now: NOW })
+
+    expect(report.pagesCreated).toEqual([])
+    expect(report.held.map((h) => h.reason)).toEqual([
+      'possible duplicate of "Tax Payment Plan" (agent-a/concepts/plan.md)',
+      'possible duplicate of "Tax Payment Plan" (agent-a/concepts/plan.md)',
+    ])
+    const create = listHeld(dir).find((h) => h.patch.kind === "create")!
+    const r = approveHeld(hub, dir, create.id, { now: NOW })
+    expect(r.ok && r.page).toBe("agent-a/projects/tax-payment-plan-engagement-4471.md")
+  })
+
+  it("does not repeat who checked a fact on its line", () => {
+    const [p] = parseContributionPatches(JSON.stringify([
+      { kind: "add", page: "Vendor", attribute: "phone", value: "1", source: "contacts thread, checked by agent-a", checkedAt: "2026-10-05T09:00:00Z" },
+    ]), "agent-a", { now: NOW })
+    expect(p.source).toBe("contacts thread")
+    const [q] = parseContributionPatches(JSON.stringify([
+      { kind: "add", page: "Vendor", attribute: "phone", value: "1", source: "checked the contacts app", checkedAt: "2026-10-05T09:00:00Z" },
+    ]), "agent-a", { now: NOW })
+    expect(q.source).toBe("checked the contacts app")
+  })
+
+  it("shows the model a page whose body, not title, matches the work", async () => {
+    page("agent-a", "concepts/plan.md", "Instalment Schedule", "Engagement 4471 with the tax office; amount unknown.")
+    for (let i = 0; i < 10; i++) page("agent-a", `misc/p${i}.md`, `Tax note ${i}`, "Unrelated.")
+    chat("agent-a", "e1", "2026-10-08", "Tax portal: engagement 4471 amount is 1200.")
+    const call = model([])
+    await runContribution(hub, dir, "agent-a", { model: "m", call, now: NOW, dryRun: true })
+    expect(call.prompts[0]).toContain("### Instalment Schedule")
+    expect(call.prompts[0]).toContain("Do not record facts about the wiki, AgentX")
+  })
+
+  function selectorReturns(paths: Array<{ title: string; path: string }>): void {
+    mocks.execSync.mockImplementation((cmd: string) => {
+      const prompt = readFileSync(cmd.match(/cat '([^']+)'/)![1], "utf-8")
+      if (prompt.includes("You are picking candidate articles")) return JSON.stringify({ result: JSON.stringify(paths) })
+      return JSON.stringify({ result: "answer" })
+    })
+  }
+
+  it("keeps at least half the walk for the agent's own pages", async () => {
+    page("agent-a", "own/one.md", "Own One", "Mine.")
+    for (let i = 0; i < 6; i++) page("agent-b", `s/${i}.md`, `Shared ${i}`, "Theirs.")
+    hub.getAgentWiki("agent-a").rebuildIndex()
+    selectorReturns([
+      ...Array.from({ length: 6 }, (_, i) => ({ title: `Shared ${i}`, path: `@agent-b/s/${i}.md` })),
+      { title: "Own One", path: "own/one.md" },
+    ])
+    const r = await agenticQuery("q", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a"), maxCandidates: 7, maxArticles: 4 })
+    expect(r.walked[0].path).toBe("own/one.md")
+    expect(r.walked.filter((w) => w.path.startsWith("@")).length).toBe(2)
+  })
+
+  it("opens the pages that link to a picked page", async () => {
+    page("agent-a", "people/sam.md", "Sam Doe", "A person.")
+    page("agent-b", "decisions/write.md", "Write to Sam by email", "Decided: email only.", { related: ["Sam Doe"], lastUpdated: "2026-10-01" })
+    hub.getAgentWiki("agent-a").rebuildIndex()
+    selectorReturns([{ title: "Sam Doe", path: "people/sam.md" }])
+    const r = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a", { shared: hub.sharedScope("agent-a") })
+    expect(r.walked.map((w) => w.path)).toEqual(["people/sam.md", "@agent-b/decisions/write.md"])
+
+    const own = await agenticQuery("how to write to Sam?", hub.getAgentWiki("agent-a"), "agent-a")
+    expect(own.walked.map((w) => w.path)).toEqual(["people/sam.md"])
+  })
+})

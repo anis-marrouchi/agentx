@@ -264,13 +264,18 @@ interface ScopeView {
   pool: CatalogEntry[]
   sharedPool: CatalogEntry[]
   titleIndex: Map<string, string>
+  /** Title (lowercased) → pages whose `related` names it, newest first.
+   *  Built only when shared wikis are searched. */
+  backlinks: Map<string, string[]>
   read(path: string): WikiArticle | null
 }
 
 function scopeView(store: WikiStore, requesterId: string | undefined, shared: SharedWikiStore[] = []): ScopeView {
   const titleIndex = new Map<string, string>()
+  const linking: Array<{ path: string; related: string[]; lastUpdated: string }> = []
   for (const article of store.listArticles(requesterId || "")) {
     titleIndex.set(article.meta.title.toLowerCase(), article.path)
+    linking.push({ path: article.path, related: article.meta.related ?? [], lastUpdated: article.meta.lastUpdated ?? "" })
   }
   const sharedPool: CatalogEntry[] = []
   const byId = new Map<string, SharedWikiStore>()
@@ -283,12 +288,28 @@ function scopeView(store: WikiStore, requesterId: string | undefined, shared: Sh
       if (a.path.includes("/_versions/") || s.skip?.(a.path)) continue
       const path = `@${s.id}/${a.path}`
       sharedPool.push(catalogEntry(a, path))
+      linking.push({ path, related: a.meta.related ?? [], lastUpdated: a.meta.lastUpdated ?? "" })
       const key = a.meta.title.toLowerCase()
       if (!titleIndex.has(key)) titleIndex.set(key, path)
     }
   }
+  // In a fleet's shared pool the page that answers a question often links
+  // TO the page the selector picked (a decision about a person), and the
+  // forward walk never reaches it (#824 review: ranked 103rd of ~5,700).
+  const backlinks = new Map<string, string[]>()
+  if (byId.size > 0) {
+    for (const l of [...linking].sort((a, b) => b.lastUpdated.localeCompare(a.lastUpdated))) {
+      for (const t of l.related) {
+        const key = t.toLowerCase()
+        const list = backlinks.get(key) ?? []
+        if (!list.includes(l.path)) list.push(l.path)
+        backlinks.set(key, list)
+      }
+    }
+  }
   let pool: CatalogEntry[] | undefined
   return {
+    backlinks,
     // Lazy: retrieveArticles brings its own pool, and building this one
     // rebuilds the index.
     get pool() { return (pool ??= [...catalogPool(store), ...sharedPool]) },
@@ -336,6 +357,9 @@ function renderSharedCatalog(question: string, pool: CatalogEntry[], messagePath
   return `\n\n## Shared wiki (other agents' articles)\n\n${lines.join("\n")}\n`
 }
 
+/** Pages that link to a picked page, opened per picked page. */
+const BACKLINKS_PER_PICK = 3
+
 function walkSubgraph(
   candidates: Array<{ title: string; path: string }>,
   view: ScopeView,
@@ -343,25 +367,36 @@ function walkSubgraph(
   maxArticles: number,
 ): Array<WikiArticle & { hop: number }> {
   const titleIndex = view.titleIndex
+  const isShared = (path: string) => path.startsWith("@")
+
+  // The agent's own pages come first, and shared pages may take at most
+  // half the walk when it has any: in the #824 trial shared pages took
+  // the slots of the agent's own correct pages and its score dropped.
+  const ordered = [...candidates.filter((c) => !isShared(c.path)), ...candidates.filter((c) => isShared(c.path))]
+  const sharedCap = ordered.length > 0 && !isShared(ordered[0].path) ? Math.floor(maxArticles / 2) : maxArticles
 
   const opened = new Map<string, WikiArticle & { hop: number }>()
-  let frontier: Array<{ path: string; hop: number }> = []
-
-  for (const c of candidates) {
-    if (!opened.has(c.path)) frontier.push({ path: c.path, hop: 0 })
-  }
+  let sharedOpened = 0
+  const frontier: Array<{ path: string; hop: number }> = ordered.map((c) => ({ path: c.path, hop: 0 }))
 
   while (frontier.length && opened.size < maxArticles) {
     const next = frontier.shift()!
     if (opened.has(next.path)) continue
     if (next.hop > maxHops) continue
+    if (isShared(next.path) && sharedOpened >= sharedCap) continue
 
     const article = view.read(next.path)
     if (!article) continue
 
     opened.set(next.path, { ...article, hop: next.hop })
+    if (isShared(next.path)) sharedOpened++
     if (next.hop >= maxHops) continue
 
+    if (next.hop === 0) {
+      for (const path of (view.backlinks.get(article.meta.title.toLowerCase()) ?? []).slice(0, BACKLINKS_PER_PICK)) {
+        if (!opened.has(path)) frontier.push({ path, hop: 1 })
+      }
+    }
     for (const target of article.meta.related || []) {
       const path = titleIndex.get(target.toLowerCase())
       if (path && !opened.has(path)) {
