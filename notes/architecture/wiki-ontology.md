@@ -1,131 +1,151 @@
-# Wiki ontology: page types, link types, importance levels
+# Wiki ontology: page types, relations, importance levels
 
-Status: **draft, waiting for owner approval** (#811, step 1). No code changes until this page is approved.
+Status: **draft v0.1, waiting for owner approval** (#811, step 1). Nothing is built: no absorb code changed, no articles reshaped. Once approved, this page becomes the default `ontology.yaml` (section 8).
 
-This page lists what the wiki will contain once it becomes a knowledge graph: the kinds of page (types), the kinds of link between pages, and how important an event is. Everything here is a starting set. All three lists live in one settings file, so an operator can add or rename entries without a code change.
+## 1. Why
 
-## 1. Page types
+Measured on a live fleet wiki (2026-10-08):
 
-One page per real thing, shared by the whole fleet. The agent that wrote a statement is kept as the statement's **source**. It no longer decides where the page lives.
+- 5,990 articles. **2,990 of them (50%) are event pages**, all at top level beside decisions and people.
+- The owner has **5 separate person pages**: one shared, plus copies written by four different agents.
+- The company has 2 shared pages, one agent copy, and 30+ pages with its name in the title, spread over 8 agents.
+- The social-security agency appears on 14 pages: 5 "concept" pages, 7 event pages and 2 decisions. There is no single page for the obligation itself.
 
-| Type id | Label (sidebar) | schema.org | What belongs here | Replaces today's `type` |
-|---|---|---|---|---|
-| `person` | People | `Person` | the owner, an employee, a client contact | `person` |
-| `organization` | Organizations | `Organization` | the company, a client, a bank, a public agency | (new; today filed as `concept` or `project`) |
-| `place` | Places | `Place` | a country, a city, an office | `place` |
-| `system` | Devices & systems | `Product` / `SoftwareApplication` | a laptop, a server, an app, a phone line | (new; today filed as `concept` or `event`) |
-| `rule` | Rules | `Legislation` | a tax or social-security obligation, a contract term, a house policy | (new; today re-researched each time) |
-| `project` | Projects | `Project` | a product or a client engagement | `project` |
-| `procedure` | Procedures | `HowTo` | how something is done here | `pattern` |
-| `topic` | Topics | `DefinedTerm` | a concept that is none of the above (fallback) | `concept` |
+## 2. Principles
 
-Not page types any more:
+1. **One page per real thing for the whole fleet.** The page id is `type/slug` (for example `org/example-company`). Agents add *statements* to it. The agent is the source of each statement and is never the folder.
+2. **Wikidata-style statements:** subject → property → value, plus qualifiers (role, start, end) and a reference (source agent + entry id + check date).
+3. **Pillars on top, details inside.** Navigation shows types and major events. Everything else lives inside the page it is about.
+4. **Access is set per statement, not per page.** A public page can hold a private statement, such as an ID number. This is how one shared page stays safe.
 
-- `event` becomes an **event entry** on the page of the thing it is about (section 3). Only major events also get their own page.
-- `decision` becomes an event entry of kind `decision`, with importance `normal` or `major`.
+## 3. Entity types
 
-**Identity rule.** Two pages describe the same thing when they share a strong identifier (phone number, email, tax or company number, hostname, domain) or the same name and type with no conflicting identifier. Names alone never merge a `person`. The merged page keeps every other name as an alias.
+| Type | schema.org | `kind` (sub-type) examples | Replaces today's `type` |
+|---|---|---|---|
+| Person | `Person` | owner, employee, contact | `person` |
+| Organization | `Organization` (`Corporation`, `GovernmentOrganization`, `BankOrCreditUnion`) | company, client, bank, agency | parts of `concept` / `project` |
+| Place | `Place` / `Country` / `City` | country, city, office | `place` (when a real place) |
+| System | `Product` / `SoftwareApplication` | laptop, server, app, account, **agent** | `place` (servers, URLs), the agent roster |
+| Rule | `Legislation` | law, filing obligation, contract term, internal policy | parts of `concept` / `decision` |
+| Project | `Project` | product, client engagement | `project` |
+| Procedure | `HowTo` | runbook, "how we do X here" | `pattern`, parts of `concept` |
+| Event | `Event` | incident, meeting, payment, release | `event` |
+| Decision | `ChooseAction` | approval, policy choice | `decision` |
+| Concept | `Thing` | fallback only, should be rare | `concept` |
 
-## 2. Link types
+Today's types are in `src/wiki/types.ts` (`WIKI_ARTICLE_TYPES`).
 
-A link goes from one page to another and carries a type. Links are stored once, on the subject page, and shown in reverse on the target page (the "inverse label").
+## 4. Relations (properties)
 
-| Link id | Label | From → To | Inverse label | Qualifiers |
-|---|---|---|---|---|
-| `has-role-at` | has role at | person → organization | people | `role` (required, e.g. "accountant") |
-| `works-on` | works on | person, organization → project | worked on by | `role` |
-| `owns` | owns | person, organization → system, organization, project | owned by | |
-| `client-of` | client of | organization, person → organization | clients | |
-| `supplier-of` | supplier of | organization → organization | suppliers | `what` |
-| `located-in` | located in | person, organization, place, system → place | located here | |
-| `registered-in` | registered in | organization → place | registered here | `registration number` |
-| `must-follow` | must follow | person, organization, project → rule | applies to | |
-| `runs-on` | runs on | system, project → system | runs | |
-| `uses` | uses | person, organization, project → system | used by | |
-| `part-of` | part of | any → same type | parts | |
-| `follows-procedure` | follows | project, rule → procedure | used for | |
-| `related-to` | related to | any → any | related to | (fallback; today's `related`) |
+| Property | From → To | Qualifiers | Wikidata |
+|---|---|---|---|
+| `founded` / `owns` | Person, Org → Org, System, Project | since, share | P112 / P127 |
+| `role_at` | Person → Org | **role** (e.g. "accountant of"), start, end | P108 / P39 |
+| `member_of` | Person, Org → Org | start, end | P463 |
+| `client_of` | Org → Org | since, contract ref (private) | — |
+| `registered_with` | Person, Org → Org | **as** (employer / self-employed), id (private), since | — |
+| `located_in` | any → Place | — | P131 / P17 |
+| `must_follow` | Person, Org, Project → Rule | as, since | ~P92 |
+| `issued_by` | Rule → Org | — | P2378 |
+| `applies_in` | Rule → Place | — | P1001 |
+| `implements` | Procedure → Rule | — | — |
+| `works_on` | Person, System (agent) → Project | role, start, end | — |
+| `uses` / `runs_on` | Org, Project → System; System → System | since | P2283 |
+| `part_of` | X → X | — | P361 |
+| `about` | Event, Decision → any entity | **required, exactly one primary** | P921 |
+| `involves` | Event → Person, Org | role | P710 |
+| `decided_by` | Decision → Person | date | — |
+| `supersedes` | Decision, Rule → same type | date | P1365 |
 
-**Qualifiers** (any link, Wikidata style): `start` date, `end` date, `source` (agent, entry or external system), `checked` (date the link was last confirmed). A link with an `end` date is shown as past, not deleted.
+Every statement can carry `source` (agent + entry id), `checked_at`, `status` (proposed / confirmed by a person) and `access`. A disagreement between two agents is two statements with different sources. The existing fact-disagreement flow (`src/wiki/facts/ledger.ts`, `agentx wiki questions`) settles which one stands.
 
-**Facts** (a phone number, an address, a fee) are not links. They stay in the existing fact ledger (`src/wiki/facts/ledger.ts`), which already records source, check date and earlier values. The entity page reads its facts from there.
+## 5. Events and importance
 
-## 3. Events and importance
+Each event has one `about` entity and one importance level.
 
-Every event is attached to exactly one page (its **subject**) and may mention others. It has a date, a kind, an importance and a source.
-
-Event kinds (starting set): `incident`, `change`, `decision`, `meeting`, `deadline`, `payment`, `milestone`, `note`.
-
-| Importance | Meaning | Where it shows |
+| Level | Test | Where it shows |
 |---|---|---|
-| `minor` | routine; nobody needs to act or remember it (disk full and cleared, cache flushed, a retry that worked) | only in the **History** section of its subject page, collapsed |
-| `normal` | worth keeping; useful context later (a meeting, a config change, a paid invoice) | History section of its subject page and of every mentioned page |
-| `major` | changes how things stand; a person should know (a client signed or left, an outage that hit a client, a rule changed, a key decision) | everything above, plus the **Major events** list in the sidebar and on the home page, and its own page |
+| **minor** | Routine, nothing lasting changes, resolved by itself (disk full, cache cleared, a deploy that went fine) | **One line** in the entity's History (date · sentence · source). No page of its own. |
+| **normal** | Changes a fact or needs a follow-up (new contact, deadline met, incident with a root cause) | Listed on the entity page. Gets its own page only if it needs more than a few lines. Not in global navigation. |
+| **major** | Changes the owner's world: money, legal standing, a client relationship starting or ending, a production outage, a strategic decision | Own page, **Major events** in the sidebar and home page, linked from the entity's summary. |
 
-Defaults when absorb is unsure: `normal`. Repeated `minor` events of the same kind on the same page (for example a fifth disk-full in a month) are counted and can be raised to `normal` by a rule in settings, so a pattern is not hidden.
+- Absorb proposes the level with a one-line reason, and a person can change it.
+- **Roll-up:** repeated minor events of the same kind on the same entity merge into one line ("disk full ×6 since Aug"). After N repeats (configurable) the roll-up is raised to normal, because a recurring problem is no longer minor.
 
-## 4. Rule pages
+## 6. Layout
 
-A `rule` page holds an obligation once. Required sections:
+- **Sidebar:** People · Organizations · Places · Systems · Rules · Projects · Procedures · Major events. The writing agent appears as a source badge, not as a section.
+- **Entity page:** summary → typed links grouped by property → facts (value · source · checked date) → decisions → history (major and normal shown, minor folded).
+- **Rule page:** applies to · issued by · jurisdiction · deadlines · penalties · what to do (→ Procedure) · sources · last checked. Agents answer from this page. A rule past its check date is checked again, using the existing `wiki facts` time-limit mechanism.
 
-- **Applies to** (filled from `must-follow` links pointing at the page)
-- **What to do**
-- **Deadlines** (date or recurrence, for example "15th of each month")
-- **Penalty** if missed
-- **Sources** (link or document reference)
-- **Last checked** (date and who checked)
+## 7. Pilot pages (shape only)
 
-Agents answer a question about the rule from this page. They research again only when **Last checked** is older than the rule's `recheckDays` (default 180).
+Values are placeholders. Private data is left out.
 
-## 5. Entity page layout
-
-1. Title, type, aliases
-2. Summary (a few sentences)
-3. Links, grouped by link type (including inverse links)
-4. Facts, each with its source and check date (from the fact ledger)
-5. History: events, newest first; minor events collapsed behind a "Show minor" control
-6. Sources: which agents and entries contributed, as a footer
-
-Sidebar and home page: one group per page type, in the order of the table in section 1, then **Major events**. The per-agent view stays reachable from a filter, not as the main grouping.
-
-## 6. Settings file
-
-Proposed location: `.agentx/wiki/_ontology.json`, beside the existing `_questions.json`. When it is missing, the wiki seeds it from a starter in code, the same way the intent graph seeds `.agentx/graph/schema.json` from `src/graph/starter-schema.ts`.
-
-```json
-{
-  "version": 1,
-  "types": [
-    { "id": "person", "label": "People", "schemaOrg": "Person", "folder": "people" }
-  ],
-  "links": [
-    { "id": "has-role-at", "label": "has role at", "inverse": "people",
-      "from": ["person"], "to": ["organization"], "qualifiers": ["role"], "required": ["role"] }
-  ],
-  "importance": [
-    { "id": "minor", "nav": false },
-    { "id": "normal", "nav": false },
-    { "id": "major", "nav": true }
-  ],
-  "eventKinds": ["incident", "change", "decision", "meeting", "deadline", "payment", "milestone", "note"],
-  "promote": { "minorRepeatsToNormal": 5, "windowDays": 30 },
-  "rules": { "recheckDays": 180 }
-}
+```yaml
+# org/example-company
+type: Organization   kind: company
+statements:
+  - founded_by: person/owner
+  - located_in: place/example-country
+  - registered_with: org/social-security-agency   {as: employer, id: <private>, source: accountant-agent}
+  - must_follow: rule/employer-contributions
+  - uses: system/agentx
+  - client_of ← org/<client>     # client orgs link in; names live on private pages
+history: major ▸ <dated company-level events> · normal ▸ … · minor ▸ folded
 ```
 
-Unknown type or link ids coming from absorb fall back to `topic` and `related-to`, and are listed for review, like new verbs in `agentx graph review`.
+```yaml
+# person/owner
+type: Person   kind: owner
+statements:
+  - founded: org/example-company
+  - role_at: org/example-company {role: founder, approver of production + money}
+  - registered_with: org/social-security-agency {as: <private>, access: private}
+  - must_follow: rule/<scheme> {access: private}
+  - contact points: {access: private, source: fact sources}
+merges: the shared page + 4 agent copies → 1 page
+decisions: "production deploys need owner approval" etc. (from an ops agent's patterns)
+```
 
-## 7. Questions for the owner
+```yaml
+# org/social-security-agency            # rule/employer-contributions
+type: Organization                         type: Rule   kind: filing obligation
+kind: GovernmentOrganization               issued_by: org/social-security-agency
+located_in: place/example-country          applies_in: place/example-country
+issues: rule/*                             applies_to: employers (as registered)
+                                           deadline: <from source, checked date>
+                                           penalty: <from source, checked date>
+                                           procedure: procedure/contribution-declaration
+                                           sources: [<official URL>], checked_at: <date>
+```
 
-1. Is `system` the right single type for devices and software, or should they be two types?
-2. Should `decision` stay a page type of its own instead of an event kind?
-3. Are the three importance levels enough, or is a fourth (`critical`) needed for alerts?
-4. Pilot entities: the company, its owner, and which legal obligation?
+The agency's 7 event pages become history lines on the company or the owner page, whichever they are `about`. Its 5 "concept" pages become a Rule, a Procedure or private statements.
+
+## 8. Configurable, not hardcoded
+
+`.agentx/wiki/ontology.yaml` holds:
+
+- types, with their schema.org mapping and kinds
+- properties: domain (from), range (to) and allowed qualifiers
+- importance levels and their tests
+- the roll-up threshold
+- the sidebar order
+
+This page is the default file. When the file is missing, the wiki seeds it from a starter in code, the same way the intent graph seeds `.agentx/graph/schema.json` from `src/graph/starter-schema.ts`.
+
+## 9. Decisions needed from the owner
+
+1. **Agents as entities:** model AgentX agents as `System` (kind: agent)? *Recommend yes.*
+2. **Decision type:** keep it as its own type rather than an event sub-type? *Recommend own type.*
+3. **Who sets `major`:** absorb may set it, and new majors appear in a weekly "check these" list? *Recommend yes.*
+4. **Per-statement access** as the confidentiality model? *Recommend yes.*
+5. **Titles:** keep the original-language name (for example French administrative terms) with English aliases? *Recommend yes.*
 
 ## Next steps after approval
 
-1. Ship the settings file and starter (no behaviour change).
-2. Absorb writes typed pages, typed links and events with importance (one pipeline; #808 covers its quality).
-3. Pilot reshape on three entities; review before and after with the owner.
-4. Full reshape of existing articles.
+1. Ship `ontology.yaml` and its starter (no behaviour change).
+2. Absorb writes into this model (one pipeline; #808 covers its quality).
+3. Pilot on the three entities above; compare before and after with the owner.
+4. Full reshape of existing articles. Nothing is merged before the pilot is reviewed.
 5. Wiki layout by type.
