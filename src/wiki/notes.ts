@@ -196,14 +196,6 @@ export class NoteStore {
    * deferred `maxDeferrals` times expires here: it stays on file with its
    * last reason, but is no longer offered.
    */
-  /** The notes `takeForRun` would give, without marking or expiring any:
-   *  for a dry run's preview. */
-  peekForRun(inbox: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS): WikiNote[] {
-    const f = this.load()
-    if (f.unreadable) return []
-    return pickForRun(f.notes.filter((n) => !(n.status === "deferred" && (n.deferrals ?? 1) >= maxDeferrals)), inbox, max)
-  }
-
   takeForRun(inbox: string, runId: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS, now: Date = new Date()): WikiNote[] {
     const f = this.load()
     if (f.unreadable) return []
@@ -223,6 +215,14 @@ export class NoteStore {
       try { this.save(f) } catch { /* listing is best effort; the run still gets its notes */ }
     }
     return picked
+  }
+
+  /** The notes `takeForRun` would give, without marking or expiring any:
+   *  for a dry run's preview. */
+  peekForRun(inbox: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS): WikiNote[] {
+    const f = this.load()
+    if (f.unreadable) return []
+    return pickForRun(f.notes.filter((n) => !(n.status === "deferred" && (n.deferrals ?? 1) >= maxDeferrals)), inbox, max)
   }
 
   /** Record what the run did with a note. */

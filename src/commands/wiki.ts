@@ -577,24 +577,28 @@ wiki
         // then record each note's outcome with this run's id. A failed run
         // records nothing: its notes stay waiting and come back.
         if (notes.length > 0 && !runFailed) {
+          // A schedule reading the same inbox may have answered a note
+          // while this call ran; its answer stands. Checked before any
+          // patch is applied, so a note it rejected never edits a page.
+          const stillOurs = notes.filter((n) => {
+            const now = noteStore!.get(n.id)
+            if (now && now.status !== "open" && now.status !== "deferred") {
+              console.log(chalk.dim(`    note ${n.id} already ${now.status} by ${now.handled?.by ?? "another run"}; left as it is`))
+              return false
+            }
+            if (now?.handled && now.handled.at > startedAt) {
+              console.log(chalk.dim(`    note ${n.id} already deferred by ${now.handled.by} during this run; left as it is`))
+              return false
+            }
+            return true
+          })
           // Only the articles shown in full may be patched.
-          const results = applyNoteAnswers(notes, parseNoteAnswers(response.notes), agentWiki, {
+          const results = applyNoteAnswers(stillOurs, parseNoteAnswers(response.notes), agentWiki, {
             agentId,
             paths: new Set(covering.map((a) => a.path)),
           })
           let recorded = 0
           for (const r of results) {
-            // A schedule reading the same inbox may have answered the note
-            // while this call ran; its answer stands.
-            const now = noteStore!.get(r.id)
-            if (now && now.status !== "open" && now.status !== "deferred") {
-              console.log(chalk.dim(`    note ${r.id} already ${now.status} by ${now.handled?.by ?? "another run"}; not recorded again`))
-              continue
-            }
-            if (now?.handled && now.handled.at > startedAt) {
-              console.log(chalk.dim(`    note ${r.id} already deferred by ${now.handled.by} during this run; not recorded again`))
-              continue
-            }
             try {
               noteStore!.handle(r.id, r.outcome, r.reason, agentId, noteRunId)
               recorded++
