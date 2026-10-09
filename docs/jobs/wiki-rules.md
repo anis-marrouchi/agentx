@@ -9,7 +9,7 @@ Agents often look up the same rule again and again: when a payroll declaration i
 - the **amount** and who it is **filed with**, when the source says;
 - the **penalty** for being late;
 - the **source**: the law or document it comes from, and the wiki page and conversation it was read from;
-- the date it was **last checked**.
+- the **source date**: the date of the conversation or page it was read from. The run does not check the rule with the law or the authority, so this is never the day of the run.
 
 The page of each person or organization that must follow the rule links to it, under **Obligations**. The penalty gets a small page of its own, linked from the rule's **Penalties and reliefs** panel.
 
@@ -17,6 +17,9 @@ When an agent is asked about the rule again, `agentx wiki query` and the agent's
 
 - **Nothing is invented.** A rule needs an action and a source the run was shown. A missing deadline or penalty is written as "not found in the sources yet", never guessed.
 - **One page per rule.** When a rule page with the same title exists, the run updates it. Facts other agents wrote on it are kept.
+- **A later source adds, it does not erase.** When a second page mentions the same rule but leaves out the deadline or the penalty, the page keeps what the first source said, and shows which source it came from: "by the 15th (from entry-0412, 2026-03-02)".
+- **Facts wait for you.** Every fact the run writes is marked **proposed**. The page shows it under **Needs attention** until you confirm it. A fact you confirmed is never changed by a later run.
+- **Your text stays.** On a rule page an agent wrote by hand, the summary goes in its own **Rule summary** section. The page's own **Overview** is left as it was.
 - **Private stays private.** A rule page can be read by exactly the agents who can read the page it came from. A link is added to a person's or organization's page only when everyone who can read that page can also read the rule.
 - **The model gets no tools.** The call that reads the page can't run commands, use connected services or send messages. It only returns text.
 - **Old text is kept.** Each write saves the previous version of the page.
@@ -40,9 +43,9 @@ Pages this job wrote itself are never read as a source. To read other pages, nam
 
 1. **Terminal:** in the folder with `agentx.json`, run `agentx wiki rules "<page title>" --dry-run`. It prints each rule it found, what the rule page would say, and which pages would link to it. Nothing is written.
 2. **Terminal:** run it again without `--dry-run` to write it.
-3. **Browser:** open `/admin/wiki/`, click **Law & Obligations**, then the rule. The summary at the top shows the deadline, the penalty, the source and the date it was checked.
+3. **Browser:** open `/admin/wiki/`, click **Law & Obligations**, then the rule. The summary at the top shows the deadline, the penalty, the source and the source date.
 
-   ![A rule page: what to do, who, deadline, amount, filed with, penalty, source and last checked at the top, then the "Who must do what, by when" panel](/screenshots/wiki/rule.png)
+   ![A rule page: what to do, who, deadline, amount, filed with, penalty, source and source date at the top, a deadline kept from an earlier source, then the "Who must do what, by when" panel with proposed facts](/screenshots/wiki/rule.png)
 
 4. **Browser:** open the page of the organization that must follow it. The **Obligations** panel lists the rule.
 
@@ -91,14 +94,14 @@ The run remembers what it read in `.agentx/wiki/_rules/state.json`, after every 
 ## What it writes
 
 - A new rule page goes in `obligations/` in the wiki of the agent whose page stated it, tagged `wiki-rules`, with `class: obligation`.
-- Its facts (action, bearer, due, amount, authority, created by, procedure) carry the source, the check date (`checked_at`) and `"by":"wiki-rules"`. The next run that reads the same rule replaces them; facts others wrote stay.
+- Its facts (action, bearer, due, amount, authority, created by, procedure) carry the source, the source's date (`checked_at`), `status: proposed` and `"by":"wiki-rules"`. A later run replaces a fact only when its source states that field; otherwise the earlier fact stays, with its own source and date. Facts others wrote, and facts you confirmed, stay.
 - A penalty page goes in `penalties/`, linked to the rule with `penalty for`.
 - A person's or organization's page gets one `subject to` fact pointing at the rule, when the source page names or links that person or organization.
 
 ## Check it worked
 
 1. **Terminal:** run `agentx wiki rules "<page title>" --dry-run`. It prints at least one rule with its page path.
-2. **Browser:** open the rule page. The top shows **Deadline**, **Penalty**, **Source** and **Last checked**.
+2. **Browser:** open the rule page. The top shows **Deadline**, **Penalty**, **Source** and **Source date**.
 3. **Browser:** open the organization that must follow it. **Obligations** lists the rule.
 4. **Terminal:** run the same command without `--dry-run` a second time. It prints `unchanged`, because the page did not change.
 
@@ -112,4 +115,5 @@ The run remembers what it read in `.agentx/wiki/_rules/state.json`, after every 
 - **No organization links to the rule:** the source page does not name it. Add `[[Organization name]]` to the source page, then run again.
 - **`ontology.yaml has no obligation type`:** your `ontology.yaml` removed it. Add the type back to write rule pages.
 - **`stopped at the cap`:** the run reached `--max-cost`. The rest wait for the next run, or raise the cap.
+- **The source date is old:** the rule was read from an old conversation or page. Check it with the law or the authority, then confirm the facts (or correct them) on the page.
 - **A rule is wrong:** fix or remove its facts in the page header. Facts this job wrote carry `"by":"wiki-rules"`. Each write kept the old version of the page.

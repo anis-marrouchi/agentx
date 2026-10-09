@@ -9,12 +9,13 @@
 // call was shown, then written once as an obligation page:
 //   - statements for the obligation lens (action, bearer, due, amount,
 //     authority, created by, procedure), each with its source and the
-//     date it was checked;
+//     date of that source, marked proposed until the owner confirms them;
 //   - a penalty page linked to it with `penalty_for`;
 //   - `subject_to` on the page of each person or organization that must
 //     follow it, so their Obligations panel lists it.
-// The model gets no tools and every write goes through the store, which
-// keeps the old version.
+// A later source that states less keeps what an earlier one stated: a
+// field is replaced only when the new source gives it. The model gets no
+// tools and every write goes through the store, which keeps the old version.
 
 import { createHash } from "crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
@@ -236,9 +237,23 @@ function asPage(value: string, list: Entity[]): string {
   return hit?.title ?? value
 }
 
-/** Statements an obligation page gets for one rule. */
-export function ruleStatements(r: RuleDraft, ctx: RulesContext, today: string): WikiStatement[] {
-  const st = (property: string, value: string): WikiStatement => ({ property, value, source: r.source, checked_at: today, by: RULES_BY })
+/**
+ * The date of what the rule was read from: the entry it cites, else the
+ * newest entry behind the page, else the day the page was created. Never
+ * the run date: nothing was checked at the law or the authority.
+ */
+export function sourceDate(r: Pick<RuleDraft, "source">, ctx: RulesContext): string | undefined {
+  const day = (d?: string) => (d && /^\d{4}-\d{2}-\d{2}/.test(d) ? d.slice(0, 10) : undefined)
+  const cited = ctx.entries.filter(x => r.source.includes(x.id)).map(x => day(x.date)).filter(Boolean).sort()
+  return cited.at(-1) ?? day(ctx.entries[0]?.date) ?? day(ctx.page.article.meta.created)
+}
+
+/** Statements an obligation page gets for one rule, proposed until the owner confirms them. */
+export function ruleStatements(r: RuleDraft, ctx: RulesContext): WikiStatement[] {
+  const checked = sourceDate(r, ctx)
+  const st = (property: string, value: string): WikiStatement => ({
+    property, value, source: r.source, ...(checked ? { checked_at: checked } : {}), status: "proposed", by: RULES_BY,
+  })
   const out = [st("action", r.action)]
   for (const b of r.bearers) out.push(st("bearer", asPage(b, ctx.parties)))
   if (r.deadline) out.push(st("due_rule", r.deadline))
@@ -249,27 +264,86 @@ export function ruleStatements(r: RuleDraft, ctx: RulesContext, today: string): 
   return out
 }
 
+/** Properties a rule holds one value of; `bearer` may hold several. */
+const SINGLE = new Set(["action", "due_rule", "amount_rule", "authority", "created_by", "procedure"])
+
+/**
+ * This job's statements for a rule after reading one more source: a
+ * field the new source states replaces the earlier one; a field it leaves
+ * empty keeps the earlier value with its own source and date. A basis the
+ * new source does not name (`created_by` set to the page read) does not
+ * replace a law an earlier source named. Bearers add up.
+ */
+export function mergeRuleStatements(earlier: WikiStatement[], fresh: WikiStatement[], r: Pick<RuleDraft, "basis">): WikiStatement[] {
+  const prev = earlier.filter(s => s.by === RULES_BY)
+  const stated = new Set(fresh.filter(s => s.property !== "created_by" || r.basis || !prev.some(p => p.property === "created_by")).map(s => s.property))
+  const out = fresh.filter(s => stated.has(s.property))
+  for (const s of prev) {
+    if (SINGLE.has(s.property) ? !stated.has(s.property) : !out.some(o => o.property === s.property && normName(o.value) === normName(s.value))) out.push(s)
+  }
+  return out
+}
+
+/** Statements merged in: this job's earlier ones replaced, others kept. A
+ *  statement the owner confirmed stays, and wins over a new value. */
+export function withRuleStatements(meta: WikiArticleMeta, statements: WikiStatement[], today: string): WikiArticleMeta {
+  const kept = (meta.statements ?? []).filter(s => s.by !== RULES_BY || s.status === "confirmed")
+  const confirmed = new Set(kept.filter(s => s.status === "confirmed" && SINGLE.has(s.property)).map(s => s.property))
+  const key = (s: WikiStatement) => `${s.property}\n${normName(s.value)}`
+  const taken = new Set(kept.map(key))
+  const all = [...kept, ...statements.filter(s => !confirmed.has(s.property) && !taken.has(key(s)))]
+  return { ...meta, statements: all.length ? all : undefined, lastUpdated: today }
+}
+
+/** A penalty as stated, with where it was read and that source's date. */
+export interface PenaltyFact {
+  value: string
+  source?: string
+  checked_at?: string
+}
+
 const missing = "not found in the sources yet"
 
-/** The plain-words summary at the top of an obligation page. */
-export function ruleOverview(r: RuleDraft, ctx: RulesContext, today: string): string {
+/** The plain-words summary at the top of an obligation page, built from
+ *  the statements the page holds after the merge. */
+export function ruleOverview(statements: WikiStatement[], penalty: PenaltyFact | undefined, readFrom: string): string {
+  const all = (p: string) => statements.filter(s => s.property === p)
+  const one = (p: string) => statements.find(s => s.property === p)
+  const action = one("action")
+  // A field read from another source than the action says which.
+  const from = (s?: { source?: string; checked_at?: string }) =>
+    s && s.source && s.source !== action?.source ? ` (from ${s.source}${s.checked_at ? `, ${s.checked_at}` : ""})` : ""
+  const line = (label: string, s?: WikiStatement) => `- **${label}:** ${s ? `${s.value}${from(s)}` : missing}`
+  const sources = [...new Set([...statements, ...(penalty ? [penalty] : [])].map(s => s.source).filter((x): x is string => !!x))]
+  const dates = [...statements.filter(s => ["action", "due_rule"].includes(s.property)), ...(penalty ? [penalty] : [])]
+    .map(s => s.checked_at).filter((x): x is string => !!x).sort()
+  const basis = one("created_by")?.value
   return [
-    `- **What to do:** ${r.action}`,
-    `- **Who:** ${r.bearers.length ? r.bearers.map(b => asPage(b, ctx.parties)).join(", ") : missing}`,
-    `- **Deadline:** ${r.deadline || missing}`,
-    ...(r.amount ? [`- **Amount:** ${r.amount}`] : []),
-    ...(r.authority ? [`- **Filed with:** ${r.authority}`] : []),
-    `- **Penalty:** ${r.penalty || missing}`,
-    `- **Source:** ${r.basis ? `${r.basis}, ` : ""}from [[${ctx.page.article.meta.title}]] (${r.source})`,
-    `- **Last checked:** ${today}`,
+    line("What to do", action),
+    `- **Who:** ${all("bearer").length ? all("bearer").map(s => s.value).join(", ") : missing}`,
+    line("Deadline", one("due_rule")),
+    ...(one("amount_rule") ? [line("Amount", one("amount_rule"))] : []),
+    ...(one("authority") ? [line("Filed with", one("authority"))] : []),
+    `- **Penalty:** ${penalty ? `${penalty.value}${from(penalty)}` : missing}`,
+    `- **Source:** ${basis ? `${basis}, ` : ""}last read from [[${readFrom}]]${sources.length ? ` (sources: ${sources.join(", ")})` : ""}`,
+    `- **Source date:** ${dates[0] ?? "not known"}. Not yet checked with the law or the authority.`,
   ].join("\n")
 }
 
-/** Statements merged in: this job's earlier ones replaced, others kept. */
-export function withRuleStatements(meta: WikiArticleMeta, statements: WikiStatement[], today: string): WikiArticleMeta {
-  const kept = (meta.statements ?? []).filter(s => s.by !== RULES_BY)
-  const all = [...kept, ...statements]
-  return { ...meta, statements: all.length ? all : undefined, lastUpdated: today }
+const SUMMARY_HEAD = "## Rule summary"
+const SUMMARY_END = "<!-- /rule-summary -->"
+
+/**
+ * The summary on a page this job did not create. It goes in its own
+ * section, which only this job rewrites, so the page's own Overview is
+ * never replaced.
+ */
+export function withRuleSummary(content: string, summary: string): string {
+  const section = `${SUMMARY_HEAD}\n\n${summary.trim()}\n\n${SUMMARY_END}\n`
+  const start = content.indexOf(`${SUMMARY_HEAD}\n`)
+  const end = start < 0 ? -1 : content.indexOf(SUMMARY_END, start)
+  if (start >= 0 && end >= 0) return `${content.slice(0, start)}${section}${content.slice(end + SUMMARY_END.length).replace(/^\n/, "")}`
+  return `${section}\n${content.trim()}\n`
 }
 
 export interface RulesState {
@@ -367,17 +441,42 @@ function ruleTarget(hub: WikiHub, r: RuleDraft, ctx: RulesContext, made: Map<str
   return { agentId: src.agentId, path, meta, content: `${r.title}.\n`, created: true }
 }
 
+const penaltyPath = (title: string) => `penalties/${slugify(cleanTitle(`${title} penalty`))}.md`
+
+/**
+ * The penalty a rule already has: on the page this job wrote for it, else
+ * on any penalty page linked to it with `penalty_for`.
+ */
+function knownPenalty(hub: WikiHub, g: WikiGraph, title: string, t: Target): PenaltyFact | undefined {
+  const fact = (statements?: WikiStatement[]) => {
+    const s = statements?.find(x => x.property === "amount_rule")
+    return s?.value ? { value: s.value, source: s.source, checked_at: s.checked_at } : undefined
+  }
+  const own = hub.getAgentWiki(t.agentId).readArticle(penaltyPath(title))
+  if (own && (own.meta.tags ?? []).includes(RULES_TAG)) return fact(own.meta.statements)
+  for (const e of g.entities.values()) {
+    if (e.type !== "penalty" || !e.statements.some(s => s.property === "penalty_for" && normName(s.value) === normName(title))) continue
+    const page = e.pages.find(p => readableAlongside(t.meta, p.article.meta))
+    const f = page && fact(page.article.meta.statements)
+    if (f) return f
+  }
+  return undefined
+}
+
 function penaltyPage(r: RuleDraft, t: Target, ctx: RulesContext, today: string): { path: string; meta: WikiArticleMeta; content: string } {
   const title = cleanTitle(`${r.title} penalty`)
-  const st = (property: string, value: string): WikiStatement => ({ property, value, source: r.source, checked_at: today, by: RULES_BY })
+  const checked = sourceDate(r, ctx)
+  const st = (property: string, value: string): WikiStatement => ({
+    property, value, source: r.source, ...(checked ? { checked_at: checked } : {}), status: "proposed", by: RULES_BY,
+  })
   const statements = [st("penalty_for", r.title), st("amount_rule", r.penalty), st("created_by", r.basis ? asPage(r.basis, ctx.laws) : ctx.page.article.meta.title)]
   return {
-    path: `penalties/${slugify(title)}.md`,
+    path: penaltyPath(r.title),
     meta: {
       title, class: "penalty", tags: [RULES_TAG], owner: t.meta.owner, access: t.meta.access, sharedWith: t.meta.sharedWith,
       created: today, lastUpdated: today, sources: t.meta.sources, statements, related: [r.title],
     },
-    content: `## Overview\n\n${r.penalty}\n\nFor [[${r.title}]]. Last checked: ${today}.\n`,
+    content: `## Overview\n\n${r.penalty}\n\nFor [[${r.title}]]. Source: ${r.source}${checked ? `, dated ${checked}` : ""}. Not yet checked with the law or the authority.\n`,
   }
 }
 
@@ -395,7 +494,7 @@ function linkBearers(hub: WikiHub, r: RuleDraft, ctx: RulesContext, t: Target, t
     if (has) continue
     linked.push(e.title)
     if (dryRun) continue
-    const statements = [...(page.article.meta.statements ?? []), { property: "subject_to", value: r.title, source: r.source, checked_at: today, by: RULES_BY }]
+    const statements = [...(page.article.meta.statements ?? []), { property: "subject_to", value: r.title, source: r.source, ...(sourceDate(r, ctx) ? { checked_at: sourceDate(r, ctx) } : {}), status: "proposed" as const, by: RULES_BY }]
     const meta = { ...page.article.meta, statements, lastUpdated: today }
     if (hub.getAgentWiki(page.agentId).writeArticle(page.article.path, meta, page.article.content, page.article.meta.owner || page.agentId)) {
       page.article.meta = meta
@@ -463,13 +562,22 @@ export async function runRules(hub: WikiHub, g: WikiGraph, call: EnrichCall, opt
     for (const r of checked.rules) {
       const t = ruleTarget(hub, r, ctx, made, opts.today)
       if (typeof t === "string") { outcome.dropped.push(`${r.title}: ${t}`); continue }
-      const summary = ruleOverview(r, ctx, opts.today)
-      const content = withOverview(t.content, summary)
-      const related = [...new Set([...(t.meta.related ?? []), page.article.meta.title, ...(r.penalty ? [cleanTitle(`${r.title} penalty`)] : [])])]
+      // What an earlier source stated stays when this one leaves it out.
+      const statements = mergeRuleStatements(t.meta.statements ?? [], ruleStatements(r, ctx), r)
+      const meta0 = withRuleStatements(t.meta, statements, opts.today)
+      const penalty = r.penalty
+        ? { value: r.penalty, source: r.source, checked_at: sourceDate(r, ctx) }
+        : knownPenalty(hub, g, r.title, t)
+      const summary = ruleOverview(meta0.statements ?? [], penalty, page.article.meta.title)
+      // A page this job did not create keeps its own Overview.
+      const ours = (t.meta.tags ?? []).includes(RULES_TAG)
+      const content = ours ? withOverview(t.content, summary) : withRuleSummary(t.content, summary)
+      const related = [...new Set([...(t.meta.related ?? []), page.article.meta.title, ...(penalty ? [cleanTitle(`${r.title} penalty`)] : [])])]
       const sources = [...new Set([...(t.meta.sources ?? []), ...ctx.entries.filter(x => r.source.includes(x.id)).map(x => x.id)])]
-      const meta = { ...withRuleStatements(t.meta, ruleStatements(r, ctx, opts.today), opts.today), related, sources }
+      const meta = { ...meta0, related, sources }
       const write: RuleWrite = {
-        title: r.title, page: `${t.agentId}/${t.path}`, created: t.created, deadline: !!r.deadline, penalty: !!r.penalty, linked: [],
+        title: r.title, page: `${t.agentId}/${t.path}`, created: t.created,
+        deadline: (meta.statements ?? []).some(s => s.property === "due_rule"), penalty: !!penalty, linked: [],
       }
       if (opts.dryRun) {
         write.preview = summary

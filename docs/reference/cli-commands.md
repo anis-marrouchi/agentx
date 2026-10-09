@@ -1631,7 +1631,7 @@ Give each event page an importance level (minor, normal or major) and the pages 
 
 ### `agentx wiki rules [pages...]`
 
-Write one obligation page per rule the wiki states, with what to do, who, the deadline, the penalty, the source and the date it was checked. Links the page of each person or organization that must follow it. With no titles, it reads legal sources, obligation pages, and pages that use a rule word, that changed since the last run. One model call per source page. See [Keep each rule on one page](/jobs/wiki-rules).
+Write one obligation page per rule the wiki states, with what to do, who, the deadline, the penalty, the source and the source's date. A later source that leaves a field out keeps the earlier value. Facts are written as proposed. Links the page of each person or organization that must follow it. With no titles, it reads legal sources, obligation pages, and pages that use a rule word, that changed since the last run. One model call per source page. See [Keep each rule on one page](/jobs/wiki-rules).
 
 | Flag | Default | What it does |
 |---|---|---|

@@ -77,10 +77,11 @@ describe("wiki rules run (#811)", () => {
     expect(page.meta.access).toBe("shared")
     expect(page.meta.sources).toEqual(["e1"])
     expect(overviewSection(page.content)).toContain("**Deadline:** by the 15th of the following month")
-    expect(overviewSection(page.content)).toContain("**Last checked:** 2026-02-01")
+    // The date is the entry's, not the run's: nothing was checked at the authority.
+    expect(overviewSection(page.content)).toContain("**Source date:** 2026-01-05")
     const facts = Object.fromEntries(page.meta.statements!.map(s => [s.property, s.value]))
     expect(facts).toMatchObject({ action: RULE.action, bearer: "Acme Works", due_rule: RULE.deadline, authority: "Social Fund", created_by: "Social Security Code" })
-    expect(page.meta.statements!.every(s => s.by === RULES_BY && s.checked_at === "2026-02-01" && s.source === "e1")).toBe(true)
+    expect(page.meta.statements!.every(s => s.by === RULES_BY && s.checked_at === "2026-01-05" && s.source === "e1" && s.status === "proposed")).toBe(true)
 
     const penalty = store.readArticle("penalties/monthly-payroll-filing-penalty.md")!
     expect(penalty.meta.statements!.find(s => s.property === "penalty_for")?.value).toBe(RULE.title)
@@ -96,6 +97,53 @@ describe("wiki rules run (#811)", () => {
     const again = await runRules(hub, g, reply([RULE]), { ...opts, only: ["Payroll notes"] }, state)
     expect(again.outcomes.map(o => o.status)).toEqual(["unchanged"])
     expect(again.costUsd).toBe(0)
+
+    // Reading it again by force does not make the rule look newly checked.
+    await runRules(hub, graph(), reply([RULE]), { ...opts, only: ["Payroll notes"], force: true, today: "2026-03-01" }, state)
+    const forced = store.readArticle("obligations/monthly-payroll-filing.md")!
+    expect(forced.meta.statements!.every(s => s.checked_at === "2026-01-05")).toBe(true)
+    expect(overviewSection(forced.content)).toContain("**Source date:** 2026-01-05")
+  })
+
+  it("keeps the deadline and penalty when a later source states less", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const state = loadRulesState(dir)
+    await runRules(hub, graph(), reply([RULE]), { ...opts, only: ["Payroll notes"] }, state)
+
+    hub.getSharedStore().addEntry({ id: "e2", date: "2026-01-20", agentId: "agent-a", source: "chat", content: "Checklist: payroll filing for Acme Works and Beta Shop." })
+    store.writeArticle("clients/beta.md", meta("Beta Shop", { class: "organization" }), "A client.", "agent-a")
+    store.writeArticle("notes/checklist.md", meta("Month-end checklist", { sources: ["e2"] }), "Do the payroll filing for Acme Works and Beta Shop.", "agent-a")
+    const second = { ...RULE, action: "File the payroll declaration.", bearer: ["Beta Shop"], deadline: "", authority: "", penalty: "", basis: "", source: "e2" }
+    const run = await runRules(hub, graph(), reply([second]), { ...opts, only: ["Month-end checklist"], today: "2026-02-10" }, state)
+    expect(run.outcomes.map(o => o.status)).toEqual(["written"])
+
+    const page = store.readArticle("obligations/monthly-payroll-filing.md")!
+    const of = (p: string) => page.meta.statements!.filter(s => s.property === p)
+    expect(of("due_rule")).toEqual([expect.objectContaining({ value: RULE.deadline, source: "e1", checked_at: "2026-01-05" })])
+    expect(of("authority")).toEqual([expect.objectContaining({ value: "Social Fund", source: "e1" })])
+    expect(of("created_by")).toEqual([expect.objectContaining({ value: "Social Security Code", source: "e1" })])
+    expect(of("action")).toEqual([expect.objectContaining({ value: second.action, source: "e2", checked_at: "2026-01-20" })])
+    expect(of("bearer").map(s => s.value).sort()).toEqual(["Acme Works", "Beta Shop"])
+
+    const summary = overviewSection(page.content)
+    expect(summary).toContain(`**Deadline:** ${RULE.deadline} (from e1, 2026-01-05)`)
+    expect(summary).toContain(`**Penalty:** ${RULE.penalty} (from e1, 2026-01-05)`)
+    expect(summary).toContain("**Source date:** 2026-01-05")
+    expect(summary).not.toContain("not found in the sources yet")
+    // The penalty page from the first source is left as it was.
+    expect(store.readArticle("penalties/monthly-payroll-filing-penalty.md")!.meta.statements!.find(s => s.property === "amount_rule")?.value).toBe(RULE.penalty)
+  })
+
+  it("keeps a statement the owner confirmed", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const state = loadRulesState(dir)
+    await runRules(hub, graph(), reply([RULE]), { ...opts, only: ["Payroll notes"] }, state)
+    const page = store.readArticle("obligations/monthly-payroll-filing.md")!
+    const statements = page.meta.statements!.map(s => (s.property === "due_rule" ? { ...s, status: "confirmed" as const, confirmed_by: "owner" } : s))
+    store.writeArticle(page.path, { ...page.meta, statements }, page.content, "agent-a")
+    await runRules(hub, graph(), reply([{ ...RULE, deadline: "by the 20th" }]), { ...opts, only: ["Payroll notes"], force: true }, state)
+    const due = store.readArticle("obligations/monthly-payroll-filing.md")!.meta.statements!.filter(s => s.property === "due_rule")
+    expect(due).toEqual([expect.objectContaining({ value: RULE.deadline, status: "confirmed" })])
   })
 
   it("updates an existing rule page instead of adding a second one, and keeps others' facts", async () => {
@@ -108,6 +156,19 @@ describe("wiki rules run (#811)", () => {
     expect(page.meta.statements![0]).toEqual(own)
     expect(page.meta.statements!.some(s => s.property === "due_rule")).toBe(true)
     expect(page.content).toContain("Agents wrote this.")
+  })
+
+  it("leaves the Overview of a rule page an agent wrote, and rewrites only its own summary", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    store.writeArticle("compliance/payroll.md", meta("Monthly payroll filing", { class: "obligation" }), "## Overview\n\nAgents wrote this.\n\n## Notes\n\nMore.\n", "agent-a")
+    const state = loadRulesState(dir)
+    await runRules(hub, graph(), reply([RULE]), { ...opts, only: ["Payroll notes"] }, state)
+    await runRules(hub, graph(), reply([RULE]), { ...opts, only: ["Payroll notes"], force: true }, state)
+    const content = store.readArticle("compliance/payroll.md")!.content
+    expect(overviewSection(content)).toContain("Agents wrote this.")
+    expect(content.match(/## Rule summary/g)).toHaveLength(1)
+    expect(content).toContain(`**Deadline:** ${RULE.deadline}`)
+    expect(content).toContain("## Notes\n\nMore.")
   })
 
   it("never writes a private source into a page more agents can read", async () => {

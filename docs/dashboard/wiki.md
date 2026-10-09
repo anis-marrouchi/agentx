@@ -54,7 +54,7 @@ A new event page has no level yet and shows as **normal**. `agentx wiki events` 
 
 ## Rule pages
 
-A rule page (an **obligation**) holds one rule once: what to do, who, the deadline, the penalty, the source and the date it was last checked. People and organizations that must follow it list it under **Obligations**. `agentx wiki rules` writes these pages from the pages that state rules. See [Keep each rule on one page](../jobs/wiki-rules.md).
+A rule page (an **obligation**) holds one rule once: what to do, who, the deadline, the penalty, the source and the date of that source. People and organizations that must follow it list it under **Obligations**. `agentx wiki rules` writes these pages from the pages that state rules. See [Keep each rule on one page](../jobs/wiki-rules.md).
 
 ## Private facts
 
