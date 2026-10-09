@@ -5,12 +5,13 @@ import { join, resolve } from "path"
 import { RunStore, WorkflowDispatcher, WorkflowStore, workflowSchema, type AgentExecuteResponse } from "../src/workflows"
 import { TimerService } from "../src/workflows/timers"
 import {
-  closeStaleWraps, finishWrap, isReadOnlyToolUse, liveStep, reportStep, requiredFor, runRecord, shouldWrap,
+  closeStaleWraps, endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, reportStep, requiredFor, runRecord, shouldWrap,
   startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText, writePlan,
 } from "../src/workflows/required"
 import { handleFollowUpApi, type FollowUpApiDeps } from "../src/workflows/follow-up-api"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { renderLivePage } from "../src/daemon/ui/pages/live"
+import { buildAgentContext } from "../src/agents/context"
 
 // workflows.required (#858): every task runs inside a workflow run — the
 // one-step linear template, or a plan the agent writes and may change —
@@ -144,6 +145,30 @@ describe("a plan the agent writes", () => {
     expect(rec.steps.map((s) => [s.id, s.status])).toEqual([["step1", "ok"], ["step2", "failed"], ["step3", "skipped"]])
   })
 
+  it("closes a stopped turn as canceled, never failed", () => {
+    start()
+    writePlan(runs, "run-1", { steps: ["One", "Two", "Three"] })
+    reportStep(runs, "run-1", { step: "step1", status: "done" })
+    reportStep(runs, "run-1", { step: "step2", status: "started" })
+    finishWrap(runs, "run-1", outcome({ error: "stopped by the owner: wait for the client", canceled: true }))
+    const final = runs.get("run-1")!
+    expect(final.status).toBe("canceled")
+    const rec = runRecord(final)
+    expect(rec.failedAt).toBeNull()
+    expect(rec.steps.map((s) => [s.id, s.status])).toEqual([["step1", "ok"], ["step2", "skipped"], ["step3", "skipped"]])
+    expect(rec.steps[1].note).toBe("stopped: stopped by the owner: wait for the client")
+
+    start("lin")
+    finishWrap(runs, "lin", outcome({ error: "task cancelled by operator", canceled: true }))
+    expect(runs.get("lin")!.status).toBe("canceled")
+    expect(runRecord(runs.get("lin")!)).toMatchObject({ failedAt: null, steps: [{ id: "reply", status: "skipped" }] })
+  })
+
+  it("tells a stop from a failure by the turn's error kind", () => {
+    for (const k of ["stopped", "cancelled", "interrupted"]) expect(endedWithoutFailing(k), k).toBe(true)
+    for (const k of [undefined, "timeout", "rate_limit", "unknown"]) expect(endedWithoutFailing(k), String(k)).toBe(false)
+  })
+
   it("refuses what makes no sense", () => {
     expect(writePlan(runs, "nope", { steps: ["a"] }).ok).toBe(false)
     start()
@@ -165,9 +190,10 @@ describe("after a restart", () => {
     start("done-already")
     finishWrap(runs, "done-already", outcome())
     expect(closeStaleWraps(runs)).toBe(1)
+    // Cut off by the stop, not failed: the task is resumed after it.
     const cut = runs.get("cut")!
-    expect(cut.status).toBe("failed")
-    expect(runRecord(cut).failedAt).toBe("step1")
+    expect(cut.status).toBe("canceled")
+    expect(runRecord(cut).failedAt).toBeNull()
     expect(runs.get("done-already")!.status).toBe("completed")
     expect(closeStaleWraps(runs)).toBe(0)
   })
@@ -178,9 +204,15 @@ describe("tools that change nothing", () => {
     for (const n of ["Read", "Grep", "WebSearch", "mcp__agentx__agentx_wiki_query", "mcp__github__get_issue", "mcp__linear__list_issues"]) {
       expect(isReadOnlyToolUse(n), n).toBe(true)
     }
-    for (const n of ["Bash", "Edit", "Write", "mcp__github__create_pull_request", "mcp__agentx__agentx_send", "mystery"]) {
+    for (const n of [
+      "Bash", "Edit", "Write", "mcp__github__create_pull_request", "mcp__agentx__agentx_send", "mystery",
+      // A write verb first wins over a lookup word last.
+      "mcp__crm__set_status", "mcp__crm__update_status", "mcp__todo__clear_list", "mcp__x__delete_search",
+      "mcp__x__add_query", "mcp__x__remove_list", "mcp__x__send_status", "mcp__x__start_check",
+    ]) {
       expect(isReadOnlyToolUse(n), n).toBe(false)
     }
+    expect(isReadOnlyToolUse("mcp__x__issue_status")).toBe(true)
     expect(isReadOnlyToolUse("mcp__agentx__agentx_workflow", { action: "match" })).toBe(true)
     expect(isReadOnlyToolUse("mcp__agentx__agentx_workflow", { action: "start" })).toBe(false)
   })
@@ -261,6 +293,15 @@ describe("what the agent and the live page see", () => {
     expect(hint).toContain('action:"plan"')
     // The overhead per wrapped turn, in characters (about 4 per token).
     expect(hint.length).toBeLessThan(700)
+  })
+
+  it("keeps the hint whole when mined procedures fill their own budget", () => {
+    const procedures = "[Procedure] " + "step and step again ".repeat(400)
+    const ctx = buildAgentContext({
+      channel: "telegram", agentId: "builder", agentName: "Builder", sender: "Sam", message: "rename the report",
+      procedureContext: procedures, workflowRunContext: wrapHintText("run-1"),
+    })
+    expect(ctx).toContain(wrapHintText("run-1"))
   })
 
   it("ships a live page script that parses and shows a task's workflow step", () => {
