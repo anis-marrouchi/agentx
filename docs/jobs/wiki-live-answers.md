@@ -9,6 +9,8 @@ With **page summaries** and a **live read**, a wiki question is answered in four
 3. A small model names what should be confirmed at the source: an issue, a merge request, a repository's newest releases, the AgentX version on each machine. AgentX then reads those, from the systems you listed.
 4. The answer is written from the pages and what was just read. Where they disagree, what was just read wins, and the answer marks those facts with "(live)".
 
+When no page fits the question, the issue tracker can still answer it. See [When no page fits](#when-no-page-fits).
+
 The same steps run for `agentx wiki query` in a terminal and for the `agentx_wiki_query` tool agents use.
 
 Everything on this page happens in a **terminal** on the machine that runs AgentX, in the folder that holds `agentx.json`.
@@ -34,6 +36,18 @@ The five kinds of read:
 | Fleet | The AgentX version, build and start time of this machine and of each machine connected to it. |
 
 Until you list a source, no live read runs and questions are answered from the pages alone.
+
+## When no page fits
+
+Sometimes the wiki has no page about a subject, but the issue tracker does. When no page is picked and at least one repository is listed under `query.live.sources`:
+
+1. A small model reads the question alone and decides whether an issue could hold the answer. If it could, it names up to 6 searches: two or three words in one of your listed repositories. Only searches are allowed here, never a single issue, a release or the fleet.
+2. AgentX runs those searches the same way as any live read.
+3. If a search finds issues, the answer is written from those lines alone. It starts with "No wiki page covers this;" and names each issue it uses.
+
+A question that needs no stored knowledge, such as a definition or a greeting, gets no search, so it costs no live read. A search that finds no issue gives no answer, the same as before.
+
+In a terminal the answer is followed by **No wiki page was used: the answer comes from a search at the source.** and the lines that were read. Agents using the `agentx_wiki_query` tool see the same note in place of the citations.
 
 ## Write the summaries
 
@@ -149,12 +163,14 @@ Each entry of `query.live.sources` has a `type` and these keys:
 1. **Terminal:** run `agentx wiki query "<a question about something that has an issue>" --agent <agent> --trace`.
 2. Under the answer and its citations, look for **Read live at the source**, with one line for each read, such as `#12 in example-org/app: "Add export" is closed since 2026-10-08`.
 3. The trace line starts with `method: summaries` and gives the reads asked and answered.
+4. **Terminal:** ask about something that has an issue but no wiki page, such as `agentx wiki query "<a feature you only filed as an issue>" --agent <agent>`. The answer starts with "No wiki page covers this;" and is followed by **No wiki page was used**.
 
 ## If something is wrong
 
 - **The trace has no `method: summaries` line:** no summaries exist for the pages in reach. Run `agentx wiki summarize --all`.
 - **No "Read live at the source" block:** `query.live.sources` is empty, `query.live.enabled` is `false`, or the picked pages named nothing that changes. Run with `--trace`: "0 asked" means the model named no read.
 - **Reads are asked but none is answered:** the token is missing or can't read the repository, or the host can't be reached. Check the name in `tokenEnv` against `.env`, and that the repository is spelled exactly as on the host.
-- **`(no answer) No page was picked for the question`:** no summary line fits the question. Nothing is read live in that case.
+- **`(no answer) No page was picked for the question`:** no summary line fits the question, and either no repository is listed, the model named no search, or the search found no issue. Run with `--trace`: "0 asked" means no search was named.
+- **An answer starts with "No wiki page covers this;" when you expected a page:** the page exists but its summary line shares no word with the question. Run `agentx wiki summarize --agent <agent>` after editing the page, or ask with the words the page's title uses.
 - **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. The live read reports what the source holds and no more.
 - **`config check` says `expected owner/name`:** a repository in `repos` is not written as `owner/name` or `group/project`.

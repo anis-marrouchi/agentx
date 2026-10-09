@@ -95,6 +95,9 @@ export interface AgenticQueryResult {
   live?: LiveLine[]
   /** Live reads the model named and the config allowed. */
   liveAsked?: number
+  /** "search": no wiki page was used; the answer comes from a search at
+   *  the source (#861). */
+  basis?: "pages" | "search"
   /** For operator debugging only. */
   trace?: {
     selectorMs: number
@@ -150,6 +153,7 @@ export async function agenticQuery(
         walked: pages.map((p) => ({ ...p, hop: 0 })),
         status: out.status,
         method: "summaries",
+        basis: out.basis,
         live: out.live,
         liveAsked: out.liveAsked,
         trace: out.trace,
