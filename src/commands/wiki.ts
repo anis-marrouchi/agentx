@@ -1271,7 +1271,7 @@ wiki
   .option("--selector-model <m>", "agentic selector model", "haiku")
   .option("--synth-model <m>", "agentic synthesis model", "sonnet")
   .action(async (opts) => {
-    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
+    const { agenticQuery } = await import("@/wiki/query")
     const { readdirSync: rd, readFileSync: rf, existsSync: ex } = await import("fs")
     const { resolve: rv, join: jn } = await import("path")
 
@@ -1770,7 +1770,7 @@ wiki
   .action(async (opts) => {
     const readline = await import("node:readline/promises")
     const { randomUUID } = await import("node:crypto")
-    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
+    const { agenticQuery } = await import("@/wiki/query")
 
     if (!opts.agent) {
       console.log(chalk.red("  --agent <id> is required."))
@@ -3220,7 +3220,7 @@ wiki
   .option("--trace", "print selector + walk trace")
   .option("--own-only", "search only the agent's own articles, not the shared wiki")
   .action(async (question, opts) => {
-    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
+    const { agenticQuery } = await import("@/wiki/query")
     const { noteSourceFor } = await import("@/wiki/query-settings")
     const { QUERY_RUNS_FILE, queryFailed, recordQueryRun, timedQuery } = await import("@/wiki/query-runs")
     const settings = await querySettingsFor(opts)
