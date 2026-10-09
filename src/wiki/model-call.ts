@@ -25,7 +25,16 @@ export interface ModelSpend {
 export function meteredModelCall(spend: ModelSpend): ModelCall {
   return async (prompt, model, timeoutMs) => {
     spend.calls++
-    const { text, costUsd } = await claudeCall(prompt, model, timeoutMs)
+    let reply: { text: string; costUsd?: number }
+    try {
+      reply = await claudeCall(prompt, model, timeoutMs)
+    } catch (err) {
+      // A call that failed (timeout, non-zero exit, model error) may still
+      // have spent: its cost is unknown, not zero.
+      spend.unpriced++
+      throw err
+    }
+    const { text, costUsd } = reply
     if (costUsd === undefined) spend.unpriced++
     else spend.usd += costUsd
     return text

@@ -43,4 +43,13 @@ describe("metered model call", () => {
     expect(await meteredModelCall(spend)("q", "haiku", 5000)).toBe("hello")
     expect(spend).toEqual({ calls: 1, usd: 0, unpriced: 1 })
   })
+
+  it("counts a call that fails as unpriced, so its question's cost is not read as complete", async () => {
+    const bin = join(dir, "claude")
+    writeFileSync(bin, "#!/bin/sh\ncat >/dev/null\necho boom >&2\nexit 1\n")
+    chmodSync(bin, 0o755)
+    const spend = { calls: 0, usd: 0, unpriced: 0 }
+    await expect(meteredModelCall(spend)("q", "haiku", 5000)).rejects.toThrow(/exited 1/)
+    expect(spend).toEqual({ calls: 1, usd: 0, unpriced: 1 })
+  })
 })
