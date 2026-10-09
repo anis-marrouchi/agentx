@@ -117,6 +117,13 @@ export function checkOntology(o: Ontology): string[] {
   }
   if (!types.has(o.fallback_type)) errors.push(`fallback_type: unknown type "${o.fallback_type}"`)
   if (!IMPORTANCE_LEVELS.includes(o.importance.default)) errors.push(`importance.default: unknown level "${o.importance.default}"`)
+  for (const r of o.importance.rules ?? []) {
+    if (!IMPORTANCE_LEVELS.includes(r.level)) errors.push(`importance.rules: unknown level "${r.level}"`)
+    if (!r.title && !r.tags?.length) errors.push(`importance.rules: a rule for "${r.level}" needs a title or tags`)
+    if (r.title) {
+      try { new RegExp(r.title, "i") } catch { errors.push(`importance.rules: bad title pattern "${r.title}"`) }
+    }
+  }
   if (o.sidebar.pins.length > o.sidebar.pins_max) {
     errors.push(`sidebar.pins: ${o.sidebar.pins.length} pins, only the first ${o.sidebar.pins_max} are shown`)
   }

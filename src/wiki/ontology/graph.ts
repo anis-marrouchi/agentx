@@ -34,6 +34,8 @@ export interface Entity {
   date: string
   updated: string
   importance: Importance
+  /** A level a job suggests; only the owner may set it. */
+  importanceProposed?: Importance
   rolledUpInto?: string
   /** Raw entry ids the pages were written from. */
   sources: string[]
@@ -157,6 +159,7 @@ export function buildGraph(pages: GraphPage[], o: Ontology, roster: AgentRoster 
       date: dated[0] ?? "",
       updated: group.map(p => p.article.meta.lastUpdated || "").sort().pop() ?? "",
       importance: group.some(p => p.article.meta.importance === "major") ? "major" : importance,
+      importanceProposed: group.map(p => p.article.meta.importanceProposed).find(Boolean),
       rolledUpInto: group.map(p => p.article.meta.rolledUpInto).find(Boolean),
       sources: [...new Set(group.flatMap(p => p.article.meta.sources ?? []))],
     })
