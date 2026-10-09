@@ -95,8 +95,9 @@ The run remembers what it read in `.agentx/wiki/_rules/state.json`, after every 
 
 - A new rule page goes in `obligations/` in the wiki of the agent whose page stated it, tagged `wiki-rules`, with `class: obligation`.
 - Its facts (action, bearer, due, amount, authority, created by, procedure) carry the source, the source's date (`checked_at`), `status: proposed` and `"by":"wiki-rules"`. A later run replaces a fact only when its source states that field; otherwise the earlier fact stays, with its own source and date. Facts others wrote, and facts you confirmed, stay.
-- A penalty page goes in `penalties/`, linked to the rule with `penalty for`.
-- A person's or organization's page gets one `subject to` fact pointing at the rule, when the source page names or links that person or organization.
+- A penalty page goes in `penalties/`, linked to the rule with `penalty for`. When you confirmed the penalty on that page, a later run leaves the page as it is, and the rule page shows the penalty you confirmed.
+- A person's or organization's page gets one `subject to` fact pointing at the rule, when the source page names or links that person or organization. Adding that link does not change the page's last-updated date.
+- Each page is read again just before it is written, so text another job added during the run is kept.
 
 ## Check it worked
 

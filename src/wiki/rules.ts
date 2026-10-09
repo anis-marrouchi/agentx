@@ -300,6 +300,8 @@ export interface PenaltyFact {
   value: string
   source?: string
   checked_at?: string
+  /** The owner confirmed it: it wins over what a new source states. */
+  confirmed?: boolean
 }
 
 const missing = "not found in the sources yet"
@@ -427,8 +429,12 @@ function ruleTarget(hub: WikiHub, r: RuleDraft, ctx: RulesContext, made: Map<str
   if (r.existing) {
     const page = targetPage(hub, r.existing)
     if (!page) return "the rule page was copied from another machine"
-    if (!readableAlongside(src.article.meta, page.article.meta)) return "the rule page is readable by agents who cannot read the source"
-    return { agentId: page.agentId, path: page.article.path, meta: page.article.meta, content: page.article.content, created: false }
+    // The run waited for the model: merge onto what is on disk now, not
+    // the copy read when the run started.
+    const now = hub.getAgentWiki(page.agentId).readArticle(page.article.path)
+    if (!now) return "the rule page was moved or removed during the run"
+    if (!readableAlongside(src.article.meta, now.meta)) return "the rule page is readable by agents who cannot read the source"
+    return { agentId: page.agentId, path: page.article.path, meta: now.meta, content: now.content, created: false }
   }
   const owner = src.article.meta.owner || src.agentId
   const store = hub.getAgentWiki(src.agentId)
@@ -445,12 +451,14 @@ const penaltyPath = (title: string) => `penalties/${slugify(cleanTitle(`${title}
 
 /**
  * The penalty a rule already has: on the page this job wrote for it, else
- * on any penalty page linked to it with `penalty_for`.
+ * on any penalty page linked to it with `penalty_for`. A confirmed
+ * statement is preferred over a proposed one on the same page.
  */
-function knownPenalty(hub: WikiHub, g: WikiGraph, title: string, t: Target): PenaltyFact | undefined {
-  const fact = (statements?: WikiStatement[]) => {
-    const s = statements?.find(x => x.property === "amount_rule")
-    return s?.value ? { value: s.value, source: s.source, checked_at: s.checked_at } : undefined
+export function knownPenalty(hub: WikiHub, g: WikiGraph, title: string, t: Pick<Target, "agentId" | "meta">): PenaltyFact | undefined {
+  const fact = (statements?: WikiStatement[]): PenaltyFact | undefined => {
+    const all = (statements ?? []).filter(x => x.property === "amount_rule" && x.value)
+    const s = all.find(x => x.status === "confirmed") ?? all[0]
+    return s ? { value: s.value, source: s.source, checked_at: s.checked_at, ...(s.status === "confirmed" ? { confirmed: true } : {}) } : undefined
   }
   const own = hub.getAgentWiki(t.agentId).readArticle(penaltyPath(title))
   if (own && (own.meta.tags ?? []).includes(RULES_TAG)) return fact(own.meta.statements)
@@ -481,7 +489,7 @@ function penaltyPage(r: RuleDraft, t: Target, ctx: RulesContext, today: string):
 }
 
 /** Add `subject_to` to each bearer's page that may show the rule. */
-function linkBearers(hub: WikiHub, r: RuleDraft, ctx: RulesContext, t: Target, today: string, dryRun: boolean, dropped: string[]): string[] {
+function linkBearers(hub: WikiHub, r: RuleDraft, ctx: RulesContext, t: Target, dryRun: boolean, dropped: string[]): string[] {
   const linked: string[] = []
   for (const b of r.bearers) {
     const e = ctx.parties.find(x => normName(x.title) === normName(b))
@@ -490,16 +498,23 @@ function linkBearers(hub: WikiHub, r: RuleDraft, ctx: RulesContext, t: Target, t
     if (!page) { dropped.push(`${r.title} → ${e.title}: page copied from another machine`); continue }
     // The link shows the rule's title on the bearer's page.
     if (!readableAlongside(t.meta, page.article.meta)) { dropped.push(`${r.title} → ${e.title}: page readable by agents who cannot read the rule`); continue }
-    const has = (page.article.meta.statements ?? []).some(s => s.property === "subject_to" && normName(s.value) === normName(r.title))
-    if (has) continue
-    linked.push(e.title)
-    if (dryRun) continue
-    const statements = [...(page.article.meta.statements ?? []), { property: "subject_to", value: r.title, source: r.source, ...(sourceDate(r, ctx) ? { checked_at: sourceDate(r, ctx) } : {}), status: "proposed" as const, by: RULES_BY }]
-    const meta = { ...page.article.meta, statements, lastUpdated: today }
-    if (hub.getAgentWiki(page.agentId).writeArticle(page.article.path, meta, page.article.content, page.article.meta.owner || page.agentId)) {
+    const linkedTo = (m: WikiArticleMeta) => (m.statements ?? []).some(s => s.property === "subject_to" && normName(s.value) === normName(r.title))
+    if (linkedTo(page.article.meta)) continue
+    if (dryRun) { linked.push(e.title); continue }
+    // Write onto the page as it is now, not the copy read at the start.
+    const store = hub.getAgentWiki(page.agentId)
+    const now = store.readArticle(page.article.path)
+    if (!now) { dropped.push(`${r.title} → ${e.title}: page moved or removed during the run`); continue }
+    if (!readableAlongside(t.meta, now.meta)) { dropped.push(`${r.title} → ${e.title}: page readable by agents who cannot read the rule`); continue }
+    if (linkedTo(now.meta)) continue
+    const checked = sourceDate(r, ctx)
+    const statements = [...(now.meta.statements ?? []), { property: "subject_to", value: r.title, source: r.source, ...(checked ? { checked_at: checked } : {}), status: "proposed" as const, by: RULES_BY }]
+    // A link added is not an edit of the page: `lastUpdated` stays.
+    const meta = { ...now.meta, statements }
+    if (store.writeArticle(page.article.path, meta, now.content, now.meta.owner || page.agentId)) {
       page.article.meta = meta
+      linked.push(e.title)
     } else {
-      linked.pop()
       dropped.push(`${r.title} → ${e.title}: write refused`)
     }
   }
@@ -565,9 +580,9 @@ export async function runRules(hub: WikiHub, g: WikiGraph, call: EnrichCall, opt
       // What an earlier source stated stays when this one leaves it out.
       const statements = mergeRuleStatements(t.meta.statements ?? [], ruleStatements(r, ctx), r)
       const meta0 = withRuleStatements(t.meta, statements, opts.today)
-      const penalty = r.penalty
-        ? { value: r.penalty, source: r.source, checked_at: sourceDate(r, ctx) }
-        : knownPenalty(hub, g, r.title, t)
+      // A penalty the owner confirmed wins, as on the rule page itself.
+      const known = knownPenalty(hub, g, r.title, t)
+      const penalty = known?.confirmed || !r.penalty ? known : { value: r.penalty, source: r.source, checked_at: sourceDate(r, ctx) }
       const summary = ruleOverview(meta0.statements ?? [], penalty, page.article.meta.title)
       // A page this job did not create keeps its own Overview.
       const ours = (t.meta.tags ?? []).includes(RULES_TAG)
@@ -581,7 +596,7 @@ export async function runRules(hub: WikiHub, g: WikiGraph, call: EnrichCall, opt
       }
       if (opts.dryRun) {
         write.preview = summary
-        write.linked = linkBearers(hub, r, ctx, t, opts.today, true, outcome.dropped)
+        write.linked = linkBearers(hub, r, ctx, t, true, outcome.dropped)
         outcome.rules.push(write)
         continue
       }
@@ -592,14 +607,18 @@ export async function runRules(hub: WikiHub, g: WikiGraph, call: EnrichCall, opt
         continue
       }
       made.set(normName(r.title), { ...t, meta, content, created: false })
-      if (r.penalty) {
+      if (r.penalty && !known?.confirmed) {
         const pen = penaltyPage(r, { ...t, meta }, ctx, opts.today)
         const old = store.readArticle(pen.path)
-        // A penalty page someone else wrote at that path is left alone.
-        if (!old || (old.meta.tags ?? []).includes(RULES_TAG)) store.writeArticle(pen.path, old ? { ...pen.meta, created: old.meta.created } : pen.meta, pen.content, pen.meta.owner)
-        else outcome.dropped.push(`${r.title}: ${pen.path} already exists`)
+        // A penalty page someone else wrote at that path is left alone; on
+        // ours, statements the owner confirmed stay.
+        if (!old) store.writeArticle(pen.path, pen.meta, pen.content, pen.meta.owner)
+        else if ((old.meta.tags ?? []).includes(RULES_TAG)) {
+          const merged = withRuleStatements({ ...pen.meta, created: old.meta.created, statements: old.meta.statements }, pen.meta.statements ?? [], opts.today)
+          store.writeArticle(pen.path, merged, pen.content, pen.meta.owner)
+        } else outcome.dropped.push(`${r.title}: ${pen.path} already exists`)
       }
-      write.linked = linkBearers(hub, r, ctx, { ...t, meta }, opts.today, false, outcome.dropped)
+      write.linked = linkBearers(hub, r, ctx, { ...t, meta }, false, outcome.dropped)
       store.rebuildIndex()
       outcome.rules.push(write)
     }

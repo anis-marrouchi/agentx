@@ -146,6 +146,60 @@ describe("wiki rules run (#811)", () => {
     expect(due).toEqual([expect.objectContaining({ value: RULE.deadline, status: "confirmed" })])
   })
 
+  it("keeps a penalty the owner confirmed, and shows it in the rule summary", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const state = loadRulesState(dir)
+    await runRules(hub, graph(), reply([RULE]), { ...opts, only: ["Payroll notes"] }, state)
+    const path = "penalties/monthly-payroll-filing-penalty.md"
+    const pen = store.readArticle(path)!
+    const statements = pen.meta.statements!.map(s => (s.property === "amount_rule" ? { ...s, status: "confirmed" as const, confirmed_by: "owner" } : s))
+    store.writeArticle(path, { ...pen.meta, statements }, pen.content, "agent-a")
+    const confirmed = store.readArticle(path)!
+
+    await runRules(hub, graph(), reply([{ ...RULE, penalty: "5% flat" }]), { ...opts, only: ["Payroll notes"], force: true, today: "2026-03-01" }, state)
+    const after = store.readArticle(path)!
+    expect(after.meta.statements!.filter(s => s.property === "amount_rule")).toEqual([expect.objectContaining({ value: RULE.penalty, status: "confirmed" })])
+    expect(after.content).toBe(confirmed.content)
+    expect(after.meta.lastUpdated).toBe(confirmed.meta.lastUpdated)
+    const summary = overviewSection(store.readArticle("obligations/monthly-payroll-filing.md")!.content)
+    expect(summary).toContain(`**Penalty:** ${RULE.penalty}`)
+    expect(summary).not.toContain("5% flat")
+  })
+
+  it("keeps other confirmed facts on its penalty page when the penalty changes", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const state = loadRulesState(dir)
+    await runRules(hub, graph(), reply([RULE]), { ...opts, only: ["Payroll notes"] }, state)
+    const path = "penalties/monthly-payroll-filing-penalty.md"
+    const pen = store.readArticle(path)!
+    const statements = pen.meta.statements!.map(s => (s.property === "created_by" ? { ...s, status: "confirmed" as const, confirmed_by: "owner" } : s))
+    store.writeArticle(path, { ...pen.meta, statements }, pen.content, "agent-a")
+
+    await runRules(hub, graph(), reply([{ ...RULE, penalty: "5% flat", basis: "Finance Act" }]), { ...opts, only: ["Payroll notes"], force: true }, state)
+    const after = store.readArticle(path)!
+    const of = (p: string) => after.meta.statements!.filter(s => s.property === p)
+    expect(of("amount_rule")).toEqual([expect.objectContaining({ value: "5% flat", status: "proposed" })])
+    expect(of("created_by")).toEqual([expect.objectContaining({ value: "Social Security Code", status: "confirmed" })])
+  })
+
+  it("writes onto pages as they are when it writes, and links a bearer without dating its page", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    store.writeArticle("compliance/payroll.md", meta("Monthly payroll filing", { class: "obligation" }), "Agents wrote this.", "agent-a")
+    const g = graph()
+    // Pages change while the run waits for the model.
+    const call: EnrichCall = async () => {
+      store.writeArticle("compliance/payroll.md", meta("Monthly payroll filing", { class: "obligation" }), "Agents wrote this. Absorb added this.", "agent-a")
+      store.writeArticle("clients/acme.md", meta("Acme Works", { class: "organization" }), "Our company. New line.", "agent-a")
+      return { text: JSON.stringify({ rules: [{ ...RULE, title: "monthly payroll filing" }] }), costUsd: 0.1 }
+    }
+    await runRules(hub, g, call, { ...opts, only: ["Payroll notes"] }, loadRulesState(dir))
+    expect(store.readArticle("compliance/payroll.md")!.content).toContain("Absorb added this.")
+    const acme = store.readArticle("clients/acme.md")!
+    expect(acme.content).toContain("New line.")
+    expect(acme.meta.lastUpdated).toBe("2026-01-02")
+    expect(acme.meta.statements).toEqual([expect.objectContaining({ property: "subject_to", value: RULE.title })])
+  })
+
   it("updates an existing rule page instead of adding a second one, and keeps others' facts", async () => {
     const store = hub.getAgentWiki("agent-a")
     const own = { property: "status", value: "active", by: "agent-a" }
