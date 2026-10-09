@@ -160,12 +160,12 @@ export async function agenticQuery(
         navigatorModel: opts.selectorModel ?? base.navigatorModel,
         answerModel: opts.synthModel ?? base.answerModel,
       }, { call: opts.call ?? claudeModelCall, fetch: opts.fetch, timeoutMs, log })
-      const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: a.meta.type }))
+      const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: a.meta.type, hop: a.hop }))
       return {
         answer: out.answer,
-        citations: out.status === "ok" ? pages : [],
-        candidates: pages.map(({ title, path }) => ({ title, path })),
-        walked: pages.map((p) => ({ ...p, hop: 0 })),
+        citations: out.status === "ok" ? pages.map(({ title, path, type }) => ({ title, path, type })) : [],
+        candidates: pages.filter((p) => p.hop === 0).map(({ title, path }) => ({ title, path })),
+        walked: pages,
         status: out.status,
         method: "summaries",
         live: out.live,

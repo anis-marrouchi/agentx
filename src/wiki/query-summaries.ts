@@ -25,6 +25,9 @@ export interface SummariesQuerySettings {
   sharedCandidates: number
   /** Most pages opened. */
   maxPages: number
+  /** Pages also opened along the `related` links of the picked pages,
+   *  in total. 0: none. */
+  linkedPages: number
   /** Characters of each opened page given to the answer. */
   pageChars: number
   navigatorModel: string
@@ -36,6 +39,7 @@ export const DEFAULT_SUMMARIES_QUERY: SummariesQuerySettings = {
   candidates: 12,
   sharedCandidates: 4,
   maxPages: 3,
+  linkedPages: 0,
   pageChars: 4000,
   navigatorModel: "haiku",
   answerModel: "sonnet",
@@ -58,6 +62,30 @@ export interface PageView {
   /** Paths the requester may read. */
   readable: Set<string>
   read(path: string): WikiArticle | null
+  /** Lowercased title → path, to follow a page's `related` links. */
+  titleIndex?: Map<string, string>
+}
+
+/**
+ * Pages named in the `related` links of the picked pages, picked order
+ * first, at most `limit`. In the #856 score the two questions the summaries
+ * method lost had their answer one link away from a picked page.
+ */
+export function linkedPages(picked: WikiArticle[], view: PageView, limit: number): Array<WikiArticle & { hop: number }> {
+  if (limit <= 0 || !view.titleIndex) return []
+  const seen = new Set(picked.map((a) => a.path))
+  const out: Array<WikiArticle & { hop: number }> = []
+  for (const page of picked) {
+    for (const title of page.meta.related ?? []) {
+      if (out.length >= limit) return out
+      const path = view.titleIndex.get(title.toLowerCase())
+      if (!path || seen.has(path) || !view.readable.has(path)) continue
+      seen.add(path)
+      const article = view.read(path)
+      if (article) out.push({ ...article, hop: 1 })
+    }
+  }
+  return out
 }
 
 export interface SummariesQueryOutcome {
@@ -229,6 +257,7 @@ export async function summariesQuery(
     if (article) picked.push({ ...article, hop: 0 })
   }
   if (picked.length === 0) return empty("no-candidates", "No page was picked for the question.")
+  picked.push(...linkedPages(picked, view, settings.linkedPages))
   const pages = pagesText(picked, summaries, settings.pageChars)
 
   // --- 3. Live reads: the model names them, code runs them ---

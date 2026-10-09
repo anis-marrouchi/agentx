@@ -356,6 +356,7 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `query.candidates` | number (1–50) | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | number (0–50) | `4` | How many of other agents' pages it sees beside them. |
 | `query.maxPages` | number (1–10) | `3` | Most pages opened for one answer. |
+| `query.linkedPages` | number (0–10) | `0` | Summaries method: also open up to this many pages that the picked pages link to (their `related` list). `0` opens none. |
 | `query.pageChars` | number (200–40000) | `4000` | Characters of each opened page given to the answer. |
 | `query.navigatorModel` | string | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |

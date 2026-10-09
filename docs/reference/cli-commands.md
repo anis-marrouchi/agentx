@@ -1642,6 +1642,7 @@ Answer a question from the wiki. Once at least 80% of the agent's own pages have
 | `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`), else the first one with a catalog | Which agent's wiki to search first. |
 | `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
 | `--no-live` | — | Skip the live read of the summaries method. |
+| `--linked <n>` | `wiki.query.linkedPages` (`0`) | Also open up to `n` pages that the picked pages link to (summaries method). |
 | `--selector-model <m>` | `haiku` | Model that picks the pages. Overrides `wiki.query.navigatorModel`. |
 | `--synth-model <m>` | `sonnet` | Model that writes the answer. Overrides `wiki.query.answerModel`. |
 | `--max-candidates <n>` | `3` | Candidates from selector (catalog method). |
@@ -1683,6 +1684,7 @@ Score the wiki's answers to a question set, or compare two saved scores. A quest
 | `--compare <files...>` | — | Compare two saved reports: `before.json after.json`. |
 | `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
 | `--no-live` | — | Skip the live read of the summaries method. |
+| `--linked <n>` | `wiki.query.linkedPages` (`0`) | Also open up to `n` pages that the picked pages link to (summaries method). |
 | `--selector-model <m>` | `haiku` | Candidate-selection model. |
 | `--synth-model <m>` | `sonnet` | Synthesis model. |
 | `--json` | — | Print the report as JSON. |

@@ -1407,6 +1407,9 @@ export const daemonConfigSchema = z.object({
       sharedCandidates: z.number().int().min(0).max(50).default(4),
       /** Most pages opened for one answer. */
       maxPages: z.number().int().min(1).max(10).default(3),
+      /** Pages also opened along the `related` links of the picked pages
+       *  (summaries method), in total. 0: none. */
+      linkedPages: z.number().int().min(0).max(10).default(0),
       /** Characters of each opened page given to the answer. */
       pageChars: z.number().int().min(200).max(40_000).default(4000),
       /** Model that picks pages from the summary lines. */

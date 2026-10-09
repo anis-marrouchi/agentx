@@ -342,6 +342,32 @@ describe("wiki query by summaries", () => {
     expect(all).toContain("Widgets")
   })
 
+  it("opens pages linked from a picked page when linkedPages is set, never one the requester can't read", async () => {
+    page("a", "projects/widgets.md", "Widgets", "Widget cutover tracked in #12.", { related: ["Sam", "Widget secret", "No such page"] })
+    await summarizeStore(hub.getAgentWiki("a"), { call: summariser })
+
+    const off = queryModel({ open: ["Widgets"] })
+    await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("a"), "a", { method: "summaries", summaries: settings({ enabled: false }), call: off.call })
+    expect(off.prompts.find((p) => p.step === "answer")!.prompt).not.toContain("Sam leads the widget work.")
+
+    const on = queryModel({ open: ["Widgets"] })
+    const result = await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("a"), "a", {
+      method: "summaries", summaries: { ...settings({ enabled: false }), linkedPages: 2 }, call: on.call,
+    })
+    expect(on.prompts.find((p) => p.step === "answer")!.prompt).toContain("Sam leads the widget work.")
+    expect(result.walked.map((w) => [w.path, w.hop])).toEqual([["projects/widgets.md", 0], ["people/sam.md", 1], ["concepts/secret.md", 1]])
+    expect(result.candidates.map((c) => c.path)).toEqual(["projects/widgets.md"])
+
+    // Agent b may not read the private page a's page links to.
+    const asB = queryModel({ open: ["Widgets"] })
+    await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("b"), "b", {
+      method: "summaries", summaries: { ...settings({ enabled: false }), linkedPages: 5 }, call: asB.call, shared: hub.sharedScope("b"),
+    })
+    const answer = asB.prompts.find((p) => p.step === "answer")!.prompt
+    expect(answer).toContain("Sam leads the widget work.")
+    expect(answer).not.toContain("4711")
+  })
+
   it("cuts a long page at pageChars", async () => {
     page("a", "projects/long.md", "Long widget log", `${"x".repeat(500)}TAILMARK`)
     const model = queryModel({ open: ["Long widget log"] })

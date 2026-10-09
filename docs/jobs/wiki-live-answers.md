@@ -113,6 +113,7 @@ All under `wiki` in `agentx.json`.
 | `query.candidates` | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | `4` | How many of other agents' pages it sees beside them. `0` shows none. |
 | `query.maxPages` | `3` | Most pages opened for one answer. |
+| `query.linkedPages` | `0` | Also open up to this many pages that the picked pages link to (each page's related pages). `0` opens none. Try `3` when the answer often sits one link away from the page picked. |
 | `query.pageChars` | `4000` | Characters of each opened page given to the answer. |
 | `query.navigatorModel` | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | `"sonnet"` | Model that writes the answer. |
@@ -144,6 +145,7 @@ Each entry of `query.live.sources` has a `type` and these keys:
 ## Ask one question a different way
 
 - `agentx wiki query "…" --no-live` answers from the pages alone.
+- `agentx wiki query "…" --linked 3` also opens up to 3 pages that the picked pages link to, for that one question.
 - `agentx wiki query "…" --method catalog` uses the earlier method for that one question.
 - `agentx wiki query "…" --trace` also prints how many reads were asked and answered, and how long each step took.
 
@@ -159,6 +161,7 @@ Each entry of `query.live.sources` has a `type` and these keys:
 - **No "Read live at the source" block:** `query.live.sources` is empty, `query.live.enabled` is `false`, or the picked pages named nothing that changes. Run with `--trace`: "0 asked" means the model named no read.
 - **Reads are asked but none is answered:** the token is missing or can't read the repository, or the host can't be reached. Check the name in `tokenEnv` against `.env`, and that the repository is spelled exactly as on the host.
 - **`(no answer) No page was picked for the question`:** no summary line fits the question. Nothing is read live in that case.
+- **The answer misses a fact that sits on a page linked from the one it cites:** set `query.linkedPages` to `3`, or try `--linked 3` on one question first.
 - **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. The live read reports what the source holds and no more.
 - **`config check` says `expected owner/name`:** a repository in `repos` is not written as `owner/name` or `group/project`.
 - **`config check` says `wiki.summaries.schedule: expected a cron of 5 fields`:** write the schedule as minute, hour, day of the month, month and day of the week, for example `"30 23 * * *"` for 23:30 every day.
