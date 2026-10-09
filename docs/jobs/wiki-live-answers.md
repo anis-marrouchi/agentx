@@ -22,7 +22,8 @@ A live read only reads.
 - The model names a read as data: a kind, a repository from your list, and a number or a few search words. It is given no shell, no command and no tool.
 - AgentX checks each named read against your settings. A repository you did not list is refused.
 - Each read is one HTTP `GET` that AgentX builds itself. Nothing is sent, changed or closed.
-- A token goes only to the host it was set for. A redirect to another address is refused.
+- A token goes only to the host it was set for, and only over `https://`. A redirect to another address is refused.
+- Issue titles, labels and release names are passed to the answer as plain data. On a public repository anyone can write them, so the answer model is told not to follow anything they say, and long or numerous labels are cut.
 - A read that fails or takes too long is left out. The answer is still given from the pages.
 
 The five kinds of read:
@@ -35,6 +36,8 @@ The five kinds of read:
 | Release | The 3 newest releases or tags of a listed repository. |
 | Fleet | The AgentX version, build and start time of this machine and of each machine connected to it. |
 
+A fleet read first asks the AgentX daemon in the source's `url` which machines are connected to it, then asks each of those machines for its version. No token is sent. Still, list only a daemon you run yourself: that daemon decides which addresses this machine asks.
+
 Until you list a source, no live read runs and questions are answered from the pages alone.
 
 ## When no page fits
@@ -46,6 +49,11 @@ Sometimes the wiki has no page about a subject, but the issue tracker does. When
 3. If a search finds issues, the answer is written from those lines alone. It starts with "No wiki page covers this;" and names each issue it uses.
 
 A question that needs no stored knowledge, such as a definition or a greeting, gets no search, so it costs no live read. A search that finds no issue gives no answer, the same as before.
+
+Two things to weigh before you list a repository:
+
+- **Cost.** Every question that picks no page now makes one more call to the small model, which decides whether to search. This happens whether or not a search is then run.
+- **Who wrote the text.** An answer from a search stands only on issue titles and labels. On a public repository anyone can open an issue, so anyone can write the text such an answer is built from. The answer is marked and the model is told to treat those lines as data, but list a public repository only if answers built from its issue titles are acceptable to you.
 
 In a terminal the answer is followed by **No wiki page was used: the answer comes from a search at the source.** and the lines that were read. Agents using the `agentx_wiki_query` tool see the same note in place of the citations.
 
@@ -112,7 +120,7 @@ Pick a time after the jobs that write wiki pages have finished. A night with no 
 
 `about` is a short note on what lives in a repository. The model reads it when choosing which repository to name, so add it when the repository's name does not say what it holds.
 
-When a source names no token, AgentX uses the token of the matching channel (`channels.github` or `channels.gitlab`), and only when the source points at that channel's host. A public GitHub repository needs no token.
+When a source names no token, AgentX uses the token of the matching channel (`channels.github` or `channels.gitlab`), and only when the source points at that channel's address over `https://`. A source with an `http://` address, another port or another host gets no channel token. A GitLab source with no `url` uses the channel's own host and its token. A public GitHub repository needs no token.
 
 ## Settings
 
@@ -120,10 +128,11 @@ All under `wiki` in `agentx.json`.
 
 | Key | Default | What it does |
 |---|---|---|
-| `query.method` | `"auto"` | How pages are picked. `summaries`: from the summary lines, then the live read. `catalog`: from page titles, then along the links between pages (the earlier method). `auto`: `summaries` as soon as summaries exist, `catalog` until then. |
+| `query.method` | `"auto"` | How pages are picked. `summaries`: from the summary lines, then the live read. `catalog`: from page titles, then along the links between pages (the earlier method). `auto`: `summaries` once at least 80% of the agent's own pages have a summary, `catalog` until then. |
 | `query.candidates` | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | `4` | How many of other agents' pages it sees beside them. `0` shows none. |
 | `query.maxPages` | `3` | Most pages opened for one answer. |
+| `query.linkedPages` | `0` | Also open up to this many pages that the picked pages link to (each page's related pages). `0` opens none. Try `3` when the answer often sits one link away from the page picked. |
 | `query.pageChars` | `4000` | Characters of each opened page given to the answer. |
 | `query.navigatorModel` | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | `"sonnet"` | Model that writes the answer. |
@@ -155,6 +164,7 @@ Each entry of `query.live.sources` has a `type` and these keys:
 ## Ask one question a different way
 
 - `agentx wiki query "…" --no-live` answers from the pages alone.
+- `agentx wiki query "…" --linked 3` also opens up to 3 pages that the picked pages link to, for that one question.
 - `agentx wiki query "…" --method catalog` uses the earlier method for that one question.
 - `agentx wiki query "…" --trace` also prints how many reads were asked and answered, and how long each step took.
 
@@ -167,10 +177,13 @@ Each entry of `query.live.sources` has a `type` and these keys:
 
 ## If something is wrong
 
-- **The trace has no `method: summaries` line:** no summaries exist for the pages in reach. Run `agentx wiki summarize --all`.
+- **The trace has no `method: summaries` line:** fewer than 80% of the agent's own pages have a summary, for example after a run with `--agent` for another agent or with `--limit`. Run `agentx wiki summarize --all`.
 - **No "Read live at the source" block:** `query.live.sources` is empty, `query.live.enabled` is `false`, or the picked pages named nothing that changes. Run with `--trace`: "0 asked" means the model named no read.
 - **Reads are asked but none is answered:** the token is missing or can't read the repository, or the host can't be reached. Check the name in `tokenEnv` against `.env`, and that the repository is spelled exactly as on the host.
 - **`(no answer) No page was picked for the question`:** no summary line fits the question, and either no repository is listed, the model named no search, or the search found no issue. Run with `--trace`: "0 asked" means no search was named.
 - **An answer starts with "No wiki page covers this;" when you expected a page:** the page exists but its summary line shares no word with the question. Run `agentx wiki summarize --agent <agent>` after editing the page, or ask with the words the page's title uses.
+- **The answer misses a fact that sits on a page linked from the one it cites:** set `query.linkedPages` to `3`, or try `--linked 3` on one question first.
 - **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. The live read reports what the source holds and no more.
 - **`config check` says `expected owner/name`:** a repository in `repos` is not written as `owner/name` or `group/project`.
+- **`config check` says `wiki.summaries.schedule: expected a cron of 5 fields`:** write the schedule as minute, hour, day of the month, month and day of the week, for example `"30 23 * * *"` for 23:30 every day.
+- **`config check` says `wiki.summaries.timezone: expected a time zone`:** use a name such as `"UTC"` or `"Europe/Paris"`.

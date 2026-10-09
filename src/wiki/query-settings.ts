@@ -29,9 +29,13 @@ function fileToken(path: string | undefined): string | undefined {
   }
 }
 
-function sameHost(a: string, b: string): boolean {
+/** Whether a channel's token may go to `url`: same origin as the
+ *  channel (scheme, host and port), and over https only, so a token is
+ *  never sent in clear or to a port it was not set for. */
+export function mayLendToken(url: string, channel: string): boolean {
   try {
-    return new URL(a).host === new URL(b).host
+    const a = new URL(url)
+    return a.protocol === "https:" && a.origin === new URL(channel).origin
   } catch {
     return false
   }
@@ -44,7 +48,8 @@ const repos = (list: Array<string | { repo: string; about?: string }>): LiveRepo
  * Turn the configured sources into hosts and tokens. A source that names
  * its own token (`tokenEnv`, `tokenFile`) uses it. One that names none
  * uses the matching channel's token, and only when the source points at
- * that channel's host: a token never goes to a host it was not set for.
+ * that channel's https origin: a token never goes to a host it was not
+ * set for, nor over plain http.
  */
 export function resolveLiveSources(config: DaemonConfig, env: Env = process.env): LiveSource[] {
   const out: LiveSource[] = []
@@ -57,13 +62,15 @@ export function resolveLiveSources(config: DaemonConfig, env: Env = process.env)
     const own = (s.tokenEnv ? env[s.tokenEnv] : undefined) || fileToken(s.tokenFile)
     if (s.type === "github") {
       const gh = config.channels.github
-      const channel = sameHost(s.apiUrl, "https://api.github.com") ? gh?.token || fileToken(gh?.tokenFile) : undefined
+      const channel = mayLendToken(s.apiUrl, "https://api.github.com") ? gh?.token || fileToken(gh?.tokenFile) : undefined
       out.push({ type: "github", apiUrl: s.apiUrl, token: own || channel || undefined, repos: repos(s.repos) })
     } else {
       const gl = config.channels.gitlab
       const url = s.url ?? gl?.host
       if (!url) continue
-      const channel = gl?.host && sameHost(url, gl.host) ? gl.token : undefined
+      // Unset url: the channel's own host, so the token goes where the
+      // channel already sends it.
+      const channel = gl?.host && (!s.url || mayLendToken(url, gl.host)) ? gl.token : undefined
       out.push({ type: "gitlab", url, token: own || channel || undefined, repos: repos(s.repos) })
     }
   }
@@ -79,6 +86,7 @@ export function resolveQuerySettings(config: DaemonConfig, env: Env = process.en
       candidates: q.candidates,
       sharedCandidates: q.sharedCandidates,
       maxPages: q.maxPages,
+      linkedPages: q.linkedPages,
       pageChars: q.pageChars,
       navigatorModel: q.navigatorModel,
       answerModel: q.answerModel,
