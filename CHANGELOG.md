@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.136.1](https://github.com/anis-marrouchi/agentx/compare/v0.136.0...v0.136.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **wiki:** restore and curator edits hold the page lock ([#916](https://github.com/anis-marrouchi/agentx/issues/916) follow-up) ([#919](https://github.com/anis-marrouchi/agentx/issues/919)) ([779a43d](https://github.com/anis-marrouchi/agentx/commit/779a43d0fbdf357631afa8a80a596aa382a77767))
+* **wiki:** wiki rules holds each page's lock from re-read to write ([#918](https://github.com/anis-marrouchi/agentx/issues/918)) ([b624e67](https://github.com/anis-marrouchi/agentx/commit/b624e67977cecd120de172aa06daef7c6f4fe914)), closes [#920](https://github.com/anis-marrouchi/agentx/issues/920)
+
 ## [0.136.0](https://github.com/anis-marrouchi/agentx/compare/v0.135.1...v0.136.0) (2026-10-09)
 
 
