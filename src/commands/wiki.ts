@@ -3233,6 +3233,10 @@ wiki
 
     console.log(result.answer)
     console.log()
+    if (result.basis === "search") {
+      console.log(chalk.dim("  No wiki page was used: the answer comes from a search at the source."))
+      console.log()
+    }
     if (result.citations.length) {
       console.log(chalk.dim("  Citations:"))
       for (const c of result.citations) {

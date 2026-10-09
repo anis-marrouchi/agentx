@@ -9,6 +9,8 @@ With **page summaries** and a **live read**, a wiki question is answered in four
 3. A small model names what should be confirmed at the source: an issue, a merge request, a repository's newest releases, where a change is deployed, the AgentX version on each machine. AgentX then reads those, from the systems you listed.
 4. The answer is written from the pages and what was just read. Where they disagree, what was just read wins, and the answer marks those facts with "(live)".
 
+When no page fits the question, the issue tracker can still answer it. See [When no page fits](#when-no-page-fits).
+
 The same steps run for `agentx wiki query` in a terminal and for the `agentx_wiki_query` tool agents use.
 
 Everything on this page happens in a **terminal** on the machine that runs AgentX, in the folder that holds `agentx.json`.
@@ -38,6 +40,23 @@ The six kinds of read:
 A fleet read first asks the AgentX daemon in the source's `url` which machines are connected to it, then asks each of those machines for its version. No token is sent. Still, list only a daemon you run yourself: that daemon decides which addresses this machine asks.
 
 Until you list a source, no live read runs and questions are answered from the pages alone.
+
+## When no page fits
+
+Sometimes the wiki has no page about a subject, but the issue tracker does. When no page is picked and at least one repository is listed under `query.live.sources`:
+
+1. A small model reads the question alone and decides whether an issue could hold the answer. If it could, it names up to 6 searches: two or three words in one of your listed repositories. Only searches are allowed here, never a single issue, a release or the fleet.
+2. AgentX runs those searches the same way as any live read.
+3. If a search finds issues, the answer is written from those lines alone. It starts with "No wiki page covers this;" and names each issue it uses.
+
+A question that needs no stored knowledge, such as a definition or a greeting, gets no search, so it costs no live read. A search that finds no issue gives no answer, the same as before.
+
+Two things to weigh before you list a repository:
+
+- **Cost.** Every question that picks no page now makes one more call to the small model, which decides whether to search. This happens whether or not a search is then run.
+- **Who wrote the text.** An answer from a search stands only on issue titles and labels. On a public repository anyone can open an issue, so anyone can write the text such an answer is built from. The answer is marked and the model is told to treat those lines as data, but list a public repository only if answers built from its issue titles are acceptable to you.
+
+In a terminal the answer is followed by **No wiki page was used: the answer comes from a search at the source.** and the lines that were read. Agents using the `agentx_wiki_query` tool see the same note in place of the citations.
 
 ## Know whether a change is deployed
 
@@ -219,13 +238,15 @@ After the pick, AgentX lists the pages the picked pages link to, and the newest 
 3. **Terminal:** run `agentx wiki query "Is merge request <number> deployed, and where?" --agent <agent> --trace` for a repository that records deployments. A line starting with `#<number> in` or `!<number> in` lists each environment as deployed, not deployed or not known.
 4. The trace line starts with `method: summaries` and gives the reads asked and answered.
 5. With `query.linkedPages` above `0`, a `followed:` line lists the linked pages that were opened, each ending in `@h1`.
+6. **Terminal:** ask about something that has an issue but no wiki page, such as `agentx wiki query "<a feature you only filed as an issue>" --agent <agent>`. The answer starts with "No wiki page covers this;" and is followed by **No wiki page was used**.
 
 ## If something is wrong
 
 - **The trace has no `method: summaries` line:** fewer than 80% of the agent's own pages have a summary, for example after a run with `--agent` for another agent or with `--limit`. Run `agentx wiki summarize --all`.
 - **No "Read live at the source" block:** `query.live.sources` is empty, `query.live.enabled` is `false`, or the picked pages named nothing that changes. Run with `--trace`: "0 asked" means the model named no read.
 - **Reads are asked but none is answered:** the token is missing or can't read the repository, or the host can't be reached. Check the name in `tokenEnv` against `.env`, and that the repository is spelled exactly as on the host.
-- **`(no answer) No page was picked for the question`:** no summary line fits the question. Nothing is read live in that case.
+- **`(no answer) No page was picked for the question`:** no summary line fits the question, and either no repository is listed, the model named no search, or the search found no issue. Run with `--trace`: "0 asked" means no search was named.
+- **An answer starts with "No wiki page covers this;" when you expected a page:** the page exists but its summary line shares no word with the question. Run `agentx wiki summarize --agent <agent>` after editing the page, or ask with the words the page's title uses.
 - **The answer misses a fact that sits on a page linked from the one it cites:** set `query.linkedPages` to `3`, or try `--linked 3` on one question first.
 - **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. Ask about the merge request that made the change, or name its number in the question, so a deploy read can be made.
 - **A deploy line says "no deployment is recorded at the source":** your pipeline does not record deployments for that repository. See [Know whether a change is deployed](#know-whether-a-change-is-deployed).

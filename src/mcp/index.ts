@@ -1766,7 +1766,10 @@ async function handleToolCall(
       const cites = result.citations.map(c => `  - ${c.title} [${c.type || "?"}] (${c.path})`).join("\n")
       const walkCount = result.walked.length
       const live = result.live?.length ? `\n\nRead live at the source just now:\n${result.live.map((l) => `  - ${l.line}`).join("\n")}` : ""
-      const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}${live}`
+      const sources = result.basis === "search"
+        ? "No wiki page was used: the answer comes from a search at the source."
+        : `Citations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}`
+      const body = `${result.answer}\n\n${sources}${live}`
       return { content: [{ type: "text", text: body }] }
     }
 
