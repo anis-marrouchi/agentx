@@ -65,6 +65,7 @@ const groups = [
     { text: "Let agents keep the wiki up to date", link: "/jobs/wiki-contributions" },
     { text: "Bring entity pages up to a full story", link: "/jobs/wiki-enrich" },
     { text: "Sort wiki events by importance", link: "/jobs/wiki-events" },
+    { text: "Keep each rule on one page", link: "/jobs/wiki-rules" },
     { text: "Get wiki answers checked at the source", link: "/jobs/wiki-live-answers" },
     { text: "Capture the screen at the right moment", link: "/jobs/screen-capture" },
     { text: "Work from your Claude Code session", link: "/jobs/claude-code-session" },
