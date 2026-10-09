@@ -13,7 +13,7 @@ import { patchProblems } from "@/wiki/fact-guard"
 import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
 import { applyNoteAnswers, noteSource, parseNoteAnswers, renderAbsorbNotesBlock } from "@/wiki/absorb-notes"
 import { NoteStore, type WikiNote } from "@/wiki/notes"
-import { absorbOffAgents, selectAbsorbAgents } from "@/wiki/absorb-agents"
+import { absorbOffAgents, absorbSkipMessage, selectAbsorbAgents } from "@/wiki/absorb-agents"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
@@ -269,8 +269,10 @@ wiki
       hub.listAgents().filter((id) => !local || local.has(id)),
       { only: opts.agent, off: await absorbOffAgentIds() },
     )
+    // Say when the skipped agent is the one that reads the notes inbox (#885).
+    const notesAbsorbAgent = skipped.length && opts.notes !== false ? (await absorbNotesConfig())?.absorbAgent : undefined
     for (const id of skipped) {
-      console.log(`  ${chalk.cyan(id)}: ${chalk.dim("absorb is off for this agent (agents." + id + ".wiki.absorb.enabled); skipped. Use --agent " + id + " to run it anyway.")}`)
+      console.log(`  ${chalk.cyan(id)}: ${chalk.dim(absorbSkipMessage(id, notesAbsorbAgent))}`)
     }
     const agents = selected
       .filter((id) => {

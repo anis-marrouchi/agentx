@@ -14,6 +14,11 @@
 // no stored knowledge. The answer then comes from those lines and says
 // that no wiki page was used.
 //
+// Between 2 and 3, `linkedPages` > 0 also opens pages linked from the
+// picked ones (#863), the best summary lines against the question first,
+// within `linkedChars`. No model call: the catalog walk reached the two
+// answers this method lost on the #855 score this way.
+//
 // Measured on 30 questions before it was built in: 21 right-or-partial
 // points with the live read against 19 for summaries alone, one run.
 
@@ -30,11 +35,12 @@ export interface SummariesQuerySettings {
   sharedCandidates: number
   /** Most pages opened. */
   maxPages: number
-  /** Pages also opened along the `related` links of the picked pages,
-   *  in total. 0: none. */
-  linkedPages: number
   /** Characters of each opened page given to the answer. */
   pageChars: number
+  /** Pages linked from the picked ones also opened. 0: none. */
+  linkedPages: number
+  /** Characters all linked pages together give to the answer. */
+  linkedChars: number
   navigatorModel: string
   answerModel: string
   live: LiveSettings
@@ -44,8 +50,9 @@ export const DEFAULT_SUMMARIES_QUERY: SummariesQuerySettings = {
   candidates: 12,
   sharedCandidates: 4,
   maxPages: 3,
-  linkedPages: 0,
   pageChars: 4000,
+  linkedPages: 0,
+  linkedChars: 6000,
   navigatorModel: "haiku",
   answerModel: "sonnet",
   live: { enabled: true, maxReads: 6, timeoutMs: 15_000, plannerModel: "haiku", sources: [] },
@@ -67,30 +74,8 @@ export interface PageView {
   /** Paths the requester may read. */
   readable: Set<string>
   read(path: string): WikiArticle | null
-  /** Lowercased title → path, to follow a page's `related` links. */
-  titleIndex?: Map<string, string>
-}
-
-/**
- * Pages named in the `related` links of the picked pages, picked order
- * first, at most `limit`. In the #856 score the two questions the summaries
- * method lost had their answer one link away from a picked page.
- */
-export function linkedPages(picked: WikiArticle[], view: PageView, limit: number): Array<WikiArticle & { hop: number }> {
-  if (limit <= 0 || !view.titleIndex) return []
-  const seen = new Set(picked.map((a) => a.path))
-  const out: Array<WikiArticle & { hop: number }> = []
-  for (const page of picked) {
-    for (const title of page.meta.related ?? []) {
-      if (out.length >= limit) return out
-      const path = view.titleIndex.get(title.toLowerCase())
-      if (!path || seen.has(path) || !view.readable.has(path)) continue
-      seen.add(path)
-      const article = view.read(path)
-      if (article) out.push({ ...article, hop: 1 })
-    }
-  }
-  return out
+  /** Pages a page links to, then pages linking to it. Unset: none. */
+  links?(article: WikiArticle): string[]
 }
 
 export interface SummariesQueryOutcome {
@@ -199,11 +184,52 @@ export function parseNavigatorReply(reply: string, count: number, maxPages: numb
   return picks.slice(0, maxPages)
 }
 
-function pagesText(pages: WikiArticle[], summaries: Map<string, string>, pageChars: number): string {
+/**
+ * Pages linked from the picked ones, up to `linkedPages`, each cut to fit
+ * what is left of `linkedChars`. Pages whose summary line shares words
+ * with the question come first, best first; the rest follow in link
+ * order (the picked page's own links before those of the next pick).
+ */
+export function followLinks(
+  question: string,
+  picked: WikiArticle[],
+  view: PageView,
+  summaries: Map<string, string>,
+  settings: Pick<SummariesQuerySettings, "linkedPages" | "linkedChars" | "pageChars">,
+): Array<WikiArticle & { hop: number; chars: number }> {
+  if (settings.linkedPages <= 0 || settings.linkedChars <= 0 || !view.links) return []
+  const open = new Set(picked.map((a) => a.path))
+  const linked: string[] = []
+  for (const a of picked) {
+    for (const path of view.links(a)) {
+      if (!open.has(path) && view.readable.has(path) && !linked.includes(path)) linked.push(path)
+    }
+  }
+  if (linked.length === 0) return []
+  const byPath = new Map(view.pool.map((c) => [c.path, c]))
+  const pool = linked.map((path) => byPath.get(path) ?? { path, title: "" })
+  const ranked = rankBySummary(question, pool, summaries, pool.length)
+  const order = [...ranked, ...pool.map((_, i) => i).filter((i) => !ranked.includes(i))]
+
+  const out: Array<WikiArticle & { hop: number; chars: number }> = []
+  let left = settings.linkedChars
+  for (const i of order) {
+    if (out.length >= settings.linkedPages || left <= 0) break
+    const article = view.read(pool[i].path)
+    if (!article) continue
+    const chars = Math.min(settings.pageChars, left)
+    left -= Math.min(article.content.length, chars)
+    out.push({ ...article, hop: 1, chars })
+  }
+  return out
+}
+
+function pagesText(pages: Array<WikiArticle & { chars?: number }>, summaries: Map<string, string>, pageChars: number): string {
   return pages.map((a) => {
     const about = [a.meta.type ?? "untyped", pageDate({ path: a.path, lastUpdated: a.meta.lastUpdated }) || "no date", a.meta.owner ? `owner ${a.meta.owner}` : ""].filter(Boolean).join(", ")
     const summary = summaries.get(a.path)
-    const body = a.content.length > pageChars ? `${a.content.slice(0, pageChars)} […]` : a.content
+    const cut = a.chars ?? pageChars
+    const body = a.content.length > cut ? `${a.content.slice(0, cut)} […]` : a.content
     return `### ${a.meta.title} (${about})\n${summary ? `Summary: ${summary}\n` : ""}${body}`
   }).join("\n\n")
 }
@@ -315,8 +341,9 @@ export async function summariesQuery(
     if (article) picked.push({ ...article, hop: 0 })
   }
   if (picked.length === 0) return noPage("No page was picked for the question.")
-  picked.push(...linkedPages(picked, view, settings.linkedPages))
-  const pages = pagesText(picked, summaries, settings.pageChars)
+  const linked = followLinks(question, picked, view, summaries, settings)
+  const pages = pagesText([...picked, ...linked], summaries, settings.pageChars)
+  picked.push(...linked.map(({ chars: _, ...a }) => a))
 
   // --- 3. Live reads: the model names them, code runs them ---
   let live: LiveLine[] = []

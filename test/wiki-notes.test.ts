@@ -230,6 +230,17 @@ describe("wiki notes settings", () => {
     expect(() => patchWikiNotes(cfg(), {})).toThrow(/nothing/)
   })
 
+  it("refuses an absorb agent whose wiki absorb is off (#885)", () => {
+    const c = cfg()
+    c.agents["wiki-agent"].wiki = { absorb: { enabled: false } }
+    expect(() => patchWikiNotes(c, { inbox: "wiki-agent", absorbAgent: "wiki-agent" })).toThrow(/agents\.wiki-agent\.wiki\.absorb\.enabled/)
+    // An absorb agent saved earlier does not block other edits.
+    c.wikiNotes = { inbox: "wiki-agent", absorbAgent: "wiki-agent" }
+    expect(() => patchWikiNotes(c, { maxNotesPerRun: 10 })).not.toThrow()
+    c.agents["wiki-agent"].wiki = {}
+    expect(() => patchWikiNotes(c, { absorbAgent: "wiki-agent" })).not.toThrow()
+  })
+
   it("allows an inbox on another node, for a node that only posts", () => {
     const c = cfg()
     patchWikiNotes(c, { inbox: "remote-wiki-agent", enabled: true })

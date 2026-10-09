@@ -793,6 +793,9 @@ export class WorkflowDispatcher {
       ?? { maxAttempts: 1, backoffMs: 1000 }
     let result: NodeResult = { error: "retry-loop did not run" }
     let attempt = 0
+    // How long the step took, retries included (#858: run records).
+    const stepStartedMs = Date.now()
+    const timing = () => ({ startedAt: new Date(stepStartedMs).toISOString(), durationMs: Math.max(0, Date.now() - stepStartedMs) })
     while (attempt < retry.maxAttempts) {
       attempt++
       try {
@@ -857,7 +860,7 @@ export class WorkflowDispatcher {
         this.runs.recordExecution({
           runId, entry: {
             at: now, nodeId, inputKeys, status: "failed",
-            idempotencyKey: key, note: result.error.slice(0, 200),
+            idempotencyKey: key, note: result.error.slice(0, 200), ...timing(),
           },
           nextPending: remainingFromPending,
           status: statusUpdate,
@@ -897,7 +900,7 @@ export class WorkflowDispatcher {
         }
         this.runs.recordExecution({
           runId, entry: {
-            at: now, nodeId, inputKeys, status: "paused", idempotencyKey: key,
+            at: now, nodeId, inputKeys, status: "paused", idempotencyKey: key, ...timing(),
             ...(result.blocked ? { note: `blocked: ${result.blocked}`.slice(0, 200) } : {}),
           },
           nextPending: remainingFromPending,
@@ -956,7 +959,7 @@ export class WorkflowDispatcher {
 
       const updated = this.runs.recordExecution({
         runId,
-        entry: { at: now, nodeId, inputKeys, status: "ok", output, idempotencyKey: key },
+        entry: { at: now, nodeId, inputKeys, status: "ok", output, idempotencyKey: key, ...timing() },
         nextPending: terminal ? [] : merged,
         status: statusUpdate,
         context: newContext,

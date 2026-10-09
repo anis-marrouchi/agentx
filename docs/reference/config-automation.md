@@ -127,6 +127,11 @@ The workflow engine. See [Workflows](/dashboard/workflows).
 | `workflows.followUp.stallMinutes` | number | `30` | Minutes without progress before an agent step gets a reminder (a nudge). At most 10080 (7 days). |
 | `workflows.followUp.maxNudges` | integer (0–20) | `2` | Nudges before the step counts as blocked and you are told. |
 | `workflows.followUp.approval` | `"step"` \| `"start"` | `"step"` | When you approve messages to people: each before it is sent, or all at once when a run starts. A workflow's own `approval` wins. |
+| `workflows.required` | object | `{}` | Every task runs inside a workflow run: a saved workflow that fits, else a plan the agent writes, else one step. See [Run every task through a workflow](/jobs/every-task-a-workflow). |
+| `workflows.required.enabled` | boolean | `false` | On for every agent. Needs `workflows.enabled`. |
+| `workflows.required.agents` | object | `{}` | Per agent, by id: `true` or `false` wins over `enabled`. |
+| `workflows.required.exemptQuestions` | boolean | `true` | A plain question (no plan, only tools that change nothing) leaves no run. |
+| `workflows.required.retentionDays` | number | `30` | Task runs that ended are removed this many days after their last change, when the daemon starts and every 6 hours. `0` keeps them all. |
 | `workflows.editor` | `"disabled"` \| `"readonly"` \| `"edit"` | `"edit"` | The dashboard's workflow editor: hidden, view only, or editable. |
 
 ## `procedures`
@@ -238,7 +243,7 @@ An open request that fails, times out, is cut off and not picked up again, or ha
 
 Who counts as you on this computer's own surfaces (voice, the phone app, the dashboard) is proven, not declared: the daemon marks the turns it starts itself, and the dashboard presents the key in `.agentx/operator.key` for the phone app. The daemon creates that file next to `agentx.json` at start, readable by your user only. A call to `POST /task` that names one of those channels without the key runs as an ordinary turn and is not recorded as your request. When the phone app talks to an agent on another computer, the computer it is paired with checks its own key on the forward and tells the other one the turn is yours; that other computer believes it only from a request that carries one of its `mesh.peers[].token` values and comes from another machine, never from a caller on the same machine or a bare header. A computer you let vouch is trusted for more than the list: the turn is yours for [people limits](/jobs/people) too. When the whole mesh shares one token, every computer in it can vouch, so share a token only between computers you own.
 
-While requests are on, or follow-up workflows are (`workflows.enabled` and `workflows.followUp.enabled`), the daemon adds its own tool server (`agentx serve --stdio`) to every agent's `.mcp.json` at start, as `agentx`, so each agent can close its requests with the `agentx_request` tool. An `agentx` entry you declared in the agent's `mcp` block, or a `.mcp.json` you wrote by hand, wins. Agents on a `claude-code` engine do not depend on that file: every session the daemon starts for them loads the `agentx` tool server through its own start flags, so the `agentx_request` and `agentx_approval` tools are there whether or not requests are on.
+While requests are on, or follow-up workflows are (`workflows.enabled` and `workflows.followUp.enabled`), or every task runs through a workflow (`workflows.required`), the daemon adds its own tool server (`agentx serve --stdio`) to every agent's `.mcp.json` at start, as `agentx`, so each agent can close its requests with the `agentx_request` tool. An `agentx` entry you declared in the agent's `mcp` block, or a `.mcp.json` you wrote by hand, wins. Agents on a `claude-code` engine do not depend on that file: every session the daemon starts for them loads the `agentx` tool server through its own start flags, so the `agentx_request` and `agentx_approval` tools are there whether or not requests are on.
 
 How to see, close and drop requests, step by step: [Keep track of what you asked for](/jobs/open-requests).
 
@@ -337,7 +342,7 @@ Pausing a running task with a resume plan, and resuming it later. You may always
 | `signals.enabled` | boolean | `true` | Turns pausing and resuming on. Off: every signal is refused, yours included. |
 | `signals.windDownSeconds` | number (10–1800) | `120` | How long a paused agent gets to write its resume plan. Past it, the plan-writing turn is stopped and AgentX writes the plan from the run's trace. |
 | `signals.allowAgents` | list of strings | `[]` | Agents that may pause or resume any task on this machine. `"*"` allows every agent. An agent never pauses its own task. |
-| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. A machine using the shared `MESH_TOKEN` is believed about its name; use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
+| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. A machine using its own token from `mesh.peers` is that machine, with or without naming itself. The list does not hold for the shared `MESH_TOKEN`: such a machine is believed about its name, and counts as the owner when it names none. Use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
 | `signals.maxPerRoot` | number (1–100) | `6` | Loop brake: most signals from agents and other machines one request (one root id) may carry in a day. The owner's are never counted. |
 
 ## `reminders`
@@ -368,13 +373,14 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `query.candidates` | number (1–50) | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | number (0–50) | `4` | How many of other agents' pages it sees beside them. |
 | `query.maxPages` | number (1–10) | `3` | Most pages opened for one answer. |
-| `query.linkedPages` | number (0–10) | `0` | Summaries method: also open up to this many pages that the picked pages link to (their `related` list). `0` opens none. |
 | `query.pageChars` | number (200–40000) | `4000` | Characters of each opened page given to the answer. |
+| `query.linkedPages` | number (0–10) | `0` | Pages linked from the picked pages that are also opened, best summary line first. `0` opens none. |
+| `query.linkedChars` | number (200–40000) | `6000` | Characters all the linked pages together give to the answer. |
 | `query.navigatorModel` | string | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |
 | `query.live.enabled` | boolean | `true` | The live read before the answer. `false` switches it off. |
 | `query.live.maxReads` | number (0–20) | `6` | Most reads for one question. |
-| `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one read may take, in milliseconds. |
+| `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one request to a source may take, in milliseconds. A deploy read makes up to four rounds of requests, so it can take up to four times this. |
 | `query.live.plannerModel` | string | `"haiku"` | Model that names the reads. |
 | `query.live.sources` | list | `[]` | Where a live read may read from. Empty: no live read runs. |
 | `query.live.sources[].type` | `"github"`, `"gitlab"` or `"agentx"` | — | The kind of system. |
