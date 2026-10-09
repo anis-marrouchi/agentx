@@ -1629,6 +1629,21 @@ Give each event page an importance level (minor, normal or major) and the pages 
 | `agentx wiki events set <title> <level>` | Set an event's level yourself. No later run changes it. |
 | `agentx wiki events proposed` | List events a run suggests as major, waiting for you. `--json` prints JSON. |
 
+### `agentx wiki rules [pages...]`
+
+Write one obligation page per rule the wiki states, with what to do, who, the deadline, the penalty, the source and the date it was checked. Links the page of each person or organization that must follow it. With no titles, it reads legal sources, obligation pages, and pages that use a rule word, that changed since the last run. One model call per source page. See [Keep each rule on one page](/jobs/wiki-rules).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | `.agentx/wiki` | Wiki directory. |
+| `--words <list>` | rule words in English, French and Arabic | Comma-separated words that mark a page as stating rules. |
+| `--max <n>` | `10` | Most source pages per run (a whole number, 1 or more). |
+| `--max-cost <usd>` | `1` | Stop before the next call once the run has spent this much. |
+| `--model <m>` | `sonnet` | Model. |
+| `--force` | — | Read again pages that did not change. |
+| `--dry-run` | — | Show what would be written; write nothing. |
+| `--json` | — | Print the run as JSON. |
+
 ### `agentx wiki serve`
 
 Start a local web server to browse the wiki by pillar and type, and each agent's pages under `/agents` (local + mesh).
