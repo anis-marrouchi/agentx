@@ -116,6 +116,8 @@ export interface WrapStart {
   chatId?: string
   message: string
   taskId?: string
+  /** The run a resumed task continues (#870). */
+  continues?: string
 }
 
 /** Create the run a task is wrapped in, on the `linear` template's steps. */
@@ -135,8 +137,24 @@ export function startWrap(runs: RunStore, args: WrapStart): WorkflowRun {
       followUp: false,
       approvedAtStart: false,
       wrap: { agentId: args.agentId, channel: args.channel, mode: "linear", ...(args.taskId ? { taskId: args.taskId } : {}) },
+      ...(args.continues ? { continues: args.continues } : {}),
     },
   })
+}
+
+/** Runs searched for the one a resumed task continues: the newest task
+ *  runs. A stop is resumed while its run is recent. */
+const CONTINUES_SCAN = 500
+
+/** The wrapped run a resumed task continues (#870): the one that wrapped
+ *  the turn `resumedFrom` names (its trace id). Null when none is found. */
+export function continuedRun(runs: RunStore, resumedFrom: string | undefined): string | null {
+  if (!resumedFrom) return null
+  try {
+    return runs.list({ workflowId: TASK_WORKFLOW_ID, limit: CONTINUES_SCAN }).find((r) => r.meta?.wrap?.taskId === resumedFrom)?.id ?? null
+  } catch {
+    return null
+  }
 }
 
 /** Step ids the run has finished (ok or failed). */
@@ -383,6 +401,8 @@ export interface RunRecord {
   tags: string[]
   /** Tokens the agent turn used, when the run wrapped one. */
   tokens?: { input?: number; output?: number }
+  /** The run this one continues: a stopped task, resumed (#870). */
+  continues?: string
 }
 
 const TERMINAL = new Set(["completed", "failed", "canceled"])
@@ -424,6 +444,7 @@ export function runRecord(run: WorkflowRun): RunRecord {
     failedAt: steps.find((s) => s.status === "failed" || s.status === "timeout")?.id ?? null,
     revisions: Math.max(0, (plan?.revisions.length ?? 0) - 1),
     tags: run.meta?.tags ?? [],
+    ...(run.meta?.continues ? { continues: run.meta.continues } : {}),
     ...(usage && (usage.inputTokens !== undefined || usage.outputTokens !== undefined)
       ? { tokens: { ...(usage.inputTokens !== undefined ? { input: usage.inputTokens } : {}), ...(usage.outputTokens !== undefined ? { output: usage.outputTokens } : {}) } }
       : {}),

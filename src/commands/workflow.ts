@@ -593,6 +593,12 @@ workflow
   .action((runId: string, opts) => {
     const nodeId = opts.node || process.env.WF_NODE_ID || "local"
     const runs = new RunStore({ nodeId })
+    // Paused by a stop signal (#870): only a resume signal re-enters the step.
+    const current = runs.get(runId)
+    if (current?.status === "paused" && current.pausedAt?.kind === "agentStop") {
+      console.log(chalk.yellow(`  ${runId} was paused by a stop signal at step ${current.pausedAt.nodeId}. Resume it with: agentx signal resume ${current.pausedAt.taskId ?? "<taskId>"}`))
+      process.exit(1)
+    }
     const updated = runs.setStatus(runId, "running")
     if (!updated) { console.log(chalk.yellow(`  no such run: ${runId}`)); process.exit(1) }
     console.log(chalk.green(`  ✓ resumed ${runId}`))

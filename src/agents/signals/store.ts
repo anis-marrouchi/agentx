@@ -26,6 +26,9 @@ export interface StoppedTask {
   originalMessage: string
   /** How to re-enter it (the resume coordinator's resumers). */
   origin: RunOrigin | null
+  /** A step of a workflow run (#870): the run paused at this step, and a
+   *  resume re-enters the step inside the run instead of the chat. */
+  workflow?: { runId: string; workflowId: string; nodeId: string }
   stoppedAt: string
   stoppedBy: string
   reason?: string
@@ -131,7 +134,8 @@ export function summarizeStopped(r: StoppedTask): Record<string, unknown> {
     reason: r.reason,
     request: preview(r.originalMessage, 200),
     plan: r.plan ? { author: r.plan.author, text: r.plan.text.slice(0, 1200), note: r.plan.note } : undefined,
-    resumable: r.state === "stopped" && !!r.origin,
+    resumable: r.state === "stopped" && (!!r.origin || !!r.workflow),
+    ...(r.workflow ? { workflow: r.workflow } : {}),
     resumedAt: r.resumedAt,
     resumedBy: r.resumedBy,
   }

@@ -94,6 +94,7 @@ common(signalCmd
     for (const t of tasks) {
       const state = t.state === "stopped" ? chalk.yellow(t.state) : t.state === "resumed" ? chalk.green(t.state) : chalk.cyan(t.state)
       console.log(`  ${state} ${chalk.bold(t.id)} ${t.agentId}${chalk.dim(`:${t.channel}:${t.chatId}`)} ${chalk.dim(`by ${t.stoppedBy} ${t.stoppedAt}`)}`)
+      if (t.workflow) console.log(`    ${chalk.dim("workflow run:")} ${t.workflow.runId} (${t.workflow.workflowId}) paused at step ${t.workflow.nodeId}`)
       console.log(`    ${chalk.dim("asked:")} ${t.request}`)
       if (t.plan) console.log(`    ${chalk.dim(`plan (${t.plan.author}):`)} ${String(t.plan.text).split("\n")[0]}`)
     }
@@ -107,6 +108,7 @@ common(signalCmd
     const { task: t } = await call(opts, "GET", `/api/signals/stopped/${encodeURIComponent(id)}${qs}`)
     console.log(`  ${chalk.bold(t.id)} ${t.agentId}${chalk.dim(`:${t.channel}:${t.chatId}`)} — ${t.state}`)
     console.log(`  stopped by ${t.stoppedBy} at ${t.stoppedAt}${t.reason ? ` (${t.reason})` : ""}`)
+    if (t.workflow) console.log(`  step ${t.workflow.nodeId} of workflow run ${t.workflow.runId} (${t.workflow.workflowId})`)
     if (t.resumedAt) console.log(`  resumed by ${t.resumedBy} at ${t.resumedAt}`)
     console.log(chalk.dim("\n  Request:"))
     console.log(`  ${t.originalMessage}`)

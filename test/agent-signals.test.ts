@@ -225,7 +225,7 @@ describe("loop guard", () => {
     expect((await h.service.resume({ kind: "owner" }, "run-1")).ok).toBe(true)
   })
 
-  it("refuses to pause a workflow step, and stops nothing", async () => {
+  it("refuses to pause a workflow step when the workflow engine is off, and stops nothing", async () => {
     const h = harness({ running: { ...RUN, workflowRunId: "wf-run-7" } })
     const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
     expect(r).toMatchObject({ ok: false, status: 409 })

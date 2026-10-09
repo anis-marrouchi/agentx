@@ -58,7 +58,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { workflowHintText } from "@/workflows/follow-up"
-import { endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, requiredFor, shouldWrap, startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText } from "@/workflows/required"
+import { continuedRun, endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, requiredFor, shouldWrap, startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText } from "@/workflows/required"
 import type { RunStore as WorkflowRunStore } from "@/workflows/run-store"
 import { randomUUID } from "crypto"
 import { ProcedureStore } from "@/procedures"
@@ -2888,7 +2888,9 @@ export class AgentRegistry {
       // write never stops the task.
       if (wrapRunId && wrapRunStore) {
         try {
-          startWrap(wrapRunStore, { runId: wrapRunId, agentId: task.agentId, channel, chatId, message: task.message, taskId: traceTaskId })
+          // A stopped task resumed: its new run names the run the stop closed.
+          const continues = continuedRun(wrapRunStore, task.resumedFrom)
+          startWrap(wrapRunStore, { runId: wrapRunId, agentId: task.agentId, channel, chatId, message: task.message, taskId: traceTaskId, ...(continues ? { continues } : {}) })
           wrapStarted = true
           runningTask.workflow = { runId: wrapRunId, workflowId: TASK_WORKFLOW_ID }
         } catch (e: any) {

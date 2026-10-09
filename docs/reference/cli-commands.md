@@ -2266,7 +2266,7 @@ Pause an active run.
 
 ### `agentx workflow resume <runId>`
 
-Resume a paused run.
+Resume a paused run. A run that a pause signal stopped at an agent's step is refused here: resume it with `agentx signal resume <taskId>`, which brings back the agent's resume plan.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -3032,11 +3032,11 @@ Stopped tasks and their resume plans.
 
 ### `agentx signal show <id>`
 
-One stopped task with its whole resume plan.
+One stopped task with its whole resume plan. For a step of a workflow run, it also names the step and the run.
 
 ### `agentx signal resume <id>`
 
-Resume a stopped task from its plan, in the same chat.
+Resume a stopped task from its plan, in the same chat. A step of a workflow run runs again inside its run, which then goes on to its next steps.
 
 | Flag | Default | What it does |
 |---|---|---|

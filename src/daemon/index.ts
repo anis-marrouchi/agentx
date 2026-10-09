@@ -1428,6 +1428,16 @@ export class AgentXDaemon {
         await withRoot({ rootId: record.rootId }, () =>
           this.resumeCoordinator().resumeOne({ origin: record.origin!, run, note, rootId: record.rootId }))
       },
+      // A workflow step (#870): the run pauses there, and resumes there.
+      // Read the dispatcher late: the engine starts after this service.
+      workflowStep: (runId, agentId) => this.workflowDispatcher
+        ? this.workflowDispatcher.agentStepOf(runId, agentId)
+        : { error: "the workflow engine is not running on this node" },
+      resumeWorkflowStep: async ({ record, note, by }) => {
+        if (!this.workflowDispatcher || !record.workflow) throw new Error("the workflow engine is not running on this node")
+        const r = await this.workflowDispatcher.resumeStoppedStep({ runId: record.workflow.runId, agentId: record.agentId, taskId: record.id, note, by })
+        if (!r.ok) throw new Error(r.error)
+      },
       tell: async (origin, text) => {
         await this.resumeCoordinator().tellOrigin(origin, text, this.log)
       },
@@ -2800,6 +2810,7 @@ export class AgentXDaemon {
           // produced it — bleeding context across runs and breaking the
           // single-conversation guarantee per workflow run.
           const wfChatId = req.workflowRunId ? `workflow:${req.workflowRunId}` : "workflow:adhoc"
+          let runTaskId: string | undefined
           const resp = await this.registry.execute({
             agentId: req.agentId,
             message: req.message,
@@ -2811,6 +2822,8 @@ export class AgentXDaemon {
               chatId: wfChatId,
               sender: "workflow",
             },
+            // A stop signal names this id; the paused step keeps it (#870).
+            onStart: (id) => { runTaskId = id },
           })
           return {
             content: resp.content ?? "",
@@ -2818,6 +2831,7 @@ export class AgentXDaemon {
             errorKind: resp.errorKind,
             autonomyBlocks: resp.autonomyBlocks,
             taskId: `wf-${req.workflowRunId ?? "na"}-${start.toString(36)}`,
+            ...(runTaskId ? { runTaskId } : {}),
             durationMs: Date.now() - start,
           }
         } catch (e: any) {

@@ -1748,6 +1748,8 @@ interface NodeLive {
     request: string
     plan?: { author: string; text: string; note?: string }
     resumable: boolean
+    /** A workflow step: its run is paused at this step (#870). */
+    workflow?: { runId: string; workflowId: string; nodeId: string }
   }>
   agents: Array<{
     id: string
@@ -1917,6 +1919,9 @@ export async function fetchDaemonAgents(
         request: String(t.request ?? ""),
         plan: t.plan && typeof t.plan.text === "string" ? { author: String(t.plan.author), text: t.plan.text, note: t.plan.note } : undefined,
         resumable: t.resumable === true,
+        ...(t.workflow && typeof t.workflow.runId === "string"
+          ? { workflow: { runId: t.workflow.runId, workflowId: String(t.workflow.workflowId ?? ""), nodeId: String(t.workflow.nodeId ?? "") } }
+          : {}),
       }))
     }
     if (cronsRes && cronsRes.ok) {

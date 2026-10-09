@@ -106,6 +106,22 @@ describe("workflows.required in the registry", () => {
     }
   })
 
+  it("a stopped task, resumed, gets a run that names the one it continues (#870)", async () => {
+    const { r, runs } = setup({ enabled: true })
+    seen.events = [writeTool]
+    seen.error = "stopped by owner"
+    seen.errorKind = "stopped"
+    await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
+    const [first] = runs.list()
+    expect(first.status).toBe("canceled")
+    seen.error = undefined
+    seen.errorKind = undefined
+    await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" }, resumedFrom: first.meta!.wrap!.taskId })
+    const second = runs.list().find((x) => x.id !== first.id)!
+    expect(second.status).toBe("completed")
+    expect(second.meta?.continues).toBe(first.id)
+  })
+
   it("puts the run hint in the context the agent gets", async () => {
     const { r, runs } = setup({ enabled: true })
     seen.events = [writeTool]
