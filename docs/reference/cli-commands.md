@@ -1532,6 +1532,8 @@ List the saved earlier versions of one page, newest first.
 
 Put a page back to an earlier version. Without a version, the newest is used. The current text is kept as a version first.
 
+If another job is saving the same page at that moment, the command stops with `the page was busy; run again` and changes nothing. Run it again.
+
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |

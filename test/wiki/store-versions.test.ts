@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { mkdtempSync, readFileSync, rmSync } from "fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
 import { WikiHub } from "../../src/wiki/hub"
+import { LockBusyError } from "../../src/wiki/facts/ledger-file"
 import type { WikiArticleMeta } from "../../src/wiki/types"
 
 // Two writes of one page inside the same millisecond must keep two
@@ -54,5 +55,20 @@ describe("WikiStore versions", () => {
     const oldest = store.getVersions(PATH).at(-1)!.timestamp
     expect(store.restoreVersion(PATH, oldest)).toBe(true)
     expect(store.readArticle(PATH)?.content.trim()).toBe("first")
+  })
+
+  it("restores under the page's lock and refuses while another process holds it", () => {
+    const store = hub.getAgentWiki("ops")
+    store.writeArticle(PATH, meta(), "first", "ops")
+    store.writeArticle(PATH, meta(), "second", "ops")
+    const oldest = store.getVersions(PATH).at(-1)!.timestamp
+    // The lock's wait runs on the real clock.
+    vi.useRealTimers()
+
+    mkdirSync(join(store.baseDir, "_locks", "people"), { recursive: true })
+    writeFileSync(join(store.baseDir, "_locks", `${PATH}.lock`), "")
+    store.lockWaitMs = 100
+    expect(() => store.restoreVersion(PATH, oldest)).toThrow(LockBusyError)
+    expect(store.readArticle(PATH)?.content.trim()).toBe("second")
   })
 })

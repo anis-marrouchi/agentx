@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { createServer, type Server } from "http"
@@ -140,6 +140,17 @@ describe("applyCuration", () => {
     const r = applyCuration(store, PATH, parseCurateReply(REPLY), { curator: "ops", expectedFingerprint: fp })
     expect(r.ok).toBe(false)
     expect(store.readArticle(PATH)!.content).toContain("Edited meanwhile.")
+  })
+
+  it("reports a page held by another process as busy and leaves it alone", () => {
+    const store = hub.getAgentWiki("ops")
+    mkdirSync(join(store.baseDir, "_locks", "people"), { recursive: true })
+    writeFileSync(join(store.baseDir, "_locks", `${PATH}.lock`), "")
+    store.lockWaitMs = 100
+    const r = applyCuration(store, PATH, parseCurateReply(REPLY), { curator: "ops" })
+    expect(r.ok).toBe(false)
+    if (!r.ok) expect(r.error).toMatch(/page was busy; nothing was written/)
+    expect(store.readArticle(PATH)!.content.trim()).toBe(BODY)
   })
 
   it("refuses a reply that wipes most of the page unless removal was asked for", () => {

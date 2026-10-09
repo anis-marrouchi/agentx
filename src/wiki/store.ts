@@ -370,16 +370,20 @@ export class WikiStore {
   }
 
   /**
-   * Restore a specific version of an article.
+   * Restore a specific version of an article, holding the page's lock.
+   * Throws LockBusyError when another process holds the page.
    */
   restoreVersion(articlePath: string, versionTimestamp: string): boolean {
     const versions = this.getVersions(articlePath)
     const version = versions.find(v => v.timestamp === versionTimestamp)
       ?? versions.find(v => v.timestamp.startsWith(versionTimestamp))
     if (!version) return false
+    return this.withArticleLock(articlePath, () => this.restoreLocked(articlePath, version.path, versionTimestamp))
+  }
 
+  private restoreLocked(articlePath: string, versionPath: string, versionTimestamp: string): boolean {
     try {
-      const content = readFileSync(version.path, "utf-8")
+      const content = readFileSync(versionPath, "utf-8")
       const fullPath = resolve(this.baseDir, articlePath)
       // Save current as a version too before restoring
       this.saveVersion(articlePath, fullPath)
