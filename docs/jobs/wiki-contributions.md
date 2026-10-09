@@ -134,7 +134,17 @@ To see whether the wiki got better, score it against questions you know the answ
 3. A week later, run step 2 again with `--out after.json`.
 4. **Terminal:** compare the two: `agentx wiki score --compare before.json after.json`. Each question that changed shows its old and new score and the facts it gained or lost.
 
-To measure what shared search alone changes, run step 2 once with `--own-only` and once without.
+Each saved score also records:
+
+- the settings the run used: how pages were picked, `linkedPages`, `linkedChars`, whether the live read and the notes were on, and the two models;
+- how long each question took, and what its model calls cost in dollars. Cost is known only for the summaries method. A question answered another way shows `?`.
+
+The comparison starts with the time and cost per question of each run, and a `changed:` line that lists each setting that differs, such as `linkedPages: 0 → 2`. To learn what one setting does, change only that one between the two runs. The comparison warns you when more than one setting changed, or when the two runs asked different questions.
+
+To measure what one setting changes, run step 2 twice, the same day and with the same question file, changing only that setting. For example:
+
+- shared search: once with `--own-only`, once without;
+- linked pages: once with `--method summaries --linked 0`, once with `--method summaries --linked 2`.
 
 ## `wiki patch` refuses to lose facts
 
@@ -152,6 +162,7 @@ It also refuses when the page changed while the patch was being made, so two pat
 1. **Terminal:** run `agentx wiki contributions`. You see how many suggestions are waiting, and what the last merge did: facts applied, pages updated and created, questions raised and suggestions held.
 2. Open a page the merge updated. At the bottom, a **Checked facts** section lists each fact with its source, check date and the agent that checked it.
 3. **Terminal:** run `agentx wiki facts list`. The same facts appear, with where, when and by whom they were checked.
+4. **Terminal:** after two scored runs, run `agentx wiki score --compare before.json after.json`. Under the scores you see a `before:` and an `after:` line with the time and cost per question, and a `changed:` line that names the setting you changed.
 
 ## If something is wrong
 
@@ -161,4 +172,6 @@ It also refuses when the page changed while the patch was being made, so two pat
 - **The merge lists a subject with more than one page:** two agents wrote a page for the same thing. Merge them by hand in the wiki, and add the other name to the page you keep as an alias.
 - **A suggestion is held as "possible duplicate of …":** read both. If they are the same thing, reject the suggestion and correct the existing page with `agentx wiki patch`. If they are different, approve it and the new page is created.
 - **A suggestion is held with "the contributing agent cannot read this page":** the page is private to another agent. Share it with that agent, or approve the suggestion yourself.
+- **The comparison says `More than one setting changed`:** the runs differ in more than the setting you meant to test, so the change in score can't be put down to it. Run both again with only that setting changed.
+- **The comparison says `what changed between the runs is unknown`:** one report was saved by an earlier version, which did not record its settings. Run it again.
 - **`claude: command not found`:** the daily job calls the `claude` command. Install it, or see [If something is wrong](/reference/cli-commands#if-something-is-wrong) in the command reference.
