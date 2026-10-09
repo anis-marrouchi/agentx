@@ -1129,7 +1129,9 @@ Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (
 
 When wiki notes are on and `wikiNotes.absorbAgent` names the agent being absorbed, absorb also reads the waiting [wiki notes](/jobs/wiki-notes). It runs even with no new entries when notes are waiting. The model answers each note as patched, rejected or deferred. A patch is a short find-and-replace in an existing article that absorb showed the model in full: absorb applies it, and refuses one whose edits together replace most of a page, remove a contact, role or organisation value, or delete a number, link or commit. A note's edits are saved all together or not at all. A note whose patch is refused, or that the model did not answer, is deferred. While notes are in the prompt, absorb saves only articles that cite an entry from this run, so a note never creates or rewrites a page. Each outcome is recorded on the note with a reason and the run id (`absorb/<agent>/<time>`). If a schedule answered the note while absorb was running, that answer stands. When the run fails, its notes stay waiting. A dry run lists the notes in the order a real run would take them.
 
-Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full, facts and notes; with notes, how many it was given, patched and recorded) and one for the whole run. The file holds no entry or article text.
+When any model call in the run fails (the `claude` CLI cannot be run, it reports an error, or its answer cannot be read), absorb prints how many failed and exits with code 1. Their entries stay queued for the next run. A schedule that runs absorb as a command (`crons.<id>.command`) therefore records the run as failed and follows its `onError` setting.
+
+Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full, facts and notes; with notes, how many it was given, patched and recorded) and one for the whole run, with how many of its calls failed. The file holds no entry or article text.
 
 ### `agentx wiki absorb-eval`
 
@@ -1654,6 +1656,18 @@ Answer a question from the wiki. Once at least 80% of the agent's own pages have
 | `--own-only` | — | Search only the agent's own articles, not the shared wiki. |
 
 Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query. The half-of-`--max-articles` rule and the linking pages belong to the catalog method; the summaries method shows the picking model `wiki.query.sharedCandidates` of other agents' pages beside the agent's own. With `wiki.query.notes.enabled`, the summaries method also searches the agent's own notes; a note it used is cited with the type `note` and a `note:` path. See [Search the agent's own notes](/jobs/wiki-live-answers#search-the-agent-s-own-notes).
+
+When the query cannot run, the command exits with code 1: the model call failed (status `error`) or no agent has a catalog yet (status `no-catalog`). A question the wiki has no page for (status `no-candidates`) is not a failure and exits 0. Each query adds one line to `_query-runs.jsonl` in the wiki directory: the time, the agent, the status, how the pages were picked and how long it took. The file holds no question, answer or error text. `agentx wiki query-runs` counts them.
+
+### `agentx wiki query-runs`
+
+Count the queries recorded in `_query-runs.jsonl`: how many ran, how many failed (status `error` or `no-catalog`), how many ended in each status, and the typical (p50) and slowest (p95) time.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--since <date>` | — | Only queries on or after this date or time, for example `2026-10-09` or `2026-10-09T08:00:00Z`. |
+| `--json` | — | Print the counts as JSON. |
 
 ### `agentx wiki summarize`
 
@@ -3845,6 +3859,8 @@ No flags.
 - **`wiki absorb` keeps printing `! refused <path>`:** the model's update left out facts the article already had, so the same entries come back each run. Check the facts listed under the message. If one is really wrong, correct it in the article with `agentx wiki edit`, then run absorb again.
 - **`wiki absorb` prints `note <id> deferred: patch refused: …`:** the model's patch broke a rule (it replaced most of a page, removed a contact or role value, or quoted text the article does not have). The note comes back on the next run. Read the reason with `agentx wiki notes list --status all`.
 - **`wiki absorb-runs` prints `no absorb runs recorded yet`:** no absorb has run since the run log was added, or `--dir` points at another wiki. Run `agentx wiki absorb` once, then try again.
+- **A schedule running `wiki absorb` as a command shows as failed:** absorb exits with code 1 when a model call fails. Run `agentx wiki absorb --dry-run` to check the setup, then `agentx wiki absorb-runs` to see how many calls failed. The entries stay queued, so the next good run catches up.
+- **`wiki query-runs` prints `no queries recorded yet`:** no query has run against this wiki since the query log was added, or `--dir` points at another wiki. Run `agentx wiki query "a question"` once, then try again.
 - **`wiki absorb-eval` prints `no articles … to score`:** nothing changed in the window you gave. Widen `--since` or `--changed-after`, or leave both out to sample every article.
 - **`unknown command`:** check the spelling and the command group. Advanced commands don't appear in `agentx --help`, but they still run.
 - **`error: required option … not specified`:** the flag is marked **required** above. Add it and run the command again.

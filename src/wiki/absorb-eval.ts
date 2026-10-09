@@ -552,6 +552,8 @@ export interface AbsorbRunRecord {
   endedAt: string
   max: number
   model: string
+  /** Compile calls in this run that failed. Absent on runs before #603. */
+  failed?: number
 }
 
 /** Cost and timing fields from the claude CLI's `--output-format json` envelope. */
