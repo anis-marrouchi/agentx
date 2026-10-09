@@ -87,6 +87,9 @@ types:
 1. A page that sets `class:` in its header uses that type.
 2. Otherwise the `classify` rules decide, from the page's older `type`, its folder, its tags or its title.
 3. A page no rule matches goes to **Topics**, which is not in the sidebar. A growing Topics count means a type is missing.
+4. A person or untyped page named after one of the fleet's agents is an **agent**. The agent names come from the wiki, `agentx.json`, persona files and `agent_names` in `ontology.yaml`. See [Agents are kept out of People](../jobs/wiki-enrich.md#agents-are-kept-out-of-people).
+
+A page's `## Overview` section shows in full at the top of its entity page. `agentx wiki enrich` writes one for you, with typed facts and links to its events. See [Bring entity pages up to a full story](../jobs/wiki-enrich.md).
 
 Statements are written in the page header as one line of JSON:
 

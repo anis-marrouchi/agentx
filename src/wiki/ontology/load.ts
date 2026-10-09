@@ -77,6 +77,10 @@ export function mergeOntology(base: Ontology, over: Record<string, unknown>, err
     else errors.push("classify must be a list")
   }
   if (typeof over.fallback_type === "string") out.fallback_type = over.fallback_type
+  if (over.agent_names !== undefined) {
+    if (Array.isArray(over.agent_names)) out.agent_names = over.agent_names.filter((n): n is string => typeof n === "string" && !!n.trim())
+    else errors.push("agent_names must be a list")
+  }
   return out
 }
 

@@ -1553,6 +1553,22 @@ The wiki's pillars, types, typed relations, event importance and page lenses. Se
 
 Each takes `--dir <path>` (default `.agentx/wiki`).
 
+### `agentx wiki enrich [entities...]`
+
+Write a full overview, sourced typed facts and History links on entity pages: people, organizations, projects, places and assets. With no titles, it does every entity of `--types` that changed since the last run. One model call per entity. See [Bring entity pages up to a full story](/jobs/wiki-enrich).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | `.agentx/wiki` | Wiki directory. |
+| `--types <list>` | `person,organization,project,place,device,server,app,domain,account` | Entity types to do. |
+| `--max <n>` | `10` | Most entities per run (a whole number, 1 or more). |
+| `--max-cost <usd>` | `1` | Stop before the next call once the run has spent this much. |
+| `--model <m>` | `sonnet` | Model. |
+| `--force` | — | Redo entities whose sources did not change. |
+| `--dry-run` | — | Show what would be written; write nothing. |
+| `--create <title>` | — | First create a page for a thing other pages only name. Needs `--as <type>` and `--owner <agent>`. |
+| `--json` | — | Print the run as JSON. |
+
 ### `agentx wiki serve`
 
 Start a local web server to browse the wiki by pillar and type, and each agent's pages under `/agents` (local + mesh).

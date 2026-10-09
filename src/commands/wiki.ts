@@ -18,6 +18,7 @@ import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
 import { registerWikiNotes } from "./wiki-notes"
 import { registerWikiOntology } from "./wiki-ontology"
+import { registerWikiEnrich } from "./wiki-enrich"
 import { resolve, relative, dirname } from "path"
 import { exec, execSync } from "child_process"
 import { promisify } from "util"
@@ -113,6 +114,7 @@ export const wiki = new Command()
 registerWikiFacts(wiki)
 registerWikiNotes(wiki)
 registerWikiOntology(wiki)
+registerWikiEnrich(wiki)
 
 // agentx wiki status
 wiki

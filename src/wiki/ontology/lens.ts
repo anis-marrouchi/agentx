@@ -62,7 +62,8 @@ function byRecent(a: PanelItem, b: PanelItem): number {
 function statementItem(g: WikiGraph, e: Entity, st: EntityStatement, inverse: boolean, from?: Entity): PanelItem {
   const other = inverse ? from : (st.target ? g.entities.get(st.target) : undefined)
   const chips = [propLabel(g, st.property, inverse)]
-  if (st.role) chips.unshift(st.role)
+  // A long role would squeeze the name out of the row.
+  if (st.role) chips.unshift(st.role.length > 40 ? `${st.role.slice(0, 39)}…` : st.role)
   return {
     label: other?.title ?? st.value,
     entityId: other?.id,

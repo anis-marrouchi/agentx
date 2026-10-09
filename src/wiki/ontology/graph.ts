@@ -9,6 +9,7 @@
 import type { WikiArticle } from "../types"
 import type { WikiHub } from "../hub"
 import { classifyPage } from "./classify"
+import { rosterMatch, type AgentRoster } from "./roster"
 import type { Importance, Ontology, WikiStatement } from "./types"
 
 export interface GraphPage {
@@ -36,6 +37,8 @@ export interface Entity {
   rolledUpInto?: string
   /** Raw entry ids the pages were written from. */
   sources: string[]
+  /** Why the type needs a person to check it (#819). */
+  review?: string
 }
 
 export interface Edge {
@@ -74,8 +77,42 @@ function eventDate(a: WikiArticle): string {
   return (a.meta.created || a.meta.lastUpdated || "").slice(0, 10)
 }
 
+/**
+ * Pages named after one of the fleet's agents are agents, not people
+ * (#819). A page's own `class` still wins. When the name is also the
+ * first name of a person page ("Sam" next to "Sam Lee"), the page keeps
+ * its type and is flagged instead of guessed.
+ */
+function applyRoster(entities: Map<string, Entity>, roster: AgentRoster, o: Ontology): void {
+  if (roster.size === 0 || !o.types.some(t => t.id === "agent")) return
+  const agentPillar = o.types.find(t => t.id === "agent")!.pillar
+  const firstNames = new Set<string>()
+  for (const e of entities.values()) {
+    const words = normName(e.title).split(" ")
+    if (e.type === "person" && words.length > 1) firstNames.add(words[0])
+  }
+  for (const e of entities.values()) {
+    // Only people and untyped pages: a project or client can share an agent's name.
+    if ((e.type !== "person" && e.type !== o.fallback_type) || e.pages.some(p => p.article.meta.class)) continue
+    const agent = rosterMatch(roster, [e.title])
+    if (!agent) {
+      // An alias is weaker evidence: a person can have a nickname that is
+      // also an agent's name. Flag it, never retype it.
+      const byAlias = rosterMatch(roster, e.pages.flatMap(p => p.article.meta.aliases ?? []))
+      if (byAlias) e.review ??= `an alias matches agent ${byAlias}; set class on the page to decide`
+      continue
+    }
+    if (e.type === "person" && firstNames.has(normName(e.title))) {
+      e.review = `shares a name with agent ${agent} and with a person; set class on the page to decide`
+      continue
+    }
+    e.type = "agent"
+    e.pillar = agentPillar
+  }
+}
+
 /** Build the graph from pages. Pure: tests call it directly. */
-export function buildGraph(pages: GraphPage[], o: Ontology): WikiGraph {
+export function buildGraph(pages: GraphPage[], o: Ontology, roster: AgentRoster = new Map()): WikiGraph {
   const typeDef = new Map(o.types.map(t => [t.id, t]))
   const names = new Map<string, string>()
   const groups = new Map<string, GraphPage[]>()
@@ -124,6 +161,7 @@ export function buildGraph(pages: GraphPage[], o: Ontology): WikiGraph {
       sources: [...new Set(group.flatMap(p => p.article.meta.sources ?? []))],
     })
   }
+  applyRoster(entities, roster, o)
 
   const resolveName = (s: string): string | undefined => names.get(normName(s))
   const outgoing = new Map<string, Edge[]>()
@@ -167,21 +205,22 @@ export function buildGraph(pages: GraphPage[], o: Ontology): WikiGraph {
 
 /** Builds from a hub, reusing the last graph while no page changed. */
 export class GraphCache {
-  private last: { refs: WikiArticle[]; ontology: Ontology; graph: WikiGraph } | null = null
+  private last: { refs: WikiArticle[]; ontology: Ontology; roster: string; graph: WikiGraph } | null = null
 
-  get(hub: WikiHub, o: Ontology): WikiGraph {
+  get(hub: WikiHub, o: Ontology, roster: AgentRoster = new Map()): WikiGraph {
     const pages: GraphPage[] = []
     for (const agentId of hub.listAgents([])) {
       for (const article of hub.getAgentWiki(agentId).listAllArticles()) pages.push({ agentId, article })
     }
     // The store hands back the same objects while files are unchanged.
     const refs = pages.map(p => p.article)
+    const rosterKey = [...roster].join("\n")
     const last = this.last
-    if (last && last.ontology === o && last.refs.length === refs.length && last.refs.every((r, i) => r === refs[i])) {
+    if (last && last.ontology === o && last.roster === rosterKey && last.refs.length === refs.length && last.refs.every((r, i) => r === refs[i])) {
       return last.graph
     }
-    const graph = buildGraph(pages, o)
-    this.last = { refs, ontology: o, graph }
+    const graph = buildGraph(pages, o, roster)
+    this.last = { refs, ontology: o, roster: rosterKey, graph }
     return graph
   }
 }

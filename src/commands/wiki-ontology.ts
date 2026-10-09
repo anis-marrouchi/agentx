@@ -54,8 +54,10 @@ export function registerWikiOntology(wiki: Command): void {
       const { GraphCache } = await import("@/wiki/ontology/graph")
       const { WikiHub } = await import("@/wiki/hub")
       const dir = wikiDir(opts.dir)
+      const { loadRoster } = await import("@/wiki/ontology/roster")
       const { ontology: o, errors } = loadOntology(dir)
-      const g = new GraphCache().get(new WikiHub(dir, () => {}), o)
+      const hub = new WikiHub(dir, () => {})
+      const g = new GraphCache().get(hub, o, loadRoster(dir, hub.listAgents([]), o.agent_names))
       const counts = new Map<string, number>()
       for (const e of g.entities.values()) counts.set(e.type, (counts.get(e.type) ?? 0) + 1)
       if (opts.json) {
