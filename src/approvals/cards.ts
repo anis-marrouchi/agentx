@@ -332,18 +332,18 @@ export function resolveCard(
   root: string,
   id: string,
   opts: { by: string; reason?: unknown; node?: string; now?: number },
-): { ok: true; card: DecisionCard } | { ok: false; error: string } {
+): { ok: true; card: DecisionCard } | { ok: false; status: 400 | 403 | 404 | 409; error: string } {
   const card = readCard(root, id)
-  if (!card) return { ok: false, error: `no card "${id}"` }
+  if (!card) return { ok: false, status: 404, error: `no card "${id}"` }
   if (card.raised_by !== opts.by || (card.node ?? "") !== (opts.node ?? "")) {
-    return { ok: false, error: `card "${id}" was raised by another agent` }
+    return { ok: false, status: 403, error: `card "${id}" was raised by another agent` }
   }
   if (!AGENT_RESOLVABLE_ORIGINS.has(card.origin?.kind)) {
-    return { ok: false, error: `card "${id}" is answered by the operator only` }
+    return { ok: false, status: 409, error: `card "${id}" is answered by the operator only` }
   }
-  if (card.status !== "pending") return { ok: false, error: `card "${id}" is already ${card.status}` }
+  if (card.status !== "pending") return { ok: false, status: 409, error: `card "${id}" is already ${card.status}` }
   const reason = oneLine(opts.reason)
-  if (!reason) return { ok: false, error: "reason is required: say where the owner answered and what you did" }
+  if (!reason) return { ok: false, status: 400, error: "reason is required: say where the owner answered and what you did" }
   const at = new Date(opts.now ?? Date.now()).toISOString()
   const resolved: DecisionCard = {
     ...card,

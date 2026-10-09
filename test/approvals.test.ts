@@ -407,7 +407,14 @@ describe("agents can raise and read, never decide", () => {
 })
 
 describe("an agent closes its own card once the owner answered in chat (#909)", () => {
-  const deps = (hasPeer?: (n: string) => boolean) => ({ ctx: ctx(), settings: DEFAULT_CARD_SETTINGS, hasAgent: (id: string) => id === "alpha" || id === "beta", hasPeer })
+  // `proven`: the agent whose running turn the call proves (the daemon reads
+  // it from X-AgentX-Task, or channel + chat). `tokenPeer`: the node whose
+  // own mesh token the call carries.
+  const deps = (o: { proven?: string | null; tokenPeer?: string; hasPeer?: (n: string) => boolean } = {}) => ({
+    ctx: ctx(), settings: DEFAULT_CARD_SETTINGS, hasAgent: (id: string) => id === "alpha" || id === "beta", hasPeer: o.hasPeer,
+    provenAgent: () => (o.proven === undefined ? "alpha" : o.proven),
+    tokenPeerIs: (n: string) => !!o.tokenPeer && n === o.tokenPeer,
+  })
   const raise = (extra: Record<string, unknown> = {}) => {
     const r = createCard(root, card(extra), { now: NOW })
     if (!r.ok) throw new Error(r.error)
@@ -434,8 +441,8 @@ describe("an agent closes its own card once the owner answered in chat (#909)", 
 
   it("only the raising agent, with a reason, on a card still pending", () => {
     const c = raise()
-    expect(close(c.id, { raised_by: "beta", reason: "done" }).status).toBe(409)
-    expect(close(c.id, { raised_by: "stranger", reason: "done" }).status).toBe(400)
+    expect(close(c.id, { raised_by: "beta", reason: "done" }, deps({ proven: "beta" })).status).toBe(403)
+    expect(close(c.id, { reason: "done" }, deps({ proven: "beta" })).status).toBe(403)
     expect(close(c.id, { raised_by: "alpha" }).status).toBe(400)
     expect(close("2026-09-26-nope-abcd", { raised_by: "alpha", reason: "done" }).status).toBe(404)
     decideCard(root, c.id, "yes")
@@ -451,23 +458,49 @@ describe("an agent closes its own card once the owner answered in chat (#909)", 
     expect((r.body as any).error).toMatch(/operator only/)
   })
 
+  it("the agent is the one the calling turn proves, not the one the body names", () => {
+    const c = raise()
+    // A turn of beta names alpha: refused, the card stays pending.
+    const r = close(c.id, { raised_by: "alpha", reason: "owner approved in chat, go ahead" }, deps({ proven: "beta" }))
+    expect(r.status).toBe(403)
+    expect(readCard(root, c.id)).toMatchObject({ status: "pending" })
+    expect(readCard(root, c.id)?.agent_notified_at).toBeUndefined()
+    // No running turn at all (a bare loopback call): refused.
+    expect(close(c.id, { raised_by: "alpha", reason: "done" }, deps({ proven: null })).status).toBe(403)
+    expect(close(c.id, { raised_by: "alpha", reason: "done" }, { ...deps(), provenAgent: undefined }).status).toBe(403)
+    expect(readCard(root, c.id)?.status).toBe("pending")
+    // alpha's own turn, without naming itself: closed in alpha's name.
+    expect(close(c.id, { reason: "done" }).status).toBe(200)
+    expect(readCard(root, c.id)).toMatchObject({ status: "resolved", decided_by: "alpha" })
+  })
+
   it("a card forwarded from another node is closed only in that node's name", () => {
     const r = createCard(root, card({ raised_by: "remote-agent" }), { now: NOW, node: "far" })
     if (!r.ok) throw new Error(r.error)
-    const peers = deps((n) => n === "far" || n === "other")
-    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "other" }, peers).status).toBe(409)
-    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done" }, peers).status).toBe(400)
-    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "far" }, peers).status).toBe(200)
+    // A loopback caller (or a local agent) naming the peer: refused.
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "far" }, deps({ hasPeer: () => true })).status).toBe(403)
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "far" }, deps({ tokenPeer: "other" })).status).toBe(403)
+    expect(readCard(root, r.card.id)?.status).toBe("pending")
+    // The other peer's own token, in its own name: not its card.
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "other" }, deps({ tokenPeer: "other" })).status).toBe(403)
+    // Without a node it is a local close, and no local agent raised it.
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done" }, deps({ proven: null })).status).toBe(403)
+    expect(close(r.card.id, { reason: "done" }).status).toBe(403)
+    expect(readCard(root, r.card.id)?.status).toBe("pending")
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "far" }, deps({ tokenPeer: "far" })).status).toBe(200)
     expect(resolveCard(root, r.card.id, { by: "remote-agent", node: "far", reason: "again" })).toMatchObject({ ok: false })
   })
 
   it("the tool closes the card and says how in its create reply", async () => {
+    // The daemon proves the turn from the task header the tool sends.
     const fakeFetch = (async (url: string, init?: RequestInit) => {
       const path = new URL(url).pathname
-      const r = handleApprovalsApi(init?.method ?? "GET", path, init?.body ? JSON.parse(String(init.body)) : undefined, new URLSearchParams(), deps())
+      const task = (init?.headers as Record<string, string> | undefined)?.["X-AgentX-Task"]
+      const r = handleApprovalsApi(init?.method ?? "GET", path, init?.body ? JSON.parse(String(init.body)) : undefined, new URLSearchParams(),
+        deps({ proven: task === "task-alpha" ? "alpha" : null }))
       return new Response(JSON.stringify(r.body), { status: r.status })
     }) as unknown as typeof fetch
-    const env = { AGENTX_AGENT_ID: "alpha" }
+    const env = { AGENTX_AGENT_ID: "alpha", AGENTX_TASK_ID: "task-alpha" }
     const opts = { daemonUrl: "http://127.0.0.1:1", fetch: fakeFetch, env }
     const text = await runApprovalTool(card(), opts)
     expect(text).toMatch(/action:"resolve"/)
@@ -476,6 +509,9 @@ describe("an agent closes its own card once the owner answered in chat (#909)", 
     expect(await runApprovalTool({ action: "resolve", id, reason: "approved in chat, done" }, opts)).toMatch(/is closed/)
     expect(await runApprovalTool({ action: "status", id }, opts)).toMatch(/closed by alpha: approved in chat, done/)
     expect(await runApprovalTool({ action: "resolve", id, reason: "again" }, opts)).toMatch(/already resolved/)
+    // Outside a running turn the tool's call proves nobody.
+    const other = /card (\S+) is/.exec(await runApprovalTool(card({ title: "Another" }), opts))![1]
+    expect(await runApprovalTool({ action: "resolve", id: other, reason: "done" }, { ...opts, env: { AGENTX_AGENT_ID: "alpha" } })).toMatch(/Error: only the agent/)
   })
 
   it("a no tells the agent not to undo work already done", () => {
