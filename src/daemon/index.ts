@@ -72,6 +72,7 @@ import { runApprovalsSweep } from "@/approvals/sweep"
 import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
+import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
@@ -1867,6 +1868,14 @@ export class AgentXDaemon {
       }
     }
 
+    // 8b'. Workflow settings the registry reads per turn (#858: required,
+    //     matching, follow-up). The engine itself starts at boot only.
+    if (JSON.stringify(this.config.workflows) !== JSON.stringify(next.workflows)) {
+      this.registry.setWorkflows(next.workflows)
+      applied.push("workflows")
+      if (this.config.workflows.enabled !== next.workflows.enabled) restartRequired.push("workflows.enabled")
+    }
+
     // 8c. WhatsApp triage reads this.config on every message; just report it.
     if (JSON.stringify(this.config.whatsappTriage) !== JSON.stringify(next.whatsappTriage)) {
       applied.push(`whatsappTriage(${next.whatsappTriage.rules.length} rule(s))`)
@@ -2959,6 +2968,13 @@ export class AgentXDaemon {
     this.workflowDispatcher = dispatcher
     this.workflowStore = store
     this.workflowRuns = runs
+    // workflows.required (#858): wrapped tasks keep their run here too.
+    // Runs whose turn was cut off by the last stop are closed first.
+    this.registry.setWorkflowRunStore(runs)
+    try {
+      const stale = closeStaleWraps(runs)
+      if (stale) this.log(`  Workflows: closed ${stale} task run(s) cut off by the last stop`)
+    } catch (e: any) { this.log(`  Workflows: closing cut-off task runs failed (non-fatal): ${e?.message || e}`) }
     // Phase 3: webhook handler can now dispatch workflows per event-type
     // (webhooks[].triggers map). When `triggers` is unset, behavior is
     // unchanged from prior versions.
@@ -2981,7 +2997,7 @@ export class AgentXDaemon {
     // throw a typed error — the registry catches it and falls back to
     // normal agent execution (suggest mode behaviour). Operators can
     // still fill the gaps via a manual run from the dashboard.
-    this.registry.setWorkflowAutoRunner(async ({ workflowId, channel, chatId, payload }) => {
+    this.registry.setWorkflowAutoRunner(async ({ workflowId, agentId, channel, chatId, message, payload, follow }) => {
       const wf = store.get(workflowId)
       if (!wf) throw new Error(`auto-run target workflow not found: ${workflowId}`)
 
@@ -3007,6 +3023,17 @@ export class AgentXDaemon {
         `defaults=[${resolution.filledFrom.defaults.join(",")}]`
       )
 
+      // workflows.required (#858): a followed run, so the engine chases each
+      // step and the owner gets one summary.
+      if (follow) {
+        const started = await dispatcher.startRun({
+          workflowId,
+          inputs: { ...resolution.inputs, requestedBy: agentId, channel, chatId },
+          meta: { title: message.replace(/\s+/g, " ").trim().slice(0, 80) || wf.title, tags: [`agent:${agentId}`], startedBy: agentId },
+        })
+        if (!started.run) throw new Error(started.error ?? `could not start ${workflowId}`)
+        return { runId: started.run.id, title: wf.title }
+      }
       const entityRef = { backend: "manual", id: chatId || `auto-${Date.now().toString(36)}` }
       const eventId = `auto:${workflowId}:${chatId}:${Date.now()}`
       const result = await dispatcher.dispatchWorkflow({
@@ -3969,11 +3996,12 @@ export class AgentXDaemon {
           dispatcher: this.workflowDispatcher,
           store: this.workflowStore,
           runs: this.workflowRuns,
+          taskRuns: this.workflowRuns,
           settings: this.config.workflows.followUp,
           hasAgent: (id) => !!this.registry.getAgent(id),
           runningTurn: (id, p) => {
             const t = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
-            return t ? { ...warmProcessChat(t.context), restricted: isRestricted(t.autonomy) } : null
+            return t ? { ...warmProcessChat(t.context), restricted: isRestricted(t.autonomy), ...(t.workflowRunId ? { workflowRunId: t.workflowRunId } : {}) } : null
           },
           ownsRequest: (requestId, agentId) => {
             const r = this.requests?.store.get(requestId)
@@ -7531,7 +7559,8 @@ export class AgentXDaemon {
       // tool server, so it can say what it is doing with a request
       // (agentx_request) without the workspace being set up by hand (#400).
       // The same while follow-up workflows are on, for agentx_workflow (#788).
-      const followUp = this.config.workflows.enabled && this.config.workflows.followUp.enabled && (this.config.workflows.followUp.agents[agentId] ?? true)
+      // And while workflows.required is on for the agent, for its plan (#858).
+      const followUp = this.config.workflows.enabled && ((this.config.workflows.followUp.enabled && (this.config.workflows.followUp.agents[agentId] ?? true)) || requiredFor(this.config.workflows, agentId))
       const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled || followUp ? agentxToolServer() : null)
       try {
         const result = syncMcpToWorkspace(ws, mcp)

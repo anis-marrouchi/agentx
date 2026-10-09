@@ -2305,6 +2305,28 @@ Show or change how follow-up workflows run: reminders, approvals, which agents m
 | `--agent <id>` | — | With `--agent-enabled`: the agent to turn it on or off for. |
 | `--agent-enabled <on\|off>` | — | Turn follow-up workflows on or off for `--agent`. |
 
+### `agentx workflow required`
+
+Show or change whether every task runs through a workflow (`workflows.required`). With no flags it shows the settings. Turning it on also turns the workflow engine on. See [Run every task through a workflow](../jobs/every-task-a-workflow.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--enabled <on\|off>` | — | Every task of every agent runs inside a workflow run. |
+| `--exempt-questions <on\|off>` | — | A plain question that changed nothing leaves no run (the setting's default is `on`). |
+| `--agent <id>` | — | With `--agent-required`: the agent to set it for. |
+| `--agent-required <on\|off\|default>` | — | On or off for `--agent` whatever `--enabled` says; `default` follows `--enabled` again. |
+
+### `agentx workflow records`
+
+One line of JSON per workflow run, newest first: the steps taken, how long each took and where it failed. For analysis across runs. Reads the runs on this computer. See [Read the records](../jobs/every-task-a-workflow.md#read-the-records).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--workflow <id>` | — | Only runs of this workflow. `task` is the runs that wrapped a task. |
+| `--agent <id>` | — | Only runs of this agent. |
+| `--days <n>` | — | Only runs started in the last `n` days. |
+| `--limit <n>` | `500` | At most this many runs. |
+
 ## webhook (advanced)
 
 `agentx webhook`: Manage webhook entries (gitlab, github, sentry, stripe, vercel, custom). **Advanced.**
