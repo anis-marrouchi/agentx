@@ -3,6 +3,7 @@ import { claudeCliEnv } from "@/utils/workspace-env"
 import chalk from "chalk"
 import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
+import type { WikiStore } from "@/wiki/store"
 import { startWikiServer } from "@/wiki/serve"
 import type { WikiPeer } from "@/wiki/article-sync"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
@@ -88,6 +89,22 @@ function refuseCopiedAgent(hub: WikiHub, agentId: string): boolean {
   console.log(chalk.yellow(`  ${agentId}'s articles are copied from ${from.node} and read-only here; change them on ${from.node}.`))
   process.exitCode = 1
   return true
+}
+
+/** `wiki.query` settings from agentx.json, with `--method` and
+ *  `--no-live` applied (#855). */
+async function queryOptions(opts: { method?: string; live?: boolean }) {
+  const { queryOptionsFromConfig } = await import("@/wiki/query")
+  const settings = await queryOptionsFromConfig()
+  if (opts.method) {
+    if (!["auto", "summaries", "catalog"].includes(opts.method)) {
+      console.log(chalk.red(`  --method must be auto, summaries or catalog, not "${opts.method}".`))
+      process.exit(1)
+    }
+    settings.method = opts.method as "auto" | "summaries" | "catalog"
+  }
+  if (opts.live === false && settings.live) settings.live = { ...settings.live, enabled: false }
+  return settings
 }
 
 /** `wiki.query.shared` from agentx.json; on when there is no config. */
@@ -3145,11 +3162,13 @@ wiki
   .description("agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer")
   .option("--dir <path>", "wiki directory")
   .option("--agent <id>", "which agent's wiki to search first (default: the calling agent, else the first one with a catalog)")
-  .option("--selector-model <m>", "candidate-selection model", "haiku")
-  .option("--synth-model <m>", "synthesis model", "sonnet")
-  .option("--max-candidates <n>", "candidates from selector", "3")
-  .option("--max-hops <n>", "wikilink hops from candidates", "2")
-  .option("--max-articles <n>", "cap on total articles walked", "8")
+  .option("--selector-model <m>", "page-selection model (default: wiki.query.models.selector, else haiku)")
+  .option("--synth-model <m>", "answer model (default: wiki.query.models.answer, else sonnet)")
+  .option("--max-candidates <n>", "pages the selector picks (default: 3, or wiki.query.maxPages)")
+  .option("--max-hops <n>", "wikilink hops from candidates (catalog method)", "2")
+  .option("--max-articles <n>", "cap on total articles walked (catalog method)", "8")
+  .option("--method <m>", "auto | summaries | catalog (default: wiki.query.method)")
+  .option("--no-live", "skip the live read")
   .option("--json", "emit full result as JSON (for A/B harnesses)")
   .option("--trace", "print selector + walk trace")
   .option("--own-only", "search only the agent's own articles, not the shared wiki")
@@ -3176,9 +3195,10 @@ wiki
 
     const store = hub.getAgentWiki(chosen)
     const result = await agenticQuery(question, store, chosen, {
+      ...(await queryOptions(opts)),
       selectorModel: opts.selectorModel,
       synthModel: opts.synthModel,
-      maxCandidates: parseInt(opts.maxCandidates),
+      maxCandidates: opts.maxCandidates ? parseInt(opts.maxCandidates) : undefined,
       maxHops: parseInt(opts.maxHops),
       maxArticles: parseInt(opts.maxArticles),
       shared: opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(chosen),
@@ -3191,7 +3211,7 @@ wiki
 
     console.log()
     console.log(chalk.bold(`  Q: ${question}`))
-    console.log(chalk.dim(`  agent: ${chosen}  ·  status: ${result.status}  ·  walked: ${result.walked.length}`))
+    console.log(chalk.dim(`  agent: ${chosen}  ·  method: ${result.method ?? "catalog"}  ·  status: ${result.status}  ·  ${result.method === "summaries" ? "pages" : "walked"}: ${result.walked.length}${result.live?.length ? `  ·  live: ${result.live.length}` : ""}`))
     console.log()
 
     if (result.status !== "ok") {
@@ -3209,15 +3229,79 @@ wiki
       }
       console.log()
     }
+    if (result.live?.length) {
+      console.log(chalk.dim("  Live read:"))
+      for (const l of result.live) console.log(chalk.dim(`    [${l.label}] ${l.source}: ${l.text}  (${l.url})`))
+      console.log()
+    }
 
     if (opts.trace && result.trace) {
-      console.log(chalk.dim(`  selector: ${result.trace.selectorMs}ms   synthesis: ${result.trace.synthesisMs}ms`))
+      console.log(chalk.dim(`  selector: ${result.trace.selectorMs}ms   synthesis: ${result.trace.synthesisMs}ms${result.trace.planMs !== undefined ? `   live plan: ${result.trace.planMs}ms   live read: ${result.trace.liveMs}ms` : ""}`))
+      if (result.trace.planOutput) console.log(chalk.dim(`  live plan: ${result.trace.planOutput.replace(/\s+/g, " ").slice(0, 400)}`))
       console.log(chalk.dim(`  candidates: ${result.candidates.map(c => c.title).join(" | ") || "(none)"}`))
       if (result.walked.length > result.candidates.length) {
         const follow = result.walked.filter(w => !result.candidates.some(c => c.path === w.path))
         console.log(chalk.dim(`  followed: ${follow.map(w => `${w.title}@h${w.hop}`).join(" | ")}`))
       }
       console.log()
+    }
+  })
+
+// agentx wiki summarize — one-line page summaries `wiki query` picks pages
+// from (#855). Pages are not touched; the lines go to _summaries.json.
+wiki
+  .command("summarize")
+  .description("write a one-line summary of each new or changed wiki page, for `wiki query`")
+  .option("--dir <path>", "wiki directory")
+  .option("--agent <id>", "only this agent's wiki")
+  .option("--all", "every agent's wiki and the shared wiki (default when --agent is not given)")
+  .option("--model <m>", "summary model (default: wiki.summaries.model, else haiku)")
+  .option("--batch <n>", "pages per model call (default: wiki.summaries.batchSize, else 20)")
+  .option("--limit <n>", "stop after this many pages per wiki; the next run continues")
+  .option("--dry-run", "count the pages that need a summary, without calling the model")
+  .action(async (opts) => {
+    const { summarizeStore } = await import("@/wiki/summaries")
+    const { runClaudeCli } = await import("@/wiki/query")
+    let model = "haiku"
+    let batchSize = 20
+    try {
+      const { loadDaemonConfig } = await import("@/daemon/config")
+      const s = loadDaemonConfig().wiki.summaries
+      model = s.model
+      batchSize = s.batchSize
+    } catch {}
+    model = opts.model || model
+    if (opts.batch) batchSize = parseInt(opts.batch)
+    const limit = opts.limit ? parseInt(opts.limit) : undefined
+
+    const hub = getHub(opts.dir)
+    const targets: Array<{ id: string; store: WikiStore; skip?: (p: string) => boolean }> = opts.agent
+      ? [{ id: opts.agent, store: hub.getAgentWiki(opts.agent) }]
+      : [
+          ...hub.listAgents().map((id) => ({ id, store: hub.getAgentWiki(id) })),
+          { id: "shared", store: hub.getSharedStore(), skip: (p: string) => p.startsWith("agents/") },
+        ]
+
+    let failed = 0
+    console.log()
+    for (const t of targets) {
+      if (!existsSync(t.store.baseDir)) continue
+      const r = await summarizeStore(t.store, {
+        model, batchSize, limit, dryRun: !!opts.dryRun, skip: t.skip,
+        run: (prompt, m) => runClaudeCli(prompt, m, 180_000),
+        log: (line) => console.log(chalk.dim(`    ${t.id}: ${line}`)),
+      })
+      failed += r.failed
+      if (r.pages === 0) continue
+      const line = opts.dryRun
+        ? `${r.stale} of ${r.pages} pages need a summary${r.removed ? `, ${r.removed} line(s) for deleted pages to drop` : ""}`
+        : `${r.written} written, ${r.pages - r.stale} unchanged${r.failed ? `, ${chalk.yellow(`${r.failed} failed`)}` : ""}${r.removed ? `, ${r.removed} dropped` : ""} (${r.pages} pages)`
+      console.log(`  ${chalk.cyan(t.id)}: ${line}`)
+    }
+    console.log()
+    if (failed > 0) {
+      console.log(chalk.yellow(`  ${failed} page(s) got no summary. Run the command again to retry them.`))
+      process.exitCode = 1
     }
   })
 
@@ -3233,8 +3317,10 @@ wiki
   .option("--own-only", "search only the agent's own articles, to measure without the shared wiki")
   .option("--out <file>", "write the report as JSON to this file")
   .option("--compare <files...>", "compare two saved reports (before after) instead of running")
-  .option("--selector-model <m>", "candidate-selection model", "haiku")
-  .option("--synth-model <m>", "synthesis model", "sonnet")
+  .option("--selector-model <m>", "page-selection model (default: wiki.query.models.selector, else haiku)")
+  .option("--synth-model <m>", "answer model (default: wiki.query.models.answer, else sonnet)")
+  .option("--method <m>", "auto | summaries | catalog (default: wiki.query.method)")
+  .option("--no-live", "skip the live read")
   .option("--json", "print the report as JSON")
   .action(async (opts) => {
     const { parseQuestionSet, buildReport, compareReports } = await import("@/wiki/score")
@@ -3277,17 +3363,22 @@ wiki
     const { agenticQuery } = await import("@/wiki/query")
     const hub = getHub(opts.dir)
     const shared = !opts.ownOnly
+    const settings = await queryOptions(opts)
     const answers = []
+    const methods = new Set<string>()
     for (const q of questions) {
       const r = await agenticQuery(q.question, hub.getAgentWiki(agent), agent, {
+        ...settings,
         selectorModel: opts.selectorModel,
         synthModel: opts.synthModel,
         shared: shared ? hub.sharedScope(agent) : undefined,
       })
+      if (r.method) methods.add(r.method)
       answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path) })
       if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status}\n`))
     }
-    const report = buildReport({ questions: opts.questions, agent, shared }, answers)
+    const live = !!settings.live?.enabled && (settings.live.sources.length ?? 0) > 0 && methods.has("summaries")
+    const report = buildReport({ questions: opts.questions, agent, shared, method: [...methods].join("+") || undefined, live }, answers)
     if (opts.out) writeFileSync(resolve(opts.out), `${JSON.stringify(report, null, 2)}\n`)
     if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
     console.log()

@@ -15,6 +15,16 @@ import { resolve } from "path"
 import { execSync } from "child_process"
 import type { WikiArticle, WikiIndex } from "./types"
 import type { WikiStore } from "./store"
+import { freshSummaries, hasSummaries, loadSummaries } from "./summaries"
+import {
+  LIVE_READ_KINDS,
+  describeSources,
+  runLiveReads,
+  validateReads,
+  type AgentxNode,
+  type LiveLine,
+  type LiveSource,
+} from "./live-read"
 
 /**
  * Agentic wiki query — the "Farzapedia-faithful" retrieval path.
@@ -55,6 +65,59 @@ export interface AgenticQueryOptions {
    *  articles the requester may read are offered. Their paths come back
    *  as `@<id>/<path>`. */
   shared?: SharedWikiStore[]
+  /** How pages are picked (#855). "auto" (default): from the page
+   *  summaries when the agent's wiki has them, else from the catalog.
+   *  "catalog" is the method above, unchanged. */
+  method?: QueryMethod
+  /** Counts and models of the summaries method. */
+  summaries?: Partial<SummaryQuerySettings>
+  /** The live read before the answer (summaries method only). Nothing is
+   *  read while it is off or lists no sources. */
+  live?: LiveReadSettings
+  /** Runs one model call. Default: the `claude` CLI. */
+  runModel?: (prompt: string, model: string, timeoutMs: number) => Promise<string>
+}
+
+export type QueryMethod = "auto" | "summaries" | "catalog"
+
+export interface SummaryQuerySettings {
+  /** Pages of the agent's own wiki shortlisted by word match. */
+  shortlist: number
+  /** Pages of the shared wiki added to the shortlist. */
+  sharedShortlist: number
+  /** Pages the selector may pick. */
+  maxPages: number
+  /** Characters of each picked page given to the answer. */
+  pageChars: number
+  /** Picks pages from the shortlist. */
+  selectorModel: string
+  /** Names the live reads. */
+  plannerModel: string
+  /** Writes the answer. */
+  answerModel: string
+}
+
+export const DEFAULT_SUMMARY_QUERY: SummaryQuerySettings = {
+  shortlist: 12,
+  sharedShortlist: 4,
+  maxPages: 3,
+  pageChars: 6000,
+  selectorModel: "haiku",
+  plannerModel: "haiku",
+  answerModel: "sonnet",
+}
+
+export interface LiveReadSettings {
+  enabled: boolean
+  sources: LiveSource[]
+  /** Nodes an `agentx` source asks: this node first, then mesh peers. */
+  nodes?: AgentxNode[]
+  /** Reads per question. Default 6. */
+  maxReads?: number
+  /** Each read's timeout, ms. Default 8000. */
+  timeoutMs?: number
+  fetch?: typeof fetch
+  env?: Record<string, string | undefined>
 }
 
 /** A wiki searched alongside the requester's own. */
@@ -75,11 +138,19 @@ export interface AgenticQueryResult {
   walked: Array<{ title: string; path: string; type?: string; hop: number }>
   /** "no-catalog" | "no-candidates" | "ok" */
   status: "ok" | "no-catalog" | "no-candidates" | "error"
+  /** Which method picked the pages. */
+  method?: "summaries" | "catalog"
+  /** Lines the live read returned, cited in the answer as [live N]. */
+  live?: LiveLine[]
   /** For operator debugging only. */
   trace?: {
     selectorMs: number
     synthesisMs: number
     selectorOutput?: string
+    /** Naming the live reads, and running them. */
+    planMs?: number
+    liveMs?: number
+    planOutput?: string
   }
   error?: string
 }
@@ -105,6 +176,11 @@ export async function agenticQuery(
   const log = opts.log ?? console.error.bind(console, "[wiki-query]")
   const messagePath = opts.messagePath?.length ? opts.messagePath : undefined
   const graphWeight = opts.graphWeight ?? DEFAULT_GRAPH_WEIGHT
+  const method = opts.method ?? "auto"
+  if (method === "summaries" || (method === "auto" && hasSummaries(store))) {
+    return summariesQuery(question, store, requesterId, opts)
+  }
+  const runClaude = opts.runModel ?? runClaudeCli
 
   // --- Step 1: Load the catalog ---
   const catalogPath = resolve(store.baseDir, "_index.md")
@@ -170,6 +246,7 @@ export async function agenticQuery(
     candidates,
     walked: walked.map(w => ({ title: w.meta.title, path: w.path, type: w.meta.type, hop: (w as any).hop ?? 0 })),
     status: "ok",
+    method: "catalog",
     trace: { selectorMs, synthesisMs, selectorOutput },
   }
 }
@@ -235,6 +312,274 @@ export function catalogPool(store: WikiStore): CatalogEntry[] {
   } catch {
     return []
   }
+}
+
+// --- Summaries + live read (#855) ---
+
+/** A page offered to the selector: its catalog line and summary. */
+interface SummaryEntry {
+  path: string
+  title: string
+  type?: string
+  tags: string[]
+  related?: string[]
+  graphPath?: string[]
+  aliases?: string[]
+  owner?: string
+  lastUpdated?: string
+  summary?: string
+}
+
+/**
+ * The summaries method:
+ *   1. no model: rank every readable page by the words it shares with the
+ *      question, over title, tags and summary; keep `shortlist` of the
+ *      agent's own pages and `sharedShortlist` shared ones;
+ *   2. small model: pick up to `maxPages` pages from those lines, or none;
+ *   3. small model: name up to `live.maxReads` live reads (names only);
+ *   4. code: validate and run the reads, in parallel;
+ *   5. answer from the pages and the live lines, marking live facts.
+ */
+async function summariesQuery(
+  question: string,
+  store: WikiStore,
+  requesterId: string | undefined,
+  opts: AgenticQueryOptions,
+): Promise<AgenticQueryResult> {
+  const cfg = { ...DEFAULT_SUMMARY_QUERY, ...stripUndefined(opts.summaries ?? {}) }
+  // The options callers already pass for the catalog method name the same
+  // steps here, and win over the configured ones.
+  if (opts.selectorModel) cfg.selectorModel = opts.selectorModel
+  if (opts.synthModel) cfg.answerModel = opts.synthModel
+  if (opts.maxCandidates) cfg.maxPages = opts.maxCandidates
+  const run = opts.runModel ?? runClaudeCli
+  const timeoutMs = opts.timeoutMs ?? 60_000
+  const log = opts.log ?? console.error.bind(console, "[wiki-query]")
+  const messagePath = opts.messagePath?.length ? opts.messagePath : undefined
+  const graphWeight = opts.graphWeight ?? DEFAULT_GRAPH_WEIGHT
+  const view = scopeView(store, requesterId, opts.shared)
+  const base = { method: "summaries" as const }
+
+  // --- 1. Shortlist by word match ---
+  const own = summaryEntries(store, requesterId)
+  const shared = (opts.shared ?? [])
+    .filter((s) => s.store.baseDir !== store.baseDir)
+    .flatMap((s) => summaryEntries(s.store, requesterId, s.skip).map((e) => ({ ...e, path: `@${s.id}/${e.path}` })))
+  const shortlist = [
+    ...shortlistBySummary(question, own, cfg.shortlist, messagePath, graphWeight),
+    ...shortlistBySummary(question, shared, cfg.sharedShortlist, messagePath, graphWeight),
+  ]
+  if (shortlist.length === 0) {
+    return { ...emptyResult("no-candidates", question, "No page shares a word with the question."), ...base }
+  }
+
+  // --- 2. Pick pages ---
+  const selectorStart = Date.now()
+  let selectorOutput = ""
+  let picked: SummaryEntry[]
+  try {
+    selectorOutput = await run(buildSummarySelectorPrompt(question, shortlist, cfg.maxPages), cfg.selectorModel, timeoutMs)
+    picked = parsePicks(selectorOutput, shortlist).slice(0, cfg.maxPages)
+  } catch (e: any) {
+    log("selector failed:", e?.message)
+    return { ...emptyResult("error", question, `Selector: ${e?.message || "unknown"}`), ...base, trace: { selectorMs: Date.now() - selectorStart, synthesisMs: 0, selectorOutput } }
+  }
+  const selectorMs = Date.now() - selectorStart
+  const candidates = picked.map((p) => ({ title: p.title, path: p.path }))
+  const pages = picked
+    .map((p) => view.read(p.path))
+    .filter((a): a is WikiArticle => !!a)
+    .map((a) => ({ ...a, hop: 0, content: a.content.length > cfg.pageChars ? a.content.slice(0, cfg.pageChars) + "\n…" : a.content }))
+  if (pages.length === 0) {
+    return { ...emptyResult("no-candidates", question, "The selector picked no page."), ...base, candidates, trace: { selectorMs, synthesisMs: 0, selectorOutput } }
+  }
+
+  // --- 3–4. Live read ---
+  const live = opts.live
+  const sources = live?.enabled ? live.sources : []
+  let lines: LiveLine[] = []
+  let planOutput = ""
+  let planMs = 0
+  let liveMs = 0
+  if (sources.length > 0 && (live?.maxReads ?? 6) > 0) {
+    const planStart = Date.now()
+    try {
+      planOutput = await run(buildLivePlanPrompt(question, pages, sources, live?.maxReads ?? 6), cfg.plannerModel, timeoutMs)
+    } catch (e: any) {
+      // The answer is still given from the pages.
+      log("live-read planner failed:", e?.message)
+    }
+    planMs = Date.now() - planStart
+    const reads = validateReads(parseJsonArray(planOutput), sources, live?.maxReads ?? 6)
+    const liveStart = Date.now()
+    if (reads.length) {
+      lines = await runLiveReads(reads, sources, {
+        timeoutMs: live?.timeoutMs ?? 8000,
+        nodes: live?.nodes,
+        fetch: live?.fetch,
+        env: live?.env,
+      })
+    }
+    liveMs = Date.now() - liveStart
+  }
+
+  // --- 5. Answer ---
+  const synthStart = Date.now()
+  const walked = pages.map((w) => ({ title: w.meta.title, path: w.path, type: w.meta.type, hop: 0 }))
+  let answer = ""
+  try {
+    answer = await run(buildSynthesisPrompt(question, pages, lines), cfg.answerModel, timeoutMs * 2)
+  } catch (e: any) {
+    log("synthesis failed:", e?.message)
+    return {
+      ...emptyResult("error", question, `Synthesis: ${e?.message || "unknown"}`), ...base, candidates, walked, live: lines,
+      trace: { selectorMs, synthesisMs: Date.now() - synthStart, selectorOutput, planMs, liveMs, planOutput },
+    }
+  }
+  return {
+    answer: answer.trim(),
+    citations: pages.map((a) => ({ title: a.meta.title, path: a.path, type: a.meta.type })),
+    candidates,
+    walked,
+    status: "ok",
+    ...base,
+    live: lines,
+    trace: { selectorMs, synthesisMs: Date.now() - synthStart, selectorOutput, planMs, liveMs, planOutput },
+  }
+}
+
+function stripUndefined<T extends object>(o: T): Partial<T> {
+  return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as Partial<T>
+}
+
+/** The pages of one store the requester may read, with their summaries. */
+function summaryEntries(store: WikiStore, requesterId: string | undefined, skip?: (path: string) => boolean): SummaryEntry[] {
+  const articles = store.listArticles(requesterId || "").filter((a) => !a.path.includes("/_versions/") && !skip?.(a.path))
+  const summaries = freshSummaries(articles, loadSummaries(store))
+  return articles.map((a) => ({
+    path: a.path,
+    title: a.meta.title,
+    type: a.meta.type,
+    tags: a.meta.tags ?? [],
+    related: a.meta.related,
+    graphPath: a.meta.graphPath,
+    aliases: a.meta.aliases,
+    owner: a.meta.owner,
+    lastUpdated: a.meta.lastUpdated,
+    summary: summaries.get(a.path),
+  }))
+}
+
+/**
+ * The `n` pages that share the most rare words with the question, over
+ * title, other names, tags and summary. Pages that share none are left
+ * out. Exported for tests.
+ */
+export function shortlistBySummary<T extends { title: string; tags?: string[]; aliases?: string[]; summary?: string; graphPath?: string[] }>(
+  question: string,
+  entries: T[],
+  n: number,
+  messagePath?: string[],
+  graphWeight: number = DEFAULT_GRAPH_WEIGHT,
+): T[] {
+  if (n <= 0 || entries.length === 0) return []
+  const docs = entries.map((e) => ({
+    title: [e.title, ...(e.aliases ?? [])].join(" "),
+    tags: e.tags,
+    summary: e.summary,
+    graphPath: e.graphPath,
+  }))
+  const matched = new Set(scoreAll(question, buildIndex(docs.map(catalogDoc))).map((r) => r.docIndex))
+  return rankCatalogPool(question, docs, messagePath, graphWeight)
+    .filter((i) => matched.has(i))
+    .slice(0, n)
+    .map((i) => entries[i])
+}
+
+function buildSummarySelectorPrompt(question: string, shortlist: SummaryEntry[], maxPages: number): string {
+  const lines = shortlist.map((e, i) => {
+    const from = [e.owner ? `owner ${e.owner}` : "", e.lastUpdated ? `updated ${e.lastUpdated.slice(0, 10)}` : ""].filter(Boolean).join(", ")
+    return `k${i + 1}. ${e.title}${e.type ? ` [${e.type}]` : ""}${from ? ` {${from}}` : ""} — ${e.summary || "(no summary)"}`
+  })
+  return `You pick wiki pages that answer a question. You do NOT answer it.
+
+## Question
+
+${question}
+
+## Pages (title, then a one-line summary)
+
+${lines.join("\n")}
+
+## Your task
+
+Pick up to ${maxPages} pages whose summary says they hold the answer, best first. Pick none when no page fits.
+
+Return ONLY a JSON array of page ids, no markdown fencing, no prose: ["k2", "k5"] or [].`
+}
+
+/** Page ids from the selector's reply, in its order, without repeats. */
+function parsePicks<T>(raw: string, shortlist: T[]): T[] {
+  const ids = parseJsonArray(raw)
+  const out: T[] = []
+  for (const id of ids) {
+    const n = Number(/^k(\d+)$/i.exec(String(id).trim())?.[1])
+    const entry = Number.isInteger(n) ? shortlist[n - 1] : undefined
+    if (entry && !out.includes(entry)) out.push(entry)
+  }
+  return out
+}
+
+function parseJsonArray(raw: string): unknown[] {
+  const match = raw.match(/\[[\s\S]*\]/)
+  if (!match) return []
+  try {
+    const parsed = JSON.parse(match[0])
+    return Array.isArray(parsed) ? parsed : []
+  } catch {
+    return []
+  }
+}
+
+/** Characters of each picked page the live-read planner sees. */
+const PLAN_PAGE_CHARS = 2500
+
+function buildLivePlanPrompt(
+  question: string,
+  pages: Array<WikiArticle & { hop: number }>,
+  sources: LiveSource[],
+  maxReads: number,
+): string {
+  const block = pages.map((a) => {
+    const body = a.content.length > PLAN_PAGE_CHARS ? a.content.slice(0, PLAN_PAGE_CHARS) + "\n…" : a.content
+    return `### ${a.meta.title}${a.meta.lastUpdated ? ` (updated ${a.meta.lastUpdated.slice(0, 10)})` : ""}\n\n${body}`
+  }).join("\n\n---\n\n")
+  return `A question will be answered from the wiki pages below. Pages can be out of date. Name the live reads that would confirm what may have changed since a page was written: the state of an issue or merge request the pages name, the newest release of a repository, the AgentX version running on each node. You only name reads; the system runs them.
+
+## Question
+
+${question}
+
+## Pages
+
+${block}
+
+## Reads you may name
+
+${describeSources(sources)}
+
+## Your task
+
+Name at most ${maxReads} reads that bear on the question, most useful first. Use only the sources and repositories listed. Name none when the pages need no check.
+
+Return ONLY a JSON array, no markdown fencing, no prose. Each item is one of:
+{"source": "<name>", "kind": "issue", "repo": "<repository>", "id": <number>}
+{"source": "<name>", "kind": "merge_request", "repo": "<repository>", "id": <number>}
+{"source": "<name>", "kind": "search", "repo": "<repository>", "query": "<a few words>"}
+{"source": "<name>", "kind": "releases", "repo": "<repository>"}
+{"source": "<name>", "kind": "version"}
+
+Allowed kinds: ${LIVE_READ_KINDS.join(", ")}. Return [] for none.`
 }
 
 // --- Helpers ---
@@ -509,7 +854,7 @@ export const DEFAULT_GRAPH_WEIGHT = 0.6
  */
 export function rankCatalogPool(
   question: string,
-  pool: Array<{ title: string; tags?: string[]; related?: string[]; graphPath?: string[] }>,
+  pool: Array<{ title: string; tags?: string[]; related?: string[]; graphPath?: string[]; summary?: string }>,
   messagePath?: string[],
   graphWeight: number = DEFAULT_GRAPH_WEIGHT,
 ): number[] {
@@ -534,9 +879,10 @@ export function rankCatalogPool(
   return ranked
 }
 
-/** What BM25 sees of a catalog entry: the catalog carries no body. */
-function catalogDoc(a: { title: string; tags?: string[]; related?: string[] }): string {
-  return [a.title, (a.tags ?? []).join(" "), (a.related ?? []).join(" ")].join(" ")
+/** What BM25 sees of a catalog entry: the catalog carries no body, only
+ *  the page summary when there is one (#855). */
+function catalogDoc(a: { title: string; tags?: string[]; related?: string[]; summary?: string }): string {
+  return [a.title, (a.tags ?? []).join(" "), (a.related ?? []).join(" "), a.summary ?? ""].join(" ")
 }
 
 function buildSelectorPrompt(question: string, catalog: string, maxCandidates: number, messagePath?: string[]): string {
@@ -570,9 +916,10 @@ Return ONLY valid JSON, no markdown fencing, no prose:
 If none of the articles match, return [].`
 }
 
-function buildSynthesisPrompt(
+export function buildSynthesisPrompt(
   question: string,
   articles: Array<WikiArticle & { hop: number }>,
+  live: LiveLine[] = [],
 ): string {
   const articlesBlock = articles
     .map(a => {
@@ -594,13 +941,21 @@ ${question}
 ## Articles (${articles.length} walked from the catalog)
 
 ${articlesBlock}
+${live.length ? `
+## Live read (${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC)
 
+${live.map((l) => `- [${l.label}] ${l.source}: ${l.text}`).join("\n")}
+` : ""}
 ## Your task
 
-Answer the question in 2–6 sentences. Cite articles by their title in square brackets like [Article Title]. When two articles disagree, prefer the one updated more recently, and say which agent's page and date the answer comes from. If the articles do not answer the question, say so plainly (do not invent). Prefer concrete facts over hedging.
+Answer the question in 2–6 sentences. Cite articles by their title in square brackets like [Article Title]. When two articles disagree, prefer the one updated more recently, and say which agent's page and date the answer comes from. If the articles do not answer the question, say so plainly (do not invent). Prefer concrete facts over hedging.${live.length ? LIVE_ANSWER_RULES : ""}
 
 Output ONLY the answer — no preamble, no "here is my answer:", no markdown fencing.`
 }
+
+const LIVE_ANSWER_RULES = `
+
+The live read is the state of the source system read just now. Where it and an article disagree about the current state of something, the live read wins. Mark each fact taken from the live read with its label, like [live 2], so the reader knows which facts came from the live read. A closed issue or a merged merge request does not by itself mean the change is released or deployed: say it is released or deployed only if an article or live line says so. If something the question needs was not read live, answer from the articles and say the current state was not checked.`
 
 function parseCandidates(raw: string): Array<{ title: string; path: string }> {
   const match = raw.match(/\[[\s\S]*?\]/)
@@ -616,7 +971,8 @@ function parseCandidates(raw: string): Array<{ title: string; path: string }> {
   }
 }
 
-async function runClaude(prompt: string, model: string, timeoutMs: number): Promise<string> {
+/** One model call through the `claude` CLI, no tools. */
+export async function runClaudeCli(prompt: string, model: string, timeoutMs: number): Promise<string> {
   // Use stdin via a temp-file pipe to avoid shell-escaping a huge prompt.
   // Prompts can exceed the `-E` arg buffer on macOS, so we always pipe.
   const { writeFileSync, mkdirSync, rmSync } = await import("fs")
@@ -648,5 +1004,46 @@ export async function sharedQueryEnabled(configPath?: string): Promise<boolean> 
     return loadDaemonConfig(configPath).wiki.query.shared
   } catch {
     return true
+  }
+}
+
+/**
+ * `wiki.query` from agentx.json as query options (#855): the method, the
+ * counts and models of the summaries method, and the live read with the
+ * nodes an `agentx` source asks. Empty when there is no config to read:
+ * the method is then "auto" and nothing is read live. The CLI and the
+ * `agentx_wiki_query` tool both ask here.
+ */
+export async function queryOptionsFromConfig(configPath?: string): Promise<Pick<AgenticQueryOptions, "method" | "summaries" | "live">> {
+  let config: import("@/daemon/config").DaemonConfig
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    config = loadDaemonConfig(configPath)
+  } catch {
+    return {}
+  }
+  const q = config.wiki.query
+  const nodes: AgentxNode[] = [
+    { name: config.node.name, url: config.dashboard.daemonUrl, token: config.dashboard.token },
+    ...config.mesh.peers.map((p) => ({ name: p.name, url: p.url, token: p.token })),
+  ]
+  return {
+    method: q.method,
+    summaries: {
+      shortlist: q.shortlist,
+      sharedShortlist: q.sharedShortlist,
+      maxPages: q.maxPages,
+      pageChars: q.pageChars,
+      selectorModel: q.models.selector,
+      plannerModel: q.models.planner,
+      answerModel: q.models.answer,
+    },
+    live: {
+      enabled: q.live.enabled,
+      sources: q.live.sources as LiveSource[],
+      nodes,
+      maxReads: q.live.maxReads,
+      timeoutMs: q.live.timeoutMs,
+    },
   }
 }

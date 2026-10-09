@@ -352,8 +352,24 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `contributions.maxCostUsd` | number (0–20) | `0.5` | Model spend per agent per run, in dollars, for agents that set no limit of their own. |
 | `contributions.model` | string | `"sonnet"` | Model for the daily run, for agents that name none. |
 | `query.shared` | boolean | `true` | Wiki searches also read other agents' pages the agent may see, and the shared lessons. |
+| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How `wiki query` picks pages: from the one-line page summaries when the agent's wiki has them (`auto`), always from them, or from the page titles and links (`catalog`). See [Answer wiki questions with a live check](/jobs/wiki-live-read). |
+| `query.shortlist` | number (1–100) | `12` | Pages of the agent's own wiki offered for picking. |
+| `query.sharedShortlist` | number (0–50) | `4` | Pages of other agents' wikis offered too. |
+| `query.maxPages` | number (1–10) | `3` | Pages that may be picked. |
+| `query.pageChars` | number | `6000` | Characters of each picked page given to the answer. |
+| `query.models.selector` | string | `"haiku"` | Model that picks the pages. |
+| `query.models.planner` | string | `"haiku"` | Model that names the live reads. |
+| `query.models.answer` | string | `"sonnet"` | Model that writes the answer. |
+| `query.live.enabled` | boolean | `true` | Switch for the live read before the answer. |
+| `query.live.sources` | list | `[]` | What the live read may read: `github` and `gitlab` sources (`name`, `host`, `repos`, `apiUrl`, `tokenEnv`) and an `agentx` source (`name`, `peers`). Empty: nothing is read. |
+| `query.live.maxReads` | number (0–20) | `6` | Live reads per question. |
+| `query.live.timeoutMs` | number | `8000` | Time limit of each live read, in milliseconds. |
+| `summaries.model` | string | `"haiku"` | Model that writes the page summaries. |
+| `summaries.batchSize` | number (1–50) | `20` | Pages per model call. |
+| `summaries.schedule` | schedule | unset | When the `wiki-summarize` job summarises new and changed pages. Unset: only when `agentx wiki summarize` is run. |
+| `summaries.timezone` | string | `"UTC"` | Time zone of that schedule. |
 
-The two jobs exist only while at least one agent is switched on. A job you define under `crons` with the same id (`wiki-contribute` or `wiki-contribute-merge`) replaces the built-in one.
+The two contribution jobs exist only while at least one agent is switched on. The `wiki-summarize` job exists only while `summaries.schedule` is set. A job you define under `crons` with the same id (`wiki-contribute`, `wiki-contribute-merge` or `wiki-summarize`) replaces the built-in one.
 
 ## Check it worked
 

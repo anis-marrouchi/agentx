@@ -1634,17 +1634,19 @@ Grade absorbed articles with the article-quality seat.
 
 ### `agentx wiki query <question>`
 
-Agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer.
+Answer a question from the wiki. With page summaries (see [`wiki summarize`](#agentx-wiki-summarize)) it picks pages by their summary, reads the live state of what they name from the sources under `wiki.query.live.sources`, and marks each fact from that read like `[live 1]`. Without summaries it walks the catalog + wikilink graph. See [Answer wiki questions with a live check](/jobs/wiki-live-read).
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
 | `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`), else the first one with a catalog | Which agent's wiki to search first. |
-| `--selector-model <m>` | `haiku` | Candidate-selection model. |
-| `--synth-model <m>` | `sonnet` | Synthesis model. |
-| `--max-candidates <n>` | `3` | Candidates from selector. |
-| `--max-hops <n>` | `2` | Wikilink hops from candidates. |
-| `--max-articles <n>` | `8` | Cap on total articles walked. |
+| `--selector-model <m>` | `wiki.query.models.selector`, else `haiku` | Page-selection model. |
+| `--synth-model <m>` | `wiki.query.models.answer`, else `sonnet` | Answer model. |
+| `--max-candidates <n>` | `wiki.query.maxPages`, else `3` | Pages the selector picks. |
+| `--max-hops <n>` | `2` | Wikilink hops from candidates (catalog method). |
+| `--max-articles <n>` | `8` | Cap on total articles walked (catalog method). |
+| `--method <m>` | `wiki.query.method` | `auto`, `summaries` or `catalog`. |
+| `--no-live` | — | Skip the live read for this question. |
 | `--json` | — | Emit full result as JSON (for A/B harnesses). |
 | `--trace` | — | Print selector + walk trace. |
 | `--own-only` | — | Search only the agent's own articles, not the shared wiki. |
@@ -1663,9 +1665,25 @@ Score the wiki's answers to a question set, or compare two saved scores. A quest
 | `--own-only` | — | Search only the agent's own articles. |
 | `--out <file>` | — | Save the report as JSON. |
 | `--compare <files...>` | — | Compare two saved reports: `before.json after.json`. |
-| `--selector-model <m>` | `haiku` | Candidate-selection model. |
-| `--synth-model <m>` | `sonnet` | Synthesis model. |
+| `--selector-model <m>` | `wiki.query.models.selector`, else `haiku` | Page-selection model. |
+| `--synth-model <m>` | `wiki.query.models.answer`, else `sonnet` | Answer model. |
+| `--method <m>` | `wiki.query.method` | `auto`, `summaries` or `catalog`: run the set once with each to compare them. The report records the method. |
+| `--no-live` | — | Skip the live read. |
 | `--json` | — | Print the report as JSON. |
+
+### `agentx wiki summarize`
+
+Write a one-line summary (35 words at most) of each new or changed wiki page, for `wiki query` to pick pages from. The lines go to `_summaries.json` in each wiki folder; the pages are not changed. A page whose text is unchanged since its line was written is skipped, lines of deleted pages are dropped, and the file is saved after each batch, so a stopped run carries on next time. See [Answer wiki questions with a live check](/jobs/wiki-live-read).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--agent <id>` | — | Only this agent's wiki. |
+| `--all` | on when `--agent` is not given | Every agent's wiki and the shared wiki. |
+| `--model <m>` | `wiki.summaries.model`, else `haiku` | Summary model. |
+| `--batch <n>` | `wiki.summaries.batchSize`, else `20` | Pages per model call. |
+| `--limit <n>` | — | Stop after this many pages per wiki. |
+| `--dry-run` | — | Count the pages that need a summary, without calling the model. |
 
 ### `agentx wiki search <query>`
 

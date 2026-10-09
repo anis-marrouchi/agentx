@@ -1,0 +1,120 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 900" width="920" height="900" role="img" aria-labelledby="t d" style="--cycle:4.2s">
+<title id="t">How a wiki question gets a live check</title>
+<desc id="d">Six steps in two parts. You write a one-line summary of every wiki page once, and list the places AgentX may read. When an agent asks the wiki a question, AgentX picks pages from their summaries. A small model names what to check, AgentX reads it from GitHub, GitLab or your machines, and the answer marks each fact that came from that check. A check that fails is left out; the answer still comes from the pages.</desc>
+<defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
+.h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.sub { font-size: 16px; fill: #475569; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
+.band.warn { fill: #B45309; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: #475569; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: #475569; }
+.card { fill: #fff; stroke: #E2E8F0; stroke-width: 1.25; filter: url(#soft); }
+.card.accent { stroke: #C7D9FF; }
+.card.win { stroke: #0B0D12; stroke-width: 1.5; }
+.link { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wrap { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; animation: draw 0.9s ease-in-out backwards; }
+.rise { animation: rise 0.55s cubic-bezier(.2,.7,.2,1) backwards; }
+.fade { animation: fade 0.4s ease-out backwards; }
+.pulse { transform-box: fill-box; transform-origin: center; opacity: 0; animation: pulse var(--cycle) ease-out infinite; }
+.blink { animation: blink 1.6s ease-in-out infinite; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0% { opacity: .7; transform: scale(1); } 9% { opacity: 0; transform: scale(1.9); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
+</style>
+<rect width="920" height="900" rx="24" fill="#FFFFFF"/>
+<text x="44" y="56" class="h1" text-anchor="start">How a wiki question gets a live check</text>
+<text x="44" y="82" class="sub" text-anchor="start">Pages say what was true. The live read says what is true now.</text>
+<circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You, the owner</text>
+<circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">AgentX</text>
+<rect x="20" y="104" width="880" height="200" rx="20" fill="#F3F7FF"/>
+<text x="44" y="132" class="band" text-anchor="start">SET UP ONCE</text>
+<g class="rise" style="animation-delay:0.32s">
+<rect x="44" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:4.62s"/>
+<circle cx="70" cy="176" r="15" fill="#1A66FF"/>
+<text x="70" y="181" class="num" text-anchor="middle">1</text>
+<text x="60" y="220" class="title" text-anchor="start">Summarise the pages</text>
+<text x="60" y="242" class="note" text-anchor="start">one line per page,</text>
+<text x="60" y="259" class="note" text-anchor="start">pages stay as they are</text>
+</g>
+<g class="rise" style="animation-delay:0.64s">
+<rect x="328" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:5.32s"/>
+<circle cx="354" cy="176" r="15" fill="#1A66FF"/>
+<text x="354" y="181" class="num" text-anchor="middle">2</text>
+<text x="344" y="220" class="title" text-anchor="start">List what may be read</text>
+<text x="344" y="242" class="note" text-anchor="start">repositories, hosts,</text>
+<text x="344" y="259" class="note" text-anchor="start">your machines</text>
+</g>
+<g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
+<g class="rise" style="animation-delay:0.96s">
+<rect x="612" y="148" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.02s"/>
+<circle cx="638" cy="176" r="15" fill="#0B0D12"/>
+<text x="638" y="181" class="num" text-anchor="middle">3</text>
+<text x="628" y="220" class="title" text-anchor="start">Agent asks the wiki</text>
+<text x="628" y="242" class="note" text-anchor="start">agentx wiki query,</text>
+<text x="628" y="259" class="note" text-anchor="start">or the agent's wiki tool</text>
+</g>
+<g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
+<rect x="20" y="320" width="880" height="398" rx="20" fill="#F6F7F9"/>
+<text x="92" y="348" class="band" text-anchor="start">EVERY QUESTION</text>
+<path d="M744 284 V302 Q744 312 734 312 H80 Q70 312 70 322 V360" class="wrap" pathLength="100" style="animation-delay:1.26s"/>
+<path d="M65 355 L70 361 L75 355" class="link fade" style="animation-delay:2.16s"/>
+<g class="rise" style="animation-delay:1.28s">
+<rect x="44" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.72s"/>
+<circle cx="70" cy="392" r="15" fill="#0B0D12"/>
+<text x="70" y="397" class="num" text-anchor="middle">4</text>
+<text x="60" y="436" class="title" text-anchor="start">Pick by summary</text>
+<text x="60" y="458" class="note" text-anchor="start">up to 3 pages,</text>
+<text x="60" y="475" class="note" text-anchor="start">or none</text>
+</g>
+<g class="rise" style="animation-delay:1.60s">
+<rect x="328" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:7.42s"/>
+<circle cx="354" cy="392" r="15" fill="#0B0D12"/>
+<text x="354" y="397" class="num" text-anchor="middle">5</text>
+<text x="344" y="436" class="title" text-anchor="start">Read the live state</text>
+<text x="344" y="458" class="note" text-anchor="start">only what you listed,</text>
+<text x="344" y="475" class="note" text-anchor="start">read-only</text>
+</g>
+<g class="fade" style="animation-delay:1.43s"><path d="M311 432 H323" class="link"/><path d="M319 428 L324 432 L319 436" class="link"/></g>
+<g class="rise" style="animation-delay:1.92s">
+<rect x="612" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:8.12s"/>
+<circle cx="638" cy="392" r="15" fill="#0B0D12"/>
+<text x="638" y="397" class="num" text-anchor="middle">6</text>
+<text x="628" y="436" class="title" text-anchor="start">Answer from both</text>
+<text x="628" y="458" class="note" text-anchor="start">live facts marked</text>
+<text x="628" y="475" class="note" text-anchor="start">[live 1], [live 2]</text>
+</g>
+<g class="fade" style="animation-delay:1.75s"><path d="M595 432 H607" class="link"/><path d="M603 428 L608 432 L603 436" class="link"/></g>
+<g class="rise" style="animation-delay:2.12s">
+<rect x="328" y="524" width="548" height="172" rx="14" class="card win"/>
+<path d="M328 558 H876" stroke="#E2E8F0"/>
+<circle cx="346" cy="541" r="4" fill="#CBD5E1"/>
+<circle cx="360" cy="541" r="4" fill="#CBD5E1"/>
+<circle cx="374" cy="541" r="4" fill="#CBD5E1"/>
+<text x="602" y="546" class="wintitle" text-anchor="middle">agentx wiki query &quot;Is the login fix out?&quot;</text>
+</g>
+<g class="rise" style="animation-delay:2.62s"><text x="346" y="588" class="rowname" text-anchor="start">example/app#12</text><rect x="346" y="597" width="140" height="22" rx="11" fill="#1A66FF" fill-opacity="0.1"/><circle cx="357" cy="608" r="3.5" fill="#1A66FF" class="blink"/><text x="366" y="612.5" class="state" style="fill:#1A66FF">closed 2026-10-08</text><path d="M346 631 H858" stroke="#E2E8F0"/></g>
+<g class="rise" style="animation-delay:2.97s"><text x="346" y="644" class="rowname" text-anchor="start">Newest release</text><rect x="346" y="653" width="140" height="22" rx="11" fill="#1A66FF" fill-opacity="0.1"/><circle cx="357" cy="664" r="3.5" fill="#1A66FF"/><text x="366" y="668.5" class="state" style="fill:#1A66FF">v2.1.0 2026-10-05</text></g>
+<g class="rise" style="animation-delay:3.32s"><text x="44" y="746" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
+<g class="rise" style="animation-delay:3.52s"><circle cx="49" cy="772.5" r="4" fill="#B45309"/><text x="62" y="778" class="symptom" text-anchor="start">No Live read lines</text><text x="62" y="798" class="note" text-anchor="start">List a source and its repositories.</text></g>
+<g class="rise" style="animation-delay:3.77s"><circle cx="465" cy="772.5" r="4" fill="#B45309"/><text x="478" y="778" class="symptom" text-anchor="start">Method shows catalog</text><text x="478" y="798" class="note" text-anchor="start">Run agentx wiki summarize.</text></g>
+<g class="rise" style="animation-delay:4.02s"><circle cx="49" cy="824.5" r="4" fill="#B45309"/><text x="62" y="830" class="symptom" text-anchor="start">A read is missing</text><text x="62" y="850" class="note" text-anchor="start">Check the token and the host.</text></g>
+<g class="rise" style="animation-delay:4.27s"><circle cx="465" cy="824.5" r="4" fill="#B45309"/><text x="478" y="830" class="symptom" text-anchor="start">Wrong pages picked</text><text x="478" y="850" class="note" text-anchor="start">Summarise again after big edits.</text></g>
+</svg>

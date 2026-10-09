@@ -954,7 +954,7 @@ const TOOLS = [
   {
     name: "agentx_wiki_query",
     description:
-      "Query the agentx institutional wiki: a cross-agent knowledge base organized by article type (person, project, place, concept, event, decision, pattern). Use this BEFORE grep/memory-search when the question is about who / what happened / what we decided / how we do something. The query walks the catalog + wikilink graph and returns a synthesized answer with citations.",
+      "Query the agentx institutional wiki: a cross-agent knowledge base organized by article type (person, project, place, concept, event, decision, pattern). Use this BEFORE grep/memory-search when the question is about who / what happened / what we decided / how we do something. The query picks pages from their one-line summaries (or walks the catalog + wikilink graph when there are none), reads the live state of what they name from the configured sources, and returns a synthesized answer with citations; facts from the live read are marked [live N].",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -972,8 +972,13 @@ const TOOLS = [
         },
         max_hops: {
           type: "number",
-          description: "Wikilink hops from candidates (default 2, max 3).",
+          description: "Wikilink hops from candidates (default 2, max 3). Catalog method only.",
           default: 2,
+        },
+        live: {
+          type: "boolean",
+          description: "Read the current state of what the picked pages name (issues, merge requests, releases, node versions) from the configured sources before answering (default true; nothing is read when no source is configured).",
+          default: true,
         },
       },
       required: ["question"],
@@ -1644,7 +1649,7 @@ async function handleToolCall(
         return { content: [{ type: "text", text: "Error: `question` is required." }] }
       }
       const { WikiHub } = await import("@/wiki")
-      const { agenticQuery, sharedQueryEnabled } = await import("@/wiki/query")
+      const { agenticQuery, sharedQueryEnabled, queryOptionsFromConfig } = await import("@/wiki/query")
       const { resolve } = await import("path")
       const wikiDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
       const hub = new WikiHub(wikiDir, undefined, "graph")
@@ -1672,7 +1677,10 @@ async function handleToolCall(
       // classification log here would hand back the previous request's
       // path, since classification runs alongside the turn.
       const branch = await runningIntentPath()
+      const settings = await queryOptionsFromConfig()
+      if (args.live === false && settings.live) settings.live = { ...settings.live, enabled: false }
       const result = await agenticQuery(question, store, agentId, {
+        ...settings,
         maxHops,
         shared: (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined,
         messagePath: branch?.path,
@@ -1683,7 +1691,9 @@ async function handleToolCall(
       }
       const cites = result.citations.map(c => `  - ${c.title} [${c.type || "?"}] (${c.path})`).join("\n")
       const walkCount = result.walked.length
-      const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}`
+      const liveLines = (result.live ?? []).map(l => `  - [${l.label}] ${l.source}: ${l.text} (${l.url})`).join("\n")
+      const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} ${result.method === "summaries" ? "read" : "walked"}):\n${cites}`
+        + (liveLines ? `\n\nLive read (${result.live!.length}):\n${liveLines}` : "")
       return { content: [{ type: "text", text: body }] }
     }
 

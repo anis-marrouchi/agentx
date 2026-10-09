@@ -849,6 +849,31 @@ const serviceSchema = z.object({
   }).optional(),
 })
 
+/** Where `wiki query` may read the live state of what a page names (#855).
+ *  Only these hosts and repositories are ever read. */
+const HOST_RE = /^[A-Za-z0-9.-]+(:\d+)?$/
+const wikiGitLiveSource = {
+  /** How the query names this source. */
+  name: z.string().min(1).regex(/^[A-Za-z0-9_.-]+$/),
+  /** API base. Unset: derived from `host`. */
+  apiUrl: z.string().url().optional(),
+  /** Repositories that may be read: owner/name, or group/subgroup/project. */
+  repos: z.array(z.string().regex(/^[A-Za-z0-9_.-]+(\/[A-Za-z0-9_.-]+)+$/)).min(1),
+  /** Environment variable holding the token, e.g. GITHUB_TOKEN. Unset:
+   *  read without one (public repositories only). */
+  tokenEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+}
+const wikiLiveSourceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("github"), host: z.string().regex(HOST_RE).default("github.com"), ...wikiGitLiveSource }),
+  z.object({ kind: z.literal("gitlab"), host: z.string().regex(HOST_RE), ...wikiGitLiveSource }),
+  z.object({
+    kind: z.literal("agentx"),
+    name: z.string().min(1).regex(/^[A-Za-z0-9_.-]+$/).default("agentx"),
+    /** Also ask each `mesh.peers` node, not only this one. */
+    peers: z.boolean().default(true),
+  }),
+])
+
 const meshPeerSchema = z.object({
   url: z.string(),
   name: z.string(),
@@ -1326,6 +1351,49 @@ export const daemonConfigSchema = z.object({
       /** `wiki query` also searches other agents' readable pages and the
        *  root wiki's own pages. */
       shared: z.boolean().default(true),
+      /** How pages are picked (#855): "auto" uses the page summaries when
+       *  the agent's wiki has them, else the catalog; "summaries" always
+       *  uses them; "catalog" is the method without summaries. */
+      method: z.enum(["auto", "summaries", "catalog"]).default("auto"),
+      /** Pages of the agent's own wiki shortlisted by word match. */
+      shortlist: z.number().int().min(1).max(100).default(12),
+      /** Pages of the shared wiki added to the shortlist. */
+      sharedShortlist: z.number().int().min(0).max(50).default(4),
+      /** Pages the selector may pick. */
+      maxPages: z.number().int().min(1).max(10).default(3),
+      /** Characters of each picked page given to the answer. */
+      pageChars: z.number().int().min(500).max(50_000).default(6000),
+      /** Model of each step of the summaries method. */
+      models: z.object({
+        selector: z.string().min(1).default("haiku"),
+        planner: z.string().min(1).default("haiku"),
+        answer: z.string().min(1).default("sonnet"),
+      }).default({}),
+      /** The live read before the answer. Nothing is read until a source
+       *  is listed. */
+      live: z.object({
+        enabled: z.boolean().default(true),
+        maxReads: z.number().int().min(0).max(20).default(6),
+        timeoutMs: z.number().int().min(500).max(60_000).default(8000),
+        sources: z.array(wikiLiveSourceSchema).default([]).superRefine((list, ctx) => {
+          const seen = new Set<string>()
+          for (const s of list) {
+            if (seen.has(s.name)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `two live sources are named "${s.name}"` })
+            seen.add(s.name)
+          }
+        }),
+      }).default({}),
+    }).default({}),
+    /** One-line page summaries `wiki query` picks pages from (#855). */
+    summaries: z.object({
+      /** Model that writes them. */
+      model: z.string().min(1).default("haiku"),
+      /** Pages per model call. */
+      batchSize: z.number().int().min(1).max(50).default(20),
+      /** When to summarise new and changed pages (cron, 5 fields). Unset:
+       *  only when `agentx wiki summarize` is run. */
+      schedule: z.string().optional(),
+      timezone: z.string().default("UTC"),
     }).default({}),
     /** The chat bubble on every wiki page: the owner types an instruction and
      *  an agent researches it and edits the open page. */
@@ -1987,7 +2055,7 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
-  return withContributionJobs(result.data)
+  return withSummaryJob(withContributionJobs(result.data))
 }
 
 /**
@@ -2067,6 +2135,24 @@ export function withContributionJobs(config: DaemonConfig, cli: string = agentxC
     [WIKI_CONTRIBUTE_MERGE_JOB]: job(c.mergeSchedule, `${cli} wiki contributions merge`),
   }
   return { ...config, crons: { ...generated, ...config.crons } }
+}
+
+/** Cron id of the page-summary job. */
+export const WIKI_SUMMARIZE_JOB = "wiki-summarize"
+
+/**
+ * Add the page-summary job when `wiki.summaries.schedule` is set (#855).
+ * It only spends on pages that are new or changed. A cron the operator
+ * defined under the same id wins.
+ */
+export function withSummaryJob(config: DaemonConfig, cli: string = agentxCli()): DaemonConfig {
+  const s = config.wiki.summaries
+  const agent = Object.keys(config.agents).sort()[0]
+  if (!s.schedule || !agent) return config
+  const job = cronJobSchema.parse({
+    schedule: s.schedule, timezone: s.timezone, agent, command: `${cli} wiki summarize --all`, timeout: 3600, onError: "log",
+  })
+  return { ...config, crons: { [WIKI_SUMMARIZE_JOB]: job, ...config.crons } }
 }
 
 /** How to call this release's CLI from a shell. */

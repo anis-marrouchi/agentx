@@ -41,6 +41,10 @@ export interface ScoreReport {
   agent: string
   /** Whether the shared wiki was searched too. */
   shared: boolean
+  /** How pages were picked ("summaries" or "catalog"), and whether the
+   *  live read was on (#855). */
+  method?: string
+  live?: boolean
   /** Mean of the question scores, 0–1. */
   score: number
   /** Questions every expected fact was found for. */
@@ -83,7 +87,7 @@ export function matchFacts(answer: string, expect: string[]): { found: string[];
 }
 
 export function buildReport(
-  meta: { questions: string; agent: string; shared: boolean; at?: string },
+  meta: { questions: string; agent: string; shared: boolean; method?: string; live?: boolean; at?: string },
   answers: Array<{ q: ScoreQuestion; answer: string; status: string; citations: string[] }>,
 ): ScoreReport {
   const results = answers.map(({ q, answer, status, citations }) => {
@@ -94,6 +98,8 @@ export function buildReport(
   return {
     at: meta.at ?? new Date().toISOString(),
     questions: meta.questions, agent: meta.agent, shared: meta.shared,
+    ...(meta.method ? { method: meta.method } : {}),
+    ...(meta.live !== undefined ? { live: meta.live } : {}),
     score, full: results.filter((r) => r.missing.length === 0).length, results,
   }
 }
