@@ -1,4 +1,4 @@
-import { createCard, isValidCardId, readCard, type CardSettings } from "./cards"
+import { createCard, isValidCardId, readCard, resolveCard, type CardSettings } from "./cards"
 import { listInbox, type InboxContext } from "./inbox"
 
 // --- The daemon's /approvals endpoints ---
@@ -10,6 +10,9 @@ import { listInbox, type InboxContext } from "./inbox"
 //   GET  /approvals/:id    read one of the cards (to check its result)
 //   POST /approvals/checkin start a check-in now ({"daily": true} for the
 //                          full pass). It only asks agents to write cards.
+//   POST /approvals/:id/resolve  the raising agent closes its own card
+//                          because the owner already answered in chat and
+//                          the agent acted on it (#909). Not a verdict.
 // Deciding is refused here on purpose. The operator decides with the
 // `agentx approvals` CLI or the dashboard's Approvals page.
 //
@@ -91,6 +94,25 @@ export function handleApprovalsApi(
     const kind = body?.daily === true ? "daily" : "check"
     deps.runCheckin(kind)
     return { status: 202, body: { started: kind } }
+  }
+
+  const resolve = path.match(/^\/approvals\/([^/]+)\/resolve$/)
+  if (resolve && m === "POST") {
+    const id = decodeURIComponent(resolve[1])
+    const by = typeof body?.raised_by === "string" ? body.raised_by.trim() : ""
+    const from = typeof body?.node === "string" ? body.node.trim() : ""
+    // Same rule as raising: a local agent, or an agent on a mesh peer that
+    // forwarded its card here.
+    const node = from && !deps.hasAgent(by) && deps.hasPeer?.(from) ? from : undefined
+    if (!by || (!deps.hasAgent(by) && !node)) {
+      return { status: 400, body: { error: "raised_by must be the agent that raised the card" } }
+    }
+    if (typeof body?.reason !== "string" || !body.reason.trim()) {
+      return { status: 400, body: { error: "reason is required: say where the owner answered and what you did" } }
+    }
+    const r = resolveCard(deps.ctx.root, id, { by, reason: body.reason, node, now: deps.ctx.now })
+    if (!r.ok) return { status: r.error.startsWith("no card") ? 404 : 409, body: { error: r.error } }
+    return { status: 200, body: { card: r.card } }
   }
 
   const one = path.match(/^\/approvals\/([^/]+)$/)

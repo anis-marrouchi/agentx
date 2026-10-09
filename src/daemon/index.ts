@@ -75,7 +75,7 @@ import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
-import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
+import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
@@ -3981,6 +3981,25 @@ export class AgentXDaemon {
           const remote = await readForwardedCard(decodeURIComponent(one[1]), forward)
           this.json(res, remote.status, remote.body)
           return
+        }
+        // Closing a forwarded card (#909) is done there too.
+        const closing = /^\/approvals\/([^/]+)\/resolve$/.exec(path)
+        if (forward && closing && req.method === "POST" && reply.status === 404) {
+          const remote = await resolveForwardedCard(decodeURIComponent(closing[1]), (body ?? {}) as Record<string, unknown>, forward)
+          if (remote.status === 200) {
+            const card = (remote.body as { card: DecisionCard }).card
+            this.log(`[approvals] ${card.id} closed on ${forward.peer.name} by ${card.raised_by}`)
+            this.requests?.tracker.cardResolved(card)
+            this.status?.board.cardResolved(card)
+          }
+          this.json(res, remote.status, remote.body)
+          return
+        }
+        if (closing && reply.status === 200) {
+          const card = (reply.body as { card: DecisionCard }).card
+          this.log(`[approvals] ${card.id} closed by ${card.raised_by}: ${card.resolution}`)
+          this.requests?.tracker.cardResolved(card)
+          this.status?.board.cardResolved(card)
         }
         raised(reply)
         this.json(res, reply.status, reply.body)

@@ -4,8 +4,8 @@ import { createServer, type Server } from "http"
 import { tmpdir } from "os"
 import { join } from "path"
 import {
-  buildCard, createCard, decideCard, expireCards, readCard, resolveExpiry, cardsAwaitingAgentNotice, verdictMessage,
-  CARD_LIMITS, DEFAULT_CARD_SETTINGS, IF_SILENT_VALUES,
+  buildCard, createCard, decideCard, expireCards, readCard, resolveCard, resolveExpiry, cardsAwaitingAgentNotice, verdictMessage,
+  saveCard, CARD_LIMITS, NO_UNDO_LINE, DEFAULT_CARD_SETTINGS, IF_SILENT_VALUES,
 } from "../src/approvals/cards"
 import { decide, listInbox, parseKey } from "../src/approvals/inbox"
 import { runApprovalsSweep, digestDue, digestText, type ApprovalSettings } from "../src/approvals/sweep"
@@ -403,6 +403,89 @@ describe("agents can raise and read, never decide", () => {
     expect(await runApprovalTool({ action: "status", id }, { daemonUrl: "http://127.0.0.1:1", fetch: fakeFetch, env })).toMatch(/still waiting/)
     expect(await runApprovalTool({ action: "approve", id }, { daemonUrl: "http://127.0.0.1:1", fetch: fakeFetch, env })).toMatch(/unknown action/)
     expect(readCard(root, id)?.status).toBe("pending")
+  })
+})
+
+describe("an agent closes its own card once the owner answered in chat (#909)", () => {
+  const deps = (hasPeer?: (n: string) => boolean) => ({ ctx: ctx(), settings: DEFAULT_CARD_SETTINGS, hasAgent: (id: string) => id === "alpha" || id === "beta", hasPeer })
+  const raise = (extra: Record<string, unknown> = {}) => {
+    const r = createCard(root, card(extra), { now: NOW })
+    if (!r.ok) throw new Error(r.error)
+    return r.card
+  }
+  const close = (id: string, body: Record<string, unknown>, d = deps()) =>
+    handleApprovalsApi("POST", `/approvals/${id}/resolve`, body, new URLSearchParams(), d)
+
+  it("closes the card: it leaves the inbox, nobody is asked again, the agent is not told", async () => {
+    const c = raise()
+    const r = close(c.id, { raised_by: "alpha", reason: "approved in chat, done" })
+    expect(r.status).toBe(200)
+    const stored = readCard(root, c.id)!
+    expect(stored).toMatchObject({ status: "resolved", resolution: "approved in chat, done", decided_by: "alpha" })
+    expect(stored.verdict).toBeUndefined()
+    expect(listInbox(ctx()).items).toEqual([])
+    // A late answer from a check-in or popup cannot land on it.
+    expect(await decide(ctx(), `card:${c.id}`, "no")).toMatchObject({ ok: false })
+    expect(readCard(root, c.id)?.status).toBe("resolved")
+    const tellAgent = vi.fn(async () => {})
+    await runApprovalsSweep({ ctx: ctx(), settings: SETTINGS, tellAgent, log: () => {} })
+    expect(tellAgent).not.toHaveBeenCalled()
+  })
+
+  it("only the raising agent, with a reason, on a card still pending", () => {
+    const c = raise()
+    expect(close(c.id, { raised_by: "beta", reason: "done" }).status).toBe(409)
+    expect(close(c.id, { raised_by: "stranger", reason: "done" }).status).toBe(400)
+    expect(close(c.id, { raised_by: "alpha" }).status).toBe(400)
+    expect(close("2026-09-26-nope-abcd", { raised_by: "alpha", reason: "done" }).status).toBe(404)
+    decideCard(root, c.id, "yes")
+    expect(close(c.id, { raised_by: "alpha", reason: "done" }).status).toBe(409)
+    expect(readCard(root, c.id)?.status).toBe("decided")
+  })
+
+  it("never closes a card the daemon acts on itself", () => {
+    const c = raise()
+    saveCard(root, { ...c, origin: { kind: "workflow", runId: "r1", nodeId: "n1" } })
+    const r = close(c.id, { raised_by: "alpha", reason: "done" })
+    expect(r.status).toBe(409)
+    expect((r.body as any).error).toMatch(/operator only/)
+  })
+
+  it("a card forwarded from another node is closed only in that node's name", () => {
+    const r = createCard(root, card({ raised_by: "remote-agent" }), { now: NOW, node: "far" })
+    if (!r.ok) throw new Error(r.error)
+    const peers = deps((n) => n === "far" || n === "other")
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "other" }, peers).status).toBe(409)
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done" }, peers).status).toBe(400)
+    expect(close(r.card.id, { raised_by: "remote-agent", reason: "done", node: "far" }, peers).status).toBe(200)
+    expect(resolveCard(root, r.card.id, { by: "remote-agent", node: "far", reason: "again" })).toMatchObject({ ok: false })
+  })
+
+  it("the tool closes the card and says how in its create reply", async () => {
+    const fakeFetch = (async (url: string, init?: RequestInit) => {
+      const path = new URL(url).pathname
+      const r = handleApprovalsApi(init?.method ?? "GET", path, init?.body ? JSON.parse(String(init.body)) : undefined, new URLSearchParams(), deps())
+      return new Response(JSON.stringify(r.body), { status: r.status })
+    }) as unknown as typeof fetch
+    const env = { AGENTX_AGENT_ID: "alpha" }
+    const opts = { daemonUrl: "http://127.0.0.1:1", fetch: fakeFetch, env }
+    const text = await runApprovalTool(card(), opts)
+    expect(text).toMatch(/action:"resolve"/)
+    const id = /card (\S+) is/.exec(text)![1]
+    expect(await runApprovalTool({ action: "resolve", id }, opts)).toMatch(/reason.* is required/)
+    expect(await runApprovalTool({ action: "resolve", id, reason: "approved in chat, done" }, opts)).toMatch(/is closed/)
+    expect(await runApprovalTool({ action: "status", id }, opts)).toMatch(/closed by alpha: approved in chat, done/)
+    expect(await runApprovalTool({ action: "resolve", id, reason: "again" }, opts)).toMatch(/already resolved/)
+  })
+
+  it("a no tells the agent not to undo work already done", () => {
+    const c = raise()
+    const r = decideCard(root, c.id, "no")
+    if (!r.ok) throw new Error(r.error)
+    expect(verdictMessage(r.card)).toContain(NO_UNDO_LINE)
+    const y = decideCard(root, raise({ title: "Another" }).id, "yes")
+    if (!y.ok) throw new Error(y.error)
+    expect(verdictMessage(y.card)).not.toContain(NO_UNDO_LINE)
   })
 })
 

@@ -27,7 +27,10 @@ function asIfSilent(v: string): IfSilent | null {
   return IF_SILENT_VALUES.includes(v as IfSilent) ? (v as IfSilent) : null
 }
 
-export type CardStatus = "pending" | "decided" | "expired"
+// "resolved": closed by the agent that raised it, because the owner gave the
+// same answer somewhere else (in chat, #909) and the agent already acted on
+// it. Not a verdict: nothing is approved or rejected by it.
+export type CardStatus = "pending" | "decided" | "expired" | "resolved"
 export type Verdict = "yes" | "no"
 
 /** Where the agent was asked, so the verdict can be taken back there. */
@@ -71,6 +74,8 @@ export interface DecisionCard extends CardChoices {
   text?: string
   /** Set once the raising agent has been told the result. */
   agent_notified_at?: string
+  /** Why the raising agent closed it (status "resolved"). */
+  resolution?: string
   /** What the card is about, when the daemon raised it (origin.ts). */
   origin?: CardOrigin
 }
@@ -81,6 +86,7 @@ export const CARD_LIMITS = {
   recommend: 300,
   source: 500,
   note: 500,
+  resolution: 300,
   /** Pending cards one agent may have open at a time. */
   pendingPerAgent: 25,
 } as const
@@ -311,6 +317,46 @@ export function decideCard(
   return { ok: true, card: decided }
 }
 
+/** Cards whose answer the daemon acts on itself (a workflow run, a plan
+ *  step, a retro): only the operator closes those. A reminder card is the
+ *  agent's own to act on, so it may close it like one it raised. */
+const AGENT_RESOLVABLE_ORIGINS = new Set<string | undefined>([undefined, "reminder"])
+
+/**
+ * The raising agent closes its own pending card: the owner gave the same
+ * answer outside the card (in chat) and the agent has acted on it (#909).
+ * The card leaves the inbox, so no check-in or popup asks again. It is not
+ * a verdict, and the agent is not sent a result for it: it already knows.
+ */
+export function resolveCard(
+  root: string,
+  id: string,
+  opts: { by: string; reason?: unknown; node?: string; now?: number },
+): { ok: true; card: DecisionCard } | { ok: false; error: string } {
+  const card = readCard(root, id)
+  if (!card) return { ok: false, error: `no card "${id}"` }
+  if (card.raised_by !== opts.by || (card.node ?? "") !== (opts.node ?? "")) {
+    return { ok: false, error: `card "${id}" was raised by another agent` }
+  }
+  if (!AGENT_RESOLVABLE_ORIGINS.has(card.origin?.kind)) {
+    return { ok: false, error: `card "${id}" is answered by the operator only` }
+  }
+  if (card.status !== "pending") return { ok: false, error: `card "${id}" is already ${card.status}` }
+  const reason = oneLine(opts.reason)
+  if (!reason) return { ok: false, error: "reason is required: say where the owner answered and what you did" }
+  const at = new Date(opts.now ?? Date.now()).toISOString()
+  const resolved: DecisionCard = {
+    ...card,
+    status: "resolved",
+    decided_by: opts.by,
+    decided_at: at,
+    resolution: reason.slice(0, CARD_LIMITS.resolution),
+    agent_notified_at: at,
+  }
+  saveCard(root, resolved)
+  return { ok: true, card: resolved }
+}
+
 /** Apply `if_silent` to every pending card past its expiry. */
 export function expireCards(root: string, now: number = Date.now()): DecisionCard[] {
   const out: DecisionCard[] = []
@@ -340,6 +386,9 @@ export function markAgentNotified(root: string, id: string, now: number = Date.n
   saveCard(root, { ...card, agent_notified_at: new Date(now).toISOString() })
 }
 
+export const NO_UNDO_LINE =
+  "A no does not by itself undo anything you already did. If you already carried this out (for example because the owner approved it in chat), do not reverse it: ask the requester one clear question first."
+
 /** What the raising agent is told. Plain text, one short message. */
 export function verdictMessage(card: DecisionCard): string {
   const retro = card.origin?.kind === "retro" ? card.origin : undefined
@@ -358,6 +407,9 @@ export function verdictMessage(card: DecisionCard): string {
   const check = card.origin?.kind === "retro-check" ? card.origin : undefined
   if (card.status === "decided" && card.verdict === "yes" && !retro && !check) lines.push(...answerLines(card))
   if (card.note) lines.push(`Operator note: ${card.note}`)
+  // A late no on something the owner already approved in chat must not
+  // quietly undo work that is done (#909).
+  if (card.status === "decided" && card.verdict === "no" && !retro && !check) lines.push(NO_UNDO_LINE)
   if (card.source) lines.push(`Source: ${card.source}`)
   if (card.origin?.kind === "reminder") lines.push(...originLines(card.origin, card.status === "decided" && card.verdict === "yes"))
   if (retro || check) {
