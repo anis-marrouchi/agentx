@@ -26,6 +26,7 @@ export function readRequiredSettings(configPath?: string): RequiredSettingsView 
     enabled: typeof r.enabled === "boolean" ? r.enabled : REQUIRED_DEFAULTS.enabled,
     agents,
     exemptQuestions: typeof r.exemptQuestions === "boolean" ? r.exemptQuestions : REQUIRED_DEFAULTS.exemptQuestions,
+    retentionDays: Number.isInteger(r.retentionDays) && r.retentionDays >= 0 ? r.retentionDays : REQUIRED_DEFAULTS.retentionDays,
     engine: raw?.workflows?.enabled === true,
   }
 }
@@ -33,6 +34,8 @@ export function readRequiredSettings(configPath?: string): RequiredSettingsView 
 export interface RequiredSettingsPatch {
   enabled?: boolean
   exemptQuestions?: boolean
+  /** Days ended task runs are kept; 0 keeps them all (#883). */
+  retentionDays?: number
   /** One agent's override: true, false, or null to follow `enabled` again. */
   agent?: { id: string; value: boolean | null }
 }
@@ -43,6 +46,9 @@ export async function updateRequiredSettings(
   patch: RequiredSettingsPatch,
   opts: { configPath?: string; reload?: boolean } = {},
 ): Promise<MutationResult> {
+  if (patch.retentionDays !== undefined && !(Number.isInteger(patch.retentionDays) && patch.retentionDays >= 0 && patch.retentionDays <= 3650)) {
+    return { success: false, error: "retentionDays is a whole number of days from 0 to 3650" }
+  }
   if (patch.agent && !/^[A-Za-z0-9_.@-]{1,80}$/.test(patch.agent.id)) {
     return { success: false, error: `"${patch.agent.id}" is not an agent id` }
   }
@@ -51,6 +57,7 @@ export async function updateRequiredSettings(
     const r = (wf.required ??= {})
     if (patch.enabled !== undefined) r.enabled = patch.enabled
     if (patch.exemptQuestions !== undefined) r.exemptQuestions = patch.exemptQuestions
+    if (patch.retentionDays !== undefined) r.retentionDays = patch.retentionDays
     if (patch.agent) {
       const agents = (r.agents ??= {})
       if (patch.agent.value === null) delete agents[patch.agent.id]

@@ -721,6 +721,7 @@ workflow
   .description("show or change whether every task runs through a workflow (workflows.required)")
   .option("--enabled <on|off>", "every task of every agent runs inside a workflow run")
   .option("--exempt-questions <on|off>", "a plain question that changed nothing leaves no run (default on)")
+  .option("--retention-days <n>", "remove task runs that ended more than n days ago (default 30, 0 keeps them all)")
   .option("--agent <id>", "with --agent-required: the agent to set it for")
   .option("--agent-required <on|off|default>", "on or off for --agent whatever --enabled says; default follows --enabled again")
   .action(async (opts: Record<string, string | undefined>) => {
@@ -733,6 +734,10 @@ workflow
     try {
       patch.enabled = onOff("--enabled", opts.enabled)
       patch.exemptQuestions = onOff("--exempt-questions", opts.exemptQuestions)
+      if (opts.retentionDays !== undefined) {
+        if (!/^\d+$/.test(opts.retentionDays) || Number(opts.retentionDays) > 3650) throw new Error("--retention-days takes a whole number from 0 to 3650")
+        patch.retentionDays = Number(opts.retentionDays)
+      }
       if ((opts.agentRequired === undefined) !== (opts.agent === undefined)) throw new Error("--agent and --agent-required go together")
       if (opts.agent && opts.agentRequired !== undefined) {
         if (!["on", "off", "default"].includes(opts.agentRequired)) throw new Error("--agent-required takes on, off or default")
@@ -741,7 +746,7 @@ workflow
     } catch (e: any) {
       console.error(chalk.red(`  ${e.message}`)); process.exitCode = 1; return
     }
-    if (patch.enabled !== undefined || patch.exemptQuestions !== undefined || patch.agent) {
+    if (patch.enabled !== undefined || patch.exemptQuestions !== undefined || patch.retentionDays !== undefined || patch.agent) {
       const r = await updateRequiredSettings(patch)
       if (!r.success) { console.error(chalk.red(`  ${r.error}`)); process.exitCode = 1; return }
       console.log(chalk.green("  ✓ saved") + (r.reloaded ? chalk.dim(" (daemon reloaded)") : ""))
@@ -752,6 +757,7 @@ workflow
     if (!s.engine) console.log(chalk.yellow("  The workflow engine is off: nothing is required until workflows.enabled is true."))
     console.log(`  Every task in a workflow  ${s.enabled ? "on" : "off"}${on.length ? chalk.dim(` (on for ${on.join(", ")})`) : ""}${off.length ? chalk.dim(` (off for ${off.join(", ")})`) : ""}`)
     console.log(`  Plain questions           ${s.exemptQuestions ? "exempt: no run when nothing was changed" : "run through a workflow too"}`)
+    console.log(`  Task runs kept            ${s.retentionDays ? `${s.retentionDays} day${s.retentionDays === 1 ? "" : "s"} after they end` : "forever"}`)
   })
 
 workflow
@@ -764,7 +770,9 @@ workflow
   .action((opts: { workflow?: string; agent?: string; days?: string; limit?: string }) => {
     const limit = Math.max(1, Math.min(10_000, Number(opts.limit) || 500))
     const since = opts.days !== undefined ? Date.now() - Math.max(0, Number(opts.days) || 0) * 86_400_000 : 0
-    const runs = new RunStore({ nodeId: process.env.WF_NODE_ID || "local" }).list({ workflowId: opts.workflow })
+    // Workflow runs and task runs (#883); a file last written before --days
+    // is not read at all.
+    const runs = new RunStore({ nodeId: process.env.WF_NODE_ID || "local" }).list({ workflowId: opts.workflow, tasks: opts.workflow ? undefined : "include", since: since || undefined, limit: opts.agent ? undefined : limit })
     let n = 0
     for (const run of runs) {
       if (since && Date.parse(run.createdAt) < since) continue

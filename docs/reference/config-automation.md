@@ -131,6 +131,7 @@ The workflow engine. See [Workflows](/dashboard/workflows).
 | `workflows.required.enabled` | boolean | `false` | On for every agent. Needs `workflows.enabled`. |
 | `workflows.required.agents` | object | `{}` | Per agent, by id: `true` or `false` wins over `enabled`. |
 | `workflows.required.exemptQuestions` | boolean | `true` | A plain question (no plan, only tools that change nothing) leaves no run. |
+| `workflows.required.retentionDays` | number | `30` | Task runs that ended are removed this many days after their last change, when the daemon starts and every 6 hours. `0` keeps them all. |
 | `workflows.editor` | `"disabled"` \| `"readonly"` \| `"edit"` | `"edit"` | The dashboard's workflow editor: hidden, view only, or editable. |
 
 ## `procedures`

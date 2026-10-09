@@ -1753,6 +1753,9 @@ export const daemonConfigSchema = z.object({
        *  that change nothing, leaves no run. On by default: such a turn has
        *  nothing to follow up. */
       exemptQuestions: z.boolean().default(true),
+      /** Task runs that ended are removed after this many days (#883),
+       *  at boot and every few hours. 0 keeps them all. */
+      retentionDays: z.number().int().min(0).max(3650).default(30),
     }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the

@@ -246,6 +246,7 @@ export class AgentXDaemon {
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
   private callSweep?: ReturnType<typeof setInterval>
+  private taskRunPrune?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
   private webrtc?: WebRtcSignalBroker
@@ -1206,6 +1207,7 @@ export class AgentXDaemon {
 
     if (this.attachSweep) clearInterval(this.attachSweep)
     if (this.callSweep) clearInterval(this.callSweep)
+    if (this.taskRunPrune) clearInterval(this.taskRunPrune)
 
     if (this.httpServer) {
       this.httpServer.close()
@@ -2971,10 +2973,28 @@ export class AgentXDaemon {
     // workflows.required (#858): wrapped tasks keep their run here too.
     // Runs whose turn was cut off by the last stop are closed first.
     this.registry.setWorkflowRunStore(runs)
+    // Task runs keep a folder of their own (#883); runs 0.133.0 wrote with
+    // the workflow runs are moved there once.
+    try {
+      const moved = runs.moveTaskRuns()
+      if (moved) this.log(`  Workflows: moved ${moved} task run(s) to their own folder`)
+    } catch (e: any) { this.log(`  Workflows: moving task runs failed (non-fatal): ${e?.message || e}`) }
     try {
       const stale = closeStaleWraps(runs)
       if (stale) this.log(`  Workflows: closed ${stale} task run(s) cut off by the last stop`)
     } catch (e: any) { this.log(`  Workflows: closing cut-off task runs failed (non-fatal): ${e?.message || e}`) }
+    // Retention (#883): ended task runs older than retentionDays go, now
+    // and every 6 hours. Read from config each time, so a change applies.
+    const pruneTaskRuns = () => {
+      try {
+        const n = runs.pruneTaskRuns(this.config.workflows.required?.retentionDays ?? 30)
+        if (n) this.log(`  Workflows: removed ${n} task run(s) past workflows.required.retentionDays`)
+      } catch (e: any) { this.log(`  Workflows: pruning task runs failed (non-fatal): ${e?.message || e}`) }
+    }
+    pruneTaskRuns()
+    if (this.taskRunPrune) clearInterval(this.taskRunPrune)
+    this.taskRunPrune = setInterval(pruneTaskRuns, 6 * 60 * 60 * 1000)
+    this.taskRunPrune.unref?.()
     // Phase 3: webhook handler can now dispatch workflows per event-type
     // (webhooks[].triggers map). When `triggers` is unset, behavior is
     // unchanged from prior versions.
