@@ -10,6 +10,7 @@
 import { createHash, randomBytes } from "crypto"
 import { readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { LockBusyError } from "./facts/ledger-file"
 import type { WikiStore } from "./store"
 import type { WikiArticle } from "./types"
 
@@ -229,13 +230,30 @@ export function applyCuration(
   opts: { curator: string; instruction?: string; expectedFingerprint?: string; now?: Date },
 ): CurateApplyResult {
   if (reply.content === undefined) return { ok: false, error: "the agent sent no page" }
+  // Held from the re-read to the write (and any undo), so a write from
+  // another process can't land in between.
+  try {
+    return store.withArticleLock(path, () => applyCurationLocked(store, path, reply, reply.content!, opts))
+  } catch (e) {
+    if (!(e instanceof LockBusyError)) throw e
+    return { ok: false, error: "the page was busy; nothing was written. Ask again." }
+  }
+}
+
+function applyCurationLocked(
+  store: WikiStore,
+  path: string,
+  reply: CurateReply,
+  content: string,
+  opts: { curator: string; instruction?: string; expectedFingerprint?: string; now?: Date },
+): CurateApplyResult {
   const current = store.readArticle(path)
   if (!current) return { ok: false, error: "the page no longer exists" }
   if (opts.expectedFingerprint && pageFingerprint(current) !== opts.expectedFingerprint) {
     return { ok: false, error: "the page changed while the agent was working; nothing was written. Ask again." }
   }
   const before = current.content.trim()
-  const after = reply.content.trim()
+  const after = content.trim()
   const diff = lineDiff(before, after)
   const added = diff.filter(d => d.op === "+").length
   const removed = diff.filter(d => d.op === "-").length

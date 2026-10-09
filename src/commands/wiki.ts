@@ -10,6 +10,7 @@ import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
 import { patchProblems } from "@/wiki/fact-guard"
+import { LockBusyError } from "@/wiki/facts/ledger-file"
 import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
 import { applyNoteAnswers, noteSource, parseNoteAnswers, renderAbsorbNotesBlock } from "@/wiki/absorb-notes"
 import { NoteStore, type WikiNote } from "@/wiki/notes"
@@ -2130,7 +2131,16 @@ wiki
     const relPath = resolveArticlePath(store, titleOrPath, agentId)
     if (!relPath) { console.log(chalk.yellow(`  no page matches "${titleOrPath}" in ${agentId}'s wiki.`)); process.exitCode = 1; return }
     const target = version || store.getVersions(relPath)[0]?.timestamp
-    if (!target || !store.restoreVersion(relPath, target)) {
+    let restored = false
+    try {
+      restored = !!target && store.restoreVersion(relPath, target)
+    } catch (e) {
+      if (!(e instanceof LockBusyError)) throw e
+      console.log(chalk.red(`  ${relPath} was not restored: the page was busy; run again.`))
+      process.exitCode = 1
+      return
+    }
+    if (!restored) {
       console.log(chalk.red(`  no version ${target ? `"${target}" ` : ""}of ${relPath}; see agentx wiki versions ${agentId} "${titleOrPath}"`))
       process.exitCode = 1
       return
