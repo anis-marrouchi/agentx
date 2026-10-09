@@ -1683,7 +1683,7 @@ When the query cannot run, the command exits with code 1: the model call failed 
 
 ### `agentx wiki query-runs`
 
-Count the queries recorded in `_query-runs.jsonl`: how many ran, how many failed (status `error` or `no-catalog`), how many ended in each status, how many came from this command (`cli`) and how many from the agents' `agentx_wiki_query` tool (`tool`), and the typical (p50) and slowest (p95) time. Only the newest queries are kept (about 500 KB of lines, once the file passes 1 MB), so a count over a long period may start later than you asked for.
+Count the queries recorded in `_query-runs.jsonl`: how many ran, how many failed (status `error` or `no-catalog`), how many ended in each status, how many came from this command (`cli`) and how many from the agents' `agentx_wiki_query` tool (`tool`), and the typical (p50) and slowest (p95) time of the queries that ran (a `no-catalog` query never ran, so it is left out of the times). Only the newest queries are kept (about 500 KB of lines, once the file passes 1 MB), so a count over a long period may start later than you asked for.
 
 | Flag | Default | What it does |
 |---|---|---|
