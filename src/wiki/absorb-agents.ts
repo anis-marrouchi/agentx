@@ -32,6 +32,16 @@ export function selectAbsorbAgents(
 }
 
 /**
+ * The line a bulk absorb prints for a skipped agent. When that agent is
+ * `wikiNotes.absorbAgent`, it also says the notes inbox was not read
+ * (#885).
+ */
+export function absorbSkipMessage(id: string, notesAbsorbAgent?: string): string {
+  const inbox = id === notesAbsorbAgent ? " It reads the wiki notes inbox, so the inbox was not read." : ""
+  return `absorb is off for this agent (agents.${id}.wiki.absorb.enabled); skipped.${inbox} Use --agent ${id} to run it anyway.`
+}
+
+/**
  * Write the switch into one agent's raw config, as the dashboard saves
  * it. Only `false` is written: on is the default, so turning it back on
  * removes the key instead of leaving `enabled: true` behind.

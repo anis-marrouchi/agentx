@@ -52,6 +52,21 @@ export function parseStatements(line: string): WikiStatement[] | undefined {
 //   - shared: owner writes, listed agents read
 //   - public: owner writes, all agents read
 
+/**
+ * Order version file names oldest first: by timestamp, then by the counter
+ * suffix that saveVersion adds when two writes share a millisecond
+ * (`<ts>.md` < `<ts>-1.md` < `<ts>-2.md` < ... < `<ts>-10.md`).
+ */
+function compareVersionNames(a: string, b: string): number {
+  const split = (f: string): [string, number] => {
+    const m = /^(.*Z)(?:-(\d+))?\.md$/.exec(f)
+    return m ? [m[1], m[2] ? Number(m[2]) : 0] : [f, 0]
+  }
+  const [ta, na] = split(a)
+  const [tb, nb] = split(b)
+  return ta < tb ? -1 : ta > tb ? 1 : na - nb
+}
+
 export class WikiStore {
   readonly baseDir: string
   private rawDir: string
@@ -292,7 +307,16 @@ export class WikiStore {
       const ts = new Date().toISOString().replace(/[:.]/g, "-")
       const versionDir = resolve(this.baseDir, "_versions", articlePath.replace(/\.md$/, ""))
       mkdirSync(versionDir, { recursive: true })
-      writeFileSync(resolve(versionDir, `${ts}.md`), content)
+      // Two writes inside one millisecond share a timestamp: the later one
+      // gets a counter suffix (`<ts>-1.md`, ...) instead of overwriting.
+      for (let n = 0; ; n++) {
+        try {
+          writeFileSync(resolve(versionDir, `${n ? `${ts}-${n}` : ts}.md`), content, { flag: "wx" })
+          return
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
+        }
+      }
     } catch {
       // Version save is best-effort
     }
@@ -308,7 +332,7 @@ export class WikiStore {
     try {
       return readdirSync(versionDir)
         .filter(f => f.endsWith(".md"))
-        .sort()
+        .sort(compareVersionNames)
         .reverse()
         .map(f => ({
           timestamp: f.replace(/\.md$/, "").replace(/-/g, (m, i) => i < 19 ? (i === 10 ? "T" : i === 13 || i === 16 ? ":" : "-") : m),
@@ -324,7 +348,8 @@ export class WikiStore {
    */
   restoreVersion(articlePath: string, versionTimestamp: string): boolean {
     const versions = this.getVersions(articlePath)
-    const version = versions.find(v => v.timestamp.startsWith(versionTimestamp))
+    const version = versions.find(v => v.timestamp === versionTimestamp)
+      ?? versions.find(v => v.timestamp.startsWith(versionTimestamp))
     if (!version) return false
 
     try {

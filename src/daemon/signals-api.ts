@@ -8,13 +8,16 @@ import { summarizeStopped } from "@/agents/signals/store"
 //   GET  /api/signals/stopped/:id                     one record, whole plan
 //   POST /api/signals/stop    { taskId } | { agentId, channel, chatId }, reason?, node?
 //   POST /api/signals/resume  { id, reason?, node? }
+//   POST /api/signals/drop    { id, node? }            forget a stopped task (#871)
 //
 // `node` names a mesh peer: the signal is forwarded there with this node's
 // peer token, and the peer decides by its own signals.allowPeers. The
 // caller is resolved by signalSender(): an agent proves itself with its
 // running task (the X-AgentX-Task / -Channel / -Chat headers its MCP
-// tools send); a forwarded signal carries `via`; anyone else past the
-// mesh gate is the owner (CLI, dashboard), as for /api/tasks/:id/cancel.
+// tools send); a forwarded signal carries `via`; a peer's own token names
+// that peer, with or without `via` (#871); anyone else past the mesh gate
+// (the shared mesh token, loopback) is the owner (CLI, dashboard), as for
+// /api/tasks/:id/cancel.
 
 export interface SignalsReply {
   status: number
@@ -50,6 +53,9 @@ export function signalSender(input: SenderInput): SignalSender | { error: string
     const agentId = typeof input.via.agentId === "string" && input.via.agentId.trim() ? input.via.agentId.trim() : undefined
     return agentId ? { kind: "agent", agentId, peer } : { kind: "peer", peer }
   }
+  // A peer's own token is that peer even when it sends no `via`, so
+  // signals.allowPeers holds for it (#871).
+  if (input.tokenPeer) return { kind: "peer", peer: input.tokenPeer }
   return { kind: "owner" }
 }
 
@@ -77,7 +83,7 @@ export interface SignalsHttpDeps {
 const str = (v: unknown): string | undefined => (typeof v === "string" && v.trim() ? v.trim() : undefined)
 
 export function isSignalsPath(path: string): boolean {
-  return path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/stopped" ||
+  return path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" || path === "/api/signals/stopped" ||
     /^\/api\/signals\/stopped\/[^/]+$/.test(path)
 }
 
@@ -145,6 +151,13 @@ export async function handleSignalsHttp(
     const r = await deps.service.resume(deps.sender, id, str(body.reason))
     if (!r.ok) return { status: r.status, body: { error: r.error } }
     return { status: 200, body: { ok: true, node: deps.selfNode, id: r.record.id, agentId: r.record.agentId, rootId: r.record.rootId, state: r.record.state, delivery: r.delivery } }
+  }
+  if (path === "/api/signals/drop") {
+    const id = str(body.id)
+    if (!id) return { status: 400, body: { error: "send { id } of a stopped task" } }
+    const r = deps.service.drop(deps.sender, id)
+    if (!r.ok) return { status: r.status, body: { error: r.error } }
+    return { status: 200, body: { ok: true, node: deps.selfNode, id: r.record.id, agentId: r.record.agentId, rootId: r.record.rootId, dropped: true } }
   }
   return { status: 404, body: { error: "not found" } }
 }

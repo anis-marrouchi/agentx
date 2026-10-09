@@ -154,8 +154,9 @@ All under `wiki` in `agentx.json`.
 | `query.candidates` | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | `4` | How many of other agents' pages it sees beside them. `0` shows none. |
 | `query.maxPages` | `3` | Most pages opened for one answer. |
-| `query.linkedPages` | `0` | Also open up to this many pages that the picked pages link to (each page's related pages). `0` opens none. Try `3` when the answer often sits one link away from the page picked. |
 | `query.pageChars` | `4000` | Characters of each opened page given to the answer. |
+| `query.linkedPages` | `0` | Pages linked from the picked pages that are also opened. `0` opens none. See [Also open linked pages](#also-open-linked-pages). |
+| `query.linkedChars` | `6000` | Characters all the linked pages together give to the answer. |
 | `query.navigatorModel` | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | `"sonnet"` | Model that writes the answer. |
 | `query.live.enabled` | `true` | Set to `false` to switch the live read off. |
@@ -183,6 +184,27 @@ Each entry of `query.live.sources` has a `type` and these keys:
 | `agentx` | `url` | this machine | The AgentX daemon to ask. |
 | `agentx` | `peers` | `true` | Also ask each machine connected to that daemon. |
 
+## Also open linked pages
+
+A wiki page can name other pages in its `related` list (a link). By default, a question opens only the pages picked from the summary lines. Sometimes the answer sits one link away, in a page the picked page points to.
+
+1. **Editor:** open `agentx.json` and set `wiki.query.linkedPages` to a small number, such as `2`:
+
+   ```json
+   {
+     "wiki": {
+       "query": {
+         "linkedPages": 2,
+         "linkedChars": 6000
+       }
+     }
+   }
+   ```
+
+2. **Terminal:** run `agentx config check`. It prints `✓ Config valid`.
+
+After the pick, AgentX lists the pages the picked pages link to, and the newest pages that link to them. It opens those whose summary line shares the most words with the question first, then the others in link order, up to `linkedPages`. Together they give the answer at most `linkedChars` characters. This step makes no extra model call. A page the agent may not read is never opened.
+
 ## Ask one question a different way
 
 - `agentx wiki query "…" --no-live` answers from the pages alone.
@@ -196,6 +218,7 @@ Each entry of `query.live.sources` has a `type` and these keys:
 2. Under the answer and its citations, look for **Read live at the source**, with one line for each read, such as `#12 in example-org/app: "Add export" is closed since 2026-10-08`.
 3. **Terminal:** run `agentx wiki query "Is merge request <number> deployed, and where?" --agent <agent> --trace` for a repository that records deployments. A line starting with `#<number> in` or `!<number> in` lists each environment as deployed, not deployed or not known.
 4. The trace line starts with `method: summaries` and gives the reads asked and answered.
+5. With `query.linkedPages` above `0`, a `followed:` line lists the linked pages that were opened, each ending in `@h1`.
 
 ## If something is wrong
 
@@ -209,6 +232,7 @@ Each entry of `query.live.sources` has a `type` and these keys:
 - **A deploy line says "not known" for every environment:** the token can't read deployments or compare commits. Give it the read access listed above.
 - **A deploy line does not list `production`:** it was not among the newest deployments read. See the note on "environments seen in the newest … deployments" in [Know whether a change is deployed](#know-whether-a-change-is-deployed).
 - **Deploy reads stop being answered after a few questions on GitHub:** the source has no token and used up GitHub's allowance for requests without one. Set `tokenEnv` or `tokenFile` on the source.
+- **No `followed:` line with `linkedPages` set:** the picked pages link to no page the agent may read. Add the missing page names to their `related` list.
 - **`config check` says `expected owner/name`:** a repository in `repos` is not written as `owner/name` or `group/project`.
 - **`config check` says `wiki.summaries.schedule: expected a cron of 5 fields`:** write the schedule as minute, hour, day of the month, month and day of the week, for example `"30 23 * * *"` for 23:30 every day.
 - **`config check` says `wiki.summaries.timezone: expected a time zone`:** use a name such as `"UTC"` or `"Europe/Paris"`.

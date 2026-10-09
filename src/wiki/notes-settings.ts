@@ -105,6 +105,12 @@ export function patchWikiNotes(cfg: any, patch: WikiNotesPatch): string {
     if (cur.inbox && !cfg.agents?.[cur.inbox]) {
       throw new Error(`the inbox agent "${cur.inbox}" is not on this node; set the absorb agent on the node that keeps its notes`)
     }
+    // A bulk `wiki absorb` skips an agent with absorb off (#850), so its
+    // notes would wait for a step that never runs (#885). Checked only when
+    // this patch names the agent, so other edits are not blocked.
+    if (patch.absorbAgent !== undefined && cfg.agents[cur.absorbAgent]?.wiki?.absorb?.enabled === false) {
+      throw new Error(`wiki absorb is off for "${cur.absorbAgent}" (agents.${cur.absorbAgent}.wiki.absorb.enabled is false), so a bulk wiki absorb skips it and never reads the notes; turn its wiki absorb back on first`)
+    }
   }
 
   cfg.wikiNotes = cur
