@@ -846,13 +846,15 @@ const TOOLS = [
       "Ask the operator for a yes/no decision by raising a decision card in their Approvals inbox, instead of asking in chat. " +
       "Lead with your recommendation. Every card expires: say what should happen if nobody answers (if_silent). " +
       "You get a message with the result when it is decided or expires. You cannot approve anything with this tool. " +
-      "Actions: create (default), status. " +
+      "Actions: create (default), status, resolve. " +
+      "If the operator answers the same question in chat and you act on it, close your card with resolve (id and reason, e.g. 'approved in chat, done'), so it is not asked again. " +
+      "A no on a card whose action you already carried out does not undo it by itself: ask the requester one clear question first. " +
       "To offer ready-made answers, add choices (and optionally a draft message); the operator's pick and final text come back with the result. " +
       "Example: {title:'Publish the launch post draft', ask:'Publish the draft on Monday?', recommend:'Yes: it is reviewed and the date is agreed', if_silent:'discard', expires:'2d', source:'https://example.com/drafts/42'}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["create", "status"], description: "create (default) or status." },
+        action: { type: "string", enum: ["create", "status", "resolve"], description: "create (default), status, or resolve (close your own pending card because the operator already answered it in chat and you acted on it)." },
         title: { type: "string", description: "create: what it is, in one line (max 120 characters)." },
         ask: { type: "string", description: "create: the yes/no question (max 300 characters)." },
         recommend: { type: "string", description: "create: your advice and why, in one line (max 300 characters). With choices, start with the exact label you advise: the Mac card marks it and opens with it picked." },
@@ -863,7 +865,8 @@ const TOOLS = [
         draft: { type: "string", description: "create, optional: a suggested message the operator may edit before approving. {choice} is replaced by the pick. On yes you get the final text: send exactly that." },
         say: { type: "string", description: "create, optional: one short line the Mac popup speaks (max 160 characters). Default: the title." },
         context: { type: "string", description: "create, optional: a few lines of background shown above the question, e.g. what the other person said (max 600 characters)." },
-        id: { type: "string", description: "status: the card id you got from create." },
+        id: { type: "string", description: "status, resolve: the card id you got from create." },
+        reason: { type: "string", description: "resolve: where the operator answered and what you did, e.g. 'approved in chat, done' (max 300 characters)." },
         channel: { type: "string", description: "Current chat's channel, from your task context, so the result can mention it." },
         chatId: { type: "string", description: "Current chat id, from your task context." },
         callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },

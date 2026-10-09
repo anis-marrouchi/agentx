@@ -11,6 +11,7 @@ import type { ApiReply } from "./daemon-api"
 //
 //   agent ─agentx_approval─▶ its daemon ─POST /approvals {node}─▶ operator's daemon
 //   agent ◀─result turn────  its daemon ◀─POST /approvals/result─ operator's daemon
+//   agent ─resolve─────────▶ its daemon ─POST /approvals/:id/resolve {node}─▶ operator's daemon
 //
 // The operator's daemon keeps the card with `node` = where it came from,
 // shows it like any other, and when it is decided or expires sends the
@@ -70,6 +71,13 @@ export function forwardCard(input: Record<string, unknown>, deps: ForwardDeps): 
  *  that was forwarded there (the agent's status check). */
 export function readForwardedCard(id: string, deps: ForwardDeps): Promise<ApiReply> {
   return call(deps, "GET", `/approvals/${encodeURIComponent(id)}`)
+}
+
+/** Raising node: POST /approvals/:id/resolve on the operator's node, for
+ *  a card that was forwarded there (#909). Sent in this node's name, so
+ *  the operator's node can check the card came from here. */
+export function resolveForwardedCard(id: string, input: Record<string, unknown>, deps: ForwardDeps): Promise<ApiReply> {
+  return call(deps, "POST", `/approvals/${encodeURIComponent(id)}/resolve`, { ...input, node: deps.self })
 }
 
 /** Operator's node: hand a decided or expired card back to the node its

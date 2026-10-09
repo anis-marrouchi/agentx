@@ -183,7 +183,7 @@ export class StatusBoard {
    *  on; an expiry means the answer never came (no card approves itself, #741). */
   cardResolved(card: { id: string; status: string; if_silent?: string; outcome?: string }): void {
     this.guard("card result", () => {
-      const went = card.status === "decided"
+      const went = card.status === "decided" || card.status === "resolved"
       this.handedBack(this.store.byRef("card", card.id), went ? "done" : "timeout")
     })
   }

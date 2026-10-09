@@ -279,7 +279,8 @@ export class RequestTracker {
       if (!req) return
       const now = this.now()
       const applied = card.outcome ?? card.if_silent
-      if (card.status === "decided") {
+      // "resolved": the agent closed it because the owner answered in chat.
+      if (card.status === "decided" || card.status === "resolved") {
         if (req.state === "waiting_owner") this.store.progress(req.id, now)
       } else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
         this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)

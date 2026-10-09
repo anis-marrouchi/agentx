@@ -75,7 +75,7 @@ import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
-import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
+import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
@@ -3726,6 +3726,15 @@ export class AgentXDaemon {
     return warmProcessChat(turn.context)
   }
 
+  /** The agent whose running turn `proof` names: the owner of its task,
+   *  or `claimed` when its channel and chat match a running turn of that
+   *  agent. Null when the call proves none. */
+  private provenAgent(proof: RequestCallerProof, claimed?: string): string | null {
+    if (proof.taskId) return this.registry.runningTaskOwner(proof.taskId)?.agentId ?? null
+    if (claimed && proof.channel && proof.chatId && this.provenTurn(claimed, proof)) return claimed
+    return null
+  }
+
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
     const path = url.pathname
@@ -3970,6 +3979,12 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           hasAgent,
           hasPeer: (node) => !!this.approvalsPeer(node),
+          provenAgent: (claimed) => this.provenAgent(this.callerProof(req), claimed),
+          tokenPeerIs: (node) => {
+            const auth = req.headers.authorization
+            const peer = peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN)
+            return !!peer && this.approvalsPeer(node)?.name === peer
+          },
           ...(process.platform === "darwin" ? {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
@@ -3981,6 +3996,30 @@ export class AgentXDaemon {
           const remote = await readForwardedCard(decodeURIComponent(one[1]), forward)
           this.json(res, remote.status, remote.body)
           return
+        }
+        // Closing a forwarded card (#909) is done there too.
+        const closing = /^\/approvals\/([^/]+)\/resolve$/.exec(path)
+        // The local handler has already proven the calling agent (a 404
+        // comes only after that check); the card is sent in its name.
+        if (forward && closing && req.method === "POST" && reply.status === 404) {
+          const input = (body ?? {}) as Record<string, unknown>
+          const by = this.provenAgent(this.callerProof(req), typeof input.raised_by === "string" ? input.raised_by.trim() : undefined)
+          if (!by) { this.json(res, 403, { error: "only the agent that raised the card can close it" }); return }
+          const remote = await resolveForwardedCard(decodeURIComponent(closing[1]), { raised_by: by, reason: input.reason }, forward)
+          if (remote.status === 200) {
+            const card = (remote.body as { card: DecisionCard }).card
+            this.log(`[approvals] ${card.id} closed on ${forward.peer.name} by ${card.raised_by}`)
+            this.requests?.tracker.cardResolved(card)
+            this.status?.board.cardResolved(card)
+          }
+          this.json(res, remote.status, remote.body)
+          return
+        }
+        if (closing && reply.status === 200) {
+          const card = (reply.body as { card: DecisionCard }).card
+          this.log(`[approvals] ${card.id} closed by ${card.raised_by}: ${card.resolution}`)
+          this.requests?.tracker.cardResolved(card)
+          this.status?.board.cardResolved(card)
         }
         raised(reply)
         this.json(res, reply.status, reply.body)

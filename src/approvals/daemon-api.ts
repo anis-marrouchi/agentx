@@ -1,4 +1,4 @@
-import { createCard, isValidCardId, readCard, type CardSettings } from "./cards"
+import { createCard, isValidCardId, readCard, resolveCard, type CardSettings } from "./cards"
 import { listInbox, type InboxContext } from "./inbox"
 
 // --- The daemon's /approvals endpoints ---
@@ -10,6 +10,14 @@ import { listInbox, type InboxContext } from "./inbox"
 //   GET  /approvals/:id    read one of the cards (to check its result)
 //   POST /approvals/checkin start a check-in now ({"daily": true} for the
 //                          full pass). It only asks agents to write cards.
+//   POST /approvals/:id/resolve  the raising agent closes its own card
+//                          because the owner already answered in chat and
+//                          the agent acted on it (#909). Not a verdict.
+//                          The agent is the one whose running turn the
+//                          call proves (X-AgentX-Task, or channel + chat),
+//                          never the body's `raised_by` alone: loopback is
+//                          not an identity. A `node` in the body is believed
+//                          only with that peer's own mesh token.
 // Deciding is refused here on purpose. The operator decides with the
 // `agentx approvals` CLI or the dashboard's Approvals page.
 //
@@ -33,6 +41,14 @@ export interface ApprovalsApiDeps {
   /** True when `node` names a mesh peer of this node, so a card raised by
    *  an agent there may be kept here (forward.ts). Unset: never. */
   hasPeer?: (node: string) => boolean
+  /** The agent whose running turn this request proves (its task header,
+   *  or channel + chat for `claimed`). Null or unset: none, and an agent
+   *  may not close a card. */
+  provenAgent?: (claimed: string | undefined) => string | null
+  /** True when the request carries the own mesh token of the peer that
+   *  `node` names, so it may close a card forwarded from there. Unset:
+   *  never. */
+  tokenPeerIs?: (node: string) => boolean
   /** Start a check-in pass in the background (checkin.ts). */
   runCheckin?: (kind: "daily" | "check") => void
 }
@@ -91,6 +107,40 @@ export function handleApprovalsApi(
     const kind = body?.daily === true ? "daily" : "check"
     deps.runCheckin(kind)
     return { status: 202, body: { started: kind } }
+  }
+
+  const resolve = path.match(/^\/approvals\/([^/]+)\/resolve$/)
+  if (resolve && m === "POST") {
+    const id = decodeURIComponent(resolve[1])
+    const claimed = typeof body?.raised_by === "string" && body.raised_by.trim() ? body.raised_by.trim() : undefined
+    const from = typeof body?.node === "string" && body.node.trim() ? body.node.trim() : undefined
+    let by: string
+    let node: string | undefined
+    if (from) {
+      // A card forwarded here from another node (forward.ts): that node
+      // checked its agent's turn; here the request must come from it.
+      if (!deps.tokenPeerIs?.(from)) {
+        return { status: 403, body: { error: `closing a card in the name of node "${from}" needs that peer's own mesh token` } }
+      }
+      if (!claimed) return { status: 400, body: { error: "raised_by must be the agent that raised the card" } }
+      by = claimed
+      node = from
+    } else {
+      const proven = deps.provenAgent?.(claimed) ?? null
+      if (!proven) {
+        return { status: 403, body: { error: "only the agent that raised the card can close it, from one of its running turns (X-AgentX-Task, or X-AgentX-Channel and X-AgentX-Chat)" } }
+      }
+      if (claimed && claimed !== proven) {
+        return { status: 403, body: { error: `the calling turn is ${proven}'s, not ${claimed}'s` } }
+      }
+      by = proven
+    }
+    if (typeof body?.reason !== "string" || !body.reason.trim()) {
+      return { status: 400, body: { error: "reason is required: say where the owner answered and what you did" } }
+    }
+    const r = resolveCard(deps.ctx.root, id, { by, reason: body.reason, node, now: deps.ctx.now })
+    if (!r.ok) return { status: r.status, body: { error: r.error } }
+    return { status: 200, body: { card: r.card } }
   }
 
   const one = path.match(/^\/approvals\/([^/]+)$/)
