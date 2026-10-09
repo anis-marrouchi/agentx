@@ -45,7 +45,11 @@ Wiki notes are off until you turn them on.
 - **rejected**, when the wiki or the conversations show the note is wrong.
 - **deferred**, when nothing it has can settle the note.
 
-A note never creates or rewrites an article: while notes are being answered, absorb only saves new or rewritten articles that come from the saved conversations. If a schedule answers a note while absorb is still working, the schedule's answer stays, and absorb leaves that note and its pages alone. Every outcome is stored on the note with a reason and the run's id, which starts with `absorb/`. If the run fails, its notes stay waiting for the next one.
+A note alone never creates or rewrites an article: while notes are being answered, absorb only saves a new or rewritten article that cites at least one of the saved conversations in the same run.
+
+Absorb reads the notes and those conversations together, so an article written from the conversations can still reflect what a note said. That article is checked like any other absorb save: it is refused if a rewrite would delete a number or a link the page had. The stricter note check (no removed contact detail, role or organisation) does not apply to it.
+
+If a schedule answers a note while absorb is still working, the schedule's answer stays, and absorb leaves that note and its pages alone. Every outcome is stored on the note with a reason and the run's id, which starts with `absorb/`. If the run fails, its notes stay waiting for the next one.
 
 **Browser:**
 
