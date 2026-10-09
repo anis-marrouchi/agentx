@@ -4,6 +4,7 @@ import type { WorkflowDispatcher } from "./dispatcher"
 import type { RunStore } from "./run-store"
 import type { WorkflowStore } from "./store"
 import type { Workflow, WorkflowRun } from "./types"
+import { reportStep, writePlan } from "./required"
 
 // --- The daemon's /follow-up endpoints: what agentx_workflow calls (#788) ---
 //
@@ -17,6 +18,9 @@ import type { Workflow, WorkflowRun } from "./types"
 //     blocked  the agent step cannot go on without the owner (reason)
 //     propose  save a workflow (from `steps`, or from a run it built) for
 //              the owner to approve as a reusable template
+//     plan     write or change the plan of the run its task is wrapped in
+//              (workflows.required, #858)
+//     step     report a step of that plan: started, done or failed
 //
 // Starting is the agent's; approving a template, cancelling a run and
 // changing settings are the owner's (CLI, dashboard).
@@ -37,7 +41,10 @@ export interface FollowUpApiDeps {
   hasAgent: (agentId: string) => boolean
   /** The channel and chat of the running turn of `agentId` the call
    *  proves (requests/daemon-api CallerProof), or null. */
-  runningTurn: (agentId: string, proof: { taskId?: string; channel?: string; chatId?: string }) => { channel: string; chatId: string; restricted?: boolean } | null
+  runningTurn: (agentId: string, proof: { taskId?: string; channel?: string; chatId?: string }) => { channel: string; chatId: string; restricted?: boolean; workflowRunId?: string } | null
+  /** The store wrapped tasks keep their run in (#858). Without it, plan
+   *  and step are refused. */
+  taskRuns?: RunStore
   /** The open request of that turn, when there is one. */
   liveRequest?: (agentId: string, channel: string, chatId: string) => string | null
   /** Is this open request one of this agent's? A run closes the request
@@ -121,11 +128,27 @@ export async function handleFollowUpApi(
 
   const input = body ?? {}
   const action = str(input.action).toLowerCase()
-  if (!["start", "done", "blocked", "propose"].includes(action)) {
-    return { status: 400, body: { error: `unknown action "${action}": use start, done, blocked or propose (list, match and status are reads)` } }
+  if (!["start", "done", "blocked", "propose", "plan", "step"].includes(action)) {
+    return { status: 400, body: { error: `unknown action "${action}": use start, done, blocked, propose, plan or step (list, match and status are reads)` } }
   }
   const agentId = str(input.agentId)
   if (!agentId || !deps.hasAgent(agentId)) return { status: 400, body: { error: "agentId must be an agent on this node" } }
+
+  // The plan of a wrapped task (#858): only the turn the run wraps may
+  // write it, whatever the follow-up settings say.
+  if (action === "plan" || action === "step") {
+    if (!deps.taskRuns) return { status: 503, body: { error: "no workflow runs on this node (workflows.enabled)" } }
+    const runId = str(input.runId)
+    if (!runId) return { status: 400, body: { error: `${action} needs runId: the run named in your task's [Workflow run …] line` } }
+    const turn = deps.runningTurn(agentId, proof)
+    if (!turn) return { status: 403, body: { error: `no running turn of "${agentId}" matches this call: use the agentx_workflow tool from inside your run` } }
+    if (turn.workflowRunId !== runId) return { status: 403, body: { error: `run ${runId} is not the run of your current task` } }
+    const r = action === "plan"
+      ? writePlan(deps.taskRuns, runId, { steps: input.steps, reason: str(input.reason) || str(input.note) || undefined })
+      : reportStep(deps.taskRuns, runId, { step: input.step, status: input.status, note: input.note ?? input.evidence })
+    if (!r.ok) return { status: 409, body: { error: r.error } }
+    return { status: 200, body: { run: describeRun(r.run, null), plan: r.run.meta?.plan?.steps ?? [] } }
+  }
   if (!agentAllowed(deps.settings, agentId)) {
     return { status: 409, body: { error: `Follow-up workflows are off ${deps.settings.enabled ? `for ${agentId}` : "on this node"} (workflows.followUp).` } }
   }

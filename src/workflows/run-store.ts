@@ -101,9 +101,12 @@ export class RunStore {
     eventRootId?: string
     /** Follow-up runs (#788): title, tags, who started it. */
     meta?: RunMeta
+    /** A run id chosen before the run exists (#858: the agent is told it
+     *  before its turn starts). Default: a fresh UUID. */
+    id?: string
   }): WorkflowRun {
     const now = new Date().toISOString()
-    const id = randomUUID()
+    const id = args.id ?? randomUUID()
     const run: WorkflowRun = {
       id,
       workflowId: args.workflowId,
@@ -249,6 +252,30 @@ export class RunStore {
     const updated: WorkflowRun = { ...run, meta, updatedAt: new Date().toISOString() }
     this.appendSnapshot(updated)
     return updated
+  }
+
+  /** Merge into a run's meta and replace its pending queue (#858: a plan
+   *  written or changed mid-run). Appends a snapshot; history is kept. */
+  patch(runId: string, patch: { meta?: Partial<RunMeta>; pending?: string[] }): WorkflowRun | null {
+    const run = this.get(runId)
+    if (!run) return null
+    const updated: WorkflowRun = {
+      ...run,
+      ...(patch.meta ? { meta: { tags: [], followUp: false, approvedAtStart: false, ...run.meta, ...patch.meta } } : {}),
+      ...(patch.pending ? { pending: patch.pending } : {}),
+      updatedAt: new Date().toISOString(),
+    }
+    this.appendSnapshot(updated)
+    return updated
+  }
+
+  /** Remove a run and its entity index entry, as if it never ran (#858: a
+   *  plain question exempted from workflows.required). */
+  discard(runId: string): boolean {
+    const run = this.get(runId)
+    if (!run) return false
+    this.clearIndex(run.entityRef)
+    try { unlinkSync(this.runPath(runId)); return true } catch { return false }
   }
 
   /** List runs, newest first. */
