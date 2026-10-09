@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.135.1](https://github.com/anis-marrouchi/agentx/compare/v0.135.0...v0.135.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **wiki:** count failed model calls as unpriced; record catalog models in score settings ([#901](https://github.com/anis-marrouchi/agentx/issues/901)) ([#905](https://github.com/anis-marrouchi/agentx/issues/905)) ([440005e](https://github.com/anis-marrouchi/agentx/commit/440005eb059899b685ac91cb67ee0e2a1ce7b3f6))
+* **wiki:** count tool queries and thrown queries; cap _query-runs.jsonl ([#902](https://github.com/anis-marrouchi/agentx/issues/902)) ([#906](https://github.com/anis-marrouchi/agentx/issues/906)) ([581f796](https://github.com/anis-marrouchi/agentx/commit/581f7960d9a04ebd85e05b60578ebeb3c80f6b42))
+* **wiki:** wiki events keeps page dates, re-reads before writing, and spares damage titles ([#900](https://github.com/anis-marrouchi/agentx/issues/900)) ([#907](https://github.com/anis-marrouchi/agentx/issues/907)) ([0460a44](https://github.com/anis-marrouchi/agentx/commit/0460a448be3556a4247e2491a498d3569378414f)), closes [#811](https://github.com/anis-marrouchi/agentx/issues/811)
+
 ## [0.135.0](https://github.com/anis-marrouchi/agentx/compare/v0.134.0...v0.135.0) (2026-10-09)
 
 
