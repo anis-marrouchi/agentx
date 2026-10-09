@@ -4,7 +4,7 @@ import { tmpdir } from "os"
 import { join, resolve } from "path"
 
 import { parseNote, readNotes } from "../../src/wiki/note-reader"
-import { absorbOffAgents, selectAbsorbAgents, setWikiAbsorb } from "../../src/wiki/absorb-agents"
+import { absorbOffAgents, absorbSkipMessage, selectAbsorbAgents, setWikiAbsorb } from "../../src/wiki/absorb-agents"
 import { AgentMemory } from "../../src/agents/agent-memory"
 import { daemonConfigSchema } from "../../src/daemon/config"
 import { WikiHub } from "../../src/wiki/hub"
@@ -151,6 +151,12 @@ describe("agents.<id>.wiki.absorb.enabled", () => {
     expect(selectAbsorbAgents(["agent-a", "agent-b", "agent-c"], { off })).toEqual({ agents: ["agent-a", "agent-c"], skipped: ["agent-b"] })
     expect(selectAbsorbAgents(["agent-a", "agent-b"], { only: "agent-b", off })).toEqual({ agents: ["agent-b"], skipped: [] })
     expect(selectAbsorbAgents(["agent-a"], { off: new Set() })).toEqual({ agents: ["agent-a"], skipped: [] })
+  })
+
+  it("the skip line says the notes inbox was not read when the agent reads it (#885)", () => {
+    expect(absorbSkipMessage("agent-b", "agent-b")).toContain("the inbox was not read")
+    expect(absorbSkipMessage("agent-b", "agent-a")).not.toContain("inbox")
+    expect(absorbSkipMessage("agent-b")).toContain("Use --agent agent-b")
   })
 
   it("wiki absorb names the skipped agent and still reads the others; --agent forces it", async () => {
