@@ -978,6 +978,19 @@ export async function executeClaudeCodeStreaming(
   logClaudeSpawn(task.agentId, agent, task.model, resumeSessionId, "stream")
 
   let fullText = ""
+  // A run can span several turns when the agent leaves background work
+  // (#892). `turnText` is the current turn's text; `earlierText` holds the
+  // turns before it, so fullText = earlierText + turnText.
+  let earlierText = ""
+  let turnText = ""
+  const emitTurnText = (delta: string) => {
+    const sep = earlierText && !turnText ? "\n\n" : ""
+    turnText += delta
+    fullText = earlierText + (earlierText ? "\n\n" : "") + turnText
+    onDelta(sep + delta, fullText)
+  }
+  const background = new BackgroundTasks()
+  let heldForBackground = false
   // Capture model + usage + session id from the stream events — Claude Code
   // emits a system-init event up front (with the billed model) and a terminal
   // result event with the full usage accounting. Without these we can't
@@ -1007,9 +1020,10 @@ export async function executeClaudeCodeStreaming(
       // Close stdin so Claude CLI doesn't wait 3s for input (see executeClaudeCode).
       stdin: "ignore",
     })
-    // Settled by the terminal `result` event. The answer is complete at
-    // that point; what follows is the CLI's own teardown (SessionEnd hook,
-    // MCP servers), which the persistent path never waited for either.
+    // Settled by the terminal `result` event: the first one with no
+    // background task left (#892). The answer is complete at that point;
+    // what follows is the CLI's own teardown (SessionEnd hook, MCP
+    // servers), which the persistent path never waited for either.
     let markResultSeen: () => void = () => {}
     const resultSeen = new Promise<void>((r) => { markResultSeen = r })
 
@@ -1075,23 +1089,20 @@ export async function executeClaudeCodeStreaming(
             if (event.type === "assistant" && event.message?.content) {
               for (const block of event.message.content) {
                 if (block.type === "text" && block.text) {
-                  const delta = block.text.slice(fullText.length)
-                  if (delta) {
-                    fullText = block.text
-                    onDelta(delta, fullText)
-                  }
+                  const delta = block.text.slice(turnText.length)
+                  if (delta) emitTurnText(delta)
                 }
               }
             }
 
             // "content_block_delta" for streaming text
             if (event.type === "content_block_delta" && event.delta?.text) {
-              fullText += event.delta.text
-              onDelta(event.delta.text, fullText)
+              emitTurnText(event.delta.text)
             }
 
+            background.observe(event)
+
             // "result" event contains final text (or an API error, when is_error).
-            if (event.type === "result") markResultSeen()
             if (event.type === "result" && event.result) {
               if (event.is_error && typeof event.result === "string") {
                 streamApiError = event.result
@@ -1099,10 +1110,9 @@ export async function executeClaudeCodeStreaming(
                 const resultText = typeof event.result === "string"
                   ? event.result
                   : event.result
-                if (typeof resultText === "string" && resultText.length > fullText.length) {
-                  const delta = resultText.slice(fullText.length)
-                  fullText = resultText
-                  if (delta) onDelta(delta, fullText)
+                if (typeof resultText === "string" && resultText.length > turnText.length) {
+                  const delta = resultText.slice(turnText.length)
+                  if (delta) emitTurnText(delta)
                 }
               }
               // Final event also carries the authoritative usage + model + session.
@@ -1119,6 +1129,24 @@ export async function executeClaudeCodeStreaming(
               if (typeof event.session_id === "string") streamSessionId = event.session_id
               if (typeof event.num_turns === "number") streamNumTurns = event.num_turns
               if (typeof event.total_cost_usd === "number") streamCostUsd = event.total_cost_usd
+            }
+
+            // A result ends the run only when no background work is left.
+            // Otherwise the CLI stays up and runs another turn once that
+            // work ends, so the task stays open (and stoppable) until then.
+            if (event.type === "result") {
+              if (background.pending === 0) {
+                markResultSeen()
+              } else {
+                if (!heldForBackground) {
+                  process.stderr.write(`[claude-stream] agent=${task.agentId} task=${task.taskId ?? "?"} turn ended with ${background.pending} background task(s) running; the task stays open until they end\n`)
+                }
+                heldForBackground = true
+                if (turnText) {
+                  earlierText = fullText
+                  turnText = ""
+                }
+              }
             }
 
             // System-init event (first thing the CLI emits) carries the model
@@ -1140,8 +1168,7 @@ export async function executeClaudeCodeStreaming(
           } catch {
             // Not JSON — could be raw text output, append it
             if (line.trim() && !line.startsWith("{")) {
-              fullText += line + "\n"
-              onDelta(line + "\n", fullText)
+              emitTurnText(line + "\n")
             }
           }
         }
@@ -1917,6 +1944,28 @@ export async function executeOrchestrator(
  * Returns null when the registry can't allocate a slot (cap exceeded,
  * binary not installed, etc.) — caller falls back to spawn-per-task.
  */
+/**
+ * Background work a claude run still has open (#892): tasks the CLI
+ * announced with `system/task_started` and has not yet closed with
+ * `system/task_notification`. A `result` while any is open ends a turn,
+ * not the run: the CLI stays up and runs a new turn once the work ends.
+ * A task the CLI marks as not backgrounded (a subagent it waits for)
+ * ends inside its turn and is not counted.
+ */
+export class BackgroundTasks {
+  private open = new Set<string>()
+
+  observe(event: any): void {
+    if (event?.type !== "system" || typeof event.task_id !== "string") return
+    if (event.subtype === "task_started" && event.is_backgrounded !== false) this.open.add(event.task_id)
+    else if (event.subtype === "task_notification") this.open.delete(event.task_id)
+  }
+
+  get pending(): number {
+    return this.open.size
+  }
+}
+
 /** Grace the CLI gets to exit on its own after its terminal event before
  *  the reply proceeds without it. */
 const POST_RESULT_EXIT_GRACE_MS = 1_000
