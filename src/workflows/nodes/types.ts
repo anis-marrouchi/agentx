@@ -32,6 +32,8 @@ export interface AgentExecuteResponse {
    *  src/agents/error-map.ts → FriendlyError.kind. */
   errorKind?: string
   taskId?: string
+  /** The turn's running-task id (what a stop signal names), when known. */
+  runTaskId?: string
   durationMs?: number
   /** Tool calls blocked by the step's autonomy level. */
   autonomyBlocks?: Array<{ tool: string; target: string | null; ruleId: string; reason: string }>

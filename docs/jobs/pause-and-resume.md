@@ -28,6 +28,7 @@ In AgentX, a stop or resume request is called a **signal**. These are not the wo
 | A chat (Telegram, WhatsApp, GitLab, GitHub…) | That chat, as a normal reply. |
 | A chat another machine of your mesh received | That chat, through the machine that received it. |
 | Another agent that asked for it | That agent, as a new message. |
+| A step of a workflow run | The workflow run. The step runs again and the run goes on to its next steps. |
 | Anything else (the API, a schedule, voice) | Nobody is waiting for it. The task runs, and its answer is kept on its task page and in its trace only. |
 
 `agentx signal resume` and the `agentx_signal` tool say which of these applies.
@@ -87,6 +88,31 @@ Agents use the `agentx_signal` tool with `action` set to `stop`, `resume` or `li
 
 A workflow can resume a task with the built-in action `signal.resume`. Give it the stopped task's `id`.
 
+## Pause a step of a workflow
+
+A *workflow* is a saved series of steps; each run of it is a *workflow run*. When the task you pause is an agent's step in a workflow run, the whole run pauses at that step. It is not marked failed.
+
+1. **Browser:** on the **Live** tab, select **❚❚ pause** on the agent's running card, as for any task.
+2. Wait a few seconds. In **Stopped tasks**, the task has a line `workflow run <run id> (<workflow>) paused at step <step>`.
+3. **Terminal (optional):** run `agentx workflow runs <workflow>`. The run shows `paused`, and its `last` line names the step with `(paused)`.
+4. **Terminal (optional):** run `agentx signal show <taskId>`. It names the step and the workflow run, and shows the resume plan.
+5. **Browser:** when you're ready, select **▶ resume** on the task. In a terminal, `agentx signal resume <taskId>` does the same.
+
+`agentx workflow resume <run id>` does not work on such a run: it says to use `agentx signal resume` instead, which brings back the plan.
+
+The step runs again with its resume plan placed before the step's prompt, so the agent continues where it stopped. When the step is done, the run goes on to its next steps as usual. Only that step gets the plan.
+
+If you cancel the workflow run while it is paused, the stopped task can no longer be resumed. The resume is refused and says the run was canceled.
+
+![Stopped tasks on the Live page: a workflow step, with the run it paused and the ▶ resume button](/screenshots/live/stopped-workflow-step.png)
+
+### Tasks every agent runs inside a workflow
+
+With [every task in a workflow](/jobs/every-task-a-workflow) switched on, each task runs inside a run of its own. Pausing such a task closes its run as `canceled`. Resuming it starts a new run, and that run names the one it continues:
+
+1. **Terminal:** run `agentx workflow records`.
+2. Find the line of the resumed task. Its `continues` field holds the id of the run the pause closed.
+
 ## Who may pause or resume a task
 
 | Who | May signal |
@@ -99,8 +125,6 @@ A workflow can resume a task with the built-in action `signal.resume`. Give it t
 An agent can never pause its own task, and the plan-writing turn cannot send signals.
 
 A machine is recognised by its own token in `mesh.peers`: a request with that token counts as that machine, so `signals.allowPeers` applies to it. `signals.allowPeers` does not protect you from a machine that uses the token every machine shares (`MESH_TOKEN`). Such a request is believed about which machine it comes from, and when it names none it counts as you, the owner. The same token already lets a machine cancel tasks and reload this one. If your machines are not all equally trusted, give each one its own token in `mesh.peers`.
-
-A step of a workflow run can't be paused: pausing it would fail the whole run, and a resume would run the step outside it. The pause is refused with a message saying so. Cancel or pause the workflow run instead.
 
 To let a coordinating agent pause any task on this machine:
 
@@ -130,6 +154,7 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 3. **Terminal:** run `agentx trace list --agent <agent>`. The task's status is `stopped`, not `error`.
 4. **Browser:** select **▶ resume**. The agent's card shows **running**, and the answer reaches the original chat.
 5. **Terminal:** run `curl 'http://127.0.0.1:18800/events/recent?kind=signal'`. You see `signal:stop`, `signal:stopped` and `signal:resume` with the same `rootId`.
+6. For a workflow step: after **▶ resume**, **Terminal:** run `agentx workflow runs <workflow>`. The run is `running` again, then `completed` once its last step is done.
 
 ## If something is wrong
 
@@ -137,7 +162,8 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 - **"mesh peer … is not in signals.allowPeers":** on the machine that runs the task, add the other machine's name to `signals.allowPeers`.
 - **"no running task matches":** the task finished before the signal arrived, or several tasks run on that chat. Use the task id.
 - **"still writing its resume plan":** wait for the plan (at most `signals.windDownSeconds`), then resume.
-- **"is a step of workflow run":** the task belongs to a workflow run. Cancel or pause the workflow run instead.
+- **"is a step of workflow run …, which cannot pause here":** the workflow engine is off on this machine, or the run is not on that agent's step any more. Cancel the workflow run instead.
+- **"resume failed: workflow run … is not paused by a stop":** the workflow run was canceled, or went on, after the pause. Start the workflow again.
 - **"carried 6 signals today":** the loop brake stopped an agent's signal. Check which agents keep pausing and resuming this task before you raise `signals.maxPerRoot`.
 - **The plan says "written by AgentX":** the agent didn't answer in time. Raise `signals.windDownSeconds` if your agents need longer.
 - **Resume says "already resumed" but the task shows stopped:** AgentX stopped in the middle of a resume. Restart AgentX; on start it clears the leftover mark, and you can resume again.
