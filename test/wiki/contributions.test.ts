@@ -571,6 +571,6 @@ describe("devops review of 800f0ee", () => {
     expect(await sharedQueryEnabled(resolve(dir, "missing.json"))).toBe(true)
 
     const mcp = readFileSync(resolve(__dirname, "../../src/mcp/index.ts"), "utf-8")
-    expect(mcp).toMatch(/shared: \(await sharedQueryEnabled\(\)\) \? hub\.sharedScope\(agentId\) : undefined/)
+    expect(mcp).toMatch(/const shared = \(await sharedQueryEnabled\(\)\) \? hub\.sharedScope\(agentId\) : undefined/)
   })
 })

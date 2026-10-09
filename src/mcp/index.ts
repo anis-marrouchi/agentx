@@ -1736,7 +1736,12 @@ async function handleToolCall(
           if (existsSync(catPath)) { agentId = id; break }
         }
       }
+      // Counted in _query-runs.jsonl beside CLI queries, so `wiki query-runs`
+      // sees the queries agents make through this tool too.
+      const { QUERY_RUNS_FILE, recordQueryRun, timedQuery } = await import("@/wiki/query-runs")
+      const runsFile = resolve(hub.getBaseDir(), QUERY_RUNS_FILE)
       if (!agentId) {
+        recordQueryRun(runsFile, { at: new Date().toISOString(), agent: "", status: "no-catalog", source: "tool", wallMs: 0 })
         return { content: [{ type: "text", text: "Error: no agent has a wiki catalog yet. Run `agentx wiki absorb` first." }] }
       }
       const store = hub.getAgentWiki(agentId)
@@ -1752,9 +1757,10 @@ async function handleToolCall(
       // `wiki.query` decides the method: page summaries plus a live read
       // once summaries exist, the catalog walk until then (#855).
       const settings = await loadQuerySettings()
-      const result = await agenticQuery(question, store, agentId, {
+      const shared = (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined
+      const result = await timedQuery(runsFile, agentId, "tool", () => agenticQuery(question, store, agentId, {
         maxHops,
-        shared: (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined,
+        shared,
         messagePath: branch?.path,
         ...(branch?.graphWeight !== undefined ? { graphWeight: branch.graphWeight } : {}),
         method: settings.method,
@@ -1762,7 +1768,7 @@ async function handleToolCall(
         // Notes only for the agent this runtime runs as: `agent` is the
         // caller's word, and another agent's notes are private to it (#867).
         notes: toolNoteSourceFor(settings, agentId),
-      })
+      }))
       if (result.status !== "ok") {
         return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
       }
