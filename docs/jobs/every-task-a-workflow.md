@@ -79,11 +79,29 @@ In `agentx.json`:
     "required": {
       "enabled": true,
       "exemptQuestions": true,
-      "agents": { "<agent-id>": false }
+      "agents": { "<agent-id>": false },
+      "retention": { "maxRuns": 2000, "maxDays": 30 }
     }
   }
 }
 ```
+
+## How long task runs are kept
+
+Each wrapped task leaves one run, so on a busy computer they add up quickly. AgentX keeps them in their own folder (`.agentx/workflows/_task-runs/`), apart from the runs of saved workflows, so they never push a saved workflow that is waiting (for a signal or a reply) out of sight. It also removes old ones:
+
+- It keeps the newest **2000** finished task runs (`workflows.required.retention.maxRuns`).
+- It removes finished task runs older than **30** days (`workflows.required.retention.maxDays`).
+- It never removes a task run that is still going, nor any run of a saved workflow.
+
+The daemon does this when it starts and once a day. To keep more, for example to study three months of records:
+
+1. **Terminal:** go to the folder that holds `agentx.json`.
+2. **Terminal:** run `agentx config set workflows.required.retention.maxDays 90`.
+3. **Terminal:** run `agentx config set workflows.required.retention.maxRuns 10000`.
+4. **Terminal:** run `agentx daemon restart`.
+
+Save the records you want to keep for good with `agentx workflow records` (see below) before they are removed.
 
 ## See the step each agent is on
 
@@ -108,7 +126,7 @@ A task you stop, cancel or that a restart cuts off is not a failure: its run end
 
 Each line has the run's `title`, `mode` (`workflow` for a saved workflow, `plan` or `linear` for a wrapped task), `status`, `durationMs`, its `steps` (each with `id`, `title`, `status`, `startedAt`, `durationMs` and a short `note`), `failedAt` (the first step that failed, or `null`), `revisions` (how many times the plan changed) and `tokens`. It never holds the full request or what a step produced.
 
-To see one run step by step, run `agentx workflow trace <runId>`, or open it on the **Workflows** tab.
+To see one run step by step, run `agentx workflow trace <runId>`, or open it on the **Workflows** tab. To list the latest task runs, run `agentx workflow runs task`; `agentx workflow runs` alone lists runs of saved workflows only.
 
 ## Check it worked
 
@@ -126,4 +144,6 @@ To see one run step by step, run `agentx workflow trace <runId>`, or open it on 
 - **`run … is not the run of your current task`:** the agent named a run from an earlier task. It can only write the plan of the task it is working on.
 - **A question left a run:** the agent used a tool that may change something (a command, an edit, a message), or one AgentX does not know. That is expected.
 - **A saved workflow took a request it should not have:** the match was close enough to start it. Make the saved workflow's title and description more specific, or raise `workflows.matching.autoRunThreshold` (default `0.85`) with `agentx config set workflows.matching.autoRunThreshold 0.95`.
+- **Older records are missing:** finished task runs past `workflows.required.retention` are removed (newest 2000, at most 30 days old, by default). Raise the limits as shown in [How long task runs are kept](#how-long-task-runs-are-kept).
+- **Task runs do not show in `agentx workflow runs`:** that list holds runs of saved workflows. Run `agentx workflow runs task`.
 - **The dashboard card says `Not saved`:** the workflow editor is read-only on that computer (`workflows.editor`). Use the terminal command on that computer instead.

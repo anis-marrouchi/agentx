@@ -35,6 +35,17 @@ export interface RequiredSettings {
   exemptQuestions: boolean
 }
 
+/** How many finished task runs are kept, and for how long (#877):
+ *  workflows.required.retention. */
+export interface TaskRunRetention {
+  /** Finished task runs kept, newest first. */
+  maxRuns: number
+  /** Finished task runs older than this are removed. */
+  maxDays: number
+}
+
+export const TASK_RUN_RETENTION_DEFAULTS: TaskRunRetention = { maxRuns: 2000, maxDays: 30 }
+
 export const REQUIRED_DEFAULTS: RequiredSettings = { enabled: false, agents: {}, exemptQuestions: true }
 
 /** Is a workflow required for this agent's tasks? Needs the engine on. */
@@ -81,7 +92,9 @@ const READ_ONLY_VERB = /^(get|list|search|read|query|find|show|status|describe|f
 const READ_ONLY_WORKFLOW_ACTIONS = new Set(["list", "match", "status"])
 /** A first word that changes something: "set_status" is a write, even
  *  though its last word reads like a lookup. */
-const WRITE_VERB = /^(set|update|delete|clear|create|add|remove|send|post|put|patch|write|run|start|stop|cancel|edit|move|rename|reset|save|upload|merge|close|open|approve|reject|assign|mark)$/
+const WRITE_VERB = /^(set|update|upsert|insert|delete|clear|create|add|remove|replace|send|post|put|patch|write|run|start|stop|cancel|edit|move|rename|reset|save|upload|merge|close|open|approve|reject|assign|mark)$/
+/** Words that join two verbs: "get_or_create", "fetch_and_update". */
+const JOINER = new Set(["or", "and", "then"])
 
 /** Does this tool call change nothing? Unknown tools count as changing. */
 export function isReadOnlyToolUse(name: string, input?: Record<string, unknown>): boolean {
@@ -90,9 +103,11 @@ export function isReadOnlyToolUse(name: string, input?: Record<string, unknown>)
   if (bare === "agentx_workflow") return READ_ONLY_WORKFLOW_ACTIONS.has(String(input?.action ?? "list").toLowerCase())
   const verb = bare.replace(/^agentx_/, "")
   // "get_issue", or "wiki_query": the verb leads, or the noun comes first.
-  // A name that leads with a write verb ("set_status") is never read-only.
-  const words = verb.split(/[_-]/)
-  if (WRITE_VERB.test(words[0].toLowerCase())) return false
+  // A name that leads with a write verb ("set_status") is never read-only,
+  // nor one that joins a write verb on ("get_or_create", "getOrCreate").
+  const words = verb.replace(/([a-z0-9])([A-Z])/g, "$1_$2").toLowerCase().split(/[_-]/)
+  if (WRITE_VERB.test(words[0])) return false
+  if (words.some((w, i) => i > 0 && JOINER.has(words[i - 1]) && WRITE_VERB.test(w))) return false
   return READ_ONLY_VERB.test(verb) || (words.length > 1 && READ_ONLY_VERB.test(words.at(-1) ?? ""))
 }
 
@@ -342,13 +357,20 @@ export function endedWithoutFailing(errorKind: unknown): boolean {
  *  path as before: wrapping never sets the task's workflowRunId. */
 export function closeStaleWraps(runs: RunStore, note = "interrupted: the daemon stopped during the turn"): number {
   let closed = 0
-  for (const run of runs.list()) {
+  for (const run of runs.list({ scope: "tasks" })) {
     if (run.status !== "running" || !run.meta?.wrap) continue
     // Cut off, not failed: the task itself is resumed after the restart.
     const r = finishWrap(runs, run.id, { error: note, canceled: true, durationMs: Math.max(0, Date.now() - Date.parse(run.createdAt)), readOnly: false, exemptQuestions: false })
     if (r && r !== "discarded") closed++
   }
   return closed
+}
+
+/** Remove finished task runs beyond the retention (#877): one run per
+ *  task adds up. Running and paused runs stay; workflow runs are not
+ *  touched. Returns how many were removed. */
+export function pruneTaskRuns(runs: RunStore, retention: Partial<TaskRunRetention> = {}): number {
+  return runs.prune({ ...TASK_RUN_RETENTION_DEFAULTS, ...retention }, "tasks")
 }
 
 // ---------------------------------------------------------------------------

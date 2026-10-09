@@ -72,7 +72,7 @@ import { runApprovalsSweep } from "@/approvals/sweep"
 import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
-import { closeStaleWraps, requiredFor } from "@/workflows/required"
+import { closeStaleWraps, pruneTaskRuns, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
@@ -245,6 +245,7 @@ export class AgentXDaemon {
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
+  private taskRunPrune?: ReturnType<typeof setInterval>
   private callSweep?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
@@ -1205,6 +1206,7 @@ export class AgentXDaemon {
     }
 
     if (this.attachSweep) clearInterval(this.attachSweep)
+    if (this.taskRunPrune) clearInterval(this.taskRunPrune)
     if (this.callSweep) clearInterval(this.callSweep)
 
     if (this.httpServer) {
@@ -2972,9 +2974,25 @@ export class AgentXDaemon {
     // Runs whose turn was cut off by the last stop are closed first.
     this.registry.setWorkflowRunStore(runs)
     try {
+      const moved = runs.moveTaskRuns()
+      if (moved) this.log(`  Workflows: moved ${moved} task run(s) to their own folder`)
+    } catch (e: any) { this.log(`  Workflows: moving task runs failed (non-fatal): ${e?.message || e}`) }
+    try {
       const stale = closeStaleWraps(runs)
       if (stale) this.log(`  Workflows: closed ${stale} task run(s) cut off by the last stop`)
     } catch (e: any) { this.log(`  Workflows: closing cut-off task runs failed (non-fatal): ${e?.message || e}`) }
+    // Task runs live apart from workflow runs and are kept within
+    // workflows.required.retention (#877), at start and once a day.
+    const pruneTasks = () => {
+      try {
+        const n = pruneTaskRuns(runs, this.config.workflows?.required?.retention)
+        if (n) this.log(`  Workflows: removed ${n} finished task run(s) past workflows.required.retention`)
+      } catch (e: any) { this.log(`  Workflows: removing old task runs failed (non-fatal): ${e?.message || e}`) }
+    }
+    pruneTasks()
+    if (this.taskRunPrune) clearInterval(this.taskRunPrune)
+    this.taskRunPrune = setInterval(pruneTasks, 24 * 60 * 60 * 1000)
+    this.taskRunPrune.unref?.()
     // Phase 3: webhook handler can now dispatch workflows per event-type
     // (webhooks[].triggers map). When `triggers` is unset, behavior is
     // unchanged from prior versions.

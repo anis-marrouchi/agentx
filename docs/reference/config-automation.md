@@ -131,6 +131,8 @@ The workflow engine. See [Workflows](/dashboard/workflows).
 | `workflows.required.enabled` | boolean | `false` | On for every agent. Needs `workflows.enabled`. |
 | `workflows.required.agents` | object | `{}` | Per agent, by id: `true` or `false` wins over `enabled`. |
 | `workflows.required.exemptQuestions` | boolean | `true` | A plain question (no plan, only tools that change nothing) leaves no run. |
+| `workflows.required.retention.maxRuns` | number | `2000` | Finished task runs kept, newest first. The daemon removes older ones when it starts and once a day. Running and paused runs, and runs of saved workflows, are never removed. |
+| `workflows.required.retention.maxDays` | number | `30` | Finished task runs older than this many days are removed, at the same times. |
 | `workflows.editor` | `"disabled"` \| `"readonly"` \| `"edit"` | `"edit"` | The dashboard's workflow editor: hidden, view only, or editable. |
 
 ## `procedures`

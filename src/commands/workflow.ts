@@ -335,7 +335,7 @@ workflow
 
 workflow
   .command("runs [id]")
-  .description("list recent runs (optionally filtered to a single workflow)")
+  .description("list recent runs (optionally filtered to a single workflow; `task` lists the runs that wrapped a task)")
   .option("--limit <n>", "max runs to show", "20")
   .option("--node <id>", "home-node id for this daemon (defaults to WF_NODE_ID env or \"local\")")
   .action((id: string | undefined, opts) => {
@@ -764,9 +764,12 @@ workflow
   .action((opts: { workflow?: string; agent?: string; days?: string; limit?: string }) => {
     const limit = Math.max(1, Math.min(10_000, Number(opts.limit) || 500))
     const since = opts.days !== undefined ? Date.now() - Math.max(0, Number(opts.days) || 0) * 86_400_000 : 0
-    const runs = new RunStore({ nodeId: process.env.WF_NODE_ID || "local" }).list({ workflowId: opts.workflow })
+    // Read newest first and stop at the limit, or at the first file older
+    // than --days: a run never starts after its file last changed (#877).
+    const runs = new RunStore({ nodeId: process.env.WF_NODE_ID || "local" }).iterate({ workflowId: opts.workflow, scope: opts.workflow ? undefined : "all" })
     let n = 0
-    for (const run of runs) {
+    for (const { run, mtimeMs } of runs) {
+      if (since && mtimeMs < since) break
       if (since && Date.parse(run.createdAt) < since) continue
       const rec = runRecord(run)
       if (opts.agent && rec.agentId !== opts.agent) continue

@@ -86,7 +86,7 @@ describe("workflows.required in the registry", () => {
     seen.events = [writeTool]
     const res = await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
     expect(res.error).toBeUndefined()
-    const [run] = runs.list()
+    const [run] = runs.list({ scope: "all" })
     expect(run).toMatchObject({ workflowId: "task", status: "completed" })
     expect(run.history.map((h) => h.nodeId)).toEqual(["reply", "done"])
     expect(seen.prompts[0]).toContain(`[Workflow run ${run.id}]`)
@@ -100,7 +100,7 @@ describe("workflows.required in the registry", () => {
     const { r, runs } = setup({ enabled: true })
     seen.error = "model overloaded"
     await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
-    const [run] = runs.list()
+    const [run] = runs.list({ scope: "all" })
     expect(run.status).toBe("failed")
     expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "failed", note: "model overloaded" })
   })
@@ -111,7 +111,7 @@ describe("workflows.required in the registry", () => {
       seen.error = `ended: ${errorKind}`
       seen.errorKind = errorKind
       await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: `c-${errorKind}` } })
-      const run = runs.list().find((x) => x.history.some((h) => h.note?.includes(errorKind)))!
+      const run = runs.list({ scope: "all" }).find((x) => x.history.some((h) => h.note?.includes(errorKind)))!
       expect(run.status, errorKind).toBe("canceled")
       expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "skipped" })
     }
@@ -124,11 +124,11 @@ describe("workflows.required in the registry", () => {
     const started = new Promise<string>((res) => { seen.started = res })
     const run = r.execute({ message: "migrate the billing tables", agentId: "ops", context: { channel: "api", chatId: "c1" } })
     const taskId = await started
-    expect(runs.list()[0].status).toBe("running")
+    expect(runs.list({ scope: "all" })[0].status).toBe("running")
     expect(r.stopRunningTask(taskId, "stopped by owner: wait for the deploy")).toBe(true)
     const res = await run
     expect(res.errorKind).toBe("stopped")
-    const [wrapped] = runs.list()
+    const [wrapped] = runs.list({ scope: "all" })
     expect(wrapped.status).toBe("canceled")
     expect(wrapped.history.map((h) => [h.nodeId, h.status])).toEqual([["reply", "skipped"]])
     expect(wrapped.history[0].note).toContain("stopped by owner: wait for the deploy")
@@ -140,34 +140,34 @@ describe("workflows.required in the registry", () => {
     seen.events = [writeTool]
     await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
     const [, history] = JSON.parse(seen.prompts[0])
-    expect(JSON.stringify(history)).toContain(`[Workflow run ${runs.list()[0].id}]`)
+    expect(JSON.stringify(history)).toContain(`[Workflow run ${runs.list({ scope: "all" })[0].id}]`)
   })
 
   it("leaves no run for a plain question", async () => {
     const { r, runs } = setup({ enabled: true })
     seen.events = [readTool]
     await r.execute({ message: "what is on today?", agentId: "ops", context: { channel: "api", chatId: "c1" } })
-    expect(runs.list()).toEqual([])
+    expect(runs.list({ scope: "all" })).toEqual([])
     // ...but keeps one when the exemption is off.
     const second = setup({ enabled: true, exemptQuestions: false })
     await second.r.execute({ message: "what is on today?", agentId: "ops", context: { channel: "api", chatId: "c2" } })
-    expect(second.runs.list()).toHaveLength(1)
+    expect(second.runs.list({ scope: "all" })).toHaveLength(1)
   })
 
   it("does nothing when off, or for this agent's override, or for a workflow step", async () => {
     const off = setup({ enabled: false })
     seen.events = [writeTool]
     await off.r.execute({ message: "x", agentId: "ops", context: { channel: "api", chatId: "c1" } })
-    expect(off.runs.list()).toEqual([])
+    expect(off.runs.list({ scope: "all" })).toEqual([])
     expect(seen.prompts[0]).not.toContain("[Workflow run")
 
     const optedOut = setup({ enabled: true, agents: { ops: false } })
     await optedOut.r.execute({ message: "x", agentId: "ops", context: { channel: "api", chatId: "c1" } })
-    expect(optedOut.runs.list()).toEqual([])
+    expect(optedOut.runs.list({ scope: "all" })).toEqual([])
 
     const step = setup({ enabled: true })
     await step.r.execute({ message: "x", agentId: "ops", workflowRunId: "parent-run", context: { channel: "workflow", chatId: "workflow:parent-run" } })
-    expect(step.runs.list()).toEqual([])
+    expect(step.runs.list({ scope: "all" })).toEqual([])
     expect(seen.during.at(-1)[0].workflow).toMatchObject({ runId: "parent-run" })
   })
 
@@ -190,7 +190,7 @@ describe("workflows.required in the registry", () => {
     expect(res.content).toContain("Chase an unpaid invoice")
     expect(res.metadata).toMatchObject({ handledByWorkflow: "invoice-chase", workflowRunId: "saved-run" })
     // The saved workflow is the task's run: no wrap, and the agent did not run.
-    expect(runs.list()).toEqual([])
+    expect(runs.list({ scope: "all" })).toEqual([])
     expect(seen.prompts).toHaveLength(0)
   })
 
@@ -204,7 +204,7 @@ describe("workflows.required in the registry", () => {
     r.setWorkflowAutoRunner(async () => { throw new Error("inputSchema requires client") })
     seen.events = [writeTool]
     await r.execute({ message: "chase the unpaid invoice", agentId: "ops", context: { channel: "telegram", chatId: "c1", senderId: "u1", sender: "Sam" } })
-    expect(runs.list()).toHaveLength(1)
-    expect(runs.list()[0].workflowId).toBe("task")
+    expect(runs.list({ scope: "all" })).toHaveLength(1)
+    expect(runs.list({ scope: "all" })[0].workflowId).toBe("task")
   })
 })

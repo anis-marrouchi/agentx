@@ -1753,6 +1753,13 @@ export const daemonConfigSchema = z.object({
        *  that change nothing, leaves no run. On by default: such a turn has
        *  nothing to follow up. */
       exemptQuestions: z.boolean().default(true),
+      /** Finished task runs kept (#877): one run per task adds up. The
+       *  daemon removes the rest at start and once a day. Running and
+       *  paused runs, and runs of saved workflows, are never removed. */
+      retention: z.object({
+        maxRuns: z.number().int().min(1).max(1_000_000).default(2000),
+        maxDays: z.number().positive().max(3650).default(30),
+      }).default({}),
     }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the

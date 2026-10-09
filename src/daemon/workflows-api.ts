@@ -265,7 +265,11 @@ function handleRuns(req: IncomingMessage, res: ServerResponse, deps: WorkflowsAp
     const limit = Math.max(1, Math.min(500, Number(q.get("limit") || 50)))
     const workflowId = q.get("workflowId") || undefined
     const summary = q.get("summary") === "1" || q.get("summary") === "true"
-    const runs = deps.runs.list({ workflowId, limit })
+    // Workflow runs by default; ?scope=tasks|all adds the runs that wrap
+    // a task (#877), which would otherwise fill the window.
+    const scopeParam = q.get("scope")
+    const scope = scopeParam === "tasks" || scopeParam === "all" || scopeParam === "workflows" ? scopeParam : undefined
+    const runs = deps.runs.list({ workflowId, limit, scope })
     if (!summary) return sendJson(res, 200, { runs })
     // Drop the heavyweight `context` (per-node outputs + the full trigger
     // event payload — webhook bodies routinely run 10–50KB each). The list

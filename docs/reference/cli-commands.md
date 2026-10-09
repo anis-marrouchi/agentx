@@ -2228,7 +2228,9 @@ Import a YAML/JSON workflow file into .agentx/workflows and hot-reload.
 
 ### `agentx workflow runs [id]`
 
-List recent runs (optionally filtered to a single workflow).
+List recent runs (optionally filtered to a single workflow; `task` lists the runs that wrapped a task).
+
+Without an id it lists runs of saved workflows only. Runs that wrapped a task (see [Run every task through a workflow](../jobs/every-task-a-workflow.md)) are kept apart: run `agentx workflow runs task` to see them.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -2322,7 +2324,7 @@ One line of JSON per workflow run, newest first: the steps taken, how long each 
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--workflow <id>` | — | Only runs of this workflow. `task` is the runs that wrapped a task. |
+| `--workflow <id>` | — | Only runs of this workflow. `task` is the runs that wrapped a task. Without it, both kinds are listed. |
 | `--agent <id>` | — | Only runs of this agent. |
 | `--days <n>` | — | Only runs started in the last `n` days. |
 | `--limit <n>` | `500` | At most this many runs. |

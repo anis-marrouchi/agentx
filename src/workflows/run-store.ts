@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "crypto"
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs"
+import { appendFileSync, closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, renameSync, statSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { currentRoot } from "@/events/envelope"
 import {
@@ -16,7 +16,13 @@ import {
 // Home-node-only persistence for dataflow runs. The node that processes the
 // triggering event becomes the home node and owns:
 //   _runs/<runId>.jsonl                   — append-only run events
+//   _task-runs/<runId>.jsonl              — runs that wrap a task (#858, #877)
 //   _index/<backend>__<entityId>.json     — entity -> active runId lookup
+//
+// Wrapped task runs (workflows.required) get their own folder: there is one
+// per task, so in the shared folder they would push paused workflow runs out
+// of the newest-N window the engine resumes from, and every scan would grow
+// with every task ever wrapped. list() reads workflow runs only unless asked.
 //
 // Event lines come in two shapes:
 //   { v: 2, kind: "snapshot", run }         — full run state at a moment
@@ -36,6 +42,10 @@ export interface RunStoreOptions {
    *  later code can verify ownership before mutating. */
   nodeId: string
 }
+
+/** Which runs list() and prune() read: workflow runs (the default),
+ *  wrapped task runs, or both. */
+export type RunScope = "workflows" | "tasks" | "all"
 
 type RunEventLine =
   | { v: 2; kind: "snapshot"; run: WorkflowRun }
@@ -64,20 +74,55 @@ export function idempotencyKey(runId: string, nodeId: string, eventId: string): 
 export class RunStore {
   readonly baseDir: string
   readonly runsDir: string
+  readonly taskRunsDir: string
   readonly indexDir: string
   readonly nodeId: string
 
   constructor(opts: RunStoreOptions) {
     this.baseDir = opts.baseDir ?? resolve(process.cwd(), ".agentx/workflows")
     this.runsDir = resolve(this.baseDir, "_runs")
+    this.taskRunsDir = resolve(this.baseDir, "_task-runs")
     this.indexDir = resolve(this.baseDir, "_index")
     this.nodeId = opts.nodeId
     mkdirSync(this.runsDir, { recursive: true })
+    mkdirSync(this.taskRunsDir, { recursive: true })
     mkdirSync(this.indexDir, { recursive: true })
   }
 
-  private runPath(runId: string): string {
-    return resolve(this.runsDir, `${runId}.jsonl`)
+  /** Where a run's file is: workflow runs first, then task runs. A run not
+   *  written yet goes to the folder its kind belongs in. */
+  private runPath(runId: string, task = false): string {
+    const main = resolve(this.runsDir, `${runId}.jsonl`)
+    if (existsSync(main)) return main
+    const wrapped = resolve(this.taskRunsDir, `${runId}.jsonl`)
+    return task || existsSync(wrapped) ? wrapped : main
+  }
+
+  private dirsFor(scope: RunScope): string[] {
+    if (scope === "tasks") return [this.taskRunsDir]
+    if (scope === "workflows") return [this.runsDir]
+    return [this.runsDir, this.taskRunsDir]
+  }
+
+  /** Run files in the scope's folders, newest first. */
+  private files(scope: RunScope): Array<{ path: string; mtime: number }> {
+    const out: Array<{ path: string; mtime: number }> = []
+    for (const dir of this.dirsFor(scope)) {
+      if (!existsSync(dir)) continue
+      for (const name of readdirSync(dir)) {
+        if (!name.endsWith(".jsonl")) continue
+        const path = resolve(dir, name)
+        try { out.push({ path, mtime: statSync(path).mtimeMs }) } catch { /* removed meanwhile */ }
+      }
+    }
+    return out.sort((a, b) => b.mtime - a.mtime)
+  }
+
+  private readPath(path: string): WorkflowRun | null {
+    if (!existsSync(path)) return null
+    let raw: string
+    try { raw = readFileSync(path, "utf-8").trim() } catch { return null }
+    return raw ? replay(raw) : null
   }
 
   private indexPath(entity: EntityRef): string {
@@ -135,31 +180,7 @@ export class RunStore {
 
   /** Read the latest snapshot of a run by replaying the jsonl log. */
   get(runId: string): WorkflowRun | null {
-    const p = this.runPath(runId)
-    if (!existsSync(p)) return null
-    const raw = readFileSync(p, "utf-8").trim()
-    if (!raw) return null
-    let run: WorkflowRun | null = null
-    for (const line of raw.split("\n")) {
-      let evt: RunEventLine
-      try { evt = JSON.parse(line) as RunEventLine } catch { continue }
-      if (evt.v !== 2) continue
-      if (evt.kind === "snapshot") run = evt.run
-      else if (evt.kind === "exec" && run && run.id === evt.runId) {
-        const current: WorkflowRun = run
-        run = {
-          ...current,
-          history: [...current.history, evt.entry],
-          pending: evt.pending,
-          status: evt.status ?? current.status,
-          pausedAt: evt.pausedAt === null ? undefined : (evt.pausedAt ?? current.pausedAt),
-          context: evt.context ?? current.context,
-          joinCounters: evt.joinCounters ?? current.joinCounters,
-          updatedAt: evt.entry.at,
-        }
-      }
-    }
-    return run
+    return this.readPath(this.runPath(runId))
   }
 
   /** Look up the active run id for an entity, if any. */
@@ -278,55 +299,74 @@ export class RunStore {
     try { unlinkSync(this.runPath(runId)); return true } catch { return false }
   }
 
-  /** List runs, newest first. */
-  list(opts: { workflowId?: string; limit?: number } = {}): WorkflowRun[] {
-    if (!existsSync(this.runsDir)) return []
-    const files = readdirSync(this.runsDir)
-      .filter((f) => f.endsWith(".jsonl"))
-      .map((f) => ({ name: f, mtime: statSync(resolve(this.runsDir, f)).mtimeMs }))
-      .sort((a, b) => b.mtime - a.mtime)
-    const out: WorkflowRun[] = []
-    for (const f of files) {
-      const run = this.get(f.name.replace(/\.jsonl$/, ""))
+  /** Runs, newest first, read one file at a time so a caller that stops
+   *  early reads no more. Scope: workflow runs by default; with a
+   *  workflowId, both folders (the id decides). */
+  *iterate(opts: { workflowId?: string; scope?: RunScope } = {}): Generator<{ run: WorkflowRun; mtimeMs: number }> {
+    const scope = opts.scope ?? (opts.workflowId ? "all" : "workflows")
+    for (const f of this.files(scope)) {
+      const run = this.readPath(f.path)
       if (!run) continue
       if (opts.workflowId && run.workflowId !== opts.workflowId) continue
+      // A task run written before task runs had their own folder.
+      if (scope === "workflows" && run.meta?.wrap) continue
+      yield { run, mtimeMs: f.mtime }
+    }
+  }
+
+  /** List runs, newest first. The limit counts runs of the scope only: task
+   *  runs never take a workflow run's place. */
+  list(opts: { workflowId?: string; limit?: number; scope?: RunScope } = {}): WorkflowRun[] {
+    const out: WorkflowRun[] = []
+    for (const { run } of this.iterate(opts)) {
       out.push(run)
       if (opts.limit && out.length >= opts.limit) break
     }
     return out
   }
 
-  /** Retention: keep at most `maxRuns` completed/failed/canceled runs
-   *  younger than `maxDays`. Running/paused runs are never pruned. */
-  prune(policy: { maxRuns: number; maxDays: number }): number {
+  /** Move task runs written to the workflow-run folder before they had
+   *  their own (#877). Reads the head of each workflow run file only: a
+   *  task run's first snapshot is small, a workflow run's can be large. */
+  moveTaskRuns(): number {
     if (!existsSync(this.runsDir)) return 0
-    const cutoff = Date.now() - policy.maxDays * 24 * 60 * 60 * 1000
-    const candidates: Array<{ file: string; run: WorkflowRun; mtime: number }> = []
+    let moved = 0
     for (const name of readdirSync(this.runsDir)) {
       if (!name.endsWith(".jsonl")) continue
       const path = resolve(this.runsDir, name)
-      const mtime = statSync(path).mtimeMs
-      const run = this.get(name.replace(/\.jsonl$/, ""))
+      const first = headLine(path)
+      if (!first?.includes('"wrap"')) continue
+      try {
+        const evt = JSON.parse(first) as RunEventLine
+        if (evt.kind !== "snapshot" || !evt.run.meta?.wrap) continue
+        renameSync(path, resolve(this.taskRunsDir, name))
+        moved++
+      } catch { /* leave it where it is */ }
+    }
+    return moved
+  }
+
+  /** Retention: keep at most `maxRuns` completed/failed/canceled runs
+   *  younger than `maxDays`, in the scope (default: both folders). Running
+   *  and paused runs are never pruned. */
+  prune(policy: { maxRuns: number; maxDays: number }, scope: RunScope = "all"): number {
+    const cutoff = Date.now() - policy.maxDays * 24 * 60 * 60 * 1000
+    let kept = 0
+    let pruned = 0
+    for (const f of this.files(scope)) {
+      const run = this.readPath(f.path)
       if (!run) continue
       if (run.status === "running" || run.status === "paused") continue
-      candidates.push({ file: path, run, mtime })
-    }
-    candidates.sort((a, b) => b.mtime - a.mtime)
-    let pruned = 0
-    for (let i = 0; i < candidates.length; i++) {
-      const c = candidates[i]
-      const tooOld = c.mtime < cutoff
-      const tooMany = i >= policy.maxRuns
-      if (tooOld || tooMany) {
-        try { unlinkSync(c.file); pruned++ } catch { /* ignore */ }
-      }
+      if (f.mtime < cutoff || kept >= policy.maxRuns) {
+        try { unlinkSync(f.path); pruned++ } catch { /* ignore */ }
+      } else kept++
     }
     return pruned
   }
 
   private appendSnapshot(run: WorkflowRun): void {
     const line: RunEventLine = { v: 2, kind: "snapshot", run }
-    appendFileSync(this.runPath(run.id), JSON.stringify(line) + "\n")
+    appendFileSync(this.runPath(run.id, !!run.meta?.wrap), JSON.stringify(line) + "\n")
   }
 
   private writeIndex(entity: EntityRef, runId: string): void {
@@ -343,4 +383,42 @@ export class RunStore {
       try { unlinkSync(p) } catch { /* ignore */ }
     }
   }
+}
+
+/** Fold a run file's lines into its latest state. */
+function replay(raw: string): WorkflowRun | null {
+  let run: WorkflowRun | null = null
+  for (const line of raw.split("\n")) {
+    let evt: RunEventLine
+    try { evt = JSON.parse(line) as RunEventLine } catch { continue }
+    if (evt.v !== 2) continue
+    if (evt.kind === "snapshot") run = evt.run
+    else if (evt.kind === "exec" && run && run.id === evt.runId) {
+      const current: WorkflowRun = run
+      run = {
+        ...current,
+        history: [...current.history, evt.entry],
+        pending: evt.pending,
+        status: evt.status ?? current.status,
+        pausedAt: evt.pausedAt === null ? undefined : (evt.pausedAt ?? current.pausedAt),
+        context: evt.context ?? current.context,
+        joinCounters: evt.joinCounters ?? current.joinCounters,
+        updatedAt: evt.entry.at,
+      }
+    }
+  }
+  return run
+}
+
+/** A file's first line, if it ends within the first 16 KB. */
+function headLine(path: string): string | null {
+  let fd: number
+  try { fd = openSync(path, "r") } catch { return null }
+  try {
+    const buf = Buffer.alloc(16 * 1024)
+    const n = readSync(fd, buf, 0, buf.length, 0)
+    const text = buf.subarray(0, n).toString("utf-8")
+    const end = text.indexOf("\n")
+    return end >= 0 ? text.slice(0, end) : n < buf.length ? text : null
+  } catch { return null } finally { closeSync(fd) }
 }

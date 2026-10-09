@@ -1196,7 +1196,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
       const headers: Record<string, string> = {}
       if (t.token) headers["Authorization"] = `Bearer ${t.token}`
       try {
-        const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs?limit=500&summary=1`, { headers, signal: AbortSignal.timeout(5000) })
+        const r = await fetch(`${t.url.replace(/\/+$/, "")}/api/workflows/runs?limit=500&summary=1&scope=workflows`, { headers, signal: AbortSignal.timeout(5000) })
         if (!r.ok) { unreachable.push(t.url); return [] }
         const data = await r.json() as { runs?: WorkflowRun[] }
         return Array.isArray(data.runs) ? data.runs : []

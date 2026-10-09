@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import { existsSync, mkdtempSync, rmSync } from "fs"
+import { existsSync, mkdtempSync, readdirSync, renameSync, rmSync, utimesSync } from "fs"
 import { tmpdir } from "os"
 import { join, resolve } from "path"
 import { RunStore, WorkflowDispatcher, WorkflowStore, workflowSchema, type AgentExecuteResponse } from "../src/workflows"
 import { TimerService } from "../src/workflows/timers"
 import {
-  closeStaleWraps, endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, reportStep, requiredFor, runRecord, shouldWrap,
+  closeStaleWraps, endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, pruneTaskRuns, reportStep, requiredFor, runRecord, shouldWrap,
   startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText, writePlan,
 } from "../src/workflows/required"
 import { handleFollowUpApi, type FollowUpApiDeps } from "../src/workflows/follow-up-api"
@@ -33,7 +33,7 @@ const outcome = (o: Partial<Parameters<typeof finishWrap>[2]> = {}) =>
 describe("the setting", () => {
   it("is off by default, with plain questions exempt", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(cfg.workflows.required).toEqual({ enabled: false, agents: {}, exemptQuestions: true })
+    expect(cfg.workflows.required).toEqual({ enabled: false, agents: {}, exemptQuestions: true, retention: { maxRuns: 2000, maxDays: 30 } })
   })
 
   it("needs the engine, and a per-agent value wins over the global one", () => {
@@ -199,6 +199,78 @@ describe("after a restart", () => {
   })
 })
 
+describe("task runs keep apart from workflow runs (#877)", () => {
+  const pausedOnSignal = async () => {
+    const store = new WorkflowStore({ baseDir: dir })
+    store.save(workflowSchema.parse({
+      id: "wait-sig", title: "Waits on a signal",
+      nodes: [
+        { id: "trigger", type: "trigger.channel", config: { source: "manual" } },
+        { id: "wait", type: "signal.wait", config: { name: "approved", scope: "workflow" } },
+        { id: "done", type: "end", config: {} },
+      ],
+      edges: [{ from: "trigger", to: "wait" }, { from: "wait", to: "done" }],
+    }))
+    const dispatcher = new WorkflowDispatcher({
+      store, runs, nodeId: "node-a", channels: {},
+      agents: { execute: async (): Promise<AgentExecuteResponse> => ({ content: "" }) },
+    })
+    await dispatcher.dispatch({ trigger: { source: "manual" }, entityRef: { backend: "manual", id: "e-sig" }, event: { id: "evt-1", payload: {} } })
+    await new Promise((r) => setTimeout(r, 40))
+    const paused = runs.list()[0]
+    expect(paused.pausedAt?.kind).toBe("signalWait")
+    return { dispatcher, paused }
+  }
+
+  it("a paused workflow still resumes after more than 500 wrapped tasks", async () => {
+    const { dispatcher, paused } = await pausedOnSignal()
+    for (let i = 0; i < 520; i++) {
+      start(`t-${i}`)
+      finishWrap(runs, `t-${i}`, outcome())
+    }
+    expect(readdirSync(runs.taskRunsDir)).toHaveLength(520)
+    // The window counts workflow runs only.
+    expect(runs.list({ limit: 500 }).map((r) => r.id)).toEqual([paused.id])
+    expect(runs.list({ scope: "tasks", limit: 500 })).toHaveLength(500)
+    expect(runs.list({ workflowId: TASK_WORKFLOW_ID })).toHaveLength(520)
+    expect(runs.get("t-0")?.status).toBe("completed")
+
+    dispatcher.emitSignal({ name: "approved", scope: "workflow", workflowId: "wait-sig" })
+    await new Promise((r) => setTimeout(r, 40))
+    expect(runs.get(paused.id)!.status).toBe("completed")
+  })
+
+  it("moves task runs written next to workflow runs, and hides them from the workflow list until then", () => {
+    start("old")
+    renameSync(resolve(runs.taskRunsDir, "old.jsonl"), resolve(runs.runsDir, "old.jsonl"))
+    runs.create({ workflowId: "wf", initialPending: [], entityRef: { backend: "manual", id: "e1" }, id: "engine" })
+    expect(runs.list().map((r) => r.id)).toEqual(["engine"])
+    expect(runs.get("old")?.meta?.wrap).toBeTruthy()
+    expect(runs.moveTaskRuns()).toBe(1)
+    expect(existsSync(resolve(runs.taskRunsDir, "old.jsonl"))).toBe(true)
+    expect(existsSync(resolve(runs.runsDir, "engine.jsonl"))).toBe(true)
+    expect(runs.moveTaskRuns()).toBe(0)
+    // A cut-off one is still closed at boot, now from its own folder.
+    expect(closeStaleWraps(runs)).toBe(1)
+    expect(runs.get("old")!.status).toBe("canceled")
+  })
+
+  it("keeps finished task runs within the retention, never running ones or workflow runs", () => {
+    runs.create({ workflowId: "wf", initialPending: [], entityRef: { backend: "manual", id: "e1" }, id: "engine" })
+    runs.setStatus("engine", "completed")
+    for (const id of ["a", "b", "c", "d"]) { start(id); finishWrap(runs, id, outcome()) }
+    start("live")
+    // "a" is oldest by file time; "b" is past maxDays.
+    const day = 86_400_000
+    utimesSync(resolve(runs.taskRunsDir, "a.jsonl"), new Date(Date.now() - 3 * 60_000), new Date(Date.now() - 3 * 60_000))
+    utimesSync(resolve(runs.taskRunsDir, "b.jsonl"), new Date(Date.now() - 40 * day), new Date(Date.now() - 40 * day))
+    expect(pruneTaskRuns(runs, { maxRuns: 2, maxDays: 30 })).toBe(2)
+    expect(readdirSync(runs.taskRunsDir).sort()).toEqual(["c.jsonl", "d.jsonl", "live.jsonl"])
+    expect(runs.get("engine")?.status).toBe("completed")
+    expect(pruneTaskRuns(runs, { maxRuns: 2, maxDays: 30 })).toBe(0)
+  })
+})
+
 describe("tools that change nothing", () => {
   it("tells reads from writes; unknown tools count as writes", () => {
     for (const n of ["Read", "Grep", "WebSearch", "mcp__agentx__agentx_wiki_query", "mcp__github__get_issue", "mcp__linear__list_issues"]) {
@@ -209,10 +281,15 @@ describe("tools that change nothing", () => {
       // A write verb first wins over a lookup word last.
       "mcp__crm__set_status", "mcp__crm__update_status", "mcp__todo__clear_list", "mcp__x__delete_search",
       "mcp__x__add_query", "mcp__x__remove_list", "mcp__x__send_status", "mcp__x__start_check",
+      // A read verb first, a write joined on (#877).
+      "mcp__x__get_or_create_user", "mcp__x__find_and_update", "mcp__x__getOrCreateUser", "mcp__x__fetch_then_delete",
     ]) {
       expect(isReadOnlyToolUse(n), n).toBe(false)
     }
     expect(isReadOnlyToolUse("mcp__x__issue_status")).toBe(true)
+    // A write word that is the thing read, not a second verb, stays a read.
+    expect(isReadOnlyToolUse("mcp__github__get_open_issues")).toBe(true)
+    expect(isReadOnlyToolUse("mcp__x__getIssue")).toBe(true)
     expect(isReadOnlyToolUse("mcp__agentx__agentx_workflow", { action: "match" })).toBe(true)
     expect(isReadOnlyToolUse("mcp__agentx__agentx_workflow", { action: "start" })).toBe(false)
   })
