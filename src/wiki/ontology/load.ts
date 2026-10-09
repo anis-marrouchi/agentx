@@ -123,6 +123,9 @@ export function checkOntology(o: Ontology): string[] {
     if (r.title) {
       try { new RegExp(r.title, "i") } catch { errors.push(`importance.rules: bad title pattern "${r.title}"`) }
     }
+    if (r.unless) {
+      try { new RegExp(r.unless, "i") } catch { errors.push(`importance.rules: bad unless pattern "${r.unless}"`) }
+    }
   }
   if (o.sidebar.pins.length > o.sidebar.pins_max) {
     errors.push(`sidebar.pins: ${o.sidebar.pins.length} pins, only the first ${o.sidebar.pins_max} are shown`)

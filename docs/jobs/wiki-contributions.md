@@ -136,8 +136,8 @@ To see whether the wiki got better, score it against questions you know the answ
 
 Each saved score also records:
 
-- the settings the run used: how pages were picked, `linkedPages`, `linkedChars`, whether the live read and the notes were on, and the two models;
-- how long each question took, and what its model calls cost in dollars. Cost is known only for the summaries method. A question answered another way shows `?`.
+- the settings the run used: how pages were picked, `linkedPages`, `linkedChars`, whether the live read and the notes were on, and the models of each way of picking pages (each question records which way answered it);
+- how long each question took, and what its model calls cost in dollars. Cost is known only for the summaries method. A question answered another way, or one with a model call that failed or reported no cost, shows `?`.
 
 The comparison starts with the time and cost per question of each run, and a `changed:` line that lists each setting that differs, such as `linkedPages: 0 → 2`. To learn what one setting does, change only that one between the two runs. The comparison warns you when more than one setting changed, or when the two runs asked different questions.
 

@@ -17,6 +17,9 @@ const notes = (show = 1): LensPanel => ({ panel: "notes", title: "Notes", source
 
 const ASSET_TYPES = ["device", "server", "app", "domain", "account", "agent"]
 
+/** Words that make an upkeep title worth a second look. */
+const UPKEEP_UNLESS = "\\b(down|outage|offline|unreachable|fail(ed|ing|ure)?|crash(ed|es|ing)?|broke|broken|lost|loss|corrupt(ed)?|data|production|prod|customers?|clients?|incident|breach|after|loop|again)\\b"
+
 const types: TypeDef[] = [
   // Parties
   {
@@ -332,10 +335,12 @@ export const DEFAULT_ONTOLOGY: Ontology = {
     major_set_by: "owner",
     rollup: { min: 5, days: 30 },
     // Routine machine upkeep: true for any fleet, so safe as a default.
+    // `unless` keeps a title that also reports damage ("Production down
+    // after reboot") for the model.
     rules: [
-      { level: "minor", title: "\\b(disk|storage) (is |was |almost |nearly )?(full|pressure|cleanup|clean-up|usage|space)\\b" },
-      { level: "minor", title: "\\b(cache|logs?|temp files?) (was |were )?(cleared|cleaned|purged|rotated|pruned)\\b" },
-      { level: "minor", title: "\\b(restart(ed)?|reboot(ed)?|health ?check|heartbeat)\\b" },
+      { level: "minor", title: "\\b(disk|storage) (is |was |almost |nearly )?(full|pressure|cleanup|clean-up|usage|space)\\b", unless: UPKEEP_UNLESS },
+      { level: "minor", title: "\\b(cache|logs?|temp files?) (was |were )?(cleared|cleaned|purged|rotated|pruned)\\b", unless: UPKEEP_UNLESS },
+      { level: "minor", title: "\\b(restart(ed)?|reboot(ed)?|health ?check|heartbeat)\\b", unless: UPKEEP_UNLESS },
     ],
   },
   sidebar: { pins_max: 5, pins: [] },

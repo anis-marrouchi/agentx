@@ -1270,7 +1270,7 @@ wiki
   .option("--selector-model <m>", "agentic selector model", "haiku")
   .option("--synth-model <m>", "agentic synthesis model", "sonnet")
   .action(async (opts) => {
-    const { agenticQuery } = await import("@/wiki/query")
+    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
     const { readdirSync: rd, readFileSync: rf, existsSync: ex } = await import("fs")
     const { resolve: rv, join: jn } = await import("path")
 
@@ -1769,7 +1769,7 @@ wiki
   .action(async (opts) => {
     const readline = await import("node:readline/promises")
     const { randomUUID } = await import("node:crypto")
-    const { agenticQuery } = await import("@/wiki/query")
+    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
 
     if (!opts.agent) {
       console.log(chalk.red("  --agent <id> is required."))
@@ -3219,7 +3219,7 @@ wiki
   .option("--trace", "print selector + walk trace")
   .option("--own-only", "search only the agent's own articles, not the shared wiki")
   .action(async (question, opts) => {
-    const { agenticQuery } = await import("@/wiki/query")
+    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
     const { noteSourceFor } = await import("@/wiki/query-settings")
     const { QUERY_RUNS_FILE, queryFailed, recordQueryRun } = await import("@/wiki/query-runs")
     const settings = await querySettingsFor(opts)
@@ -3386,7 +3386,7 @@ wiki
       return
     }
     const questions = parseQuestionSet(readFileSync(resolve(opts.questions), "utf-8"))
-    const { agenticQuery } = await import("@/wiki/query")
+    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
     const { noteSourceFor } = await import("@/wiki/query-settings")
     const { meteredModelCall } = await import("@/wiki/model-call")
     const settings = await querySettingsFor(opts)
@@ -3423,6 +3423,8 @@ wiki
         notes: settings.notes.enabled,
         navigatorModel: opts.selectorModel ?? settings.summaries.navigatorModel,
         answerModel: opts.synthModel ?? settings.summaries.answerModel,
+        catalogSelectorModel: opts.selectorModel ?? CATALOG_SELECTOR_MODEL,
+        catalogSynthModel: opts.synthModel ?? CATALOG_SYNTH_MODEL,
       },
     }, answers)
     if (opts.out) writeFileSync(resolve(opts.out), `${JSON.stringify(report, null, 2)}\n`)

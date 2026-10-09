@@ -471,17 +471,19 @@ export async function runEnrich(hub: WikiHub, g: WikiGraph, call: EnrichCall, op
       continue
     }
 
-    const content = r.overview ? withOverview(page.article.content, r.overview) : page.article.content
-    const meta = mergedMeta(page.article.meta, r, opts.today)
+    const withNew = (a: { content: string }) => (r.overview ? withOverview(a.content, r.overview) : a.content)
     if (opts.dryRun) {
-      run.outcomes.push({ ...outcome, status: "dry-run", preview: content, facts: r.statements })
+      run.outcomes.push({ ...outcome, status: "dry-run", preview: withNew(page.article), facts: r.statements })
       continue
     }
     const store = hub.getAgentWiki(page.agentId)
-    const ok = store.writeArticle(page.article.path, meta, content, page.article.meta.owner || page.agentId)
+    // Absorb may have changed the page while the run waited for the model:
+    // merge onto what is on disk now, not the copy read at the start.
+    const current = store.readArticle(page.article.path)
+    const ok = !!current && store.writeArticle(page.article.path, mergedMeta(current.meta, r, opts.today), withNew(current), current.meta.owner || page.agentId)
     if (!ok) {
       outcome.status = "failed"
-      outcome.dropped.push("write refused")
+      outcome.dropped.push(current ? "write refused" : "the page was moved or removed during the run")
       run.outcomes.push(outcome)
       remember(e.id, fp, reply.costUsd, true)
       continue

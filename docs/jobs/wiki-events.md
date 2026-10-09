@@ -19,12 +19,14 @@ Three words used on this page:
 
 How the run works:
 
-- **Rules go first, and cost nothing.** Routine upkeep (a full disk, a cleared cache, a restart) is minor by default. You can change the rules.
+- **Rules go first, and cost nothing.** Routine upkeep (a full disk, a cleared cache, a restart) is minor by default. A title that also reports damage, such as "Production down after reboot" or "Health check failed", is left for the model. You can change the rules.
 - **A model sorts the rest**, 20 events per call. It reads the title and the first lines of each event page, never the raw conversations.
 - **Nothing is invented.** The run may only say an event is about a page that the event already links to, or that its title names. Anything else is dropped, and the run tells you.
 - **The model gets no tools.** The call can't run commands, use connected services or send messages. It only returns text.
 - **Your own choice wins.** A level you set yourself is never changed by a later run.
 - **Old text is kept.** Each write saves the previous version of the page.
+- **The page's date stays.** Setting a level or a link does not change the page's "updated" date, so a run does not make every event look new.
+- **Newer text wins.** Just before it writes, the run reads the page again. If the page changed while the run waited for the model, the new level goes onto the newer text. If someone set a level in that time, the run leaves it.
 - **Spending has a cap.** A run stops before the next call once it has spent `--max-cost`.
 
 ## Before you start
@@ -87,14 +89,14 @@ You can set any event's level this way at any time. No later run changes a level
 ## Change the rules
 
 1. **Terminal:** run `agentx wiki ontology init` if you have no `.agentx/wiki/ontology.yaml` yet.
-2. Open the file and edit `rules` under `importance`. Rules are tried in order and the first match wins. A rule has a `level`, and a `title` pattern, a list of `tags`, or both:
+2. Open the file and edit `rules` under `importance`. Rules are tried in order and the first match wins. A rule has a `level`, and a `title` pattern, a list of `tags`, or both. It can also have an `unless` pattern: when the title matches it, the rule is skipped and the next rule, or the model, decides. A *pattern* is a search written as a regular expression, and upper or lower case does not matter:
 
    ```yaml
    importance:
      default: normal
      major_set_by: owner
      rules:
-       - {level: minor, title: "\\b(restart(ed)?|health ?check)\\b"}
+       - {level: minor, title: "\\b(restart(ed)?|health ?check)\\b", unless: "\\b(down|failed|outage)\\b"}
        - {level: minor, tags: [reminder]}
        - {level: normal, title: "\\binvoice (sent|paid)\\b"}
    ```
@@ -115,12 +117,14 @@ Set `major_set_by: anyone` to let a run write **major** directly, with no propos
 
 - **`no page is titled: …`:** the name after `--about` does not match a page title or alias. Copy the title from the wiki page.
 - **`dropped: about …: not in the list shown`:** the model named a page the event does not link to. That link is left out. Add `[[Page Title]]` to the event page if the event really is about it, then run again with `--force`.
-- **An event has the wrong level:** run `agentx wiki events set "<event title>" <level>`. For a kind of event that is often wrong, add a rule.
+- **An event has the wrong level:** run `agentx wiki events set "<event title>" <level>`. For a kind of event that is often wrong, add a rule, or add an `unless` pattern to the rule that caught it.
+- **`a level was set on the page during the run`:** someone set the level while the run waited for the model. The run left that level alone.
+- **`the page was moved or removed during the run`:** absorb renamed or merged the page. The next run finds it under its new name.
 - **An event does not show in a page's History:** the event neither links to that page nor names it in its title. Add `[[Page Title]]` to the event page.
 - **`no-page`:** the event's pages are copied from another machine. Run the job on the machine that holds them.
 - **`no-answer`:** the model's reply had no usable line for that event. It keeps no level and the next run tries it again.
 - **`write refused`:** the page belongs to another agent or was copied from another machine. Run the job where the page lives.
 - **`stopped at the cap`:** the run reached `--max-cost`. The rest wait for the next run, or raise the cap.
 - **`--max must be a whole number`:** give `--max` or `--batch` a number such as `200`.
-- **A red box says ontology.yaml has problems:** a rule has an unknown level, no `title` or `tags`, or a pattern that is not valid. Run `agentx wiki ontology check` and fix the line it prints.
+- **A red box says ontology.yaml has problems:** a rule has an unknown level, no `title` or `tags`, or a `title` or `unless` pattern that is not valid. Run `agentx wiki ontology check` and fix the line it prints.
 - **To undo this job's work on one event:** open the page's header, remove `importance:` and the facts that carry `"by":"wiki-events"`. The next run does the event again.
