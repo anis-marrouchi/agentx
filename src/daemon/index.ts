@@ -67,7 +67,7 @@ import { runApprovalsSweep } from "@/approvals/sweep"
 import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
-import { requiredFor } from "@/workflows/required"
+import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
@@ -2880,7 +2880,12 @@ export class AgentXDaemon {
     this.workflowStore = store
     this.workflowRuns = runs
     // workflows.required (#858): wrapped tasks keep their run here too.
+    // Runs whose turn was cut off by the last stop are closed first.
     this.registry.setWorkflowRunStore(runs)
+    try {
+      const stale = closeStaleWraps(runs)
+      if (stale) this.log(`  Workflows: closed ${stale} task run(s) cut off by the last stop`)
+    } catch (e: any) { this.log(`  Workflows: closing cut-off task runs failed (non-fatal): ${e?.message || e}`) }
     // Phase 3: webhook handler can now dispatch workflows per event-type
     // (webhooks[].triggers map). When `triggers` is unset, behavior is
     // unchanged from prior versions.

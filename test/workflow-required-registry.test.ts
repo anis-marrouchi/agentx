@@ -13,6 +13,7 @@ const seen = vi.hoisted(() => ({
   during: [] as any[],
   events: [] as any[],
   list: null as null | (() => any[]),
+  error: undefined as string | undefined,
 }))
 vi.mock("../src/agents/runtime", async (importOriginal) => {
   const real: any = await importOriginal()
@@ -22,6 +23,7 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
       seen.prompts.push(JSON.stringify([task, history]))
       for (const e of seen.events) onEvent?.(e)
       if (seen.list) seen.during.push(seen.list())
+      if (seen.error) return Promise.resolve({ content: "", duration: 1, error: seen.error })
       return Promise.resolve({ content: "ok", duration: 1, usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheCreateTokens: 0 } })
     },
   }
@@ -41,6 +43,7 @@ beforeEach(() => {
   seen.during.length = 0
   seen.events = []
   seen.list = null
+  seen.error = undefined
   getEventBus().removeAllListeners()
 })
 afterEach(() => {
@@ -75,6 +78,18 @@ describe("workflows.required in the registry", () => {
     expect(run.history.map((h) => h.nodeId)).toEqual(["reply", "done"])
     expect(seen.prompts[0]).toContain(`[Workflow run ${run.id}]`)
     expect(seen.during[0][0].workflow).toMatchObject({ runId: run.id, workflowId: "task", step: "reply" })
+    // The task itself is not made a workflow step: restart resume and
+    // stop treat it as before.
+    expect(JSON.parse(seen.prompts[0])[0].workflowRunId).toBeUndefined()
+  })
+
+  it("closes the run as failed when the turn fails or is stopped", async () => {
+    const { r, runs } = setup({ enabled: true })
+    seen.error = "Stopped by the owner"
+    await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
+    const [run] = runs.list()
+    expect(run.status).toBe("failed")
+    expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "failed", note: "Stopped by the owner" })
   })
 
   it("leaves no run for a plain question", async () => {
