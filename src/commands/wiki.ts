@@ -346,6 +346,9 @@ wiki
 
     let totalAbsorbed = 0
     let totalWithPath = 0
+    // Compile calls that failed: thrown, unparseable, or reported an error.
+    // Any one makes the command exit 1, so a command schedule sees it (#603).
+    let failedCalls = 0
 
     // One line per compile call in _absorb-runs.jsonl: time, cost, tokens
     // and prompt size, so a change to the pipeline can be measured (#808).
@@ -723,10 +726,11 @@ wiki
       } finally {
         call.at = new Date().toISOString()
         call.wallMs = Date.now() - callStart
+        if (call.failed) failedCalls++
         writeTelemetry(call)
       }
     }
-    writeTelemetry({ kind: "run", label, startedAt, endedAt: new Date().toISOString(), max: maxEntries, model })
+    writeTelemetry({ kind: "run", label, startedAt, endedAt: new Date().toISOString(), max: maxEntries, model, failed: failedCalls })
 
     console.log()
     if (opts.dryRun) {
@@ -737,6 +741,10 @@ wiki
         const pct = totalAbsorbed > 0 ? Math.round((totalWithPath / totalAbsorbed) * 100) : 0
         console.log(chalk.dim(`  ${totalWithPath}/${totalAbsorbed} carry graphPath (${pct}%) — wiki retrieval graph weight is now non-zero for those`))
       }
+    }
+    if (failedCalls > 0) {
+      console.log(chalk.red(`  ${failedCalls} absorb call(s) failed; their entries stay queued`))
+      process.exitCode = 1
     }
     console.log()
   })
@@ -912,6 +920,29 @@ wiki
     if (opts.json) console.log(JSON.stringify({ card, checks }, null, 2))
     else if (opts.out) console.log(chalk.green(`  scorecard written to ${opts.out}`))
     else console.log(md)
+  })
+
+// agentx wiki query-runs — how many queries ran, failed and how long they
+// took, from _query-runs.jsonl (#603).
+wiki
+  .command("query-runs")
+  .description("count wiki queries by outcome, with timing")
+  .option("--dir <path>", "wiki directory")
+  .option("--since <date>", "only queries on or after this date or time (ISO)")
+  .option("--json", "print the summary as JSON")
+  .action(async (opts) => {
+    const { QUERY_RUNS_FILE, summariseQueryRuns } = await import("@/wiki/query-runs")
+    const file = resolve(wikiDir(opts.dir), QUERY_RUNS_FILE)
+    if (!existsSync(file)) {
+      console.log(chalk.yellow(`  no queries recorded yet (${file})`))
+      return
+    }
+    const s = summariseQueryRuns(readFileSync(file, "utf-8"), typeof opts.since === "string" ? opts.since.trim() : undefined)
+    if (opts.json) { console.log(JSON.stringify(s, null, 2)); return }
+    console.log()
+    console.log(chalk.bold(`  ${s.total} queries · ${s.failed} failed · p50 ${(s.wallMsP50 / 1000).toFixed(1)} s · p95 ${(s.wallMsP95 / 1000).toFixed(1)} s`))
+    for (const [status, n] of Object.entries(s.byStatus).sort((a, b) => b[1] - a[1])) console.log(`  ${status.padEnd(14)} ${n}`)
+    console.log()
   })
 
 // agentx wiki absorb-runs — time and cost per absorb run label, from
@@ -3186,10 +3217,18 @@ wiki
   .action(async (question, opts) => {
     const { agenticQuery } = await import("@/wiki/query")
     const { noteSourceFor } = await import("@/wiki/query-settings")
+    const { QUERY_RUNS_FILE, queryFailed, recordQueryRun } = await import("@/wiki/query-runs")
     const settings = await querySettingsFor(opts)
     if (!settings) return
     const hub = getHub(opts.dir)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    // Every query leaves one line in _query-runs.jsonl, and one that could
+    // not run exits 1, so a failure is counted and a caller can see it (#603).
+    const queryStart = Date.now()
+    const record = (agent: string, status: Parameters<typeof queryFailed>[0], method?: string) => {
+      recordQueryRun(resolve(hub.getBaseDir(), QUERY_RUNS_FILE), { at: new Date().toISOString(), agent, status, method, wallMs: Date.now() - queryStart })
+      if (queryFailed(status)) process.exitCode = 1
+    }
 
     // The named (or calling) agent, or the first one that has a catalog. A named agent
     // with no articles of its own still searches the shared wiki.
@@ -3204,6 +3243,7 @@ wiki
     }
     if (!chosen) {
       console.log(chalk.yellow("  No agent has a catalog yet. Run `agentx wiki status` or migrate first."))
+      record(named || "", "no-catalog")
       return
     }
 
@@ -3219,6 +3259,7 @@ wiki
       summaries: settings.summaries,
       notes: noteSourceFor(settings, chosen),
     })
+    record(chosen, result.status, result.method)
 
     if (opts.json) {
       console.log(JSON.stringify(result, null, 2))
