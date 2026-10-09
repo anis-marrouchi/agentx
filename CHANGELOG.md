@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.136.0](https://github.com/anis-marrouchi/agentx/compare/v0.135.1...v0.136.0) (2026-10-09)
+
+
+### Features
+
+* **approvals:** an agent closes its own card once the owner answered in chat ([#910](https://github.com/anis-marrouchi/agentx/issues/910)) ([2d23e0b](https://github.com/anis-marrouchi/agentx/commit/2d23e0b4830dfad7c5a98fa0555281ab3859abfa)), closes [#909](https://github.com/anis-marrouchi/agentx/issues/909)
+* **wiki:** one rule page per obligation, keeping a confirmed penalty ([#915](https://github.com/anis-marrouchi/agentx/issues/915)) ([6de23ca](https://github.com/anis-marrouchi/agentx/commit/6de23cae6de27440a1a97bf9a46d36cfae70fd45))
+
+
+### Bug Fixes
+
+* **wiki:** hold a page lock from re-read to write in wiki events and enrich ([#907](https://github.com/anis-marrouchi/agentx/issues/907) follow-up) ([#916](https://github.com/anis-marrouchi/agentx/issues/916)) ([14fc384](https://github.com/anis-marrouchi/agentx/commit/14fc384cee3d46329de2377a6a0044a6cba88292))
+* **wiki:** leave no-catalog lines out of query-runs p50/p95 (follow-up to [#906](https://github.com/anis-marrouchi/agentx/issues/906)) ([#914](https://github.com/anis-marrouchi/agentx/issues/914)) ([c2354b4](https://github.com/anis-marrouchi/agentx/commit/c2354b4e4b84c43e5968755d7ee787fdb4339e1a))
+
 ## [0.135.1](https://github.com/anis-marrouchi/agentx/compare/v0.135.0...v0.135.1) (2026-10-09)
 
 
