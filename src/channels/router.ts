@@ -21,7 +21,7 @@ import { runPipeline, type PipelineResult } from "./inbound/pipeline"
 import { defaultPipeline } from "./inbound/stages"
 import { pickAccountForAgent } from "./account-resolution"
 import { getEventBus } from "@/events/bus"
-import { withNewRoot } from "@/events/envelope"
+import { withNewRoot, withRoot } from "@/events/envelope"
 import { getLedgerMode } from "@/intent/mode"
 import { getDefaultLedger } from "@/intent/instance"
 import { recordRouterDispatch, routerChannelToSource } from "@/intent/sources/router"
@@ -572,12 +572,12 @@ export class MessageRouter {
    *  goes through the normal path, so its answer lands in the same chat. */
   createResumer(): Resumer {
     return {
-      resume: async ({ origin, note, attempt, run }) => {
+      resume: async ({ origin, note, attempt, run, rootId }) => {
         if (origin.kind !== "router") throw new Error("not a router run")
         const adapter = this.channels.get(origin.adapter)
         if (!adapter) throw new Error(`channel "${origin.adapter}" is not running`)
         const msg = incomingFrom(origin.message)
-        msg.resume = { note, attempt, resumedFrom: run.taskId }
+        msg.resume = { note, attempt, resumedFrom: run.taskId, ...(rootId ? { rootId } : {}) }
         // Handed over, not awaited: the run may take minutes, and one slow
         // run mustn't hold up the rest of the resume queue.
         this.handleMessage(adapter, msg, { replay: true })
@@ -677,7 +677,9 @@ export class MessageRouter {
     msg: IncomingMessage,
     opts: { replay?: boolean } = {},
   ): Promise<void> {
-    return withNewRoot(() => this.routeMessage(adapter, msg, opts))
+    // A task resumed after a stop signal stays under the root it ran under.
+    const rootId = msg.resume?.rootId
+    return rootId ? withRoot({ rootId }, () => this.routeMessage(adapter, msg, opts)) : withNewRoot(() => this.routeMessage(adapter, msg, opts))
   }
 
   private async routeMessage(
@@ -1053,6 +1055,12 @@ export class MessageRouter {
       // it, so an "Error:" here would only be a false failure.
       if (response.errorKind === "interrupted") {
         this.log(`Task interrupted for ${agentName} (${response.error}) — resume handles the reply after restart`)
+        return
+      }
+      // Stopped by a stop signal (#857): the signal service tells the chat
+      // the task is paused once its resume plan is saved.
+      if (response.errorKind === "stopped") {
+        this.log(`Task stopped for ${agentName} (${response.error}) — paused with a resume plan`)
         return
       }
 

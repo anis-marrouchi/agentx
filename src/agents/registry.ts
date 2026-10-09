@@ -26,7 +26,7 @@ import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
-import { serializeOrigin } from "./resume/origin"
+import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { isQueued, queuedMarker } from "./queued"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
@@ -43,6 +43,7 @@ const INTENT_WAIT_BEFORE_MATCH_MS = 250
 const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
+import { currentRoot } from "@/events/envelope"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
 import { debug } from "@/observability/debug"
@@ -190,8 +191,9 @@ export interface TaskRecord {
   durationMs: number
   ok: boolean
   error?: string
-  /** Set when a deadline ended the run: `timeout`, with the step it was in. */
-  status?: "timeout"
+  /** Set when a deadline ended the run: `timeout`, with the step it was in;
+   *  `stopped` when a stop signal ended it (#857). */
+  status?: "timeout" | "stopped"
   step?: string
   /** Final agent text (one-shot, may be empty if streaming captured it). */
   responseText: string
@@ -653,9 +655,17 @@ export class AgentRegistry {
    *  of this run. When the operator presses Stop first then Update, we use it
    *  to drop the orphan cancelled turn from history so the Update reads as an
    *  edit, not a bare follow-up. */
-  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
+  private taskAborts: Map<string, {
+    agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController
+    /** What a stop signal needs to save and later re-enter the run (#857). */
+    traceId?: string; sender?: string; rootId?: string; origin?: RunOrigin
+  }> = new Map()
   /** Runs a daemon shutdown stopped, with the reason each one reports. */
   private interruptedRuns: Map<string, string> = new Map()
+  /** Runs a stop signal ended, with the reason each one reports (#857). */
+  private stoppedRuns: Map<string, string> = new Map()
+  /** Callers waiting for a run to let go of its slot (whenRunEnds). */
+  private runEndWaiters: Map<string, Array<() => void>> = new Map()
   /** Claude cloud sessions this node launched (#622), by issue. Created on
    *  first use so a fleet with the setting off never touches the file. */
   private cloudSessions?: CloudSessionStore
@@ -1145,13 +1155,19 @@ export class AgentRegistry {
       this.interruptedRuns.delete(task.runningTaskId!)
       response = { ...response, content: "", error: interruptedBy, errorKind: "interrupted" }
     }
+    // Ended by a stop signal (#857): report the stop, not how the step read the kill.
+    const stoppedBy = !interruptedBy && task.runningTaskId ? this.stoppedRuns.get(task.runningTaskId) : undefined
+    if (stoppedBy) {
+      this.stoppedRuns.delete(task.runningTaskId!)
+      response = { ...response, content: "", error: stoppedBy, errorKind: "stopped" }
+    }
     // A run that threw or was cancelled before its own cleanup ran.
     if (task.runningTaskId) this.runReleases.get(task.runningTaskId)?.(response)
     // The preparation steps hit the pre-spawn deadline: the message was
     // never handed to a model. With the slot released, run it once more
     // from the start; a second stall is reported in plain words, not with
     // the internal error (#340).
-    const preSpawn = !interruptedBy && response.error && /^timed out before spawn after/.test(response.error)
+    const preSpawn = !interruptedBy && !stoppedBy && response.error && /^timed out before spawn after/.test(response.error)
     if (preSpawn && !task.preSpawnRetry) {
       this.log(`[${task.agentId}] ${response.error}; retrying the run once`)
       return this.execute({ ...task, preSpawnRetry: 1, runningTaskId: undefined, onStart: undefined }, onDelta, onThinking, onEvent)
@@ -1440,6 +1456,14 @@ export class AgentRegistry {
       chatId: typeof runningTask.chatId === "string" ? runningTask.chatId : "",
       originalMessage: task.message || "",
       controller: abortController,
+      sender: task.context?.sender,
+      rootId: currentRoot()?.rootId,
+      origin: task.origin ?? {
+        kind: "direct",
+        context: task.context as Record<string, unknown> | undefined,
+        model: task.model,
+        autonomy: task.autonomy,
+      },
     })
 
     // Output capture for the dashboard streaming modal. We never *force*
@@ -1468,6 +1492,8 @@ export class AgentRegistry {
     // it by name; the variable is set before any callback can fire.
     const traceTaskId = newEventId()
     task.taskId = traceTaskId
+    const abortEntry = this.taskAborts.get(runningTask.id)
+    if (abortEntry) abortEntry.traceId = traceTaskId
 
     // Per-task tool-use tally (improvement plan #3). Counts each
     // assistant tool_use block by tool name so we can compare against
@@ -1612,10 +1638,38 @@ export class AgentRegistry {
     // Give back everything the run holds. Idempotent: the `finally` below
     // calls it, and execute() calls it for a run that threw before reaching
     // that `try`.
+    // Set once the run emitted task:started / its own task:completed.
+    // closeTrace emits the completion for a run that ended before reaching
+    // it: a pre-spawn abort, a cancel or stop signal, an unexpected error.
+    // Otherwise its trace stayed "in-flight" and the next boot resumed it
+    // as cut-off work (#340, #857). A shutdown interruption is emitted
+    // flagged `interrupted`, which keeps the trace open on purpose.
+    let traceOpened = false
+    let completedEmitted = false
+    const closeTrace = (finalResponse: AgentResponse | undefined) => {
+      if (!traceOpened || completedEmitted) return
+      completedEmitted = true
+      try {
+        getEventBus().emit("task:completed", {
+          taskId: traceTaskId,
+          agentId: task.agentId,
+          channel: qChannel,
+          chatId: qChatId,
+          durationMs: Date.now() - runningTask.startedAt.getTime(),
+          error: finalResponse?.error || (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+          errorKind: finalResponse?.errorKind,
+          interrupted: this.interruptedRuns.has(runningTask.id) ? true : undefined,
+          stopped: !this.interruptedRuns.has(runningTask.id) && (this.stoppedRuns.has(runningTask.id) || finalResponse?.errorKind === "stopped") ? true : undefined,
+          at: new Date().toISOString(),
+        } as any)
+      } catch { /* observability never breaks the run */ }
+    }
+
     let released = false
     const releaseRun = (finalResponse: AgentResponse | undefined) => {
       if (released) return
       released = true
+      closeTrace(finalResponse)
       this.runReleases.delete(runningTask.id)
       if (deadline) clearTimeout(deadline)
       clearPreSpawnDeadline()
@@ -1627,6 +1681,9 @@ export class AgentRegistry {
       // Drop the abort entry — the controller is unreachable after this point
       // and a future cancel for the same id should 404, not silently no-op.
       this.taskAborts.delete(runningTask.id)
+      const waiters = this.runEndWaiters.get(runningTask.id)
+      this.runEndWaiters.delete(runningTask.id)
+      for (const w of waiters ?? []) { try { w() } catch { /* */ } }
 
       // Notify any open dashboard streams that this task has finished, then
       // schedule the buffer for cleanup so memory doesn't grow unbounded.
@@ -1654,7 +1711,9 @@ export class AgentRegistry {
           durationMs: endedAt.getTime() - runningTask.startedAt.getTime(),
           ok: !finalResponse?.error,
           error: finalResponse?.error,
-          ...(timedOutStep ? { status: "timeout" as const, step: timedOutStep } : {}),
+          ...(this.stoppedRuns.has(runningTask.id) || finalResponse?.errorKind === "stopped"
+            ? { status: "stopped" as const }
+            : timedOutStep ? { status: "timeout" as const, step: timedOutStep } : {}),
           responseText: finalResponse?.content || "",
           transcript: output.buffer,
         }
@@ -1823,6 +1882,7 @@ export class AgentRegistry {
       pickup: isPickup(task.context),
       operator: isOperatorTurn(task.context),
     })
+    traceOpened = true
 
     // Classify the message through the intent graph when enabled. Skip for
     // a2a traffic — the classifier itself dispatches through /task, and
@@ -2700,9 +2760,6 @@ export class AgentRegistry {
     }
 
     let finalResponse: AgentResponse | undefined
-    // Set once the run emitted its own task:completed; the finally below
-    // emits one for a run that ended before reaching it.
-    let completedEmitted = false
     // turn-progress shadow seat: watches the tool steps of this turn.
     const turnWatch = startTurnWatch({
       agent: task.agentId, request: task.message, taskId: traceTaskId,
@@ -2925,6 +2982,13 @@ export class AgentRegistry {
         response.error = interruptedBy
         response.errorKind = "interrupted"
       }
+      // Ended by a stop signal (#857): stopped, not failed.
+      const stoppedBy = interruptedBy ? undefined : this.stoppedRuns.get(runningTask.id)
+      if (stoppedBy) {
+        response.content = ""
+        response.error = stoppedBy
+        response.errorKind = "stopped"
+      }
 
       finalResponse = response
 
@@ -2943,6 +3007,7 @@ export class AgentRegistry {
         error: response.error || undefined,
         errorKind: response.error ? response.errorKind : undefined,
         interrupted: interruptedBy ? true : undefined,
+        stopped: stoppedBy ? true : undefined,
         inputTokens: split?.inputTokens,
         outputTokens: split?.outputTokens,
         cacheReadTokens: split?.cacheReadTokens,
@@ -3140,21 +3205,7 @@ export class AgentRegistry {
       // cancel, an unexpected error) still closes its trace; otherwise the
       // row stayed "in-flight" and the next boot resumed it as cut-off work
       // (#340). A shutdown interruption keeps it open on purpose.
-      if (!completedEmitted) {
-        try {
-          getEventBus().emit("task:completed", {
-            taskId: traceTaskId,
-            agentId: task.agentId,
-            channel: qChannel,
-            chatId: qChatId,
-            durationMs: Date.now() - runningTask.startedAt.getTime(),
-            error: finalResponse?.error || (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
-            errorKind: finalResponse?.errorKind,
-            interrupted: this.interruptedRuns.has(runningTask.id) ? true : undefined,
-            at: new Date().toISOString(),
-          } as any)
-        } catch { /* observability never breaks the run */ }
-      }
+      closeTrace(finalResponse)
       releaseRun(finalResponse)
     }
   }
@@ -3389,7 +3440,7 @@ export class AgentRegistry {
     const chatId = ctx?.chatId
     if (!channel || !chatId) return
     // Operator-cancelled / queued-marker — nothing to deliver
-    if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted") return
+    if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted" || resp.errorKind === "stopped") return
     if (isQueued(resp.error)) return
     const text = resp.error
       ? `Error: ${resp.error}`
@@ -3485,6 +3536,54 @@ export class AgentRegistry {
     } catch { /* AbortController.abort never throws on modern Node, but defend */ }
     this.log(`[${entry.agentId}] task ${taskId} cancelled — ${reason}`)
     return { agentId: entry.agentId, channel: entry.channel, chatId: entry.chatId }
+  }
+
+  /**
+   * Stop signal (#857). Aborts the run like an operator stop, but it ends
+   * with status `stopped` and errorKind "stopped" instead of cancelled, so
+   * nothing reports it as a failure. False when no live run matches.
+   */
+  stopRunningTask(taskId: string, reason: string): boolean {
+    const entry = this.taskAborts.get(taskId)
+    if (!entry || entry.controller.signal.aborted) return false
+    this.stoppedRuns.set(taskId, reason)
+    try { entry.controller.abort(new Error(reason)) } catch { /* */ }
+    this.log(`[${entry.agentId}] task ${taskId} stopped — ${reason}`)
+    return true
+  }
+
+  /** Resolves once the run `taskId` has let go of its slot (at once when it
+   *  is not running), or after `timeoutMs`. */
+  whenRunEnds(taskId: string, timeoutMs: number): Promise<void> {
+    if (!this.taskAborts.has(taskId)) return Promise.resolve()
+    return new Promise((resolveEnd) => {
+      const timer = setTimeout(resolveEnd, timeoutMs)
+      timer.unref?.()
+      const list = this.runEndWaiters.get(taskId) ?? []
+      list.push(() => { clearTimeout(timer); resolveEnd() })
+      this.runEndWaiters.set(taskId, list)
+    })
+  }
+
+  /** A running task a stop signal can address: by its id, or the only run
+   *  of `agentId` on a chat. Null when none (or several) match. */
+  signalTarget(by: { taskId?: string; agentId?: string; channel?: string; chatId?: string }): {
+    taskId: string; traceId?: string; agentId: string; channel: string; chatId: string
+    sender?: string; rootId?: string; originalMessage: string; origin: RunOrigin | null
+  } | null {
+    let id: string | undefined
+    if (by.taskId) {
+      id = this.taskAborts.has(by.taskId) ? by.taskId : undefined
+    } else if (by.agentId && by.channel && by.chatId) {
+      const ids = [...this.taskAborts].filter(([, e]) => e.agentId === by.agentId && e.channel === by.channel && e.chatId === by.chatId).map(([k]) => k)
+      id = ids.length === 1 ? ids[0] : undefined
+    }
+    const e = id ? this.taskAborts.get(id) : undefined
+    if (!id || !e) return null
+    return {
+      taskId: id, traceId: e.traceId, agentId: e.agentId, channel: e.channel, chatId: e.chatId,
+      sender: e.sender, rootId: e.rootId, originalMessage: e.originalMessage, origin: e.origin ?? null,
+    }
   }
 
   /**

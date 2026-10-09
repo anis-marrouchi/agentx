@@ -81,7 +81,8 @@ export interface IncomingMessage {
   runbookFiles?: string[]
   /** Set when this message re-runs one a restart cut off (agents/resume):
    *  the note for the agent, the attempt number, and the run it continues. */
-  resume?: { note: string; attempt: number; resumedFrom: string }
+  /** `rootId`: a task resumed after a stop signal keeps its root (#857). */
+  resume?: { note: string; attempt: number; resumedFrom: string; rootId?: string }
 }
 
 export interface OutgoingMessage {

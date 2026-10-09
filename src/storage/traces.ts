@@ -62,7 +62,7 @@ export interface TraceStartInput {
 }
 
 export interface TraceEndInput {
-  status: "ok" | "error" | "timeout"
+  status: "ok" | "error" | "timeout" | "stopped"
   finalSessionId?: string | null
   inputTokens?: number | null
   outputTokens?: number | null
@@ -519,4 +519,16 @@ export function listTraces(db: Database.Database, filters: ListTracesFilters = {
   `
   params.push(limit)
   return (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(rowToTrace)
+}
+
+/** The tool calls one run made, in order: what a stop signal's resume plan
+ *  lists when the agent wrote none (#857). Bounded. */
+export function traceToolCalls(
+  db: Database.Database, taskId: string, limit = 200,
+): Array<{ action: string | null; inputSummary: string | null }> {
+  const rows = db.prepare(`
+    SELECT action, input_summary FROM task_trace_steps
+     WHERE task_id = ? AND name = 'tool_use' ORDER BY seq LIMIT ?
+  `).all(taskId, limit) as Array<Record<string, any>>
+  return rows.map((s) => ({ action: s.action ?? null, inputSummary: s.input_summary ?? null }))
 }
