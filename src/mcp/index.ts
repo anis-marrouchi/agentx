@@ -1721,7 +1721,7 @@ async function handleToolCall(
       }
       const { WikiHub } = await import("@/wiki")
       const { agenticQuery, sharedQueryEnabled } = await import("@/wiki/query")
-      const { loadQuerySettings } = await import("@/wiki/query-settings")
+      const { loadQuerySettings, toolNoteSourceFor } = await import("@/wiki/query-settings")
       const { resolve } = await import("path")
       const wikiDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
       const hub = new WikiHub(wikiDir, undefined, "graph")
@@ -1759,6 +1759,9 @@ async function handleToolCall(
         ...(branch?.graphWeight !== undefined ? { graphWeight: branch.graphWeight } : {}),
         method: settings.method,
         summaries: settings.summaries,
+        // Notes only for the agent this runtime runs as: `agent` is the
+        // caller's word, and another agent's notes are private to it (#867).
+        notes: toolNoteSourceFor(settings, agentId),
       })
       if (result.status !== "ok") {
         return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
