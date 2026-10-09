@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.135.0](https://github.com/anis-marrouchi/agentx/compare/v0.134.0...v0.135.0) (2026-10-09)
+
+
+### Features
+
+* **wiki:** give each event an importance level and the pages it is about ([#811](https://github.com/anis-marrouchi/agentx/issues/811)) ([#900](https://github.com/anis-marrouchi/agentx/issues/900)) ([85ebaad](https://github.com/anis-marrouchi/agentx/commit/85ebaad83dfafbb0a3621bad7d420a48e629b55b))
+* **wiki:** score reports record settings, time and cost per question ([#863](https://github.com/anis-marrouchi/agentx/issues/863)) ([#901](https://github.com/anis-marrouchi/agentx/issues/901)) ([43aa86e](https://github.com/anis-marrouchi/agentx/commit/43aa86e9074feb1c62ffca766b5026b5967f973a))
+
+
+### Bug Fixes
+
+* **runtime:** keep a claude-code task open while its background work runs ([#892](https://github.com/anis-marrouchi/agentx/issues/892)) ([#894](https://github.com/anis-marrouchi/agentx/issues/894)) ([227f67f](https://github.com/anis-marrouchi/agentx/commit/227f67f624f3f8a03ed2226df9063e241e4d6ccb))
+* **wiki:** absorb and query exit 1 when they fail; count failed queries ([#603](https://github.com/anis-marrouchi/agentx/issues/603)) ([#902](https://github.com/anis-marrouchi/agentx/issues/902)) ([40224c2](https://github.com/anis-marrouchi/agentx/commit/40224c2ac4a400bbfd52eab6533fa5d78b2100ea))
+
 ## [0.134.0](https://github.com/anis-marrouchi/agentx/compare/v0.133.0...v0.134.0) (2026-10-09)
 
 
