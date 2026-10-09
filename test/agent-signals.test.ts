@@ -197,6 +197,39 @@ describe("who may signal", () => {
   })
 })
 
+describe("drop and stale claims", () => {
+  it("refuses to drop a task still writing its plan", async () => {
+    const h = harness({ windDown: () => new Promise(() => {}) })
+    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    if (!r.ok) throw new Error(r.error)
+    expect(h.service.drop({ kind: "owner" }, "run-1")).toMatchObject({ ok: false, status: 409 })
+  })
+
+  it("gives back a claim a restart left on a task that was never resumed", async () => {
+    const h = harness()
+    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    if (!r.ok) throw new Error(r.error)
+    await r.done
+    // A resume claimed it, then the process died before saving the record.
+    expect(h.deps.store.claim("run-1")).toBe(true)
+    expect(await h.service.resume({ kind: "owner" }, "run-1")).toMatchObject({ ok: false, status: 409 })
+    // Next boot.
+    const after = new SignalService(h.deps)
+    after.recover()
+    expect((await after.resume({ kind: "owner" }, "run-1")).ok).toBe(true)
+  })
+
+  it("keeps the claim of a task that was resumed", async () => {
+    const h = harness()
+    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    if (!r.ok) throw new Error(r.error)
+    await r.done
+    expect((await h.service.resume({ kind: "owner" }, "run-1")).ok).toBe(true)
+    new SignalService(h.deps).recover()
+    expect(h.deps.store.claim("run-1")).toBe(false)
+  })
+})
+
 describe("loop guard", () => {
   it("caps signals per root", () => {
     let t = 0
@@ -287,6 +320,30 @@ describe("HTTP surface", () => {
     expect(signalSender({ proofGiven: false, provenTurn: null, via: { node: "liar", agentId: "lead" }, tokenPeer: "laptop" }))
       .toEqual({ kind: "agent", agentId: "lead", peer: "laptop" })
     expect(signalSender({ proofGiven: false, provenTurn: null, via: { node: "laptop" }, tokenPeer: null })).toEqual({ kind: "peer", peer: "laptop" })
+  })
+
+  it("never takes a caller with a peer's own token for the owner, with or without `via`", () => {
+    const peerNoVia = signalSender({ proofGiven: false, provenTurn: null, tokenPeer: "laptop" })
+    expect(peerNoVia).toEqual({ kind: "peer", peer: "laptop" })
+    // Nor for one of this node's agents, whatever task its headers name.
+    expect(signalSender({ proofGiven: true, provenTurn: { agentId: "lead", channel: "telegram" }, tokenPeer: "laptop" })).toEqual({ kind: "peer", peer: "laptop" })
+    // So signals.allowPeers binds it: refused by default.
+    expect(canSignal(peerNoVia as any, { agentId: "coder" }, settings())).toMatchObject({ ok: false })
+    expect(canSignal(peerNoVia as any, { agentId: "coder" }, settings({ allowPeers: ["laptop"] }))).toEqual({ ok: true })
+    // The shared mesh token names no peer: still the owner, as for cancel.
+    expect(signalSender({ proofGiven: false, provenTurn: null, tokenPeer: null })).toEqual({ kind: "owner" })
+  })
+
+  it("drops a stopped task over HTTP", async () => {
+    const h = harness()
+    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    if (!r.ok) throw new Error(r.error)
+    await r.done
+    const deps = { service: h.service, selfNode: "here", forward: async () => null }
+    expect((await handleSignalsHttp("POST", "/api/signals/drop", new URLSearchParams(), { id: "run-1" }, { ...deps, sender: { kind: "agent", agentId: "intruder" } })).status).toBe(403)
+    expect((await handleSignalsHttp("POST", "/api/signals/drop", new URLSearchParams(), { id: "run-1" }, { ...deps, sender: { kind: "owner" } })).status).toBe(200)
+    expect(h.service.get("run-1")).toBeNull()
+    expect((await handleSignalsHttp("POST", "/api/signals/drop", new URLSearchParams(), { id: "run-1" }, { ...deps, sender: { kind: "owner" } })).status).toBe(404)
   })
 
   it("maps a peer's own token to its name, never the shared mesh token", () => {

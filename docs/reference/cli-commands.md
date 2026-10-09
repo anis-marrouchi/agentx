@@ -3020,6 +3020,10 @@ Resume a stopped task from its plan, in the same chat.
 |---|---|---|
 | `-r, --reason <reason>` | — | Why: recorded on the resume event. |
 
+### `agentx signal drop <id>`
+
+Forget a stopped task that won't be resumed: its record and its plan are deleted. Refused while the agent is still writing its plan. The same people and agents that may resume a task may drop it.
+
 ## watch (advanced)
 
 `agentx watch`: Stream live daemon events — workflow runs, user tasks, signals, mesh health. **Advanced.**

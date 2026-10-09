@@ -100,7 +100,7 @@ export function isControlPost(path: string): boolean {
     // Stopping a workflow run (#788).
     /^\/workflow-runs\/[^/]+\/cancel$/.test(path) ||
     // Stop and resume signals (#857).
-    path === "/api/signals/stop" || path === "/api/signals/resume"
+    path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop"
 }
 
 /** True when the socket peer is on this host. Used by loopback-only

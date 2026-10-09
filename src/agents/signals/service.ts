@@ -187,11 +187,32 @@ export class SignalService {
     }
   }
 
+  /** Forget a stopped task that will not be resumed: its record and any
+   *  claim go. Same senders as a resume; not counted by the loop brake. */
+  drop(sender: SignalSender, id: string): { ok: true } | { ok: false; status: 403 | 404 | 409; error: string } {
+    const record = this.deps.store.get(id)
+    if (!record) return { ok: false, status: 404, error: `no stopped task ${id}` }
+    if (record.state === "winding-down") return { ok: false, status: 409, error: "the task is still writing its resume plan; try again in a moment" }
+    if (this.resuming.has(id)) return { ok: false, status: 409, error: "the task is being resumed" }
+    const allowed = canSignal(sender, { agentId: record.agentId, sender: record.sender }, this.deps.settings())
+    if (!allowed.ok) return { ok: false, status: 403, error: allowed.reason }
+    this.deps.store.remove(id)
+    this.deps.log(`[signals] ${record.agentId} task ${id} dropped by ${describeSender(sender)}`)
+    return { ok: true }
+  }
+
   /** After a restart: a task whose wind-down the restart cut off would
    *  wait as "winding-down" forever. Give it a plan from its trace (no
-   *  model call) so it can be resumed. Returns how many it closed. */
+   *  model call) so it can be resumed. A claim left by a resume the restart
+   *  cut off before it saved the record would refuse every later resume as
+   *  "already resumed": it is given back. Returns how many it closed. */
   recover(): number {
     let n = 0
+    for (const record of this.deps.store.list({ state: "stopped", limit: 200, now: this.now() })) {
+      if (this.deps.store.release(record.id)) {
+        this.deps.log(`[signals] ${record.agentId} task ${record.id}: a resume cut off by a restart left a claim; given back`)
+      }
+    }
     for (const record of this.deps.store.list({ state: "winding-down", limit: 200, now: this.now() })) {
       const plan = machinePlan({ toolCalls: this.deps.toolCalls(record.traceId), note: "a restart cut off the wind-down" })
       this.save({ ...record, state: "stopped", plan })

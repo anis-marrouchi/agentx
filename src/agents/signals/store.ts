@@ -79,9 +79,10 @@ export class StoppedTaskStore {
     }
   }
 
-  /** Give a claim back, after a resume that could not re-enter the task. */
-  release(id: string): void {
-    try { unlinkSync(`${this.file(id)}.claim`) } catch { /* not claimed */ }
+  /** Give a claim back, after a resume that could not re-enter the task.
+   *  True when there was one. */
+  release(id: string): boolean {
+    try { unlinkSync(`${this.file(id)}.claim`); return true } catch { return false /* not claimed */ }
   }
 
   remove(id: string): boolean {
