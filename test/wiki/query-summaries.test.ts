@@ -342,32 +342,6 @@ describe("wiki query by summaries", () => {
     expect(all).toContain("Widgets")
   })
 
-  it("opens pages linked from a picked page when linkedPages is set, never one the requester can't read", async () => {
-    page("a", "projects/widgets.md", "Widgets", "Widget cutover tracked in #12.", { related: ["Sam", "Widget secret", "No such page"] })
-    await summarizeStore(hub.getAgentWiki("a"), { call: summariser })
-
-    const off = queryModel({ open: ["Widgets"] })
-    await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("a"), "a", { method: "summaries", summaries: settings({ enabled: false }), call: off.call })
-    expect(off.prompts.find((p) => p.step === "answer")!.prompt).not.toContain("Sam leads the widget work.")
-
-    const on = queryModel({ open: ["Widgets"] })
-    const result = await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("a"), "a", {
-      method: "summaries", summaries: { ...settings({ enabled: false }), linkedPages: 2 }, call: on.call,
-    })
-    expect(on.prompts.find((p) => p.step === "answer")!.prompt).toContain("Sam leads the widget work.")
-    expect(result.walked.map((w) => [w.path, w.hop])).toEqual([["projects/widgets.md", 0], ["people/sam.md", 1], ["concepts/secret.md", 1]])
-    expect(result.candidates.map((c) => c.path)).toEqual(["projects/widgets.md"])
-
-    // Agent b may not read the private page a's page links to.
-    const asB = queryModel({ open: ["Widgets"] })
-    await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("b"), "b", {
-      method: "summaries", summaries: { ...settings({ enabled: false }), linkedPages: 5 }, call: asB.call, shared: hub.sharedScope("b"),
-    })
-    const answer = asB.prompts.find((p) => p.step === "answer")!.prompt
-    expect(answer).toContain("Sam leads the widget work.")
-    expect(answer).not.toContain("4711")
-  })
-
   it("cuts a long page at pageChars", async () => {
     page("a", "projects/long.md", "Long widget log", `${"x".repeat(500)}TAILMARK`)
     const model = queryModel({ open: ["Long widget log"] })
@@ -394,6 +368,46 @@ describe("wiki query by summaries", () => {
     expect(model.prompts).toEqual([])
   })
 
+  it("opens no linked page by default", async () => {
+    page("a", "projects/widgets.md", "Widgets", "Widget cutover tracked in #12.", { related: ["Sam"] })
+    const model = queryModel({ open: ["Widgets"] })
+    const result = await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("a"), "a", { method: "summaries", summaries: settings({ enabled: false }), call: model.call })
+    expect(result.walked.map((w) => w.path)).toEqual(["projects/widgets.md"])
+    expect(model.prompts.find((p) => p.step === "answer")!.prompt).not.toContain("Sam leads")
+  })
+
+  it("opens pages linked from the pick, the best summary line first, within the character budget", async () => {
+    page("a", "projects/widgets.md", "Widgets", "Widget cutover tracked in #12.", { related: ["Sam", "Cutover runbook", "Unread"] })
+    page("a", "concepts/runbook.md", "Cutover runbook", `Cutover owner: Kim.${"y".repeat(300)}`)
+    page("a", "concepts/hidden.md", "Unread", "Not for b.", { access: "private" })
+    await summarizeStore(hub.getAgentWiki("a"), { call: summariser })
+    const model = queryModel({ open: ["Widgets"] })
+    const result = await agenticQuery("Who owns the widgets cutover?", hub.getAgentWiki("a"), "a", {
+      method: "summaries", summaries: { ...settings({ enabled: false }), linkedPages: 1, linkedChars: 200 }, call: model.call,
+    })
+    // "Cutover runbook" shares a word with the question; "Sam" does not.
+    expect(result.walked).toEqual([
+      expect.objectContaining({ path: "projects/widgets.md", hop: 0 }),
+      expect.objectContaining({ path: "concepts/runbook.md", hop: 1 }),
+    ])
+    expect(result.candidates.map((c) => c.path)).toEqual(["projects/widgets.md"])
+    expect(result.citations.map((c) => c.path)).toEqual(["projects/widgets.md", "concepts/runbook.md"])
+    const answer = model.prompts.find((p) => p.step === "answer")!.prompt
+    expect(answer).toContain("Cutover owner: Kim.")
+    expect(answer).toContain("[…]")
+    expect(answer).not.toContain("Sam leads")
+    expect(model.prompts.map((p) => p.step)).toEqual(["navigator", "answer"])
+
+    // With room for more, the rest follow in link order; a page the
+    // requester may not read is never opened.
+    const more = queryModel({ open: ["Widgets"] })
+    const all = await agenticQuery("Who owns the widgets cutover?", hub.getAgentWiki("b"), "b", {
+      method: "summaries", summaries: { ...settings({ enabled: false }), linkedPages: 5 }, call: more.call, shared: hub.sharedScope("b"),
+    })
+    expect(all.walked.map((w) => w.path)).toEqual(["@a/projects/widgets.md", "@a/concepts/runbook.md", "@a/people/sam.md"])
+    expect(more.prompts.map((p) => p.prompt).join("\n")).not.toContain("Not for b.")
+  })
+
   it("auto keeps the catalog method until a summary exists; the default is the catalog method", async () => {
     rmSync(summariesPath(hub.getAgentWiki("a")))
     const model = queryModel({ open: ["Widgets"] })
@@ -411,7 +425,7 @@ describe("wiki.query settings", () => {
   it("defaults: summaries when they exist, live read on with no source, no job", () => {
     const config = parse({})
     const s = resolveQuerySettings(config, {})
-    expect(s).toMatchObject({ shared: true, method: "auto", summaries: { candidates: 12, maxPages: 3, pageChars: 4000, navigatorModel: "haiku", answerModel: "sonnet", live: { enabled: true, maxReads: 6, sources: [] } } })
+    expect(s).toMatchObject({ shared: true, method: "auto", summaries: { candidates: 12, maxPages: 3, pageChars: 4000, linkedPages: 0, linkedChars: 6000, navigatorModel: "haiku", answerModel: "sonnet", live: { enabled: true, maxReads: 6, sources: [] } } })
     expect(withSummariesJob(config).crons[WIKI_SUMMARIZE_JOB]).toBeUndefined()
   })
 
