@@ -15,13 +15,21 @@ const seen = vi.hoisted(() => ({
   list: null as null | (() => any[]),
   error: undefined as string | undefined,
   errorKind: undefined as string | undefined,
+  /** Run until the turn is aborted, as a real agent would. */
+  hang: false,
+  started: null as null | ((id: string) => void),
 }))
 vi.mock("../src/agents/runtime", async (importOriginal) => {
   const real: any = await importOriginal()
   return {
     ...real,
-    executeTask: (_def: any, task: any, _p: any, _d: any, history: any, _r: any, onEvent?: (e: any) => void) => {
+    executeTask: (_def: any, task: any, _p: any, _d: any, history: any, _r: any, onEvent?: (e: any) => void, signal?: AbortSignal) => {
       seen.prompts.push(JSON.stringify([task, history]))
+      if (seen.hang) {
+        for (const e of seen.events) onEvent?.(e)
+        seen.started?.(task.runningTaskId)
+        return new Promise((res) => signal?.addEventListener("abort", () => res({ content: "", error: "task cancelled by operator", errorKind: "cancelled", duration: 1 }), { once: true }))
+      }
       for (const e of seen.events) onEvent?.(e)
       if (seen.list) seen.during.push(seen.list())
       if (seen.error) return Promise.resolve({ content: "", duration: 1, error: seen.error, ...(seen.errorKind ? { errorKind: seen.errorKind } : {}) })
@@ -34,6 +42,7 @@ import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { getEventBus } from "../src/events/bus"
 import { RunStore, WorkflowStore, workflowSchema } from "../src/workflows"
+import { runRecord } from "../src/workflows/required"
 
 let dir: string
 const prevCwd = process.cwd()
@@ -46,6 +55,8 @@ beforeEach(() => {
   seen.list = null
   seen.error = undefined
   seen.errorKind = undefined
+  seen.hang = false
+  seen.started = null
   getEventBus().removeAllListeners()
 })
 afterEach(() => {
@@ -104,6 +115,24 @@ describe("workflows.required in the registry", () => {
       expect(run.status, errorKind).toBe("canceled")
       expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "skipped" })
     }
+  })
+
+  it("closes the run as canceled when stopRunningTask ends the turn (#857)", async () => {
+    const { r, runs } = setup({ enabled: true })
+    seen.hang = true
+    seen.events = [writeTool]
+    const started = new Promise<string>((res) => { seen.started = res })
+    const run = r.execute({ message: "migrate the billing tables", agentId: "ops", context: { channel: "api", chatId: "c1" } })
+    const taskId = await started
+    expect(runs.list()[0].status).toBe("running")
+    expect(r.stopRunningTask(taskId, "stopped by owner: wait for the deploy")).toBe(true)
+    const res = await run
+    expect(res.errorKind).toBe("stopped")
+    const [wrapped] = runs.list()
+    expect(wrapped.status).toBe("canceled")
+    expect(wrapped.history.map((h) => [h.nodeId, h.status])).toEqual([["reply", "skipped"]])
+    expect(wrapped.history[0].note).toContain("stopped by owner: wait for the deploy")
+    expect(runRecord(wrapped).failedAt).toBeNull()
   })
 
   it("puts the run hint in the context the agent gets", async () => {

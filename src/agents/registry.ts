@@ -3283,7 +3283,7 @@ export class AgentRegistry {
           const usage = finalResponse?.usage
           const closed = finishWrap(wrapRunStore, wrapRunId, {
             error: finalResponse ? finalResponse.error || undefined : (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
-            canceled: endedWithoutFailing(finalResponse?.errorKind) || this.interruptedRuns.has(runningTask.id) || (!finalResponse && abortController.signal.aborted),
+            canceled: endedWithoutFailing(finalResponse?.errorKind) || this.stoppedRuns.has(runningTask.id) || this.interruptedRuns.has(runningTask.id) || (!finalResponse && abortController.signal.aborted),
             durationMs: Date.now() - runningTask.startedAt.getTime(),
             ...(usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } : {}),
             readOnly: wrapReadOnly,
