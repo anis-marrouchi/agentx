@@ -1971,6 +1971,143 @@ wiki
     }
   })
 
+// agentx wiki curate / versions / restore / curator — the page curator
+// (#818) from the terminal. `curate` asks the running daemon, which runs
+// the agent and writes the page exactly as the bubble on the page does.
+async function curatorDaemon(): Promise<{ url: string; headers: Record<string, string> }> {
+  const { loadDaemonConfig } = await import("@/daemon/config")
+  const cfg = loadDaemonConfig()
+  const url = cfg.dashboard?.daemonUrl?.replace(/\/+$/, "") || "http://127.0.0.1:18800"
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (cfg.dashboard?.token) headers.Authorization = `Bearer ${cfg.dashboard.token}`
+  return { url, headers }
+}
+
+function printCuratorEdit(edit: any): void {
+  console.log(chalk.bold(`  Page changed: +${edit.added} / −${edit.removed} lines`))
+  for (const l of edit.diff || []) {
+    const line = `    ${l.op === " " ? " " : l.op} ${l.text}`
+    console.log(l.op === "+" ? chalk.green(line) : l.op === "-" ? chalk.red(line) : chalk.dim(line))
+  }
+  if (edit.sources?.length) {
+    console.log(chalk.bold("  Sources"))
+    for (const s of edit.sources) console.log(`    - ${s}`)
+  } else {
+    console.log(chalk.yellow("  No sources were cited for this change."))
+  }
+  if (edit.version) console.log(chalk.dim(`  Undo: agentx wiki restore <agent> <page> ${edit.version}`))
+}
+
+wiki
+  .command("curate <agent> <titleOrPath> <instruction>")
+  .description("ask the page curator agent to research and edit one page (needs the daemon)")
+  .option("--dir <path>", "wiki directory")
+  .option("--timeout <minutes>", "stop waiting after this long", "30")
+  .action(async (agentId, titleOrPath, instruction, opts) => {
+    const hub = getHub(opts.dir)
+    if (refuseCopiedAgent(hub, agentId)) return
+    const relPath = resolveArticlePath(hub.getAgentWiki(agentId), titleOrPath, agentId)
+    if (!relPath) {
+      console.log(chalk.yellow(`  no page matches "${titleOrPath}" in ${agentId}'s wiki.`))
+      process.exitCode = 1
+      return
+    }
+    const { url, headers } = await curatorDaemon()
+    const call = async (method: string, path: string, body?: unknown) => {
+      const r = await fetch(url + path, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) })
+      const data: any = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`)
+      return data
+    }
+    let started: any
+    try {
+      started = await call("POST", "/api/wiki/curate", { agent: agentId, path: relPath, message: instruction })
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message?.includes("fetch failed") ? `the daemon at ${url} is not running` : e.message}`))
+      process.exitCode = 1
+      return
+    }
+    console.log(chalk.dim(`  ${started.curator} is working on ${relPath}…`))
+    const qs = `?agent=${encodeURIComponent(agentId)}&path=${encodeURIComponent(relPath)}`
+    const deadline = Date.now() + Number(opts.timeout || 30) * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000))
+      const state = await call("GET", `/api/wiki/curate${qs}`).catch(() => null)
+      const msg = state?.messages?.find((m: any) => m.id === started.id)
+      if (!msg || msg.status === "pending") continue
+      console.log(msg.status === "error" ? chalk.red(`  ${msg.text}`) : `  ${msg.text}`)
+      if (msg.edit && (msg.edit.added || msg.edit.removed)) printCuratorEdit(msg.edit)
+      if (msg.status === "error") process.exitCode = 1
+      return
+    }
+    console.log(chalk.yellow("  still working; the result will show in the chat on the page."))
+  })
+
+wiki
+  .command("versions <agent> <titleOrPath>")
+  .description("list the saved earlier versions of one page, newest first")
+  .option("--dir <path>", "wiki directory")
+  .action((agentId, titleOrPath, opts) => {
+    const store = getHub(opts.dir).getAgentWiki(agentId)
+    const relPath = resolveArticlePath(store, titleOrPath, agentId)
+    if (!relPath) { console.log(chalk.yellow(`  no page matches "${titleOrPath}" in ${agentId}'s wiki.`)); process.exitCode = 1; return }
+    const versions = store.getVersions(relPath)
+    if (!versions.length) { console.log(chalk.dim(`  ${relPath} has no earlier versions.`)); return }
+    console.log(chalk.bold(`  ${relPath}`))
+    for (const v of versions) console.log(`    ${v.timestamp}`)
+  })
+
+wiki
+  .command("restore <agent> <titleOrPath> [version]")
+  .description("put a page back to an earlier version (default: the newest); the current text is kept as a version")
+  .option("--dir <path>", "wiki directory")
+  .action((agentId, titleOrPath, version, opts) => {
+    const hub = getHub(opts.dir)
+    if (refuseCopiedAgent(hub, agentId)) return
+    const store = hub.getAgentWiki(agentId)
+    const relPath = resolveArticlePath(store, titleOrPath, agentId)
+    if (!relPath) { console.log(chalk.yellow(`  no page matches "${titleOrPath}" in ${agentId}'s wiki.`)); process.exitCode = 1; return }
+    const target = version || store.getVersions(relPath)[0]?.timestamp
+    if (!target || !store.restoreVersion(relPath, target)) {
+      console.log(chalk.red(`  no version ${target ? `"${target}" ` : ""}of ${relPath}; see agentx wiki versions ${agentId} "${titleOrPath}"`))
+      process.exitCode = 1
+      return
+    }
+    console.log(chalk.green(`  ✓ ${relPath} restored to ${target}.`))
+  })
+
+wiki
+  .command("curator")
+  .description("show or change the page curator: the chat bubble on wiki pages")
+  .option("--on", "show the bubble on wiki pages")
+  .option("--off", "hide the bubble and refuse curator requests")
+  .option("--agent <id>", "agent that answers on every page")
+  .option("--owner", "let each page's owner agent answer (the default)")
+  .action(async (opts) => {
+    if (opts.on && opts.off) { console.log(chalk.red("  pick --on or --off, not both")); process.exitCode = 1; return }
+    if (opts.agent && opts.owner) { console.log(chalk.red("  pick --agent or --owner, not both")); process.exitCode = 1; return }
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    if (opts.on || opts.off || opts.agent || opts.owner) {
+      if (opts.agent) {
+        const agents = Object.keys(loadDaemonConfig().agents || {})
+        if (!agents.includes(opts.agent)) { console.log(chalk.red(`  no agent "${opts.agent}" in agentx.json`)); process.exitCode = 1; return }
+      }
+      const { mutateAgentxConfig } = await import("@/daemon/config-mutate")
+      mutateAgentxConfig((cfg) => {
+        cfg.wiki = cfg.wiki || {}
+        cfg.wiki.curator = cfg.wiki.curator || {}
+        if (opts.on) cfg.wiki.curator.enabled = true
+        if (opts.off) cfg.wiki.curator.enabled = false
+        if (opts.agent) cfg.wiki.curator.agent = opts.agent
+        if (opts.owner) delete cfg.wiki.curator.agent
+        return "wiki.curator updated"
+      })
+    }
+    const c = loadDaemonConfig().wiki?.curator ?? { enabled: true }
+    console.log(`  Page curator: ${c.enabled ? chalk.green("on") : chalk.yellow("off")}`)
+    console.log(`  Answers:      ${c.agent ? c.agent : "each page's owner agent"}`)
+  })
+
 // agentx wiki patch — LLM-driven minimal edit from a free-form
 // instruction. "quiz without the question" — when you already know
 // what's wrong and just want the patch applied without hunting for

@@ -259,6 +259,15 @@ When a request is not already in the graph's cache, the classifier asks the `int
 | `graph.retrievalWeights.graph` | number | `0.6` | Weight of topic match in wiki search. |
 | `graph.retrievalWeights.bm25` | number | `0.4` | Weight of text match in wiki search. |
 
+## wiki
+
+The wiki as seen from its pages. See [Wiki › Ask an agent to curate a page](/dashboard/wiki#ask-an-agent-to-curate-a-page).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `wiki.curator.enabled` | boolean | `true` | Shows the chat button on every wiki page in the dashboard. Off, the button is hidden and curator requests are refused. |
+| `wiki.curator.agent` | string | — | Agent that answers on every page. Unset, the page's owner agent answers. |
+
 ## decisions
 
 Typed decisions ("seats") let a small, fast model answer fixed-choice questions with a probability. Everything is off by default. See [Jev and typed decisions](/architecture/jev).

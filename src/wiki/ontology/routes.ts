@@ -21,6 +21,16 @@ export class OntologyRoutes {
 
   constructor(private hub: WikiHub, private wikiDir: string) {}
 
+  /** The page an entity route shows first, for the curator bubble (#818).
+   *  Null for any other route. */
+  pageAt(path: string): { agentId: string; path: string; title: string } | null {
+    if (!path.startsWith("/e/")) return null
+    const { ontology } = loadOntology(this.wikiDir)
+    const e = this.cache.get(this.hub, ontology).entities.get(path.split("/").filter(Boolean)[1] ?? "")
+    const first = e?.pages[0]
+    return first ? { agentId: first.agentId, path: first.article.path, title: first.article.meta.title } : null
+  }
+
   /** HTML for the path, or null when the path is not one of these routes
    *  or names something that does not exist. */
   handle(path: string, params: URLSearchParams): string | null {

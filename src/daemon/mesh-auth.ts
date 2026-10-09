@@ -74,7 +74,9 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/wiki/articles" || path === "/wiki/article" ||
     // Notes agents leave for the wiki observe/sweep run (#825): what an
     // agent saw, kept inside the fleet. A peer forwards one with its token.
-    path === "/wiki/notes"
+    path === "/wiki/notes" ||
+    // The wiki page curator: runs an agent turn and rewrites a page (#818).
+    path === "/api/wiki/curate" || path === "/api/wiki/curate/restore"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a

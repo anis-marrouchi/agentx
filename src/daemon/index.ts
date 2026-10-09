@@ -77,6 +77,7 @@ import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
 import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
 import { isOperatorTurn, loadOperatorKey, operatorContext, operatorVouch, ownerProven } from "@/requests/operator"
+import { WikiCurateApi } from "./wiki-curate-api"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
 import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
@@ -255,6 +256,18 @@ export class AgentXDaemon {
   /** Watched WhatsApp chats (src/whatsapp-triage). Null without SQLite. */
   private waTriage: TriageService | null = null
   private assistantStore(): AssistantStore | undefined { return this._assistant }
+  /** The chat bubble on wiki pages (#818). */
+  private wikiCurate = new WikiCurateApi({
+    hub: () => this.registry.getWikiHub(),
+    settings: () => this.config.wiki?.curator ?? { enabled: true },
+    agents: () => this.registry.list().map(a => a.id),
+    execute: (agentId, prompt, requestText) => this.registry.execute({
+      agentId, message: prompt, requestText,
+      // The owner typed it on this node's wiki page: the turn is theirs.
+      context: operatorContext({ channel: "dashboard", chatId: "wiki-curator", sender: "operator" }) as any,
+    }),
+    log: (m) => this.log(m),
+  })
 
   /** Workflow health for the monitor. Cached for a minute: the dashboard
    *  polls every 15s and dormancy does not change on that timescale. */
@@ -4349,6 +4362,10 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.json(res, 200, { configured: true, error: String(e?.message || e), workflows: [] }); return
         }
+      }
+      // --- Wiki page curator (#818) --------------------------------------
+      if (path === "/api/wiki/curate" || path === "/api/wiki/curate/restore") {
+        if (await this.wikiCurate.handle(req, res, path, url)) return
       }
       // --- Ask-an-agent drawer ------------------------------------------
       //

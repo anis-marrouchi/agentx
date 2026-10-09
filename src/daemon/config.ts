@@ -1327,6 +1327,13 @@ export const daemonConfigSchema = z.object({
        *  root wiki's own pages. */
       shared: z.boolean().default(true),
     }).default({}),
+    /** The chat bubble on every wiki page: the owner types an instruction and
+     *  an agent researches it and edits the open page. */
+    curator: z.object({
+      enabled: z.boolean().default(true),
+      /** Agent that answers. Unset: the page's owner agent. */
+      agent: z.string().min(1).optional(),
+    }).default({}),
   }).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
