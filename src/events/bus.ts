@@ -204,6 +204,8 @@ export interface AgentXEvents {
     /** A daemon shutdown stopped the run. Its trace stays in flight so the
      *  next boot can resume it. */
     interrupted?: boolean
+    /** Ended by a stop signal (agents/signals, #857): status `stopped`. */
+    stopped?: boolean
     inputTokens?: number
     outputTokens?: number
     cacheReadTokens?: number
@@ -437,7 +439,11 @@ function lifecycleEnvelope<E extends EventName>(event: E, payload: AgentXEvents[
     case "task:step":
       return { ...base, kind: "agent", summary: [p.name, p.action, p.status].filter(Boolean).join(" ") }
     case "task:completed":
-      return { ...base, kind: "agent", summary: p.error ? `failed after ${p.durationMs}ms: ${p.error}` : `completed in ${p.durationMs}ms` }
+      return {
+        ...base, kind: "agent",
+        summary: p.stopped ? `stopped after ${p.durationMs}ms: ${p.error ?? "stop signal"}`
+          : p.error ? `failed after ${p.durationMs}ms: ${p.error}` : `completed in ${p.durationMs}ms`,
+      }
     case "session:rotated":
       return { ...base, kind: "agent", summary: `session rotated (${p.reason})` }
     default:
