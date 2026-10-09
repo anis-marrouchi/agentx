@@ -95,6 +95,7 @@ const LIVE_PAGE_CSS = `
 .ax-node__stopped-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
 .ax-node__stopped-head .ax-task-action:first-of-type { margin-left: auto; }
 .ax-node__stopped-ask { margin-top: 2px; overflow-wrap: anywhere; }
+.ax-node__stopped-wf { margin-top: 2px; overflow-wrap: anywhere; font-family: var(--ax-mono); font-size: 11px; }
 .ax-node__stopped summary { cursor: pointer; margin-top: 4px; }
 .ax-node__stopped-plan { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--ax-mono); font-size: 11px; margin: 4px 0 0; max-height: 240px; overflow: auto; }
 .ax-node__tag {
@@ -490,8 +491,14 @@ function stoppedHtml(node) {
   const url = escapeHtml(node.url);
   const items = rows.map(t => {
     const by = t.plan ? (t.plan.author === 'agent' ? 'plan by the agent' : 'plan by AgentX (' + (t.plan.note || 'no answer') + ')') : 'writing its plan…';
+    const wf = t.workflow;
     const resume = t.state === 'stopped' && t.resumable
-      ? '<button type="button" class="ax-task-action" data-action="signal-resume" data-stopped-id="' + escapeHtml(t.id) + '" data-node-url="' + url + '" title="Resume this task from its plan, in the same chat">▶ resume</button>'
+      ? '<button type="button" class="ax-task-action" data-action="signal-resume" data-stopped-id="' + escapeHtml(t.id) + '" data-node-url="' + url + '" title="' +
+          (wf ? 'Resume this step from its plan; the workflow run goes on from it' : 'Resume this task from its plan, in the same chat') + '">▶ resume</button>'
+      : '';
+    // #870 — a workflow step: the whole run waits at this step.
+    const wfLine = wf
+      ? '<div class="ax-node__stopped-wf">workflow run ' + escapeHtml(wf.runId) + ' (' + escapeHtml(wf.workflowId) + ') paused at step ' + escapeHtml(wf.nodeId) + '</div>'
       : '';
     const drop = t.state !== 'winding-down'
       ? '<button type="button" class="ax-task-action" data-action="signal-drop" data-stopped-id="' + escapeHtml(t.id) + '" data-node-url="' + url + '" title="Forget this stopped task and its plan">✕ drop</button>'
@@ -500,6 +507,7 @@ function stoppedHtml(node) {
       '<div class="ax-node__stopped-head"><b>' + escapeHtml(t.agentId) + '</b> · ' + escapeHtml(t.channel) +
         ' · stopped by ' + escapeHtml(t.stoppedBy) + ' · ' + escapeHtml(fmtAgo(t.stoppedAt)) +
         (t.reason ? ' · ' + escapeHtml(t.reason) : '') + resume + drop + '</div>' +
+      wfLine +
       '<div class="ax-node__stopped-ask">' + escapeHtml(t.request) + '</div>' +
       (t.plan ? '<details><summary>' + escapeHtml(by) + '</summary><pre class="ax-node__stopped-plan">' + escapeHtml(t.plan.text) + '</pre></details>'
         : '<div class="ax-node__stopped-ask">' + escapeHtml(by) + '</div>') +

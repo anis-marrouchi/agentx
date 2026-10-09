@@ -108,7 +108,7 @@ A task you stop, cancel or that a restart cuts off is not a failure: its run end
 3. To narrow it down, add `--agent <agent-id>`, `--workflow <workflow-id>` or `--days 7`. Runs that wrapped a task have the workflow id `task`.
 4. **Terminal:** to keep the records for analysis, run `agentx workflow records --days 30 > runs.jsonl`.
 
-Each line has the run's `title`, `mode` (`workflow` for a saved workflow, `plan` or `linear` for a wrapped task), `status`, `durationMs`, its `steps` (each with `id`, `title`, `status`, `startedAt`, `durationMs` and a short `note`), `failedAt` (the first step that failed, or `null`), `revisions` (how many times the plan changed) and `tokens`. It never holds the full request or what a step produced.
+Each line has the run's `title`, `mode` (`workflow` for a saved workflow, `plan` or `linear` for a wrapped task), `status`, `durationMs`, its `steps` (each with `id`, `title`, `status`, `startedAt`, `durationMs` and a short `note`), `failedAt` (the first step that failed, or `null`), `revisions` (how many times the plan changed), `tokens` and, for a paused task that was resumed, `continues` (the id of the run the pause closed; see [pause a task and resume it later](/jobs/pause-and-resume#tasks-every-agent-runs-inside-a-workflow)). It never holds the full request or what a step produced.
 
 To see one run step by step, run `agentx workflow trace <runId>`.
 

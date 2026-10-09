@@ -89,6 +89,8 @@ const shots = [
   // then a task on the Live tab shows its run's step; switched off again.
   { name: "workflows/required-settings", path: "/workflows", wait: "#wf-required", steps: [{ click: "#wf-required > summary" }, { wait: "#wf-required-agents select" }, { click: "#wf-required-enabled" }, { waitText: ["#wf-required-note", "Saved"] }, { click: ".ax-wf__req-agents > summary" }], clipTo: ".ax-wf__required" },
   { name: "live/running-task-workflow", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-agent__task-wf" }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".ax-agent.is-handling" },
+  // A workflow step paused by a stop signal: the run waits at that step (#870).
+  { name: "live/stopped-workflow-step", path: "/live", wait: ".ax-agent__name", steps: [{ workflow: "demo-backlog" }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped-item:has(.ax-node__stopped-wf) details" }, { click: ".ax-node__stopped-item:has(.ax-node__stopped-wf) details summary" }], clipTo: ".ax-node__stopped-item:has(.ax-node__stopped-wf)" },
 ]
 
 function client(ws) {
@@ -178,6 +180,11 @@ try {
       if (step.select) await evaluate(`(() => { const e = document.querySelector(${JSON.stringify(step.select)}); e.value = ${JSON.stringify(step.value)}; e.dispatchEvent(new Event('change', { bubbles: true })) })()`)
       // Start a real scripted task on the demo daemon without waiting for it.
       if (step.task) fetch("http://127.0.0.1:18921/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.task) }).catch(() => {})
+      // Start a manual run of a seeded workflow on the demo daemon (#870).
+      if (step.workflow) {
+        const r = await fetch(`http://127.0.0.1:18921/workflows/${encodeURIComponent(step.workflow)}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        if (!r.ok) throw new Error(`Workflow run failed: ${r.status} ${await r.text()}`)
+      }
       // Pause the agent's running task with a stop signal (#857).
       if (step.pause) {
         const agents = await (await fetch("http://127.0.0.1:18921/agents")).json()

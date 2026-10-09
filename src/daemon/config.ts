@@ -318,6 +318,13 @@ const agentConfigSchema = z.object({
     absorb: z.object({
       enabled: z.boolean().default(true),
     }).default({}),
+    /** Where this agent's notes are, for `wiki query` when
+     *  `wiki.query.notes.enabled` (#862). Unset: the AgentX note store,
+     *  `.agentx/agent-memory/<agent>/`. A relative path is read from the
+     *  folder AgentX runs in. */
+    notes: z.object({
+      dir: z.string().min(1).optional(),
+    }).default({}),
   }).optional(),
   permissionMode: z.string().default("default"),
   /** How this agent's `claude` CLI is billed (claude-code tier). Default
@@ -1405,6 +1412,18 @@ export const daemonConfigSchema = z.object({
       candidates: z.number().int().min(1).max(50).default(12),
       /** Other agents' pages shown beside them. */
       sharedCandidates: z.number().int().min(0).max(50).default(4),
+      /** The asking agent's own notes, searched beside its pages by the
+       *  summaries method (#862). A note's `description` is its summary
+       *  line. Only the agent's own notes: a note is private to the agent
+       *  that wrote it. Off by default. */
+      notes: z.object({
+        enabled: z.boolean().default(false),
+        /** Note types searched. `user` and `feedback` notes describe a
+         *  person or the agent's own working rules and stay out. */
+        types: z.array(z.string().min(1)).default(["project", "reference"]),
+        /** Notes shown to the model that picks. */
+        candidates: z.number().int().min(1).max(50).default(4),
+      }).default({}),
       /** Most pages opened for one answer. */
       maxPages: z.number().int().min(1).max(10).default(3),
       /** Characters of each opened page given to the answer. */

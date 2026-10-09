@@ -12,6 +12,9 @@ import type { StoppedTask, StoppedTaskStore } from "./store"
 // resume: re-enter the task through the resume coordinator's resumers (the
 //         same ones a restart uses), with the plan prepended, on the same
 //         chat and under the same root id.
+// A step of a workflow run (#870): the stop pauses the whole run at that
+// step (not failed), and the resume re-enters the step inside the run,
+// which then goes on to its later steps.
 // Both publish `signal` events, so subscribers and the live page see them.
 // Every step is logged; nothing here throws to the caller except through
 // the returned result.
@@ -47,6 +50,12 @@ export interface SignalServiceDeps {
   windDown(input: { id: string; agentId: string; rootId: string; message: string; timeoutMs: number }): Promise<{ content?: string; error?: string }>
   /** Re-enter the task (resume coordinator). Resolves once handed over. */
   resume(input: { record: StoppedTask; note: string }): Promise<void>
+  /** The workflow step a running task is (#870), or why its run cannot
+   *  pause there. Absent: the workflow engine is off. */
+  workflowStep?(runId: string, agentId: string): { workflowId: string; nodeId: string } | { error: string }
+  /** Re-enter a paused workflow step with the note, inside its run. Throws
+   *  when the run is no longer paused at it. */
+  resumeWorkflowStep?(input: { record: StoppedTask; note: string; by: string }): Promise<void>
   /** One line to the chat the task came from; best effort. */
   tell?(origin: RunOrigin, text: string): Promise<void>
   publish(input: { type: string; agentId: string; rootId: string; summary: string; ref: string }): void
@@ -62,7 +71,10 @@ export type SignalResult =
  *  run that names no calling agent (an API call, a schedule, voice) has
  *  nobody waiting: it runs, and its answer is kept on its task page and
  *  trace only. */
-export function deliveryOf(origin: RunOrigin): string {
+export function deliveryOf(origin: RunOrigin | null, workflow?: StoppedTask["workflow"]): string {
+  if (workflow) return `workflow run ${workflow.runId}, which goes on from step ${workflow.nodeId}`
+  if (!origin) return "nobody: no record of how to re-enter it"
+
   if (origin.kind === "router") return `the chat it came from (${origin.adapter})`
   if (origin.kind === "mesh") return `the chat it came from, through ${origin.node ?? "the forwarding node"}`
   const caller = callerAgentOf(origin)
@@ -99,11 +111,16 @@ export class SignalService {
   ): Promise<SignalResult> {
     const run = this.deps.findRunning(target)
     if (!run) return { ok: false, status: 404, error: "no running task matches (it may have finished already)" }
-    // A workflow step: stopping it would fail the workflow run, and a resume
-    // would re-enter it outside that run, answering nobody. Refused until
-    // workflow runs can pause on a stop (#857 review).
+    // A workflow step (#870): the run pauses at that step. Refused when
+    // the engine cannot pause it there, rather than failing the run.
+    let workflow: StoppedTask["workflow"]
     if (run.workflowRunId) {
-      return { ok: false, status: 409, error: `this task is a step of workflow run ${run.workflowRunId}: pausing it would fail the run. Cancel or pause the workflow run instead` }
+      const step = this.deps.workflowStep?.(run.workflowRunId, run.agentId)
+        ?? { error: "the workflow engine is not running on this node" }
+      if ("error" in step) {
+        return { ok: false, status: 409, error: `this task is a step of workflow run ${run.workflowRunId}, which cannot pause here (${step.error}). Cancel the workflow run instead` }
+      }
+      workflow = { runId: run.workflowRunId, workflowId: step.workflowId, nodeId: step.nodeId }
     }
     const settings = this.deps.settings()
     const allowed = canSignal(sender, { agentId: run.agentId, sender: run.sender }, settings)
@@ -125,6 +142,7 @@ export class SignalService {
       rootId,
       originalMessage: run.originalMessage,
       origin: run.origin,
+      ...(workflow ? { workflow } : {}),
       stoppedAt: new Date(this.now()).toISOString(),
       stoppedBy: by,
       reason: why,
@@ -148,7 +166,8 @@ export class SignalService {
     if (!record) return { ok: false, status: 404, error: `no stopped task ${id}` }
     if (record.state === "winding-down") return { ok: false, status: 409, error: "the task is still writing its resume plan; try again in a moment" }
     if (record.state === "resumed" || this.resuming.has(id)) return { ok: false, status: 409, error: "the task was already resumed" }
-    if (!record.origin) return { ok: false, status: 409, error: "no record of how to re-enter this task" }
+    if (!record.origin && !record.workflow) return { ok: false, status: 409, error: "no record of how to re-enter this task" }
+    if (record.workflow && !this.deps.resumeWorkflowStep) return { ok: false, status: 409, error: `this task is a step of workflow run ${record.workflow.runId}, and the workflow engine is not running on this node` }
     const settings = this.deps.settings()
     const allowed = canSignal(sender, { agentId: record.agentId, sender: record.sender }, settings)
     if (!allowed.ok) return { ok: false, status: 403, error: allowed.reason }
@@ -170,7 +189,8 @@ export class SignalService {
         summary: `resume sent to ${record.agentId} by ${by}${reason ? `: ${reason.trim().slice(0, 200)}` : ""}`,
       })
       try {
-        await this.deps.resume({ record: resumed, note })
+        if (record.workflow) await this.deps.resumeWorkflowStep!({ record: resumed, note, by })
+        else await this.deps.resume({ record: resumed, note })
       } catch (e: any) {
         this.save(record)
         this.deps.store.release(id)
@@ -179,7 +199,7 @@ export class SignalService {
         this.deps.publish({ type: "signal:resume-failed", agentId: record.agentId, rootId: record.rootId, ref: id, summary: error })
         return { ok: false, status: 500, error }
       }
-      const delivery = deliveryOf(record.origin)
+      const delivery = deliveryOf(record.origin, record.workflow)
       this.deps.log(`[signals] ${record.agentId} task ${id} resumed by ${by}; answer goes to ${delivery}`)
       return { ok: true, record: resumed, delivery }
     } finally {
@@ -258,7 +278,7 @@ export class SignalService {
       summary: `${record.agentId} stopped; resume plan ${plan.author === "agent" ? "written by the agent" : `written by AgentX (${plan.note})`}`,
     })
     this.deps.log(`[signals] ${record.agentId} task ${record.id}: resume plan saved (${plan.author})`)
-    if (record.origin && record.origin.kind !== "direct" && this.deps.tell) {
+    if (!record.workflow && record.origin && record.origin.kind !== "direct" && this.deps.tell) {
       await this.deps.tell(record.origin, `Paused: ${record.stoppedBy} stopped this task${record.reason ? ` (${record.reason})` : ""}. Where it got to is saved, and it can be resumed later.`)
         .catch((e: any) => this.deps.log(`[signals] couldn't tell the chat: ${e?.message ?? e}`))
     }

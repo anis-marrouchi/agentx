@@ -547,6 +547,16 @@ export const pausedAtSchema = z.discriminatedUnion("kind", [
     /** Set once the step is blocked: no more nudges, the owner is told. */
     blocked: z.string().optional(),
   }),
+  // An agent step a stop signal paused (#870). The whole run waits here;
+  // a resume signal re-enters this step with the agent's resume plan
+  // prepended, and the run goes on from it.
+  z.object({
+    kind: z.literal("agentStop"),
+    nodeId: z.string(),
+    agentId: z.string(),
+    /** The stopped turn's running-task id: the stopped-task record. */
+    taskId: z.string().optional(),
+  }),
 ])
 export type PausedAt = z.infer<typeof pausedAtSchema>
 
@@ -614,6 +624,9 @@ export const runMetaSchema = z.object({
   }).optional(),
   /** The plan the agent wrote for a wrapped task, and each change to it. */
   plan: planSchema.optional(),
+  /** The run this one continues (#870): a wrapped task that was stopped,
+   *  then resumed, gets a new run that names the one the stop closed. */
+  continues: z.string().optional(),
 })
 export type RunMeta = z.infer<typeof runMetaSchema>
 
