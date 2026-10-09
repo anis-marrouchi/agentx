@@ -181,6 +181,8 @@ agentx attach as helper
 | `agentx workflow run <id> --follow --title "…" --tag client:example-co` | Start a run AgentX follows to the end ([follow a request](../jobs/follow-up-workflows.md)) |
 | `agentx workflow progress [--tag <kind:name>]` | Followed runs still going, grouped by tag |
 | `agentx workflow follow-up` | Show or change the follow-up settings: nudges, approvals, which agents |
+| `agentx workflow required` | Show or change whether every task runs through a workflow ([every task a workflow](../jobs/every-task-a-workflow.md)) |
+| `agentx workflow records` | One JSON line per run: steps, times, where it failed |
 | `agentx cron list` | List schedules |
 | `agentx cron disable <id>` | Disable a schedule |
 | `agentx cron enable <id>` | Enable a schedule |

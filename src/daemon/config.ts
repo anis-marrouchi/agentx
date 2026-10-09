@@ -1710,6 +1710,18 @@ export const daemonConfigSchema = z.object({
        *  can set its own `approval`. */
       approval: z.enum(["start", "step"]).default("step"),
     }).default({}),
+    /** Run every task through a workflow (#858): a saved workflow that
+     *  fits, else a plan the agent writes first, else the one-step
+     *  `linear` template. Needs `enabled`. Off by default. */
+    required: z.object({
+      enabled: z.boolean().default(false),
+      /** Per agent, by id: true or false wins over `enabled`. */
+      agents: z.record(z.boolean()).default({}),
+      /** A plain question answered in one turn, with no plan and only tools
+       *  that change nothing, leaves no run. On by default: such a turn has
+       *  nothing to follow up. */
+      exemptQuestions: z.boolean().default(true),
+    }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the
      *  page. "disabled" hides the tab entirely. */

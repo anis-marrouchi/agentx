@@ -190,6 +190,11 @@ const LIVE_PAGE_CSS = `
   font-size: var(--ax-fs-xs); color: var(--ax-accent);
 }
 .ax-agent__task-head .elapsed { margin-left: auto; font-family: var(--ax-mono); color: var(--ax-muted); }
+.ax-agent__task-wf {
+  font-family: var(--ax-mono); font-size: 11px; color: var(--ax-muted);
+  overflow-wrap: anywhere; margin-top: 4px;
+}
+.ax-agent__task-wf-label { color: var(--ax-accent); }
 .ax-agent__task-body {
   font-size: var(--ax-fs-sm); margin-top: 4px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
@@ -575,6 +580,17 @@ function lessonHtml(l, nodeUrl) {
   '</div>';
 }
 
+// The workflow run a task belongs to and the step it is on (#858). A task
+// wrapped under workflows.required runs as "task"; its title is the
+// request, already shown above, so only the step is named.
+function workflowLine(w) {
+  if (!w || !w.runId) return '';
+  const name = w.workflowId && w.workflowId !== 'task' ? (w.title || w.workflowId) + ' · ' : '';
+  return '<div class="ax-agent__task-wf" title="Workflow run ' + escapeHtml(w.runId) + '">' +
+    '<span class="ax-agent__task-wf-label">workflow</span> ' + escapeHtml(name) + 'step ' + escapeHtml(w.step || '…') +
+  '</div>';
+}
+
 function renderAgent(a, node) {
   const card = document.createElement('div');
   const lesson = lessonOf(a, node);
@@ -614,6 +630,7 @@ function renderAgent(a, node) {
         '<span class="elapsed">' + elapsed + '</span>' +
       '</div>' +
       '<div class="ax-agent__task-body">' + escapeHtml(t.messagePreview || '(no preview)') + '</div>' +
+      workflowLine(t.workflow) +
       actions +
     '</div>';
   }).join('');
