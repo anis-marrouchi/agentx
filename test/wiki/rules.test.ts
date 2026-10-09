@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
-import { join } from "path"
+import { dirname, join } from "path"
 import { WikiHub } from "../../src/wiki/hub"
 import type { WikiArticleMeta } from "../../src/wiki/types"
 import { DEFAULT_ONTOLOGY } from "../../src/wiki/ontology/defaults"
@@ -198,6 +198,55 @@ describe("wiki rules run (#811)", () => {
     expect(acme.content).toContain("New line.")
     expect(acme.meta.lastUpdated).toBe("2026-01-02")
     expect(acme.meta.statements).toEqual([expect.objectContaining({ property: "subject_to", value: RULE.title })])
+  })
+
+  // Another process holds `path` while the run waits for the model.
+  const holding = (path: string): EnrichCall => async (p) => {
+    const store = hub.getAgentWiki("agent-a")
+    const lock = join(store.baseDir, "_locks", `${path}.lock`)
+    mkdirSync(dirname(lock), { recursive: true })
+    writeFileSync(lock, "")
+    return reply([RULE])(p)
+  }
+
+  it("leaves a rule page another process holds, and says so", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    store.lockWaitMs = 100
+    const run = await runRules(hub, graph(), holding("obligations/monthly-payroll-filing.md"), { ...opts, only: ["Payroll notes"] }, loadRulesState(dir))
+    expect(run.outcomes[0]).toMatchObject({ status: "failed", rules: [] })
+    expect(run.outcomes[0].dropped.join()).toMatch(/Monthly payroll filing: the page was busy/)
+    expect(store.readArticle("obligations/monthly-payroll-filing.md")).toBeNull()
+    expect(store.readArticle("clients/acme.md")!.meta.statements).toBeUndefined()
+  })
+
+  it("writes the rule but not a held penalty or bearer page, and says which", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    store.lockWaitMs = 100
+    const both: EnrichCall = async (p) => {
+      await holding("penalties/monthly-payroll-filing-penalty.md")(p)
+      return holding("clients/acme.md")(p)
+    }
+    const run = await runRules(hub, graph(), both, { ...opts, only: ["Payroll notes"] }, loadRulesState(dir))
+    expect(run.outcomes[0].status).toBe("written")
+    expect(run.outcomes[0].rules).toEqual([expect.objectContaining({ title: RULE.title, linked: [] })])
+    expect(run.outcomes[0].dropped).toEqual([
+      `${RULE.title}: penalties/monthly-payroll-filing-penalty.md the page was busy; run again`,
+      `${RULE.title} → Acme Works: the page was busy; run again`,
+    ])
+    expect(store.readArticle("obligations/monthly-payroll-filing.md")).not.toBeNull()
+    expect(store.readArticle("penalties/monthly-payroll-filing-penalty.md")).toBeNull()
+    expect(store.readArticle("clients/acme.md")!.meta.statements).toBeUndefined()
+  })
+
+  it("does not write over a page created at the rule's path during the run", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const call: EnrichCall = async (p) => {
+      store.writeArticle("obligations/monthly-payroll-filing.md", meta("Payroll filing", { class: "obligation" }), "A person wrote this.", "agent-a")
+      return reply([RULE])(p)
+    }
+    const run = await runRules(hub, graph(), call, { ...opts, only: ["Payroll notes"] }, loadRulesState(dir))
+    expect(run.outcomes[0].rules).toEqual([expect.objectContaining({ page: "agent-a/obligations/monthly-payroll-filing-2.md", created: true })])
+    expect(store.readArticle("obligations/monthly-payroll-filing.md")!.content).toBe("A person wrote this.")
   })
 
   it("updates an existing rule page instead of adding a second one, and keeps others' facts", async () => {

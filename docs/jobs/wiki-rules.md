@@ -97,7 +97,7 @@ The run remembers what it read in `.agentx/wiki/_rules/state.json`, after every 
 - Its facts (action, bearer, due, amount, authority, created by, procedure) carry the source, the source's date (`checked_at`), `status: proposed` and `"by":"wiki-rules"`. A later run replaces a fact only when its source states that field; otherwise the earlier fact stays, with its own source and date. Facts others wrote, and facts you confirmed, stay.
 - A penalty page goes in `penalties/`, linked to the rule with `penalty for`. When you confirmed the penalty on that page, a later run leaves the page as it is, and the rule page shows the penalty you confirmed.
 - A person's or organization's page gets one `subject to` fact pointing at the rule, when the source page names or links that person or organization. Adding that link does not change the page's last-updated date.
-- Each page is read again just before it is written, so text another job added during the run is kept.
+- Each page is read again just before it is written, so text another job added during the run is kept. While it reads and writes, the run holds the page, so another write waits a moment instead of being lost.
 
 ## Check it worked
 
@@ -117,4 +117,6 @@ The run remembers what it read in `.agentx/wiki/_rules/state.json`, after every 
 - **`ontology.yaml has no obligation type`:** your `ontology.yaml` removed it. Add the type back to write rule pages.
 - **`stopped at the cap`:** the run reached `--max-cost`. The rest wait for the next run, or raise the cap.
 - **The source date is old:** the rule was read from an old conversation or page. Check it with the law or the authority, then confirm the facts (or correct them) on the page.
+- **`the page was moved or removed during the run`:** absorb renamed or merged the rule page or the person's page while the run waited for the model. The next run finds it under its new name.
+- **`the page was busy; run again`:** another job was writing that page (the rule, its penalty, or a person's or organization's page) and did not finish within 5 seconds. Run again with `--force`. If it keeps happening and no `agentx` command is running, delete the page's file under `_locks/` in the agent's wiki folder.
 - **A rule is wrong:** fix or remove its facts in the page header. Facts this job wrote carry `"by":"wiki-rules"`. Each write kept the old version of the page.
