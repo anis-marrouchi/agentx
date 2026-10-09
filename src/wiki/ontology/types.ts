@@ -97,6 +97,8 @@ export interface ImportanceRule {
   title?: string
   /** Match when the event page has any of these tags. */
   tags?: string[]
+  /** Case-insensitive regular expression on the title that stops the rule. */
+  unless?: string
 }
 
 export interface Ontology {

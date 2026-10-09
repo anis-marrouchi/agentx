@@ -203,6 +203,19 @@ describe("wiki enrich run", () => {
     expect(again.outcomes.map(o => o.status)).toEqual(["unchanged"])
   })
 
+  it("writes onto the text on disk, not the copy read before the model call", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const call: EnrichCall = async (p) => {
+      // Absorb edits the page while the run waits for the model.
+      store.writeArticle("people/pat.md", store.readArticle("people/pat.md")!.meta, "Pat is a buyer. Pat moved to the north office.", "agent-a")
+      return reply("Pat buys from us.")(p)
+    }
+    await runEnrich(hub, graph(), call, { ...opts, only: ["Pat Doe"] }, { entities: {} })
+    const content = store.readArticle("people/pat.md")!.content
+    expect(content).toContain("Pat moved to the north office.")
+    expect(overviewSection(content)).toBe("Pat buys from us.")
+  })
+
   it("stops before the next call once the cap is spent, and a dry run writes nothing", async () => {
     const run = await runEnrich(hub, graph(), reply("Story."), { ...opts, maxCostUsd: 0.2, dryRun: true }, { entities: {} })
     expect(run.outcomes).toHaveLength(1)

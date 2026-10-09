@@ -100,6 +100,11 @@ export function ruleLevel(rules: ImportanceRule[] | undefined, title: string, ta
       try { re = new RegExp(r.title, "i") } catch { continue } // reported by checkOntology
       if (!re.test(title)) continue
     }
+    if (r.unless) {
+      let re: RegExp
+      try { re = new RegExp(r.unless, "i") } catch { continue } // reported by checkOntology
+      if (re.test(title)) continue
+    }
     if (r.tags?.length && !r.tags.some(t => have.has(t.toLowerCase()))) continue
     return r.level
   }
@@ -130,9 +135,14 @@ function localPage(hub: Pick<WikiHub, "syncedFrom">, e: Entity): GraphPage | und
   return e.pages.find(p => !hub.syncedFrom(p.agentId))
 }
 
+/** True when this job set the page's level. */
+function ownLevel(meta: WikiArticleMeta): boolean {
+  return (meta.statements ?? []).some(s => s.by === EVENTS_BY && s.property === LEVEL_MARK)
+}
+
 /** True when the level on the event was set by a person or another job. */
 function setByOthers(ev: Entity): boolean {
-  return ev.pages.some(p => p.article.meta.importance && !(p.article.meta.statements ?? []).some(s => s.by === EVENTS_BY && s.property === LEVEL_MARK))
+  return ev.pages.some(p => p.article.meta.importance && !ownLevel(p.article.meta))
 }
 
 /** Events this run should look at, newest first. */
@@ -244,7 +254,9 @@ export function eventMeta(meta: WikiArticleMeta, v: EventVerdict, today: string)
     .map(t => ({ property: "involves", value: t, checked_at: today, by: EVENTS_BY }))
   // The marker records that this job set the level, so --force may redo it.
   added.push({ property: LEVEL_MARK, value: v.proposed ?? v.importance, checked_at: today, by: EVENTS_BY, ...(v.why ? { note: v.why } : {}) })
-  return { ...meta, importance: v.importance, importanceProposed: v.proposed, statements: [...kept, ...added], lastUpdated: today }
+  // `lastUpdated` stays: the level and links are not news about the event,
+  // and the catalog sorts and labels pages by that date.
+  return { ...meta, importance: v.importance, importanceProposed: v.proposed, statements: [...kept, ...added] }
 }
 
 export async function runEvents(hub: WikiHub, g: WikiGraph, call: EventsCall, opts: EventsOptions): Promise<EventsRun> {
@@ -261,7 +273,16 @@ export async function runEvents(hub: WikiHub, g: WikiGraph, call: EventsCall, op
     const base: EventOutcome = { event: it.event.id, title: it.event.title, date: it.event.date, page: where, status: "dry-run", importance: v.importance, proposed: v.proposed, about: v.about, by: v.by, why: v.why, dropped }
     if (opts.dryRun) { run.outcomes.push(base); return }
     const store = hub.getAgentWiki(it.page.agentId)
-    const ok = store.writeArticle(it.page.article.path, eventMeta(it.page.article.meta, v, opts.today), it.page.article.content, it.page.article.meta.owner || it.page.agentId)
+    // Absorb or a person may have changed the page while the run waited
+    // for the model: write onto what is on disk now, not the copy read
+    // at the start.
+    const current = store.readArticle(it.page.article.path)
+    if (!current) { run.outcomes.push({ ...base, status: "failed", dropped: [...dropped, "the page was moved or removed during the run"] }); return }
+    if (current.meta.importance && !ownLevel(current.meta)) {
+      run.outcomes.push({ ...base, status: "failed", dropped: [...dropped, "a level was set on the page during the run"] })
+      return
+    }
+    const ok = store.writeArticle(it.page.article.path, eventMeta(current.meta, v, opts.today), current.content, current.meta.owner || it.page.agentId)
     run.outcomes.push({ ...base, status: ok ? "written" : "failed", dropped: ok ? dropped : [...dropped, "write refused"] })
   }
 
@@ -314,7 +335,7 @@ export async function runEvents(hub: WikiHub, g: WikiGraph, call: EventsCall, op
 }
 
 /** The owner's own word: set a level on an event and clear any proposal. */
-export function setEventLevel(hub: WikiHub, g: WikiGraph, name: string, level: Importance, today: string): { ok: boolean; title?: string; page?: string; reason?: string } {
+export function setEventLevel(hub: WikiHub, g: WikiGraph, name: string, level: Importance): { ok: boolean; title?: string; page?: string; reason?: string } {
   const id = g.names.get(normName(name)) ?? (g.entities.has(name) ? name : undefined)
   const ev = id ? g.entities.get(id) : undefined
   if (!ev) return { ok: false, reason: `no page is titled "${name}"` }
@@ -322,10 +343,11 @@ export function setEventLevel(hub: WikiHub, g: WikiGraph, name: string, level: I
   const page = localPage(hub, ev)
   if (!page) return { ok: false, title: ev.title, reason: "its pages are copied from another node; set the level there" }
   // Dropping this job's marker makes the level the owner's: no run redoes it.
-  const statements = (page.article.meta.statements ?? []).filter(s => !(s.by === EVENTS_BY && s.property === LEVEL_MARK))
-  const meta: WikiArticleMeta = { ...page.article.meta, importance: level, importanceProposed: undefined, statements: statements.length ? statements : undefined, lastUpdated: today }
   const store = hub.getAgentWiki(page.agentId)
-  const ok = store.writeArticle(page.article.path, meta, page.article.content, page.article.meta.owner || page.agentId)
+  const current = store.readArticle(page.article.path) ?? page.article
+  const statements = (current.meta.statements ?? []).filter(s => !(s.by === EVENTS_BY && s.property === LEVEL_MARK))
+  const meta: WikiArticleMeta = { ...current.meta, importance: level, importanceProposed: undefined, statements: statements.length ? statements : undefined }
+  const ok = store.writeArticle(page.article.path, meta, current.content, current.meta.owner || page.agentId)
   if (ok) store.rebuildIndex()
   return { ok, title: ev.title, page: `${page.agentId}/${page.article.path}`, reason: ok ? undefined : "write refused" }
 }
