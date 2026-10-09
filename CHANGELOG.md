@@ -2,6 +2,25 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.134.0](https://github.com/anis-marrouchi/agentx/compare/v0.133.0...v0.134.0) (2026-10-09)
+
+
+### Features
+
+* **signals:** pause a workflow run on stop and continue it on resume ([#870](https://github.com/anis-marrouchi/agentx/issues/870)) ([#881](https://github.com/anis-marrouchi/agentx/issues/881)) ([59f188a](https://github.com/anis-marrouchi/agentx/commit/59f188abe01f2817154a29341ac025d2ee1b7553))
+* **wiki:** live read of deploy records, rebased onto [#859](https://github.com/anis-marrouchi/agentx/issues/859) + review fixes ([#860](https://github.com/anis-marrouchi/agentx/issues/860), supersedes [#865](https://github.com/anis-marrouchi/agentx/issues/865)) ([#879](https://github.com/anis-marrouchi/agentx/issues/879)) ([c011d50](https://github.com/anis-marrouchi/agentx/commit/c011d5028b3f04229fda1f317937a4968589d92e))
+* **wiki:** search the source when no wiki page is picked ([#861](https://github.com/anis-marrouchi/agentx/issues/861)) ([#882](https://github.com/anis-marrouchi/agentx/issues/882)) ([9e9d75c](https://github.com/anis-marrouchi/agentx/commit/9e9d75cc82a446addb65f47642b57c2e6db6160c))
+* **wiki:** summaries query can open pages linked from the pick ([#863](https://github.com/anis-marrouchi/agentx/issues/863)) ([#878](https://github.com/anis-marrouchi/agentx/issues/878)) ([38bf7dd](https://github.com/anis-marrouchi/agentx/commit/38bf7dd4a363577e8ea0a3ed62ece718bbbf2635))
+* **wiki:** wiki query searches the agent's own notes ([#862](https://github.com/anis-marrouchi/agentx/issues/862), supersedes [#867](https://github.com/anis-marrouchi/agentx/issues/867)) ([#884](https://github.com/anis-marrouchi/agentx/issues/884)) ([ef569f6](https://github.com/anis-marrouchi/agentx/commit/ef569f696401a992c5c32d7d7f498edcf215a2ed))
+
+
+### Bug Fixes
+
+* **signals:** peer token without via is that peer; drop stopped tasks; clear stale claims ([#871](https://github.com/anis-marrouchi/agentx/issues/871)) ([#880](https://github.com/anis-marrouchi/agentx/issues/880)) ([32c5452](https://github.com/anis-marrouchi/agentx/commit/32c5452041205e6c17fe222c72025af6966ed177))
+* **wiki:** keep one version per write within a millisecond ([#873](https://github.com/anis-marrouchi/agentx/issues/873)) ([#875](https://github.com/anis-marrouchi/agentx/issues/875)) ([aec525f](https://github.com/anis-marrouchi/agentx/commit/aec525f74b31ea3a96b5529b30cab6306ca6dc3a))
+* **wiki:** refuse a notes absorb agent whose wiki absorb is off ([#885](https://github.com/anis-marrouchi/agentx/issues/885)) ([#888](https://github.com/anis-marrouchi/agentx/issues/888)) ([a1f39e5](https://github.com/anis-marrouchi/agentx/commit/a1f39e5a8537bd4f465b60abeb99c22ddad57973))
+* **workflows:** keep task runs apart and prune them ([#883](https://github.com/anis-marrouchi/agentx/issues/883)) ([#890](https://github.com/anis-marrouchi/agentx/issues/890)) ([67f67bf](https://github.com/anis-marrouchi/agentx/commit/67f67bfef94c260aa235603fb3a581ecbfc79d1b))
+
 ## [0.133.0](https://github.com/anis-marrouchi/agentx/compare/v0.132.0...v0.133.0) (2026-10-09)
 
 
