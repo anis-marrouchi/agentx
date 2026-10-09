@@ -57,6 +57,10 @@ export type FetchLike = (url: string, init: { method: "GET"; headers: Record<str
 const SEARCH_ROWS = 8
 const RELEASE_ROWS = 3
 const SEARCH_WORDS_CHARS = 60
+/** Labels kept per row, and characters per label. On a public repository
+ *  anyone can write a title or a label, and the answer reads them. */
+const LABELS_PER_ROW = 6
+const LABEL_CHARS = 30
 
 type RepoSource = Extract<LiveSource, { repos: LiveRepo[] }>
 
@@ -161,12 +165,17 @@ const rows = (v: unknown): Array<Record<string, unknown>> => (Array.isArray(v) ?
 function labelNames(row: Record<string, unknown>): string[] {
   return (Array.isArray(row.labels) ? row.labels : [])
     .map((l) => (l && typeof l === "object" ? String((l as { name?: unknown }).name ?? "") : String(l)))
+    .map((name) => name.replace(/\s+/g, " ").trim().slice(0, LABEL_CHARS))
     .filter(Boolean)
+    .slice(0, LABELS_PER_ROW)
 }
 
 function title(row: Record<string, unknown>, chars: number): string {
   return String(row.title ?? "").replace(/\s+/g, " ").slice(0, chars)
 }
+
+/** A release or tag name, cut like a label: anyone who can push a tag writes it. */
+const tag = (v: unknown) => String(v ?? "").replace(/\s+/g, " ").slice(0, LABEL_CHARS)
 
 function stateOf(row: Record<string, unknown>): { state: string; since: string } {
   const pr = row.pull_request && typeof row.pull_request === "object" ? row.pull_request as Record<string, unknown> : {}
@@ -235,14 +244,14 @@ async function readRelease(read: Extract<LiveRead, { kind: "release" }>, source:
   if (source.type === "github") {
     const releases = await getJson(`${base}/releases?per_page=${RELEASE_ROWS}`, headers, fetchImpl, timeoutMs)
     if (!releases) return ""
-    names = rows(releases).map((r) => `${r.tag_name} (${day(r.published_at)})`)
+    names = rows(releases).map((r) => `${tag(r.tag_name)} (${day(r.published_at)})`)
     if (names.length === 0) {
-      names = rows(await getJson(`${base}/tags?per_page=${RELEASE_ROWS}`, headers, fetchImpl, timeoutMs)).map((r) => String(r.name))
+      names = rows(await getJson(`${base}/tags?per_page=${RELEASE_ROWS}`, headers, fetchImpl, timeoutMs)).map((r) => tag(r.name))
     }
   } else {
     const tags = await getJson(`${base}/repository/tags?per_page=${RELEASE_ROWS}`, headers, fetchImpl, timeoutMs)
     if (!tags) return ""
-    names = rows(tags).map((r) => `${r.name} (${day((r.commit as { created_at?: unknown } | undefined)?.created_at)})`)
+    names = rows(tags).map((r) => `${tag(r.name)} (${day((r.commit as { created_at?: unknown } | undefined)?.created_at)})`)
   }
   return `newest releases of ${read.repo}: ${names.join(", ") || "none found"}`
 }

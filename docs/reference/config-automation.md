@@ -364,10 +364,11 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `contributions.maxCostUsd` | number (0–20) | `0.5` | Model spend per agent per run, in dollars, for agents that set no limit of their own. |
 | `contributions.model` | string | `"sonnet"` | Model for the daily run, for agents that name none. |
 | `query.shared` | boolean | `true` | Wiki searches also read other agents' pages the agent may see, and the shared lessons. |
-| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How a wiki question picks its pages. `summaries`: from the one-line page summaries, then a live read. `catalog`: from page titles, then along the links between pages. `auto`: `summaries` once summaries exist. See [Get wiki answers checked at the source](/jobs/wiki-live-answers). |
+| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How a wiki question picks its pages. `summaries`: from the one-line page summaries, then a live read. `catalog`: from page titles, then along the links between pages. `auto`: `summaries` once at least 80% of the agent's own pages have a summary. See [Get wiki answers checked at the source](/jobs/wiki-live-answers). |
 | `query.candidates` | number (1–50) | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | number (0–50) | `4` | How many of other agents' pages it sees beside them. |
 | `query.maxPages` | number (1–10) | `3` | Most pages opened for one answer. |
+| `query.linkedPages` | number (0–10) | `0` | Summaries method: also open up to this many pages that the picked pages link to (their `related` list). `0` opens none. |
 | `query.pageChars` | number (200–40000) | `4000` | Characters of each opened page given to the answer. |
 | `query.navigatorModel` | string | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |
