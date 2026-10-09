@@ -47,6 +47,7 @@ import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
+import { readRequiredSettings, updateRequiredSettings, type RequiredSettingsPatch } from "@/daemon/workflow-required-settings"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import { dashboardIcon } from "./app-icon"
@@ -1194,6 +1195,32 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     for (const list of remote) for (const r of list) byId.set(r.id, { ...r, history: r.history ?? [], pending: r.pending ?? [] })
     const titles = new Map(ctx.workflowStore.list().map((w) => [w.id, w.title] as const))
     sendJson(res, 200, { groups: progressGroups([...byId.values()], (id) => titles.get(id)), unreachable })
+    return
+  }
+
+  // Run every task through a workflow (#858): this node's setting. Follows
+  // the topbar's machine menu like the rest of /api/workflows.
+  //   GET  /api/workflows/required   the settings and this node's agents
+  //   POST /api/workflows/required   { enabled?, exemptQuestions?, agentId?, agentRequired?: "on"|"off"|"default" }
+  if (path === "/api/workflows/required") {
+    const view = () => ({ settings: readRequiredSettings(), agents: Object.keys(ctx.config.agents ?? {}).sort() })
+    if (method === "GET") { sendJson(res, 200, view()); return }
+    if (method !== "POST") { sendJson(res, 405, { error: "Method not allowed" }); return }
+    if (ctx.config.workflows?.editor !== "edit") { sendJson(res, 403, { error: "the workflow editor is read-only on this node (workflows.editor)" }); return }
+    const body = await readJson(req).catch(() => ({})) as Record<string, unknown>
+    const patch: RequiredSettingsPatch = {}
+    if (typeof body.enabled === "boolean") patch.enabled = body.enabled
+    if (typeof body.exemptQuestions === "boolean") patch.exemptQuestions = body.exemptQuestions
+    if (typeof body.agentId === "string" && body.agentId) {
+      if (!Object.prototype.hasOwnProperty.call(ctx.config.agents ?? {}, body.agentId)) { sendJson(res, 400, { error: `no agent "${body.agentId}" on this node` }); return }
+      const v = body.agentRequired
+      if (v !== "on" && v !== "off" && v !== "default") { sendJson(res, 400, { error: "agentRequired is on, off or default" }); return }
+      patch.agent = { id: body.agentId, value: v === "default" ? null : v === "on" }
+    }
+    if (patch.enabled === undefined && patch.exemptQuestions === undefined && !patch.agent) { sendJson(res, 400, { error: "nothing to change" }); return }
+    const r = await updateRequiredSettings(patch)
+    if (!r.success) { sendJson(res, 400, { error: r.error }); return }
+    sendJson(res, 200, { ok: true, reloaded: !!r.reloaded, ...view() })
     return
   }
 

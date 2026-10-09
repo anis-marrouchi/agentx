@@ -82,6 +82,10 @@ const shots = [
   { name: "live/running-build", path: "/live", wait: ".ax-build", clipTo: ".ax-topbar__right" },
   // Last: the scripted reply takes a minute, so later shots would show it running.
   { name: "live/running-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--update" }] },
+  // Every task in a workflow (#858): switched on through the card itself,
+  // then a task on the Live tab shows its run's step; switched off again.
+  { name: "workflows/required-settings", path: "/workflows", wait: "#wf-required", steps: [{ click: "#wf-required > summary" }, { wait: "#wf-required-agents select" }, { click: "#wf-required-enabled" }, { waitText: ["#wf-required-note", "Saved"] }, { click: ".ax-wf__req-agents > summary" }], clipTo: ".ax-wf__required" },
+  { name: "live/running-task-workflow", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-agent__task-wf" }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".ax-agent.is-handling" },
 ]
 
 function client(ws) {
@@ -149,6 +153,12 @@ try {
     await sleep(700)
     for (const step of shot.steps || []) {
       if (step.wait) await wait(step.wait)
+      if (step.waitText) {
+        const [sel, text] = step.waitText
+        for (let i = 0; i < 200 && !(await evaluate(`(document.querySelector(${JSON.stringify(sel)})?.textContent || "").includes(${JSON.stringify(text)})`)); i++) await sleep(150)
+      }
+      // A dashboard API call, as the page would make it.
+      if (step.post) await evaluate(`fetch(${JSON.stringify(step.post.path)}, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" }, body: ${JSON.stringify(JSON.stringify(step.post.body))} }).then(r => r.status)`)
       if (step.click) { await wait(step.click); await evaluate(`document.querySelector(${JSON.stringify(step.click)}).click()`) }
       if (step.clickText) await evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(step.within || "button")})].find(e => e.textContent.trim() === ${JSON.stringify(step.clickText)} || (${JSON.stringify(!!step.within)} && e.textContent.includes(${JSON.stringify(step.clickText)}))); if (!b) throw Error('Button missing'); b.click() })()`)
       if (step.type) {

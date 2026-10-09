@@ -57,6 +57,7 @@ const groups = [
     { text: "Fire a routine from outside", link: "/jobs/fire-a-routine" },
     { text: "Keep track of what you asked for", link: "/jobs/open-requests" },
     { text: "Let a workflow follow a request", link: "/jobs/follow-up-workflows" },
+    { text: "Run every task through a workflow", link: "/jobs/every-task-a-workflow" },
     { text: "Follow a request of several steps", link: "/jobs/tracked-plans" },
     { text: "Review what agents learn", link: "/jobs/agent-memory" },
     { text: "Let agents leave notes for the wiki run", link: "/jobs/wiki-notes" },
