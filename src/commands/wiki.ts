@@ -5,6 +5,7 @@ import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
 import type { WikiPeer } from "@/wiki/article-sync"
+import type { WikiQuerySettings } from "@/wiki/query-settings"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
@@ -19,6 +20,7 @@ import { registerWikiFacts } from "./wiki-facts"
 import { registerWikiNotes } from "./wiki-notes"
 import { registerWikiOntology } from "./wiki-ontology"
 import { registerWikiEnrich } from "./wiki-enrich"
+import { registerWikiSummarize } from "./wiki-summarize"
 import { resolve, relative, dirname } from "path"
 import { exec, execSync } from "child_process"
 import { promisify } from "util"
@@ -96,6 +98,20 @@ async function sharedQueryOn(): Promise<boolean> {
   return sharedQueryEnabled()
 }
 
+/** `wiki.query` settings with the `--method` and `--no-live` flags
+ *  applied; null, with a message, when `--method` names no method. */
+async function querySettingsFor(opts: { method?: string; live?: boolean }): Promise<WikiQuerySettings | null> {
+  const { loadQuerySettings } = await import("@/wiki/query-settings")
+  const settings = await loadQuerySettings()
+  if (opts.method && !["auto", "summaries", "catalog"].includes(opts.method)) {
+    console.log(chalk.red(`  --method takes auto, summaries or catalog, not "${opts.method}".`))
+    process.exitCode = 1
+    return null
+  }
+  const live = { ...settings.summaries.live, enabled: settings.summaries.live.enabled && opts.live !== false }
+  return { ...settings, method: (opts.method as WikiQuerySettings["method"]) ?? settings.method, summaries: { ...settings.summaries, live } }
+}
+
 /** The wiki root, resolved the same way everywhere that needs it. */
 function wikiDir(dir?: string): string {
   return dir || resolve(process.cwd(), ".agentx/wiki")
@@ -115,6 +131,7 @@ registerWikiFacts(wiki)
 registerWikiNotes(wiki)
 registerWikiOntology(wiki)
 registerWikiEnrich(wiki)
+registerWikiSummarize(wiki)
 
 // agentx wiki status
 wiki
@@ -3142,19 +3159,23 @@ wiki
 
 wiki
   .command("query <question>")
-  .description("agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer")
+  .description("agentic wiki query — picks pages from their one-line summaries, reads live state at the source, then answers; walks the catalog + wikilink graph where no summaries exist")
   .option("--dir <path>", "wiki directory")
   .option("--agent <id>", "which agent's wiki to search first (default: the calling agent, else the first one with a catalog)")
-  .option("--selector-model <m>", "candidate-selection model", "haiku")
-  .option("--synth-model <m>", "synthesis model", "sonnet")
-  .option("--max-candidates <n>", "candidates from selector", "3")
-  .option("--max-hops <n>", "wikilink hops from candidates", "2")
-  .option("--max-articles <n>", "cap on total articles walked", "8")
+  .option("--method <m>", "how pages are picked: auto, summaries or catalog (default: wiki.query.method)")
+  .option("--no-live", "skip the live read of the summaries method")
+  .option("--selector-model <m>", "candidate-selection model (default haiku)")
+  .option("--synth-model <m>", "synthesis model (default sonnet)")
+  .option("--max-candidates <n>", "candidates from selector (catalog method)", "3")
+  .option("--max-hops <n>", "wikilink hops from candidates (catalog method)", "2")
+  .option("--max-articles <n>", "cap on total articles walked (catalog method)", "8")
   .option("--json", "emit full result as JSON (for A/B harnesses)")
   .option("--trace", "print selector + walk trace")
   .option("--own-only", "search only the agent's own articles, not the shared wiki")
   .action(async (question, opts) => {
     const { agenticQuery } = await import("@/wiki/query")
+    const settings = await querySettingsFor(opts)
+    if (!settings) return
     const hub = getHub(opts.dir)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
 
@@ -3182,6 +3203,8 @@ wiki
       maxHops: parseInt(opts.maxHops),
       maxArticles: parseInt(opts.maxArticles),
       shared: opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(chosen),
+      method: settings.method,
+      summaries: settings.summaries,
     })
 
     if (opts.json) {
@@ -3209,8 +3232,16 @@ wiki
       }
       console.log()
     }
+    if (result.live?.length) {
+      console.log(chalk.dim("  Read live at the source:"))
+      for (const l of result.live) console.log(chalk.dim(`    - ${l.line}`))
+      console.log()
+    }
 
     if (opts.trace && result.trace) {
+      if (result.method === "summaries") {
+        console.log(chalk.dim(`  method: summaries   live reads: ${result.liveAsked ?? 0} asked, ${result.live?.length ?? 0} answered   plan: ${result.trace.planMs ?? 0}ms   reads: ${result.trace.liveMs ?? 0}ms`))
+      }
       console.log(chalk.dim(`  selector: ${result.trace.selectorMs}ms   synthesis: ${result.trace.synthesisMs}ms`))
       console.log(chalk.dim(`  candidates: ${result.candidates.map(c => c.title).join(" | ") || "(none)"}`))
       if (result.walked.length > result.candidates.length) {
@@ -3233,8 +3264,10 @@ wiki
   .option("--own-only", "search only the agent's own articles, to measure without the shared wiki")
   .option("--out <file>", "write the report as JSON to this file")
   .option("--compare <files...>", "compare two saved reports (before after) instead of running")
-  .option("--selector-model <m>", "candidate-selection model", "haiku")
-  .option("--synth-model <m>", "synthesis model", "sonnet")
+  .option("--method <m>", "how pages are picked: auto, summaries or catalog (default: wiki.query.method)")
+  .option("--no-live", "skip the live read of the summaries method")
+  .option("--selector-model <m>", "candidate-selection model (default haiku)")
+  .option("--synth-model <m>", "synthesis model (default sonnet)")
   .option("--json", "print the report as JSON")
   .action(async (opts) => {
     const { parseQuestionSet, buildReport, compareReports } = await import("@/wiki/score")
@@ -3275,6 +3308,8 @@ wiki
     }
     const questions = parseQuestionSet(readFileSync(resolve(opts.questions), "utf-8"))
     const { agenticQuery } = await import("@/wiki/query")
+    const settings = await querySettingsFor(opts)
+    if (!settings) return
     const hub = getHub(opts.dir)
     const shared = !opts.ownOnly
     const answers = []
@@ -3283,6 +3318,8 @@ wiki
         selectorModel: opts.selectorModel,
         synthModel: opts.synthModel,
         shared: shared ? hub.sharedScope(agent) : undefined,
+        method: settings.method,
+        summaries: settings.summaries,
       })
       answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path) })
       if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status}\n`))

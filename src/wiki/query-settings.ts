@@ -1,0 +1,105 @@
+// `wiki.query` from agentx.json, resolved into what a query runs with
+// (#855). The CLI and the `agentx_wiki_query` tool both ask here, so one
+// setting reaches both.
+
+import { readFileSync } from "fs"
+import type { DaemonConfig } from "@/daemon/config"
+import type { LiveRepo, LiveSource } from "./live-read"
+import { DEFAULT_SUMMARIES_QUERY, type SummariesQuerySettings } from "./query-summaries"
+
+export type QueryMethod = "auto" | "summaries" | "catalog"
+
+export interface WikiQuerySettings {
+  /** Also search other agents' readable pages. */
+  shared: boolean
+  method: QueryMethod
+  summaries: SummariesQuerySettings
+}
+
+export const DEFAULT_QUERY_SETTINGS: WikiQuerySettings = { shared: true, method: "auto", summaries: DEFAULT_SUMMARIES_QUERY }
+
+type Env = Record<string, string | undefined>
+
+function fileToken(path: string | undefined): string | undefined {
+  if (!path) return undefined
+  try {
+    return readFileSync(path, "utf-8").trim().split("\n")[0].trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
+function sameHost(a: string, b: string): boolean {
+  try {
+    return new URL(a).host === new URL(b).host
+  } catch {
+    return false
+  }
+}
+
+const repos = (list: Array<string | { repo: string; about?: string }>): LiveRepo[] =>
+  list.map((r) => (typeof r === "string" ? { repo: r } : { repo: r.repo, about: r.about }))
+
+/**
+ * Turn the configured sources into hosts and tokens. A source that names
+ * its own token (`tokenEnv`, `tokenFile`) uses it. One that names none
+ * uses the matching channel's token, and only when the source points at
+ * that channel's host: a token never goes to a host it was not set for.
+ */
+export function resolveLiveSources(config: DaemonConfig, env: Env = process.env): LiveSource[] {
+  const out: LiveSource[] = []
+  for (const s of config.wiki.query.live.sources) {
+    if (s.type === "agentx") {
+      const bind = config.node.bind.replace(/^0\.0\.0\.0:/, "127.0.0.1:")
+      out.push({ type: "agentx", url: s.url ?? `http://${bind}`, peers: s.peers })
+      continue
+    }
+    const own = (s.tokenEnv ? env[s.tokenEnv] : undefined) || fileToken(s.tokenFile)
+    if (s.type === "github") {
+      const gh = config.channels.github
+      const channel = sameHost(s.apiUrl, "https://api.github.com") ? gh?.token || fileToken(gh?.tokenFile) : undefined
+      out.push({ type: "github", apiUrl: s.apiUrl, token: own || channel || undefined, repos: repos(s.repos) })
+    } else {
+      const gl = config.channels.gitlab
+      const url = s.url ?? gl?.host
+      if (!url) continue
+      const channel = gl?.host && sameHost(url, gl.host) ? gl.token : undefined
+      out.push({ type: "gitlab", url, token: own || channel || undefined, repos: repos(s.repos) })
+    }
+  }
+  return out
+}
+
+export function resolveQuerySettings(config: DaemonConfig, env: Env = process.env): WikiQuerySettings {
+  const q = config.wiki.query
+  return {
+    shared: q.shared,
+    method: q.method,
+    summaries: {
+      candidates: q.candidates,
+      sharedCandidates: q.sharedCandidates,
+      maxPages: q.maxPages,
+      pageChars: q.pageChars,
+      navigatorModel: q.navigatorModel,
+      answerModel: q.answerModel,
+      live: {
+        enabled: q.live.enabled,
+        maxReads: q.live.maxReads,
+        timeoutMs: q.live.timeoutMs,
+        plannerModel: q.live.plannerModel,
+        sources: resolveLiveSources(config, env),
+      },
+    },
+  }
+}
+
+/** The settings of the config in the working directory; the defaults
+ *  (shared on, no live source) when there is none to read. */
+export async function loadQuerySettings(configPath?: string): Promise<WikiQuerySettings> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    return resolveQuerySettings(loadDaemonConfig(configPath))
+  } catch {
+    return DEFAULT_QUERY_SETTINGS
+  }
+}

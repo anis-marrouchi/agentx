@@ -802,6 +802,47 @@ const cronJobSchema = z.object({
   message: "autonomy applies to agent routines; a command cron runs no agent (remove autonomy or the command)",
 })
 
+/** A repository a live read may name: `owner/name`, or a GitLab path. */
+const wikiLiveRepoName = z.string().regex(/^(?!.*(?:^|\/)\.+(?:\/|$))[\w.-]+(\/[\w.-]+)+$/, "expected owner/name")
+const wikiLiveRepoSchema = z.union([
+  wikiLiveRepoName,
+  z.object({
+    repo: wikiLiveRepoName,
+    /** What lives there, shown to the model so it names the right one. */
+    about: z.string().max(200).optional(),
+  }),
+])
+const wikiLiveTokenFields = {
+  /** Name of the environment variable that holds the token. */
+  tokenEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+  /** File whose first line is the token. */
+  tokenFile: z.string().optional(),
+}
+/** Where `wiki query` may read live state from (#855). Read-only: each
+ *  read is one HTTP GET built by code (src/wiki/live-read.ts). */
+const wikiLiveSourceSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("github"),
+    apiUrl: z.string().url().default("https://api.github.com"),
+    ...wikiLiveTokenFields,
+    repos: z.array(wikiLiveRepoSchema).min(1),
+  }),
+  z.object({
+    type: z.literal("gitlab"),
+    /** The GitLab host. Unset: `channels.gitlab.host`. */
+    url: z.string().url().optional(),
+    ...wikiLiveTokenFields,
+    repos: z.array(wikiLiveRepoSchema).min(1),
+  }),
+  z.object({
+    type: z.literal("agentx"),
+    /** The daemon to ask. Unset: this node. */
+    url: z.string().url().optional(),
+    /** Also ask each mesh peer the daemon lists. */
+    peers: z.boolean().default(true),
+  }),
+])
+
 /** Notes agents leave for the wiki observe/sweep run (#825, src/wiki/notes.ts).
  *  Off by default. Every node that should be able to post sets the same
  *  `inbox`; only the inbox agent's node lists `crons`. */
@@ -1326,6 +1367,52 @@ export const daemonConfigSchema = z.object({
       /** `wiki query` also searches other agents' readable pages and the
        *  root wiki's own pages. */
       shared: z.boolean().default(true),
+      /** How pages are picked (#855). `summaries`: from the one-line page
+       *  summaries `agentx wiki summarize` writes, then a live read.
+       *  `catalog`: from titles, then a walk along the pages' links.
+       *  `auto`: `summaries` once summaries exist, `catalog` until then. */
+      method: z.enum(["auto", "summaries", "catalog"]).default("auto"),
+      /** The agent's own pages shown to the model that picks. */
+      candidates: z.number().int().min(1).max(50).default(12),
+      /** Other agents' pages shown beside them. */
+      sharedCandidates: z.number().int().min(0).max(50).default(4),
+      /** Most pages opened for one answer. */
+      maxPages: z.number().int().min(1).max(10).default(3),
+      /** Characters of each opened page given to the answer. */
+      pageChars: z.number().int().min(200).max(40_000).default(4000),
+      /** Model that picks pages from the summary lines. */
+      navigatorModel: z.string().min(1).default("haiku"),
+      /** Model that writes the answer. */
+      answerModel: z.string().min(1).default("sonnet"),
+      /** Before the answer, confirm at the source what may have changed
+       *  since the pages were written. A model names the reads; code runs
+       *  them, and each is one HTTP GET. Nothing runs until `sources`
+       *  lists where to read. */
+      live: z.object({
+        enabled: z.boolean().default(true),
+        /** Most reads for one question. */
+        maxReads: z.number().int().min(0).max(20).default(6),
+        /** Timeout of one read, in milliseconds. */
+        timeoutMs: z.number().int().min(1000).max(120_000).default(15_000),
+        /** Model that names the reads. */
+        plannerModel: z.string().min(1).default("haiku"),
+        sources: z.array(wikiLiveSourceSchema).default([]),
+      }).default({}),
+    }).default({}),
+    /** One-line page summaries `wiki query` picks pages from (#855). */
+    summaries: z.object({
+      model: z.string().min(1).default("haiku"),
+      /** Pages per model call. */
+      batchSize: z.number().int().min(1).max(50).default(20),
+      /** Longest summary, in words. */
+      maxWords: z.number().int().min(5).max(120).default(35),
+      /** When `agentx wiki summarize` runs on its own (cron, 5 fields).
+       *  Unset: no job is added. */
+      schedule: z.string().optional(),
+      timezone: z.string().default("UTC"),
+      /** Agent the job is filed under. Unset: `node.defaultAgent`, else
+       *  the first agent. */
+      agent: z.string().min(1).optional(),
     }).default({}),
     /** The chat bubble on every wiki page: the owner types an instruction and
      *  an agent researches it and edits the open page. */
@@ -1987,7 +2074,7 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
-  return withContributionJobs(result.data)
+  return withSummariesJob(withContributionJobs(result.data))
 }
 
 /**
@@ -2067,6 +2154,24 @@ export function withContributionJobs(config: DaemonConfig, cli: string = agentxC
     [WIKI_CONTRIBUTE_MERGE_JOB]: job(c.mergeSchedule, `${cli} wiki contributions merge`),
   }
   return { ...config, crons: { ...generated, ...config.crons } }
+}
+
+/** Cron id of the job that keeps the wiki page summaries current. */
+export const WIKI_SUMMARIZE_JOB = "wiki-summarize"
+
+/**
+ * Add the job that keeps the page summaries current when
+ * `wiki.summaries.schedule` is set (#855). It only spends on pages that
+ * are new or changed. A cron the operator defined under the same id wins.
+ */
+export function withSummariesJob(config: DaemonConfig, cli: string = agentxCli()): DaemonConfig {
+  const s = config.wiki.summaries
+  const agent = s.agent ?? config.node.defaultAgent ?? Object.keys(config.agents).sort()[0]
+  if (!s.schedule || !agent) return config
+  const job = cronJobSchema.parse({
+    schedule: s.schedule, timezone: s.timezone, agent, command: `${cli} wiki summarize --all`, timeout: 3600, onError: "log",
+  })
+  return { ...config, crons: { [WIKI_SUMMARIZE_JOB]: job, ...config.crons } }
 }
 
 /** How to call this release's CLI from a shell. */
