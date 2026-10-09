@@ -2,6 +2,20 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.131.0](https://github.com/anis-marrouchi/agentx/compare/v0.130.0...v0.131.0) (2026-10-09)
+
+
+### Features
+
+* **wiki:** chat bubble to curate the open page, rebased + review fixes ([#818](https://github.com/anis-marrouchi/agentx/issues/818), supersedes [#821](https://github.com/anis-marrouchi/agentx/issues/821)) ([#840](https://github.com/anis-marrouchi/agentx/issues/840)) ([7a8baf5](https://github.com/anis-marrouchi/agentx/commit/7a8baf5c03cd8436562e9799bc9d6ebb2e946459))
+* **wiki:** entity pages with a full overview, sourced facts and linked history ([#820](https://github.com/anis-marrouchi/agentx/issues/820), [#819](https://github.com/anis-marrouchi/agentx/issues/819)) ([#834](https://github.com/anis-marrouchi/agentx/issues/834)) ([c5f6897](https://github.com/anis-marrouchi/agentx/commit/c5f68979179f6ff6147b5dddf50ddfcbd6005181))
+* **wiki:** wiki query picks pages from summaries and reads live state ([#855](https://github.com/anis-marrouchi/agentx/issues/855)) ([#856](https://github.com/anis-marrouchi/agentx/issues/856)) ([fee9b76](https://github.com/anis-marrouchi/agentx/commit/fee9b769894a5fd85c8ef6debcbb3dc6f3724e1e))
+
+
+### Bug Fixes
+
+* **wiki:** count a skipped note as deferred and keep a slot for deferred notes ([#836](https://github.com/anis-marrouchi/agentx/issues/836)) ([#839](https://github.com/anis-marrouchi/agentx/issues/839)) ([304d989](https://github.com/anis-marrouchi/agentx/commit/304d98945ffa156a3bbcc61962ce1c1b3a206245))
+
 ## [0.130.0](https://github.com/anis-marrouchi/agentx/compare/v0.129.0...v0.130.0) (2026-10-09)
 
 
