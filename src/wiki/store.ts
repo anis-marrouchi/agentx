@@ -282,6 +282,7 @@ export class WikiStore {
     // is also valid YAML, so the line-based reader below stays simple.
     if (meta.class) frontmatter.push(`class: ${meta.class}`)
     if (meta.importance) frontmatter.push(`importance: ${meta.importance}`)
+    if (meta.importanceProposed) frontmatter.push(`importance_proposed: ${meta.importanceProposed}`)
     if (meta.date) frontmatter.push(`date: ${meta.date}`)
     if (meta.rolledUpInto) frontmatter.push(`rolled_up_into: ${JSON.stringify(meta.rolledUpInto)}`)
     if (meta.aliases?.length) frontmatter.push(`aliases: ${JSON.stringify(meta.aliases)}`)
@@ -424,6 +425,7 @@ export class WikiStore {
     const graphPath = getArray("graph_path")
     const aliases = getArray("aliases")
     const importance = get("importance")
+    const importanceProposed = get("importance_proposed")
     const date = get("date")
     return {
       meta: {
@@ -440,6 +442,7 @@ export class WikiStore {
         graphPath: graphPath.length ? graphPath : undefined,
         class: /^[a-z][a-z0-9_]*$/.test(get("class")) ? get("class") : undefined,
         importance: isImportance(importance) ? importance : undefined,
+        importanceProposed: isImportance(importanceProposed) ? importanceProposed : undefined,
         date: /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : undefined,
         rolledUpInto: get("rolled_up_into") || undefined,
         aliases: aliases.length ? aliases : undefined,

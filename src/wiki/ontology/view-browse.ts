@@ -44,6 +44,8 @@ export function needsAttention(g: WikiGraph, entities: Entity[], now = Date.now(
       out.push({ e, chip: "due", why: `due ${due.value}` })
     } else if (e.statements.some(s => s.status === "proposed")) {
       out.push({ e, chip: "proposed", why: "statements wait for confirmation" })
+    } else if (e.type === "event" && e.importanceProposed && e.importanceProposed !== e.importance) {
+      out.push({ e, chip: "proposed", why: `proposed as ${e.importanceProposed}; the owner decides` })
     } else if (e.type === "event" && e.importance === "major" && e.date && now - Date.parse(e.date) <= 30 * DAY) {
       out.push({ e, chip: "major", why: `major event ${e.date}` })
     }

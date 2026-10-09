@@ -50,6 +50,8 @@ The per-agent view is still there: click **Agent wikis** at the top.
 
 Every event is **minor**, **normal** or **major**. Pages show major and normal events and fold minor ones under a count. When five or more minor events happen in 30 days, the page shows them as one **Recurring** line. Only the owner sets **major**; an agent can propose it.
 
+A new event page has no level yet and shows as **normal**. `agentx wiki events` gives every event its level and the page it is about. See [Sort wiki events by importance](../jobs/wiki-events.md).
+
 ## Private facts
 
 A statement marked `access: private` (an ID number, an account number) shows as `••••` on Z2 and Z3. Its value appears only on its Z4 page. The **Discussed** panel lists the conversations a page was written from and is marked private to the owner.

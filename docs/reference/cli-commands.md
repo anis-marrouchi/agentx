@@ -1605,6 +1605,28 @@ Write a full overview, sourced typed facts and History links on entity pages: pe
 | `--create <title>` | — | First create a page for a thing other pages only name. Needs `--as <type>` and `--owner <agent>`. |
 | `--json` | — | Print the run as JSON. |
 
+### `agentx wiki events`
+
+Give each event page an importance level (minor, normal or major) and the pages it is about, so it shows in their History. The rules under `importance.rules` in `ontology.yaml` decide first, with no model call. The other events go to a model in batches. Events that already have a level are skipped. See [Sort wiki events by importance](/jobs/wiki-events).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | `.agentx/wiki` | Wiki directory. |
+| `--about <titles...>` | — | Only events linked to or naming these pages. Prints each page's History before and after. |
+| `--max <n>` | `200` | Most events per run (a whole number, 1 or more). |
+| `--batch <n>` | `20` | Events per model call. |
+| `--max-cost <usd>` | `1` | Stop before the next call once the run has spent this much. |
+| `--model <m>` | `haiku` | Model. |
+| `--rules-only` | — | Use only the importance rules; make no model call. |
+| `--force` | — | Redo events whose level this job set earlier. A level you set yourself is never redone. |
+| `--dry-run` | — | Show what would be written; write nothing. |
+| `--json` | — | Print the run as JSON. |
+
+| Subcommand | What it does |
+|---|---|
+| `agentx wiki events set <title> <level>` | Set an event's level yourself. No later run changes it. |
+| `agentx wiki events proposed` | List events a run suggests as major, waiting for you. `--json` prints JSON. |
+
 ### `agentx wiki serve`
 
 Start a local web server to browse the wiki by pillar and type, and each agent's pages under `/agents` (local + mesh).

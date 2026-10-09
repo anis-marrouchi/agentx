@@ -90,6 +90,15 @@ export interface ClassifyRule {
   title?: string
 }
 
+/** Gives an event its importance without a model call (#811). */
+export interface ImportanceRule {
+  level: Importance
+  /** Case-insensitive regular expression on the event title. */
+  title?: string
+  /** Match when the event page has any of these tags. */
+  tags?: string[]
+}
+
 export interface Ontology {
   version: number
   pillars: PillarDef[]
@@ -100,6 +109,9 @@ export interface Ontology {
     /** Who may set `major`: "owner" means agents can only propose it. */
     major_set_by: "owner" | "anyone"
     rollup: { min: number; days: number }
+    /** Tried in order by `wiki events` before it asks a model. The first
+     *  match wins. */
+    rules?: ImportanceRule[]
   }
   sidebar: {
     pins_max: number
