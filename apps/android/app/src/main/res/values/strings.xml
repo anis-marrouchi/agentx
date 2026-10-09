@@ -26,6 +26,7 @@
     <string name="allowed">allowed</string>
     <string name="not_allowed">not allowed</string>
     <string name="places_off">Place reminders are off. This phone watches no places.</string>
+    <string name="places_no_access">Place reminders can\'t fire: AgentX may no longer use the location all the time. Tap Open Android settings for AgentX, then Permissions, then Location, and choose Allow all the time with Use precise location on.</string>
     <string name="places_none">No places yet. Add one in the phone app\'s Alerts tab, or on the computer\'s Places page.</string>
     <string name="places_watching">Watching: %1$s</string>
     <string name="places_last_check">Last checked for changes at %1$s.</string>

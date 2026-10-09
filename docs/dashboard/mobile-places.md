@@ -146,6 +146,8 @@ Android asks twice: first for the location, then for the location "all the time"
 
 If you refuse either one, the switch stays off and the screen says what to change and where. Tap **Open settings** to go straight to AgentX's permissions.
 
+If you take the location away later in Android's settings, the switch stays on but the screen says **Place reminders can't fire** in place of **Watching:**, until you allow it again.
+
 ## Save a place
 
 On the phone:
