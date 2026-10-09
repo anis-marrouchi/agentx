@@ -1260,7 +1260,7 @@ Notes in this node's inbox.
 
 ### `agentx wiki notes handle <id>`
 
-Record what the run did with a note. A deferred note is given to the next run again, until it has been deferred `wikiNotes.maxDeferrals` times; then it expires.
+Record what the run did with a note. A deferred note is given to the next run again, until it has been deferred `wikiNotes.maxDeferrals` times; then it expires. A note a run was given and did not record counts as deferred when the next run starts.
 
 | Flag | Default | What it does |
 |---|---|---|

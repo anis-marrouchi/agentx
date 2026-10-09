@@ -100,8 +100,10 @@ describe("NoteStore", () => {
     const store = new NoteStore(dir)
     const ids = ["a", "b", "c"].map((change) => add(store, { change }).note.id)
     const offered: string[] = []
+    // A skipped note counts as deferred (#836); a high maxDeferrals keeps
+    // them all waiting long enough to test the rotation alone.
     for (let run = 1; run <= 30; run++) {
-      offered.push(...store.takeForRun("wiki-agent", `sweep/run-${run}`, 1).map((n) => n.id))
+      offered.push(...store.takeForRun("wiki-agent", `sweep/run-${run}`, 1, 100).map((n) => n.id))
     }
     expect(offered).toHaveLength(30)
     // Past NOTE_LIMITS.listedIn runs each, every note still comes up within
@@ -127,6 +129,50 @@ describe("NoteStore", () => {
     expect(after.handled?.reason).toBe("source down")
     expect(store.list("waiting")).toEqual([])
     expect(store.list("expired").map((x) => x.id)).toEqual([n.id])
+  })
+
+  it("counts a note a run was given and skipped as deferred, so skipped notes expire (#836)", () => {
+    const store = new NoteStore(dir)
+    const skipped = [add(store, { change: "skip one" }).note, add(store, { change: "skip two" }).note]
+    const old = add(store, { change: "old deferred" }).note
+    store.handle(old.id, "deferred", "source down", "wiki-agent", "sweep/run-0")
+    // Two slots: one stays free for the deferred note.
+    expect(store.takeForRun("wiki-agent", "sweep/run-1", 2, 3).map((n) => n.id)).toEqual([skipped[0].id, old.id])
+    // Run 1 recorded nothing. Run 2 counts that as a deferral by run 1.
+    store.takeForRun("wiki-agent", "sweep/run-2", 2, 3)
+    expect(store.get(skipped[0].id)).toMatchObject({ status: "deferred", deferrals: 1, handled: { by: "agentx", runId: "sweep/run-1" } })
+    expect(store.get(old.id)?.deferrals).toBe(2)
+    // Nothing is ever recorded: every note still expires, none stays waiting.
+    for (let run = 3; run <= 12; run++) store.takeForRun("wiki-agent", `sweep/run-${run}`, 2, 3)
+    expect(store.list("waiting")).toEqual([])
+    expect(store.list("expired")).toHaveLength(3)
+  })
+
+  it("keeps a slot for deferred notes when new notes would fill every slot (#836)", () => {
+    const store = new NoteStore(dir)
+    const stuck = add(store, { change: "stuck" }).note
+    store.handle(stuck.id, "deferred", "source cannot be checked", "wiki-agent")
+    const fresh = [1, 2, 3].map((i) => add(store, { change: `new ${i}` }).note)
+    expect(store.takeForRun("wiki-agent", "sweep/run-1", 3).map((n) => n.id)).toEqual([fresh[0].id, fresh[1].id, stuck.id])
+    // One slot: open notes still go first, the one no run has seen yet ahead.
+    expect(new NoteStore(dir).takeForRun("wiki-agent", "sweep/run-1", 1).map((n) => n.id)).toEqual([fresh[2].id])
+  })
+
+  it("does not count a deferral twice when a run answers after its skip was counted", () => {
+    const store = new NoteStore(dir)
+    const n = add(store).note
+    store.takeForRun("wiki-agent", "sweep/run-1", 5)
+    store.takeForRun("wiki-agent", "sweep/run-2", 0)
+    expect(store.get(n.id)?.deferrals).toBe(1)
+    store.handle(n.id, "deferred", "source down", "wiki-agent", "sweep/run-1")
+    expect(store.get(n.id)?.deferrals).toBe(1)
+    // An answer from the run it was given to clears the wait.
+    store.takeForRun("wiki-agent", "sweep/run-3", 5)
+    store.handle(n.id, "deferred", "still down", "wiki-agent", "sweep/run-3")
+    expect(store.get(n.id)?.deferrals).toBe(2)
+    expect(store.get(n.id)?.awaiting).toBeUndefined()
+    store.takeForRun("wiki-agent", "sweep/run-4", 5)
+    expect(store.get(n.id)?.deferrals).toBe(2)
   })
 
   it("needs a reason and a known outcome", () => {
