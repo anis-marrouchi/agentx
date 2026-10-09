@@ -19,7 +19,7 @@ import { planResume, type ResumePlan, type ResumeSettings } from "./policy"
 export interface Resumer {
   /** Re-enter the run with the note prepended. Resolves once the run has
    *  been handed over, not when it finishes. */
-  resume(input: { origin: RunOrigin; run: InterruptedRun; note: string; attempt: number }): Promise<void>
+  resume(input: { origin: RunOrigin; run: InterruptedRun; note: string; attempt: number; rootId?: string }): Promise<void>
   /** One line to the chat the run came from. */
   tell?(origin: RunOrigin, text: string): Promise<void>
 }
@@ -118,6 +118,23 @@ export class ResumeCoordinator {
       try { await input.notifyOperator(text) } catch (e: any) { input.log(`[resume] operator notice failed: ${e?.message ?? e}`) }
     }
     return outcomes
+  }
+
+  /** Re-enter one run outside the boot pass: a task a stop signal paused
+   *  (agents/signals, #857). Same resumers as a restart, so the answer lands
+   *  where a live one would. `rootId` keeps the run under its original root.
+   *  Throws when no resumer handles the origin, or the resumer refuses. */
+  async resumeOne(input: { origin: RunOrigin; run: InterruptedRun; note: string; rootId?: string }): Promise<void> {
+    const resumer = this.resumers.get(input.origin.kind)
+    if (!resumer) throw new Error(`no resumer for "${input.origin.kind}" runs`)
+    // attempt 0: a stop is not a restart, so a restart that later cuts the
+    // resumed run off may still resume it.
+    await resumer.resume({ origin: input.origin, run: input.run, note: input.note, attempt: 0, rootId: input.rootId })
+  }
+
+  /** One line to the chat a run came from; false when there's no way to. */
+  tellOrigin(origin: RunOrigin, text: string, log: (m: string) => void): Promise<boolean> {
+    return this.tell(origin, text, log)
   }
 
   /** Tell the run's chat; false when there's no way to. Never throws. */

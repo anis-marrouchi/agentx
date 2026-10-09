@@ -1103,6 +1103,18 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // the /places page adds and removes the owner's places here.
   if (await handleDashboardPlaces(req, res, path, method, appPlacesDeps(ctx.config))) return
 
+  // Pause a running task with a resume plan, or resume one (#857), on the
+  // node that holds it. Below the token and X-Requested-With checks: both
+  // stop or start a run.
+  //   POST /api/signals/stop?node=<url>     { taskId, reason? }
+  //   POST /api/signals/resume?node=<url>   { id }
+  if (method === "POST" && (path === "/api/signals/stop" || path === "/api/signals/resume")) {
+    const nodeUrl = new URL(req.url || "/", "http://localhost").searchParams.get("node")
+    if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
+    await proxyNodePost(req, res, ctx, nodeUrl, path)
+    return
+  }
+
   // "Restart when idle" on a node's header (Live page). The daemon holds the
   // request and exits by itself once no task is running, so its service
   // manager starts it again; it refuses when none would. Below the token and
@@ -1722,6 +1734,21 @@ interface NodeLive {
   inflight?: number
   /** A "restart when idle" request the node is holding (GET /health). */
   restart?: { state: "none" | "pending" | "restarting"; requestedAt?: string; deadline?: string }
+  /** Tasks a stop signal paused, with their resume plan (#857;
+   *  GET /api/signals/stopped, bounded summaries; undefined on older nodes). */
+  stoppedTasks?: Array<{
+    id: string
+    agentId: string
+    channel: string
+    chatId: string
+    state: string
+    stoppedAt: string
+    stoppedBy: string
+    reason?: string
+    request: string
+    plan?: { author: string; text: string; note?: string }
+    resumable: boolean
+  }>
   agents: Array<{
     id: string
     name: string
@@ -1842,7 +1869,7 @@ export async function fetchDaemonAgents(
         .catch(() => null)
         .finally(() => { clearTimeout(timer); signal?.removeEventListener("abort", stop) })
     }
-    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes, attachRes] = await Promise.all([
+    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes, attachRes, stoppedRes] = await Promise.all([
       optional("/health"),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
       optional("/mesh"),
@@ -1851,6 +1878,7 @@ export async function fetchDaemonAgents(
       optional("/talk"),
       optional("/routines"),
       optional("/attach/sessions"),
+      optional("/api/signals/stopped?limit=20"),
     ])
     if (!agentsRes || !agentsRes.ok) {
       base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
@@ -1878,6 +1906,18 @@ export async function fetchDaemonAgents(
       // /health already embeds today's usage rollup — reuse it so the
       // dashboard doesn't need a separate /usage call per node.
       if (h.usage) base.usage = h.usage
+    }
+    if (stoppedRes && stoppedRes.ok) {
+      const data: any = await stoppedRes.json().catch(() => ({}))
+      const tasks: any[] = Array.isArray(data?.tasks) ? data.tasks : []
+      base.stoppedTasks = tasks.filter((t) => t && t.state !== "resumed").slice(0, 10).map((t) => ({
+        id: String(t.id), agentId: String(t.agentId), channel: String(t.channel ?? ""), chatId: String(t.chatId ?? ""),
+        state: String(t.state), stoppedAt: String(t.stoppedAt), stoppedBy: String(t.stoppedBy ?? ""),
+        reason: typeof t.reason === "string" ? t.reason : undefined,
+        request: String(t.request ?? ""),
+        plan: t.plan && typeof t.plan.text === "string" ? { author: String(t.plan.author), text: t.plan.text, note: t.plan.note } : undefined,
+        resumable: t.resumable === true,
+      }))
     }
     if (cronsRes && cronsRes.ok) {
       const jobs: any[] = await cronsRes.json().then((j: unknown) => (Array.isArray(j) ? j : []), () => [])

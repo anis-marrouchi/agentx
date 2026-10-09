@@ -609,6 +609,29 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_signal",
+    description:
+      "Stop a running agent task cleanly, or resume one that was stopped (#857). " +
+      "`stop`: the task ends with status stopped, the agent writes a resume plan (done, left, next action, half-applied), and the task waits. " +
+      "`resume`: the task runs again in the same chat with its plan prepended. `list`: stopped tasks and their plans. " +
+      "You may signal tasks you dispatched, or any task when signals.allowAgents names you. Never your own task. " +
+      "Set `node` to signal a task on another mesh node.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["stop", "resume", "list"], description: "stop a running task, resume a stopped one, or list stopped tasks." },
+        taskId: { type: "string", description: "stop: the running task id (from agentx_agents or the live page)." },
+        agentId: { type: "string", description: "stop: with channel and chatId, the agent whose only task on that chat to stop." },
+        channel: { type: "string", description: "stop: the task's channel." },
+        chatId: { type: "string", description: "stop: the task's chat id." },
+        id: { type: "string", description: "resume: the stopped task's id (from list)." },
+        reason: { type: "string", description: "Why: shown to the agent, in the plan and on the live page." },
+        node: { type: "string", description: "A mesh node's name, when the task runs there." },
+      },
+      required: ["action"],
+    },
+  },
+  {
     name: "agentx_send_contact",
     description:
       "Send a message to a HUMAN CONTACT by name. Resolves through .agentx/contacts.json (id → exact alias → fuzzy substring). Refuses fuzzy matches without confirmed:true so the agent must ask the user to disambiguate before sending. Refuses when the name also matches a registered agent (use agentx_send_agent for those). Use this when the target is a person, not a bot.",
@@ -1592,6 +1615,56 @@ async function handleToolCall(
       }
       const { formatEventLine } = await import("@/events/subscriptions")
       return { content: [{ type: "text", text: renderEventsAnswer(agentId, data, formatEventLine) }] }
+    }
+
+    case "agentx_signal": {
+      const action = String(args.action ?? "")
+      const self = process.env.AGENTX_AGENT_ID
+      const proof = callerHeaders()
+      // An agent's own run proves who it is; one that cannot is refused
+      // rather than taken for the owner.
+      if (self && Object.keys(proof).length === 0) {
+        return { content: [{ type: "text", text: "Signal not sent: this run cannot prove which task it is (no AGENTX_TASK_ID or AGENTX_CHANNEL/AGENTX_CHAT_ID)." }] }
+      }
+      const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined)
+      if (action === "list") {
+        const qs = new URLSearchParams({ limit: "20" })
+        const node = str(args.node)
+        if (node) qs.set("node", node)
+        const res = await daemonFetch(`${daemonUrl()}/api/signals/stopped?${qs}`, { headers: proof, signal: AbortSignal.timeout(20_000) })
+        const data = await res.json().catch(() => ({})) as any
+        if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
+        const tasks: any[] = data.tasks || []
+        if (!tasks.length) return { content: [{ type: "text", text: "No stopped tasks." }] }
+        const lines = tasks.map((t) => [
+          `- ${t.id} ${t.agentId} on ${t.channel} — ${t.state}, stopped by ${t.stoppedBy} at ${t.stoppedAt}${t.reason ? ` (${t.reason})` : ""}`,
+          `  Request: ${t.request}`,
+          t.plan ? `  Plan (${t.plan.author}):\n${String(t.plan.text).split("\n").map((l: string) => `    ${l}`).join("\n")}` : "  Plan: not written yet",
+        ].join("\n"))
+        return { content: [{ type: "text", text: lines.join("\n") }] }
+      }
+      if (action !== "stop" && action !== "resume") {
+        return { content: [{ type: "text", text: "Error: action must be stop, resume or list." }] }
+      }
+      const body = action === "stop"
+        ? { taskId: str(args.taskId), agentId: str(args.agentId), channel: str(args.channel), chatId: str(args.chatId), reason: str(args.reason), node: str(args.node), from: self }
+        : { id: str(args.id), reason: str(args.reason), node: str(args.node), from: self }
+      const res = await daemonFetch(`${daemonUrl()}/api/signals/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...proof },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Signal not sent: ${data.error || `HTTP ${res.status}`}` }] }
+      return {
+        content: [{
+          type: "text",
+          text: action === "stop"
+            ? `Stopped task ${data.id} of ${data.agentId}. It is writing its resume plan; resume it with agentx_signal action=resume id=${data.id}.`
+            : `Resumed task ${data.id} of ${data.agentId}. Its answer goes to ${data.delivery ?? "the chat it came from"}.`,
+        }],
+      }
     }
 
     case "agentx_crons": {

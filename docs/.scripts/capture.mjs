@@ -82,6 +82,9 @@ const shots = [
   { name: "live/running-build", path: "/live", wait: ".ax-build", clipTo: ".ax-topbar__right" },
   // Last: the scripted reply takes a minute, so later shots would show it running.
   { name: "live/running-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--update" }] },
+  // The same scripted task, still running: its pause button, then paused.
+  { name: "live/pause-task", path: "/live", wait: ".ax-task-action--pause", clipTo: ".ax-agent:has(.ax-task-action--pause)" },
+  { name: "live/stopped-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped details" }, { click: ".ax-node__stopped details summary" }], clipTo: ".ax-node__stopped" },
   // Every task in a workflow (#858): switched on through the card itself,
   // then a task on the Live tab shows its run's step; switched off again.
   { name: "workflows/required-settings", path: "/workflows", wait: "#wf-required", steps: [{ click: "#wf-required > summary" }, { wait: "#wf-required-agents select" }, { click: "#wf-required-enabled" }, { waitText: ["#wf-required-note", "Saved"] }, { click: ".ax-wf__req-agents > summary" }], clipTo: ".ax-wf__required" },
@@ -175,6 +178,14 @@ try {
       if (step.select) await evaluate(`(() => { const e = document.querySelector(${JSON.stringify(step.select)}); e.value = ${JSON.stringify(step.value)}; e.dispatchEvent(new Event('change', { bubbles: true })) })()`)
       // Start a real scripted task on the demo daemon without waiting for it.
       if (step.task) fetch("http://127.0.0.1:18921/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.task) }).catch(() => {})
+      // Pause the agent's running task with a stop signal (#857).
+      if (step.pause) {
+        const agents = await (await fetch("http://127.0.0.1:18921/agents")).json()
+        const run = agents.find(a => a.id === step.pause)?.runningTasks?.[0]
+        if (!run) throw new Error(`No running task on ${step.pause}`)
+        const r = await fetch("http://127.0.0.1:18921/api/signals/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taskId: run.id, reason: "deploy at 15:00" }) })
+        if (!r.ok) throw new Error(`Pause failed: ${r.status} ${await r.text()}`)
+      }
       if (step.scroll) await evaluate(`window.scrollTo(0, document.querySelector(${JSON.stringify(step.scroll)}).getBoundingClientRect().top + window.scrollY - 110)`)
       await sleep(300)
     }

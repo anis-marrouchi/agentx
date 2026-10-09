@@ -89,6 +89,14 @@ const LIVE_PAGE_CSS = `
 .ax-node__session { display: inline-flex; gap: 6px; align-items: center; padding: 2px 8px; border: 1px solid var(--ax-line, currentColor); border-radius: 999px; color: var(--ax-text-2, inherit); }
 .ax-node__session.is-bound { color: var(--ax-text, inherit); border-color: var(--ax-accent, currentColor); }
 .ax-node__session.is-waiting { border-style: dashed; }
+.ax-node__stopped { padding: 10px 16px 0; font-size: 12px; color: var(--ax-muted); }
+.ax-node__stopped ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.ax-node__stopped-item { border: 1px solid var(--ax-border); border-radius: 6px; padding: 6px 10px; color: var(--ax-text-2, inherit); }
+.ax-node__stopped-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.ax-node__stopped-head .ax-task-action { margin-left: auto; }
+.ax-node__stopped-ask { margin-top: 2px; overflow-wrap: anywhere; }
+.ax-node__stopped summary { cursor: pointer; margin-top: 4px; }
+.ax-node__stopped-plan { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--ax-mono); font-size: 11px; margin: 4px 0 0; max-height: 240px; overflow: auto; }
 .ax-node__tag {
   font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px;
   padding: 2px 7px; border-radius: 3px; border: 1px solid var(--ax-border-2);
@@ -444,7 +452,7 @@ function renderNode(node) {
   sec.innerHTML = '<header>' +
     '<span class="ax-node__name">' + escapeHtml(node.name) + '</span>' +
     '<span class="ax-node__url">' + escapeHtml(node.url) + '</span>' +
-    tag + (node.stale ? '' : restartHtml(node)) + '</header>' + sessionsHtml(node) + '<div class="ax-grid--agents"></div>';
+    tag + (node.stale ? '' : restartHtml(node)) + '</header>' + sessionsHtml(node) + stoppedHtml(node) + '<div class="ax-grid--agents"></div>';
   const g = sec.querySelector('.ax-grid--agents');
   if (!node.reachable || node.agents.length === 0) {
     const empty = document.createElement('div');
@@ -472,6 +480,44 @@ function sessionsHtml(node) {
       '<b>' + escapeHtml(r.project || r.session) + '</b> ' + escapeHtml(who) + ' · ' + escapeHtml(when) + '</span>';
   }).join('');
   return '<div class="ax-node__sessions" aria-label="Claude Code sessions"><span>Claude Code sessions</span>' + chips + '</div>';
+}
+
+// #857 — tasks a stop signal paused on this node, each with the resume plan
+// it left (folded) and a Resume button. Hidden when there are none.
+function stoppedHtml(node) {
+  const rows = node.stoppedTasks || [];
+  if (!rows.length) return '';
+  const url = escapeHtml(node.url);
+  const items = rows.map(t => {
+    const by = t.plan ? (t.plan.author === 'agent' ? 'plan by the agent' : 'plan by AgentX (' + (t.plan.note || 'no answer') + ')') : 'writing its plan…';
+    const resume = t.state === 'stopped' && t.resumable
+      ? '<button type="button" class="ax-task-action" data-action="signal-resume" data-stopped-id="' + escapeHtml(t.id) + '" data-node-url="' + url + '" title="Resume this task from its plan, in the same chat">▶ resume</button>'
+      : '';
+    return '<li class="ax-node__stopped-item">' +
+      '<div class="ax-node__stopped-head"><b>' + escapeHtml(t.agentId) + '</b> · ' + escapeHtml(t.channel) +
+        ' · stopped by ' + escapeHtml(t.stoppedBy) + ' · ' + escapeHtml(fmtAgo(t.stoppedAt)) +
+        (t.reason ? ' · ' + escapeHtml(t.reason) : '') + resume + '</div>' +
+      '<div class="ax-node__stopped-ask">' + escapeHtml(t.request) + '</div>' +
+      (t.plan ? '<details><summary>' + escapeHtml(by) + '</summary><pre class="ax-node__stopped-plan">' + escapeHtml(t.plan.text) + '</pre></details>'
+        : '<div class="ax-node__stopped-ask">' + escapeHtml(by) + '</div>') +
+    '</li>';
+  }).join('');
+  return '<div class="ax-node__stopped" aria-label="Stopped tasks"><span>Stopped tasks · ' + rows.length + '</span><ul>' + items + '</ul></div>';
+}
+
+function signalPost(el, path, nodeUrl, body, done) {
+  el.disabled = true;
+  fetch(path + '?node=' + encodeURIComponent(nodeUrl), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'agentx-board' },
+    body: JSON.stringify(body),
+  })
+    .then(async function (r) {
+      const res = await r.json().catch(function () { return {}; });
+      if (!r.ok) throw new Error(res.error || ('HTTP ' + r.status));
+      el.textContent = done;
+    })
+    .catch(function (err) { el.disabled = false; alert('Failed: ' + (err && err.message || err)); });
 }
 
 // "Restart when idle": the node restarts itself once no task is running.
@@ -573,6 +619,7 @@ function renderAgent(a, node) {
     const actions = t.id
       ? '<div class="ax-agent__task-actions">' +
           '<button type="button" class="ax-task-action ax-task-action--update" data-action="followup" data-task-id="' + escapeHtml(t.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" title="Add a message to this chat — the current turn keeps running, your message dispatches as the next turn">✎ update</button>' +
+          '<button type="button" class="ax-task-action ax-task-action--pause" data-action="signal-stop" data-task-id="' + escapeHtml(t.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" title="Stop this task and keep a resume plan, so it can be resumed later">❚❚ pause</button>' +
           '<button type="button" class="ax-task-action ax-task-action--stop" data-action="cancel" data-task-id="' + escapeHtml(t.id) + '" data-node-url="' + escapeHtml(nodeUrl) + '" title="Stop this running task">✕ stop</button>' +
         '</div>'
       : '';
@@ -785,6 +832,16 @@ document.getElementById('grid').addEventListener('click', (e) => {
     const nodeUrl = actionEl.dataset.nodeUrl || '';
     if (action === 'node-restart' || action === 'node-restart-cancel') {
       nodeRestart(actionEl, action === 'node-restart-cancel');
+      return;
+    }
+    if (action === 'signal-stop') {
+      const reason = prompt('Pause this task? The agent writes a resume plan, and you can resume it later.\\nReason (optional):', '');
+      if (reason === null) return;
+      signalPost(actionEl, '/api/signals/stop', nodeUrl, { taskId: taskId, reason: reason || undefined }, 'pausing…');
+      return;
+    }
+    if (action === 'signal-resume') {
+      signalPost(actionEl, '/api/signals/resume', nodeUrl, { id: actionEl.dataset.stoppedId }, 'resumed');
       return;
     }
     if (action === 'voice-stop') {

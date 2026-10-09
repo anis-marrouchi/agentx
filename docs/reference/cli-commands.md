@@ -2997,6 +2997,51 @@ Force-kill one persistent process (the next dispatch will spawn fresh).
 | `--token <token>` | — | Bearer token (defaults to dashboard.token). |
 | `-r, --reason <reason>` | `operator-cli` | Kill reason (recorded on the dead-process snapshot). |
 
+## signal (advanced)
+
+`agentx signal`: Pause a running agent task with a resume plan, and resume it later. **Advanced.** See [Pause a task and resume it later](/jobs/pause-and-resume).
+
+Every subcommand takes these flags:
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Daemon config file. |
+| `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
+| `--token <token>` | — | Bearer token (defaults to dashboard.token). |
+| `--peer <name>` | — | Send to this mesh machine instead. |
+
+### `agentx signal stop [taskId]`
+
+Stop a running task; the agent writes a resume plan.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | With `--channel` and `--chat`: the agent's only task on that chat. |
+| `--channel <channel>` | — | The task's channel. |
+| `--chat <chatId>` | — | The task's chat id. |
+| `-r, --reason <reason>` | — | Why: shown to the agent and on the Live page. |
+
+### `agentx signal list`
+
+Stopped tasks and their resume plans.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--all` | — | Include tasks already resumed. |
+| `--agent <id>` | — | Only this agent's. |
+
+### `agentx signal show <id>`
+
+One stopped task with its whole resume plan.
+
+### `agentx signal resume <id>`
+
+Resume a stopped task from its plan, in the same chat.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-r, --reason <reason>` | — | Why: recorded on the resume event. |
+
 ## watch (advanced)
 
 `agentx watch`: Stream live daemon events — workflow runs, user tasks, signals, mesh health. **Advanced.**
