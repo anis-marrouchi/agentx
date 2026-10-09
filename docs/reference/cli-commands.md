@@ -1642,6 +1642,7 @@ Answer a question from the wiki. Once page summaries exist (`agentx wiki summari
 | `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`), else the first one with a catalog | Which agent's wiki to search first. |
 | `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
 | `--no-live` | — | Skip the live read of the summaries method. |
+| `--no-notes` | — | Leave the agent's own notes out when `wiki.query.notes.enabled` is on. |
 | `--selector-model <m>` | `haiku` | Model that picks the pages. Overrides `wiki.query.navigatorModel`. |
 | `--synth-model <m>` | `sonnet` | Model that writes the answer. Overrides `wiki.query.answerModel`. |
 | `--max-candidates <n>` | `3` | Candidates from selector (catalog method). |
@@ -1651,7 +1652,7 @@ Answer a question from the wiki. Once page summaries exist (`agentx wiki summari
 | `--trace` | — | Print the method, the live reads asked and answered, and the time of each step. |
 | `--own-only` | — | Search only the agent's own articles, not the shared wiki. |
 
-Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query. The half-of-`--max-articles` rule and the linking pages belong to the catalog method; the summaries method shows the picking model `wiki.query.sharedCandidates` of other agents' pages beside the agent's own.
+Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query. The half-of-`--max-articles` rule and the linking pages belong to the catalog method; the summaries method shows the picking model `wiki.query.sharedCandidates` of other agents' pages beside the agent's own. With `wiki.query.notes.enabled`, the summaries method also searches the agent's own notes; a note it used is cited with the type `note` and a `note:` path. See [Search the agent's own notes](/jobs/wiki-live-answers#search-the-agent-s-own-notes).
 
 ### `agentx wiki summarize`
 
@@ -1683,6 +1684,7 @@ Score the wiki's answers to a question set, or compare two saved scores. A quest
 | `--compare <files...>` | — | Compare two saved reports: `before.json after.json`. |
 | `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
 | `--no-live` | — | Skip the live read of the summaries method. |
+| `--no-notes` | — | Leave the agent's own notes out, to measure what they add. |
 | `--selector-model <m>` | `haiku` | Candidate-selection model. |
 | `--synth-model <m>` | `sonnet` | Synthesis model. |
 | `--json` | — | Print the report as JSON. |

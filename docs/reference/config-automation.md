@@ -359,6 +359,9 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `query.pageChars` | number (200–40000) | `4000` | Characters of each opened page given to the answer. |
 | `query.navigatorModel` | string | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |
+| `query.notes.enabled` | boolean | `false` | The summaries method also searches the asking agent's own notes. Only that agent's notes, never another agent's. See [Search the agent's own notes](/jobs/wiki-live-answers#search-the-agent-s-own-notes). |
+| `query.notes.types` | list of strings | `["project", "reference"]` | Note types searched. |
+| `query.notes.candidates` | number (1–50) | `4` | How many of the agent's notes the picking model sees beside its pages. |
 | `query.live.enabled` | boolean | `true` | The live read before the answer. `false` switches it off. |
 | `query.live.maxReads` | number (0–20) | `6` | Most reads for one question. |
 | `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one read may take, in milliseconds. |

@@ -98,9 +98,9 @@ async function sharedQueryOn(): Promise<boolean> {
   return sharedQueryEnabled()
 }
 
-/** `wiki.query` settings with the `--method` and `--no-live` flags
- *  applied; null, with a message, when `--method` names no method. */
-async function querySettingsFor(opts: { method?: string; live?: boolean }): Promise<WikiQuerySettings | null> {
+/** `wiki.query` settings with the `--method`, `--no-live` and `--no-notes`
+ *  flags applied; null, with a message, when `--method` names no method. */
+async function querySettingsFor(opts: { method?: string; live?: boolean; notes?: boolean }): Promise<WikiQuerySettings | null> {
   const { loadQuerySettings } = await import("@/wiki/query-settings")
   const settings = await loadQuerySettings()
   if (opts.method && !["auto", "summaries", "catalog"].includes(opts.method)) {
@@ -109,7 +109,8 @@ async function querySettingsFor(opts: { method?: string; live?: boolean }): Prom
     return null
   }
   const live = { ...settings.summaries.live, enabled: settings.summaries.live.enabled && opts.live !== false }
-  return { ...settings, method: (opts.method as WikiQuerySettings["method"]) ?? settings.method, summaries: { ...settings.summaries, live } }
+  const notes = { ...settings.notes, enabled: settings.notes.enabled && opts.notes !== false }
+  return { ...settings, method: (opts.method as WikiQuerySettings["method"]) ?? settings.method, summaries: { ...settings.summaries, live }, notes }
 }
 
 /** The wiki root, resolved the same way everywhere that needs it. */
@@ -3164,6 +3165,7 @@ wiki
   .option("--agent <id>", "which agent's wiki to search first (default: the calling agent, else the first one with a catalog)")
   .option("--method <m>", "how pages are picked: auto, summaries or catalog (default: wiki.query.method)")
   .option("--no-live", "skip the live read of the summaries method")
+  .option("--no-notes", "leave the agent's own notes out (wiki.query.notes)")
   .option("--selector-model <m>", "candidate-selection model (default haiku)")
   .option("--synth-model <m>", "synthesis model (default sonnet)")
   .option("--max-candidates <n>", "candidates from selector (catalog method)", "3")
@@ -3174,6 +3176,7 @@ wiki
   .option("--own-only", "search only the agent's own articles, not the shared wiki")
   .action(async (question, opts) => {
     const { agenticQuery } = await import("@/wiki/query")
+    const { noteSourceFor } = await import("@/wiki/query-settings")
     const settings = await querySettingsFor(opts)
     if (!settings) return
     const hub = getHub(opts.dir)
@@ -3205,6 +3208,7 @@ wiki
       shared: opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(chosen),
       method: settings.method,
       summaries: settings.summaries,
+      notes: noteSourceFor(settings, chosen),
     })
 
     if (opts.json) {
@@ -3266,6 +3270,7 @@ wiki
   .option("--compare <files...>", "compare two saved reports (before after) instead of running")
   .option("--method <m>", "how pages are picked: auto, summaries or catalog (default: wiki.query.method)")
   .option("--no-live", "skip the live read of the summaries method")
+  .option("--no-notes", "leave the agent's own notes out (wiki.query.notes)")
   .option("--selector-model <m>", "candidate-selection model (default haiku)")
   .option("--synth-model <m>", "synthesis model (default sonnet)")
   .option("--json", "print the report as JSON")
@@ -3308,6 +3313,7 @@ wiki
     }
     const questions = parseQuestionSet(readFileSync(resolve(opts.questions), "utf-8"))
     const { agenticQuery } = await import("@/wiki/query")
+    const { noteSourceFor } = await import("@/wiki/query-settings")
     const settings = await querySettingsFor(opts)
     if (!settings) return
     const hub = getHub(opts.dir)
@@ -3320,6 +3326,7 @@ wiki
         shared: shared ? hub.sharedScope(agent) : undefined,
         method: settings.method,
         summaries: settings.summaries,
+        notes: noteSourceFor(settings, agent),
       })
       answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path) })
       if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status}\n`))

@@ -3,8 +3,11 @@
 // setting reaches both.
 
 import { readFileSync } from "fs"
+import { resolve } from "path"
+import { AgentMemory } from "@/agents/agent-memory"
 import type { DaemonConfig } from "@/daemon/config"
 import type { LiveRepo, LiveSource } from "./live-read"
+import type { NoteSource } from "./query-notes"
 import { DEFAULT_SUMMARIES_QUERY, type SummariesQuerySettings } from "./query-summaries"
 
 export type QueryMethod = "auto" | "summaries" | "catalog"
@@ -14,9 +17,31 @@ export interface WikiQuerySettings {
   shared: boolean
   method: QueryMethod
   summaries: SummariesQuerySettings
+  /** The asking agent's own notes in the pool (#862). */
+  notes: {
+    enabled: boolean
+    types: string[]
+    /** `agents.<id>.wiki.notes.dir` of each agent that sets one. */
+    dirs: Record<string, string>
+  }
 }
 
-export const DEFAULT_QUERY_SETTINGS: WikiQuerySettings = { shared: true, method: "auto", summaries: DEFAULT_SUMMARIES_QUERY }
+export const DEFAULT_QUERY_SETTINGS: WikiQuerySettings = {
+  shared: true, method: "auto", summaries: DEFAULT_SUMMARIES_QUERY,
+  notes: { enabled: false, types: ["project", "reference"], dirs: {} },
+}
+
+/** The notes `agentId`'s queries search, or undefined when notes are off.
+ *  Its configured folder, else its folder in the AgentX note store. */
+export function noteSourceFor(settings: WikiQuerySettings, agentId: string, cwd = process.cwd()): NoteSource | undefined {
+  if (!settings.notes.enabled || !agentId) return undefined
+  const dir = settings.notes.dirs[agentId]
+  return {
+    owner: agentId,
+    dir: dir ? resolve(cwd, dir) : new AgentMemory({ baseDir: resolve(cwd, ".agentx") }).dirOf(agentId),
+    types: settings.notes.types,
+  }
+}
 
 type Env = Record<string, string | undefined>
 
@@ -78,6 +103,7 @@ export function resolveQuerySettings(config: DaemonConfig, env: Env = process.en
     summaries: {
       candidates: q.candidates,
       sharedCandidates: q.sharedCandidates,
+      noteCandidates: q.notes.candidates,
       maxPages: q.maxPages,
       pageChars: q.pageChars,
       navigatorModel: q.navigatorModel,
@@ -89,6 +115,11 @@ export function resolveQuerySettings(config: DaemonConfig, env: Env = process.en
         plannerModel: q.live.plannerModel,
         sources: resolveLiveSources(config, env),
       },
+    },
+    notes: {
+      enabled: q.notes.enabled,
+      types: q.notes.types,
+      dirs: Object.fromEntries(Object.entries(config.agents).flatMap(([id, a]) => (a.wiki?.notes?.dir ? [[id, a.wiki.notes.dir]] : []))),
     },
   }
 }

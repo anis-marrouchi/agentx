@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 
 import { WikiHub } from "../../src/wiki/hub"
 import { agenticQuery } from "../../src/wiki/query"
 import { DEFAULT_SUMMARIES_QUERY, parseNavigatorReply, rankBySummary, type SummariesQuerySettings } from "../../src/wiki/query-summaries"
-import { resolveLiveSources, resolveQuerySettings } from "../../src/wiki/query-settings"
+import { noteSourceFor, resolveLiveSources, resolveQuerySettings } from "../../src/wiki/query-settings"
 import { buildPlanPrompt, runLiveReads, validateReads, type FetchLike, type LiveSettings } from "../../src/wiki/live-read"
 import { loadSummaries, parseSummaryReply, summariesPath, summarizeStore } from "../../src/wiki/summaries"
 import { WIKI_SUMMARIZE_JOB, daemonConfigSchema, withSummariesJob } from "../../src/daemon/config"
@@ -343,6 +343,91 @@ describe("wiki query by summaries", () => {
     const result = await agenticQuery("Is the widget cutover done?", hub.getAgentWiki("a"), "a", { method: "auto", summaries: settings(), call: model.call, timeoutMs: 1, log: () => {} })
     expect(result.method).toBeUndefined()
     expect(model.prompts).toEqual([])
+  })
+})
+
+describe("wiki query with the agent's notes (#862)", () => {
+  let notesDir: string
+
+  function note(file: string, fields: Record<string, string>, body: string): void {
+    const head = Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join("\n")
+    writeFileSync(join(notesDir, file), `---\n${head}\n---\n${body}\n`)
+  }
+
+  beforeEach(async () => {
+    notesDir = join(dir, "notes-a")
+    mkdirSync(notesDir, { recursive: true })
+    page("a", "projects/widgets.md", "Widgets", "Widget cutover tracked in #12.")
+    await summarizeStore(hub.getAgentWiki("a"), { call: summariser })
+    note("project_gadget-port.md", { name: "gadget-port", description: "Gadget service listens on port 7420 since the move", type: "project", source: "gadget deploy file", checked: "2026-10-02" }, "The gadget service listens on port 7420 since the move to the new host.")
+    note("feedback_tone.md", { name: "tone", description: "Gadget replies stay short", type: "feedback", source: "owner", checked: "2026-10-01" }, "Keep gadget replies short.")
+    note("reference_gadget-key.md", { name: "gadget-key", description: "Gadget admin key", type: "reference" }, "api_key=abcd1234efgh5678 for the gadget admin.")
+  })
+
+  const notes = (owner = "a") => ({ owner, dir: notesDir, types: ["project", "reference"] })
+
+  it("picks and cites a fact held only in one of the agent's notes", async () => {
+    const model = queryModel({ open: ["gadget-port"], answer: "Port 7420 [gadget-port]." })
+    const result = await agenticQuery("Which port does the gadget service listen on?", hub.getAgentWiki("a"), "a", {
+      method: "auto", summaries: settings({ enabled: false }), call: model.call, notes: notes(),
+    })
+    expect(result).toMatchObject({ status: "ok", method: "summaries", answer: "Port 7420 [gadget-port]." })
+    expect(result.citations).toEqual([{ title: "gadget-port", path: "note:project_gadget-port.md", type: "note" }])
+    const [navigator, answer] = model.prompts
+    expect(navigator.prompt).toContain("[note, checked 2026-10-02] gadget-port — Gadget service listens on port 7420 since the move")
+    expect(answer.prompt).toContain("### gadget-port (note, checked 2026-10-02)")
+    expect(answer.prompt).toContain("Source: gadget deploy file")
+    expect(answer.prompt).toContain("listens on port 7420")
+    expect(answer.prompt).toContain("one of the agent's own notes")
+  })
+
+  it("never offers another agent's notes, a note of a type left out, or a note holding a secret", async () => {
+    page("b", "projects/gadgets.md", "Gadgets", "Gadget work.")
+    await summarizeStore(hub.getAgentWiki("b"), { call: summariser })
+    const asB = queryModel({ open: ["gadget-port"] })
+    await agenticQuery("Which port does the gadget service listen on?", hub.getAgentWiki("b"), "b", {
+      method: "summaries", summaries: settings({ enabled: false }), call: asB.call, notes: notes("a"),
+    })
+    expect(asB.prompts.map((p) => p.prompt).join("\n")).not.toContain("7420")
+
+    const asA = queryModel({ open: ["gadget-port"] })
+    await agenticQuery("gadget port, gadget replies and the gadget admin key", hub.getAgentWiki("a"), "a", {
+      method: "summaries", summaries: settings({ enabled: false }), call: asA.call, notes: notes(),
+    })
+    const all = asA.prompts.map((p) => p.prompt).join("\n")
+    expect(all).toContain("7420")
+    expect(all).not.toContain("short")
+    expect(all).not.toContain("abcd1234")
+    expect(all).not.toContain("Gadget admin key")
+  })
+
+  it("marks a note without a check date, and leaves the pool unchanged without notes", async () => {
+    note("project_gadget-owner.md", { name: "gadget-owner", description: "Gadget service is run by the platform team", type: "project" }, "The platform team runs the gadget service.")
+    const model = queryModel({ open: ["gadget-owner"] })
+    await agenticQuery("Who runs the gadget service?", hub.getAgentWiki("a"), "a", { method: "summaries", summaries: settings({ enabled: false }), call: model.call, notes: notes() })
+    expect(model.prompts[0].prompt).toContain("[note, not checked] gadget-owner")
+    expect(model.prompts[1].prompt).toContain("Checked: not recorded")
+
+    const without = queryModel({ open: ["gadget-owner"] })
+    const result = await agenticQuery("Who runs the gadget service?", hub.getAgentWiki("a"), "a", { method: "summaries", summaries: settings({ enabled: false }), call: without.call })
+    expect(result.status).toBe("no-candidates")
+  })
+
+  it("is off by default; on, it reads the agent's folder or the AgentX note store", () => {
+    const parse = (extra: Record<string, unknown>) =>
+      daemonConfigSchema.parse({ node: { id: "n", name: "n", bind: "0.0.0.0:18800" }, ...extra })
+    const off = resolveQuerySettings(parse({}), {})
+    expect(off.notes).toEqual({ enabled: false, types: ["project", "reference"], dirs: {} })
+    expect(off.summaries.noteCandidates).toBe(4)
+    expect(noteSourceFor(off, "a", "/work")).toBeUndefined()
+
+    const on = resolveQuerySettings(parse({
+      wiki: { query: { notes: { enabled: true, candidates: 6 } } },
+      agents: { a: { name: "A", workspace: "/w/a", wiki: { notes: { dir: "notes/a" } } }, b: { name: "B", workspace: "/w/b" } },
+    }), {})
+    expect(on.summaries.noteCandidates).toBe(6)
+    expect(noteSourceFor(on, "a", "/work")).toEqual({ owner: "a", dir: "/work/notes/a", types: ["project", "reference"] })
+    expect(noteSourceFor(on, "b", "/work")).toEqual({ owner: "b", dir: "/work/.agentx/agent-memory/b", types: ["project", "reference"] })
   })
 })
 
