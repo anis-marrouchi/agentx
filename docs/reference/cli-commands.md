@@ -1709,7 +1709,7 @@ Write the one-line page summaries `agentx wiki query` picks pages from. Only pag
 
 ### `agentx wiki score`
 
-Score the wiki's answers to a question set, or compare two saved scores. A question file is a JSON array or one JSON object per line: `{"id": "q1", "question": "…", "expect": ["fact", "…"]}`. Each answer scores the share of its expected facts it contains (case and spacing ignored; a fact of five or more digits also matches on its digits; `"a|b"` accepts either spelling). See [Measure the difference](/jobs/wiki-contributions#measure-the-difference).
+Score the wiki's answers to a question set, or compare two saved scores. A question file is a JSON array or one JSON object per line: `{"id": "q1", "question": "…", "expect": ["fact", "…"]}`. Each answer scores the share of its expected facts it contains (case and spacing ignored; a fact of five or more digits also matches on its digits; `"a|b"` accepts either spelling). A report also records the settings of the run, and how long each question took and what it cost (cost for the summaries method only). `--compare` prints the time and cost per question of both runs and the settings that differ, and warns when more than one setting differs or the question sets differ. See [Measure the difference](/jobs/wiki-contributions#measure-the-difference).
 
 | Flag | Default | What it does |
 |---|---|---|

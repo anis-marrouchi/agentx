@@ -11,7 +11,28 @@ export type ModelCall = (prompt: string, model: string, timeoutMs: number) => Pr
  * nothing to run, write or send with. No shell either: the prompt goes
  * in on stdin.
  */
-export const claudeModelCall: ModelCall = async (prompt, model, timeoutMs) => {
+export const claudeModelCall: ModelCall = async (prompt, model, timeoutMs) => (await claudeCall(prompt, model, timeoutMs)).text
+
+/** What the calls of a metered ModelCall spent. */
+export interface ModelSpend {
+  calls: number
+  usd: number
+  /** Calls whose reply named no cost: `usd` then counts low. */
+  unpriced: number
+}
+
+/** claudeModelCall, adding each call's reported cost to `spend`. */
+export function meteredModelCall(spend: ModelSpend): ModelCall {
+  return async (prompt, model, timeoutMs) => {
+    spend.calls++
+    const { text, costUsd } = await claudeCall(prompt, model, timeoutMs)
+    if (costUsd === undefined) spend.unpriced++
+    else spend.usd += costUsd
+    return text
+  }
+}
+
+async function claudeCall(prompt: string, model: string, timeoutMs: number): Promise<{ text: string; costUsd?: number }> {
   const args = ["-p", "-", "--output-format", "json", "--max-turns", "1", "--model", model,
     "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
     "--settings", '{"disableAllHooks":true}', "--setting-sources", "", "--no-session-persistence"]
@@ -31,11 +52,12 @@ export const claudeModelCall: ModelCall = async (prompt, model, timeoutMs) => {
     child.stdin.end(prompt)
   })
   try {
-    const envelope = JSON.parse(out) as { result?: string; is_error?: boolean }
+    const envelope = JSON.parse(out) as { result?: string; is_error?: boolean; total_cost_usd?: unknown }
     if (envelope.is_error) throw new Error(`model error: ${String(envelope.result).slice(0, 200)}`)
-    return String(envelope.result ?? "")
+    const cost = envelope.total_cost_usd
+    return { text: String(envelope.result ?? ""), costUsd: typeof cost === "number" && Number.isFinite(cost) ? cost : undefined }
   } catch (err) {
-    if (err instanceof SyntaxError) return out
+    if (err instanceof SyntaxError) return { text: out }
     throw err
   }
 }

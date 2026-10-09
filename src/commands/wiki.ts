@@ -3332,8 +3332,12 @@ wiki
   .option("--synth-model <m>", "synthesis model (default sonnet)")
   .option("--json", "print the report as JSON")
   .action(async (opts) => {
-    const { parseQuestionSet, buildReport, compareReports } = await import("@/wiki/score")
+    const { parseQuestionSet, buildReport, compareReports, runCost } = await import("@/wiki/score")
     const pct = (n: number) => `${Math.round(n * 100)}%`
+    const secs = (ms?: number) => (ms === undefined ? "?" : `${(ms / 1000).toFixed(1)}s`)
+    const usd = (n?: number) => (n === undefined ? "?" : `$${n.toFixed(3)}`)
+    const costLine = (c: { meanMs?: number; meanCostUsd?: number; unpriced: number }) =>
+      `${secs(c.meanMs)} and ${usd(c.meanCostUsd)} per question${c.unpriced ? ` (${c.unpriced} without a cost)` : ""}`
 
     if (opts.compare) {
       if (opts.compare.length !== 2) {
@@ -3346,6 +3350,17 @@ wiki
       if (opts.json) { console.log(JSON.stringify(diff, null, 2)); return }
       console.log()
       console.log(chalk.bold(`  ${pct(diff.before)} → ${pct(diff.after)}`))
+      console.log(chalk.dim(`  before: ${costLine(diff.cost.before)}`))
+      console.log(chalk.dim(`  after:  ${costLine(diff.cost.after)}`))
+      if (diff.changed === "unknown") {
+        console.log(chalk.yellow("  ! A report records no settings, so what changed between the runs is unknown."))
+      } else {
+        console.log(chalk.dim(`  changed: ${diff.changed.join("; ") || "nothing"}`))
+        if (diff.changed.length > 1) console.log(chalk.yellow("  ! More than one setting changed: the difference can't be put down to one of them."))
+      }
+      if (diff.onlyBefore.length || diff.onlyAfter.length) {
+        console.log(chalk.yellow(`  ! The runs asked different questions. Only before: ${diff.onlyBefore.join(", ") || "none"}. Only after: ${diff.onlyAfter.join(", ") || "none"}.`))
+      }
       for (const d of diff.deltas) {
         if (d.before === d.after) continue
         const mark = d.after > d.before ? chalk.green("▲") : chalk.red("▼")
@@ -3371,12 +3386,17 @@ wiki
     const questions = parseQuestionSet(readFileSync(resolve(opts.questions), "utf-8"))
     const { agenticQuery } = await import("@/wiki/query")
     const { noteSourceFor } = await import("@/wiki/query-settings")
+    const { meteredModelCall } = await import("@/wiki/model-call")
     const settings = await querySettingsFor(opts)
     if (!settings) return
     const hub = getHub(opts.dir)
     const shared = !opts.ownOnly
     const answers = []
     for (const q of questions) {
+      // Each question gets its own meter. Only the summaries method's calls
+      // go through it; the catalog method's cost stays unknown.
+      const spend = { calls: 0, usd: 0, unpriced: 0 }
+      const started = Date.now()
       const r = await agenticQuery(q.question, hub.getAgentWiki(agent), agent, {
         selectorModel: opts.selectorModel,
         synthModel: opts.synthModel,
@@ -3384,15 +3404,30 @@ wiki
         method: settings.method,
         summaries: settings.summaries,
         notes: noteSourceFor(settings, agent),
+        call: meteredModelCall(spend),
       })
-      answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path) })
-      if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status}\n`))
+      const ms = Date.now() - started
+      const costUsd = r.method === "summaries" && spend.unpriced === 0 ? spend.usd : undefined
+      answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path), method: r.method ?? "catalog", ms, costUsd })
+      if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status} ${secs(ms)} ${usd(costUsd)}\n`))
     }
-    const report = buildReport({ questions: opts.questions, agent, shared }, answers)
+    const report = buildReport({
+      questions: opts.questions, agent, shared,
+      settings: {
+        method: settings.method,
+        linkedPages: settings.summaries.linkedPages,
+        linkedChars: settings.summaries.linkedChars,
+        live: settings.summaries.live.enabled,
+        notes: settings.notes.enabled,
+        navigatorModel: opts.selectorModel ?? settings.summaries.navigatorModel,
+        answerModel: opts.synthModel ?? settings.summaries.answerModel,
+      },
+    }, answers)
     if (opts.out) writeFileSync(resolve(opts.out), `${JSON.stringify(report, null, 2)}\n`)
     if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
     console.log()
     console.log(chalk.bold(`  ${agent}: ${pct(report.score)} · ${report.full}/${report.results.length} questions fully answered${shared ? "" : " (own articles only)"}`))
+    console.log(chalk.dim(`  ${costLine(runCost(report))}`))
     for (const r of report.results) {
       const mark = r.missing.length === 0 ? chalk.green("✓") : r.found.length ? chalk.yellow("~") : chalk.red("✗")
       console.log(`  ${mark} ${r.id} ${pct(r.score)}  ${chalk.dim(r.question.slice(0, 80))}`)

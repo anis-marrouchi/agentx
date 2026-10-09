@@ -332,6 +332,38 @@ describe("wiki score", () => {
     expect(diff.deltas.find((d) => d.id === "b")?.gained).toEqual(["paid"])
   })
 
+  it("records settings, time and cost per question, and names what changed between two runs", () => {
+    const qs = parseQuestionSet('{"id": "a", "question": "phone?", "expect": ["+1 555 0100"]}\n{"id": "b", "question": "status?", "expect": ["paid"]}')
+    const settings = { method: "summaries", linkedPages: 0, linkedChars: 6000, live: true, notes: true, navigatorModel: "haiku", answerModel: "sonnet" }
+    const before = buildReport({ questions: "q", agent: "x", shared: true, settings }, [
+      { q: qs[0], answer: "unknown", status: "ok", citations: [], method: "summaries", ms: 4000, costUsd: 0.02 },
+      { q: qs[1], answer: "paid", status: "ok", citations: [], method: "summaries", ms: 6000, costUsd: 0.04 },
+    ])
+    const after = buildReport({ questions: "q", agent: "x", shared: true, settings: { ...settings, linkedPages: 2 } }, [
+      { q: qs[0], answer: "+1 555 0100", status: "ok", citations: [], method: "summaries", ms: 5000, costUsd: 0.03 },
+      { q: qs[1], answer: "paid", status: "ok", citations: [], method: "catalog", ms: 7000 },
+    ])
+    expect(before.settings).toEqual(settings)
+    expect(after.results[1]).not.toHaveProperty("costUsd")
+
+    const diff = compareReports(before, after)
+    expect(diff.changed).toEqual(["linkedPages: 0 → 2"])
+    expect(diff.onlyBefore).toEqual([])
+    expect(diff.cost.before).toEqual({ meanMs: 5000, meanCostUsd: expect.closeTo(0.03), unpriced: 0 })
+    expect(diff.cost.after).toEqual({ meanMs: 6000, meanCostUsd: 0.03, unpriced: 1 })
+    expect(diff.deltas[0]).toMatchObject({ id: "a", before: 0, after: 1, ms: { before: 4000, after: 5000 }, costUsd: { before: 0.02, after: 0.03 } })
+
+    // Three settings at once, a different question set, a report with no settings.
+    const mixed = buildReport({ questions: "q", agent: "x", shared: true, settings: { ...settings, linkedPages: 2, live: false, notes: false } }, [
+      { q: { id: "c", question: "new?", expect: ["x"] }, answer: "x", status: "ok", citations: [] },
+    ])
+    const many = compareReports(before, mixed)
+    expect(many.changed).toHaveLength(3)
+    expect(many).toMatchObject({ onlyBefore: ["a", "b"], onlyAfter: ["c"] })
+    const { settings: _, ...old } = before
+    expect(compareReports(old, after).changed).toBe("unknown")
+  })
+
   it("accepts any one spelling of a fact written as a|b", () => {
     const { found, missing } = matchFacts("Due 31/03/2027, total 24 148,725 DT.", ["2027-03-31|31/03/2027", "24148.725|24 148,725", "paid|settled"])
     expect(found).toEqual(["2027-03-31|31/03/2027", "24148.725|24 148,725"])
