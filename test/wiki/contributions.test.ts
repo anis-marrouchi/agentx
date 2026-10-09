@@ -334,7 +334,7 @@ describe("wiki score", () => {
 
   it("records settings, time and cost per question, and names what changed between two runs", () => {
     const qs = parseQuestionSet('{"id": "a", "question": "phone?", "expect": ["+1 555 0100"]}\n{"id": "b", "question": "status?", "expect": ["paid"]}')
-    const settings = { method: "summaries", linkedPages: 0, linkedChars: 6000, live: true, notes: true, navigatorModel: "haiku", answerModel: "sonnet" }
+    const settings = { method: "summaries", linkedPages: 0, linkedChars: 6000, live: true, notes: true, navigatorModel: "haiku", answerModel: "sonnet", catalogSelectorModel: "haiku", catalogSynthModel: "sonnet" }
     const before = buildReport({ questions: "q", agent: "x", shared: true, settings }, [
       { q: qs[0], answer: "unknown", status: "ok", citations: [], method: "summaries", ms: 4000, costUsd: 0.02 },
       { q: qs[1], answer: "paid", status: "ok", citations: [], method: "summaries", ms: 6000, costUsd: 0.04 },

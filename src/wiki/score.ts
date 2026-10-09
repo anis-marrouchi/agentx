@@ -49,8 +49,14 @@ export interface ScoreSettings {
   linkedChars: number
   live: boolean
   notes: boolean
+  /** Models of the summaries method. */
   navigatorModel: string
   answerModel: string
+  /** Models of the catalog method. With `method: auto` each question's
+   *  `method` says which pair answered it. Unset in reports written before
+   *  they were recorded. */
+  catalogSelectorModel?: string
+  catalogSynthModel?: string
 }
 
 export interface ScoreReport {
