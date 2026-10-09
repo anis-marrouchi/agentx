@@ -102,7 +102,7 @@ export function registerWikiEvents(wiki: Command): void {
         return
       }
       const { hub, g } = await open(wikiDir(cmd.optsWithGlobals().dir))
-      const r = setEventLevel(hub, g, title, lv, today())
+      const r = setEventLevel(hub, g, title, lv)
       if (r.ok) console.log(chalk.green(`  ${r.title} is now ${lv}`) + chalk.dim(` (${r.page})`))
       else {
         console.error(chalk.red(`  not set: ${r.reason}`))

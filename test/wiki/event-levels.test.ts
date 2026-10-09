@@ -30,6 +30,14 @@ describe("importance rules", () => {
     expect(ruleLevel(rules, "Example Company signed the renewal", [])).toBeUndefined()
   })
 
+  it("leaves upkeep titles that also report damage to the model", () => {
+    expect(ruleLevel(rules, "Build Server restarted", [])).toBe("minor")
+    expect(ruleLevel(rules, "Production down after reboot", [])).toBeUndefined()
+    expect(ruleLevel(rules, "Health check failed on Build Server", [])).toBeUndefined()
+    expect(ruleLevel(rules, "Disk full, data lost", [])).toBeUndefined()
+    expect(ruleLevel([{ level: "minor", title: "restart", unless: "(" }], "restart", [])).toBeUndefined()
+  })
+
   it("matches on tags, and needs every condition of a rule", () => {
     const own = [{ level: "normal" as const, title: "invoice", tags: ["billing"] }, { level: "minor" as const, tags: ["noise"] }]
     expect(ruleLevel(own, "Invoice sent", ["Billing"])).toBe("normal")
@@ -43,6 +51,7 @@ describe("importance rules", () => {
     expect(errors).toMatch(/unknown level "huge"/)
     expect(errors).toMatch(/needs a title or tags/)
     expect(errors).toMatch(/bad title pattern/)
+    expect(checkOntology(mergeOntology(DEFAULT_ONTOLOGY, { importance: { rules: [{ level: "minor", title: "x", unless: "(" }] } })).join()).toMatch(/bad unless pattern/)
   })
 })
 
@@ -101,7 +110,7 @@ describe("wiki events run", () => {
     expect(event("Renewal signed").meta).toMatchObject({ importance: "normal", importanceProposed: "major" })
     expect(graph().entities.get("renewal-signed")?.importanceProposed).toBe("major")
 
-    expect(setEventLevel(hub, graph(), "Renewal signed", "major", "2026-03-02").ok).toBe(true)
+    expect(setEventLevel(hub, graph(), "Renewal signed", "major").ok).toBe(true)
     expect(event("Renewal signed").meta.importance).toBe("major")
     expect(event("Renewal signed").meta.importanceProposed).toBeUndefined()
 
@@ -150,8 +159,39 @@ describe("wiki events run", () => {
     expect(run.left).toBe(2)
   })
 
+  it("keeps the page's date and writes onto the text on disk, not the copy read at the start", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const path = "events/2026-02-12-weekly-call.md"
+    const call: EventsCall = async (p) => {
+      // Absorb edits the page while the run waits for the model.
+      store.writeArticle(path, { ...store.readArticle(path)!.meta, lastUpdated: "2026-02-20" }, "A call with [[Example Company]]. Next one in March.", "agent-a")
+      return reply({ "Renewal signed": { importance: "normal" }, "Weekly call": { importance: "minor", about: ["Example Company"] } })(p)
+    }
+    await runEvents(hub, graph(), call, opts)
+    const page = event("Weekly call")
+    expect(page.meta.importance).toBe("minor")
+    expect(page.meta.lastUpdated).toBe("2026-02-20")
+    expect(page.content).toContain("Next one in March.")
+    expect(event("Renewal signed").meta.lastUpdated).toBe("2026-01-02")
+
+    expect(setEventLevel(hub, graph(), "Weekly call", "normal").ok).toBe(true)
+    expect(event("Weekly call").meta.lastUpdated).toBe("2026-02-20")
+  })
+
+  it("leaves a level a person set while the run waited", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const path = "events/2026-02-10-renewal-signed.md"
+    const call: EventsCall = async (p) => {
+      store.writeArticle(path, { ...store.readArticle(path)!.meta, importance: "major" }, store.readArticle(path)!.content, "agent-a")
+      return reply({ "Renewal signed": { importance: "minor" }, "Weekly call": { importance: "minor" } })(p)
+    }
+    const run = await runEvents(hub, graph(), call, opts)
+    expect(event("Renewal signed").meta.importance).toBe("major")
+    expect(run.outcomes.find(o => o.title === "Renewal signed")?.dropped.join()).toMatch(/level was set on the page during the run/)
+  })
+
   it("refuses to set a level on a page that is not an event", () => {
-    const r = setEventLevel(hub, graph(), "Office Laptop", "major", "2026-03-02")
+    const r = setEventLevel(hub, graph(), "Office Laptop", "major")
     expect(r.ok).toBe(false)
     expect(r.reason).toMatch(/not an event/)
   })
