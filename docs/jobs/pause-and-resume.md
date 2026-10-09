@@ -85,6 +85,10 @@ A workflow can resume a task with the built-in action `signal.resume`. Give it t
 
 An agent can never pause its own task, and the plan-writing turn cannot send signals.
 
+A machine is recognised by its own token in `mesh.peers`. A request that carries the token every machine shares (`MESH_TOKEN`) is believed about which machine it comes from. If your machines are not all equally trusted, give each one its own token in `mesh.peers`.
+
+A step of a workflow run can't be paused: pausing it would fail the whole run, and a resume would run the step outside it. The pause is refused with a message saying so. Cancel or pause the workflow run instead.
+
 To let a coordinating agent pause any task on this machine:
 
 1. **Terminal:** run `agentx config set signals.allowAgents lead` (use your agent's id).
@@ -102,7 +106,7 @@ The settings live under `signals` in `agentx.json`. Change them with `agentx con
 | `signals.allowPeers` | `[]` | Mesh machines whose signals are accepted. |
 | `signals.maxPerRoot` | `6` | Most signals one request may carry in a day. |
 
-The last setting is a brake against loops. Everything that comes from one request (a chat message, a schedule, a webhook) shares one id, its *root*. A paused and resumed task keeps its root. When signals keep bouncing, for example one agent resumes what another keeps pausing, the seventh signal in a day is refused.
+The last setting is a brake against loops between agents. Everything that comes from one request (a chat message, a schedule, a webhook) shares one id, its *root*. A paused and resumed task keeps its root. When signals keep bouncing, for example one agent resumes what another keeps pausing, the seventh signal from agents or other machines in a day is refused. Your own pauses and resumes are never counted or refused.
 
 Each pause and resume is also published as an event of kind `signal` (`signal:stop`, `signal:stopped`, `signal:resume`, `signal:resume-failed`), so an agent can [follow events](/automations/event-subscriptions) about it.
 
@@ -120,6 +124,7 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 - **"mesh peer … is not in signals.allowPeers":** on the machine that runs the task, add the other machine's name to `signals.allowPeers`.
 - **"no running task matches":** the task finished before the signal arrived, or several tasks run on that chat. Use the task id.
 - **"still writing its resume plan":** wait for the plan (at most `signals.windDownSeconds`), then resume.
-- **"carried 6 signals today":** the loop brake stopped it. Check which agents keep pausing and resuming this task before you raise `signals.maxPerRoot`.
+- **"is a step of workflow run":** the task belongs to a workflow run. Cancel or pause the workflow run instead.
+- **"carried 6 signals today":** the loop brake stopped an agent's signal. Check which agents keep pausing and resuming this task before you raise `signals.maxPerRoot`.
 - **The plan says "written by AgentX":** the agent didn't answer in time. Raise `signals.windDownSeconds` if your agents need longer.
 - **Resume does nothing in a chat:** the chat's channel isn't running on this machine any more. Check it in [Settings](/dashboard/settings).

@@ -27,6 +27,8 @@ export interface RunningRef {
   rootId?: string
   originalMessage: string
   origin: RunOrigin | null
+  /** Set when the task is a step of a workflow run. */
+  workflowRunId?: string
 }
 
 export interface SignalServiceDeps {
@@ -97,11 +99,18 @@ export class SignalService {
   ): Promise<SignalResult> {
     const run = this.deps.findRunning(target)
     if (!run) return { ok: false, status: 404, error: "no running task matches (it may have finished already)" }
+    // A workflow step: stopping it would fail the workflow run, and a resume
+    // would re-enter it outside that run, answering nobody. Refused until
+    // workflow runs can pause on a stop (#857 review).
+    if (run.workflowRunId) {
+      return { ok: false, status: 409, error: `this task is a step of workflow run ${run.workflowRunId}: pausing it would fail the run. Cancel or pause the workflow run instead` }
+    }
     const settings = this.deps.settings()
     const allowed = canSignal(sender, { agentId: run.agentId, sender: run.sender }, settings)
     if (!allowed.ok) return { ok: false, status: 403, error: allowed.reason }
     const rootId = run.rootId || run.taskId
-    if (!this.budget.take(rootId, settings.maxPerRoot)) {
+    // The brake is for agent loops: the owner is never counted or refused.
+    if (sender.kind !== "owner" && !this.budget.take(rootId, settings.maxPerRoot)) {
       return { ok: false, status: 429, error: `this task's root already carried ${settings.maxPerRoot} signals today (signals.maxPerRoot)` }
     }
     const by = describeSender(sender)
@@ -143,7 +152,7 @@ export class SignalService {
     const settings = this.deps.settings()
     const allowed = canSignal(sender, { agentId: record.agentId, sender: record.sender }, settings)
     if (!allowed.ok) return { ok: false, status: 403, error: allowed.reason }
-    if (!this.budget.take(record.rootId, settings.maxPerRoot)) {
+    if (sender.kind !== "owner" && !this.budget.take(record.rootId, settings.maxPerRoot)) {
       return { ok: false, status: 429, error: `this task's root already carried ${settings.maxPerRoot} signals today (signals.maxPerRoot)` }
     }
     // Atomic, before any action: two resumes can't both re-enter it.

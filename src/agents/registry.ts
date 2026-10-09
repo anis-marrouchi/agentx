@@ -659,6 +659,8 @@ export class AgentRegistry {
     agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController
     /** What a stop signal needs to save and later re-enter the run (#857). */
     traceId?: string; sender?: string; rootId?: string; origin?: RunOrigin
+    /** Set when the run is a workflow step (#857: not stoppable with a plan). */
+    workflowRunId?: string
   }> = new Map()
   /** Runs a daemon shutdown stopped, with the reason each one reports. */
   private interruptedRuns: Map<string, string> = new Map()
@@ -1458,6 +1460,7 @@ export class AgentRegistry {
       controller: abortController,
       sender: task.context?.sender,
       rootId: currentRoot()?.rootId,
+      workflowRunId: task.workflowRunId ?? (typeof runningTask.chatId === "string" && runningTask.chatId.startsWith("workflow:") ? runningTask.chatId.slice(9) || undefined : undefined),
       origin: task.origin ?? {
         kind: "direct",
         context: task.context as Record<string, unknown> | undefined,
@@ -3569,7 +3572,7 @@ export class AgentRegistry {
    *  of `agentId` on a chat. Null when none (or several) match. */
   signalTarget(by: { taskId?: string; agentId?: string; channel?: string; chatId?: string }): {
     taskId: string; traceId?: string; agentId: string; channel: string; chatId: string
-    sender?: string; rootId?: string; originalMessage: string; origin: RunOrigin | null
+    sender?: string; rootId?: string; originalMessage: string; origin: RunOrigin | null; workflowRunId?: string
   } | null {
     let id: string | undefined
     if (by.taskId) {
@@ -3583,6 +3586,7 @@ export class AgentRegistry {
     return {
       taskId: id, traceId: e.traceId, agentId: e.agentId, channel: e.channel, chatId: e.chatId,
       sender: e.sender, rootId: e.rootId, originalMessage: e.originalMessage, origin: e.origin ?? null,
+      ...(e.workflowRunId ? { workflowRunId: e.workflowRunId } : {}),
     }
   }
 

@@ -337,8 +337,8 @@ Pausing a running task with a resume plan, and resuming it later. You may always
 | `signals.enabled` | boolean | `true` | Turns pausing and resuming on. Off: every signal is refused, yours included. |
 | `signals.windDownSeconds` | number (10–1800) | `120` | How long a paused agent gets to write its resume plan. Past it, the plan-writing turn is stopped and AgentX writes the plan from the run's trace. |
 | `signals.allowAgents` | list of strings | `[]` | Agents that may pause or resume any task on this machine. `"*"` allows every agent. An agent never pauses its own task. |
-| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. |
-| `signals.maxPerRoot` | number (1–100) | `6` | Loop brake: most signals one request (one root id) may carry in a day. |
+| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. A machine using the shared `MESH_TOKEN` is believed about its name; use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
+| `signals.maxPerRoot` | number (1–100) | `6` | Loop brake: most signals from agents and other machines one request (one root id) may carry in a day. The owner's are never counted. |
 
 ## `reminders`
 

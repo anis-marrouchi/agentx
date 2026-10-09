@@ -92,6 +92,17 @@ describe("a stop signal in the registry", () => {
     }
   })
 
+  it("marks a workflow step, so the service can refuse to pause it", async () => {
+    const r = registry()
+    let onStart!: (id: string) => void
+    const started = new Promise<string>((res) => { onStart = res })
+    const run = r.execute({ message: "step", agentId: "coder", workflowRunId: "wf-1", context: { channel: "workflow", chatId: "workflow:wf-1" }, onStart })
+    const id = await started
+    expect(r.signalTarget({ taskId: id })?.workflowRunId).toBe("wf-1")
+    r.cancelRunningTask(id, "test over")
+    await run
+  })
+
   it("whenRunEnds resolves at once for a run that is not going", async () => {
     await expect(registry().whenRunEnds("nope", 60_000)).resolves.toBeUndefined()
   })

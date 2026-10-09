@@ -205,6 +205,14 @@ describe("failure", () => {
     expect(store.get("req-t1")).toBeNull()
   })
 
+  it("does not treat a run a stop signal paused as a failure (#857)", () => {
+    start("t1")
+    end("t1", { error: "stopped by owner: deploy", errorKind: "stopped", stopped: true })
+    const r = store.get("req-t1")
+    expect(r?.state).not.toBe("needs_attention")
+    expect(r?.attentionReason ?? null).toBeNull()
+  })
+
   it("covers a failed delegation: the request the turn handed on comes back", () => {
     start("t1")
     tracker.delegationStarted(dlg("dlg-1"))

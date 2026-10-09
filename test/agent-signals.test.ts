@@ -209,12 +209,28 @@ describe("loop guard", () => {
     expect(b.take("r", 2)).toBe(true)
   })
 
-  it("refuses a stop past signals.maxPerRoot", async () => {
+  it("refuses an agent's signal past signals.maxPerRoot", async () => {
     const h = harness({ s: { maxPerRoot: 1 } })
-    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    const r = await h.service.stop({ kind: "agent", agentId: "lead" }, { taskId: "run-1" })
     if (!r.ok) throw new Error(r.error)
     await r.done
-    expect(await h.service.resume({ kind: "owner" }, "run-1")).toMatchObject({ ok: false, status: 429 })
+    expect(await h.service.resume({ kind: "agent", agentId: "lead" }, "run-1")).toMatchObject({ ok: false, status: 429 })
+  })
+
+  it("never counts or refuses the owner", async () => {
+    const h = harness({ s: { maxPerRoot: 1 } })
+    const r = await h.service.stop({ kind: "agent", agentId: "lead" }, { taskId: "run-1" })
+    if (!r.ok) throw new Error(r.error)
+    await r.done
+    expect((await h.service.resume({ kind: "owner" }, "run-1")).ok).toBe(true)
+  })
+
+  it("refuses to pause a workflow step, and stops nothing", async () => {
+    const h = harness({ running: { ...RUN, workflowRunId: "wf-run-7" } })
+    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    expect(r).toMatchObject({ ok: false, status: 409 })
+    if (!r.ok) expect(r.error).toMatch(/workflow run wf-run-7/)
+    expect(h.stopped).toEqual([])
   })
 
   it("a signal event wakes a subscriber once per root, and never the signalled agent", () => {

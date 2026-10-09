@@ -14,9 +14,10 @@
 //   - an agent may signal a task it dispatched (the task's sender is
 //     `agent:<id>`), or any task when `allowAgents` names it;
 //   - an agent never signals its own running task (it can just stop).
-// Signals are counted per root id, and past `maxPerRoot` in a day the next
-// one is refused: a stop that wakes an agent that resumes it that wakes …
-// stops there, whatever the subscriptions say.
+// Agents' and peers' signals are counted per root id, and past `maxPerRoot`
+// in a day the next one is refused: a stop that wakes an agent that resumes
+// it that wakes … stops there, whatever the subscriptions say. The owner is
+// never counted or refused.
 
 export interface SignalSettings {
   enabled: boolean

@@ -70,7 +70,7 @@ d.list(d.x0, y + ROW + 56, {
     ["“is not in signals.allowAgents”", "Only you and the agent that asked may stop it."],
     ["“no running task matches”", "The task already finished."],
     ["“still writing its resume plan”", "Wait a moment, then resume."],
-    ["“carried 6 signals today”", "The loop brake: raise signals.maxPerRoot."],
+    ["“is a step of workflow run”", "Pause the workflow run instead."],
   ],
   delay: end + 1.6,
 })
