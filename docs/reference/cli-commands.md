@@ -2313,6 +2313,7 @@ Show or change whether every task runs through a workflow (`workflows.required`)
 |---|---|---|
 | `--enabled <on\|off>` | — | Every task of every agent runs inside a workflow run. |
 | `--exempt-questions <on\|off>` | — | A plain question that changed nothing leaves no run (the setting's default is `on`). |
+| `--retention-days <n>` | — | Remove task runs that ended more than `n` days ago (the setting's default is `30`; `0` keeps them all). |
 | `--agent <id>` | — | With `--agent-required`: the agent to set it for. |
 | `--agent-required <on\|off\|default>` | — | On or off for `--agent` whatever `--enabled` says; `default` follows `--enabled` again. |
 
