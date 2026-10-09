@@ -26,7 +26,7 @@ How the run works:
 - **Your own choice wins.** A level you set yourself is never changed by a later run.
 - **Old text is kept.** Each write saves the previous version of the page.
 - **The page's date stays.** Setting a level or a link does not change the page's "updated" date, so a run does not make every event look new.
-- **Newer text wins.** Just before it writes, the run reads the page again. If the page changed while the run waited for the model, the new level goes onto the newer text. If someone set a level in that time, the run leaves it.
+- **Newer text wins.** Just before it writes, the run reads the page again. If the page changed while the run waited for the model, the new level goes onto the newer text. If someone set a level in that time, the run leaves it. While it reads and writes, the run holds the page, so another write waits a moment instead of being lost.
 - **Spending has a cap.** A run stops before the next call once it has spent `--max-cost`.
 
 ## Before you start
@@ -120,6 +120,7 @@ Set `major_set_by: anyone` to let a run write **major** directly, with no propos
 - **An event has the wrong level:** run `agentx wiki events set "<event title>" <level>`. For a kind of event that is often wrong, add a rule, or add an `unless` pattern to the rule that caught it.
 - **`a level was set on the page during the run`:** someone set the level while the run waited for the model. The run left that level alone.
 - **`the page was moved or removed during the run`:** absorb renamed or merged the page. The next run finds it under its new name.
+- **`the page was busy; run again`** (from a run or from `wiki events set`): another job was writing the page and did not finish within 5 seconds. Run the same command again. If it keeps happening and no `agentx` command is running, delete the page's file under `_locks/` in the agent's wiki folder.
 - **An event does not show in a page's History:** the event neither links to that page nor names it in its title. Add `[[Page Title]]` to the event page.
 - **`no-page`:** the event's pages are copied from another machine. Run the job on the machine that holds them.
 - **`no-answer`:** the model's reply had no usable line for that event. It keeps no level and the next run tries it again.

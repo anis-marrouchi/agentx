@@ -14,6 +14,7 @@
 
 import type { WikiHub } from "./hub"
 import type { WikiArticleMeta } from "./types"
+import { LockBusyError } from "./facts/ledger-file"
 import { normName, type Entity, type GraphPage, type WikiGraph } from "./ontology/graph"
 import { linkedEntities } from "./ontology/lens"
 import { IMPORTANCE_LEVELS, type Importance, type ImportanceRule, type Ontology, type WikiStatement } from "./ontology/types"
@@ -273,17 +274,24 @@ export async function runEvents(hub: WikiHub, g: WikiGraph, call: EventsCall, op
     const base: EventOutcome = { event: it.event.id, title: it.event.title, date: it.event.date, page: where, status: "dry-run", importance: v.importance, proposed: v.proposed, about: v.about, by: v.by, why: v.why, dropped }
     if (opts.dryRun) { run.outcomes.push(base); return }
     const store = hub.getAgentWiki(it.page.agentId)
+    const path = it.page.article.path
     // Absorb or a person may have changed the page while the run waited
-    // for the model: write onto what is on disk now, not the copy read
-    // at the start.
-    const current = store.readArticle(it.page.article.path)
-    if (!current) { run.outcomes.push({ ...base, status: "failed", dropped: [...dropped, "the page was moved or removed during the run"] }); return }
-    if (current.meta.importance && !ownLevel(current.meta)) {
-      run.outcomes.push({ ...base, status: "failed", dropped: [...dropped, "a level was set on the page during the run"] })
-      return
+    // for the model: write onto what is on disk now, not the copy read at
+    // the start. The page lock keeps another write from landing between
+    // this read and the write.
+    let why: string | undefined
+    try {
+      why = store.withArticleLock(path, () => {
+        const current = store.readArticle(path)
+        if (!current) return "the page was moved or removed during the run"
+        if (current.meta.importance && !ownLevel(current.meta)) return "a level was set on the page during the run"
+        return store.writeArticle(path, eventMeta(current.meta, v, opts.today), current.content, current.meta.owner || it.page.agentId) ? undefined : "write refused"
+      })
+    } catch (err) {
+      if (!(err instanceof LockBusyError)) throw err
+      why = "the page was busy; run again"
     }
-    const ok = store.writeArticle(it.page.article.path, eventMeta(current.meta, v, opts.today), current.content, current.meta.owner || it.page.agentId)
-    run.outcomes.push({ ...base, status: ok ? "written" : "failed", dropped: ok ? dropped : [...dropped, "write refused"] })
+    run.outcomes.push(why ? { ...base, status: "failed", dropped: [...dropped, why] } : { ...base, status: "written" })
   }
 
   // Rules first: free, and the same answer every run.
@@ -344,12 +352,22 @@ export function setEventLevel(hub: WikiHub, g: WikiGraph, name: string, level: I
   if (!page) return { ok: false, title: ev.title, reason: "its pages are copied from another node; set the level there" }
   // Dropping this job's marker makes the level the owner's: no run redoes it.
   const store = hub.getAgentWiki(page.agentId)
-  const current = store.readArticle(page.article.path) ?? page.article
-  const statements = (current.meta.statements ?? []).filter(s => !(s.by === EVENTS_BY && s.property === LEVEL_MARK))
-  const meta: WikiArticleMeta = { ...current.meta, importance: level, importanceProposed: undefined, statements: statements.length ? statements : undefined }
-  const ok = store.writeArticle(page.article.path, meta, current.content, current.meta.owner || page.agentId)
+  let ok: boolean
+  let reason = "write refused"
+  try {
+    ok = store.withArticleLock(page.article.path, () => {
+      const current = store.readArticle(page.article.path) ?? page.article
+      const statements = (current.meta.statements ?? []).filter(s => !(s.by === EVENTS_BY && s.property === LEVEL_MARK))
+      const meta: WikiArticleMeta = { ...current.meta, importance: level, importanceProposed: undefined, statements: statements.length ? statements : undefined }
+      return store.writeArticle(page.article.path, meta, current.content, current.meta.owner || page.agentId)
+    })
+  } catch (err) {
+    if (!(err instanceof LockBusyError)) throw err
+    ok = false
+    reason = "the page was busy; run again"
+  }
   if (ok) store.rebuildIndex()
-  return { ok, title: ev.title, page: `${page.agentId}/${page.article.path}`, reason: ok ? undefined : "write refused" }
+  return { ok, title: ev.title, page: `${page.agentId}/${page.article.path}`, reason: ok ? undefined : reason }
 }
 
 export interface AboutSummary {
