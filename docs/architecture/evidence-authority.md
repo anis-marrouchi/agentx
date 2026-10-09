@@ -1,6 +1,6 @@
 # Evidence authority and the memory backend contract
 
-Status: **recorded, follow-on work paused.** The contract was reviewed in [#604](https://github.com/anis-marrouchi/agentx/issues/604) and merged on 2026-10-04 ([#609](https://github.com/anis-marrouchi/agentx/pull/609)). On 2026-10-05 the owner decided to skip the Hindsight memory backend for now: the remaining phases of [#602](https://github.com/anis-marrouchi/agentx/issues/602) (the adapter, capture, comparison and rollout) stay open but are not being worked on until the owner picks them up again. Nothing here is switched on. No agent reads or writes through this contract yet, and no memory service is installed.
+Status: **recorded, follow-on work not retained.** The contract was reviewed in [#604](https://github.com/anis-marrouchi/agentx/issues/604) and merged on 2026-10-04 ([#609](https://github.com/anis-marrouchi/agentx/pull/609)). On 2026-10-09 the owner decided not to go ahead with the Hindsight memory backend. The plan in [#602](https://github.com/anis-marrouchi/agentx/issues/602) and its remaining phases (the adapter in [#605](https://github.com/anis-marrouchi/agentx/issues/605), capture, comparison and rollout) are closed. The freshness audit in [#603](https://github.com/anis-marrouchi/agentx/issues/603) stays open on its own, because its fixes do not depend on Hindsight. Nothing here is switched on. No agent reads or writes through this contract, and no memory service is installed.
 
 This page records one decision: when AgentX uses a memory backend (a service that indexes what agents know so they can search it), **AgentX decides what is true, who may read it and how fresh it is. The backend only finds things.**
 
@@ -140,16 +140,16 @@ Because AgentX holds the original records, exporting them or moving to another b
 
 ## Open points for review
 
-These points wait with the paused work. They are not being answered until the owner picks [#602](https://github.com/anis-marrouchi/agentx/issues/602) up again.
+These points were left open when the Hindsight work closed. They only need an answer if a memory backend is proposed again.
 
-1. Where the records are stored (a file per agent, or the existing database). This belongs to the capture work in [#606](https://github.com/anis-marrouchi/agentx/issues/606).
+1. Where the records are stored (a file per agent, or the existing database). This belonged to the capture work in [#606](https://github.com/anis-marrouchi/agentx/issues/606), now closed.
 2. How a task gets a project that AgentX can trust. Until that exists the project field stays reserved (see above). The project is also not part of the partition yet: a public record with a project would be indexed with every other public record. It must become part of the partition before anything may set the field.
 3. Whether a conflict with a reviewed article should open a wiki question, a promotion proposal, or both.
 4. Whether the articles the absorb job already wrote should be counted as reviewed. This contract says no: each one is unverified until a person reviews it. Counting them as reviewed in one step would be the owner's decision.
 
-### Left for the capture work (#606)
+### Left for any future capture work
 
-The access-control review of this contract found five smaller points. None is reachable while nothing calls this code. Each must be settled before records are stored or sent to a backend:
+The access-control review of this contract found five smaller points. None is reachable while nothing calls this code. Each must be settled before records are ever stored or sent to a backend:
 
 1. **Secrets.** Memory capture refuses a secret before it stores a fact (`isInjectable` in `src/agents/memory-trust.ts`). `usable` here does not repeat that check. The step that builds a record must refuse secrets before `upsert` sends the text to an outside service.
 2. **Unknown values.** An unknown access or state is refused. An unknown trust or review value is not: the record is shown. Both should be refused.
@@ -169,4 +169,4 @@ This page describes a contract, not a feature you can switch on. To check the ru
 ## If something is wrong
 
 - **A case fails after a code change:** a rule above was changed. Either restore it, or update this page and the case in the same change so a reviewer sees the rule moved.
-- **A rule here disagrees with how the fact ledger behaves:** the ledger (`src/wiki/facts/ledger.ts`) is the behaviour in use today. Report the difference on [#602](https://github.com/anis-marrouchi/agentx/issues/602); #604 is closed.
+- **A rule here disagrees with how the fact ledger behaves:** the ledger (`src/wiki/facts/ledger.ts`) is the behaviour in use today. Open a new issue that links this page; #602 and #604 are closed.
