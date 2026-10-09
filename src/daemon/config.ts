@@ -1380,6 +1380,11 @@ export const daemonConfigSchema = z.object({
       maxPages: z.number().int().min(1).max(10).default(3),
       /** Characters of each opened page given to the answer. */
       pageChars: z.number().int().min(200).max(40_000).default(4000),
+      /** Pages linked from the picked ones also opened (#863), best
+       *  summary line against the question first. 0: none. */
+      linkedPages: z.number().int().min(0).max(10).default(0),
+      /** Characters all linked pages together give to the answer. */
+      linkedChars: z.number().int().min(200).max(40_000).default(6000),
       /** Model that picks pages from the summary lines. */
       navigatorModel: z.string().min(1).default("haiku"),
       /** Model that writes the answer. */

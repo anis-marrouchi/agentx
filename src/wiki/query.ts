@@ -142,12 +142,12 @@ export async function agenticQuery(
         navigatorModel: opts.selectorModel ?? base.navigatorModel,
         answerModel: opts.synthModel ?? base.answerModel,
       }, { call: opts.call ?? claudeModelCall, fetch: opts.fetch, timeoutMs, log })
-      const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: a.meta.type }))
+      const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: a.meta.type, hop: a.hop }))
       return {
         answer: out.answer,
-        citations: out.status === "ok" ? pages : [],
-        candidates: pages.map(({ title, path }) => ({ title, path })),
-        walked: pages.map((p) => ({ ...p, hop: 0 })),
+        citations: out.status === "ok" ? pages.map(({ hop: _, ...p }) => p) : [],
+        candidates: pages.filter((p) => p.hop === 0).map(({ title, path }) => ({ title, path })),
+        walked: pages,
         status: out.status,
         method: "summaries",
         live: out.live,
@@ -319,6 +319,8 @@ interface ScopeView {
   /** Paths the requester may read, own and shared. */
   readable: Set<string>
   read(path: string): WikiArticle | null
+  /** Pages `article` names in `related`, then the newest that name it. */
+  links(article: WikiArticle): string[]
 }
 
 function scopeView(store: WikiStore, requesterId: string | undefined, shared: SharedWikiStore[] = []): ScopeView {
@@ -375,6 +377,12 @@ function scopeView(store: WikiStore, requesterId: string | undefined, shared: Sh
       const rel = m ? m[2] : path
       const article = requesterId ? s.readArticleAs(rel, requesterId) : s.readArticle(rel)
       return article ? { ...article, path } : null
+    },
+    links(article) {
+      const forward = (article.meta.related ?? []).map((t) => titleIndex.get(t.toLowerCase())).filter((p): p is string => !!p)
+      const names = [article.meta.title, ...(article.meta.aliases ?? [])].map((n) => n.toLowerCase())
+      const back = [...new Set(names.flatMap((n) => backlinks.get(n) ?? []))].filter((p) => p !== article.path).slice(0, BACKLINKS_PER_PICK)
+      return [...new Set([...forward, ...back])].filter((p) => p !== article.path)
     },
   }
 }
