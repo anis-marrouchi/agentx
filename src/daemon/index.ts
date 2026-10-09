@@ -7111,6 +7111,7 @@ export class AgentXDaemon {
             enabled: this.config.wikiNotes.enabled,
             inbox: this.config.wikiNotes.inbox ?? null,
             crons: this.config.wikiNotes.crons,
+            absorbAgent: this.config.wikiNotes.absorbAgent ?? null,
             total: all.length,
             // Newest first, bounded: a list is a summary, not an export.
             notes: all.slice(-limit).reverse(),

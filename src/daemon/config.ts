@@ -814,6 +814,12 @@ const wikiNotesSchema = z.object({
    *  Each must run as the inbox agent. Empty: notes are kept but no run
    *  reads them. */
   crons: z.array(z.string().min(1)).default([]),
+  /** Agent whose `agentx wiki absorb` pass reads the inbox (#831). Absorb
+   *  is one model call with no tools: it gets the notes in its prompt,
+   *  answers each, and absorb applies the patches and records the
+   *  outcome. Unset: absorb reads no notes. Must run on this node, the
+   *  node that keeps the inbox. */
+  absorbAgent: z.string().min(1).optional(),
   /** Most notes one run is given. The rest wait for the next run. */
   maxNotesPerRun: z.number().int().min(1).max(100).default(20),
   /** A note deferred this many times stops being offered (status

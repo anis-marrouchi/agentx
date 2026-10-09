@@ -10,6 +10,8 @@ import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
 import { patchProblems } from "@/wiki/fact-guard"
 import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
+import { applyNoteAnswers, noteSource, parseNoteAnswers, renderAbsorbNotesBlock } from "@/wiki/absorb-notes"
+import { NoteStore, type WikiNote } from "@/wiki/notes"
 import { absorbOffAgents, selectAbsorbAgents } from "@/wiki/absorb-agents"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
@@ -48,6 +50,19 @@ async function localAgentIds(): Promise<Set<string> | null> {
     const { loadDaemonConfig } = await import("@/daemon/config")
     const ids = Object.keys(loadDaemonConfig().agents || {})
     return ids.length ? new Set(ids) : null
+  } catch {
+    return null
+  }
+}
+
+/** This node's wiki notes settings when absorb should read the inbox
+ *  (#831): notes on, with an inbox and a `wikiNotes.absorbAgent`. */
+async function absorbNotesConfig(): Promise<{ inbox: string; absorbAgent: string; max: number; maxDeferrals: number } | null> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    const n = loadDaemonConfig().wikiNotes
+    if (!n?.enabled || !n.inbox || !n.absorbAgent) return null
+    return { inbox: n.inbox, absorbAgent: n.absorbAgent, max: n.maxNotesPerRun, maxDeferrals: n.maxDeferrals }
   } catch {
     return null
   }
@@ -208,6 +223,7 @@ wiki
   .option("--until <date>", "only entries dated on or before YYYY-MM-DD")
   .option("--model <model>", "compile model (default: AGENTX_WIKI_ABSORB_MODEL, else sonnet)")
   .option("--run-label <label>", "tag this run's lines in _absorb-runs.jsonl, for `wiki absorb-runs`")
+  .option("--no-notes", "do not read the wiki notes inbox, even for wikiNotes.absorbAgent")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     let model: string
@@ -317,6 +333,10 @@ wiki
       }
     }
     const startedAt = new Date().toISOString()
+    // The wiki notes inbox (#831): read by the absorb pass of one agent,
+    // set as wikiNotes.absorbAgent on the node that keeps the inbox.
+    const notesCfg = opts.notes === false ? null : await absorbNotesConfig()
+    const noteStore = notesCfg ? new NoteStore(hub.getBaseDir()) : null
 
     for (const agentId of agents) {
       const agentStart = Date.now()
@@ -333,7 +353,18 @@ wiki
         .filter((e) => !untilDate || (e.date ?? "").slice(0, 10) <= untilDate)
         .slice(0, maxEntries)
 
-      if (unabsorbed.length === 0) {
+      // Notes are taken (and marked as given to this run) only for a real
+      // run; a dry run counts them.
+      const readsNotes = Boolean(notesCfg && noteStore && notesCfg.absorbAgent === agentId)
+      const noteRunId = `absorb/${agentId}/${startedAt.replace(/[:.]/g, "-")}`
+      let notes: WikiNote[] = []
+      if (readsNotes && opts.dryRun) {
+        notes = noteStore!.peekForRun(notesCfg!.inbox, notesCfg!.max, notesCfg!.maxDeferrals)
+      } else if (readsNotes) {
+        notes = noteStore!.takeForRun(notesCfg!.inbox, noteRunId, notesCfg!.max, notesCfg!.maxDeferrals)
+      }
+
+      if (unabsorbed.length === 0 && notes.length === 0) {
         console.log(`  ${chalk.cyan(agentId)}: ${chalk.green("all absorbed")}`)
         continue
       }
@@ -344,6 +375,7 @@ wiki
         console.log(chalk.dim(`    [${e.date} via ${e.source}] ${e.content.slice(0, 80)}...`))
       }
       if (unabsorbed.length > 3) console.log(chalk.dim(`    ... and ${unabsorbed.length - 3} more`))
+      if (notes.length > 0) console.log(chalk.dim(`    Wiki notes: ${notes.length} from the ${notesCfg!.inbox} inbox${opts.dryRun ? "" : ` (run ${noteRunId})`}`))
 
       if (opts.dryRun) continue
 
@@ -417,13 +449,19 @@ wiki
       // updates them instead of rewriting them blind or filing a
       // duplicate beside them (#801).
       const catalog = existingIndex.articles.filter((a) => a.path && !a.path.includes("/_versions/"))
-      const covering = await findCoveringArticles(unabsorbed, agentWiki, agentId, catalog)
+      // A note looks up the articles it is about the same way an entry
+      // does: a note may only patch an article the model has read in full.
+      const covering = await findCoveringArticles(
+        [...unabsorbed, ...notes.map((n) => ({ id: noteSource(n.id), content: n.change }))],
+        agentWiki, agentId, catalog,
+      )
       if (covering.length > 0) {
         console.log(chalk.dim(`    Existing: ${covering.map((a) => a.path).join(", ")}`))
       }
 
       const coveringBlock = renderCoveringBlock(covering)
-      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock, coveringBlock)
+      const notesBlock = renderAbsorbNotesBlock(notes)
+      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock, coveringBlock, notesBlock)
       console.log(chalk.dim(`    Mode: ${modeLabel(mode)}`))
 
       // Write prompt and run Claude
@@ -442,12 +480,14 @@ wiki
           entries: entryTexts.length,
           // The catalog lists every article title; its share is the prompt
           // minus the same prompt built without it.
-          catalog: prompt.length - buildAbsorbPrompt(mode, agentId, worldview, [], entryTexts, unabsorbed.length, factsBlock, coveringBlock).length,
+          catalog: prompt.length - buildAbsorbPrompt(mode, agentId, worldview, [], entryTexts, unabsorbed.length, factsBlock, coveringBlock, notesBlock).length,
           catalogArticles: existingIndex.articles.length,
           covering: coveringBlock.length,
           facts: factsBlock.length,
           worldview: worldview.length,
+          notes: notesBlock.length,
         },
+        ...(notes.length ? { notes: notes.length } : {}),
       }
       const callStart = Date.now()
       call.prepMs = callStart - agentStart
@@ -488,6 +528,7 @@ wiki
         // { articles, gaps }, or a legacy bare array of articles.
         const response = parseAbsorbResponse(responseText)
         if ("error" in response) {
+          if (notes.length > 0) console.log(chalk.yellow(`    ${notes.length} wiki note(s) stay waiting`))
           console.log(chalk.red(`    ${response.error}`))
           console.log(chalk.dim(`    First 500 chars: ${responseText.slice(0, 500)}`))
           continue
@@ -496,10 +537,22 @@ wiki
         // Entries behind a refused save stay queued for the next run.
         const held = new Set<string>()
         const saved = new Set<string>()
+        const batchIds = new Set(unabsorbed.map((e) => e.id))
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)
-          const sources = Array.isArray(article.sources) ? article.sources : []
+          const cited = Array.isArray(article.sources) ? article.sources : []
+          // A note only patches, through its edits below. With notes in
+          // the prompt, an article must cite an entry from this batch: one
+          // citing nothing, or only notes, was written from a note and is
+          // refused (#832 review). In a notes-only run that is every
+          // article.
+          const sources = notes.length > 0 ? cited.filter((s) => batchIds.has(s)) : cited
+          if (notes.length > 0 && sources.length === 0) {
+            console.log(chalk.yellow(`    ! refused ${article.path}: cites no entry from this batch; a wiki note only patches`))
+            call.refused++
+            continue
+          }
           // Same title as an existing article: same subject, same file.
           const target = absorbTargetPath(article, catalog)
           if (target !== article.path) {
@@ -548,6 +601,47 @@ wiki
           call.articles++
           for (const id of sources) saved.add(id)
         }
+        // Answer the wiki notes: apply the patches the model proposed,
+        // then record each note's outcome with this run's id. A failed run
+        // records nothing: its notes stay waiting and come back.
+        if (notes.length > 0 && !runFailed) {
+          // A schedule reading the same inbox may have answered a note
+          // while this call ran; its answer stands. Checked before any
+          // patch is applied, so a note it rejected never edits a page.
+          const stillOurs = notes.filter((n) => {
+            const now = noteStore!.get(n.id)
+            if (now && now.status !== "open" && now.status !== "deferred") {
+              console.log(chalk.dim(`    note ${n.id} already ${now.status} by ${now.handled?.by ?? "another run"}; left as it is`))
+              return false
+            }
+            if (now?.handled && now.handled.at > startedAt) {
+              console.log(chalk.dim(`    note ${n.id} already deferred by ${now.handled.by} during this run; left as it is`))
+              return false
+            }
+            return true
+          })
+          // Only the articles shown in full may be patched.
+          const results = applyNoteAnswers(stillOurs, parseNoteAnswers(response.notes), agentWiki, {
+            agentId,
+            paths: new Set(covering.map((a) => a.path)),
+          })
+          let recorded = 0
+          for (const r of results) {
+            try {
+              noteStore!.handle(r.id, r.outcome, r.reason, agentId, noteRunId)
+              recorded++
+            } catch (e: any) {
+              console.log(chalk.yellow(`    ! note ${r.id}: could not record ${r.outcome}: ${e?.message ?? e}`))
+            }
+            const mark = r.outcome === "patched" ? chalk.green("~") : r.outcome === "rejected" ? chalk.red("x") : chalk.yellow("…")
+            console.log(`    ${mark} note ${r.id} ${r.outcome}: ${chalk.dim(r.reason.slice(0, 160))}`)
+          }
+          call.notesPatched = results.filter((r) => r.outcome === "patched").length
+          call.notesRecorded = recorded
+        } else if (notes.length > 0) {
+          console.log(chalk.yellow(`    ${notes.length} wiki note(s) stay waiting`))
+        }
+
         call.failed = runFailed
         // A held entry another saved article cites counts as absorbed and
         // is not offered again (#808), so the refused update is lost.

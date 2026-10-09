@@ -1125,8 +1125,11 @@ Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (
 | `--until <date>` | — | Only entries dated on or before YYYY-MM-DD. |
 | `--model <model>` | `AGENTX_WIKI_ABSORB_MODEL`, else `sonnet` | The model that compiles the articles. |
 | `--run-label <label>` | — | A name for this run in the run log, so `agentx wiki absorb-runs` can compare runs. |
+| `--no-notes` | — | Do not read the wiki notes inbox, even for the agent set as `wikiNotes.absorbAgent`. |
 
-Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full and facts) and one for the whole run. The file holds no entry or article text.
+When wiki notes are on and `wikiNotes.absorbAgent` names the agent being absorbed, absorb also reads the waiting [wiki notes](/jobs/wiki-notes). It runs even with no new entries when notes are waiting. The model answers each note as patched, rejected or deferred. A patch is a short find-and-replace in an existing article that absorb showed the model in full: absorb applies it, and refuses one whose edits together replace most of a page, remove a contact, role or organisation value, or delete a number, link or commit. A note's edits are saved all together or not at all. A note whose patch is refused, or that the model did not answer, is deferred. While notes are in the prompt, absorb saves only articles that cite an entry from this run, so a note never creates or rewrites a page. Each outcome is recorded on the note with a reason and the run id (`absorb/<agent>/<time>`). If a schedule answered the note while absorb was running, that answer stands. When the run fails, its notes stay waiting. A dry run lists the notes in the order a real run would take them.
+
+Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full, facts and notes; with notes, how many it was given, patched and recorded) and one for the whole run. The file holds no entry or article text.
 
 ### `agentx wiki absorb-eval`
 
@@ -1269,12 +1272,13 @@ Record what the run did with a note. A deferred note is given to the next run ag
 
 ### `agentx wiki notes config`
 
-Show or set the inbox agent and the schedules that read it (`wikiNotes` in `agentx.json`). With no flag, it prints the current settings.
+Show or set the inbox agent, and the schedules and absorb pass that read it (`wikiNotes` in `agentx.json`). With no flag, it prints the current settings.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--inbox <agent>` | — | Agent that runs the wiki observe/sweep schedule. `""` clears it. |
 | `--cron <ids>` | — | Comma-separated schedule ids that read the inbox. `""` for none. |
+| `--absorb <agent>` | — | Agent whose `agentx wiki absorb` pass reads and answers the notes. Must run on this node, the node that keeps the inbox. `""` clears it. |
 | `--max <n>` | — | Most notes one run is given (1-100). |
 | `--max-deferrals <n>` | — | Times a note may be deferred before it expires (1-20). |
 | `--enable` | — | Turn wiki notes on. |
@@ -3691,6 +3695,7 @@ No flags.
 - **`unknown option`:** your installed version is older or newer than these docs. Use the flags that `agentx <command> --help` shows.
 - **`claude: command not found` from a wiki command:** the `claude` CLI isn't installed in any of the folders listed under `agentx wiki absorb`. Install it, or add its folder to the daemon's PATH.
 - **`wiki absorb` keeps printing `! refused <path>`:** the model's update left out facts the article already had, so the same entries come back each run. Check the facts listed under the message. If one is really wrong, correct it in the article with `agentx wiki edit`, then run absorb again.
+- **`wiki absorb` prints `note <id> deferred: patch refused: …`:** the model's patch broke a rule (it replaced most of a page, removed a contact or role value, or quoted text the article does not have). The note comes back on the next run. Read the reason with `agentx wiki notes list --status all`.
 - **`wiki absorb-runs` prints `no absorb runs recorded yet`:** no absorb has run since the run log was added, or `--dir` points at another wiki. Run `agentx wiki absorb` once, then try again.
 - **`wiki absorb-eval` prints `no articles … to score`:** nothing changed in the window you gave. Widen `--since` or `--changed-after`, or leave both out to sample every article.
 - **`unknown command`:** check the spelling and the command group. Advanced commands don't appear in `agentx --help`, but they still run.

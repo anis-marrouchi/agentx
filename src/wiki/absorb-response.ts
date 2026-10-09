@@ -19,7 +19,9 @@ export interface AbsorbArticle {
 }
 
 export type AbsorbResponse =
-  | { articles: AbsorbArticle[]; gaps: string[] }
+  /** `notes` is the model's raw answer to the wiki notes inbox (#831),
+   *  read by parseNoteAnswers. */
+  | { articles: AbsorbArticle[]; gaps: string[]; notes: unknown[] }
   | { error: string }
 
 /** Read `{ articles, gaps }` (or a legacy bare array of articles) out of the
@@ -29,11 +31,12 @@ export function parseAbsorbResponse(text: string): AbsorbResponse {
   if (parsed === null) {
     return { error: /[{[]/.test(text) ? "no parseable JSON in response" : "no JSON found in response" }
   }
-  if (Array.isArray(parsed)) return { articles: parsed, gaps: [] }
+  if (Array.isArray(parsed)) return { articles: parsed, gaps: [], notes: [] }
   if (typeof parsed !== "object") return { error: "response JSON is not an object or array" }
   return {
     articles: Array.isArray(parsed.articles) ? parsed.articles : [],
     gaps: Array.isArray(parsed.gaps) ? parsed.gaps : [],
+    notes: Array.isArray(parsed.notes) ? parsed.notes : [],
   }
 }
 

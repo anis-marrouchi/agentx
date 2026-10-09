@@ -172,7 +172,7 @@ describe("wiki notes settings", () => {
   it("sets the inbox and the schedules that read it", () => {
     const c = cfg()
     patchWikiNotes(c, { inbox: "wiki-agent", crons: ["sweep"], enabled: true })
-    expect(wikiNotesSettings(c.wikiNotes)).toEqual({ enabled: true, inbox: "wiki-agent", crons: ["sweep"], maxNotesPerRun: 20, maxDeferrals: 3 })
+    expect(wikiNotesSettings(c.wikiNotes)).toEqual({ enabled: true, inbox: "wiki-agent", crons: ["sweep"], absorbAgent: "", maxNotesPerRun: 20, maxDeferrals: 3 })
   })
 
   it("refuses settings that could not work", () => {

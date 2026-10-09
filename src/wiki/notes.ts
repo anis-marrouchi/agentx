@@ -211,18 +211,7 @@ export class NoteStore {
         changed = true
       }
     }
-    // Least recently listed first, then oldest: a round-robin. An open note
-    // a run keeps skipping is never deferred, so it never expires, and must
-    // not hold its place ahead of newer notes on every run. The key is a
-    // counter rather than a clock so two runs in the same millisecond still
-    // rotate.
-    const fairOrder = (a: WikiNote, b: WikiNote) =>
-      (a.lastListedSeq ?? 0) - (b.lastListedSeq ?? 0) || a.posted.localeCompare(b.posted)
-    const mine = f.notes.filter((n) => n.to === inbox)
-    const picked = [
-      ...mine.filter((n) => n.status === "open").sort(fairOrder),
-      ...mine.filter((n) => n.status === "deferred").sort(fairOrder),
-    ].slice(0, Math.max(0, max))
+    const picked = pickForRun(f.notes, inbox, max)
     const seq = f.notes.reduce((m, n) => Math.max(m, n.lastListedSeq ?? 0), 0) + 1
     for (const n of picked) {
       n.listedIn = [...(n.listedIn ?? []), runId].slice(-NOTE_LIMITS.listedIn)
@@ -232,6 +221,14 @@ export class NoteStore {
       try { this.save(f) } catch { /* listing is best effort; the run still gets its notes */ }
     }
     return picked
+  }
+
+  /** The notes `takeForRun` would give, without marking or expiring any:
+   *  for a dry run's preview. */
+  peekForRun(inbox: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS): WikiNote[] {
+    const f = this.load()
+    if (f.unreadable) return []
+    return pickForRun(f.notes.filter((n) => !(n.status === "deferred" && (n.deferrals ?? 1) >= maxDeferrals)), inbox, max)
   }
 
   /** Record what the run did with a note. */
@@ -249,6 +246,21 @@ export class NoteStore {
     this.save(f)
     return note
   }
+}
+
+/** Open notes first, then deferred ones. Within each: least recently listed
+ *  first, then oldest, a round-robin. An open note a run keeps skipping is
+ *  never deferred, so it never expires, and must not hold its place ahead of
+ *  newer notes on every run. The key is a counter rather than a clock so two
+ *  runs in the same millisecond still rotate. */
+function pickForRun(notes: WikiNote[], inbox: string, max: number): WikiNote[] {
+  const fairOrder = (a: WikiNote, b: WikiNote) =>
+    (a.lastListedSeq ?? 0) - (b.lastListedSeq ?? 0) || a.posted.localeCompare(b.posted)
+  const mine = notes.filter((n) => n.to === inbox)
+  return [
+    ...mine.filter((n) => n.status === "open").sort(fairOrder),
+    ...mine.filter((n) => n.status === "deferred").sort(fairOrder),
+  ].slice(0, Math.max(0, max))
 }
 
 /** Open, or deferred by an earlier run: the run still owes it an answer. */
