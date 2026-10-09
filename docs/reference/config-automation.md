@@ -374,7 +374,7 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |
 | `query.live.enabled` | boolean | `true` | The live read before the answer. `false` switches it off. |
 | `query.live.maxReads` | number (0–20) | `6` | Most reads for one question. |
-| `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one read may take, in milliseconds. |
+| `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one request to a source may take, in milliseconds. A deploy read makes up to four rounds of requests, so it can take up to four times this. |
 | `query.live.plannerModel` | string | `"haiku"` | Model that names the reads. |
 | `query.live.sources` | list | `[]` | Where a live read may read from. Empty: no live read runs. |
 | `query.live.sources[].type` | `"github"`, `"gitlab"` or `"agentx"` | — | The kind of system. |

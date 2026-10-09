@@ -284,9 +284,9 @@ async function listDeploys(source: RepoSource, base: string, headers: Record<str
     const got = await getJson(`${base}/deployments?order_by=id&sort=desc&per_page=${DEPLOY_ROWS}`, headers, fetchImpl, timeoutMs)
     if (!got) return null
     return rows(got).map((d) => ({
-      env: String((d.environment as { name?: unknown } | undefined)?.name ?? ""),
+      env: tag((d.environment as { name?: unknown } | undefined)?.name),
       sha: String(d.sha ?? ""),
-      state: String(d.status ?? ""),
+      state: tag(d.status),
       at: day(d.updated_at ?? d.created_at),
     }))
   }
@@ -296,9 +296,9 @@ async function listDeploys(source: RepoSource, base: string, headers: Record<str
   return Promise.all(rows(got).map(async (d) => {
     const status = rows(await getJson(`${base}/deployments/${encodeURIComponent(String(d.id))}/statuses?per_page=1`, headers, fetchImpl, timeoutMs))[0]
     return {
-      env: String(d.environment ?? ""),
+      env: tag(d.environment),
       sha: String(d.sha ?? ""),
-      state: String(status?.state ?? "unknown"),
+      state: tag(status?.state ?? "unknown"),
       at: day(status?.created_at ?? d.created_at),
     }
   }))
@@ -347,25 +347,36 @@ async function readDeploy(read: Extract<LiveRead, { kind: "deploy" }>, source: R
   const { base, headers } = repoApi(source, read.repo)
   const ref = read.id === undefined ? "" : `${source.type === "gitlab" ? "!" : "#"}${read.id}`
 
-  // The commit the change landed as. A change that is not merged is not deployed.
+  // The commit the change landed as or, for a change that is not merged,
+  // its head commit: a review or preview environment can run a branch.
   let commit = ""
   let head = `deploys of ${read.repo}`
   if (read.id !== undefined) {
     const mr = await getJson(`${base}/${source.type === "github" ? "pulls" : "merge_requests"}/${read.id}`, headers, fetchImpl, timeoutMs) as Record<string, unknown> | null
     if (!mr || typeof mr !== "object" || !("state" in mr)) return ""
     const merged = source.type === "github" ? Boolean(mr.merged_at) : mr.state === "merged"
-    if (!merged) return `${ref} in ${read.repo} is ${mr.state === "opened" ? "open" : String(mr.state)}, not merged, so it is not deployed`
-    // GitLab: no merge commit when merged by fast-forward; the squash or
-    // the head commit is then what landed.
-    commit = String(source.type === "github" ? mr.merge_commit_sha ?? "" : mr.merge_commit_sha ?? mr.squash_commit_sha ?? mr.sha ?? "")
-    if (!/^[0-9a-f]{7,64}$/i.test(commit)) return ""
-    head = `${ref} in ${read.repo} (merged ${day(mr.merged_at)} as ${short(commit)})`
+    if (merged) {
+      // GitLab: no merge commit when merged by fast-forward; the squash or
+      // the head commit is then what landed.
+      commit = String(source.type === "github" ? mr.merge_commit_sha ?? "" : mr.merge_commit_sha ?? mr.squash_commit_sha ?? mr.sha ?? "")
+      if (!/^[0-9a-f]{7,64}$/i.test(commit)) return ""
+      head = `${ref} in ${read.repo} (merged ${day(mr.merged_at)} as ${short(commit)})`
+    } else {
+      const state = mr.state === "opened" ? "open" : tag(mr.state)
+      commit = String(source.type === "github" ? (mr.head as { sha?: unknown } | undefined)?.sha ?? "" : mr.sha ?? "")
+      // Without its head commit only this much is known.
+      if (!/^[0-9a-f]{7,64}$/i.test(commit)) return `${ref} in ${read.repo} is ${state}, not merged, so it is in no environment that deploys from the target branch; branch deploys not checked`
+      head = `${ref} in ${read.repo} (${state}, not merged, head ${short(commit)})`
+    }
   }
 
   const deploys = await listDeploys(source, base, headers, fetchImpl, timeoutMs)
   if (!deploys) return ""
   const envs = byEnvironment(deploys)
   if (envs.length === 0) return `${head}: no deployment is recorded at the source, so where it runs is not known from it`
+  // Only the newest deployments are read: an environment deployed less
+  // often than the others can be missing, and the line says so.
+  head += `, environments seen in the newest ${deploys.length} deployment${deploys.length === 1 ? "" : "s"}`
   if (!commit) return `${head}: ${envs.map((e) => `${e.env} ${envState(e)}`).join("; ")}`
 
   const parts = await Promise.all(envs.map(async (e) => {

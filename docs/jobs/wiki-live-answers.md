@@ -43,24 +43,41 @@ Until you list a source, no live read runs and questions are answered from the p
 
 A closed issue or a merged merge request does not mean the change is running. A **deployment** is the record your GitHub or GitLab project keeps each time a version is sent to an **environment**, such as `staging` or `production`. When a question asks whether something is live, the model names a deploy read with the number of the merge request that made the change. AgentX then:
 
-1. Reads the merge request. One that is not merged is reported as not deployed, and nothing more is read.
-2. Reads the newest deployments of the repository (30 on GitLab, 10 on GitHub) and, for each environment, the newest one that succeeded. That is the version running there.
-3. Asks the host whether that version holds the merge request's commit.
+1. Reads the merge request and the commit to look for. For a merged one, that is the commit it landed as. For one that is not merged yet, it is the newest commit on its branch (its **head**), because a review, preview or staging environment can run a branch before it is merged.
+2. Reads the newest deployments of the repository (30 on GitLab, 10 on GitHub) and, for each environment found in them (up to 6), the newest one that succeeded. That is the version running there.
+3. Asks the host whether that version holds the commit.
 
 The answer then gets a line such as:
 
 ```text
-!7 in example-group/billing (merged 2026-10-07 as 1a2b3c4d): production: deployed (runs 5e6f7a8b deployed 2026-10-08); staging: not deployed (runs 9c0d1e2f deployed 2026-10-06)
+!7 in example-group/billing (merged 2026-10-07 as 1a2b3c4d), environments seen in the newest 30 deployments: production: deployed (runs 5e6f7a8b deployed 2026-10-08); staging: not deployed (runs 9c0d1e2f deployed 2026-10-06)
 ```
+
+For a merge request that is not merged, the line names its head instead, for example `!8 in example-group/billing (open, not merged, head 3a4b5c6d), …`. "deployed" then means that environment runs the branch. If the host does not give the head commit, the line says only what is known: the change is in no environment that deploys from the target branch, and branch deploys were not checked.
 
 - **deployed:** the version running in that environment holds the change.
 - **not deployed:** it does not hold it yet.
 - **not known:** the environment has no successful deployment in the list, or the host did not answer.
 - `newest deploy failure …` (or `failed`, `running`) after an environment means a newer deployment to it has not succeeded, so it still runs the version named before it.
 
+Only the newest deployments are read, across all environments. On a repository with many preview or review deployments, an environment that is deployed less often (often `production`) can be missing from them. That is why the line says "environments seen in the newest … deployments": an environment that is not listed is not known, not "not deployed". To ask about it, ask again once the busy environments have settled, or read the environment's page on the host. Environment names are cut to 30 characters, like labels, since GitLab names review environments after their branch.
+
 This only works when your pipeline records deployments: GitLab does when a CI job names an `environment`, and GitHub when a workflow job names an `environment` or a tool calls the deployments API. When nothing is recorded, the line says so, and the answer says it can't tell where the change runs. It never says "not deployed" for that reason.
 
 The read needs no new setting: any repository listed under `sources` can be read this way. A GitLab token with the `read_api` scope is enough. On GitHub, a fine-grained token needs read access to **Deployments**, **Contents** and **Pull requests**.
+
+### How many requests a deploy read makes
+
+A deploy read is several requests, made in up to four rounds one after the other: the merge request, the deployment list, the state of each deployment (GitHub only), then one comparison per environment.
+
+| Host | Requests for one deploy read | Longest wait |
+|---|---|---|
+| GitHub | up to 18 (1 + 1 + 10 + 6) | 4 × `timeoutMs` (60 seconds by default) |
+| GitLab | up to 8 (1 + 1 + 6) | 3 × `timeoutMs` (45 seconds by default) |
+
+`query.live.timeoutMs` applies to each request, not to the whole read, and `query.live.maxReads` counts reads, not requests. With the defaults, one question can make about 100 requests and wait about a minute. Reads run side by side, so several reads do not add up their waits.
+
+GitHub allows only 60 requests an hour without a token. A GitHub source with no token can run out of that allowance after three or four questions about deployments; give it a token (see `tokenEnv` below).
 
 ## Write the summaries
 
@@ -143,7 +160,7 @@ All under `wiki` in `agentx.json`.
 | `query.answerModel` | `"sonnet"` | Model that writes the answer. |
 | `query.live.enabled` | `true` | Set to `false` to switch the live read off. |
 | `query.live.maxReads` | `6` | Most reads for one question. |
-| `query.live.timeoutMs` | `15000` | How long one read may take, in milliseconds. |
+| `query.live.timeoutMs` | `15000` | How long one request to a source may take, in milliseconds. A read made of several requests can take longer: see [How many requests a deploy read makes](#how-many-requests-a-deploy-read-makes). |
 | `query.live.plannerModel` | `"haiku"` | Model that names the reads. |
 | `query.live.sources` | `[]` | Where to read from. Empty: no live read. |
 | `summaries.model` | `"haiku"` | Model that writes the summaries. |
@@ -190,6 +207,8 @@ Each entry of `query.live.sources` has a `type` and these keys:
 - **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. Ask about the merge request that made the change, or name its number in the question, so a deploy read can be made.
 - **A deploy line says "no deployment is recorded at the source":** your pipeline does not record deployments for that repository. See [Know whether a change is deployed](#know-whether-a-change-is-deployed).
 - **A deploy line says "not known" for every environment:** the token can't read deployments or compare commits. Give it the read access listed above.
+- **A deploy line does not list `production`:** it was not among the newest deployments read. See the note on "environments seen in the newest … deployments" in [Know whether a change is deployed](#know-whether-a-change-is-deployed).
+- **Deploy reads stop being answered after a few questions on GitHub:** the source has no token and used up GitHub's allowance for requests without one. Set `tokenEnv` or `tokenFile` on the source.
 - **`config check` says `expected owner/name`:** a repository in `repos` is not written as `owner/name` or `group/project`.
 - **`config check` says `wiki.summaries.schedule: expected a cron of 5 fields`:** write the schedule as minute, hour, day of the month, month and day of the week, for example `"30 23 * * *"` for 23:30 every day.
 - **`config check` says `wiki.summaries.timezone: expected a time zone`:** use a name such as `"UTC"` or `"Europe/Paris"`.

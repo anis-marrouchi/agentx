@@ -271,32 +271,56 @@ describe("live reads", () => {
     })
     const lines = await runLiveReads([{ kind: "deploy", repo: "acme/widgets", id: 14 }, { kind: "deploy", repo: "acme/widgets" }], LIVE, impl)
     expect(lines.map((l) => l.line)).toEqual([
-      "#14 in acme/widgets (merged 2026-10-08 as aaaaaaaa): production: deployed (runs bbbbbbbb deployed 2026-10-08, newest deploy failure 2026-10-09); staging: not deployed (runs cccccccc deployed 2026-10-07)",
-      "deploys of acme/widgets: production runs bbbbbbbb deployed 2026-10-08, newest deploy failure 2026-10-09; staging runs cccccccc deployed 2026-10-07",
+      "#14 in acme/widgets (merged 2026-10-08 as aaaaaaaa), environments seen in the newest 4 deployments: production: deployed (runs bbbbbbbb deployed 2026-10-08, newest deploy failure 2026-10-09); staging: not deployed (runs cccccccc deployed 2026-10-07)",
+      "deploys of acme/widgets, environments seen in the newest 4 deployments: production runs bbbbbbbb deployed 2026-10-08, newest deploy failure 2026-10-09; staging runs cccccccc deployed 2026-10-07",
     ])
     expect(seen.every((r) => r.method === "GET" && r.redirect === "error" && r.headers.Authorization === "Bearer gh-secret")).toBe(true)
   })
 
-  it("answers for a GitLab merge request, and never calls an unmerged change deployed", async () => {
+  it("answers for a GitLab merge request, and checks an unmerged one's head against branch deploys", async () => {
     const gl = "https://gitlab.test/api/v4/projects/acme%2Fgroup%2Fbilling"
-    const squash = "1".repeat(40), prod = "2".repeat(40)
+    const squash = "1".repeat(40), prod = "2".repeat(40), branch = "4".repeat(40)
     const { impl, seen } = fakeFetch({
       [`${gl}/merge_requests/7`]: { iid: 7, state: "merged", merged_at: "2026-10-07T09:00:00Z", merge_commit_sha: null, squash_commit_sha: squash },
-      [`${gl}/merge_requests/8`]: { iid: 8, state: "opened" },
+      [`${gl}/merge_requests/8`]: { iid: 8, state: "opened", sha: branch },
       [`${gl}/deployments?order_by=id&sort=desc&per_page=30`]: [
         { id: 9, sha: prod, status: "success", updated_at: "2026-10-08T10:00:00Z", environment: { name: "production" } },
         { id: 8, sha: "3".repeat(40), status: "running", updated_at: "2026-10-09T10:00:00Z", environment: { name: "review/x" } },
+        { id: 7, sha: branch, status: "success", updated_at: "2026-10-09T09:00:00Z", environment: { name: `review/${"long-branch-".repeat(10)}` } },
       ],
       [`${gl}/repository/merge_base?refs%5B%5D=${squash}&refs%5B%5D=${prod}`]: { id: squash },
+      [`${gl}/repository/merge_base?refs%5B%5D=${squash}&refs%5B%5D=${branch}`]: { id: "5".repeat(40) },
+      [`${gl}/repository/merge_base?refs%5B%5D=${branch}&refs%5B%5D=${prod}`]: { id: "5".repeat(40) },
     })
     const lines = await runLiveReads([{ kind: "deploy", repo: "acme/group/billing", id: 7 }, { kind: "deploy", repo: "acme/group/billing", id: 8 }], LIVE, impl)
+    // An environment named after a branch is cut like a label.
+    const review = `review/${"long-branch-".repeat(10)}`.slice(0, 30)
     expect(lines.map((l) => l.line)).toEqual([
-      "!7 in acme/group/billing (merged 2026-10-07 as 11111111): production: deployed (runs 22222222 deployed 2026-10-08); review/x: not known (no successful deploy listed, newest deploy running 2026-10-09)",
-      "!8 in acme/group/billing is open, not merged, so it is not deployed",
+      `!7 in acme/group/billing (merged 2026-10-07 as 11111111), environments seen in the newest 3 deployments: production: deployed (runs 22222222 deployed 2026-10-08); review/x: not known (no successful deploy listed, newest deploy running 2026-10-09); ${review}: not deployed (runs 44444444 deployed 2026-10-09)`,
+      `!8 in acme/group/billing (open, not merged, head 44444444), environments seen in the newest 3 deployments: production: not deployed (runs 22222222 deployed 2026-10-08); review/x: not known (no successful deploy listed, newest deploy running 2026-10-09); ${review}: deployed (runs 44444444 deployed 2026-10-09)`,
     ])
     expect(seen.every((r) => r.method === "GET" && r.headers["PRIVATE-TOKEN"] === "gl-secret")).toBe(true)
-    // An unmerged change asks for no deployment.
-    expect(seen.filter((r) => r.url.includes("deployments")).length).toBe(1)
+  })
+
+  it("checks an open GitHub pull request's head, and says only what was read when the head is missing", async () => {
+    const gh = "https://api.github.test/repos/acme/widgets"
+    const head = "f".repeat(40), preview = "f".repeat(40)
+    const { impl, seen } = fakeFetch({
+      [`${gh}/pulls/15`]: { number: 15, state: "open", merged_at: null, head: { sha: head } },
+      [`${gh}/pulls/16`]: { number: 16, state: "open", merged_at: null },
+      [`${gh}/deployments?per_page=10`]: [{ id: 5, sha: preview, environment: "preview", created_at: "2026-10-09T07:00:00Z" }],
+      [`${gh}/deployments/5/statuses?per_page=1`]: [{ state: "success", created_at: "2026-10-09T07:05:00Z" }],
+    })
+    const one = await runLiveReads([{ kind: "deploy", repo: "acme/widgets", id: 15 }], LIVE, impl)
+    expect(one.map((l) => l.line)).toEqual([
+      "#15 in acme/widgets (open, not merged, head ffffffff), environments seen in the newest 1 deployment: preview: deployed (runs ffffffff deployed 2026-10-09)",
+    ])
+    const before = seen.length
+    const two = await runLiveReads([{ kind: "deploy", repo: "acme/widgets", id: 16 }], LIVE, impl)
+    expect(two.map((l) => l.line)).toEqual([
+      "#16 in acme/widgets is open, not merged, so it is in no environment that deploys from the target branch; branch deploys not checked",
+    ])
+    expect(seen.slice(before).map((r) => r.url)).toEqual([`${gh}/pulls/16`])
   })
 
   it("says the source records no deployment rather than that the change is not deployed", async () => {
