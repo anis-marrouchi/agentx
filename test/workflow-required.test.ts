@@ -5,7 +5,7 @@ import { join, resolve } from "path"
 import { RunStore, WorkflowDispatcher, WorkflowStore, workflowSchema, type AgentExecuteResponse } from "../src/workflows"
 import { TimerService } from "../src/workflows/timers"
 import {
-  finishWrap, isReadOnlyToolUse, liveStep, reportStep, requiredFor, runRecord, shouldWrap,
+  closeStaleWraps, finishWrap, isReadOnlyToolUse, liveStep, reportStep, requiredFor, runRecord, shouldWrap,
   startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText, writePlan,
 } from "../src/workflows/required"
 import { handleFollowUpApi, type FollowUpApiDeps } from "../src/workflows/follow-up-api"
@@ -154,6 +154,22 @@ describe("a plan the agent writes", () => {
     expect(reportStep(runs, "run-1", { step: "a", status: "maybe" })).toMatchObject({ ok: false })
     finishWrap(runs, "run-1", outcome())
     expect(writePlan(runs, "run-1", { steps: ["b"] })).toMatchObject({ ok: false })
+  })
+})
+
+describe("after a restart", () => {
+  it("closes wrapped runs whose turn was cut off, and leaves others alone", () => {
+    start("cut")
+    writePlan(runs, "cut", { steps: ["One", "Two"] })
+    reportStep(runs, "cut", { step: "step1", status: "started" })
+    start("done-already")
+    finishWrap(runs, "done-already", outcome())
+    expect(closeStaleWraps(runs)).toBe(1)
+    const cut = runs.get("cut")!
+    expect(cut.status).toBe("failed")
+    expect(runRecord(cut).failedAt).toBe("step1")
+    expect(runs.get("done-already")!.status).toBe("completed")
+    expect(closeStaleWraps(runs)).toBe(0)
   })
 })
 

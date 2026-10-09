@@ -302,6 +302,21 @@ export function finishWrap(runs: RunStore, runId: string, out: WrapOutcome): Wor
   return runs.get(runId) ?? current
 }
 
+/** At boot: a wrapped task's run still "running" lost its turn when the
+ *  daemon stopped (a hard kill skips the turn's own close). Close it as
+ *  failed where it was, so records and the Live page do not show it as
+ *  going on. The task itself is resumed (or reported) by the restart
+ *  path as before: wrapping never sets the task's workflowRunId. */
+export function closeStaleWraps(runs: RunStore, note = "interrupted: the daemon stopped during the turn"): number {
+  let closed = 0
+  for (const run of runs.list()) {
+    if (run.status !== "running" || !run.meta?.wrap) continue
+    const r = finishWrap(runs, run.id, { error: note, durationMs: Math.max(0, Date.now() - Date.parse(run.createdAt)), readOnly: false, exemptQuestions: false })
+    if (r && r !== "discarded") closed++
+  }
+  return closed
+}
+
 // ---------------------------------------------------------------------------
 // One line per run, for analysis across runs
 

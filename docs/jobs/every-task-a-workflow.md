@@ -14,7 +14,12 @@ When a task reaches an agent, AgentX picks the workflow in this order:
 2. **A plan the agent writes.** Otherwise the agent is told, in one line, that its task runs inside a run. For a task of several steps it writes its plan first, then reports each step as it starts it and when it is done or failed. If the plan changes halfway, it writes the steps it has left again, with a reason. Steps already done keep their place, and the change is kept on the run.
 3. **One step.** A task the agent does in one go needs no plan. The run then has the shape of the `linear` template: start, the agent's reply, done.
 
-What does not change: the agent answers in the same chat, with the same tools, in the same session. A step of a workflow that is already running is never wrapped in a second run.
+What does not change: the agent answers in the same chat, with the same tools, in the same session, and a task cut off by a restart is picked up again as before. A step of a workflow that is already running is never wrapped in a second run.
+
+Two limits on the first choice:
+
+- **Matching reads words in plain Latin letters.** It uses the same matcher and the same threshold as [workflow matching](../reference/config-automation.md) (`workflows.matching.autoRunThreshold`, default `0.85`), and it compares words of four letters or more written in a to z. A request in Arabic, or with many accented words, rarely matches a saved workflow, so it gets a plan or one step instead.
+- **A routine with limited permissions never starts a saved workflow.** A schedule or routine that may only report or propose (its autonomy is `report` or `propose`) cannot set a whole workflow going. It still runs inside a run of its own, on a plan or one step.
 
 ### Plain questions
 
