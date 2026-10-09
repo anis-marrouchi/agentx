@@ -20,6 +20,7 @@ import { registerWikiFacts } from "./wiki-facts"
 import { registerWikiNotes } from "./wiki-notes"
 import { registerWikiOntology } from "./wiki-ontology"
 import { registerWikiEnrich } from "./wiki-enrich"
+import { registerWikiRules } from "./wiki-rules"
 import { registerWikiSummarize } from "./wiki-summarize"
 import { resolve, relative, dirname } from "path"
 import { exec, execSync } from "child_process"
@@ -138,6 +139,7 @@ registerWikiFacts(wiki)
 registerWikiNotes(wiki)
 registerWikiOntology(wiki)
 registerWikiEnrich(wiki)
+registerWikiRules(wiki)
 registerWikiSummarize(wiki)
 
 // agentx wiki status

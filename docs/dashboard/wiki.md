@@ -50,6 +50,10 @@ The per-agent view is still there: click **Agent wikis** at the top.
 
 Every event is **minor**, **normal** or **major**. Pages show major and normal events and fold minor ones under a count. When five or more minor events happen in 30 days, the page shows them as one **Recurring** line. Only the owner sets **major**; an agent can propose it.
 
+## Rule pages
+
+A rule page (an **obligation**) holds one rule once: what to do, who, the deadline, the penalty, the source and the date it was last checked. People and organizations that must follow it list it under **Obligations**. `agentx wiki rules` writes these pages from the pages that state rules. See [Keep each rule on one page](../jobs/wiki-rules.md).
+
 ## Private facts
 
 A statement marked `access: private` (an ID number, an account number) shows as `••••` on Z2 and Z3. Its value appears only on its Z4 page. The **Discussed** panel lists the conversations a page was written from and is marked private to the owner.
