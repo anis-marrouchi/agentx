@@ -3047,7 +3047,7 @@ Resume a stopped task from its plan, in the same chat.
 
 ### `agentx signal drop <id>`
 
-Forget a stopped task and its resume plan, when it won't be resumed. It can no longer be resumed afterwards.
+Forget a stopped task and its resume plan, when it won't be resumed. It can no longer be resumed afterwards. Refused while the agent is still writing its plan or while the task is being resumed. The same people and agents that may resume a task may drop it.
 
 ## watch (advanced)
 
