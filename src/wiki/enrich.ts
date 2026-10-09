@@ -16,6 +16,7 @@
 import { createHash } from "crypto"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
 import { resolve } from "path"
+import { LockBusyError } from "./facts/ledger-file"
 import type { WikiHub } from "./hub"
 import { isWikiArticleType, type WikiArticleMeta, type WikiEntry } from "./types"
 import { normName, type Entity, type GraphPage, type WikiGraph } from "./ontology/graph"
@@ -478,12 +479,23 @@ export async function runEnrich(hub: WikiHub, g: WikiGraph, call: EnrichCall, op
     }
     const store = hub.getAgentWiki(page.agentId)
     // Absorb may have changed the page while the run waited for the model:
-    // merge onto what is on disk now, not the copy read at the start.
-    const current = store.readArticle(page.article.path)
-    const ok = !!current && store.writeArticle(page.article.path, mergedMeta(current.meta, r, opts.today), withNew(current), current.meta.owner || page.agentId)
-    if (!ok) {
+    // merge onto what is on disk now, not the copy read at the start. The
+    // page lock keeps another write from landing between this read and
+    // the write.
+    let why: string | undefined
+    try {
+      why = store.withArticleLock(page.article.path, () => {
+        const current = store.readArticle(page.article.path)
+        if (!current) return "the page was moved or removed during the run"
+        return store.writeArticle(page.article.path, mergedMeta(current.meta, r, opts.today), withNew(current), current.meta.owner || page.agentId) ? undefined : "write refused"
+      })
+    } catch (err) {
+      if (!(err instanceof LockBusyError)) throw err
+      why = "the page was busy; run again"
+    }
+    if (why) {
       outcome.status = "failed"
-      outcome.dropped.push(current ? "write refused" : "the page was moved or removed during the run")
+      outcome.dropped.push(why)
       run.outcomes.push(outcome)
       remember(e.id, fp, reply.costUsd, true)
       continue

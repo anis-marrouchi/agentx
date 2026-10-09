@@ -13,6 +13,7 @@ import {
   type RerankCandidate,
 } from "../decisions/seats/wiki-rerank"
 import { ancestryScore as ancestryOf } from "@/graph"
+import { LockBusyError, withLock } from "./facts/ledger-file"
 import { IMPORTANCE_LEVELS, type Importance, type WikiStatement } from "./ontology/types"
 
 function isImportance(s: string): s is Importance {
@@ -71,6 +72,8 @@ export class WikiStore {
   readonly baseDir: string
   private rawDir: string
   private log: (...args: unknown[]) => void
+  /** How long a write waits for another process holding the page's lock. */
+  lockWaitMs = 5000
 
   constructor(
     baseDir: string = resolve(process.cwd(), ".agentx/wiki"),
@@ -221,6 +224,18 @@ export class WikiStore {
   // --- Articles (compiled knowledge) ---
 
   /**
+   * Run `fn` holding the page's lock, so a read → change → write inside it
+   * can't lose a write from another process. Every `writeArticle` takes
+   * the same lock; re-entrant within one process. Locks live under
+   * `_locks/`, which page listings skip. Throws LockBusyError when another
+   * holder keeps it past the wait.
+   */
+  withArticleLock<T>(path: string, fn: () => T): T {
+    const lock = `${resolve(this.baseDir, "_locks", path)}.lock`
+    return withLock(resolve(this.baseDir, path), fn, { lock, what: `wiki page ${path}`, timeoutMs: this.lockWaitMs, staleMs: 10_000 })
+  }
+
+  /**
    * Write or update a wiki article.
    */
   writeArticle(
@@ -229,6 +244,16 @@ export class WikiStore {
     content: string,
     agentId: string,
   ): boolean {
+    try {
+      return this.withArticleLock(path, () => this.writeArticleLocked(path, meta, content, agentId))
+    } catch (e) {
+      if (!(e instanceof LockBusyError)) throw e
+      this.log(e.message)
+      return false
+    }
+  }
+
+  private writeArticleLocked(path: string, meta: WikiArticleMeta, content: string, agentId: string): boolean {
     // LLM picks the path. We just write the file.
     const existing = this.readArticle(path)
     if (existing && !this.canWrite(existing.meta, agentId)) {

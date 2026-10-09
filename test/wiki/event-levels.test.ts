@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { WikiHub } from "../../src/wiki/hub"
@@ -188,6 +188,31 @@ describe("wiki events run", () => {
     const run = await runEvents(hub, graph(), call, opts)
     expect(event("Renewal signed").meta.importance).toBe("major")
     expect(run.outcomes.find(o => o.title === "Renewal signed")?.dropped.join()).toMatch(/level was set on the page during the run/)
+  })
+
+  it("holds the page's lock from the read to the write", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const path = "events/2026-02-10-renewal-signed.md"
+    const lock = join(store.baseDir, "_locks", `${path}.lock`)
+    // Another process holds the page while this run would write it.
+    const call: EventsCall = async (p) => {
+      mkdirSync(join(store.baseDir, "_locks", "events"), { recursive: true })
+      writeFileSync(lock, "")
+      return reply({ "Renewal signed": { importance: "normal" }, "Weekly call": { importance: "minor" } })(p)
+    }
+    store.lockWaitMs = 100
+    const run = await runEvents(hub, graph(), call, opts)
+    expect(event("Renewal signed").meta.importance).toBeUndefined()
+    expect(run.outcomes.find(o => o.title === "Renewal signed")).toMatchObject({ status: "failed" })
+    expect(run.outcomes.find(o => o.title === "Renewal signed")?.dropped.join()).toMatch(/page was busy/)
+    expect(event("Weekly call").meta.importance).toBe("minor")
+    expect(setEventLevel(hub, graph(), "Renewal signed", "major")).toMatchObject({ ok: false, reason: expect.stringMatching(/busy/) })
+
+    // A lock left by a crashed process is taken over.
+    const old = new Date(Date.now() - 60_000)
+    utimesSync(lock, old, old)
+    expect(setEventLevel(hub, graph(), "Renewal signed", "major").ok).toBe(true)
+    expect(event("Renewal signed").meta.importance).toBe("major")
   })
 
   it("refuses to set a level on a page that is not an event", () => {

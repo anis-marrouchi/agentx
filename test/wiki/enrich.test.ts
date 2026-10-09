@@ -216,6 +216,19 @@ describe("wiki enrich run", () => {
     expect(overviewSection(content)).toBe("Pat buys from us.")
   })
 
+  it("leaves a page another process holds, and says so", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    const call: EnrichCall = async (p) => {
+      mkdirSync(join(store.baseDir, "_locks", "people"), { recursive: true })
+      writeFileSync(join(store.baseDir, "_locks", "people/pat.md.lock"), "")
+      return reply("Pat buys from us.")(p)
+    }
+    store.lockWaitMs = 100
+    const run = await runEnrich(hub, graph(), call, { ...opts, only: ["Pat Doe"] }, { entities: {} })
+    expect(run.outcomes[0]).toMatchObject({ status: "failed", dropped: [expect.stringMatching(/page was busy/)] })
+    expect(store.readArticle("people/pat.md")!.content).toBe("Pat is a buyer.")
+  })
+
   it("stops before the next call once the cap is spent, and a dry run writes nothing", async () => {
     const run = await runEnrich(hub, graph(), reply("Story."), { ...opts, maxCostUsd: 0.2, dryRun: true }, { entities: {} })
     expect(run.outcomes).toHaveLength(1)
