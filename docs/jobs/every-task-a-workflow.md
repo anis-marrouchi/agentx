@@ -27,6 +27,8 @@ A **plain question** is a task the agent answers without writing a plan and with
 
 A tool AgentX does not recognise as read-only counts as one that changes something, so a question that used it leaves a run.
 
+A tool whose name starts with a word that changes things, such as `set`, `update`, `delete`, `clear` or `send`, always counts as changing something, even when its name ends in a word like `status` or `search`.
+
 ### What it costs
 
 For a task of one step, the wrap adds about 1 millisecond of disk writes before and after the agent's turn, about 200 tokens of instructions the agent reads, and no extra call to the AI model. Run `pnpm bench:required` in a copy of the AgentX source to measure the disk and token side on your own computer.
@@ -105,6 +107,8 @@ Every run keeps, for each step: whether it was done, failed or skipped, when it 
 4. **Terminal:** to keep the records for analysis, run `agentx workflow records --days 30 > runs.jsonl`.
 
 Each line has the run's `title`, `mode` (`workflow` for a saved workflow, `plan` or `linear` for a wrapped task), `status`, `durationMs`, its `steps` (each with `id`, `title`, `status`, `startedAt`, `durationMs` and a short `note`), `failedAt` (the first step that failed, or `null`), `revisions` (how many times the plan changed) and `tokens`. It never holds the full request or what a step produced.
+
+A task you [pause](./pause-and-resume.md) is not a failure. Its run ends with the status `canceled`: the step it was on is marked skipped with the note `stopped: <reason>`, and `failedAt` stays `null`. When you resume the task, it gets a new run of its own.
 
 To see one run step by step, run `agentx workflow trace <runId>`, or open it on the **Workflows** tab.
 

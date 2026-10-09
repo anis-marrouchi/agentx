@@ -144,6 +144,27 @@ describe("a plan the agent writes", () => {
     expect(rec.steps.map((s) => [s.id, s.status])).toEqual([["step1", "ok"], ["step2", "failed"], ["step3", "skipped"]])
   })
 
+  it("closes a stopped turn as canceled at the step it was on, with nothing failed (#857)", () => {
+    start()
+    writePlan(runs, "run-1", { steps: ["One", "Two", "Three"] })
+    reportStep(runs, "run-1", { step: "step1", status: "done" })
+    reportStep(runs, "run-1", { step: "step2", status: "started" })
+    finishWrap(runs, "run-1", outcome({ error: "stopped by owner: deploy", errorKind: "stopped" }))
+    const final = runs.get("run-1")!
+    expect(final.status).toBe("canceled")
+    const rec = runRecord(final)
+    expect(rec.failedAt).toBeNull()
+    expect(rec.steps.map((s) => [s.id, s.status, s.note])).toEqual([
+      ["step1", "ok", undefined],
+      ["step2", "skipped", "stopped: stopped by owner: deploy"],
+      ["step3", "skipped", "not reached: the task was stopped"],
+    ])
+    // Linear: the reply step is not reached rather than failed.
+    start("run-2")
+    finishWrap(runs, "run-2", outcome({ error: "stopped by owner", errorKind: "stopped" }))
+    expect(runRecord(runs.get("run-2")!)).toMatchObject({ status: "canceled", failedAt: null, steps: [{ id: "reply", status: "skipped" }] })
+  })
+
   it("refuses what makes no sense", () => {
     expect(writePlan(runs, "nope", { steps: ["a"] }).ok).toBe(false)
     start()
@@ -175,10 +196,15 @@ describe("after a restart", () => {
 
 describe("tools that change nothing", () => {
   it("tells reads from writes; unknown tools count as writes", () => {
-    for (const n of ["Read", "Grep", "WebSearch", "mcp__agentx__agentx_wiki_query", "mcp__github__get_issue", "mcp__linear__list_issues"]) {
+    for (const n of ["Read", "Grep", "WebSearch", "mcp__agentx__agentx_wiki_query", "mcp__github__get_issue", "mcp__linear__list_issues", "mcp__x__task_status", "mcp__x__issue_search"]) {
       expect(isReadOnlyToolUse(n), n).toBe(true)
     }
-    for (const n of ["Bash", "Edit", "Write", "mcp__github__create_pull_request", "mcp__agentx__agentx_send", "mystery"]) {
+    for (const n of [
+      "Bash", "Edit", "Write", "mcp__github__create_pull_request", "mcp__agentx__agentx_send", "mystery",
+      // A write verb first: the last word does not make it a read.
+      "mcp__x__set_status", "mcp__x__update_status", "mcp__x__clear_list", "mcp__x__delete_search",
+      "mcp__agentx__agentx_cancel_query", "mcp__x__run-check", "mcp__x__Post_view",
+    ]) {
       expect(isReadOnlyToolUse(n), n).toBe(false)
     }
     expect(isReadOnlyToolUse("mcp__agentx__agentx_workflow", { action: "match" })).toBe(true)

@@ -78,6 +78,7 @@ const READ_ONLY_TOOLS = new Set([
   "TodoWrite", "TodoRead", "ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool",
 ])
 const READ_ONLY_VERB = /^(get|list|search|read|query|find|show|status|describe|fetch|view|lookup|recall|whoami|check)(_|-|$|[A-Z])/
+const WRITE_VERB = /^(set|update|delete|clear|create|add|remove|send|post|put|patch|write|run|start|stop|cancel)([A-Z]|$)/i
 const READ_ONLY_WORKFLOW_ACTIONS = new Set(["list", "match", "status"])
 
 /** Does this tool call change nothing? Unknown tools count as changing. */
@@ -87,7 +88,11 @@ export function isReadOnlyToolUse(name: string, input?: Record<string, unknown>)
   if (bare === "agentx_workflow") return READ_ONLY_WORKFLOW_ACTIONS.has(String(input?.action ?? "list").toLowerCase())
   const verb = bare.replace(/^agentx_/, "")
   // "get_issue", or "wiki_query": the verb leads, or the noun comes first.
-  return READ_ONLY_VERB.test(verb) || READ_ONLY_VERB.test(verb.split(/[_-]/).at(-1) ?? "")
+  // The last word counts only when the first is not a write verb, so
+  // "set_status" or "delete_search" change something.
+  if (READ_ONLY_VERB.test(verb)) return true
+  const words = verb.split(/[_-]/)
+  return words.length > 1 && !WRITE_VERB.test(words[0]) && READ_ONLY_VERB.test(words.at(-1) ?? "")
 }
 
 /** Tool calls in one stream event (assistant tool_use blocks). */
@@ -242,6 +247,10 @@ export function reportStep(runs: RunStore, runId: string, input: { step: unknown
 export interface WrapOutcome {
   /** The turn's error, if it failed. */
   error?: string
+  /** Why the turn ended without an answer. "stopped" (a stop signal,
+   *  #857) is a pause, not a failure: the run closes `canceled`, with no
+   *  failed step, and the resumed task gets a run of its own. */
+  errorKind?: string
   /** Turn wall time, ms. */
   durationMs: number
   inputTokens?: number
@@ -270,6 +279,27 @@ export function finishWrap(runs: RunStore, runId: string, out: WrapOutcome): Wor
   }
   const error = out.error ? out.error.slice(0, 300) : undefined
   let current = run
+
+  if (error && out.errorKind === "stopped") {
+    // Paused by a stop signal: the step it was on, and the ones after it,
+    // are not reached rather than failed, so failedAt stays empty.
+    const note = `stopped: ${error}`.slice(0, 300)
+    if (!plan) {
+      const e = entry(current, LINEAR_STEPS.reply, "skipped", current.createdAt, { output: usage, note })
+      current = runs.recordExecution({ runId, entry: e, nextPending: [] }) ?? current
+    } else {
+      const left = plan.steps.filter((s) => !finishedSteps(current).has(s.id))
+      const at = (plan.current && left.find((s) => s.id === plan.current!.id)) ?? left[0]
+      for (const s of at ? [at, ...left.filter((l) => l !== at)] : []) {
+        const e = s === at
+          ? entry(current, s.id, "skipped", stepStart(current, s.id), { note })
+          : entry(current, s.id, "skipped", current.history.at(-1)?.at ?? current.createdAt, { note: "not reached: the task was stopped" })
+        current = runs.recordExecution({ runId, entry: e, nextPending: [] }) ?? current
+      }
+    }
+    current = runs.setStatus(runId, "canceled") ?? current
+    return runs.get(runId) ?? current
+  }
 
   if (!plan) {
     // linear: the reply step is the turn.

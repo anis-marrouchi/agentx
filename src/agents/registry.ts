@@ -3275,8 +3275,14 @@ export class AgentRegistry {
       if (wrapStarted && wrapRunId && wrapRunStore) {
         try {
           const usage = finalResponse?.usage
+          // A stop signal (#857) pauses the task: its run closes canceled,
+          // not failed, even when the abort came before a response.
+          const stopped = !this.interruptedRuns.has(runningTask.id) && (this.stoppedRuns.has(runningTask.id) || finalResponse?.errorKind === "stopped")
           const closed = finishWrap(wrapRunStore, wrapRunId, {
-            error: finalResponse ? finalResponse.error || undefined : (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+            error: stopped
+              ? this.stoppedRuns.get(runningTask.id) || finalResponse?.error || "stopped"
+              : finalResponse ? finalResponse.error || undefined : (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+            ...(stopped ? { errorKind: "stopped" } : finalResponse?.errorKind ? { errorKind: finalResponse.errorKind } : {}),
             durationMs: Date.now() - runningTask.startedAt.getTime(),
             ...(usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } : {}),
             readOnly: wrapReadOnly,

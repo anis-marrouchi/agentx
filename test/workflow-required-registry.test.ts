@@ -14,6 +14,7 @@ const seen = vi.hoisted(() => ({
   events: [] as any[],
   list: null as null | (() => any[]),
   error: undefined as string | undefined,
+  onTurn: null as null | (() => void),
 }))
 vi.mock("../src/agents/runtime", async (importOriginal) => {
   const real: any = await importOriginal()
@@ -23,6 +24,7 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
       seen.prompts.push(JSON.stringify([task, history]))
       for (const e of seen.events) onEvent?.(e)
       if (seen.list) seen.during.push(seen.list())
+      seen.onTurn?.()
       if (seen.error) return Promise.resolve({ content: "", duration: 1, error: seen.error })
       return Promise.resolve({ content: "ok", duration: 1, usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheCreateTokens: 0 } })
     },
@@ -33,6 +35,7 @@ import { AgentRegistry } from "../src/agents/registry"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { getEventBus } from "../src/events/bus"
 import { RunStore, WorkflowStore, workflowSchema } from "../src/workflows"
+import { runRecord } from "../src/workflows/required"
 
 let dir: string
 const prevCwd = process.cwd()
@@ -44,6 +47,7 @@ beforeEach(() => {
   seen.events = []
   seen.list = null
   seen.error = undefined
+  seen.onTurn = null
   getEventBus().removeAllListeners()
 })
 afterEach(() => {
@@ -83,13 +87,31 @@ describe("workflows.required in the registry", () => {
     expect(JSON.parse(seen.prompts[0])[0].workflowRunId).toBeUndefined()
   })
 
-  it("closes the run as failed when the turn fails or is stopped", async () => {
+  it("closes the run as failed when the turn fails", async () => {
     const { r, runs } = setup({ enabled: true })
-    seen.error = "Stopped by the owner"
+    seen.error = "The model returned an error"
     await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
     const [run] = runs.list()
     expect(run.status).toBe("failed")
-    expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "failed", note: "Stopped by the owner" })
+    expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "failed", note: "The model returned an error" })
+  })
+
+  it("closes a stopped turn as canceled, not failed (#857)", async () => {
+    const { r, runs } = setup({ enabled: true })
+    seen.events = [writeTool]
+    // A stop signal lands mid-turn; the runtime then reports the abort.
+    seen.onTurn = () => {
+      const id = r.list().find((a) => a.id === "ops")!.runningTasks[0].id
+      expect(r.stopRunningTask(id, "stopped by owner: deploy")).toBe(true)
+      seen.error = "aborted"
+    }
+    const res = await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
+    expect(res.errorKind).toBe("stopped")
+    const [run] = runs.list()
+    expect(run.status).toBe("canceled")
+    expect(run.history.some((h) => h.status === "failed")).toBe(false)
+    expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "skipped", note: "stopped: stopped by owner: deploy" })
+    expect(runRecord(run)).toMatchObject({ status: "canceled", failedAt: null })
   })
 
   it("leaves no run for a plain question", async () => {
