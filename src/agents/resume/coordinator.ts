@@ -54,11 +54,13 @@ export class ResumeCoordinator {
     notifyOperator?: (text: string) => Promise<void>
     log: (msg: string) => void
     staggerMs?: number
+    /** Runs another part of the daemon picks up itself (see planResume). */
+    handledElsewhere?: (run: InterruptedRun) => string | null
   }): Promise<ResumeOutcome[]> {
     const outcomes: ResumeOutcome[] = []
     let plans: ResumePlan[] = []
     try {
-      plans = planResume(input.runs, input.settings, { now: input.now, boots: input.boots })
+      plans = planResume(input.runs, input.settings, { now: input.now, boots: input.boots, handledElsewhere: input.handledElsewhere })
     } catch (e: any) {
       input.log(`[resume] planning failed, nothing resumed: ${e?.message ?? e}`)
       return outcomes

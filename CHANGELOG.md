@@ -2,6 +2,28 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.129.0](https://github.com/anis-marrouchi/agentx/compare/v0.128.0...v0.129.0) (2026-10-08)
+
+
+### Features
+
+* **wiki:** note reader with source and check date; pause absorb per agent ([#850](https://github.com/anis-marrouchi/agentx/issues/850)) ([#851](https://github.com/anis-marrouchi/agentx/issues/851)) ([0df84c3](https://github.com/anis-marrouchi/agentx/commit/0df84c394c1f95772e55eb8f9ea81de4676a6980))
+
+
+### Bug Fixes
+
+* **a2a:** agentx_send_agent answers once queued, dedupes retries ([#847](https://github.com/anis-marrouchi/agentx/issues/847)) ([#848](https://github.com/anis-marrouchi/agentx/issues/848)) ([8a612f2](https://github.com/anis-marrouchi/agentx/commit/8a612f209eba19d8f20be36e8cb1be65722041d3))
+* **a2a:** re-run a delegation result relay stopped by a restart ([#846](https://github.com/anis-marrouchi/agentx/issues/846)) ([#849](https://github.com/anis-marrouchi/agentx/issues/849)) ([0306e6b](https://github.com/anis-marrouchi/agentx/commit/0306e6b587a3a4acf1a3d600dd0a8e20f155b923))
+* **task:** drop slot waiters whose caller has gone ([#822](https://github.com/anis-marrouchi/agentx/issues/822)) ([#823](https://github.com/anis-marrouchi/agentx/issues/823)) ([e7ccc71](https://github.com/anis-marrouchi/agentx/commit/e7ccc715c6c1d91b2c68582d0c552e4c4b01e382))
+* **wiki:** round-robin waiting notes so a skipped note cannot starve newer ones ([#837](https://github.com/anis-marrouchi/agentx/issues/837)) ([2ecf472](https://github.com/anis-marrouchi/agentx/commit/2ecf472a32695d70396870c3f51e5fd37db9458a))
+
+## [0.128.0](https://github.com/anis-marrouchi/agentx/compare/v0.127.0...v0.128.0) (2026-10-08)
+
+
+### Features
+
+* **wiki:** daily per-agent contributions as sourced patches ([#824](https://github.com/anis-marrouchi/agentx/issues/824)) ([#826](https://github.com/anis-marrouchi/agentx/issues/826)) ([75fdd77](https://github.com/anis-marrouchi/agentx/commit/75fdd778d5ac6b8106c901da2bb15baf0ddf512c))
+
 ## [0.127.0](https://github.com/anis-marrouchi/agentx/compare/v0.126.2...v0.127.0) (2026-10-08)
 
 

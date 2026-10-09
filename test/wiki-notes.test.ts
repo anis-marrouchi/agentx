@@ -86,6 +86,31 @@ describe("NoteStore", () => {
     expect(got.map((n) => n.id)).toEqual([fresh.id, stuck[0].id])
   })
 
+  it("rotates open notes a run skipped behind newer ones", () => {
+    const store = new NoteStore(dir)
+    // The run is given this note but never records it, so it is never deferred.
+    const skipped = add(store, { change: "skipped" }).note
+    expect(store.takeForRun("wiki-agent", "sweep/run-1", 1).map((n) => n.id)).toEqual([skipped.id])
+    const fresh = add(store, { change: "new note" }).note
+    expect(store.takeForRun("wiki-agent", "sweep/run-2", 1).map((n) => n.id)).toEqual([fresh.id])
+    expect(store.takeForRun("wiki-agent", "sweep/run-3", 1).map((n) => n.id)).toEqual([skipped.id])
+  })
+
+  it("keeps rotating skipped open notes after their run history is trimmed", () => {
+    const store = new NoteStore(dir)
+    const ids = ["a", "b", "c"].map((change) => add(store, { change }).note.id)
+    const offered: string[] = []
+    for (let run = 1; run <= 30; run++) {
+      offered.push(...store.takeForRun("wiki-agent", `sweep/run-${run}`, 1).map((n) => n.id))
+    }
+    expect(offered).toHaveLength(30)
+    // Past NOTE_LIMITS.listedIn runs each, every note still comes up within
+    // any 3 consecutive runs.
+    for (let run = 10; run + 3 <= 30; run++) {
+      expect(new Set(offered.slice(run, run + 3))).toEqual(new Set(ids))
+    }
+  })
+
   it("stops offering a note once it has been deferred maxDeferrals times", () => {
     const store = new NoteStore(dir)
     const n = add(store).note

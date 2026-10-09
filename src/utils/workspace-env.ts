@@ -137,10 +137,16 @@ export function withToolPath(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return env
 }
 
-/** The env for a one-shot `claude -p` call: subscription billing and a
- *  PATH that can find the CLI. */
+/** The env for a one-shot `claude -p` call: subscription billing, a
+ *  PATH that can find the CLI, and no CLAUDECODE marker. Inside an
+ *  agent's session (the MCP server, an agent's own shell) the marker is
+ *  inherited and the CLI refuses to start a nested session, which is how
+ *  `agentx_wiki_patch` and `agentx_wiki_interview` failed at `claude -p`
+ *  (#824). session-monitor and talk-model drop it for the same reason. */
 export function claudeCliEnv(): NodeJS.ProcessEnv {
-  return withToolPath(stripAnthropicApiKey({ ...process.env }))
+  const env = withToolPath(stripAnthropicApiKey({ ...process.env }))
+  delete env.CLAUDECODE
+  return env
 }
 
 /** How an agent's `claude` CLI is billed. "subscription" (the default) is

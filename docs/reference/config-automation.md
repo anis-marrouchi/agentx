@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, resuming after a restart and due reminders. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -339,6 +339,21 @@ Hands due Apple Reminders back to the agent that created them. macOS only, off b
 | `reminders.pollSeconds` | number (15 or more) | `60` | How often the lists are read. |
 | `reminders.lookbackHours` | number | `24` | A reminder overdue by more than this (the daemon was off) is reported to its agent, not run. |
 | `reminders.command` | string | `"remindctl"` | The `remindctl` program, or its full path when the daemon can't find it. |
+
+## `wiki`
+
+Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wiki-contributions).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `contributions.schedule` | schedule | `"40 22 * * *"` | When each agent with `agents.<id>.wiki.contribute.enabled` reviews its day (the `wiki-contribute` job). |
+| `contributions.mergeSchedule` | schedule | `"20 23 * * *"` | When the queued suggestions are applied (the `wiki-contribute-merge` job). |
+| `contributions.timezone` | string | `"UTC"` | Time zone of both schedules. |
+| `contributions.maxCostUsd` | number (0–20) | `0.5` | Model spend per agent per run, in dollars, for agents that set no limit of their own. |
+| `contributions.model` | string | `"sonnet"` | Model for the daily run, for agents that name none. |
+| `query.shared` | boolean | `true` | Wiki searches also read other agents' pages the agent may see, and the shared lessons. |
+
+The two jobs exist only while at least one agent is switched on. A job you define under `crons` with the same id (`wiki-contribute` or `wiki-contribute-merge`) replaces the built-in one.
 
 ## Check it worked
 

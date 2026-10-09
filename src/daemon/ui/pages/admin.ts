@@ -305,6 +305,8 @@ const ADMIN_PAGE_BODY = `
       <label>Permission mode<span class="hint">(default / bypassPermissions / plan)</span></label>
       <select id="e-perm"><option value="default">default</option><option value="bypassPermissions">bypassPermissions</option><option value="plan">plan</option></select>
       <label class="toggle-switch" style="margin-top:12px"><input type="checkbox" id="e-access" /> <span>Expose via public API</span></label>
+      <label class="toggle-switch" style="margin-top:12px"><input type="checkbox" id="e-wiki-absorb" aria-describedby="e-wiki-absorb-hint" /> <span>Include in the wiki absorb</span></label>
+      <p id="e-wiki-absorb-hint" class="hint" style="margin:4px 0 0;font-size:12px;color:var(--ax-muted)">Off: <code>agentx wiki absorb</code> skips this agent. Its conversations are still saved, so the absorb can catch up when you turn it back on.</p>
       <div id="e-msg" class="msg"></div>
     </div>
     <div class="td-footer" style="justify-content:flex-end">
@@ -3589,6 +3591,7 @@ function openAgentEdit(agent) {
   $('e-max-exec').value = agent.maxExecutionMinutes || 20;
   $('e-perm').value = agent.permissionMode || 'default';
   $('e-access').checked = agent.access === 'public';
+  $('e-wiki-absorb').checked = agent.wikiAbsorb !== false;
   $('e-msg').className = 'msg';
   editModal.el.classList.remove('hidden');
   editModal.el.setAttribute('aria-hidden', 'false');
@@ -3615,6 +3618,7 @@ async function saveAgentEdit() {
     maxExecutionMinutes: Number.isFinite(maxExecutionMinutes) ? maxExecutionMinutes : undefined,
     permissionMode: $('e-perm').value,
     access: $('e-access').checked ? 'public' : 'private',
+    wikiAbsorb: $('e-wiki-absorb').checked,
   };
   try {
     await req('PATCH', '/api/admin/agents', { id, patch });

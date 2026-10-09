@@ -51,6 +51,19 @@ export interface AgenticQueryOptions {
   /** Weight of the branch match against the text match, 0–1. Default 0.6
    *  (`graph.retrievalWeights.graph`). */
   graphWeight?: number
+  /** Other wikis to search besides `store`: the shared wiki (#824). Only
+   *  articles the requester may read are offered. Their paths come back
+   *  as `@<id>/<path>`. */
+  shared?: SharedWikiStore[]
+}
+
+/** A wiki searched alongside the requester's own. */
+export interface SharedWikiStore {
+  /** Shown in citations as `@<id>/<path>`: an agent id, or "shared". */
+  id: string
+  store: WikiStore
+  /** Paths to leave out, e.g. the agents/ tree under the root store. */
+  skip?: (path: string) => boolean
 }
 
 export interface AgenticQueryResult {
@@ -95,17 +108,19 @@ export async function agenticQuery(
 
   // --- Step 1: Load the catalog ---
   const catalogPath = resolve(store.baseDir, "_index.md")
-  if (!existsSync(catalogPath)) {
+  const view = scopeView(store, requesterId, opts.shared)
+  if (!existsSync(catalogPath) && view.sharedPool.length === 0) {
     return emptyResult("no-catalog", question, "No _index.md found — run `agentx wiki status` to rebuild.")
   }
-  const catalog = readFileSync(catalogPath, "utf-8")
+  const ownCatalog = existsSync(catalogPath) ? readFileSync(catalogPath, "utf-8") : ""
+  const catalog = ownCatalog + renderSharedCatalog(question, view.sharedPool, messagePath, graphWeight)
 
   // --- Step 2: Selector — pick candidates ---
   const selectorStart = Date.now()
   let candidates: Array<{ title: string; path: string }> = []
   let selectorOutput = ""
   try {
-    const viaSeat = await selectCandidatesViaSeat(question, catalogPool(store), requesterId, maxCandidates, messagePath, graphWeight)
+    const viaSeat = await selectCandidatesViaSeat(question, view.pool, requesterId, maxCandidates, messagePath, graphWeight)
     if (viaSeat) {
       candidates = viaSeat
       selectorOutput = `[wiki-rerank seat] ${viaSeat.map((c) => c.title).join(" | ")}`
@@ -128,7 +143,7 @@ export async function agenticQuery(
   }
 
   // --- Step 3: Walk the subgraph via `related` wikilinks ---
-  const walked = walkSubgraph(candidates, store, requesterId, maxHops, maxArticles)
+  const walked = walkSubgraph(candidates, view, maxHops, maxArticles)
 
   if (walked.length === 0) {
     return { ...emptyResult("no-candidates", question, "Candidates did not resolve to readable articles."), candidates, trace: { selectorMs, synthesisMs: 0, selectorOutput } }
@@ -208,7 +223,7 @@ export async function retrieveArticles(
       .map((i) => ({ title: pool[i].title, path: pool[i].path }))
   }
   if (candidates.length === 0) return []
-  return walkSubgraph(candidates, store, requesterId, opts.maxHops ?? 1, opts.maxArticles ?? 6)
+  return walkSubgraph(candidates, scopeView(store, requesterId), opts.maxHops ?? 1, opts.maxArticles ?? 6)
 }
 
 export type CatalogEntry = WikiIndex["articles"][number]
@@ -239,39 +254,162 @@ function emptyResult(
   }
 }
 
+/**
+ * The articles a query may open: the requester's own wiki first, then
+ * each shared one. Shared paths carry an `@<id>/` prefix so the walk
+ * knows which store to read; a title the own wiki has resolves there.
+ */
+interface ScopeView {
+  /** Own catalog, then the shared articles. */
+  pool: CatalogEntry[]
+  sharedPool: CatalogEntry[]
+  titleIndex: Map<string, string>
+  /** Title (lowercased) → pages whose `related` names it, newest first.
+   *  Built only when shared wikis are searched. */
+  backlinks: Map<string, string[]>
+  read(path: string): WikiArticle | null
+}
+
+function scopeView(store: WikiStore, requesterId: string | undefined, shared: SharedWikiStore[] = []): ScopeView {
+  const titleIndex = new Map<string, string>()
+  const linking: Array<{ path: string; related: string[]; lastUpdated: string }> = []
+  for (const article of store.listArticles(requesterId || "")) {
+    titleIndex.set(article.meta.title.toLowerCase(), article.path)
+    linking.push({ path: article.path, related: article.meta.related ?? [], lastUpdated: article.meta.lastUpdated ?? "" })
+  }
+  const sharedPool: CatalogEntry[] = []
+  const byId = new Map<string, SharedWikiStore>()
+  for (const s of shared) {
+    if (s.store.baseDir === store.baseDir) continue
+    byId.set(s.id, s)
+    // listArticles is cached and already drops what the requester can't
+    // read; rebuilding every agent's index per query would not be.
+    for (const a of s.store.listArticles(requesterId || "")) {
+      if (a.path.includes("/_versions/") || s.skip?.(a.path)) continue
+      const path = `@${s.id}/${a.path}`
+      sharedPool.push(catalogEntry(a, path))
+      linking.push({ path, related: a.meta.related ?? [], lastUpdated: a.meta.lastUpdated ?? "" })
+      const key = a.meta.title.toLowerCase()
+      if (!titleIndex.has(key)) titleIndex.set(key, path)
+    }
+  }
+  // In a fleet's shared pool the page that answers a question often links
+  // TO the page the selector picked (a decision about a person), and the
+  // forward walk never reaches it (#824 review: ranked 103rd of ~5,700).
+  const backlinks = new Map<string, string[]>()
+  if (byId.size > 0) {
+    for (const l of [...linking].sort((a, b) => b.lastUpdated.localeCompare(a.lastUpdated))) {
+      for (const t of l.related) {
+        const key = t.toLowerCase()
+        const list = backlinks.get(key) ?? []
+        if (!list.includes(l.path)) list.push(l.path)
+        backlinks.set(key, list)
+      }
+    }
+  }
+  let pool: CatalogEntry[] | undefined
+  return {
+    backlinks,
+    // Lazy: retrieveArticles brings its own pool, and building this one
+    // rebuilds the index.
+    get pool() { return (pool ??= [...catalogPool(store), ...sharedPool]) },
+    sharedPool,
+    titleIndex,
+    read(path) {
+      const m = path.match(/^@([^/]+)\/(.+)$/)
+      const target = m ? byId.get(m[1]) : undefined
+      if (m && !target) return null
+      const s = target?.store ?? store
+      const rel = m ? m[2] : path
+      const article = requesterId ? s.readArticleAs(rel, requesterId) : s.readArticle(rel)
+      return article ? { ...article, path } : null
+    },
+  }
+}
+
+function catalogEntry(a: WikiArticle, path: string): CatalogEntry {
+  return {
+    path,
+    title: a.meta.title,
+    type: a.meta.type,
+    related: a.meta.related,
+    tags: a.meta.tags || [],
+    owner: a.meta.owner,
+    access: a.meta.access,
+    sharedWith: a.meta.sharedWith,
+    aliases: [a.meta.title.toLowerCase(), ...(a.meta.aliases ?? []).map((x) => x.toLowerCase())],
+    backlinks: 0,
+    sources: a.meta.sources,
+    lastUpdated: a.meta.lastUpdated,
+    graphPath: a.meta.graphPath,
+  }
+}
+
+/** Shared articles most related to the question, for the CLI selector.
+ *  Capped: a fleet's shared catalog would not fit one prompt. */
+export const SHARED_CATALOG_LINES = 150
+
+function renderSharedCatalog(question: string, pool: CatalogEntry[], messagePath: string[] | undefined, graphWeight: number): string {
+  if (pool.length === 0) return ""
+  const lines = rankCatalogPool(question, pool, messagePath, graphWeight)
+    .slice(0, SHARED_CATALOG_LINES)
+    .map((i) => `- ${pool[i].title}${pool[i].type ? ` [${pool[i].type}]` : ""} (${pool[i].path})`)
+  return `\n\n## Shared wiki (other agents' articles)\n\n${lines.join("\n")}\n`
+}
+
+/** Pages that link to a picked page, opened per picked page. */
+const BACKLINKS_PER_PICK = 3
+
 function walkSubgraph(
   candidates: Array<{ title: string; path: string }>,
-  store: WikiStore,
-  requesterId: string | undefined,
+  view: ScopeView,
   maxHops: number,
   maxArticles: number,
 ): Array<WikiArticle & { hop: number }> {
-  // Build a title → path index from the store so wikilinks resolve.
-  const titleIndex = new Map<string, string>()
-  for (const article of store.listArticles(requesterId || "")) {
-    titleIndex.set(article.meta.title.toLowerCase(), article.path)
-  }
+  const titleIndex = view.titleIndex
+  const isShared = (path: string) => path.startsWith("@")
+
+  // The agent's own pages come first, and shared pages may take at most
+  // half the walk when it has any: in the #824 trial shared pages took
+  // the slots of the agent's own correct pages and its score dropped.
+  const ordered = [...candidates.filter((c) => !isShared(c.path)), ...candidates.filter((c) => isShared(c.path))]
+  let sharedCap = ordered.length > 0 && !isShared(ordered[0].path) ? Math.floor(maxArticles / 2) : maxArticles
 
   const opened = new Map<string, WikiArticle & { hop: number }>()
-  let frontier: Array<{ path: string; hop: number }> = []
+  let sharedOpened = 0
+  let frontier: Array<{ path: string; hop: number }> = ordered.map((c) => ({ path: c.path, hop: 0 }))
+  // Shared pages turned away by the cap, in walk order. When the agent's
+  // own pages run out first they get the slots left: an own pick with no
+  // own neighbours must not leave the walk short of shared pages that answer.
+  const deferred: Array<{ path: string; hop: number }> = []
 
-  for (const c of candidates) {
-    if (!opened.has(c.path)) frontier.push({ path: c.path, hop: 0 })
-  }
-
-  while (frontier.length && opened.size < maxArticles) {
+  while (opened.size < maxArticles) {
+    if (!frontier.length) {
+      if (!deferred.length || sharedCap >= maxArticles) break
+      sharedCap = maxArticles
+      frontier = deferred.splice(0)
+    }
     const next = frontier.shift()!
     if (opened.has(next.path)) continue
     if (next.hop > maxHops) continue
+    if (isShared(next.path) && sharedOpened >= sharedCap) { deferred.push(next); continue }
 
-    const article = requesterId
-      ? store.readArticleAs(next.path, requesterId)
-      : store.readArticle(next.path)
+    const article = view.read(next.path)
     if (!article) continue
 
     opened.set(next.path, { ...article, hop: next.hop })
+    if (isShared(next.path)) sharedOpened++
     if (next.hop >= maxHops) continue
 
+    if (next.hop === 0) {
+      // Pages link to a subject by any of its names; skip what is already
+      // open before taking the newest few, or an opened page uses a slot.
+      const names = [article.meta.title, ...(article.meta.aliases ?? [])].map((n) => n.toLowerCase())
+      const linking = [...new Set(names.flatMap((n) => view.backlinks.get(n) ?? []))]
+        .filter((path) => path !== next.path && !opened.has(path))
+        .slice(0, BACKLINKS_PER_PICK)
+      for (const path of linking) frontier.push({ path, hop: 1 })
+    }
     for (const target of article.meta.related || []) {
       const path = titleIndex.get(target.toLowerCase())
       if (path && !opened.has(path)) {
@@ -438,7 +576,10 @@ function buildSynthesisPrompt(
 ): string {
   const articlesBlock = articles
     .map(a => {
-      const header = `### ${a.meta.title} — ${a.meta.type || "untyped"} (${a.path}) [hop ${a.hop}]`
+      // Owner and date let the answer say where a fact came from and pick
+      // the newer page when two disagree (#824).
+      const from = [a.meta.owner ? `owner: ${a.meta.owner}` : "", a.meta.lastUpdated ? `updated: ${a.meta.lastUpdated}` : ""].filter(Boolean).join(", ")
+      const header = `### ${a.meta.title} — ${a.meta.type || "untyped"} (${a.path}) [hop ${a.hop}]${from ? ` {${from}}` : ""}`
       const related = a.meta.related?.length ? `Related: ${a.meta.related.join(", ")}` : ""
       return [header, related, "", a.content].filter(Boolean).join("\n")
     })
@@ -456,7 +597,7 @@ ${articlesBlock}
 
 ## Your task
 
-Answer the question in 2–6 sentences. Cite articles by their title in square brackets like [Article Title]. If the articles do not answer the question, say so plainly (do not invent). Prefer concrete facts over hedging.
+Answer the question in 2–6 sentences. Cite articles by their title in square brackets like [Article Title]. When two articles disagree, prefer the one updated more recently, and say which agent's page and date the answer comes from. If the articles do not answer the question, say so plainly (do not invent). Prefer concrete facts over hedging.
 
 Output ONLY the answer — no preamble, no "here is my answer:", no markdown fencing.`
 }
@@ -495,5 +636,17 @@ async function runClaude(prompt: string, model: string, timeoutMs: number): Prom
     }
   } finally {
     try { rmSync(promptPath, { force: true }) } catch {}
+  }
+}
+
+/** `wiki.query.shared` from agentx.json: whether a query also searches the
+ *  shared wiki. On when there is no config to read. The CLI and the
+ *  `agentx_wiki_query` tool both ask here, so the switch reaches both. */
+export async function sharedQueryEnabled(configPath?: string): Promise<boolean> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    return loadDaemonConfig(configPath).wiki.query.shared
+  } catch {
+    return true
   }
 }

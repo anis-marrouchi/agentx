@@ -24,6 +24,20 @@ Remote protected daemon requests need `Authorization: Bearer <mesh-token>`. Read
 
 When an agent sends work from a conversation a person started, the request returns at once and the answer comes back to that agent as a new message. See [When an agent asks another agent](../jobs/ask-another-agent.md).
 
+## Send work to an agent on this machine
+
+A script on the same machine can give work to one of its agents with `POST /task`:
+
+```sh
+curl http://127.0.0.1:18800/task \
+  -H 'Content-Type: application/json' \
+  -d '{"agent":"helper","message":"Reply with a short hello"}'
+```
+
+The request stays open until the agent answers. If the agent is busy with other work, the request first waits for it to be free, for up to 25 minutes.
+
+**Keep the connection open if the message must run.** A caller that disconnects (for example `curl -m 30` timing out) before the agent is free has its request dropped: it never runs, and nothing is sent back. Once the agent has started the work, a disconnect no longer stops it. There is no fire-and-forget mode for scripts: only an agent asking from a conversation a person started gets an early answer and its reply later ([When an agent asks another agent](../jobs/ask-another-agent.md)). So set your client's timeout to more than 25 minutes plus the time the work takes, and don't treat a timeout as "delivered". If you resend after a timeout, the message may run twice when the first attempt had already started.
+
 ## Serve the standalone A2A protocol
 
 The standalone command starts a separate provider-backed server. It does not select a named daemon agent. Configure and authenticate the chosen provider first:
@@ -55,11 +69,13 @@ For source installations, use `node dist/cli.js` in place of `agentx` in these c
 
 1. **Terminal:** run `agentx mesh list`. The peer you send to is listed.
 2. **Terminal:** send the hello task above. The reply prints in the terminal, and the work shows in **Operations**.
-3. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
+3. **Terminal:** send the `POST /task` request above. It prints the agent's answer as JSON.
+4. For the standalone server: `curl http://127.0.0.1:3171/.well-known/agent-card.json` returns the agent card.
 
 ## If something is wrong
 
 - **`Mesh not enabled`:** this daemon has no mesh set up. [Pair your machines](../jobs/tailscale.md) first.
 - **`401` from the peer:** the two machines don't share the same mesh token. See [Add a second machine](../jobs/second-machine.md).
 - **The peer can't find the agent:** the agent ID must be one configured on that peer, not on this machine.
+- **A `POST /task` message never ran:** the caller probably disconnected while the agent was busy. The daemon log shows `caller gone during slot wait — not starting`. Keep the connection open longer and send it again.
 - **The standalone server doesn't answer:** check that the chosen `--provider` is installed and signed in on that machine.

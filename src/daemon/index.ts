@@ -191,8 +191,9 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
-import type { DelegationManager } from "@/a2a/delegation"
+import { isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -224,6 +225,8 @@ export class AgentXDaemon {
   private delegations: DelegationManager
   /** Synchronous delegations in flight, to refuse cycles that could never finish. */
   private syncWaits = new SyncWaits()
+  /** Recent /send/agent answers, so a retry gets the same task id (#847). */
+  private sendAgentDedupe = new SendAgentDedupe()
   /** Phone-app callback replies waiting for the dashboard to file them. */
   private callbackReplies = new CallbackReplies()
   private hooks: HookRegistry
@@ -521,6 +524,7 @@ export class AgentXDaemon {
         this.status?.board.delegationDone(rec, result.status)
       },
       callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
+      onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
     })
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)
@@ -1350,6 +1354,11 @@ export class AgentXDaemon {
         boots: this.bootTimes,
         log: this.log,
         staggerMs: 2_000,
+        // A delegation result's relay turn is re-run by the delegation
+        // manager (#846); resuming it here too would answer twice.
+        handledElsewhere: (run) => this.config.mesh.delegation.requeueRelayOnRestart && isDelegationRelay(run.originalMessage)
+          ? "delegation result relay: the delegation manager runs it again"
+          : null,
         notifyOperator: dest
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
           : undefined,
@@ -5921,8 +5930,14 @@ export class AgentXDaemon {
           // dispatch when the target lives on this daemon). This is the
           // deterministic path for "agent A asks agent B to do X" — no
           // contact-directory fallback, no name fuzzy-matching. Caller
-          // must pass an exact agentId. Returns the resulting task id /
-          // remote message id when the mesh accepts the task.
+          // must pass an exact agentId.
+          //
+          // retro:01M4DJTC01FK0BVCMFKT5K4SRQ (#847) — answers 202
+          // {accepted, taskId, status: "queued"} as soon as the work is
+          // handed off, local or mesh; the target's turn runs in the
+          // background. A repeat of the same message from the same sender
+          // within the dedupe window gets the first task id back. Only
+          // `"async": false` still waits for the answer.
           const body = await readBody(req)
           if (!body.agentId || !body.text) {
             this.json(res, 400, { error: "Required: agentId, text" })
@@ -5930,38 +5945,69 @@ export class AgentXDaemon {
           }
           const targetAgent = String(body.agentId)
           const text = String(body.text)
+          const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+          const wait = body.async === false
+          const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
+          const seen = wait ? null : this.sendAgentDedupe.get(dedupeKey)
+          if (seen) {
+            this.log(`[send/agent] duplicate of ${String(seen.taskId)} from ${senderAgentId || "?"} → ${targetAgent}; not sent again`)
+            this.json(res, 202, duplicateBody(seen))
+            break
+          }
           // #277 — same gate as /task: refuse a cycle, or call back when a
           // person started it.
           const gate = this.delegationGate(req, body, { callee: targetAgent, message: text })
-          if (!("track" in gate)) { const a = gateAnswer(gate); this.json(res, a.status, a.body); break }
+          if (!("track" in gate)) {
+            const a = gateAnswer(gate)
+            if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)
+            this.json(res, a.status, a.body)
+            break
+          }
           // Local agent? Dispatch directly through the registry.
           const localDef = this.registry.getAgent(targetAgent)
           if (localDef) {
-            try {
-              const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+            const track = gate.track
+            // Only a caller that waits holds the callee in syncWaits: a
+            // queued send leaves the caller free, so it can't form a cycle.
+            const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
               const context = { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a" }
               // A remote target records on its own node's /task; a local one
               // has no other hop that would put this delegation in the ledger.
               const intentRef = this.recordInboundDispatch(
                 targetAgent,
-                { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}`, ...(gate.track.root ? { initiator: gate.track.root } : {}) },
+                { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}`, ...(track.root ? { initiator: track.root } : {}) },
                 text,
                 senderAgentId,
               )
-              let response
-              try {
-                response = await this.registry.execute({
-                  agentId: targetAgent,
-                  message: text,
-                  context,
-                  intentRef,
-                  onStart: gate.track.onStart,
-                })
-              } finally { gate.track.end() }
-              this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
-            } catch (e: any) {
-              this.json(res, 500, { error: e.message })
+              return this.registry.execute({
+                agentId: targetAgent,
+                message: text,
+                context,
+                intentRef,
+                onStart: waits ? track.onStart : onStart,
+              }).finally(() => { if (waits) track.end() })
             }
+            if (wait) {
+              try {
+                const response = await runLocal(true)
+                this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
+              } catch (e: any) {
+                this.json(res, 500, { error: e.message })
+              }
+              break
+            }
+            const queued = queueSend({
+              agent: targetAgent,
+              log: (m) => this.log(m),
+              run: async (taskId) => {
+                // A busy agent queues the message; it gets a run (and a
+                // trace) only when it starts. This line joins the two ids.
+                const r = await runLocal(false, (runId) => this.log(`[send/agent] ${taskId} → ${targetAgent} started as run ${runId}`))
+                return { ok: !r.error, ...(r.error ? { detail: r.error.slice(0, 200) } : {}) }
+              },
+            })
+            this.sendAgentDedupe.put(dedupeKey, queued)
+            this.json(res, 202, queued)
             break
           }
           // Remote agent? Find the mesh peer that advertises this agent.
@@ -5969,7 +6015,8 @@ export class AgentXDaemon {
             this.json(res, 400, { error: `Unknown agent "${targetAgent}" — mesh disabled, no remote lookup possible` })
             break
           }
-          const directory = this.mesh.directory()
+          const mesh = this.mesh
+          const directory = mesh.directory()
           const peer = directory.find((p) => p.healthy && p.skills.some((s) => s.id === targetAgent))
           if (!peer) {
             const known = [
@@ -5979,13 +6026,26 @@ export class AgentXDaemon {
             this.json(res, 404, { error: `Unknown agent "${targetAgent}"`, known })
             break
           }
-          try {
-            const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
-            const messageId = await this.mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
-            this.json(res, 200, { ok: true, messageId, peer: peer.peer })
-          } catch (e: any) {
-            this.json(res, 500, { error: e.message, peer: peer.peer })
+          if (wait) {
+            try {
+              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+              this.json(res, 200, { ok: true, messageId, peer: peer.peer })
+            } catch (e: any) {
+              this.json(res, 500, { error: e.message, peer: peer.peer })
+            }
+            break
           }
+          const queued = queueSend({
+            agent: targetAgent,
+            peer: peer.peer,
+            log: (m) => this.log(m),
+            run: async () => {
+              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+              return { ok: true }
+            },
+          })
+          this.sendAgentDedupe.put(dedupeKey, queued)
+          this.json(res, 202, queued)
           break
         }
 
@@ -6184,6 +6244,13 @@ export class AgentXDaemon {
           // incremental visibility into the orchestrator's progress
           // instead of a 60-180s blank wait. Existing JSON callers are
           // untouched — they see the original single-response shape.
+          // A caller that gives up (curl -m 30, a client timeout) must not
+          // leave its request waiting for a busy agent's slot: a retrying
+          // script would have every attempt run once the slot frees (#822).
+          // Listens on `res` for the reason given below; guarded so a normal
+          // answer never trips it.
+          const callerGone = new AbortController()
+          res.on("close", () => { if (!res.writableEnded) callerGone.abort(new Error("caller disconnected")) })
           const acceptHeader = String(req.headers["accept"] || "")
           const wantStream = body.stream === true || acceptHeader.includes("text/event-stream")
           if (wantStream) {
@@ -6280,6 +6347,7 @@ export class AgentXDaemon {
                   intentRef,
                   freshSession,
                   onStart: track.onStart,
+                  callerSignal: callerGone.signal,
                 },
                 onDelta,
                 onThinking,
@@ -6321,6 +6389,7 @@ export class AgentXDaemon {
               systemPromptAppend: remoteVoiceAppend(body.context),
               origin,
               onStart: track.onStart,
+              callerSignal: callerGone.signal,
             },
             () => {},
           )).finally(track.end), origin)
