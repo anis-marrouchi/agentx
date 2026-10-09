@@ -15,6 +15,10 @@ import { resolve } from "path"
 import { execSync } from "child_process"
 import type { WikiArticle, WikiIndex } from "./types"
 import type { WikiStore } from "./store"
+import { claudeModelCall, type ModelCall } from "./model-call"
+import type { FetchLike, LiveLine } from "./live-read"
+import { DEFAULT_SUMMARIES_QUERY, collectSummaries, summariesQuery, type SummariesQuerySettings } from "./query-summaries"
+import type { QueryMethod } from "./query-settings"
 
 /**
  * Agentic wiki query — the "Farzapedia-faithful" retrieval path.
@@ -55,6 +59,16 @@ export interface AgenticQueryOptions {
    *  articles the requester may read are offered. Their paths come back
    *  as `@<id>/<path>`. */
   shared?: SharedWikiStore[]
+  /** How pages are picked (#855). `summaries`: from the one-line page
+   *  summaries, then a live read (query-summaries.ts). `auto`: that, once
+   *  a summary exists for the pages in scope. Default "catalog". */
+  method?: QueryMethod
+  /** Settings of the summaries method. An explicit `selectorModel` or
+   *  `synthModel` overrides its models. */
+  summaries?: SummariesQuerySettings
+  /** Model call and HTTP GET of the summaries method; tests pass their own. */
+  call?: ModelCall
+  fetch?: FetchLike
 }
 
 /** A wiki searched alongside the requester's own. */
@@ -75,11 +89,19 @@ export interface AgenticQueryResult {
   walked: Array<{ title: string; path: string; type?: string; hop: number }>
   /** "no-catalog" | "no-candidates" | "ok" */
   status: "ok" | "no-catalog" | "no-candidates" | "error"
+  /** How the pages were picked. */
+  method?: "summaries" | "catalog"
+  /** Lines read at the source for this answer (summaries method). */
+  live?: LiveLine[]
+  /** Live reads the model named and the config allowed. */
+  liveAsked?: number
   /** For operator debugging only. */
   trace?: {
     selectorMs: number
     synthesisMs: number
     selectorOutput?: string
+    planMs?: number
+    liveMs?: number
   }
   error?: string
 }
@@ -109,6 +131,33 @@ export async function agenticQuery(
   // --- Step 1: Load the catalog ---
   const catalogPath = resolve(store.baseDir, "_index.md")
   const view = scopeView(store, requesterId, opts.shared)
+
+  const method = opts.method ?? "catalog"
+  if (method !== "catalog") {
+    const summaries = collectSummaries(store, opts.shared)
+    if (method === "summaries" || summaries.size > 0) {
+      const base = opts.summaries ?? DEFAULT_SUMMARIES_QUERY
+      const out = await summariesQuery(question, view, summaries, {
+        ...base,
+        navigatorModel: opts.selectorModel ?? base.navigatorModel,
+        answerModel: opts.synthModel ?? base.answerModel,
+      }, { call: opts.call ?? claudeModelCall, fetch: opts.fetch, timeoutMs, log })
+      const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: a.meta.type }))
+      return {
+        answer: out.answer,
+        citations: out.status === "ok" ? pages : [],
+        candidates: pages.map(({ title, path }) => ({ title, path })),
+        walked: pages.map((p) => ({ ...p, hop: 0 })),
+        status: out.status,
+        method: "summaries",
+        live: out.live,
+        liveAsked: out.liveAsked,
+        trace: out.trace,
+        ...(out.error ? { error: out.error } : {}),
+      }
+    }
+  }
+
   if (!existsSync(catalogPath) && view.sharedPool.length === 0) {
     return emptyResult("no-catalog", question, "No _index.md found — run `agentx wiki status` to rebuild.")
   }
@@ -267,6 +316,8 @@ interface ScopeView {
   /** Title (lowercased) → pages whose `related` names it, newest first.
    *  Built only when shared wikis are searched. */
   backlinks: Map<string, string[]>
+  /** Paths the requester may read, own and shared. */
+  readable: Set<string>
   read(path: string): WikiArticle | null
 }
 
@@ -310,6 +361,7 @@ function scopeView(store: WikiStore, requesterId: string | undefined, shared: Sh
   let pool: CatalogEntry[] | undefined
   return {
     backlinks,
+    readable: new Set(linking.map((l) => l.path)),
     // Lazy: retrieveArticles brings its own pool, and building this one
     // rebuilds the index.
     get pool() { return (pool ??= [...catalogPool(store), ...sharedPool]) },

@@ -352,8 +352,35 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `contributions.maxCostUsd` | number (0–20) | `0.5` | Model spend per agent per run, in dollars, for agents that set no limit of their own. |
 | `contributions.model` | string | `"sonnet"` | Model for the daily run, for agents that name none. |
 | `query.shared` | boolean | `true` | Wiki searches also read other agents' pages the agent may see, and the shared lessons. |
+| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How a wiki question picks its pages. `summaries`: from the one-line page summaries, then a live read. `catalog`: from page titles, then along the links between pages. `auto`: `summaries` once summaries exist. See [Get wiki answers checked at the source](/jobs/wiki-live-answers). |
+| `query.candidates` | number (1–50) | `12` | How many of the agent's own pages the picking model sees. |
+| `query.sharedCandidates` | number (0–50) | `4` | How many of other agents' pages it sees beside them. |
+| `query.maxPages` | number (1–10) | `3` | Most pages opened for one answer. |
+| `query.pageChars` | number (200–40000) | `4000` | Characters of each opened page given to the answer. |
+| `query.navigatorModel` | string | `"haiku"` | Model that picks the pages. |
+| `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |
+| `query.live.enabled` | boolean | `true` | The live read before the answer. `false` switches it off. |
+| `query.live.maxReads` | number (0–20) | `6` | Most reads for one question. |
+| `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one read may take, in milliseconds. |
+| `query.live.plannerModel` | string | `"haiku"` | Model that names the reads. |
+| `query.live.sources` | list | `[]` | Where a live read may read from. Empty: no live read runs. |
+| `query.live.sources[].type` | `"github"`, `"gitlab"` or `"agentx"` | — | The kind of system. |
+| `query.live.sources[].repos` | list | — | `github` and `gitlab`: the repositories that may be read, each `"owner/name"` or an object with `repo` and `about`. At least one. |
+| `query.live.sources[].repos[].repo` | string | — | The repository, as `owner/name` or a GitLab project path. |
+| `query.live.sources[].repos[].about` | string | unset | What lives there, so the model names the right repository. |
+| `query.live.sources[].apiUrl` | string | `"https://api.github.com"` | `github`: the API address. |
+| `query.live.sources[].url` | string | `channels.gitlab.host`, or this machine | `gitlab`: the host. `agentx`: the daemon to ask. |
+| `query.live.sources[].tokenEnv` | string | unset | `github` and `gitlab`: name of the environment variable that holds a read token. |
+| `query.live.sources[].tokenFile` | string | unset | `github` and `gitlab`: a file whose first line is the read token. |
+| `query.live.sources[].peers` | boolean | `true` | `agentx`: also ask each machine connected to the daemon. |
+| `summaries.model` | string | `"haiku"` | Model that writes the one-line page summaries. |
+| `summaries.batchSize` | number (1–50) | `20` | Pages per model call. |
+| `summaries.maxWords` | number (5–120) | `35` | Longest summary, in words. |
+| `summaries.schedule` | schedule | unset | When `agentx wiki summarize --all` runs on its own (the `wiki-summarize` job). Unset: no job. |
+| `summaries.timezone` | string | `"UTC"` | Time zone of that schedule. |
+| `summaries.agent` | string | unset | Agent the job is listed under. Unset: `node.defaultAgent`, else the first agent. |
 
-The two jobs exist only while at least one agent is switched on. A job you define under `crons` with the same id (`wiki-contribute` or `wiki-contribute-merge`) replaces the built-in one.
+The two contribution jobs exist only while at least one agent is switched on. A job you define under `crons` with the same id (`wiki-contribute`, `wiki-contribute-merge` or `wiki-summarize`) replaces the built-in one.
 
 ## Check it worked
 

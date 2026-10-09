@@ -954,7 +954,7 @@ const TOOLS = [
   {
     name: "agentx_wiki_query",
     description:
-      "Query the agentx institutional wiki: a cross-agent knowledge base organized by article type (person, project, place, concept, event, decision, pattern). Use this BEFORE grep/memory-search when the question is about who / what happened / what we decided / how we do something. The query walks the catalog + wikilink graph and returns a synthesized answer with citations.",
+      "Query the agentx institutional wiki: a cross-agent knowledge base organized by article type (person, project, place, concept, event, decision, pattern). Use this BEFORE grep/memory-search when the question is about who / what happened / what we decided / how we do something. The query picks pages from their one-line summaries, reads the live state of what they name (issue, merge request, release, running version) from the configured sources, and returns an answer with citations and the lines it read live. Where no summaries exist it walks the catalog + wikilink graph.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -972,7 +972,7 @@ const TOOLS = [
         },
         max_hops: {
           type: "number",
-          description: "Wikilink hops from candidates (default 2, max 3).",
+          description: "Wikilink hops from candidates (default 2, max 3). Used by the catalog method only.",
           default: 2,
         },
       },
@@ -1645,6 +1645,7 @@ async function handleToolCall(
       }
       const { WikiHub } = await import("@/wiki")
       const { agenticQuery, sharedQueryEnabled } = await import("@/wiki/query")
+      const { loadQuerySettings } = await import("@/wiki/query-settings")
       const { resolve } = await import("path")
       const wikiDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
       const hub = new WikiHub(wikiDir, undefined, "graph")
@@ -1672,18 +1673,24 @@ async function handleToolCall(
       // classification log here would hand back the previous request's
       // path, since classification runs alongside the turn.
       const branch = await runningIntentPath()
+      // `wiki.query` decides the method: page summaries plus a live read
+      // once summaries exist, the catalog walk until then (#855).
+      const settings = await loadQuerySettings()
       const result = await agenticQuery(question, store, agentId, {
         maxHops,
         shared: (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined,
         messagePath: branch?.path,
         ...(branch?.graphWeight !== undefined ? { graphWeight: branch.graphWeight } : {}),
+        method: settings.method,
+        summaries: settings.summaries,
       })
       if (result.status !== "ok") {
         return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
       }
       const cites = result.citations.map(c => `  - ${c.title} [${c.type || "?"}] (${c.path})`).join("\n")
       const walkCount = result.walked.length
-      const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}`
+      const live = result.live?.length ? `\n\nRead live at the source just now:\n${result.live.map((l) => `  - ${l.line}`).join("\n")}` : ""
+      const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}${live}`
       return { content: [{ type: "text", text: body }] }
     }
 
