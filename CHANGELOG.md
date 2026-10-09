@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.130.0](https://github.com/anis-marrouchi/agentx/compare/v0.129.0...v0.130.0) (2026-10-09)
+
+
+### Features
+
+* **wiki:** wiki absorb reads and answers the agents' wiki notes ([#831](https://github.com/anis-marrouchi/agentx/issues/831)) ([#832](https://github.com/anis-marrouchi/agentx/issues/832)) ([73a09ff](https://github.com/anis-marrouchi/agentx/commit/73a09ff34ba7e9825f12f9f666a718d3a96c49f9))
+
 ## [0.129.0](https://github.com/anis-marrouchi/agentx/compare/v0.128.0...v0.129.0) (2026-10-08)
 
 
