@@ -9,6 +9,7 @@ import { loadDaemonConfig } from "./config"
 import { localSettings, patchLocal } from "@/notify/local"
 import { patchScreen, screenSettings } from "@/computer-use/capture-settings"
 import { patchWikiNotes, wikiNotesSettings, type WikiNotesPatch } from "@/wiki/notes-settings"
+import { setWikiAbsorb } from "@/wiki/absorb-agents"
 import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
@@ -220,6 +221,8 @@ function getAdminState() {
     maxConcurrent: a.maxConcurrent ?? 1,
     maxExecutionMinutes: a.maxExecutionMinutes ?? 20,
     permissionMode: a.permissionMode || "default",
+    // Bulk wiki absorb for this agent (#850); on unless set to false.
+    wikiAbsorb: a.wiki?.absorb?.enabled !== false,
     // Per-agent integrations registry. Each entry: { kind, label, credentials, metadata, enabled }.
     // Credentials carry env-var REFS (uppercase identifier) — not values.
     // The integration list endpoint also resolves env-set status server-side
@@ -519,6 +522,7 @@ function editAgent(body: any) {
     }
     if (typeof patch.permissionMode === "string") a.permissionMode = patch.permissionMode
     if (patch.access === "public" || patch.access === "private") a.access = patch.access
+    if (typeof patch.wikiAbsorb === "boolean") setWikiAbsorb(a, patch.wikiAbsorb)
     return `updated agent "${id}"`
   })
   return { summary }
@@ -1509,6 +1513,7 @@ async function updateWikiNotes(body: any) {
   if ("enabled" in body) patch.enabled = !!body.enabled
   if ("inbox" in body) patch.inbox = String(body.inbox ?? "")
   if ("crons" in body) patch.crons = Array.isArray(body.crons) ? body.crons.map(String) : String(body.crons ?? "").split(",")
+  if ("absorbAgent" in body) patch.absorbAgent = String(body.absorbAgent ?? "")
   if ("maxNotesPerRun" in body) patch.maxNotesPerRun = Number(body.maxNotesPerRun)
   if ("maxDeferrals" in body) patch.maxDeferrals = Number(body.maxDeferrals)
   const { summary } = mutateAgentxConfig((cfg) => patchWikiNotes(cfg, patch))

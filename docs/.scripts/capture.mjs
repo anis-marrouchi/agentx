@@ -64,6 +64,7 @@ const shots = [
   { name: "settings/actions", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="actions"]' }, { wait: "#tab-actions details:not(.add-form)" }, { click: "#tab-actions details:not(.add-form) summary" }, { type: "#tab-actions details:not(.add-form) input", text: "the team" }, { click: "#tab-actions details:not(.add-form) button.primary" }, { wait: "#tab-actions [data-ac-msg].ok" }, { scroll: "#tab-actions" }] },
   { name: "settings/advanced-tree", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="advanced"]' }, { wait: ".ax-jv-line" }, { click: "#jv-collapse-all" }, { click: ".ax-jv-toggle" }, { click: '.ax-jv-line[data-path="agents"] .ax-jv-toggle' }, { click: '.ax-jv-line[data-path="agents.cx"] .ax-jv-toggle' }, { scroll: "#tab-advanced" }] },
   { name: "channels/gitlab", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="channels"]' }, { clickText: "GitLab", within: "#ch-devtools .ax-connector" }, { wait: "#gl-env" }, { type: "#gl-env", text: "GITLAB_TOKEN" }, { scroll: "#ch-gitlab" }] },
+  { name: "agent-memory/wiki-absorb", path: "/admin/agents/cx", wait: '.ax-opts[data-field="wikiAbsorb"] button.is-active', steps: [{ scroll: '.ax-opts[data-field="wikiAbsorb"]' }] },
   { name: "agents/personality", path: "/admin/agents/cx", wait: "#f-triggers .ax-trig-pill", steps: [{ click: 'a[data-tab="identity"]' }] },
   { name: "setup/filled", path: "/setup", wait: "#wizard", steps: [
     { fill: '[name="agentName"]', text: "Support" }, { fill: '[name="agentId"]', text: "support" },

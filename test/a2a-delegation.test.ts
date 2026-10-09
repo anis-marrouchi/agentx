@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { DelegationManager, MAX_DONE_IDS, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
+import { DelegationManager, MAX_DONE_IDS, DELEGATION_RESULT_MARKER, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
 
 // A person on a chat channel asked "front"; front delegates to "worker".
 const HUMAN_TURN: CallerTurn = {
@@ -377,5 +377,116 @@ describe("after a restart", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true })
     }
+  })
+})
+
+describe("a callback turn stopped by a restart (#846)", () => {
+  const STOPPED = { content: "", error: "Claude Code was stopped mid-turn (registry-stop), before its time limit" }
+
+  function withLog<T>(fn: (logPath: string) => Promise<T>): Promise<T> {
+    const dir = mkdtempSync(join(tmpdir(), "agentx-dlg-"))
+    return fn(join(dir, "delegations.jsonl")).finally(() => rmSync(dir, { recursive: true, force: true }))
+  }
+
+  /** Before the restart: the callee answers, the callback turn is stopped. */
+  async function stoppedRelay(logPath: string, over: Partial<DelegationDeps> = {}) {
+    const before = harness({ logPath, injectTurn: async (turn) => { before.injected.push(turn); return STOPPED }, ...over })
+    const { taskId } = before.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Find the report" })
+    before.local.resolve({ content: "Here is the report" })
+    await flush()
+    before.mgr.stop()
+    return { before, taskId }
+  }
+
+  it("holds the relay and runs it once more after the restart", async () => {
+    await withLog(async (logPath) => {
+      const { before, taskId } = await stoppedRelay(logPath)
+      expect(before.injected).toHaveLength(1)
+      expect(before.injected[0].message.startsWith(DELEGATION_RESULT_MARKER)).toBe(true)
+      expect(before.delivered).toHaveLength(0) // nothing sent while the channels are down
+
+      const after = harness({ logPath })
+      await after.mgr.recover()
+      expect(after.injected).toHaveLength(1)
+      expect(after.injected[0].message).toContain(`task=${taskId}`)
+      expect(after.injected[0].message).toContain("Here is the report")
+      expect(after.delivered).toEqual([expect.objectContaining({ channel: "telegram", chatId: "chat-1", text: "summary for front", record: false })])
+
+      // Relayed: a later start runs nothing more.
+      const again = harness({ logPath })
+      await again.mgr.recover()
+      expect(again.injected).toHaveLength(0)
+      expect(again.delivered).toHaveLength(0)
+    })
+  })
+
+  it("sends the notice and notes the request when the re-run fails too", async () => {
+    await withLog(async (logPath) => {
+      const { taskId } = await stoppedRelay(logPath)
+      const failed: Array<{ id: string; reason: string }> = []
+      const after = harness({
+        logPath,
+        injectTurn: async (turn) => { after.injected.push(turn); return { content: "", error: "provider down" } },
+        onRelayFailed: (rec, _result, reason) => { failed.push({ id: rec.id, reason }) },
+      })
+      await after.mgr.recover()
+      expect(after.injected).toHaveLength(1)
+      expect(failed).toEqual([{ id: taskId, reason: expect.stringContaining("provider down") }])
+      expect(after.delivered).toHaveLength(1)
+      expect(after.delivered[0]).toMatchObject({ channel: "telegram", chatId: "chat-1", record: true, outcome: "error", taskId })
+      expect(after.delivered[0].text).toContain(taskId)
+
+      // No loop: nothing is re-run or re-sent on the next start.
+      const again = harness({ logPath })
+      await again.mgr.recover()
+      expect(again.injected).toHaveLength(0)
+      expect(again.delivered).toHaveLength(0)
+    })
+  })
+
+  it("re-runs at most once: a re-run stopped by another restart gets the notice next time", async () => {
+    await withLog(async (logPath) => {
+      const { taskId } = await stoppedRelay(logPath)
+      const second = harness({ logPath, injectTurn: async (turn) => { second.injected.push(turn); return STOPPED } })
+      await second.mgr.recover()
+      expect(second.injected).toHaveLength(1)
+      expect(second.delivered).toHaveLength(0)
+
+      const failed: string[] = []
+      const third = harness({ logPath, onRelayFailed: (rec) => { failed.push(rec.id) } })
+      await third.mgr.recover()
+      expect(third.injected).toHaveLength(0)
+      expect(failed).toEqual([taskId])
+      expect(third.delivered).toEqual([expect.objectContaining({ taskId, outcome: "error", record: true })])
+    })
+  })
+
+  it("does not hold a turn stopped for another reason, or with a reply", async () => {
+    await withLog(async (logPath) => {
+      const { before } = await stoppedRelay(logPath, {
+        injectTurn: async (turn) => { before.injected.push(turn); return { content: "", error: "stopped mid-turn (turn deadline (30m))" } },
+      })
+      expect(before.delivered).toHaveLength(1) // the plain result, as before
+      const after = harness({ logPath })
+      await after.mgr.recover()
+      expect(after.injected).toHaveLength(0)
+    })
+    expect(stoppedByRestart({ content: "partial answer", error: "stopped mid-turn (registry-stop)" })).toBe(false)
+    expect(stoppedByRestart(STOPPED)).toBe(true)
+  })
+
+  it("can be turned off", async () => {
+    await withLog(async (logPath) => {
+      await stoppedRelay(logPath, { requeueRelayOnRestart: false })
+      const after = harness({ logPath })
+      await after.mgr.recover()
+      expect(after.injected).toHaveLength(0)
+    })
+  })
+
+  it("only treats delegation results as relays", () => {
+    expect(isDelegationRelay(`${DELEGATION_RESULT_MARKER} task=dlg-1 from=worker status=done]\n...`)).toBe(true)
+    expect(isDelegationRelay("What is the weather?")).toBe(false)
+    expect(isDelegationRelay(null)).toBe(false)
   })
 })

@@ -305,6 +305,8 @@ const ADMIN_PAGE_BODY = `
       <label>Permission mode<span class="hint">(default / bypassPermissions / plan)</span></label>
       <select id="e-perm"><option value="default">default</option><option value="bypassPermissions">bypassPermissions</option><option value="plan">plan</option></select>
       <label class="toggle-switch" style="margin-top:12px"><input type="checkbox" id="e-access" /> <span>Expose via public API</span></label>
+      <label class="toggle-switch" style="margin-top:12px"><input type="checkbox" id="e-wiki-absorb" aria-describedby="e-wiki-absorb-hint" /> <span>Include in the wiki absorb</span></label>
+      <p id="e-wiki-absorb-hint" class="hint" style="margin:4px 0 0;font-size:12px;color:var(--ax-muted)">Off: <code>agentx wiki absorb</code> skips this agent. Its conversations are still saved, so the absorb can catch up when you turn it back on.</p>
       <div id="e-msg" class="msg"></div>
     </div>
     <div class="td-footer" style="justify-content:flex-end">
@@ -592,7 +594,7 @@ const ADMIN_PAGE_BODY = `
 
     <div class="ax-stack" id="wiki-notes-cfg" style="margin-top:22px">
       <h3 style="margin:0 0 6px;font-size:13px">Wiki notes inbox</h3>
-      <p style="font-size:12px;color:var(--ax-muted);margin:0 0 10px">Agents leave short notes (what changed, the source, the date) for the agent that runs your wiki observe/sweep schedule. The schedules you pick read them first and record what they did with each one. Same as <code>agentx wiki notes config</code>.</p>
+      <p style="font-size:12px;color:var(--ax-muted);margin:0 0 10px">Agents leave short notes (what changed, the source, the date) for the agent that runs your wiki observe/sweep schedule. The schedules you pick, and the absorb pass you name, read them first and record what they did with each one. Same as <code>agentx wiki notes config</code>.</p>
       <label class="toggle-switch"><input type="checkbox" id="wn-enabled" /> <span>Wiki notes on</span></label>
       <label for="wn-inbox">Inbox agent <span class="hint">(runs the observe/sweep schedule; may be on another node)</span></label>
       <input id="wn-inbox" list="wn-agents" placeholder="agent id" autocomplete="off" />
@@ -601,6 +603,8 @@ const ADMIN_PAGE_BODY = `
         <legend style="font-size:12px">Schedules on this node that read the inbox</legend>
         <div id="wn-crons"></div>
       </fieldset>
+      <label for="wn-absorb">Absorb that reads the inbox <span class="hint">(the agent whose <code>wiki absorb</code> pass answers the notes; leave empty for none)</span></label>
+      <input id="wn-absorb" list="wn-agents" placeholder="agent id" autocomplete="off" />
       <label for="wn-max">Most notes per run</label>
       <input id="wn-max" type="number" min="1" max="100" value="20" />
       <label for="wn-max-deferrals">Deferrals before a note expires <span class="hint">(a note the run keeps putting off stops being offered)</span></label>
@@ -1859,6 +1863,7 @@ function renderWikiNotes() {
   if (!$('wn-enabled')) return;
   $('wn-enabled').checked = !!n.enabled;
   $('wn-inbox').value = n.inbox || '';
+  $('wn-absorb').value = n.absorbAgent || '';
   $('wn-max').value = n.maxNotesPerRun || 20;
   $('wn-max-deferrals').value = n.maxDeferrals || 3;
   $('wn-agents').innerHTML = (state.agents || []).map(a => '<option value="' + escapeHtml(a.id) + '"></option>').join('');
@@ -1876,6 +1881,7 @@ async function saveWikiNotes() {
       enabled: $('wn-enabled').checked,
       inbox: $('wn-inbox').value.trim(),
       crons,
+      absorbAgent: $('wn-absorb').value.trim(),
       maxNotesPerRun: Number($('wn-max').value),
       maxDeferrals: Number($('wn-max-deferrals').value),
     });
@@ -3618,6 +3624,7 @@ function openAgentEdit(agent) {
   $('e-max-exec').value = agent.maxExecutionMinutes || 20;
   $('e-perm').value = agent.permissionMode || 'default';
   $('e-access').checked = agent.access === 'public';
+  $('e-wiki-absorb').checked = agent.wikiAbsorb !== false;
   $('e-msg').className = 'msg';
   editModal.el.classList.remove('hidden');
   editModal.el.setAttribute('aria-hidden', 'false');
@@ -3644,6 +3651,7 @@ async function saveAgentEdit() {
     maxExecutionMinutes: Number.isFinite(maxExecutionMinutes) ? maxExecutionMinutes : undefined,
     permissionMode: $('e-perm').value,
     access: $('e-access').checked ? 'public' : 'private',
+    wikiAbsorb: $('e-wiki-absorb').checked,
   };
   try {
     await req('PATCH', '/api/admin/agents', { id, patch });

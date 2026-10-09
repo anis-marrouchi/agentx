@@ -1109,7 +1109,7 @@ Absorb then protects those articles in two ways:
 
 When an update is saved, the article keeps its creation date, its access setting and the entries it already cited.
 
-Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
+Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. It also skips an agent whose `wiki.absorb.enabled` is `false` (it prints `absorb is off for this agent`). Naming the agent with `--agent` absorbs it anyway. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
 
 Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (absorb uses Sonnet unless `--model` or `AGENTX_WIKI_ABSORB_MODEL` names another model). They look for it on your PATH and also in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, so they work from the daemon and from the `agentx_wiki_query` tool without a login shell's PATH.
 
@@ -1125,8 +1125,11 @@ Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (
 | `--until <date>` | — | Only entries dated on or before YYYY-MM-DD. |
 | `--model <model>` | `AGENTX_WIKI_ABSORB_MODEL`, else `sonnet` | The model that compiles the articles. |
 | `--run-label <label>` | — | A name for this run in the run log, so `agentx wiki absorb-runs` can compare runs. |
+| `--no-notes` | — | Do not read the wiki notes inbox, even for the agent set as `wikiNotes.absorbAgent`. |
 
-Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full and facts) and one for the whole run. The file holds no entry or article text.
+When wiki notes are on and `wikiNotes.absorbAgent` names the agent being absorbed, absorb also reads the waiting [wiki notes](/jobs/wiki-notes). It runs even with no new entries when notes are waiting. The model answers each note as patched, rejected or deferred. A patch is a short find-and-replace in an existing article that absorb showed the model in full: absorb applies it, and refuses one whose edits together replace most of a page, remove a contact, role or organisation value, or delete a number, link or commit. A note's edits are saved all together or not at all. A note whose patch is refused, or that the model did not answer, is deferred. While notes are in the prompt, absorb saves only articles that cite an entry from this run, so a note never creates or rewrites a page. Each outcome is recorded on the note with a reason and the run id (`absorb/<agent>/<time>`). If a schedule answered the note while absorb was running, that answer stands. When the run fails, its notes stay waiting. A dry run lists the notes in the order a real run would take them.
+
+Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full, facts and notes; with notes, how many it was given, patched and recorded) and one for the whole run. The file holds no entry or article text.
 
 ### `agentx wiki absorb-eval`
 
@@ -1269,12 +1272,13 @@ Record what the run did with a note. A deferred note is given to the next run ag
 
 ### `agentx wiki notes config`
 
-Show or set the inbox agent and the schedules that read it (`wikiNotes` in `agentx.json`). With no flag, it prints the current settings.
+Show or set the inbox agent, and the schedules and absorb pass that read it (`wikiNotes` in `agentx.json`). With no flag, it prints the current settings.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--inbox <agent>` | — | Agent that runs the wiki observe/sweep schedule. `""` clears it. |
 | `--cron <ids>` | — | Comma-separated schedule ids that read the inbox. `""` for none. |
+| `--absorb <agent>` | — | Agent whose `agentx wiki absorb` pass reads and answers the notes. Must run on this node, the node that keeps the inbox. `""` clears it. |
 | `--max <n>` | — | Most notes one run is given (1-100). |
 | `--max-deferrals <n>` | — | Times a note may be deferred before it expires (1-20). |
 | `--enable` | — | Turn wiki notes on. |
@@ -1420,6 +1424,90 @@ LLM-patch an article from a free-form instruction; shows diff + confirms before 
 | `--patch-model <m>` | `sonnet` | Patch model. |
 | `--yes` | — | Skip confirmation and write immediately. |
 | `--no-commit` | — | Show the patched body but don't write. |
+| `--allow-fact-loss` | — | Save even when the patch shrinks the article or drops a phone number, email, role, link or number it had. |
+
+Before saving, the patch is checked: it is refused, with the reason, when the article gets much shorter, when the result contains the model's own commentary, when a heading appears twice, when it drops a phone number, email, role, "main contact" note, link or number, or when the article changed while the patch was being made. The article's existing related links are kept. See [`wiki patch` refuses to lose facts](/jobs/wiki-contributions#wiki-patch-refuses-to-lose-facts).
+
+### `agentx wiki contribute`
+
+Queue sourced wiki patches from an agent's work since its last run: its chat messages, and its tasks with the tool calls it ran. Each patch adds a fact, corrects a value or creates a short page, and names its source and check date. Nothing is written to the wiki until `agentx wiki contributions merge`. See [Let agents keep the wiki up to date](/jobs/wiki-contributions).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--agent <id>` | — | Contribute for this agent. |
+| `--all` | — | Every agent with `wiki.contribute.enabled` in `agentx.json`. |
+| `--since <time>` | the last 24 hours | First run only: read work from this date or time. Later runs start where the last one stopped. |
+| `--max-patches <n>` | the agent's `maxPatches`, else `30` | Patches per agent per run. |
+| `--max-cost <usd>` | the agent's `maxCostUsd`, else `wiki.contributions.maxCostUsd`, else `0.5` | Model spend per agent per run, in dollars. Each call is also capped at what is left. |
+| `--max-items <n>` | `60` | Chat messages and tasks read per agent per run. |
+| `--model <model>` | the agent's `model`, else `wiki.contributions.model`, else `AGENTX_WIKI_CONTRIBUTE_MODEL`, else `sonnet` | Model for the contribution call. |
+| `--db <path>` | `.agentx/db.sqlite` | Trace database with the agents' tasks. Without it, only chat messages are read. |
+| `--dry-run` | — | Show the patches without queueing them or moving the agent's starting point. |
+| `--json` | — | Print the batches as JSON. |
+
+### `agentx wiki contribute enable <agent>`
+
+Turn on an agent's daily wiki contribution (`agents.<id>.wiki.contribute.enabled`). The daily jobs `wiki-contribute` and `wiki-contribute-merge` are then added to the schedule.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--max-cost <usd>` | — | Model spend per run, in dollars. |
+| `--max-patches <n>` | — | Patches per run. |
+| `-c, --config <path>` | — | Path to `agentx.json`. |
+
+### `agentx wiki contribute disable <agent>`
+
+Turn off an agent's daily wiki contribution. Takes the same flags as `enable`.
+
+### `agentx wiki contributions`
+
+The daily merge of agents' wiki patches (list, merge, held, approve, reject). On its own it runs `list`.
+
+### `agentx wiki contributions list`
+
+Patches waiting for the merge, and what the last merge did.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--json` | — | Print as JSON. |
+
+### `agentx wiki contributions merge`
+
+Apply every queued patch. Facts go through the fact ledger, so the newest check wins and the older value stays in its history and on the page as "previously". A patch older than the wiki's value raises a question instead. Several new pages for the same subject become one page, and a new page whose title closely matches an existing one is held as a possible duplicate. A patch that removes a fact, or a change that would lose one, is held. Subjects with more than one page are listed.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--dry-run` | — | Show what would change without writing. |
+| `--json` | — | Print the report as JSON. |
+
+### `agentx wiki contributions held`
+
+Patches the merge held for a person, with the reason and the facts the change would lose.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--all` | — | Include approved and rejected. |
+| `--json` | — | Print as JSON. |
+
+### `agentx wiki contributions approve <id>`
+
+Apply a held patch as it is. The page's previous version is kept in its history.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki contributions reject <id>`
+
+Drop a held patch.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
 
 ### `agentx wiki curate <agent> <titleOrPath> <instruction>`
 
@@ -1535,7 +1623,7 @@ Agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
-| `--agent <id>` | — | Which agent's wiki to query (default: first one with a catalog). |
+| `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`), else the first one with a catalog | Which agent's wiki to search first. |
 | `--selector-model <m>` | `haiku` | Candidate-selection model. |
 | `--synth-model <m>` | `sonnet` | Synthesis model. |
 | `--max-candidates <n>` | `3` | Candidates from selector. |
@@ -1543,6 +1631,25 @@ Agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer
 | `--max-articles <n>` | `8` | Cap on total articles walked. |
 | `--json` | — | Emit full result as JSON (for A/B harnesses). |
 | `--trace` | — | Print selector + walk trace. |
+| `--own-only` | — | Search only the agent's own articles, not the shared wiki. |
+
+Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query.
+
+### `agentx wiki score`
+
+Score the wiki's answers to a question set, or compare two saved scores. A question file is a JSON array or one JSON object per line: `{"id": "q1", "question": "…", "expect": ["fact", "…"]}`. Each answer scores the share of its expected facts it contains (case and spacing ignored; a fact of five or more digits also matches on its digits; `"a|b"` accepts either spelling). See [Measure the difference](/jobs/wiki-contributions#measure-the-difference).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--questions <file>` | — | The question set. Required unless `--compare`. |
+| `--agent <id>` | the calling agent | Ask as this agent. |
+| `--own-only` | — | Search only the agent's own articles. |
+| `--out <file>` | — | Save the report as JSON. |
+| `--compare <files...>` | — | Compare two saved reports: `before.json after.json`. |
+| `--selector-model <m>` | `haiku` | Candidate-selection model. |
+| `--synth-model <m>` | `sonnet` | Synthesis model. |
+| `--json` | — | Print the report as JSON. |
 
 ### `agentx wiki search <query>`
 
@@ -1789,6 +1896,17 @@ Remove a memory.
 | Flag | Default | What it does |
 |---|---|---|
 | `--agent <id>` | required | Agent id. |
+
+### `agentx memory check`
+
+List an agent's notes and whether each has a `source` and a `checked` date in its header. Read only. See [Check which notes say where and when they were checked](/jobs/agent-memory#_10-check-which-notes-say-where-and-when-they-were-checked).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | required | Agent id. |
+| `--dir <path>` | the AgentX store, `.agentx/agent-memory/<id>/` | Read notes from this folder instead, such as the one a `claude-code` agent keeps. |
+| `--missing` | — | List only notes missing a source or a check date. |
+| `--json` | — | Print the result as JSON. |
 
 ### `agentx memory index`
 
@@ -3613,6 +3731,7 @@ No flags.
 - **`unknown option`:** your installed version is older or newer than these docs. Use the flags that `agentx <command> --help` shows.
 - **`claude: command not found` from a wiki command:** the `claude` CLI isn't installed in any of the folders listed under `agentx wiki absorb`. Install it, or add its folder to the daemon's PATH.
 - **`wiki absorb` keeps printing `! refused <path>`:** the model's update left out facts the article already had, so the same entries come back each run. Check the facts listed under the message. If one is really wrong, correct it in the article with `agentx wiki edit`, then run absorb again.
+- **`wiki absorb` prints `note <id> deferred: patch refused: …`:** the model's patch broke a rule (it replaced most of a page, removed a contact or role value, or quoted text the article does not have). The note comes back on the next run. Read the reason with `agentx wiki notes list --status all`.
 - **`wiki absorb-runs` prints `no absorb runs recorded yet`:** no absorb has run since the run log was added, or `--dir` points at another wiki. Run `agentx wiki absorb` once, then try again.
 - **`wiki absorb-eval` prints `no articles … to score`:** nothing changed in the window you gave. Widen `--since` or `--changed-after`, or leave both out to sample every article.
 - **`unknown command`:** check the spelling and the command group. Advanced commands don't appear in `agentx --help`, but they still run.

@@ -346,6 +346,8 @@ export const demo = new Command()
           agentId: "builder",
           senderAgentId: "cx",
           text: DELEGATION,
+          // The demo prints the helper's reply, so it waits for it (#847).
+          async: false,
         })
         const builderReply = typeof s2.messageId === "string" ? s2.messageId : s2.content || "(no reply)"
         say("@builder (vps-nyc)", builderReply, chalk.yellow)
