@@ -238,10 +238,82 @@ describe("live reads", () => {
     expect(seen).toEqual([])
   })
 
+  it("checks deploy reads like the others: listed repository, a number or no id", () => {
+    expect(validateReads([
+      { kind: "deploy", repo: "acme/widgets", id: 14 },
+      { kind: "deploy", repo: "acme/group/billing" },
+      { kind: "deploy", repo: "acme/widgets", id: "14; curl" },
+      { kind: "deploy", repo: "acme/widgets", id: 0 },
+      { kind: "deploy", repo: "evil/repo", id: 1 },
+    ], LIVE)).toEqual([
+      { kind: "deploy", repo: "acme/widgets", id: 14 },
+      { kind: "deploy", repo: "acme/group/billing" },
+    ])
+  })
+
+  it("answers whether a GitHub pull request is deployed and where, from deployments read at the source", async () => {
+    const gh = "https://api.github.test/repos/acme/widgets"
+    const merge = "a".repeat(40), prod = "b".repeat(40), staging = "c".repeat(40), broken = "d".repeat(40)
+    const { impl, seen } = fakeFetch({
+      [`${gh}/pulls/14`]: { number: 14, state: "closed", merged_at: "2026-10-08T09:00:00Z", merge_commit_sha: merge },
+      [`${gh}/deployments?per_page=10`]: [
+        { id: 4, sha: broken, environment: "production", created_at: "2026-10-09T08:00:00Z" },
+        { id: 3, sha: prod, environment: "production", created_at: "2026-10-08T12:00:00Z" },
+        { id: 2, sha: staging, environment: "staging", created_at: "2026-10-07T12:00:00Z" },
+        { id: 1, sha: "e".repeat(40), environment: "production", created_at: "2026-10-01T12:00:00Z" },
+      ],
+      [`${gh}/deployments/4/statuses?per_page=1`]: [{ state: "failure", created_at: "2026-10-09T08:05:00Z" }],
+      [`${gh}/deployments/3/statuses?per_page=1`]: [{ state: "success", created_at: "2026-10-08T12:05:00Z" }],
+      [`${gh}/deployments/2/statuses?per_page=1`]: [{ state: "success", created_at: "2026-10-07T12:05:00Z" }],
+      [`${gh}/deployments/1/statuses?per_page=1`]: [{ state: "inactive", created_at: "2026-10-08T12:05:00Z" }],
+      [`${gh}/compare/${merge}...${prod}?per_page=1`]: { status: "ahead" },
+      [`${gh}/compare/${merge}...${staging}?per_page=1`]: { status: "behind" },
+    })
+    const lines = await runLiveReads([{ kind: "deploy", repo: "acme/widgets", id: 14 }, { kind: "deploy", repo: "acme/widgets" }], LIVE, impl)
+    expect(lines.map((l) => l.line)).toEqual([
+      "#14 in acme/widgets (merged 2026-10-08 as aaaaaaaa): production: deployed (runs bbbbbbbb deployed 2026-10-08, newest deploy failure 2026-10-09); staging: not deployed (runs cccccccc deployed 2026-10-07)",
+      "deploys of acme/widgets: production runs bbbbbbbb deployed 2026-10-08, newest deploy failure 2026-10-09; staging runs cccccccc deployed 2026-10-07",
+    ])
+    expect(seen.every((r) => r.method === "GET" && r.redirect === "error" && r.headers.Authorization === "Bearer gh-secret")).toBe(true)
+  })
+
+  it("answers for a GitLab merge request, and never calls an unmerged change deployed", async () => {
+    const gl = "https://gitlab.test/api/v4/projects/acme%2Fgroup%2Fbilling"
+    const squash = "1".repeat(40), prod = "2".repeat(40)
+    const { impl, seen } = fakeFetch({
+      [`${gl}/merge_requests/7`]: { iid: 7, state: "merged", merged_at: "2026-10-07T09:00:00Z", merge_commit_sha: null, squash_commit_sha: squash },
+      [`${gl}/merge_requests/8`]: { iid: 8, state: "opened" },
+      [`${gl}/deployments?order_by=id&sort=desc&per_page=30`]: [
+        { id: 9, sha: prod, status: "success", updated_at: "2026-10-08T10:00:00Z", environment: { name: "production" } },
+        { id: 8, sha: "3".repeat(40), status: "running", updated_at: "2026-10-09T10:00:00Z", environment: { name: "review/x" } },
+      ],
+      [`${gl}/repository/merge_base?refs%5B%5D=${squash}&refs%5B%5D=${prod}`]: { id: squash },
+    })
+    const lines = await runLiveReads([{ kind: "deploy", repo: "acme/group/billing", id: 7 }, { kind: "deploy", repo: "acme/group/billing", id: 8 }], LIVE, impl)
+    expect(lines.map((l) => l.line)).toEqual([
+      "!7 in acme/group/billing (merged 2026-10-07 as 11111111): production: deployed (runs 22222222 deployed 2026-10-08); review/x: not known (no successful deploy listed, newest deploy running 2026-10-09)",
+      "!8 in acme/group/billing is open, not merged, so it is not deployed",
+    ])
+    expect(seen.every((r) => r.method === "GET" && r.headers["PRIVATE-TOKEN"] === "gl-secret")).toBe(true)
+    // An unmerged change asks for no deployment.
+    expect(seen.filter((r) => r.url.includes("deployments")).length).toBe(1)
+  })
+
+  it("says the source records no deployment rather than that the change is not deployed", async () => {
+    const gh = "https://api.github.test/repos/acme/widgets"
+    const { impl } = fakeFetch({
+      [`${gh}/pulls/14`]: { number: 14, state: "closed", merged_at: "2026-10-08T09:00:00Z", merge_commit_sha: "a".repeat(40) },
+      [`${gh}/deployments?per_page=10`]: [],
+    })
+    const lines = await runLiveReads([{ kind: "deploy", repo: "acme/widgets", id: 14 }], LIVE, impl)
+    expect(lines.map((l) => l.line)).toEqual(["#14 in acme/widgets (merged 2026-10-08 as aaaaaaaa): no deployment is recorded at the source, so where it runs is not known from it"])
+  })
+
   it("offers the model only the kinds the sources can serve", () => {
     const repoOnly = buildPlanPrompt("q", "pages", { ...LIVE, sources: LIVE.sources.slice(0, 1) })
     expect(repoOnly).toContain("- acme/widgets — the widget app")
     expect(repoOnly).not.toContain('"fleet"')
+    expect(repoOnly).toContain('"deploy"')
     const fleetOnly = buildPlanPrompt("q", "pages", { ...LIVE, sources: LIVE.sources.slice(2) })
     expect(fleetOnly).toContain('"fleet"')
     expect(fleetOnly).not.toContain('"issue"')

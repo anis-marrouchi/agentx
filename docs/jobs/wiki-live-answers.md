@@ -6,7 +6,7 @@ With **page summaries** and a **live read**, a wiki question is answered in four
 
 1. Every page has a one-line summary: its main fact, the status it gives and the date of that status. The pages that share words with the question are found from these lines, with no model.
 2. A small model picks up to 3 pages from those lines, or none when no line fits.
-3. A small model names what should be confirmed at the source: an issue, a merge request, a repository's newest releases, the AgentX version on each machine. AgentX then reads those, from the systems you listed.
+3. A small model names what should be confirmed at the source: an issue, a merge request, a repository's newest releases, where a change is deployed, the AgentX version on each machine. AgentX then reads those, from the systems you listed.
 4. The answer is written from the pages and what was just read. Where they disagree, what was just read wins, and the answer marks those facts with "(live)".
 
 The same steps run for `agentx wiki query` in a terminal and for the `agentx_wiki_query` tool agents use.
@@ -19,11 +19,11 @@ A live read only reads.
 
 - The model names a read as data: a kind, a repository from your list, and a number or a few search words. It is given no shell, no command and no tool.
 - AgentX checks each named read against your settings. A repository you did not list is refused.
-- Each read is one HTTP `GET` that AgentX builds itself. Nothing is sent, changed or closed.
+- Each read is made of HTTP `GET` requests that AgentX builds itself. Nothing is sent, changed or closed.
 - A token goes only to the host it was set for. A redirect to another address is refused.
 - A read that fails or takes too long is left out. The answer is still given from the pages.
 
-The five kinds of read:
+The six kinds of read:
 
 | Kind | What it reads |
 |---|---|
@@ -31,9 +31,33 @@ The five kinds of read:
 | Merge request | One merge request or pull request: title, state, date it was merged or closed. |
 | Search | Up to 8 issues of a listed repository that match two or three words. |
 | Release | The 3 newest releases or tags of a listed repository. |
+| Deploy | Where a merged merge request (or pull request) is deployed: for each environment of a listed repository, whether the version running there holds the change. Without a number, what each environment runs now. |
 | Fleet | The AgentX version, build and start time of this machine and of each machine connected to it. |
 
 Until you list a source, no live read runs and questions are answered from the pages alone.
+
+## Know whether a change is deployed
+
+A closed issue or a merged merge request does not mean the change is running. A **deployment** is the record your GitHub or GitLab project keeps each time a version is sent to an **environment**, such as `staging` or `production`. When a question asks whether something is live, the model names a deploy read with the number of the merge request that made the change. AgentX then:
+
+1. Reads the merge request. One that is not merged is reported as not deployed, and nothing more is read.
+2. Reads the newest deployments of the repository (30 on GitLab, 10 on GitHub) and, for each environment, the newest one that succeeded. That is the version running there.
+3. Asks the host whether that version holds the merge request's commit.
+
+The answer then gets a line such as:
+
+```text
+!7 in example-group/billing (merged 2026-10-07 as 1a2b3c4d): production: deployed (runs 5e6f7a8b deployed 2026-10-08); staging: not deployed (runs 9c0d1e2f deployed 2026-10-06)
+```
+
+- **deployed:** the version running in that environment holds the change.
+- **not deployed:** it does not hold it yet.
+- **not known:** the environment has no successful deployment in the list, or the host did not answer.
+- `newest deploy failure …` (or `failed`, `running`) after an environment means a newer deployment to it has not succeeded, so it still runs the version named before it.
+
+This only works when your pipeline records deployments: GitLab does when a CI job names an `environment`, and GitHub when a workflow job names an `environment` or a tool calls the deployments API. When nothing is recorded, the line says so, and the answer says it can't tell where the change runs. It never says "not deployed" for that reason.
+
+The read needs no new setting: any repository listed under `sources` can be read this way. A GitLab token with the `read_api` scope is enough. On GitHub, a fine-grained token needs read access to **Deployments**, **Contents** and **Pull requests**.
 
 ## Write the summaries
 
@@ -148,7 +172,8 @@ Each entry of `query.live.sources` has a `type` and these keys:
 
 1. **Terminal:** run `agentx wiki query "<a question about something that has an issue>" --agent <agent> --trace`.
 2. Under the answer and its citations, look for **Read live at the source**, with one line for each read, such as `#12 in example-org/app: "Add export" is closed since 2026-10-08`.
-3. The trace line starts with `method: summaries` and gives the reads asked and answered.
+3. **Terminal:** run `agentx wiki query "Is merge request <number> deployed, and where?" --agent <agent> --trace` for a repository that records deployments. A line starting with `#<number> in` or `!<number> in` lists each environment as deployed, not deployed or not known.
+4. The trace line starts with `method: summaries` and gives the reads asked and answered.
 
 ## If something is wrong
 
@@ -156,5 +181,7 @@ Each entry of `query.live.sources` has a `type` and these keys:
 - **No "Read live at the source" block:** `query.live.sources` is empty, `query.live.enabled` is `false`, or the picked pages named nothing that changes. Run with `--trace`: "0 asked" means the model named no read.
 - **Reads are asked but none is answered:** the token is missing or can't read the repository, or the host can't be reached. Check the name in `tokenEnv` against `.env`, and that the repository is spelled exactly as on the host.
 - **`(no answer) No page was picked for the question`:** no summary line fits the question. Nothing is read live in that case.
-- **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. The live read reports what the source holds and no more.
+- **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. Ask about the merge request that made the change, or name its number in the question, so a deploy read can be made.
+- **A deploy line says "no deployment is recorded at the source":** your pipeline does not record deployments for that repository. See [Know whether a change is deployed](#know-whether-a-change-is-deployed).
+- **A deploy line says "not known" for every environment:** the token can't read deployments or compare commits. Give it the read access listed above.
 - **`config check` says `expected owner/name`:** a repository in `repos` is not written as `owner/name` or `group/project`.

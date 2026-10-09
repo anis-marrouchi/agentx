@@ -1,4 +1,4 @@
-// --- Live reads for `wiki query` (#855) ---
+// --- Live reads for `wiki query` (#855, deploy records #860) ---
 //
 // A wiki page records what was true when it was written. Whether an
 // issue is still open, a change merged or which version runs can have
@@ -10,7 +10,7 @@
 //     repository and a number or a few words, nothing else.
 //   - Each read is checked against the configured sources. A repository
 //     that is not on the list is refused.
-//   - Each read is one HTTP GET, to a URL this file builds from the
+//   - Each read is made of HTTP GETs, to URLs this file builds from the
 //     configured host. No shell, no CLI and no tool is given to a model,
 //     so nothing can be sent or changed.
 //   - A token is sent only to the host it was configured for, and a
@@ -44,6 +44,9 @@ export type LiveRead =
   | { kind: "issue" | "mr"; repo: string; id: number }
   | { kind: "search"; repo: string; words: string }
   | { kind: "release"; repo: string }
+  /** Deploy records of a repository; with `id`, whether that merge
+   *  request's change is in what each environment runs (#860). */
+  | { kind: "deploy"; repo: string; id?: number }
   | { kind: "fleet" }
 
 export interface LiveLine {
@@ -57,6 +60,12 @@ export type FetchLike = (url: string, init: { method: "GET"; headers: Record<str
 const SEARCH_ROWS = 8
 const RELEASE_ROWS = 3
 const SEARCH_WORDS_CHARS = 60
+/** Newest deployments listed by a deploy read. */
+const DEPLOY_ROWS = 30
+/** GitHub keeps a deployment's state apart: at most this many are asked. */
+const DEPLOY_STATUS_READS = 10
+/** Environments reported by one deploy read. */
+const DEPLOY_ENVIRONMENTS = 6
 
 type RepoSource = Extract<LiveSource, { repos: LiveRepo[] }>
 
@@ -82,6 +91,8 @@ export function buildPlanPrompt(question: string, pages: string, settings: LiveS
       '{"kind": "mr", "repo": "<repo>", "id": <number>}      one merge request or pull request',
       '{"kind": "search", "repo": "<repo>", "words": "<2-3 words>"}   issues of a repository that match',
       '{"kind": "release", "repo": "<repo>"}                 newest releases or tags of a repository',
+      '{"kind": "deploy", "repo": "<repo>", "id": <number>}  whether merge request <id> is deployed, and to which environment',
+      '{"kind": "deploy", "repo": "<repo>"}                  what each environment of a repository runs now',
     )
   }
   if (hasFleet(settings.sources)) kinds.push('{"kind": "fleet"}                                     AgentX version running on each node now')
@@ -90,6 +101,8 @@ export function buildPlanPrompt(question: string, pages: string, settings: LiveS
 The pages may be stale. A fact that changes (status, open or closed, merged, deployed,
 released, which version runs, what is still owed or left) should be confirmed at the source.
 A fact that does not change (who someone is, a rule, a decision, a contact) needs no read.
+A closed issue or a merged merge request does not say the change runs. To know whether it
+is deployed, name a deploy read with the number of the merge request that made the change.
 
 Reads you may name, at most ${settings.maxReads} in total:
 ${kinds.join("\n")}
@@ -126,9 +139,15 @@ export function validateReads(raw: unknown, settings: LiveSettings): LiveRead[] 
     }
     const repo = typeof r.repo === "string" ? r.repo : ""
     if (!repoSource(settings.sources, repo)) continue
+    const id = typeof r.id === "number" ? r.id : /^\d+$/.test(String(r.id ?? "")) ? Number(r.id) : NaN
+    const validId = Number.isSafeInteger(id) && id > 0
     if (r.kind === "issue" || r.kind === "mr") {
-      const id = typeof r.id === "number" ? r.id : /^\d+$/.test(String(r.id ?? "")) ? Number(r.id) : NaN
-      if (Number.isSafeInteger(id) && id > 0) keep({ kind: r.kind, repo, id })
+      if (validId) keep({ kind: r.kind, repo, id })
+    } else if (r.kind === "deploy") {
+      // No id: what each environment runs. An id that is not a number is
+      // refused rather than read as "no id".
+      if (r.id === undefined || r.id === null) keep({ kind: "deploy", repo })
+      else if (validId) keep({ kind: "deploy", repo, id })
     } else if (r.kind === "search") {
       const words = String(r.words ?? "").replace(/[^\p{L}\p{N} ._-]+/gu, " ").replace(/\s+/g, " ").trim().slice(0, SEARCH_WORDS_CHARS)
       if (words) keep({ kind: "search", repo, words })
@@ -247,6 +266,107 @@ async function readRelease(read: Extract<LiveRead, { kind: "release" }>, source:
   return `newest releases of ${read.repo}: ${names.join(", ") || "none found"}`
 }
 
+interface DeployRow { env: string; sha: string; state: string; at: string }
+interface EnvState { env: string; newest: DeployRow; running?: DeployRow }
+
+/** The newest deployments, newest first, each with its state. */
+async function listDeploys(source: RepoSource, base: string, headers: Record<string, string>, fetchImpl: FetchLike, timeoutMs: number): Promise<DeployRow[] | null> {
+  if (source.type === "gitlab") {
+    const got = await getJson(`${base}/deployments?order_by=id&sort=desc&per_page=${DEPLOY_ROWS}`, headers, fetchImpl, timeoutMs)
+    if (!got) return null
+    return rows(got).map((d) => ({
+      env: String((d.environment as { name?: unknown } | undefined)?.name ?? ""),
+      sha: String(d.sha ?? ""),
+      state: String(d.status ?? ""),
+      at: day(d.updated_at ?? d.created_at),
+    }))
+  }
+  const got = await getJson(`${base}/deployments?per_page=${DEPLOY_STATUS_READS}`, headers, fetchImpl, timeoutMs)
+  if (!got) return null
+  // A GitHub deployment's state is its newest status, one read each.
+  return Promise.all(rows(got).map(async (d) => {
+    const status = rows(await getJson(`${base}/deployments/${encodeURIComponent(String(d.id))}/statuses?per_page=1`, headers, fetchImpl, timeoutMs))[0]
+    return {
+      env: String(d.environment ?? ""),
+      sha: String(d.sha ?? ""),
+      state: String(status?.state ?? "unknown"),
+      at: day(status?.created_at ?? d.created_at),
+    }
+  }))
+}
+
+/** Per environment: the newest deploy, and the newest that succeeded,
+ *  which is what runs there. */
+function byEnvironment(deploys: DeployRow[]): EnvState[] {
+  const envs = new Map<string, EnvState>()
+  for (const d of deploys) {
+    if (!d.env) continue
+    let e = envs.get(d.env)
+    if (!e) {
+      if (envs.size >= DEPLOY_ENVIRONMENTS) continue
+      e = { env: d.env, newest: d }
+      envs.set(d.env, e)
+    }
+    if (!e.running && d.state === "success" && /^[0-9a-f]{7,64}$/i.test(d.sha)) e.running = d
+  }
+  return [...envs.values()]
+}
+
+/** Whether `commit` is in `deployed`: true, false, or null when the host
+ *  could not say. */
+async function contains(source: RepoSource, base: string, headers: Record<string, string>, commit: string, deployed: string, fetchImpl: FetchLike, timeoutMs: number): Promise<boolean | null> {
+  if (commit === deployed) return true
+  if (source.type === "github") {
+    const got = await getJson(`${base}/compare/${encodeURIComponent(commit)}...${encodeURIComponent(deployed)}?per_page=1`, headers, fetchImpl, timeoutMs) as { status?: unknown } | null
+    if (!got || typeof got.status !== "string") return null
+    return got.status === "identical" || got.status === "ahead"
+  }
+  const got = await getJson(`${base}/repository/merge_base?refs%5B%5D=${encodeURIComponent(commit)}&refs%5B%5D=${encodeURIComponent(deployed)}`, headers, fetchImpl, timeoutMs) as { id?: unknown } | null
+  if (!got || typeof got.id !== "string") return null
+  return got.id === commit
+}
+
+const short = (sha: string) => sha.slice(0, 8)
+
+/** What an environment runs, and a newer deploy that did not succeed. */
+function envState(e: EnvState): string {
+  const failed = e.newest !== e.running ? `, newest deploy ${e.newest.state} ${e.newest.at}` : ""
+  return (e.running ? `runs ${short(e.running.sha)} deployed ${e.running.at}` : "no successful deploy listed") + failed
+}
+
+async function readDeploy(read: Extract<LiveRead, { kind: "deploy" }>, source: RepoSource, fetchImpl: FetchLike, timeoutMs: number): Promise<string> {
+  const { base, headers } = repoApi(source, read.repo)
+  const ref = read.id === undefined ? "" : `${source.type === "gitlab" ? "!" : "#"}${read.id}`
+
+  // The commit the change landed as. A change that is not merged is not deployed.
+  let commit = ""
+  let head = `deploys of ${read.repo}`
+  if (read.id !== undefined) {
+    const mr = await getJson(`${base}/${source.type === "github" ? "pulls" : "merge_requests"}/${read.id}`, headers, fetchImpl, timeoutMs) as Record<string, unknown> | null
+    if (!mr || typeof mr !== "object" || !("state" in mr)) return ""
+    const merged = source.type === "github" ? Boolean(mr.merged_at) : mr.state === "merged"
+    if (!merged) return `${ref} in ${read.repo} is ${mr.state === "opened" ? "open" : String(mr.state)}, not merged, so it is not deployed`
+    // GitLab: no merge commit when merged by fast-forward; the squash or
+    // the head commit is then what landed.
+    commit = String(source.type === "github" ? mr.merge_commit_sha ?? "" : mr.merge_commit_sha ?? mr.squash_commit_sha ?? mr.sha ?? "")
+    if (!/^[0-9a-f]{7,64}$/i.test(commit)) return ""
+    head = `${ref} in ${read.repo} (merged ${day(mr.merged_at)} as ${short(commit)})`
+  }
+
+  const deploys = await listDeploys(source, base, headers, fetchImpl, timeoutMs)
+  if (!deploys) return ""
+  const envs = byEnvironment(deploys)
+  if (envs.length === 0) return `${head}: no deployment is recorded at the source, so where it runs is not known from it`
+  if (!commit) return `${head}: ${envs.map((e) => `${e.env} ${envState(e)}`).join("; ")}`
+
+  const parts = await Promise.all(envs.map(async (e) => {
+    const has = e.running ? await contains(source, base, headers, commit, e.running.sha, fetchImpl, timeoutMs) : null
+    const verdict = has === true ? "deployed" : has === false ? "not deployed" : "not known"
+    return `${e.env}: ${verdict} (${envState(e)})`
+  }))
+  return `${head}: ${parts.join("; ")}`
+}
+
 async function readFleet(sources: LiveSource[], fetchImpl: FetchLike, timeoutMs: number): Promise<string> {
   const nodes: Array<{ name: string; url: string }> = []
   for (const s of sources) {
@@ -279,6 +399,7 @@ export async function runLiveReads(reads: LiveRead[], settings: LiveSettings, fe
     if (!source) return ""
     if (read.kind === "search") return readSearch(read, source, fetchImpl, settings.timeoutMs)
     if (read.kind === "release") return readRelease(read, source, fetchImpl, settings.timeoutMs)
+    if (read.kind === "deploy") return readDeploy(read, source, fetchImpl, settings.timeoutMs)
     return readOne(read, source, fetchImpl, settings.timeoutMs)
   }))
   return checked.map((read, i) => ({ read, line: lines[i] })).filter((l) => l.line)
