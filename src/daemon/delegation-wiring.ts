@@ -294,6 +294,7 @@ export interface DelegationWiring {
   onStarted?: DelegationDeps["onStarted"]
   onDone?: DelegationDeps["onDone"]
   callbackNote?: DelegationDeps["callbackNote"]
+  onRelayFailed?: DelegationDeps["onRelayFailed"]
 }
 
 /** Where a message for `channel` goes on this machine: its own adapter,
@@ -404,11 +405,13 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
   return new DelegationManager({
     timeoutMs: cfg.timeoutMinutes * 60_000,
     asyncWhenHuman: cfg.asyncWhenHuman,
+    requeueRelayOnRestart: cfg.requeueRelayOnRestart,
     logPath: resolve(w.baseDir ?? process.cwd(), ".agentx/a2a/delegations.jsonl"),
     log: w.log,
     onStarted: w.onStarted,
     onDone: w.onDone,
     callbackNote: w.callbackNote,
+    onRelayFailed: w.onRelayFailed,
     runLocal: (callee, message, context, opts) => w.registry.execute({
       agentId: callee,
       message,

@@ -247,6 +247,10 @@ How to use these, step by step: [Review what your agents learn](../jobs/agent-me
 | `agentx wiki proposals show <id>` | The proposed article and its evidence |
 | `agentx wiki proposals approve <id>` | Write it into the shared wiki; refuses if the article changed since, unless `--force` |
 | `agentx wiki proposals reject <id> [--reason]` | Decline it; its sources aren't judged again until they change |
+| `agentx wiki contribute enable <agent>` | Let an agent add sourced facts to the wiki once a day ([how](/jobs/wiki-contributions)) |
+| `agentx wiki contribute --agent <id> [--dry-run]` | Run one agent's contribution now |
+| `agentx wiki contributions [merge \| held \| approve <id> \| reject <id>]` | See, apply or decide on the queued contributions |
+| `agentx wiki score --agent <id> --questions <file> [--out <file>]` | Score the wiki against questions you know the answers to; `--compare a.json b.json` shows the change |
 | `agentx wiki facts list [--stale]` | Checked facts, with where, when and by whom they were checked |
 | `agentx wiki facts show <id>` | One fact and its earlier values |
 | `agentx wiki facts set --subject --attribute --value --source --checked-at now` | Record a fact you checked; a different value needs a newer check or `--confirm` |

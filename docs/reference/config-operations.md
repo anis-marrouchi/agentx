@@ -44,6 +44,7 @@ The mesh links several AgentX machines so their agents can reach each other. See
 | `mesh.feed.skipTypes` | list of strings | `["task:step"]` | Event types peers leave out of the feed they send this machine. The default skips per-step agent activity. A change applies when this machine next reconnects to each peer. |
 | `mesh.delegation.asyncWhenHuman` | boolean | `true` | When a person started the conversation, an agent that asks another agent gets its answer later, as a new message, instead of waiting. See [When an agent asks another agent](/jobs/ask-another-agent). Applies without the mesh too. |
 | `mesh.delegation.timeoutMinutes` | number | `30` | Minutes a helper agent has to answer before the asking agent is told it timed out. From 1 to 240. |
+| `mesh.delegation.requeueRelayOnRestart` | boolean | `true` | If a restart stops your agent while it is passing a helper's answer on to you, your agent tries once more after the restart. If that try fails too, you get a short message saying the answer did not come through, and your open request is marked as needing attention. Turn it off (`false`) to skip the second try. |
 
 Each entry in `mesh.peers`:
 

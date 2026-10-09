@@ -298,6 +298,27 @@ const agentConfigSchema = z.object({
    *  them off, when that is longer than shutdown.drainTimeoutSeconds. For
    *  agents whose runs are long (renders, builds). */
   drainTimeoutSeconds: z.number().int().min(0).max(86_400).optional(),
+  /** Wiki settings for this agent. `contribute` turns on its daily wiki
+   *  contribution (#824): `agentx wiki contribute --all` reviews the
+   *  agent's work since its last run and queues sourced patches for the
+   *  daily merge. Off by default. `maxPatches` and `maxCostUsd` cap one
+   *  run; `model` overrides the wiki-wide model. `absorb` leaves the
+   *  agent out of the bulk absorb. */
+  wiki: z.object({
+    contribute: z.object({
+      enabled: z.boolean().default(false),
+      maxPatches: z.number().int().min(1).max(200).default(30),
+      maxCostUsd: z.number().min(0).max(20).optional(),
+      model: z.string().optional(),
+    }).default({}),
+    /** Whether `agentx wiki absorb` without `--agent` compiles this
+     *  agent's raw entries (#850). On by default. Off, the agent is skipped
+     *  and named; its raw entries are still captured, so absorb can resume
+     *  later with nothing lost. `--agent <id>` still runs it. */
+    absorb: z.object({
+      enabled: z.boolean().default(true),
+    }).default({}),
+  }).optional(),
   permissionMode: z.string().default("default"),
   /** How this agent's `claude` CLI is billed (claude-code tier). Default
    *  "subscription": the shared OAuth login, ANTHROPIC_API_KEY stripped.
@@ -793,6 +814,12 @@ const wikiNotesSchema = z.object({
    *  Each must run as the inbox agent. Empty: notes are kept but no run
    *  reads them. */
   crons: z.array(z.string().min(1)).default([]),
+  /** Agent whose `agentx wiki absorb` pass reads the inbox (#831). Absorb
+   *  is one model call with no tools: it gets the notes in its prompt,
+   *  answers each, and absorb applies the patches and records the
+   *  outcome. Unset: absorb reads no notes. Must run on this node, the
+   *  node that keeps the inbox. */
+  absorbAgent: z.string().min(1).optional(),
   /** Most notes one run is given. The rest wait for the next run. */
   maxNotesPerRun: z.number().int().min(1).max(100).default(20),
   /** A note deferred this many times stops being offered (status
@@ -864,6 +891,10 @@ const meshConfigSchema = z.object({
     asyncWhenHuman: z.boolean().default(true),
     /** A delegation with no answer after this long is reported as timed out. */
     timeoutMinutes: z.number().int().min(1).max(240).default(30),
+    /** A restart that stops the turn passing a delegation's answer on to
+     *  the person (#846): run that turn once more after the next start,
+     *  and if it fails again, tell the person and note the open request. */
+    requeueRelayOnRestart: z.boolean().default(true),
   }).default({}),
 })
 
@@ -1275,6 +1306,28 @@ export const daemonConfigSchema = z.object({
   }),
   providers: z.record(z.string(), providerConfigSchema).default({}),
   agents: z.record(z.string(), agentConfigSchema).default({}),
+  /** Wiki-wide settings (#824). */
+  wiki: z.object({
+    /** The daily per-agent contribution and the merge that applies it.
+     *  Both jobs are added to the schedule when at least one agent has
+     *  `wiki.contribute.enabled`; a cron with the same id overrides them. */
+    contributions: z.object({
+      /** When each enabled agent reviews its day (cron, 5 fields). */
+      schedule: z.string().default("40 22 * * *"),
+      /** When the queued patches are applied. */
+      mergeSchedule: z.string().default("20 23 * * *"),
+      timezone: z.string().default("UTC"),
+      /** Default per-agent, per-run model spend cap in USD. */
+      maxCostUsd: z.number().min(0).max(20).default(0.5),
+      /** Default model for the contribution call. */
+      model: z.string().default("sonnet"),
+    }).default({}),
+    query: z.object({
+      /** `wiki query` also searches other agents' readable pages and the
+       *  root wiki's own pages. */
+      shared: z.boolean().default(true),
+    }).default({}),
+  }).default({}),
   channels: channelsConfigSchema.default({}),
   crons: z.record(z.string(), cronJobSchema).default({}),
   /** Notes agents leave for the wiki observe/sweep run (#825). */
@@ -1927,7 +1980,7 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
-  return result.data
+  return withContributionJobs(result.data)
 }
 
 /**
@@ -1982,4 +2035,36 @@ export function validateWorkspaces(config: DaemonConfig): string[] {
   }
 
   return warnings
+}
+
+/** Cron ids of the daily wiki contribution jobs. */
+export const WIKI_CONTRIBUTE_JOB = "wiki-contribute"
+export const WIKI_CONTRIBUTE_MERGE_JOB = "wiki-contribute-merge"
+
+/**
+ * Add the daily wiki contribution and merge jobs when an agent has
+ * `wiki.contribute.enabled` (#824), so they show and run with the other
+ * schedules. A cron the operator defined under the same id wins. The
+ * commands call the CLI of the running release, so an upgrade needs no
+ * edit.
+ */
+export function withContributionJobs(config: DaemonConfig, cli: string = agentxCli()): DaemonConfig {
+  const enabled = Object.entries(config.agents).filter(([, a]) => a.wiki?.contribute?.enabled).map(([id]) => id).sort()
+  if (enabled.length === 0) return config
+  const c = config.wiki.contributions
+  const job = (schedule: string, command: string) => cronJobSchema.parse({
+    schedule, timezone: c.timezone, agent: enabled[0], command, timeout: 3600, onError: "log",
+  })
+  const generated: Record<string, z.infer<typeof cronJobSchema>> = {
+    [WIKI_CONTRIBUTE_JOB]: job(c.schedule, `${cli} wiki contribute --all`),
+    [WIKI_CONTRIBUTE_MERGE_JOB]: job(c.mergeSchedule, `${cli} wiki contributions merge`),
+  }
+  return { ...config, crons: { ...generated, ...config.crons } }
+}
+
+/** How to call this release's CLI from a shell. */
+function agentxCli(): string {
+  const entry = process.argv[1] ?? ""
+  if (/[\\/]cli\.(?:c|m)?js$/.test(entry)) return `"${process.execPath}" "${entry}"`
+  return "agentx"
 }

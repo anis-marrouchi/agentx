@@ -239,6 +239,19 @@ export class RequestTracker {
     })
   }
 
+  /** A restart stopped the turn passing the delegation's answer on, and
+   *  its one re-run failed too (#846): the answer never reached the owner. */
+  relayFailed(d: DelegationSignal, text: string, reason: string): void {
+    this.guard("delegation relay", () => {
+      const req = this.store.byLink("delegation", d.id)
+      if (!req) return
+      const who = d.peer ? `${d.callee} on ${d.peer}` : d.callee
+      if (this.store.needsAttention(req.id, `The answer from ${who} was not passed on after a restart (${clip(reason)}). It said: ${clip(text)}`, this.now())) {
+        this.log(`[requests] ${req.id} needs attention: delegation ${d.id} answer not relayed`)
+      }
+    })
+  }
+
   /** The agent raised a decision card from the turn of a request: the
    *  request now waits on the owner, with the card's question. The card's
    *  own reminders (inbox, Mac card, check-ins, digest) do the reminding.

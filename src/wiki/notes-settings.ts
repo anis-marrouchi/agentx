@@ -8,6 +8,8 @@ export interface WikiNotesPatch {
   inbox?: string
   /** Replace the list of schedules that read the inbox. */
   crons?: string[]
+  /** Agent whose `wiki absorb` pass reads the inbox. "" clears it. */
+  absorbAgent?: string
   maxNotesPerRun?: number
   maxDeferrals?: number
 }
@@ -16,6 +18,7 @@ export interface WikiNotesView {
   enabled: boolean
   inbox: string
   crons: string[]
+  absorbAgent: string
   maxNotesPerRun: number
   maxDeferrals: number
 }
@@ -29,6 +32,7 @@ export function wikiNotesSettings(raw: any): WikiNotesView {
     enabled: n.enabled === true,
     inbox: typeof n.inbox === "string" ? n.inbox : "",
     crons: Array.isArray(n.crons) ? n.crons.filter((c: unknown) => typeof c === "string") : [],
+    absorbAgent: typeof n.absorbAgent === "string" ? n.absorbAgent : "",
     maxNotesPerRun: Number.isInteger(n.maxNotesPerRun) ? n.maxNotesPerRun : 20,
     maxDeferrals: Number.isInteger(n.maxDeferrals) ? n.maxDeferrals : 3,
   }
@@ -41,7 +45,8 @@ export function wikiNotesSettings(raw: any): WikiNotesView {
  * The inbox agent may live on another node (a node that only posts notes),
  * so it is not required to be in `cfg.agents`. A schedule listed in
  * `crons` must exist here and run as the inbox agent: that is the run
- * that reads the notes.
+ * that reads the notes. So must `absorbAgent`: absorb reads the inbox
+ * file on its own node, which is the inbox agent's node.
  */
 export function patchWikiNotes(cfg: any, patch: WikiNotesPatch): string {
   const cur = { ...(cfg.wikiNotes && typeof cfg.wikiNotes === "object" ? cfg.wikiNotes : {}) }
@@ -58,6 +63,13 @@ export function patchWikiNotes(cfg: any, patch: WikiNotesPatch): string {
     const ids = [...new Set(patch.crons.map((c) => String(c).trim()).filter(Boolean))]
     cur.crons = ids
     changes.push(`crons=${ids.length ? ids.join(",") : "none"}`)
+  }
+  if (patch.absorbAgent !== undefined) {
+    const id = String(patch.absorbAgent).trim()
+    if (id && !ID_RE.test(id)) throw new Error(`"${id}" is not an agent id`)
+    if (id) cur.absorbAgent = id
+    else delete cur.absorbAgent
+    changes.push(id ? `absorbAgent=${id}` : "absorb agent cleared")
   }
   if (patch.maxNotesPerRun !== undefined) {
     const n = Number(patch.maxNotesPerRun)
@@ -85,6 +97,13 @@ export function patchWikiNotes(cfg: any, patch: WikiNotesPatch): string {
     if (!job) throw new Error(`no schedule "${id}" on this node`)
     if (cur.inbox && job.agent !== cur.inbox) {
       throw new Error(`schedule "${id}" runs as "${job.agent}", not the inbox agent "${cur.inbox}"`)
+    }
+  }
+
+  if (cur.absorbAgent) {
+    if (!cfg.agents?.[cur.absorbAgent]) throw new Error(`no agent "${cur.absorbAgent}" on this node to run the absorb that reads the notes`)
+    if (cur.inbox && !cfg.agents?.[cur.inbox]) {
+      throw new Error(`the inbox agent "${cur.inbox}" is not on this node; set the absorb agent on the node that keeps its notes`)
     }
   }
 

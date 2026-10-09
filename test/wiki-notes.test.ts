@@ -86,6 +86,33 @@ describe("NoteStore", () => {
     expect(got.map((n) => n.id)).toEqual([fresh.id, stuck[0].id])
   })
 
+  it("rotates open notes a run skipped behind newer ones", () => {
+    const store = new NoteStore(dir)
+    // The run is given this note but never records it, so it is never deferred.
+    const skipped = add(store, { change: "skipped" }).note
+    expect(store.takeForRun("wiki-agent", "sweep/run-1", 1).map((n) => n.id)).toEqual([skipped.id])
+    const fresh = add(store, { change: "new note" }).note
+    expect(store.takeForRun("wiki-agent", "sweep/run-2", 1).map((n) => n.id)).toEqual([fresh.id])
+    expect(store.takeForRun("wiki-agent", "sweep/run-3", 1).map((n) => n.id)).toEqual([skipped.id])
+  })
+
+  it("keeps rotating skipped open notes after their run history is trimmed", () => {
+    const store = new NoteStore(dir)
+    const ids = ["a", "b", "c"].map((change) => add(store, { change }).note.id)
+    const offered: string[] = []
+    // A skipped note counts as deferred (#836); a high maxDeferrals keeps
+    // them all waiting long enough to test the rotation alone.
+    for (let run = 1; run <= 30; run++) {
+      offered.push(...store.takeForRun("wiki-agent", `sweep/run-${run}`, 1, 100).map((n) => n.id))
+    }
+    expect(offered).toHaveLength(30)
+    // Past NOTE_LIMITS.listedIn runs each, every note still comes up within
+    // any 3 consecutive runs.
+    for (let run = 10; run + 3 <= 30; run++) {
+      expect(new Set(offered.slice(run, run + 3))).toEqual(new Set(ids))
+    }
+  })
+
   it("stops offering a note once it has been deferred maxDeferrals times", () => {
     const store = new NoteStore(dir)
     const n = add(store).note
@@ -127,8 +154,8 @@ describe("NoteStore", () => {
     store.handle(stuck.id, "deferred", "source cannot be checked", "wiki-agent")
     const fresh = [1, 2, 3].map((i) => add(store, { change: `new ${i}` }).note)
     expect(store.takeForRun("wiki-agent", "sweep/run-1", 3).map((n) => n.id)).toEqual([fresh[0].id, fresh[1].id, stuck.id])
-    // One slot: open notes still go first.
-    expect(new NoteStore(dir).takeForRun("wiki-agent", "sweep/run-1", 1).map((n) => n.id)).toEqual([fresh[0].id])
+    // One slot: open notes still go first, the one no run has seen yet ahead.
+    expect(new NoteStore(dir).takeForRun("wiki-agent", "sweep/run-1", 1).map((n) => n.id)).toEqual([fresh[2].id])
   })
 
   it("does not count a deferral twice when a run answers after its skip was counted", () => {
@@ -191,7 +218,7 @@ describe("wiki notes settings", () => {
   it("sets the inbox and the schedules that read it", () => {
     const c = cfg()
     patchWikiNotes(c, { inbox: "wiki-agent", crons: ["sweep"], enabled: true })
-    expect(wikiNotesSettings(c.wikiNotes)).toEqual({ enabled: true, inbox: "wiki-agent", crons: ["sweep"], maxNotesPerRun: 20, maxDeferrals: 3 })
+    expect(wikiNotesSettings(c.wikiNotes)).toEqual({ enabled: true, inbox: "wiki-agent", crons: ["sweep"], absorbAgent: "", maxNotesPerRun: 20, maxDeferrals: 3 })
   })
 
   it("refuses settings that could not work", () => {
