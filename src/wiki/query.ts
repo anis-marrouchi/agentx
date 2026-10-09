@@ -61,7 +61,8 @@ export interface AgenticQueryOptions {
   shared?: SharedWikiStore[]
   /** How pages are picked (#855). `summaries`: from the one-line page
    *  summaries, then a live read (query-summaries.ts). `auto`: that, once
-   *  a summary exists for the pages in scope. Default "catalog". */
+   *  most of the requester's own pages have a summary
+   *  (AUTO_SUMMARY_COVERAGE). Default "catalog". */
   method?: QueryMethod
   /** Settings of the summaries method. An explicit `selectorModel` or
    *  `synthModel` overrides its models. */
@@ -69,6 +70,23 @@ export interface AgenticQueryOptions {
   /** Model call and HTTP GET of the summaries method; tests pass their own. */
   call?: ModelCall
   fetch?: FetchLike
+}
+
+/** Share of the requester's own pages that must have a summary before
+ *  `auto` picks pages from summaries. Below it, an unsummarised page
+ *  would be ranked on its title and tags alone, so the catalog walk is
+ *  kept: one `wiki summarize --agent <id>` or `--limit` run must not
+ *  switch every agent that can read that store. */
+export const AUTO_SUMMARY_COVERAGE = 0.8
+
+/** Share of the pages in reach that have a summary: the requester's own
+ *  pages, or the shared pages when the requester has none. */
+function summaryCoverage(store: WikiStore, requesterId: string | undefined, view: ScopeView, summaries: Map<string, string>): number {
+  if (summaries.size === 0) return 0
+  let paths = store.listArticles(requesterId || "").map((a) => a.path).filter((p) => !p.includes("/_versions/"))
+  if (paths.length === 0) paths = view.sharedPool.map((e) => e.path)
+  if (paths.length === 0) return 0
+  return paths.filter((p) => summaries.has(p)).length / paths.length
 }
 
 /** A wiki searched alongside the requester's own. */
@@ -135,7 +153,7 @@ export async function agenticQuery(
   const method = opts.method ?? "catalog"
   if (method !== "catalog") {
     const summaries = collectSummaries(store, opts.shared)
-    if (method === "summaries" || summaries.size > 0) {
+    if (method === "summaries" || summaryCoverage(store, requesterId, view, summaries) >= AUTO_SUMMARY_COVERAGE) {
       const base = opts.summaries ?? DEFAULT_SUMMARIES_QUERY
       const out = await summariesQuery(question, view, summaries, {
         ...base,

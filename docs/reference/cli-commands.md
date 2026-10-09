@@ -1634,7 +1634,7 @@ Grade absorbed articles with the article-quality seat.
 
 ### `agentx wiki query <question>`
 
-Answer a question from the wiki. Once page summaries exist (`agentx wiki summarize`), it picks up to 3 pages from their one-line summaries, reads the live state of what they name from the sources in `wiki.query.live.sources`, and answers from both; the lines it read are printed under **Read live at the source**. Until then it picks from page titles and walks the links between pages. See [Get wiki answers checked at the source](/jobs/wiki-live-answers).
+Answer a question from the wiki. Once at least 80% of the agent's own pages have a summary (`agentx wiki summarize`), it picks up to 3 pages from their one-line summaries, reads the live state of what they name from the sources in `wiki.query.live.sources`, and answers from both; the lines it read are printed under **Read live at the source**. Until then it picks from page titles and walks the links between pages. See [Get wiki answers checked at the source](/jobs/wiki-live-answers).
 
 | Flag | Default | What it does |
 |---|---|---|
