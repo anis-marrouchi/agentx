@@ -944,6 +944,7 @@ wiki
     console.log()
     console.log(chalk.bold(`  ${s.total} queries · ${s.failed} failed · p50 ${(s.wallMsP50 / 1000).toFixed(1)} s · p95 ${(s.wallMsP95 / 1000).toFixed(1)} s`))
     for (const [status, n] of Object.entries(s.byStatus).sort((a, b) => b[1] - a[1])) console.log(`  ${status.padEnd(14)} ${n}`)
+    console.log(chalk.dim(`  from: ${Object.entries(s.bySource).map(([src, n]) => `${src} ${n}`).join(" · ")}`))
     console.log()
   })
 
@@ -3219,18 +3220,15 @@ wiki
   .action(async (question, opts) => {
     const { agenticQuery } = await import("@/wiki/query")
     const { noteSourceFor } = await import("@/wiki/query-settings")
-    const { QUERY_RUNS_FILE, queryFailed, recordQueryRun } = await import("@/wiki/query-runs")
+    const { QUERY_RUNS_FILE, queryFailed, recordQueryRun, timedQuery } = await import("@/wiki/query-runs")
     const settings = await querySettingsFor(opts)
     if (!settings) return
     const hub = getHub(opts.dir)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
     // Every query leaves one line in _query-runs.jsonl, and one that could
     // not run exits 1, so a failure is counted and a caller can see it (#603).
+    const runsFile = resolve(hub.getBaseDir(), QUERY_RUNS_FILE)
     const queryStart = Date.now()
-    const record = (agent: string, status: Parameters<typeof queryFailed>[0], method?: string) => {
-      recordQueryRun(resolve(hub.getBaseDir(), QUERY_RUNS_FILE), { at: new Date().toISOString(), agent, status, method, wallMs: Date.now() - queryStart })
-      if (queryFailed(status)) process.exitCode = 1
-    }
 
     // The named (or calling) agent, or the first one that has a catalog. A named agent
     // with no articles of its own still searches the shared wiki.
@@ -3245,23 +3243,26 @@ wiki
     }
     if (!chosen) {
       console.log(chalk.yellow("  No agent has a catalog yet. Run `agentx wiki status` or migrate first."))
-      record(named || "", "no-catalog")
+      recordQueryRun(runsFile, { at: new Date().toISOString(), agent: named || "", status: "no-catalog", source: "cli", wallMs: Date.now() - queryStart })
+      process.exitCode = 1
       return
     }
 
-    const store = hub.getAgentWiki(chosen)
-    const result = await agenticQuery(question, store, chosen, {
+    const agent = chosen
+    const store = hub.getAgentWiki(agent)
+    const shared = opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(agent)
+    const result = await timedQuery(runsFile, agent, "cli", () => agenticQuery(question, store, agent, {
       selectorModel: opts.selectorModel,
       synthModel: opts.synthModel,
       maxCandidates: parseInt(opts.maxCandidates),
       maxHops: parseInt(opts.maxHops),
       maxArticles: parseInt(opts.maxArticles),
-      shared: opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(chosen),
+      shared,
       method: settings.method,
       summaries: settings.summaries,
-      notes: noteSourceFor(settings, chosen),
-    })
-    record(chosen, result.status, result.method)
+      notes: noteSourceFor(settings, agent),
+    }))
+    if (queryFailed(result.status)) process.exitCode = 1
 
     if (opts.json) {
       console.log(JSON.stringify(result, null, 2))
