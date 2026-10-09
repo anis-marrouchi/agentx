@@ -296,7 +296,9 @@ Closing a card is not an answer: it approves and rejects nothing. An agent can c
 
 If you do answer **No** on a card whose work is already done, the agent does not undo anything because of that no alone. It asks you one clear question first.
 
-Over the local API, an agent closes a card with `POST /approvals/<id>/resolve` and the fields `raised_by` (the agent id) and `reason`.
+Over the local API, an agent closes a card with `POST /approvals/<id>/resolve` and the field `reason`. The daemon works out which agent is asking from the agent's running turn (the `X-AgentX-Task` header, or `X-AgentX-Channel` and `X-AgentX-Chat`), which the `agentx_approval` tool sends by itself. A `raised_by` field is optional and must name that same agent. A call from outside a running turn, or one that names a different agent, is refused with `403` and the card stays open.
+
+A card forwarded from another machine is closed through that machine's daemon, which checks its agent the same way and then passes the request on in its own name. The machine that keeps the card accepts that only when the request carries the own mesh token of the peer that forwarded the card: the `token` of that peer in `mesh.peers`. The shared `MESH_TOKEN` is not enough, because every agent on the machine has it.
 
 Agents on a `claude-code` engine get the `agentx_approval` tool in every session, whichever channel started it: the daemon adds its own tool server to each session it starts, next to the tool servers the workspace and the computer's user already load.
 
@@ -351,6 +353,8 @@ For check-ins (Mac):
 - **The card window never opens, but the plain dialogs do:** the web window couldn't start, so AgentX fell back to the dialogs. Run `agentx approvals popup --sample` in a terminal to see the error. To keep the dialogs, set `--popup-style dialog`.
 - **Check-ins raise no cards:** check that `agentx approvals settings` shows **Check-ins on**, that `remindctl show today` lists your reminders, and that `checkin.agent` names an agent from `agentx agent list`. The daemon log lines starting `[checkin]` say what happened to each reminder: "no agent owns it", "couldn't compose a card", or the pass totals.
 - **A card comes back after you already approved it in chat:** the agent did not close it. Answer it with what you said in chat (**Yes**), or tell the agent to close it with the `resolve` action. Agents whose sessions started before this update need a new session to see that action.
+- **An agent gets "only the agent that raised the card can close it":** the call did not come from one of that agent's running turns, or it came from another agent. Only the agent that raised a card can close it, while it is working. Answer the card in **Approvals** instead.
+- **An agent on another machine can't close its card ("needs that peer's own mesh token"):** on the machine that keeps the cards, give that peer its own `token` in `mesh.peers`, and use the same token for this machine in the peer's `mesh.peers`. Until then, answer the card in **Approvals**.
 - **An agent gets "card … is answered by the operator only" when it closes a card:** the card belongs to a workflow, a plan or a retro, which act on your answer themselves. Answer it in **Approvals**.
 - **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
