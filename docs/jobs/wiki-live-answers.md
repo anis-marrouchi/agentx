@@ -20,7 +20,8 @@ A live read only reads.
 - The model names a read as data: a kind, a repository from your list, and a number or a few search words. It is given no shell, no command and no tool.
 - AgentX checks each named read against your settings. A repository you did not list is refused.
 - Each read is made of HTTP `GET` requests that AgentX builds itself. Nothing is sent, changed or closed.
-- A token goes only to the host it was set for. A redirect to another address is refused.
+- A token goes only to the host it was set for, and only over `https://`. A redirect to another address is refused.
+- Issue titles, labels, release names and environment names are passed to the answer as plain data. On a public repository anyone can write them, so the answer model is told not to follow anything they say, and long or numerous labels are cut.
 - A read that fails or takes too long is left out. The answer is still given from the pages.
 
 The six kinds of read:
@@ -33,6 +34,8 @@ The six kinds of read:
 | Release | The 3 newest releases or tags of a listed repository. |
 | Deploy | Where a merged merge request (or pull request) is deployed: for each environment of a listed repository, whether the version running there holds the change. Without a number, what each environment runs now. |
 | Fleet | The AgentX version, build and start time of this machine and of each machine connected to it. |
+
+A fleet read first asks the AgentX daemon in the source's `url` which machines are connected to it, then asks each of those machines for its version. No token is sent. Still, list only a daemon you run yourself: that daemon decides which addresses this machine asks.
 
 Until you list a source, no live read runs and questions are answered from the pages alone.
 
@@ -122,7 +125,7 @@ Pick a time after the jobs that write wiki pages have finished. A night with no 
 
 `about` is a short note on what lives in a repository. The model reads it when choosing which repository to name, so add it when the repository's name does not say what it holds.
 
-When a source names no token, AgentX uses the token of the matching channel (`channels.github` or `channels.gitlab`), and only when the source points at that channel's host. A public GitHub repository needs no token.
+When a source names no token, AgentX uses the token of the matching channel (`channels.github` or `channels.gitlab`), and only when the source points at that channel's address over `https://`. A source with an `http://` address, another port or another host gets no channel token. A GitLab source with no `url` uses the channel's own host and its token. A public GitHub repository needs no token.
 
 ## Settings
 
@@ -130,10 +133,11 @@ All under `wiki` in `agentx.json`.
 
 | Key | Default | What it does |
 |---|---|---|
-| `query.method` | `"auto"` | How pages are picked. `summaries`: from the summary lines, then the live read. `catalog`: from page titles, then along the links between pages (the earlier method). `auto`: `summaries` as soon as summaries exist, `catalog` until then. |
+| `query.method` | `"auto"` | How pages are picked. `summaries`: from the summary lines, then the live read. `catalog`: from page titles, then along the links between pages (the earlier method). `auto`: `summaries` once at least 80% of the agent's own pages have a summary, `catalog` until then. |
 | `query.candidates` | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | `4` | How many of other agents' pages it sees beside them. `0` shows none. |
 | `query.maxPages` | `3` | Most pages opened for one answer. |
+| `query.linkedPages` | `0` | Also open up to this many pages that the picked pages link to (each page's related pages). `0` opens none. Try `3` when the answer often sits one link away from the page picked. |
 | `query.pageChars` | `4000` | Characters of each opened page given to the answer. |
 | `query.navigatorModel` | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | `"sonnet"` | Model that writes the answer. |
@@ -165,6 +169,7 @@ Each entry of `query.live.sources` has a `type` and these keys:
 ## Ask one question a different way
 
 - `agentx wiki query "…" --no-live` answers from the pages alone.
+- `agentx wiki query "…" --linked 3` also opens up to 3 pages that the picked pages link to, for that one question.
 - `agentx wiki query "…" --method catalog` uses the earlier method for that one question.
 - `agentx wiki query "…" --trace` also prints how many reads were asked and answered, and how long each step took.
 
@@ -177,11 +182,14 @@ Each entry of `query.live.sources` has a `type` and these keys:
 
 ## If something is wrong
 
-- **The trace has no `method: summaries` line:** no summaries exist for the pages in reach. Run `agentx wiki summarize --all`.
+- **The trace has no `method: summaries` line:** fewer than 80% of the agent's own pages have a summary, for example after a run with `--agent` for another agent or with `--limit`. Run `agentx wiki summarize --all`.
 - **No "Read live at the source" block:** `query.live.sources` is empty, `query.live.enabled` is `false`, or the picked pages named nothing that changes. Run with `--trace`: "0 asked" means the model named no read.
 - **Reads are asked but none is answered:** the token is missing or can't read the repository, or the host can't be reached. Check the name in `tokenEnv` against `.env`, and that the repository is spelled exactly as on the host.
 - **`(no answer) No page was picked for the question`:** no summary line fits the question. Nothing is read live in that case.
+- **The answer misses a fact that sits on a page linked from the one it cites:** set `query.linkedPages` to `3`, or try `--linked 3` on one question first.
 - **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. Ask about the merge request that made the change, or name its number in the question, so a deploy read can be made.
 - **A deploy line says "no deployment is recorded at the source":** your pipeline does not record deployments for that repository. See [Know whether a change is deployed](#know-whether-a-change-is-deployed).
 - **A deploy line says "not known" for every environment:** the token can't read deployments or compare commits. Give it the read access listed above.
 - **`config check` says `expected owner/name`:** a repository in `repos` is not written as `owner/name` or `group/project`.
+- **`config check` says `wiki.summaries.schedule: expected a cron of 5 fields`:** write the schedule as minute, hour, day of the month, month and day of the week, for example `"30 23 * * *"` for 23:30 every day.
+- **`config check` says `wiki.summaries.timezone: expected a time zone`:** use a name such as `"UTC"` or `"Europe/Paris"`.

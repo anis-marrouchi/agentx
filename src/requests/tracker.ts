@@ -197,8 +197,8 @@ export class RequestTracker {
       const now = this.now()
       // Cut by a shutdown: the next boot decides (resumeOutcome).
       if (p.interrupted) return
-      // Stopped on purpose is not a failure.
-      if (p.error && p.errorKind !== "cancelled") {
+      // Stopped on purpose (cancel, or a stop signal, #857) is not a failure.
+      if (p.error && p.errorKind !== "cancelled" && !p.stopped && p.errorKind !== "stopped") {
         const word = failureWord(p.error)
         if (this.store.needsAttention(req.id, `${p.agentId} ${word}: ${clip(p.error)}`, now)) {
           this.log(`[requests] ${req.id} needs attention: run ${p.taskId} ${word}`)

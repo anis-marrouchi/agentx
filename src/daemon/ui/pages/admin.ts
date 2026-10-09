@@ -3880,6 +3880,11 @@ const JV_HINTS = {
   'crons[].schedule': 'standard five-field cron',
   'mesh.peers[].url': 'full URL including port',
   'tokens[].scopes': 'permissions this token grants',
+  'signals.enabled': 'allow stopping a running task with a resume plan',
+  'signals.windDownSeconds': 'time a stopped agent gets to write its resume plan',
+  'signals.allowAgents': 'agents that may stop or resume any task ("*" for all)',
+  'signals.allowPeers': 'mesh nodes whose stop and resume signals are accepted',
+  'signals.maxPerRoot': 'loop brake: most signals one request may carry per day',
 };
 
 let __jvMode = 'tree';

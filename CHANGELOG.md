@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.132.0](https://github.com/anis-marrouchi/agentx/compare/v0.131.0...v0.132.0) (2026-10-09)
+
+
+### Features
+
+* **signals:** stop a running agent task with a resume plan, and resume it ([#857](https://github.com/anis-marrouchi/agentx/issues/857)) ([#868](https://github.com/anis-marrouchi/agentx/issues/868)) ([79164e5](https://github.com/anis-marrouchi/agentx/commit/79164e52225572d3bcf3dbfded4592595aa6c940))
+
 ## [0.131.0](https://github.com/anis-marrouchi/agentx/compare/v0.130.0...v0.131.0) (2026-10-09)
 
 

@@ -328,6 +328,18 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.crashLoop.restarts` | number (1 or more) | `3` | This many restarts… |
 | `resume.crashLoop.windowMinutes` | number | `10` | …within this many minutes pauses picking up work. |
 
+## `signals`
+
+Pausing a running task with a resume plan, and resuming it later. You may always pause or resume; an agent may pause or resume a task it handed out. See [Pause a task and resume it later](/jobs/pause-and-resume).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `signals.enabled` | boolean | `true` | Turns pausing and resuming on. Off: every signal is refused, yours included. |
+| `signals.windDownSeconds` | number (10–1800) | `120` | How long a paused agent gets to write its resume plan. Past it, the plan-writing turn is stopped and AgentX writes the plan from the run's trace. |
+| `signals.allowAgents` | list of strings | `[]` | Agents that may pause or resume any task on this machine. `"*"` allows every agent. An agent never pauses its own task. |
+| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. A machine using the shared `MESH_TOKEN` is believed about its name; use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
+| `signals.maxPerRoot` | number (1–100) | `6` | Loop brake: most signals from agents and other machines one request (one root id) may carry in a day. The owner's are never counted. |
+
 ## `reminders`
 
 Hands due Apple Reminders back to the agent that created them. macOS only, off by default. See [Hand due reminders back to agents](/automations/reminders).
@@ -352,10 +364,11 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `contributions.maxCostUsd` | number (0–20) | `0.5` | Model spend per agent per run, in dollars, for agents that set no limit of their own. |
 | `contributions.model` | string | `"sonnet"` | Model for the daily run, for agents that name none. |
 | `query.shared` | boolean | `true` | Wiki searches also read other agents' pages the agent may see, and the shared lessons. |
-| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How a wiki question picks its pages. `summaries`: from the one-line page summaries, then a live read. `catalog`: from page titles, then along the links between pages. `auto`: `summaries` once summaries exist. See [Get wiki answers checked at the source](/jobs/wiki-live-answers). |
+| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How a wiki question picks its pages. `summaries`: from the one-line page summaries, then a live read. `catalog`: from page titles, then along the links between pages. `auto`: `summaries` once at least 80% of the agent's own pages have a summary. See [Get wiki answers checked at the source](/jobs/wiki-live-answers). |
 | `query.candidates` | number (1–50) | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | number (0–50) | `4` | How many of other agents' pages it sees beside them. |
 | `query.maxPages` | number (1–10) | `3` | Most pages opened for one answer. |
+| `query.linkedPages` | number (0–10) | `0` | Summaries method: also open up to this many pages that the picked pages link to (their `related` list). `0` opens none. |
 | `query.pageChars` | number (200–40000) | `4000` | Characters of each opened page given to the answer. |
 | `query.navigatorModel` | string | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |

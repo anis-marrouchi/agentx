@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 900" width="920" height="900" role="img" aria-labelledby="t d" style="--cycle:4.2s">
+<title id="t">How a task is paused and resumed</title>
+<desc id="d">Six steps in two parts. You, or the agent that handed out the task, ask a running agent to stop. AgentX stops the task; it is marked stopped, not failed. The agent gets a short turn to write a resume plan: what is done, what is left, the next action, and anything half-finished. If it does not answer in time, AgentX writes a plan from the record of the run. Later you, an agent or a workflow step asks to resume. The task runs again in the same chat with its plan placed before the original request.</desc>
+<defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
+.h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.sub { font-size: 16px; fill: #475569; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
+.band.warn { fill: #B45309; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: #475569; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: #475569; }
+.card { fill: #fff; stroke: #E2E8F0; stroke-width: 1.25; filter: url(#soft); }
+.card.accent { stroke: #C7D9FF; }
+.card.win { stroke: #0B0D12; stroke-width: 1.5; }
+.link { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wrap { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; animation: draw 0.9s ease-in-out backwards; }
+.rise { animation: rise 0.55s cubic-bezier(.2,.7,.2,1) backwards; }
+.fade { animation: fade 0.4s ease-out backwards; }
+.pulse { transform-box: fill-box; transform-origin: center; opacity: 0; animation: pulse var(--cycle) ease-out infinite; }
+.blink { animation: blink 1.6s ease-in-out infinite; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0% { opacity: .7; transform: scale(1); } 9% { opacity: 0; transform: scale(1.9); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
+</style>
+<rect width="920" height="900" rx="24" fill="#FFFFFF"/>
+<text x="44" y="56" class="h1" text-anchor="start">How a task is paused and resumed</text>
+<text x="44" y="82" class="sub" text-anchor="start">Nothing is lost: the plan says where the work got to.</text>
+<circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You, or the agent that asked</text>
+<circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">AgentX and the stopped agent</text>
+<rect x="20" y="104" width="880" height="372" rx="20" fill="#F6F7F9"/>
+<text x="44" y="132" class="band" text-anchor="start">STOP</text>
+<g class="rise" style="animation-delay:0.32s">
+<rect x="44" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:4.62s"/>
+<circle cx="70" cy="176" r="15" fill="#1A66FF"/>
+<text x="70" y="181" class="num" text-anchor="middle">1</text>
+<text x="60" y="220" class="title" text-anchor="start">Ask it to stop</text>
+<text x="60" y="242" class="note" text-anchor="start">Pause on the Live page,</text>
+<text x="60" y="259" class="note" text-anchor="start">agentx signal stop, or a tool</text>
+</g>
+<g class="rise" style="animation-delay:0.64s">
+<rect x="328" y="148" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:5.32s"/>
+<circle cx="354" cy="176" r="15" fill="#0B0D12"/>
+<text x="354" y="181" class="num" text-anchor="middle">2</text>
+<text x="344" y="220" class="title" text-anchor="start">The task stops</text>
+<text x="344" y="242" class="note" text-anchor="start">marked stopped,</text>
+<text x="344" y="259" class="note" text-anchor="start">not failed</text>
+</g>
+<g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
+<g class="rise" style="animation-delay:0.96s">
+<rect x="612" y="148" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.02s"/>
+<circle cx="638" cy="176" r="15" fill="#0B0D12"/>
+<text x="638" y="181" class="num" text-anchor="middle">3</text>
+<text x="628" y="220" class="title" text-anchor="start">The agent writes</text>
+<text x="628" y="241" class="title" text-anchor="start">a resume plan</text>
+<text x="628" y="263" class="note" text-anchor="start">done, left, next action,</text>
+<text x="628" y="280" class="note" text-anchor="start">half-finished</text>
+</g>
+<g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
+<path d="M744 284 V292 Q744 302 734 302 H80 Q70 302 70 312 V316" class="wrap" pathLength="100" style="animation-delay:1.26s"/>
+<path d="M65 311 L70 317 L75 311" class="link fade" style="animation-delay:2.16s"/>
+<g class="rise" style="animation-delay:1.28s">
+<rect x="44" y="320" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="348" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.72s"/>
+<circle cx="70" cy="348" r="15" fill="#0B0D12"/>
+<text x="70" y="353" class="num" text-anchor="middle">4</text>
+<text x="60" y="392" class="title" text-anchor="start">The plan is saved</text>
+<text x="60" y="414" class="note" text-anchor="start">shown under Stopped tasks</text>
+<text x="60" y="431" class="note" text-anchor="start">on the Live page</text>
+</g>
+<rect x="20" y="492" width="880" height="366" rx="20" fill="#F3F7FF"/>
+<text x="92" y="520" class="band" text-anchor="start">RESUME</text>
+<path d="M176 456 V474 Q176 484 166 484 H80 Q70 484 70 494 V532" class="wrap" pathLength="100" style="animation-delay:1.58s"/>
+<path d="M65 527 L70 533 L75 527" class="link fade" style="animation-delay:2.48s"/>
+<g class="rise" style="animation-delay:1.60s">
+<rect x="44" y="536" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="564" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:7.42s"/>
+<circle cx="70" cy="564" r="15" fill="#1A66FF"/>
+<text x="70" y="569" class="num" text-anchor="middle">5</text>
+<text x="60" y="608" class="title" text-anchor="start">Ask it to resume</text>
+<text x="60" y="630" class="note" text-anchor="start">Resume on the Live page,</text>
+<text x="60" y="647" class="note" text-anchor="start">the CLI, a tool or a workflow</text>
+</g>
+<g class="rise" style="animation-delay:1.92s">
+<rect x="328" y="536" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="564" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:8.12s"/>
+<circle cx="354" cy="564" r="15" fill="#0B0D12"/>
+<text x="354" y="569" class="num" text-anchor="middle">6</text>
+<text x="344" y="608" class="title" text-anchor="start">It runs again</text>
+<text x="344" y="630" class="note" text-anchor="start">same chat, plan first,</text>
+<text x="344" y="647" class="note" text-anchor="start">then the request</text>
+</g>
+<g class="fade" style="animation-delay:1.75s"><path d="M311 604 H323" class="link"/><path d="M319 600 L324 604 L319 608" class="link"/></g>
+<g class="rise" style="animation-delay:2.32s"><rect x="328" y="354" width="264" height="68" rx="14" class="card"/><rect x="328" y="354" width="6" height="68" rx="3" fill="#B45309"/><text x="350" y="383" class="title" text-anchor="start">No plan in time</text><text x="350" y="405" class="note" text-anchor="start">AgentX writes one from the run.</text></g>
+<g class="rise" style="animation-delay:3.52s"><text x="44" y="728" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
+<g class="rise" style="animation-delay:3.72s"><circle cx="49" cy="754.5" r="4" fill="#B45309"/><text x="62" y="760" class="symptom" text-anchor="start">“is not in signals.allowAgents”</text><text x="62" y="780" class="note" text-anchor="start">Only you and the agent that asked may stop it.</text></g>
+<g class="rise" style="animation-delay:3.97s"><circle cx="465" cy="754.5" r="4" fill="#B45309"/><text x="478" y="760" class="symptom" text-anchor="start">“no running task matches”</text><text x="478" y="780" class="note" text-anchor="start">The task already finished.</text></g>
+<g class="rise" style="animation-delay:4.22s"><circle cx="49" cy="806.5" r="4" fill="#B45309"/><text x="62" y="812" class="symptom" text-anchor="start">“still writing its resume plan”</text><text x="62" y="832" class="note" text-anchor="start">Wait a moment, then resume.</text></g>
+<g class="rise" style="animation-delay:4.47s"><circle cx="465" cy="806.5" r="4" fill="#B45309"/><text x="478" y="812" class="symptom" text-anchor="start">“is a step of workflow run”</text><text x="478" y="832" class="note" text-anchor="start">Pause the workflow run instead.</text></g>
+</svg>

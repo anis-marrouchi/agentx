@@ -26,6 +26,8 @@ export interface FriendlyError {
     | "timeout"
     | "cancelled"
     | "interrupted"
+    /** Ended by a stop signal; its resume plan is saved (#857). */
+    | "stopped"
     | "unknown"
   /** Whether this error is transient — a retry has a reasonable chance of succeeding. */
   retryable: boolean

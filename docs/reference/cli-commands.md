@@ -1634,7 +1634,7 @@ Grade absorbed articles with the article-quality seat.
 
 ### `agentx wiki query <question>`
 
-Answer a question from the wiki. Once page summaries exist (`agentx wiki summarize`), it picks up to 3 pages from their one-line summaries, reads the live state of what they name from the sources in `wiki.query.live.sources`, and answers from both; the lines it read are printed under **Read live at the source**. Until then it picks from page titles and walks the links between pages. See [Get wiki answers checked at the source](/jobs/wiki-live-answers).
+Answer a question from the wiki. Once at least 80% of the agent's own pages have a summary (`agentx wiki summarize`), it picks up to 3 pages from their one-line summaries, reads the live state of what they name from the sources in `wiki.query.live.sources`, and answers from both; the lines it read are printed under **Read live at the source**. Until then it picks from page titles and walks the links between pages. See [Get wiki answers checked at the source](/jobs/wiki-live-answers).
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1642,6 +1642,7 @@ Answer a question from the wiki. Once page summaries exist (`agentx wiki summari
 | `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`), else the first one with a catalog | Which agent's wiki to search first. |
 | `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
 | `--no-live` | — | Skip the live read of the summaries method. |
+| `--linked <n>` | `wiki.query.linkedPages` (`0`) | Also open up to `n` pages that the picked pages link to (summaries method). |
 | `--selector-model <m>` | `haiku` | Model that picks the pages. Overrides `wiki.query.navigatorModel`. |
 | `--synth-model <m>` | `sonnet` | Model that writes the answer. Overrides `wiki.query.answerModel`. |
 | `--max-candidates <n>` | `3` | Candidates from selector (catalog method). |
@@ -1683,6 +1684,7 @@ Score the wiki's answers to a question set, or compare two saved scores. A quest
 | `--compare <files...>` | — | Compare two saved reports: `before.json after.json`. |
 | `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
 | `--no-live` | — | Skip the live read of the summaries method. |
+| `--linked <n>` | `wiki.query.linkedPages` (`0`) | Also open up to `n` pages that the picked pages link to (summaries method). |
 | `--selector-model <m>` | `haiku` | Candidate-selection model. |
 | `--synth-model <m>` | `sonnet` | Synthesis model. |
 | `--json` | — | Print the report as JSON. |
@@ -2974,6 +2976,51 @@ Force-kill one persistent process (the next dispatch will spawn fresh).
 | `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
 | `--token <token>` | — | Bearer token (defaults to dashboard.token). |
 | `-r, --reason <reason>` | `operator-cli` | Kill reason (recorded on the dead-process snapshot). |
+
+## signal (advanced)
+
+`agentx signal`: Pause a running agent task with a resume plan, and resume it later. **Advanced.** See [Pause a task and resume it later](/jobs/pause-and-resume).
+
+Every subcommand takes these flags:
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Daemon config file. |
+| `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
+| `--token <token>` | — | Bearer token (defaults to dashboard.token). |
+| `--peer <name>` | — | Send to this mesh machine instead. |
+
+### `agentx signal stop [taskId]`
+
+Stop a running task; the agent writes a resume plan.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | With `--channel` and `--chat`: the agent's only task on that chat. |
+| `--channel <channel>` | — | The task's channel. |
+| `--chat <chatId>` | — | The task's chat id. |
+| `-r, --reason <reason>` | — | Why: shown to the agent and on the Live page. |
+
+### `agentx signal list`
+
+Stopped tasks and their resume plans.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--all` | — | Include tasks already resumed. |
+| `--agent <id>` | — | Only this agent's. |
+
+### `agentx signal show <id>`
+
+One stopped task with its whole resume plan.
+
+### `agentx signal resume <id>`
+
+Resume a stopped task from its plan, in the same chat.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-r, --reason <reason>` | — | Why: recorded on the resume event. |
 
 ## watch (advanced)
 
