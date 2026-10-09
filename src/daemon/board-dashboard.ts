@@ -1108,7 +1108,8 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
   // stop or start a run.
   //   POST /api/signals/stop?node=<url>     { taskId, reason? }
   //   POST /api/signals/resume?node=<url>   { id }
-  if (method === "POST" && (path === "/api/signals/stop" || path === "/api/signals/resume")) {
+  //   POST /api/signals/drop?node=<url>     { id }
+  if (method === "POST" && (path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop")) {
     const nodeUrl = new URL(req.url || "/", "http://localhost").searchParams.get("node")
     if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
     await proxyNodePost(req, res, ctx, nodeUrl, path)

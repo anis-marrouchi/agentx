@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { existsSync, mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { canSignal, DEFAULT_SIGNAL_SETTINGS, SignalBudget, type SignalSettings } from "../src/agents/signals/policy"
@@ -341,7 +341,7 @@ describe("config", () => {
 })
 
 describe("live page", () => {
-  it("ships a script that parses, with pause and resume actions", async () => {
+  it("ships a script that parses, with pause, resume and drop actions", async () => {
     const { renderLivePage } = await import("../src/daemon/ui/pages/live")
     const html = renderLivePage()
     const scripts = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1])
@@ -349,6 +349,8 @@ describe("live page", () => {
     expect(html).toContain("data-action=\"signal-stop\"")
     expect(html).toContain("data-action=\"signal-resume\"")
     expect(html).toContain("/api/signals/resume")
+    expect(html).toContain("data-action=\"signal-drop\"")
+    expect(html).toContain("/api/signals/drop")
   })
 })
 
@@ -448,5 +450,58 @@ describe("the cut-off tool call and the workflow `signal` kind", () => {
     expect(got).toEqual([])
     legacy.publish({ kind: "signal", name: "go", scope: "global" } as any)
     expect(got).toHaveLength(1)
+  })
+})
+
+describe("follow-ups (#871)", () => {
+  it("a peer's own token is that peer without `via`, so signals.allowPeers holds for it", () => {
+    const sender = signalSender({ proofGiven: false, provenTurn: null, tokenPeer: "laptop" })
+    expect(sender).toEqual({ kind: "peer", peer: "laptop" })
+    if ("error" in sender) throw new Error(sender.error)
+    expect(canSignal(sender, { agentId: "coder" }, settings()).ok).toBe(false)
+    expect(canSignal(sender, { agentId: "coder" }, settings({ allowPeers: ["laptop"] })).ok).toBe(true)
+    // The shared mesh token names no peer: still the owner.
+    expect(signalSender({ proofGiven: false, provenTurn: null, tokenPeer: null })).toEqual({ kind: "owner" })
+  })
+
+  it("drops a stopped task nobody will resume, by the same rules as resume", async () => {
+    const h = harness()
+    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    if (!r.ok) throw new Error(r.error)
+    await r.done
+    const deps = { service: h.service, selfNode: "server", sender: { kind: "peer" as const, peer: "laptop" }, forward: async () => null }
+    expect((await handleSignalsHttp("POST", "/api/signals/drop", new URLSearchParams(), { id: "run-1" }, deps)).status).toBe(403)
+    expect((await handleSignalsHttp("POST", "/api/signals/drop", new URLSearchParams(), {}, { ...deps, sender: { kind: "owner" } })).status).toBe(400)
+    const ok = await handleSignalsHttp("POST", "/api/signals/drop", new URLSearchParams(), { id: "run-1" }, { ...deps, sender: { kind: "owner" } })
+    expect(ok).toMatchObject({ status: 200, body: { ok: true, id: "run-1", dropped: true } })
+    expect(h.service.get("run-1")).toBeNull()
+    expect(h.events.map((e) => e.type)).toContain("signal:dropped")
+    expect((await handleSignalsHttp("POST", "/api/signals/drop", new URLSearchParams(), { id: "run-1" }, { ...deps, sender: { kind: "owner" } })).status).toBe(404)
+  })
+
+  it("refuses to drop a task still writing its plan", async () => {
+    const h = harness({ windDown: () => new Promise(() => {}) })
+    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    if (!r.ok) throw new Error(r.error)
+    const d = h.service.drop({ kind: "owner" }, "run-1")
+    expect(d).toMatchObject({ ok: false, status: 409 })
+  })
+
+  it("after a restart, removes a claim left on a task never resumed, so it can be resumed", async () => {
+    const h = harness()
+    const r = await h.service.stop({ kind: "owner" }, { taskId: "run-1" })
+    if (!r.ok) throw new Error(r.error)
+    await r.done
+    // A crash between claim() and the save: the claim stays, the record says stopped.
+    expect(h.deps.store.claim("run-1")).toBe(true)
+    expect(await h.service.resume({ kind: "owner" }, "run-1")).toMatchObject({ ok: false, error: "the task was already resumed" })
+    const after = harness({ running: null })
+    after.service.recover()
+    expect(existsSync(join(dir, "run-1.json.claim"))).toBe(false)
+    expect((await after.service.resume({ kind: "owner" }, "run-1")).ok).toBe(true)
+    // A claim on a resumed record stays: it still guards against a second resume.
+    after.deps.store.claim("run-1")
+    after.service.recover()
+    expect(existsSync(join(dir, "run-1.json.claim"))).toBe(true)
   })
 })
