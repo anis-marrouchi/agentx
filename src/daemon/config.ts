@@ -1426,11 +1426,13 @@ export const daemonConfigSchema = z.object({
       }).default({}),
       /** Most pages opened for one answer. */
       maxPages: z.number().int().min(1).max(10).default(3),
-      /** Pages also opened along the `related` links of the picked pages
-       *  (summaries method), in total. 0: none. */
-      linkedPages: z.number().int().min(0).max(10).default(0),
       /** Characters of each opened page given to the answer. */
       pageChars: z.number().int().min(200).max(40_000).default(4000),
+      /** Pages linked from the picked ones also opened (#863), best
+       *  summary line against the question first. 0: none. */
+      linkedPages: z.number().int().min(0).max(10).default(0),
+      /** Characters all linked pages together give to the answer. */
+      linkedChars: z.number().int().min(200).max(40_000).default(6000),
       /** Model that picks pages from the summary lines. */
       navigatorModel: z.string().min(1).default("haiku"),
       /** Model that writes the answer. */
@@ -1760,6 +1762,21 @@ export const daemonConfigSchema = z.object({
        *  starts ("start"), or each before it is sent ("step"). A workflow
        *  can set its own `approval`. */
       approval: z.enum(["start", "step"]).default("step"),
+    }).default({}),
+    /** Run every task through a workflow (#858): a saved workflow that
+     *  fits, else a plan the agent writes first, else the one-step
+     *  `linear` template. Needs `enabled`. Off by default. */
+    required: z.object({
+      enabled: z.boolean().default(false),
+      /** Per agent, by id: true or false wins over `enabled`. */
+      agents: z.record(z.boolean()).default({}),
+      /** A plain question answered in one turn, with no plan and only tools
+       *  that change nothing, leaves no run. On by default: such a turn has
+       *  nothing to follow up. */
+      exemptQuestions: z.boolean().default(true),
+      /** Task runs that ended are removed after this many days (#883),
+       *  at boot and every few hours. 0 keeps them all. */
+      retentionDays: z.number().int().min(0).max(3650).default(30),
     }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the

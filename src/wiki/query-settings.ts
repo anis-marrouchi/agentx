@@ -122,8 +122,9 @@ export function resolveQuerySettings(config: DaemonConfig, env: Env = process.en
       sharedCandidates: q.sharedCandidates,
       noteCandidates: q.notes.candidates,
       maxPages: q.maxPages,
-      linkedPages: q.linkedPages,
       pageChars: q.pageChars,
+      linkedPages: q.linkedPages,
+      linkedChars: q.linkedChars,
       navigatorModel: q.navigatorModel,
       answerModel: q.answerModel,
       live: {

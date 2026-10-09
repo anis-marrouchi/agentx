@@ -58,6 +58,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { workflowHintText } from "@/workflows/follow-up"
+import { endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, requiredFor, shouldWrap, startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText } from "@/workflows/required"
+import type { RunStore as WorkflowRunStore } from "@/workflows/run-store"
+import { randomUUID } from "crypto"
 import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
@@ -156,6 +159,10 @@ export interface RunningTask {
   intentPath?: string[]
   /** Step autonomy the turn runs at (report | propose | act). Unset = act. */
   autonomy?: AgentTask["autonomy"]
+  /** The workflow run this turn belongs to (#858): a step of a run, or
+   *  the run a task is wrapped in under workflows.required. `step` and
+   *  `title` are filled in when the agent list is read. */
+  workflow?: { runId: string; workflowId?: string; step?: string; title?: string }
 }
 
 type TaskOutputSubscriber = (chunk: string) => void
@@ -629,7 +636,12 @@ export class AgentRegistry {
     chatId: string
     message: string
     payload: Record<string, unknown>
-  }) => Promise<{ runId?: string }>
+    /** Start it as a followed run (#858: workflows.required). */
+    follow?: boolean
+  }) => Promise<{ runId?: string; title?: string }>
+  /** Where wrapped tasks keep their run (#858). Wired by the daemon with
+   *  the workflow engine's run store; unset means no wrapping. */
+  private workflowRuns?: WorkflowRunStore
   private messageQueue: MessageQueue
   /**
    * Voice chats a waiting question has claimed between its wait ending and
@@ -769,6 +781,10 @@ export class AgentRegistry {
   /** Wire the workflow auto-runner — see field doc above. Daemon calls this
    *  after WorkflowDispatcher boot. Pass undefined to detach (e.g. during
    *  reload). */
+  setWorkflowRunStore(runs: WorkflowRunStore | undefined): void {
+    this.workflowRuns = runs
+  }
+
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
     this.workflowAutoRunner = runner
   }
@@ -787,6 +803,12 @@ export class AgentRegistry {
    *  match setProviders. */
   setConfig(next: DaemonConfig): void {
     this.config = next
+  }
+
+  /** Swap the workflows block on a config reload (#858): matching,
+   *  follow-up and required settings are read per turn. */
+  setWorkflows(workflows: DaemonConfig["workflows"]): void {
+    this.config = { ...this.config, workflows }
   }
 
   /** Swap the people list on a config reload (#384). Turns read it when
@@ -1436,6 +1458,7 @@ export class AgentRegistry {
       sender: task.context?.sender,
       startedAt: new Date(),
       ...(task.autonomy ? { autonomy: task.autonomy } : {}),
+      ...(task.workflowRunId ? { workflow: { runId: task.workflowRunId } } : {}),
     }
     state.runningTasks.push(runningTask)
     task.runningTaskId = runningTask.id
@@ -1941,7 +1964,7 @@ export class AgentRegistry {
     // Decision-only here: compute whether auto-run should fire. We don't fire
     // the workflow yet — that happens inside the outer try/finally so
     // runningTask + activeTasks bookkeeping always cleans up.
-    let pendingAutoRun: { workflowId: string; confidence: number } | undefined
+    let pendingAutoRun: { workflowId: string; confidence: number; follow?: boolean } | undefined
     // Follow-up (#788): a saved workflow that fits this request is named to
     // the agent, which starts it with agentx_workflow instead of running
     // the steps by hand.
@@ -1984,6 +2007,31 @@ export class AgentRegistry {
         this.log(`[${task.agentId}] workflow matcher failed (non-fatal): ${e?.message || e}`)
       }
     }
+    // workflows.required (#858): every task runs inside a workflow run. A
+    // saved workflow that fits a person's request is started and followed
+    // (matching need not be on); anything else is wrapped in a run of its
+    // own, on a plan the agent writes or the one-step linear template. A
+    // workflow step's own turn is never wrapped again.
+    const wrapRunStore = requiredFor(this.config.workflows, task.agentId) && shouldWrap(task) ? this.workflowRuns : undefined
+    if (wrapRunStore && !pendingAutoRun && !restricted && this.workflowAutoRunner && isHumanFacingTurn(task.context as any)) {
+      try {
+        const store = new WorkflowStore({ baseDir: resolve(process.cwd(), this.config.workflows.dir) })
+        const match = matchWorkflow({ agentId: task.agentId, channel, message: task.message, intentPath: intent?.path }, store.list())
+        const threshold = wfMatching?.autoRunThreshold ?? 0.85
+        if (match && match.confidence >= threshold) {
+          pendingAutoRun = { workflowId: match.workflow.id, confidence: match.confidence, follow: true }
+          this.log(`[${task.agentId}] workflows.required: saved workflow ${match.workflow.id} fits (confidence=${match.confidence.toFixed(2)})`)
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] workflows.required matcher failed (non-fatal): ${e?.message || e}`)
+      }
+    }
+    // Chosen now so the agent is told its run before the turn starts; the
+    // run itself is created inside the try below, which always closes it.
+    const wrapRunId = wrapRunStore ? randomUUID() : undefined
+    // Its own context layer, so mined procedures and the follow-up hint
+    // never crowd it out of the procedures budget.
+    const workflowRunContext = wrapRunId ? wrapHintText(wrapRunId) : undefined
 
     // Wiki context — Phase 3 Farzapedia alignment: instead of preloading BM25
     // hits (the old shallow-RAG path). The catalog itself is injected on
@@ -2574,6 +2622,7 @@ export class AgentRegistry {
       // bootstrapContext intentionally omitted — delivered via system prompt.
       patternContext: isCodexCli ? undefined : patternContext || undefined,
       procedureContext: [procedureContext, workflowHint].filter(Boolean).join("\n\n") || undefined,
+      workflowRunContext,
       references: referencesBlock,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
@@ -2769,8 +2818,15 @@ export class AgentRegistry {
       budgetMinutes: state.def.maxExecutionMinutes ?? 20,
     })
     const unwatchedOnEvent = onEvent
+    // workflows.required (#858): the turn's wrapping run, once created, and
+    // whether every tool it used changed nothing (the plain-question test).
+    let wrapStarted = false
+    let wrapReadOnly = true
     onEvent = (event: any) => {
       turnWatch.observe(event)
+      if (wrapRunId && wrapReadOnly) {
+        for (const use of toolUsesOf(event)) if (!isReadOnlyToolUse(use.name, use.input)) wrapReadOnly = false
+      }
       unwatchedOnEvent?.(event)
     }
     try {
@@ -2791,6 +2847,7 @@ export class AgentRegistry {
             channel,
             chatId,
             message: task.message,
+            ...(autoRun.follow ? { follow: true } : {}),
             payload: {
               message: task.message,
               agentId: task.agentId,
@@ -2808,7 +2865,11 @@ export class AgentRegistry {
             `agent execution skipped — workflow owns the reply`,
           )
           finalResponse = {
-            content: "",
+            // A required run answers the person with where their request
+            // went; the run's own steps and summary do the rest.
+            content: autoRun.follow
+              ? `Started the workflow "${result.title ?? autoRun.workflowId}" for this${result.runId ? ` (run ${result.runId})` : ""}. AgentX follows each step and tells the owner when it is done.`
+              : "",
             duration: 0,
             metadata: {
               handledByWorkflow: pendingAutoRun.workflowId,
@@ -2819,6 +2880,19 @@ export class AgentRegistry {
           return finalResponse
         } catch (e: any) {
           this.log(`[${task.agentId}] workflow auto-run failed; falling back to agent: ${e?.message || e}`)
+        }
+      }
+
+      // workflows.required (#858): no saved workflow took it, so the turn
+      // runs inside a run of its own. Best-effort: a store that cannot
+      // write never stops the task.
+      if (wrapRunId && wrapRunStore) {
+        try {
+          startWrap(wrapRunStore, { runId: wrapRunId, agentId: task.agentId, channel, chatId, message: task.message, taskId: traceTaskId })
+          wrapStarted = true
+          runningTask.workflow = { runId: wrapRunId, workflowId: TASK_WORKFLOW_ID }
+        } catch (e: any) {
+          this.log(`[${task.agentId}] workflows.required: could not create run ${wrapRunId} (non-fatal): ${e?.message || e}`)
         }
       }
 
@@ -3204,6 +3278,22 @@ export class AgentRegistry {
       return finalResponse
     } finally {
       turnWatch.stop()
+      if (wrapStarted && wrapRunId && wrapRunStore) {
+        try {
+          const usage = finalResponse?.usage
+          const closed = finishWrap(wrapRunStore, wrapRunId, {
+            error: finalResponse ? finalResponse.error || undefined : (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+            canceled: endedWithoutFailing(finalResponse?.errorKind) || this.stoppedRuns.has(runningTask.id) || this.interruptedRuns.has(runningTask.id) || (!finalResponse && abortController.signal.aborted),
+            durationMs: Date.now() - runningTask.startedAt.getTime(),
+            ...(usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } : {}),
+            readOnly: wrapReadOnly,
+            exemptQuestions: this.config.workflows?.required?.exemptQuestions ?? true,
+          })
+          if (closed && closed !== "discarded") this.log(`[${task.agentId}] workflow run ${wrapRunId} ${closed.status} (${closed.meta?.wrap?.mode ?? "linear"})`)
+        } catch (e: any) {
+          this.log(`[${task.agentId}] workflows.required: could not close run ${wrapRunId} (non-fatal): ${e?.message || e}`)
+        }
+      }
       // A run that threw before its completion event (a pre-spawn abort, a
       // cancel, an unexpected error) still closes its trace; otherwise the
       // row stayed "in-flight" and the next boot resumed it as cut-off work
@@ -3258,10 +3348,25 @@ export class AgentRegistry {
         total: s.totalTasks,
         errors: s.errors,
         lastActive: s.lastActive,
-        runningTasks: s.runningTasks,
+        runningTasks: this.withWorkflowSteps(s.runningTasks),
         lastSummary: summary ? { text: summary.text, at: summary.at.toISOString(), ok: summary.ok } : undefined,
         hourlyTasks: this.getHourlySparkline(s.id, 24),
       }
+    })
+  }
+
+  /** Running tasks with the workflow run each belongs to and the step it
+   *  is on (#858), read from the run store; the stored list is not touched. */
+  private withWorkflowSteps(tasks: RunningTask[]): RunningTask[] {
+    const runs = this.workflowRuns
+    if (!runs || !tasks.some((t) => t.workflow)) return tasks
+    return tasks.map((t) => {
+      if (!t.workflow) return t
+      try {
+        const run = runs.get(t.workflow.runId)
+        if (!run) return t
+        return { ...t, workflow: { ...t.workflow, workflowId: run.workflowId, step: liveStep(run), title: run.meta?.title ?? run.workflowId } }
+      } catch { return t }
     })
   }
 
@@ -3473,7 +3578,7 @@ export class AgentRegistry {
   findRunningTurn(
     agentId: string,
     by: { taskId?: string; channel?: string; chatId?: string } = {},
-  ): { taskId: string; context: NonNullable<AgentTask["context"]>; autonomy?: AgentTask["autonomy"] } | null {
+  ): { taskId: string; context: NonNullable<AgentTask["context"]>; autonomy?: AgentTask["autonomy"]; workflowRunId?: string } | null {
     const state = this.agents.get(agentId)
     if (!state) return null
     let run: RunningTask | undefined
@@ -3490,7 +3595,7 @@ export class AgentRegistry {
     }
     if (!run) return null
     const context = this.runningContexts.get(run.id)
-    return context ? { taskId: run.id, context, ...(run.autonomy ? { autonomy: run.autonomy } : {}) } : null
+    return context ? { taskId: run.id, context, ...(run.autonomy ? { autonomy: run.autonomy } : {}), ...(run.workflow ? { workflowRunId: run.workflow.runId } : {}) } : null
   }
 
   /** Whether every slot of `agentId` is taken, and by which runs. Lets a

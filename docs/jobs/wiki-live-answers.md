@@ -6,8 +6,10 @@ With **page summaries** and a **live read**, a wiki question is answered in four
 
 1. Every page has a one-line summary: its main fact, the status it gives and the date of that status. The pages that share words with the question are found from these lines, with no model.
 2. A small model picks up to 3 pages from those lines, or none when no line fits.
-3. A small model names what should be confirmed at the source: an issue, a merge request, a repository's newest releases, the AgentX version on each machine. AgentX then reads those, from the systems you listed.
+3. A small model names what should be confirmed at the source: an issue, a merge request, a repository's newest releases, where a change is deployed, the AgentX version on each machine. AgentX then reads those, from the systems you listed.
 4. The answer is written from the pages and what was just read. Where they disagree, what was just read wins, and the answer marks those facts with "(live)".
+
+When no page fits the question, the issue tracker can still answer it. See [When no page fits](#when-no-page-fits).
 
 The same steps run for `agentx wiki query` in a terminal and for the `agentx_wiki_query` tool agents use.
 
@@ -19,12 +21,12 @@ A live read only reads.
 
 - The model names a read as data: a kind, a repository from your list, and a number or a few search words. It is given no shell, no command and no tool.
 - AgentX checks each named read against your settings. A repository you did not list is refused.
-- Each read is one HTTP `GET` that AgentX builds itself. Nothing is sent, changed or closed.
+- Each read is made of HTTP `GET` requests that AgentX builds itself. Nothing is sent, changed or closed.
 - A token goes only to the host it was set for, and only over `https://`. A redirect to another address is refused.
-- Issue titles, labels and release names are passed to the answer as plain data. On a public repository anyone can write them, so the answer model is told not to follow anything they say, and long or numerous labels are cut.
+- Issue titles, labels, release names and environment names are passed to the answer as plain data. On a public repository anyone can write them, so the answer model is told not to follow anything they say, and long or numerous labels are cut.
 - A read that fails or takes too long is left out. The answer is still given from the pages.
 
-The five kinds of read:
+The six kinds of read:
 
 | Kind | What it reads |
 |---|---|
@@ -32,11 +34,69 @@ The five kinds of read:
 | Merge request | One merge request or pull request: title, state, date it was merged or closed. |
 | Search | Up to 8 issues of a listed repository that match two or three words. |
 | Release | The 3 newest releases or tags of a listed repository. |
+| Deploy | Where a merged merge request (or pull request) is deployed: for each environment of a listed repository, whether the version running there holds the change. Without a number, what each environment runs now. |
 | Fleet | The AgentX version, build and start time of this machine and of each machine connected to it. |
 
 A fleet read first asks the AgentX daemon in the source's `url` which machines are connected to it, then asks each of those machines for its version. No token is sent. Still, list only a daemon you run yourself: that daemon decides which addresses this machine asks.
 
 Until you list a source, no live read runs and questions are answered from the pages alone.
+
+## When no page fits
+
+Sometimes the wiki has no page about a subject, but the issue tracker does. When no page is picked and at least one repository is listed under `query.live.sources`:
+
+1. A small model reads the question alone and decides whether an issue could hold the answer. If it could, it names up to 6 searches: two or three words in one of your listed repositories. Only searches are allowed here, never a single issue, a release or the fleet.
+2. AgentX runs those searches the same way as any live read.
+3. If a search finds issues, the answer is written from those lines alone. It starts with "No wiki page covers this;" and names each issue it uses.
+
+A question that needs no stored knowledge, such as a definition or a greeting, gets no search, so it costs no live read. A search that finds no issue gives no answer, the same as before.
+
+Two things to weigh before you list a repository:
+
+- **Cost.** Every question that picks no page now makes one more call to the small model, which decides whether to search. This happens whether or not a search is then run.
+- **Who wrote the text.** An answer from a search stands only on issue titles and labels. On a public repository anyone can open an issue, so anyone can write the text such an answer is built from. The answer is marked and the model is told to treat those lines as data, but list a public repository only if answers built from its issue titles are acceptable to you.
+
+In a terminal the answer is followed by **No wiki page was used: the answer comes from a search at the source.** and the lines that were read. Agents using the `agentx_wiki_query` tool see the same note in place of the citations.
+
+## Know whether a change is deployed
+
+A closed issue or a merged merge request does not mean the change is running. A **deployment** is the record your GitHub or GitLab project keeps each time a version is sent to an **environment**, such as `staging` or `production`. When a question asks whether something is live, the model names a deploy read with the number of the merge request that made the change. AgentX then:
+
+1. Reads the merge request and the commit to look for. For a merged one, that is the commit it landed as. For one that is not merged yet, it is the newest commit on its branch (its **head**), because a review, preview or staging environment can run a branch before it is merged.
+2. Reads the newest deployments of the repository (30 on GitLab, 10 on GitHub) and, for each environment found in them (up to 6), the newest one that succeeded. That is the version running there.
+3. Asks the host whether that version holds the commit.
+
+The answer then gets a line such as:
+
+```text
+!7 in example-group/billing (merged 2026-10-07 as 1a2b3c4d), environments seen in the newest 30 deployments: production: deployed (runs 5e6f7a8b deployed 2026-10-08); staging: not deployed (runs 9c0d1e2f deployed 2026-10-06)
+```
+
+For a merge request that is not merged, the line names its head instead, for example `!8 in example-group/billing (open, not merged, head 3a4b5c6d), …`. "deployed" then means that environment runs the branch. If the host does not give the head commit, the line says only what is known: the change is in no environment that deploys from the target branch, and branch deploys were not checked.
+
+- **deployed:** the version running in that environment holds the change.
+- **not deployed:** it does not hold it yet.
+- **not known:** the environment has no successful deployment in the list, or the host did not answer.
+- `newest deploy failure …` (or `failed`, `running`) after an environment means a newer deployment to it has not succeeded, so it still runs the version named before it.
+
+Only the newest deployments are read, across all environments. On a repository with many preview or review deployments, an environment that is deployed less often (often `production`) can be missing from them. That is why the line says "environments seen in the newest … deployments": an environment that is not listed is not known, not "not deployed". To ask about it, ask again once the busy environments have settled, or read the environment's page on the host. Environment names are cut to 30 characters, like labels, since GitLab names review environments after their branch.
+
+This only works when your pipeline records deployments: GitLab does when a CI job names an `environment`, and GitHub when a workflow job names an `environment` or a tool calls the deployments API. When nothing is recorded, the line says so, and the answer says it can't tell where the change runs. It never says "not deployed" for that reason.
+
+The read needs no new setting: any repository listed under `sources` can be read this way. A GitLab token with the `read_api` scope is enough. On GitHub, a fine-grained token needs read access to **Deployments**, **Contents** and **Pull requests**.
+
+### How many requests a deploy read makes
+
+A deploy read is several requests, made in up to four rounds one after the other: the merge request, the deployment list, the state of each deployment (GitHub only), then one comparison per environment.
+
+| Host | Requests for one deploy read | Longest wait |
+|---|---|---|
+| GitHub | up to 18 (1 + 1 + 10 + 6) | 4 × `timeoutMs` (60 seconds by default) |
+| GitLab | up to 8 (1 + 1 + 6) | 3 × `timeoutMs` (45 seconds by default) |
+
+`query.live.timeoutMs` applies to each request, not to the whole read, and `query.live.maxReads` counts reads, not requests. With the defaults, one question can make about 100 requests and wait about a minute. Reads run side by side, so several reads do not add up their waits.
+
+GitHub allows only 60 requests an hour without a token. A GitHub source with no token can run out of that allowance after three or four questions about deployments; give it a token (see `tokenEnv` below).
 
 ## Write the summaries
 
@@ -143,8 +203,9 @@ All under `wiki` in `agentx.json`.
 | `query.candidates` | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | `4` | How many of other agents' pages it sees beside them. `0` shows none. |
 | `query.maxPages` | `3` | Most pages opened for one answer. |
-| `query.linkedPages` | `0` | Also open up to this many pages that the picked pages link to (each page's related pages). `0` opens none. Try `3` when the answer often sits one link away from the page picked. |
 | `query.pageChars` | `4000` | Characters of each opened page given to the answer. |
+| `query.linkedPages` | `0` | Pages linked from the picked pages that are also opened. `0` opens none. See [Also open linked pages](#also-open-linked-pages). |
+| `query.linkedChars` | `6000` | Characters all the linked pages together give to the answer. |
 | `query.navigatorModel` | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | `"sonnet"` | Model that writes the answer. |
 | `query.notes.enabled` | `false` | Also search the asking agent's own notes. See [Search the agent's own notes](#search-the-agent-s-own-notes). |
@@ -152,7 +213,7 @@ All under `wiki` in `agentx.json`.
 | `query.notes.candidates` | `4` | How many of the agent's notes the picking model sees beside its pages. |
 | `query.live.enabled` | `true` | Set to `false` to switch the live read off. |
 | `query.live.maxReads` | `6` | Most reads for one question. |
-| `query.live.timeoutMs` | `15000` | How long one read may take, in milliseconds. |
+| `query.live.timeoutMs` | `15000` | How long one request to a source may take, in milliseconds. A read made of several requests can take longer: see [How many requests a deploy read makes](#how-many-requests-a-deploy-read-makes). |
 | `query.live.plannerModel` | `"haiku"` | Model that names the reads. |
 | `query.live.sources` | `[]` | Where to read from. Empty: no live read. |
 | `summaries.model` | `"haiku"` | Model that writes the summaries. |
@@ -181,6 +242,27 @@ Each entry of `query.live.sources` has a `type` and these keys:
 | `agentx` | `url` | this machine | The AgentX daemon to ask. |
 | `agentx` | `peers` | `true` | Also ask each machine connected to that daemon. |
 
+## Also open linked pages
+
+A wiki page can name other pages in its `related` list (a link). By default, a question opens only the pages picked from the summary lines. Sometimes the answer sits one link away, in a page the picked page points to.
+
+1. **Editor:** open `agentx.json` and set `wiki.query.linkedPages` to a small number, such as `2`:
+
+   ```json
+   {
+     "wiki": {
+       "query": {
+         "linkedPages": 2,
+         "linkedChars": 6000
+       }
+     }
+   }
+   ```
+
+2. **Terminal:** run `agentx config check`. It prints `✓ Config valid`.
+
+After the pick, AgentX lists the pages the picked pages link to, and the newest pages that link to them. It opens those whose summary line shares the most words with the question first, then the others in link order, up to `linkedPages`. Together they give the answer at most `linkedChars` characters. This step makes no extra model call. A page the agent may not read is never opened.
+
 ## Ask one question a different way
 
 - `agentx wiki query "…" --no-live` answers from the pages alone.
@@ -193,19 +275,28 @@ Each entry of `query.live.sources` has a `type` and these keys:
 
 1. **Terminal:** run `agentx wiki query "<a question about something that has an issue>" --agent <agent> --trace`.
 2. Under the answer and its citations, look for **Read live at the source**, with one line for each read, such as `#12 in example-org/app: "Add export" is closed since 2026-10-08`.
-3. The trace line starts with `method: summaries` and gives the reads asked and answered.
-4. With notes on, ask a question only one of the agent's notes answers. The note is listed under **Citations** as `[note]`, with a path that starts with `note:`.
+3. **Terminal:** run `agentx wiki query "Is merge request <number> deployed, and where?" --agent <agent> --trace` for a repository that records deployments. A line starting with `#<number> in` or `!<number> in` lists each environment as deployed, not deployed or not known.
+4. The trace line starts with `method: summaries` and gives the reads asked and answered.
+5. With `query.linkedPages` above `0`, a `followed:` line lists the linked pages that were opened, each ending in `@h1`.
+6. **Terminal:** ask about something that has an issue but no wiki page, such as `agentx wiki query "<a feature you only filed as an issue>" --agent <agent>`. The answer starts with "No wiki page covers this;" and is followed by **No wiki page was used**.
+7. With notes on, ask a question only one of the agent's notes answers. The note is listed under **Citations** as `[note]`, with a path that starts with `note:`.
 
 ## If something is wrong
 
 - **The trace has no `method: summaries` line:** fewer than 80% of the agent's own pages have a summary, for example after a run with `--agent` for another agent or with `--limit`. Run `agentx wiki summarize --all`.
 - **No "Read live at the source" block:** `query.live.sources` is empty, `query.live.enabled` is `false`, or the picked pages named nothing that changes. Run with `--trace`: "0 asked" means the model named no read.
 - **Reads are asked but none is answered:** the token is missing or can't read the repository, or the host can't be reached. Check the name in `tokenEnv` against `.env`, and that the repository is spelled exactly as on the host.
-- **`(no answer) No page was picked for the question`:** no summary line fits the question. Nothing is read live in that case.
+- **`(no answer) No page was picked for the question`:** no summary line fits the question, and either no repository is listed, the model named no search, or the search found no issue. Run with `--trace`: "0 asked" means no search was named.
+- **An answer starts with "No wiki page covers this;" when you expected a page:** the page exists but its summary line shares no word with the question. Run `agentx wiki summarize --agent <agent>` after editing the page, or ask with the words the page's title uses.
 - **The answer misses a fact that sits on a page linked from the one it cites:** set `query.linkedPages` to `3`, or try `--linked 3` on one question first.
 - **A note is never picked:** check that `wiki.query.notes.enabled` is `true`, that the note's `type` is in `wiki.query.notes.types`, and that you asked as the agent that wrote it (`--agent <agent>`). Through the `agentx_wiki_query` tool, the agent must be the one the tool runs as. **Terminal:** run `agentx memory check --agent <agent>` (add `--dir <notes folder>` if you set `wiki.notes.dir`) to see which notes AgentX finds. A note with no `description` line is found by the first line of its text.
 - **A note shows `not checked`:** its header has no `checked:` date. Add `source:` and `checked:` to the note, as in [Check which notes say where and when they were checked](/jobs/agent-memory#_10-check-which-notes-say-where-and-when-they-were-checked).
-- **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. The live read reports what the source holds and no more.
+- **An answer says "closed" but not "deployed":** a closed issue does not say the change is running. Ask about the merge request that made the change, or name its number in the question, so a deploy read can be made.
+- **A deploy line says "no deployment is recorded at the source":** your pipeline does not record deployments for that repository. See [Know whether a change is deployed](#know-whether-a-change-is-deployed).
+- **A deploy line says "not known" for every environment:** the token can't read deployments or compare commits. Give it the read access listed above.
+- **A deploy line does not list `production`:** it was not among the newest deployments read. See the note on "environments seen in the newest … deployments" in [Know whether a change is deployed](#know-whether-a-change-is-deployed).
+- **Deploy reads stop being answered after a few questions on GitHub:** the source has no token and used up GitHub's allowance for requests without one. Set `tokenEnv` or `tokenFile` on the source.
+- **No `followed:` line with `linkedPages` set:** the picked pages link to no page the agent may read. Add the missing page names to their `related` list.
 - **`config check` says `expected owner/name`:** a repository in `repos` is not written as `owner/name` or `group/project`.
 - **`config check` says `wiki.summaries.schedule: expected a cron of 5 fields`:** write the schedule as minute, hour, day of the month, month and day of the week, for example `"30 23 * * *"` for 23:30 every day.
 - **`config check` says `wiki.summaries.timezone: expected a time zone`:** use a name such as `"UTC"` or `"Europe/Paris"`.

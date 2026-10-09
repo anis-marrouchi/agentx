@@ -93,7 +93,7 @@ const LIVE_PAGE_CSS = `
 .ax-node__stopped ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
 .ax-node__stopped-item { border: 1px solid var(--ax-border); border-radius: 6px; padding: 6px 10px; color: var(--ax-text-2, inherit); }
 .ax-node__stopped-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
-.ax-node__stopped-head .ax-task-action { margin-left: auto; }
+.ax-node__stopped-head .ax-task-action:first-of-type { margin-left: auto; }
 .ax-node__stopped-ask { margin-top: 2px; overflow-wrap: anywhere; }
 .ax-node__stopped summary { cursor: pointer; margin-top: 4px; }
 .ax-node__stopped-plan { white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--ax-mono); font-size: 11px; margin: 4px 0 0; max-height: 240px; overflow: auto; }
@@ -190,6 +190,11 @@ const LIVE_PAGE_CSS = `
   font-size: var(--ax-fs-xs); color: var(--ax-accent);
 }
 .ax-agent__task-head .elapsed { margin-left: auto; font-family: var(--ax-mono); color: var(--ax-muted); }
+.ax-agent__task-wf {
+  font-family: var(--ax-mono); font-size: 11px; color: var(--ax-muted);
+  overflow-wrap: anywhere; margin-top: 4px;
+}
+.ax-agent__task-wf-label { color: var(--ax-accent); }
 .ax-agent__task-body {
   font-size: var(--ax-fs-sm); margin-top: 4px;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
@@ -488,10 +493,13 @@ function stoppedHtml(node) {
     const resume = t.state === 'stopped' && t.resumable
       ? '<button type="button" class="ax-task-action" data-action="signal-resume" data-stopped-id="' + escapeHtml(t.id) + '" data-node-url="' + url + '" title="Resume this task from its plan, in the same chat">▶ resume</button>'
       : '';
+    const drop = t.state !== 'winding-down'
+      ? '<button type="button" class="ax-task-action" data-action="signal-drop" data-stopped-id="' + escapeHtml(t.id) + '" data-node-url="' + url + '" title="Forget this stopped task and its plan">✕ drop</button>'
+      : '';
     return '<li class="ax-node__stopped-item">' +
       '<div class="ax-node__stopped-head"><b>' + escapeHtml(t.agentId) + '</b> · ' + escapeHtml(t.channel) +
         ' · stopped by ' + escapeHtml(t.stoppedBy) + ' · ' + escapeHtml(fmtAgo(t.stoppedAt)) +
-        (t.reason ? ' · ' + escapeHtml(t.reason) : '') + resume + '</div>' +
+        (t.reason ? ' · ' + escapeHtml(t.reason) : '') + resume + drop + '</div>' +
       '<div class="ax-node__stopped-ask">' + escapeHtml(t.request) + '</div>' +
       (t.plan ? '<details><summary>' + escapeHtml(by) + '</summary><pre class="ax-node__stopped-plan">' + escapeHtml(t.plan.text) + '</pre></details>'
         : '<div class="ax-node__stopped-ask">' + escapeHtml(by) + '</div>') +
@@ -575,6 +583,17 @@ function lessonHtml(l, nodeUrl) {
   '</div>';
 }
 
+// The workflow run a task belongs to and the step it is on (#858). A task
+// wrapped under workflows.required runs as "task"; its title is the
+// request, already shown above, so only the step is named.
+function workflowLine(w) {
+  if (!w || !w.runId) return '';
+  const name = w.workflowId && w.workflowId !== 'task' ? (w.title || w.workflowId) + ' · ' : '';
+  return '<div class="ax-agent__task-wf" title="Workflow run ' + escapeHtml(w.runId) + '">' +
+    '<span class="ax-agent__task-wf-label">workflow</span> ' + escapeHtml(name) + 'step ' + escapeHtml(w.step || '…') +
+  '</div>';
+}
+
 function renderAgent(a, node) {
   const card = document.createElement('div');
   const lesson = lessonOf(a, node);
@@ -614,6 +633,7 @@ function renderAgent(a, node) {
         '<span class="elapsed">' + elapsed + '</span>' +
       '</div>' +
       '<div class="ax-agent__task-body">' + escapeHtml(t.messagePreview || '(no preview)') + '</div>' +
+      workflowLine(t.workflow) +
       actions +
     '</div>';
   }).join('');
@@ -825,6 +845,11 @@ document.getElementById('grid').addEventListener('click', (e) => {
     }
     if (action === 'signal-resume') {
       signalPost(actionEl, '/api/signals/resume', nodeUrl, { id: actionEl.dataset.stoppedId }, 'resumed');
+      return;
+    }
+    if (action === 'signal-drop') {
+      if (!confirm('Drop this stopped task? Its resume plan is deleted and it can no longer be resumed.')) return;
+      signalPost(actionEl, '/api/signals/drop', nodeUrl, { id: actionEl.dataset.stoppedId }, 'dropped');
       return;
     }
     if (action === 'voice-stop') {

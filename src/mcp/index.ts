@@ -1,4 +1,5 @@
 import { createAgentContext } from "@/agent"
+import { PLAN_TOOL_TEXT } from "@/workflows/required"
 import { detectTechStack, formatTechStack } from "@/agent/context/tech-stack"
 import { detectSchemas, formatSchemas } from "@/agent/context/schema"
 import { loadLocalSkills, matchSkillsToTask } from "@/agent/skills/loader"
@@ -927,26 +928,28 @@ const TOOLS = [
       "person.wait {channel, chatId, timeout:'2d', remindAfter:'4h', reminds:'<person.message step id>'}, branch, transform, timer.boundary. Use {{stepId.field}} for what an earlier step produced, e.g. {{reply.text}}. " +
       "Once started, do not run its steps by hand. done: your agent step is finished (runId, step, evidence). blocked: your step needs the owner (runId, reason). " +
       "status: one run (runId). list: every follow-up still going, by tag. propose: ask the owner to keep a workflow as a template (title + steps, or fromRun: a run you built). " +
+      PLAN_TOOL_TEXT + " " +
       "Example: {action:'start', title:'Contract for the new hire', tags:['employee:sam'], steps:[{id:'ask_doc', type:'person.message', config:{to:'Sam', channel:'telegram', chatId:'123', text:'Please send the signed contract.'}}, {id:'doc', type:'person.wait', config:{reminds:'ask_doc', timeout:'2d', remindAfter:'1d'}}, {id:'tell', type:'owner.notify', config:{text:'Sam sent: {{doc.text}}'}}]}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["match", "start", "status", "list", "done", "blocked", "propose"], description: "list (default), match, start, status, done, blocked or propose." },
+        action: { type: "string", enum: ["match", "start", "status", "list", "done", "blocked", "propose", "plan", "step"], description: "list (default), match, start, status, done, blocked, propose, plan or step." },
         request: { type: "string", description: "match: the owner's request, in their words." },
         workflowId: { type: "string", description: "start: the saved workflow to start." },
         title: { type: "string", description: "start / propose: what this run or workflow is for, in a few words." },
         description: { type: "string", description: "propose: when to use this workflow." },
         tags: { type: "array", items: { type: "string" }, description: "start: what the run concerns, as kind:name (client:acme, employee:sam, project:site, idea:newsletter)." },
         inputs: { type: "object", description: "start: values the steps read as {{start.<name>}}." },
-        steps: { type: "array", items: { type: "object" }, description: "start / propose: [{id, type, config}] in order, when building a workflow." },
+        steps: { type: "array", items: { anyOf: [{ type: "object" }, { type: "string" }] }, description: "start / propose: [{id, type, config}] in order, when building a workflow. plan: the step titles, in order (strings)." },
         edges: { type: "array", items: { type: "object" }, description: "Optional: [{from, to, fromPort?}] instead of running the steps in order. Ports: owner.ask yes/no/expired, person.message sent/declined, person.wait reply/timeout." },
         approval: { type: "string", enum: ["start", "step"], description: "start / propose: the owner approves messages to people all at once at the start, or each before it is sent." },
         autoStart: { type: "boolean", description: "propose: start without telling the owner first." },
-        runId: { type: "string", description: "status / done / blocked: the run." },
-        step: { type: "string", description: "done / blocked: the step id (default: the one the run waits on)." },
+        runId: { type: "string", description: "status / done / blocked / plan / step: the run." },
+        step: { type: "string", description: "done / blocked / step: the step id (default: the one the run waits on)." },
+        status: { type: "string", enum: ["started", "done", "failed"], description: "step: what happened to the step." },
         evidence: { type: "string", description: "done: the proof (a link, an id, what you checked)." },
         note: { type: "string", description: "done: anything the next step should know." },
-        reason: { type: "string", description: "blocked: what the owner must do." },
+        reason: { type: "string", description: "blocked: what the owner must do. plan: why the plan changed." },
         fromRun: { type: "string", description: "propose: a run you built, to keep its workflow." },
         requestId: { type: "string", description: "start: the open request this serves (default: the request of this turn)." },
         channel: { type: "string", description: "Current chat's channel, from your task context." },
@@ -1766,7 +1769,10 @@ async function handleToolCall(
       const cites = result.citations.map(c => `  - ${c.title} [${c.type || "?"}] (${c.path})`).join("\n")
       const walkCount = result.walked.length
       const live = result.live?.length ? `\n\nRead live at the source just now:\n${result.live.map((l) => `  - ${l.line}`).join("\n")}` : ""
-      const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}${live}`
+      const sources = result.basis === "search"
+        ? "No wiki page was used: the answer comes from a search at the source."
+        : `Citations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}`
+      const body = `${result.answer}\n\n${sources}${live}`
       return { content: [{ type: "text", text: body }] }
     }
 

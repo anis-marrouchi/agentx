@@ -45,7 +45,11 @@ Wiki notes are off until you turn them on.
 - **rejected**, when the wiki or the conversations show the note is wrong.
 - **deferred**, when nothing it has can settle the note.
 
-A note never creates or rewrites an article: while notes are being answered, absorb only saves new or rewritten articles that come from the saved conversations. If a schedule answers a note while absorb is still working, the schedule's answer stays, and absorb leaves that note and its pages alone. Every outcome is stored on the note with a reason and the run's id, which starts with `absorb/`. If the run fails, its notes stay waiting for the next one.
+A note alone never creates or rewrites an article: while notes are being answered, absorb only saves a new or rewritten article that cites at least one of the saved conversations in the same run.
+
+Absorb reads the notes and those conversations together, so an article written from the conversations can still reflect what a note said. That article is checked like any other absorb save: it is refused if a rewrite would delete a number or a link the page had. The stricter note check (no removed contact detail, role or organisation) does not apply to it.
+
+If a schedule answers a note while absorb is still working, the schedule's answer stays, and absorb leaves that note and its pages alone. Every outcome is stored on the note with a reason and the run's id, which starts with `absorb/`. If the run fails, its notes stay waiting for the next one.
 
 **Browser:**
 
@@ -143,6 +147,8 @@ Notes are stored in `.agentx/wiki/_notes.json` on the inbox agent's machine.
 - **`runs as "<agent>", not the inbox agent`:** only schedules that run as the inbox agent can read the inbox. Pick another schedule, or change the inbox agent.
 - **Wiki absorb never prints `Wiki notes:`:** check that **Absorb that reads the inbox** names the agent you absorb, that wiki notes are on, and that you did not pass `--no-notes`.
 - **`no agent "<agent>" on this node to run the absorb`:** the absorb agent must be listed in this machine's `agentx.json`. Set it on the inbox agent's machine.
+- **`wiki absorb is off for "<agent>"`:** a bulk `agentx wiki absorb` skips that agent, so it would never read the notes. Turn its **Wiki absorb** back on (see [Leave an agent out of the wiki absorb](/jobs/agent-memory#_11-leave-an-agent-out-of-the-wiki-absorb)), then set it again, or pick another agent.
+- **Wiki absorb prints `skipped. It reads the wiki notes inbox, so the inbox was not read.`:** the absorb agent's **Wiki absorb** was turned off after it was set. Turn it back on, or run `agentx wiki absorb --agent <absorb agent>` to read the notes this once.
 - **A note shows `deferred` with `patch refused`:** absorb's correction broke a rule, so the page was left alone. The note comes back next run. If the note is right, fix the page yourself with `agentx wiki edit`, then record the note with `agentx wiki notes handle <id> --outcome patched --reason "<what you changed>"`.
 - **The run never mentions notes:** check that its schedule is ticked under **Wiki notes inbox** on the inbox agent's machine, and that wiki notes are on there.
 - **A note shows `deferred by agentx` with the reason `was given this note and recorded nothing`:** the run skipped it. AgentX counts that as a deferral when the next run starts, so a note runs keep skipping expires too. Read the run's answer on the Operations page, or record the note yourself with `agentx wiki notes handle <id> --outcome patched|rejected|deferred --reason "<why>"`.
