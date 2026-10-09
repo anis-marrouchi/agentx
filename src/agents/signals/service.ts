@@ -207,10 +207,34 @@ export class SignalService {
     }
   }
 
+  /** Forget a stopped task and its plan (#871). Stopped records are kept
+   *  until resumed, so one nobody will resume stays until dropped. Same
+   *  rules as resume for who may; refused while the plan is being written
+   *  or a resume is under way. Not counted against the root budget: it
+   *  starts nothing. */
+  drop(sender: SignalSender, id: string): SignalResult {
+    const record = this.deps.store.get(id)
+    if (!record) return { ok: false, status: 404, error: `no stopped task ${id}` }
+    if (record.state === "winding-down") return { ok: false, status: 409, error: "the task is still writing its resume plan; try again in a moment" }
+    if (this.resuming.has(id)) return { ok: false, status: 409, error: "the task is being resumed" }
+    const allowed = canSignal(sender, { agentId: record.agentId, sender: record.sender }, this.deps.settings())
+    if (!allowed.ok) return { ok: false, status: 403, error: allowed.reason }
+    if (!this.deps.store.remove(id)) return { ok: false, status: 500, error: `couldn't remove ${id}` }
+    const by = describeSender(sender)
+    this.deps.publish({ type: "signal:dropped", agentId: record.agentId, rootId: record.rootId, ref: id, summary: `stopped task of ${record.agentId} dropped by ${by}` })
+    this.deps.log(`[signals] ${record.agentId} task ${id} dropped by ${by}`)
+    return { ok: true, record }
+  }
+
   /** After a restart: a task whose wind-down the restart cut off would
    *  wait as "winding-down" forever. Give it a plan from its trace (no
-   *  model call) so it can be resumed. Returns how many it closed. */
+   *  model call) so it can be resumed. A resume the restart cut off
+   *  between its claim and its save left a claim on a task still
+   *  `stopped`; that claim is removed (#871). Returns how many tasks it
+   *  closed. */
   recover(): number {
+    const claims = this.deps.store.dropStaleClaims()
+    if (claims) this.deps.log(`[signals] removed ${claims} resume claim(s) a restart left on tasks never resumed`)
     let n = 0
     for (const record of this.deps.store.list({ state: "winding-down", limit: 200, now: this.now() })) {
       const plan = machinePlan({ toolCalls: this.deps.toolCalls(record.traceId), note: "a restart cut off the wind-down" })

@@ -2,6 +2,25 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.133.0](https://github.com/anis-marrouchi/agentx/compare/v0.132.0...v0.133.0) (2026-10-09)
+
+
+### Features
+
+* **workflows:** setting to run every task through a workflow ([#858](https://github.com/anis-marrouchi/agentx/issues/858)) ([#869](https://github.com/anis-marrouchi/agentx/issues/869)) ([82f6179](https://github.com/anis-marrouchi/agentx/commit/82f6179dfb136f6bade1dfbea22c41501151d7e3))
+
+
+### Bug Fixes
+
+* **wiki:** [#856](https://github.com/anis-marrouchi/agentx/issues/856) review follow-ups, plus opt-in linked pages for the summaries method ([#859](https://github.com/anis-marrouchi/agentx/issues/859)) ([ca9cdf9](https://github.com/anis-marrouchi/agentx/commit/ca9cdf95f71349475ae8f74b891a785418f30648))
+
+## [0.132.0](https://github.com/anis-marrouchi/agentx/compare/v0.131.0...v0.132.0) (2026-10-09)
+
+
+### Features
+
+* **signals:** stop a running agent task with a resume plan, and resume it ([#857](https://github.com/anis-marrouchi/agentx/issues/857)) ([#868](https://github.com/anis-marrouchi/agentx/issues/868)) ([79164e5](https://github.com/anis-marrouchi/agentx/commit/79164e52225572d3bcf3dbfded4592595aa6c940))
+
 ## [0.131.0](https://github.com/anis-marrouchi/agentx/compare/v0.130.0...v0.131.0) (2026-10-09)
 
 

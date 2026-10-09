@@ -82,13 +82,13 @@ const shots = [
   { name: "live/running-build", path: "/live", wait: ".ax-build", clipTo: ".ax-topbar__right" },
   // Last: the scripted reply takes a minute, so later shots would show it running.
   { name: "live/running-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--update" }] },
+  // The same scripted task, still running: its pause button, then paused.
+  { name: "live/pause-task", path: "/live", wait: ".ax-task-action--pause", clipTo: ".ax-agent:has(.ax-task-action--pause)" },
+  { name: "live/stopped-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped details" }, { click: ".ax-node__stopped details summary" }], clipTo: ".ax-node__stopped" },
   // Every task in a workflow (#858): switched on through the card itself,
   // then a task on the Live tab shows its run's step; switched off again.
   { name: "workflows/required-settings", path: "/workflows", wait: "#wf-required", steps: [{ click: "#wf-required > summary" }, { wait: "#wf-required-agents select" }, { click: "#wf-required-enabled" }, { waitText: ["#wf-required-note", "Saved"] }, { click: ".ax-wf__req-agents > summary" }], clipTo: ".ax-wf__required" },
   { name: "live/running-task-workflow", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-agent__task-wf" }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".ax-agent.is-handling" },
-  // The same scripted task, still running: its pause button, then paused.
-  { name: "live/pause-task", path: "/live", wait: ".ax-task-action--pause", clipTo: ".ax-agent:has(.ax-task-action--pause)" },
-  { name: "live/stopped-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped details" }, { click: ".ax-node__stopped details summary" }], clipTo: ".ax-node__stopped" },
   // A workflow step paused by a stop signal: the run waits at that step (#870).
   { name: "live/stopped-workflow-step", path: "/live", wait: ".ax-agent__name", steps: [{ workflow: "demo-backlog" }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped-item:has(.ax-node__stopped-wf) details" }, { click: ".ax-node__stopped-item:has(.ax-node__stopped-wf) details summary" }], clipTo: ".ax-node__stopped-item:has(.ax-node__stopped-wf)" },
 ]

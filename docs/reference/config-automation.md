@@ -131,6 +131,7 @@ The workflow engine. See [Workflows](/dashboard/workflows).
 | `workflows.required.enabled` | boolean | `false` | On for every agent. Needs `workflows.enabled`. |
 | `workflows.required.agents` | object | `{}` | Per agent, by id: `true` or `false` wins over `enabled`. |
 | `workflows.required.exemptQuestions` | boolean | `true` | A plain question (no plan, only tools that change nothing) leaves no run. |
+| `workflows.required.retentionDays` | number | `30` | Task runs that ended are removed this many days after their last change, when the daemon starts and every 6 hours. `0` keeps them all. |
 | `workflows.editor` | `"disabled"` \| `"readonly"` \| `"edit"` | `"edit"` | The dashboard's workflow editor: hidden, view only, or editable. |
 
 ## `procedures`
@@ -341,7 +342,7 @@ Pausing a running task with a resume plan, and resuming it later. You may always
 | `signals.enabled` | boolean | `true` | Turns pausing and resuming on. Off: every signal is refused, yours included. |
 | `signals.windDownSeconds` | number (10–1800) | `120` | How long a paused agent gets to write its resume plan. Past it, the plan-writing turn is stopped and AgentX writes the plan from the run's trace. |
 | `signals.allowAgents` | list of strings | `[]` | Agents that may pause or resume any task on this machine. `"*"` allows every agent. An agent never pauses its own task. |
-| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. A machine using the shared `MESH_TOKEN` is believed about its name; use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
+| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. A machine using its own token from `mesh.peers` is that machine, with or without naming itself. The list does not hold for the shared `MESH_TOKEN`: such a machine is believed about its name, and counts as the owner when it names none. Use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
 | `signals.maxPerRoot` | number (1–100) | `6` | Loop brake: most signals from agents and other machines one request (one root id) may carry in a day. The owner's are never counted. |
 
 ## `reminders`
@@ -368,16 +369,18 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `contributions.maxCostUsd` | number (0–20) | `0.5` | Model spend per agent per run, in dollars, for agents that set no limit of their own. |
 | `contributions.model` | string | `"sonnet"` | Model for the daily run, for agents that name none. |
 | `query.shared` | boolean | `true` | Wiki searches also read other agents' pages the agent may see, and the shared lessons. |
-| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How a wiki question picks its pages. `summaries`: from the one-line page summaries, then a live read. `catalog`: from page titles, then along the links between pages. `auto`: `summaries` once summaries exist. See [Get wiki answers checked at the source](/jobs/wiki-live-answers). |
+| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How a wiki question picks its pages. `summaries`: from the one-line page summaries, then a live read. `catalog`: from page titles, then along the links between pages. `auto`: `summaries` once at least 80% of the agent's own pages have a summary. See [Get wiki answers checked at the source](/jobs/wiki-live-answers). |
 | `query.candidates` | number (1–50) | `12` | How many of the agent's own pages the picking model sees. |
 | `query.sharedCandidates` | number (0–50) | `4` | How many of other agents' pages it sees beside them. |
 | `query.maxPages` | number (1–10) | `3` | Most pages opened for one answer. |
 | `query.pageChars` | number (200–40000) | `4000` | Characters of each opened page given to the answer. |
+| `query.linkedPages` | number (0–10) | `0` | Pages linked from the picked pages that are also opened, best summary line first. `0` opens none. |
+| `query.linkedChars` | number (200–40000) | `6000` | Characters all the linked pages together give to the answer. |
 | `query.navigatorModel` | string | `"haiku"` | Model that picks the pages. |
 | `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |
 | `query.live.enabled` | boolean | `true` | The live read before the answer. `false` switches it off. |
 | `query.live.maxReads` | number (0–20) | `6` | Most reads for one question. |
-| `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one read may take, in milliseconds. |
+| `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one request to a source may take, in milliseconds. A deploy read makes up to four rounds of requests, so it can take up to four times this. |
 | `query.live.plannerModel` | string | `"haiku"` | Model that names the reads. |
 | `query.live.sources` | list | `[]` | Where a live read may read from. Empty: no live read runs. |
 | `query.live.sources[].type` | `"github"`, `"gitlab"` or `"agentx"` | — | The kind of system. |

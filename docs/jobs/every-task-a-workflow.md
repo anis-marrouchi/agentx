@@ -66,6 +66,7 @@ The settings are the `workflows.required` block in `agentx.json`.
 | `agentx workflow required` | Shows the settings. |
 | `agentx workflow required --enabled on` | Every task of every agent runs inside a workflow run. `off` turns it off. |
 | `agentx workflow required --exempt-questions off` | A plain question leaves a run too. `on` (the default) leaves none. |
+| `agentx workflow required --retention-days 7` | Task runs are removed 7 days after they end. The default is `30`; `0` keeps them all. |
 | `agentx workflow required --agent <agent-id> --agent-required off` | Turns it off for one agent while it is on for the others. `on` turns it on for that agent only, even when it is off for the others. `default` makes the agent follow the setting for all again. |
 
 In the dashboard, the same card has a tick box for plain questions and, under **Per agent**, a menu next to each agent: **as above**, **on** or **off**.
@@ -79,6 +80,7 @@ In `agentx.json`:
     "required": {
       "enabled": true,
       "exemptQuestions": true,
+      "retentionDays": 30,
       "agents": { "<agent-id>": false }
     }
   }
@@ -108,7 +110,18 @@ A task you stop, cancel or that a restart cuts off is not a failure: its run end
 
 Each line has the run's `title`, `mode` (`workflow` for a saved workflow, `plan` or `linear` for a wrapped task), `status`, `durationMs`, its `steps` (each with `id`, `title`, `status`, `startedAt`, `durationMs` and a short `note`), `failedAt` (the first step that failed, or `null`), `revisions` (how many times the plan changed), `tokens` and, for a paused task that was resumed, `continues` (the id of the run the pause closed; see [pause a task and resume it later](/jobs/pause-and-resume#tasks-every-agent-runs-inside-a-workflow)). It never holds the full request or what a step produced.
 
-To see one run step by step, run `agentx workflow trace <runId>`, or open it on the **Workflows** tab.
+To see one run step by step, run `agentx workflow trace <runId>`.
+
+### Where task runs are kept
+
+A run that wrapped a task is kept apart from the runs of saved workflows, in the `_tasks` folder next to the workflow runs. So many tasks never hide a saved workflow that is waiting for a signal or a reply: it is still found and picked up. The **Workflows** tab lists the runs of saved workflows only.
+
+Task runs do not pile up forever. A task run that ended is removed 30 days after its last change, checked when the daemon starts and every 6 hours. A run still going is never removed. To keep them longer or shorter:
+
+1. **Terminal:** run `agentx workflow required --retention-days 90`. Use `0` to keep them all.
+2. **Terminal:** run `agentx workflow required`. The line `Task runs kept` shows the new value.
+
+Copy the records out with `agentx workflow records` before they are removed if you want to keep them longer than that.
 
 ## Check it worked
 
@@ -117,6 +130,7 @@ To see one run step by step, run `agentx workflow trace <runId>`, or open it on 
 3. **Browser:** while it works, open the **Live** tab. Under its running task you see `workflow · step …`.
 4. **Terminal:** when it is done, run `agentx workflow records --agent <agent-id> --days 1`. The first line is that task, with `"status":"completed"` and its steps.
 5. Ask the same agent a plain question, for example "What day is it?". With plain questions exempt, no new line appears in `agentx workflow records`.
+6. **Terminal:** run `agentx workflow required`. The line `Task runs kept` says how many days ended task runs are kept.
 
 ## If something is wrong
 
@@ -126,4 +140,6 @@ To see one run step by step, run `agentx workflow trace <runId>`, or open it on 
 - **`run … is not the run of your current task`:** the agent named a run from an earlier task. It can only write the plan of the task it is working on.
 - **A question left a run:** the agent used a tool that may change something (a command, an edit, a message), or one AgentX does not know. That is expected.
 - **A saved workflow took a request it should not have:** the match was close enough to start it. Make the saved workflow's title and description more specific, or raise `workflows.matching.autoRunThreshold` (default `0.85`) with `agentx config set workflows.matching.autoRunThreshold 0.95`.
+- **A task run is not on the Workflows tab:** task runs are kept apart from the runs of saved workflows. Use `agentx workflow records --workflow task` or `agentx workflow trace <runId>`.
+- **Old task runs are gone:** they were removed after `workflows.required.retentionDays` (30 by default). Raise it with `agentx workflow required --retention-days <n>`, or set `0` to keep them all.
 - **The dashboard card says `Not saved`:** the workflow editor is read-only on that computer (`workflows.editor`). Use the terminal command on that computer instead.

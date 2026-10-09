@@ -13,7 +13,7 @@ import { patchProblems } from "@/wiki/fact-guard"
 import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
 import { applyNoteAnswers, noteSource, parseNoteAnswers, renderAbsorbNotesBlock } from "@/wiki/absorb-notes"
 import { NoteStore, type WikiNote } from "@/wiki/notes"
-import { absorbOffAgents, selectAbsorbAgents } from "@/wiki/absorb-agents"
+import { absorbOffAgents, absorbSkipMessage, selectAbsorbAgents } from "@/wiki/absorb-agents"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
@@ -98,9 +98,9 @@ async function sharedQueryOn(): Promise<boolean> {
   return sharedQueryEnabled()
 }
 
-/** `wiki.query` settings with the `--method` and `--no-live` flags
- *  applied; null, with a message, when `--method` names no method. */
-async function querySettingsFor(opts: { method?: string; live?: boolean }): Promise<WikiQuerySettings | null> {
+/** `wiki.query` settings with the `--method`, `--no-live` and `--linked`
+ *  flags applied; null, with a message, when a flag's value is wrong. */
+async function querySettingsFor(opts: { method?: string; live?: boolean; linked?: string }): Promise<WikiQuerySettings | null> {
   const { loadQuerySettings } = await import("@/wiki/query-settings")
   const settings = await loadQuerySettings()
   if (opts.method && !["auto", "summaries", "catalog"].includes(opts.method)) {
@@ -108,8 +108,14 @@ async function querySettingsFor(opts: { method?: string; live?: boolean }): Prom
     process.exitCode = 1
     return null
   }
+  const linked = opts.linked === undefined ? settings.summaries.linkedPages : Number(opts.linked)
+  if (!Number.isInteger(linked) || linked < 0 || linked > 10) {
+    console.log(chalk.red(`  --linked takes a whole number from 0 to 10, not "${opts.linked}".`))
+    process.exitCode = 1
+    return null
+  }
   const live = { ...settings.summaries.live, enabled: settings.summaries.live.enabled && opts.live !== false }
-  return { ...settings, method: (opts.method as WikiQuerySettings["method"]) ?? settings.method, summaries: { ...settings.summaries, live } }
+  return { ...settings, method: (opts.method as WikiQuerySettings["method"]) ?? settings.method, summaries: { ...settings.summaries, linkedPages: linked, live } }
 }
 
 /** The wiki root, resolved the same way everywhere that needs it. */
@@ -263,8 +269,10 @@ wiki
       hub.listAgents().filter((id) => !local || local.has(id)),
       { only: opts.agent, off: await absorbOffAgentIds() },
     )
+    // Say when the skipped agent is the one that reads the notes inbox (#885).
+    const notesAbsorbAgent = skipped.length && opts.notes !== false ? (await absorbNotesConfig())?.absorbAgent : undefined
     for (const id of skipped) {
-      console.log(`  ${chalk.cyan(id)}: ${chalk.dim("absorb is off for this agent (agents." + id + ".wiki.absorb.enabled); skipped. Use --agent " + id + " to run it anyway.")}`)
+      console.log(`  ${chalk.cyan(id)}: ${chalk.dim(absorbSkipMessage(id, notesAbsorbAgent))}`)
     }
     const agents = selected
       .filter((id) => {
@@ -3164,6 +3172,7 @@ wiki
   .option("--agent <id>", "which agent's wiki to search first (default: the calling agent, else the first one with a catalog)")
   .option("--method <m>", "how pages are picked: auto, summaries or catalog (default: wiki.query.method)")
   .option("--no-live", "skip the live read of the summaries method")
+  .option("--linked <n>", "also open up to n pages linked from the picked pages (summaries method; default: wiki.query.linkedPages)")
   .option("--selector-model <m>", "candidate-selection model (default haiku)")
   .option("--synth-model <m>", "synthesis model (default sonnet)")
   .option("--max-candidates <n>", "candidates from selector (catalog method)", "3")
@@ -3224,6 +3233,10 @@ wiki
 
     console.log(result.answer)
     console.log()
+    if (result.basis === "search") {
+      console.log(chalk.dim("  No wiki page was used: the answer comes from a search at the source."))
+      console.log()
+    }
     if (result.citations.length) {
       console.log(chalk.dim("  Citations:"))
       for (const c of result.citations) {
@@ -3266,6 +3279,7 @@ wiki
   .option("--compare <files...>", "compare two saved reports (before after) instead of running")
   .option("--method <m>", "how pages are picked: auto, summaries or catalog (default: wiki.query.method)")
   .option("--no-live", "skip the live read of the summaries method")
+  .option("--linked <n>", "also open up to n pages linked from the picked pages (summaries method; default: wiki.query.linkedPages)")
   .option("--selector-model <m>", "candidate-selection model (default haiku)")
   .option("--synth-model <m>", "synthesis model (default sonnet)")
   .option("--json", "print the report as JSON")

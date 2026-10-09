@@ -33,7 +33,7 @@ const outcome = (o: Partial<Parameters<typeof finishWrap>[2]> = {}) =>
 describe("the setting", () => {
   it("is off by default, with plain questions exempt", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(cfg.workflows.required).toEqual({ enabled: false, agents: {}, exemptQuestions: true })
+    expect(cfg.workflows.required).toEqual({ enabled: false, agents: {}, exemptQuestions: true, retentionDays: 30 })
   })
 
   it("needs the engine, and a per-agent value wins over the global one", () => {
@@ -319,14 +319,19 @@ describe("changing the setting (CLI and dashboard)", () => {
     const { readRequiredSettings, updateRequiredSettings } = await import("../src/daemon/workflow-required-settings")
     const path = join(dir, "agentx.json")
     writeFileSync(path, JSON.stringify({ node: { id: "n", name: "n" } }))
-    expect(readRequiredSettings(path)).toEqual({ enabled: false, agents: {}, exemptQuestions: true, engine: false })
+    expect(readRequiredSettings(path)).toEqual({ enabled: false, agents: {}, exemptQuestions: true, retentionDays: 30, engine: false })
 
     expect((await updateRequiredSettings({ enabled: true, exemptQuestions: false }, { configPath: path, reload: false })).success).toBe(true)
     expect((await updateRequiredSettings({ agent: { id: "builder", value: false } }, { configPath: path, reload: false })).success).toBe(true)
-    expect(readRequiredSettings(path)).toEqual({ enabled: true, agents: { builder: false }, exemptQuestions: false, engine: true })
+    expect(readRequiredSettings(path)).toEqual({ enabled: true, agents: { builder: false }, exemptQuestions: false, retentionDays: 30, engine: true })
 
     expect((await updateRequiredSettings({ agent: { id: "builder", value: null } }, { configPath: path, reload: false })).success).toBe(true)
     expect(JSON.parse(readFileSync(path, "utf-8")).workflows.required.agents).toEqual({})
     expect((await updateRequiredSettings({ agent: { id: "../x", value: true } }, { configPath: path, reload: false })).success).toBe(false)
+
+    // Retention for task runs (#883): whole days, 0 keeps them all.
+    expect((await updateRequiredSettings({ retentionDays: 7 }, { configPath: path, reload: false })).success).toBe(true)
+    expect(readRequiredSettings(path).retentionDays).toBe(7)
+    expect((await updateRequiredSettings({ retentionDays: -1 }, { configPath: path, reload: false })).success).toBe(false)
   })
 })

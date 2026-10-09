@@ -92,6 +92,24 @@ export class StoppedTaskStore {
     try { unlinkSync(this.file(id)); return true } catch { return false }
   }
 
+  /** Remove claims whose record is not `resumed`: a crash between claim()
+   *  and the save leaves one, and every later resume would answer "already
+   *  resumed" (#871). Call at boot only, before any resume can run.
+   *  Returns how many it removed. */
+  dropStaleClaims(): number {
+    if (!existsSync(this.dir)) return 0
+    let n = 0
+    for (const name of readdirSync(this.dir)) {
+      if (!name.endsWith(".json.claim")) continue
+      const claim = resolve(this.dir, name)
+      let state: StoppedState | undefined
+      try { state = (JSON.parse(readFileSync(claim.slice(0, -".claim".length), "utf-8")) as StoppedTask).state } catch { /* no record */ }
+      if (state === "resumed") continue
+      try { unlinkSync(claim); n++ } catch { /* gone already */ }
+    }
+    return n
+  }
+
   /** Newest first. Drops resumed records past their keep time. */
   list(opts: { state?: StoppedState; agentId?: string; limit?: number; now?: number } = {}): StoppedTask[] {
     if (!existsSync(this.dir)) return []

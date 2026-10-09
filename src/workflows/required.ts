@@ -1,4 +1,4 @@
-import { idempotencyKey, type RunStore } from "./run-store"
+import { idempotencyKey, TASK_WORKFLOW_ID, type RunStore } from "./run-store"
 import type { NodeExecutionEntry, Plan, PlanStep, WorkflowRun } from "./types"
 
 // --- Run every task through a workflow (#858) ---
@@ -22,8 +22,9 @@ import type { NodeExecutionEntry, Plan, PlanStep, WorkflowRun } from "./types"
 // exempted: its run is discarded when the turn ends (exemptQuestions).
 
 /** The workflow id wrapped tasks run under. No file: the steps are the
- *  `linear` template's, or the agent's plan. */
-export const TASK_WORKFLOW_ID = "task"
+ *  `linear` template's, or the agent's plan. Their runs are kept apart
+ *  from workflow runs (#883). */
+export { TASK_WORKFLOW_ID }
 /** Node ids of the `linear` template (templates/linear.yaml). */
 export const LINEAR_STEPS = { start: "start", reply: "reply", done: "done" } as const
 
@@ -33,9 +34,11 @@ export interface RequiredSettings {
   agents: Record<string, boolean>
   /** Plain questions answered in one turn with nothing changed leave no run. */
   exemptQuestions: boolean
+  /** Task runs that ended are removed after this many days (#883). */
+  retentionDays: number
 }
 
-export const REQUIRED_DEFAULTS: RequiredSettings = { enabled: false, agents: {}, exemptQuestions: true }
+export const REQUIRED_DEFAULTS: RequiredSettings = { enabled: false, agents: {}, exemptQuestions: true, retentionDays: 30 }
 
 /** Is a workflow required for this agent's tasks? Needs the engine on. */
 export function requiredFor(
@@ -93,6 +96,10 @@ export function isReadOnlyToolUse(name: string, input?: Record<string, unknown>)
   // A name that leads with a write verb ("set_status") is never read-only.
   const words = verb.split(/[_-]/)
   if (WRITE_VERB.test(words[0].toLowerCase())) return false
+  // "get_or_create_x", "findOrCreate": a write verb after "or" / "and" may
+  // change something (#883).
+  const all = verb.split(/[_-]|(?<=[a-z0-9])(?=[A-Z])/).map((w) => w.toLowerCase())
+  if (all.some((w, i) => i > 0 && (all[i - 1] === "or" || all[i - 1] === "and") && WRITE_VERB.test(w))) return false
   return READ_ONLY_VERB.test(verb) || (words.length > 1 && READ_ONLY_VERB.test(words.at(-1) ?? ""))
 }
 
@@ -360,8 +367,11 @@ export function endedWithoutFailing(errorKind: unknown): boolean {
  *  path as before: wrapping never sets the task's workflowRunId. */
 export function closeStaleWraps(runs: RunStore, note = "interrupted: the daemon stopped during the turn"): number {
   let closed = 0
-  for (const run of runs.list()) {
-    if (run.status !== "running" || !run.meta?.wrap) continue
+  // Only the open ones (#883): the time this takes does not grow with the
+  // task runs kept.
+  for (const id of runs.openTaskRunIds()) {
+    const run = runs.get(id)
+    if (!run || run.status !== "running" || !run.meta?.wrap) continue
     // Cut off, not failed: the task itself is resumed after the restart.
     const r = finishWrap(runs, run.id, { error: note, canceled: true, durationMs: Math.max(0, Date.now() - Date.parse(run.createdAt)), readOnly: false, exemptQuestions: false })
     if (r && r !== "discarded") closed++

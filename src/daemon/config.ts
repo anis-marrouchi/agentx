@@ -802,6 +802,33 @@ const cronJobSchema = z.object({
   message: "autonomy applies to agent routines; a command cron runs no agent (remove autonomy or the command)",
 })
 
+/** Whether `expr` is a 5-field cron the scheduler can read: each field a
+ *  `*`, a number or a range, with an optional `/step`, comma-separated,
+ *  inside the field's bounds. */
+export function isCronExpression(expr: string): boolean {
+  const bounds: Array<[number, number]> = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]]
+  const fields = expr.trim().split(/\s+/)
+  if (fields.length !== 5) return false
+  return fields.every((field, i) => field.split(",").every((part) => {
+    const m = /^(\*|(\d+)(?:-(\d+))?)(?:\/(\d+))?$/.exec(part)
+    if (!m) return false
+    const [min, max] = bounds[i]
+    const a = m[2] === undefined ? min : Number(m[2])
+    const b = m[3] === undefined ? a : Number(m[3])
+    const step = m[4] === undefined ? 1 : Number(m[4])
+    return a >= min && b <= max && a <= b && step >= 1
+  }))
+}
+
+function isTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** A repository a live read may name: `owner/name`, or a GitLab path. */
 const wikiLiveRepoName = z.string().regex(/^(?!.*(?:^|\/)\.+(?:\/|$))[\w.-]+(\/[\w.-]+)+$/, "expected owner/name")
 const wikiLiveRepoSchema = z.union([
@@ -1370,7 +1397,9 @@ export const daemonConfigSchema = z.object({
       /** How pages are picked (#855). `summaries`: from the one-line page
        *  summaries `agentx wiki summarize` writes, then a live read.
        *  `catalog`: from titles, then a walk along the pages' links.
-       *  `auto`: `summaries` once summaries exist, `catalog` until then. */
+       *  `auto`: `summaries` once most of the agent's own pages have a
+       *  summary (AUTO_SUMMARY_COVERAGE in src/wiki/query.ts), `catalog`
+       *  until then. */
       method: z.enum(["auto", "summaries", "catalog"]).default("auto"),
       /** The agent's own pages shown to the model that picks. */
       candidates: z.number().int().min(1).max(50).default(12),
@@ -1380,6 +1409,11 @@ export const daemonConfigSchema = z.object({
       maxPages: z.number().int().min(1).max(10).default(3),
       /** Characters of each opened page given to the answer. */
       pageChars: z.number().int().min(200).max(40_000).default(4000),
+      /** Pages linked from the picked ones also opened (#863), best
+       *  summary line against the question first. 0: none. */
+      linkedPages: z.number().int().min(0).max(10).default(0),
+      /** Characters all linked pages together give to the answer. */
+      linkedChars: z.number().int().min(200).max(40_000).default(6000),
       /** Model that picks pages from the summary lines. */
       navigatorModel: z.string().min(1).default("haiku"),
       /** Model that writes the answer. */
@@ -1408,8 +1442,8 @@ export const daemonConfigSchema = z.object({
       maxWords: z.number().int().min(5).max(120).default(35),
       /** When `agentx wiki summarize` runs on its own (cron, 5 fields).
        *  Unset: no job is added. */
-      schedule: z.string().optional(),
-      timezone: z.string().default("UTC"),
+      schedule: z.string().refine((v) => v.trim() === "" || isCronExpression(v), "expected a cron of 5 fields, such as \"30 23 * * *\"").optional(),
+      timezone: z.string().refine(isTimeZone, "expected a time zone such as \"UTC\" or \"Europe/Paris\"").default("UTC"),
       /** Agent the job is filed under. Unset: `node.defaultAgent`, else
        *  the first agent. */
       agent: z.string().min(1).optional(),
@@ -1721,6 +1755,9 @@ export const daemonConfigSchema = z.object({
        *  that change nothing, leaves no run. On by default: such a turn has
        *  nothing to follow up. */
       exemptQuestions: z.boolean().default(true),
+      /** Task runs that ended are removed after this many days (#883),
+       *  at boot and every few hours. 0 keeps them all. */
+      retentionDays: z.number().int().min(0).max(3650).default(30),
     }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the
@@ -2195,11 +2232,14 @@ export const WIKI_SUMMARIZE_JOB = "wiki-summarize"
 export function withSummariesJob(config: DaemonConfig, cli: string = agentxCli()): DaemonConfig {
   const s = config.wiki.summaries
   const agent = s.agent ?? config.node.defaultAgent ?? Object.keys(config.agents).sort()[0]
-  if (!s.schedule || !agent) return config
-  const job = cronJobSchema.parse({
+  if (!s.schedule?.trim() || !agent) return config
+  const job = cronJobSchema.safeParse({
     schedule: s.schedule, timezone: s.timezone, agent, command: `${cli} wiki summarize --all`, timeout: 3600, onError: "log",
   })
-  return { ...config, crons: { [WIKI_SUMMARIZE_JOB]: job, ...config.crons } }
+  if (!job.success) {
+    throw new Error(`wiki.summaries: the ${WIKI_SUMMARIZE_JOB} job can't be built: ${job.error.issues.map((i) => i.message).join("; ")}`)
+  }
+  return { ...config, crons: { [WIKI_SUMMARIZE_JOB]: job.data, ...config.crons } }
 }
 
 /** How to call this release's CLI from a shell. */
