@@ -1477,6 +1477,22 @@ export const daemonConfigSchema = z.object({
       windowMinutes: z.number().positive().default(10),
     }).default({}),
   }).default({}),
+  /** Stop and resume signals (agents/signals, #857): stop a running task
+   *  cleanly, keep the agent's resume plan, resume it later. The owner may
+   *  always signal; an agent may signal tasks it dispatched, or any task
+   *  when listed in allowAgents; a mesh peer only when listed in allowPeers. */
+  signals: z.object({
+    enabled: z.boolean().default(true),
+    /** How long the stopped agent gets to write its resume plan. Past it,
+     *  the wind-down is stopped and a plan is built from the trace. */
+    windDownSeconds: z.number().int().min(10).max(1800).default(120),
+    /** Agents that may stop or resume any agent's task here ("*" for all). */
+    allowAgents: z.array(z.string().min(1)).default([]),
+    /** Mesh peers (node names) whose stop and resume signals are accepted. */
+    allowPeers: z.array(z.string().min(1)).default([]),
+    /** Loop brake: most signals one root id may carry in a day. */
+    maxPerRoot: z.number().int().min(1).max(100).default(6),
+  }).default({}),
   /** Open requests (src/requests, #356): what a person asked an agent for
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */

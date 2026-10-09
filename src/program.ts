@@ -29,6 +29,7 @@ import { talk as talkCmd, narrate as narrateCmd } from "@/commands/talk"
 import { voice as voiceCmd } from "@/commands/voice"
 import { attach as attachCmd } from "@/commands/attach"
 import { process_ as processCmd } from "@/commands/process"
+import { signalCmd } from "@/commands/signal"
 import { rag as ragCmd } from "@/commands/rag"
 import { backlog } from "@/commands/backlog"
 import { schedule } from "@/commands/schedule"
@@ -160,7 +161,7 @@ const ADVANCED = [
   // Workflow / BPM
   workflow, webhook, board, backlog, business, plan,
   // Observability + forensics
-  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, watch, eventsCmd, dbCmd,
+  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, signalCmd, watch, eventsCmd, dbCmd,
   // Fleet + extension
   mesh, a2a, skillCmd, pluginCmd, hook, actionsCmd, people,
   // Scheduling internals (`schedule` is the friendly front door)

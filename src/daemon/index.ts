@@ -59,6 +59,11 @@ import { localAlert, localSettings, notify, type Sender } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
+import { SignalService } from "@/agents/signals/service"
+import { StoppedTaskStore } from "@/agents/signals/store"
+import { setSignalService } from "@/agents/signals/instance"
+import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
+import { traceToolCalls } from "@/storage/traces"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
@@ -234,6 +239,8 @@ export class AgentXDaemon {
   private landscape: LandscapeBuilder
   private heartbeat: HeartbeatManager
   private stopEventWaker?: () => void
+  /** Stop and resume signals (agents/signals, #857). */
+  private signals!: SignalService
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
@@ -459,6 +466,9 @@ export class AgentXDaemon {
     // MCP tool layer can post outbound messages through the canonical send
     // path without re-implementing dedupe / marker / identity / ledger.
     setMessageRouter(this.router)
+
+    this.signals = this.createSignalService()
+    setSignalService(this.signals)
 
     // Initialize service matcher (automated client services)
     if (Object.keys(this.config.services).length > 0) {
@@ -993,6 +1003,13 @@ export class AgentXDaemon {
     // running daemon.
     this.bootTimes = recordBoot(resolve(process.cwd(), ".agentx"))
     this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1))
+    // Paused tasks whose plan-writing turn the restart cut off (#857): a
+    // plan from the trace, so they can be resumed. Before the resume pass,
+    // which skips the cut-off wind-down turns themselves.
+    try {
+      const recovered = this.signals.recover()
+      if (recovered) this.log(`  Signals: ${recovered} paused task(s) got a plan from their trace after the restart`)
+    } catch (e: any) { this.log(`[signals] recovery failed: ${e?.message ?? e}`) }
     if (this.interruptedRuns.length > 0) {
       setTimeout(() => { void this.resumeInterruptedRuns() }, 5_000).unref?.()
     }
@@ -1286,78 +1303,147 @@ export class AgentXDaemon {
   /** Every start on record with who stopped the one before (boot-record.ts). */
   private bootLog: BootEntry[] = []
 
+  /** The resumers that re-enter a run where it came from: used by the boot
+   *  resume pass and by resume signals (agents/signals, #857). */
+  private resumeCoordinatorInstance?: ResumeCoordinator
+  private resumeCoordinator(): ResumeCoordinator {
+    if (this.resumeCoordinatorInstance) return this.resumeCoordinatorInstance
+    const coordinator = new ResumeCoordinator()
+    coordinator.register("router", this.router.createResumer())
+    // A turn on the agent that asked for a cut-off agent-to-agent run:
+    // the notice that it was cut off, or the re-run's answer. Marked so
+    // that, if this turn is cut off too, it is reported and never
+    // bounced back (see callerAgentOf).
+    const tellCaller = (caller: string, fromAgent: string, text: string) =>
+      this.registry.execute({
+        message: text,
+        agentId: caller,
+        context: { channel: "a2a", sender: `agent:${fromAgent}`, chatId: fromAgent, [RESUME_DELIVERY_FLAG]: true } as any,
+      }).catch((e: any) => this.log(`[resume] couldn't tell ${caller}: ${e?.message ?? e}`))
+    coordinator.register("direct", {
+      // Non-chat runs, only for channels opted in via resume.directChannels,
+      // where nothing delivers their answer; and agent-to-agent runs that
+      // name their calling agent, whose answer becomes a turn on that agent.
+      resume: async ({ origin, note, attempt, run }) => {
+        if (origin.kind !== "direct") throw new Error("not a direct run")
+        const caller = callerAgentOf(origin)
+        const rerun = this.registry.execute({
+          message: `${note}\n${run.originalMessage ?? ""}`,
+          agentId: run.agentId,
+          context: origin.context as any,
+          model: origin.model,
+          autonomy: origin.autonomy as any,
+          origin,
+          resumeAttempt: attempt,
+          resumedFrom: run.taskId,
+        })
+        if (!caller) {
+          void rerun.catch((e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
+          return
+        }
+        void rerun.then(
+          (response) => tellCaller(caller, run.agentId, resumedAnswerText(run, response)),
+          (e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`),
+        )
+      },
+      tell: async (origin, text) => {
+        const caller = callerAgentOf(origin)
+        if (!caller) throw new Error("no chat to tell")
+        const from = origin.kind === "direct" ? String(origin.context?.chatId ?? "an agent") : "an agent"
+        await tellCaller(caller, from, `[AgentX resume] ${text}`)
+      },
+    })
+    coordinator.register("mesh", createMeshResumer({
+      peers: () => this.mesh?.directory() ?? [],
+      send: async (peer, body) => {
+        const r = await fetch(`${peer.peerUrl}/channel/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(15000),
+        })
+        if (!r.ok) throw new Error(`peer ${peer.peer} /channel/send -> ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`)
+      },
+      execute: ({ agentId, message, origin, attempt, resumedFrom }) => this.registry.execute({
+        message,
+        agentId,
+        context: origin.context as any,
+        origin,
+        resumeAttempt: attempt,
+        resumedFrom,
+      }),
+      log: this.log,
+    }))
+    this.resumeCoordinatorInstance = coordinator
+    return coordinator
+  }
+
+  /** Stop a running task with a resume plan, and resume it later (#857). */
+  private createSignalService(): SignalService {
+    const bus = getAgentEventBus()
+    return new SignalService({
+      settings: () => this.config.signals,
+      store: new StoppedTaskStore(resolve(process.cwd(), ".agentx/signals/stopped")),
+      findRunning: (by) => this.registry.signalTarget(by),
+      stopRun: (taskId, reason) => this.registry.stopRunningTask(taskId, reason),
+      whenRunEnds: (taskId, ms) => this.registry.whenRunEnds(taskId, ms),
+      toolCalls: (traceId) => {
+        if (!traceId || !this.db) return []
+        try { return traceToolCalls(this.db, traceId) } catch { return [] }
+      },
+      // Its own chat, so the turn neither queues behind the chat it stopped
+      // nor posts there; under the task's root, so what it causes cannot
+      // wake a subscriber twice.
+      windDown: ({ id, agentId, rootId, message, timeoutMs }) => withRoot({ rootId }, () => {
+        let runId: string | undefined
+        const timer = setTimeout(() => {
+          if (runId) this.registry.cancelRunningTask(runId, `wind-down timed out after ${Math.round(timeoutMs / 1000)}s`)
+        }, timeoutMs)
+        timer.unref?.()
+        return this.registry.execute({
+          message,
+          agentId,
+          context: { channel: WIND_DOWN_CHANNEL, chatId: `signal:${id}`, sender: "agentx:signal" },
+          timeoutMinutes: timeoutMs / 60_000,
+          // Still waiting for a slot when the time is up: dropped, not run.
+          callerSignal: AbortSignal.timeout(timeoutMs),
+          onStart: (r) => { runId = r },
+        }).finally(() => clearTimeout(timer))
+      }),
+      resume: async ({ record, note }) => {
+        if (!record.origin) throw new Error("no record of how to re-enter this task")
+        const run = {
+          taskId: record.traceId ?? record.id,
+          agentId: record.agentId,
+          channel: record.channel,
+          chatId: record.chatId,
+          workflowRunId: null,
+          startedAt: Date.parse(record.stoppedAt),
+          originalMessage: record.originalMessage,
+          resumeOrigin: null,
+          resumeAttempt: 0,
+          toolCalls: [],
+        }
+        await withRoot({ rootId: record.rootId }, () =>
+          this.resumeCoordinator().resumeOne({ origin: record.origin!, run, note, rootId: record.rootId }))
+      },
+      tell: async (origin, text) => {
+        await this.resumeCoordinator().tellOrigin(origin, text, this.log)
+      },
+      publish: ({ type, agentId, rootId, summary, ref }) => {
+        try { bus.publish({ kind: "signal", type, agentId, rootId, summary, ref }) } catch { /* observability never breaks a signal */ }
+      },
+      log: (msg) => this.log(msg),
+    })
+  }
+
   /** Resume, report or skip each run the last restart cut off. Never throws. */
   private async resumeInterruptedRuns(): Promise<void> {
     const runs = this.interruptedRuns
     this.interruptedRuns = []
     if (!this.db || runs.length === 0) return
     try {
-      const coordinator = new ResumeCoordinator()
-      coordinator.register("router", this.router.createResumer())
-      // A turn on the agent that asked for a cut-off agent-to-agent run:
-      // the notice that it was cut off, or the re-run's answer. Marked so
-      // that, if this turn is cut off too, it is reported and never
-      // bounced back (see callerAgentOf).
-      const tellCaller = (caller: string, fromAgent: string, text: string) =>
-        this.registry.execute({
-          message: text,
-          agentId: caller,
-          context: { channel: "a2a", sender: `agent:${fromAgent}`, chatId: fromAgent, [RESUME_DELIVERY_FLAG]: true } as any,
-        }).catch((e: any) => this.log(`[resume] couldn't tell ${caller}: ${e?.message ?? e}`))
-      coordinator.register("direct", {
-        // Non-chat runs, only for channels opted in via resume.directChannels,
-        // where nothing delivers their answer; and agent-to-agent runs that
-        // name their calling agent, whose answer becomes a turn on that agent.
-        resume: async ({ origin, note, attempt, run }) => {
-          if (origin.kind !== "direct") throw new Error("not a direct run")
-          const caller = callerAgentOf(origin)
-          const rerun = this.registry.execute({
-            message: `${note}\n${run.originalMessage ?? ""}`,
-            agentId: run.agentId,
-            context: origin.context as any,
-            model: origin.model,
-            autonomy: origin.autonomy as any,
-            origin,
-            resumeAttempt: attempt,
-            resumedFrom: run.taskId,
-          })
-          if (!caller) {
-            void rerun.catch((e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
-            return
-          }
-          void rerun.then(
-            (response) => tellCaller(caller, run.agentId, resumedAnswerText(run, response)),
-            (e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`),
-          )
-        },
-        tell: async (origin, text) => {
-          const caller = callerAgentOf(origin)
-          if (!caller) throw new Error("no chat to tell")
-          const from = origin.kind === "direct" ? String(origin.context?.chatId ?? "an agent") : "an agent"
-          await tellCaller(caller, from, `[AgentX resume] ${text}`)
-        },
-      })
-      coordinator.register("mesh", createMeshResumer({
-        peers: () => this.mesh?.directory() ?? [],
-        send: async (peer, body) => {
-          const r = await fetch(`${peer.peerUrl}/channel/send`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(15000),
-          })
-          if (!r.ok) throw new Error(`peer ${peer.peer} /channel/send -> ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`)
-        },
-        execute: ({ agentId, message, origin, attempt, resumedFrom }) => this.registry.execute({
-          message,
-          agentId,
-          context: origin.context as any,
-          origin,
-          resumeAttempt: attempt,
-          resumedFrom,
-        }),
-        log: this.log,
-      }))
+      const coordinator = this.resumeCoordinator()
       const dest = this.config.notifications?.destination
       const outcomes = await coordinator.run({
         db: this.db,
@@ -1371,6 +1457,9 @@ export class AgentXDaemon {
         // manager (#846); resuming it here too would answer twice.
         handledElsewhere: (run) => this.config.mesh.delegation.requeueRelayOnRestart && isDelegationRelay(run.originalMessage)
           ? "delegation result relay: the delegation manager runs it again"
+          // A pause's plan-writing turn: signals.recover() above gave its
+          // task a plan from the trace; running it again would answer nobody.
+          : run.channel === WIND_DOWN_CHANNEL ? "stop signal wind-down: its task got a plan from the trace"
           : null,
         notifyOperator: dest
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
@@ -5196,6 +5285,48 @@ export class AgentXDaemon {
             this.json(res, 500, { error: e?.message || String(e) })
           }
         }
+        return
+      }
+
+      // Stop and resume signals (#857). Gated by isControlPost /
+      // isMeshGatedPath before this point.
+      if (isSignalsPath(path)) {
+        const body = req.method === "POST" ? (await readJsonBody(req).catch(() => ({})) as Record<string, unknown>) : {}
+        const proof = this.callerProof(req)
+        const fromAgent = typeof body.from === "string" ? body.from : undefined
+        let provenTurn: { agentId: string; channel: string } | null = null
+        if (proof.taskId) {
+          const owner = this.registry.runningTaskOwner(proof.taskId)
+          provenTurn = owner ? { agentId: owner.agentId, channel: owner.channel } : null
+        } else if (fromAgent && proof.channel && proof.chatId) {
+          provenTurn = this.provenTurn(fromAgent, proof) ? { agentId: fromAgent, channel: proof.channel } : null
+        }
+        const auth = req.headers.authorization
+        const sender = signalSender({
+          proofGiven: Boolean(proof.taskId || (proof.channel && proof.chatId)),
+          provenTurn,
+          via: body.via as { node?: unknown; agentId?: unknown } | undefined,
+          tokenPeer: peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN),
+        })
+        const reply = await handleSignalsHttp(req.method || "GET", path, url.searchParams, body, {
+          service: this.signals,
+          selfNode: this.config.node.name || this.config.node.id || "local",
+          sender,
+          forward: async (node, method, target, fwdBody) => {
+            const want = node.toLowerCase()
+            const peer = this.mesh?.directory().find((p) => p.healthy && (p.peer.toLowerCase() === want || p.node?.toLowerCase() === want))
+            if (!peer) return null
+            const r = await fetch(`${peer.peerUrl}${target}`, {
+              method,
+              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+              ...(fwdBody ? { body: JSON.stringify(fwdBody) } : {}),
+              signal: AbortSignal.timeout(15_000),
+            })
+            const data = await r.json().catch(() => ({ error: `peer answered ${r.status}` }))
+            return { status: r.status, body: data as Record<string, unknown> }
+          },
+        })
+        this.json(res, reply.status, reply.body)
         return
       }
 

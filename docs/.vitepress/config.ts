@@ -58,6 +58,7 @@ const groups = [
     { text: "Keep track of what you asked for", link: "/jobs/open-requests" },
     { text: "Let a workflow follow a request", link: "/jobs/follow-up-workflows" },
     { text: "Follow a request of several steps", link: "/jobs/tracked-plans" },
+    { text: "Pause a task and resume it later", link: "/jobs/pause-and-resume" },
     { text: "Review what agents learn", link: "/jobs/agent-memory" },
     { text: "Let agents leave notes for the wiki run", link: "/jobs/wiki-notes" },
     { text: "Let agents keep the wiki up to date", link: "/jobs/wiki-contributions" },

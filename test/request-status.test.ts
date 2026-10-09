@@ -400,6 +400,12 @@ describe("failed", () => {
     expect(state("req-t1")).toBe("stopped")
   })
 
+  it("shows a run a stop signal paused as stopped, not failed (#857)", () => {
+    start("t1")
+    end("t1", { error: "stopped by owner: deploy", errorKind: "stopped", stopped: true })
+    expect(state("req-t1")).toBe("stopped")
+  })
+
   it("keeps an ended request ended when a late signal arrives", () => {
     start("t1")
     end("t1", { error: "boom" })
