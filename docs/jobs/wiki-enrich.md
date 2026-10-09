@@ -12,6 +12,8 @@ It works for people, organizations, projects, places, devices, servers, apps, do
 
 - **Nothing is invented.** A fact needs a property the page's type shows, a value, and a source the run was shown. Anything else is dropped, and the run tells you why.
 - **Agents are not people.** The fleet's own agents never show up as a person's relations. See [Agents are kept out of People](#agents-are-kept-out-of-people).
+- **Private stays private.** The run writes to one page of the entity, and reads only pages that everyone who can read that page can already read. Text from an owner-only page never ends up in a shared or public one.
+- **The model gets no tools.** The call that writes can't run commands, use connected services or send messages. It only returns text.
 - **Old text is kept.** Each write saves the previous version of the page, so you can see what changed.
 - **Spending has a cap.** Each entity costs one model call. A run stops before the next call once it has spent `--max-cost`.
 - **Only what changed is redone.** An entity is done again only when it has a new source, page, linked event or mentioning page. `--force` redoes it anyway.
@@ -45,7 +47,9 @@ The page goes into that agent's wiki, typed as you asked, and the run writes it 
 
 ## Run it on a schedule
 
-Add a job with a `command` to `crons` in `agentx.json`. The `agent` field picks the agent that runs it. This job runs every night and spends at most $2:
+Add a job with a `command` to `crons` in `agentx.json`. The `agent` field picks the agent that runs it. This job runs every night and spends at most $2.
+
+A job is stopped after its `timeout`, in seconds (600 by default). Each entity can take up to 4 minutes, so give the job about 4.5 minutes (270 seconds) per entity in `--max`. For `--max 20`, that is 5400:
 
 ```json
 {
@@ -53,7 +57,8 @@ Add a job with a `command` to `crons` in `agentx.json`. The `agent` field picks 
     "wiki-enrich": {
       "schedule": "0 3 * * *",
       "agent": "<agent>",
-      "command": "agentx wiki enrich --max 20 --max-cost 2"
+      "command": "agentx wiki enrich --max 20 --max-cost 2",
+      "timeout": 5400
     }
   }
 }
@@ -64,7 +69,7 @@ Add a job with a `command` to `crons` in `agentx.json`. The `agent` field picks 
 | Flag | Default | What it does |
 |---|---|---|
 | `--types <list>` | every type it handles | Which entity types to do, comma-separated. |
-| `--max <n>` | `10` | Most entities per run. |
+| `--max <n>` | `10` | Most entities per run. A whole number, 1 or more. |
 | `--max-cost <usd>` | `1` | The run stops before the next call once it has spent this much. |
 | `--model <m>` | `sonnet` | The model that writes. |
 | `--force` | — | Redo entities that did not change. |
@@ -72,7 +77,7 @@ Add a job with a `command` to `crons` in `agentx.json`. The `agent` field picks 
 | `--create <title>` | — | First create a page for this name. Needs `--as` and `--owner`. |
 | `--json` | — | Print the run as JSON. |
 
-The run remembers what it did in `.agentx/wiki/_enrich/state.json`. Delete that file to start over.
+The run remembers what it did in `.agentx/wiki/_enrich/state.json`, after every entity. A run that is stopped part-way, and then retried, does not pay again for the entities it already did. An entity whose answer had nothing to write is remembered too, until its sources change. An entity whose call failed is tried again next run, after the others. Delete that file to start over.
 
 ## Agents are kept out of People
 
@@ -89,6 +94,8 @@ Old pages about an agent are often typed `person`, and titled with just the agen
 
 When that name is also the first name of a real person page (for example "Nova" next to "Nova Reyes"), the page stays a person. The page then shows **Check the type**. Add `class: agent` or `class: person` to its header to decide.
 
+A page whose **alias** (another name listed in its header) matches an agent also stays a person and shows **Check the type**. People can have a nickname that is also an agent's name.
+
 ## Check it worked
 
 1. **Terminal:** run `agentx wiki enrich "<page title>" --dry-run`. It prints an overview and at least one fact with a source.
@@ -101,6 +108,9 @@ When that name is also the first name of a real person page (for example "Nova" 
 - **`dropped: source not among those given`:** the model cited something the run did not show it. The fact is left out. Nothing to fix; a later run can find it when a source mentions it.
 - **`dropped: value is a project, expected organization`:** the name points at a page of another type. Give the real organization its own page (see [Add a page for something only mentioned](#add-a-page-for-something-only-mentioned)), then run it again with `--force`.
 - **`write refused`:** the page belongs to another agent or was copied from another machine. Run the job on the machine that holds the page.
+- **A fact or a sentence you expected is missing:** it may come from a page fewer agents can read than the page being written. The run leaves such pages out. Share that page more widely, or write the fact on it by hand.
+- **The scheduled job shows `timeout`:** raise `timeout` (about 270 per entity), or lower `--max`. The entities it finished are kept and not paid for again.
+- **`--max must be a whole number`:** give `--max` a number such as `10`.
 - **`stopped at the cap`:** the run reached `--max-cost`. The rest wait for the next run, or raise the cap.
 - **An agent still shows under People:** its name is not in the list above. Add it under `agent_names` in `ontology.yaml`.
 - **A fact is wrong:** open the page's header and remove it from `statements`. Facts this job wrote carry `"by":"wiki-enrich"`, and the next run replaces all of them.

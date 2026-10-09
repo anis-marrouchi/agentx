@@ -94,8 +94,14 @@ function applyRoster(entities: Map<string, Entity>, roster: AgentRoster, o: Onto
   for (const e of entities.values()) {
     // Only people and untyped pages: a project or client can share an agent's name.
     if ((e.type !== "person" && e.type !== o.fallback_type) || e.pages.some(p => p.article.meta.class)) continue
-    const agent = rosterMatch(roster, [e.title, ...e.pages.flatMap(p => p.article.meta.aliases ?? [])])
-    if (!agent) continue
+    const agent = rosterMatch(roster, [e.title])
+    if (!agent) {
+      // An alias is weaker evidence: a person can have a nickname that is
+      // also an agent's name. Flag it, never retype it.
+      const byAlias = rosterMatch(roster, e.pages.flatMap(p => p.article.meta.aliases ?? []))
+      if (byAlias) e.review ??= `an alias matches agent ${byAlias}; set class on the page to decide`
+      continue
+    }
     if (e.type === "person" && firstNames.has(normName(e.title))) {
       e.review = `shares a name with agent ${agent} and with a person; set class on the page to decide`
       continue

@@ -1557,7 +1557,7 @@ Write a full overview, sourced typed facts and History links on entity pages: pe
 |---|---|---|
 | `--dir <path>` | `.agentx/wiki` | Wiki directory. |
 | `--types <list>` | `person,organization,project,place,device,server,app,domain,account` | Entity types to do. |
-| `--max <n>` | `10` | Most entities per run. |
+| `--max <n>` | `10` | Most entities per run (a whole number, 1 or more). |
 | `--max-cost <usd>` | `1` | Stop before the next call once the run has spent this much. |
 | `--model <m>` | `sonnet` | Model. |
 | `--force` | — | Redo entities whose sources did not change. |

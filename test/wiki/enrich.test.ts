@@ -63,6 +63,12 @@ describe("agents are not people (#819)", () => {
     expect(labels).toEqual(["Other Person"])
   })
 
+  it("flags a person whose alias is an agent's name, without retyping it", () => {
+    const g = buildGraph([page("agent-a", "people/pat.md", meta("Pat Doe", { type: "person", aliases: ["Nova"] }))], DEFAULT_ONTOLOGY, roster)
+    expect(g.entities.get("pat-doe")?.type).toBe("person")
+    expect(g.entities.get("pat-doe")?.review).toMatch(/alias matches agent helper-agent/)
+  })
+
   it("reads a persona name and the configured agents next to the wiki", () => {
     expect(personaName("# X\n\n**Name:** Nova (نوفا). A star.")).toBe("Nova")
     const root = mkdtempSync(join(tmpdir(), "roster-"))
@@ -103,6 +109,14 @@ describe("overview", () => {
     expect(overviewSection(kept)).toBe("New.")
     expect(kept).toContain("Hand-written.")
     expect(kept).toContain("More text.")
+    // A hand-written Overview ended by a heading, longer than the call reads.
+    const long = `## Overview\n\n${"Hand-written story. ".repeat(250)}\n\n## Notes\n\nKept.`
+    const kept2 = withOverview(long, "New.")
+    expect(overviewSection(kept2)).toBe("New.")
+    expect(kept2).toContain("Hand-written story.")
+    expect(kept2).toContain("Kept.")
+    // Short enough to have been read in full: replaced.
+    expect(withOverview("## Overview\n\nShort old.\n\n## Notes\n\nKept.", "New.")).not.toContain("Short old.")
   })
 })
 
@@ -195,6 +209,50 @@ describe("wiki enrich run", () => {
     expect(run.capped).toBe(true)
     expect(run.outcomes[0].status).toBe("dry-run")
     expect(hub.getAgentWiki("agent-a").getVersions("people/pat.md")).toHaveLength(0)
+  })
+
+  it("never reads a page narrower than the one it writes to", async () => {
+    const store = hub.getAgentWiki("agent-a")
+    store.writeArticle("people/pat.md", meta("Pat Doe", { type: "person", owner: "agent-a", sources: ["e1", "e2"] }), "Pat is a buyer.", "agent-a")
+    store.writeArticle("people/pat-private.md", meta("Pat Doe", { type: "person", owner: "agent-a", access: "private", sources: ["e9"] }), "Pat's secret salary.", "agent-a")
+    store.writeArticle("notes/private-note.md", meta("Private Note", { owner: "agent-a", access: "private" }), "Pat Doe told me a secret.", "agent-a")
+    store.writeArticle("notes/public-note.md", meta("Public Note", { owner: "agent-a" }), "Pat Doe came to the launch.", "agent-a")
+    const g = graph()
+    const e = g.entities.get("pat-doe")!
+    const prompts: string[] = []
+    const run = await runEnrich(hub, g, async (p) => { prompts.push(p); return { text: JSON.stringify({ overview: "Pat buys from us." }), costUsd: 0.1 } }, { ...opts, only: ["Pat Doe"] }, { entities: {} })
+    expect(run.outcomes[0]).toMatchObject({ status: "written", page: "agent-a/people/pat.md" })
+    expect(prompts[0]).toContain("Pat is a buyer.")
+    expect(prompts[0]).toContain("Pat Doe came to the launch.")
+    expect(prompts[0]).not.toContain("secret")
+    // Writing to the private page, everything readable may be used.
+    const priv = e.pages.find(p => p.article.path === "people/pat-private.md")!
+    const ctx = enrichContext(g, e, () => [], priv)
+    expect(ctx.pages.map(p => p.article.path).sort()).toEqual(["people/pat-private.md", "people/pat.md"])
+    expect(ctx.sources.sort()).toEqual(["e1", "e2", "e9"])
+    expect(ctx.mentions.map(m => m.page.article.meta.title).sort()).toEqual(["Private Note", "Public Note"])
+  })
+
+  it("saves state after each paid call, so a killed run does not pay again", async () => {
+    const saved: string[][] = []
+    let calls = 0
+    const call: EnrichCall = async () => {
+      calls++
+      if (calls === 2) throw new Error("killed")
+      return { text: JSON.stringify({ overview: "Story." }), costUsd: 0.1 }
+    }
+    const state = loadEnrichState(dir)
+    await runEnrich(hub, graph(), call, { ...opts, save: s => saved.push(Object.keys(s.entities)) }, state)
+    expect(saved.length).toBe(2)
+    expect(saved[0]).toHaveLength(1)
+    // The failed entity goes last next time, and the written one is skipped.
+    const order: string[] = []
+    const next = await runEnrich(hub, graph(), async (p) => { order.push(p.match(/Subject: "([^"]+)"/)![1]); return { text: "no json", costUsd: 0.1 } }, opts, state)
+    expect(order).toHaveLength(1)
+    expect(next.outcomes.map(o => o.status)).toEqual(["no-reply"])
+    // A paid reply with nothing usable is remembered as well.
+    const third = await runEnrich(hub, graph(), call, opts, state)
+    expect(third.outcomes).toEqual([])
   })
 
   it("creates a typed page for a thing other pages only name", async () => {

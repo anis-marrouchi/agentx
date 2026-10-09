@@ -11,12 +11,16 @@ import { resolve } from "path"
 
 const wikiDir = (dir?: string) => dir || resolve(process.cwd(), ".agentx/wiki")
 
-/** One `claude -p` call with no tools; cost from the JSON envelope. */
+/** One `claude -p` call with no tools; cost from the JSON envelope.
+ *  The prompt carries raw message text, so no built-in tool, MCP server,
+ *  hook or settings file is loaded: an injected instruction has nothing
+ *  to write or send with. */
 function claudeCall(model: string): (prompt: string) => Promise<{ text: string; costUsd: number }> {
   return async (prompt) => {
     const { claudeCliEnv } = await import("@/utils/workspace-env")
     const args = ["-p", "-", "--output-format", "json", "--max-turns", "1", "--model", model,
-      "--disallowedTools", "Bash Read Write Edit Glob Grep Agent WebSearch WebFetch NotebookEdit"]
+      "--tools", "", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
+      "--settings", '{"disableAllHooks":true}', "--setting-sources", "", "--no-session-persistence"]
     const out = await new Promise<string>((ok, fail) => {
       const child = spawn("claude", args, { env: claudeCliEnv(), stdio: ["pipe", "pipe", "pipe"] })
       let stdout = ""
@@ -67,7 +71,12 @@ export function registerWikiEnrich(wiki: Command): void {
         process.exitCode = 1
         return
       }
-      const max = Math.max(1, Number(opts.max) || 10)
+      const max = Number(opts.max)
+      if (!Number.isInteger(max) || max < 1) {
+        console.error(chalk.red("  --max must be a whole number of entities, 1 or more"))
+        process.exitCode = 1
+        return
+      }
       const maxCostUsd = Number(opts.maxCost)
       if (!Number.isFinite(maxCostUsd) || maxCostUsd <= 0) {
         console.error(chalk.red("  --max-cost must be a positive number of dollars"))
@@ -101,8 +110,8 @@ export function registerWikiEnrich(wiki: Command): void {
       const state = loadEnrichState(dir)
       const run = await runEnrich(hub, g, claudeCall(opts.model), {
         types, only: entities, max, maxCostUsd, dryRun: !!opts.dryRun, force: !!opts.force, today: new Date().toISOString().slice(0, 10),
+        save: s => saveEnrichState(dir, s),
       }, state)
-      if (!opts.dryRun) saveEnrichState(dir, state)
 
       if (opts.json) {
         console.log(JSON.stringify(run, null, 2))
