@@ -9,6 +9,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 //   agentx signal list [--all]                          stopped tasks and their plans
 //   agentx signal show <id>                             one stopped task, whole plan
 //   agentx signal resume <id> [--reason …]              run it again from its plan
+//   agentx signal drop <id>                             forget a stopped task and its plan
 //
 // `--peer <name>` sends the signal to a mesh node, which accepts it only
 // when its signals.allowPeers names this node. Settings: `agentx config
@@ -122,4 +123,12 @@ common(signalCmd
     const data = await call(opts, "POST", "/api/signals/resume", { id, reason: opts.reason, node: opts.peer })
     console.log(chalk.green(`  resumed ${data.agentId} task ${data.id}`))
     if (data.delivery) console.log(chalk.dim(`  its answer goes to ${data.delivery}`))
+  })
+
+common(signalCmd
+  .command("drop <id>")
+  .description("forget a stopped task and its resume plan, when it won't be resumed"))
+  .action(async (id: string, opts) => {
+    const data = await call(opts, "POST", "/api/signals/drop", { id, node: opts.peer })
+    console.log(chalk.green(`  dropped ${data.agentId} task ${data.id}`))
   })

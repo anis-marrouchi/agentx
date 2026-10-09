@@ -13,6 +13,8 @@ That note is the **resume plan**. Right after the stop, the agent gets one short
 | Next action | The first thing to do when the task is resumed. |
 | Half-applied | Anything started but not finished, such as a partial edit, an open branch or an unsent message. |
 
+The plan is written in a separate chat with the agent's usual tools. In it, the agent sees the original request and the list of tools it used, not the conversation that was stopped.
+
 The agent does nothing else in that turn. If it doesn't answer within the time limit (two minutes unless you change it), AgentX stops that turn too and writes the plan itself from the run's *trace* (the record of every tool the agent used). Such a plan says it was written by AgentX.
 
 A paused task is marked **stopped**, not failed. It waits until someone resumes it. Resuming runs it again in the same chat, with the plan placed before the original request, so the agent continues instead of starting over.
@@ -56,6 +58,16 @@ In AgentX, a stop or resume request is called a **signal**. These are not the wo
 
 ![Stopped tasks on the Live page, with a resume plan opened and the ▶ resume button](/screenshots/live/stopped-task.png)
 
+## Drop a task you won't resume
+
+A paused task stays in **Stopped tasks** until it is resumed. A resumed task is removed by itself after 7 days. To remove one you will never resume:
+
+1. **Browser:** open the **Live** tab.
+2. Under the machine's name, find the task in **Stopped tasks**.
+3. Select **✕ drop**, then select **OK** to confirm. The task and its plan are deleted, and it can no longer be resumed.
+
+From the terminal, `agentx signal drop <taskId>` does the same.
+
 ## Pause and resume from the terminal
 
 1. **Terminal:** run `curl -s http://127.0.0.1:18800/agents` and copy the `id` listed under the agent's `runningTasks`. On the dashboard, the same id is in the address bar of a running task's page.
@@ -63,6 +75,7 @@ In AgentX, a stop or resume request is called a **signal**. These are not the wo
 3. **Terminal:** run `agentx signal list` to see stopped tasks. The plan's first line is shown under each one.
 4. **Terminal:** run `agentx signal show <taskId>` to read the whole plan.
 5. **Terminal:** when you're ready, run `agentx signal resume <taskId>`.
+6. **Terminal:** if the task will never be resumed, run `agentx signal drop <taskId>` instead. This deletes the task's record and plan.
 
 Without a task id, name the agent and its chat instead: `agentx signal stop --agent coder --channel telegram --chat 12345`. This works when that agent has exactly one task running on that chat.
 
@@ -85,7 +98,7 @@ A workflow can resume a task with the built-in action `signal.resume`. Give it t
 
 An agent can never pause its own task, and the plan-writing turn cannot send signals.
 
-A machine is recognised by its own token in `mesh.peers`. A request that carries the token every machine shares (`MESH_TOKEN`) is believed about which machine it comes from. If your machines are not all equally trusted, give each one its own token in `mesh.peers`.
+A machine is recognised by its own token in `mesh.peers`: a request with that token counts as that machine, so `signals.allowPeers` applies to it. `signals.allowPeers` does not protect you from a machine that uses the token every machine shares (`MESH_TOKEN`). Such a request is believed about which machine it comes from, and when it names none it counts as you, the owner. The same token already lets a machine cancel tasks and reload this one. If your machines are not all equally trusted, give each one its own token in `mesh.peers`.
 
 A step of a workflow run can't be paused: pausing it would fail the whole run, and a resume would run the step outside it. The pause is refused with a message saying so. Cancel or pause the workflow run instead.
 
@@ -108,7 +121,7 @@ The settings live under `signals` in `agentx.json`. Change them with `agentx con
 
 The last setting is a brake against loops between agents. Everything that comes from one request (a chat message, a schedule, a webhook) shares one id, its *root*. A paused and resumed task keeps its root. When signals keep bouncing, for example one agent resumes what another keeps pausing, the seventh signal from agents or other machines in a day is refused. Your own pauses and resumes are never counted or refused.
 
-Each pause and resume is also published as an event of kind `signal` (`signal:stop`, `signal:stopped`, `signal:resume`, `signal:resume-failed`), so an agent can [follow events](/automations/event-subscriptions) about it.
+Each pause and resume is also published as an event of kind `signal` (`signal:stop`, `signal:stopped`, `signal:resume`, `signal:resume-failed`, `signal:dropped`), so an agent can [follow events](/automations/event-subscriptions) about it.
 
 ## Check it worked
 
@@ -127,4 +140,6 @@ Each pause and resume is also published as an event of kind `signal` (`signal:st
 - **"is a step of workflow run":** the task belongs to a workflow run. Cancel or pause the workflow run instead.
 - **"carried 6 signals today":** the loop brake stopped an agent's signal. Check which agents keep pausing and resuming this task before you raise `signals.maxPerRoot`.
 - **The plan says "written by AgentX":** the agent didn't answer in time. Raise `signals.windDownSeconds` if your agents need longer.
+- **Resume says "already resumed" but the task shows stopped:** AgentX stopped in the middle of a resume. Restart AgentX; on start it clears the leftover mark, and you can resume again.
+- **"mesh peer … is not in signals.allowPeers" from your own dashboard:** the dashboard reaches that machine with a token from `mesh.peers`, so it counts as that machine. Add the machine to `signals.allowPeers`, or give the dashboard the shared `MESH_TOKEN` for it.
 - **Resume does nothing in a chat:** the chat's channel isn't running on this machine any more. Check it in [Settings](/dashboard/settings).
