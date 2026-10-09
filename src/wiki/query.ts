@@ -17,7 +17,8 @@ import type { WikiArticle, WikiIndex } from "./types"
 import type { WikiStore } from "./store"
 import { claudeModelCall, type ModelCall } from "./model-call"
 import type { FetchLike, LiveLine } from "./live-read"
-import { DEFAULT_SUMMARIES_QUERY, collectSummaries, summariesQuery, type SummariesQuerySettings } from "./query-summaries"
+import { DEFAULT_SUMMARIES_QUERY, collectSummaries, summariesQuery, type PageView, type SummariesQuerySettings } from "./query-summaries"
+import { isNotePath, notePool, type NoteSource } from "./query-notes"
 import type { QueryMethod } from "./query-settings"
 
 /**
@@ -67,6 +68,10 @@ export interface AgenticQueryOptions {
   /** Settings of the summaries method. An explicit `selectorModel` or
    *  `synthModel` overrides its models. */
   summaries?: SummariesQuerySettings
+  /** The requester's own notes, searched beside its pages by the
+   *  summaries method (#862). A note is private to the agent that wrote
+   *  it: notes of any other agent are ignored. */
+  notes?: NoteSource
   /** Model call and HTTP GET of the summaries method; tests pass their own. */
   call?: ModelCall
   fetch?: FetchLike
@@ -155,12 +160,13 @@ export async function agenticQuery(
     const summaries = collectSummaries(store, opts.shared)
     if (method === "summaries" || summaryCoverage(store, requesterId, view, summaries) >= AUTO_SUMMARY_COVERAGE) {
       const base = opts.summaries ?? DEFAULT_SUMMARIES_QUERY
-      const out = await summariesQuery(question, view, summaries, {
+      const notes = opts.notes && requesterId && opts.notes.owner === requesterId ? notePool(opts.notes) : undefined
+      const out = await summariesQuery(question, notes ? withNotes(view, notes) : view, notes ? new Map([...summaries, ...notes.summaries]) : summaries, {
         ...base,
         navigatorModel: opts.selectorModel ?? base.navigatorModel,
         answerModel: opts.synthModel ?? base.answerModel,
       }, { call: opts.call ?? claudeModelCall, fetch: opts.fetch, timeoutMs, log })
-      const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: a.meta.type, hop: a.hop }))
+      const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: isNotePath(a.path) ? "note" : a.meta.type, hop: a.hop }))
       return {
         answer: out.answer,
         citations: out.status === "ok" ? pages.map(({ title, path, type }) => ({ title, path, type })) : [],
@@ -394,6 +400,18 @@ function scopeView(store: WikiStore, requesterId: string | undefined, shared: Sh
       const article = requesterId ? s.readArticleAs(rel, requesterId) : s.readArticle(rel)
       return article ? { ...article, path } : null
     },
+  }
+}
+
+/** The view with the requester's notes added: in the pool, readable,
+ *  and opened from the notes folder. Everything else the view carries
+ *  (such as the title index linked pages follow) is kept. */
+function withNotes(view: ScopeView, notes: ReturnType<typeof notePool>): PageView {
+  return {
+    ...view,
+    pool: [...view.pool, ...notes.pool],
+    readable: new Set([...view.readable, ...notes.pool.map((n) => n.path)]),
+    read: (path) => (isNotePath(path) ? notes.read(path) : view.read(path)),
   }
 }
 
