@@ -99,6 +99,8 @@ The Live tab shows every computer of your mesh. A computer that cannot be reache
 
 Every run keeps, for each step: whether it was done, failed or skipped, when it started and how long it took. A run that wrapped an agent's turn also keeps the tokens the turn used.
 
+A task you stop, cancel or that a restart cuts off is not a failure: its run ends as `canceled`, the step it was on is marked skipped with the reason, and `failedAt` stays empty. Only a turn that went wrong ends as `failed`.
+
 1. **Terminal:** go to the folder that holds `agentx.json`.
 2. **Terminal:** run `agentx workflow records`. Each line is one run, newest first, written as JSON (a text format programs read).
 3. To narrow it down, add `--agent <agent-id>`, `--workflow <workflow-id>` or `--days 7`. Runs that wrapped a task have the workflow id `task`.

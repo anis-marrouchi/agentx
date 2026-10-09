@@ -57,7 +57,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { workflowHintText } from "@/workflows/follow-up"
-import { finishWrap, isReadOnlyToolUse, liveStep, requiredFor, shouldWrap, startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText } from "@/workflows/required"
+import { endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, requiredFor, shouldWrap, startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText } from "@/workflows/required"
 import type { RunStore as WorkflowRunStore } from "@/workflows/run-store"
 import { randomUUID } from "crypto"
 import { ProcedureStore } from "@/procedures"
@@ -1966,7 +1966,9 @@ export class AgentRegistry {
     // Chosen now so the agent is told its run before the turn starts; the
     // run itself is created inside the try below, which always closes it.
     const wrapRunId = wrapRunStore ? randomUUID() : undefined
-    if (wrapRunId) workflowHint = [workflowHint, wrapHintText(wrapRunId)].filter(Boolean).join("\n\n")
+    // Its own context layer, so mined procedures and the follow-up hint
+    // never crowd it out of the procedures budget.
+    const workflowRunContext = wrapRunId ? wrapHintText(wrapRunId) : undefined
 
     // Wiki context — Phase 3 Farzapedia alignment: instead of preloading BM25
     // hits (the old shallow-RAG path). The catalog itself is injected on
@@ -2557,6 +2559,7 @@ export class AgentRegistry {
       // bootstrapContext intentionally omitted — delivered via system prompt.
       patternContext: isCodexCli ? undefined : patternContext || undefined,
       procedureContext: [procedureContext, workflowHint].filter(Boolean).join("\n\n") || undefined,
+      workflowRunContext,
       references: referencesBlock,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
@@ -3212,6 +3215,7 @@ export class AgentRegistry {
           const usage = finalResponse?.usage
           const closed = finishWrap(wrapRunStore, wrapRunId, {
             error: finalResponse ? finalResponse.error || undefined : (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+            canceled: endedWithoutFailing(finalResponse?.errorKind) || this.interruptedRuns.has(runningTask.id) || (!finalResponse && abortController.signal.aborted),
             durationMs: Date.now() - runningTask.startedAt.getTime(),
             ...(usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } : {}),
             readOnly: wrapReadOnly,

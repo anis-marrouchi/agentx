@@ -14,6 +14,7 @@ const seen = vi.hoisted(() => ({
   events: [] as any[],
   list: null as null | (() => any[]),
   error: undefined as string | undefined,
+  errorKind: undefined as string | undefined,
 }))
 vi.mock("../src/agents/runtime", async (importOriginal) => {
   const real: any = await importOriginal()
@@ -23,7 +24,7 @@ vi.mock("../src/agents/runtime", async (importOriginal) => {
       seen.prompts.push(JSON.stringify([task, history]))
       for (const e of seen.events) onEvent?.(e)
       if (seen.list) seen.during.push(seen.list())
-      if (seen.error) return Promise.resolve({ content: "", duration: 1, error: seen.error })
+      if (seen.error) return Promise.resolve({ content: "", duration: 1, error: seen.error, ...(seen.errorKind ? { errorKind: seen.errorKind } : {}) })
       return Promise.resolve({ content: "ok", duration: 1, usage: { inputTokens: 100, outputTokens: 10, cacheReadTokens: 0, cacheCreateTokens: 0 } })
     },
   }
@@ -44,6 +45,7 @@ beforeEach(() => {
   seen.events = []
   seen.list = null
   seen.error = undefined
+  seen.errorKind = undefined
   getEventBus().removeAllListeners()
 })
 afterEach(() => {
@@ -83,13 +85,33 @@ describe("workflows.required in the registry", () => {
     expect(JSON.parse(seen.prompts[0])[0].workflowRunId).toBeUndefined()
   })
 
-  it("closes the run as failed when the turn fails or is stopped", async () => {
+  it("closes the run as failed when the turn fails", async () => {
     const { r, runs } = setup({ enabled: true })
-    seen.error = "Stopped by the owner"
+    seen.error = "model overloaded"
     await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
     const [run] = runs.list()
     expect(run.status).toBe("failed")
-    expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "failed", note: "Stopped by the owner" })
+    expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "failed", note: "model overloaded" })
+  })
+
+  it("closes the run as canceled when the turn is stopped or cancelled", async () => {
+    for (const errorKind of ["stopped", "cancelled"]) {
+      const { r, runs } = setup({ enabled: true })
+      seen.error = `ended: ${errorKind}`
+      seen.errorKind = errorKind
+      await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: `c-${errorKind}` } })
+      const run = runs.list().find((x) => x.history.some((h) => h.note?.includes(errorKind)))!
+      expect(run.status, errorKind).toBe("canceled")
+      expect(run.history.at(-1)).toMatchObject({ nodeId: "reply", status: "skipped" })
+    }
+  })
+
+  it("puts the run hint in the context the agent gets", async () => {
+    const { r, runs } = setup({ enabled: true })
+    seen.events = [writeTool]
+    await r.execute({ message: "rename the report", agentId: "ops", context: { channel: "api", chatId: "c1" } })
+    const [, history] = JSON.parse(seen.prompts[0])
+    expect(JSON.stringify(history)).toContain(`[Workflow run ${runs.list()[0].id}]`)
   })
 
   it("leaves no run for a plain question", async () => {

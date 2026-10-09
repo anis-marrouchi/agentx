@@ -79,6 +79,9 @@ const READ_ONLY_TOOLS = new Set([
 ])
 const READ_ONLY_VERB = /^(get|list|search|read|query|find|show|status|describe|fetch|view|lookup|recall|whoami|check)(_|-|$|[A-Z])/
 const READ_ONLY_WORKFLOW_ACTIONS = new Set(["list", "match", "status"])
+/** A first word that changes something: "set_status" is a write, even
+ *  though its last word reads like a lookup. */
+const WRITE_VERB = /^(set|update|delete|clear|create|add|remove|send|post|put|patch|write|run|start|stop|cancel|edit|move|rename|reset|save|upload|merge|close|open|approve|reject|assign|mark)$/
 
 /** Does this tool call change nothing? Unknown tools count as changing. */
 export function isReadOnlyToolUse(name: string, input?: Record<string, unknown>): boolean {
@@ -87,7 +90,10 @@ export function isReadOnlyToolUse(name: string, input?: Record<string, unknown>)
   if (bare === "agentx_workflow") return READ_ONLY_WORKFLOW_ACTIONS.has(String(input?.action ?? "list").toLowerCase())
   const verb = bare.replace(/^agentx_/, "")
   // "get_issue", or "wiki_query": the verb leads, or the noun comes first.
-  return READ_ONLY_VERB.test(verb) || READ_ONLY_VERB.test(verb.split(/[_-]/).at(-1) ?? "")
+  // A name that leads with a write verb ("set_status") is never read-only.
+  const words = verb.split(/[_-]/)
+  if (WRITE_VERB.test(words[0].toLowerCase())) return false
+  return READ_ONLY_VERB.test(verb) || (words.length > 1 && READ_ONLY_VERB.test(words.at(-1) ?? ""))
 }
 
 /** Tool calls in one stream event (assistant tool_use blocks). */
@@ -240,8 +246,13 @@ export function reportStep(runs: RunStore, runId: string, input: { step: unknown
 }
 
 export interface WrapOutcome {
-  /** The turn's error, if it failed. */
+  /** The turn's error, if it failed or was stopped. */
   error?: string
+  /** Why the turn ended without finishing, when it was not a failure: a
+   *  stop signal (#857), an operator cancel, a daemon stop. The run is
+   *  then closed as `canceled`, not `failed`, so analysis across runs
+   *  never counts a pause as a failure. */
+  canceled?: boolean
   /** Turn wall time, ms. */
   durationMs: number
   inputTokens?: number
@@ -270,6 +281,20 @@ export function finishWrap(runs: RunStore, runId: string, out: WrapOutcome): Wor
   }
   const error = out.error ? out.error.slice(0, 300) : undefined
   let current = run
+
+  if (error && out.canceled) {
+    // Stopped, not failed: the step it was on and the ones after it are
+    // skipped with the reason; nothing is marked failed.
+    const done = finishedSteps(current)
+    const left = plan ? plan.steps.filter((s) => !done.has(s.id)).map((s) => s.id) : [LINEAR_STEPS.reply]
+    const at = plan?.current && left.includes(plan.current.id) ? plan.current.id : left[0]
+    for (const id of left) {
+      const note = id === at ? `stopped: ${error}` : "not reached: the turn was stopped"
+      const e = entry(current, id, "skipped", id === at ? stepStart(current, id) : (current.history.at(-1)?.at ?? current.createdAt), { note, ...(id === at && !plan ? { output: usage } : {}) })
+      current = runs.recordExecution({ runId, entry: e, nextPending: [] }) ?? current
+    }
+    return runs.setStatus(runId, "canceled") ?? current
+  }
 
   if (!plan) {
     // linear: the reply step is the turn.
@@ -302,16 +327,25 @@ export function finishWrap(runs: RunStore, runId: string, out: WrapOutcome): Wor
   return runs.get(runId) ?? current
 }
 
+/** Error kinds that end a turn without it failing: a stop signal (#857),
+ *  an operator cancel, a daemon shutdown. Compared as strings so a kind
+ *  added later needs no type change here. */
+const NOT_A_FAILURE = new Set(["stopped", "cancelled", "interrupted"])
+export function endedWithoutFailing(errorKind: unknown): boolean {
+  return typeof errorKind === "string" && NOT_A_FAILURE.has(errorKind)
+}
+
 /** At boot: a wrapped task's run still "running" lost its turn when the
  *  daemon stopped (a hard kill skips the turn's own close). Close it as
- *  failed where it was, so records and the Live page do not show it as
+ *  canceled where it was, so records and the Live page do not show it as
  *  going on. The task itself is resumed (or reported) by the restart
  *  path as before: wrapping never sets the task's workflowRunId. */
 export function closeStaleWraps(runs: RunStore, note = "interrupted: the daemon stopped during the turn"): number {
   let closed = 0
   for (const run of runs.list()) {
     if (run.status !== "running" || !run.meta?.wrap) continue
-    const r = finishWrap(runs, run.id, { error: note, durationMs: Math.max(0, Date.now() - Date.parse(run.createdAt)), readOnly: false, exemptQuestions: false })
+    // Cut off, not failed: the task itself is resumed after the restart.
+    const r = finishWrap(runs, run.id, { error: note, canceled: true, durationMs: Math.max(0, Date.now() - Date.parse(run.createdAt)), readOnly: false, exemptQuestions: false })
     if (r && r !== "discarded") closed++
   }
   return closed
