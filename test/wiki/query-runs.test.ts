@@ -37,6 +37,16 @@ describe("query runs", () => {
     expect(summariseQueryRuns(text, "2026-10-09")).toMatchObject({ total: 2, failed: 1 })
   })
 
+  it("leaves no-catalog lines out of the times but counts them as failed", () => {
+    const text = [
+      { at: "2026-10-09T10:00:00.000Z", agent: "a", status: "ok", wallMs: 4000 },
+      { at: "2026-10-09T10:01:00.000Z", agent: "", status: "no-catalog", source: "tool", wallMs: 0 },
+      { at: "2026-10-09T10:02:00.000Z", agent: "", status: "no-catalog", source: "tool", wallMs: 0 },
+    ].map((r) => JSON.stringify(r)).join("\n")
+
+    expect(summariseQueryRuns(text)).toMatchObject({ total: 3, failed: 2, wallMsP50: 4000, wallMsP95: 4000 })
+  })
+
   it("records a query that throws as an error and throws it on", async () => {
     dir = mkdtempSync(join(tmpdir(), "query-runs-"))
     const file = join(dir, "_query-runs.jsonl")

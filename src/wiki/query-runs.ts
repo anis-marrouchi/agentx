@@ -87,6 +87,7 @@ export interface QueryRunSummary {
   failed: number
   byStatus: Record<string, number>
   bySource: Record<string, number>
+  /** Over queries that ran: `no-catalog` lines are left out. */
   wallMsP50: number
   wallMsP95: number
 }
@@ -106,7 +107,8 @@ export function summariseQueryRuns(text: string, since?: string): QueryRunSummar
     const source = r.source ?? "cli"
     bySource[source] = (bySource[source] ?? 0) + 1
   }
-  const ms = records.map((r) => Number(r.wallMs) || 0).sort((a, b) => a - b)
+  // A `no-catalog` line never ran a query (the tool writes it with wallMs 0), so it would only pull the times down.
+  const ms = records.filter((r) => r.status !== "no-catalog").map((r) => Number(r.wallMs) || 0).sort((a, b) => a - b)
   const pick = (q: number) => (ms.length ? ms[Math.min(ms.length - 1, Math.floor(q * ms.length))] : 0)
   return {
     total: records.length,
