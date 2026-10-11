@@ -370,6 +370,9 @@ The settings window writes most of these for you. You can also edit `agentx.json
 | `voice.startReduced` | `false` | `true` starts the app with the pill [reduced to its orb](../dashboard/voice.md#reduce-the-pill-to-its-orb): a small circle you can drag anywhere. With the character, as the [character alone](../dashboard/voice.md#reduce-the-character), without its speech bubble |
 | `voice.stroll` | `false` | `true` lets the [character](../dashboard/voice.md#the-character) take a [slow stroll](../dashboard/voice.md#let-the-character-stroll) when the assistant has nothing to do |
 | `voice.animations` | `"sometimes"` | How often the character plays a [small animation by itself](../dashboard/voice.md#let-the-character-play-by-itself) when idle: `"off"`, `"rarely"`, `"sometimes"` or `"often"` |
+| `voice.floor.enabled` | `true` | Lets a demo, a recording or a script take [the floor](../dashboard/voice.md#one-speaker-at-a-time-the-floor): while it is held, every other voice and bubble waits. `false`: nobody can take it |
+| `voice.floor.defaultSeconds` | `120` | How long a holder keeps the floor when it names no time, `5` to `3600` |
+| `voice.floor.maxSeconds` | `1800` | The longest one take or one renewal may ask for, in seconds, `5` to `14400`. A holder that needs longer renews |
 | `voice.card.timeout` | `30` | Seconds an answer in the pill stays open once spoken, `0` to `600`. `0` keeps it open until you close it |
 | `voice.card.maxHeight` | `320` | Tallest the answer grows before it scrolls, in points, `120` to `800` |
 | `node.defaultAgent` | not set: the first agent | The agent that answers when none is ticked or pinned |
@@ -444,6 +447,12 @@ An app started at login doesn't see variables set in your terminal. Keep keys in
 | `agentx voice pronounce [written] [spoken]` | Lists the [pronunciations](#say-a-word-the-way-it-is-said), or sets one. `--lang en,fr,ar` limits it to lines in those languages, `--remove` takes it away, `-c <path>` |
 | `agentx people say <id> [spoken]` | Sets how a person's name is said aloud; `none` clears it |
 | `agentx voice card` | Shows or changes the answer in the pill. `--timeout <seconds>` (0 to 600, 0 keeps it open), `--max-height <points>` (120 to 800), `-c <path>` |
+| `agentx voice floor` | Shows who holds [the floor](../dashboard/voice.md#one-speaker-at-a-time-the-floor). `--json` prints the daemon's reply |
+| `agentx voice floor run --as <name> -- <command…>` | Holds the floor for as long as the command runs. `--sound` when it plays sound, `--hide` for a recording, `--seconds <n>`, `--agent <id>` |
+| `agentx voice floor take --as <name>` | Takes the floor and prints its id. `--seconds <n>`, `--sound`, `--hide`, `--agent <id>`, `--pid <pid>`, `--json` |
+| `agentx voice floor renew <id>` | Keeps the floor longer, from now. `--seconds <n>` |
+| `agentx voice floor release <id>` | Lets go of the floor |
+| `agentx voice floor stop` | Takes the floor back from whoever holds it |
 | `agentx narrate <agent> on\|off\|default` | Switches task narration for an agent. `--task` targets one task id instead |
 | `agentx talk <agentA> <agentB> <topic…>` | Two agents talk out loud. See [Talk mode](../dashboard/voice.md#talk-mode-two-agents-talk-out-loud) |
 

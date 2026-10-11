@@ -196,6 +196,7 @@ describe("config", () => {
       stroll: false,
       animations: "sometimes",
       palette: "lagoon",
+      floor: { enabled: true, defaultSeconds: 120, maxSeconds: 1800 },
       card: { timeout: 30, maxHeight: 320 },
     })
   })

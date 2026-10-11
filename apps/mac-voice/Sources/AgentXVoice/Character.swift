@@ -35,6 +35,10 @@ final class CharacterHost {
     private var hidden = false
     /// On the page, playing (#580): its window is out until it is back.
     private var away = false
+    /// A recording holds the floor (#924): out until it ends.
+    private var concealed = false
+    /// Hidden, by the owner or for a recording.
+    private var out: Bool { hidden || concealed }
     private var animated = true
     private var reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
     private var activity = CharacterMath.Activity.idle
@@ -94,7 +98,7 @@ final class CharacterHost {
     /// A still picture: Reduce Motion, or "Animated orb" off.
     private var still: Bool { !animated || reduceMotion }
     /// The look is the character: whether it is on screen. Nil with the orb.
-    var onScreen: Bool? { shown ? !hidden && !away : nil }
+    var onScreen: Bool? { shown ? !out && !away : nil }
     /// Told when it comes on screen or leaves it: shown or hidden, or the look changed.
     var onScreenChanged: (() -> Void)?
 
@@ -146,6 +150,15 @@ final class CharacterHost {
         onScreenChanged?()
     }
 
+    /// Out for a recording that holds the floor (#924), and back as it
+    /// was when the recording ends: hidden stays hidden.
+    func setConcealed(_ on: Bool) {
+        guard concealed != on else { return }
+        concealed = on
+        run()
+        onScreenChanged?()
+    }
+
     /// Hide it, as its bubble is hidden: gone until it is asked back.
     func setHidden(_ on: Bool) {
         guard hidden != on else { return }
@@ -187,8 +200,8 @@ final class CharacterHost {
     /// Go beside `rect` and mark it, or with nil go back to where it
     /// rests; in the state `asked`, or with nil its real one.
     func guide(to rect: NSRect?, mark kind: GuideMath.Mark = .none, caption: String? = nil, asked mood: CharacterMath.Mood? = nil) {
-        asked = shown && !hidden && !away ? mood : nil
-        if shown, !hidden, !away, carried == nil, let rect {
+        asked = shown && !out && !away ? mood : nil
+        if shown, !out, !away, carried == nil, let rect {
             guide.show(rect, kind, caption: caption, color: view.stops[2], animated: !still)
         } else {
             guide.end()
@@ -200,14 +213,14 @@ final class CharacterHost {
     /// Standing still, it is drawn again when something changes: its
     /// state, or its bubble showing or hiding.
     func redraw() {
-        if shown && !hidden && still { tick() }
+        if shown && !out && still { tick() }
     }
 
     /// The frames run only while it is on screen and may move.
     private func run() {
         timer?.invalidate()
         timer = nil
-        guard shown, !hidden, !away else { carried = nil; guide(to: nil); window.orderOut(nil); return }
+        guard shown, !out, !away else { carried = nil; guide(to: nil); window.orderOut(nil); return }
         tick()
         window.orderFrontRegardless()
         // Still, it only watches for the hand that moves it.

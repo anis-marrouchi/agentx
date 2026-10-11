@@ -44,14 +44,37 @@ interface Snapshot {
 
 type ScreenRect = { x: number; y: number; width: number; height: number }
 
+/**
+ * Who holds the floor when it is not this command's, else null. The holder
+ * itself (`AGENTX_FLOOR` still answered 200) gets the cursor when no
+ * character is on screen: the floor is its turn, not a ban (#924).
+ */
+export async function floorHeldByOther(
+  call: typeof daemon = daemon,
+  own: string | undefined = process.env.AGENTX_FLOOR,
+): Promise<string | null> {
+  const floor = await call("GET", "/voice/floor").catch(() => null)
+  if (!floor?.held) return null
+  if (own && await call("GET", `/voice/floor/${own}`).then(() => true, () => false)) return null
+  return floor.holder ?? "someone"
+}
+
 /** Show `rect`: the character when it is on screen, else the cursor. */
 async function show(rect: ScreenRect, label: string, opts: { mark: string; hold?: string; text?: string; expression?: string }): Promise<void> {
   const shown = await daemon("POST", "/voice/guide", {
     rect, mark: opts.mark, ...(opts.hold ? { hold: Number(opts.hold) } : {}), ...(opts.text ? { text: opts.text } : {}),
     ...(opts.expression ? { expression: opts.expression } : {}),
+    // Inside `agentx voice floor run`, the character obeys this command.
+    ...(process.env.AGENTX_FLOOR ? { floor: process.env.AGENTX_FLOOR } : {}),
   })
     .then((r) => r?.shown === true, () => false)
   if (shown) return
+  // Someone else holds the floor: the cursor would draw over them too (#924).
+  const other = await floorHeldByOther()
+  if (other) {
+    console.log(chalk.yellow(`  the floor is held by ${other}: nothing is pointed at until it is free`))
+    process.exit(3)
+  }
   await run(HELPER, ["point", "--x", String(rect.x), "--y", String(rect.y),
                      "--w", String(rect.width), "--h", String(rect.height), "--label", label])
 }
