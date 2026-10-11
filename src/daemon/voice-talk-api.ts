@@ -114,7 +114,8 @@ export class VoiceTalkService {
         const renewed = !!id && id === this.floorId
         this.floorId = id
         if (id) this.speech.reserve(id)
-        else this.speech.release()
+        // Taken back or timed out: the holder has no more to say here.
+        else this.speech.release(view.ended === "owner" || view.ended === "expired")
         if (renewed) { /* nothing new to say */ } else if (view.held) {
           this.log(`[floor] held by ${view.holder} until ${new Date(view.expiresAt!).toISOString()}${view.sound ? ", plays sound" : ""}${view.hide ? ", character and bubbles hidden" : ""}`)
           // The character goes home: only the holder sends it from here.

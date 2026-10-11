@@ -13,6 +13,8 @@
 //                                    hide: a recording; the character and
 //                                    every bubble stay hidden.
 //                                    pid: freed when that process is gone.
+//                                    id: take the free floor again under the
+//                                    id of a hold a daemon restart forgot.
 //   POST   /voice/floor/:id/renew    {seconds?}  keep it that long from now.
 //                                    410 once it is no longer :id's: the
 //                                    holder stops.
@@ -57,6 +59,7 @@ export async function handleFloor(
       sound: body.sound === true,
       hide: body.hide === true,
       pid: num(body.pid) ?? null,
+      ...(typeof body.id === "string" ? { id: body.id } : {}),
     })
     if (took.ok) return { status: 201, body: { id: took.id, ...took.view } }
     const status = took.reason === "invalid" ? 400 : took.reason === "off" ? 403 : 409

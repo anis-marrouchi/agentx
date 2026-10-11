@@ -186,14 +186,27 @@ export class SpeechOut {
     if (this.floor === floor) return
     this.floor = floor
     if (this.current && !this.allowed(this.current.u)) this.waiting.unshift(this.detach("floor")!)
+    // Narration already waiting would be old news by the time it plays.
+    const stale = this.waiting.filter((w) => w.item.kind === "narration" && !this.allowed(w.u))
+    this.waiting = this.waiting.filter((w) => !stale.includes(w))
+    for (const e of stale) this.drop(e)
     this.changed()
     this.next()
   }
 
-  /** The floor is free: every line that waited plays, in order. */
-  release(): void {
+  /** The floor is free: every line that waited plays, in order. With
+   *  `silence`, the floor was taken from its holder: its own lines,
+   *  playing or waiting, are dropped. */
+  release(silence = false): void {
     if (this.floor === null) return
+    const floor = this.floor
     this.floor = null
+    if (silence) {
+      if (this.current?.u.floor === floor) this.drop(this.detach("stopped")!)
+      const theirs = this.waiting.filter((w) => w.u.floor === floor)
+      this.waiting = this.waiting.filter((w) => w.u.floor !== floor)
+      for (const e of theirs) this.drop(e)
+    }
     this.changed()
     this.next()
   }

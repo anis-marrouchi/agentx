@@ -124,30 +124,40 @@ holding(floor.command("run"))
     // The command and what it runs speak and point under this floor.
     const child = spawn(command[0], command.slice(1), { stdio: "inherit", env: { ...process.env, AGENTX_FLOOR: id } })
     let taken = false
+    let over = false
     // Renewed well inside its time, and checked every two seconds: the
     // floor gone (the owner's stop) ends the command, which no longer
     // has the right to speak.
-    const lost = (r: { status: number } | null) => {
-      if (r?.status !== 410 || taken) return
+    const lost = async (r: { status: number; data: any } | null) => {
+      if (r?.status !== 410 || taken || over) return
+      // A daemon that restarted has forgotten the hold: nobody took it,
+      // so it is taken again under the same id and the command goes on.
+      const now = r.data?.floor as FloorView | undefined
+      if (now && !now.held && now.ended === null) {
+        const again = await floorRequest("POST", "/voice/floor", { ...takeBody(opts, process.pid), seconds, id }).catch(() => null)
+        if (again?.status === 201 || over) return
+      }
       taken = true
       console.error(chalk.yellow("  the floor was taken back: stopping"))
       child.kill("SIGTERM")
+      // A command that ignores the request is ended.
+      setTimeout(() => child.kill("SIGKILL"), 5000).unref()
     }
     const renew = setInterval(() => void floorRequest("POST", `/voice/floor/${id}/renew`, { seconds }).catch(() => null).then(lost), (seconds * 1000) / 3)
     const check = setInterval(() => void floorRequest("GET", `/voice/floor/${id}`).catch(() => null).then(lost), 2000)
-    const beat = { renew, check }
-    const release = () => floorRequest("POST", `/voice/floor/${id}/release`, {}).catch(() => null)
-    for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, () => child.kill(sig))
+    const end = async () => {
+      over = true
+      clearInterval(renew)
+      clearInterval(check)
+      await floorRequest("POST", `/voice/floor/${id}/release`, {}).catch(() => null)
+    }
+    for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(sig, () => child.kill(sig))
     child.on("error", async (e) => {
-      clearInterval(beat.renew)
-      clearInterval(beat.check)
-      await release()
+      await end()
       fail(e)
     })
     child.on("close", async (code, signal) => {
-      clearInterval(beat.renew)
-      clearInterval(beat.check)
-      await release()
+      await end()
       process.exit(taken ? 130 : code ?? (signal ? 1 : 0))
     })
   })

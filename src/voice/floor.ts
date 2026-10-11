@@ -36,7 +36,13 @@ export interface FloorRequest {
   hide?: boolean
   /** The holder's process on this host: the floor is freed when it is gone. */
   pid?: number | null
+  /** The id of a hold the daemon forgot when it restarted: a holder
+   *  takes the free floor again under it, so what it started keeps its
+   *  proof. Unset: a new one. */
+  id?: string
 }
+
+const FLOOR_ID = /^[a-f0-9]{24}$/
 
 /** Why the floor was last freed. */
 export type FloorEnd = "released" | "expired" | "holder gone" | "owner"
@@ -142,8 +148,10 @@ export class Floor {
     const refuse = (reason: "off" | "held" | "busy" | "invalid", error: string): FloorTake => ({ ok: false, reason, error, view: this.view() })
     if (!s.enabled) return refuse("off", "The floor is off on this computer (voice.floor.enabled)")
     const holder = String(req.holder ?? "").replace(/\s+/g, " ").trim().slice(0, FLOOR_HOLDER_MAX)
-    const seconds = req.seconds ?? s.defaultSeconds
+    const seconds = req.seconds ?? Math.min(s.defaultSeconds, s.maxSeconds)
     const pid = req.pid ?? null
+    const id = req.id ?? randomBytes(12).toString("hex")
+    if (!FLOOR_ID.test(id)) return refuse("invalid", "id is 24 hex characters, as a take returned it")
     if (!holder || !Number.isFinite(seconds) || seconds <= 0 || seconds > s.maxSeconds || (pid !== null && !(Number.isInteger(pid) && pid > 1))) {
       return refuse("invalid", `Required: holder (who takes the floor); seconds is up to ${s.maxSeconds}; pid is a process on this computer`)
     }
@@ -154,7 +162,7 @@ export class Floor {
     if (pid !== null && !this.alive(pid)) return refuse("invalid", `No process ${pid} runs on this computer`)
     const at = this.now()
     const hold: Hold = {
-      id: randomBytes(12).toString("hex"), holder, agentId: req.agentId || null,
+      id, holder, agentId: req.agentId || null,
       sound: req.sound === true, hide: req.hide === true, pid, since: at, expiresAt: at + seconds * 1000,
     }
     this.hold = hold
@@ -168,7 +176,7 @@ export class Floor {
   renew(id: string, seconds?: number): FloorView | null {
     if (!this.holds(id)) return null
     const s = this.settings
-    const more = seconds ?? s.defaultSeconds
+    const more = seconds ?? Math.min(s.defaultSeconds, s.maxSeconds)
     if (!Number.isFinite(more) || more <= 0 || more > s.maxSeconds) return null
     this.hold!.expiresAt = this.now() + more * 1000
     this.arm()

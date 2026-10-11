@@ -24,9 +24,9 @@ enum FloorClient {
     }
 }
 
-/// Follows the floor for as long as the app runs. With no daemon the
-/// floor is free: nothing of the assistant stays hidden behind a holder
-/// nobody can ask about.
+/// Follows the floor for as long as the app runs. A hold ends at its
+/// time limit whether or not the daemon is there to say so: nothing of
+/// the assistant stays hidden behind a holder nobody can ask about.
 @MainActor
 final class FloorWatcher {
     private var last = FloorState.free
@@ -47,16 +47,11 @@ final class FloorWatcher {
         }
     }
 
-    /// Wait until the floor is free.
-    func free() async {
-        while state.held && !Task.isCancelled {
-            try? await Task.sleep(nanoseconds: 250_000_000)
-        }
-    }
-
     private func turn() async {
         guard let next = await FloorClient.next(after: last.seq) else {
-            set(.free)
+            // The daemon is restarting or gone. A hold is kept until its
+            // own time limit: a recording must not have the character
+            // walk back in because one request failed.
             try? await Task.sleep(nanoseconds: 2_000_000_000)
             return
         }

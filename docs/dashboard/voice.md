@@ -959,7 +959,14 @@ While someone holds the floor:
 
 The floor never stays taken. It frees itself at its time limit (two minutes unless the holder asks for another time or renews), and at once when the holder's program has ended.
 
-**You can always take it back.** **Command–Option–.** (Stop speaking) frees the floor, whoever holds it. So does **Take the floor back** in the AgentX menu, which also shows who holds it.
+**You can always take it back.** There are two ways, and they differ in what happens to the answers that waited:
+
+- **Take the floor back** in the AgentX menu frees the floor and nothing else: the answers that waited are said now. The menu also shows who holds it.
+- **Command–Option–.** (Stop speaking) frees the floor and asks for silence: everything that waited is dropped, as it always is with that key. A kept answer is still shown in the pill.
+
+Either way, what the holder itself had queued to say is dropped.
+
+If the daemon restarts while a command started with `agentx voice floor run` holds the floor, the command takes it again by itself once the daemon is back. AgentX Voice keeps a recording hidden meanwhile.
 
 ### Hold the floor while a script runs
 

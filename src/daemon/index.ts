@@ -6772,7 +6772,7 @@ export class AgentXDaemon {
             message = (body.message as string) || (body.q as string) || message
             requestedAgent = (body.agent as string) || (body.agentId as string) || requestedAgent
             voiceSession = (body.session as string) || voiceSession
-            handsFree = body.handsFree === true
+            handsFree = body.handsFree === true || handsFree
           }
 
           // An explicit agent is what makes this endpoint useful for more than
@@ -6797,6 +6797,16 @@ export class AgentXDaemon {
           // then talk like a colleague. A client that sends no session id
           // shares one per origin, which the 8h gap still keeps sensible.
           const session = voiceSession.trim() || origin
+
+          // The floor's holder plays sound, and nobody held a key to say
+          // this: the microphone heard the holder, not the owner (#924).
+          // It wakes no agent, switches to none, and nothing is said back.
+          const floor = this.voiceTalk.floor.view()
+          if (handsFree && floor.held && floor.sound) {
+            this.log(`[floor] ${requested}: hands-free words dropped while ${floor.holder} holds the floor (${JSON.stringify(message.slice(0, 60))})`)
+            this.json(res, 200, { agentId: requested, voice: null, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
+            break
+          }
 
           // "talk to Atlas" points this session at another agent, local or
           // on a mesh peer, until "back to secretary". The new agent
@@ -6823,16 +6833,6 @@ export class AgentXDaemon {
           // builds it from the few voice fields the proxy sends.
           const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents, this.config.voice)
           const introduce = this.voiceIntros.needsIntro(session, agentId)
-
-          // The floor's holder plays sound, and nobody held a key to say
-          // this: the microphone heard the holder, not the owner (#924).
-          // It wakes no agent and nothing is said back.
-          const floor = this.voiceTalk.floor.view()
-          if (handsFree && floor.held && floor.sound) {
-            this.log(`[floor] ${agentId}: hands-free words dropped while ${floor.holder} holds the floor (${JSON.stringify(message.slice(0, 60))})`)
-            this.json(res, 200, { agentId, voice, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
-            break
-          }
 
           // A transcript with no words ("[background noise]") wakes no
           // agent: no presence decision, no task, one fixed line (#614).

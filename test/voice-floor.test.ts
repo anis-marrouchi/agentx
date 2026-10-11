@@ -104,6 +104,26 @@ describe("Floor", () => {
     expect(floor.view().held).toBe(false)
   })
 
+  it("a holder takes the free floor again under its id after a daemon restart, and only a well-formed id", () => {
+    const before = new Floor()
+    const took = before.take({ holder: "Tour" })
+    if (!took.ok) throw new Error("refused")
+    const after = new Floor()
+    expect(after.holds(took.id)).toBe(false)
+    expect(after.take({ holder: "Tour", id: took.id })).toMatchObject({ ok: true, id: took.id })
+    expect(after.holds(took.id)).toBe(true)
+    expect(new Floor().take({ holder: "Tour", id: "mine" })).toMatchObject({ ok: false, reason: "invalid" })
+    // Not a way past another holder.
+    expect(after.take({ holder: "Other", id: "a".repeat(24) })).toMatchObject({ ok: false, reason: "held" })
+  })
+
+  it("a default time over the limit is cut to the limit", () => {
+    const floor = new Floor({ now: () => 0, settings: () => ({ maxSeconds: 60 }) })
+    const took = floor.take({ holder: "Tour" })
+    expect(took.ok && took.view.expiresAt).toBe(60_000)
+    expect(took.ok && floor.renew(took.id)?.expiresAt).toBe(60_000)
+  })
+
   it("is off when voice.floor.enabled is false", () => {
     expect(new Floor({ settings: () => ({ enabled: false }) }).take({ holder: "Tour" })).toMatchObject({ ok: false, reason: "off" })
   })
@@ -184,6 +204,44 @@ describe("the speaking queue under a floor", () => {
     svc.floor.release(took.id)
     await sleep(30)
     expect(plays()).toEqual([])
+  })
+
+  it("narration that was already waiting is dropped when the floor is taken", async () => {
+    const { svc, speech, plays } = service()
+    void speech.say(line("an answer playing"))
+    const stale = speech.say(line("reading the file", { kind: "narration" }))
+    await sleep(5)
+    const took = svc.floor.take({ holder: "Tour" })
+    if (!took.ok) throw new Error("refused")
+    expect(await stale).toBe(false)
+    svc.floor.release(took.id)
+    await sleep(40)
+    expect(plays()).toEqual(["play an answer playing", "play an answer playing"])
+  })
+
+  it("taken back by the owner, the holder's own lines are dropped and the others play", async () => {
+    const { svc, speech, log } = service()
+    const took = svc.floor.take({ holder: "Tour" })
+    if (!took.ok) throw new Error("refused")
+    const answer = speech.say(line("the answer"))
+    const playing = speech.say(line("tour line one", { floor: took.id }))
+    const queued = speech.say(line("tour line two", { floor: took.id }))
+    await sleep(5)
+    svc.floor.revoke()
+    expect(await playing).toBe(false)
+    expect(await queued).toBe(false)
+    expect(await answer).toBe(true)
+    expect(log).toEqual(["play tour line one", "kill tour line one", "play the answer"])
+  })
+
+  it("released by the holder, a last line it queued is still said", async () => {
+    const { svc, speech, plays } = service()
+    const took = svc.floor.take({ holder: "Tour" })
+    if (!took.ok) throw new Error("refused")
+    const last = speech.say(line("that was the tour", { floor: took.id }))
+    svc.floor.release(took.id)
+    expect(await last).toBe(true)
+    expect(plays()).toEqual(["play that was the tour"])
   })
 
   it("the listener's pause and resume do not let a waiting line through", async () => {

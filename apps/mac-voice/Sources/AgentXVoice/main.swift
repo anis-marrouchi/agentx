@@ -124,6 +124,9 @@ final class App: NSObject, NSApplicationDelegate {
     private func floorChanged(_ floor: FloorState) {
         if floor.holder != floorHolder {
             floorHolder = floor.holder
+            // Just taken: an answer being read or said leaves the screen.
+            // Its line is cut on the daemon and plays again after.
+            if floor.held && !recorder.isRecording { panel.collapse(); panel.render(rest) }
             Log.info(floor.held
                 ? "floor: held by \(floor.holder ?? "?")\(floor.sound ? ", plays sound" : "")\(floor.hide ? ", everything hidden" : "")"
                 : "floor: free")
@@ -826,7 +829,7 @@ final class App: NSObject, NSApplicationDelegate {
                 if !midTurn {
                     panel.render(.error("Didn't catch that"))
                     // Say it aloud: someone not looking would think it was sent.
-                    await Speech.say("Sorry, I didn't hear that. Please say it again.", agentID: nil, kind: "line", voice: voice)
+                    await apologise("Sorry, I didn't hear that. Please say it again.", voice: voice)
                     busy = false; resetSoon()
                 }
                 return
@@ -897,12 +900,25 @@ final class App: NSObject, NSApplicationDelegate {
 
     /// Someone holds the floor (#924): the answer is kept, and shown and
     /// said once it is free. Until then nothing of it is on screen.
-    private func waitForFloor(_ agent: String?) async {
+    private func waitForFloor(_ agent: String?, ownTurn: Bool = true) async {
         let floor = floorWatcher.state
         guard floor.holdsAnswers else { return }
         Log.info("floor: answer\(agent.map { " (\($0))" } ?? "") kept until \(floor.holder ?? "the holder") lets go")
         if !recorder.isRecording { panel.render(rest) }
-        await floorWatcher.free()
+        // The owner's own words end the wait: "stop" drops the answer,
+        // anything else replaces it, and neither should wait for the holder.
+        let generation = stopGeneration
+        while floorWatcher.state.holdsAnswers && generation == stopGeneration && !(ownTurn && (abandoned || followUp != nil || silenced)) {
+            try? await Task.sleep(nanoseconds: 250_000_000)
+        }
+    }
+
+    /// An apology said aloud, for someone not looking. Not while the
+    /// floor is held: the line would wait behind the holder with the
+    /// turn still open, and the pill already says it.
+    private func apologise(_ text: String, voice: VoiceChoice?) async {
+        guard !floorWatcher.state.held else { return }
+        await Speech.say(text, agentID: nil, kind: "line", voice: voice)
     }
 
     /// A question for another agent while our own turn thinks. It runs
@@ -931,7 +947,7 @@ final class App: NSObject, NSApplicationDelegate {
             // The next question for this agent goes now, while this
             // answer waits to be spoken.
             startNextAside(for: agent)
-            if case .success(let answer) = result { await waitForFloor(answer.agentID ?? agent) }
+            if case .success(let answer) = result { await waitForFloor(answer.agentID ?? agent, ownTurn: false) }
             guard generation == stopGeneration else { return }
             switch result {
             case .success(let answer):
@@ -953,7 +969,7 @@ final class App: NSObject, NSApplicationDelegate {
                 }
             case .failure(let error):
                 Log.warn("aside failed (\(agent)): \(error.localizedDescription)")
-                await Speech.say("Sorry, \(statusMenu.name(of: agent)) couldn't answer that.", agentID: nil, kind: "line", voice: nil)
+                await apologise("Sorry, \(statusMenu.name(of: agent)) couldn't answer that.", voice: nil)
             }
         }
     }
@@ -1051,7 +1067,7 @@ final class App: NSObject, NSApplicationDelegate {
             panel.render(.error(short(error.localizedDescription)))
             // Say it aloud too — a voice assistant that fails only in
             // a 230px label has failed silently for anyone not looking.
-            await Speech.say("Sorry, that didn't work.", agentID: nil, kind: "line", voice: voice)
+            await apologise("Sorry, that didn't work.", voice: voice)
             resetSoon()
         }
         busy = false
