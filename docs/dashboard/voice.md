@@ -945,6 +945,67 @@ Agents can check the queue themselves when they need to, using the `agentx_voice
 
 If the daemon can't be reached, the widget speaks its answer itself, as before.
 
+## One speaker at a time: the floor
+
+The speaking queue orders what AgentX says. It cannot see a demo script that plays its own sound, or a screen recording. For those there is the **floor**: whoever holds it is the only one that may speak and show a bubble on this computer. One holder at a time.
+
+While someone holds the floor:
+
+- **Spoken answers wait.** An agent's answer is kept and is shown and said when the floor is free. Task narration is dropped, since it would be old by then.
+- **The character obeys only the holder.** `agentx point` and `agentx express` from anyone else are refused and say who holds the floor.
+- **No talk, lesson or approval pop-up starts.** A talk or lesson is refused; a pop-up waits.
+- **The microphone does not open by itself.** When the holder plays sound (`--sound`), the widget does not open its hands-free window after an answer, and throws away what an open one heard. Holding **Option–Space** still works: that is you.
+- **For a recording, nothing shows.** With `--hide`, the character, the pill and every bubble stay off the screen until the floor is free.
+
+The floor never stays taken. It frees itself at its time limit (two minutes unless the holder asks for another time or renews), and at once when the holder's program has ended.
+
+**You can always take it back.** **Command–Option–.** (Stop speaking) frees the floor, whoever holds it. So does **Take the floor back** in the AgentX menu, which also shows who holds it.
+
+### Hold the floor while a script runs
+
+1. **Terminal:** run your script through `agentx voice floor run`:
+
+   ```sh
+   agentx voice floor run --as "Product tour" --sound -- python3 tour.py
+   ```
+
+2. The floor is held under the name you gave for as long as the script runs, and freed when it ends, however it ends. If you press **Command–Option–.**, the script is stopped.
+
+The script and everything it starts get the floor's id in `AGENTX_FLOOR`. `agentx point` and `agentx express` read it, so the script can still move the character.
+
+For a screen recording, add `--hide`:
+
+```sh
+agentx voice floor run --as "Screen recording" --hide --seconds 600 -- sleep 600
+```
+
+### Take and release it yourself
+
+For a program that cannot be started through `agentx voice floor run`:
+
+1. **Terminal:** run `agentx voice floor take --as "Product tour" --sound --seconds 300`. It prints an id. If someone else holds the floor, it says who and exits with code 2.
+2. **Terminal:** when you are done, run `agentx voice floor release <id>`. What waited is said now.
+
+To keep it longer, run `agentx voice floor renew <id> --seconds 300`. Add `--pid <number>` to `take` to free the floor as soon as that program ends, and `--agent <id>` to name the agent it speaks for.
+
+To see who holds the floor, run `agentx voice floor`. To take it back from whoever holds it, run `agentx voice floor stop`. `--json` on `agentx voice floor` and on `take` prints the daemon's reply as it is.
+
+### From any language
+
+The same over HTTP, on the daemon's port:
+
+| Request | What it does |
+|---|---|
+| `GET /voice/floor` | Who holds it: `held`, `holder`, `sound`, `hide`, `expiresAt`. With `?after=<seq>` the answer comes at the next change |
+| `POST /voice/floor` with `{"holder": "Product tour", "seconds": 300, "sound": true}` | Takes it. `201` with an `id`; `409` with who holds it. Also `hide`, `pid`, `agentId` |
+| `POST /voice/floor/<id>/renew` with `{"seconds": 300}` | Keeps it that long from now. `410` when it is no longer yours: stop |
+| `POST /voice/floor/<id>/release` | Lets go |
+| `DELETE /voice/floor` | Takes it back from whoever holds it |
+
+A holder that wants AgentX to speak or point for it sends its id: `POST /voice/queue` with `"floor": "<id>"` plays the line at once, and `POST /voice/guide` with `"floor": "<id>"` moves the character.
+
+To turn the floor off, or change its time limits, see `voice.floor` in the [config reference](../guides/agentx-voice.md#shared-voice-settings-voice-in-agentx-json).
+
 ## History of what you asked
 
 The History window lists the questions you asked out loud and the answers you got, grouped by day, newest first. Each row shows the agent, the time, how long the answer took, what you said and the start of the answer. A question that failed shows why in red.

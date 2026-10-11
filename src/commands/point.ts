@@ -49,9 +49,17 @@ async function show(rect: ScreenRect, label: string, opts: { mark: string; hold?
   const shown = await daemon("POST", "/voice/guide", {
     rect, mark: opts.mark, ...(opts.hold ? { hold: Number(opts.hold) } : {}), ...(opts.text ? { text: opts.text } : {}),
     ...(opts.expression ? { expression: opts.expression } : {}),
+    // Inside `agentx voice floor run`, the character obeys this command.
+    ...(process.env.AGENTX_FLOOR ? { floor: process.env.AGENTX_FLOOR } : {}),
   })
     .then((r) => r?.shown === true, () => false)
   if (shown) return
+  // Someone else holds the floor: the cursor would draw over them too (#924).
+  const floor = await daemon("GET", "/voice/floor").catch(() => null)
+  if (floor?.held) {
+    console.log(chalk.yellow(`  the floor is held by ${floor.holder}: nothing is pointed at until it is free`))
+    process.exit(3)
+  }
   await run(HELPER, ["point", "--x", String(rect.x), "--y", String(rect.y),
                      "--w", String(rect.width), "--h", String(rect.height), "--label", label])
 }

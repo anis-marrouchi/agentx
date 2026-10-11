@@ -8,6 +8,7 @@ import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { NOISE_MARKERS } from "@/voice/noise"
+import { FLOOR_DEFAULTS } from "@/voice/floor"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
 import { unknownAgentxTools } from "@/mcp/tool-names"
@@ -1712,6 +1713,18 @@ export const daemonConfigSchema = z.object({
     /** The orb and character palette of an agent that set neither
      *  presence.palette nor presence.color. */
     palette: z.enum(ORB_PALETTE_IDS).default(DEFAULT_PALETTE),
+    /** The floor (#924): something that speaks or draws by itself, such
+     *  as a demo script or a screen recording, takes it for a while and
+     *  everything else waits: agents' spoken answers, notices, the
+     *  character. See src/voice/floor.ts. Off: nobody can take it. */
+    floor: z.object({
+      enabled: z.boolean().default(true),
+      /** Seconds a holder keeps the floor when it names no time. */
+      defaultSeconds: z.number().int().min(5).max(3600).default(FLOOR_DEFAULTS.defaultSeconds),
+      /** The longest one take or one renewal may ask for, in seconds.
+       *  A holder that needs longer renews. */
+      maxSeconds: z.number().int().min(5).max(14400).default(FLOOR_DEFAULTS.maxSeconds),
+    }).default({}),
     /** The answer text AgentX Voice shows inside its pill. */
     card: z.object({
       /** Seconds the answer stays open once it has been spoken; 0 keeps

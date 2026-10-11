@@ -716,7 +716,7 @@ const TOOLS = [
   {
     name: "agentx_voice_queue",
     description:
-      "See what this host is saying out loud and what waits to be said: every agent's spoken answers, narration, talks and lessons share one speaking queue. Use it before speaking at length, or when asked who is talking.",
+      "See what this host is saying out loud and what waits to be said: every agent's spoken answers, narration, talks and lessons share one speaking queue. It also says who holds the floor (a demo, a recording): while it is held, your spoken lines wait and the character does not move for you. Use it before speaking at length, or when asked who is talking.",
     inputSchema: {
       type: "object" as const,
       properties: {},

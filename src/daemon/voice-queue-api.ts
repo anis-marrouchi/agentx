@@ -3,11 +3,15 @@
 // can see who is speaking and who waits, and AgentX Voice queues its
 // answers here instead of playing them over everyone else.
 //
-//   GET  /voice/queue          {paused, playing, waiting, recent}
-//   POST /voice/queue          {text, agentId, kind?, wait?}  queue a line in
-//                              the agent's voice. 202 {item}; with wait: true
-//                              the reply comes once the line is done:
-//                              200 {item, played}.
+//   GET  /voice/queue          {paused, reserved, playing, waiting, recent,
+//                              floor}  floor: who holds the floor, if anyone
+//                              (voice-floor-api.ts)
+//   POST /voice/queue          {text, agentId, kind?, wait?, floor?}  queue a
+//                              line in the agent's voice. 202 {item}; with
+//                              wait: true the reply comes once the line is
+//                              done: 200 {item, played}. While the floor is
+//                              held the line waits for it to be free, unless
+//                              `floor` is the holder's id.
 //   POST /voice/queue/:id/skip    drop a line, playing or waiting
 //   POST /voice/queue/:id/front   play a waiting line next
 //   POST /voice/queue/:id/replay  say a queued or recent line again, next
@@ -20,6 +24,7 @@
 // Changes also go out on /events as `voice` frames (kind "voice:queue").
 // Same gate as /ask: each of these makes the host speak.
 
+import { describeFloor, type Floor, type FloorView } from "@/voice/floor"
 import type { VoiceRef } from "@/voice/speaker"
 import type { QueueItem, QueueView, SpeechKind, SpeechOut } from "@/voice/speaking-queue"
 import type { Reply } from "@/daemon/voice-talk-api"
@@ -38,9 +43,10 @@ export async function handleQueue(
   method: string,
   path: string,
   body: Record<string, unknown>,
+  floor?: Pick<Floor, "view">,
 ): Promise<Reply> {
   if (path === "/voice/queue") {
-    if (method === "GET") return { status: 200, body: speech.view() }
+    if (method === "GET") return { status: 200, body: { ...speech.view(), ...(floor ? { floor: floor.view() } : {}) } }
     if (method !== "POST") return { status: 405, body: { error: "GET or POST" } }
     const text = String(body.text ?? "").trim()
     const agentId = String(body.agentId ?? body.agent ?? "")
@@ -49,7 +55,7 @@ export async function handleQueue(
     if (text.length > MAX_TEXT) return { status: 413, body: { error: `text is over ${MAX_TEXT} characters` } }
     const voice = voiceOf(agentId)
     if (!voice) return { status: 404, body: { error: `Unknown agent: ${agentId}` } }
-    const { item, done } = speech.enqueue({ voice, text, agentId, kind })
+    const { item, done } = speech.enqueue({ voice, text, agentId, kind, ...(typeof body.floor === "string" ? { floor: body.floor } : {}) })
     if (body.wait !== true) return { status: 202, body: { item } }
     return { status: 200, body: { item, played: await done } }
   }
@@ -75,11 +81,11 @@ export async function handleQueue(
 
 /** The queue in a few plain lines, for an agent that asks (MCP tool
  *  agentx_voice_queue) rather than having it in every turn. */
-export function describeQueue(v: QueueView): string {
+export function describeQueue(v: QueueView & { floor?: FloorView }): string {
   const who = (i: QueueItem) => `${i.agentId ?? "someone"} (${i.kind}): "${i.text.length > 80 ? `${i.text.slice(0, 79)}…` : i.text}" [${i.id}]`
   const head = v.playing ? `Speaking: ${who(v.playing)}`
     : v.paused ? "Paused: the listener is speaking; the queue plays on after." : "Nothing is speaking."
-  return [head, ...v.waiting.map((i, n) => `${n + 1}. waiting: ${who(i)}`)].join("\n")
+  return [...(v.floor?.held ? [describeFloor(v.floor)] : []), head, ...v.waiting.map((i, n) => `${n + 1}. waiting: ${who(i)}`)].join("\n")
 }
 
 const unknown = (id: string): Reply => ({ status: 404, body: { error: `No such line in the queue: ${id}` } })

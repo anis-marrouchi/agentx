@@ -10,6 +10,10 @@
 // start, then the rest. A held queue resumes by itself after `holdMs`, so
 // a door that never closes cannot silence the host for good. stop() drops
 // everything. Every change is reported through `events.onChange`.
+//
+// While the floor is held (floor.ts) the queue is reserved: only the
+// holder's own lines play; every other line waits and plays once the
+// floor is free, except narration, which would be stale by then.
 
 import type { ChildProcess } from "child_process"
 import { unlinkSync } from "fs"
@@ -28,6 +32,8 @@ export interface QueueItem {
 
 export interface QueueView {
   paused: boolean
+  /** The floor is held: only its holder's lines play (floor.ts). */
+  reserved: boolean
   playing: QueueItem | null
   waiting: QueueItem[]
   /** Lines played in full, newest first, so one can be replayed. */
@@ -59,6 +65,8 @@ export class SpeechOut {
   private recent: QueueItem[] = []
   private held = false
   private holdTimer: ReturnType<typeof setTimeout> | null = null
+  /** The floor's id while it is held: only lines that carry it play. */
+  private floor: string | null = null
   /** Bumped whenever the current line changes hands: a player or a
    *  synthesis that finishes under an older run is ignored. */
   private run = 0
@@ -91,6 +99,8 @@ export class SpeechOut {
       id: `s${Date.now().toString(36)}-${++this.seq}`,
       agentId: u.agentId ?? null, kind: u.kind ?? "line", text: u.text, voice: u.voice, enqueuedAt: Date.now(),
     }
+    // Narration says what a task is doing now: after the floor it is old news.
+    if (item.kind === "narration" && !this.allowed(u)) return { item, done: Promise.resolve(false) }
     let done!: (played: boolean) => void
     const played = new Promise<boolean>((r) => { done = r })
     // The catch keeps an early failure from being reported as unhandled
@@ -113,7 +123,7 @@ export class SpeechOut {
   }
 
   view(): QueueView {
-    return { paused: this.held, playing: this.current?.item ?? null, waiting: this.waiting.map((e) => e.item), recent: [...this.recent] }
+    return { paused: this.held, reserved: this.floor !== null, playing: this.current?.item ?? null, waiting: this.waiting.map((e) => e.item), recent: [...this.recent] }
   }
 
   /** Drop one line, playing or waiting; the rest keep their order. */
@@ -170,6 +180,26 @@ export class SpeechOut {
     this.next()
   }
 
+  /** The floor is taken: the line playing is cut unless it is the
+   *  holder's, and plays again with the rest once the floor is free. */
+  reserve(floor: string): void {
+    if (this.floor === floor) return
+    this.floor = floor
+    if (this.current && !this.allowed(this.current.u)) this.waiting.unshift(this.detach("floor")!)
+    this.changed()
+    this.next()
+  }
+
+  /** The floor is free: every line that waited plays, in order. */
+  release(): void {
+    if (this.floor === null) return
+    this.floor = null
+    this.changed()
+    this.next()
+  }
+
+  private allowed(u: Utterance): boolean { return this.floor === null || u.floor === this.floor }
+
   /** Drop every line of one kind — a talk or lesson silencing itself. */
   cancel(kind: SpeechKind): void {
     let dropped = false
@@ -192,10 +222,13 @@ export class SpeechOut {
     if (all.length || wasHeld) this.changed()
   }
 
-  /** Start the next line, unless one is playing or the queue is held. */
+  /** Start the next line that may play, unless one is playing or the
+   *  queue is held. */
   private next(): void {
-    if (this.held || this.current || !this.waiting.length) return
-    const e = this.waiting.shift()!
+    if (this.held || this.current) return
+    const at = this.waiting.findIndex((w) => this.allowed(w.u))
+    if (at < 0) return
+    const e = this.waiting.splice(at, 1)[0]
     this.current = e
     const run = ++this.run
     this.changed()

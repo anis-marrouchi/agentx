@@ -167,6 +167,7 @@ import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-ap
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { handleGuide, isGuidePath } from "@/daemon/voice-guide-api"
+import { handleFloor, isFloorPath } from "@/daemon/voice-floor-api"
 import { GUIDE_INSTRUCTION } from "@/voice/guide"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
@@ -373,6 +374,7 @@ export class AgentXDaemon {
       voiceSettings: () => this.config?.voice ?? {},
       // Who is speaking and who waits, live for the menu and any client.
       onQueue: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:queue", ...view })),
+      onFloor: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:floor", ...view })),
     })
     this.voiceTalk.speech.pronounce = this.sayAs
     this.voiceTalk.narrator.attach(getAgentEventBus())
@@ -2004,8 +2006,9 @@ export class AgentXDaemon {
         }
         this.status?.board.sweep()
         // The Mac popup waits on a person, so it runs beside the sweep,
-        // never inside it (src/approvals/popup-runner.ts).
-        void popNext({
+        // never inside it (src/approvals/popup-runner.ts). Not over a
+        // demo or a recording: the card waits for the floor to be free.
+        if (!this.voiceTalk.floor.view().held) void popNext({
           ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log,
           agentName: (id) => this.registry.getAgent(id)?.name,
           // Through the speaking queue, never straight to `say`: the line
@@ -3768,8 +3771,18 @@ export class AgentXDaemon {
         const voiceOf = (id: string) => agents[id]
           ? voiceRef(resolveAgentVoice(id, agents, this.config.voice))
           : this.voiceMesh.voices.speaker(id, false)?.voice ?? null
-        const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body)
+        const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body, this.voiceTalk.floor)
         // With wait, the client may have given up; the line still plays.
+        if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
+        return
+      }
+      // The floor: taking it silences every other voice on this host.
+      if (isFloorPath(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const gone = new AbortController()
+        res.once("close", () => gone.abort())
+        const reply = await handleFloor(this.voiceTalk.floor, req.method || "GET", path, url.searchParams, body, gone.signal)
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }
@@ -3780,7 +3793,7 @@ export class AgentXDaemon {
         // The app may go while it waits: then no character is there to send.
         const gone = new AbortController()
         res.once("close", () => gone.abort())
-        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body, gone.signal)
+        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body, gone.signal, this.voiceTalk.floor)
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }
@@ -6752,11 +6765,14 @@ export class AgentXDaemon {
           let message = url.searchParams.get("q") || url.searchParams.get("message") || ""
           let requestedAgent = url.searchParams.get("agent") || ""
           let voiceSession = url.searchParams.get("session") || ""
+          // The microphone opened by itself, no key held (#924).
+          let handsFree = url.searchParams.get("handsFree") === "true"
           if (req.method === "POST") {
             const body = await readBody(req)
             message = (body.message as string) || (body.q as string) || message
             requestedAgent = (body.agent as string) || (body.agentId as string) || requestedAgent
             voiceSession = (body.session as string) || voiceSession
+            handsFree = body.handsFree === true
           }
 
           // An explicit agent is what makes this endpoint useful for more than
@@ -6807,6 +6823,16 @@ export class AgentXDaemon {
           // builds it from the few voice fields the proxy sends.
           const voice = remote ? this.voiceMesh.voices.voice(agentId) : resolveAgentVoice(agentId, this.config.agents, this.config.voice)
           const introduce = this.voiceIntros.needsIntro(session, agentId)
+
+          // The floor's holder plays sound, and nobody held a key to say
+          // this: the microphone heard the holder, not the owner (#924).
+          // It wakes no agent and nothing is said back.
+          const floor = this.voiceTalk.floor.view()
+          if (handsFree && floor.held && floor.sound) {
+            this.log(`[floor] ${agentId}: hands-free words dropped while ${floor.holder} holds the floor (${JSON.stringify(message.slice(0, 60))})`)
+            this.json(res, 200, { agentId, voice, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
+            break
+          }
 
           // A transcript with no words ("[background noise]") wakes no
           // agent: no presence decision, no task, one fixed line (#614).
