@@ -265,7 +265,9 @@ describe("launchCloudSession", () => {
 describe("CloudSessionStore", () => {
   const dir = mkdtempSync(join(tmpdir(), "agentx-cloud-"))
   const file = join(dir, ".agentx", "cloud-sessions.json")
-  const base: OpenCloudSession = { repo: "example-org/example-repo", number: 42, kind: "issue", sessionId: "session_01A", url: "https://claude.ai/code/session_01A", agentId: "coder", startedAt: Date.parse("2026-10-04T10:00:00Z") }
+  const base: OpenCloudSession = { repo: "example-org/example-repo", number: 42, kind: "issue", sessionId: "session_01A", url: "https://claude.ai/code/session_01A", agentId: "coder", startedAt: new Date().setHours(10, 0, 0, 0) }
+  // Ten o'clock today, not a fixed date: the store drops sessions older
+  // than its keep time by the real clock, whatever `now` a test passes.
 
   it("keeps a launched session open for openHours, then forgets it", () => {
     const store = new CloudSessionStore(file)
