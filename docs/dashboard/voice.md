@@ -978,7 +978,7 @@ If the daemon restarts while a command started with `agentx voice floor run` hol
 
 2. The floor is held under the name you gave for as long as the script runs, and freed when it ends, however it ends. If you press **Command–Option–.**, the script is stopped.
 
-The script and everything it starts get the floor's id in `AGENTX_FLOOR`. `agentx point` and `agentx express` read it, so the script can still move the character.
+The script and everything it starts get the floor's id in `AGENTX_FLOOR`. `agentx point` and `agentx express` read it, so the script can still move the character. When the character is not on screen (the orb look, AgentX Voice closed, or a recording with `--hide`), `agentx point` from the script moves the highlight cursor instead, as it does when nobody holds the floor.
 
 For a screen recording, add `--hide`:
 
