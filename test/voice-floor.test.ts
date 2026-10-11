@@ -10,6 +10,7 @@ import { describeQueue, handleQueue } from "../src/daemon/voice-queue-api"
 import { VoiceTalkService } from "../src/daemon/voice-talk-api"
 import { VoiceIntroTracker } from "../src/voice/agent-voice"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { floorHeldByOther } from "../src/commands/point"
 
 // #924: one speaker at a time, with a floor others must respect.
 
@@ -357,6 +358,27 @@ describe("the character under a floor", () => {
     const refused = await guide(svc, { rect, floor: took.id })
     expect(refused.status).toBe(409)
     expect(refused.body).toMatchObject({ error: "The character is hidden while Screen recording holds the floor" })
+  })
+
+  it("lets the holder's `agentx point` fall back to the cursor, and no one else's", async () => {
+    const floor = new Floor()
+    // The CLI's daemon call over the real handler: throws on an error status.
+    const call = async (method: string, path: string) => {
+      const [p, q] = path.split("?")
+      const r = await handleFloor(floor, method, p, new URLSearchParams(q), {})
+      if (r.status >= 300) throw new Error(String((r.body as any).error))
+      return r.body
+    }
+    expect(await floorHeldByOther(call, undefined)).toBeNull()
+    const took = floor.take({ holder: "Tour" })
+    if (!took.ok) throw new Error("refused")
+    expect(await floorHeldByOther(call, undefined)).toBe("Tour")
+    expect(await floorHeldByOther(call, "0123abcd")).toBe("Tour")
+    expect(await floorHeldByOther(call, took.id)).toBeNull()
+    floor.revoke()
+    floor.take({ holder: "Other" })
+    // An id from a hold that was taken back no longer counts.
+    expect(await floorHeldByOther(call, took.id)).toBe("Other")
   })
 })
 
