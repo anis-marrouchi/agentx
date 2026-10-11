@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.137.0](https://github.com/anis-marrouchi/agentx/compare/v0.136.1...v0.137.0) (2026-10-11)
+
+
+### Features
+
+* **voice:** one speaker at a time, with a floor others must respect ([#924](https://github.com/anis-marrouchi/agentx/issues/924)) ([#925](https://github.com/anis-marrouchi/agentx/issues/925)) ([7fb30d2](https://github.com/anis-marrouchi/agentx/commit/7fb30d2480530ad08abd7b6d9d7e47a6d711f3d7))
+
 ## [0.136.1](https://github.com/anis-marrouchi/agentx/compare/v0.136.0...v0.136.1) (2026-10-09)
 
 
