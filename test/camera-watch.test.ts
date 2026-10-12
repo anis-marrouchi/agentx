@@ -252,6 +252,54 @@ describe("interval frames", () => {
   })
 })
 
+describe("local frame tap (#844 spike)", () => {
+  const tapRoot = () => join(dir, "tap")
+  const tapped = (callId: string) => {
+    const d = join(tapRoot(), callId)
+    return existsSync(d) ? readdirSync(d).sort() : []
+  }
+  const withTap = (everyMs = 1000) => new CameraWatchManager({
+    config: () => cfg,
+    startBot: async (o) => { const bot: FakeBot = { ...o, closed: null }; bots.push(bot); return { close: (r) => { bot.closed = r; o.onClosed(r) } } },
+    workspaceOf: () => join(dir, "writer-ws"),
+    agentName: () => "Writer",
+    turn: async (t) => { turns.push(t); return reply },
+    tap: () => ({ dir: tapRoot(), everyMs, maxEdge: 4 }),
+    cwd: () => dir,
+    now: () => now,
+  })
+
+  it("writes the newest new frame for a local reader, with no agent turn, and keeps only the last few", async () => {
+    vi.useFakeTimers()
+    const m = withTap()
+    await m.start({ callId: "cam-tap1", agentId: "writer" })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(tapped("cam-tap1")).toEqual([])          // no frame yet
+    bots[0].onFrame(frame(16, 8))
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(tapped("cam-tap1")).toEqual(["frame-000001.png"])
+    const png = readFileSync(join(tapRoot(), "cam-tap1", "frame-000001.png"))
+    expect(png.readUInt32BE(16)).toBe(4)            // shrunk to maxEdge
+    await vi.advanceTimersByTimeAsync(3000)
+    expect(tapped("cam-tap1")).toEqual(["frame-000001.png"]) // nothing new: nothing written
+    for (let i = 0; i < 5; i++) { bots[0].onFrame(frame()); await vi.advanceTimersByTimeAsync(1000) }
+    expect(tapped("cam-tap1")).toEqual(["frame-000004.png", "frame-000005.png", "frame-000006.png"])
+    expect(turns).toEqual([])
+    expect(m.get("cam-tap1")?.looks).toBe(0)
+    m.stop("cam-tap1")
+    expect(existsSync(join(tapRoot(), "cam-tap1"))).toBe(false)
+  })
+
+  it("is off unless the daemon passes a tap", async () => {
+    vi.useFakeTimers()
+    await mgr.start({ callId: "cam-tap2", agentId: "writer" })
+    bots[0].onFrame(frame())
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(existsSync(tapRoot())).toBe(false)
+    expect(existsSync(frames("cam-tap2"))).toBe(false)
+  })
+})
+
 describe("frames reach the agent only when needed (#687)", () => {
   it("with nothing asked, no frame reaches the agent, and every hand-over is logged with why", async () => {
     vi.useFakeTimers()

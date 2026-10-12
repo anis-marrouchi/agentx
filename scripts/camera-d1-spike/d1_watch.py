@@ -9,8 +9,8 @@
 # bench: runs every picture in DIR against every target and prints accuracy,
 #        latency per frame and memory. DIR/labels.json maps a file name to the
 #        targets that ARE in that picture; every other target counts as absent.
-# watch: polls DIR for new frame-*.png files (the camera share with
-#        camera.bot.keepFrames on) and raises an alert when a target shows up
+# watch: polls DIR for new frame-*.png files (the daemon's local frame tap,
+#        AGENTX_CAMERA_TAP_DIR, which needs no agent turn) and raises an alert when a target shows up
 #        on --hits frames in a row. Alerts are a local Mac banner by default;
 #        --notify also sends the alert TEXT (never the picture) through
 #        `agentx notify`.
@@ -33,6 +33,9 @@ from pathlib import Path
 
 DEFAULT_MODEL = "LiquidAI/d1-3B"
 IMAGE_EXT = {".png", ".jpg", ".jpeg", ".webp"}
+# Above 768 px on the long side d1 cuts the picture into tiles: about 7x the
+# time and 2.5x the memory on an 8 GB Mac (#844 figures), for no gain here.
+DEFAULT_MAX_EDGE = 768
 
 
 def question_key(i: int) -> str:
@@ -116,13 +119,21 @@ def sync(device: str) -> None:
         torch.cuda.synchronize()
 
 
-def ask(model, device: str, image_path: Path, questions: dict):
+def shrink(photo, max_edge: int):
+    """Fit the picture inside max_edge on its long side (0: as it is)."""
+    if max_edge > 0 and max(photo.size) > max_edge:
+        photo = photo.copy()
+        photo.thumbnail((max_edge, max_edge))
+    return photo
+
+
+def ask(model, device: str, image_path: Path, questions: dict, max_edge: int = DEFAULT_MAX_EDGE):
     """One forward pass on one picture; returns (result, seconds in the model)."""
     import torch
     from PIL import Image
 
     with Image.open(image_path) as im:
-        photo = im.convert("RGB")
+        photo = shrink(im.convert("RGB"), max_edge)
     t0 = time.perf_counter()
     with torch.inference_mode():
         result = model.system_one(None, questions, images=[photo])
@@ -228,11 +239,11 @@ def cmd_bench(a) -> int:
     load_s = time.perf_counter() - t0
 
     # The first pass compiles kernels on MPS; keep it out of the figures.
-    ask(model, device, images[0], questions)
+    ask(model, device, images[0], questions, a.max_edge)
     latencies: list[float] = []
 
     def answer(path: Path) -> dict[str, float]:
-        result, secs = ask(model, device, path, questions)
+        result, secs = ask(model, device, path, questions, a.max_edge)
         latencies.append(secs)
         if a.raw:
             print(f"{path.name}: {result!r}")
@@ -241,7 +252,8 @@ def cmd_bench(a) -> int:
     per_target, overall = score_set(images, labels, targets, answer, a.threshold)
     mem = memory_mb(device)
 
-    print(f"\nModel {a.model} on {device}, loaded in {load_s:.1f} s; {len(images)} pictures x {len(targets)} targets, threshold {a.threshold}\n")
+    print(f"\nModel {a.model} on {device}, loaded in {load_s:.1f} s; {len(images)} pictures x {len(targets)} targets, "
+          f"threshold {a.threshold}, max edge {a.max_edge or 'none'}\n")
     print("| Target | Right | Wrong | Missed | False alarms |")
     print("|---|---|---|---|---|")
     for t, s in per_target.items():
@@ -255,7 +267,7 @@ def cmd_bench(a) -> int:
 
     if a.out:
         Path(a.out).expanduser().write_text(json.dumps({
-            "model": a.model, "device": device, "load_seconds": load_s, "threshold": a.threshold,
+            "model": a.model, "device": device, "max_edge": a.max_edge, "load_seconds": load_s, "threshold": a.threshold,
             "targets": targets, "pictures": len(images),
             "per_target": {t: vars(s) for t, s in per_target.items()},
             "accuracy": overall.accuracy, "latency_seconds": latencies, "memory_mb": mem,
@@ -320,7 +332,7 @@ def cmd_watch(a) -> int:
             # Only the newest frame matters for a live watch; skip a backlog.
             for path in frames[-1:]:
                 try:
-                    result, secs = ask(model, device, path, questions)
+                    result, secs = ask(model, device, path, questions, a.max_edge)
                 except OSError as e:  # file still being written, or deleted under us
                     print(f"skip {path.name}: {e}", flush=True)
                     continue
@@ -346,6 +358,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--model", default=os.environ.get("AGENTX_D1_MODEL", DEFAULT_MODEL), help=f"Hugging Face id or local folder (default {DEFAULT_MODEL})")
     p.add_argument("--device", choices=["mps", "cpu", "cuda"], help="default: mps on a Mac")
     p.add_argument("--threshold", type=float, default=0.7, help="P(yes) needed to count a target as seen (default 0.7)")
+    p.add_argument("--max-edge", type=int, default=DEFAULT_MAX_EDGE, help=f"shrink pictures to this long side first, 0 for none (default {DEFAULT_MAX_EDGE})")
     p.add_argument("--offline", action="store_true", help="refuse any network fetch (same as HF_HUB_OFFLINE=1)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
@@ -356,7 +369,7 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--out", help="also write the figures as JSON here")
 
     w = sub.add_parser("watch", help="alert on new camera-share frames")
-    w.add_argument("--frames", required=True, help="folder the share writes frames into (searched recursively)")
+    w.add_argument("--frames", required=True, help="the daemon's AGENTX_CAMERA_TAP_DIR (searched recursively)")
     w.add_argument("--target", action="append", required=True, help="a named target; repeat for more")
     w.add_argument("--hits", type=int, default=2, help="frames in a row before an alert (default 2)")
     w.add_argument("--cooldown", type=float, default=60, help="seconds before the same target alerts again (default 60)")

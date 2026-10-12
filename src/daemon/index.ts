@@ -8,7 +8,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "http"
 import { createReadStream } from "fs"
 import { writeFileSync, existsSync, unlinkSync, mkdirSync, readFileSync, type FSWatcher } from "fs"
 import { watchConfigFile } from "./config-watch"
-import { resolve, dirname, extname, normalize, sep } from "path"
+import { resolve, dirname, extname, isAbsolute, normalize, sep } from "path"
 import { loadDaemonConfig, validateWorkspaces, type DaemonConfig } from "./config"
 import { AgentRegistry, setGlobalRegistry } from "@/agents/registry"
 import { setAgentRegistry } from "@/agents/registry-instance"
@@ -3611,6 +3611,19 @@ export class AgentXDaemon {
         const rgba = { width: frame.width, height: frame.height, data: new Uint8ClampedArray(frame.width * frame.height * 4) }
         native(frame, rgba)
         return rgba
+      },
+      // Spike for #844, not a setting: a local vision model reads frames
+      // from this folder with no agent turn. Unset, there is no tap.
+      tap: () => {
+        const dir = process.env.AGENTX_CAMERA_TAP_DIR?.trim()
+        if (!dir || !isAbsolute(dir)) return null
+        const secs = Number(process.env.AGENTX_CAMERA_TAP_SECONDS || 1)
+        const edge = Number(process.env.AGENTX_CAMERA_TAP_EDGE || 768)
+        return {
+          dir,
+          everyMs: Number.isFinite(secs) && secs > 0 ? Math.round(secs * 1000) : 1000,
+          maxEdge: Number.isFinite(edge) && edge >= 160 ? Math.round(edge) : 768,
+        }
       },
       log: (m) => this.log(m),
     })
