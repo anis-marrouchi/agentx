@@ -135,7 +135,34 @@ is 24.4% of the spend. It can be measured offline in about 3 hours
 default effort, at medium effort, and on Sonnet 5.5, then grading the
 answers blind. The owner approved it on 2026-10-12 (about 19:55Z): run
 offline on the Mac only, nothing changed on any agent, stop at 45 USD.
-Its result belongs on #947.
+
+**Result (posted on #947, 2026-10-12, about 26 USD).** 20 past read-only
+tasks were replayed in fresh sessions that were allowed to read only. A
+second run of today's setting measured the noise.
+
+| Setting | Cost | Graded as good as today's |
+|---|---|---|
+| Opus 5.5, high effort (today) | 10.99 USD | reference |
+| The same, run again | 11.12 USD | 10 of 20 (the noise) |
+| Opus 5.5, medium effort | 10.82 USD | 9 of 20 |
+| Sonnet 5.5, high effort | 5.32 USD | 5 of 20 |
+
+- **Medium effort saves nothing.** It is 1.5% cheaper, which is within
+  the 1.2% gap between two identical runs. Drop it.
+- **Sonnet halves the price per task but not the tokens.**
+  - It holds on status checks (4 of 4 checked facts right).
+  - It is weaker on reviews (1 of 8 graded as good, against 5 of 8 for
+    the repeat run).
+- **The reach is small.** Read-only turns are about 9.4% of the Mac's
+  spend; turns that change something are 80.3%. The reachable saving is
+  1.5% (status checks and incoming reports only) to at most 5%. It would
+  also need routing by task kind first, since the model is set per agent.
+- **Side finding:** in every arm, 4 to 7 of the 11 hand-checked answers
+  stated something no longer true. The replay makes this worse than live
+  use.
+
+So no setting tested here is a quick, big saving. The bill sits in the
+80% of turns that change things, which cannot be replayed offline.
 
 Two items above are not in that table:
 
