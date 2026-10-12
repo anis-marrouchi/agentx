@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.137.1](https://github.com/anis-marrouchi/agentx/compare/v0.137.0...v0.137.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **daemon:** stop slow links failing every fetch with ETIMEDOUT ([#930](https://github.com/anis-marrouchi/agentx/issues/930)) ([#931](https://github.com/anis-marrouchi/agentx/issues/931)) ([6eb558f](https://github.com/anis-marrouchi/agentx/commit/6eb558f88fbcf39be11f20c792f94231d6e62fac))
+
 ## [0.137.0](https://github.com/anis-marrouchi/agentx/compare/v0.136.1...v0.137.0) (2026-10-11)
 
 
