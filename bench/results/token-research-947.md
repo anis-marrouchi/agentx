@@ -82,7 +82,7 @@ in `src`).
 agent give a count, the bytes withheld, and how often the agent read an
 original back. It needs `session.observationPack.enabled` and a daemon
 restart, and works only for agents with `bypassPermissions`
-(`src/agents/observation-pack.ts:84`).
+(`src/agents/observation-pack.ts:84-85`).
 
 **C. Monitor reviewer.** See finding 2. The side-by-side comparison of 30
 stored traces on `opus` and `sonnet` takes about an hour. Recording the
