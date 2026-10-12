@@ -12,12 +12,15 @@ A **workflow** is a list of steps AgentX runs in order. One pass through it is a
 - After its agent step, the live workflow starts the pilot workflow with the same input. The pilot's agent steps run with autonomy `report`, so they read, decide and answer, but change nothing.
 - When the pilot cannot handle a case, its step answers with the result token `RESULT: fallback`. That is a **hand-back**: if the pilot were live, the full agent would take the case.
 - `agentx workflow pilot-report` reads the traces of both runs and prices their tokens with the same table the costs page uses. Requests over 200,000 input tokens are priced at 1.5 times, as the provider bills them.
+- Each trace is priced at the model it ran on. A trace written by this version or later records that model. For an older trace, the report uses the `model` set for that agent in `agentx.json`. When neither is known, the trace is priced at Sonnet rates and the report says how many traces that was.
 
 Steps that run code (scripts, branches) make no model call and count as zero on both paths.
 
 ## Set it up
 
 You need workflows turned on and the live workflow saved in `.agentx/workflows/`. The examples use a live workflow `owner-sweep` with a script step `sweep` and an agent step `act`.
+
+Know this before the first run: the live run waits at the new `pilot` step until the pilot run ends. If a pilot run fails, the live run stays **paused** at `pilot` instead of ending as completed. The live agent's work is already done by then, but a scheduled job's run will show as paused. See [If something is wrong](#if-something-is-wrong) for how to clear it.
 
 1. **In your editor**, create `.agentx/workflows/owner-sweep-pilot.yaml`. Its trigger is manual, because the live workflow starts it:
 
@@ -104,6 +107,10 @@ The pilot runs after the live agent has finished, so it never delays the live wo
 
    Below the table: how many runs were handed back, and the saving in percent on the paired runs.
 
+   A pilot run that has not ended yet is left out, and counted on a `Not compared yet` line. It is compared on the next report, once it ends.
+
+   If you see `No model known for N of M model call(s)`, those calls were priced at Sonnet rates, so their cost may be wrong. Set `model` for those agents in `agentx.json` and run the report again.
+
 3. **In the terminal**, to check runs one by one, list each pair with its trace ids, then open a trace:
 
    ```bash
@@ -127,5 +134,6 @@ Add `--json` to get the same report as data, with every pair.
 - **The pilot changed something:** `autonomy: report` is enforced only for agents on the `claude-code` tier. Use such an agent for the pilot, or take the tools that change things away from it.
 - **Live runs stay paused at `pilot`:** the live run waits for the pilot to reach an `end` step. A pilot run that fails leaves the live run paused. Give every path in the pilot an `end` step, and cancel stuck runs with `agentx workflow cancel <runId>`.
 - **`Not compared: … pilot run(s) without a live run`:** those pilot runs were started by hand, or their live run is older than `--since`. They are left out of the figures.
-- **Costs look too low:** only agent turns are priced. A step that calls a model some other way (for example `action.builtin` with `extract.structured`, or `classify`) leaves no trace with tokens, so it is not counted. Keep the pilot's model calls in `agent` steps.
+- **`No model known for … model call(s)`:** those traces are older than this version and their agent has no `model` in `agentx.json`. Add `"model"` to each agent the two workflows use, then run the report again. New traces record their model, so the line goes away for runs made after the update.
+- **Costs look too low:** check for the `No model known` line first. Then: only agent turns are priced. A step that calls a model some other way (for example `action.builtin` with `extract.structured`, or `classify`) leaves no trace with tokens, so it is not counted. Keep the pilot's model calls in `agent` steps.
 - **`No trace database`:** run the command in the folder the daemon runs in, or pass `--db <path>`.

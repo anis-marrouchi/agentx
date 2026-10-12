@@ -14,14 +14,31 @@ import type { WorkflowRun } from "@/workflows/types"
 // Pairing: a pilot run belongs to the live run that started it, read from
 // its `parentRunId` (a subProcess step) or from a `liveRunId` input on its
 // trigger. Code steps make no trace rows and so count as zero.
+//
+// Model: each row is priced at its own model, read from the trace row, else
+// from the agent's configured model. Older rows carry no model, and an agent
+// may have none configured; such rows are priced at the fallback rate and
+// counted, so the report says how much of it rests on a guess.
 
 /** Result token a pilot step returns to hand the case back. */
 export const HAND_BACK_RESULT = "fallback"
 
 export type Pricing = typeof CACHE_AWARE_PRICING
 
-/** One trace row priced. */
-export function traceCostUsd(t: TraceRecord, pricing: Pricing = CACHE_AWARE_PRICING): number {
+/** Model a row with no known model is priced at (TokenTracker's default). */
+export const FALLBACK_PRICING_MODEL = "claude-sonnet"
+
+/** Configured model per agent id, for rows that do not carry one. */
+export type AgentModels = Record<string, string | undefined>
+
+/** The model a trace row ran on: the row's own, else its agent's
+ *  configured model. Null when neither is known. */
+export function traceModel(t: Pick<TraceRecord, "model" | "agentId">, agentModels: AgentModels = {}): string | null {
+  return t.model || agentModels[t.agentId] || null
+}
+
+/** One trace row priced at `model`, or at the fallback rate without one. */
+export function traceCostUsd(t: TraceRecord, pricing: Pricing = CACHE_AWARE_PRICING, model: string | null = t.model): number {
   return TokenTracker.calculateCost({
     inputTokens: t.inputTokens ?? 0,
     outputTokens: t.outputTokens ?? 0,
@@ -32,7 +49,7 @@ export function traceCostUsd(t: TraceRecord, pricing: Pricing = CACHE_AWARE_PRIC
     tier2CacheReadTokens: t.tier2CacheReadTokens ?? 0,
     tier2CacheCreateTokens: t.tier2CacheCreateTokens ?? 0,
     tasks: 1, totalDuration: 0, errors: 0,
-  }, t.model ?? undefined, pricing)
+  }, model ?? FALLBACK_PRICING_MODEL, pricing)
 }
 
 /** A model call: an agent turn. The engine's own rows for code steps
@@ -51,12 +68,15 @@ export interface RunCost {
   calls: number
   /** Model calls that failed or were cancelled. */
   failedCalls: number
+  /** Model calls with no known model, priced at the fallback rate. */
+  fallbackPricedCalls: number
   traceIds: string[]
 }
 
-function runCost(run: WorkflowRun, traces: TraceRecord[], pricing: Pricing): RunCost {
+function runCost(run: WorkflowRun, traces: TraceRecord[], pricing: Pricing, agentModels: AgentModels): RunCost {
   const mine = traces.filter((t) => t.workflowRunId === run.id && isModelCall(t))
-  const cost = mine.reduce((s, t) => s + traceCostUsd(t, pricing), 0)
+  const models = mine.map((t) => traceModel(t, agentModels))
+  const cost = mine.reduce((s, t, i) => s + traceCostUsd(t, pricing, models[i]), 0)
   return {
     runId: run.id,
     workflowId: run.workflowId,
@@ -65,8 +85,15 @@ function runCost(run: WorkflowRun, traces: TraceRecord[], pricing: Pricing): Run
     costUsd: round(cost),
     calls: mine.length,
     failedCalls: mine.filter((t) => t.status === "error" || t.status === "canceled").length,
+    fallbackPricedCalls: models.filter((m) => !m).length,
     traceIds: mine.map((t) => t.taskId),
   }
+}
+
+/** Whether a run has ended. A run that ran out of steps without an end
+ *  step stays "running" with nothing pending. */
+export function runEnded(run: Pick<WorkflowRun, "status" | "pending">): boolean {
+  return run.status !== "paused" && (run.status !== "running" || run.pending.length === 0)
 }
 
 /** Why a pilot run handed its case back, or null when it answered. */
@@ -127,6 +154,12 @@ export interface PilotComparison {
   /** Live runs with no pilot run, and pilot runs with no live run. */
   unpairedLive: number
   orphanPilot: number
+  /** Paired live runs whose pilot run has not ended yet: left out until
+   *  it does, so a run in progress is not read as a hand-back. */
+  pilotInProgress: number
+  /** Model calls priced at the fallback rate because no model was known,
+   *  out of all model calls counted, per side. */
+  fallbackPriced: { live: number; pilot: number; calls: number }
   pairs: PilotPair[]
 }
 
@@ -155,11 +188,13 @@ export function comparePilot(args: {
   runs: WorkflowRun[]
   traces: TraceRecord[]
   pricing?: Pricing
+  agentModels?: AgentModels
 }): PilotComparison {
   const pricing = args.pricing ?? CACHE_AWARE_PRICING
+  const agentModels = args.agentModels ?? {}
   const liveRuns = args.runs
     .filter((r) => r.workflowId === args.liveWorkflow)
-    .map((r) => runCost(r, args.traces, pricing))
+    .map((r) => runCost(r, args.traces, pricing, agentModels))
     .filter((c) => c.calls > 0)
     .sort((a, b) => a.startedAt.localeCompare(b.startedAt))
   const pilotRuns = args.runs.filter((r) => r.workflowId === args.pilotWorkflow)
@@ -173,10 +208,12 @@ export function comparePilot(args: {
     if (!prev || p.createdAt < prev.createdAt) pilotByLive.set(live, p)
   }
 
+  let inProgress = 0
   const pairs: PilotPair[] = liveRuns.map((live) => {
     const run = pilotByLive.get(live.runId)
-    if (!run) return { live, pilot: null, handedBack: null, pilotPathCostUsd: null }
-    const pilot = runCost(run, args.traces, pricing)
+    if (run && !runEnded(run)) inProgress++
+    if (!run || !runEnded(run)) return { live, pilot: null, handedBack: null, pilotPathCostUsd: null }
+    const pilot = runCost(run, args.traces, pricing, agentModels)
     const handedBack = handBackReason(run)
     return { live, pilot, handedBack, pilotPathCostUsd: round(pilot.costUsd + (handedBack ? live.costUsd : 0)) }
   })
@@ -197,8 +234,14 @@ export function comparePilot(args: {
       pilotPath,
       saving: paired.length && pairedLive.totalCostUsd > 0 ? round(1 - pilotPath.totalCostUsd / pairedLive.totalCostUsd) : null,
     },
-    unpairedLive: liveRuns.length - paired.length,
+    unpairedLive: liveRuns.length - paired.length - inProgress,
     orphanPilot: orphan,
+    pilotInProgress: inProgress,
+    fallbackPriced: {
+      live: liveRuns.reduce((s, c) => s + c.fallbackPricedCalls, 0),
+      pilot: paired.reduce((s, p) => s + p.pilot!.fallbackPricedCalls, 0),
+      calls: liveRuns.reduce((s, c) => s + c.calls, 0) + paired.reduce((s, p) => s + p.pilot!.calls, 0),
+    },
     pairs,
   }
 }

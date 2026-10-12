@@ -2292,7 +2292,7 @@ List recent runs (optionally filtered to a single workflow).
 
 ### `agentx workflow pilot-report <live> <pilot>`
 
-Compare a live workflow with a pilot workflow that ran beside it on the same input: cost per run, how often the pilot handed the case back, and failures. Reads the trace database and the run files; changes nothing. Guide: [Try a cheaper workflow beside a live one](../jobs/workflow-pilot.md).
+Compare a live workflow with a pilot workflow that ran beside it on the same input: cost per run, how often the pilot handed the case back, and failures. Reads the trace database and the run files; changes nothing. Each trace is priced at the model it ran on, or at its agent's `model` in `agentx.json` for older traces; the report counts the traces priced at Sonnet rates because no model was known. Pilot runs still in progress are left out. Guide: [Try a cheaper workflow beside a live one](../jobs/workflow-pilot.md).
 
 | Flag | Default | What it does |
 |---|---|---|
