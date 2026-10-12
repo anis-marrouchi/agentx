@@ -369,13 +369,15 @@ workflow
   .option("--pairs", "list each pair with its run and trace ids", false)
   .option("--json", "print the report as JSON", false)
   .action(async (live: string, pilot: string, opts) => {
-    const { comparePilot } = await import("@/storage/workflow-pilot")
+    const { comparePilot, FALLBACK_PRICING_MODEL } = await import("@/storage/workflow-pilot")
     const { listTracesForRuns } = await import("@/storage/traces")
     const { loadPricingWithOverrides } = await import("@/daemon/token-tracker")
     const sinceMs = opts.since ? (durationToMs(opts.since) !== null ? Date.now() - durationToMs(opts.since)! : Date.parse(opts.since)) : undefined
     if (opts.since && !Number.isFinite(sinceMs)) { console.log(chalk.red(`  --since: "${opts.since}" is not a date or a duration`)); process.exit(1) }
     const store = new RunStore({ nodeId: opts.node || process.env.WF_NODE_ID || "local" })
     const sinceIso = sinceMs !== undefined ? new Date(sinceMs).toISOString() : ""
+    // `since` on list() only skips files last written before it; a run
+    // started earlier but written later still comes back, so cut on createdAt.
     const runs = [...store.list({ workflowId: live, since: sinceMs }), ...store.list({ workflowId: pilot, since: sinceMs })]
       .filter((r) => r.createdAt >= sinceIso)
     const dbPath = resolve(process.cwd(), opts.db)
@@ -383,7 +385,7 @@ workflow
     const db = new Database(dbPath, { readonly: true })
     let traces
     try { traces = listTracesForRuns(db, runs.map((r) => r.id)) } finally { db.close() }
-    const report = comparePilot({ liveWorkflow: live, pilotWorkflow: pilot, runs, traces, pricing: loadPricingWithOverrides() })
+    const report = comparePilot({ liveWorkflow: live, pilotWorkflow: pilot, runs, traces, pricing: loadPricingWithOverrides(), agentModels: readAgentModels() })
     if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
 
     const usd = (n: number | null) => n === null ? chalk.dim("n/a") : `$${n.toFixed(4)}`
@@ -401,6 +403,13 @@ workflow
     console.log(`  Saving on the paired runs: ${report.paired.saving === null ? chalk.dim("n/a") : pct(report.paired.saving)}`)
     if (report.unpairedLive || report.orphanPilot) {
       console.log(chalk.dim(`  Not compared: ${report.unpairedLive} live run(s) without a pilot run, ${report.orphanPilot} pilot run(s) without a live run`))
+    }
+    if (report.pilotInProgress) {
+      console.log(chalk.dim(`  Not compared yet: ${report.pilotInProgress} pilot run(s) still in progress`))
+    }
+    const fb = report.fallbackPriced
+    if (fb.live || fb.pilot) {
+      console.log(chalk.yellow(`  No model known for ${fb.live + fb.pilot} of ${fb.calls} model call(s) (live ${fb.live}, pilot ${fb.pilot}): priced at ${FALLBACK_PRICING_MODEL} rates. Set the agent's model in agentx.json.`))
     }
     if (opts.pairs) {
       console.log()
@@ -701,6 +710,18 @@ workflow
     console.log()
     console.log(chalk.dim("  Details: agentx workflow trace <runId> · Stop one: agentx workflow cancel <runId>"))
   })
+
+/** Configured model per agent id, read from agentx.json without
+ *  validating the rest of it. Empty when the file cannot be read. */
+function readAgentModels(): Record<string, string | undefined> {
+  let raw: any = {}
+  try { raw = expandEnvVars(JSON.parse(readFileSync(findConfigPath(), "utf-8"))) } catch { raw = {} }
+  const out: Record<string, string | undefined> = {}
+  for (const [id, a] of Object.entries<any>(raw?.agents ?? {})) {
+    if (typeof a?.model === "string" && a.model) out[id] = a.model
+  }
+  return out
+}
 
 function readFollowUpSettings(): Record<string, any> {
   const path = findConfigPath()

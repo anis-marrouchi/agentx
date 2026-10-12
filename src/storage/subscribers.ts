@@ -187,6 +187,9 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
           // show original vs current output without reconstructing from
           // step events.
           finalResponse: p.finalResponse ?? null,
+          // The model the turn was billed on, so a trace can be priced
+          // at its own rate (workflow pilot-report, #928).
+          model: p.billedModel ?? null,
         })
       } catch { /* */ }
     }

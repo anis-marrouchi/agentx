@@ -4,10 +4,14 @@ import { tmpdir } from "os"
 import path from "path"
 import { openDb, closeDb } from "../src/storage/sqlite"
 import { recordTraceStart, recordTraceEnd, listTracesForRuns, type TraceRecord } from "../src/storage/traces"
-import { comparePilot, handBackReason, liveRunIdOf, traceCostUsd } from "../src/storage/workflow-pilot"
+import { comparePilot, handBackReason, liveRunIdOf, traceCostUsd, traceModel } from "../src/storage/workflow-pilot"
 import type { WorkflowRun } from "../src/workflows/types"
 
-const PRICING = { "claude-sonnet": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 } }
+const PRICING = {
+  "claude-sonnet": { input: 3, output: 15, cacheRead: 0.3, cacheCreate: 3.75 },
+  "claude-opus-5": { input: 5, output: 25, cacheRead: 0.5, cacheCreate: 6.25 },
+  "claude-haiku": { input: 1, output: 5, cacheRead: 0.1, cacheCreate: 1.25 },
+}
 
 function trace(over: Partial<TraceRecord>): TraceRecord {
   return {
@@ -40,6 +44,14 @@ describe("traceCostUsd", () => {
     const t2 = trace({ tier2InputTokens: 1_000_000 })
     expect(traceCostUsd(t1, PRICING)).toBeCloseTo(3)
     expect(traceCostUsd(t2, PRICING)).toBeCloseTo(4.5)
+  })
+})
+
+describe("traceModel", () => {
+  it("reads the row's model, else the agent's configured model", () => {
+    expect(traceModel({ model: "claude-haiku-4-5", agentId: "a" }, { a: "claude-opus-5" })).toBe("claude-haiku-4-5")
+    expect(traceModel({ model: null, agentId: "a" }, { a: "claude-opus-5" })).toBe("claude-opus-5")
+    expect(traceModel({ model: null, agentId: "b" }, { a: "claude-opus-5" })).toBeNull()
   })
 })
 
@@ -104,6 +116,55 @@ describe("comparePilot", () => {
   })
 })
 
+describe("comparePilot, one model per side", () => {
+  const runs = [
+    run({ id: "L1", workflowId: "sweep" }),
+    run({ id: "P1", workflowId: "sweep-pilot", parentRunId: "L1" }),
+  ]
+
+  it("prices each side at its own model, from the row or the agent config", () => {
+    // Live rows carry no model (older rows): the agent's config says Opus.
+    // Pilot rows carry Haiku.
+    const traces = [
+      trace({ workflowRunId: "L1", agentId: "sweeper", model: null, inputTokens: 1_000_000 }), // $5
+      trace({ workflowRunId: "P1", agentId: "sweeper-lite", model: "claude-haiku-4-5", inputTokens: 1_000_000 }), // $1
+    ]
+    const report = comparePilot({
+      liveWorkflow: "sweep", pilotWorkflow: "sweep-pilot", runs, traces, pricing: PRICING,
+      agentModels: { sweeper: "claude-opus-5", "sweeper-lite": "claude-sonnet-4-6" },
+    })
+    expect(report.paired.live.totalCostUsd).toBeCloseTo(5)
+    expect(report.paired.pilotPath.totalCostUsd).toBeCloseTo(1)
+    expect(report.paired.saving).toBeCloseTo(0.8)
+    expect(report.fallbackPriced).toEqual({ live: 0, pilot: 0, calls: 2 })
+  })
+
+  it("counts rows with no known model, priced at the fallback rate", () => {
+    const traces = [
+      trace({ workflowRunId: "L1", model: null, inputTokens: 1_000_000 }),
+      trace({ workflowRunId: "P1", model: null, inputTokens: 1_000_000 }),
+    ]
+    const report = comparePilot({ liveWorkflow: "sweep", pilotWorkflow: "sweep-pilot", runs, traces, pricing: PRICING })
+    expect(report.paired.live.totalCostUsd).toBeCloseTo(3)
+    expect(report.fallbackPriced).toEqual({ live: 1, pilot: 1, calls: 2 })
+    expect(report.pairs[0].live.fallbackPricedCalls).toBe(1)
+  })
+
+  it("leaves out a pair whose pilot run has not ended", () => {
+    const traces = [trace({ workflowRunId: "L1", inputTokens: 1_000 }), trace({ workflowRunId: "P1", inputTokens: 1_000 })]
+    for (const pilot of [
+      run({ id: "P1", workflowId: "sweep-pilot", parentRunId: "L1", status: "paused" }),
+      run({ id: "P1", workflowId: "sweep-pilot", parentRunId: "L1", status: "running", pending: [{ nodeId: "decide" }] as WorkflowRun["pending"] }),
+    ]) {
+      const report = comparePilot({ liveWorkflow: "sweep", pilotWorkflow: "sweep-pilot", runs: [runs[0], pilot], traces, pricing: PRICING })
+      expect(report.paired.runs).toBe(0)
+      expect(report.paired.handedBack).toBe(0)
+      expect(report.pilotInProgress).toBe(1)
+      expect(report.unpairedLive).toBe(0)
+    }
+  })
+})
+
 describe("listTracesForRuns", () => {
   let tmp: string
   beforeEach(() => { closeDb(); tmp = mkdtempSync(path.join(tmpdir(), "agentx-pilot-")) })
@@ -119,5 +180,16 @@ describe("listTracesForRuns", () => {
     expect(rows.map((r) => r.taskId)).toEqual([a])
     expect(rows[0].inputTokens).toBe(5)
     expect(listTracesForRuns(db, [])).toEqual([])
+  })
+
+  it("stores the billed model at the end of the turn, and keeps one set at start", () => {
+    const db = openDb({ path: path.join(tmp, "db.sqlite") })!
+    const a = recordTraceStart(db, { agentId: "sweeper", channel: "workflow", chatId: "workflow:R1", workflowRunId: "R1" })
+    recordTraceEnd(db, a, { status: "ok", model: "claude-opus-5" })
+    const b = recordTraceStart(db, { agentId: "sweeper", channel: "workflow", chatId: "workflow:R1", workflowRunId: "R1", model: "claude-haiku-4-5" })
+    recordTraceEnd(db, b, { status: "ok" })
+    const byId = new Map(listTracesForRuns(db, ["R1"]).map((r) => [r.taskId, r.model]))
+    expect(byId.get(a)).toBe("claude-opus-5")
+    expect(byId.get(b)).toBe("claude-haiku-4-5")
   })
 })
