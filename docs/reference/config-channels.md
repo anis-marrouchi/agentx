@@ -235,7 +235,10 @@ ntfy sends push notifications to your phone. It only sends; it does not receive 
 | `channels.ntfy.defaultPriority` | number (1–5) | `3` | Priority when a message sets none. |
 | `channels.ntfy.defaultTitle` | string | — | Title when a message sets none (otherwise `AgentX`). |
 
-When a notification cannot reach the server, or the server answers with a temporary error, AgentX tries again after 1, 3 and 8 seconds. Each failed try is written to the daemon log with its reason, for example `ntfy: attempt 1/4 failed (ntfy: fetch failed code=ETIMEDOUT); retrying in 1000 ms`. A notification still not delivered after the last try is logged as `send failed`.
+When AgentX cannot connect to the ntfy server, or the server answers "busy" (`429` or `503`), it tries again after 1, 3 and 8 seconds. Each failed try is written to the daemon log with its reason, for example `ntfy: attempt 1/4 failed (ntfy: fetch failed code=ETIMEDOUT); retrying in 1000 ms`. A notification still not delivered is logged as `send failed`.
+
+- AgentX gives up after about 20 seconds in total, whatever the number of tries.
+- It does not try again when the server may already have received the notification: for example when the connection breaks halfway, or the server answers with another error. This way your phone never gets the same notification twice.
 
 ## Browser calls (WebRTC)
 

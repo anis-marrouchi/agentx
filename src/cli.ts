@@ -11,8 +11,12 @@ if (refusal) {
 
 const { buildProgram } = await import("@/program")
 const { installCliSignalExit } = await import("@/utils/signal-exit")
+const { applyConnectAttemptTimeout, readConnectAttemptTimeout } = await import("@/daemon/net-family")
 
 installCliSignalExit()
+// CLI commands that call out on their own need the same connect attempt
+// timeout as the daemon, or they fail on a slow dual-stack link (#930).
+applyConnectAttemptTimeout(readConnectAttemptTimeout())
 
 const program = await buildProgram()
 
