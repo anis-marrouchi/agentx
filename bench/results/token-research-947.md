@@ -34,8 +34,8 @@ The owner first proposed two three-day trials: the 5-minute cache on one
 tool-heavy agent, and medium effort on one low-risk agent. The owner then
 turned both down. What replaced them is in
 [Quick wins and big wins](#quick-wins-and-big-wins-the-owners-bar-2026-10-12):
-an offline effort test, approved on 2026-10-12, and short checks of a few
-hours each.
+an offline effort test, approved and run on 2026-10-12, and short checks
+of a few hours each. The effort test found no quick, big saving.
 
 **A fix to this page's cron query.** The owner also found that
 `splitTaskUsageByTier` moves a whole turn into the `tier2_*` columns once
@@ -475,18 +475,16 @@ tested.
 ## Recommendation
 
 Updated after the owner's measurement and the owner's quick-win bar. The
-two three-day trials are no longer proposed.
+two three-day trials are no longer proposed. The offline effort test is
+done (result above): medium effort saves nothing and is dropped, and Sonnet
+would reach at most 5% of the spend, only after routing by task kind.
 
-1. **Run the offline effort test** the owner approved on 2026-10-12:
-   about 20 past read-only tasks at the default effort, at medium effort
-   and on Sonnet 5.5, graded blind. Offline on the Mac only, nothing
-   changed on any agent, stop at 45 USD. Post the result on #947.
-2. **Fix the price list.** It is small and does not touch agents. Every
+1. **Fix the price list.** It is small and does not touch agents. Every
    later decision is priced with it.
-3. **Count the Monitor reviewer.** Record the usage the CLI already
+2. **Count the Monitor reviewer.** Record the usage the CLI already
    returns, then run the 30-review comparison (item C). Session logs
    cannot see this spend, so the measurement above could not either.
-4. **Before the 5-minute cache goes beyond one agent**, check the replay
+3. **Before the 5-minute cache goes beyond one agent**, check the replay
    in hours (item D), then run `bench/cache-gap-replay.py` on the second
    host's logs. Read its `1h writes` and `ttl5m` columns per channel. The
    owner measured one host only.
