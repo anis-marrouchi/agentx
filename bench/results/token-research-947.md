@@ -30,9 +30,12 @@ measurement wins. In short:
 | 4. Idle chats resumed in full | 42 calls, 2.5% of spend | Small on that host |
 | 5. Old tool output | Not recommended: Claude Code owns the transcript, and an edit costs a rewrite, worth 40 reads | Agreed |
 
-The owner's recommendation stands as the next step: the 5-minute cache on
-one tool-heavy agent, and medium effort on one low-risk agent, each for
-three days.
+The owner first proposed two three-day trials: the 5-minute cache on one
+tool-heavy agent, and medium effort on one low-risk agent. The owner then
+turned both down. What replaced them is in
+[Quick wins and big wins](#quick-wins-and-big-wins-the-owners-bar-2026-10-12):
+an offline effort test, approved on 2026-10-12, and short checks of a few
+hours each.
 
 **A fix to this page's cron query.** The owner also found that
 `splitTaskUsageByTier` moves a whole turn into the `tier2_*` columns once
@@ -444,21 +447,22 @@ tested.
 
 ## Recommendation
 
-Updated after the owner's measurement:
+Updated after the owner's measurement and the owner's quick-win bar. The
+two three-day trials are no longer proposed.
 
-1. **Run the owner's two trials** as posted on #947: the 5-minute cache
-   on one tool-heavy agent, and medium effort on one low-risk agent. They
-   are the largest measured savings, and each is one environment
-   variable.
+1. **Run the offline effort test** the owner approved on 2026-10-12:
+   about 20 past read-only tasks at the default effort, at medium effort
+   and on Sonnet 5.5, graded blind. Offline on the Mac only, nothing
+   changed on any agent, stop at 45 USD. Post the result on #947.
 2. **Fix the price list.** It is small and does not touch agents. Every
    later decision is priced with it.
 3. **Count the Monitor reviewer.** Record the usage the CLI already
-   returns, then run the 30-review comparison. Session logs cannot see
-   this spend, so the measurement above could not either.
-4. **Before trial 1 goes beyond one host**, run
-   `bench/cache-gap-replay.py` on the second host's logs. Read its
-   `1h writes` and `ttl5m` columns per channel. The owner measured one
-   host only.
+   returns, then run the 30-review comparison (item C). Session logs
+   cannot see this spend, so the measurement above could not either.
+4. **Before the 5-minute cache goes beyond one agent**, check the replay
+   in hours (item D), then run `bench/cache-gap-replay.py` on the second
+   host's logs. Read its `1h writes` and `ttl5m` columns per channel. The
+   owner measured one host only.
 
 Findings 1 and 4 of this page wait. On the measured host they are 2.5%
 together at most.
@@ -477,8 +481,8 @@ together at most.
 - If the replay shows `1h writes` at 100 percent and `ttl1h` at about
   zero, the node already uses the one-hour cache. Finding 3 does not
   apply to it; read `ttl5m` instead.
-- If the replay prints only a header, the date window holds no session
-  logs. Claude Code removes logs older than `cleanupPeriodDays` (30 by
+- If both tables show only a `TOTAL` row of zeros, the date window holds
+  no session logs. Claude Code removes logs older than `cleanupPeriodDays` (30 by
   default), and AgentX's Monitor reviews are never written there.
 - If the cron query shows `resumed` at 0 for every job, the jobs already
   start fresh (they run less often than every 12 hours). Finding 1 does

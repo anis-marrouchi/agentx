@@ -74,7 +74,9 @@ the share of writes already on the one-hour cache, and three what-ifs: every
 write on the one-hour cache (`ttl1h`), every write on the five-minute
 cache (`ttl5m`, the other direction, for a node on the subscription whose
 writes are all on the hour), and a fresh start with a short brief after a
-long pause (`rotate`). No model is called.
+long pause (`rotate`). No model is called. It reads only the top-level
+`*/*.jsonl` files and skips sidechain lines, so calls made by subagents are
+not counted.
 
 ```bash
 python3 bench/cache-gap-replay.py --from 2026-10-01 --to 2026-10-07
