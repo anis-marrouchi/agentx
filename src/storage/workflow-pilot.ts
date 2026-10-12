@@ -1,5 +1,5 @@
 import type { TraceRecord } from "@/storage/traces"
-import { TokenTracker, CACHE_AWARE_PRICING } from "@/daemon/token-tracker"
+import { TokenTracker, CACHE_AWARE_PRICING, getModelFamily } from "@/daemon/token-tracker"
 import type { WorkflowRun } from "@/workflows/types"
 
 // --- Workflow pilot report (#928) ---
@@ -16,9 +16,10 @@ import type { WorkflowRun } from "@/workflows/types"
 // trigger. Code steps make no trace rows and so count as zero.
 //
 // Model: each row is priced at its own model, read from the trace row, else
-// from the agent's configured model. Older rows carry no model, and an agent
-// may have none configured; such rows are priced at the fallback rate and
-// counted, so the report says how much of it rests on a guess.
+// from the agent's configured model. Older rows carry no model, an agent
+// may have none configured, and a model may be one the price table does not
+// know (getModelFamily maps any unknown name to Sonnet); such rows are priced
+// at the fallback rate and counted, so the report says how much rests on a guess.
 
 /** Result token a pilot step returns to hand the case back. */
 export const HAND_BACK_RESULT = "fallback"
@@ -35,6 +36,13 @@ export type AgentModels = Record<string, string | undefined>
  *  configured model. Null when neither is known. */
 export function traceModel(t: Pick<TraceRecord, "model" | "agentId">, agentModels: AgentModels = {}): string | null {
   return t.model || agentModels[t.agentId] || null
+}
+
+/** Whether the price table has a rate for `model`. getModelFamily maps
+ *  any name it does not recognise to Sonnet, so only a Claude family name
+ *  counts as known. */
+export function isPricedModel(model: string, pricing: Pricing = CACHE_AWARE_PRICING): boolean {
+  return /fable|mythos|opus|sonnet|haiku/i.test(model) && getModelFamily(model) in pricing
 }
 
 /** One trace row priced at `model`, or at the fallback rate without one. */
@@ -68,8 +76,11 @@ export interface RunCost {
   calls: number
   /** Model calls that failed or were cancelled. */
   failedCalls: number
-  /** Model calls with no known model, priced at the fallback rate. */
+  /** Model calls with no known model, or a model the price table does
+   *  not know, priced at the fallback rate. */
   fallbackPricedCalls: number
+  /** Models seen on this run that the price table does not know. */
+  unpricedModels: string[]
   traceIds: string[]
 }
 
@@ -85,7 +96,8 @@ function runCost(run: WorkflowRun, traces: TraceRecord[], pricing: Pricing, agen
     costUsd: round(cost),
     calls: mine.length,
     failedCalls: mine.filter((t) => t.status === "error" || t.status === "canceled").length,
-    fallbackPricedCalls: models.filter((m) => !m).length,
+    fallbackPricedCalls: models.filter((m) => !m || !isPricedModel(m, pricing)).length,
+    unpricedModels: [...new Set(models.filter((m): m is string => !!m && !isPricedModel(m, pricing)))],
     traceIds: mine.map((t) => t.taskId),
   }
 }
@@ -157,9 +169,10 @@ export interface PilotComparison {
   /** Paired live runs whose pilot run has not ended yet: left out until
    *  it does, so a run in progress is not read as a hand-back. */
   pilotInProgress: number
-  /** Model calls priced at the fallback rate because no model was known,
-   *  out of all model calls counted, per side. */
-  fallbackPriced: { live: number; pilot: number; calls: number }
+  /** Model calls priced at the fallback rate because no model was known
+   *  or the price table has no rate for it, out of all model calls counted,
+   *  per side. `unpricedModels` names the models with no rate. */
+  fallbackPriced: { live: number; pilot: number; calls: number; unpricedModels: string[] }
   pairs: PilotPair[]
 }
 
@@ -241,6 +254,7 @@ export function comparePilot(args: {
       live: liveRuns.reduce((s, c) => s + c.fallbackPricedCalls, 0),
       pilot: paired.reduce((s, p) => s + p.pilot!.fallbackPricedCalls, 0),
       calls: liveRuns.reduce((s, c) => s + c.calls, 0) + paired.reduce((s, p) => s + p.pilot!.calls, 0),
+      unpricedModels: [...new Set([...liveRuns, ...paired.map((p) => p.pilot!)].flatMap((c) => c.unpricedModels))].sort(),
     },
     pairs,
   }

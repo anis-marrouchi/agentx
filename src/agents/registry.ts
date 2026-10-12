@@ -3102,9 +3102,10 @@ export class AgentRegistry {
         injectedContext,
         finalResponse: response.content || undefined,
         // Per-task model attribution: prefer what the runtime actually
-        // billed; fall back to the agent's configured model so codex-cli
-        // / sdk agents don't get stamped with the daemon-wide opus default.
-        billedModel: response.billedModel || state.def.model || undefined,
+        // billed; then the per-task override (cron model); then the agent's
+        // configured model so codex-cli / sdk agents don't get stamped with
+        // the daemon-wide opus default. Same order as the usage tracker below.
+        billedModel: response.billedModel || task.model || state.def.model || undefined,
         at: new Date().toISOString(),
       })
 

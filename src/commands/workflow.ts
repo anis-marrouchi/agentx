@@ -409,7 +409,8 @@ workflow
     }
     const fb = report.fallbackPriced
     if (fb.live || fb.pilot) {
-      console.log(chalk.yellow(`  No model known for ${fb.live + fb.pilot} of ${fb.calls} model call(s) (live ${fb.live}, pilot ${fb.pilot}): priced at ${FALLBACK_PRICING_MODEL} rates. Set the agent's model in agentx.json.`))
+      console.log(chalk.yellow(`  No price known for ${fb.live + fb.pilot} of ${fb.calls} model call(s) (live ${fb.live}, pilot ${fb.pilot}): priced at ${FALLBACK_PRICING_MODEL} rates. Set the agent's model in agentx.json.`))
+      if (fb.unpricedModels.length) console.log(chalk.yellow(`  Models with no price: ${fb.unpricedModels.join(", ")}`))
     }
     if (opts.pairs) {
       console.log()
