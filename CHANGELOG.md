@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.137.2](https://github.com/anis-marrouchi/agentx/compare/v0.137.1...v0.137.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **daemon:** bound ntfy sends, never re-post a stored push, cover the CLI ([#931](https://github.com/anis-marrouchi/agentx/issues/931) follow-up) ([#933](https://github.com/anis-marrouchi/agentx/issues/933)) ([8efe57e](https://github.com/anis-marrouchi/agentx/commit/8efe57ecfee4b8cbfe4e3d334d872b59b6cd9954))
+
 ## [0.137.1](https://github.com/anis-marrouchi/agentx/compare/v0.137.0...v0.137.1) (2026-10-12)
 
 
