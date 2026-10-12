@@ -14,6 +14,33 @@ things were. Neither is a missing technique from a paper:
   accident: the Monitor reviewer, and the history every scheduled job
   carries from one run to the next (findings 1 and 2).
 
+## Read this first: the owner's measurement changes the ranking
+
+After this page was written, the owner posted findings on #947 measured
+on real session logs: one host, 2026-10-09 to 10-12, 507 sessions and
+11,545 model calls. Where that measurement and this page disagree, the
+measurement wins. In short:
+
+| This page | The measurement on that host | What follows |
+|---|---|---|
+| Price list out of date | Confirmed. Opus 5.5 is 97.8% of spend, reads cost 0.05×, and writes (49.3%) now cost more than reads (26.3%) | Keep. Fix it first |
+| 1. Scheduled jobs carry history | Every resume after more than an hour, all channels together, is 2.5% of spend. Cron gains 1.0% from the cache change | Downgraded: small on that host. The rotation sum (fresh start 0.30 USD, break-even at 22 calls, median session 16) says the same |
+| 2. Monitor reviewer on Opus | Not visible in session logs, because reviews run with `--no-session-persistence` | Still open; only the database query and a usage record can measure it |
+| 3. Ask for the 1-hour cache on API-key agents | That host is on the subscription: every main-session write is already on the hour. The measured win goes the other way: the 5-minute cache on tool-heavy agents saves 7.9% | Holds only on API-key agents. The script now also prices the 5-minute direction (`ttl5m`), so the second, unmeasured host can be checked the same way |
+| 4. Idle chats resumed in full | 42 calls, 2.5% of spend | Small on that host |
+| 5. Old tool output | Not recommended: Claude Code owns the transcript, and an edit costs a rewrite, worth 40 reads | Agreed |
+
+The owner's recommendation stands as the next step: the 5-minute cache on
+one tool-heavy agent, and medium effort on one low-risk agent, each for
+three days.
+
+**A fix to this page's cron query.** The owner also found that
+`splitTaskUsageByTier` moves a whole turn into the `tier2_*` columns once
+its summed input passes 200,000, and zeroes the base columns
+(`token-tracker.ts:174`). `task_traces` stores the same split
+(`src/storage/traces.ts:248-255`). The cron query below now adds both, so
+large resumed runs are not counted as zero.
+
 ## How this was done
 
 - **Code.** Every "today" line below was read from the code on `main` at
@@ -111,21 +138,28 @@ tested.
 
   ```sql
   -- sqlite3 .agentx/db.sqlite
-  SELECT chat_id,
-         COUNT(*) AS runs,
-         SUM(resume_session_id IS NOT NULL) AS resumed,
-         ROUND(AVG(CASE WHEN resume_session_id IS NULL
-                   THEN input_tokens + cache_read_tokens + cache_create_tokens END)) AS fresh_in,
-         ROUND(AVG(CASE WHEN resume_session_id IS NOT NULL
-                   THEN input_tokens + cache_read_tokens + cache_create_tokens END)) AS resumed_in,
-         ROUND(AVG(CASE WHEN resume_session_id IS NOT NULL
-                   THEN cache_create_tokens END)) AS resumed_write
-  FROM task_traces
-  WHERE channel = 'cron' AND started_at >= (strftime('%s','now','-7 days') * 1000)
-  GROUP BY chat_id ORDER BY runs DESC;
+  -- A turn over 200,000 summed input sits in the tier2_* columns with the
+  -- base columns at zero, so every figure adds both.
+  WITH t AS (
+    SELECT chat_id, resume_session_id IS NOT NULL AS resumed,
+           IFNULL(input_tokens,0) + IFNULL(tier2_input_tokens,0)
+             + IFNULL(cache_read_tokens,0) + IFNULL(tier2_cache_read_tokens,0)
+             + IFNULL(cache_create_tokens,0) + IFNULL(tier2_cache_create_tokens,0) AS input_all,
+           IFNULL(cache_create_tokens,0) + IFNULL(tier2_cache_create_tokens,0) AS write_all
+    FROM task_traces
+    WHERE channel = 'cron' AND started_at >= (strftime('%s','now','-7 days') * 1000)
+  )
+  SELECT chat_id, COUNT(*) AS runs, SUM(resumed) AS resumed,
+         ROUND(AVG(CASE WHEN NOT resumed THEN input_all END)) AS fresh_in,
+         ROUND(AVG(CASE WHEN resumed THEN input_all END)) AS resumed_in,
+         ROUND(AVG(CASE WHEN NOT resumed THEN write_all END)) AS fresh_write,
+         ROUND(AVG(CASE WHEN resumed THEN write_all END)) AS resumed_write
+  FROM t GROUP BY chat_id ORDER BY runs DESC;
   ```
 
-  `resumed_in / fresh_in` is the multiple each resumed run pays.
+  The figures are per run, summed over all of the run's model calls.
+  `resumed_write / fresh_write` is the multiple each resumed run pays in
+  cache writes, which is where the cost is on the 5.5 models.
   `python3 bench/cache-gap-replay.py --from <day> --to <day>` gives the
   same per channel, split by the gap since the previous call.
 - **Cost.** Small: a per-job `freshSession` setting (or a default for the
@@ -212,7 +246,9 @@ tested.
   logs' own usage. Its `1h writes` column shows which cache each channel
   already gets: 100 percent means the hour is in use, and this finding
   does not apply there. Its `ttl1h` column is the change if every write
-  used the hour. A negative value means a saving.
+  used the hour, and its `ttl5m` column the change if every write used
+  five minutes. A negative value means a saving. On a subscription host,
+  `ttl5m` is the owner's finding 1.
 - **Cost.** One environment variable in the agent's spawn environment,
   for API-key agents only.
 - **Risk.** Low. Bursty sessions cost a little more, as the column shows.
@@ -304,19 +340,24 @@ tested.
 
 ## Recommendation
 
-1. **Fix the price list first.** It is small, has no effect on agents,
-   and every saving above is priced with it.
-2. **Then test findings 1 and 2.** Both can be measured for free from
-   `.agentx/db.sqlite` on a live node: the cron query above, and the
-   review count plus 30 rebuilt inputs. Both changes are small and easy
-   to reverse. Monitor's quality check costs about $1 to $2. Of the five
-   findings, these two are the most likely to save the most, and neither
-   needs a new mechanism.
+Updated after the owner's measurement:
 
-Findings 3 and 4 come next, after one run of
-`bench/cache-gap-replay.py` on a week of a node's session logs. That run
-says, from the logs' own numbers, whether the node's cache is already the
-one-hour one, and how much of its spend is rewrites after a pause.
+1. **Run the owner's two trials** as posted on #947: the 5-minute cache
+   on one tool-heavy agent, and medium effort on one low-risk agent. They
+   are the largest measured savings, and each is one environment
+   variable.
+2. **Fix the price list.** It is small and does not touch agents. Every
+   later decision is priced with it.
+3. **Count the Monitor reviewer.** Record the usage the CLI already
+   returns, then run the 30-review comparison. Session logs cannot see
+   this spend, so the measurement above could not either.
+4. **Before trial 1 goes beyond one host**, run
+   `bench/cache-gap-replay.py` on the second host's logs. Read its
+   `1h writes` and `ttl5m` columns per channel. The owner measured one
+   host only.
+
+Findings 1 and 4 of this page wait. On the measured host they are 2.5%
+together at most.
 
 ## Check it worked
 
@@ -329,9 +370,9 @@ one-hour one, and how much of its spend is rewrites after a pause.
 
 ## If something is wrong
 
-- If the replay shows `1h writes` at 100 percent and every `ttl1h` value
-  is positive, the node already uses the one-hour cache. Finding 3 does
-  not apply to it.
+- If the replay shows `1h writes` at 100 percent and `ttl1h` at about
+  zero, the node already uses the one-hour cache. Finding 3 does not
+  apply to it; read `ttl5m` instead.
 - If the replay prints only a header, the date window holds no session
   logs. Claude Code removes logs older than `cleanupPeriodDays` (30 by
   default), and AgentX's Monitor reviews are never written there.

@@ -70,9 +70,11 @@ and after, comes from `agentx usage channels`.
 model call by how long it came after the previous call in its session:
 under 5 minutes, 5 to 60 minutes, 1 to 24 hours, more than a day. For each
 group it shows the cache writes and reads from the logs' own usage fields,
-the share of writes already on the one-hour cache, and two what-ifs: every
-write on the one-hour cache (`ttl1h`), and a fresh start with a short
-brief after a long pause (`rotate`). No model is called.
+the share of writes already on the one-hour cache, and three what-ifs: every
+write on the one-hour cache (`ttl1h`), every write on the five-minute
+cache (`ttl5m`, the other direction, for a node on the subscription whose
+writes are all on the hour), and a fresh start with a short brief after a
+long pause (`rotate`). No model is called.
 
 ```bash
 python3 bench/cache-gap-replay.py --from 2026-10-01 --to 2026-10-07

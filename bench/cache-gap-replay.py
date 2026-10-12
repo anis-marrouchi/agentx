@@ -7,13 +7,17 @@ calling a model: how much of each session's cost is cache writes that follow an
 idle gap (the cached prefix expired, so the whole context is written again),
 grouped by the gap since the previous model call in the same session.
 
-It then prices two what-ifs in "base input token" units (5-minute write 1.25x,
+It then prices three what-ifs in "base input token" units (5-minute write 1.25x,
 1-hour write 2x, uncached input 1x, output not counted; cache read 0.1x, or
 0.05x on Opus 5.5 and Sonnet 5.5 and 0.025x on Fable 5.1 and Mythos 5.1, per
 https://platform.claude.com/docs/en/about-claude/pricing):
 
   ttl1h   every write uses the 1-hour cache, so a call 5 to 60 minutes after
           the previous one reads the prefix instead of writing it again.
+  ttl5m   every write uses the 5-minute cache: writes cost 1.25x instead of
+          2x, and a call 5 minutes or more after the previous one writes the
+          prefix it read under the hour. This is the other direction, for
+          a node whose writes are already all on the hour (subscription).
   rotate  a call more than --rotate-after minutes after the previous one
           starts a fresh session carrying --brief tokens instead of the old
           context. Only the first call after the gap is repriced, so the
@@ -116,7 +120,7 @@ def main():
 
     def bucket():
         return {"calls": 0, "input": 0, "write5m": 0, "write1h": 0, "read": 0, "output": 0,
-                "cost": 0.0, "ttl1h": 0.0, "rotate": 0.0}
+                "cost": 0.0, "ttl1h": 0.0, "ttl5m": 0.0, "rotate": 0.0}
 
     by_gap, by_channel = defaultdict(bucket), defaultdict(bucket)
     for path in Path(args.projects).glob("*/*.jsonl"):
@@ -130,9 +134,16 @@ def main():
             w5m = max(write - w1h, 0)
             cost = fresh + READ * read + WRITE_5M * w5m + WRITE_1H * w1h
 
-            # 1-hour TTL: within an hour the prefix that was rewritten becomes a read.
-            moved = min(write, previous) if gap is not None and 5 <= gap < 60 else 0
+            # 1-hour TTL: within an hour a prefix the 5-minute cache let expire
+            # becomes a read. A 1-hour write after such a gap was not an expiry.
+            moved = min(w5m, previous) if gap is not None and 5 <= gap < 60 else 0
             ttl1h = fresh + READ * (read + moved) + WRITE_1H * (write - moved)
+
+            # 5-minute TTL: cheaper writes, but after 5 minutes the read prefix is gone.
+            if gap is not None and gap >= 5:
+                ttl5m = fresh + WRITE_5M * (write + read)
+            else:
+                ttl5m = fresh + READ * read + WRITE_5M * write
 
             # Rotation: after a long idle, the old prefix is replaced by a brief.
             rotate = cost
@@ -149,6 +160,7 @@ def main():
                 b["output"] += usage.get("output_tokens") or 0
                 b["cost"] += cost
                 b["ttl1h"] += ttl1h
+                b["ttl5m"] += ttl5m
                 b["rotate"] += rotate
 
     def table(title, rows, order=None):
@@ -158,19 +170,20 @@ def main():
                 total[k] += b[k]
         names = order or sorted(rows, key=lambda n: -rows[n]["cost"])
         print(f"\n{title}")
-        print(f"  {'':<16} {'calls':>7} {'write Mtok':>11} {'read Mtok':>10} {'1h writes':>9} {'cost Mu':>8} {'share':>6} {'ttl1h':>7} {'rotate':>7}")
+        print(f"  {'':<16} {'calls':>7} {'write Mtok':>11} {'read Mtok':>10} {'1h writes':>9} {'cost Mu':>8} {'share':>6} {'ttl1h':>7} {'ttl5m':>7} {'rotate':>7}")
         for name, b in [(n, rows[n]) for n in names if n in rows] + [("TOTAL", total)]:
             share = b["cost"] / total["cost"] * 100 if total["cost"] else 0
             ttl = (b["ttl1h"] / b["cost"] - 1) * 100 if b["cost"] else 0
+            ttl5 = (b["ttl5m"] / b["cost"] - 1) * 100 if b["cost"] else 0
             rot = (b["rotate"] / b["cost"] - 1) * 100 if b["cost"] else 0
             writes = b["write5m"] + b["write1h"]
             long_ttl = b["write1h"] / writes * 100 if writes else 0
             print(f"  {name[:16]:<16} {b['calls']:>7} {(b['write5m'] + b['write1h'])/1e6:>11.2f} {b['read']/1e6:>10.2f} {long_ttl:>8.0f}% "
-                  f"{b['cost']/1e6:>8.2f} {share:>5.1f}% {ttl:>+6.1f}% {rot:>+6.1f}%")
+                  f"{b['cost']/1e6:>8.2f} {share:>5.1f}% {ttl:>+6.1f}% {ttl5:>+6.1f}% {rot:>+6.1f}%")
 
     print(f"Cache gap replay {args.since}..{args.until}, rotate after {args.rotate_after:g} min with a {args.brief}-token brief")
     print("1h writes = share of cache writes already on the one-hour cache (the rest are five-minute)")
-    print("cost Mu = million base-input-token units; ttl1h and rotate = change against today")
+    print("cost Mu = million base-input-token units; ttl1h, ttl5m and rotate = change against today")
     table("By gap since the previous call in the session", by_gap, [g for g, _ in GAPS])
     table("By channel", by_channel)
     if args.out:
