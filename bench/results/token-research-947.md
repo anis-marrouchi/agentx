@@ -102,6 +102,22 @@ of repeating it:
    holds and the other channels can be decided from it without further
    trials.
 
+**The measurement's answer (posted on #947 the same evening).** None of
+the measured items is both quick and big. The 5-minute cache (7.9%) and
+ObservationPack (6.2%) each need about six daytime hours on one busy
+agent, not three days. The one item that could be big is effort: output
+is 24.4% of the spend. It can be measured offline in about 3 hours
+(about 30 USD) by re-running about 20 past read-only tasks at the
+default effort, at medium effort, and on Sonnet 5.5, then grading the
+answers blind. That is the current recommendation; the owner decides.
+
+Two items above are not in that table:
+
+- **A** is a test, not a saving. It explains part of the 14.2% that
+  first calls write, which the table puts at "days, needs code". If the
+  git snapshot is the cause, the fix is one variable, not code.
+- **C** costs tokens that the measured logs could not see.
+
 **Left out because they do not fit the bar:** medium effort (quality
 needs days of answers to judge), fewer round trips (a guess), per-task
 budgets (needs the 20 most expensive sessions read first), and masking
