@@ -48,19 +48,20 @@ Schedules (also called scheduled jobs, cron jobs or routines), keyed by job id: 
 
 ## `wikiNotes`
 
-Notes agents leave for the wiki observe/sweep run: what changed, the source and the date. The listed schedules read them first and record each one as patched, rejected or deferred. Off by default. Guide: [Let agents leave notes for the wiki run](/jobs/wiki-notes).
+Notes agents leave for the wiki observe/sweep run: what changed, the source and the date. The listed schedules, and the absorb pass of `absorbAgent`, read them first and record each one as patched, rejected or deferred. Off by default. Guide: [Let agents leave notes for the wiki run](/jobs/wiki-notes).
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `wikiNotes.enabled` | boolean | `false` | Turns wiki notes on for this node. Needs `wikiNotes.inbox`. |
 | `wikiNotes.inbox` | string | — | Agent that runs the wiki observe/sweep schedule. Notes are kept on its node; other nodes forward theirs to it. |
 | `wikiNotes.crons` | string[] | `[]` | Schedule ids (keys of `crons`) that read the inbox when they start. Each must run as the inbox agent. |
+| `wikiNotes.absorbAgent` | string | — | Agent whose `agentx wiki absorb` pass reads the inbox and answers each note with a patch, a rejection or a deferral. Must be an agent on this node, the node that keeps the inbox. Unset: absorb reads no notes. |
 | `wikiNotes.maxNotesPerRun` | number (1-100) | `20` | Most notes one run is given, open notes before deferred ones. The rest wait for the next run. |
 | `wikiNotes.maxDeferrals` | number (1-20) | `3` | A note deferred this many times expires and is no longer offered. |
 
 ```json
 {
-  "wikiNotes": { "enabled": true, "inbox": "wiki-agent", "crons": ["wiki-sweep"] }
+  "wikiNotes": { "enabled": true, "inbox": "wiki-agent", "crons": ["wiki-sweep"], "absorbAgent": "wiki-agent" }
 }
 ```
 
@@ -126,6 +127,11 @@ The workflow engine. See [Workflows](/dashboard/workflows).
 | `workflows.followUp.stallMinutes` | number | `30` | Minutes without progress before an agent step gets a reminder (a nudge). At most 10080 (7 days). |
 | `workflows.followUp.maxNudges` | integer (0–20) | `2` | Nudges before the step counts as blocked and you are told. |
 | `workflows.followUp.approval` | `"step"` \| `"start"` | `"step"` | When you approve messages to people: each before it is sent, or all at once when a run starts. A workflow's own `approval` wins. |
+| `workflows.required` | object | `{}` | Every task runs inside a workflow run: a saved workflow that fits, else a plan the agent writes, else one step. See [Run every task through a workflow](/jobs/every-task-a-workflow). |
+| `workflows.required.enabled` | boolean | `false` | On for every agent. Needs `workflows.enabled`. |
+| `workflows.required.agents` | object | `{}` | Per agent, by id: `true` or `false` wins over `enabled`. |
+| `workflows.required.exemptQuestions` | boolean | `true` | A plain question (no plan, only tools that change nothing) leaves no run. |
+| `workflows.required.retentionDays` | number | `30` | Task runs that ended are removed this many days after their last change, when the daemon starts and every 6 hours. `0` keeps them all. |
 | `workflows.editor` | `"disabled"` \| `"readonly"` \| `"edit"` | `"edit"` | The dashboard's workflow editor: hidden, view only, or editable. |
 
 ## `procedures`
@@ -237,7 +243,7 @@ An open request that fails, times out, is cut off and not picked up again, or ha
 
 Who counts as you on this computer's own surfaces (voice, the phone app, the dashboard) is proven, not declared: the daemon marks the turns it starts itself, and the dashboard presents the key in `.agentx/operator.key` for the phone app. The daemon creates that file next to `agentx.json` at start, readable by your user only. A call to `POST /task` that names one of those channels without the key runs as an ordinary turn and is not recorded as your request. When the phone app talks to an agent on another computer, the computer it is paired with checks its own key on the forward and tells the other one the turn is yours; that other computer believes it only from a request that carries one of its `mesh.peers[].token` values and comes from another machine, never from a caller on the same machine or a bare header. A computer you let vouch is trusted for more than the list: the turn is yours for [people limits](/jobs/people) too. When the whole mesh shares one token, every computer in it can vouch, so share a token only between computers you own.
 
-While requests are on, or follow-up workflows are (`workflows.enabled` and `workflows.followUp.enabled`), the daemon adds its own tool server (`agentx serve --stdio`) to every agent's `.mcp.json` at start, as `agentx`, so each agent can close its requests with the `agentx_request` tool. An `agentx` entry you declared in the agent's `mcp` block, or a `.mcp.json` you wrote by hand, wins. Agents on a `claude-code` engine do not depend on that file: every session the daemon starts for them loads the `agentx` tool server through its own start flags, so the `agentx_request` and `agentx_approval` tools are there whether or not requests are on.
+While requests are on, or follow-up workflows are (`workflows.enabled` and `workflows.followUp.enabled`), or every task runs through a workflow (`workflows.required`), the daemon adds its own tool server (`agentx serve --stdio`) to every agent's `.mcp.json` at start, as `agentx`, so each agent can close its requests with the `agentx_request` tool. An `agentx` entry you declared in the agent's `mcp` block, or a `.mcp.json` you wrote by hand, wins. Agents on a `claude-code` engine do not depend on that file: every session the daemon starts for them loads the `agentx` tool server through its own start flags, so the `agentx_request` and `agentx_approval` tools are there whether or not requests are on.
 
 How to see, close and drop requests, step by step: [Keep track of what you asked for](/jobs/open-requests).
 
@@ -327,6 +333,18 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.crashLoop.restarts` | number (1 or more) | `3` | This many restarts… |
 | `resume.crashLoop.windowMinutes` | number | `10` | …within this many minutes pauses picking up work. |
 
+## `signals`
+
+Pausing a running task with a resume plan, and resuming it later. You may always pause or resume; an agent may pause or resume a task it handed out. See [Pause a task and resume it later](/jobs/pause-and-resume).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `signals.enabled` | boolean | `true` | Turns pausing and resuming on. Off: every signal is refused, yours included. |
+| `signals.windDownSeconds` | number (10–1800) | `120` | How long a paused agent gets to write its resume plan. Past it, the plan-writing turn is stopped and AgentX writes the plan from the run's trace. |
+| `signals.allowAgents` | list of strings | `[]` | Agents that may pause or resume any task on this machine. `"*"` allows every agent. An agent never pauses its own task. |
+| `signals.allowPeers` | list of strings | `[]` | Mesh machines (their node names) whose signals this machine accepts. A machine using its own token from `mesh.peers` is that machine, with or without naming itself. The list does not hold for the shared `MESH_TOKEN`: such a machine is believed about its name, and counts as the owner when it names none. Use per-peer tokens in `mesh.peers` if machines are not equally trusted. |
+| `signals.maxPerRoot` | number (1–100) | `6` | Loop brake: most signals from agents and other machines one request (one root id) may carry in a day. The owner's are never counted. |
+
 ## `reminders`
 
 Hands due Apple Reminders back to the agent that created them. macOS only, off by default. See [Hand due reminders back to agents](/automations/reminders).
@@ -351,8 +369,40 @@ Settings for the shared wiki. See [Let agents keep the wiki up to date](/jobs/wi
 | `contributions.maxCostUsd` | number (0–20) | `0.5` | Model spend per agent per run, in dollars, for agents that set no limit of their own. |
 | `contributions.model` | string | `"sonnet"` | Model for the daily run, for agents that name none. |
 | `query.shared` | boolean | `true` | Wiki searches also read other agents' pages the agent may see, and the shared lessons. |
+| `query.method` | `"auto"`, `"summaries"` or `"catalog"` | `"auto"` | How a wiki question picks its pages. `summaries`: from the one-line page summaries, then a live read. `catalog`: from page titles, then along the links between pages. `auto`: `summaries` once at least 80% of the agent's own pages have a summary. See [Get wiki answers checked at the source](/jobs/wiki-live-answers). |
+| `query.candidates` | number (1–50) | `12` | How many of the agent's own pages the picking model sees. |
+| `query.sharedCandidates` | number (0–50) | `4` | How many of other agents' pages it sees beside them. |
+| `query.maxPages` | number (1–10) | `3` | Most pages opened for one answer. |
+| `query.pageChars` | number (200–40000) | `4000` | Characters of each opened page given to the answer. |
+| `query.linkedPages` | number (0–10) | `0` | Pages linked from the picked pages that are also opened, best summary line first. `0` opens none. |
+| `query.linkedChars` | number (200–40000) | `6000` | Characters all the linked pages together give to the answer. |
+| `query.navigatorModel` | string | `"haiku"` | Model that picks the pages. |
+| `query.answerModel` | string | `"sonnet"` | Model that writes the answer. |
+| `query.notes.enabled` | boolean | `false` | The summaries method also searches the asking agent's own notes. Only that agent's notes, never another agent's. Through the `agentx_wiki_query` tool, only for the agent the tool runs as. Notes can hold contact details, so turn this on only for agents whose answers go back to the same agent. See [Search the agent's own notes](/jobs/wiki-live-answers#search-the-agent-s-own-notes). |
+| `query.notes.types` | list of strings | `["project", "reference"]` | Note types searched. |
+| `query.notes.candidates` | number (1–50) | `4` | How many of the agent's notes the picking model sees beside its pages. |
+| `query.live.enabled` | boolean | `true` | The live read before the answer. `false` switches it off. |
+| `query.live.maxReads` | number (0–20) | `6` | Most reads for one question. |
+| `query.live.timeoutMs` | number (1000–120000) | `15000` | How long one request to a source may take, in milliseconds. A deploy read makes up to four rounds of requests, so it can take up to four times this. |
+| `query.live.plannerModel` | string | `"haiku"` | Model that names the reads. |
+| `query.live.sources` | list | `[]` | Where a live read may read from. Empty: no live read runs. |
+| `query.live.sources[].type` | `"github"`, `"gitlab"` or `"agentx"` | — | The kind of system. |
+| `query.live.sources[].repos` | list | — | `github` and `gitlab`: the repositories that may be read, each `"owner/name"` or an object with `repo` and `about`. At least one. |
+| `query.live.sources[].repos[].repo` | string | — | The repository, as `owner/name` or a GitLab project path. |
+| `query.live.sources[].repos[].about` | string | unset | What lives there, so the model names the right repository. |
+| `query.live.sources[].apiUrl` | string | `"https://api.github.com"` | `github`: the API address. |
+| `query.live.sources[].url` | string | `channels.gitlab.host`, or this machine | `gitlab`: the host. `agentx`: the daemon to ask. |
+| `query.live.sources[].tokenEnv` | string | unset | `github` and `gitlab`: name of the environment variable that holds a read token. |
+| `query.live.sources[].tokenFile` | string | unset | `github` and `gitlab`: a file whose first line is the read token. |
+| `query.live.sources[].peers` | boolean | `true` | `agentx`: also ask each machine connected to the daemon. |
+| `summaries.model` | string | `"haiku"` | Model that writes the one-line page summaries. |
+| `summaries.batchSize` | number (1–50) | `20` | Pages per model call. |
+| `summaries.maxWords` | number (5–120) | `35` | Longest summary, in words. |
+| `summaries.schedule` | schedule | unset | When `agentx wiki summarize --all` runs on its own (the `wiki-summarize` job). Unset: no job. |
+| `summaries.timezone` | string | `"UTC"` | Time zone of that schedule. |
+| `summaries.agent` | string | unset | Agent the job is listed under. Unset: `node.defaultAgent`, else the first agent. |
 
-The two jobs exist only while at least one agent is switched on. A job you define under `crons` with the same id (`wiki-contribute` or `wiki-contribute-merge`) replaces the built-in one.
+The two contribution jobs exist only while at least one agent is switched on. A job you define under `crons` with the same id (`wiki-contribute`, `wiki-contribute-merge` or `wiki-summarize`) replaces the built-in one.
 
 ## Check it worked
 

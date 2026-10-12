@@ -793,6 +793,9 @@ export class WorkflowDispatcher {
       ?? { maxAttempts: 1, backoffMs: 1000 }
     let result: NodeResult = { error: "retry-loop did not run" }
     let attempt = 0
+    // How long the step took, retries included (#858: run records).
+    const stepStartedMs = Date.now()
+    const timing = () => ({ startedAt: new Date(stepStartedMs).toISOString(), durationMs: Math.max(0, Date.now() - stepStartedMs) })
     while (attempt < retry.maxAttempts) {
       attempt++
       try {
@@ -857,7 +860,7 @@ export class WorkflowDispatcher {
         this.runs.recordExecution({
           runId, entry: {
             at: now, nodeId, inputKeys, status: "failed",
-            idempotencyKey: key, note: result.error.slice(0, 200),
+            idempotencyKey: key, note: result.error.slice(0, 200), ...timing(),
           },
           nextPending: remainingFromPending,
           status: statusUpdate,
@@ -897,7 +900,7 @@ export class WorkflowDispatcher {
         }
         this.runs.recordExecution({
           runId, entry: {
-            at: now, nodeId, inputKeys, status: "paused", idempotencyKey: key,
+            at: now, nodeId, inputKeys, status: "paused", idempotencyKey: key, ...timing(),
             ...(result.blocked ? { note: `blocked: ${result.blocked}`.slice(0, 200) } : {}),
           },
           nextPending: remainingFromPending,
@@ -956,7 +959,7 @@ export class WorkflowDispatcher {
 
       const updated = this.runs.recordExecution({
         runId,
-        entry: { at: now, nodeId, inputKeys, status: "ok", output, idempotencyKey: key },
+        entry: { at: now, nodeId, inputKeys, status: "ok", output, idempotencyKey: key, ...timing() },
         nextPending: terminal ? [] : merged,
         status: statusUpdate,
         context: newContext,
@@ -1218,6 +1221,68 @@ export class WorkflowDispatcher {
     if (walk) void this.walk(wf, args.runId, `done:${args.runId}`).catch((e: any) => this.log(`[workflow:${wf.id}] walk after step done failed: ${e.message}`))
     else await this.settle(args.runId)
     return { ok: true }
+  }
+
+  /** The agent step of `agentId` a running run is on, for a stop signal
+   *  about to pause it (#870). An error when the run cannot pause there. */
+  agentStepOf(runId: string, agentId: string): { workflowId: string; nodeId: string } | { error: string } {
+    const run = this.runs.get(runId)
+    if (!run) return { error: `no workflow run ${runId}` }
+    if (run.status !== "running") return { error: `workflow run ${runId} is ${run.status}` }
+    const wf = this.store.get(run.workflowId)
+    if (!wf) return { error: `workflow "${run.workflowId}" is gone` }
+    const steps = run.pending.filter((id) => {
+      const node = findNode(wf, id)
+      return node?.type === "agent" && String((node.config as { agentId?: unknown }).agentId ?? "") === agentId
+    })
+    if (steps.length !== 1) return { error: steps.length ? `workflow run ${runId} runs ${agentId} in ${steps.length} steps at once` : `workflow run ${runId} is not on a step of ${agentId}` }
+    return { workflowId: run.workflowId, nodeId: steps[0] }
+  }
+
+  /** A resume signal for a step a stop signal paused (#870). The step
+   *  re-enters with `note` (the agent's resume plan) prepended to its
+   *  prompt, and the run walks on from it. Resolves once the walk is
+   *  started, not when the step ends. */
+  async resumeStoppedStep(args: { runId: string; agentId: string; taskId?: string; note: string; by: string }): Promise<{ ok: true; nodeId: string } | { ok: false; error: string }> {
+    const run0 = this.runs.get(args.runId)
+    if (!run0) return { ok: false, error: `no workflow run ${args.runId}` }
+    const wf = this.store.get(run0.workflowId)
+    if (!wf) return { ok: false, error: `workflow "${run0.workflowId}" is gone` }
+    let error: string | undefined
+    let nodeId = ""
+    await this.commit(args.runId, () => {
+      const fresh = this.runs.get(args.runId)
+      const p = fresh?.pausedAt
+      if (!fresh || fresh.status !== "paused" || p?.kind !== "agentStop") {
+        error = `workflow run ${args.runId} is not paused by a stop (it is ${fresh?.status ?? "gone"}${p ? `, on ${p.kind} ${p.nodeId}` : ""})`
+        return
+      }
+      if (p.agentId !== args.agentId || (args.taskId && p.taskId && p.taskId !== args.taskId)) {
+        error = `workflow run ${args.runId} is paused at step "${p.nodeId}" of ${p.agentId}, not at this task`
+        return
+      }
+      nodeId = p.nodeId
+      const at = new Date().toISOString()
+      // The `resumed` entry carries the note: the step's handler reads it
+      // from the step's newest entry, so only the re-entering turn uses it.
+      this.runs.recordExecution({
+        runId: fresh.id,
+        entry: {
+          at, nodeId, inputKeys: [], status: "resumed", output: { resumeNote: args.note },
+          idempotencyKey: idempotencyKey(fresh.id, nodeId, `signal-resumed:${args.taskId ?? at}`),
+          note: `resumed by ${args.by}`.slice(0, 200),
+        },
+        nextPending: [nodeId, ...fresh.pending.filter((x) => x !== nodeId)],
+        status: "running",
+        pausedAt: null,
+      })
+      this.emitRunEvent({ runId: fresh.id, workflowId: wf.id, nodeId, phase: "resumed", status: "running", note: `signal:resume by ${args.by}`, rootId: fresh.eventRootId })
+    })
+    if (error) return { ok: false, error }
+    this.log(`[workflow:${wf.id}] run ${args.runId} resumed at step "${nodeId}" by ${args.by}`)
+    void this.walk(wf, args.runId, `signal-resume:${args.taskId ?? Date.now()}`)
+      .catch((e: any) => this.log(`[workflow:${wf.id}] walk after resume failed: ${e.message}`))
+    return { ok: true, nodeId }
   }
 
   /** The owner stops a run (CLI, dashboard). */

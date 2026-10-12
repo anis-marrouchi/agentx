@@ -145,7 +145,8 @@ export class StatusBoard {
       // Cut by a shutdown: the next boot decides.
       if (p.interrupted) return
       let state: StatusState
-      if (p.error) state = p.errorKind === "cancelled" ? "stopped" : /\btimed? ?out\b|timeout/i.test(p.error) ? "timed_out" : "failed"
+      // A cancel or a stop signal (#857) is stopped on purpose, not failed.
+      if (p.error) state = p.errorKind === "cancelled" || p.errorKind === "stopped" || p.stopped ? "stopped" : /\btimed? ?out\b|timeout/i.test(p.error) ? "timed_out" : "failed"
       else state = row.pending > 0 ? "waiting" : "done"
       this.change(row.id, { state, turnLive: false })
     })
@@ -182,7 +183,7 @@ export class StatusBoard {
    *  on; an expiry means the answer never came (no card approves itself, #741). */
   cardResolved(card: { id: string; status: string; if_silent?: string; outcome?: string }): void {
     this.guard("card result", () => {
-      const went = card.status === "decided"
+      const went = card.status === "decided" || card.status === "resolved"
       this.handedBack(this.store.byRef("card", card.id), went ? "done" : "timeout")
     })
   }

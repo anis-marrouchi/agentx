@@ -18,7 +18,7 @@ export interface EntityViewCtx {
 
 /** Article markdown with [[links]] pointing at entity pages. */
 export function wikiMd(g: WikiGraph, text: string): string {
-  return markdownToHtml(text.replace(/<!--\s*tags?:[^>]*-->\s*\n?/gi, ""), {
+  return markdownToHtml(text.replace(/<!--\s*tags?:[^>]*-->\s*\n?/gi, "").replace(/<!-- \/overview -->\s*\n?/g, ""), {
     wikilink: (target, display) => {
       const id = g.names.get(normName(target))
       return id
@@ -33,6 +33,51 @@ export function bodyOf(content: string): string {
   return content.replace(/^---\n[\s\S]*?\n---\n?/, "").trim()
 }
 
+const OVERVIEW_HEADING = /^##[ \t]+Overview[ \t]*$/im
+/** Closes an Overview section on pages whose other text has no headings. */
+export const OVERVIEW_END = "<!-- /overview -->"
+
+/** Where the Overview section starts and ends in a body, if it has one. */
+export function overviewSpan(body: string): { start: number; textStart: number; end: number; after: number } | undefined {
+  const m = OVERVIEW_HEADING.exec(body)
+  if (!m) return undefined
+  const textStart = m.index + m[0].length
+  const rest = body.slice(textStart)
+  const marker = rest.indexOf(OVERVIEW_END)
+  const heading = rest.search(/^#{1,2}[ \t]/m)
+  const cut = [marker, heading].filter(i => i >= 0)
+  const end = textStart + (cut.length ? Math.min(...cut) : rest.length)
+  const after = marker >= 0 && textStart + marker === end ? end + OVERVIEW_END.length : end
+  return { start: m.index, textStart, end, after }
+}
+
+/** The `## Overview` section of a page body, without its heading. */
+export function overviewSection(content: string): string | undefined {
+  const body = bodyOf(content)
+  const span = overviewSpan(body)
+  const text = span ? body.slice(span.textStart, span.end).trim() : ""
+  return text || undefined
+}
+
+/** The newest `## Overview` any of the entity's pages has (#820). */
+export function overviewOf(e: Entity): string | undefined {
+  const pages = [...e.pages].sort((a, b) => (b.article.meta.lastUpdated || "").localeCompare(a.article.meta.lastUpdated || ""))
+  for (const p of pages) {
+    const text = overviewSection(p.article.content)
+    if (text) return text
+  }
+  return undefined
+}
+
+/** Cut at the last sentence end that fits, else at a word. */
+export function cutAtSentence(text: string, max: number): string {
+  if (text.length <= max) return text
+  const head = text.slice(0, max)
+  const end = Math.max(...[". ", "! ", "? ", "؟ ", "。"].map(s => head.lastIndexOf(s)))
+  if (end > max / 3) return head.slice(0, end + 1)
+  return `${head.replace(/\s+\S*$/, "")}…`
+}
+
 /** First paragraph of the first page, as plain text. */
 export function summaryOf(e: Entity, max = 360): string {
   const body = bodyOf(e.pages[0]?.article.content ?? "")
@@ -44,7 +89,7 @@ export function summaryOf(e: Entity, max = 360): string {
     .replace(/[*_`]/g, "")
     .replace(/\s+/g, " ")
     .trim()
-  return plain.length > max ? `${plain.slice(0, max - 1)}…` : plain
+  return cutAtSentence(plain, max)
 }
 
 function pillarOf(g: WikiGraph, e: Entity) {
@@ -65,7 +110,10 @@ function notesHtml(g: WikiGraph, e: Entity, full: boolean): string {
   if (!full) {
     const first = e.pages[0]
     if (!first) return ""
-    const text = bodyOf(first.article.content)
+    // The overview card above already shows the Overview section.
+    const body = bodyOf(first.article.content)
+    const span = overviewSpan(body)
+    const text = (span ? body.slice(0, span.start) + body.slice(span.after) : body).trim()
     const short = text.length > 1600 ? `${text.slice(0, 1600).replace(/\n[^\n]*$/, "")}\n\n…` : text
     return `<div class="ox-prose">${wikiMd(g, short)}</div>`
   }
@@ -108,9 +156,12 @@ export function entityPage(ctx: EntityViewCtx, e: Entity): string {
   if (e.pages.length > 1) main += `<span class="ox-chip">${icon("merge")}merged from ${e.pages.length} pages</span>`
   main += `</div></div></div>`
 
-  const summary = summaryOf(e)
-  if (summary && lens[0]?.panel !== "notes") {
-    main += `<section class="ox-card"><p class="ox-summary">${esc(summary)}</p><div class="ox-meta"><span>updated ${esc(e.updated || "—")}</span><span>sources: ${e.sources.length}</span><span>${e.statements.length} statements</span></div></section>`
+  if (e.review) main += `<div class="ox-card ox-sub" style="border-color:var(--warn,#d97706)">Check the type: ${esc(e.review)}</div>`
+  const overview = overviewOf(e)
+  const summary = overview ? "" : summaryOf(e)
+  if ((overview || summary) && lens[0]?.panel !== "notes") {
+    const lead = overview ? `<div class="ox-summary ox-prose">${wikiMd(g, overview)}</div>` : `<p class="ox-summary">${esc(summary)}</p>`
+    main += `<section class="ox-card">${lead}<div class="ox-meta"><span>updated ${esc(e.updated || "—")}</span><span>sources: ${e.sources.length}</span><span>${e.statements.length} statements</span></div></section>`
   }
   main += `<div class="ox-grid2">`
   for (const def of lens) {

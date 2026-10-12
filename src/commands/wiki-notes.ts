@@ -137,9 +137,10 @@ export function registerWikiNotes(wiki: Command): void {
 
   notes
     .command("config")
-    .description("show or set the inbox agent and the schedules that read it")
+    .description("show or set the inbox agent, and the schedules and absorb pass that read it")
     .option("--inbox <agent>", "agent that runs the wiki observe/sweep schedule (\"\" clears it)")
     .option("--cron <ids>", "comma-separated schedule ids that read the inbox (\"\" for none)")
+    .option("--absorb <agent>", "agent whose `wiki absorb` pass reads and answers the notes (\"\" clears it)")
     .option("--max <n>", "most notes one run is given (1-100)")
     .option("--max-deferrals <n>", "times a note may be deferred before it expires (1-20)")
     .option("--enable", "turn wiki notes on")
@@ -150,6 +151,7 @@ export function registerWikiNotes(wiki: Command): void {
       const patch: Record<string, unknown> = {}
       if (opts.inbox !== undefined) patch.inbox = opts.inbox
       if (opts.cron !== undefined) patch.crons = String(opts.cron).split(",")
+      if (opts.absorb !== undefined) patch.absorbAgent = opts.absorb
       if (opts.max !== undefined) patch.maxNotesPerRun = Number(opts.max)
       if (opts.maxDeferrals !== undefined) patch.maxDeferrals = Number(opts.maxDeferrals)
       if (opts.enable && opts.disable) { fail("pick one of --enable and --disable"); return }
@@ -168,6 +170,7 @@ export function registerWikiNotes(wiki: Command): void {
       console.log(`  wiki notes: ${view.enabled ? chalk.green("on") : chalk.dim("off")}`)
       console.log(`  inbox agent: ${view.inbox || chalk.dim("not set")}`)
       console.log(`  schedules that read it: ${view.crons.length ? view.crons.join(", ") : chalk.dim("none on this node")}`)
+      console.log(`  absorb that reads it: ${view.absorbAgent ? `wiki absorb for ${view.absorbAgent}` : chalk.dim("none")}`)
       console.log(`  most notes per run: ${view.maxNotesPerRun}`)
       console.log(`  deferrals before a note expires: ${view.maxDeferrals}`)
     }))

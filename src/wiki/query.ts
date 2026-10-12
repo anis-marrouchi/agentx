@@ -15,6 +15,11 @@ import { resolve } from "path"
 import { execSync } from "child_process"
 import type { WikiArticle, WikiIndex } from "./types"
 import type { WikiStore } from "./store"
+import { claudeModelCall, type ModelCall } from "./model-call"
+import type { FetchLike, LiveLine } from "./live-read"
+import { DEFAULT_SUMMARIES_QUERY, collectSummaries, summariesQuery, type PageView, type SummariesQuerySettings } from "./query-summaries"
+import { isNotePath, notePool, type NoteSource } from "./query-notes"
+import type { QueryMethod } from "./query-settings"
 
 /**
  * Agentic wiki query — the "Farzapedia-faithful" retrieval path.
@@ -29,6 +34,10 @@ import type { WikiStore } from "./store"
  * Returns an answer with citations and a trace of which articles were walked,
  * so callers can audit the retrieval path.
  */
+
+/** Models of the catalog method when no `selectorModel` / `synthModel` is given. */
+export const CATALOG_SELECTOR_MODEL = "haiku"
+export const CATALOG_SYNTH_MODEL = "sonnet"
 
 export interface AgenticQueryOptions {
   /** Candidate-selection model (cheap). Defaults to "haiku". */
@@ -55,6 +64,38 @@ export interface AgenticQueryOptions {
    *  articles the requester may read are offered. Their paths come back
    *  as `@<id>/<path>`. */
   shared?: SharedWikiStore[]
+  /** How pages are picked (#855). `summaries`: from the one-line page
+   *  summaries, then a live read (query-summaries.ts). `auto`: that, once
+   *  most of the requester's own pages have a summary
+   *  (AUTO_SUMMARY_COVERAGE). Default "catalog". */
+  method?: QueryMethod
+  /** Settings of the summaries method. An explicit `selectorModel` or
+   *  `synthModel` overrides its models. */
+  summaries?: SummariesQuerySettings
+  /** The requester's own notes, searched beside its pages by the
+   *  summaries method (#862). A note is private to the agent that wrote
+   *  it: notes of any other agent are ignored. */
+  notes?: NoteSource
+  /** Model call and HTTP GET of the summaries method; tests pass their own. */
+  call?: ModelCall
+  fetch?: FetchLike
+}
+
+/** Share of the requester's own pages that must have a summary before
+ *  `auto` picks pages from summaries. Below it, an unsummarised page
+ *  would be ranked on its title and tags alone, so the catalog walk is
+ *  kept: one `wiki summarize --agent <id>` or `--limit` run must not
+ *  switch every agent that can read that store. */
+export const AUTO_SUMMARY_COVERAGE = 0.8
+
+/** Share of the pages in reach that have a summary: the requester's own
+ *  pages, or the shared pages when the requester has none. */
+function summaryCoverage(store: WikiStore, requesterId: string | undefined, view: ScopeView, summaries: Map<string, string>): number {
+  if (summaries.size === 0) return 0
+  let paths = store.listArticles(requesterId || "").map((a) => a.path).filter((p) => !p.includes("/_versions/"))
+  if (paths.length === 0) paths = view.sharedPool.map((e) => e.path)
+  if (paths.length === 0) return 0
+  return paths.filter((p) => summaries.has(p)).length / paths.length
 }
 
 /** A wiki searched alongside the requester's own. */
@@ -75,11 +116,22 @@ export interface AgenticQueryResult {
   walked: Array<{ title: string; path: string; type?: string; hop: number }>
   /** "no-catalog" | "no-candidates" | "ok" */
   status: "ok" | "no-catalog" | "no-candidates" | "error"
+  /** How the pages were picked. */
+  method?: "summaries" | "catalog"
+  /** Lines read at the source for this answer (summaries method). */
+  live?: LiveLine[]
+  /** Live reads the model named and the config allowed. */
+  liveAsked?: number
+  /** "search": no wiki page was used; the answer comes from a search at
+   *  the source (#861). */
+  basis?: "pages" | "search"
   /** For operator debugging only. */
   trace?: {
     selectorMs: number
     synthesisMs: number
     selectorOutput?: string
+    planMs?: number
+    liveMs?: number
   }
   error?: string
 }
@@ -96,8 +148,8 @@ export async function agenticQuery(
   requesterId: string | undefined,
   opts: AgenticQueryOptions = {},
 ): Promise<AgenticQueryResult> {
-  const selectorModel = opts.selectorModel ?? "haiku"
-  const synthModel = opts.synthModel ?? "sonnet"
+  const selectorModel = opts.selectorModel ?? CATALOG_SELECTOR_MODEL
+  const synthModel = opts.synthModel ?? CATALOG_SYNTH_MODEL
   const maxCandidates = opts.maxCandidates ?? 3
   const maxHops = opts.maxHops ?? 2
   const maxArticles = opts.maxArticles ?? 8
@@ -109,6 +161,35 @@ export async function agenticQuery(
   // --- Step 1: Load the catalog ---
   const catalogPath = resolve(store.baseDir, "_index.md")
   const view = scopeView(store, requesterId, opts.shared)
+
+  const method = opts.method ?? "catalog"
+  if (method !== "catalog") {
+    const summaries = collectSummaries(store, opts.shared)
+    if (method === "summaries" || summaryCoverage(store, requesterId, view, summaries) >= AUTO_SUMMARY_COVERAGE) {
+      const base = opts.summaries ?? DEFAULT_SUMMARIES_QUERY
+      const notes = opts.notes && requesterId && opts.notes.owner === requesterId ? notePool(opts.notes) : undefined
+      const out = await summariesQuery(question, notes ? withNotes(view, notes) : view, notes ? new Map([...summaries, ...notes.summaries]) : summaries, {
+        ...base,
+        navigatorModel: opts.selectorModel ?? base.navigatorModel,
+        answerModel: opts.synthModel ?? base.answerModel,
+      }, { call: opts.call ?? claudeModelCall, fetch: opts.fetch, timeoutMs, log })
+      const pages = out.picked.map((a) => ({ title: a.meta.title, path: a.path, type: isNotePath(a.path) ? "note" : a.meta.type, hop: a.hop }))
+      return {
+        answer: out.answer,
+        citations: out.status === "ok" ? pages.map(({ hop: _, ...p }) => p) : [],
+        candidates: pages.filter((p) => p.hop === 0).map(({ title, path }) => ({ title, path })),
+        walked: pages,
+        status: out.status,
+        method: "summaries",
+        basis: out.basis,
+        live: out.live,
+        liveAsked: out.liveAsked,
+        trace: out.trace,
+        ...(out.error ? { error: out.error } : {}),
+      }
+    }
+  }
+
   if (!existsSync(catalogPath) && view.sharedPool.length === 0) {
     return emptyResult("no-catalog", question, "No _index.md found — run `agentx wiki status` to rebuild.")
   }
@@ -267,7 +348,11 @@ interface ScopeView {
   /** Title (lowercased) → pages whose `related` names it, newest first.
    *  Built only when shared wikis are searched. */
   backlinks: Map<string, string[]>
+  /** Paths the requester may read, own and shared. */
+  readable: Set<string>
   read(path: string): WikiArticle | null
+  /** Pages `article` names in `related`, then the newest that name it. */
+  links(article: WikiArticle): string[]
 }
 
 function scopeView(store: WikiStore, requesterId: string | undefined, shared: SharedWikiStore[] = []): ScopeView {
@@ -310,6 +395,7 @@ function scopeView(store: WikiStore, requesterId: string | undefined, shared: Sh
   let pool: CatalogEntry[] | undefined
   return {
     backlinks,
+    readable: new Set(linking.map((l) => l.path)),
     // Lazy: retrieveArticles brings its own pool, and building this one
     // rebuilds the index.
     get pool() { return (pool ??= [...catalogPool(store), ...sharedPool]) },
@@ -324,6 +410,24 @@ function scopeView(store: WikiStore, requesterId: string | undefined, shared: Sh
       const article = requesterId ? s.readArticleAs(rel, requesterId) : s.readArticle(rel)
       return article ? { ...article, path } : null
     },
+    links(article) {
+      const forward = (article.meta.related ?? []).map((t) => titleIndex.get(t.toLowerCase())).filter((p): p is string => !!p)
+      const names = [article.meta.title, ...(article.meta.aliases ?? [])].map((n) => n.toLowerCase())
+      const back = [...new Set(names.flatMap((n) => backlinks.get(n) ?? []))].filter((p) => p !== article.path).slice(0, BACKLINKS_PER_PICK)
+      return [...new Set([...forward, ...back])].filter((p) => p !== article.path)
+    },
+  }
+}
+
+/** The view with the requester's notes added: in the pool, readable,
+ *  and opened from the notes folder. Everything else the view carries
+ *  (such as the title index linked pages follow) is kept. */
+function withNotes(view: ScopeView, notes: ReturnType<typeof notePool>): PageView {
+  return {
+    ...view,
+    pool: [...view.pool, ...notes.pool],
+    readable: new Set([...view.readable, ...notes.pool.map((n) => n.path)]),
+    read: (path) => (isNotePath(path) ? notes.read(path) : view.read(path)),
   }
 }
 

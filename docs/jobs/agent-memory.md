@@ -249,7 +249,65 @@ AgentX groups tasks that repeat, such as "send the weekly report", the same way 
 
 A few runs prove little. Treat a change as a hint until `n` is in the tens.
 
-<!-- No screenshot: every step here is a terminal command. -->
+## 10. Check which notes say where and when they were checked
+
+An agent's notes are the memories it writes for itself. A note can also carry two extra lines in its header (the lines between the `---` markers at the top of the file):
+
+- `source:` where the note's content was checked, such as "billing app settings" or "owner said";
+- `checked:` the date it was checked, written `YYYY-MM-DD`.
+
+This check only reads the notes; it changes nothing.
+
+1. **Terminal:** list an agent's notes:
+   ```sh
+   agentx memory check --agent <agent>
+   ```
+   Each note shows `✓` with its source and check date, or `✗` with what it lacks. The last line counts the notes that have both.
+2. **Terminal:** to see only the notes that lack one of them, add `--missing`.
+3. **Terminal:** a `claude-code` agent can also keep notes in its own folder, outside AgentX. To check that folder, name it:
+   ```sh
+   agentx memory check --agent <agent> --dir <notes folder>
+   ```
+   Notes written by other tools may put the two lines under a `metadata:` heading; they are read there too.
+
+A note header with both lines looks like this:
+
+```md
+---
+name: billing-cutoff
+description: Invoices close on the 25th
+type: project
+source: billing app settings
+checked: 2026-10-01
+---
+The billing run closes invoices on the 25th.
+```
+
+AgentX never guesses a source or a date from the text of a note. A note that says "checked on Monday" in a sentence still counts as missing both.
+
+## 11. Leave an agent out of the wiki absorb
+
+The wiki absorb (`agentx wiki absorb`) turns agents' saved conversations into wiki articles. You can leave one agent out, for example while you try building its part of the wiki from its own notes. Its conversations are still saved, so the absorb catches up when you turn it back on.
+
+**Browser:**
+
+1. Open the dashboard, go to **Settings**, and open the agent.
+2. On the **Overview** page, under **Limits & safety**, set **Wiki absorb** to **Off**.
+3. Click **Save**.
+
+![The agent's Overview page with the Wiki absorb setting under Limits & safety](/screenshots/agent-memory/wiki-absorb.png)
+
+The **Edit** dialog on an agent's card in **Settings** has the same switch, **Include in the wiki absorb**.
+
+**Terminal** (instead of the browser):
+
+1. Turn it off:
+   ```sh
+   agentx config set agents.<agent>.wiki.absorb.enabled false
+   ```
+2. Run the absorb as usual. It prints `absorb is off for this agent` next to that agent and moves on to the others.
+3. To absorb that agent once anyway, name it: `agentx wiki absorb --agent <agent>`.
+4. To turn it back on, run `agentx config set agents.<agent>.wiki.absorb.enabled true`.
 
 ## Check it worked
 
@@ -261,6 +319,8 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 6. `agentx wiki promote --failures` prints a line with the number of failed tasks it read and the number of failures that recur.
 7. `agentx wiki facts list` shows each fact with where, when and by whom it was checked.
 8. `agentx memory facts flag-unsourced` reports `0 fact(s)` after you have run it with `--apply`.
+9. `agentx memory check --agent <agent>` ends with a line counting the notes that have both a source and a check date.
+10. After you turn the wiki absorb off for an agent, `agentx wiki absorb --dry-run` prints `absorb is off for this agent` next to it.
 
 ## If something is wrong
 
@@ -284,4 +344,7 @@ A few runs prove little. Treat a change as a hint until `n` is in the tens.
 - **Wiki articles saved before version 0.115 are missing from an agent's answers:** older versions of the background service (the daemon) kept some articles in a separate `unified` folder. The service now reads only the `graph` folder, which the `agentx wiki` commands use.
   1. **Terminal:** run `agentx wiki prune` to list the articles that would move into `graph`.
   2. **Terminal:** run `agentx wiki prune --commit` to move them.
+- **`agentx memory check` says a note has no `checked` even though the header has one:** the date must be written `YYYY-MM-DD` (a date and time such as `2026-10-01T09:00:00Z` works too). The check prints what it could not read under the note.
+- **`agentx memory check` finds no notes:** without `--dir` it reads the AgentX store, `.agentx/agent-memory/<agent>/`, in the folder that holds `agentx.json`. Run it there, or name the notes folder with `--dir`.
+- **`agentx wiki absorb` still skips an agent you turned back on:** check the agent in `agentx.json`. `wiki.absorb.enabled` must be `true` or left out.
 - **Memory changes are refused with `403`:** the request named a task from another agent. Each agent can only change its own memories.

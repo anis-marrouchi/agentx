@@ -6,6 +6,8 @@ import { MeshWikiClient } from "./mesh"
 import type { WikiPeer } from "./article-sync"
 import type { AgentWikiSummary } from "./hub"
 import { OntologyRoutes } from "./ontology/routes"
+import { withCuratorBubble, type BubblePage } from "./curate-bubble"
+import { isSafeArticlePath } from "./article-sync"
 
 // --- Lightweight Markdown → HTML (no deps) ---
 
@@ -1002,6 +1004,15 @@ export interface WikiHandlerOpts {
    *  with the prefix stripped, and hrefs in the rendered HTML get the
    *  prefix re-prepended so links round-trip back to the same mount. */
   pathPrefix?: string
+  /** Put the page curator bubble (#818) on page views. It asks the
+   *  endpoint on load and shows itself only when the curator is on. Unset,
+   *  pages carry no bubble (the standalone `wiki serve` has no agents). */
+  curator?: boolean
+  /** Where the bubble sends instructions. Default /api/wiki/curate. */
+  curatorEndpoint?: string
+  /** The dashboard.token the bubble sends, like the dashboard's other
+   *  pages (window.AX_LOCAL_TOKEN). Read per request. */
+  curatorToken?: () => string | undefined
 }
 
 /** Build the wiki HTTP request handler. Same logic as `startWikiServer`,
@@ -1211,9 +1222,35 @@ export function createWikiHandler(opts: WikiHandlerOpts): (req: IncomingMessage,
       html = pageLayout("Error", "", `<h1>Error</h1><pre>${escapeHtml(err.message)}</pre>`)
     }
 
+    if (status === 200 && opts.curator) {
+      const page = curatedPageAt(hub, ontologyRoutes, path, agentFilter)
+      if (page) html = withCuratorBubble(html, page, opts.curatorEndpoint, opts.curatorToken?.())
+    }
+
     res.writeHead(status, { "Content-Type": "text/html; charset=utf-8" })
     res.end(prefix ? prefixHrefs(html, prefix) : html)
   }
+}
+
+/** The one local page a route shows, or null for lists, search and
+ *  remote pages. */
+function curatedPageAt(hub: WikiHub, routes: OntologyRoutes, path: string, agentFilter?: string): BubblePage | null {
+  let agentId: string | undefined
+  let articlePath: string | undefined
+  if (agentFilter && path.startsWith("/article/")) {
+    agentId = agentFilter
+    articlePath = path.slice("/article/".length)
+  } else if (!agentFilter && path.startsWith("/agent/")) {
+    const m = path.match(/^\/agent\/([^/]+)\/article\/(.+)$/)
+    if (m) { agentId = m[1]; articlePath = m[2] }
+  } else if (!agentFilter) {
+    return routes.pageAt(path)
+  }
+  if (!agentId || !articlePath || !hub.listAgents([]).includes(agentId)) return null
+  const store = hub.getAgentWiki(agentId)
+  if (!isSafeArticlePath(store.baseDir, articlePath)) return null
+  const article = store.readArticle(articlePath)
+  return article ? { agentId, path: articlePath, title: article.meta.title } : null
 }
 
 /** Re-prepend the mount prefix to every absolute internal href the wiki

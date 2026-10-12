@@ -250,6 +250,15 @@ const AGENT_PAGE_BODY = `
           </div>
           <input id="f-pmode" type="hidden" />
         </div>
+        <div class="ax-slider-row">
+          <label>Wiki absorb</label>
+          <span class="ax-hint"><b>Off</b> = <code>agentx wiki absorb</code> skips this agent. Its conversations are still saved, so the absorb can catch up when you turn it back on.</span>
+          <div class="ax-opts" data-field="wikiAbsorb">
+            <button data-v="on">On</button>
+            <button data-v="off">Off</button>
+          </div>
+          <input id="f-wabs" type="hidden" />
+        </div>
       </div>
     </section>
 
@@ -938,6 +947,7 @@ async function loadAgent(){
     setOpt('maxConcurrent', a.maxConcurrent ?? 1);
     setOpt('maxExecutionMinutes', a.maxExecutionMinutes ?? 20);
     setOpt('permissionMode', a.permissionMode || 'default');
+    setOpt('wikiAbsorb', a.wikiAbsorb === false ? 'off' : 'on');
     renderTriggers(a.mentions || []);
 
     // Quick system prompt + personality editor share the systemPrompt field.
@@ -1062,6 +1072,8 @@ $('btn-save-meta').addEventListener('click', async () => {
     mentions: $('f-mentions').value.split(',').map(s=>s.trim()).filter(Boolean),
     systemPrompt: $('sp-editor').value,
   };
+  // Sent only once the page has read it, so a failed load can't turn it back on.
+  if ($('f-wabs').value) body.wikiAbsorb = $('f-wabs').value === 'on';
   try {
     await req('PATCH', '/api/admin/agent/' + AGENT_ID, body);
     showMsg('ok', 'Saved. Restart the daemon for tier/model changes to take effect.');

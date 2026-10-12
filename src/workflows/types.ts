@@ -450,6 +450,11 @@ export const nodeExecutionEntrySchema = z.object({
    *  deliveries when a run is resumed from a checkpoint. */
   idempotencyKey: z.string(),
   note: z.string().optional(),
+  /** When the step began (#858). `at` is when it was recorded, so the
+   *  step took `durationMs` from here. Absent on entries written before. */
+  startedAt: z.string().optional(),
+  /** How long the step ran, in milliseconds (#858). */
+  durationMs: z.number().int().min(0).optional(),
 })
 export type NodeExecutionEntry = z.infer<typeof nodeExecutionEntrySchema>
 
@@ -542,8 +547,43 @@ export const pausedAtSchema = z.discriminatedUnion("kind", [
     /** Set once the step is blocked: no more nudges, the owner is told. */
     blocked: z.string().optional(),
   }),
+  // An agent step a stop signal paused (#870). The whole run waits here;
+  // a resume signal re-enters this step with the agent's resume plan
+  // prepended, and the run goes on from it.
+  z.object({
+    kind: z.literal("agentStop"),
+    nodeId: z.string(),
+    agentId: z.string(),
+    /** The stopped turn's running-task id: the stopped-task record. */
+    taskId: z.string().optional(),
+  }),
 ])
 export type PausedAt = z.infer<typeof pausedAtSchema>
+
+/** A plan an agent writes for a task (#858). Steps done keep their place;
+ *  a revision replaces only the steps not done yet, and is recorded. */
+export const planStepSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+})
+export const planRevisionSchema = z.object({
+  at: z.string(),
+  /** `plan`: the first plan. `revise`: a change to the steps left. */
+  kind: z.enum(["plan", "revise"]),
+  reason: z.string().optional(),
+  /** The step ids still to do after this change. */
+  steps: z.array(z.string()),
+  /** The step ids the change dropped. */
+  dropped: z.array(z.string()).default([]),
+})
+export const planSchema = z.object({
+  steps: z.array(planStepSchema),
+  /** The step the agent said it started, and when. */
+  current: z.object({ id: z.string(), startedAt: z.string() }).optional(),
+  revisions: z.array(planRevisionSchema).default([]),
+})
+export type PlanStep = z.infer<typeof planStepSchema>
+export type Plan = z.infer<typeof planSchema>
 
 /** What a follow-up run is about and who started it (#788). Runs that
  *  triggers start have none. */
@@ -573,6 +613,20 @@ export const runMetaSchema = z.object({
   }).optional(),
   /** The owner got the end summary. Sent once. */
   endNotifiedAt: z.string().optional(),
+  /** A task run inside a workflow because `workflows.required` is on
+   *  (#858): the agent turn it wraps. `mode` is `linear` (the one-step
+   *  template) until the agent writes a plan. */
+  wrap: z.object({
+    agentId: z.string(),
+    channel: z.string(),
+    mode: z.enum(["linear", "plan"]),
+    taskId: z.string().optional(),
+  }).optional(),
+  /** The plan the agent wrote for a wrapped task, and each change to it. */
+  plan: planSchema.optional(),
+  /** The run this one continues (#870): a wrapped task that was stopped,
+   *  then resumed, gets a new run that names the one the stop closed. */
+  continues: z.string().optional(),
 })
 export type RunMeta = z.infer<typeof runMetaSchema>
 

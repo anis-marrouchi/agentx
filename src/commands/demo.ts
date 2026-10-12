@@ -65,6 +65,13 @@ function buildSpecs(root: string, basePort: number, cmd: string): NodeSpec[] {
             delayMs: 900,
           },
           {
+            // The wind-down turn after a pause (agents/signals, #857).
+            match: "\\[Stop signal\\]",
+            reply:
+              "Done: read the demo backlog; items 1 to 3 are ready.\nLeft: items 4 and 5 still need a check.\nNext action: check item 4 against the release notes.\nHalf-applied: nothing.",
+            delayMs: 400,
+          },
+          {
             match: "Builder reports",
             thinking: "Fix confirmed and pipeline green — close the loop with the customer.",
             reply:
@@ -346,6 +353,8 @@ export const demo = new Command()
           agentId: "builder",
           senderAgentId: "cx",
           text: DELEGATION,
+          // The demo prints the helper's reply, so it waits for it (#847).
+          async: false,
         })
         const builderReply = typeof s2.messageId === "string" ? s2.messageId : s2.content || "(no reply)"
         say("@builder (vps-nyc)", builderReply, chalk.yellow)

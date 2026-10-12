@@ -46,6 +46,19 @@ export function renderWorkflowsPage(opts: WorkflowsPageOpts = {}): string {
       <p class="hint">Workflows agents started for your requests, grouped by who or what they concern. Open a group to see which step each one is on and what it waits for.</p>
       <div id="wf-followups-body" aria-live="polite"><span class="hint">Loading&hellip;</span></div>
     </section>
+    <section class="ax-wf__required" aria-labelledby="wf-required-title">
+      <details id="wf-required">
+        <summary><h3 id="wf-required-title">Every task in a workflow</h3><span class="hint" id="wf-required-state"></span></summary>
+        <p class="hint">When on, each task an agent gets runs inside a workflow run: a saved workflow that fits, else a plan the agent writes first, else one step. Every run is recorded step by step.</p>
+        <label class="ax-wf__req-row"><input type="checkbox" id="wf-required-enabled" /> Run every task through a workflow</label>
+        <label class="ax-wf__req-row"><input type="checkbox" id="wf-required-exempt" /> Plain questions leave no run (nothing was changed)</label>
+        <details class="ax-wf__req-agents">
+          <summary>Per agent</summary>
+          <div id="wf-required-agents"></div>
+        </details>
+        <span class="hint" id="wf-required-note" aria-live="polite"></span>
+      </details>
+    </section>
     <ul id="wf-list" class="ax-wf__cards" aria-live="polite"></ul>
     <div id="wf-empty" class="ax-wf__empty" hidden>
       <p><b>No workflows yet.</b></p>
@@ -201,6 +214,18 @@ const WORKFLOWS_PAGE_CSS = `
 .ax-wf__fu-row b { overflow-wrap: anywhere; }
 .ax-wf__fu-row .hint { overflow-wrap: anywhere; }
 .ax-wf__fu-row.is-blocked b::before { content: "⚠ "; color: var(--ax-err); }
+.ax-wf__required { border-bottom: var(--ax-border-w) solid var(--ax-border); padding: 8px 16px; }
+.ax-wf__required > details > summary {
+  cursor: pointer; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; list-style: none;
+}
+.ax-wf__required h3 { font-size: 13px; font-weight: 600; margin: 0; }
+.ax-wf__required details[open] > summary { margin-bottom: 6px; }
+.ax-wf__required summary:focus-visible, .ax-wf__required input:focus-visible, .ax-wf__required select:focus-visible { outline: 2px solid var(--ax-accent); outline-offset: 2px; }
+.ax-wf__req-row { display: flex; gap: 6px; align-items: center; font-size: 12px; padding: 3px 0; }
+.ax-wf__req-agents > summary { cursor: pointer; font-size: 12px; padding: 4px 0; }
+.ax-wf__req-agent { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; padding: 2px 0; }
+.ax-wf__req-agent span { overflow-wrap: anywhere; min-width: 0; }
+.ax-wf__req-agent select { font: inherit; font-size: 12px; background: var(--ax-surface); color: inherit; border: var(--ax-border-w) solid var(--ax-border); border-radius: 4px; }
 .ax-wf__n8n {
   border-top: var(--ax-border-w) solid var(--ax-border);
   padding: 14px 16px; display: flex; flex-direction: column; gap: 8px;
@@ -1238,6 +1263,67 @@ export const WORKFLOWS_PAGE_SCRIPT = `
       toast("Failed to load workflows: " + e.message)
     }
     loadFollowUps()
+    loadRequired()
+  }
+
+  // Every task in a workflow (#858): this node's workflows.required.
+  async function loadRequired() {
+    const box = $("#wf-required")
+    if (!box) return
+    let data
+    try {
+      data = await fetchJSON("/api/workflows/required")
+    } catch (e) {
+      $("#wf-required-state").textContent = "unavailable"
+      $("#wf-required-note").textContent = "Could not load the setting: " + e.message
+      return
+    }
+    renderRequired(data)
+  }
+
+  // Whether the engine was on when the page loaded: the daemon only starts
+  // it at boot, so switching it on here needs a restart.
+  let requiredEngineAtLoad = null
+  function renderRequired(data) {
+    const st = data.settings || {}
+    if (requiredEngineAtLoad === null) requiredEngineAtLoad = !!st.engine
+    const overrides = st.agents || {}
+    const onFor = Object.keys(overrides).filter((k) => overrides[k])
+    $("#wf-required-state").textContent = (st.enabled ? "on" : "off") + (onFor.length && !st.enabled ? " · on for " + onFor.length + " agent(s)" : "")
+    $("#wf-required-enabled").checked = !!st.enabled
+    $("#wf-required-exempt").checked = st.exemptQuestions !== false
+    $("#wf-required-note").textContent = st.engine ? "" : "The workflow engine is off: turning this on also turns it on."
+    $("#wf-required-agents").innerHTML = (data.agents || []).map((id) => {
+      const v = Object.prototype.hasOwnProperty.call(overrides, id) ? (overrides[id] ? "on" : "off") : "default"
+      return '<label class="ax-wf__req-agent"><span>' + esc(id) + '</span><select data-agent="' + esc(id) + '" aria-label="Workflow required for ' + esc(id) + '">' +
+        ['default', 'on', 'off'].map((o) => '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + (o === 'default' ? 'as above' : o) + '</option>').join("") +
+        '</select></label>'
+    }).join("") || '<span class="hint">No agents on this node.</span>'
+    $("#wf-required-agents").querySelectorAll("select[data-agent]").forEach((sel) => sel.addEventListener("change", () => {
+      saveRequired({ agentId: sel.getAttribute("data-agent"), agentRequired: sel.value })
+    }))
+  }
+
+  ;(function bindRequired() {
+    const en = $("#wf-required-enabled")
+    const ex = $("#wf-required-exempt")
+    if (en) en.addEventListener("change", () => saveRequired({ enabled: en.checked }))
+    if (ex) ex.addEventListener("change", () => saveRequired({ exemptQuestions: ex.checked }))
+  })()
+
+  async function saveRequired(patch) {
+    $("#wf-required-note").textContent = "Saving…"
+    try {
+      const data = await postJSON("/api/workflows/required", patch)
+      renderRequired(data)
+      const engineNew = !requiredEngineAtLoad && data.settings && data.settings.engine
+      $("#wf-required-note").textContent = engineNew
+        ? "Saved. The workflow engine was off: restart the daemon (agentx daemon restart) to start it."
+        : data.reloaded ? "Saved." : "Saved. Restart the daemon if it does not pick it up."
+    } catch (e) {
+      $("#wf-required-note").textContent = "Not saved: " + e.message
+      loadRequired()
+    }
   }
 
   // Follow-ups (#788): running workflows grouped by tag. A group is a

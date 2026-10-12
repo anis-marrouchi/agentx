@@ -25,7 +25,7 @@ Everything the daemon does is published as an event on one in-process bus. Examp
 | `agent` | `task:queued`, `task:queue-flushed`, `task:queue-ended`, `task:started`, `task:step`, `task:completed`, `session:rotated` | trace ID (none for `task:queued`, `task:queue-flushed` and `task:queue-ended`: the message has no run of its own) |
 | `run` | `created`, `ok`, `failed`, `paused`, `resumed`, `skipped`, `completed`, `timeout` | workflow run ID |
 | `task` | `created`, `submitted`, `canceled` (workflow user tasks) | user task ID |
-| `signal` | `emitted` | — |
+| `signal` | `emitted` (a workflow signal); `signal:stop`, `signal:stopped`, `signal:resume`, `signal:resume-failed` ([pause and resume a task](/jobs/pause-and-resume)) | the stopped task's ID for the pause and resume types |
 | `mesh` | `forward` (a task sent to a peer), `recovered`, `lost`, `skills-changed`, `added`, `removed`, and from the [mesh feed](#events-from-other-machines): `feed:down`, `feed:up`, `feed:gap` | — |
 | `announce` | `announce` (a note to the whole mesh, see [Announcements](#announcements)) | — |
 | `reminder` | `reminder:due`, `reminder:dispatched`, `reminder:skipped` ([due reminders](/automations/reminders)) | Apple Reminders ID |

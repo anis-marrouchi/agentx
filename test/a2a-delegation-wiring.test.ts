@@ -272,7 +272,7 @@ describe("createDelegations wiring", () => {
 
   it("reads the delegation settings", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(cfg.mesh.delegation).toEqual({ asyncWhenHuman: true, timeoutMinutes: 30 })
+    expect(cfg.mesh.delegation).toEqual({ asyncWhenHuman: true, timeoutMinutes: 30, requeueRelayOnRestart: true })
   })
 })
 

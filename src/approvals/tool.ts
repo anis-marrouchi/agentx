@@ -5,11 +5,12 @@ import { answerLines } from "./choices"
 // --- Agent-facing `agentx_approval` tool ---
 //
 // Lets an agent raise a decision card instead of asking the operator in
-// chat, and check what happened to one. It talks to the daemon's
-// /approvals endpoints, which never decide: there is no action here that
-// approves or rejects anything.
+// chat, check what happened to one, and close its own card once the owner
+// answered the same thing in chat and it acted on that (#909). It talks to
+// the daemon's /approvals endpoints, which never decide: there is no
+// action here that approves or rejects anything.
 
-export type ApprovalToolAction = "create" | "status"
+export type ApprovalToolAction = "create" | "status" | "resolve"
 
 export interface ApprovalToolDeps {
   daemonUrl: string
@@ -44,13 +45,35 @@ export async function runApprovalTool(args: Record<string, unknown>, deps: Appro
         const picked = c.verdict === "yes" ? answerLines(c).join("\n") : ""
         return `Card ${c.id}: the operator said ${String(c.verdict).toUpperCase()}.${c.note ? ` Note: ${c.note}` : ""}${picked ? `\n${picked}` : ""}`
       }
+      if (c.status === "resolved") return `Card ${c.id} was closed by ${c.raised_by}: ${c.resolution ?? "answered outside the card"}.`
       return `Card ${c.id} expired unanswered; the default applied: ${c.outcome ?? c.if_silent}.`
     } catch (e: any) {
       return `Error: couldn't reach the daemon (${e?.message ?? e}).`
     }
   }
 
-  if (action !== "create") return `Error: unknown action "${action}". Use create or status.`
+  if (action === "resolve") {
+    const id = str(args.id)
+    const reason = str(args.reason)
+    if (!id) return "Error: `id` is required for resolve (the card id you got when you raised it)."
+    if (!reason) return "Error: `reason` is required for resolve: where the owner answered and what you did, e.g. \"approved in chat, done\"."
+    if (!caller) return "Error: couldn't tell which agent you are. Pass callerAgentId."
+    try {
+      const res = await doFetch(`${base}/approvals/${encodeURIComponent(id)}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders(deps.env ?? process.env) },
+        body: JSON.stringify({ raised_by: caller.agentId, reason }),
+        signal: AbortSignal.timeout(10_000),
+      })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`
+      return `Card ${data.card.id} is closed. It left the operator's inbox, so nobody will be asked about it again.`
+    } catch (e: any) {
+      return `Error: couldn't reach the daemon (${e?.message ?? e}).`
+    }
+  }
+
+  if (action !== "create") return `Error: unknown action "${action}". Use create, status or resolve.`
   if (!caller) return "Error: couldn't tell which agent you are. Pass callerAgentId."
 
   const reply = caller.channel && caller.chatId && !NON_CHAT_CHANNELS.has(caller.channel)
@@ -86,6 +109,7 @@ export async function runApprovalTool(args: Record<string, unknown>, deps: Appro
       `Decision card ${c.id} is in the operator's Approvals inbox.`,
       `If nobody answers by ${c.expires}, "${c.if_silent}" applies.`,
       "You will get a message with the result. Tell the requester it is waiting for approval; don't ask the operator again in chat.",
+      `If the operator answers the same thing in chat and you act on it, close the card with {action:"resolve", id:"${c.id}", reason:"approved in chat, done"} so it is not asked again.`,
     ].join(" ")
   } catch (e: any) {
     return `Error: couldn't reach the daemon (${e?.message ?? e}).`

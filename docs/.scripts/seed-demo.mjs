@@ -86,9 +86,12 @@ writeFileSync(resolve(root, ".agentx/places.json"), JSON.stringify({
 // A slow scripted step, so the Live shot can catch a task while it runs.
 const scriptPath = resolve(root, "demo-script.json")
 const script = JSON.parse(readFileSync(scriptPath, "utf8"))
-script.steps = script.steps.filter(s => s.match !== "Go through the demo backlog")
+// Not when the request is quoted in a pause's plan-writing turn: that turn
+// gets the scripted plan, at once, instead of this minute-long review.
+const backlog = "(?<!The request you were working on:\\n)Go through the demo backlog"
+script.steps = script.steps.filter(s => !String(s.match).endsWith("Go through the demo backlog"))
 script.steps.push({
-  match: "Go through the demo backlog",
+  match: backlog,
   thinking: "Reading the demo backlog one issue at a time.",
   reply: "Backlog reviewed: three demo issues are ready and one waits for the customer. This is a scripted example.",
   delayMs: 60000,
@@ -104,6 +107,14 @@ const fixture = JSON.parse(readFileSync(resolve(repo, "docs/public/examples/demo
 for (const [id, title] of [["demo-report", "Draft the demo shop report"], ["demo-handoff", "Prepare a customer handoff"]]) {
   const file = resolve(root, `${id}.json`)
   writeFileSync(file, JSON.stringify({ ...fixture, id, title }, null, 2))
+  execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "workflow", "add", file, "--no-reload"], { cwd: root, stdio: "pipe" })
+}
+// A workflow whose one agent step takes a minute (the scripted backlog
+// review), so the Live page can show it paused by a stop signal (#870).
+{
+  const file = resolve(root, "demo-backlog.json")
+  const nodes = fixture.nodes.map((n) => n.type === "agent" ? { ...n, config: { ...n.config, prompt: "Go through the demo backlog and tell me what is ready." } } : n)
+  writeFileSync(file, JSON.stringify({ ...fixture, id: "demo-backlog", title: "Review the demo backlog", state: "active", nodes }, null, 2))
   execFileSync(process.execPath, [resolve(repo, "dist/cli.js"), "workflow", "add", file, "--no-reload"], { cwd: root, stdio: "pipe" })
 }
 await post("/reload")
@@ -192,4 +203,4 @@ if (!(await runsToday()).some(r => r.jobId === "morning-report")) {
     await setJob(saved)
   }
 }
-console.log("Seeded two workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, a webhook, a board, an action, two places, and two real scripted task runs.")
+console.log("Seeded three workflows, three disabled schedules with one scheduled run, one schedule request, three decision cards, two clients, six fictional reviews, an open request with a plan, a webhook, a board, an action, two places, and two real scripted task runs.")

@@ -24,8 +24,9 @@ export function buildAbsorbPrompt(
   entryCount: number,
   factsBlock = "",
   coveringBlock = "",
+  notesBlock = "",
 ): string {
-  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount, factsBlock, coveringBlock)
+  return buildFarzapediaPrompt(agentId, worldview, existingArticles, entryTexts, entryCount, factsBlock, coveringBlock, notesBlock)
 }
 
 function buildFarzapediaPrompt(
@@ -36,6 +37,7 @@ function buildFarzapediaPrompt(
   entryCount: number,
   factsBlock = "",
   coveringBlock = "",
+  notesBlock = "",
 ): string {
   const worldviewSection = worldview ? `\n## Worldview\n\n${worldview}\n` : ""
 
@@ -158,7 +160,7 @@ sources: ["entry-id-1", "entry-id-2"]
 \`\`\`
 
 Access guidance: default \`public\`; \`private\` only for sensitive credentials or agent-specific learnings; \`shared\` with specific agent IDs when the article matters only to a subset.
-${worldviewSection}${existingList}${coveringBlock}${factsBlock}
+${worldviewSection}${existingList}${coveringBlock}${factsBlock}${notesBlock}
 ## Gap Detection
 
 After compiling, populate a \`gaps\` array: wikilink targets you referenced but for which no article exists yet. Be specific:
@@ -183,7 +185,16 @@ After compiling, populate a \`gaps\` array: wikilink targets you referenced but 
   ],
   "gaps": [
     "Karim Rahmouni — Tunis Padel coach, mentioned in entries but no people/ article"
-  ]
+  ]${notesBlock ? `,
+  "notes": [
+    {
+      "id": "3f2a91c04b7e",
+      "outcome": "patched",
+      "reason": "Entry 2026-10-07 confirms the move",
+      "edits": [{ "path": "concepts/staging-deployment.md", "find": "Staging runs on the old server.", "replace": "Staging runs on the new server (moved 2026-10-07)." }]
+    },
+    { "id": "9b1c2d3e4f50", "outcome": "rejected", "reason": "The article and entry 2026-10-06 both name a different owner", "edits": [] }
+  ]` : ""}
 }
 \`\`\`
 

@@ -17,12 +17,13 @@ A busy agent shows a **running** card with the channel the task came from, how l
 3. To watch the agent work, select the task card. Its progress opens as it happens.
 4. To add something to the conversation, select **✎ update**. The Task page opens; type your message and send it. The current step keeps running, and your message is handled next.
 5. To stop the task, select **✕ stop**, then confirm.
+6. To pause the task so it can be picked up later, select **❚❚ pause**. The agent writes a resume plan, and the task appears under **Stopped tasks** with a **▶ resume** button. See [Pause a task and resume it later](../jobs/pause-and-resume.md).
 
 When an agent is idle, its card shows its **last reply**. Select **history →** to see its recent tasks.
 
 If the agent is running an on-screen lesson through [AgentX Voice](./voice.md), the card shows **on screen** with the step number. Select **✕ stop** on that line to end the lesson and give the screen back.
 
-![A Live agent card with a running task and its ✎ update and ✕ stop buttons](/screenshots/live/running-task.png)
+![A Live agent card with a running task and its ✎ update, ❚❚ pause and ✕ stop buttons](/screenshots/live/running-task.png)
 
 ## See which Claude Code session answers for an agent
 

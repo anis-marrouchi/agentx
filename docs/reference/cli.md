@@ -181,6 +181,8 @@ agentx attach as helper
 | `agentx workflow run <id> --follow --title "…" --tag client:example-co` | Start a run AgentX follows to the end ([follow a request](../jobs/follow-up-workflows.md)) |
 | `agentx workflow progress [--tag <kind:name>]` | Followed runs still going, grouped by tag |
 | `agentx workflow follow-up` | Show or change the follow-up settings: nudges, approvals, which agents |
+| `agentx workflow required` | Show or change whether every task runs through a workflow ([every task a workflow](../jobs/every-task-a-workflow.md)) |
+| `agentx workflow records` | One JSON line per run: steps, times, where it failed |
 | `agentx cron list` | List schedules |
 | `agentx cron disable <id>` | Disable a schedule |
 | `agentx cron enable <id>` | Enable a schedule |
@@ -250,6 +252,7 @@ How to use these, step by step: [Review what your agents learn](../jobs/agent-me
 | `agentx wiki contribute enable <agent>` | Let an agent add sourced facts to the wiki once a day ([how](/jobs/wiki-contributions)) |
 | `agentx wiki contribute --agent <id> [--dry-run]` | Run one agent's contribution now |
 | `agentx wiki contributions [merge \| held \| approve <id> \| reject <id>]` | See, apply or decide on the queued contributions |
+| `agentx wiki summarize [--agent <id> \| --all] [--dry-run]` | Write the one-line page summaries wiki questions pick pages from; only new or changed pages ([how](/jobs/wiki-live-answers)) |
 | `agentx wiki score --agent <id> --questions <file> [--out <file>]` | Score the wiki against questions you know the answers to; `--compare a.json b.json` shows the change |
 | `agentx wiki facts list [--stale]` | Checked facts, with where, when and by whom they were checked |
 | `agentx wiki facts show <id>` | One fact and its earlier values |

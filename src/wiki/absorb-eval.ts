@@ -525,6 +525,10 @@ export interface AbsorbCallRecord {
   /** Entries held by a refused save that another saved article cites:
    *  they leave the queue, so the refused update is never retried. */
   heldCited?: number
+  /** Wiki notes (#831) the call was given, patched, and recorded. */
+  notes?: number
+  notesPatched?: number
+  notesRecorded?: number
   failed: boolean
   /** The model call alone. */
   wallMs: number
@@ -548,6 +552,8 @@ export interface AbsorbRunRecord {
   endedAt: string
   max: number
   model: string
+  /** Compile calls in this run that failed. Absent on runs before #603. */
+  failed?: number
 }
 
 /** Cost and timing fields from the claude CLI's `--output-format json` envelope. */

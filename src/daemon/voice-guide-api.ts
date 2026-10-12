@@ -14,7 +14,13 @@
 //                                   where it rests.
 //                                   {home: true}  send it back.
 //                                   409 when no character is on screen.
+//                                   While the floor is held (#924) only its
+//                                   holder sends the character: {floor: id}.
+//                                   Anyone else gets 409 with who holds it,
+//                                   and so does everyone while it is hidden
+//                                   for a recording.
 
+import type { Floor } from "@/voice/floor"
 import { GUIDE_EXPRESSIONS, GUIDE_HOLD, GUIDE_MARKS, GUIDE_TEXT_MAX, guideText, type GuideExpression, type GuideFeed, type GuideMark } from "@/voice/guide"
 import type { Rect } from "@/voice/presence"
 import type { Reply } from "@/daemon/voice-talk-api"
@@ -40,9 +46,15 @@ export async function handleGuide(
   body: Record<string, unknown>,
   /** The caller hung up: ends its wait. */
   gone?: AbortSignal,
+  floor?: Pick<Floor, "view" | "holds">,
 ): Promise<Reply> {
   if (method === "GET") return { status: 200, body: await feed.next(Number(query.get("after")) || 0, undefined, gone) }
   if (method !== "POST") return { status: 405, body: { error: "GET or POST" } }
+  const held = floor?.view()
+  if (held?.held && (held.hide || !floor!.holds(body.floor))) {
+    const error = held.hide ? `The character is hidden while ${held.holder} holds the floor` : `The floor is held by ${held.holder}`
+    return { status: 409, body: { shown: false, error, floor: held } }
+  }
   if (!character || !feed.listening) {
     return { status: 409, body: { shown: false, error: character ? "AgentX Voice is not showing the character" : "voice.look is not character" } }
   }

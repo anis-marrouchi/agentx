@@ -13,6 +13,7 @@ import {
   type RerankCandidate,
 } from "../decisions/seats/wiki-rerank"
 import { ancestryScore as ancestryOf } from "@/graph"
+import { LockBusyError, withLock } from "./facts/ledger-file"
 import { IMPORTANCE_LEVELS, type Importance, type WikiStatement } from "./ontology/types"
 
 function isImportance(s: string): s is Importance {
@@ -52,10 +53,27 @@ export function parseStatements(line: string): WikiStatement[] | undefined {
 //   - shared: owner writes, listed agents read
 //   - public: owner writes, all agents read
 
+/**
+ * Order version file names oldest first: by timestamp, then by the counter
+ * suffix that saveVersion adds when two writes share a millisecond
+ * (`<ts>.md` < `<ts>-1.md` < `<ts>-2.md` < ... < `<ts>-10.md`).
+ */
+function compareVersionNames(a: string, b: string): number {
+  const split = (f: string): [string, number] => {
+    const m = /^(.*Z)(?:-(\d+))?\.md$/.exec(f)
+    return m ? [m[1], m[2] ? Number(m[2]) : 0] : [f, 0]
+  }
+  const [ta, na] = split(a)
+  const [tb, nb] = split(b)
+  return ta < tb ? -1 : ta > tb ? 1 : na - nb
+}
+
 export class WikiStore {
   readonly baseDir: string
   private rawDir: string
   private log: (...args: unknown[]) => void
+  /** How long a write waits for another process holding the page's lock. */
+  lockWaitMs = 5000
 
   constructor(
     baseDir: string = resolve(process.cwd(), ".agentx/wiki"),
@@ -206,6 +224,18 @@ export class WikiStore {
   // --- Articles (compiled knowledge) ---
 
   /**
+   * Run `fn` holding the page's lock, so a read → change → write inside it
+   * can't lose a write from another process. Every `writeArticle` takes
+   * the same lock; re-entrant within one process. Locks live under
+   * `_locks/`, which page listings skip. Throws LockBusyError when another
+   * holder keeps it past the wait.
+   */
+  withArticleLock<T>(path: string, fn: () => T): T {
+    const lock = `${resolve(this.baseDir, "_locks", path)}.lock`
+    return withLock(resolve(this.baseDir, path), fn, { lock, what: `wiki page ${path}`, timeoutMs: this.lockWaitMs, staleMs: 10_000 })
+  }
+
+  /**
    * Write or update a wiki article.
    */
   writeArticle(
@@ -214,6 +244,16 @@ export class WikiStore {
     content: string,
     agentId: string,
   ): boolean {
+    try {
+      return this.withArticleLock(path, () => this.writeArticleLocked(path, meta, content, agentId))
+    } catch (e) {
+      if (!(e instanceof LockBusyError)) throw e
+      this.log(e.message)
+      return false
+    }
+  }
+
+  private writeArticleLocked(path: string, meta: WikiArticleMeta, content: string, agentId: string): boolean {
     // LLM picks the path. We just write the file.
     const existing = this.readArticle(path)
     if (existing && !this.canWrite(existing.meta, agentId)) {
@@ -267,6 +307,7 @@ export class WikiStore {
     // is also valid YAML, so the line-based reader below stays simple.
     if (meta.class) frontmatter.push(`class: ${meta.class}`)
     if (meta.importance) frontmatter.push(`importance: ${meta.importance}`)
+    if (meta.importanceProposed) frontmatter.push(`importance_proposed: ${meta.importanceProposed}`)
     if (meta.date) frontmatter.push(`date: ${meta.date}`)
     if (meta.rolledUpInto) frontmatter.push(`rolled_up_into: ${JSON.stringify(meta.rolledUpInto)}`)
     if (meta.aliases?.length) frontmatter.push(`aliases: ${JSON.stringify(meta.aliases)}`)
@@ -292,7 +333,16 @@ export class WikiStore {
       const ts = new Date().toISOString().replace(/[:.]/g, "-")
       const versionDir = resolve(this.baseDir, "_versions", articlePath.replace(/\.md$/, ""))
       mkdirSync(versionDir, { recursive: true })
-      writeFileSync(resolve(versionDir, `${ts}.md`), content)
+      // Two writes inside one millisecond share a timestamp: the later one
+      // gets a counter suffix (`<ts>-1.md`, ...) instead of overwriting.
+      for (let n = 0; ; n++) {
+        try {
+          writeFileSync(resolve(versionDir, `${n ? `${ts}-${n}` : ts}.md`), content, { flag: "wx" })
+          return
+        } catch (err) {
+          if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err
+        }
+      }
     } catch {
       // Version save is best-effort
     }
@@ -308,7 +358,7 @@ export class WikiStore {
     try {
       return readdirSync(versionDir)
         .filter(f => f.endsWith(".md"))
-        .sort()
+        .sort(compareVersionNames)
         .reverse()
         .map(f => ({
           timestamp: f.replace(/\.md$/, "").replace(/-/g, (m, i) => i < 19 ? (i === 10 ? "T" : i === 13 || i === 16 ? ":" : "-") : m),
@@ -320,15 +370,20 @@ export class WikiStore {
   }
 
   /**
-   * Restore a specific version of an article.
+   * Restore a specific version of an article, holding the page's lock.
+   * Throws LockBusyError when another process holds the page.
    */
   restoreVersion(articlePath: string, versionTimestamp: string): boolean {
     const versions = this.getVersions(articlePath)
-    const version = versions.find(v => v.timestamp.startsWith(versionTimestamp))
+    const version = versions.find(v => v.timestamp === versionTimestamp)
+      ?? versions.find(v => v.timestamp.startsWith(versionTimestamp))
     if (!version) return false
+    return this.withArticleLock(articlePath, () => this.restoreLocked(articlePath, version.path, versionTimestamp))
+  }
 
+  private restoreLocked(articlePath: string, versionPath: string, versionTimestamp: string): boolean {
     try {
-      const content = readFileSync(version.path, "utf-8")
+      const content = readFileSync(versionPath, "utf-8")
       const fullPath = resolve(this.baseDir, articlePath)
       // Save current as a version too before restoring
       this.saveVersion(articlePath, fullPath)
@@ -399,6 +454,7 @@ export class WikiStore {
     const graphPath = getArray("graph_path")
     const aliases = getArray("aliases")
     const importance = get("importance")
+    const importanceProposed = get("importance_proposed")
     const date = get("date")
     return {
       meta: {
@@ -415,6 +471,7 @@ export class WikiStore {
         graphPath: graphPath.length ? graphPath : undefined,
         class: /^[a-z][a-z0-9_]*$/.test(get("class")) ? get("class") : undefined,
         importance: isImportance(importance) ? importance : undefined,
+        importanceProposed: isImportance(importanceProposed) ? importanceProposed : undefined,
         date: /^\d{4}-\d{2}-\d{2}/.test(date) ? date.slice(0, 10) : undefined,
         rolledUpInto: get("rolled_up_into") || undefined,
         aliases: aliases.length ? aliases : undefined,

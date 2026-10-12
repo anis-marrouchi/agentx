@@ -26,7 +26,7 @@ import { HandoverStore } from "@/channels/handover-store"
 import { MemoryStore } from "./memory-store"
 import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
-import { serializeOrigin } from "./resume/origin"
+import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
 import { isQueued, queuedMarker } from "./queued"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
@@ -43,6 +43,7 @@ const INTENT_WAIT_BEFORE_MATCH_MS = 250
 const INTENT_WAIT_BEFORE_ENTRY_MS = 5_000
 import { digestEvents, renderDigest, type SubscriptionInput } from "@/events/subscriptions"
 import { newEventId } from "@/intent/ulid"
+import { currentRoot } from "@/events/envelope"
 import { getAttachRegistry } from "@/attach"
 import { isRestricted } from "@/guard/autonomy"
 import { debug } from "@/observability/debug"
@@ -57,6 +58,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
 import { workflowHintText } from "@/workflows/follow-up"
+import { continuedRun, endedWithoutFailing, finishWrap, isReadOnlyToolUse, liveStep, requiredFor, shouldWrap, startWrap, TASK_WORKFLOW_ID, toolUsesOf, wrapHintText } from "@/workflows/required"
+import type { RunStore as WorkflowRunStore } from "@/workflows/run-store"
+import { randomUUID } from "crypto"
 import { ProcedureStore } from "@/procedures"
 import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
@@ -155,6 +159,10 @@ export interface RunningTask {
   intentPath?: string[]
   /** Step autonomy the turn runs at (report | propose | act). Unset = act. */
   autonomy?: AgentTask["autonomy"]
+  /** The workflow run this turn belongs to (#858): a step of a run, or
+   *  the run a task is wrapped in under workflows.required. `step` and
+   *  `title` are filled in when the agent list is read. */
+  workflow?: { runId: string; workflowId?: string; step?: string; title?: string }
 }
 
 type TaskOutputSubscriber = (chunk: string) => void
@@ -190,8 +198,9 @@ export interface TaskRecord {
   durationMs: number
   ok: boolean
   error?: string
-  /** Set when a deadline ended the run: `timeout`, with the step it was in. */
-  status?: "timeout"
+  /** Set when a deadline ended the run: `timeout`, with the step it was in;
+   *  `stopped` when a stop signal ended it (#857). */
+  status?: "timeout" | "stopped"
   step?: string
   /** Final agent text (one-shot, may be empty if streaming captured it). */
   responseText: string
@@ -627,7 +636,12 @@ export class AgentRegistry {
     chatId: string
     message: string
     payload: Record<string, unknown>
-  }) => Promise<{ runId?: string }>
+    /** Start it as a followed run (#858: workflows.required). */
+    follow?: boolean
+  }) => Promise<{ runId?: string; title?: string }>
+  /** Where wrapped tasks keep their run (#858). Wired by the daemon with
+   *  the workflow engine's run store; unset means no wrapping. */
+  private workflowRuns?: WorkflowRunStore
   private messageQueue: MessageQueue
   /**
    * Voice chats a waiting question has claimed between its wait ending and
@@ -653,9 +667,19 @@ export class AgentRegistry {
    *  of this run. When the operator presses Stop first then Update, we use it
    *  to drop the orphan cancelled turn from history so the Update reads as an
    *  edit, not a bare follow-up. */
-  private taskAborts: Map<string, { agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController }> = new Map()
+  private taskAborts: Map<string, {
+    agentId: string; channel: string; chatId: string; originalMessage: string; controller: AbortController
+    /** What a stop signal needs to save and later re-enter the run (#857). */
+    traceId?: string; sender?: string; rootId?: string; origin?: RunOrigin
+    /** Set when the run is a workflow step (#857: not stoppable with a plan). */
+    workflowRunId?: string
+  }> = new Map()
   /** Runs a daemon shutdown stopped, with the reason each one reports. */
   private interruptedRuns: Map<string, string> = new Map()
+  /** Runs a stop signal ended, with the reason each one reports (#857). */
+  private stoppedRuns: Map<string, string> = new Map()
+  /** Callers waiting for a run to let go of its slot (whenRunEnds). */
+  private runEndWaiters: Map<string, Array<() => void>> = new Map()
   /** Claude cloud sessions this node launched (#622), by issue. Created on
    *  first use so a fleet with the setting off never touches the file. */
   private cloudSessions?: CloudSessionStore
@@ -757,6 +781,10 @@ export class AgentRegistry {
   /** Wire the workflow auto-runner — see field doc above. Daemon calls this
    *  after WorkflowDispatcher boot. Pass undefined to detach (e.g. during
    *  reload). */
+  setWorkflowRunStore(runs: WorkflowRunStore | undefined): void {
+    this.workflowRuns = runs
+  }
+
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
     this.workflowAutoRunner = runner
   }
@@ -775,6 +803,12 @@ export class AgentRegistry {
    *  match setProviders. */
   setConfig(next: DaemonConfig): void {
     this.config = next
+  }
+
+  /** Swap the workflows block on a config reload (#858): matching,
+   *  follow-up and required settings are read per turn. */
+  setWorkflows(workflows: DaemonConfig["workflows"]): void {
+    this.config = { ...this.config, workflows }
   }
 
   /** Swap the people list on a config reload (#384). Turns read it when
@@ -1111,6 +1145,14 @@ export class AgentRegistry {
     return { content: result.content, error: result.error, cloudSession: result.cloudSession, duration: Date.now() - started }
   }
 
+  /** The answer for a run whose HTTP caller left before it got a slot
+   *  (#822). Logged so the dropped request is visible on the node. */
+  private callerGone(task: AgentTask, during: string): AgentResponse {
+    const reason = abortReason(task.callerSignal!).message
+    this.log(`[${task.agentId}] caller gone during ${during} — not starting (${reason})`)
+    return { content: "", error: `Caller gone before agent "${task.agentId}" was free — not started` }
+  }
+
   /**
    * Execute a task on an agent. Respects maxConcurrent limit.
    *
@@ -1137,13 +1179,19 @@ export class AgentRegistry {
       this.interruptedRuns.delete(task.runningTaskId!)
       response = { ...response, content: "", error: interruptedBy, errorKind: "interrupted" }
     }
+    // Ended by a stop signal (#857): report the stop, not how the step read the kill.
+    const stoppedBy = !interruptedBy && task.runningTaskId ? this.stoppedRuns.get(task.runningTaskId) : undefined
+    if (stoppedBy) {
+      this.stoppedRuns.delete(task.runningTaskId!)
+      response = { ...response, content: "", error: stoppedBy, errorKind: "stopped" }
+    }
     // A run that threw or was cancelled before its own cleanup ran.
     if (task.runningTaskId) this.runReleases.get(task.runningTaskId)?.(response)
     // The preparation steps hit the pre-spawn deadline: the message was
     // never handed to a model. With the slot released, run it once more
     // from the start; a second stall is reported in plain words, not with
     // the internal error (#340).
-    const preSpawn = !interruptedBy && response.error && /^timed out before spawn after/.test(response.error)
+    const preSpawn = !interruptedBy && !stoppedBy && response.error && /^timed out before spawn after/.test(response.error)
     if (preSpawn && !task.preSpawnRetry) {
       this.log(`[${task.agentId}] ${response.error}; retrying the run once`)
       return this.execute({ ...task, preSpawnRetry: 1, runningTaskId: undefined, onStart: undefined }, onDelta, onThinking, onEvent)
@@ -1299,6 +1347,7 @@ export class AgentRegistry {
         const maxWaitMs = 25 * 60_000
         const pollIntervalMs = 500
         while (state.activeTasks >= state.def.maxConcurrent) {
+          if (task.callerSignal?.aborted) return this.callerGone(task, "slot wait")
           if (Date.now() - start > maxWaitMs) {
             return { content: "", error: `Agent "${task.agentId}" busy — slot wait timed out after ${Math.round(maxWaitMs / 60000)}m` }
           }
@@ -1380,6 +1429,10 @@ export class AgentRegistry {
       this.log(`[${task.agentId}] ${rateResult.reason}`)
       return { content: "", error: rateResult.reason }
     }
+    // The rate-limit wait above can be minutes long too. The token it
+    // took is spent even though this run never starts; that is accepted,
+    // since the next caller only waits one token interval longer.
+    if (task.callerSignal?.aborted) return this.callerGone(task, "rate-limit wait")
 
     // A flushed queued message that waited long enough for its subject to
     // change is told so (#282). Added here, when it really starts, and
@@ -1405,6 +1458,7 @@ export class AgentRegistry {
       sender: task.context?.sender,
       startedAt: new Date(),
       ...(task.autonomy ? { autonomy: task.autonomy } : {}),
+      ...(task.workflowRunId ? { workflow: { runId: task.workflowRunId } } : {}),
     }
     state.runningTasks.push(runningTask)
     task.runningTaskId = runningTask.id
@@ -1427,6 +1481,15 @@ export class AgentRegistry {
       chatId: typeof runningTask.chatId === "string" ? runningTask.chatId : "",
       originalMessage: task.message || "",
       controller: abortController,
+      sender: task.context?.sender,
+      rootId: currentRoot()?.rootId,
+      workflowRunId: task.workflowRunId ?? (typeof runningTask.chatId === "string" && runningTask.chatId.startsWith("workflow:") ? runningTask.chatId.slice(9) || undefined : undefined),
+      origin: task.origin ?? {
+        kind: "direct",
+        context: task.context as Record<string, unknown> | undefined,
+        model: task.model,
+        autonomy: task.autonomy,
+      },
     })
 
     // Output capture for the dashboard streaming modal. We never *force*
@@ -1455,6 +1518,8 @@ export class AgentRegistry {
     // it by name; the variable is set before any callback can fire.
     const traceTaskId = newEventId()
     task.taskId = traceTaskId
+    const abortEntry = this.taskAborts.get(runningTask.id)
+    if (abortEntry) abortEntry.traceId = traceTaskId
 
     // Per-task tool-use tally (improvement plan #3). Counts each
     // assistant tool_use block by tool name so we can compare against
@@ -1599,10 +1664,38 @@ export class AgentRegistry {
     // Give back everything the run holds. Idempotent: the `finally` below
     // calls it, and execute() calls it for a run that threw before reaching
     // that `try`.
+    // Set once the run emitted task:started / its own task:completed.
+    // closeTrace emits the completion for a run that ended before reaching
+    // it: a pre-spawn abort, a cancel or stop signal, an unexpected error.
+    // Otherwise its trace stayed "in-flight" and the next boot resumed it
+    // as cut-off work (#340, #857). A shutdown interruption is emitted
+    // flagged `interrupted`, which keeps the trace open on purpose.
+    let traceOpened = false
+    let completedEmitted = false
+    const closeTrace = (finalResponse: AgentResponse | undefined) => {
+      if (!traceOpened || completedEmitted) return
+      completedEmitted = true
+      try {
+        getEventBus().emit("task:completed", {
+          taskId: traceTaskId,
+          agentId: task.agentId,
+          channel: qChannel,
+          chatId: qChatId,
+          durationMs: Date.now() - runningTask.startedAt.getTime(),
+          error: finalResponse?.error || (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+          errorKind: finalResponse?.errorKind,
+          interrupted: this.interruptedRuns.has(runningTask.id) ? true : undefined,
+          stopped: !this.interruptedRuns.has(runningTask.id) && (this.stoppedRuns.has(runningTask.id) || finalResponse?.errorKind === "stopped") ? true : undefined,
+          at: new Date().toISOString(),
+        } as any)
+      } catch { /* observability never breaks the run */ }
+    }
+
     let released = false
     const releaseRun = (finalResponse: AgentResponse | undefined) => {
       if (released) return
       released = true
+      closeTrace(finalResponse)
       this.runReleases.delete(runningTask.id)
       if (deadline) clearTimeout(deadline)
       clearPreSpawnDeadline()
@@ -1614,6 +1707,9 @@ export class AgentRegistry {
       // Drop the abort entry — the controller is unreachable after this point
       // and a future cancel for the same id should 404, not silently no-op.
       this.taskAborts.delete(runningTask.id)
+      const waiters = this.runEndWaiters.get(runningTask.id)
+      this.runEndWaiters.delete(runningTask.id)
+      for (const w of waiters ?? []) { try { w() } catch { /* */ } }
 
       // Notify any open dashboard streams that this task has finished, then
       // schedule the buffer for cleanup so memory doesn't grow unbounded.
@@ -1641,7 +1737,9 @@ export class AgentRegistry {
           durationMs: endedAt.getTime() - runningTask.startedAt.getTime(),
           ok: !finalResponse?.error,
           error: finalResponse?.error,
-          ...(timedOutStep ? { status: "timeout" as const, step: timedOutStep } : {}),
+          ...(this.stoppedRuns.has(runningTask.id) || finalResponse?.errorKind === "stopped"
+            ? { status: "stopped" as const }
+            : timedOutStep ? { status: "timeout" as const, step: timedOutStep } : {}),
           responseText: finalResponse?.content || "",
           transcript: output.buffer,
         }
@@ -1810,6 +1908,7 @@ export class AgentRegistry {
       pickup: isPickup(task.context),
       operator: isOperatorTurn(task.context),
     })
+    traceOpened = true
 
     // Classify the message through the intent graph when enabled. Skip for
     // a2a traffic — the classifier itself dispatches through /task, and
@@ -1865,7 +1964,7 @@ export class AgentRegistry {
     // Decision-only here: compute whether auto-run should fire. We don't fire
     // the workflow yet — that happens inside the outer try/finally so
     // runningTask + activeTasks bookkeeping always cleans up.
-    let pendingAutoRun: { workflowId: string; confidence: number } | undefined
+    let pendingAutoRun: { workflowId: string; confidence: number; follow?: boolean } | undefined
     // Follow-up (#788): a saved workflow that fits this request is named to
     // the agent, which starts it with agentx_workflow instead of running
     // the steps by hand.
@@ -1908,6 +2007,31 @@ export class AgentRegistry {
         this.log(`[${task.agentId}] workflow matcher failed (non-fatal): ${e?.message || e}`)
       }
     }
+    // workflows.required (#858): every task runs inside a workflow run. A
+    // saved workflow that fits a person's request is started and followed
+    // (matching need not be on); anything else is wrapped in a run of its
+    // own, on a plan the agent writes or the one-step linear template. A
+    // workflow step's own turn is never wrapped again.
+    const wrapRunStore = requiredFor(this.config.workflows, task.agentId) && shouldWrap(task) ? this.workflowRuns : undefined
+    if (wrapRunStore && !pendingAutoRun && !restricted && this.workflowAutoRunner && isHumanFacingTurn(task.context as any)) {
+      try {
+        const store = new WorkflowStore({ baseDir: resolve(process.cwd(), this.config.workflows.dir) })
+        const match = matchWorkflow({ agentId: task.agentId, channel, message: task.message, intentPath: intent?.path }, store.list())
+        const threshold = wfMatching?.autoRunThreshold ?? 0.85
+        if (match && match.confidence >= threshold) {
+          pendingAutoRun = { workflowId: match.workflow.id, confidence: match.confidence, follow: true }
+          this.log(`[${task.agentId}] workflows.required: saved workflow ${match.workflow.id} fits (confidence=${match.confidence.toFixed(2)})`)
+        }
+      } catch (e: any) {
+        this.log(`[${task.agentId}] workflows.required matcher failed (non-fatal): ${e?.message || e}`)
+      }
+    }
+    // Chosen now so the agent is told its run before the turn starts; the
+    // run itself is created inside the try below, which always closes it.
+    const wrapRunId = wrapRunStore ? randomUUID() : undefined
+    // Its own context layer, so mined procedures and the follow-up hint
+    // never crowd it out of the procedures budget.
+    const workflowRunContext = wrapRunId ? wrapHintText(wrapRunId) : undefined
 
     // Wiki context — Phase 3 Farzapedia alignment: instead of preloading BM25
     // hits (the old shallow-RAG path). The catalog itself is injected on
@@ -2498,6 +2622,7 @@ export class AgentRegistry {
       // bootstrapContext intentionally omitted — delivered via system prompt.
       patternContext: isCodexCli ? undefined : patternContext || undefined,
       procedureContext: [procedureContext, workflowHint].filter(Boolean).join("\n\n") || undefined,
+      workflowRunContext,
       references: referencesBlock,
       skillInjection: skillInjection || undefined,
       groupHistory: task.context?.group ? undefined : undefined, // group log is injected by router
@@ -2687,17 +2812,21 @@ export class AgentRegistry {
     }
 
     let finalResponse: AgentResponse | undefined
-    // Set once the run emitted its own task:completed; the finally below
-    // emits one for a run that ended before reaching it.
-    let completedEmitted = false
     // turn-progress shadow seat: watches the tool steps of this turn.
     const turnWatch = startTurnWatch({
       agent: task.agentId, request: task.message, taskId: traceTaskId,
       budgetMinutes: state.def.maxExecutionMinutes ?? 20,
     })
     const unwatchedOnEvent = onEvent
+    // workflows.required (#858): the turn's wrapping run, once created, and
+    // whether every tool it used changed nothing (the plain-question test).
+    let wrapStarted = false
+    let wrapReadOnly = true
     onEvent = (event: any) => {
       turnWatch.observe(event)
+      if (wrapRunId && wrapReadOnly) {
+        for (const use of toolUsesOf(event)) if (!isReadOnlyToolUse(use.name, use.input)) wrapReadOnly = false
+      }
       unwatchedOnEvent?.(event)
     }
     try {
@@ -2718,6 +2847,7 @@ export class AgentRegistry {
             channel,
             chatId,
             message: task.message,
+            ...(autoRun.follow ? { follow: true } : {}),
             payload: {
               message: task.message,
               agentId: task.agentId,
@@ -2735,7 +2865,11 @@ export class AgentRegistry {
             `agent execution skipped — workflow owns the reply`,
           )
           finalResponse = {
-            content: "",
+            // A required run answers the person with where their request
+            // went; the run's own steps and summary do the rest.
+            content: autoRun.follow
+              ? `Started the workflow "${result.title ?? autoRun.workflowId}" for this${result.runId ? ` (run ${result.runId})` : ""}. AgentX follows each step and tells the owner when it is done.`
+              : "",
             duration: 0,
             metadata: {
               handledByWorkflow: pendingAutoRun.workflowId,
@@ -2746,6 +2880,21 @@ export class AgentRegistry {
           return finalResponse
         } catch (e: any) {
           this.log(`[${task.agentId}] workflow auto-run failed; falling back to agent: ${e?.message || e}`)
+        }
+      }
+
+      // workflows.required (#858): no saved workflow took it, so the turn
+      // runs inside a run of its own. Best-effort: a store that cannot
+      // write never stops the task.
+      if (wrapRunId && wrapRunStore) {
+        try {
+          // A stopped task resumed: its new run names the run the stop closed.
+          const continues = continuedRun(wrapRunStore, task.resumedFrom)
+          startWrap(wrapRunStore, { runId: wrapRunId, agentId: task.agentId, channel, chatId, message: task.message, taskId: traceTaskId, ...(continues ? { continues } : {}) })
+          wrapStarted = true
+          runningTask.workflow = { runId: wrapRunId, workflowId: TASK_WORKFLOW_ID }
+        } catch (e: any) {
+          this.log(`[${task.agentId}] workflows.required: could not create run ${wrapRunId} (non-fatal): ${e?.message || e}`)
         }
       }
 
@@ -2912,6 +3061,13 @@ export class AgentRegistry {
         response.error = interruptedBy
         response.errorKind = "interrupted"
       }
+      // Ended by a stop signal (#857): stopped, not failed.
+      const stoppedBy = interruptedBy ? undefined : this.stoppedRuns.get(runningTask.id)
+      if (stoppedBy) {
+        response.content = ""
+        response.error = stoppedBy
+        response.errorKind = "stopped"
+      }
 
       finalResponse = response
 
@@ -2930,6 +3086,7 @@ export class AgentRegistry {
         error: response.error || undefined,
         errorKind: response.error ? response.errorKind : undefined,
         interrupted: interruptedBy ? true : undefined,
+        stopped: stoppedBy ? true : undefined,
         inputTokens: split?.inputTokens,
         outputTokens: split?.outputTokens,
         cacheReadTokens: split?.cacheReadTokens,
@@ -3123,25 +3280,27 @@ export class AgentRegistry {
       return finalResponse
     } finally {
       turnWatch.stop()
+      if (wrapStarted && wrapRunId && wrapRunStore) {
+        try {
+          const usage = finalResponse?.usage
+          const closed = finishWrap(wrapRunStore, wrapRunId, {
+            error: finalResponse ? finalResponse.error || undefined : (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
+            canceled: endedWithoutFailing(finalResponse?.errorKind) || this.stoppedRuns.has(runningTask.id) || this.interruptedRuns.has(runningTask.id) || (!finalResponse && abortController.signal.aborted),
+            durationMs: Date.now() - runningTask.startedAt.getTime(),
+            ...(usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens } : {}),
+            readOnly: wrapReadOnly,
+            exemptQuestions: this.config.workflows?.required?.exemptQuestions ?? true,
+          })
+          if (closed && closed !== "discarded") this.log(`[${task.agentId}] workflow run ${wrapRunId} ${closed.status} (${closed.meta?.wrap?.mode ?? "linear"})`)
+        } catch (e: any) {
+          this.log(`[${task.agentId}] workflows.required: could not close run ${wrapRunId} (non-fatal): ${e?.message || e}`)
+        }
+      }
       // A run that threw before its completion event (a pre-spawn abort, a
       // cancel, an unexpected error) still closes its trace; otherwise the
       // row stayed "in-flight" and the next boot resumed it as cut-off work
       // (#340). A shutdown interruption keeps it open on purpose.
-      if (!completedEmitted) {
-        try {
-          getEventBus().emit("task:completed", {
-            taskId: traceTaskId,
-            agentId: task.agentId,
-            channel: qChannel,
-            chatId: qChatId,
-            durationMs: Date.now() - runningTask.startedAt.getTime(),
-            error: finalResponse?.error || (abortController.signal.aborted ? abortReason(abortController.signal).message : "run ended before completion"),
-            errorKind: finalResponse?.errorKind,
-            interrupted: this.interruptedRuns.has(runningTask.id) ? true : undefined,
-            at: new Date().toISOString(),
-          } as any)
-        } catch { /* observability never breaks the run */ }
-      }
+      closeTrace(finalResponse)
       releaseRun(finalResponse)
     }
   }
@@ -3191,10 +3350,25 @@ export class AgentRegistry {
         total: s.totalTasks,
         errors: s.errors,
         lastActive: s.lastActive,
-        runningTasks: s.runningTasks,
+        runningTasks: this.withWorkflowSteps(s.runningTasks),
         lastSummary: summary ? { text: summary.text, at: summary.at.toISOString(), ok: summary.ok } : undefined,
         hourlyTasks: this.getHourlySparkline(s.id, 24),
       }
+    })
+  }
+
+  /** Running tasks with the workflow run each belongs to and the step it
+   *  is on (#858), read from the run store; the stored list is not touched. */
+  private withWorkflowSteps(tasks: RunningTask[]): RunningTask[] {
+    const runs = this.workflowRuns
+    if (!runs || !tasks.some((t) => t.workflow)) return tasks
+    return tasks.map((t) => {
+      if (!t.workflow) return t
+      try {
+        const run = runs.get(t.workflow.runId)
+        if (!run) return t
+        return { ...t, workflow: { ...t.workflow, workflowId: run.workflowId, step: liveStep(run), title: run.meta?.title ?? run.workflowId } }
+      } catch { return t }
     })
   }
 
@@ -3376,7 +3550,7 @@ export class AgentRegistry {
     const chatId = ctx?.chatId
     if (!channel || !chatId) return
     // Operator-cancelled / queued-marker — nothing to deliver
-    if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted") return
+    if (resp.errorKind === "cancelled" || resp.errorKind === "interrupted" || resp.errorKind === "stopped") return
     if (isQueued(resp.error)) return
     const text = resp.error
       ? `Error: ${resp.error}`
@@ -3406,7 +3580,7 @@ export class AgentRegistry {
   findRunningTurn(
     agentId: string,
     by: { taskId?: string; channel?: string; chatId?: string } = {},
-  ): { taskId: string; context: NonNullable<AgentTask["context"]>; autonomy?: AgentTask["autonomy"] } | null {
+  ): { taskId: string; context: NonNullable<AgentTask["context"]>; autonomy?: AgentTask["autonomy"]; workflowRunId?: string } | null {
     const state = this.agents.get(agentId)
     if (!state) return null
     let run: RunningTask | undefined
@@ -3423,7 +3597,7 @@ export class AgentRegistry {
     }
     if (!run) return null
     const context = this.runningContexts.get(run.id)
-    return context ? { taskId: run.id, context, ...(run.autonomy ? { autonomy: run.autonomy } : {}) } : null
+    return context ? { taskId: run.id, context, ...(run.autonomy ? { autonomy: run.autonomy } : {}), ...(run.workflow ? { workflowRunId: run.workflow.runId } : {}) } : null
   }
 
   /** Whether every slot of `agentId` is taken, and by which runs. Lets a
@@ -3472,6 +3646,55 @@ export class AgentRegistry {
     } catch { /* AbortController.abort never throws on modern Node, but defend */ }
     this.log(`[${entry.agentId}] task ${taskId} cancelled — ${reason}`)
     return { agentId: entry.agentId, channel: entry.channel, chatId: entry.chatId }
+  }
+
+  /**
+   * Stop signal (#857). Aborts the run like an operator stop, but it ends
+   * with status `stopped` and errorKind "stopped" instead of cancelled, so
+   * nothing reports it as a failure. False when no live run matches.
+   */
+  stopRunningTask(taskId: string, reason: string): boolean {
+    const entry = this.taskAborts.get(taskId)
+    if (!entry || entry.controller.signal.aborted) return false
+    this.stoppedRuns.set(taskId, reason)
+    try { entry.controller.abort(new Error(reason)) } catch { /* */ }
+    this.log(`[${entry.agentId}] task ${taskId} stopped — ${reason}`)
+    return true
+  }
+
+  /** Resolves once the run `taskId` has let go of its slot (at once when it
+   *  is not running), or after `timeoutMs`. */
+  whenRunEnds(taskId: string, timeoutMs: number): Promise<void> {
+    if (!this.taskAborts.has(taskId)) return Promise.resolve()
+    return new Promise((resolveEnd) => {
+      const timer = setTimeout(resolveEnd, timeoutMs)
+      timer.unref?.()
+      const list = this.runEndWaiters.get(taskId) ?? []
+      list.push(() => { clearTimeout(timer); resolveEnd() })
+      this.runEndWaiters.set(taskId, list)
+    })
+  }
+
+  /** A running task a stop signal can address: by its id, or the only run
+   *  of `agentId` on a chat. Null when none (or several) match. */
+  signalTarget(by: { taskId?: string; agentId?: string; channel?: string; chatId?: string }): {
+    taskId: string; traceId?: string; agentId: string; channel: string; chatId: string
+    sender?: string; rootId?: string; originalMessage: string; origin: RunOrigin | null; workflowRunId?: string
+  } | null {
+    let id: string | undefined
+    if (by.taskId) {
+      id = this.taskAborts.has(by.taskId) ? by.taskId : undefined
+    } else if (by.agentId && by.channel && by.chatId) {
+      const ids = [...this.taskAborts].filter(([, e]) => e.agentId === by.agentId && e.channel === by.channel && e.chatId === by.chatId).map(([k]) => k)
+      id = ids.length === 1 ? ids[0] : undefined
+    }
+    const e = id ? this.taskAborts.get(id) : undefined
+    if (!id || !e) return null
+    return {
+      taskId: id, traceId: e.traceId, agentId: e.agentId, channel: e.channel, chatId: e.chatId,
+      sender: e.sender, rootId: e.rootId, originalMessage: e.originalMessage, origin: e.origin ?? null,
+      ...(e.workflowRunId ? { workflowRunId: e.workflowRunId } : {}),
+    }
   }
 
   /**

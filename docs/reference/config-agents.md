@@ -14,6 +14,7 @@ The machine this daemon runs on.
 | `node.name` | string | required | Readable name of this machine, shown in logs and mesh listings. |
 | `node.bind` | string | `"127.0.0.1:18800"` | Address and port the daemon API listens on. |
 | `node.defaultAgent` | string | — | Agent used by voice and API calls that do not name one. |
+| `node.connectAttemptTimeoutMs` | number (250–60000) | `5000` | How long, in milliseconds, the daemon waits for each address of a server to answer before it tries the next one. Raise it on a slow internet link where every outgoing request fails with `ETIMEDOUT`. Read when the daemon starts, and by every `agentx` command run from the folder that holds the config file. |
 
 ## providers
 
@@ -66,6 +67,8 @@ One entry per agent, keyed by agent id (`agents.<id>`).
 | `wiki.contribute.maxPatches` | number (1–200) | `30` | Most suggestions one daily run may make. |
 | `wiki.contribute.maxCostUsd` | number (0–20) | `wiki.contributions.maxCostUsd` | Most model spend one daily run may reach, in dollars. |
 | `wiki.contribute.model` | string | `wiki.contributions.model` | Model for this agent's daily run. |
+| `wiki.notes.dir` | string | the AgentX note store, `.agentx/agent-memory/<agent>/` | The folder `wiki query` reads this agent's notes from when `wiki.query.notes.enabled` is on. A relative path is read from the folder that holds `agentx.json`. See [Search the agent's own notes](/jobs/wiki-live-answers#search-the-agent-s-own-notes). |
+| `wiki.absorb.enabled` | boolean | `true` | `false` leaves the agent out of `agentx wiki absorb` unless it is named with `--agent`. Its conversations are still saved. See [Leave an agent out of the wiki absorb](/jobs/agent-memory#_11-leave-an-agent-out-of-the-wiki-absorb). |
 | `toolUseRequired` | list of string | `[]` | Tool names, such as `Write`, of which at least one must be used in a run; otherwise the run fails with `tool_required_not_called`. |
 | `gitlabAutoReply` | boolean | — | For this agent, overrides the GitLab or GitHub channel's `autoReplyLegacy`: `true` posts the agent's final answer as a comment, `false` does not. |
 | `persistentProcess` | boolean | `false` | Keeps a warm process per conversation for `claude-code`, `codex-cli` and `opencode` agents so replies start faster. |
@@ -489,6 +492,7 @@ A warm process answers only the question it was asked. When a background task of
 ## If something is wrong
 
 - **`config check` names a field:** the value has the wrong type or is out of range. Compare it with the table above.
+- **On a slow internet link, every message, notification or poll fails with `fetch failed` or `ETIMEDOUT`, while `curl` from the same machine works:** the daemon gave up connecting too early. The start of the daemon log shows `Connect attempt timeout: N ms`. Raise `node.connectAttemptTimeoutMs`, for example to `10000`, and restart the daemon.
 - **An `sdk` agent fails with `No API key for provider`:** set `providers.<name>.apiKey`, or check that the environment variable it points to is in `.env`.
 - **An agent with `persistentProcess` answers the question before the one you asked:** update AgentX and restart the daemon. Versions up to 0.103.2 sent a background task's reply as the answer to the next question.
 - **A model or engine change is ignored:** restart the daemon fully with `agentx daemon stop`, then `agentx daemon start --detach`.

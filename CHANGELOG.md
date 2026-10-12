@@ -2,6 +2,146 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.137.2](https://github.com/anis-marrouchi/agentx/compare/v0.137.1...v0.137.2) (2026-10-12)
+
+
+### Bug Fixes
+
+* **daemon:** bound ntfy sends, never re-post a stored push, cover the CLI ([#931](https://github.com/anis-marrouchi/agentx/issues/931) follow-up) ([#933](https://github.com/anis-marrouchi/agentx/issues/933)) ([8efe57e](https://github.com/anis-marrouchi/agentx/commit/8efe57ecfee4b8cbfe4e3d334d872b59b6cd9954))
+
+## [0.137.1](https://github.com/anis-marrouchi/agentx/compare/v0.137.0...v0.137.1) (2026-10-12)
+
+
+### Bug Fixes
+
+* **daemon:** stop slow links failing every fetch with ETIMEDOUT ([#930](https://github.com/anis-marrouchi/agentx/issues/930)) ([#931](https://github.com/anis-marrouchi/agentx/issues/931)) ([6eb558f](https://github.com/anis-marrouchi/agentx/commit/6eb558f88fbcf39be11f20c792f94231d6e62fac))
+
+## [0.137.0](https://github.com/anis-marrouchi/agentx/compare/v0.136.1...v0.137.0) (2026-10-11)
+
+
+### Features
+
+* **voice:** one speaker at a time, with a floor others must respect ([#924](https://github.com/anis-marrouchi/agentx/issues/924)) ([#925](https://github.com/anis-marrouchi/agentx/issues/925)) ([7fb30d2](https://github.com/anis-marrouchi/agentx/commit/7fb30d2480530ad08abd7b6d9d7e47a6d711f3d7))
+
+## [0.136.1](https://github.com/anis-marrouchi/agentx/compare/v0.136.0...v0.136.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **wiki:** restore and curator edits hold the page lock ([#916](https://github.com/anis-marrouchi/agentx/issues/916) follow-up) ([#919](https://github.com/anis-marrouchi/agentx/issues/919)) ([779a43d](https://github.com/anis-marrouchi/agentx/commit/779a43d0fbdf357631afa8a80a596aa382a77767))
+* **wiki:** wiki rules holds each page's lock from re-read to write ([#918](https://github.com/anis-marrouchi/agentx/issues/918)) ([b624e67](https://github.com/anis-marrouchi/agentx/commit/b624e67977cecd120de172aa06daef7c6f4fe914)), closes [#920](https://github.com/anis-marrouchi/agentx/issues/920)
+
+## [0.136.0](https://github.com/anis-marrouchi/agentx/compare/v0.135.1...v0.136.0) (2026-10-09)
+
+
+### Features
+
+* **approvals:** an agent closes its own card once the owner answered in chat ([#910](https://github.com/anis-marrouchi/agentx/issues/910)) ([2d23e0b](https://github.com/anis-marrouchi/agentx/commit/2d23e0b4830dfad7c5a98fa0555281ab3859abfa)), closes [#909](https://github.com/anis-marrouchi/agentx/issues/909)
+* **wiki:** one rule page per obligation, keeping a confirmed penalty ([#915](https://github.com/anis-marrouchi/agentx/issues/915)) ([6de23ca](https://github.com/anis-marrouchi/agentx/commit/6de23cae6de27440a1a97bf9a46d36cfae70fd45))
+
+
+### Bug Fixes
+
+* **wiki:** hold a page lock from re-read to write in wiki events and enrich ([#907](https://github.com/anis-marrouchi/agentx/issues/907) follow-up) ([#916](https://github.com/anis-marrouchi/agentx/issues/916)) ([14fc384](https://github.com/anis-marrouchi/agentx/commit/14fc384cee3d46329de2377a6a0044a6cba88292))
+* **wiki:** leave no-catalog lines out of query-runs p50/p95 (follow-up to [#906](https://github.com/anis-marrouchi/agentx/issues/906)) ([#914](https://github.com/anis-marrouchi/agentx/issues/914)) ([c2354b4](https://github.com/anis-marrouchi/agentx/commit/c2354b4e4b84c43e5968755d7ee787fdb4339e1a))
+
+## [0.135.1](https://github.com/anis-marrouchi/agentx/compare/v0.135.0...v0.135.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* **wiki:** count failed model calls as unpriced; record catalog models in score settings ([#901](https://github.com/anis-marrouchi/agentx/issues/901)) ([#905](https://github.com/anis-marrouchi/agentx/issues/905)) ([440005e](https://github.com/anis-marrouchi/agentx/commit/440005eb059899b685ac91cb67ee0e2a1ce7b3f6))
+* **wiki:** count tool queries and thrown queries; cap _query-runs.jsonl ([#902](https://github.com/anis-marrouchi/agentx/issues/902)) ([#906](https://github.com/anis-marrouchi/agentx/issues/906)) ([581f796](https://github.com/anis-marrouchi/agentx/commit/581f7960d9a04ebd85e05b60578ebeb3c80f6b42))
+* **wiki:** wiki events keeps page dates, re-reads before writing, and spares damage titles ([#900](https://github.com/anis-marrouchi/agentx/issues/900)) ([#907](https://github.com/anis-marrouchi/agentx/issues/907)) ([0460a44](https://github.com/anis-marrouchi/agentx/commit/0460a448be3556a4247e2491a498d3569378414f)), closes [#811](https://github.com/anis-marrouchi/agentx/issues/811)
+
+## [0.135.0](https://github.com/anis-marrouchi/agentx/compare/v0.134.0...v0.135.0) (2026-10-09)
+
+
+### Features
+
+* **wiki:** give each event an importance level and the pages it is about ([#811](https://github.com/anis-marrouchi/agentx/issues/811)) ([#900](https://github.com/anis-marrouchi/agentx/issues/900)) ([85ebaad](https://github.com/anis-marrouchi/agentx/commit/85ebaad83dfafbb0a3621bad7d420a48e629b55b))
+* **wiki:** score reports record settings, time and cost per question ([#863](https://github.com/anis-marrouchi/agentx/issues/863)) ([#901](https://github.com/anis-marrouchi/agentx/issues/901)) ([43aa86e](https://github.com/anis-marrouchi/agentx/commit/43aa86e9074feb1c62ffca766b5026b5967f973a))
+
+
+### Bug Fixes
+
+* **runtime:** keep a claude-code task open while its background work runs ([#892](https://github.com/anis-marrouchi/agentx/issues/892)) ([#894](https://github.com/anis-marrouchi/agentx/issues/894)) ([227f67f](https://github.com/anis-marrouchi/agentx/commit/227f67f624f3f8a03ed2226df9063e241e4d6ccb))
+* **wiki:** absorb and query exit 1 when they fail; count failed queries ([#603](https://github.com/anis-marrouchi/agentx/issues/603)) ([#902](https://github.com/anis-marrouchi/agentx/issues/902)) ([40224c2](https://github.com/anis-marrouchi/agentx/commit/40224c2ac4a400bbfd52eab6533fa5d78b2100ea))
+
+## [0.134.0](https://github.com/anis-marrouchi/agentx/compare/v0.133.0...v0.134.0) (2026-10-09)
+
+
+### Features
+
+* **signals:** pause a workflow run on stop and continue it on resume ([#870](https://github.com/anis-marrouchi/agentx/issues/870)) ([#881](https://github.com/anis-marrouchi/agentx/issues/881)) ([59f188a](https://github.com/anis-marrouchi/agentx/commit/59f188abe01f2817154a29341ac025d2ee1b7553))
+* **wiki:** live read of deploy records, rebased onto [#859](https://github.com/anis-marrouchi/agentx/issues/859) + review fixes ([#860](https://github.com/anis-marrouchi/agentx/issues/860), supersedes [#865](https://github.com/anis-marrouchi/agentx/issues/865)) ([#879](https://github.com/anis-marrouchi/agentx/issues/879)) ([c011d50](https://github.com/anis-marrouchi/agentx/commit/c011d5028b3f04229fda1f317937a4968589d92e))
+* **wiki:** search the source when no wiki page is picked ([#861](https://github.com/anis-marrouchi/agentx/issues/861)) ([#882](https://github.com/anis-marrouchi/agentx/issues/882)) ([9e9d75c](https://github.com/anis-marrouchi/agentx/commit/9e9d75cc82a446addb65f47642b57c2e6db6160c))
+* **wiki:** summaries query can open pages linked from the pick ([#863](https://github.com/anis-marrouchi/agentx/issues/863)) ([#878](https://github.com/anis-marrouchi/agentx/issues/878)) ([38bf7dd](https://github.com/anis-marrouchi/agentx/commit/38bf7dd4a363577e8ea0a3ed62ece718bbbf2635))
+* **wiki:** wiki query searches the agent's own notes ([#862](https://github.com/anis-marrouchi/agentx/issues/862), supersedes [#867](https://github.com/anis-marrouchi/agentx/issues/867)) ([#884](https://github.com/anis-marrouchi/agentx/issues/884)) ([ef569f6](https://github.com/anis-marrouchi/agentx/commit/ef569f696401a992c5c32d7d7f498edcf215a2ed))
+
+
+### Bug Fixes
+
+* **signals:** peer token without via is that peer; drop stopped tasks; clear stale claims ([#871](https://github.com/anis-marrouchi/agentx/issues/871)) ([#880](https://github.com/anis-marrouchi/agentx/issues/880)) ([32c5452](https://github.com/anis-marrouchi/agentx/commit/32c5452041205e6c17fe222c72025af6966ed177))
+* **wiki:** keep one version per write within a millisecond ([#873](https://github.com/anis-marrouchi/agentx/issues/873)) ([#875](https://github.com/anis-marrouchi/agentx/issues/875)) ([aec525f](https://github.com/anis-marrouchi/agentx/commit/aec525f74b31ea3a96b5529b30cab6306ca6dc3a))
+* **wiki:** refuse a notes absorb agent whose wiki absorb is off ([#885](https://github.com/anis-marrouchi/agentx/issues/885)) ([#888](https://github.com/anis-marrouchi/agentx/issues/888)) ([a1f39e5](https://github.com/anis-marrouchi/agentx/commit/a1f39e5a8537bd4f465b60abeb99c22ddad57973))
+* **workflows:** keep task runs apart and prune them ([#883](https://github.com/anis-marrouchi/agentx/issues/883)) ([#890](https://github.com/anis-marrouchi/agentx/issues/890)) ([67f67bf](https://github.com/anis-marrouchi/agentx/commit/67f67bfef94c260aa235603fb3a581ecbfc79d1b))
+
+## [0.133.0](https://github.com/anis-marrouchi/agentx/compare/v0.132.0...v0.133.0) (2026-10-09)
+
+
+### Features
+
+* **workflows:** setting to run every task through a workflow ([#858](https://github.com/anis-marrouchi/agentx/issues/858)) ([#869](https://github.com/anis-marrouchi/agentx/issues/869)) ([82f6179](https://github.com/anis-marrouchi/agentx/commit/82f6179dfb136f6bade1dfbea22c41501151d7e3))
+
+
+### Bug Fixes
+
+* **wiki:** [#856](https://github.com/anis-marrouchi/agentx/issues/856) review follow-ups, plus opt-in linked pages for the summaries method ([#859](https://github.com/anis-marrouchi/agentx/issues/859)) ([ca9cdf9](https://github.com/anis-marrouchi/agentx/commit/ca9cdf95f71349475ae8f74b891a785418f30648))
+
+## [0.132.0](https://github.com/anis-marrouchi/agentx/compare/v0.131.0...v0.132.0) (2026-10-09)
+
+
+### Features
+
+* **signals:** stop a running agent task with a resume plan, and resume it ([#857](https://github.com/anis-marrouchi/agentx/issues/857)) ([#868](https://github.com/anis-marrouchi/agentx/issues/868)) ([79164e5](https://github.com/anis-marrouchi/agentx/commit/79164e52225572d3bcf3dbfded4592595aa6c940))
+
+## [0.131.0](https://github.com/anis-marrouchi/agentx/compare/v0.130.0...v0.131.0) (2026-10-09)
+
+
+### Features
+
+* **wiki:** chat bubble to curate the open page, rebased + review fixes ([#818](https://github.com/anis-marrouchi/agentx/issues/818), supersedes [#821](https://github.com/anis-marrouchi/agentx/issues/821)) ([#840](https://github.com/anis-marrouchi/agentx/issues/840)) ([7a8baf5](https://github.com/anis-marrouchi/agentx/commit/7a8baf5c03cd8436562e9799bc9d6ebb2e946459))
+* **wiki:** entity pages with a full overview, sourced facts and linked history ([#820](https://github.com/anis-marrouchi/agentx/issues/820), [#819](https://github.com/anis-marrouchi/agentx/issues/819)) ([#834](https://github.com/anis-marrouchi/agentx/issues/834)) ([c5f6897](https://github.com/anis-marrouchi/agentx/commit/c5f68979179f6ff6147b5dddf50ddfcbd6005181))
+* **wiki:** wiki query picks pages from summaries and reads live state ([#855](https://github.com/anis-marrouchi/agentx/issues/855)) ([#856](https://github.com/anis-marrouchi/agentx/issues/856)) ([fee9b76](https://github.com/anis-marrouchi/agentx/commit/fee9b769894a5fd85c8ef6debcbb3dc6f3724e1e))
+
+
+### Bug Fixes
+
+* **wiki:** count a skipped note as deferred and keep a slot for deferred notes ([#836](https://github.com/anis-marrouchi/agentx/issues/836)) ([#839](https://github.com/anis-marrouchi/agentx/issues/839)) ([304d989](https://github.com/anis-marrouchi/agentx/commit/304d98945ffa156a3bbcc61962ce1c1b3a206245))
+
+## [0.130.0](https://github.com/anis-marrouchi/agentx/compare/v0.129.0...v0.130.0) (2026-10-09)
+
+
+### Features
+
+* **wiki:** wiki absorb reads and answers the agents' wiki notes ([#831](https://github.com/anis-marrouchi/agentx/issues/831)) ([#832](https://github.com/anis-marrouchi/agentx/issues/832)) ([73a09ff](https://github.com/anis-marrouchi/agentx/commit/73a09ff34ba7e9825f12f9f666a718d3a96c49f9))
+
+## [0.129.0](https://github.com/anis-marrouchi/agentx/compare/v0.128.0...v0.129.0) (2026-10-08)
+
+
+### Features
+
+* **wiki:** note reader with source and check date; pause absorb per agent ([#850](https://github.com/anis-marrouchi/agentx/issues/850)) ([#851](https://github.com/anis-marrouchi/agentx/issues/851)) ([0df84c3](https://github.com/anis-marrouchi/agentx/commit/0df84c394c1f95772e55eb8f9ea81de4676a6980))
+
+
+### Bug Fixes
+
+* **a2a:** agentx_send_agent answers once queued, dedupes retries ([#847](https://github.com/anis-marrouchi/agentx/issues/847)) ([#848](https://github.com/anis-marrouchi/agentx/issues/848)) ([8a612f2](https://github.com/anis-marrouchi/agentx/commit/8a612f209eba19d8f20be36e8cb1be65722041d3))
+* **a2a:** re-run a delegation result relay stopped by a restart ([#846](https://github.com/anis-marrouchi/agentx/issues/846)) ([#849](https://github.com/anis-marrouchi/agentx/issues/849)) ([0306e6b](https://github.com/anis-marrouchi/agentx/commit/0306e6b587a3a4acf1a3d600dd0a8e20f155b923))
+* **task:** drop slot waiters whose caller has gone ([#822](https://github.com/anis-marrouchi/agentx/issues/822)) ([#823](https://github.com/anis-marrouchi/agentx/issues/823)) ([e7ccc71](https://github.com/anis-marrouchi/agentx/commit/e7ccc715c6c1d91b2c68582d0c552e4c4b01e382))
+* **wiki:** round-robin waiting notes so a skipped note cannot starve newer ones ([#837](https://github.com/anis-marrouchi/agentx/issues/837)) ([2ecf472](https://github.com/anis-marrouchi/agentx/commit/2ecf472a32695d70396870c3f51e5fd37db9458a))
+
 ## [0.128.0](https://github.com/anis-marrouchi/agentx/compare/v0.127.0...v0.128.0) (2026-10-08)
 
 

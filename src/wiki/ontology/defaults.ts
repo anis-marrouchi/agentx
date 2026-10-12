@@ -17,14 +17,18 @@ const notes = (show = 1): LensPanel => ({ panel: "notes", title: "Notes", source
 
 const ASSET_TYPES = ["device", "server", "app", "domain", "account", "agent"]
 
+/** Words that make an upkeep title worth a second look. */
+const UPKEEP_UNLESS = "\\b(down|outage|offline|unreachable|fail(ed|ing|ure)?|crash(ed|es|ing)?|broke|broken|lost|loss|corrupt(ed)?|data|production|prod|customers?|clients?|incident|breach|after|loop|again)\\b"
+
 const types: TypeDef[] = [
   // Parties
   {
     id: "person", label: "Person", plural: "People", pillar: "parties", schema: "Person", icon: "person",
     lens: [
       { panel: "roles", title: "Roles over time", from: ["role_at", "member_of", "founded"], show: 6, display: "timeline" },
-      { panel: "relations", title: "Relations", from: ["works_with", "reports_to", "client_of", "related"], types: ["person", "organization"], show: 5, group_by: "role" },
-      { panel: "belongings", title: "Belongings", from: ["owns", "uses", "related"], types: ASSET_TYPES, show: 5 },
+      { panel: "relations", title: "Relations", from: ["works_with", "reports_to", "client_of", "works_on", "related"], types: ["person", "organization", "project"], show: 5, group_by: "role" },
+      // Agents are not a person's belongings or relations (#819).
+      { panel: "belongings", title: "Belongings", from: ["owns", "uses", "related"], types: ASSET_TYPES.filter(t => t !== "agent"), show: 5 },
       { panel: "obligations", title: "Obligations they carry", from: ["subject_to"], show: 3 },
       history(),
       discussed,
@@ -129,7 +133,7 @@ const types: TypeDef[] = [
   {
     id: "project", label: "Project", plural: "Projects", pillar: "offerings", schema: "Project", icon: "project",
     lens: [
-      { panel: "people", title: "Client and people", from: ["client_of", "works_on", "related"], types: ["person", "organization", "agent"], show: 6, group_by: "role" },
+      { panel: "people", title: "Client and people", from: ["client", "client_of", "works_on", "related"], types: ["person", "organization", "agent"], show: 6, group_by: "role" },
       { panel: "agreements", title: "Agreements", source: "linked", types: ["contract"], show: 3 },
       { panel: "decisions", title: "Decisions", source: "linked", types: ["decision", "policy"], show: 4 },
       history(6),
@@ -267,14 +271,15 @@ export const DEFAULT_ONTOLOGY: Ontology = {
   types,
   properties: [
     { id: "related", label: "related to", inverse: "related to" },
-    { id: "role_at", label: "role at", inverse: "people", wikidata: "P108", range: ["organization"] },
-    { id: "member_of", label: "member of", inverse: "members", wikidata: "P463" },
-    { id: "founded", label: "founded", inverse: "founded by", wikidata: "P112" },
-    { id: "works_with", label: "works with", inverse: "works with" },
-    { id: "reports_to", label: "reports to", inverse: "manages" },
-    { id: "client_of", label: "client of", inverse: "clients", wikidata: "P1972" },
-    { id: "works_on", label: "works on", inverse: "people" },
-    { id: "works_for", label: "works for", inverse: "agents", wikidata: "P108" },
+    { id: "role_at", label: "role at", inverse: "people", wikidata: "P108", range: ["organization"], domain: ["person"] },
+    { id: "member_of", label: "member of", inverse: "members", wikidata: "P463", range: ["organization"], domain: ["person", "organization"] },
+    { id: "founded", label: "founded", inverse: "founded by", wikidata: "P112", domain: ["person", "organization"] },
+    { id: "works_with", label: "works with", inverse: "works with", domain: ["person", "organization"] },
+    { id: "reports_to", label: "reports to", inverse: "manages", domain: ["person"] },
+    { id: "client_of", label: "client of", inverse: "clients", wikidata: "P1972", domain: ["person", "organization"] },
+    { id: "client", label: "is for client", inverse: "projects", range: ["organization", "person"], domain: ["project", "offering", "contract"] },
+    { id: "works_on", label: "works on", inverse: "people", range: ["project"], domain: ["person", "organization", "agent"] },
+    { id: "works_for", label: "works for", inverse: "agents", wikidata: "P108", domain: ["agent", "person"] },
     { id: "owns", label: "owns", inverse: "owned by", wikidata: "P1830" },
     { id: "uses", label: "uses", inverse: "used by", wikidata: "P2283" },
     { id: "located_in", label: "located in", inverse: "here", wikidata: "P276" },
@@ -323,11 +328,20 @@ export const DEFAULT_ONTOLOGY: Ontology = {
     { id: "triggered_by", label: "triggered by", inverse: "triggers" },
     { id: "mentions", label: "mentions", inverse: "discussed in" },
     { id: "reading", label: "reading" },
+    { id: "importance_set", label: "importance set" },
   ],
   importance: {
     default: "normal",
     major_set_by: "owner",
     rollup: { min: 5, days: 30 },
+    // Routine machine upkeep: true for any fleet, so safe as a default.
+    // `unless` keeps a title that also reports damage ("Production down
+    // after reboot") for the model.
+    rules: [
+      { level: "minor", title: "\\b(disk|storage) (is |was |almost |nearly )?(full|pressure|cleanup|clean-up|usage|space)\\b", unless: UPKEEP_UNLESS },
+      { level: "minor", title: "\\b(cache|logs?|temp files?) (was |were )?(cleared|cleaned|purged|rotated|pruned)\\b", unless: UPKEEP_UNLESS },
+      { level: "minor", title: "\\b(restart(ed)?|reboot(ed)?|health ?check|heartbeat)\\b", unless: UPKEEP_UNLESS },
+    ],
   },
   sidebar: { pins_max: 5, pins: [] },
   classify: [

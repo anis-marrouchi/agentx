@@ -16,6 +16,7 @@ import { fileReadLines, fileWriteJsonl } from "./file"
 import { httpFetch, httpPost } from "./http"
 import { meshDelegate } from "./mesh"
 import { ragLexical } from "./rag"
+import { signalResume } from "./signal"
 
 /**
  * Register every shipped built-in. Idempotent — re-registering the
@@ -36,6 +37,7 @@ export function registerAllBuiltins(): void {
   registerBuiltin(httpPost)
   registerBuiltin(meshDelegate)
   registerBuiltin(ragLexical)
+  registerBuiltin(signalResume)
 }
 
 /** Test-only — clears the registry. Re-call registerAllBuiltins to repopulate. */

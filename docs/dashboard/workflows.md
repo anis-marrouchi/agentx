@@ -25,6 +25,15 @@ Workflows that agents started for your requests are listed under **Follow-ups**,
 
 See [Let a workflow follow a request](../jobs/follow-up-workflows.md).
 
+## Run every task through a workflow
+
+Below **Follow-ups**, the card **Every task in a workflow** turns on the setting that runs each task an agent gets inside a workflow run, for every agent or one at a time.
+
+1. **Browser:** click **Every task in a workflow** to open the card.
+2. **Browser:** tick **Run every task through a workflow**, or open **Per agent** and choose **on** or **off** next to an agent.
+
+See [Run every task through a workflow](../jobs/every-task-a-workflow.md).
+
 ## Edit a workflow
 
 ![The workflow editor with the Ask AI to build… button](/screenshots/editor-chat-closed.png)

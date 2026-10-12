@@ -15,6 +15,7 @@ import {
 import { HandoverStore } from "@/channels/handover-store"
 import { loadDaemonConfig } from "./config"
 import { mutateAgentxConfig } from "./config-mutate"
+import { setWikiAbsorb } from "@/wiki/absorb-agents"
 import type { TopbarPeer } from "./topbar"
 import { renderAgentPage } from "./ui/pages/agent"
 
@@ -139,6 +140,8 @@ function getAgentState(agentId: string) {
     maxConcurrent: def.maxConcurrent ?? 1,
     maxExecutionMinutes: def.maxExecutionMinutes ?? 20,
     permissionMode: def.permissionMode || "default",
+    // Bulk wiki absorb for this agent (#850); on unless set to false.
+    wikiAbsorb: def.wiki?.absorb?.enabled !== false,
     // Phase 5/8 capability fields — exposed so the Capability tab can
     // render current values without a second round-trip.
     intents: Array.isArray((def as any).intents) ? (def as any).intents : [],
@@ -165,6 +168,10 @@ function patchAgent(agentId: string, body: any) {
   const { summary } = mutateAgentxConfig((cfg) => {
     if (!cfg.agents?.[agentId]) throw new Error(`Agent "${agentId}" not found`)
     cfg.agents[agentId] = { ...cfg.agents[agentId], ...fields }
+    if (typeof body?.wikiAbsorb === "boolean") {
+      setWikiAbsorb(cfg.agents[agentId], body.wikiAbsorb)
+      fields.wikiAbsorb = body.wikiAbsorb
+    }
     return `agent "${agentId}" updated (${Object.keys(fields).join(", ")})`
   })
   return { summary, agent: getAgentState(agentId) }

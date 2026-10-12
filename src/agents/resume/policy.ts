@@ -7,6 +7,8 @@ import { callerAgentOf, parseOrigin, type RunOrigin } from "./origin"
 // decide per run. Rules, in order (the first that applies wins):
 //
 //   skip    scheduled jobs — the next scheduled run covers them
+//   skip    runs another part of the daemon picks up itself (a delegation
+//           result's relay turn: the delegation manager re-runs it, #846)
 //   report  workflow steps — the workflow engine owns their retries
 //   report  crash loop — several restarts in a short window; a resumed run
 //           may be what brings the daemon down
@@ -62,13 +64,20 @@ export function inCrashLoop(boots: number[], now: number, s: ResumeSettings["cra
 export function planResume(
   runs: InterruptedRun[],
   settings: ResumeSettings,
-  ctx: { now: number; boots: number[] },
+  ctx: {
+    now: number
+    boots: number[]
+    /** A reason when another part of the daemon picks this run up itself. */
+    handledElsewhere?: (run: InterruptedRun) => string | null
+  },
 ): ResumePlan[] {
   const loop = inCrashLoop(ctx.boots, ctx.now, settings.crashLoop)
   return runs.map((run): ResumePlan => {
     const ch = base(run.channel)
     const origin = parseOrigin(run.resumeOrigin)
     if (ch === "cron") return { run, action: "skip", origin, reason: "scheduled job: the next scheduled run covers it" }
+    const elsewhere = ctx.handledElsewhere?.(run)
+    if (elsewhere) return { run, action: "skip", origin, reason: elsewhere }
     if (run.workflowRunId) return { run, action: "report", origin, reason: "workflow step: the workflow engine owns retries" }
     if (!settings.enabled) return { run, action: "report", origin, reason: "resume is turned off" }
     if (loop) {

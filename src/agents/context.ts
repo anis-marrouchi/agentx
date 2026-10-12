@@ -44,6 +44,7 @@ const DEFAULT_CONFIG: ContextConfig = {
     intent: 200,
     artifacts: 500,
     procedures: 400,
+    "workflow-run": 200,
     memory: 400,
     history: 1200,
     "cross-chat": 800,
@@ -81,6 +82,8 @@ export interface ContextInput {
 
   // Matched procedures (user-perspective SOPs — known-good step sequences)
   procedureContext?: string          // from renderProcedureContext()
+  /** The workflow run this task is wrapped in (#858, workflows.required). */
+  workflowRunContext?: string
 
   // Auto-injected skills (matched to current message)
   skillInjection?: string            // from getAutoInjectSkills()
@@ -373,6 +376,19 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("procedures", 400),
       content: input.procedureContext,
       tags: ["procedures", "sop"],
+    })
+  }
+
+  // 6.45 The workflow run this task is wrapped in (#858). Its own layer:
+  // in the procedures budget it could be cut, and the agent would not
+  // know its run id.
+  if (input.workflowRunContext) {
+    layers.push({
+      name: "workflow-run",
+      priority: 6.55,
+      maxTokens: budget("workflow-run", 200),
+      content: input.workflowRunContext,
+      tags: ["workflow", "plan"],
     })
   }
 

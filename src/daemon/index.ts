@@ -41,6 +41,7 @@ import { buildRoutines, type Routine, type RoutineWorkflow } from "./routines"
 import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
+import { applyConnectAttemptTimeout, DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS } from "./net-family"
 import { buildInfo, diskBuild } from "@/utils/build-info"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
@@ -59,6 +60,11 @@ import { localAlert, localSettings, notify, type Sender } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
+import { SignalService } from "@/agents/signals/service"
+import { StoppedTaskStore } from "@/agents/signals/store"
+import { setSignalService } from "@/agents/signals/instance"
+import { handleSignalsHttp, isSignalsPath, peerOfToken, signalSender, WIND_DOWN_CHANNEL } from "@/daemon/signals-api"
+import { traceToolCalls } from "@/storage/traces"
 import { RESUME_DELIVERY_FLAG, callerAgentOf } from "@/agents/resume/origin"
 import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
@@ -67,9 +73,10 @@ import { runApprovalsSweep } from "@/approvals/sweep"
 import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
+import { closeStaleWraps, requiredFor } from "@/workflows/required"
 import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
-import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
+import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
@@ -77,6 +84,7 @@ import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
 import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
 import { isOperatorTurn, loadOperatorKey, operatorContext, operatorVouch, ownerProven } from "@/requests/operator"
+import { WikiCurateApi } from "./wiki-curate-api"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
 import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
@@ -160,6 +168,7 @@ import { handleVoiceIo, isVoiceIoPath, resolveVoice } from "@/daemon/voice-io-ap
 import { resolveAgentVoice, VoiceIntroTracker, introInstruction, VOICE_MODE_INSTRUCTION, remoteVoiceAppend, voiceForText, voiceRef } from "@/voice/agent-voice"
 import { handleQueue, isQueuePath } from "@/daemon/voice-queue-api"
 import { handleGuide, isGuidePath } from "@/daemon/voice-guide-api"
+import { handleFloor, isFloorPath } from "@/daemon/voice-floor-api"
 import { GUIDE_INSTRUCTION } from "@/voice/guide"
 import { handleCalls, isCallsPath } from "@/daemon/calls-api"
 import { CallService, SUMMARY_PROMPT } from "@/calls/service"
@@ -191,8 +200,9 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
-import type { DelegationManager } from "@/a2a/delegation"
+import { isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
 import { ServiceMatcher } from "@/services/matcher"
@@ -224,16 +234,21 @@ export class AgentXDaemon {
   private delegations: DelegationManager
   /** Synchronous delegations in flight, to refuse cycles that could never finish. */
   private syncWaits = new SyncWaits()
+  /** Recent /send/agent answers, so a retry gets the same task id (#847). */
+  private sendAgentDedupe = new SendAgentDedupe()
   /** Phone-app callback replies waiting for the dashboard to file them. */
   private callbackReplies = new CallbackReplies()
   private hooks: HookRegistry
   private landscape: LandscapeBuilder
   private heartbeat: HeartbeatManager
   private stopEventWaker?: () => void
+  /** Stop and resume signals (agents/signals, #857). */
+  private signals!: SignalService
   private business?: BusinessLayer
   private httpServer?: ReturnType<typeof createServer>
   private attachSweep?: ReturnType<typeof setInterval>
   private callSweep?: ReturnType<typeof setInterval>
+  private taskRunPrune?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
   private webrtc?: WebRtcSignalBroker
@@ -252,6 +267,18 @@ export class AgentXDaemon {
   /** Watched WhatsApp chats (src/whatsapp-triage). Null without SQLite. */
   private waTriage: TriageService | null = null
   private assistantStore(): AssistantStore | undefined { return this._assistant }
+  /** The chat bubble on wiki pages (#818). */
+  private wikiCurate = new WikiCurateApi({
+    hub: () => this.registry.getWikiHub(),
+    settings: () => this.config.wiki?.curator ?? { enabled: true },
+    agents: () => this.registry.list().map(a => a.id),
+    execute: (agentId, prompt, requestText) => this.registry.execute({
+      agentId, message: prompt, requestText,
+      // The owner typed it on this node's wiki page: the turn is theirs.
+      context: operatorContext({ channel: "dashboard", chatId: "wiki-curator", sender: "operator" }) as any,
+    }),
+    log: (m) => this.log(m),
+  })
 
   /** Workflow health for the monitor. Cached for a minute: the dashboard
    *  polls every 15s and dormancy does not change on that timescale. */
@@ -348,6 +375,7 @@ export class AgentXDaemon {
       voiceSettings: () => this.config?.voice ?? {},
       // Who is speaking and who waits, live for the menu and any client.
       onQueue: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:queue", ...view })),
+      onFloor: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:floor", ...view })),
     })
     this.voiceTalk.speech.pronounce = this.sayAs
     this.voiceTalk.narrator.attach(getAgentEventBus())
@@ -444,6 +472,9 @@ export class AgentXDaemon {
     // path without re-implementing dedupe / marker / identity / ledger.
     setMessageRouter(this.router)
 
+    this.signals = this.createSignalService()
+    setSignalService(this.signals)
+
     // Initialize service matcher (automated client services)
     if (Object.keys(this.config.services).length > 0) {
       const serviceMatcher = new ServiceMatcher(this.config.services, this.log)
@@ -521,6 +552,7 @@ export class AgentXDaemon {
         this.status?.board.delegationDone(rec, result.status)
       },
       callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
+      onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
     })
 
     // Initialize webhook handler (after mesh so mesh-forwarding works)
@@ -684,6 +716,10 @@ export class AgentXDaemon {
     this.log("")
     this.log(`  Node: ${this.config.node.name} (${this.config.node.id})`)
     this.log(`  Bind: ${this.config.node.bind}`)
+    // Before any channel polls or pushes: Node's 250 ms per-address connect
+    // attempt fails every fetch on a slow dual-stack link (#930).
+    const attemptMs = applyConnectAttemptTimeout(this.config.node.connectAttemptTimeoutMs ?? DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS)
+    if (attemptMs !== undefined) this.log(`  Connect attempt timeout: ${attemptMs} ms`)
     const ffmpeg = findFfmpeg()
     this.log(ffmpeg
       ? `  Voice: ffmpeg ${ffmpeg}`
@@ -976,6 +1012,13 @@ export class AgentXDaemon {
     // running daemon.
     this.bootTimes = recordBoot(resolve(process.cwd(), ".agentx"))
     this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1))
+    // Paused tasks whose plan-writing turn the restart cut off (#857): a
+    // plan from the trace, so they can be resumed. Before the resume pass,
+    // which skips the cut-off wind-down turns themselves.
+    try {
+      const recovered = this.signals.recover()
+      if (recovered) this.log(`  Signals: ${recovered} paused task(s) got a plan from their trace after the restart`)
+    } catch (e: any) { this.log(`[signals] recovery failed: ${e?.message ?? e}`) }
     if (this.interruptedRuns.length > 0) {
       setTimeout(() => { void this.resumeInterruptedRuns() }, 5_000).unref?.()
     }
@@ -1171,6 +1214,7 @@ export class AgentXDaemon {
 
     if (this.attachSweep) clearInterval(this.attachSweep)
     if (this.callSweep) clearInterval(this.callSweep)
+    if (this.taskRunPrune) clearInterval(this.taskRunPrune)
 
     if (this.httpServer) {
       this.httpServer.close()
@@ -1269,78 +1313,157 @@ export class AgentXDaemon {
   /** Every start on record with who stopped the one before (boot-record.ts). */
   private bootLog: BootEntry[] = []
 
+  /** The resumers that re-enter a run where it came from: used by the boot
+   *  resume pass and by resume signals (agents/signals, #857). */
+  private resumeCoordinatorInstance?: ResumeCoordinator
+  private resumeCoordinator(): ResumeCoordinator {
+    if (this.resumeCoordinatorInstance) return this.resumeCoordinatorInstance
+    const coordinator = new ResumeCoordinator()
+    coordinator.register("router", this.router.createResumer())
+    // A turn on the agent that asked for a cut-off agent-to-agent run:
+    // the notice that it was cut off, or the re-run's answer. Marked so
+    // that, if this turn is cut off too, it is reported and never
+    // bounced back (see callerAgentOf).
+    const tellCaller = (caller: string, fromAgent: string, text: string) =>
+      this.registry.execute({
+        message: text,
+        agentId: caller,
+        context: { channel: "a2a", sender: `agent:${fromAgent}`, chatId: fromAgent, [RESUME_DELIVERY_FLAG]: true } as any,
+      }).catch((e: any) => this.log(`[resume] couldn't tell ${caller}: ${e?.message ?? e}`))
+    coordinator.register("direct", {
+      // Non-chat runs, only for channels opted in via resume.directChannels,
+      // where nothing delivers their answer; and agent-to-agent runs that
+      // name their calling agent, whose answer becomes a turn on that agent.
+      resume: async ({ origin, note, attempt, run }) => {
+        if (origin.kind !== "direct") throw new Error("not a direct run")
+        const caller = callerAgentOf(origin)
+        const rerun = this.registry.execute({
+          message: `${note}\n${run.originalMessage ?? ""}`,
+          agentId: run.agentId,
+          context: origin.context as any,
+          model: origin.model,
+          autonomy: origin.autonomy as any,
+          origin,
+          resumeAttempt: attempt,
+          resumedFrom: run.taskId,
+        })
+        if (!caller) {
+          void rerun.catch((e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
+          return
+        }
+        void rerun.then(
+          (response) => tellCaller(caller, run.agentId, resumedAnswerText(run, response)),
+          (e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`),
+        )
+      },
+      tell: async (origin, text) => {
+        const caller = callerAgentOf(origin)
+        if (!caller) throw new Error("no chat to tell")
+        const from = origin.kind === "direct" ? String(origin.context?.chatId ?? "an agent") : "an agent"
+        await tellCaller(caller, from, `[AgentX resume] ${text}`)
+      },
+    })
+    coordinator.register("mesh", createMeshResumer({
+      peers: () => this.mesh?.directory() ?? [],
+      send: async (peer, body) => {
+        const r = await fetch(`${peer.peerUrl}/channel/send`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(15000),
+        })
+        if (!r.ok) throw new Error(`peer ${peer.peer} /channel/send -> ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`)
+      },
+      execute: ({ agentId, message, origin, attempt, resumedFrom }) => this.registry.execute({
+        message,
+        agentId,
+        context: origin.context as any,
+        origin,
+        resumeAttempt: attempt,
+        resumedFrom,
+      }),
+      log: this.log,
+    }))
+    this.resumeCoordinatorInstance = coordinator
+    return coordinator
+  }
+
+  /** Stop a running task with a resume plan, and resume it later (#857). */
+  private createSignalService(): SignalService {
+    const bus = getAgentEventBus()
+    return new SignalService({
+      settings: () => this.config.signals,
+      store: new StoppedTaskStore(resolve(process.cwd(), ".agentx/signals/stopped")),
+      findRunning: (by) => this.registry.signalTarget(by),
+      stopRun: (taskId, reason) => this.registry.stopRunningTask(taskId, reason),
+      whenRunEnds: (taskId, ms) => this.registry.whenRunEnds(taskId, ms),
+      toolCalls: (traceId) => {
+        if (!traceId || !this.db) return []
+        try { return traceToolCalls(this.db, traceId) } catch { return [] }
+      },
+      // Its own chat, so the turn neither queues behind the chat it stopped
+      // nor posts there; under the task's root, so what it causes cannot
+      // wake a subscriber twice.
+      windDown: ({ id, agentId, rootId, message, timeoutMs }) => withRoot({ rootId }, () => {
+        let runId: string | undefined
+        const timer = setTimeout(() => {
+          if (runId) this.registry.cancelRunningTask(runId, `wind-down timed out after ${Math.round(timeoutMs / 1000)}s`)
+        }, timeoutMs)
+        timer.unref?.()
+        return this.registry.execute({
+          message,
+          agentId,
+          context: { channel: WIND_DOWN_CHANNEL, chatId: `signal:${id}`, sender: "agentx:signal" },
+          timeoutMinutes: timeoutMs / 60_000,
+          // Still waiting for a slot when the time is up: dropped, not run.
+          callerSignal: AbortSignal.timeout(timeoutMs),
+          onStart: (r) => { runId = r },
+        }).finally(() => clearTimeout(timer))
+      }),
+      resume: async ({ record, note }) => {
+        if (!record.origin) throw new Error("no record of how to re-enter this task")
+        const run = {
+          taskId: record.traceId ?? record.id,
+          agentId: record.agentId,
+          channel: record.channel,
+          chatId: record.chatId,
+          workflowRunId: null,
+          startedAt: Date.parse(record.stoppedAt),
+          originalMessage: record.originalMessage,
+          resumeOrigin: null,
+          resumeAttempt: 0,
+          toolCalls: [],
+        }
+        await withRoot({ rootId: record.rootId }, () =>
+          this.resumeCoordinator().resumeOne({ origin: record.origin!, run, note, rootId: record.rootId }))
+      },
+      // A workflow step (#870): the run pauses there, and resumes there.
+      // Read the dispatcher late: the engine starts after this service.
+      workflowStep: (runId, agentId) => this.workflowDispatcher
+        ? this.workflowDispatcher.agentStepOf(runId, agentId)
+        : { error: "the workflow engine is not running on this node" },
+      resumeWorkflowStep: async ({ record, note, by }) => {
+        if (!this.workflowDispatcher || !record.workflow) throw new Error("the workflow engine is not running on this node")
+        const r = await this.workflowDispatcher.resumeStoppedStep({ runId: record.workflow.runId, agentId: record.agentId, taskId: record.id, note, by })
+        if (!r.ok) throw new Error(r.error)
+      },
+      tell: async (origin, text) => {
+        await this.resumeCoordinator().tellOrigin(origin, text, this.log)
+      },
+      publish: ({ type, agentId, rootId, summary, ref }) => {
+        try { bus.publish({ kind: "signal", type, agentId, rootId, summary, ref }) } catch { /* observability never breaks a signal */ }
+      },
+      log: (msg) => this.log(msg),
+    })
+  }
+
   /** Resume, report or skip each run the last restart cut off. Never throws. */
   private async resumeInterruptedRuns(): Promise<void> {
     const runs = this.interruptedRuns
     this.interruptedRuns = []
     if (!this.db || runs.length === 0) return
     try {
-      const coordinator = new ResumeCoordinator()
-      coordinator.register("router", this.router.createResumer())
-      // A turn on the agent that asked for a cut-off agent-to-agent run:
-      // the notice that it was cut off, or the re-run's answer. Marked so
-      // that, if this turn is cut off too, it is reported and never
-      // bounced back (see callerAgentOf).
-      const tellCaller = (caller: string, fromAgent: string, text: string) =>
-        this.registry.execute({
-          message: text,
-          agentId: caller,
-          context: { channel: "a2a", sender: `agent:${fromAgent}`, chatId: fromAgent, [RESUME_DELIVERY_FLAG]: true } as any,
-        }).catch((e: any) => this.log(`[resume] couldn't tell ${caller}: ${e?.message ?? e}`))
-      coordinator.register("direct", {
-        // Non-chat runs, only for channels opted in via resume.directChannels,
-        // where nothing delivers their answer; and agent-to-agent runs that
-        // name their calling agent, whose answer becomes a turn on that agent.
-        resume: async ({ origin, note, attempt, run }) => {
-          if (origin.kind !== "direct") throw new Error("not a direct run")
-          const caller = callerAgentOf(origin)
-          const rerun = this.registry.execute({
-            message: `${note}\n${run.originalMessage ?? ""}`,
-            agentId: run.agentId,
-            context: origin.context as any,
-            model: origin.model,
-            autonomy: origin.autonomy as any,
-            origin,
-            resumeAttempt: attempt,
-            resumedFrom: run.taskId,
-          })
-          if (!caller) {
-            void rerun.catch((e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`))
-            return
-          }
-          void rerun.then(
-            (response) => tellCaller(caller, run.agentId, resumedAnswerText(run, response)),
-            (e: any) => this.log(`[resume] ${run.taskId} failed: ${e?.message ?? e}`),
-          )
-        },
-        tell: async (origin, text) => {
-          const caller = callerAgentOf(origin)
-          if (!caller) throw new Error("no chat to tell")
-          const from = origin.kind === "direct" ? String(origin.context?.chatId ?? "an agent") : "an agent"
-          await tellCaller(caller, from, `[AgentX resume] ${text}`)
-        },
-      })
-      coordinator.register("mesh", createMeshResumer({
-        peers: () => this.mesh?.directory() ?? [],
-        send: async (peer, body) => {
-          const r = await fetch(`${peer.peerUrl}/channel/send`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
-            body: JSON.stringify(body),
-            signal: AbortSignal.timeout(15000),
-          })
-          if (!r.ok) throw new Error(`peer ${peer.peer} /channel/send -> ${r.status} ${(await r.text().catch(() => "")).slice(0, 200)}`)
-        },
-        execute: ({ agentId, message, origin, attempt, resumedFrom }) => this.registry.execute({
-          message,
-          agentId,
-          context: origin.context as any,
-          origin,
-          resumeAttempt: attempt,
-          resumedFrom,
-        }),
-        log: this.log,
-      }))
+      const coordinator = this.resumeCoordinator()
       const dest = this.config.notifications?.destination
       const outcomes = await coordinator.run({
         db: this.db,
@@ -1350,6 +1473,14 @@ export class AgentXDaemon {
         boots: this.bootTimes,
         log: this.log,
         staggerMs: 2_000,
+        // A delegation result's relay turn is re-run by the delegation
+        // manager (#846); resuming it here too would answer twice.
+        handledElsewhere: (run) => this.config.mesh.delegation.requeueRelayOnRestart && isDelegationRelay(run.originalMessage)
+          ? "delegation result relay: the delegation manager runs it again"
+          // A pause's plan-writing turn: signals.recover() above gave its
+          // task a plan from the trace; running it again would answer nobody.
+          : run.channel === WIND_DOWN_CHANNEL ? "stop signal wind-down: its task got a plan from the trace"
+          : null,
         notifyOperator: dest
           ? async (text) => { await this.router.sendOutbound({ channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId, text }) }
           : undefined,
@@ -1756,6 +1887,14 @@ export class AgentXDaemon {
       }
     }
 
+    // 8b'. Workflow settings the registry reads per turn (#858: required,
+    //     matching, follow-up). The engine itself starts at boot only.
+    if (JSON.stringify(this.config.workflows) !== JSON.stringify(next.workflows)) {
+      this.registry.setWorkflows(next.workflows)
+      applied.push("workflows")
+      if (this.config.workflows.enabled !== next.workflows.enabled) restartRequired.push("workflows.enabled")
+    }
+
     // 8c. WhatsApp triage reads this.config on every message; just report it.
     if (JSON.stringify(this.config.whatsappTriage) !== JSON.stringify(next.whatsappTriage)) {
       applied.push(`whatsappTriage(${next.whatsappTriage.rules.length} rule(s))`)
@@ -1872,8 +2011,9 @@ export class AgentXDaemon {
         }
         this.status?.board.sweep()
         // The Mac popup waits on a person, so it runs beside the sweep,
-        // never inside it (src/approvals/popup-runner.ts).
-        void popNext({
+        // never inside it (src/approvals/popup-runner.ts). Not over a
+        // demo or a recording: the card waits for the floor to be free.
+        if (!this.voiceTalk.floor.view().held) void popNext({
           ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log,
           agentName: (id) => this.registry.getAgent(id)?.name,
           // Through the speaking queue, never straight to `say`: the line
@@ -2680,6 +2820,7 @@ export class AgentXDaemon {
           // produced it — bleeding context across runs and breaking the
           // single-conversation guarantee per workflow run.
           const wfChatId = req.workflowRunId ? `workflow:${req.workflowRunId}` : "workflow:adhoc"
+          let runTaskId: string | undefined
           const resp = await this.registry.execute({
             agentId: req.agentId,
             message: req.message,
@@ -2691,6 +2832,8 @@ export class AgentXDaemon {
               chatId: wfChatId,
               sender: "workflow",
             },
+            // A stop signal names this id; the paused step keeps it (#870).
+            onStart: (id) => { runTaskId = id },
           })
           return {
             content: resp.content ?? "",
@@ -2698,6 +2841,7 @@ export class AgentXDaemon {
             errorKind: resp.errorKind,
             autonomyBlocks: resp.autonomyBlocks,
             taskId: `wf-${req.workflowRunId ?? "na"}-${start.toString(36)}`,
+            ...(runTaskId ? { runTaskId } : {}),
             durationMs: Date.now() - start,
           }
         } catch (e: any) {
@@ -2848,6 +2992,31 @@ export class AgentXDaemon {
     this.workflowDispatcher = dispatcher
     this.workflowStore = store
     this.workflowRuns = runs
+    // workflows.required (#858): wrapped tasks keep their run here too.
+    // Runs whose turn was cut off by the last stop are closed first.
+    this.registry.setWorkflowRunStore(runs)
+    // Task runs keep a folder of their own (#883); runs 0.133.0 wrote with
+    // the workflow runs are moved there once.
+    try {
+      const moved = runs.moveTaskRuns()
+      if (moved) this.log(`  Workflows: moved ${moved} task run(s) to their own folder`)
+    } catch (e: any) { this.log(`  Workflows: moving task runs failed (non-fatal): ${e?.message || e}`) }
+    try {
+      const stale = closeStaleWraps(runs)
+      if (stale) this.log(`  Workflows: closed ${stale} task run(s) cut off by the last stop`)
+    } catch (e: any) { this.log(`  Workflows: closing cut-off task runs failed (non-fatal): ${e?.message || e}`) }
+    // Retention (#883): ended task runs older than retentionDays go, now
+    // and every 6 hours. Read from config each time, so a change applies.
+    const pruneTaskRuns = () => {
+      try {
+        const n = runs.pruneTaskRuns(this.config.workflows.required?.retentionDays ?? 30)
+        if (n) this.log(`  Workflows: removed ${n} task run(s) past workflows.required.retentionDays`)
+      } catch (e: any) { this.log(`  Workflows: pruning task runs failed (non-fatal): ${e?.message || e}`) }
+    }
+    pruneTaskRuns()
+    if (this.taskRunPrune) clearInterval(this.taskRunPrune)
+    this.taskRunPrune = setInterval(pruneTaskRuns, 6 * 60 * 60 * 1000)
+    this.taskRunPrune.unref?.()
     // Phase 3: webhook handler can now dispatch workflows per event-type
     // (webhooks[].triggers map). When `triggers` is unset, behavior is
     // unchanged from prior versions.
@@ -2870,7 +3039,7 @@ export class AgentXDaemon {
     // throw a typed error — the registry catches it and falls back to
     // normal agent execution (suggest mode behaviour). Operators can
     // still fill the gaps via a manual run from the dashboard.
-    this.registry.setWorkflowAutoRunner(async ({ workflowId, channel, chatId, payload }) => {
+    this.registry.setWorkflowAutoRunner(async ({ workflowId, agentId, channel, chatId, message, payload, follow }) => {
       const wf = store.get(workflowId)
       if (!wf) throw new Error(`auto-run target workflow not found: ${workflowId}`)
 
@@ -2896,6 +3065,17 @@ export class AgentXDaemon {
         `defaults=[${resolution.filledFrom.defaults.join(",")}]`
       )
 
+      // workflows.required (#858): a followed run, so the engine chases each
+      // step and the owner gets one summary.
+      if (follow) {
+        const started = await dispatcher.startRun({
+          workflowId,
+          inputs: { ...resolution.inputs, requestedBy: agentId, channel, chatId },
+          meta: { title: message.replace(/\s+/g, " ").trim().slice(0, 80) || wf.title, tags: [`agent:${agentId}`], startedBy: agentId },
+        })
+        if (!started.run) throw new Error(started.error ?? `could not start ${workflowId}`)
+        return { runId: started.run.id, title: wf.title }
+      }
       const entityRef = { backend: "manual", id: chatId || `auto-${Date.now().toString(36)}` }
       const eventId = `auto:${workflowId}:${chatId}:${Date.now()}`
       const result = await dispatcher.dispatchWorkflow({
@@ -3554,6 +3734,15 @@ export class AgentXDaemon {
     return warmProcessChat(turn.context)
   }
 
+  /** The agent whose running turn `proof` names: the owner of its task,
+   *  or `claimed` when its channel and chat match a running turn of that
+   *  agent. Null when the call proves none. */
+  private provenAgent(proof: RequestCallerProof, claimed?: string): string | null {
+    if (proof.taskId) return this.registry.runningTaskOwner(proof.taskId)?.agentId ?? null
+    if (claimed && proof.channel && proof.chatId && this.provenTurn(claimed, proof)) return claimed
+    return null
+  }
+
   private async handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url || "/", `http://${req.headers.host || "localhost"}`)
     const path = url.pathname
@@ -3587,8 +3776,18 @@ export class AgentXDaemon {
         const voiceOf = (id: string) => agents[id]
           ? voiceRef(resolveAgentVoice(id, agents, this.config.voice))
           : this.voiceMesh.voices.speaker(id, false)?.voice ?? null
-        const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body)
+        const reply = await handleQueue(this.voiceTalk.speech, voiceOf, req.method || "GET", path, body, this.voiceTalk.floor)
         // With wait, the client may have given up; the line still plays.
+        if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
+        return
+      }
+      // The floor: taking it silences every other voice on this host.
+      if (isFloorPath(path)) {
+        if (!this.checkMeshAuth(req, res, path)) return
+        const body = req.method === "POST" ? await readBody(req) : {}
+        const gone = new AbortController()
+        res.once("close", () => gone.abort())
+        const reply = await handleFloor(this.voiceTalk.floor, req.method || "GET", path, url.searchParams, body, gone.signal)
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }
@@ -3599,7 +3798,7 @@ export class AgentXDaemon {
         // The app may go while it waits: then no character is there to send.
         const gone = new AbortController()
         res.once("close", () => gone.abort())
-        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body, gone.signal)
+        const reply = await handleGuide(this.voiceTalk.guide, this.config?.voice?.look === "character", req.method || "GET", url.searchParams, body, gone.signal, this.voiceTalk.floor)
         if (!res.writableEnded && !res.destroyed) this.json(res, reply.status, reply.body)
         return
       }
@@ -3798,6 +3997,12 @@ export class AgentXDaemon {
           settings: this.config.approvals,
           hasAgent,
           hasPeer: (node) => !!this.approvalsPeer(node),
+          provenAgent: (claimed) => this.provenAgent(this.callerProof(req), claimed),
+          tokenPeerIs: (node) => {
+            const auth = req.headers.authorization
+            const peer = peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN)
+            return !!peer && this.approvalsPeer(node)?.name === peer
+          },
           ...(process.platform === "darwin" ? {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
@@ -3809,6 +4014,30 @@ export class AgentXDaemon {
           const remote = await readForwardedCard(decodeURIComponent(one[1]), forward)
           this.json(res, remote.status, remote.body)
           return
+        }
+        // Closing a forwarded card (#909) is done there too.
+        const closing = /^\/approvals\/([^/]+)\/resolve$/.exec(path)
+        // The local handler has already proven the calling agent (a 404
+        // comes only after that check); the card is sent in its name.
+        if (forward && closing && req.method === "POST" && reply.status === 404) {
+          const input = (body ?? {}) as Record<string, unknown>
+          const by = this.provenAgent(this.callerProof(req), typeof input.raised_by === "string" ? input.raised_by.trim() : undefined)
+          if (!by) { this.json(res, 403, { error: "only the agent that raised the card can close it" }); return }
+          const remote = await resolveForwardedCard(decodeURIComponent(closing[1]), { raised_by: by, reason: input.reason }, forward)
+          if (remote.status === 200) {
+            const card = (remote.body as { card: DecisionCard }).card
+            this.log(`[approvals] ${card.id} closed on ${forward.peer.name} by ${card.raised_by}`)
+            this.requests?.tracker.cardResolved(card)
+            this.status?.board.cardResolved(card)
+          }
+          this.json(res, remote.status, remote.body)
+          return
+        }
+        if (closing && reply.status === 200) {
+          const card = (reply.body as { card: DecisionCard }).card
+          this.log(`[approvals] ${card.id} closed by ${card.raised_by}: ${card.resolution}`)
+          this.requests?.tracker.cardResolved(card)
+          this.status?.board.cardResolved(card)
         }
         raised(reply)
         this.json(res, reply.status, reply.body)
@@ -3858,11 +4087,12 @@ export class AgentXDaemon {
           dispatcher: this.workflowDispatcher,
           store: this.workflowStore,
           runs: this.workflowRuns,
+          taskRuns: this.workflowRuns,
           settings: this.config.workflows.followUp,
           hasAgent: (id) => !!this.registry.getAgent(id),
           runningTurn: (id, p) => {
             const t = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
-            return t ? { ...warmProcessChat(t.context), restricted: isRestricted(t.autonomy) } : null
+            return t ? { ...warmProcessChat(t.context), restricted: isRestricted(t.autonomy), ...(t.workflowRunId ? { workflowRunId: t.workflowRunId } : {}) } : null
           },
           ownsRequest: (requestId, agentId) => {
             const r = this.requests?.store.get(requestId)
@@ -4340,6 +4570,10 @@ export class AgentXDaemon {
         } catch (e: any) {
           this.json(res, 200, { configured: true, error: String(e?.message || e), workflows: [] }); return
         }
+      }
+      // --- Wiki page curator (#818) --------------------------------------
+      if (path === "/api/wiki/curate" || path === "/api/wiki/curate/restore") {
+        if (await this.wikiCurate.handle(req, res, path, url)) return
       }
       // --- Ask-an-agent drawer ------------------------------------------
       //
@@ -5173,6 +5407,48 @@ export class AgentXDaemon {
         return
       }
 
+      // Stop and resume signals (#857). Gated by isControlPost /
+      // isMeshGatedPath before this point.
+      if (isSignalsPath(path)) {
+        const body = req.method === "POST" ? (await readJsonBody(req).catch(() => ({})) as Record<string, unknown>) : {}
+        const proof = this.callerProof(req)
+        const fromAgent = typeof body.from === "string" ? body.from : undefined
+        let provenTurn: { agentId: string; channel: string } | null = null
+        if (proof.taskId) {
+          const owner = this.registry.runningTaskOwner(proof.taskId)
+          provenTurn = owner ? { agentId: owner.agentId, channel: owner.channel } : null
+        } else if (fromAgent && proof.channel && proof.chatId) {
+          provenTurn = this.provenTurn(fromAgent, proof) ? { agentId: fromAgent, channel: proof.channel } : null
+        }
+        const auth = req.headers.authorization
+        const sender = signalSender({
+          proofGiven: Boolean(proof.taskId || (proof.channel && proof.chatId)),
+          provenTurn,
+          via: body.via as { node?: unknown; agentId?: unknown } | undefined,
+          tokenPeer: peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN),
+        })
+        const reply = await handleSignalsHttp(req.method || "GET", path, url.searchParams, body, {
+          service: this.signals,
+          selfNode: this.config.node.name || this.config.node.id || "local",
+          sender,
+          forward: async (node, method, target, fwdBody) => {
+            const want = node.toLowerCase()
+            const peer = this.mesh?.directory().find((p) => p.healthy && (p.peer.toLowerCase() === want || p.node?.toLowerCase() === want))
+            if (!peer) return null
+            const r = await fetch(`${peer.peerUrl}${target}`, {
+              method,
+              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+              ...(fwdBody ? { body: JSON.stringify(fwdBody) } : {}),
+              signal: AbortSignal.timeout(15_000),
+            })
+            const data = await r.json().catch(() => ({ error: `peer answered ${r.status}` }))
+            return { status: r.status, body: data as Record<string, unknown> }
+          },
+        })
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
       if (req.method === "POST" && path === "/api/processes/kill") {
         if (!this.processRegistry) { this.json(res, 503, { error: "process registry not enabled" }); return }
         try {
@@ -5921,8 +6197,14 @@ export class AgentXDaemon {
           // dispatch when the target lives on this daemon). This is the
           // deterministic path for "agent A asks agent B to do X" — no
           // contact-directory fallback, no name fuzzy-matching. Caller
-          // must pass an exact agentId. Returns the resulting task id /
-          // remote message id when the mesh accepts the task.
+          // must pass an exact agentId.
+          //
+          // retro:01M4DJTC01FK0BVCMFKT5K4SRQ (#847) — answers 202
+          // {accepted, taskId, status: "queued"} as soon as the work is
+          // handed off, local or mesh; the target's turn runs in the
+          // background. A repeat of the same message from the same sender
+          // within the dedupe window gets the first task id back. Only
+          // `"async": false` still waits for the answer.
           const body = await readBody(req)
           if (!body.agentId || !body.text) {
             this.json(res, 400, { error: "Required: agentId, text" })
@@ -5930,38 +6212,69 @@ export class AgentXDaemon {
           }
           const targetAgent = String(body.agentId)
           const text = String(body.text)
+          const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+          const wait = body.async === false
+          const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
+          const seen = wait ? null : this.sendAgentDedupe.get(dedupeKey)
+          if (seen) {
+            this.log(`[send/agent] duplicate of ${String(seen.taskId)} from ${senderAgentId || "?"} → ${targetAgent}; not sent again`)
+            this.json(res, 202, duplicateBody(seen))
+            break
+          }
           // #277 — same gate as /task: refuse a cycle, or call back when a
           // person started it.
           const gate = this.delegationGate(req, body, { callee: targetAgent, message: text })
-          if (!("track" in gate)) { const a = gateAnswer(gate); this.json(res, a.status, a.body); break }
+          if (!("track" in gate)) {
+            const a = gateAnswer(gate)
+            if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)
+            this.json(res, a.status, a.body)
+            break
+          }
           // Local agent? Dispatch directly through the registry.
           const localDef = this.registry.getAgent(targetAgent)
           if (localDef) {
-            try {
-              const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+            const track = gate.track
+            // Only a caller that waits holds the callee in syncWaits: a
+            // queued send leaves the caller free, so it can't form a cycle.
+            const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
               const context = { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a" }
               // A remote target records on its own node's /task; a local one
               // has no other hop that would put this delegation in the ledger.
               const intentRef = this.recordInboundDispatch(
                 targetAgent,
-                { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}`, ...(gate.track.root ? { initiator: gate.track.root } : {}) },
+                { ...context, chatId: `a2a:${senderAgentId || "?"}:${targetAgent}`, ...(track.root ? { initiator: track.root } : {}) },
                 text,
                 senderAgentId,
               )
-              let response
-              try {
-                response = await this.registry.execute({
-                  agentId: targetAgent,
-                  message: text,
-                  context,
-                  intentRef,
-                  onStart: gate.track.onStart,
-                })
-              } finally { gate.track.end() }
-              this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
-            } catch (e: any) {
-              this.json(res, 500, { error: e.message })
+              return this.registry.execute({
+                agentId: targetAgent,
+                message: text,
+                context,
+                intentRef,
+                onStart: waits ? track.onStart : onStart,
+              }).finally(() => { if (waits) track.end() })
             }
+            if (wait) {
+              try {
+                const response = await runLocal(true)
+                this.json(res, response.error ? 500 : 200, { ok: !response.error, content: response.content, error: response.error })
+              } catch (e: any) {
+                this.json(res, 500, { error: e.message })
+              }
+              break
+            }
+            const queued = queueSend({
+              agent: targetAgent,
+              log: (m) => this.log(m),
+              run: async (taskId) => {
+                // A busy agent queues the message; it gets a run (and a
+                // trace) only when it starts. This line joins the two ids.
+                const r = await runLocal(false, (runId) => this.log(`[send/agent] ${taskId} → ${targetAgent} started as run ${runId}`))
+                return { ok: !r.error, ...(r.error ? { detail: r.error.slice(0, 200) } : {}) }
+              },
+            })
+            this.sendAgentDedupe.put(dedupeKey, queued)
+            this.json(res, 202, queued)
             break
           }
           // Remote agent? Find the mesh peer that advertises this agent.
@@ -5969,7 +6282,8 @@ export class AgentXDaemon {
             this.json(res, 400, { error: `Unknown agent "${targetAgent}" — mesh disabled, no remote lookup possible` })
             break
           }
-          const directory = this.mesh.directory()
+          const mesh = this.mesh
+          const directory = mesh.directory()
           const peer = directory.find((p) => p.healthy && p.skills.some((s) => s.id === targetAgent))
           if (!peer) {
             const known = [
@@ -5979,13 +6293,26 @@ export class AgentXDaemon {
             this.json(res, 404, { error: `Unknown agent "${targetAgent}"`, known })
             break
           }
-          try {
-            const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
-            const messageId = await this.mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
-            this.json(res, 200, { ok: true, messageId, peer: peer.peer })
-          } catch (e: any) {
-            this.json(res, 500, { error: e.message, peer: peer.peer })
+          if (wait) {
+            try {
+              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+              this.json(res, 200, { ok: true, messageId, peer: peer.peer })
+            } catch (e: any) {
+              this.json(res, 500, { error: e.message, peer: peer.peer })
+            }
+            break
           }
+          const queued = queueSend({
+            agent: targetAgent,
+            peer: peer.peer,
+            log: (m) => this.log(m),
+            run: async () => {
+              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+              return { ok: true }
+            },
+          })
+          this.sendAgentDedupe.put(dedupeKey, queued)
+          this.json(res, 202, queued)
           break
         }
 
@@ -6184,6 +6511,13 @@ export class AgentXDaemon {
           // incremental visibility into the orchestrator's progress
           // instead of a 60-180s blank wait. Existing JSON callers are
           // untouched — they see the original single-response shape.
+          // A caller that gives up (curl -m 30, a client timeout) must not
+          // leave its request waiting for a busy agent's slot: a retrying
+          // script would have every attempt run once the slot frees (#822).
+          // Listens on `res` for the reason given below; guarded so a normal
+          // answer never trips it.
+          const callerGone = new AbortController()
+          res.on("close", () => { if (!res.writableEnded) callerGone.abort(new Error("caller disconnected")) })
           const acceptHeader = String(req.headers["accept"] || "")
           const wantStream = body.stream === true || acceptHeader.includes("text/event-stream")
           if (wantStream) {
@@ -6280,6 +6614,7 @@ export class AgentXDaemon {
                   intentRef,
                   freshSession,
                   onStart: track.onStart,
+                  callerSignal: callerGone.signal,
                 },
                 onDelta,
                 onThinking,
@@ -6321,6 +6656,7 @@ export class AgentXDaemon {
               systemPromptAppend: remoteVoiceAppend(body.context),
               origin,
               onStart: track.onStart,
+              callerSignal: callerGone.signal,
             },
             () => {},
           )).finally(track.end), origin)
@@ -6434,11 +6770,14 @@ export class AgentXDaemon {
           let message = url.searchParams.get("q") || url.searchParams.get("message") || ""
           let requestedAgent = url.searchParams.get("agent") || ""
           let voiceSession = url.searchParams.get("session") || ""
+          // The microphone opened by itself, no key held (#924).
+          let handsFree = url.searchParams.get("handsFree") === "true"
           if (req.method === "POST") {
             const body = await readBody(req)
             message = (body.message as string) || (body.q as string) || message
             requestedAgent = (body.agent as string) || (body.agentId as string) || requestedAgent
             voiceSession = (body.session as string) || voiceSession
+            handsFree = body.handsFree === true || handsFree
           }
 
           // An explicit agent is what makes this endpoint useful for more than
@@ -6463,6 +6802,16 @@ export class AgentXDaemon {
           // then talk like a colleague. A client that sends no session id
           // shares one per origin, which the 8h gap still keeps sensible.
           const session = voiceSession.trim() || origin
+
+          // The floor's holder plays sound, and nobody held a key to say
+          // this: the microphone heard the holder, not the owner (#924).
+          // It wakes no agent, switches to none, and nothing is said back.
+          const floor = this.voiceTalk.floor.view()
+          if (handsFree && floor.held && floor.sound) {
+            this.log(`[floor] ${requested}: hands-free words dropped while ${floor.holder} holds the floor (${JSON.stringify(message.slice(0, 60))})`)
+            this.json(res, 200, { agentId: requested, voice: null, presence: null, text: null, full: null, ui: null, dropped: "floor", floor })
+            break
+          }
 
           // "talk to Atlas" points this session at another agent, local or
           // on a mesh peer, until "back to secretary". The new agent
@@ -7042,6 +7391,7 @@ export class AgentXDaemon {
             enabled: this.config.wikiNotes.enabled,
             inbox: this.config.wikiNotes.inbox ?? null,
             crons: this.config.wikiNotes.crons,
+            absorbAgent: this.config.wikiNotes.absorbAgent ?? null,
             total: all.length,
             // Newest first, bounded: a list is a summary, not an export.
             notes: all.slice(-limit).reverse(),
@@ -7313,7 +7663,8 @@ export class AgentXDaemon {
       // tool server, so it can say what it is doing with a request
       // (agentx_request) without the workspace being set up by hand (#400).
       // The same while follow-up workflows are on, for agentx_workflow (#788).
-      const followUp = this.config.workflows.enabled && this.config.workflows.followUp.enabled && (this.config.workflows.followUp.agents[agentId] ?? true)
+      // And while workflows.required is on for the agent, for its plan (#858).
+      const followUp = this.config.workflows.enabled && ((this.config.workflows.followUp.enabled && (this.config.workflows.followUp.agents[agentId] ?? true)) || requiredFor(this.config.workflows, agentId))
       const mcp = withAgentXToolServer(effectiveMcpConfig(def), this.config.requests.enabled || followUp ? agentxToolServer() : null)
       try {
         const result = syncMcpToWorkspace(ws, mcp)

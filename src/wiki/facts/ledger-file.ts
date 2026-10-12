@@ -60,6 +60,14 @@ export function writeLedger(file: string, data: unknown): void {
   renameSync(tmp, file)
 }
 
+/** Another holder kept the lock past the wait. */
+export class LockBusyError extends Error {
+  constructor(readonly lock: string, what: string) {
+    super(`${what} is busy (${lock}). If no agentx command is running, delete that lock and try again.`)
+    this.name = "LockBusyError"
+  }
+}
+
 const sleep = (ms: number) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 
 /** Locks this process holds, so a caller already inside one (approve →
@@ -93,12 +101,13 @@ export function takeOver(lock: string, staleMs: number): void {
 }
 
 /**
- * Run `fn` holding `<file>.lock`. Waits up to `timeoutMs` for another
+ * Run `fn` holding `<file>.lock` (or `opts.lock`). Waits up to `timeoutMs` for another
  * holder; a lock older than `staleMs` is a crashed holder and is taken
- * over. Re-entrant within one process.
+ * over. Re-entrant within one process. `what` names the file in the busy
+ * error.
  */
-export function withLock<T>(file: string, fn: () => T, opts: { timeoutMs?: number; staleMs?: number } = {}): T {
-  const lock = `${file}.lock`
+export function withLock<T>(file: string, fn: () => T, opts: { timeoutMs?: number; staleMs?: number; what?: string; lock?: string } = {}): T {
+  const lock = opts.lock ?? `${file}.lock`
   if (held.has(lock)) return fn()
   const timeoutMs = opts.timeoutMs ?? 3000
   const staleMs = opts.staleMs ?? 15_000
@@ -112,7 +121,7 @@ export function withLock<T>(file: string, fn: () => T, opts: { timeoutMs?: numbe
       if (e?.code !== "EEXIST") throw e
       if (isStale(lock, staleMs)) takeOver(lock, staleMs)
       if (Date.now() > deadline) {
-        throw new Error(`fact ledger is busy (${lock}). If no agentx command is running, delete that lock and try again.`)
+        throw new LockBusyError(lock, opts.what ?? "fact ledger")
       }
       sleep(25)
     }

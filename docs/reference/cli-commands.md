@@ -1109,7 +1109,7 @@ Absorb then protects those articles in two ways:
 
 When an update is saved, the article keeps its creation date, its access setting and the entries it already cited.
 
-Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
+Without `--agent`, absorb only compiles the agents in this node's `agentx.json`. It also skips an agent whose `wiki.absorb.enabled` is `false` (it prints `absorb is off for this agent`). Naming the agent with `--agent` absorbs it anyway. An agent that runs on another node is absorbed there, and its articles reach this node through `agentx wiki sync --articles`. Absorb skips an agent whose articles were copied that way.
 
 Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (absorb uses Sonnet unless `--model` or `AGENTX_WIKI_ABSORB_MODEL` names another model). They look for it on your PATH and also in `~/.local/bin`, `/opt/homebrew/bin` and `/usr/local/bin`, so they work from the daemon and from the `agentx_wiki_query` tool without a login shell's PATH.
 
@@ -1125,8 +1125,13 @@ Absorb, `wiki query`, `wiki lint` and the patch commands call the `claude` CLI (
 | `--until <date>` | — | Only entries dated on or before YYYY-MM-DD. |
 | `--model <model>` | `AGENTX_WIKI_ABSORB_MODEL`, else `sonnet` | The model that compiles the articles. |
 | `--run-label <label>` | — | A name for this run in the run log, so `agentx wiki absorb-runs` can compare runs. |
+| `--no-notes` | — | Do not read the wiki notes inbox, even for the agent set as `wikiNotes.absorbAgent`. |
 
-Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full and facts) and one for the whole run. The file holds no entry or article text.
+When wiki notes are on and `wikiNotes.absorbAgent` names the agent being absorbed, absorb also reads the waiting [wiki notes](/jobs/wiki-notes). It runs even with no new entries when notes are waiting. The model answers each note as patched, rejected or deferred. A patch is a short find-and-replace in an existing article that absorb showed the model in full: absorb applies it, and refuses one whose edits together replace most of a page, remove a contact, role or organisation value, or delete a number, link or commit. A note's edits are saved all together or not at all. A note whose patch is refused, or that the model did not answer, is deferred. While notes are in the prompt, absorb saves only articles that cite an entry from this run, so a note never creates or rewrites a page. Each outcome is recorded on the note with a reason and the run id (`absorb/<agent>/<time>`). If a schedule answered the note while absorb was running, that answer stands. When the run fails, its notes stay waiting. A dry run lists the notes in the order a real run would take them.
+
+When any model call in the run fails (the `claude` CLI cannot be run, it reports an error, or its answer cannot be read), absorb prints how many failed and exits with code 1. Their entries stay queued for the next run. A schedule that runs absorb as a command (`crons.<id>.command`) therefore records the run as failed and follows its `onError` setting.
+
+Every run that is not a dry run adds lines to `_absorb-runs.jsonl` in the wiki directory: one per model call (agent, entries, articles written and refused, time before and during the call, cost and tokens as the `claude` CLI reports them, and prompt size split into entries, catalog, articles shown in full, facts and notes; with notes, how many it was given, patched and recorded) and one for the whole run, with how many of its calls failed. The file holds no entry or article text.
 
 ### `agentx wiki absorb-eval`
 
@@ -1257,7 +1262,7 @@ Notes in this node's inbox.
 
 ### `agentx wiki notes handle <id>`
 
-Record what the run did with a note. A deferred note is given to the next run again, until it has been deferred `wikiNotes.maxDeferrals` times; then it expires.
+Record what the run did with a note. A deferred note is given to the next run again, until it has been deferred `wikiNotes.maxDeferrals` times; then it expires. A note a run was given and did not record counts as deferred when the next run starts.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1269,12 +1274,13 @@ Record what the run did with a note. A deferred note is given to the next run ag
 
 ### `agentx wiki notes config`
 
-Show or set the inbox agent and the schedules that read it (`wikiNotes` in `agentx.json`). With no flag, it prints the current settings.
+Show or set the inbox agent, and the schedules and absorb pass that read it (`wikiNotes` in `agentx.json`). With no flag, it prints the current settings.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--inbox <agent>` | — | Agent that runs the wiki observe/sweep schedule. `""` clears it. |
 | `--cron <ids>` | — | Comma-separated schedule ids that read the inbox. `""` for none. |
+| `--absorb <agent>` | — | Agent whose `agentx wiki absorb` pass reads and answers the notes. Must run on this node, the node that keeps the inbox. `""` clears it. |
 | `--max <n>` | — | Most notes one run is given (1-100). |
 | `--max-deferrals <n>` | — | Times a note may be deferred before it expires (1-20). |
 | `--enable` | — | Turn wiki notes on. |
@@ -1505,6 +1511,44 @@ Drop a held patch.
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
 
+### `agentx wiki curate <agent> <titleOrPath> <instruction>`
+
+Ask the page curator to research and edit one page, as the chat button on the page does. Needs the daemon. Prints the reply, the changed lines and the sources. See [Wiki › Ask an agent to curate a page](../dashboard/wiki.md#ask-an-agent-to-curate-a-page).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--timeout <minutes>` | `30` | Stop waiting after this long. The change is still written when the agent finishes. |
+
+### `agentx wiki versions <agent> <titleOrPath>`
+
+List the saved earlier versions of one page, newest first.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki restore <agent> <titleOrPath> [version]`
+
+Put a page back to an earlier version. Without a version, the newest is used. The current text is kept as a version first.
+
+If another job is saving the same page at that moment, the command stops with `the page was busy; run again` and changes nothing. Run it again.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+
+### `agentx wiki curator`
+
+Show or change the page curator: the chat button on wiki pages (`wiki.curator` in `agentx.json`).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--on` | — | Show the button on wiki pages. |
+| `--off` | — | Hide the button and refuse curator requests. |
+| `--agent <id>` | — | Let this agent answer on every page. |
+| `--owner` | — | Let each page's owner agent answer (the default). |
+
 ### `agentx wiki prune`
 
 Collapse legacy flat/unified mode dirs into graph/ (dedup by title; losers archived).
@@ -1549,6 +1593,59 @@ The wiki's pillars, types, typed relations, event importance and page lenses. Se
 
 Each takes `--dir <path>` (default `.agentx/wiki`).
 
+### `agentx wiki enrich [entities...]`
+
+Write a full overview, sourced typed facts and History links on entity pages: people, organizations, projects, places and assets. With no titles, it does every entity of `--types` that changed since the last run. One model call per entity. See [Bring entity pages up to a full story](/jobs/wiki-enrich).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | `.agentx/wiki` | Wiki directory. |
+| `--types <list>` | `person,organization,project,place,device,server,app,domain,account` | Entity types to do. |
+| `--max <n>` | `10` | Most entities per run (a whole number, 1 or more). |
+| `--max-cost <usd>` | `1` | Stop before the next call once the run has spent this much. |
+| `--model <m>` | `sonnet` | Model. |
+| `--force` | — | Redo entities whose sources did not change. |
+| `--dry-run` | — | Show what would be written; write nothing. |
+| `--create <title>` | — | First create a page for a thing other pages only name. Needs `--as <type>` and `--owner <agent>`. |
+| `--json` | — | Print the run as JSON. |
+
+### `agentx wiki events`
+
+Give each event page an importance level (minor, normal or major) and the pages it is about, so it shows in their History. The rules under `importance.rules` in `ontology.yaml` decide first, with no model call. The other events go to a model in batches. Events that already have a level are skipped. See [Sort wiki events by importance](/jobs/wiki-events).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | `.agentx/wiki` | Wiki directory. |
+| `--about <titles...>` | — | Only events linked to or naming these pages. Prints each page's History before and after. |
+| `--max <n>` | `200` | Most events per run (a whole number, 1 or more). |
+| `--batch <n>` | `20` | Events per model call. |
+| `--max-cost <usd>` | `1` | Stop before the next call once the run has spent this much. |
+| `--model <m>` | `haiku` | Model. |
+| `--rules-only` | — | Use only the importance rules; make no model call. |
+| `--force` | — | Redo events whose level this job set earlier. A level you set yourself is never redone. |
+| `--dry-run` | — | Show what would be written; write nothing. |
+| `--json` | — | Print the run as JSON. |
+
+| Subcommand | What it does |
+|---|---|
+| `agentx wiki events set <title> <level>` | Set an event's level yourself. No later run changes it. |
+| `agentx wiki events proposed` | List events a run suggests as major, waiting for you. `--json` prints JSON. |
+
+### `agentx wiki rules [pages...]`
+
+Write one obligation page per rule the wiki states, with what to do, who, the deadline, the penalty, the source and the source's date. A later source that leaves a field out keeps the earlier value. Facts are written as proposed. Links the page of each person or organization that must follow it. With no titles, it reads legal sources, obligation pages, and pages that use a rule word, that changed since the last run. One model call per source page. See [Keep each rule on one page](/jobs/wiki-rules).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | `.agentx/wiki` | Wiki directory. |
+| `--words <list>` | rule words in English, French and Arabic | Comma-separated words that mark a page as stating rules. |
+| `--max <n>` | `10` | Most source pages per run (a whole number, 1 or more). |
+| `--max-cost <usd>` | `1` | Stop before the next call once the run has spent this much. |
+| `--model <m>` | `sonnet` | Model. |
+| `--force` | — | Read again pages that did not change. |
+| `--dry-run` | — | Show what would be written; write nothing. |
+| `--json` | — | Print the run as JSON. |
+
 ### `agentx wiki serve`
 
 Start a local web server to browse the wiki by pillar and type, and each agent's pages under `/agents` (local + mesh).
@@ -1578,26 +1675,58 @@ Grade absorbed articles with the article-quality seat.
 
 ### `agentx wiki query <question>`
 
-Agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer.
+Answer a question from the wiki. Once at least 80% of the agent's own pages have a summary (`agentx wiki summarize`), it picks up to 3 pages from their one-line summaries, reads the live state of what they name from the sources in `wiki.query.live.sources`, and answers from both; the lines it read are printed under **Read live at the source**. Until then it picks from page titles and walks the links between pages. See [Get wiki answers checked at the source](/jobs/wiki-live-answers).
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--dir <path>` | — | Wiki directory. |
 | `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`), else the first one with a catalog | Which agent's wiki to search first. |
-| `--selector-model <m>` | `haiku` | Candidate-selection model. |
-| `--synth-model <m>` | `sonnet` | Synthesis model. |
-| `--max-candidates <n>` | `3` | Candidates from selector. |
-| `--max-hops <n>` | `2` | Wikilink hops from candidates. |
-| `--max-articles <n>` | `8` | Cap on total articles walked. |
+| `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
+| `--no-live` | — | Skip the live read of the summaries method. |
+| `--linked <n>` | `wiki.query.linkedPages` (`0`) | Also open up to `n` pages that the picked pages link to (summaries method). |
+| `--no-notes` | — | Leave the agent's own notes out when `wiki.query.notes.enabled` is on. |
+| `--selector-model <m>` | `haiku` | Model that picks the pages. Overrides `wiki.query.navigatorModel`. |
+| `--synth-model <m>` | `sonnet` | Model that writes the answer. Overrides `wiki.query.answerModel`. |
+| `--max-candidates <n>` | `3` | Candidates from selector (catalog method). |
+| `--max-hops <n>` | `2` | Wikilink hops from candidates (catalog method). |
+| `--max-articles <n>` | `8` | Cap on total articles walked (catalog method). |
 | `--json` | — | Emit full result as JSON (for A/B harnesses). |
-| `--trace` | — | Print selector + walk trace. |
+| `--trace` | — | Print the method, the live reads asked and answered, and the time of each step. |
 | `--own-only` | — | Search only the agent's own articles, not the shared wiki. |
 
-Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query.
+Besides the agent's own articles, the query reads other agents' articles the agent may see (public, or shared with it) and the shared lessons. Their paths show as `@<agent>/<path>`. The answer names the agent and date of the page it used and prefers the newer page when two disagree. The agent's own pages are walked first and other agents' pages take at most half of `--max-articles` (slots the agent's own pages leave empty go to them); each picked page also opens up to 3 of the newest pages that link to it by its title or an alias. `wiki.query.shared: false` in `agentx.json` turns this off for every query. The half-of-`--max-articles` rule and the linking pages belong to the catalog method; the summaries method shows the picking model `wiki.query.sharedCandidates` of other agents' pages beside the agent's own. With `wiki.query.notes.enabled`, the summaries method also searches the agent's own notes; a note it used is cited with the type `note` and a `note:` path. See [Search the agent's own notes](/jobs/wiki-live-answers#search-the-agent-s-own-notes).
+
+When the query cannot run, the command exits with code 1: the model call failed (status `error`) or no agent has a catalog yet (status `no-catalog`). A question the wiki has no page for (status `no-candidates`) is not a failure and exits 0. Each query adds one line to `_query-runs.jsonl` in the wiki directory: the time, the agent, the status, how the pages were picked, where the query came from and how long it took. Queries an agent makes with the `agentx_wiki_query` tool are written to the same file, marked `tool`; queries from this command are marked `cli`. A query that stops with an unexpected error is written with status `error`. The file holds no question, answer or error text. Once it passes 1 MB, the oldest lines are removed so that about 500 KB of the newest remain. `agentx wiki query-runs` counts them.
+
+### `agentx wiki query-runs`
+
+Count the queries recorded in `_query-runs.jsonl`: how many ran, how many failed (status `error` or `no-catalog`), how many ended in each status, how many came from this command (`cli`) and how many from the agents' `agentx_wiki_query` tool (`tool`), and the typical (p50) and slowest (p95) time of the queries that ran (a `no-catalog` query never ran, so it is left out of the times). Only the newest queries are kept (about 500 KB of lines, once the file passes 1 MB), so a count over a long period may start later than you asked for.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | — | Wiki directory. |
+| `--since <date>` | — | Only queries on or after this date or time, for example `2026-10-09` or `2026-10-09T08:00:00Z`. |
+| `--json` | — | Print the counts as JSON. |
+
+### `agentx wiki summarize`
+
+Write the one-line page summaries `agentx wiki query` picks pages from. Only pages with no summary, or whose text changed since it was written, are summarised; the line of a page that is gone is removed. The lines are saved in `_summaries.json` beside each agent's pages, and no page is edited. See [Get wiki answers checked at the source](/jobs/wiki-live-answers).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dir <path>` | `.agentx/wiki` | Wiki directory. |
+| `--agent <id>` | the calling agent (`AGENTX_AGENT_ID`) | Summarise this agent's pages. |
+| `--all` | — | Summarise every agent's pages and the shared pages. |
+| `--model <m>` | `wiki.summaries.model` (`haiku`) | Model. |
+| `--batch <n>` | `wiki.summaries.batchSize` (`20`) | Pages per model call. |
+| `--workers <n>` | `4` | Model calls running at once. |
+| `--limit <n>` | `0` | Most pages to summarise per agent in this run. `0` is all. |
+| `--dry-run` | — | Show how many pages are due; call no model, write nothing. |
+| `--json` | — | Print the run as JSON. |
 
 ### `agentx wiki score`
 
-Score the wiki's answers to a question set, or compare two saved scores. A question file is a JSON array or one JSON object per line: `{"id": "q1", "question": "…", "expect": ["fact", "…"]}`. Each answer scores the share of its expected facts it contains (case and spacing ignored; a fact of five or more digits also matches on its digits; `"a|b"` accepts either spelling). See [Measure the difference](/jobs/wiki-contributions#measure-the-difference).
+Score the wiki's answers to a question set, or compare two saved scores. A question file is a JSON array or one JSON object per line: `{"id": "q1", "question": "…", "expect": ["fact", "…"]}`. Each answer scores the share of its expected facts it contains (case and spacing ignored; a fact of five or more digits also matches on its digits; `"a|b"` accepts either spelling). A report also records the settings of the run, and how long each question took and what it cost (cost for the summaries method only). `--compare` prints the time and cost per question of both runs and the settings that differ, and warns when more than one setting differs or the question sets differ. See [Measure the difference](/jobs/wiki-contributions#measure-the-difference).
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -1607,6 +1736,10 @@ Score the wiki's answers to a question set, or compare two saved scores. A quest
 | `--own-only` | — | Search only the agent's own articles. |
 | `--out <file>` | — | Save the report as JSON. |
 | `--compare <files...>` | — | Compare two saved reports: `before.json after.json`. |
+| `--method <m>` | `wiki.query.method` (`auto`) | How pages are picked: `auto`, `summaries` or `catalog`. |
+| `--no-live` | — | Skip the live read of the summaries method. |
+| `--linked <n>` | `wiki.query.linkedPages` (`0`) | Also open up to `n` pages that the picked pages link to (summaries method). |
+| `--no-notes` | — | Leave the agent's own notes out, to measure what they add. |
 | `--selector-model <m>` | `haiku` | Candidate-selection model. |
 | `--synth-model <m>` | `sonnet` | Synthesis model. |
 | `--json` | — | Print the report as JSON. |
@@ -1856,6 +1989,17 @@ Remove a memory.
 | Flag | Default | What it does |
 |---|---|---|
 | `--agent <id>` | required | Agent id. |
+
+### `agentx memory check`
+
+List an agent's notes and whether each has a `source` and a `checked` date in its header. Read only. See [Check which notes say where and when they were checked](/jobs/agent-memory#_10-check-which-notes-say-where-and-when-they-were-checked).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | required | Agent id. |
+| `--dir <path>` | the AgentX store, `.agentx/agent-memory/<id>/` | Read notes from this folder instead, such as the one a `claude-code` agent keeps. |
+| `--missing` | — | List only notes missing a source or a check date. |
+| `--json` | — | Print the result as JSON. |
 
 ### `agentx memory index`
 
@@ -2179,7 +2323,7 @@ Pause an active run.
 
 ### `agentx workflow resume <runId>`
 
-Resume a paused run.
+Resume a paused run. A run that a pause signal stopped at an agent's step is refused here: resume it with `agentx signal resume <taskId>`, which brings back the agent's resume plan.
 
 | Flag | Default | What it does |
 |---|---|---|
@@ -2215,6 +2359,29 @@ Show or change how follow-up workflows run: reminders, approvals, which agents m
 | `--approval <start\|step>` | — | Approve messages to people all at once when a run starts, or each before it is sent. |
 | `--agent <id>` | — | With `--agent-enabled`: the agent to turn it on or off for. |
 | `--agent-enabled <on\|off>` | — | Turn follow-up workflows on or off for `--agent`. |
+
+### `agentx workflow required`
+
+Show or change whether every task runs through a workflow (`workflows.required`). With no flags it shows the settings. Turning it on also turns the workflow engine on. See [Run every task through a workflow](../jobs/every-task-a-workflow.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--enabled <on\|off>` | — | Every task of every agent runs inside a workflow run. |
+| `--exempt-questions <on\|off>` | — | A plain question that changed nothing leaves no run (the setting's default is `on`). |
+| `--retention-days <n>` | — | Remove task runs that ended more than `n` days ago (the setting's default is `30`; `0` keeps them all). |
+| `--agent <id>` | — | With `--agent-required`: the agent to set it for. |
+| `--agent-required <on\|off\|default>` | — | On or off for `--agent` whatever `--enabled` says; `default` follows `--enabled` again. |
+
+### `agentx workflow records`
+
+One line of JSON per workflow run, newest first: the steps taken, how long each took and where it failed. For analysis across runs. Reads the runs on this computer. See [Read the records](../jobs/every-task-a-workflow.md#read-the-records).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--workflow <id>` | — | Only runs of this workflow. `task` is the runs that wrapped a task. |
+| `--agent <id>` | — | Only runs of this agent. |
+| `--days <n>` | — | Only runs started in the last `n` days. |
+| `--limit <n>` | `500` | At most this many runs. |
 
 ## webhook (advanced)
 
@@ -2887,6 +3054,55 @@ Force-kill one persistent process (the next dispatch will spawn fresh).
 | `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
 | `--token <token>` | — | Bearer token (defaults to dashboard.token). |
 | `-r, --reason <reason>` | `operator-cli` | Kill reason (recorded on the dead-process snapshot). |
+
+## signal (advanced)
+
+`agentx signal`: Pause a running agent task with a resume plan, and resume it later. **Advanced.** See [Pause a task and resume it later](/jobs/pause-and-resume).
+
+Every subcommand takes these flags:
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Daemon config file. |
+| `--node <url>` | — | Daemon URL (defaults to dashboard.daemonUrl). |
+| `--token <token>` | — | Bearer token (defaults to dashboard.token). |
+| `--peer <name>` | — | Send to this mesh machine instead. |
+
+### `agentx signal stop [taskId]`
+
+Stop a running task; the agent writes a resume plan.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--agent <id>` | — | With `--channel` and `--chat`: the agent's only task on that chat. |
+| `--channel <channel>` | — | The task's channel. |
+| `--chat <chatId>` | — | The task's chat id. |
+| `-r, --reason <reason>` | — | Why: shown to the agent and on the Live page. |
+
+### `agentx signal list`
+
+Stopped tasks and their resume plans.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--all` | — | Include tasks already resumed. |
+| `--agent <id>` | — | Only this agent's. |
+
+### `agentx signal show <id>`
+
+One stopped task with its whole resume plan. For a step of a workflow run, it also names the step and the run.
+
+### `agentx signal resume <id>`
+
+Resume a stopped task from its plan, in the same chat. A step of a workflow run runs again inside its run, which then goes on to its next steps.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-r, --reason <reason>` | — | Why: recorded on the resume event. |
+
+### `agentx signal drop <id>`
+
+Forget a stopped task and its resume plan, when it won't be resumed. It can no longer be resumed afterwards. Refused while the agent is still writing its plan or while the task is being resumed. The same people and agents that may resume a task may drop it.
 
 ## watch (advanced)
 
@@ -3680,7 +3896,10 @@ No flags.
 - **`unknown option`:** your installed version is older or newer than these docs. Use the flags that `agentx <command> --help` shows.
 - **`claude: command not found` from a wiki command:** the `claude` CLI isn't installed in any of the folders listed under `agentx wiki absorb`. Install it, or add its folder to the daemon's PATH.
 - **`wiki absorb` keeps printing `! refused <path>`:** the model's update left out facts the article already had, so the same entries come back each run. Check the facts listed under the message. If one is really wrong, correct it in the article with `agentx wiki edit`, then run absorb again.
+- **`wiki absorb` prints `note <id> deferred: patch refused: …`:** the model's patch broke a rule (it replaced most of a page, removed a contact or role value, or quoted text the article does not have). The note comes back on the next run. Read the reason with `agentx wiki notes list --status all`.
 - **`wiki absorb-runs` prints `no absorb runs recorded yet`:** no absorb has run since the run log was added, or `--dir` points at another wiki. Run `agentx wiki absorb` once, then try again.
+- **A schedule running `wiki absorb` as a command shows as failed:** absorb exits with code 1 when a model call fails. Run `agentx wiki absorb --dry-run` to check the setup, then `agentx wiki absorb-runs` to see how many calls failed. The entries stay queued, so the next good run catches up.
+- **`wiki query-runs` prints `no queries recorded yet`:** no query has run against this wiki since the query log was added, or `--dir` points at another wiki. Run `agentx wiki query "a question"` once, then try again.
 - **`wiki absorb-eval` prints `no articles … to score`:** nothing changed in the window you gave. Widen `--since` or `--changed-after`, or leave both out to sample every article.
 - **`unknown command`:** check the spelling and the command group. Advanced commands don't appear in `agentx --help`, but they still run.
 - **`error: required option … not specified`:** the flag is marked **required** above. Add it and run the command again.

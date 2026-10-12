@@ -9,6 +9,7 @@ import { loadDaemonConfig } from "./config"
 import { localSettings, patchLocal } from "@/notify/local"
 import { patchScreen, screenSettings } from "@/computer-use/capture-settings"
 import { patchWikiNotes, wikiNotesSettings, type WikiNotesPatch } from "@/wiki/notes-settings"
+import { setWikiAbsorb } from "@/wiki/absorb-agents"
 import { ntfyStatus, patchNtfy } from "@/notify/ntfy-settings"
 import { listAgentFiles, readAgentFile, writeAgentFile, createAgentSkill, deleteAgentSkill } from "./file-ops"
 import { getWhatsAppState } from "./whatsapp-state"
@@ -125,6 +126,7 @@ export async function handleAdminApi(req: IncomingMessage, res: ServerResponse, 
       // Notifications — single mutation endpoint that takes a partial body
       // (destination?, on?, longTaskThreshold?). Mirrors `agentx notifications`.
       "POST /api/admin/notifications":   () => updateNotifications(body),
+      "POST /api/admin/wiki/curator":    () => updateWikiCurator(body),
       "POST /api/admin/screen":          () => updateScreen(body),
       // Wiki notes inbox (#825) — mirrors `agentx wiki notes config`;
       // the note list is read from the daemon, which owns the inbox.
@@ -219,6 +221,8 @@ function getAdminState() {
     maxConcurrent: a.maxConcurrent ?? 1,
     maxExecutionMinutes: a.maxExecutionMinutes ?? 20,
     permissionMode: a.permissionMode || "default",
+    // Bulk wiki absorb for this agent (#850); on unless set to false.
+    wikiAbsorb: a.wiki?.absorb?.enabled !== false,
     // Per-agent integrations registry. Each entry: { kind, label, credentials, metadata, enabled }.
     // Credentials carry env-var REFS (uppercase identifier) — not values.
     // The integration list endpoint also resolves env-set status server-side
@@ -362,7 +366,7 @@ function getAdminState() {
     closedWindowDays: b.closedWindowDays ?? 30,
     columns: Array.isArray(b.columns) ? b.columns : [],
   }))
-  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions }
+  return { exists: true, agents, telegram, slack, discord, gitlab, whatsapp, requestStatus: statusChannelsOf(cfg), whatsappTriage: whatsappTriageSettings(cfg), crons, webhooks, mesh, daemonUrl, nodeName: cfg.node?.name, business, boards, notifications, screen: screenSettings((cfg as any).screen), wikiNotes: wikiNotesSettings((cfg as any).wikiNotes), actions, wikiCurator: wikiCuratorSettings(cfg) }
 }
 
 // ========================================================================
@@ -518,6 +522,7 @@ function editAgent(body: any) {
     }
     if (typeof patch.permissionMode === "string") a.permissionMode = patch.permissionMode
     if (patch.access === "public" || patch.access === "private") a.access = patch.access
+    if (typeof patch.wikiAbsorb === "boolean") setWikiAbsorb(a, patch.wikiAbsorb)
     return `updated agent "${id}"`
   })
   return { summary }
@@ -1423,6 +1428,32 @@ async function updateMeshHealth(body: any) {
 }
 
 // ========================================================================
+// Wiki page curator (#818) — mirrors `agentx wiki curator`
+// ========================================================================
+
+function wikiCuratorSettings(cfg: any): { enabled: boolean; agent: string } {
+  const c = cfg?.wiki?.curator || {}
+  return { enabled: c.enabled !== false, agent: typeof c.agent === "string" ? c.agent : "" }
+}
+
+function updateWikiCurator(body: any) {
+  const { summary } = mutateAgentxConfig((cfg) => {
+    cfg.wiki = cfg.wiki || {}
+    cfg.wiki.curator = cfg.wiki.curator || {}
+    if (body && "enabled" in body) cfg.wiki.curator.enabled = !!body.enabled
+    if (body && "agent" in body) {
+      const agent = String(body.agent || "").trim()
+      if (!agent) delete cfg.wiki.curator.agent
+      else if (!cfg.agents?.[agent]) throw new Error(`no agent "${agent}"`)
+      else cfg.wiki.curator.agent = agent
+    }
+    const c = wikiCuratorSettings(cfg)
+    return `wiki.curator ${c.enabled ? "on" : "off"}, answered by ${c.agent || "the page owner"}`
+  })
+  return { summary }
+}
+
+// ========================================================================
 // Notifications — admin write handler (mirrors `agentx notifications`)
 // ========================================================================
 
@@ -1482,6 +1513,7 @@ async function updateWikiNotes(body: any) {
   if ("enabled" in body) patch.enabled = !!body.enabled
   if ("inbox" in body) patch.inbox = String(body.inbox ?? "")
   if ("crons" in body) patch.crons = Array.isArray(body.crons) ? body.crons.map(String) : String(body.crons ?? "").split(",")
+  if ("absorbAgent" in body) patch.absorbAgent = String(body.absorbAgent ?? "")
   if ("maxNotesPerRun" in body) patch.maxNotesPerRun = Number(body.maxNotesPerRun)
   if ("maxDeferrals" in body) patch.maxDeferrals = Number(body.maxDeferrals)
   const { summary } = mutateAgentxConfig((cfg) => patchWikiNotes(cfg, patch))

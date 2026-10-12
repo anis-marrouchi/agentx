@@ -76,6 +76,11 @@ export class AgentMemory {
     this.baseDir = resolve(root, "agent-memory")
   }
 
+  /** The agent's note folder, without creating it. */
+  dirOf(agentId: string): string {
+    return resolve(this.baseDir, slug(agentId))
+  }
+
   private dirFor(agentId: string): string {
     const safe = slug(agentId)
     const dir = resolve(this.baseDir, safe)

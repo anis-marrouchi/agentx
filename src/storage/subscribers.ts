@@ -159,7 +159,8 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     const traceTaskId = p.taskId ?? pendingTraceIds.get(key)
     pendingTraceIds.delete(key)
     const id = `${p.agentId}:${p.channel}:${p.chatId}:${p.at}`
-    const status = p.error ? "error" : "ok"
+    // A stop signal ended the run (#857): stopped, not failed.
+    const status = p.stopped ? "stopped" : p.error ? "error" : "ok"
 
     // Finalize the trace row — same status/tokens task_history records,
     // plus duration computed inside the UPDATE. A run a shutdown stopped
@@ -167,7 +168,7 @@ export function attachSqliteSubscribers(db: Database.Database, model = "claude-o
     if (traceTaskId && !p.interrupted) {
       try {
         recordTraceEnd(db, traceTaskId, {
-          status: p.error ? "error" : "ok",
+          status,
           inputTokens: p.inputTokens ?? null,
           outputTokens: p.outputTokens ?? null,
           cacheReadTokens: p.cacheReadTokens ?? null,

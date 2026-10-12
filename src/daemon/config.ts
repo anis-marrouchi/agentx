@@ -8,6 +8,7 @@ import { DEFAULT_HOTKEYS, hotkeyError } from "@/voice/hotkey"
 import { DEFAULT_PALETTE, ORB_PALETTE_IDS, VOICE_ANIMATIONS, VOICE_LOOKS } from "@/voice/orb-palettes"
 import { SPOKEN_MAX_CHARS } from "@/voice/speakable"
 import { NOISE_MARKERS } from "@/voice/noise"
+import { FLOOR_DEFAULTS } from "@/voice/floor"
 import { whatsappTriageSchema } from "@/whatsapp-triage/config"
 import { peopleProblem } from "@/people/people"
 import { unknownAgentxTools } from "@/mcp/tool-names"
@@ -302,13 +303,28 @@ const agentConfigSchema = z.object({
    *  contribution (#824): `agentx wiki contribute --all` reviews the
    *  agent's work since its last run and queues sourced patches for the
    *  daily merge. Off by default. `maxPatches` and `maxCostUsd` cap one
-   *  run; `model` overrides the wiki-wide model. */
+   *  run; `model` overrides the wiki-wide model. `absorb` leaves the
+   *  agent out of the bulk absorb. */
   wiki: z.object({
     contribute: z.object({
       enabled: z.boolean().default(false),
       maxPatches: z.number().int().min(1).max(200).default(30),
       maxCostUsd: z.number().min(0).max(20).optional(),
       model: z.string().optional(),
+    }).default({}),
+    /** Whether `agentx wiki absorb` without `--agent` compiles this
+     *  agent's raw entries (#850). On by default. Off, the agent is skipped
+     *  and named; its raw entries are still captured, so absorb can resume
+     *  later with nothing lost. `--agent <id>` still runs it. */
+    absorb: z.object({
+      enabled: z.boolean().default(true),
+    }).default({}),
+    /** Where this agent's notes are, for `wiki query` when
+     *  `wiki.query.notes.enabled` (#862). Unset: the AgentX note store,
+     *  `.agentx/agent-memory/<agent>/`. A relative path is read from the
+     *  folder AgentX runs in. */
+    notes: z.object({
+      dir: z.string().min(1).optional(),
     }).default({}),
   }).optional(),
   permissionMode: z.string().default("default"),
@@ -794,6 +810,74 @@ const cronJobSchema = z.object({
   message: "autonomy applies to agent routines; a command cron runs no agent (remove autonomy or the command)",
 })
 
+/** Whether `expr` is a 5-field cron the scheduler can read: each field a
+ *  `*`, a number or a range, with an optional `/step`, comma-separated,
+ *  inside the field's bounds. */
+export function isCronExpression(expr: string): boolean {
+  const bounds: Array<[number, number]> = [[0, 59], [0, 23], [1, 31], [1, 12], [0, 6]]
+  const fields = expr.trim().split(/\s+/)
+  if (fields.length !== 5) return false
+  return fields.every((field, i) => field.split(",").every((part) => {
+    const m = /^(\*|(\d+)(?:-(\d+))?)(?:\/(\d+))?$/.exec(part)
+    if (!m) return false
+    const [min, max] = bounds[i]
+    const a = m[2] === undefined ? min : Number(m[2])
+    const b = m[3] === undefined ? a : Number(m[3])
+    const step = m[4] === undefined ? 1 : Number(m[4])
+    return a >= min && b <= max && a <= b && step >= 1
+  }))
+}
+
+function isTimeZone(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz })
+    return true
+  } catch {
+    return false
+  }
+}
+
+/** A repository a live read may name: `owner/name`, or a GitLab path. */
+const wikiLiveRepoName = z.string().regex(/^(?!.*(?:^|\/)\.+(?:\/|$))[\w.-]+(\/[\w.-]+)+$/, "expected owner/name")
+const wikiLiveRepoSchema = z.union([
+  wikiLiveRepoName,
+  z.object({
+    repo: wikiLiveRepoName,
+    /** What lives there, shown to the model so it names the right one. */
+    about: z.string().max(200).optional(),
+  }),
+])
+const wikiLiveTokenFields = {
+  /** Name of the environment variable that holds the token. */
+  tokenEnv: z.string().regex(/^[A-Za-z_][A-Za-z0-9_]*$/).optional(),
+  /** File whose first line is the token. */
+  tokenFile: z.string().optional(),
+}
+/** Where `wiki query` may read live state from (#855). Read-only: each
+ *  read is one HTTP GET built by code (src/wiki/live-read.ts). */
+const wikiLiveSourceSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("github"),
+    apiUrl: z.string().url().default("https://api.github.com"),
+    ...wikiLiveTokenFields,
+    repos: z.array(wikiLiveRepoSchema).min(1),
+  }),
+  z.object({
+    type: z.literal("gitlab"),
+    /** The GitLab host. Unset: `channels.gitlab.host`. */
+    url: z.string().url().optional(),
+    ...wikiLiveTokenFields,
+    repos: z.array(wikiLiveRepoSchema).min(1),
+  }),
+  z.object({
+    type: z.literal("agentx"),
+    /** The daemon to ask. Unset: this node. */
+    url: z.string().url().optional(),
+    /** Also ask each mesh peer the daemon lists. */
+    peers: z.boolean().default(true),
+  }),
+])
+
 /** Notes agents leave for the wiki observe/sweep run (#825, src/wiki/notes.ts).
  *  Off by default. Every node that should be able to post sets the same
  *  `inbox`; only the inbox agent's node lists `crons`. */
@@ -806,6 +890,12 @@ const wikiNotesSchema = z.object({
    *  Each must run as the inbox agent. Empty: notes are kept but no run
    *  reads them. */
   crons: z.array(z.string().min(1)).default([]),
+  /** Agent whose `agentx wiki absorb` pass reads the inbox (#831). Absorb
+   *  is one model call with no tools: it gets the notes in its prompt,
+   *  answers each, and absorb applies the patches and records the
+   *  outcome. Unset: absorb reads no notes. Must run on this node, the
+   *  node that keeps the inbox. */
+  absorbAgent: z.string().min(1).optional(),
   /** Most notes one run is given. The rest wait for the next run. */
   maxNotesPerRun: z.number().int().min(1).max(100).default(20),
   /** A note deferred this many times stops being offered (status
@@ -877,6 +967,10 @@ const meshConfigSchema = z.object({
     asyncWhenHuman: z.boolean().default(true),
     /** A delegation with no answer after this long is reported as timed out. */
     timeoutMinutes: z.number().int().min(1).max(240).default(30),
+    /** A restart that stops the turn passing a delegation's answer on to
+     *  the person (#846): run that turn once more after the next start,
+     *  and if it fails again, tell the person and note the open request. */
+    requeueRelayOnRestart: z.boolean().default(true),
   }).default({}),
 })
 
@@ -1285,6 +1379,10 @@ export const daemonConfigSchema = z.object({
     bind: z.string().default("127.0.0.1:18800"),
     /** Default agent for voice/API calls that don't specify one (e.g. Siri) */
     defaultAgent: z.string().optional(),
+    /** Time each address gets to connect before Node tries the next one,
+     *  in ms. Node's own 250 ms fails every request on a slow link when the
+     *  host also resolves IPv6 (#930). Applied at daemon start. */
+    connectAttemptTimeoutMs: z.number().int().min(250).max(60_000).default(5000),
   }),
   providers: z.record(z.string(), providerConfigSchema).default({}),
   agents: z.record(z.string(), agentConfigSchema).default({}),
@@ -1308,6 +1406,78 @@ export const daemonConfigSchema = z.object({
       /** `wiki query` also searches other agents' readable pages and the
        *  root wiki's own pages. */
       shared: z.boolean().default(true),
+      /** How pages are picked (#855). `summaries`: from the one-line page
+       *  summaries `agentx wiki summarize` writes, then a live read.
+       *  `catalog`: from titles, then a walk along the pages' links.
+       *  `auto`: `summaries` once most of the agent's own pages have a
+       *  summary (AUTO_SUMMARY_COVERAGE in src/wiki/query.ts), `catalog`
+       *  until then. */
+      method: z.enum(["auto", "summaries", "catalog"]).default("auto"),
+      /** The agent's own pages shown to the model that picks. */
+      candidates: z.number().int().min(1).max(50).default(12),
+      /** Other agents' pages shown beside them. */
+      sharedCandidates: z.number().int().min(0).max(50).default(4),
+      /** The asking agent's own notes, searched beside its pages by the
+       *  summaries method (#862). A note's `description` is its summary
+       *  line. Only the agent's own notes: a note is private to the agent
+       *  that wrote it. Off by default. */
+      notes: z.object({
+        enabled: z.boolean().default(false),
+        /** Note types searched. `user` and `feedback` notes describe a
+         *  person or the agent's own working rules and stay out. */
+        types: z.array(z.string().min(1)).default(["project", "reference"]),
+        /** Notes shown to the model that picks. */
+        candidates: z.number().int().min(1).max(50).default(4),
+      }).default({}),
+      /** Most pages opened for one answer. */
+      maxPages: z.number().int().min(1).max(10).default(3),
+      /** Characters of each opened page given to the answer. */
+      pageChars: z.number().int().min(200).max(40_000).default(4000),
+      /** Pages linked from the picked ones also opened (#863), best
+       *  summary line against the question first. 0: none. */
+      linkedPages: z.number().int().min(0).max(10).default(0),
+      /** Characters all linked pages together give to the answer. */
+      linkedChars: z.number().int().min(200).max(40_000).default(6000),
+      /** Model that picks pages from the summary lines. */
+      navigatorModel: z.string().min(1).default("haiku"),
+      /** Model that writes the answer. */
+      answerModel: z.string().min(1).default("sonnet"),
+      /** Before the answer, confirm at the source what may have changed
+       *  since the pages were written. A model names the reads; code runs
+       *  them, and each is one HTTP GET. Nothing runs until `sources`
+       *  lists where to read. */
+      live: z.object({
+        enabled: z.boolean().default(true),
+        /** Most reads for one question. */
+        maxReads: z.number().int().min(0).max(20).default(6),
+        /** Timeout of one read, in milliseconds. */
+        timeoutMs: z.number().int().min(1000).max(120_000).default(15_000),
+        /** Model that names the reads. */
+        plannerModel: z.string().min(1).default("haiku"),
+        sources: z.array(wikiLiveSourceSchema).default([]),
+      }).default({}),
+    }).default({}),
+    /** One-line page summaries `wiki query` picks pages from (#855). */
+    summaries: z.object({
+      model: z.string().min(1).default("haiku"),
+      /** Pages per model call. */
+      batchSize: z.number().int().min(1).max(50).default(20),
+      /** Longest summary, in words. */
+      maxWords: z.number().int().min(5).max(120).default(35),
+      /** When `agentx wiki summarize` runs on its own (cron, 5 fields).
+       *  Unset: no job is added. */
+      schedule: z.string().refine((v) => v.trim() === "" || isCronExpression(v), "expected a cron of 5 fields, such as \"30 23 * * *\"").optional(),
+      timezone: z.string().refine(isTimeZone, "expected a time zone such as \"UTC\" or \"Europe/Paris\"").default("UTC"),
+      /** Agent the job is filed under. Unset: `node.defaultAgent`, else
+       *  the first agent. */
+      agent: z.string().min(1).optional(),
+    }).default({}),
+    /** The chat bubble on every wiki page: the owner types an instruction and
+     *  an agent researches it and edits the open page. */
+    curator: z.object({
+      enabled: z.boolean().default(true),
+      /** Agent that answers. Unset: the page's owner agent. */
+      agent: z.string().min(1).optional(),
     }).default({}),
   }).default({}),
   channels: channelsConfigSchema.default({}),
@@ -1364,6 +1534,22 @@ export const daemonConfigSchema = z.object({
       restarts: z.number().int().positive().default(3),
       windowMinutes: z.number().positive().default(10),
     }).default({}),
+  }).default({}),
+  /** Stop and resume signals (agents/signals, #857): stop a running task
+   *  cleanly, keep the agent's resume plan, resume it later. The owner may
+   *  always signal; an agent may signal tasks it dispatched, or any task
+   *  when listed in allowAgents; a mesh peer only when listed in allowPeers. */
+  signals: z.object({
+    enabled: z.boolean().default(true),
+    /** How long the stopped agent gets to write its resume plan. Past it,
+     *  the wind-down is stopped and a plan is built from the trace. */
+    windDownSeconds: z.number().int().min(10).max(1800).default(120),
+    /** Agents that may stop or resume any agent's task here ("*" for all). */
+    allowAgents: z.array(z.string().min(1)).default([]),
+    /** Mesh peers (node names) whose stop and resume signals are accepted. */
+    allowPeers: z.array(z.string().min(1)).default([]),
+    /** Loop brake: most signals one root id may carry in a day. */
+    maxPerRoot: z.number().int().min(1).max(100).default(6),
   }).default({}),
   /** Open requests (src/requests, #356): what a person asked an agent for
    *  is recorded and followed until it is done, declined or dropped. Off
@@ -1531,6 +1717,18 @@ export const daemonConfigSchema = z.object({
     /** The orb and character palette of an agent that set neither
      *  presence.palette nor presence.color. */
     palette: z.enum(ORB_PALETTE_IDS).default(DEFAULT_PALETTE),
+    /** The floor (#924): something that speaks or draws by itself, such
+     *  as a demo script or a screen recording, takes it for a while and
+     *  everything else waits: agents' spoken answers, notices, the
+     *  character. See src/voice/floor.ts. Off: nobody can take it. */
+    floor: z.object({
+      enabled: z.boolean().default(true),
+      /** Seconds a holder keeps the floor when it names no time. */
+      defaultSeconds: z.number().int().min(5).max(3600).default(FLOOR_DEFAULTS.defaultSeconds),
+      /** The longest one take or one renewal may ask for, in seconds.
+       *  A holder that needs longer renews. */
+      maxSeconds: z.number().int().min(5).max(14400).default(FLOOR_DEFAULTS.maxSeconds),
+    }).default({}),
     /** The answer text AgentX Voice shows inside its pill. */
     card: z.object({
       /** Seconds the answer stays open once it has been spoken; 0 keeps
@@ -1581,6 +1779,21 @@ export const daemonConfigSchema = z.object({
        *  starts ("start"), or each before it is sent ("step"). A workflow
        *  can set its own `approval`. */
       approval: z.enum(["start", "step"]).default("step"),
+    }).default({}),
+    /** Run every task through a workflow (#858): a saved workflow that
+     *  fits, else a plan the agent writes first, else the one-step
+     *  `linear` template. Needs `enabled`. Off by default. */
+    required: z.object({
+      enabled: z.boolean().default(false),
+      /** Per agent, by id: true or false wins over `enabled`. */
+      agents: z.record(z.boolean()).default({}),
+      /** A plain question answered in one turn, with no plan and only tools
+       *  that change nothing, leaves no run. On by default: such a turn has
+       *  nothing to follow up. */
+      exemptQuestions: z.boolean().default(true),
+      /** Task runs that ended are removed after this many days (#883),
+       *  at boot and every few hours. 0 keeps them all. */
+      retentionDays: z.number().int().min(0).max(3650).default(30),
     }).default({}),
     /** Controls whether the dashboard exposes the visual editor. "readonly"
      *  serves the list + run timelines but strips write controls from the
@@ -1962,7 +2175,7 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
-  return withContributionJobs(result.data)
+  return withSummariesJob(withContributionJobs(result.data))
 }
 
 /**
@@ -2042,6 +2255,27 @@ export function withContributionJobs(config: DaemonConfig, cli: string = agentxC
     [WIKI_CONTRIBUTE_MERGE_JOB]: job(c.mergeSchedule, `${cli} wiki contributions merge`),
   }
   return { ...config, crons: { ...generated, ...config.crons } }
+}
+
+/** Cron id of the job that keeps the wiki page summaries current. */
+export const WIKI_SUMMARIZE_JOB = "wiki-summarize"
+
+/**
+ * Add the job that keeps the page summaries current when
+ * `wiki.summaries.schedule` is set (#855). It only spends on pages that
+ * are new or changed. A cron the operator defined under the same id wins.
+ */
+export function withSummariesJob(config: DaemonConfig, cli: string = agentxCli()): DaemonConfig {
+  const s = config.wiki.summaries
+  const agent = s.agent ?? config.node.defaultAgent ?? Object.keys(config.agents).sort()[0]
+  if (!s.schedule?.trim() || !agent) return config
+  const job = cronJobSchema.safeParse({
+    schedule: s.schedule, timezone: s.timezone, agent, command: `${cli} wiki summarize --all`, timeout: 3600, onError: "log",
+  })
+  if (!job.success) {
+    throw new Error(`wiki.summaries: the ${WIKI_SUMMARIZE_JOB} job can't be built: ${job.error.issues.map((i) => i.message).join("; ")}`)
+  }
+  return { ...config, crons: { [WIKI_SUMMARIZE_JOB]: job.data, ...config.crons } }
 }
 
 /** How to call this release's CLI from a shell. */

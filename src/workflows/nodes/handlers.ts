@@ -32,7 +32,9 @@ const agentHandler: NodeHandler = async (ctx) => {
 
   // A followed step (#788) tells the agent how to say it is done.
   const supervised = isSupervised(ctx)
-  const prompt = render(promptTemplate, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
+  // Re-entered by a resume signal (#870): the agent's resume plan first.
+  const resumed = resumeNoteFor(ctx)
+  const prompt = (resumed ? `${resumed}\n\n` : "") + render(promptTemplate, ctx.run.context as unknown as Record<string, unknown>, { envAllow: ctx.workflow.envAllow })
     + (supervised ? supervisedSuffix(ctx.run, ctx.node.id) : "")
   const timeoutMinutes = typeof cfg.timeoutMinutes === "number" ? cfg.timeoutMinutes : undefined
   // Step autonomy. An unrecognised value fails the step rather than
@@ -68,6 +70,15 @@ const agentHandler: NodeHandler = async (ctx) => {
       ...(autonomy ? { autonomy: autonomy as "report" | "propose" | "act" } : {}),
     })
     const durationMs = Date.now() - start
+    // A stop signal (#870): the run pauses at this step, it does not fail.
+    // A resume signal re-enters the step with the agent's plan.
+    if (resp.error && resp.errorKind === "stopped") {
+      ctx.log(`[node:${ctx.node.id}] agent "${agentId}" stopped by a signal; run paused at this step`)
+      return {
+        paused: true,
+        pausedAt: { kind: "agentStop", nodeId: ctx.node.id, agentId, ...(resp.runTaskId ? { taskId: resp.runTaskId } : {}) },
+      }
+    }
     if (resp.error) {
       const kind = resp.errorKind ?? "unknown"
       ctx.log(`[node:${ctx.node.id}] agent "${agentId}" failed (${kind}): ${resp.error}`)
@@ -96,6 +107,15 @@ const agentHandler: NodeHandler = async (ctx) => {
   } finally {
     if (gateKey) nodeConcurrencyGate.release(gateKey)
   }
+}
+
+/** The resume note a resume signal left for this step (#870): the newest
+ *  history entry of the node is its `resumed` entry, so the note is used
+ *  once, by the turn that re-enters the step. */
+function resumeNoteFor(ctx: NodeContext): string | undefined {
+  const last = [...(ctx.run.history ?? [])].reverse().find((h) => h.nodeId === ctx.node.id)
+  const note = last?.status === "resumed" ? last.output?.resumeNote : undefined
+  return typeof note === "string" && note ? note : undefined
 }
 
 const branchHandler: NodeHandler = async (ctx) => {

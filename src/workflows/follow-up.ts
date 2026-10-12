@@ -130,6 +130,8 @@ export function waitingOn(run: Pick<WorkflowRun, "status" | "pausedAt" | "pendin
       return `a reply on ${p.channel} (${p.chatId}) until ${p.deadline.slice(0, 16).replace("T", " ")} UTC${p.reminders ? `, ${p.reminders} reminder(s) sent` : ""}`
     case "agentStep":
       return p.blocked ? `blocked: ${p.blocked}` : `${p.agentId} to finish${p.nudges ? ` (${p.nudges}/${p.maxNudges} reminder(s) sent)` : ""}`
+    case "agentStop":
+      return `a resume signal: ${p.agentId} was paused at this step`
     case "timerWait":
       return `a timer until ${p.fireAt.slice(0, 16).replace("T", " ")} UTC`
     case "signalWait":

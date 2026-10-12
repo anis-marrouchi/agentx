@@ -108,7 +108,7 @@ describe("SpeechOut as the speaking queue", () => {
     s.stop()
     expect(await a).toBe(false)
     expect(await b).toBe(false)
-    expect(s.view()).toEqual({ paused: false, playing: null, waiting: [], recent: [] })
+    expect(s.view()).toEqual({ paused: false, reserved: false, playing: null, waiting: [], recent: [] })
     expect(await s.say(line("after"))).toBe(true)
     expect(plays()).toEqual(["play one", "play after"])
   })

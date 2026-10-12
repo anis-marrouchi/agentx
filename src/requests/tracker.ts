@@ -197,8 +197,8 @@ export class RequestTracker {
       const now = this.now()
       // Cut by a shutdown: the next boot decides (resumeOutcome).
       if (p.interrupted) return
-      // Stopped on purpose is not a failure.
-      if (p.error && p.errorKind !== "cancelled") {
+      // Stopped on purpose (cancel, or a stop signal, #857) is not a failure.
+      if (p.error && p.errorKind !== "cancelled" && !p.stopped && p.errorKind !== "stopped") {
         const word = failureWord(p.error)
         if (this.store.needsAttention(req.id, `${p.agentId} ${word}: ${clip(p.error)}`, now)) {
           this.log(`[requests] ${req.id} needs attention: run ${p.taskId} ${word}`)
@@ -239,6 +239,19 @@ export class RequestTracker {
     })
   }
 
+  /** A restart stopped the turn passing the delegation's answer on, and
+   *  its one re-run failed too (#846): the answer never reached the owner. */
+  relayFailed(d: DelegationSignal, text: string, reason: string): void {
+    this.guard("delegation relay", () => {
+      const req = this.store.byLink("delegation", d.id)
+      if (!req) return
+      const who = d.peer ? `${d.callee} on ${d.peer}` : d.callee
+      if (this.store.needsAttention(req.id, `The answer from ${who} was not passed on after a restart (${clip(reason)}). It said: ${clip(text)}`, this.now())) {
+        this.log(`[requests] ${req.id} needs attention: delegation ${d.id} answer not relayed`)
+      }
+    })
+  }
+
   /** The agent raised a decision card from the turn of a request: the
    *  request now waits on the owner, with the card's question. The card's
    *  own reminders (inbox, Mac card, check-ins, digest) do the reminding.
@@ -266,7 +279,8 @@ export class RequestTracker {
       if (!req) return
       const now = this.now()
       const applied = card.outcome ?? card.if_silent
-      if (card.status === "decided") {
+      // "resolved": the agent closed it because the owner answered in chat.
+      if (card.status === "decided" || card.status === "resolved") {
         if (req.state === "waiting_owner") this.store.progress(req.id, now)
       } else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
         this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)

@@ -47,6 +47,7 @@ import { handleWorkflowsApi } from "./workflows-api"
 import { ROUTINE_LIMITS, type Routine } from "./routines"
 import { LayoutStore, RunStore, WorkflowStore, type WorkflowRun } from "@/workflows"
 import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
+import { readRequiredSettings, updateRequiredSettings, type RequiredSettingsPatch } from "@/daemon/workflow-required-settings"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
 import { dashboardIcon } from "./app-icon"
@@ -1079,9 +1080,41 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     if (xr !== "agentx-board") { sendJson(res, 400, { error: "missing X-Requested-With: agentx-board" }); return }
   }
 
+  // Wiki page curator (#818). The wiki on this dashboard is the local
+  // node's, so the chat goes to the local daemon, which runs the agent.
+  // Below the /api/* token and X-Requested-With checks on purpose: the
+  // proxy calls the daemon with the dashboard's own credential, and a POST
+  // starts an operator turn that rewrites a page.
+  if (path === "/api/wiki/curate" || path === "/api/wiki/curate/restore") {
+    try {
+      const headers: Record<string, string> = { "Content-Type": "application/json" }
+      if (ctx.config.dashboard.token) headers["Authorization"] = `Bearer ${ctx.config.dashboard.token}`
+      const daemonUrl = ctx.config.dashboard.daemonUrl.replace(/\/+$/, "")
+      const body = method === "POST" ? JSON.stringify((await readJson(req)) ?? {}) : undefined
+      const r = await fetch(`${daemonUrl}${path}${url.search}`, { method, headers, ...(body ? { body } : {}) })
+      sendJson(res, r.status, await r.json().catch(() => ({ error: `HTTP ${r.status}` })))
+    } catch (e: any) {
+      sendJson(res, 502, { error: "daemon unreachable", message: e?.message || String(e) })
+    }
+    return
+  }
+
   // Places (#676), below the /api/* token and X-Requested-With checks:
   // the /places page adds and removes the owner's places here.
   if (await handleDashboardPlaces(req, res, path, method, appPlacesDeps(ctx.config))) return
+
+  // Pause a running task with a resume plan, or resume one (#857), on the
+  // node that holds it. Below the token and X-Requested-With checks: both
+  // stop or start a run.
+  //   POST /api/signals/stop?node=<url>     { taskId, reason? }
+  //   POST /api/signals/resume?node=<url>   { id }
+  //   POST /api/signals/drop?node=<url>     { id }
+  if (method === "POST" && (path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop")) {
+    const nodeUrl = new URL(req.url || "/", "http://localhost").searchParams.get("node")
+    if (!nodeUrl) { sendJson(res, 400, { error: "node query param required" }); return }
+    await proxyNodePost(req, res, ctx, nodeUrl, path)
+    return
+  }
 
   // "Restart when idle" on a node's header (Live page). The daemon holds the
   // request and exits by itself once no task is running, so its service
@@ -1175,6 +1208,32 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     for (const list of remote) for (const r of list) byId.set(r.id, { ...r, history: r.history ?? [], pending: r.pending ?? [] })
     const titles = new Map(ctx.workflowStore.list().map((w) => [w.id, w.title] as const))
     sendJson(res, 200, { groups: progressGroups([...byId.values()], (id) => titles.get(id)), unreachable })
+    return
+  }
+
+  // Run every task through a workflow (#858): this node's setting. Follows
+  // the topbar's machine menu like the rest of /api/workflows.
+  //   GET  /api/workflows/required   the settings and this node's agents
+  //   POST /api/workflows/required   { enabled?, exemptQuestions?, agentId?, agentRequired?: "on"|"off"|"default" }
+  if (path === "/api/workflows/required") {
+    const view = () => ({ settings: readRequiredSettings(), agents: Object.keys(ctx.config.agents ?? {}).sort() })
+    if (method === "GET") { sendJson(res, 200, view()); return }
+    if (method !== "POST") { sendJson(res, 405, { error: "Method not allowed" }); return }
+    if (ctx.config.workflows?.editor !== "edit") { sendJson(res, 403, { error: "the workflow editor is read-only on this node (workflows.editor)" }); return }
+    const body = await readJson(req).catch(() => ({})) as Record<string, unknown>
+    const patch: RequiredSettingsPatch = {}
+    if (typeof body.enabled === "boolean") patch.enabled = body.enabled
+    if (typeof body.exemptQuestions === "boolean") patch.exemptQuestions = body.exemptQuestions
+    if (typeof body.agentId === "string" && body.agentId) {
+      if (!Object.prototype.hasOwnProperty.call(ctx.config.agents ?? {}, body.agentId)) { sendJson(res, 400, { error: `no agent "${body.agentId}" on this node` }); return }
+      const v = body.agentRequired
+      if (v !== "on" && v !== "off" && v !== "default") { sendJson(res, 400, { error: "agentRequired is on, off or default" }); return }
+      patch.agent = { id: body.agentId, value: v === "default" ? null : v === "on" }
+    }
+    if (patch.enabled === undefined && patch.exemptQuestions === undefined && !patch.agent) { sendJson(res, 400, { error: "nothing to change" }); return }
+    const r = await updateRequiredSettings(patch)
+    if (!r.success) { sendJson(res, 400, { error: r.error }); return }
+    sendJson(res, 200, { ok: true, reloaded: !!r.reloaded, ...view() })
     return
   }
 
@@ -1676,6 +1735,23 @@ interface NodeLive {
   inflight?: number
   /** A "restart when idle" request the node is holding (GET /health). */
   restart?: { state: "none" | "pending" | "restarting"; requestedAt?: string; deadline?: string }
+  /** Tasks a stop signal paused, with their resume plan (#857;
+   *  GET /api/signals/stopped, bounded summaries; undefined on older nodes). */
+  stoppedTasks?: Array<{
+    id: string
+    agentId: string
+    channel: string
+    chatId: string
+    state: string
+    stoppedAt: string
+    stoppedBy: string
+    reason?: string
+    request: string
+    plan?: { author: string; text: string; note?: string }
+    resumable: boolean
+    /** A workflow step: its run is paused at this step (#870). */
+    workflow?: { runId: string; workflowId: string; nodeId: string }
+  }>
   agents: Array<{
     id: string
     name: string
@@ -1796,7 +1872,7 @@ export async function fetchDaemonAgents(
         .catch(() => null)
         .finally(() => { clearTimeout(timer); signal?.removeEventListener("abort", stop) })
     }
-    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes, attachRes] = await Promise.all([
+    const [healthRes, agentsRes, meshRes, cronsRes, cronRunsRes, talkRes, routinesRes, attachRes, stoppedRes] = await Promise.all([
       optional("/health"),
       fetch(url + "/agents", { headers, signal }).catch(() => null),
       optional("/mesh"),
@@ -1805,6 +1881,7 @@ export async function fetchDaemonAgents(
       optional("/talk"),
       optional("/routines"),
       optional("/attach/sessions"),
+      optional("/api/signals/stopped?limit=20"),
     ])
     if (!agentsRes || !agentsRes.ok) {
       base.error = agentsRes ? `HTTP ${agentsRes.status}` : "unreachable"
@@ -1832,6 +1909,21 @@ export async function fetchDaemonAgents(
       // /health already embeds today's usage rollup — reuse it so the
       // dashboard doesn't need a separate /usage call per node.
       if (h.usage) base.usage = h.usage
+    }
+    if (stoppedRes && stoppedRes.ok) {
+      const data: any = await stoppedRes.json().catch(() => ({}))
+      const tasks: any[] = Array.isArray(data?.tasks) ? data.tasks : []
+      base.stoppedTasks = tasks.filter((t) => t && t.state !== "resumed").slice(0, 10).map((t) => ({
+        id: String(t.id), agentId: String(t.agentId), channel: String(t.channel ?? ""), chatId: String(t.chatId ?? ""),
+        state: String(t.state), stoppedAt: String(t.stoppedAt), stoppedBy: String(t.stoppedBy ?? ""),
+        reason: typeof t.reason === "string" ? t.reason : undefined,
+        request: String(t.request ?? ""),
+        plan: t.plan && typeof t.plan.text === "string" ? { author: String(t.plan.author), text: t.plan.text, note: t.plan.note } : undefined,
+        resumable: t.resumable === true,
+        ...(t.workflow && typeof t.workflow.runId === "string"
+          ? { workflow: { runId: t.workflow.runId, workflowId: String(t.workflow.workflowId ?? ""), nodeId: String(t.workflow.nodeId ?? "") } }
+          : {}),
+      }))
     }
     if (cronsRes && cronsRes.ok) {
       const jobs: any[] = await cronsRes.json().then((j: unknown) => (Array.isArray(j) ? j : []), () => [])
@@ -1886,7 +1978,7 @@ export async function fetchDaemonAgents(
 // in-memory cache), so absorbs and edits from elsewhere show up
 // without a restart.
 let _wikiHandler: ((req: IncomingMessage, res: ServerResponse) => Promise<void>) | null = null
-function getOrCreateWikiHandler(ctx: { config: DaemonConfig; token?: string }): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
+function getOrCreateWikiHandler(_ctx: { config: DaemonConfig; token?: string }): (req: IncomingMessage, res: ServerResponse) => Promise<void> {
   if (_wikiHandler) return _wikiHandler
   const wikiDir = resolve(process.cwd(), ".agentx/wiki")
   // Match the CLI defaults exactly so the embedded view renders the
@@ -1897,12 +1989,15 @@ function getOrCreateWikiHandler(ctx: { config: DaemonConfig; token?: string }): 
     wikiDir,
     pathPrefix: "/admin/wiki",
     mode: "graph",
+    // The page curator bubble (#818). It asks the daemon on load and
+    // stays hidden when wiki.curator.enabled is off there, so a settings
+    // change shows without restarting the dashboard.
+    curator: true,
+    curatorToken: () => _ctx.token,
     // No remote-peer browsing in the embedded view — keeps the dashboard
     // independent of mesh state. Operators who want cross-mesh wiki nav
     // can still run `agentx wiki serve --peer <url>`.
   })
-  // ctx is passed for future use (auth etc.) but unused right now.
-  void ctx
   return _wikiHandler
 }
 

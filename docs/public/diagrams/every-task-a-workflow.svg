@@ -1,0 +1,133 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 920" width="920" height="920" role="img" aria-labelledby="t d" style="--cycle:4.9s">
+<title id="t">How a task runs through a workflow</title>
+<desc id="d">Seven steps in three parts. You turn the setting on, then ask an agent for something. AgentX picks the workflow: a saved workflow that fits your request, else a plan the agent writes first, else a single step. The agent works through the steps and reports each one; it may change the steps it has left, and the change is kept. Every run is recorded step by step, with how long each took and where it failed, and the Live page shows the step each agent is on. A plain question that changed nothing leaves no run.</desc>
+<defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
+.h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.sub { font-size: 16px; fill: #475569; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
+.band.warn { fill: #B45309; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: #475569; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: #475569; }
+.card { fill: #fff; stroke: #E2E8F0; stroke-width: 1.25; filter: url(#soft); }
+.card.accent { stroke: #C7D9FF; }
+.card.win { stroke: #0B0D12; stroke-width: 1.5; }
+.link { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wrap { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; animation: draw 0.9s ease-in-out backwards; }
+.rise { animation: rise 0.55s cubic-bezier(.2,.7,.2,1) backwards; }
+.fade { animation: fade 0.4s ease-out backwards; }
+.pulse { transform-box: fill-box; transform-origin: center; opacity: 0; animation: pulse var(--cycle) ease-out infinite; }
+.blink { animation: blink 1.6s ease-in-out infinite; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0% { opacity: .7; transform: scale(1); } 9% { opacity: 0; transform: scale(1.9); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
+</style>
+<rect width="920" height="920" rx="24" fill="#FFFFFF"/>
+<text x="44" y="56" class="h1" text-anchor="start">How a task runs through a workflow</text>
+<text x="44" y="82" class="sub" text-anchor="start">Every piece of work gets a plan, a follow-up and a record.</text>
+<circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You, the owner</text>
+<circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">The agent and AgentX</text>
+<rect x="20" y="104" width="880" height="200" rx="20" fill="#F3F7FF"/>
+<text x="44" y="132" class="band" text-anchor="start">YOU ASK</text>
+<g class="rise" style="animation-delay:0.32s">
+<rect x="44" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:4.94s"/>
+<circle cx="70" cy="176" r="15" fill="#1A66FF"/>
+<text x="70" y="181" class="num" text-anchor="middle">1</text>
+<text x="60" y="220" class="title" text-anchor="start">Turn the setting on</text>
+<text x="60" y="242" class="note" text-anchor="start">once, for every agent</text>
+<text x="60" y="259" class="note" text-anchor="start">or for one</text>
+</g>
+<g class="rise" style="animation-delay:0.64s">
+<rect x="328" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:5.64s"/>
+<circle cx="354" cy="176" r="15" fill="#1A66FF"/>
+<text x="354" y="181" class="num" text-anchor="middle">2</text>
+<text x="344" y="220" class="title" text-anchor="start">Ask an agent</text>
+<text x="344" y="242" class="note" text-anchor="start">in your own words,</text>
+<text x="344" y="259" class="note" text-anchor="start">as usual</text>
+</g>
+<g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
+<g class="rise" style="animation-delay:0.96s">
+<rect x="612" y="148" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.34s"/>
+<circle cx="638" cy="176" r="15" fill="#0B0D12"/>
+<text x="638" y="181" class="num" text-anchor="middle">3</text>
+<text x="628" y="220" class="title" text-anchor="start">AgentX picks one</text>
+<text x="628" y="242" class="note" text-anchor="start">a saved workflow that fits,</text>
+<text x="628" y="259" class="note" text-anchor="start">else a plan, else one step</text>
+</g>
+<g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
+<rect x="20" y="320" width="880" height="200" rx="20" fill="#F6F7F9"/>
+<text x="92" y="348" class="band" text-anchor="start">THE AGENT WORKS THROUGH IT</text>
+<path d="M744 284 V302 Q744 312 734 312 H80 Q70 312 70 322 V360" class="wrap" pathLength="100" style="animation-delay:1.26s"/>
+<path d="M65 355 L70 361 L75 355" class="link fade" style="animation-delay:2.16s"/>
+<g class="rise" style="animation-delay:1.28s">
+<rect x="44" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:7.04s"/>
+<circle cx="70" cy="392" r="15" fill="#0B0D12"/>
+<text x="70" y="397" class="num" text-anchor="middle">4</text>
+<text x="60" y="436" class="title" text-anchor="start">It writes a plan</text>
+<text x="60" y="458" class="note" text-anchor="start">the steps, before</text>
+<text x="60" y="475" class="note" text-anchor="start">it starts</text>
+</g>
+<g class="rise" style="animation-delay:1.60s">
+<rect x="328" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:7.74s"/>
+<circle cx="354" cy="392" r="15" fill="#0B0D12"/>
+<text x="354" y="397" class="num" text-anchor="middle">5</text>
+<text x="344" y="436" class="title" text-anchor="start">It reports each step</text>
+<text x="344" y="458" class="note" text-anchor="start">and may change the</text>
+<text x="344" y="475" class="note" text-anchor="start">steps it has left</text>
+</g>
+<g class="fade" style="animation-delay:1.43s"><path d="M311 432 H323" class="link"/><path d="M319 428 L324 432 L319 436" class="link"/></g>
+<g class="rise" style="animation-delay:1.92s">
+<rect x="612" y="364" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="638" cy="392" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:8.44s"/>
+<circle cx="638" cy="392" r="15" fill="#1A66FF"/>
+<text x="638" y="397" class="num" text-anchor="middle">6</text>
+<text x="628" y="436" class="title" text-anchor="start">You see the step</text>
+<text x="628" y="458" class="note" text-anchor="start">on the Live page,</text>
+<text x="628" y="475" class="note" text-anchor="start">per agent</text>
+</g>
+<g class="fade" style="animation-delay:1.75s"><path d="M595 432 H607" class="link"/><path d="M603 428 L608 432 L603 436" class="link"/></g>
+<rect x="20" y="536" width="880" height="372" rx="20" fill="#F3F7FF"/>
+<text x="92" y="564" class="band" text-anchor="start">IT LEAVES A RECORD</text>
+<path d="M744 500 V518 Q744 528 734 528 H80 Q70 528 70 538 V576" class="wrap" pathLength="100" style="animation-delay:2.22s"/>
+<path d="M65 571 L70 577 L75 571" class="link fade" style="animation-delay:3.12s"/>
+<g class="rise" style="animation-delay:2.24s">
+<rect x="44" y="580" width="264" height="136" rx="14" class="card"/>
+<circle cx="70" cy="608" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:9.14s"/>
+<circle cx="70" cy="608" r="15" fill="#0B0D12"/>
+<text x="70" y="613" class="num" text-anchor="middle">7</text>
+<text x="60" y="652" class="title" text-anchor="start">Every run is recorded</text>
+<text x="60" y="674" class="note" text-anchor="start">steps, times, and</text>
+<text x="60" y="691" class="note" text-anchor="start">where it failed</text>
+</g>
+<g class="rise" style="animation-delay:2.44s">
+<rect x="328" y="568" width="548" height="160" rx="14" class="card win"/>
+<path d="M328 602 H876" stroke="#E2E8F0"/>
+<circle cx="346" cy="585" r="4" fill="#CBD5E1"/>
+<circle cx="360" cy="585" r="4" fill="#CBD5E1"/>
+<circle cx="374" cy="585" r="4" fill="#CBD5E1"/>
+<text x="602" y="590" class="wintitle" text-anchor="middle">Live · demo agent</text>
+</g>
+<g class="rise" style="animation-delay:2.94s"><text x="346" y="632" class="rowname" text-anchor="start">workflow</text><rect x="346" y="641" width="214" height="22" rx="11" fill="#1A66FF" fill-opacity="0.1"/><circle cx="357" cy="652" r="3.5" fill="#1A66FF" class="blink"/><text x="366" y="656.5" class="state" style="fill:#1A66FF">step Rename the report (2/3)</text><path d="M346 675 H858" stroke="#E2E8F0"/></g>
+<g class="rise" style="animation-delay:3.29s"><text x="346" y="688" class="rowname" text-anchor="start">plain question</text><rect x="346" y="697" width="208" height="22" rx="11" fill="#0B0D12" fill-opacity="0.1"/><circle cx="357" cy="708" r="3.5" fill="#0B0D12"/><text x="366" y="712.5" class="state" style="fill:#0B0D12">no run: nothing was changed</text></g>
+<g class="rise" style="animation-delay:3.84s"><text x="44" y="772" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
+<g class="rise" style="animation-delay:4.04s"><circle cx="49" cy="798.5" r="4" fill="#B45309"/><text x="62" y="804" class="symptom" text-anchor="start">No run is recorded</text><text x="62" y="824" class="note" text-anchor="start">Check the engine and the setting are on.</text></g>
+<g class="rise" style="animation-delay:4.29s"><circle cx="465" cy="798.5" r="4" fill="#B45309"/><text x="478" y="804" class="symptom" text-anchor="start">The agent wrote no plan</text><text x="478" y="824" class="note" text-anchor="start">One-step tasks need none.</text></g>
+<g class="rise" style="animation-delay:4.54s"><circle cx="49" cy="850.5" r="4" fill="#B45309"/><text x="62" y="856" class="symptom" text-anchor="start">A question left a run</text><text x="62" y="876" class="note" text-anchor="start">It used a tool that changes things.</text></g>
+<g class="rise" style="animation-delay:4.79s"><circle cx="465" cy="850.5" r="4" fill="#B45309"/><text x="478" y="856" class="symptom" text-anchor="start">One agent should skip it</text><text x="478" y="876" class="note" text-anchor="start">Turn it off for that agent.</text></g>
+</svg>

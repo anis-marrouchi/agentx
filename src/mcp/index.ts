@@ -1,4 +1,5 @@
 import { createAgentContext } from "@/agent"
+import { PLAN_TOOL_TEXT } from "@/workflows/required"
 import { detectTechStack, formatTechStack } from "@/agent/context/tech-stack"
 import { detectSchemas, formatSchemas } from "@/agent/context/schema"
 import { loadLocalSkills, matchSkillsToTask } from "@/agent/skills/loader"
@@ -272,6 +273,39 @@ export function _resolveDaemonTokenForTesting(env: NodeJS.ProcessEnv = process.e
 
 export const _daemonFetchForTesting = daemonFetch
 
+export function _handleToolCallForTesting(name: string, args: Record<string, unknown>) {
+  return handleToolCall(name, args)
+}
+
+/** How long agentx_send_agent waits for the daemon. It answers once the
+ *  task is queued, which takes well under a second (#847). */
+export const SEND_AGENT_TIMEOUT_MS = 10_000
+
+/** Errors that mean the request never reached the daemon. */
+const UNREACHED_CODES = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH"])
+
+/**
+ * What agentx_send_agent tells the agent when its fetch throws (#847). A
+ * daemon that could not be reached got nothing: that is a failure. Any
+ * other error (a timeout, a reset connection) came after the request was
+ * sent, so the task is most likely queued; resending it is safe anyway,
+ * since the daemon returns the first task id for a repeat.
+ */
+export function sendAgentFetchError(agentId: string, e: unknown): string {
+  const err = e as { name?: string; message?: string; code?: string; cause?: { code?: string } }
+  const code = err?.cause?.code ?? err?.code
+  if (code && UNREACHED_CODES.has(code)) {
+    return `Error: the AgentX daemon could not be reached (${code}); the message to ${agentId} was not sent.`
+  }
+  const why = err?.name === "TimeoutError" || err?.name === "AbortError" ? "no answer in time" : (err?.message || String(e))
+  return (
+    `Probably delivered to ${agentId}: the daemon did not confirm (${why}), but the request was sent and is most likely queued. ` +
+    `Do not treat this as a failure. If unsure, send the same message again: within 10 minutes a repeat returns the existing task id ` +
+    `instead of a second task, and delivers it if the first never arrived. ` +
+    `A busy ${agentId} shows no trace until its turn starts; later, \`agentx trace list --agent ${agentId} --since 1h\` or the daemon log ("[send/agent]") shows it.`
+  )
+}
+
 // Strip ANSI escape codes from CLI output (we re-invoke the CLI for tools
 // that shell out — chalk colors its output, MCP clients want plain text).
 // eslint-disable-next-line no-control-regex
@@ -508,7 +542,7 @@ const TOOLS = [
   {
     name: "agentx_send_agent",
     description:
-      "Send a message to ANOTHER AGENT by exact agentId — uses the AgentX A2A mesh (or local registry when the agent lives on this daemon). This is the deterministic path for agent-to-agent communication; it never falls through to a contact lookup, so an unknown agentId returns 404 with the list of known agents instead of silently sending to a similarly-named human. Use this when the target is a registered agent. When a person started this conversation, the call returns at once with a task id; tell the person who you asked, end your turn, and the answer arrives later as a new message in this conversation.",
+      "Send a message to ANOTHER AGENT by exact agentId — uses the AgentX A2A mesh (or local registry when the agent lives on this daemon). This is the deterministic path for agent-to-agent communication; it never falls through to a contact lookup, so an unknown agentId returns 404 with the list of known agents instead of silently sending to a similarly-named human. Use this when the target is a registered agent. The call returns at once with a task id once the message is queued; do not send the same message again. When a person started this conversation, tell the person who you asked, end your turn, and the answer arrives later as a new message in this conversation.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -572,6 +606,29 @@ const TOOLS = [
         limit: { type: "number", description: "Most events to return. Default 20, max 50." },
         agentId: { type: "string", description: "Whose subscriptions to read. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
       },
+    },
+  },
+  {
+    name: "agentx_signal",
+    description:
+      "Stop a running agent task cleanly, or resume one that was stopped (#857). " +
+      "`stop`: the task ends with status stopped, the agent writes a resume plan (done, left, next action, half-applied), and the task waits. " +
+      "`resume`: the task runs again in the same chat with its plan prepended. `list`: stopped tasks and their plans. " +
+      "You may signal tasks you dispatched, or any task when signals.allowAgents names you. Never your own task. " +
+      "Set `node` to signal a task on another mesh node.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        action: { type: "string", enum: ["stop", "resume", "list"], description: "stop a running task, resume a stopped one, or list stopped tasks." },
+        taskId: { type: "string", description: "stop: the running task id (from agentx_agents or the live page)." },
+        agentId: { type: "string", description: "stop: with channel and chatId, the agent whose only task on that chat to stop." },
+        channel: { type: "string", description: "stop: the task's channel." },
+        chatId: { type: "string", description: "stop: the task's chat id." },
+        id: { type: "string", description: "resume: the stopped task's id (from list)." },
+        reason: { type: "string", description: "Why: shown to the agent, in the plan and on the live page." },
+        node: { type: "string", description: "A mesh node's name, when the task runs there." },
+      },
+      required: ["action"],
     },
   },
   {
@@ -659,7 +716,7 @@ const TOOLS = [
   {
     name: "agentx_voice_queue",
     description:
-      "See what this host is saying out loud and what waits to be said: every agent's spoken answers, narration, talks and lessons share one speaking queue. Use it before speaking at length, or when asked who is talking.",
+      "See what this host is saying out loud and what waits to be said: every agent's spoken answers, narration, talks and lessons share one speaking queue. It also says who holds the floor (a demo, a recording): while it is held, your spoken lines wait and the character does not move for you. Use it before speaking at length, or when asked who is talking.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -789,13 +846,15 @@ const TOOLS = [
       "Ask the operator for a yes/no decision by raising a decision card in their Approvals inbox, instead of asking in chat. " +
       "Lead with your recommendation. Every card expires: say what should happen if nobody answers (if_silent). " +
       "You get a message with the result when it is decided or expires. You cannot approve anything with this tool. " +
-      "Actions: create (default), status. " +
+      "Actions: create (default), status, resolve. " +
+      "If the operator answers the same question in chat and you act on it, close your card with resolve (id and reason, e.g. 'approved in chat, done'), so it is not asked again. " +
+      "A no on a card whose action you already carried out does not undo it by itself: ask the requester one clear question first. " +
       "To offer ready-made answers, add choices (and optionally a draft message); the operator's pick and final text come back with the result. " +
       "Example: {title:'Publish the launch post draft', ask:'Publish the draft on Monday?', recommend:'Yes: it is reviewed and the date is agreed', if_silent:'discard', expires:'2d', source:'https://example.com/drafts/42'}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["create", "status"], description: "create (default) or status." },
+        action: { type: "string", enum: ["create", "status", "resolve"], description: "create (default), status, or resolve (close your own pending card because the operator already answered it in chat and you acted on it)." },
         title: { type: "string", description: "create: what it is, in one line (max 120 characters)." },
         ask: { type: "string", description: "create: the yes/no question (max 300 characters)." },
         recommend: { type: "string", description: "create: your advice and why, in one line (max 300 characters). With choices, start with the exact label you advise: the Mac card marks it and opens with it picked." },
@@ -806,7 +865,8 @@ const TOOLS = [
         draft: { type: "string", description: "create, optional: a suggested message the operator may edit before approving. {choice} is replaced by the pick. On yes you get the final text: send exactly that." },
         say: { type: "string", description: "create, optional: one short line the Mac popup speaks (max 160 characters). Default: the title." },
         context: { type: "string", description: "create, optional: a few lines of background shown above the question, e.g. what the other person said (max 600 characters)." },
-        id: { type: "string", description: "status: the card id you got from create." },
+        id: { type: "string", description: "status, resolve: the card id you got from create." },
+        reason: { type: "string", description: "resolve: where the operator answered and what you did, e.g. 'approved in chat, done' (max 300 characters)." },
         channel: { type: "string", description: "Current chat's channel, from your task context, so the result can mention it." },
         chatId: { type: "string", description: "Current chat id, from your task context." },
         callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
@@ -871,26 +931,28 @@ const TOOLS = [
       "person.wait {channel, chatId, timeout:'2d', remindAfter:'4h', reminds:'<person.message step id>'}, branch, transform, timer.boundary. Use {{stepId.field}} for what an earlier step produced, e.g. {{reply.text}}. " +
       "Once started, do not run its steps by hand. done: your agent step is finished (runId, step, evidence). blocked: your step needs the owner (runId, reason). " +
       "status: one run (runId). list: every follow-up still going, by tag. propose: ask the owner to keep a workflow as a template (title + steps, or fromRun: a run you built). " +
+      PLAN_TOOL_TEXT + " " +
       "Example: {action:'start', title:'Contract for the new hire', tags:['employee:sam'], steps:[{id:'ask_doc', type:'person.message', config:{to:'Sam', channel:'telegram', chatId:'123', text:'Please send the signed contract.'}}, {id:'doc', type:'person.wait', config:{reminds:'ask_doc', timeout:'2d', remindAfter:'1d'}}, {id:'tell', type:'owner.notify', config:{text:'Sam sent: {{doc.text}}'}}]}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["match", "start", "status", "list", "done", "blocked", "propose"], description: "list (default), match, start, status, done, blocked or propose." },
+        action: { type: "string", enum: ["match", "start", "status", "list", "done", "blocked", "propose", "plan", "step"], description: "list (default), match, start, status, done, blocked, propose, plan or step." },
         request: { type: "string", description: "match: the owner's request, in their words." },
         workflowId: { type: "string", description: "start: the saved workflow to start." },
         title: { type: "string", description: "start / propose: what this run or workflow is for, in a few words." },
         description: { type: "string", description: "propose: when to use this workflow." },
         tags: { type: "array", items: { type: "string" }, description: "start: what the run concerns, as kind:name (client:acme, employee:sam, project:site, idea:newsletter)." },
         inputs: { type: "object", description: "start: values the steps read as {{start.<name>}}." },
-        steps: { type: "array", items: { type: "object" }, description: "start / propose: [{id, type, config}] in order, when building a workflow." },
+        steps: { type: "array", items: { anyOf: [{ type: "object" }, { type: "string" }] }, description: "start / propose: [{id, type, config}] in order, when building a workflow. plan: the step titles, in order (strings)." },
         edges: { type: "array", items: { type: "object" }, description: "Optional: [{from, to, fromPort?}] instead of running the steps in order. Ports: owner.ask yes/no/expired, person.message sent/declined, person.wait reply/timeout." },
         approval: { type: "string", enum: ["start", "step"], description: "start / propose: the owner approves messages to people all at once at the start, or each before it is sent." },
         autoStart: { type: "boolean", description: "propose: start without telling the owner first." },
-        runId: { type: "string", description: "status / done / blocked: the run." },
-        step: { type: "string", description: "done / blocked: the step id (default: the one the run waits on)." },
+        runId: { type: "string", description: "status / done / blocked / plan / step: the run." },
+        step: { type: "string", description: "done / blocked / step: the step id (default: the one the run waits on)." },
+        status: { type: "string", enum: ["started", "done", "failed"], description: "step: what happened to the step." },
         evidence: { type: "string", description: "done: the proof (a link, an id, what you checked)." },
         note: { type: "string", description: "done: anything the next step should know." },
-        reason: { type: "string", description: "blocked: what the owner must do." },
+        reason: { type: "string", description: "blocked: what the owner must do. plan: why the plan changed." },
         fromRun: { type: "string", description: "propose: a run you built, to keep its workflow." },
         requestId: { type: "string", description: "start: the open request this serves (default: the request of this turn)." },
         channel: { type: "string", description: "Current chat's channel, from your task context." },
@@ -921,7 +983,7 @@ const TOOLS = [
   {
     name: "agentx_wiki_query",
     description:
-      "Query the agentx institutional wiki: a cross-agent knowledge base organized by article type (person, project, place, concept, event, decision, pattern). Use this BEFORE grep/memory-search when the question is about who / what happened / what we decided / how we do something. The query walks the catalog + wikilink graph and returns a synthesized answer with citations.",
+      "Query the agentx institutional wiki: a cross-agent knowledge base organized by article type (person, project, place, concept, event, decision, pattern). Use this BEFORE grep/memory-search when the question is about who / what happened / what we decided / how we do something. The query picks pages from their one-line summaries, reads the live state of what they name (issue, merge request, release, running version) from the configured sources, and returns an answer with citations and the lines it read live. Where no summaries exist it walks the catalog + wikilink graph.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -939,7 +1001,7 @@ const TOOLS = [
         },
         max_hops: {
           type: "number",
-          description: "Wikilink hops from candidates (default 2, max 3).",
+          description: "Wikilink hops from candidates (default 2, max 3). Used by the catalog method only.",
           default: 2,
         },
       },
@@ -1278,12 +1340,22 @@ async function handleToolCall(
       if (!agentId || !text) {
         return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
       }
-      const res = await daemonFetch(`${daemonUrl()}/send/agent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...callerFields() }),
-      })
-      const data = await res.json() as any
+      // retro:01M4DJTC01FK0BVCMFKT5K4SRQ (#847) — the daemon answers as soon
+      // as the task is queued, so a short timeout is enough. A timeout or a
+      // dropped connection after the request went out most likely means the
+      // task is queued: say so, never "failed", so the agent does not resend.
+      let res: Response
+      try {
+        res = await daemonFetch(`${daemonUrl()}/send/agent`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...callerFields() }),
+          signal: AbortSignal.timeout(SEND_AGENT_TIMEOUT_MS),
+        })
+      } catch (e) {
+        return { content: [{ type: "text", text: sendAgentFetchError(agentId, e) }] }
+      }
+      const data = await res.json().catch(() => ({})) as any
       if (res.status === 202 && data?.accepted) {
         return { content: [{ type: "text", text: data.note || `Delegated to ${agentId} (task ${data.taskId}).` }] }
       }
@@ -1548,6 +1620,56 @@ async function handleToolCall(
       return { content: [{ type: "text", text: renderEventsAnswer(agentId, data, formatEventLine) }] }
     }
 
+    case "agentx_signal": {
+      const action = String(args.action ?? "")
+      const self = process.env.AGENTX_AGENT_ID
+      const proof = callerHeaders()
+      // An agent's own run proves who it is; one that cannot is refused
+      // rather than taken for the owner.
+      if (self && Object.keys(proof).length === 0) {
+        return { content: [{ type: "text", text: "Signal not sent: this run cannot prove which task it is (no AGENTX_TASK_ID or AGENTX_CHANNEL/AGENTX_CHAT_ID)." }] }
+      }
+      const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined)
+      if (action === "list") {
+        const qs = new URLSearchParams({ limit: "20" })
+        const node = str(args.node)
+        if (node) qs.set("node", node)
+        const res = await daemonFetch(`${daemonUrl()}/api/signals/stopped?${qs}`, { headers: proof, signal: AbortSignal.timeout(20_000) })
+        const data = await res.json().catch(() => ({})) as any
+        if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
+        const tasks: any[] = data.tasks || []
+        if (!tasks.length) return { content: [{ type: "text", text: "No stopped tasks." }] }
+        const lines = tasks.map((t) => [
+          `- ${t.id} ${t.agentId} on ${t.channel} — ${t.state}, stopped by ${t.stoppedBy} at ${t.stoppedAt}${t.reason ? ` (${t.reason})` : ""}`,
+          `  Request: ${t.request}`,
+          t.plan ? `  Plan (${t.plan.author}):\n${String(t.plan.text).split("\n").map((l: string) => `    ${l}`).join("\n")}` : "  Plan: not written yet",
+        ].join("\n"))
+        return { content: [{ type: "text", text: lines.join("\n") }] }
+      }
+      if (action !== "stop" && action !== "resume") {
+        return { content: [{ type: "text", text: "Error: action must be stop, resume or list." }] }
+      }
+      const body = action === "stop"
+        ? { taskId: str(args.taskId), agentId: str(args.agentId), channel: str(args.channel), chatId: str(args.chatId), reason: str(args.reason), node: str(args.node), from: self }
+        : { id: str(args.id), reason: str(args.reason), node: str(args.node), from: self }
+      const res = await daemonFetch(`${daemonUrl()}/api/signals/${action}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...proof },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30_000),
+      })
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Signal not sent: ${data.error || `HTTP ${res.status}`}` }] }
+      return {
+        content: [{
+          type: "text",
+          text: action === "stop"
+            ? `Stopped task ${data.id} of ${data.agentId}. It is writing its resume plan; resume it with agentx_signal action=resume id=${data.id}.`
+            : `Resumed task ${data.id} of ${data.agentId}. Its answer goes to ${data.delivery ?? "the chat it came from"}.`,
+        }],
+      }
+    }
+
     case "agentx_crons": {
       const res = await daemonFetch(`${daemonUrl()}/crons/health`)
       const data = await res.json() as any
@@ -1602,6 +1724,7 @@ async function handleToolCall(
       }
       const { WikiHub } = await import("@/wiki")
       const { agenticQuery, sharedQueryEnabled } = await import("@/wiki/query")
+      const { loadQuerySettings, toolNoteSourceFor } = await import("@/wiki/query-settings")
       const { resolve } = await import("path")
       const wikiDir = (args.wiki_dir as string) || resolve(process.cwd(), ".agentx/wiki")
       const hub = new WikiHub(wikiDir, undefined, "graph")
@@ -1616,7 +1739,12 @@ async function handleToolCall(
           if (existsSync(catPath)) { agentId = id; break }
         }
       }
+      // Counted in _query-runs.jsonl beside CLI queries, so `wiki query-runs`
+      // sees the queries agents make through this tool too.
+      const { QUERY_RUNS_FILE, recordQueryRun, timedQuery } = await import("@/wiki/query-runs")
+      const runsFile = resolve(hub.getBaseDir(), QUERY_RUNS_FILE)
       if (!agentId) {
+        recordQueryRun(runsFile, { at: new Date().toISOString(), agent: "", status: "no-catalog", source: "tool", wallMs: 0 })
         return { content: [{ type: "text", text: "Error: no agent has a wiki catalog yet. Run `agentx wiki absorb` first." }] }
       }
       const store = hub.getAgentWiki(agentId)
@@ -1629,18 +1757,31 @@ async function handleToolCall(
       // classification log here would hand back the previous request's
       // path, since classification runs alongside the turn.
       const branch = await runningIntentPath()
-      const result = await agenticQuery(question, store, agentId, {
+      // `wiki.query` decides the method: page summaries plus a live read
+      // once summaries exist, the catalog walk until then (#855).
+      const settings = await loadQuerySettings()
+      const shared = (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined
+      const result = await timedQuery(runsFile, agentId, "tool", () => agenticQuery(question, store, agentId, {
         maxHops,
-        shared: (await sharedQueryEnabled()) ? hub.sharedScope(agentId) : undefined,
+        shared,
         messagePath: branch?.path,
         ...(branch?.graphWeight !== undefined ? { graphWeight: branch.graphWeight } : {}),
-      })
+        method: settings.method,
+        summaries: settings.summaries,
+        // Notes only for the agent this runtime runs as: `agent` is the
+        // caller's word, and another agent's notes are private to it (#867).
+        notes: toolNoteSourceFor(settings, agentId),
+      }))
       if (result.status !== "ok") {
         return { content: [{ type: "text", text: `Query returned status "${result.status}"${result.error ? `: ${result.error}` : ""}` }] }
       }
       const cites = result.citations.map(c => `  - ${c.title} [${c.type || "?"}] (${c.path})`).join("\n")
       const walkCount = result.walked.length
-      const body = `${result.answer}\n\nCitations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}`
+      const live = result.live?.length ? `\n\nRead live at the source just now:\n${result.live.map((l) => `  - ${l.line}`).join("\n")}` : ""
+      const sources = result.basis === "search"
+        ? "No wiki page was used: the answer comes from a search at the source."
+        : `Citations (${walkCount} article${walkCount === 1 ? "" : "s"} walked):\n${cites}`
+      const body = `${result.answer}\n\n${sources}${live}`
       return { content: [{ type: "text", text: body }] }
     }
 

@@ -141,6 +141,51 @@ memory
     console.log(md)
   })
 
+// --- agentx memory check — which notes carry a source and a check date ---
+//
+// Read only (#850). Reads the agent's notes from the AgentX store, or from
+// another notes folder with --dir (such as the one a claude-code agent
+// keeps), and lists each note with the `source` and `checked` fields it
+// has or lacks.
+
+memory
+  .command("check")
+  .description("list an agent's notes and whether each has a source and a check date")
+  .requiredOption("--agent <id>", "agent id")
+  .option("--dir <path>", "read notes from this folder instead of the AgentX store")
+  .option("--missing", "list only notes missing a source or a check date")
+  .option("--json", "print the result as JSON")
+  .action(async (opts: { agent: string; dir?: string; missing?: boolean; json?: boolean }) => {
+    const { readNotes } = await import("@/wiki/note-reader")
+    const dir = opts.dir ? resolve(opts.dir) : new AgentMemory().dirOf(opts.agent)
+    const read = readNotes(dir)
+    const complete = read.notes.filter((n) => n.missing.length === 0)
+    const shown = opts.missing ? read.notes.filter((n) => n.missing.length > 0) : read.notes
+    if (opts.json) {
+      console.log(JSON.stringify({ agent: opts.agent, ...read, notes: shown, complete: complete.length, total: read.notes.length }, null, 2))
+      return
+    }
+    console.log()
+    console.log(chalk.dim(`  ${dir}`))
+    if (read.notes.length === 0) {
+      console.log(chalk.dim(`  no notes for agent "${opts.agent}" in this folder`))
+      console.log()
+      return
+    }
+    for (const n of shown) {
+      const mark = n.missing.length ? chalk.yellow("✗") : chalk.green("✓")
+      const what = n.missing.length
+        ? chalk.yellow(`no ${n.missing.join(", no ")}`)
+        : chalk.dim(`${n.source} · checked ${n.checked}`)
+      console.log(`  ${mark} ${chalk.cyan(n.name.padEnd(28))} ${what}`)
+      for (const p of n.problems) console.log(chalk.dim(`      ${p}`))
+    }
+    for (const s of read.skipped) console.log(chalk.dim(`  - ${s.file}: ${s.reason}`))
+    console.log()
+    console.log(`  ${complete.length} of ${read.notes.length} note(s) have both a source and a check date.`)
+    console.log()
+  })
+
 // --- agentx memory facts — the facts extracted after every reply ---
 //
 // A second, automatic memory: after each reply a small model pulls out

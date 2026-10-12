@@ -5,16 +5,25 @@ import { WikiHub } from "@/wiki"
 import type { WikiMode } from "@/wiki/hub"
 import { startWikiServer } from "@/wiki/serve"
 import type { WikiPeer } from "@/wiki/article-sync"
+import type { WikiQuerySettings } from "@/wiki/query-settings"
 import { buildAbsorbPrompt } from "@/wiki/prompts"
 import { absorbModel, parseAbsorbResponse } from "@/wiki/absorb-response"
 import { droppedFacts, findCoveringArticles, renderCoveringBlock, absorbTargetPath } from "@/wiki/absorb-context"
 import { patchProblems } from "@/wiki/fact-guard"
+import { LockBusyError } from "@/wiki/facts/ledger-file"
 import { envelopeUsage, type AbsorbCallRecord, type AbsorbRunRecord } from "@/wiki/absorb-eval"
+import { applyNoteAnswers, noteSource, parseNoteAnswers, renderAbsorbNotesBlock } from "@/wiki/absorb-notes"
+import { NoteStore, type WikiNote } from "@/wiki/notes"
+import { absorbOffAgents, absorbSkipMessage, selectAbsorbAgents } from "@/wiki/absorb-agents"
 import { runPromotion } from "@/wiki/promote"
 import { GraphStore } from "@/graph"
 import { registerWikiFacts } from "./wiki-facts"
 import { registerWikiNotes } from "./wiki-notes"
 import { registerWikiOntology } from "./wiki-ontology"
+import { registerWikiEnrich } from "./wiki-enrich"
+import { registerWikiEvents } from "./wiki-events"
+import { registerWikiRules } from "./wiki-rules"
+import { registerWikiSummarize } from "./wiki-summarize"
 import { resolve, relative, dirname } from "path"
 import { exec, execSync } from "child_process"
 import { promisify } from "util"
@@ -52,6 +61,30 @@ async function localAgentIds(): Promise<Set<string> | null> {
   }
 }
 
+/** This node's wiki notes settings when absorb should read the inbox
+ *  (#831): notes on, with an inbox and a `wikiNotes.absorbAgent`. */
+async function absorbNotesConfig(): Promise<{ inbox: string; absorbAgent: string; max: number; maxDeferrals: number } | null> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    const n = loadDaemonConfig().wikiNotes
+    if (!n?.enabled || !n.inbox || !n.absorbAgent) return null
+    return { inbox: n.inbox, absorbAgent: n.absorbAgent, max: n.maxNotesPerRun, maxDeferrals: n.maxDeferrals }
+  } catch {
+    return null
+  }
+}
+
+/** Agents with the bulk absorb turned off in agentx.json (#850). Empty
+ *  when there is no config to read. */
+async function absorbOffAgentIds(): Promise<Set<string>> {
+  try {
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    return absorbOffAgents(loadDaemonConfig().agents || {})
+  } catch {
+    return new Set()
+  }
+}
+
 /** True, with a message, when the agent's articles are a read-only copy
  *  from a peer: the next sync would overwrite any edit made here. */
 function refuseCopiedAgent(hub: WikiHub, agentId: string): boolean {
@@ -66,6 +99,27 @@ function refuseCopiedAgent(hub: WikiHub, agentId: string): boolean {
 async function sharedQueryOn(): Promise<boolean> {
   const { sharedQueryEnabled } = await import("@/wiki/query")
   return sharedQueryEnabled()
+}
+
+/** `wiki.query` settings with the `--method`, `--no-live`, `--linked` and
+ *  `--no-notes` flags applied; null, with a message, when a flag's value is wrong. */
+async function querySettingsFor(opts: { method?: string; live?: boolean; linked?: string; notes?: boolean }): Promise<WikiQuerySettings | null> {
+  const { loadQuerySettings } = await import("@/wiki/query-settings")
+  const settings = await loadQuerySettings()
+  if (opts.method && !["auto", "summaries", "catalog"].includes(opts.method)) {
+    console.log(chalk.red(`  --method takes auto, summaries or catalog, not "${opts.method}".`))
+    process.exitCode = 1
+    return null
+  }
+  const linked = opts.linked === undefined ? settings.summaries.linkedPages : Number(opts.linked)
+  if (!Number.isInteger(linked) || linked < 0 || linked > 10) {
+    console.log(chalk.red(`  --linked takes a whole number from 0 to 10, not "${opts.linked}".`))
+    process.exitCode = 1
+    return null
+  }
+  const live = { ...settings.summaries.live, enabled: settings.summaries.live.enabled && opts.live !== false }
+  const notes = { ...settings.notes, enabled: settings.notes.enabled && opts.notes !== false }
+  return { ...settings, method: (opts.method as WikiQuerySettings["method"]) ?? settings.method, summaries: { ...settings.summaries, linkedPages: linked, live }, notes }
 }
 
 /** The wiki root, resolved the same way everywhere that needs it. */
@@ -86,6 +140,10 @@ export const wiki = new Command()
 registerWikiFacts(wiki)
 registerWikiNotes(wiki)
 registerWikiOntology(wiki)
+registerWikiEnrich(wiki)
+registerWikiEvents(wiki)
+registerWikiRules(wiki)
+registerWikiSummarize(wiki)
 
 // agentx wiki status
 wiki
@@ -196,6 +254,7 @@ wiki
   .option("--until <date>", "only entries dated on or before YYYY-MM-DD")
   .option("--model <model>", "compile model (default: AGENTX_WIKI_ABSORB_MODEL, else sonnet)")
   .option("--run-label <label>", "tag this run's lines in _absorb-runs.jsonl, for `wiki absorb-runs`")
+  .option("--no-notes", "do not read the wiki notes inbox, even for wikiNotes.absorbAgent")
   .action(async (opts) => {
     const mode = opts.mode as WikiMode
     let model: string
@@ -210,7 +269,18 @@ wiki
     // Each node absorbs its own agents. A peer's agents are absorbed on the
     // peer and reach this node through `wiki sync --articles`.
     const local = await localAgentIds()
-    const agents = (opts.agent ? [opts.agent] : hub.listAgents().filter((id) => !local || local.has(id)))
+    // Agents with agents.<id>.wiki.absorb.enabled false are left out
+    // unless named with --agent (#850).
+    const { agents: selected, skipped } = selectAbsorbAgents(
+      hub.listAgents().filter((id) => !local || local.has(id)),
+      { only: opts.agent, off: await absorbOffAgentIds() },
+    )
+    // Say when the skipped agent is the one that reads the notes inbox (#885).
+    const notesAbsorbAgent = skipped.length && opts.notes !== false ? (await absorbNotesConfig())?.absorbAgent : undefined
+    for (const id of skipped) {
+      console.log(`  ${chalk.cyan(id)}: ${chalk.dim(absorbSkipMessage(id, notesAbsorbAgent))}`)
+    }
+    const agents = selected
       .filter((id) => {
         const from = hub.syncedFrom(id)
         if (from) console.log(`  ${chalk.cyan(id)}: ${chalk.dim(`copied from ${from.node}, read-only here; absorb it there`)}`)
@@ -281,6 +351,9 @@ wiki
 
     let totalAbsorbed = 0
     let totalWithPath = 0
+    // Compile calls that failed: thrown, unparseable, or reported an error.
+    // Any one makes the command exit 1, so a command schedule sees it (#603).
+    let failedCalls = 0
 
     // One line per compile call in _absorb-runs.jsonl: time, cost, tokens
     // and prompt size, so a change to the pipeline can be measured (#808).
@@ -296,6 +369,10 @@ wiki
       }
     }
     const startedAt = new Date().toISOString()
+    // The wiki notes inbox (#831): read by the absorb pass of one agent,
+    // set as wikiNotes.absorbAgent on the node that keeps the inbox.
+    const notesCfg = opts.notes === false ? null : await absorbNotesConfig()
+    const noteStore = notesCfg ? new NoteStore(hub.getBaseDir()) : null
 
     for (const agentId of agents) {
       const agentStart = Date.now()
@@ -312,7 +389,18 @@ wiki
         .filter((e) => !untilDate || (e.date ?? "").slice(0, 10) <= untilDate)
         .slice(0, maxEntries)
 
-      if (unabsorbed.length === 0) {
+      // Notes are taken (and marked as given to this run) only for a real
+      // run; a dry run counts them.
+      const readsNotes = Boolean(notesCfg && noteStore && notesCfg.absorbAgent === agentId)
+      const noteRunId = `absorb/${agentId}/${startedAt.replace(/[:.]/g, "-")}`
+      let notes: WikiNote[] = []
+      if (readsNotes && opts.dryRun) {
+        notes = noteStore!.peekForRun(notesCfg!.inbox, notesCfg!.max, notesCfg!.maxDeferrals)
+      } else if (readsNotes) {
+        notes = noteStore!.takeForRun(notesCfg!.inbox, noteRunId, notesCfg!.max, notesCfg!.maxDeferrals)
+      }
+
+      if (unabsorbed.length === 0 && notes.length === 0) {
         console.log(`  ${chalk.cyan(agentId)}: ${chalk.green("all absorbed")}`)
         continue
       }
@@ -323,6 +411,7 @@ wiki
         console.log(chalk.dim(`    [${e.date} via ${e.source}] ${e.content.slice(0, 80)}...`))
       }
       if (unabsorbed.length > 3) console.log(chalk.dim(`    ... and ${unabsorbed.length - 3} more`))
+      if (notes.length > 0) console.log(chalk.dim(`    Wiki notes: ${notes.length} from the ${notesCfg!.inbox} inbox${opts.dryRun ? "" : ` (run ${noteRunId})`}`))
 
       if (opts.dryRun) continue
 
@@ -396,13 +485,19 @@ wiki
       // updates them instead of rewriting them blind or filing a
       // duplicate beside them (#801).
       const catalog = existingIndex.articles.filter((a) => a.path && !a.path.includes("/_versions/"))
-      const covering = await findCoveringArticles(unabsorbed, agentWiki, agentId, catalog)
+      // A note looks up the articles it is about the same way an entry
+      // does: a note may only patch an article the model has read in full.
+      const covering = await findCoveringArticles(
+        [...unabsorbed, ...notes.map((n) => ({ id: noteSource(n.id), content: n.change }))],
+        agentWiki, agentId, catalog,
+      )
       if (covering.length > 0) {
         console.log(chalk.dim(`    Existing: ${covering.map((a) => a.path).join(", ")}`))
       }
 
       const coveringBlock = renderCoveringBlock(covering)
-      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock, coveringBlock)
+      const notesBlock = renderAbsorbNotesBlock(notes)
+      const prompt = buildAbsorbPrompt(mode, agentId, worldview, existingIndex.articles, entryTexts, unabsorbed.length, factsBlock, coveringBlock, notesBlock)
       console.log(chalk.dim(`    Mode: ${modeLabel(mode)}`))
 
       // Write prompt and run Claude
@@ -421,12 +516,14 @@ wiki
           entries: entryTexts.length,
           // The catalog lists every article title; its share is the prompt
           // minus the same prompt built without it.
-          catalog: prompt.length - buildAbsorbPrompt(mode, agentId, worldview, [], entryTexts, unabsorbed.length, factsBlock, coveringBlock).length,
+          catalog: prompt.length - buildAbsorbPrompt(mode, agentId, worldview, [], entryTexts, unabsorbed.length, factsBlock, coveringBlock, notesBlock).length,
           catalogArticles: existingIndex.articles.length,
           covering: coveringBlock.length,
           facts: factsBlock.length,
           worldview: worldview.length,
+          notes: notesBlock.length,
         },
+        ...(notes.length ? { notes: notes.length } : {}),
       }
       const callStart = Date.now()
       call.prepMs = callStart - agentStart
@@ -467,6 +564,7 @@ wiki
         // { articles, gaps }, or a legacy bare array of articles.
         const response = parseAbsorbResponse(responseText)
         if ("error" in response) {
+          if (notes.length > 0) console.log(chalk.yellow(`    ${notes.length} wiki note(s) stay waiting`))
           console.log(chalk.red(`    ${response.error}`))
           console.log(chalk.dim(`    First 500 chars: ${responseText.slice(0, 500)}`))
           continue
@@ -475,10 +573,22 @@ wiki
         // Entries behind a refused save stay queued for the next run.
         const held = new Set<string>()
         const saved = new Set<string>()
+        const batchIds = new Set(unabsorbed.map((e) => e.id))
 
         for (const article of articles) {
           const now = new Date().toISOString().slice(0, 10)
-          const sources = Array.isArray(article.sources) ? article.sources : []
+          const cited = Array.isArray(article.sources) ? article.sources : []
+          // A note only patches, through its edits below. With notes in
+          // the prompt, an article must cite an entry from this batch: one
+          // citing nothing, or only notes, was written from a note and is
+          // refused (#832 review). In a notes-only run that is every
+          // article.
+          const sources = notes.length > 0 ? cited.filter((s) => batchIds.has(s)) : cited
+          if (notes.length > 0 && sources.length === 0) {
+            console.log(chalk.yellow(`    ! refused ${article.path}: cites no entry from this batch; a wiki note only patches`))
+            call.refused++
+            continue
+          }
           // Same title as an existing article: same subject, same file.
           const target = absorbTargetPath(article, catalog)
           if (target !== article.path) {
@@ -527,6 +637,47 @@ wiki
           call.articles++
           for (const id of sources) saved.add(id)
         }
+        // Answer the wiki notes: apply the patches the model proposed,
+        // then record each note's outcome with this run's id. A failed run
+        // records nothing: its notes stay waiting and come back.
+        if (notes.length > 0 && !runFailed) {
+          // A schedule reading the same inbox may have answered a note
+          // while this call ran; its answer stands. Checked before any
+          // patch is applied, so a note it rejected never edits a page.
+          const stillOurs = notes.filter((n) => {
+            const now = noteStore!.get(n.id)
+            if (now && now.status !== "open" && now.status !== "deferred") {
+              console.log(chalk.dim(`    note ${n.id} already ${now.status} by ${now.handled?.by ?? "another run"}; left as it is`))
+              return false
+            }
+            if (now?.handled && now.handled.at > startedAt) {
+              console.log(chalk.dim(`    note ${n.id} already deferred by ${now.handled.by} during this run; left as it is`))
+              return false
+            }
+            return true
+          })
+          // Only the articles shown in full may be patched.
+          const results = applyNoteAnswers(stillOurs, parseNoteAnswers(response.notes), agentWiki, {
+            agentId,
+            paths: new Set(covering.map((a) => a.path)),
+          })
+          let recorded = 0
+          for (const r of results) {
+            try {
+              noteStore!.handle(r.id, r.outcome, r.reason, agentId, noteRunId)
+              recorded++
+            } catch (e: any) {
+              console.log(chalk.yellow(`    ! note ${r.id}: could not record ${r.outcome}: ${e?.message ?? e}`))
+            }
+            const mark = r.outcome === "patched" ? chalk.green("~") : r.outcome === "rejected" ? chalk.red("x") : chalk.yellow("…")
+            console.log(`    ${mark} note ${r.id} ${r.outcome}: ${chalk.dim(r.reason.slice(0, 160))}`)
+          }
+          call.notesPatched = results.filter((r) => r.outcome === "patched").length
+          call.notesRecorded = recorded
+        } else if (notes.length > 0) {
+          console.log(chalk.yellow(`    ${notes.length} wiki note(s) stay waiting`))
+        }
+
         call.failed = runFailed
         // A held entry another saved article cites counts as absorbed and
         // is not offered again (#808), so the refused update is lost.
@@ -580,10 +731,11 @@ wiki
       } finally {
         call.at = new Date().toISOString()
         call.wallMs = Date.now() - callStart
+        if (call.failed) failedCalls++
         writeTelemetry(call)
       }
     }
-    writeTelemetry({ kind: "run", label, startedAt, endedAt: new Date().toISOString(), max: maxEntries, model })
+    writeTelemetry({ kind: "run", label, startedAt, endedAt: new Date().toISOString(), max: maxEntries, model, failed: failedCalls })
 
     console.log()
     if (opts.dryRun) {
@@ -594,6 +746,10 @@ wiki
         const pct = totalAbsorbed > 0 ? Math.round((totalWithPath / totalAbsorbed) * 100) : 0
         console.log(chalk.dim(`  ${totalWithPath}/${totalAbsorbed} carry graphPath (${pct}%) — wiki retrieval graph weight is now non-zero for those`))
       }
+    }
+    if (failedCalls > 0) {
+      console.log(chalk.red(`  ${failedCalls} absorb call(s) failed; their entries stay queued`))
+      process.exitCode = 1
     }
     console.log()
   })
@@ -769,6 +925,30 @@ wiki
     if (opts.json) console.log(JSON.stringify({ card, checks }, null, 2))
     else if (opts.out) console.log(chalk.green(`  scorecard written to ${opts.out}`))
     else console.log(md)
+  })
+
+// agentx wiki query-runs — how many queries ran, failed and how long they
+// took, from _query-runs.jsonl (#603).
+wiki
+  .command("query-runs")
+  .description("count wiki queries by outcome, with timing")
+  .option("--dir <path>", "wiki directory")
+  .option("--since <date>", "only queries on or after this date or time (ISO)")
+  .option("--json", "print the summary as JSON")
+  .action(async (opts) => {
+    const { QUERY_RUNS_FILE, summariseQueryRuns } = await import("@/wiki/query-runs")
+    const file = resolve(wikiDir(opts.dir), QUERY_RUNS_FILE)
+    if (!existsSync(file)) {
+      console.log(chalk.yellow(`  no queries recorded yet (${file})`))
+      return
+    }
+    const s = summariseQueryRuns(readFileSync(file, "utf-8"), typeof opts.since === "string" ? opts.since.trim() : undefined)
+    if (opts.json) { console.log(JSON.stringify(s, null, 2)); return }
+    console.log()
+    console.log(chalk.bold(`  ${s.total} queries · ${s.failed} failed · p50 ${(s.wallMsP50 / 1000).toFixed(1)} s · p95 ${(s.wallMsP95 / 1000).toFixed(1)} s`))
+    for (const [status, n] of Object.entries(s.byStatus).sort((a, b) => b[1] - a[1])) console.log(`  ${status.padEnd(14)} ${n}`)
+    console.log(chalk.dim(`  from: ${Object.entries(s.bySource).map(([src, n]) => `${src} ${n}`).join(" · ")}`))
+    console.log()
   })
 
 // agentx wiki absorb-runs — time and cost per absorb run label, from
@@ -1854,6 +2034,152 @@ wiki
     }
   })
 
+// agentx wiki curate / versions / restore / curator — the page curator
+// (#818) from the terminal. `curate` asks the running daemon, which runs
+// the agent and writes the page exactly as the bubble on the page does.
+async function curatorDaemon(): Promise<{ url: string; headers: Record<string, string> }> {
+  const { loadDaemonConfig } = await import("@/daemon/config")
+  const cfg = loadDaemonConfig()
+  const url = cfg.dashboard?.daemonUrl?.replace(/\/+$/, "") || "http://127.0.0.1:18800"
+  const headers: Record<string, string> = { "Content-Type": "application/json" }
+  if (cfg.dashboard?.token) headers.Authorization = `Bearer ${cfg.dashboard.token}`
+  return { url, headers }
+}
+
+function printCuratorEdit(edit: any): void {
+  console.log(chalk.bold(`  Page changed: +${edit.added} / −${edit.removed} lines`))
+  for (const l of edit.diff || []) {
+    const line = `    ${l.op === " " ? " " : l.op} ${l.text}`
+    console.log(l.op === "+" ? chalk.green(line) : l.op === "-" ? chalk.red(line) : chalk.dim(line))
+  }
+  if (edit.sources?.length) {
+    console.log(chalk.bold("  Sources"))
+    for (const s of edit.sources) console.log(`    - ${s}`)
+  } else {
+    console.log(chalk.yellow("  No sources were cited for this change."))
+  }
+  if (edit.version) console.log(chalk.dim(`  Undo: agentx wiki restore <agent> <page> ${edit.version}`))
+}
+
+wiki
+  .command("curate <agent> <titleOrPath> <instruction>")
+  .description("ask the page curator agent to research and edit one page (needs the daemon)")
+  .option("--dir <path>", "wiki directory")
+  .option("--timeout <minutes>", "stop waiting after this long", "30")
+  .action(async (agentId, titleOrPath, instruction, opts) => {
+    const hub = getHub(opts.dir)
+    if (refuseCopiedAgent(hub, agentId)) return
+    const relPath = resolveArticlePath(hub.getAgentWiki(agentId), titleOrPath, agentId)
+    if (!relPath) {
+      console.log(chalk.yellow(`  no page matches "${titleOrPath}" in ${agentId}'s wiki.`))
+      process.exitCode = 1
+      return
+    }
+    const { url, headers } = await curatorDaemon()
+    const call = async (method: string, path: string, body?: unknown) => {
+      const r = await fetch(url + path, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) })
+      const data: any = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`)
+      return data
+    }
+    let started: any
+    try {
+      started = await call("POST", "/api/wiki/curate", { agent: agentId, path: relPath, message: instruction })
+    } catch (e: any) {
+      console.log(chalk.red(`  ${e.message?.includes("fetch failed") ? `the daemon at ${url} is not running` : e.message}`))
+      process.exitCode = 1
+      return
+    }
+    console.log(chalk.dim(`  ${started.curator} is working on ${relPath}…`))
+    const qs = `?agent=${encodeURIComponent(agentId)}&path=${encodeURIComponent(relPath)}`
+    const deadline = Date.now() + Number(opts.timeout || 30) * 60_000
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000))
+      const state = await call("GET", `/api/wiki/curate${qs}`).catch(() => null)
+      const msg = state?.messages?.find((m: any) => m.id === started.id)
+      if (!msg || msg.status === "pending") continue
+      console.log(msg.status === "error" ? chalk.red(`  ${msg.text}`) : `  ${msg.text}`)
+      if (msg.edit && (msg.edit.added || msg.edit.removed)) printCuratorEdit(msg.edit)
+      if (msg.status === "error") process.exitCode = 1
+      return
+    }
+    console.log(chalk.yellow("  still working; the result will show in the chat on the page."))
+  })
+
+wiki
+  .command("versions <agent> <titleOrPath>")
+  .description("list the saved earlier versions of one page, newest first")
+  .option("--dir <path>", "wiki directory")
+  .action((agentId, titleOrPath, opts) => {
+    const store = getHub(opts.dir).getAgentWiki(agentId)
+    const relPath = resolveArticlePath(store, titleOrPath, agentId)
+    if (!relPath) { console.log(chalk.yellow(`  no page matches "${titleOrPath}" in ${agentId}'s wiki.`)); process.exitCode = 1; return }
+    const versions = store.getVersions(relPath)
+    if (!versions.length) { console.log(chalk.dim(`  ${relPath} has no earlier versions.`)); return }
+    console.log(chalk.bold(`  ${relPath}`))
+    for (const v of versions) console.log(`    ${v.timestamp}`)
+  })
+
+wiki
+  .command("restore <agent> <titleOrPath> [version]")
+  .description("put a page back to an earlier version (default: the newest); the current text is kept as a version")
+  .option("--dir <path>", "wiki directory")
+  .action((agentId, titleOrPath, version, opts) => {
+    const hub = getHub(opts.dir)
+    if (refuseCopiedAgent(hub, agentId)) return
+    const store = hub.getAgentWiki(agentId)
+    const relPath = resolveArticlePath(store, titleOrPath, agentId)
+    if (!relPath) { console.log(chalk.yellow(`  no page matches "${titleOrPath}" in ${agentId}'s wiki.`)); process.exitCode = 1; return }
+    const target = version || store.getVersions(relPath)[0]?.timestamp
+    let restored = false
+    try {
+      restored = !!target && store.restoreVersion(relPath, target)
+    } catch (e) {
+      if (!(e instanceof LockBusyError)) throw e
+      console.log(chalk.red(`  ${relPath} was not restored: the page was busy; run again.`))
+      process.exitCode = 1
+      return
+    }
+    if (!restored) {
+      console.log(chalk.red(`  no version ${target ? `"${target}" ` : ""}of ${relPath}; see agentx wiki versions ${agentId} "${titleOrPath}"`))
+      process.exitCode = 1
+      return
+    }
+    console.log(chalk.green(`  ✓ ${relPath} restored to ${target}.`))
+  })
+
+wiki
+  .command("curator")
+  .description("show or change the page curator: the chat bubble on wiki pages")
+  .option("--on", "show the bubble on wiki pages")
+  .option("--off", "hide the bubble and refuse curator requests")
+  .option("--agent <id>", "agent that answers on every page")
+  .option("--owner", "let each page's owner agent answer (the default)")
+  .action(async (opts) => {
+    if (opts.on && opts.off) { console.log(chalk.red("  pick --on or --off, not both")); process.exitCode = 1; return }
+    if (opts.agent && opts.owner) { console.log(chalk.red("  pick --agent or --owner, not both")); process.exitCode = 1; return }
+    const { loadDaemonConfig } = await import("@/daemon/config")
+    if (opts.on || opts.off || opts.agent || opts.owner) {
+      if (opts.agent) {
+        const agents = Object.keys(loadDaemonConfig().agents || {})
+        if (!agents.includes(opts.agent)) { console.log(chalk.red(`  no agent "${opts.agent}" in agentx.json`)); process.exitCode = 1; return }
+      }
+      const { mutateAgentxConfig } = await import("@/daemon/config-mutate")
+      mutateAgentxConfig((cfg) => {
+        cfg.wiki = cfg.wiki || {}
+        cfg.wiki.curator = cfg.wiki.curator || {}
+        if (opts.on) cfg.wiki.curator.enabled = true
+        if (opts.off) cfg.wiki.curator.enabled = false
+        if (opts.agent) cfg.wiki.curator.agent = opts.agent
+        if (opts.owner) delete cfg.wiki.curator.agent
+        return "wiki.curator updated"
+      })
+    }
+    const c = loadDaemonConfig().wiki?.curator ?? { enabled: true }
+    console.log(`  Page curator: ${c.enabled ? chalk.green("on") : chalk.yellow("off")}`)
+    console.log(`  Answers:      ${c.agent ? c.agent : "each page's owner agent"}`)
+  })
+
 // agentx wiki patch — LLM-driven minimal edit from a free-form
 // instruction. "quiz without the question" — when you already know
 // what's wrong and just want the patch applied without hunting for
@@ -2888,21 +3214,33 @@ wiki
 
 wiki
   .command("query <question>")
-  .description("agentic wiki query — walks the catalog + wikilink graph, synthesizes an answer")
+  .description("agentic wiki query — picks pages from their one-line summaries, reads live state at the source, then answers; walks the catalog + wikilink graph where no summaries exist")
   .option("--dir <path>", "wiki directory")
   .option("--agent <id>", "which agent's wiki to search first (default: the calling agent, else the first one with a catalog)")
-  .option("--selector-model <m>", "candidate-selection model", "haiku")
-  .option("--synth-model <m>", "synthesis model", "sonnet")
-  .option("--max-candidates <n>", "candidates from selector", "3")
-  .option("--max-hops <n>", "wikilink hops from candidates", "2")
-  .option("--max-articles <n>", "cap on total articles walked", "8")
+  .option("--method <m>", "how pages are picked: auto, summaries or catalog (default: wiki.query.method)")
+  .option("--no-live", "skip the live read of the summaries method")
+  .option("--linked <n>", "also open up to n pages linked from the picked pages (summaries method; default: wiki.query.linkedPages)")
+  .option("--no-notes", "leave the agent's own notes out (wiki.query.notes)")
+  .option("--selector-model <m>", "candidate-selection model (default haiku)")
+  .option("--synth-model <m>", "synthesis model (default sonnet)")
+  .option("--max-candidates <n>", "candidates from selector (catalog method)", "3")
+  .option("--max-hops <n>", "wikilink hops from candidates (catalog method)", "2")
+  .option("--max-articles <n>", "cap on total articles walked (catalog method)", "8")
   .option("--json", "emit full result as JSON (for A/B harnesses)")
   .option("--trace", "print selector + walk trace")
   .option("--own-only", "search only the agent's own articles, not the shared wiki")
   .action(async (question, opts) => {
     const { agenticQuery } = await import("@/wiki/query")
+    const { noteSourceFor } = await import("@/wiki/query-settings")
+    const { QUERY_RUNS_FILE, queryFailed, recordQueryRun, timedQuery } = await import("@/wiki/query-runs")
+    const settings = await querySettingsFor(opts)
+    if (!settings) return
     const hub = getHub(opts.dir)
     const agents = opts.agent ? [opts.agent] : hub.listAgents()
+    // Every query leaves one line in _query-runs.jsonl, and one that could
+    // not run exits 1, so a failure is counted and a caller can see it (#603).
+    const runsFile = resolve(hub.getBaseDir(), QUERY_RUNS_FILE)
+    const queryStart = Date.now()
 
     // The named (or calling) agent, or the first one that has a catalog. A named agent
     // with no articles of its own still searches the shared wiki.
@@ -2917,18 +3255,26 @@ wiki
     }
     if (!chosen) {
       console.log(chalk.yellow("  No agent has a catalog yet. Run `agentx wiki status` or migrate first."))
+      recordQueryRun(runsFile, { at: new Date().toISOString(), agent: named || "", status: "no-catalog", source: "cli", wallMs: Date.now() - queryStart })
+      process.exitCode = 1
       return
     }
 
-    const store = hub.getAgentWiki(chosen)
-    const result = await agenticQuery(question, store, chosen, {
+    const agent = chosen
+    const store = hub.getAgentWiki(agent)
+    const shared = opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(agent)
+    const result = await timedQuery(runsFile, agent, "cli", () => agenticQuery(question, store, agent, {
       selectorModel: opts.selectorModel,
       synthModel: opts.synthModel,
       maxCandidates: parseInt(opts.maxCandidates),
       maxHops: parseInt(opts.maxHops),
       maxArticles: parseInt(opts.maxArticles),
-      shared: opts.ownOnly || !(await sharedQueryOn()) ? undefined : hub.sharedScope(chosen),
-    })
+      shared,
+      method: settings.method,
+      summaries: settings.summaries,
+      notes: noteSourceFor(settings, agent),
+    }))
+    if (queryFailed(result.status)) process.exitCode = 1
 
     if (opts.json) {
       console.log(JSON.stringify(result, null, 2))
@@ -2947,6 +3293,10 @@ wiki
 
     console.log(result.answer)
     console.log()
+    if (result.basis === "search") {
+      console.log(chalk.dim("  No wiki page was used: the answer comes from a search at the source."))
+      console.log()
+    }
     if (result.citations.length) {
       console.log(chalk.dim("  Citations:"))
       for (const c of result.citations) {
@@ -2955,8 +3305,16 @@ wiki
       }
       console.log()
     }
+    if (result.live?.length) {
+      console.log(chalk.dim("  Read live at the source:"))
+      for (const l of result.live) console.log(chalk.dim(`    - ${l.line}`))
+      console.log()
+    }
 
     if (opts.trace && result.trace) {
+      if (result.method === "summaries") {
+        console.log(chalk.dim(`  method: summaries   live reads: ${result.liveAsked ?? 0} asked, ${result.live?.length ?? 0} answered   plan: ${result.trace.planMs ?? 0}ms   reads: ${result.trace.liveMs ?? 0}ms`))
+      }
       console.log(chalk.dim(`  selector: ${result.trace.selectorMs}ms   synthesis: ${result.trace.synthesisMs}ms`))
       console.log(chalk.dim(`  candidates: ${result.candidates.map(c => c.title).join(" | ") || "(none)"}`))
       if (result.walked.length > result.candidates.length) {
@@ -2979,12 +3337,20 @@ wiki
   .option("--own-only", "search only the agent's own articles, to measure without the shared wiki")
   .option("--out <file>", "write the report as JSON to this file")
   .option("--compare <files...>", "compare two saved reports (before after) instead of running")
-  .option("--selector-model <m>", "candidate-selection model", "haiku")
-  .option("--synth-model <m>", "synthesis model", "sonnet")
+  .option("--method <m>", "how pages are picked: auto, summaries or catalog (default: wiki.query.method)")
+  .option("--no-live", "skip the live read of the summaries method")
+  .option("--linked <n>", "also open up to n pages linked from the picked pages (summaries method; default: wiki.query.linkedPages)")
+  .option("--no-notes", "leave the agent's own notes out (wiki.query.notes)")
+  .option("--selector-model <m>", "candidate-selection model (default haiku)")
+  .option("--synth-model <m>", "synthesis model (default sonnet)")
   .option("--json", "print the report as JSON")
   .action(async (opts) => {
-    const { parseQuestionSet, buildReport, compareReports } = await import("@/wiki/score")
+    const { parseQuestionSet, buildReport, compareReports, runCost } = await import("@/wiki/score")
     const pct = (n: number) => `${Math.round(n * 100)}%`
+    const secs = (ms?: number) => (ms === undefined ? "?" : `${(ms / 1000).toFixed(1)}s`)
+    const usd = (n?: number) => (n === undefined ? "?" : `$${n.toFixed(3)}`)
+    const costLine = (c: { meanMs?: number; meanCostUsd?: number; unpriced: number }) =>
+      `${secs(c.meanMs)} and ${usd(c.meanCostUsd)} per question${c.unpriced ? ` (${c.unpriced} without a cost)` : ""}`
 
     if (opts.compare) {
       if (opts.compare.length !== 2) {
@@ -2997,6 +3363,17 @@ wiki
       if (opts.json) { console.log(JSON.stringify(diff, null, 2)); return }
       console.log()
       console.log(chalk.bold(`  ${pct(diff.before)} → ${pct(diff.after)}`))
+      console.log(chalk.dim(`  before: ${costLine(diff.cost.before)}`))
+      console.log(chalk.dim(`  after:  ${costLine(diff.cost.after)}`))
+      if (diff.changed === "unknown") {
+        console.log(chalk.yellow("  ! A report records no settings, so what changed between the runs is unknown."))
+      } else {
+        console.log(chalk.dim(`  changed: ${diff.changed.join("; ") || "nothing"}`))
+        if (diff.changed.length > 1) console.log(chalk.yellow("  ! More than one setting changed: the difference can't be put down to one of them."))
+      }
+      if (diff.onlyBefore.length || diff.onlyAfter.length) {
+        console.log(chalk.yellow(`  ! The runs asked different questions. Only before: ${diff.onlyBefore.join(", ") || "none"}. Only after: ${diff.onlyAfter.join(", ") || "none"}.`))
+      }
       for (const d of diff.deltas) {
         if (d.before === d.after) continue
         const mark = d.after > d.before ? chalk.green("▲") : chalk.red("▼")
@@ -3020,24 +3397,52 @@ wiki
       return
     }
     const questions = parseQuestionSet(readFileSync(resolve(opts.questions), "utf-8"))
-    const { agenticQuery } = await import("@/wiki/query")
+    const { agenticQuery, CATALOG_SELECTOR_MODEL, CATALOG_SYNTH_MODEL } = await import("@/wiki/query")
+    const { noteSourceFor } = await import("@/wiki/query-settings")
+    const { meteredModelCall } = await import("@/wiki/model-call")
+    const settings = await querySettingsFor(opts)
+    if (!settings) return
     const hub = getHub(opts.dir)
     const shared = !opts.ownOnly
     const answers = []
     for (const q of questions) {
+      // Each question gets its own meter. Only the summaries method's calls
+      // go through it; the catalog method's cost stays unknown.
+      const spend = { calls: 0, usd: 0, unpriced: 0 }
+      const started = Date.now()
       const r = await agenticQuery(q.question, hub.getAgentWiki(agent), agent, {
         selectorModel: opts.selectorModel,
         synthModel: opts.synthModel,
         shared: shared ? hub.sharedScope(agent) : undefined,
+        method: settings.method,
+        summaries: settings.summaries,
+        notes: noteSourceFor(settings, agent),
+        call: meteredModelCall(spend),
       })
-      answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path) })
-      if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status}\n`))
+      const ms = Date.now() - started
+      const costUsd = r.method === "summaries" && spend.unpriced === 0 ? spend.usd : undefined
+      answers.push({ q, answer: r.answer || r.error || "", status: r.status, citations: r.citations.map((c) => c.path), method: r.method ?? "catalog", ms, costUsd })
+      if (!opts.json) process.stderr.write(chalk.dim(`  ${q.id} ${r.status} ${secs(ms)} ${usd(costUsd)}\n`))
     }
-    const report = buildReport({ questions: opts.questions, agent, shared }, answers)
+    const report = buildReport({
+      questions: opts.questions, agent, shared,
+      settings: {
+        method: settings.method,
+        linkedPages: settings.summaries.linkedPages,
+        linkedChars: settings.summaries.linkedChars,
+        live: settings.summaries.live.enabled,
+        notes: settings.notes.enabled,
+        navigatorModel: opts.selectorModel ?? settings.summaries.navigatorModel,
+        answerModel: opts.synthModel ?? settings.summaries.answerModel,
+        catalogSelectorModel: opts.selectorModel ?? CATALOG_SELECTOR_MODEL,
+        catalogSynthModel: opts.synthModel ?? CATALOG_SYNTH_MODEL,
+      },
+    }, answers)
     if (opts.out) writeFileSync(resolve(opts.out), `${JSON.stringify(report, null, 2)}\n`)
     if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
     console.log()
     console.log(chalk.bold(`  ${agent}: ${pct(report.score)} · ${report.full}/${report.results.length} questions fully answered${shared ? "" : " (own articles only)"}`))
+    console.log(chalk.dim(`  ${costLine(runCost(report))}`))
     for (const r of report.results) {
       const mark = r.missing.length === 0 ? chalk.green("✓") : r.found.length ? chalk.yellow("~") : chalk.red("✗")
       console.log(`  ${mark} ${r.id} ${pct(r.score)}  ${chalk.dim(r.question.slice(0, 80))}`)

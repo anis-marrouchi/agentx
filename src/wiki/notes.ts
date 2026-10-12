@@ -39,6 +39,9 @@ export const NOTE_LIMITS = {
 /** Times a note may be deferred before the inbox stops offering it. */
 export const DEFAULT_MAX_DEFERRALS = 3
 
+/** `handled.by` when the inbox, not a run, deferred a note a run skipped. */
+export const SKIPPED_BY = "agentx"
+
 export interface WikiNote {
   id: string
   /** Agent that posted the note. */
@@ -58,6 +61,11 @@ export interface WikiNote {
   status: NoteStatus
   /** The runs that were given this note as input, newest last. */
   listedIn?: string[]
+  /** The run last given this note, until something is recorded for it. */
+  awaiting?: string
+  /** Store-wide count of the listing that last gave out this note. Unlike
+   *  `listedIn` it is never trimmed, so it can order a fair rotation. */
+  lastListedSeq?: number
   /** How the run used it. Kept for deferred notes too, which come back. */
   handled?: { at: string; by: string; outcome: NoteOutcome; reason: string; runId?: string }
   /** How many times a run deferred it. */
@@ -189,17 +197,37 @@ export class NoteStore {
 
   /**
    * The notes a run should read: open ones first, then ones an earlier run
-   * deferred, each oldest first. Marks each as listed in `runId`.
+   * deferred; within each, never-listed notes first, then the least recently
+   * listed, then the oldest. Marks each as listed in `runId`.
    *
    * Open notes go first so that notes a run keeps deferring (a source that
-   * can never be checked) cannot fill every slot and hide new ones. A note
-   * deferred `maxDeferrals` times expires here: it stays on file with its
-   * last reason, but is no longer offered.
+   * can never be checked) cannot fill every slot and hide new ones. One
+   * slot is still kept for deferred notes when a run gets more than one,
+   * so a steady stream of new notes cannot hide them either (#836).
+   *
+   * A note an earlier run was given and recorded nothing for counts as
+   * deferred by that run: otherwise a run that keeps skipping notes would
+   * leave them open forever, holding every slot (#836). A note deferred
+   * `maxDeferrals` times expires here: it stays on file with its last
+   * reason, but is no longer offered.
    */
   takeForRun(inbox: string, runId: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS, now: Date = new Date()): WikiNote[] {
     const f = this.load()
     if (f.unreadable) return []
     let changed = false
+    for (const n of f.notes) {
+      if (n.to !== inbox || !n.awaiting || n.awaiting === runId) continue
+      if (isWaiting(n)) {
+        n.deferrals = (n.deferrals ?? 0) + 1
+        n.status = "deferred"
+        n.handled = {
+          at: now.toISOString(), by: SKIPPED_BY, outcome: "deferred",
+          reason: `run ${n.awaiting} was given this note and recorded nothing`, runId: n.awaiting,
+        }
+      }
+      delete n.awaiting
+      changed = true
+    }
     for (const n of f.notes) {
       if (n.to === inbox && n.status === "deferred" && (n.deferrals ?? 1) >= maxDeferrals) {
         n.status = "expired"
@@ -207,19 +235,25 @@ export class NoteStore {
         changed = true
       }
     }
-    const oldestFirst = (a: WikiNote, b: WikiNote) => a.posted.localeCompare(b.posted)
-    const mine = f.notes.filter((n) => n.to === inbox)
-    const picked = [
-      ...mine.filter((n) => n.status === "open").sort(oldestFirst),
-      ...mine.filter((n) => n.status === "deferred").sort(oldestFirst),
-    ].slice(0, Math.max(0, max))
+    const picked = pickForRun(f.notes, inbox, max)
+    const seq = f.notes.reduce((m, n) => Math.max(m, n.lastListedSeq ?? 0), 0) + 1
     for (const n of picked) {
       n.listedIn = [...(n.listedIn ?? []), runId].slice(-NOTE_LIMITS.listedIn)
+      n.lastListedSeq = seq
+      n.awaiting = runId
     }
     if (picked.length > 0 || changed) {
       try { this.save(f) } catch { /* listing is best effort; the run still gets its notes */ }
     }
     return picked
+  }
+
+  /** The notes `takeForRun` would give, without marking or expiring any:
+   *  for a dry run's preview. */
+  peekForRun(inbox: string, max: number, maxDeferrals: number = DEFAULT_MAX_DEFERRALS): WikiNote[] {
+    const f = this.load()
+    if (f.unreadable) return []
+    return pickForRun(f.notes.filter((n) => !(n.status === "deferred" && (n.deferrals ?? 1) >= maxDeferrals)), inbox, max)
   }
 
   /** Record what the run did with a note. */
@@ -231,12 +265,34 @@ export class NoteStore {
     const f = this.load()
     const note = f.notes.find((n) => n.id === id) ?? matchPrefix(f.notes, id)
     if (!note) throw new Error(`no note "${id}"`)
-    if (outcome === "deferred") note.deferrals = (note.deferrals ?? 0) + 1
+    // A run that answers late, after the next run already counted its skip
+    // as a deferral, must not be counted twice.
+    const skipCounted = note.handled?.by === SKIPPED_BY && !note.awaiting && (!runId || note.handled.runId === runId)
+    if (outcome === "deferred" && !skipCounted) note.deferrals = (note.deferrals ?? 0) + 1
+    delete note.awaiting
     note.status = outcome
     note.handled = { at: now.toISOString(), by, outcome, reason: why, ...(runId ? { runId } : {}) }
     this.save(f)
     return note
   }
+}
+
+/** Open notes first, then deferred ones. Within each: least recently listed
+ *  first, then oldest, a round-robin. An open note a run keeps skipping is
+ *  never deferred, so it never expires, and must not hold its place ahead of
+ *  newer notes on every run. The key is a counter rather than a clock so two
+ *  runs in the same millisecond still rotate. */
+function pickForRun(notes: WikiNote[], inbox: string, max: number): WikiNote[] {
+  const fairOrder = (a: WikiNote, b: WikiNote) =>
+    (a.lastListedSeq ?? 0) - (b.lastListedSeq ?? 0) || a.posted.localeCompare(b.posted)
+  const mine = notes.filter((n) => n.to === inbox)
+  const open = mine.filter((n) => n.status === "open").sort(fairOrder)
+  const deferred = mine.filter((n) => n.status === "deferred").sort(fairOrder)
+  // One slot stays for deferred notes when a run gets more than one, so a
+  // steady stream of new notes cannot hide them (#836).
+  const slots = Math.max(0, max)
+  const openSlots = deferred.length > 0 && slots > 1 ? slots - 1 : slots
+  return [...open.slice(0, openSlots), ...deferred].slice(0, slots)
 }
 
 /** Open, or deferred by an earlier run: the run still owes it an answer. */

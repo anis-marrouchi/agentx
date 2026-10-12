@@ -64,6 +64,7 @@ const shots = [
   { name: "settings/actions", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="actions"]' }, { wait: "#tab-actions details:not(.add-form)" }, { click: "#tab-actions details:not(.add-form) summary" }, { type: "#tab-actions details:not(.add-form) input", text: "the team" }, { click: "#tab-actions details:not(.add-form) button.primary" }, { wait: "#tab-actions [data-ac-msg].ok" }, { scroll: "#tab-actions" }] },
   { name: "settings/advanced-tree", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="advanced"]' }, { wait: ".ax-jv-line" }, { click: "#jv-collapse-all" }, { click: ".ax-jv-toggle" }, { click: '.ax-jv-line[data-path="agents"] .ax-jv-toggle' }, { click: '.ax-jv-line[data-path="agents.cx"] .ax-jv-toggle' }, { scroll: "#tab-advanced" }] },
   { name: "channels/gitlab", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="channels"]' }, { clickText: "GitLab", within: "#ch-devtools .ax-connector" }, { wait: "#gl-env" }, { type: "#gl-env", text: "GITLAB_TOKEN" }, { scroll: "#ch-gitlab" }] },
+  { name: "agent-memory/wiki-absorb", path: "/admin/agents/cx", wait: '.ax-opts[data-field="wikiAbsorb"] button.is-active', steps: [{ scroll: '.ax-opts[data-field="wikiAbsorb"]' }] },
   { name: "agents/personality", path: "/admin/agents/cx", wait: "#f-triggers .ax-trig-pill", steps: [{ click: 'a[data-tab="identity"]' }] },
   { name: "setup/filled", path: "/setup", wait: "#wizard", steps: [
     { fill: '[name="agentName"]', text: "Support" }, { fill: '[name="agentId"]', text: "support" },
@@ -81,6 +82,15 @@ const shots = [
   { name: "live/running-build", path: "/live", wait: ".ax-build", clipTo: ".ax-topbar__right" },
   // Last: the scripted reply takes a minute, so later shots would show it running.
   { name: "live/running-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--update" }] },
+  // The same scripted task, still running: its pause button, then paused.
+  { name: "live/pause-task", path: "/live", wait: ".ax-task-action--pause", clipTo: ".ax-agent:has(.ax-task-action--pause)" },
+  { name: "live/stopped-task", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped details" }, { click: ".ax-node__stopped details summary" }], clipTo: ".ax-node__stopped" },
+  // Every task in a workflow (#858): switched on through the card itself,
+  // then a task on the Live tab shows its run's step; switched off again.
+  { name: "workflows/required-settings", path: "/workflows", wait: "#wf-required", steps: [{ click: "#wf-required > summary" }, { wait: "#wf-required-agents select" }, { click: "#wf-required-enabled" }, { waitText: ["#wf-required-note", "Saved"] }, { click: ".ax-wf__req-agents > summary" }], clipTo: ".ax-wf__required" },
+  { name: "live/running-task-workflow", path: "/live", wait: ".ax-agent__name", steps: [{ task: { agent: "cx", message: "Go through the demo backlog and tell me what is ready." } }, { wait: ".ax-agent__task-wf" }, { post: { path: "/api/workflows/required", body: { enabled: false } } }], clipTo: ".ax-agent.is-handling" },
+  // A workflow step paused by a stop signal: the run waits at that step (#870).
+  { name: "live/stopped-workflow-step", path: "/live", wait: ".ax-agent__name", steps: [{ workflow: "demo-backlog" }, { wait: ".ax-task-action--pause" }, { pause: "cx" }, { wait: ".ax-node__stopped-item:has(.ax-node__stopped-wf) details" }, { click: ".ax-node__stopped-item:has(.ax-node__stopped-wf) details summary" }], clipTo: ".ax-node__stopped-item:has(.ax-node__stopped-wf)" },
 ]
 
 function client(ws) {
@@ -148,6 +158,12 @@ try {
     await sleep(700)
     for (const step of shot.steps || []) {
       if (step.wait) await wait(step.wait)
+      if (step.waitText) {
+        const [sel, text] = step.waitText
+        for (let i = 0; i < 200 && !(await evaluate(`(document.querySelector(${JSON.stringify(sel)})?.textContent || "").includes(${JSON.stringify(text)})`)); i++) await sleep(150)
+      }
+      // A dashboard API call, as the page would make it.
+      if (step.post) await evaluate(`fetch(${JSON.stringify(step.post.path)}, { method: "POST", headers: { "Content-Type": "application/json", "X-Requested-With": "agentx-board" }, body: ${JSON.stringify(JSON.stringify(step.post.body))} }).then(r => r.status)`)
       if (step.click) { await wait(step.click); await evaluate(`document.querySelector(${JSON.stringify(step.click)}).click()`) }
       if (step.clickText) await evaluate(`(() => { const b = [...document.querySelectorAll(${JSON.stringify(step.within || "button")})].find(e => e.textContent.trim() === ${JSON.stringify(step.clickText)} || (${JSON.stringify(!!step.within)} && e.textContent.includes(${JSON.stringify(step.clickText)}))); if (!b) throw Error('Button missing'); b.click() })()`)
       if (step.type) {
@@ -164,6 +180,19 @@ try {
       if (step.select) await evaluate(`(() => { const e = document.querySelector(${JSON.stringify(step.select)}); e.value = ${JSON.stringify(step.value)}; e.dispatchEvent(new Event('change', { bubbles: true })) })()`)
       // Start a real scripted task on the demo daemon without waiting for it.
       if (step.task) fetch("http://127.0.0.1:18921/task", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(step.task) }).catch(() => {})
+      // Start a manual run of a seeded workflow on the demo daemon (#870).
+      if (step.workflow) {
+        const r = await fetch(`http://127.0.0.1:18921/workflows/${encodeURIComponent(step.workflow)}/run`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" })
+        if (!r.ok) throw new Error(`Workflow run failed: ${r.status} ${await r.text()}`)
+      }
+      // Pause the agent's running task with a stop signal (#857).
+      if (step.pause) {
+        const agents = await (await fetch("http://127.0.0.1:18921/agents")).json()
+        const run = agents.find(a => a.id === step.pause)?.runningTasks?.[0]
+        if (!run) throw new Error(`No running task on ${step.pause}`)
+        const r = await fetch("http://127.0.0.1:18921/api/signals/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ taskId: run.id, reason: "deploy at 15:00" }) })
+        if (!r.ok) throw new Error(`Pause failed: ${r.status} ${await r.text()}`)
+      }
       if (step.scroll) await evaluate(`window.scrollTo(0, document.querySelector(${JSON.stringify(step.scroll)}).getBoundingClientRect().top + window.scrollY - 110)`)
       await sleep(300)
     }

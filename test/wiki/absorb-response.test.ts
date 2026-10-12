@@ -12,7 +12,7 @@ const article = (content: string) => ({
 describe("parseAbsorbResponse", () => {
   it("reads articles and gaps", () => {
     const reply = JSON.stringify({ articles: [article("ok")], gaps: ["Voice app"] })
-    expect(parseAbsorbResponse(reply)).toEqual({ articles: [article("ok")], gaps: ["Voice app"] })
+    expect(parseAbsorbResponse(reply)).toEqual({ articles: [article("ok")], gaps: ["Voice app"], notes: [] })
   })
 
   // The 2026-10-07 A/B: a faithful article quoted "`${`" from the review,
@@ -35,7 +35,7 @@ describe("parseAbsorbResponse", () => {
   })
 
   it("accepts a legacy bare array", () => {
-    expect(parseAbsorbResponse(JSON.stringify([article("x")]))).toEqual({ articles: [article("x")], gaps: [] })
+    expect(parseAbsorbResponse(JSON.stringify([article("x")]))).toEqual({ articles: [article("x")], gaps: [], notes: [] })
   })
 
   it("reports a reply with no JSON", () => {

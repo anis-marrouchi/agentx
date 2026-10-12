@@ -77,6 +77,10 @@ export function mergeOntology(base: Ontology, over: Record<string, unknown>, err
     else errors.push("classify must be a list")
   }
   if (typeof over.fallback_type === "string") out.fallback_type = over.fallback_type
+  if (over.agent_names !== undefined) {
+    if (Array.isArray(over.agent_names)) out.agent_names = over.agent_names.filter((n): n is string => typeof n === "string" && !!n.trim())
+    else errors.push("agent_names must be a list")
+  }
   return out
 }
 
@@ -113,6 +117,16 @@ export function checkOntology(o: Ontology): string[] {
   }
   if (!types.has(o.fallback_type)) errors.push(`fallback_type: unknown type "${o.fallback_type}"`)
   if (!IMPORTANCE_LEVELS.includes(o.importance.default)) errors.push(`importance.default: unknown level "${o.importance.default}"`)
+  for (const r of o.importance.rules ?? []) {
+    if (!IMPORTANCE_LEVELS.includes(r.level)) errors.push(`importance.rules: unknown level "${r.level}"`)
+    if (!r.title && !r.tags?.length) errors.push(`importance.rules: a rule for "${r.level}" needs a title or tags`)
+    if (r.title) {
+      try { new RegExp(r.title, "i") } catch { errors.push(`importance.rules: bad title pattern "${r.title}"`) }
+    }
+    if (r.unless) {
+      try { new RegExp(r.unless, "i") } catch { errors.push(`importance.rules: bad unless pattern "${r.unless}"`) }
+    }
+  }
   if (o.sidebar.pins.length > o.sidebar.pins_max) {
     errors.push(`sidebar.pins: ${o.sidebar.pins.length} pins, only the first ${o.sidebar.pins_max} are shown`)
   }

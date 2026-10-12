@@ -74,7 +74,12 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/wiki/articles" || path === "/wiki/article" ||
     // Notes agents leave for the wiki observe/sweep run (#825): what an
     // agent saw, kept inside the fleet. A peer forwards one with its token.
-    path === "/wiki/notes"
+    path === "/wiki/notes" ||
+    // The wiki page curator: runs an agent turn and rewrites a page (#818).
+    path === "/api/wiki/curate" || path === "/api/wiki/curate/restore" ||
+    // Stopped tasks and their resume plans (#857): each holds the request
+    // and what the agent did. Stop and resume are control posts below.
+    path === "/api/signals/stopped" || path.startsWith("/api/signals/stopped/")
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
@@ -93,7 +98,9 @@ export function isControlPost(path: string): boolean {
     /^\/mesh\/guests\/[^/]+\/(pause|resume|end|update)$/.test(path) ||
     /^\/crons\/[^/]+\/enabled$/.test(path) ||
     // Stopping a workflow run (#788).
-    /^\/workflow-runs\/[^/]+\/cancel$/.test(path)
+    /^\/workflow-runs\/[^/]+\/cancel$/.test(path) ||
+    // Stop and resume signals (#857).
+    path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop"
 }
 
 /** True when the socket peer is on this host. Used by loopback-only

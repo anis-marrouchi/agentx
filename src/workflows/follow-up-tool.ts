@@ -12,6 +12,8 @@ import { callerHeaders } from "@/calls/service"
 //   done     the step you own is finished (evidence)
 //   blocked  your step cannot go on without the owner (reason)
 //   propose  ask the owner to keep a workflow as a reusable template
+//   plan     write or change the plan of the run your task is wrapped in
+//   step     report a step of that plan (started, done, failed)
 // It talks to the daemon's /follow-up endpoints.
 
 export interface WorkflowToolDeps {
@@ -84,7 +86,7 @@ export async function runWorkflowTool(args: Record<string, unknown>, deps: Workf
         action, agentId: caller.agentId,
         workflowId: args.workflowId, title: args.title, description: args.description, tags: args.tags, inputs: args.inputs,
         steps: args.steps, edges: args.edges, approval: args.approval, autoStart: args.autoStart, requestId: args.requestId,
-        runId: args.runId, step: args.step, evidence: args.evidence, note: args.note, reason: args.reason, fromRun: args.fromRun,
+        runId: args.runId, step: args.step, evidence: args.evidence, note: args.note, reason: args.reason, fromRun: args.fromRun, status: args.status,
       }),
       signal: AbortSignal.timeout(20_000),
     })
@@ -99,6 +101,14 @@ export async function runWorkflowTool(args: Record<string, unknown>, deps: Workf
         ...(data.warning ? [`Note: ${data.warning}`] : []),
       ].join(" ")
     }
+    if (action === "plan") {
+      return [
+        `Plan recorded on run ${data.run?.runId ?? args.runId}:`,
+        ...(data.plan ?? []).map((s: any) => `- ${s.id} ${s.title}`),
+        `Report each step with {action:"step", runId, step:"<id>", status:"started"|"done"|"failed"}.`,
+      ].join("\n")
+    }
+    if (action === "step") return `Step recorded. ${data.run ? describe(data.run) : ""}`.trim()
     if (action === "done") return `Step recorded as done. ${data.run ? describe(data.run) : ""}`.trim()
     if (action === "blocked") return "The step is marked blocked and the owner is told. Nothing more happens on it until it is sorted."
     return `Saved ${data.workflowId} switched off, and asked the owner (card ${data.cardId}) whether to keep it as a reusable workflow.`
