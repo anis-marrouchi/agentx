@@ -41,6 +41,72 @@ its summed input passes 200,000, and zeroes the base columns
 (`src/storage/traces.ts:248-255`). The cron query below now adds both, so
 large resumed runs are not counted as zero.
 
+## Quick wins and big wins (the owner's bar, 2026-10-12)
+
+The owner turned down the two three-day trials. He asked for quick wins
+(measurable in hours) and big wins (a change visible on the bill). Shares
+are of the spend measured on the one host. Nothing below is switched on.
+
+| # | Change | Measured in | Size | Cost and risk |
+|---|---|---|---|---|
+| A | Find why a new session rewrites 16.6k tokens it should read | 15 minutes | up to about 5%: part of the 12.3% that first calls write within an hour of the agent's last session | Test: one env var. Risk depends on the cause |
+| B | Turn ObservationPack on (already built) | a few busy hours | about 6.2%, before the re-reads it also saves | Setting plus daemon restart. Risk: the agent reads back a cut original; each pack is logged |
+| C | Monitor reviewer on Sonnet instead of Opus | one hour, about 2 USD | half of a cost nothing counts today | One env var. Risk: weaker reviews, checked side by side first |
+| D | The 5-minute cache, judged in hours, not days | 3 busy hours on the GitLab agent | 7.9% overall predicted, GitLab alone 2.8% | One env var. Risk: misses after pauses, already counted in the prediction |
+
+**A. The 16.6k rewrite.** The owner's probe started two sessions with
+the same prompt; the second still wrote 16.6k tokens instead of reading
+them. Claude Code's [caching page](https://code.claude.com/docs/en/prompt-caching#cache-scope)
+gives one likely cause: "Sequential sessions share the prefix only when
+the git status snapshot taken at startup matches". An agent working in a
+repository whose status changes between sessions loses that part of its
+cache every time. This is a hypothesis, not a finding.
+
+1. **Terminal:** repeat the probe, two new sessions with the same short
+   prompt, and read the second one's `cache_creation_input_tokens`.
+2. **Terminal:** repeat it with `CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS=1`
+   set, which drops the snapshot and the built-in commit instructions
+   ([documented](https://code.claude.com/docs/en/agent-sdk/modifying-system-prompts#turn-off-the-context-your-agent-replaces)).
+3. If the rewrite falls to near zero, that is the cause. The fix is the
+   same variable for agents that do not commit code. Coding agents keep
+   the snapshot.
+4. If it does not fall, log one start request (`OTEL_LOG_RAW_API_BODIES=file:<dir>`)
+   and compare the two bodies for the first byte that differs.
+
+AgentX sets neither this variable nor `includeGitInstructions` (searched
+in `src`).
+
+**B. ObservationPack.** The owner measured 963 tool results over its
+10 KB limit, worth about 6.2% of the spend. Each pack is written to
+`.agentx/observations/<agent>/index.jsonl`, so a few hours on a busy
+agent give a count, the bytes withheld, and how often the agent read an
+original back. It needs `session.observationPack.enabled` and a daemon
+restart, and works only for agents with `bypassPermissions`
+(`src/agents/observation-pack.ts:84`).
+
+**C. Monitor reviewer.** See finding 2. The side-by-side comparison of 30
+stored traces on `opus` and `sonnet` takes about an hour. Recording the
+reviewer's usage, a few lines in `reviewWithClaude`, makes the saving
+show on the Cost page.
+
+**D. The 5-minute cache in hours.** The three-day trial was meant to
+catch misses after pauses. The replay of the owner's logs has already
+counted those (174 calls). A short window can check the replay instead
+of repeating it:
+
+1. Run `bench/cache-gap-replay.py` on the GitLab agent's logs for the
+   same three hours of the previous working day, and note the `ttl5m`
+   figure.
+2. Set the 5-minute cache on that agent for three busy hours.
+3. If the measured change in write cost is close to `ttl5m`, the replay
+   holds and the other channels can be decided from it without further
+   trials.
+
+**Left out because they do not fit the bar:** medium effort (quality
+needs days of answers to judge), fewer round trips (a guess), per-task
+budgets (needs the 20 most expensive sessions read first), and masking
+old results (negative here).
+
 ## How this was done
 
 - **Code.** Every "today" line below was read from the code on `main` at
