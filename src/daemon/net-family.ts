@@ -35,8 +35,11 @@ export const DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS = 5000
  * commands that call out on their own and never load the full daemon config.
  * Falls back to the default when there is no file or no valid value.
  */
-export function readConnectAttemptTimeout(cwd: string = process.cwd()): number {
-  for (const p of [resolve(cwd, "agentx.json"), resolve(cwd, ".agentx/config.json")]) {
+export function readConnectAttemptTimeout(cwd: string = process.cwd(), configPath?: string): number {
+  const candidates = configPath
+    ? [resolve(cwd, configPath)]
+    : [resolve(cwd, "agentx.json"), resolve(cwd, ".agentx/config.json")]
+  for (const p of candidates) {
     if (!existsSync(p)) continue
     try {
       const v = JSON.parse(readFileSync(p, "utf-8"))?.node?.connectAttemptTimeoutMs
@@ -45,4 +48,22 @@ export function readConnectAttemptTimeout(cwd: string = process.cwd()): number {
     break
   }
   return DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS
+}
+
+/**
+ * The config path given on the command line (`--config <path>`,
+ * `--config=<path>`, or `-c <path>` naming a `.json` file), read before
+ * commander parses anything. `-c` alone also means `--cwd` for some
+ * commands, which names a folder, hence the `.json` check.
+ */
+export function configPathFromArgv(argv: string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    const a = argv[i]
+    if (a === "--") break
+    if (a.startsWith("--config=")) return a.slice("--config=".length) || undefined
+    const next = argv[i + 1]
+    if (a === "--config" && next) return next
+    if (a === "-c" && next?.endsWith(".json")) return next
+  }
+  return undefined
 }

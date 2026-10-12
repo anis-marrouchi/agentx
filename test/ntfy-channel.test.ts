@@ -204,6 +204,18 @@ describe("NtfyAdapter", () => {
     expect(lines.some(l => /failed after 2 attempt/.test(l))).toBe(true)
   })
 
+  it("names the send time limit when it cuts a try, and does not retry it", async () => {
+    const abort = new DOMException("The operation was aborted due to timeout", "TimeoutError")
+    const fn = vi.fn().mockRejectedValue(abort)
+    ;(globalThis as any).fetch = fn
+    const lines: string[] = []
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0], sendTimeoutMs: 1000 }, (m) => lines.push(String(m)))
+
+    await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/send time limit of 1000 ms reached/)
+    expect(fn).toHaveBeenCalledTimes(1)
+    expect(lines.some(l => /failed after 1 attempt\(s\): ntfy: send time limit of 1000 ms reached/.test(l))).toBe(true)
+  })
+
   it("gives each request an abort signal bounded by the send time limit", async () => {
     const fn = mockFetch()
     const a = new NtfyAdapter({ topic: "t", sendTimeoutMs: 1000 }, quiet)

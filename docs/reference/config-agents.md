@@ -14,7 +14,7 @@ The machine this daemon runs on.
 | `node.name` | string | required | Readable name of this machine, shown in logs and mesh listings. |
 | `node.bind` | string | `"127.0.0.1:18800"` | Address and port the daemon API listens on. |
 | `node.defaultAgent` | string | — | Agent used by voice and API calls that do not name one. |
-| `node.connectAttemptTimeoutMs` | number (250–60000) | `5000` | How long, in milliseconds, the daemon waits for each address of a server to answer before it tries the next one. Raise it on a slow internet link where every outgoing request fails with `ETIMEDOUT`. Read when the daemon starts, and by every `agentx` command run from the folder that holds the config file. |
+| `node.connectAttemptTimeoutMs` | number (250–60000) | `5000` | How long, in milliseconds, the daemon waits for each address of a server to answer before it tries the next one. Raise it on a slow internet link where every outgoing request fails with `ETIMEDOUT`. Read when the daemon starts, and by every `agentx` command: from the file given with `--config`, or else from the config file in the current folder. |
 
 ## providers
 
