@@ -7,8 +7,10 @@ calling a model: how much of each session's cost is cache writes that follow an
 idle gap (the cached prefix expired, so the whole context is written again),
 grouped by the gap since the previous model call in the same session.
 
-It then prices two what-ifs in "base input token" units (cache read 0.1x,
-5-minute write 1.25x, 1-hour write 2x, uncached input 1x, output not counted):
+It then prices two what-ifs in "base input token" units (5-minute write 1.25x,
+1-hour write 2x, uncached input 1x, output not counted; cache read 0.1x, or
+0.05x on Opus 5.5 and Sonnet 5.5 and 0.025x on Fable 5.1 and Mythos 5.1, per
+https://platform.claude.com/docs/en/about-claude/pricing):
 
   ttl1h   every write uses the 1-hour cache, so a call 5 to 60 minutes after
           the previous one reads the prefix instead of writing it again.
@@ -34,7 +36,16 @@ from pathlib import Path
 
 CHANNEL_RE = re.compile(r"^Channel: ([\w:.-]+)", re.M)
 GAPS = [("first call", None), ("< 5 min", 5), ("5-60 min", 60), ("1-24 h", 1440), ("> 24 h", float("inf"))]
-READ, WRITE_5M, WRITE_1H = 0.1, 1.25, 2.0
+WRITE_5M, WRITE_1H = 1.25, 2.0
+
+
+def read_factor(model):
+    m = (model or "").lower()
+    if any(k in m for k in ("fable-5-1", "mythos-5-1")):
+        return 0.025
+    if any(k in m for k in ("opus-5-5", "sonnet-5-5")):
+        return 0.05
+    return 0.1
 
 
 def parse_time(value):
@@ -54,7 +65,7 @@ def gap_label(minutes):
 
 
 def calls(path, since, until):
-    """Yield (channel, gap_minutes, usage, previous_context) per model call in window."""
+    """Yield (channel, gap_minutes, usage, previous_context, model) per model call in window."""
     try:
         lines = path.read_text(errors="replace").splitlines()
     except OSError:
@@ -89,7 +100,7 @@ def calls(path, since, until):
         context = sum(usage.get(k) or 0 for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
         day = (obj.get("timestamp") or "")[:10]
         if since <= day <= until:
-            yield channel, gap, usage, last_context
+            yield channel, gap, usage, last_context, msg.get("model")
         last_at, last_context = at or last_at, context
 
 
@@ -109,7 +120,8 @@ def main():
 
     by_gap, by_channel = defaultdict(bucket), defaultdict(bucket)
     for path in Path(args.projects).glob("*/*.jsonl"):
-        for channel, gap, usage, previous in calls(path, args.since, args.until):
+        for channel, gap, usage, previous, model in calls(path, args.since, args.until):
+            READ = read_factor(model)
             fresh = usage.get("input_tokens") or 0
             read = usage.get("cache_read_input_tokens") or 0
             write = usage.get("cache_creation_input_tokens") or 0
