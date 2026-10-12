@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.137.3](https://github.com/anis-marrouchi/agentx/compare/v0.137.2...v0.137.3) (2026-10-12)
+
+
+### Bug Fixes
+
+* **daemon:** name the ntfy send limit, honor --config in the CLI ([#933](https://github.com/anis-marrouchi/agentx/issues/933) follow-up) ([#939](https://github.com/anis-marrouchi/agentx/issues/939)) ([0058fb1](https://github.com/anis-marrouchi/agentx/commit/0058fb1cad8db1f61dd594d62c1b7e8bdef3145c))
+
 ## [0.137.2](https://github.com/anis-marrouchi/agentx/compare/v0.137.1...v0.137.2) (2026-10-12)
 
 
