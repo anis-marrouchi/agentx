@@ -49,7 +49,7 @@ are of the spend measured on the one host. Nothing below is switched on.
 
 | # | Change | Measured in | Size | Cost and risk |
 |---|---|---|---|---|
-| A | Find why a new session rewrites 16.6k tokens it should read | 15 minutes | up to about 5%: part of the 12.3% that first calls write within an hour of the agent's last session | Test: one env var. Risk depends on the cause |
+| A | Find why a new session rewrites 16.6k tokens it should read | tested, 24 sessions, 2.7 USD | **well under 1%**: the hypothesis was wrong (see below) | Not applied |
 | B | Turn ObservationPack on (already built) | a few busy hours | about 6.2%, before the re-reads it also saves | Setting plus daemon restart. Risk: the agent reads back a cut original; each pack is logged |
 | C | Monitor reviewer on Sonnet instead of Opus | one hour, about 2 USD | half of a cost nothing counts today | One env var. Risk: weaker reviews, checked side by side first |
 | D | The 5-minute cache, judged in hours, not days | 3 busy hours on the GitLab agent | 7.9% overall predicted, GitLab alone 2.8% | One env var. Risk: misses after pauses, already counted in the prediction |
@@ -75,6 +75,27 @@ cache every time. This is a hypothesis, not a finding.
 
 AgentX sets neither this variable nor `includeGitInstructions` (searched
 in `src`).
+
+**Result (posted on #947, 2026-10-12 19:30Z): the hypothesis was wrong.**
+
+- **The variable left the rewrite at 16.6k tokens.**
+- **The cause is the connector tool list.** The logged start requests
+  differ first in the list of tool names from remote connectors (65,
+  then 106, then 110). Those connectors attach at their own pace. The
+  list sits in the same cached segment as the workspace instruction
+  files, the memory index and the prompt, so one changed line rewrites
+  the whole segment. When the list matched, the rewrite was 0.
+- **That segment is rewritten at every real session start anyway,**
+  because the prompt differs every time and sits in that segment ahead of
+  the tool list. The probe's identical prompt made it look like a fault.
+- **The variable does remove a separate rewrite of about 6.2k tokens.**
+  This happens only in a git repository whose status changed since the
+  last session, which is 2 of 12 agent workspaces on that host. That is
+  well under 1% of the spend, an estimate, so not worth applying on its
+  own.
+- **The route to the first-call cost stays finding 2 of the measurement:**
+  move the instruction files into the system prompt, about 3.5%. That
+  needs code.
 
 **B. ObservationPack.** The owner measured 963 tool results over its
 10 KB limit, worth about 6.2% of the spend. Each pack is written to
@@ -113,9 +134,8 @@ answers blind. That is the current recommendation; the owner decides.
 
 Two items above are not in that table:
 
-- **A** is a test, not a saving. It explains part of the 14.2% that
-  first calls write, which the table puts at "days, needs code". If the
-  git snapshot is the cause, the fix is one variable, not code.
+- **A** was a test. It has since run and found well under 1% (above),
+  so the table's "days, needs code" for the first-call cost stands.
 - **C** costs tokens that the measured logs could not see.
 
 **Left out because they do not fit the bar:** medium effort (quality
