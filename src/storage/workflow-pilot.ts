@@ -79,6 +79,8 @@ export interface RunCost {
   /** Model calls with no known model, or a model the price table does
    *  not know, priced at the fallback rate. */
   fallbackPricedCalls: number
+  /** The part of `fallbackPricedCalls` with no model on record at all. */
+  noModelCalls: number
   /** Models seen on this run that the price table does not know. */
   unpricedModels: string[]
   traceIds: string[]
@@ -97,6 +99,7 @@ function runCost(run: WorkflowRun, traces: TraceRecord[], pricing: Pricing, agen
     calls: mine.length,
     failedCalls: mine.filter((t) => t.status === "error" || t.status === "canceled").length,
     fallbackPricedCalls: models.filter((m) => !m || !isPricedModel(m, pricing)).length,
+    noModelCalls: models.filter((m) => !m).length,
     unpricedModels: [...new Set(models.filter((m): m is string => !!m && !isPricedModel(m, pricing)))],
     traceIds: mine.map((t) => t.taskId),
   }
@@ -171,8 +174,9 @@ export interface PilotComparison {
   pilotInProgress: number
   /** Model calls priced at the fallback rate because no model was known
    *  or the price table has no rate for it, out of all model calls counted,
-   *  per side. `unpricedModels` names the models with no rate. */
-  fallbackPriced: { live: number; pilot: number; calls: number; unpricedModels: string[] }
+   *  per side. `noModel` counts those with no model on record at all;
+   *  `unpricedModels` names the models with no rate. */
+  fallbackPriced: { live: number; pilot: number; calls: number; noModel: number; unpricedModels: string[] }
   pairs: PilotPair[]
 }
 
@@ -254,6 +258,7 @@ export function comparePilot(args: {
       live: liveRuns.reduce((s, c) => s + c.fallbackPricedCalls, 0),
       pilot: paired.reduce((s, p) => s + p.pilot!.fallbackPricedCalls, 0),
       calls: liveRuns.reduce((s, c) => s + c.calls, 0) + paired.reduce((s, p) => s + p.pilot!.calls, 0),
+      noModel: liveRuns.reduce((s, c) => s + c.noModelCalls, 0) + paired.reduce((s, p) => s + p.pilot!.noModelCalls, 0),
       unpricedModels: [...new Set([...liveRuns, ...paired.map((p) => p.pilot!)].flatMap((c) => c.unpricedModels))].sort(),
     },
     pairs,

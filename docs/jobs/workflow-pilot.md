@@ -109,7 +109,7 @@ The pilot runs after the live agent has finished, so it never delays the live wo
 
    A pilot run that has not ended yet is left out, and counted on a `Not compared yet` line. It is compared on the next report, once it ends.
 
-   If you see `No price known for N of M model call(s)`, those calls were priced at Sonnet rates, so their cost may be wrong. Either the call has no model on record, or its model is not in the price table. A `Models with no price` line names the models of the second kind.
+   If you see `No price known for N of M model call(s)`, those calls were priced at Sonnet rates, so their cost may be wrong. Either the call has no model on record, or its model is not in the price table. When some calls have no model, the line says how many and asks you to set the agent's model in `agentx.json`. A `Models with no price` line names the models of the second kind.
 
 3. **In the terminal**, to check runs one by one, list each pair with its trace ids, then open a trace:
 
