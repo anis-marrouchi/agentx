@@ -2290,6 +2290,18 @@ List recent runs (optionally filtered to a single workflow).
 | `--limit <n>` | `20` | Max runs to show. |
 | `--node <id>` | — | Home-node id for this daemon (defaults to WF_NODE_ID env or "local"). |
 
+### `agentx workflow pilot-report <live> <pilot>`
+
+Compare a live workflow with a pilot workflow that ran beside it on the same input: cost per run, how often the pilot handed the case back, and failures. Reads the trace database and the run files; changes nothing. Guide: [Try a cheaper workflow beside a live one](../jobs/workflow-pilot.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <when>` | — | Only runs started after this: an ISO date, or a duration like `7d`. |
+| `--db <path>` | `.agentx/db.sqlite` | Trace database. |
+| `--node <id>` | — | Home-node id for this daemon (defaults to WF_NODE_ID env or "local"). |
+| `--pairs` | — | List each pair with its run and trace ids. |
+| `--json` | — | Print the report as JSON. |
+
 ### `agentx workflow run <id-or-file>`
 
 Manually trigger a workflow by id, or load + register + run a YAML/JSON file.

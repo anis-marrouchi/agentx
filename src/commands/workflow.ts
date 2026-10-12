@@ -361,6 +361,59 @@ workflow
   })
 
 workflow
+  .command("pilot-report <live> <pilot>")
+  .description("compare a live workflow with a pilot that ran beside it: cost per run, hand-backs, failures (#928)")
+  .option("--since <when>", "only runs started after this: an ISO date, or a duration like 7d")
+  .option("--db <path>", "trace database", ".agentx/db.sqlite")
+  .option("--node <id>", "home-node id for this daemon (defaults to WF_NODE_ID env or \"local\")")
+  .option("--pairs", "list each pair with its run and trace ids", false)
+  .option("--json", "print the report as JSON", false)
+  .action(async (live: string, pilot: string, opts) => {
+    const { comparePilot } = await import("@/storage/workflow-pilot")
+    const { listTracesForRuns } = await import("@/storage/traces")
+    const { loadPricingWithOverrides } = await import("@/daemon/token-tracker")
+    const sinceMs = opts.since ? (durationToMs(opts.since) !== null ? Date.now() - durationToMs(opts.since)! : Date.parse(opts.since)) : undefined
+    if (opts.since && !Number.isFinite(sinceMs)) { console.log(chalk.red(`  --since: "${opts.since}" is not a date or a duration`)); process.exit(1) }
+    const store = new RunStore({ nodeId: opts.node || process.env.WF_NODE_ID || "local" })
+    const sinceIso = sinceMs !== undefined ? new Date(sinceMs).toISOString() : ""
+    const runs = [...store.list({ workflowId: live, since: sinceMs }), ...store.list({ workflowId: pilot, since: sinceMs })]
+      .filter((r) => r.createdAt >= sinceIso)
+    const dbPath = resolve(process.cwd(), opts.db)
+    if (!existsSync(dbPath)) { console.log(chalk.red(`  No trace database at ${dbPath}`)); process.exit(1) }
+    const db = new Database(dbPath, { readonly: true })
+    let traces
+    try { traces = listTracesForRuns(db, runs.map((r) => r.id)) } finally { db.close() }
+    const report = comparePilot({ liveWorkflow: live, pilotWorkflow: pilot, runs, traces, pricing: loadPricingWithOverrides() })
+    if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
+
+    const usd = (n: number | null) => n === null ? chalk.dim("n/a") : `$${n.toFixed(4)}`
+    const pct = (n: number) => `${(n * 100).toFixed(1)}%`
+    const line = (label: string, s: { runs: number; failed: number; costPerRunUsd: number | null; medianCostUsd: number | null; totalCostUsd: number }) =>
+      console.log(`  ${label.padEnd(22)} ${String(s.runs).padStart(5)}  ${String(s.failed).padStart(6)}  ${usd(s.costPerRunUsd).padStart(9)}  ${usd(s.medianCostUsd).padStart(9)}  ${usd(s.totalCostUsd)}`)
+    console.log()
+    console.log(chalk.bold(`  Pilot: ${pilot}  beside  ${live}`))
+    console.log(chalk.dim(`  ${"".padEnd(22)} ${"runs".padStart(5)}  ${"failed".padStart(6)}  ${"mean".padStart(9)}  ${"median".padStart(9)}  total`))
+    line(`${live} (all)`.slice(0, 22), report.live)
+    line("live, paired runs", report.paired.live)
+    line("pilot path, paired", report.paired.pilotPath)
+    console.log()
+    console.log(`  Handed back to the full agent: ${report.paired.handedBack} of ${report.paired.runs} (${pct(report.paired.handBackShare)})`)
+    console.log(`  Saving on the paired runs: ${report.paired.saving === null ? chalk.dim("n/a") : pct(report.paired.saving)}`)
+    if (report.unpairedLive || report.orphanPilot) {
+      console.log(chalk.dim(`  Not compared: ${report.unpairedLive} live run(s) without a pilot run, ${report.orphanPilot} pilot run(s) without a live run`))
+    }
+    if (opts.pairs) {
+      console.log()
+      for (const p of report.pairs) {
+        if (!p.pilot) continue
+        console.log(`  ${chalk.dim(p.live.startedAt)}  live ${p.live.runId.slice(0, 8)} ${usd(p.live.costUsd)}  pilot ${p.pilot.runId.slice(0, 8)} ${usd(p.pilot.costUsd)}${p.handedBack ? chalk.yellow(`  handed back: ${p.handedBack}`) : ""}`)
+        console.log(chalk.dim(`    traces: live ${p.live.traceIds.join(" ") || "-"} | pilot ${p.pilot.traceIds.join(" ") || "-"}`))
+      }
+    }
+    console.log()
+  })
+
+workflow
   .command("run <id-or-file>")
   .description("manually trigger a workflow by id, or load + register + run a YAML/JSON file")
   .option("--input <json>", "JSON object merged into the trigger event payload")

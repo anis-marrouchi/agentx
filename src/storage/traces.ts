@@ -521,6 +521,23 @@ export function listTraces(db: Database.Database, filters: ListTracesFilters = {
   return (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(rowToTrace)
 }
 
+/** Every trace row of these workflow runs, oldest first. Unbounded by
+ *  design: a report over a few hundred runs needs all of their rows. */
+export function listTracesForRuns(db: Database.Database, runIds: string[]): TraceRecord[] {
+  const out: TraceRecord[] = []
+  // SQLite caps bound parameters; stay well under it.
+  for (let i = 0; i < runIds.length; i += 500) {
+    const chunk = runIds.slice(i, i + 500)
+    if (!chunk.length) continue
+    const rows = db.prepare(`
+      SELECT * FROM task_traces WHERE workflow_run_id IN (${chunk.map(() => "?").join(",")})
+       ORDER BY started_at
+    `).all(...chunk) as Record<string, unknown>[]
+    out.push(...rows.map(rowToTrace))
+  }
+  return out
+}
+
 /** The tool calls one run made, in order: what a stop signal's resume plan
  *  lists when the agent wrote none (#857). Bounded. */
 export function traceToolCalls(

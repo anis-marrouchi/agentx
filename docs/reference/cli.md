@@ -176,6 +176,7 @@ agentx attach as helper
 | `agentx workflow add <file>` | Import a definition |
 | `agentx workflow run <id-or-file>` | Execute the named workflow; may perform external actions. Fails if the workflow is not active |
 | `agentx workflow runs [id]` | Inspect runs |
+| `agentx workflow pilot-report <live> <pilot>` | Compare a pilot workflow with the live one it ran beside: cost per run, hand-backs, failures |
 | `agentx workflow trace <id>` | Inspect execution details |
 | `agentx workflow cancel <runId>` | Stop a run; a followed run's reminders stop and you get its summary |
 | `agentx workflow run <id> --follow --title "…" --tag client:example-co` | Start a run AgentX follows to the end ([follow a request](../jobs/follow-up-workflows.md)) |
