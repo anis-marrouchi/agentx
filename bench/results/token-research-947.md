@@ -130,7 +130,9 @@ agent, not three days. The one item that could be big is effort: output
 is 24.4% of the spend. It can be measured offline in about 3 hours
 (about 30 USD) by re-running about 20 past read-only tasks at the
 default effort, at medium effort, and on Sonnet 5.5, then grading the
-answers blind. That is the current recommendation; the owner decides.
+answers blind. The owner approved it on 2026-10-12 (about 19:55Z): run
+offline on the Mac only, nothing changed on any agent, stop at 45 USD.
+Its result belongs on #947.
 
 Two items above are not in that table:
 
