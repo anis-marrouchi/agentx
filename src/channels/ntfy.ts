@@ -55,7 +55,10 @@ export function describeFetchError(e: unknown): string {
 // no key to drop a repeat, so re-posting after a 500 or a reset mid-response
 // could put the same notification on the phone twice.
 
-/** The connection never opened, so the request never reached the server. */
+/** The connection never opened, so the request never reached the server.
+ *  ETIMEDOUT can also, rarely, mean an open connection went silent; then a
+ *  repeat is possible. Telling the two apart would need to know whether the
+ *  body was written, which fetch does not expose. */
 const CONNECT_FAILURE_CODES = new Set([
   "ECONNREFUSED", "ETIMEDOUT", "ENETUNREACH", "EHOSTUNREACH", "EADDRNOTAVAIL",
   "ENOTFOUND", "EAI_AGAIN", "UND_ERR_CONNECT_TIMEOUT",
@@ -151,7 +154,8 @@ export class NtfyAdapter implements ChannelAdapter {
     const attempts = delays.length + 1
     // Each try can spend several seconds per address on a dead link, so the
     // whole send gets one time limit and callers never wait much past it.
-    const deadline = Date.now() + (this.config.sendTimeoutMs ?? DEFAULT_SEND_TIMEOUT_MS)
+    const limitMs = this.config.sendTimeoutMs ?? DEFAULT_SEND_TIMEOUT_MS
+    const deadline = Date.now() + limitMs
 
     // A slow or flapping link loses pushes that a few seconds later would
     // go through. Retry only what cannot have been stored (see above).
@@ -163,7 +167,10 @@ export class NtfyAdapter implements ChannelAdapter {
         const signal = AbortSignal.timeout(Math.max(1, deadline - Date.now()))
         res = await fetch(url, { method: "POST", headers, body, signal })
       } catch (e) {
-        failure = new Error(`ntfy: ${describeFetchError(e)}`, { cause: e })
+        // The abort only says "aborted due to timeout"; name the send limit.
+        failure = (e as { name?: string })?.name === "TimeoutError"
+          ? new Error(`ntfy: send time limit of ${limitMs} ms reached`, { cause: e })
+          : new Error(`ntfy: ${describeFetchError(e)}`, { cause: e })
         retryable = isRetryableFetchError(e)
       }
       if (res) {
