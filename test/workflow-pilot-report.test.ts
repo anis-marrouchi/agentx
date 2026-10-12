@@ -136,7 +136,7 @@ describe("comparePilot, one model per side", () => {
     expect(report.paired.live.totalCostUsd).toBeCloseTo(5)
     expect(report.paired.pilotPath.totalCostUsd).toBeCloseTo(1)
     expect(report.paired.saving).toBeCloseTo(0.8)
-    expect(report.fallbackPriced).toEqual({ live: 0, pilot: 0, calls: 2 })
+    expect(report.fallbackPriced).toEqual({ live: 0, pilot: 0, calls: 2, unpricedModels: [] })
   })
 
   it("counts rows with no known model, priced at the fallback rate", () => {
@@ -146,8 +146,22 @@ describe("comparePilot, one model per side", () => {
     ]
     const report = comparePilot({ liveWorkflow: "sweep", pilotWorkflow: "sweep-pilot", runs, traces, pricing: PRICING })
     expect(report.paired.live.totalCostUsd).toBeCloseTo(3)
-    expect(report.fallbackPriced).toEqual({ live: 1, pilot: 1, calls: 2 })
+    expect(report.fallbackPriced).toEqual({ live: 1, pilot: 1, calls: 2, unpricedModels: [] })
     expect(report.pairs[0].live.fallbackPricedCalls).toBe(1)
+  })
+
+  it("counts a model the price table does not know, and names it", () => {
+    const traces = [
+      trace({ workflowRunId: "L1", agentId: "sweeper", model: null, inputTokens: 1_000_000 }),
+      trace({ workflowRunId: "P1", model: "gpt-5-mini", inputTokens: 1_000_000 }),
+    ]
+    const report = comparePilot({
+      liveWorkflow: "sweep", pilotWorkflow: "sweep-pilot", runs, traces, pricing: PRICING,
+      agentModels: { sweeper: "claude-opus-5" },
+    })
+    expect(report.paired.pilotPath.totalCostUsd).toBeCloseTo(3)
+    expect(report.fallbackPriced).toEqual({ live: 0, pilot: 1, calls: 2, unpricedModels: ["gpt-5-mini"] })
+    expect(report.pairs[0].pilot!.unpricedModels).toEqual(["gpt-5-mini"])
   })
 
   it("leaves out a pair whose pilot run has not ended", () => {
