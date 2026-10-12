@@ -470,13 +470,21 @@ export class MessageRouter {
       }
     }
 
-    this.log(`Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
+    this.log(`${new Date().toISOString()} Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
 
+    // A failed send gets its own line, so the log never reads as if a push
+    // went out when it did not (#930).
     let messageId: string | void
-    if (adapter.name === "telegram" && accountId) {
-      messageId = await this.adapterSend(adapter, { ...msg, accountId })
-    } else {
-      messageId = await adapter.send(msg)
+    try {
+      if (adapter.name === "telegram" && accountId) {
+        messageId = await this.adapterSend(adapter, { ...msg, accountId })
+      } else {
+        messageId = await adapter.send(msg)
+      }
+    } catch (e: any) {
+      const code = e?.cause?.code ? ` code=${e.cause.code}` : ""
+      this.log(`${new Date().toISOString()} Outbound [${msg.channel}] -> ${msg.chatId}: send failed: ${e?.message ?? e}${code}`)
+      throw e
     }
 
     // Record into dedupe table after the send so a future repeat within the

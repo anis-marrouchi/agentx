@@ -29,6 +29,26 @@ export interface NtfyConfig {
   defaultPriority?: number
   /** Notification title. Per-message titles override it. */
   defaultTitle?: string
+  /** Waits between attempts when a publish fails on the network or with a
+   *  429/5xx. One attempt more than there are entries. */
+  retryDelaysMs?: number[]
+}
+
+const DEFAULT_RETRY_DELAYS_MS = [1000, 3000, 8000]
+
+/** `fetch failed` hides the reason in `cause`; surface its code so a log
+ *  line says ETIMEDOUT or ECONNREFUSED rather than nothing useful (#930). */
+export function describeFetchError(e: unknown): string {
+  const err = e as { message?: string; cause?: { code?: string; message?: string } }
+  const message = err?.message ?? String(e)
+  const cause = err?.cause
+  if (cause?.code) return `${message} code=${cause.code}`
+  if (cause?.message && cause.message !== message) return `${message} (${cause.message})`
+  return message
+}
+
+function isRetryableStatus(status: number): boolean {
+  return status === 429 || status >= 500
 }
 
 /**
@@ -105,18 +125,38 @@ export class NtfyAdapter implements ChannelAdapter {
       headers["Actions"] = encodeHeader(actions)
     }
 
-    const res = await fetch(`${this.serverUrl()}/${encodeURIComponent(topic)}`, {
-      method: "POST",
-      headers,
-      body: split.body || msg.text || "",
-    })
+    const url = `${this.serverUrl()}/${encodeURIComponent(topic)}`
+    const body = split.body || msg.text || ""
+    const delays = this.config.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS
+    const attempts = delays.length + 1
 
-    if (!res.ok) {
-      const detail = await res.text().catch(() => "")
-      throw new Error(`ntfy: ${res.status} ${detail.slice(0, 200)}`)
+    // A slow or flapping link loses pushes that a few seconds later would
+    // go through. Retry network failures and server-side errors; a 4xx is
+    // the request itself and fails at once.
+    for (let attempt = 1; ; attempt++) {
+      let res: Response | undefined
+      let failure!: Error
+      try {
+        res = await fetch(url, { method: "POST", headers, body })
+      } catch (e) {
+        failure = new Error(`ntfy: ${describeFetchError(e)}`, { cause: e })
+      }
+      if (res) {
+        if (res.ok) {
+          const json = await res.json().catch(() => null) as { id?: string } | null
+          return json?.id
+        }
+        const detail = await res.text().catch(() => "")
+        failure = new Error(`ntfy: ${res.status} ${detail.slice(0, 200)}`)
+        if (!isRetryableStatus(res.status)) throw failure
+      }
+      if (attempt >= attempts) {
+        this.log(`ntfy: send failed after ${attempts} attempt(s): ${failure.message}`)
+        throw failure
+      }
+      const wait = delays[attempt - 1]
+      this.log(`ntfy: attempt ${attempt}/${attempts} failed (${failure.message}); retrying in ${wait} ms`)
+      await new Promise(r => setTimeout(r, wait))
     }
-
-    const json = await res.json().catch(() => null) as { id?: string } | null
-    return json?.id
   }
 }

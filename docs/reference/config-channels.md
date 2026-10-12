@@ -235,6 +235,8 @@ ntfy sends push notifications to your phone. It only sends; it does not receive 
 | `channels.ntfy.defaultPriority` | number (1–5) | `3` | Priority when a message sets none. |
 | `channels.ntfy.defaultTitle` | string | — | Title when a message sets none (otherwise `AgentX`). |
 
+When a notification cannot reach the server, or the server answers with a temporary error, AgentX tries again after 1, 3 and 8 seconds. Each failed try is written to the daemon log with its reason, for example `ntfy: attempt 1/4 failed (ntfy: fetch failed code=ETIMEDOUT); retrying in 1000 ms`. A notification still not delivered after the last try is logged as `send failed`.
+
 ## Browser calls (WebRTC)
 
 WebRTC lets people call an agent from a browser.
@@ -299,4 +301,5 @@ The call bot joins a call, writes down what is said and posts it to a chat. It d
 - **A GitHub issue starts no run:** the daemon log says why, with a line such as `skipped: action="labeled" not in channels.github.issueActions`. Add the change to `issueActions` or to the project rule's `actions` list.
 - **A GitHub issue still starts several runs:** the changes came further apart than `debounceSeconds`. Raise it.
 - **GitLab says the webhook failed:** check that `channels.gitlab.webhookPort` is reachable from GitLab and that the secret matches `channels.gitlab.webhookSecret`.
+- **A notification never arrives:** run `agentx daemon logs` and look for `ntfy: attempt` or `send failed` lines. `ETIMEDOUT` points at a slow link (see `node.connectAttemptTimeoutMs` in [Configuration: agents and runtime](./config-agents.md#node)); a `401` or `403` points at a wrong `token` or `topic`.
 - **A value is empty at runtime:** a `${…}` reference points at a variable missing from `.env`. Add it and restart the daemon.

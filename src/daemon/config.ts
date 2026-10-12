@@ -1379,6 +1379,10 @@ export const daemonConfigSchema = z.object({
     bind: z.string().default("127.0.0.1:18800"),
     /** Default agent for voice/API calls that don't specify one (e.g. Siri) */
     defaultAgent: z.string().optional(),
+    /** Time each address gets to connect before Node tries the next one,
+     *  in ms. Node's own 250 ms fails every request on a slow link when the
+     *  host also resolves IPv6 (#930). Applied at daemon start. */
+    connectAttemptTimeoutMs: z.number().int().min(250).max(60_000).default(5000),
   }),
   providers: z.record(z.string(), providerConfigSchema).default({}),
   agents: z.record(z.string(), agentConfigSchema).default({}),
