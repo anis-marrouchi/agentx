@@ -41,6 +41,7 @@ import { buildRoutines, type Routine, type RoutineWorkflow } from "./routines"
 import { handleOpenAICompat } from "./openai-compat"
 import { ProjectRulesStore } from "@/projects/rules"
 import { Logger } from "./logger"
+import { applyConnectAttemptTimeout } from "./net-family"
 import { buildInfo, diskBuild } from "@/utils/build-info"
 import { EventBus, parseKindsParam } from "./event-bus"
 import { WebhookHandler } from "./webhooks"
@@ -715,6 +716,10 @@ export class AgentXDaemon {
     this.log("")
     this.log(`  Node: ${this.config.node.name} (${this.config.node.id})`)
     this.log(`  Bind: ${this.config.node.bind}`)
+    // Before any channel polls or pushes: Node's 250 ms per-address connect
+    // attempt fails every fetch on a slow dual-stack link (#930).
+    const attemptMs = applyConnectAttemptTimeout(this.config.node.connectAttemptTimeoutMs ?? 5000)
+    if (attemptMs !== undefined) this.log(`  Connect attempt timeout: ${attemptMs} ms`)
     const ffmpeg = findFfmpeg()
     this.log(ffmpeg
       ? `  Voice: ffmpeg ${ffmpeg}`

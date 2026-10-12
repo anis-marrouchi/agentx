@@ -136,4 +136,42 @@ describe("NtfyAdapter", () => {
 
     await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/no topic/)
   })
+
+  it("retries a network failure and logs its cause code (#930)", async () => {
+    const timeout = Object.assign(new TypeError("fetch failed"), { cause: { code: "ETIMEDOUT" } })
+    const fn = vi.fn()
+      .mockRejectedValueOnce(timeout)
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ id: "late" }), text: async () => "" })
+    ;(globalThis as any).fetch = fn
+    const lines: string[] = []
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0, 0] }, (m) => lines.push(String(m)))
+
+    expect(await a.send({ channel: "ntfy", chatId: "", text: "hi" })).toBe("late")
+    expect(fn).toHaveBeenCalledTimes(2)
+    expect(lines.join("\n")).toMatch(/attempt 1\/3 failed \(ntfy: fetch failed code=ETIMEDOUT\)/)
+  })
+
+  it("gives up after the last retry, logs it and throws with the cause code", async () => {
+    const timeout = Object.assign(new TypeError("fetch failed"), { cause: { code: "ETIMEDOUT" } })
+    const fn = vi.fn().mockRejectedValue(timeout)
+    ;(globalThis as any).fetch = fn
+    const lines: string[] = []
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0, 0] }, (m) => lines.push(String(m)))
+
+    await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/ETIMEDOUT/)
+    expect(fn).toHaveBeenCalledTimes(3)
+    expect(lines.some(l => /failed after 3 attempt/.test(l))).toBe(true)
+  })
+
+  it("retries a 5xx but not a 4xx", async () => {
+    const fn = mockFetch(503, { error: "busy" })
+    const a = new NtfyAdapter({ topic: "t", retryDelaysMs: [0] }, quiet)
+    await expect(a.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/503/)
+    expect(fn).toHaveBeenCalledTimes(2)
+
+    const fn4 = mockFetch(403, { error: "forbidden" })
+    const b = new NtfyAdapter({ topic: "t", retryDelaysMs: [0] }, quiet)
+    await expect(b.send({ channel: "ntfy", chatId: "", text: "hi" })).rejects.toThrow(/403/)
+    expect(fn4).toHaveBeenCalledTimes(1)
+  })
 })
