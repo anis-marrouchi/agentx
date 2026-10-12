@@ -1,4 +1,6 @@
 import net from "node:net"
+import { existsSync, readFileSync } from "node:fs"
+import { resolve } from "node:path"
 
 // --- Connect attempt timeout for dual-stack hosts (#930) ---
 //
@@ -24,4 +26,23 @@ export function applyConnectAttemptTimeout(ms: number): number | undefined {
   const current = get()
   if (ms > current) set(ms)
   return get()
+}
+
+export const DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS = 5000
+
+/**
+ * `node.connectAttemptTimeoutMs` read straight from the config file, for CLI
+ * commands that call out on their own and never load the full daemon config.
+ * Falls back to the default when there is no file or no valid value.
+ */
+export function readConnectAttemptTimeout(cwd: string = process.cwd()): number {
+  for (const p of [resolve(cwd, "agentx.json"), resolve(cwd, ".agentx/config.json")]) {
+    if (!existsSync(p)) continue
+    try {
+      const v = JSON.parse(readFileSync(p, "utf-8"))?.node?.connectAttemptTimeoutMs
+      if (Number.isInteger(v) && v >= 250 && v <= 60_000) return v
+    } catch { /* an invalid file is reported by whatever loads it in full */ }
+    break
+  }
+  return DEFAULT_CONNECT_ATTEMPT_TIMEOUT_MS
 }
