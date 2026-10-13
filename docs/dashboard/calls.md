@@ -62,7 +62,7 @@ You can change the words of the notification with `calls.busy.title` and `calls.
 
 The agent is told you are busy from what AgentX Voice last reported, which can be up to two seconds old. A call placed in the two seconds after you start a voice turn is answered "ringing" and waits all the same. If AgentX Voice quits while a call waits, the call counts as missed once its ring time runs out.
 
-A waiting call survives a restart of AgentX. It keeps the time it started waiting, so it still ends at the time the agent was given, and you are not told about it a second time.
+A waiting call survives a restart of AgentX. It keeps the time it started waiting, so it still ends at the time the agent was given, and you are not told about it a second time. If you answer it or pick **Later** first, the wait is over: when that call rings again, it starts a new wait.
 
 ## How an agent places a call
 
