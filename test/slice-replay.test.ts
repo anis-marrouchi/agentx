@@ -162,3 +162,82 @@ describe("bench/slice-replay.py", () => {
     expect(check).not.toContain("old_string")
   })
 })
+
+// The rules the #928 results page names as possible causes of the gap with the
+// seat scripts. One session: a mkdir, then a message, then a read whose result
+// carries an image, then an MCP "set" call, then a reply.
+describe("bench/slice-replay.py rule switches", () => {
+  let dir = ""
+  const user = (content: unknown) => JSON.stringify({ type: "user", isSidechain: false, timestamp: "2026-10-10T08:00:00Z", message: { role: "user", content } })
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), "slice-replay-rules-"))
+    mkdirSync(join(dir, "seat-a"))
+    writeFileSync(join(dir, "seat-a", "s1.jsonl"), [
+      user("Start"),
+      line("ra", [tool("a", "Bash", { command: "mkdir -p /w/out" })]),
+      result("a", ""),
+      user("Now look at the screenshot"),
+      line("rb", [tool("b", "Read", { file_path: "/w/shot.png" })]),
+      user([{ type: "tool_result", tool_use_id: "b", content: [{ type: "text", text: "a picture" }, { type: "image", source: { type: "base64", media_type: "image/png", data: "A".repeat(400) } }] }]),
+      line("rc", [tool("c", "mcp__tracker__set_label", { label: "done" })]),
+      result("c", "ok"),
+      line("rd", [{ type: "text", text: "done" }]),
+    ].join("\n"))
+  })
+  afterAll(() => rmSync(dir, { recursive: true, force: true }))
+
+  const phases = (...rules: string[]) => {
+    const out = join(dir, "phases.json")
+    const r = run(["phases", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--min-calls", "1", "--json", out, ...rules])
+    expect(r.status, r.stderr).toBe(0)
+    return { stdout: r.stdout, ...JSON.parse(readFileSync(out, "utf8")) }
+  }
+  const calls = (...rules: string[]) => {
+    const out = join(dir, "calls.json")
+    const r = run(["calls", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--json", out, ...rules])
+    expect(r.status, r.stderr).toBe(0)
+    return JSON.parse(readFileSync(out, "utf8"))
+  }
+
+  it("keeps the rules the owner-sweep check ran by default, and records them", () => {
+    const p = phases()
+    expect(p.rules).toEqual({ first: "file", change: "broad", result_size: "text", chain: "message" })
+    expect(p.stdout).not.toContain("rules:")
+    expect(Object.fromEntries(Object.entries(p.byKind).map(([k, v]) => [k, (v as { requests: number }).requests]))).toEqual({ first: 1, read: 1, change: 1, answer: 1 })
+    expect(p.readingStretches).toMatchObject({ stretches: 1, calls: 1, resultTokens: Math.floor(Buffer.byteLength("a picture") / 4) })
+  })
+
+  it("--change narrow leaves mkdir and MCP set calls as reads", () => {
+    const p = phases("--change", "narrow")
+    expect(p.stdout).toContain("(rules: --change narrow)")
+    expect(p.byKind.change).toBeUndefined()
+    expect(p.byKind.read.requests).toBe(2)
+    expect(p.readingStretches).toMatchObject({ stretches: 1, calls: 2 })
+  })
+
+  it("--first message counts a request right after a message as a first call", () => {
+    const p = phases("--first", "message")
+    expect(p.byKind.first.requests).toBe(2)
+    expect(p.byKind.read).toBeUndefined()
+  })
+
+  it("--result-size all counts the parts of a result that are not text", () => {
+    expect(phases("--result-size", "all").readingStretches.resultTokens).toBeGreaterThan(100)
+  })
+
+  it("--chain answer runs a chain on through a message", () => {
+    let c = calls()
+    expect(c).toMatchObject({ chains: 2 })
+    expect(c.byPlace).toMatchObject({ first: { requests: 1 }, afterMessage: { requests: 1 }, chain: { requests: 1 }, answer: { requests: 1 } })
+    c = calls("--chain", "answer")
+    expect(c).toMatchObject({ chains: 1, rules: { chain: "answer" } })
+    expect(c.byPlace.afterMessage).toBeUndefined()
+    expect(c.byPlace.chain.requests).toBe(2)
+  })
+
+  it("refuses an unknown rule value", () => {
+    const r = run(["phases", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--change", "loose"])
+    expect(r.status).not.toBe(0)
+    expect(r.stderr).toContain("invalid choice")
+  })
+})

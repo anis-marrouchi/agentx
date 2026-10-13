@@ -148,6 +148,11 @@ same node and window, agent workspace seats only (580 main sessions against
     (bytes / 4). Images and any other parts are left out.
   - **Chain:** a run of requests with tool calls and no message between;
     a request after a message is not "inside a chain".
+- Each of these four rules now has an option in `slice-replay.py`
+  (`--first`, `--change`, `--result-size`, `--chain`; see
+  [bench/README.md](../README.md)). The defaults keep the figures above.
+  Running each option on the same window shows which rule moves the shares
+  towards this page; that run has not been done yet.
 - **The reader saving (20% to 27%) rests on the "only reads" share and the
   10.7M result tokens**, the two figures that differ most. Until the rules
   are reconciled, treat it as the seat scripts' figure, not one this
