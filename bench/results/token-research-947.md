@@ -30,9 +30,12 @@ measurement wins. In short:
 | 4. Idle chats resumed in full | 42 calls, 2.5% of spend | Small on that host |
 | 5. Old tool output | Not recommended: Claude Code owns the transcript, and an edit costs a rewrite, worth 40 reads | Agreed |
 
-The owner's recommendation stands as the next step: the 5-minute cache on
-one tool-heavy agent, and medium effort on one low-risk agent, each for
-three days.
+The owner first proposed two three-day trials: the 5-minute cache on one
+tool-heavy agent, and medium effort on one low-risk agent. The owner then
+turned both down. What replaced them is in
+[Quick wins and big wins](#quick-wins-and-big-wins-the-owners-bar-2026-10-12):
+an offline effort test, approved and run on 2026-10-12, and short checks
+of a few hours each. The effort test found no quick, big saving.
 
 **A fix to this page's cron query.** The owner also found that
 `splitTaskUsageByTier` moves a whole turn into the `tier2_*` columns once
@@ -144,8 +147,8 @@ second run of today's setting measured the noise.
 | Opus 5.5, medium effort | 10.82 USD | 9 of 20 |
 | Sonnet 5.5, high effort | 5.32 USD | 5 of 20 |
 
-- **Medium effort saves nothing.** It is 1.5% cheaper, which is within
-  the 1.2% gap between two identical runs. Drop it.
+- **Medium effort saves nothing.** It is 1.5% cheaper, which is about the
+  size of the 1.2% gap between two identical runs. Drop it.
 - **Sonnet halves the price per task but not the tokens.**
   - It holds on status checks (4 of 4 checked facts right).
   - It is weaker on reviews (1 of 8 graded as good, against 5 of 8 for
@@ -167,8 +170,8 @@ Two items above are not in that table:
   so the table's "days, needs code" for the first-call cost stands.
 - **C** costs tokens that the measured logs could not see.
 
-**Left out because they do not fit the bar:** medium effort (quality
-needs days of answers to judge), fewer round trips (a guess), per-task
+**Left out because they do not fit the bar:** medium effort (the
+offline test above found no saving), fewer round trips (a guess), per-task
 budgets (needs the 20 most expensive sessions read first), and masking
 old results (negative here).
 
@@ -471,21 +474,20 @@ tested.
 
 ## Recommendation
 
-Updated after the owner's measurement:
+Updated after the owner's measurement and the owner's quick-win bar. The
+two three-day trials are no longer proposed. The offline effort test is
+done (result above): medium effort saves nothing and is dropped, and Sonnet
+would reach at most 5% of the spend, only after routing by task kind.
 
-1. **Run the owner's two trials** as posted on #947: the 5-minute cache
-   on one tool-heavy agent, and medium effort on one low-risk agent. They
-   are the largest measured savings, and each is one environment
-   variable.
-2. **Fix the price list.** It is small and does not touch agents. Every
+1. **Fix the price list.** It is small and does not touch agents. Every
    later decision is priced with it.
-3. **Count the Monitor reviewer.** Record the usage the CLI already
-   returns, then run the 30-review comparison. Session logs cannot see
-   this spend, so the measurement above could not either.
-4. **Before trial 1 goes beyond one host**, run
-   `bench/cache-gap-replay.py` on the second host's logs. Read its
-   `1h writes` and `ttl5m` columns per channel. The owner measured one
-   host only.
+2. **Count the Monitor reviewer.** Record the usage the CLI already
+   returns, then run the 30-review comparison (item C). Session logs
+   cannot see this spend, so the measurement above could not either.
+3. **Before the 5-minute cache goes beyond one agent**, check the replay
+   in hours (item D), then run `bench/cache-gap-replay.py` on the second
+   host's logs. Read its `1h writes` and `ttl5m` columns per channel. The
+   owner measured one host only.
 
 Findings 1 and 4 of this page wait. On the measured host they are 2.5%
 together at most.
@@ -504,8 +506,8 @@ together at most.
 - If the replay shows `1h writes` at 100 percent and `ttl1h` at about
   zero, the node already uses the one-hour cache. Finding 3 does not
   apply to it; read `ttl5m` instead.
-- If the replay prints only a header, the date window holds no session
-  logs. Claude Code removes logs older than `cleanupPeriodDays` (30 by
+- If both tables show only a `TOTAL` row of zeros, the date window holds
+  no session logs. Claude Code removes logs older than `cleanupPeriodDays` (30 by
   default), and AgentX's Monitor reviews are never written there.
 - If the cron query shows `resumed` at 0 for every job, the jobs already
   start fresh (they run less often than every 12 hours). Finding 1 does
