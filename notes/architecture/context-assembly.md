@@ -34,6 +34,17 @@ the one the idea decides first.
 - **Expected saving: 11% to 13% of spend**, with a ceiling of 30%. This is
   a calculation until the offline test in section 6.
 
+## Owner decisions (2026-10-13)
+
+- **Order of work agreed:** short capability lists per seat and channel
+  first, then the memory decision per new session. Answer quality is
+  judged first, token saving second. This agrees the design order only.
+  It is not a go to build, change a seat, switch anything on or merge.
+- **Step B approved:** 40 offline runs on 20 past tasks, today's start
+  against the short start, graded blind. About 26 USD, stopped above 30 USD.
+  It is run by the Dev Session seat and reported on #956.
+- **Any build needs a new yes** from the owner after the step B result.
+
 ## Words used here
 
 - **Turn:** one incoming message and the agent's answer to it. A turn can
