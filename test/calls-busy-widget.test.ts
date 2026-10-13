@@ -15,18 +15,20 @@ let now: number
 let cfg: CallsConfig
 let notices: Array<{ title: string; message: string; urgent: boolean }>
 let calls: CallService
+let inFocus: boolean
 
 beforeEach(async () => {
   now = 1_000_000
   cfg = callsSchema.parse({ allow: ["*"] })
   notices = []
+  inFocus = false
   const deps: CallDeps = {
     store: new CallStore(new Database(":memory:")),
     config: () => cfg,
     agentName: (id) => ({ writer: "Writer", ops: "Ops", sales: "Sales" } as Record<string, string>)[id] ?? null,
     isRunningTurn: (id, p) => p.taskId === `task-${id}`,
     alert: async (n) => { notices.push(n) },
-    focus: () => ({ active: false, mode: null, reason: "off" }),
+    focus: () => ({ active: inFocus, mode: null, reason: inFocus ? "on" : "off" }),
     now: () => now,
   }
   calls = new CallService(deps)
@@ -159,7 +161,7 @@ describe("the caller of a busy owner (#969)", () => {
     const r = await request("ops")
 
     expect(r).toMatchObject({ ok: true, rang: "waiting", call: { status: "ringing" } })
-    expect(r.busy).toEqual({ why: "call", with: "Writer", remindAt: now + retry(), waitsUntil: now + maxWait() })
+    expect(r.busy).toEqual({ why: "call", with: "Writer", remindAt: now + retry(), waitsUntil: now + maxWait() + cfg.ringSeconds * 1000 })
     // Told before the next poll, and the call in progress is left alone.
     expect(titles()).toEqual(["Call waiting: Ops"])
     expect(notices[0].message).toMatch(/^Pick a launch date\n/)
@@ -177,6 +179,49 @@ describe("the caller of a busy owner (#969)", () => {
     calls.decline(first.id)
     await poll(POLL_MS, { busy: true })
     expect((await request("sales")).busy).toMatchObject({ why: "voice", with: null })
+  })
+
+  it("two calls between two polls: the second is told the first is ringing, and waits", async () => {
+    const first = await request("writer")
+    const second = await request("ops")
+    expect(first).toMatchObject({ ok: true, rang: "widget" })
+    expect(second).toMatchObject({ ok: true, rang: "waiting", busy: { why: "ringing", with: "Writer" } })
+    expect(titles()).toEqual(["Call waiting: Ops"])
+    // The widget shows the first; the second outlives its own ring time.
+    if (!first.ok || !second.ok) throw new Error("not placed")
+    await poll(cfg.ringSeconds * 2000, { busy: true, showing: first.call.id })
+    expect(calls.get(second.call.id)?.status).toBe("ringing")
+    expect(titles()).toEqual(["Call waiting: Ops", "Missed call from Writer"])
+  })
+
+  it("is missed at about waitsUntil when the owner stays busy, not before", async () => {
+    const first = await place("writer")
+    await talk(first.id)
+    const r = await request("ops")
+    if (!r.ok || !r.busy) throw new Error("not waiting")
+    cfg = { ...cfg, maxCallMinutes: 60 }
+    // Within a poll or two of the time the caller was given.
+    await poll(r.busy.waitsUntil - now - POLL_MS * 2, { busy: true })
+    expect(calls.get(r.call.id)?.status).toBe("ringing")
+    await poll(POLL_MS * 2, { busy: true })
+    expect(calls.get(r.call.id)).toMatchObject({ status: "missed", note: "widget busy" })
+  })
+
+  it("an urgent call during Focus waits for a busy owner; a normal one is held as missed", async () => {
+    const first = await place("writer")
+    await talk(first.id)
+    inFocus = true
+    expect(await request("ops", "urgent")).toMatchObject({ ok: true, rang: "waiting", busy: { why: "call" } })
+    expect(await request("sales")).toMatchObject({ ok: true, rang: false, call: { status: "missed" } })
+  })
+
+  it("withdrawing a call back that is due does not ring it first", async () => {
+    const call = await place("writer")
+    await poll(POLL_MS, { showing: call.id })
+    calls.later(call.id, 5)
+    now += 6 * 60_000
+    expect(await calls.cancel({ agentId: "writer" }, { taskId: "task-writer" })).toMatchObject({ ok: true, call: { status: "ended", note: CANCELLED_NOTE } })
+    expect(notices).toEqual([])
   })
 
   it("a free widget is not a busy result", async () => {

@@ -172,7 +172,9 @@ export class CallService {
     this.deps.log?.(`[calls] ${agentId} asks ${kind === "camera" ? "to see" : "for a call"} (${urgency}): ${reason}`)
     const rang = await this.ring(call)
     const saved = this.deps.store.get(call.id)!
-    return rang === "waiting" ? { ok: true, call: saved, rang, busy: this.busyInfo(call) } : { ok: true, call: saved, rang }
+    if (rang !== "waiting") return { ok: true, call: saved, rang }
+    // The widget may have come free while the owner was being told.
+    return this.waiting.has(call.id) ? { ok: true, call: saved, rang, busy: this.busyInfo(call) } : { ok: true, call: saved, rang: "widget" }
   }
 
   /** The caller withdraws its own voice call while it waits or rings, for
@@ -183,7 +185,7 @@ export class CallService {
     if (!this.deps.isRunningTurn(agentId, proof)) {
       return { ok: false, status: 403, error: `No running turn of ${agentId} asked for this. An agent withdraws its own call from inside its run.` }
     }
-    await this.sweep()
+    // No sweep first: a call back that is due must not ring just to be withdrawn.
     const mine = this.deps.store.list({ status: ["ringing", "later"], kind: "voice", limit: 200 }).find((c) => c.agentId === agentId)
     if (!mine) return { ok: false, status: 404, error: `${agentId} has no call waiting or ringing` }
     const ended = this.deps.store.transition(mine.id, ["ringing", "later"], { status: "ended", endedAt: this.now(), ringingSince: null, ringAgainAt: null, note: CANCELLED_NOTE })
@@ -209,8 +211,10 @@ export class CallService {
       return "notify"
     }
     if (this.widgetAlive()) {
-      if (!this.widget.busy) return "widget"
-      await this.wait(call)
+      // Busy by its last poll, or by a call placed since that it will show first.
+      if (!this.widget.busy && !this.otherCalls(call).length) return "widget"
+      this.startWaiting(call)
+      await this.callWaiting(call)
       return "waiting"
     }
     await this.notice(call, `${this.name(call.agentId)} is calling`,
@@ -229,12 +233,16 @@ export class CallService {
     }
   }
 
-  /** The call starts waiting for the busy widget, and the owner is told. */
-  private async wait(call: Call): Promise<void> {
+  /** The call starts waiting for the busy widget. */
+  private startWaiting(call: Call): void {
     const now = this.now()
     this.waiting.set(call.id, { since: now, toldAt: now })
     this.deps.log?.(`[calls] ${call.id} from ${call.agentId} waits: the widget is busy`)
-    await this.callWaiting(call)
+  }
+
+  /** Voice calls ringing or answered other than `call`, oldest first. */
+  private otherCalls(call: Call): Call[] {
+    return this.deps.store.list({ status: ["ringing", "answered"], kind: "voice", limit: 200 }).filter((c) => c.id !== call.id).reverse()
   }
 
   private async callWaiting(call: Call): Promise<void> {
@@ -246,15 +254,18 @@ export class CallService {
   private busyInfo(call: Call): BusyInfo {
     const cfg = this.deps.config().busy
     const { since, toldAt } = this.waiting.get(call.id) ?? { since: this.now(), toldAt: this.now() }
-    const others = this.deps.store.list({ status: ["ringing", "answered"], kind: "voice", limit: 200 }).filter((c) => c.id !== call.id)
+    const others = this.otherCalls(call)
     const talking = others.find((c) => c.status === "answered")
-    const showing = others.find((c) => c.id === this.widget.showing)
-    const waitsUntil = since + cfg.maxWaitMinutes * 60_000
+    // The call on the pill, or the oldest one it has yet to show.
+    const showing = others.find((c) => c.id === this.widget.showing) ?? others.find((c) => !this.waiting.has(c.id))
+    // After the wait the ring time runs once more before it is missed.
+    const waitsUntil = since + cfg.maxWaitMinutes * 60_000 + this.deps.config().ringSeconds * 1000
     const remindAt = toldAt + cfg.retryMinutes * 60_000
+    const stopsWaiting = since + cfg.maxWaitMinutes * 60_000
     return {
       why: talking ? "call" : showing ? "ringing" : "voice",
       with: talking ? this.name(talking.agentId) : showing ? this.name(showing.agentId) : null,
-      remindAt: remindAt < waitsUntil ? remindAt : null,
+      remindAt: remindAt < stopsWaiting ? remindAt : null,
       waitsUntil,
     }
   }
@@ -285,6 +296,9 @@ export class CallService {
   private async hold(widget: WidgetState): Promise<void> {
     const now = this.now()
     const busy = this.deps.config().busy
+    // Told after the loop: a poll that overlaps a slow notice must not
+    // carry on from a list and a widget state that are out of date.
+    const tell: Call[] = []
     const live = this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 })
     for (const id of this.waiting.keys()) if (!live.some((c) => c.id === id)) this.waiting.delete(id)
     for (const call of live) {
@@ -296,12 +310,12 @@ export class CallService {
       const held = this.waiting.get(call.id)
       if (held && now - held.since >= busy.maxWaitMinutes * 60_000) continue
       if (!this.deps.store.transition(call.id, "ringing", { ringingSince: now })) continue
-      if (!held) await this.wait(call)
-      else if (now - held.toldAt >= busy.retryMinutes * 60_000) {
-        held.toldAt = now
-        await this.callWaiting(call)
-      }
+      if (!held) this.startWaiting(call)
+      else if (now - held.toldAt >= busy.retryMinutes * 60_000) held.toldAt = now
+      else continue
+      tell.push(call)
     }
+    for (const call of tell) await this.callWaiting(call)
   }
 
   /** The phone app's poll: camera asks waiting for the owner, oldest first.
