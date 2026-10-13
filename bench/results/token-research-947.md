@@ -147,8 +147,8 @@ second run of today's setting measured the noise.
 | Opus 5.5, medium effort | 10.82 USD | 9 of 20 |
 | Sonnet 5.5, high effort | 5.32 USD | 5 of 20 |
 
-- **Medium effort saves nothing.** It is 1.5% cheaper, which is within
-  the 1.2% gap between two identical runs. Drop it.
+- **Medium effort saves nothing.** It is 1.5% cheaper, which is about the
+  size of the 1.2% gap between two identical runs. Drop it.
 - **Sonnet halves the price per task but not the tokens.**
   - It holds on status checks (4 of 4 checked facts right).
   - It is weaker on reviews (1 of 8 graded as good, against 5 of 8 for
