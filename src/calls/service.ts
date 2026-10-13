@@ -30,7 +30,7 @@
 import { randomUUID } from "crypto"
 import { focusLabel, readFocus, type FocusState } from "@/notify/focus"
 import type { CallsConfig } from "@/daemon/config"
-import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency } from "./store"
+import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency, type Waiting } from "./store"
 
 export const REASON_MAX = 200
 /** The widget polls every 2 s; missing this long means it is not running. */
@@ -121,10 +121,18 @@ export class CallService {
   /** What the widget said with its last poll. */
   private widget: WidgetState = {}
   /** Calls waiting for a busy widget: since when, and when the owner was
-   *  last told. */
-  private waiting = new Map<string, { since: number; toldAt: number }>()
+   *  last told. Written through to the store, so a restart keeps them. */
+  private waiting: Map<string, Waiting>
 
-  constructor(private deps: CallDeps) {}
+  constructor(private deps: CallDeps) {
+    this.waiting = deps.store.waiting()
+  }
+
+  private setWaiting(id: string, w: Waiting | null): void {
+    if (w) this.waiting.set(id, w)
+    else if (!this.waiting.delete(id)) return
+    this.deps.store.setWaiting(id, w)
+  }
 
   private now(): number { return this.deps.now?.() ?? Date.now() }
   private name(agentId: string): string { return this.deps.agentName(agentId) ?? agentId }
@@ -190,7 +198,7 @@ export class CallService {
     if (!mine) return { ok: false, status: 404, error: `${agentId} has no call waiting or ringing` }
     const ended = this.deps.store.transition(mine.id, ["ringing", "later"], { status: "ended", endedAt: this.now(), ringingSince: null, ringAgainAt: null, note: CANCELLED_NOTE })
     if (!ended) return { ok: false, status: 409, error: `call is ${this.deps.store.get(mine.id)?.status}` }
-    this.waiting.delete(mine.id)
+    this.setWaiting(mine.id, null)
     this.deps.log?.(`[calls] ${mine.id} withdrawn by ${agentId}`)
     return { ok: true, call: ended }
   }
@@ -236,7 +244,7 @@ export class CallService {
   /** The call starts waiting for the busy widget. */
   private startWaiting(call: Call): void {
     const now = this.now()
-    this.waiting.set(call.id, { since: now, toldAt: now })
+    this.setWaiting(call.id, { since: now, toldAt: now })
     this.deps.log?.(`[calls] ${call.id} from ${call.agentId} waits: the widget is busy`)
   }
 
@@ -300,10 +308,13 @@ export class CallService {
     // carry on from a list and a widget state that are out of date.
     const tell: Call[] = []
     const live = this.deps.store.list({ status: ["ringing"], kind: "voice", limit: 20 })
-    for (const id of this.waiting.keys()) if (!live.some((c) => c.id === id)) this.waiting.delete(id)
+    for (const id of [...this.waiting.keys()]) if (!live.some((c) => c.id === id)) this.setWaiting(id, null)
     for (const call of live) {
       if (call.id === widget.showing) {
-        if (this.waiting.delete(call.id)) this.deps.store.transition(call.id, "ringing", { ringingSince: now })
+        if (this.waiting.has(call.id)) {
+          this.setWaiting(call.id, null)
+          this.deps.store.transition(call.id, "ringing", { ringingSince: now })
+        }
         continue
       }
       if (!widget.busy) continue
@@ -311,7 +322,7 @@ export class CallService {
       if (held && now - held.since >= busy.maxWaitMinutes * 60_000) continue
       if (!this.deps.store.transition(call.id, "ringing", { ringingSince: now })) continue
       if (!held) this.startWaiting(call)
-      else if (now - held.toldAt >= busy.retryMinutes * 60_000) held.toldAt = now
+      else if (now - held.toldAt >= busy.retryMinutes * 60_000) this.setWaiting(call.id, { since: held.since, toldAt: now })
       else continue
       tell.push(call)
     }
@@ -424,9 +435,10 @@ export type Rang = "widget" | "notify" | "waiting" | false
 /** The note on a call its caller withdrew. */
 export const CANCELLED_NOTE = "withdrawn by the caller"
 
-/** What the caller reads when its call waits for a busy owner. */
-export function busyText(busy: BusyInfo, now: number = Date.now()): string {
-  const at = (ms: number) => `${new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })} (in ${Math.max(1, Math.round((ms - now) / 60_000))} min)`
+/** What the caller reads when its call waits for a busy owner. Times are
+ *  in the host's time zone (or `timeZone`), and say which one. */
+export function busyText(busy: BusyInfo, now: number = Date.now(), timeZone?: string): string {
+  const at = (ms: number) => `${new Date(ms).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit", hour12: false, timeZoneName: "short", timeZone })} (in ${Math.max(1, Math.round((ms - now) / 60_000))} min)`
   const why = busy.why === "call" ? `The owner is busy in another call${busy.with ? ` (with ${busy.with})` : ""}.`
     : busy.why === "ringing" ? `The owner is busy: another call${busy.with ? ` (from ${busy.with})` : ""} is ringing.`
     : "The owner is busy on the voice widget."

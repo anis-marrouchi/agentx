@@ -47,7 +47,7 @@ After you hang up, the agent writes a two-to-three-sentence summary. It appears 
 A second agent can call while you talk to the first. It works like call waiting on a phone:
 
 - **You** get a notification at once, with a sound: **Call waiting: Ops**, then the reason. The call you are in carries on. Nothing rings yet.
-- **The calling agent** is told that you are busy in another call, and with which agent. It is also told that its call waits, so it doesn't call again.
+- **The calling agent** is told that you are busy in another call, and with which agent. It is also told that its call waits, so it doesn't call again, and until what time, for example `14:10 CET (in 10 min)`. The time is in the time zone of the computer that runs AgentX, and names it.
 - **When you hang up**, the waiting call rings on the pill, and its ring time starts then. If several agents wait, they ring one at a time, oldest first.
 - **While you stay busy**, you get the notification again every 5 minutes (`calls.busy.retryMinutes`).
 - **After 10 minutes** (`calls.busy.maxWaitMinutes`) a call stops waiting. Its ring time then runs once more. If you are still busy at the end of it, the call counts as missed, with the note `widget busy`.
@@ -61,6 +61,8 @@ The agent can withdraw its call while it waits or rings, for example to send you
 You can change the words of the notification with `calls.busy.title` and `calls.busy.notice`. See [Settings](#settings).
 
 The agent is told you are busy from what AgentX Voice last reported, which can be up to two seconds old. A call placed in the two seconds after you start a voice turn is answered "ringing" and waits all the same. If AgentX Voice quits while a call waits, the call counts as missed once its ring time runs out.
+
+A waiting call survives a restart of AgentX. It keeps the time it started waiting, so it still ends at the time the agent was given, and you are not told about it a second time.
 
 ## How an agent places a call
 
