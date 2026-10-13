@@ -189,6 +189,10 @@ Agents ringing you for a live voice call on AgentX Voice. See [Calls from your a
 | `calls.maxCallMinutes` | number (1–240) | `30` | An answered call nobody hung up ends after this many minutes (the widget quit or crashed, the Mac slept), so the agent can call again. |
 | `calls.ringSound` | string | `"Submarine"` | The ring: a sound from `/System/Library/Sounds`, without the extension. |
 | `calls.summary` | boolean | `true` | After hang-up, the agent writes a short summary, filed in the dashboard's Ask history. |
+| `calls.busy.retryMinutes` | number (1–60) | `5` | While a call waits because AgentX Voice is busy (you are in another call, in a turn, or recording), you get the call-waiting notice again this often. |
+| `calls.busy.maxWaitMinutes` | number (1–240) | `10` | The longest a call waits. Still busy then, it counts as missed. |
+| `calls.busy.title` | string | `"Call waiting: {agent}"` | Title of the call-waiting notice. `{agent}` becomes the caller's name. |
+| `calls.busy.notice` | string | `"AgentX Voice is busy. The call rings when it is free."` | Second line of that notice, under the caller's reason. |
 
 ## `approvals`
 

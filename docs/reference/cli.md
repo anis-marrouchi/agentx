@@ -94,6 +94,7 @@ agentx desktop start
 | `agentx doctor` | Check local installation and prerequisites |
 | `agentx notify "<message>"` | Notify the phone app and show a Mac banner, held during Focus; `--proof` captures the banner; see [Get notified](../jobs/notifications.md) |
 | `agentx call request --reason "…"` | From inside an agent's run: ring the owner for a live voice call (`--urgent`); see [Calls from your agents](../dashboard/calls.md) |
+| `agentx call cancel` | From inside an agent's run: withdraw its call that is still waiting or ringing |
 | `agentx call list` | Recent calls (`--status missed`, `--limit`, `--json`) |
 | `agentx call answer <id>`, `agentx call decline <id>`, `agentx call hangup <id>`, `agentx call later <id> [minutes]` | Act on a call from the terminal |
 | `agentx call allow <agent>`, `agentx call disallow <agent>` | Who may call you (`calls.allow`; `"*"` for every agent). The same list lets an agent ask to see through your phone camera |
