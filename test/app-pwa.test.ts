@@ -137,9 +137,11 @@ describe("page scripts parse", () => {
     expect(APP_SERVICE_WORKER).toContain("indexOf('/api/') === 0) return")
   })
 
-  it("the shell has four labelled tabs, safe-area padding and a theme toggle", () => {
+  it("the shell has five labelled tabs, safe-area padding and a theme toggle", () => {
     const html = renderAppPage()
-    for (const t of ["Chat", "Fleet", "Activity", "Alerts"]) expect(html).toContain(`<span>${t}</span></button>`)
+    for (const t of ["Chat", "Fleet", "Activity", "Alerts", "Desk"]) expect(html).toContain(`<span>${t}</span></button>`)
+    expect(html.match(/role="tab"/g)).toHaveLength(5)
+    expect(html).toContain("grid-template-columns: repeat(5, 1fr)")
     expect(html).toContain("viewport-fit=cover")
     expect(html).toContain("env(safe-area-inset-bottom)")
     expect(html).toContain('id="theme"')

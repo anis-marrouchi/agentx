@@ -35,6 +35,7 @@ const groups = [
     { text: "Phone app", link: "/dashboard/mobile-app" },
     { text: "Phone app: Chat", link: "/dashboard/mobile-chat" },
     { text: "Phone app: Fleet and Activity", link: "/dashboard/mobile-fleet" },
+    { text: "Phone app: Desk", link: "/dashboard/mobile-desk" },
     { text: "Phone app: Notifications", link: "/dashboard/mobile-alerts" },
     { text: "Phone app: Share camera", link: "/dashboard/mobile-camera" },
     { text: "Phone app: Place reminders", link: "/dashboard/mobile-places" },

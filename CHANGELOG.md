@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.138.0](https://github.com/anis-marrouchi/agentx/compare/v0.137.3...v0.138.0) (2026-10-13)
+
+
+### Features
+
+* **app:** Desk tab on the phone, one board over what waits and what runs ([#959](https://github.com/anis-marrouchi/agentx/issues/959)) ([#960](https://github.com/anis-marrouchi/agentx/issues/960)) ([0258384](https://github.com/anis-marrouchi/agentx/commit/025838427f08a0d14f2524efe243c9bcd014683c))
+
 ## [0.137.3](https://github.com/anis-marrouchi/agentx/compare/v0.137.2...v0.137.3) (2026-10-12)
 
 
