@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.138.1](https://github.com/anis-marrouchi/agentx/compare/v0.138.0...v0.138.1) (2026-10-13)
+
+
+### Bug Fixes
+
+* **app:** show "Working now" on the Desk by matching runs on the trace id ([#959](https://github.com/anis-marrouchi/agentx/issues/959)) ([#962](https://github.com/anis-marrouchi/agentx/issues/962)) ([a75c998](https://github.com/anis-marrouchi/agentx/commit/a75c998256a0a79fee6479623a5d64557f2f12ff))
+
 ## [0.138.0](https://github.com/anis-marrouchi/agentx/compare/v0.137.3...v0.138.0) (2026-10-13)
 
 
