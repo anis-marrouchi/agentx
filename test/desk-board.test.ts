@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import Database from "better-sqlite3"
-import { buildDesk, DESK_DONE_MAX, DESK_TITLE_MAX, type DeskInbox, type DeskInput } from "../src/desk/board"
+import { buildDesk, DESK_DONE_MAX, DESK_TITLE_MAX, liveRunRefs, type DeskInbox, type DeskInput } from "../src/desk/board"
 import { RequestStore } from "../src/requests/store"
 import type { DecisionCard } from "../src/approvals/cards"
 
@@ -173,5 +173,17 @@ describe("card text", () => {
     const board = buildDesk(input(s))
     expect(board.cards.map((c) => c.key)).toEqual(["request:long"])
     expect(board.cards[0].title.length).toBeLessThanOrEqual(DESK_TITLE_MAX)
+  })
+})
+
+describe("liveRunRefs", () => {
+  it("keys each running task by its trace id and skips one without it", () => {
+    const refs = liveRunRefs([
+      { runningTasks: [{ id: "1700000000000-abc123", traceId: "trace-a" } as { traceId?: string }] },
+      // A daemon older than #962 sends no trace id: nothing is shown as working.
+      { runningTasks: [{ id: "1700000000001-def456" } as { traceId?: string }] },
+      {},
+    ])
+    expect([...refs]).toEqual(["trace-a"])
   })
 })
