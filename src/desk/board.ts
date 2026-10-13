@@ -105,7 +105,9 @@ export interface DeskInput {
   requests: DeskRequest[] | null
   /** Decision cards of this node that are no longer pending. */
   cards: DecisionCard[]
-  /** Ids of the runs that are live on this node right now. */
+  /** Trace task ids of the runs live on this node right now: the id a
+   *  request's run link holds (task:started's taskId), not the registry's
+   *  running-task id. */
   liveRuns: ReadonlySet<string>
   /** Inbox keys of this node the owner put off: still waiting, not shown. */
   deferred?: ReadonlySet<string>

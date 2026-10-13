@@ -1779,6 +1779,8 @@ interface NodeLive {
       chatId?: string
       sender?: string
       startedAt: string
+      /** The turn's trace task id: what a request's run link holds. */
+      traceId?: string
     }>
   }>
   /** Today's per-agent usage rollup pulled from /health. */
@@ -2548,7 +2550,8 @@ function appDeskDeps(config: DaemonConfig): AppDeskDeps {
       if (!here || !here.reachable || (here as { stale?: boolean }).stale) {
         errors.push("The running tasks could not be read, so no request is shown as working now.")
       } else {
-        for (const a of here.agents) for (const t of a.runningTasks ?? []) liveRuns.add(t.id)
+        // A request links the trace task id, not the registry's run id.
+        for (const a of here.agents) for (const t of a.runningTasks ?? []) if (t.traceId) liveRuns.add(t.traceId)
       }
       const now = Date.now()
       let requests: DeskRequest[] | null = null

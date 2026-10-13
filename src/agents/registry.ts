@@ -163,6 +163,9 @@ export interface RunningTask {
    *  the run a task is wrapped in under workflows.required. `step` and
    *  `title` are filled in when the agent list is read. */
   workflow?: { runId: string; workflowId?: string; step?: string; title?: string }
+  /** The trace task id of this turn: the id task:started carries, and so
+   *  the one a request stores as its run link. Set once the trace opens. */
+  traceId?: string
 }
 
 type TaskOutputSubscriber = (chunk: string) => void
@@ -1518,6 +1521,7 @@ export class AgentRegistry {
     // it by name; the variable is set before any callback can fire.
     const traceTaskId = newEventId()
     task.taskId = traceTaskId
+    runningTask.traceId = traceTaskId
     const abortEntry = this.taskAborts.get(runningTask.id)
     if (abortEntry) abortEntry.traceId = traceTaskId
 
