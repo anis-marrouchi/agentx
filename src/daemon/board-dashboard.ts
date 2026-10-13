@@ -65,8 +65,13 @@ import type { AppCameraDeps } from "./app-camera"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
 import { logSlowQueries } from "@/storage/slow-queries"
-import type { AppFleetDeps, ApprovalItem, NodeApprovals } from "./app-fleet"
-import { decide, listInbox, type InboxItem } from "@/approvals/inbox"
+import type { AppFleetDeps, ApprovalItem, NodeApprovals, NodeReply } from "./app-fleet"
+import type { AppDeskDeps } from "./app-desk"
+import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX } from "@/desk/board"
+import { listCards, type DecisionCard } from "@/approvals/cards"
+import { readInboxState } from "@/approvals/state"
+import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
+import { decide, listInbox, requestStoreFor, type InboxItem } from "@/approvals/inbox"
 import { readApprovalSettings } from "@/approvals/settings"
 import { classifyBrowserRequest, isStateChangingOrPreflight } from "./browser-origin"
 import { headerBuild, setTopbarFeatures, type TopbarPeer } from "./topbar"
@@ -244,7 +249,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), assetLinks: () => assetLinks(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), assetLinks: () => assetLinks(ctx.config) })) return
 
   // The AX symbol as favicon and touch icon. Public: browsers fetch icons
   // without credentials, and they hold no data.
@@ -2525,6 +2530,41 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
   }
 }
 
+/** What the phone app's Desk tab reads and answers through (app-desk.ts).
+ *  The board is put together from this node's sources on every read:
+ *  what waits (every node's inbox), the requests, the finished decision
+ *  cards, and the runs that are live right now. */
+function appDeskDeps(config: DaemonConfig): AppDeskDeps {
+  const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const fleet = appFleetDeps(config)
+  const ctx = { root: process.cwd() }
+  return {
+    async board() {
+      const [inbox, snap] = await Promise.all([fleet.approvals(), fleet.snapshot()])
+      const liveRuns = new Set<string>()
+      for (const n of snap.nodes) {
+        if (n.url.replace(/\/+$/, "") !== primary) continue
+        for (const a of n.agents) for (const t of a.runningTasks ?? []) liveRuns.add(t.id)
+      }
+      const now = Date.now()
+      const store = requestStoreFor(ctx)
+      const requests = store
+        ? [...store.listOpen(), ...store.listClosedSince(now - DESK_DONE_DAYS * 86_400_000, DESK_DONE_MAX)]
+          .map((record) => ({ record, links: store.links(record.id) }))
+        : null
+      let cards: DecisionCard[] = []
+      const errors: string[] = []
+      try { cards = listCards(ctx.root).filter((c) => c.status !== "pending") } catch (e: any) { errors.push(`Finished cards could not be read: ${e.message}`) }
+      const deferred = new Set(Object.entries(readInboxState(ctx.root).snoozed).filter(([, until]) => Date.parse(until) > now).map(([key]) => key))
+      const board = buildDesk({ now, node: primary, nodeName: config.node?.name || "this computer", inbox, requests, cards, liveRuns, deferred })
+      return { ...board, errors: [...board.errors, ...errors] }
+    },
+    async reply(id, text) {
+      return handleRequestsPanel("POST", `${REQUESTS_PANEL_PREFIX}/reply`, { id, text }, ctx) as Promise<NodeReply>
+    },
+  }
+}
+
 /** What the phone app's Chat tab talks through (app-chat.ts): turns go to
  *  the primary daemon with its token, the picker reads the live snapshot,
  *  and conversations live in the same SQLite file as the push tables. */
@@ -2668,6 +2708,8 @@ function toApprovalItem(i: InboxItem): ApprovalItem {
     expires: i.expires,
     ...(i.choices ? { choices: i.choices } : {}),
     ...(i.draft ? { draft: i.draft } : {}),
+    ...(i.detail ? { detail: i.detail } : {}),
+    ...(i.created_at ? { createdAt: i.created_at } : {}),
   }
 }
 

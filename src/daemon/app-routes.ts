@@ -4,6 +4,7 @@ import { createRequire } from "module"
 import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
 import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
+import { handleAppDesk, type AppDeskDeps } from "./app-desk"
 import { handleAppPush, type AppPushDeps } from "./app-push"
 import { handleAppAnnounce, type AppAnnounceDeps } from "./app-announce"
 import { handleAppChat, type AppChatDeps } from "./app-chat"
@@ -50,6 +51,7 @@ export interface AppRouteCtx {
   nodeName?: string
   tokens?: TokenStore
   fleet?: AppFleetDeps
+  desk?: AppDeskDeps
   push?: AppPushDeps
   announce?: AppAnnounceDeps
   chat?: AppChatDeps
@@ -150,6 +152,7 @@ export async function handleAppRequest(
     return sendJson(res, 200, { id: rec.id, device: rec.name, node: ctx.nodeName ?? null })
   }
   if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet)) return true
+  if (ctx.desk && await handleAppDesk(req, res, path, method, ctx.desk)) return true
   if (ctx.push && await handleAppPush(req, res, path, method, rec, ctx.push)) return true
   if (ctx.announce && await handleAppAnnounce(req, res, path, method, rec, ctx.announce)) return true
   if (ctx.chat && await handleAppChat(req, res, path, method, rec, ctx.chat)) return true

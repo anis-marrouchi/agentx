@@ -102,7 +102,7 @@ for (const [w, h] of [
   })
   for (const theme of ["light", "dark"]) {
     await ev(`document.documentElement.setAttribute('data-theme','${theme}')`)
-    for (const tab of ["chat", "fleet", "activity", "alerts"]) {
+    for (const tab of ["chat", "fleet", "activity", "alerts", "desk"]) {
       await click("#tab-" + tab)
       await sleep(300)
       await check(
@@ -138,7 +138,7 @@ await check(
 )
 await key("End")
 await check(
-  `document.querySelector('#tab-alerts').getAttribute('aria-selected')==='true'`,
+  `document.querySelector('#tab-desk').getAttribute('aria-selected')==='true'`,
   "end tab",
 )
 await key("Home")
