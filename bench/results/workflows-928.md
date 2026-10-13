@@ -36,6 +36,7 @@ not the cache write, unless the raw result also stays out of the context.
 
 | Form | Saving, share of spend | How it was measured | Status |
 |---|---|---|---|
+| Whole job as one workflow (the first pilot on #928, not measured here) | 78% cheaper on its own job, which is about 1% of spend | Offline replay on #928 | Stopped 2026-10-13: the owner declined the live dry-run |
 | Small workflows mined from repeated slices of calls, one call each | 1% to 4% (ceiling 8%) | Count of literal repeated sequences | Not built |
 | Look ahead: the agent fixes its next 2 to 4 calls in one call, run with no model | 1% to 3% | Count, plus a replay of 60 moments | Not built |
 | Checked batch: 2 to 4 steps in one call, a check on each, stop at the first failed check | 3.5% to 5% (6% at most) | 240 graded stretches, 40 graded by hand | Not built; below the 50% bar set before the test |
@@ -164,8 +165,13 @@ same node and window, agent workspace seats only (580 main sessions against
   corrections on long work that changes things, which needs one live seat
   (not voice, because of the speed) for a few days. Do not expect the
   calculated 20% to 27% from it: measured so far is 12% on small tasks.
-- **Whole-job workflow dry-run** on #928 is a separate question and was
-  still open on 2026-10-13; this page does not cover it.
+- **Whole job as one workflow: stopped.** On 2026-10-13 the owner answered
+  "No, stop it" to running the fixed version in the live dry-run: no
+  routing, no merge, the idea set aside. The record on #928 stays: 78%
+  cheaper on the job it was written for, a job that is about 1% of spend.
+
+With both answers, nothing from #928 goes live. The repo keeps only the
+read-only script and this page.
 - **Session start (18%)** is shared with #615 and #947, not with these forms.
 - **Prices:** check which of 4 / 20 and 5 / 25 matches the invoice for
   Opus 5.5, and whether AgentX's table needs a Haiku 5 family.
