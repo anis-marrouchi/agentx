@@ -23,6 +23,11 @@ import { handleAdminGet, handleAdminApi, handleAdminConfigGet } from "./admin-pa
 import { readVoiceHealth } from "@/voice/voice-health"
 import { handleGraphGet, handleGraphApi } from "./graph-panel"
 import { handleApprovalsPageGet, handleApprovalsPanelApi } from "./approvals-panel"
+import { daemonCallAgent, type DeskPanelDeps } from "./desk-panel"
+import type { AppDeskDeps, DeskNodeRead } from "./app-desk"
+import { readDeskSource } from "@/desk/read"
+import { deskAct } from "@/desk/act"
+import type { DeskSource } from "@/desk/card"
 import { handlePeoplePanel } from "./people-panel"
 import { handleObservabilityGet, handleObservabilityApi } from "./observability-panel"
 import { handleLedgerApi, renderLedgerPage } from "./ledger-panel"
@@ -244,7 +249,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), assetLinks: () => assetLinks(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), assetLinks: () => assetLinks(ctx.config) })) return
 
   // The AX symbol as favicon and touch icon. Public: browsers fetch icons
   // without credentials, and they hold no data.
@@ -757,7 +762,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (path.startsWith("/api/admin/approvals")) {
-    await handleApprovalsPanelApi(req, res, path, url)
+    await handleApprovalsPanelApi(req, res, path, url, { desk: deskPanelDeps(ctx.config) })
     return
   }
   // People (#441): the page and its /api/admin/people data, after the token
@@ -2515,6 +2520,69 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
             ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}),
           },
           body: JSON.stringify({ key, action, ...answer }),
+          signal: AbortSignal.timeout(10000),
+        })
+        return { status: r.status, body: parse(await r.text()) }
+      } catch (e: any) {
+        return { status: 502, body: { error: e.message || "peer dashboard unreachable" } }
+      }
+    },
+  }
+}
+
+/** The desk's Call on this machine: its daemon rings the owner (desk-panel.ts). */
+function deskPanelDeps(config: DaemonConfig): DeskPanelDeps {
+  const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  return { callAgent: daemonCallAgent({ url, token: dashboardTokenForNode(config.dashboard, url), operatorKey: loadOperatorKey(process.cwd()) }) }
+}
+
+/** What the phone app's Desk tab reads and acts through (app-desk.ts): the
+ *  same machines as its Activity tab's approvals, this one read directly
+ *  and the others through their dashboard's /api/admin/approvals/desk. */
+function appDeskDeps(config: DaemonConfig): AppDeskDeps {
+  const primary = config.dashboard.daemonUrl.replace(/\/+$/, "")
+  const parse = (text: string) => { try { return JSON.parse(text) } catch { return { error: text.slice(0, 200) } } }
+  const ctx = { root: process.cwd() }
+  return {
+    snapshot: () => buildLiveSnapshot(config),
+    quietHours: () => config.desk?.quietHours ?? 3,
+    async sources() {
+      const local: DeskNodeRead = { node: primary, nodeName: config.node?.name || "this computer" }
+      try { local.source = readDeskSource(ctx) } catch (e: any) { local.error = e.message }
+      const remote = await Promise.all(config.dashboard.daemons.map(async (d): Promise<DeskNodeRead> => {
+        const out: DeskNodeRead = { node: d.url.replace(/\/+$/, ""), nodeName: d.name }
+        const peer = findPeer(d.url, config)
+        if (!peer) return { ...out, error: "not in the dashboard's list of computers" }
+        try {
+          const r = await fetch(`${peer.url}/api/admin/approvals/desk`, {
+            headers: { "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
+            signal: AbortSignal.timeout(4000),
+          })
+          if (!r.ok) return { ...out, error: r.status === 404 ? "its AgentX is older and has no desk yet" : `HTTP ${r.status}` }
+          out.source = await r.json() as DeskSource
+        } catch (e: any) { out.error = e.message || "unreachable" }
+        return out
+      }))
+      return [local, ...remote]
+    },
+    async act(nodeUrl, input, by) {
+      const target = nodeUrl.replace(/\/+$/, "")
+      if (target === primary) {
+        const r = await deskAct(ctx, input, { by, laterHours: readApprovalSettings().laterHours, callAgent: deskPanelDeps(config).callAgent })
+        return r.ok ? { status: 200, body: { ok: true, message: r.message } } : { status: r.status, body: { error: r.error } }
+      }
+      const peer = findPeer(target, config)
+      if (!peer) return { status: 403, body: { error: "node not in dashboard allowlist", target } }
+      try {
+        const r = await fetch(`${peer.url}/api/admin/approvals/desk/act`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Requested-With": "agentx-board",
+            "X-Agentx-Peer": "primary",
+            ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}),
+          },
+          body: JSON.stringify({ ...input, by }),
           signal: AbortSignal.timeout(10000),
         })
         return { status: r.status, body: parse(await r.text()) }

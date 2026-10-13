@@ -124,7 +124,28 @@ export class CallService {
     if (!this.deps.isRunningTurn(agentId, proof)) {
       return { ok: false, status: 403, error: `No running turn of ${agentId} placed this call. An agent calls from inside its own run.` }
     }
+    return this.place(agentId, reason, urgency, kind, proof)
+  }
 
+  /** The owner asks an agent to call them about something: the desk's
+   *  Call (#959). The owner's surface proved who asks (the operator key,
+   *  checked by the route), so no running turn is named. The allow list,
+   *  one call at a time, the hourly limit and Focus hold as for any call.
+   *  The same ask again while its call is still live is that one call. */
+  async ownerAsks(input: { agentId?: unknown; reason?: unknown }): Promise<CallResult & { rang?: "widget" | "notify" | false; again?: boolean }> {
+    const agentId = String(input.agentId ?? "").trim()
+    const reason = String(input.reason ?? "").replace(/\s+/g, " ").trim()
+    if (!agentId || !reason) return { ok: false, status: 400, error: "Required: agentId and reason" }
+    if (reason.length > REASON_MAX) return { ok: false, status: 413, error: `reason is over ${REASON_MAX} characters; keep it to one line` }
+    if (this.deps.agentName(agentId) === null) return { ok: false, status: 404, error: `Unknown agent: ${agentId}` }
+    await this.sweep()
+    const same = this.deps.store.list({ status: LIVE, limit: 200 }).find((c) => c.agentId === agentId && c.reason === reason)
+    if (same) return { ok: true, call: same, rang: false, again: true }
+    return this.place(agentId, reason, "normal", "voice", {})
+  }
+
+  /** Checks 1 to 4, then the row and the ring. */
+  private async place(agentId: string, reason: string, urgency: CallUrgency, kind: CallKind, proof: CallerProof): Promise<CallResult & { rang?: "widget" | "notify" | false }> {
     const cfg = this.deps.config()
     if (!cfg.allow.includes("*") && !cfg.allow.includes(agentId)) {
       const verb = kind === "camera" ? "may not ask to see through the owner's camera" : "may not call the owner"

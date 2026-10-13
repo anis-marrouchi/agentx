@@ -20,6 +20,8 @@ export interface SnapshotNode {
   url: string
   reachable: boolean
   error?: string
+  /** Last good data served while the node does not answer. */
+  stale?: boolean
   uptimeSec?: number
   inflight?: number
   restart?: { state: string; requestedAt?: string; deadline?: string }

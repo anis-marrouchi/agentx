@@ -12,6 +12,7 @@ import { createServer } from "node:http"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { renderAppLockedPage, renderAppPage } from "../../src/daemon/ui/pages/app"
+import { buildDesk } from "../../src/desk/card"
 
 const now = Date.now(),
   ts = new Date(now).toISOString()
@@ -109,6 +110,53 @@ const agents = [
   { id: "support", name: "Support", active: 0, busy: false, errors: 0 },
 ]
 
+// --- The desk (#959): the real model over invented sources ---
+const H = 3600000
+const desk = () => buildDesk([
+  {
+    node: "local", nodeName: "Studio",
+    source: {
+      items: [
+        {
+          key: "card:newsletter", kind: "card", title: "Spring newsletter is ready to send", ask: "Send it to the 240 subscribers?",
+          yes: "tell writer yes", no: "tell writer no", raised_by: "writer", created_at: iso(3 * H), expires: new Date(now + 2 * 24 * H).toISOString(),
+          recommend: "Send today: the offer in it ends Friday", choices: ["Send today", "Send Monday"],
+          detail: "Draft checked against the style guide. 3 links tested, all open.",
+        },
+        {
+          key: "schedule:backup-check", kind: "schedule", title: "New schedule: backup check", ask: "Create the backup check every night at 02:00?",
+          yes: "create the schedule", no: "drop the request", raised_by: "helper", created_at: iso(26 * H),
+        },
+      ],
+      requests: [
+        {
+          id: "req-photos", state: "in_progress", agentId: "helper", summary: "Make the website photos smaller", question: null, attentionReason: null,
+          createdAt: now - 2 * H, updatedAt: now - 10 * 60000, closedAt: null, evidence: null, closeReason: null, runs: ["t1"], cards: [],
+          lastAnswer: null, plan: { done: 1, total: 3 },
+        },
+        {
+          id: "req-week", state: "waiting_owner", agentId: "support", summary: "Draft the reply to the supplier", question: "Which delivery week should I offer?",
+          attentionReason: null, createdAt: now - 5 * H, updatedAt: now - 4 * H, closedAt: null, evidence: null, closeReason: null, runs: [], cards: [],
+          lastAnswer: { text: "The supplier can deliver in week 18 or week 19.", at: now - 4 * H }, plan: null,
+        },
+        {
+          id: "req-labels", state: "in_progress", agentId: "support", summary: "Order new shipping labels", question: null, attentionReason: null,
+          createdAt: now - 30 * H, updatedAt: now - 9 * H, closedAt: null, evidence: null, closeReason: null, runs: [], cards: [], lastAnswer: null, plan: null,
+        },
+        {
+          id: "req-report", state: "done", agentId: "helper", summary: "Send me the weekly summary", question: null, attentionReason: null,
+          createdAt: now - 26 * H, updatedAt: now - 20 * H, closedAt: now - 20 * H, evidence: "https://example.com/reports/week-40", closeReason: null,
+          runs: [], cards: [], lastAnswer: null, plan: null,
+        },
+      ],
+      closedCards: [],
+      deferred: {},
+    },
+  },
+], [
+  { node: "local", nodeName: "Studio", taskId: "t1", agentId: "helper", agentName: "Helper", preview: "Making the website photos smaller.", startedAt: iso(10 * 60000) },
+], { now, quietHours: 3 })
+
 // --- Scenes ---
 const defaults = {
   // The other conversation: "thinking" (strip chip) or "done" (its finish banner).
@@ -164,6 +212,8 @@ function api(path: string): any {
       }
     case "/api/app/activity":
       return { ts, tasks: [{ taskId: "t1", agentName: "Helper", node: "local", nodeName: "Studio", channel: "app", startedAt: ts, preview: "Making the website photos smaller." }] }
+    case "/api/app/desk":
+      return { ts, quietHours: 3, ...desk() }
     case "/api/app/approvals":
       return { nodes: [{ node: "local", nodeName: "Studio", items: [
         { key: "a1", title: "Review the draft", ask: "Is this ready to share?", recommend: "Read the changes first", raisedBy: "Support" },
@@ -331,6 +381,11 @@ createServer(async (req, res) => {
     const body = await read()
     streamUntil = body.seconds > 0 ? Date.now() + body.seconds * 1000 : 0
     json(200, { watch: { streamUntil: streamUntil || null } })
+    return
+  }
+  if (path === "/api/app/desk/act" && req.method === "POST") {
+    const body = await read()
+    json(200, { ok: true, message: body.action === "defer" ? "Put off until tomorrow." : "Recorded. The agent is told." })
     return
   }
   if (req.method === "POST") {

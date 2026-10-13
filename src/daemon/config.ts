@@ -1251,6 +1251,13 @@ export const requestsConfigSchema = z.object({
   }).default({}),
 }).default({})
 
+/** The owner's desk (src/desk, #959): the phone app's Desk tab. */
+export const deskConfigSchema = z.object({
+  /** An open request with no running work and no change for this long
+   *  moves from "With an agent" to "No news". */
+  quietHours: z.number().positive().max(24 * 30).default(3),
+}).default({})
+
 /** People (src/people, #384): the humans who talk to the agents, one entry
  *  per person whatever channel they use. Empty: this machine's owner is the
  *  only known person and nothing else changes. */
@@ -1555,6 +1562,9 @@ export const daemonConfigSchema = z.object({
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */
   requests: requestsConfigSchema,
+  /** The owner's desk (src/desk, #959): one board of what waits for the
+   *  owner, what agents are doing and what went quiet. */
+  desk: deskConfigSchema,
   people: peopleConfigSchema,
   members: membersConfigSchema,
   /** Request status where the request was made (src/requests/status-board,

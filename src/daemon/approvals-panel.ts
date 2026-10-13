@@ -4,6 +4,7 @@ import { popAgain } from "@/approvals/popup-runner"
 import { parseDestination, readApprovalSettings, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
 import { renderApprovalsPage } from "./ui/pages/approvals"
 import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
+import { DESK_PANEL_PREFIX, handleDeskPanel, type DeskPanelDeps } from "./desk-panel"
 import type { TopbarPeer } from "./topbar"
 
 // --- Dashboard side of the Approvals inbox ---
@@ -19,6 +20,7 @@ import type { TopbarPeer } from "./topbar"
 //   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force?, choice?, text? }
 //   POST /api/admin/approvals/popup        { key }: show the card on the Mac again
 //   POST /api/admin/approvals/settings     settings form
+//   GET  /api/admin/approvals/desk[/act]   the desk on this machine (desk-panel.ts)
 
 const ACTIONS: readonly InboxAction[] = ["yes", "no", "later"]
 
@@ -62,6 +64,8 @@ export interface ApprovalsPanelOpts {
   configPath?: string
   /** Hot-reload the daemon after config writes. Default true. */
   reload?: boolean
+  /** The desk's Call (desk-panel.ts). */
+  desk?: DeskPanelDeps
 }
 
 /** Returns false when the path isn't one of ours. */
@@ -82,6 +86,12 @@ export async function handleApprovalsPanelApi(
   }
 
   try {
+    if (path === DESK_PANEL_PREFIX || path.startsWith(`${DESK_PANEL_PREFIX}/`)) {
+      const r = await handleDeskPanel(method, path, method === "POST" ? await readJson(req) : {}, ctx, opts.desk)
+      sendJson(res, r.status, r.body)
+      return true
+    }
+
     if (path.startsWith(REQUESTS_PANEL_PREFIX)) {
       const r = await handleRequestsPanel(method, path, method === "POST" ? await readJson(req) : {}, ctx)
       sendJson(res, r.status, r.body)

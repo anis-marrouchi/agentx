@@ -238,6 +238,13 @@ export class RequestStore {
     ).all(...OPEN_STATES).map(toRecord)
   }
 
+  /** Requests closed since `since`, newest first, at most `limit`. */
+  listClosedSince(since: number, limit = 50): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(CLOSED_STATES.length)}) AND closed_at >= ? ORDER BY closed_at DESC, rowid DESC LIMIT ?`,
+    ).all(...CLOSED_STATES, since, limit).map(toRecord)
+  }
+
   /** Requests in these states that nothing has touched since `before`. */
   quietSince(states: RequestState[], before: number): RequestRecord[] {
     return this.db.prepare(

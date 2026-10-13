@@ -239,6 +239,15 @@ try {
       await wait(".fx-sheet[open]"); await sleep(200); await shot("activity-choice-sheet"); await key("Escape")
     },
     // --- Alerts ---
+    "desk": async () => { await open("/app"); await tab("desk", "#panel-desk .dk-card"); await shot("desk") },
+    "desk-agent-dark": async () => {
+      await open("/app", { theme: "dark" }); await tab("desk", "#panel-desk .dk-card")
+      await click('#panel-desk [data-col="agent"]'); await wait("#panel-desk .dk-agent"); await sleep(200); await shot("desk-agent-dark")
+    },
+    "desk-answer-sheet": async () => {
+      await open("/app"); await tab("desk", "#panel-desk .dk-opt")
+      await click("#panel-desk .dk-opt"); await wait(".fx-sheet[open]"); await sleep(200); await shot("desk-answer-sheet"); await key("Escape")
+    },
     "alerts": async () => { await scene({ push: "off" }); await open("/app"); await alerts("#al-btn:not([hidden])"); await shot("alerts") },
     "alerts-chat-finish": async () => {
       await scene({ push: "on" }); await open("/app", { flags: { pushOn: true } })

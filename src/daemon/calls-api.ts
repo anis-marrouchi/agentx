@@ -9,6 +9,12 @@
 //                               403 no such running turn, or not in
 //                               calls.allow; 409 one already in
 //                               progress; 429 over calls.maxPerHour
+//   POST /calls/owner           {agentId, reason}: the owner asks this
+//                               agent to call them (the desk's Call, #959),
+//                               with X-AgentX-Operator: this node's
+//                               operator key. Same allow list, hourly
+//                               limit and Focus; the same ask while its
+//                               call is live is that call (200 {again}).
 //   GET  /calls?status=&kind=&limit=  newest first; status is a comma list
 //   GET  /calls/ringing?busy=1&showing=<id>
 //                               the widget's poll: voice calls {calls,
@@ -47,7 +53,16 @@ export async function handleCalls(
   query: URLSearchParams,
   body: Record<string, unknown>,
   proof: CallerProof = {},
+  /** The caller showed this node's operator key: the owner's surface. */
+  owner = false,
 ): Promise<Reply> {
+  if (path === "/calls/owner") {
+    if (method !== "POST") return { status: 405, body: { error: "POST" } }
+    if (!owner) return { status: 403, body: { error: "Only the owner's own surfaces (the operator key) may ask an agent to call." } }
+    const r = await calls.ownerAsks(body)
+    if (!r.ok) return { status: r.status, body: { error: r.error } }
+    return { status: r.again ? 200 : r.rang === false ? 202 : 201, body: { call: r.call, rang: r.rang, ...(r.again ? { again: true } : {}) } }
+  }
   if (path === "/calls") {
     if (method === "POST") {
       const r = await calls.request(body, proof)
