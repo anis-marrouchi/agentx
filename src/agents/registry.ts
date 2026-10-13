@@ -138,6 +138,10 @@ export function getGlobalRegistry(): AgentRegistry | undefined {
 export interface RunningTask {
   /** Unique id for this execution (timestamp-based). */
   id: string
+  /** The id the run's trace is kept under, and the one `task:started`
+   *  carries: what a request's run link holds. Absent until the trace
+   *  is allocated. */
+  traceId?: string
   /** First 200 chars of the user message, for dense lists. */
   messagePreview: string
   /** The whole request. A task page shows what was actually asked, and the
@@ -1518,6 +1522,7 @@ export class AgentRegistry {
     // it by name; the variable is set before any callback can fire.
     const traceTaskId = newEventId()
     task.taskId = traceTaskId
+    runningTask.traceId = traceTaskId
     const abortEntry = this.taskAborts.get(runningTask.id)
     if (abortEntry) abortEntry.traceId = traceTaskId
 

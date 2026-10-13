@@ -67,7 +67,7 @@ import { openDb } from "@/storage/sqlite"
 import { logSlowQueries } from "@/storage/slow-queries"
 import type { AppFleetDeps, ApprovalItem, NodeApprovals, NodeReply } from "./app-fleet"
 import type { AppDeskDeps } from "./app-desk"
-import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX, type DeskRequest } from "@/desk/board"
+import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX, liveRunRefs, type DeskRequest } from "@/desk/board"
 import { listCards, type DecisionCard } from "@/approvals/cards"
 import { readInboxState } from "@/approvals/state"
 import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
@@ -1774,6 +1774,7 @@ interface NodeLive {
     hourlyTasks?: number[]
     runningTasks?: Array<{
       id: string
+      traceId?: string
       messagePreview: string
       channel: string
       chatId?: string
@@ -2541,14 +2542,14 @@ function appDeskDeps(config: DaemonConfig): AppDeskDeps {
   return {
     async board() {
       const [inbox, snap] = await Promise.all([fleet.approvals(), fleet.snapshot()])
-      const liveRuns = new Set<string>()
+      let liveRuns: ReadonlySet<string> = new Set<string>()
       const errors: string[] = []
       const here = snap.nodes.find((n) => n.url.replace(/\/+$/, "") === primary)
       // A last-known answer is no proof that a run is live now.
       if (!here || !here.reachable || (here as { stale?: boolean }).stale) {
         errors.push("The running tasks could not be read, so no request is shown as working now.")
       } else {
-        for (const a of here.agents) for (const t of a.runningTasks ?? []) liveRuns.add(t.id)
+        liveRuns = liveRunRefs(here.agents)
       }
       const now = Date.now()
       let requests: DeskRequest[] | null = null

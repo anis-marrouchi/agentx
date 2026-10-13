@@ -105,12 +105,22 @@ export interface DeskInput {
   requests: DeskRequest[] | null
   /** Decision cards of this node that are no longer pending. */
   cards: DecisionCard[]
-  /** Ids of the runs that are live on this node right now. */
+  /** The runs that are live on this node right now, by the id a request's
+   *  run link holds (see `liveRunRefs`). */
   liveRuns: ReadonlySet<string>
   /** Inbox keys of this node the owner put off: still waiting, not shown. */
   deferred?: ReadonlySet<string>
   quietHours?: number
   doneDays?: number
+}
+
+/** The live runs of a node's agent list, each by its trace id. That is the
+ *  id `task:started` carries and a request's run link stores; a running
+ *  task's own `id` is a different one and matches no link. */
+export function liveRunRefs(agents: ReadonlyArray<{ runningTasks?: ReadonlyArray<{ traceId?: string }> }>): Set<string> {
+  const refs = new Set<string>()
+  for (const a of agents) for (const t of a.runningTasks ?? []) if (t.traceId) refs.add(t.traceId)
+  return refs
 }
 
 export interface DeskFigures {
