@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from "fs"
 import { describeQueue } from "@/daemon/voice-queue-api"
 import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
-import { callerHeaders } from "@/calls/service"
+import { busyText, callerHeaders } from "@/calls/service"
 import { READ_TOOL_NAMES, type McpToolSet } from "./tool-names"
 
 // --- MCP Server: expose agentx as a Model Context Protocol server ---
@@ -725,17 +725,20 @@ const TOOLS = [
   {
     name: "agentx_call_owner",
     description:
-      "Ring the owner for a live voice call on their desktop widget, when you need them directly and a message will not do. " +
+      "Ring the owner for a live voice call on their desktop widget. A call interrupts them: place one only when they asked you to call, " +
+      "or when you are blocked on something only they can decide and a message would be too slow. Otherwise send a message. " +
       "When they answer you speak first, so give the reason in one line. Only agents the owner allowed (calls.allow) can call; " +
       "a few calls an hour at most. urgency 'urgent' rings through Focus: use it only for something that cannot wait. " +
+      "If the owner is busy in another call, they get a call-waiting notice and your call waits and rings by itself when they are free: " +
+      "the result says so, do not call again. cancel: true withdraws your waiting call, for example to send a message instead. " +
       "Returns how it rang, or why it did not.",
     inputSchema: {
       type: "object" as const,
       properties: {
         reason: { type: "string", description: "Why you are calling, in one line (at most 200 characters)." },
         urgency: { type: "string", enum: ["normal", "urgent"], description: "Default normal: held as a missed call during Focus." },
+        cancel: { type: "boolean", description: "true: withdraw your call that is still waiting or ringing. No reason needed." },
       },
-      required: ["reason"],
     },
   },
   {
@@ -1507,6 +1510,15 @@ async function handleToolCall(
       // The daemon checks this against a running turn of the agent.
       const agentId = process.env.AGENTX_AGENT_ID
       if (!agentId) return { content: [{ type: "text", text: "Call not placed: only an agent's own run can call (AGENTX_AGENT_ID is not set)." }] }
+      if (args.cancel === true) {
+        const res = await daemonFetch(`${daemonUrl()}/calls/cancel`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...callerHeaders() },
+          body: JSON.stringify({ agentId }),
+        })
+        const data = await res.json().catch(() => ({})) as any
+        return { content: [{ type: "text", text: res.ok ? `Call ${data.call?.id} withdrawn. It will not ring.` : `Not withdrawn: ${data?.error || `HTTP ${res.status}`}` }] }
+      }
       const res = await daemonFetch(`${daemonUrl()}/calls`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...callerHeaders() },
@@ -1516,6 +1528,7 @@ async function handleToolCall(
       if (!res.ok) return { content: [{ type: "text", text: `Call not placed: ${data?.error || `HTTP ${res.status}`}` }] }
       const how = data.rang === "widget" ? "It is ringing on the owner's desktop widget. When they answer you will be asked to open the conversation."
         : data.rang === "notify" ? "The desktop widget is not running, so the owner got a notification instead."
+        : data.rang === "waiting" && data.busy ? `${busyText(data.busy)} If a message will do, withdraw the call (cancel: true) and send the message.`
         : `It did not ring (${data.call?.note ?? "held"}); the owner sees it as a missed call.`
       return { content: [{ type: "text", text: `Call ${data.call?.id} placed. ${how}` }] }
     }

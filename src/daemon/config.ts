@@ -1148,6 +1148,18 @@ export const callsSchema = z.object({
   /** After hang-up, ask the agent for a short summary and file it in the
    *  dashboard's conversation history. */
   summary: z.boolean().default(true),
+  /** A call that arrives while AgentX Voice is busy (the owner is in
+   *  another call, in a turn, or recording) waits for it. */
+  busy: z.object({
+    /** The owner is told again that a call waits, this often. */
+    retryMinutes: z.number().int().min(1).max(60).default(5),
+    /** The longest a call waits. Still busy then, it counts as missed. */
+    maxWaitMinutes: z.number().int().min(1).max(240).default(10),
+    /** Title of the call-waiting notice; {agent} is the caller's name. */
+    title: z.string().min(1).max(120).default("Call waiting: {agent}"),
+    /** Its second line, under the caller's reason. */
+    notice: z.string().min(1).max(200).default("AgentX Voice is busy. The call rings when it is free."),
+  }).default({}),
 }).default({})
 
 export type CallsConfig = z.infer<typeof callsSchema>
