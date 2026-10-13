@@ -94,7 +94,7 @@ main h2 { font-size: 28px; font-weight: 600; letter-spacing: -.02em; }
 .tabs [role=tab][aria-selected=true], [data-theme=dark] .tabs [role=tab][aria-selected=true] { background: transparent; color: var(--ax-accent); font-weight: 600; }
 .tab-icon { display: grid; place-items: center; width: 56px; height: 30px; border-radius: 16px; }
 .tab-icon svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-.tabs::before { content: ''; position: absolute; pointer-events: none; top: 4px; width: 56px; height: 30px; border-radius: 16px; background: var(--ax-accent-t); left: calc((var(--tab-position, 0) + .5) * 25% - 28px); }
+.tabs::before { content: ''; position: absolute; pointer-events: none; top: 4px; width: 56px; height: 30px; border-radius: 16px; background: var(--ax-accent-t); left: calc((var(--tab-position, 0) + .5) * 20% - 28px); }
 .tab-icon { position: relative; }
 .tabs button:active .tab-icon { background: var(--ax-surface-2); transform: scale(.92); }
 .fx-card { border-radius: 16px; padding: 16px; }

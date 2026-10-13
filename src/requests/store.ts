@@ -261,6 +261,13 @@ export class RequestStore {
     return this.db.prepare("SELECT * FROM requests WHERE state = ? ORDER BY created_at, rowid").all(state).map(toRecord)
   }
 
+  /** Requests closed since `since`, newest first. */
+  listClosedSince(since: number, limit = 50): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(CLOSED_STATES.length)}) AND closed_at >= ? ORDER BY closed_at DESC, rowid DESC LIMIT ?`,
+    ).all(...CLOSED_STATES, since, limit).map(toRecord)
+  }
+
   /** The owner said "pick it up again": back in progress, and the agent
    *  is to be told at the next check. */
   requestPickup(id: string, now: number): boolean {

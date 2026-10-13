@@ -12,6 +12,8 @@ import { createServer } from "node:http"
 import { readFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { renderAppLockedPage, renderAppPage } from "../../src/daemon/ui/pages/app"
+import { buildDesk, type DeskRequest } from "../../src/desk/board"
+import type { RequestRecord } from "../../src/requests/store"
 
 const now = Date.now(),
   ts = new Date(now).toISOString()
@@ -131,8 +133,42 @@ let scene = { ...defaults }
 // Keep watching on the camera sheet: when it stops by itself.
 let streamUntil = 0
 
+// --- The Desk: the real board (desk/board.ts) over scripted sources ---
+const HOUR = 3_600_000
+const request = (id: string, text: string, state: RequestRecord["state"], updatedAgo: number, more: Partial<RequestRecord> = {}): DeskRequest => ({
+  record: {
+    id, state, channel: "app", chatId: "demo", sender: null, person: null, agentId: "helper", text,
+    createdAt: now - updatedAgo - HOUR, updatedAt: now - updatedAgo, attentionReason: null, notifiedAt: null, question: null,
+    closedAt: null, evidence: null, closeReason: null, ownerNote: null, noteSaid: false, askedAgent: null, ...more,
+  },
+  links: [{ kind: "run", ref: `run-${id}` }],
+})
+const desk = () => buildDesk({
+  now, node: "local", nodeName: "Studio", cards: [], liveRuns: new Set(["run-r1"]),
+  inbox: [{ node: "local", nodeName: "Studio", items: [
+    {
+      key: "card:newsletter", title: "Spring newsletter is ready to send", ask: "Send it to the 240 subscribers?",
+      choices: ["Send today", "Send Monday"], recommend: "Send today: the offer in it ends Friday.", raisedBy: "helper",
+      detail: "Draft checked against the style guide. 3 links tested, all open.", createdAt: iso(26 * HOUR),
+    },
+    {
+      key: "schedule:weekly-digest", title: 'New schedule "weekly-digest" for helper', ask: "Let helper run this every Monday at 09:00?",
+      yes: "enable it", no: "drop the request", raisedBy: "helper", detail: "Collect the week's notes into one digest.", createdAt: iso(3 * HOUR),
+    },
+  ] }],
+  requests: [
+    request("r1", "Make the photos on the website smaller", "in_progress", 20 * 60_000),
+    request("r2", "Update the opening hours on the site", "waiting_other", 2 * HOUR),
+    request("r3", "Compare three hosting plans for the shop and say which one to take", "in_progress", 9 * HOUR),
+    request("r4", "Choose a cover for the catalogue", "waiting_owner", 2 * HOUR, { question: "Blue or green for the catalogue cover?" }),
+    request("r5", "Rename the photo folders by date", "done", 3 * HOUR, { closedAt: now - 3 * HOUR, evidence: "142 folders renamed, list in the shared drive" }),
+  ],
+})
+
 function api(path: string): any {
   switch (path) {
+    case "/api/app/desk":
+      return desk()
     case "/api/app/me":
       return scene.locked ? 401 : { device: "Demo phone", node: "Studio" }
     case "/api/app/agents":
@@ -293,6 +329,10 @@ createServer(async (req, res) => {
     const finish = () => res.end("event: final\ndata: " + JSON.stringify({ content: "Demo answer received.", status: "done" }) + "\n\n")
     if (scene.slow) setTimeout(finish, 15000)
     else finish()
+    return
+  }
+  if (path === "/api/app/desk/reply" && req.method === "POST") {
+    json(200, { ok: true, message: "Reply sent: Helper will go on with it" })
     return
   }
   if (path === "/api/app/voice/transcribe") {
