@@ -13,12 +13,16 @@ and --json.
             call after a message, tool call inside a chain, answer), split
             into re-read, cache write, output and input, plus how often the
             agent already groups calls in one request or one shell line.
-  ahead     Ceiling on look-ahead (the 10-13 clarification on #928): the
-            share of windows of 2 to 4 calls in a chain whose later calls
-            use no named thing (path, hash, number, identifier) that first
-            came back in a result inside the window, and the saving if each
+  ahead     Look-ahead (the 10-13 comments on #928): the share of windows
+            of 2 to 4 calls in a chain whose later calls use no named thing
+            (path, hash, number, identifier) that first came back in a result
+            inside the window, the round trips in them, and the saving if each
             such window became one call. It cannot see a decision that hangs
-            on a result, so it is an upper bound.
+            on a result, so for steps fixed ahead it is an upper bound; it is
+            not one for a workflow that passes values between its steps.
+            --sample writes windows with the start of each result and the
+            agent's text between calls, for grading whether a check on the
+            result would have decided the next step.
   outline   Write bounded tool outlines of a sample of sessions spread over
             the seats, for a mining agent to read (step 1 of the test).
   mark      Mark where a catalog of proposed workflows would have applied in
@@ -43,7 +47,9 @@ re-read from the cache; the high saving prices their whole cost.
 
 Prices are list prices per million tokens, the table in
 src/daemon/token-tracker.ts (CACHE_AWARE_PRICING); the 200k-token long-context
-tier is left out. A test checks the two tables match.
+tier is left out. A test checks the two tables match. --prices replaces rates
+per family, for example with what the runtime reports per call, which on
+2026-10-13 differed from that table for Opus 5.5 (#928).
 """
 
 import argparse
@@ -178,7 +184,9 @@ def load_session(path, since, until):
     """Requests of one main session in the window, in order.
 
     Each request: {id, day, model, usage, calls: [(tool, args, use id)],
-    afterMessage, prompt, results}. afterMessage is true when a message (not
+    afterMessage, prompt, results, heads, text}. heads holds the first 300
+    characters of each call's result and text those of the agent's own text
+    or thinking in the request. afterMessage is true when a message (not
     a tool result) came in since the request before; prompt holds the named
     things of that message and results those of each call's result, by use
     id (see named()). One assistant message is spread over several log lines
@@ -202,7 +210,9 @@ def load_session(path, since, until):
             has_result = any(b.get("type") == "tool_result" for b in blocks)
             for block in blocks:
                 if block.get("type") == "tool_result" and block.get("tool_use_id") in owner:
-                    by_id[owner[block["tool_use_id"]]]["results"][block["tool_use_id"]] = named(result_text(block))
+                    text = result_text(block)
+                    by_id[owner[block["tool_use_id"]]]["results"][block["tool_use_id"]] = named(text)
+                    by_id[owner[block["tool_use_id"]]]["heads"][block["tool_use_id"]] = head(text)
                 elif block.get("type") == "text" and block.get("text"):
                     prompt |= named(block["text"])
                     # Text sent along with tool results is a reminder, not a message.
@@ -212,10 +222,12 @@ def load_session(path, since, until):
         if mid not in by_id:
             day = (obj.get("timestamp") or "")[:10]
             by_id[mid] = {"id": mid, "day": day, "model": msg.get("model", ""), "usage": msg.get("usage") or {}, "calls": [],
-                          "afterMessage": message, "prompt": prompt, "results": {}}
+                          "afterMessage": message, "prompt": prompt, "results": {}, "heads": {}, "text": ""}
             order.append(mid)
             prompt, message = set(), False
         for block in content if isinstance(content, list) else []:
+            if isinstance(block, dict) and block.get("type") in ("text", "thinking") and not by_id[mid]["text"]:
+                by_id[mid]["text"] = head(block.get("text") or block.get("thinking") or "")
             if isinstance(block, dict) and block.get("type") == "tool_use":
                 args = block.get("input") if isinstance(block.get("input"), dict) else {}
                 by_id[mid]["calls"].append((block.get("name", "?"), args, block.get("id")))
@@ -227,6 +239,12 @@ def load_session(path, since, until):
 # or underscored identifier. Used to see whether a call's arguments carry
 # something that first came back in an earlier result.
 NAMED_RE = re.compile(r"[\w.~-]*/[\w./~-]+|\b[0-9a-f]{7,40}\b|\b\d{2,}\b|\b[A-Za-z_]\w*[._-][\w.-]+")
+
+
+def head(text, width=300):
+    """The start of a result or of the agent's text, for a grader to read; never the whole of it."""
+    text = " ".join(str(text).split())
+    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 def named(text):
@@ -458,14 +476,27 @@ def first_from_result(requests):
     return first
 
 
+def window_record(key, requests, flat, i, k):
+    """One window for a grader: each call with the start of its result, and the agent's text between calls."""
+    first, last = flat[i][3], flat[i + k - 1][3]
+    steps = []
+    for c in flat[i: i + k]:
+        r = requests[c[3]]
+        use = next((u for name, a, u in r["calls"] if label(name, a, "command") == c[0] and arg_shape(name, a) == c[1]), None)
+        steps.append({"call": f"{c[0]}  {c[1]}", "result": r["heads"].get(use, "")})
+    return {"seat": key[0], "session": key[1], "removedRequests": last - first, "steps": steps,
+            "between": [requests[j]["text"] for j in range(first + 1, last + 1) if requests[j]["text"]]}
+
+
 def ahead(args):
-    """Ceiling on look-ahead: windows of calls whose arguments use nothing new from results inside the window."""
+    """Look-ahead: windows of calls whose arguments use nothing new from results inside the window."""
     sessions = load_all(args.projects, args.since, args.until)
     total_spend = spend(sessions)
     labelled = {k: flatten(v, "command") for k, v in sessions.items()}
     known = repeated(labelled, args.max_len, args.min_sessions, args.min_seats, False) if args.known else None
     windows = defaultdict(lambda: [0, 0])
     low = high = nowrite = 0.0
+    removed, picked = 0, []
     for key, requests in sessions.items():
         flat = labelled[key]
         req = [c[3] for c in flat]
@@ -498,6 +529,9 @@ def ahead(args):
                     whole, reread = removed_cost(requests, req[i], req[i + k - 1])
                     low += reread
                     high += whole
+                    removed += req[i + k - 1] - req[i]
+                    if args.sample:
+                        picked.append(window_record(key, requests, flat, i, k))
                     # The results still come back and are written to the cache; only re-reads and output go.
                     for r in requests[req[i] + 1: req[i + k - 1] + 1]:
                         p = PRICES[family(r["model"])]
@@ -513,13 +547,21 @@ def ahead(args):
         "known": bool(args.known), "byLength": {str(k): {"windows": w, "fixed": f, "fixedPct": pct(f, w)} for k, (w, f) in sorted(windows.items())},
         "savingLowPct": round(low / total_spend * 100, 2) if total_spend else 0.0, "savingHighPct": round(high / total_spend * 100, 2) if total_spend else 0.0,
         "savingNoWritePct": round(nowrite / total_spend * 100, 2) if total_spend else 0.0,
+        "removableRequests": removed,
     }
-    print(f"Look-ahead ceiling {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD")
+    print(f"Look-ahead {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD")
     for k, b in result["byLength"].items():
         print(f"  {k} steps: {b['fixed']} of {b['windows']} windows ({b['fixedPct']}%) use nothing new from a result inside the window")
     where = f"only sequences seen in {args.min_sessions}+ sessions and {args.min_seats}+ seats" if args.known else f"any window of up to {args.max_len} calls"
     print(f"  saving, {where}: {result['savingLowPct']}% (re-reads only) to {result['savingHighPct']}% (whole cost) of spend;"
           f" {result['savingNoWritePct']}% if the results are still written to the cache")
+    print(f"  {removed} round trips sit in such windows")
+    if args.sample:
+        out = Path(args.sample_out)
+        out.mkdir(parents=True, exist_ok=True)
+        sample = random.Random(args.seed).sample(picked, min(args.sample, len(picked)))
+        (out / "windows.jsonl").write_text("".join(json.dumps(w) + "\n" for w in sample))
+        print(f"  wrote {len(sample)} of {len(picked)} windows to {out}/windows.jsonl for grading")
     if args.out:
         Path(args.out).write_text(json.dumps(result, indent=2))
         print(f"\nSaved {args.out}")
@@ -648,6 +690,7 @@ def main():
         p.add_argument("--from", dest="since", required=True)
         p.add_argument("--to", dest="until", required=True)
         p.add_argument("--projects", default=str(Path.home() / ".claude" / "projects"))
+        p.add_argument("--prices", help="JSON file of {family: {input, output, cacheRead, cacheCreate}} to use in place of the built-in table")
 
     p = sub.add_parser("count", help="find repeated slices and price them")
     window(p)
@@ -671,6 +714,9 @@ def main():
     p.add_argument("--known", action="store_true", help="only count sequences seen in --min-sessions and --min-seats")
     p.add_argument("--min-sessions", type=int, default=5)
     p.add_argument("--min-seats", type=int, default=2)
+    p.add_argument("--sample", type=int, default=0, help="windows to write for grading")
+    p.add_argument("--sample-out", default="ahead-windows")
+    p.add_argument("--seed", type=int, default=928)
     p.add_argument("--json", dest="out")
     p.set_defaults(func=ahead)
 
@@ -694,6 +740,11 @@ def main():
     p.set_defaults(func=lambda a: print(json.dumps(PRICES, sort_keys=True)))
 
     args = ap.parse_args()
+    if getattr(args, "prices", None):
+        for fam, rates in json.loads(Path(args.prices).read_text()).items():
+            if fam not in PRICES:
+                raise SystemExit(f"--prices: unknown family {fam}; known: {', '.join(sorted(PRICES))}")
+            PRICES[fam] = {**PRICES[fam], **rates}
     args.func(args)
 
 

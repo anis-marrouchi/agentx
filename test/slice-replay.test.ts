@@ -100,6 +100,32 @@ describe("bench/slice-replay.py", () => {
     expect(a.savingNoWritePct).toBeCloseTo(25, 1) // the fixture writes nothing to the cache
   })
 
+  it("writes sampled windows with the start of each result for grading", () => {
+    const out = join(dir, "ahead-sample.json")
+    const windows = join(dir, "windows")
+    const r = run(["ahead", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--sample", "2", "--sample-out", windows, "--json", out])
+    expect(r.status, r.stderr).toBe(0)
+    expect(JSON.parse(readFileSync(out, "utf8")).removableRequests).toBe(5)
+    const rows = readFileSync(join(windows, "windows.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l))
+    expect(rows).toHaveLength(2)
+    expect(rows[0].removedRequests).toBe(1)
+    expect(rows[0].steps.map((s: { result: string }) => s.result)).toEqual(["a body", "touches /w/memory/notes.md"])
+    expect(rows[0].between).toEqual(["ok"])
+  })
+
+  it("takes other prices per family and refuses an unknown one", () => {
+    const prices = join(dir, "prices.json")
+    writeFileSync(prices, JSON.stringify({ "claude-opus-5": { cacheRead: 0 } }))
+    const out = join(dir, "calls-prices.json")
+    let r = run(["calls", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--prices", prices, "--json", out])
+    expect(r.status, r.stderr).toBe(0)
+    expect(JSON.parse(readFileSync(out, "utf8")).byPlace.chain.parts).toMatchObject({ reread: 0, output: 100 })
+    writeFileSync(prices, JSON.stringify({ "claude-opus-9": { cacheRead: 0 } }))
+    r = run(["calls", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--prices", prices])
+    expect(r.status).not.toBe(0)
+    expect(r.stderr).toContain("unknown family")
+  })
+
   it("marks a catalog on unseen sessions only and writes a bounded hand check", () => {
     const mine = join(dir, "mine")
     let r = run(["outline", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--sample", "2", "--out", mine])

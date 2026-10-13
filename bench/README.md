@@ -98,7 +98,7 @@ python3 bench/slice-replay.py mark --from ... --to ... --catalog catalog.json --
   step is matched against `label<TAB>arguments`, with numbers shown as
   `<n>`, so `"^bash:gh pr view\\t"` matches any PR number.
 - Outlines and the hand check show each call's arguments cut at 120
-  characters and never the tool output, but they still hold commands and
+  characters and never the tool output (`ahead --sample` is the exception, below), but they still hold commands and
   paths: keep them on the node.
 
 It finds only calls in a row and in the same order. The stop rule from #928:
@@ -110,9 +110,13 @@ Two more commands cover the look-ahead form (the agent fixes its next 2 to
 ```bash
 # What one call costs by its place in a session, split into re-read, cache write, output and input
 python3 bench/slice-replay.py calls --from 2026-10-09 --to 2026-10-12
-# Ceiling: windows of 2 to 4 calls whose later calls use nothing that first came back in a result inside the window
+# Windows of 2 to 4 calls whose later calls use nothing that first came back in a result inside the window
 python3 bench/slice-replay.py ahead --from 2026-10-09 --to 2026-10-12
 python3 bench/slice-replay.py ahead --from ... --to ... --known   # only sequences seen in 5+ sessions and 2+ seats
+# Sample 240 of those windows for grading whether a check on a result would have decided the next step
+python3 bench/slice-replay.py ahead --from ... --to ... --sample 240 --sample-out graded/
+# Any command, with other prices (for example what the runtime reports per call)
+python3 bench/slice-replay.py calls --from ... --to ... --prices runtime-prices.json
 ```
 
 - `calls` sorts each request into the first call of a session, a tool call
@@ -122,9 +126,20 @@ python3 bench/slice-replay.py ahead --from ... --to ... --known   # only sequenc
 - `ahead` looks for named things (a path, a hash, a number of 2+ digits, a
   dotted or dashed identifier). A window counts as fixed when no later call
   in it carries one that first appeared in an earlier result of the same
-  window. It cannot see a choice that depends on a result, so it is an upper
-  bound. What a model can really commit to ahead needs a model replay,
-  which is not here.
+  window. It also prints how many round trips sit in such windows. It cannot
+  see a choice that depends on a result, so for steps fixed ahead it is an
+  upper bound. It is not one for a workflow that passes values between its
+  steps, or for a batch that stops at the first failed check.
+- `ahead --sample` writes `windows.jsonl`: each window's calls, the first 300
+  characters of each result, and the agent's own text or thinking between
+  them. A grader (a person or a model run separately) marks whether a check
+  on the result would have decided the next step. No model is called here.
+  The file holds the start of real tool output, so keep it on the node.
+- `--prices` takes `{"<family>": {"input": ..., "output": ..., "cacheRead":
+  ..., "cacheCreate": ...}}` and replaces those rates; the families are the
+  keys `prices` prints. On 2026-10-13 the runtime's per-call cost for Opus
+  5.5 was a fifth below AgentX's table (#928); which one matches the invoice
+  is not checked.
 - Removing a call does not save all of its cost. The results still come
   back to the agent and are written into the cache, so read the `write`
   column of `calls` next to the `ahead` saving.
