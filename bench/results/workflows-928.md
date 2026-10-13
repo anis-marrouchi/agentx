@@ -2,13 +2,15 @@
 
 The results of the token side of the spike in #928, measured on 2026-10-13
 on one node's Claude Code session logs (10-09 to 10-12, 507 to 561 main
-sessions depending on the count). Nothing from it is built, routed or switched on. This page records
-what was measured so the ideas are not re-done from scratch, and what is
-still open. The model-free parts can be re-run with
-[`bench/slice-replay.py`](../slice-replay.py) (see the
-[bench README](../README.md#small-reusable-workflows-928)). The graded runs
-used scripts in the developer seat's workspace and are not in this
-repository.
+sessions depending on the count). Nothing from it is built, routed or
+switched on. This page records what was measured so the ideas are not
+re-done from scratch, and what is still open.
+
+Every figure on this page comes from scripts in the developer seat's
+workspace, which are not in this repository. This repository's
+[`bench/slice-replay.py`](../slice-replay.py) measures the same things with
+its own rules and **does not reproduce these figures** on the same logs: see
+[Re-running with this repository's script](#re-running-with-this-repositorys-script).
 
 Prices: the runtime reported Opus 5.5 at 4 / 20 USD per million input /
 output tokens. AgentX's `CACHE_AWARE_PRICING` has 5 / 25, and which one
@@ -112,6 +114,43 @@ short note. Text the main model is about to edit it reads itself.
     does not touch, and drift day to day against their reference. More of
     them will not settle the question.
 - **Not tested:** long sessions that change things, where most spend sits.
+
+## Re-running with this repository's script
+
+An owner-sweep check of PR #954 (at `d5b76a9`) ran `slice-replay.py` on the
+same node and window, agent workspace seats only (580 main sessions against
+561):
+
+| Figure | This page (seat scripts) | `slice-replay.py` |
+|---|---|---|
+| First call of a session | 18% | 11% |
+| Only reads | 37% | 27% |
+| Reads plus a run | 9% | 10% |
+| Changes something | 30% | 43% |
+| Answer, no tool | 5% | 9% |
+| Reading stretches of 2+ calls | 1,052, results 10.7M tokens | 987, results 4.1M tokens |
+| One call inside a chain | 0.072 USD: 33% re-read, 38% cache write, 29% output | 0.085 USD: 55% re-read, 20% cache write, 25% output |
+
+- Prices do not explain it: with 4 / 20 through `--prices` the shares move
+  by less than a point. Adding scratch seats under `/tmp` does not either.
+- Which side is right is not known. The two have not been compared rule by
+  rule. Differences in `slice-replay.py` that could explain it, none
+  checked against the seat scripts:
+  - **First call:** only the first request of each session file in the
+    window counts. A session resumed for a new task, or the first call of
+    each run inside a long session, counts as a tool call or an answer.
+  - **Changes something:** broad. Any shell line with `cp`, `mkdir`, `tee`
+    or a `>` redirect to a file, and any MCP tool whose name contains add,
+    set, update or similar, counts as a change, and a request takes its
+    strongest call.
+  - **Result size:** only the text parts of a tool result are counted
+    (bytes / 4). Images and any other parts are left out.
+  - **Chain:** a run of requests with tool calls and no message between;
+    a request after a message is not "inside a chain".
+- **The reader saving (20% to 27%) rests on the "only reads" share and the
+  10.7M result tokens**, the two figures that differ most. Until the rules
+  are reconciled, treat it as the seat scripts' figure, not one this
+  repository can re-derive.
 
 ## What would reopen or close these
 

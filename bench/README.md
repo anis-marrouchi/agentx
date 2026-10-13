@@ -66,8 +66,11 @@ and after, comes from `agentx usage channels`.
 
 ### Small reusable workflows (#928)
 
-What #928 measured with it, and what is still open, is in
-[results/workflows-928.md](results/workflows-928.md).
+What #928 measured, and what is still open, is in
+[results/workflows-928.md](results/workflows-928.md). Those figures come from
+other scripts, and this one gives different shares on the same logs (the
+page has both and the rule differences), so do not quote its output as the
+#928 figures.
 
 `bench/slice-replay.py` reads the same session logs and asks how much
 folding a repeated run of tool calls into one call (a registered action, or
