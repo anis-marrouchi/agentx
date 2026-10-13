@@ -104,6 +104,31 @@ python3 bench/slice-replay.py mark --from ... --to ... --catalog catalog.json --
 It finds only calls in a row and in the same order. The stop rule from #928:
 under 10% saved on unseen sessions, drop the token case for this form.
 
+Two more commands cover the look-ahead form (the agent fixes its next 2 to
+4 calls in one call and an engine runs them with no model):
+
+```bash
+# What one call costs by its place in a session, split into re-read, cache write, output and input
+python3 bench/slice-replay.py calls --from 2026-10-09 --to 2026-10-12
+# Ceiling: windows of 2 to 4 calls whose later calls use nothing that first came back in a result inside the window
+python3 bench/slice-replay.py ahead --from 2026-10-09 --to 2026-10-12
+python3 bench/slice-replay.py ahead --from ... --to ... --known   # only sequences seen in 5+ sessions and 2+ seats
+```
+
+- `calls` sorts each request into the first call of a session, a tool call
+  right after a message, a tool call inside a chain, and an answer with no
+  tool. It also prints how often the agent already groups calls: several
+  tools in one request, several commands in one shell line.
+- `ahead` looks for named things (a path, a hash, a number of 2+ digits, a
+  dotted or dashed identifier). A window counts as fixed when no later call
+  in it carries one that first appeared in an earlier result of the same
+  window. It cannot see a choice that depends on a result, so it is an upper
+  bound. What a model can really commit to ahead needs a model replay,
+  which is not here.
+- Removing a call does not save all of its cost. The results still come
+  back to the agent and are written into the cache, so read the `write`
+  column of `calls` next to the `ahead` saving.
+
 ### The history block (#636, parked)
 
 Pruning today's earlier messages with a Jev seat before a fresh session

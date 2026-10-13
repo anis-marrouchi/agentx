@@ -9,6 +9,16 @@ and --json.
 
   count     Find slices of consecutive tool calls that repeat across sessions
             and seats, and price the round trips they would remove.
+  calls     Cost per request by its place in a session (first call, tool
+            call after a message, tool call inside a chain, answer), split
+            into re-read, cache write, output and input, plus how often the
+            agent already groups calls in one request or one shell line.
+  ahead     Ceiling on look-ahead (the 10-13 clarification on #928): the
+            share of windows of 2 to 4 calls in a chain whose later calls
+            use no named thing (path, hash, number, identifier) that first
+            came back in a result inside the window, and the saving if each
+            such window became one call. It cannot see a decision that hangs
+            on a result, so it is an upper bound.
   outline   Write bounded tool outlines of a sample of sessions spread over
             the seats, for a mining agent to read (step 1 of the test).
   mark      Mark where a catalog of proposed workflows would have applied in
@@ -20,6 +30,8 @@ and --json.
 Usage:
   python3 bench/slice-replay.py count --from 2026-10-09 --to 2026-10-12
   python3 bench/slice-replay.py count --from ... --to ... --level kind
+  python3 bench/slice-replay.py calls --from ... --to ...
+  python3 bench/slice-replay.py ahead --from ... --to ... [--known]
   python3 bench/slice-replay.py outline --from ... --to ... --sample 60 --out mine/
   python3 bench/slice-replay.py mark --from ... --to ... --catalog catalog.json --seen mine/seen.json --out marked/
 
@@ -165,33 +177,69 @@ def arg_shape(name, args, width=120):
 def load_session(path, since, until):
     """Requests of one main session in the window, in order.
 
-    Each request: {id, day, model, usage, calls: [(tool, args)]}. One
-    assistant message is spread over several log lines that repeat its usage;
-    the usage is counted once per message id."""
+    Each request: {id, day, model, usage, calls: [(tool, args, use id)],
+    afterMessage, prompt, results}. afterMessage is true when a message (not
+    a tool result) came in since the request before; prompt holds the named
+    things of that message and results those of each call's result, by use
+    id (see named()). One assistant message is spread over several log lines
+    that repeat its usage; the usage is counted once per message id."""
     try:
         lines = path.read_text(errors="replace").splitlines()
     except OSError:
         return []
-    order, by_id = [], {}
+    order, by_id, prompt, message, owner = [], {}, set(), True, {}
     for line in lines:
         try:
             obj = json.loads(line)
         except json.JSONDecodeError:
             continue
-        if obj.get("isSidechain") or obj.get("type") != "assistant":
+        if obj.get("isSidechain") or obj.get("type") not in ("assistant", "user"):
             continue
         msg = obj.get("message") or {}
+        content = msg.get("content")
+        if obj.get("type") == "user":
+            blocks = [b for b in (content if isinstance(content, list) else [{"type": "text", "text": content or ""}]) if isinstance(b, dict)]
+            has_result = any(b.get("type") == "tool_result" for b in blocks)
+            for block in blocks:
+                if block.get("type") == "tool_result" and block.get("tool_use_id") in owner:
+                    by_id[owner[block["tool_use_id"]]]["results"][block["tool_use_id"]] = named(result_text(block))
+                elif block.get("type") == "text" and block.get("text"):
+                    prompt |= named(block["text"])
+                    # Text sent along with tool results is a reminder, not a message.
+                    message = message or not has_result
+            continue
         mid = msg.get("id") or obj.get("uuid")
         if mid not in by_id:
             day = (obj.get("timestamp") or "")[:10]
-            by_id[mid] = {"id": mid, "day": day, "model": msg.get("model", ""), "usage": msg.get("usage") or {}, "calls": []}
+            by_id[mid] = {"id": mid, "day": day, "model": msg.get("model", ""), "usage": msg.get("usage") or {}, "calls": [],
+                          "afterMessage": message, "prompt": prompt, "results": {}}
             order.append(mid)
-        content = msg.get("content")
+            prompt, message = set(), False
         for block in content if isinstance(content, list) else []:
             if isinstance(block, dict) and block.get("type") == "tool_use":
                 args = block.get("input") if isinstance(block.get("input"), dict) else {}
-                by_id[mid]["calls"].append((block.get("name", "?"), args))
+                by_id[mid]["calls"].append((block.get("name", "?"), args, block.get("id")))
+                owner[block.get("id")] = mid
     return [r for r in (by_id[m] for m in order) if since <= r["day"] <= until and r["model"] != "<synthetic>"]
+
+
+# A named thing: a path, a hash, a number of 2+ digits, or a dotted, dashed
+# or underscored identifier. Used to see whether a call's arguments carry
+# something that first came back in an earlier result.
+NAMED_RE = re.compile(r"[\w.~-]*/[\w./~-]+|\b[0-9a-f]{7,40}\b|\b\d{2,}\b|\b[A-Za-z_]\w*[._-][\w.-]+")
+
+
+def named(text):
+    return {t.strip(".-") for t in NAMED_RE.findall(text or "") if len(t.strip(".-")) >= 3}
+
+
+def result_text(block):
+    content = block.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
+    return ""
 
 
 def load_all(projects, since, until):
@@ -208,7 +256,7 @@ def flatten(requests, level):
     """Calls of a session in order: (label, shape, request index)."""
     out = []
     for i, r in enumerate(requests):
-        for name, args in r["calls"]:
+        for name, args, _ in r["calls"]:
             out.append((label(name, args, level), arg_shape(name, args), name, i))
     return out
 
@@ -233,30 +281,34 @@ def removed_cost(requests, first, last):
 
 # ---- count -----------------------------------------------------------------
 
+def repeated(calls, max_len, min_sessions, min_seats, skip_repeats):
+    """Label sequences of 2..max_len calls seen in enough sessions and seats."""
+    seen = defaultdict(lambda: (set(), set()))
+    for (seat, sid), cs in calls.items():
+        labels = [c[0] for c in cs]
+        for n in range(2, max_len + 1):
+            for i in range(len(labels) - n + 1):
+                gram = tuple(labels[i: i + n])
+                if skip_repeats and len(set(gram)) == 1:
+                    continue
+                seen[gram][0].add(sid)
+                seen[gram][1].add(seat)
+    return {g for g, (ss, seats) in seen.items() if len(ss) >= min_sessions and len(seats) >= min_seats}
+
+
 def count(args):
     sessions = load_all(args.projects, args.since, args.until)
     total_spend = spend(sessions)
     calls = {k: flatten(v, args.level) for k, v in sessions.items()}
     tool_requests = sum(1 for v in sessions.values() for r in v if r["calls"])
     n_calls = sum(len(v) for v in calls.values())
-
-    seen = defaultdict(lambda: (set(), set()))
-    for (seat, sid), cs in calls.items():
-        labels = [c[0] for c in cs]
-        for n in range(2, args.max_len + 1):
-            for i in range(len(labels) - n + 1):
-                gram = tuple(labels[i: i + n])
-                if args.skip_repeats and len(set(gram)) == 1:
-                    continue
-                seen[gram][0].add(sid)
-                seen[gram][1].add(seat)
-    keep = {g for g, (ss, seats) in seen.items() if len(ss) >= args.min_sessions and len(seats) >= args.min_seats}
+    keep = repeated(calls, args.max_len, args.min_sessions, args.min_seats, args.skip_repeats)
 
     # Mark each session greedily, longest pattern first, without overlap.
     covered_calls, low, high = 0, 0.0, 0.0
     per_gram = defaultdict(lambda: {"places": 0, "calls": 0, "low": 0.0, "high": 0.0})
     for key, cs in calls.items():
-        labels, used, i = [c[0] for c in cs], [False] * len(cs), 0
+        labels, used = [c[0] for c in cs], [False] * len(cs)
         for n in range(args.max_len, 1, -1):
             i = 0
             while i <= len(labels) - n:
@@ -303,6 +355,176 @@ def count(args):
         print(f"\nSaved {args.out}")
 
 
+# ---- calls -----------------------------------------------------------------
+
+def place(i, r):
+    if i == 0:
+        return "first"
+    if not r["calls"]:
+        return "answer"
+    return "afterMessage" if r["afterMessage"] else "chain"
+
+
+def chains(requests):
+    """Chain number per request: a run of requests with tool calls and no message between."""
+    out, n = [], -1
+    for i, r in enumerate(requests):
+        if r["calls"] and (i == 0 or r["afterMessage"] or not requests[i - 1]["calls"]):
+            n += 1
+        out.append(n if r["calls"] else None)
+    return out
+
+
+def calls_report(args):
+    sessions = load_all(args.projects, args.since, args.until)
+    total_spend = spend(sessions)
+    keys = ("cache_read_input_tokens", "cache_creation_input_tokens", "output_tokens", "input_tokens")
+    rows = defaultdict(lambda: {"requests": 0, "cost": 0.0, **{k: 0 for k in keys}, "reread": 0.0, "write": 0.0, "output": 0.0, "input": 0.0})
+    multi_requests = multi_calls = tool_calls = shell = shell2 = shell3 = 0
+    chain_len = defaultdict(int)
+    for (seat, sid), requests in sessions.items():
+        for i, (r, c) in enumerate(zip(requests, chains(requests))):
+            b = rows[place(i, r)]
+            p = PRICES[family(r["model"])]
+            u = r["usage"]
+            b["requests"] += 1
+            b["cost"] += cost(r["model"], u)[0]
+            for k in keys:
+                b[k] += u.get(k, 0)
+            b["reread"] += u.get("cache_read_input_tokens", 0) / 1e6 * p["cacheRead"]
+            b["write"] += u.get("cache_creation_input_tokens", 0) / 1e6 * p["cacheCreate"]
+            b["output"] += u.get("output_tokens", 0) / 1e6 * p["output"]
+            b["input"] += u.get("input_tokens", 0) / 1e6 * p["input"]
+            tool_calls += len(r["calls"])
+            if len(r["calls"]) > 1:
+                multi_requests += 1
+                multi_calls += len(r["calls"])
+            if c is not None:
+                chain_len[(sid, c)] += len(r["calls"])
+            for name, a, _ in r["calls"]:
+                if name == "Bash":
+                    parts = [s for s in SPLIT_RE.split(a.get("command", "")) if s.strip()]
+                    shell += 1
+                    shell2 += len(parts) >= 2
+                    shell3 += len(parts) >= 3
+
+    pct = lambda x, d: round(x / d * 100, 1) if d else 0.0
+    lengths = sorted(chain_len.values())
+    result = {
+        "from": args.since, "to": args.until, "sessions": len(sessions), "spendUsd": round(total_spend, 4),
+        "byPlace": {}, "toolCalls": tool_calls, "chains": len(lengths), "medianChainCalls": lengths[len(lengths) // 2] if lengths else 0,
+        "callsInMultiToolRequests": pct(multi_calls, tool_calls), "callsPerMultiToolRequest": round(multi_calls / multi_requests, 1) if multi_requests else 0.0,
+        "shellJoining2Plus": pct(shell2, shell), "shellJoining3Plus": pct(shell3, shell),
+    }
+    print(f"Calls {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD")
+    print(f"  {'place':<13} {'requests':>8} {'read':>8} {'written':>8} {'output':>7} {'cost':>7} {'share':>6}   re-read  write  output  input")
+    for name in ("first", "afterMessage", "chain", "answer"):
+        b = rows.get(name)
+        if not b or not b["requests"]:
+            continue
+        n = b["requests"]
+        result["byPlace"][name] = {
+            "requests": n, "avgCacheRead": round(b["cache_read_input_tokens"] / n), "avgCacheWrite": round(b["cache_creation_input_tokens"] / n),
+            "avgOutput": round(b["output_tokens"] / n), "avgCostUsd": round(b["cost"] / n, 4), "sharePct": pct(b["cost"], total_spend),
+            "parts": {k: pct(b[k], b["cost"]) for k in ("reread", "write", "output", "input")},
+        }
+        e = result["byPlace"][name]
+        print(f"  {name:<13} {n:>8} {e['avgCacheRead']/1e3:>7.1f}k {e['avgCacheWrite']/1e3:>7.1f}k {e['avgOutput']:>7} {e['avgCostUsd']:>7.3f} {e['sharePct']:>5.1f}%"
+              f"   {e['parts']['reread']:>6.0f}% {e['parts']['write']:>5.0f}% {e['parts']['output']:>6.0f}% {e['parts']['input']:>5.0f}%")
+    print(f"\n  {tool_calls} tool calls in {len(lengths)} chains, {result['medianChainCalls']} calls per chain at the median")
+    print(f"  {result['callsInMultiToolRequests']}% of tool calls share a request with others ({result['callsPerMultiToolRequest']} per such request)")
+    print(f"  {result['shellJoining2Plus']}% of shell calls join 2+ commands, {result['shellJoining3Plus']}% 3+")
+    if args.out:
+        Path(args.out).write_text(json.dumps(result, indent=2))
+        print(f"\nSaved {args.out}")
+
+
+# ---- ahead -----------------------------------------------------------------
+
+def first_from_result(requests):
+    """{named thing: index (in session call order) of the call whose result first carried it}."""
+    seen, first, k = set(), {}, 0
+    for r in requests:
+        seen |= r["prompt"]
+        start = k
+        for _, a, _ in r["calls"]:
+            seen |= named(json.dumps(a))
+            k += 1
+        for j, (_, _, use) in enumerate(r["calls"]):
+            for t in r["results"].get(use, ()):
+                if t not in seen:
+                    first[t] = start + j
+            seen |= r["results"].get(use, set())
+    return first
+
+
+def ahead(args):
+    """Ceiling on look-ahead: windows of calls whose arguments use nothing new from results inside the window."""
+    sessions = load_all(args.projects, args.since, args.until)
+    total_spend = spend(sessions)
+    labelled = {k: flatten(v, "command") for k, v in sessions.items()}
+    known = repeated(labelled, args.max_len, args.min_sessions, args.min_seats, False) if args.known else None
+    windows = defaultdict(lambda: [0, 0])
+    low = high = nowrite = 0.0
+    for key, requests in sessions.items():
+        flat = labelled[key]
+        req = [c[3] for c in flat]
+        per_request = chains(requests)
+        chain = [per_request[i] for i in req]
+        argtok = [named(json.dumps(a)) for r in requests for _, a, _ in r["calls"]]
+        first = first_from_result(requests)
+
+        def fixed(i, k):
+            if i + k > len(flat) or chain[i + k - 1] != chain[i]:
+                return None
+            for j in range(i + 1, i + k):
+                for t in argtok[j]:
+                    a = first.get(t)
+                    if a is not None and i <= a < j and req[a] < req[j]:
+                        return False
+            return True
+
+        for i in range(len(flat)):
+            for k in range(2, args.max_len + 1):
+                ok = fixed(i, k)
+                if ok is None:
+                    break
+                windows[k][0] += 1
+                windows[k][1] += ok
+        i = 0
+        while i < len(flat):
+            for k in range(args.max_len, 1, -1):
+                if fixed(i, k) and (known is None or tuple(c[0] for c in flat[i: i + k]) in known):
+                    whole, reread = removed_cost(requests, req[i], req[i + k - 1])
+                    low += reread
+                    high += whole
+                    # The results still come back and are written to the cache; only re-reads and output go.
+                    for r in requests[req[i] + 1: req[i + k - 1] + 1]:
+                        p = PRICES[family(r["model"])]
+                        nowrite += r["usage"].get("cache_read_input_tokens", 0) / 1e6 * p["cacheRead"] + r["usage"].get("output_tokens", 0) / 1e6 * p["output"]
+                    i += k
+                    break
+            else:
+                i += 1
+
+    pct = lambda x, d: round(x / d * 100, 1) if d else 0.0
+    result = {
+        "from": args.since, "to": args.until, "sessions": len(sessions), "spendUsd": round(total_spend, 4), "maxLen": args.max_len,
+        "known": bool(args.known), "byLength": {str(k): {"windows": w, "fixed": f, "fixedPct": pct(f, w)} for k, (w, f) in sorted(windows.items())},
+        "savingLowPct": round(low / total_spend * 100, 2) if total_spend else 0.0, "savingHighPct": round(high / total_spend * 100, 2) if total_spend else 0.0,
+        "savingNoWritePct": round(nowrite / total_spend * 100, 2) if total_spend else 0.0,
+    }
+    print(f"Look-ahead ceiling {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD")
+    for k, b in result["byLength"].items():
+        print(f"  {k} steps: {b['fixed']} of {b['windows']} windows ({b['fixedPct']}%) use nothing new from a result inside the window")
+    where = f"only sequences seen in {args.min_sessions}+ sessions and {args.min_seats}+ seats" if args.known else f"any window of up to {args.max_len} calls"
+    print(f"  saving, {where}: {result['savingLowPct']}% (re-reads only) to {result['savingHighPct']}% (whole cost) of spend;"
+          f" {result['savingNoWritePct']}% if the results are still written to the cache")
+    if args.out:
+        Path(args.out).write_text(json.dumps(result, indent=2))
+        print(f"\nSaved {args.out}")
+
+
 # ---- outline ---------------------------------------------------------------
 
 def sample_spread(keys, n, seed):
@@ -324,7 +546,7 @@ def sample_spread(keys, n, seed):
 def outline_text(seat, sid, requests):
     lines = [f"# {seat} / {sid}", ""]
     for i, r in enumerate(requests):
-        for name, a in r["calls"]:
+        for name, a, _ in r["calls"]:
             lines.append(f"{i:>4}  {label(name, a, 'command'):<28} {arg_shape(name, a)}")
     return "\n".join(lines) + "\n"
 
@@ -437,6 +659,20 @@ def main():
     p.add_argument("--top", type=int, default=10)
     p.add_argument("--json", dest="out")
     p.set_defaults(func=count)
+
+    p = sub.add_parser("calls", help="cost per call by its place in a session, and how calls are grouped")
+    window(p)
+    p.add_argument("--json", dest="out")
+    p.set_defaults(func=calls_report)
+
+    p = sub.add_parser("ahead", help="ceiling on how many coming calls can be fixed without seeing results")
+    window(p)
+    p.add_argument("--max-len", type=int, default=4)
+    p.add_argument("--known", action="store_true", help="only count sequences seen in --min-sessions and --min-seats")
+    p.add_argument("--min-sessions", type=int, default=5)
+    p.add_argument("--min-seats", type=int, default=2)
+    p.add_argument("--json", dest="out")
+    p.set_defaults(func=ahead)
 
     p = sub.add_parser("outline", help="write tool outlines of a sample of sessions")
     window(p)

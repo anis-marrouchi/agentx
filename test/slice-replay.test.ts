@@ -7,8 +7,9 @@ import { CACHE_AWARE_PRICING } from "../src/daemon/token-tracker"
 
 // bench/slice-replay.py (#928) reads Claude Code session logs. Each fake
 // session below has 4 requests: gh pr view, then gh pr diff, then a memory
-// edit, then a reply with no tool. Every request re-reads 1M cached tokens
-// on Opus 5 (0.50 USD) and writes 100 output tokens.
+// edit, then a reply with no tool. The diff's result names the memory file
+// the edit then writes, so the edit depends on a result. Every request
+// re-reads 1M cached tokens on Opus 5 (0.50 USD) and writes 100 output tokens.
 const ROOT = resolve(__dirname, "..")
 const run = (args: string[]) => spawnSync("python3", ["bench/slice-replay.py", ...args], { cwd: ROOT, encoding: "utf8", timeout: 60_000 })
 
@@ -18,15 +19,21 @@ function line(id: string, content: unknown[]) {
     message: { id, model: "claude-opus-5-5", content, usage: { input_tokens: 0, output_tokens: 100, cache_read_input_tokens: 1_000_000, cache_creation_input_tokens: 0 } },
   })
 }
-const tool = (name: string, input: Record<string, unknown>) => ({ type: "tool_use", id: `t${Math.random()}`, name, input })
+const tool = (id: string, name: string, input: Record<string, unknown>) => ({ type: "tool_use", id, name, input })
+const result = (id: string, text: string) =>
+  JSON.stringify({ type: "user", isSidechain: false, timestamp: "2026-10-10T08:00:00Z", message: { role: "user", content: [{ type: "tool_result", tool_use_id: id, content: text }] } })
 
 function session(n: number): string {
   return [
-    line(`m${n}a`, [tool("Bash", { command: `cd /w && gh pr view ${n} --json body` })]),
+    JSON.stringify({ type: "user", isSidechain: false, timestamp: "2026-10-10T08:00:00Z", message: { role: "user", content: `Review PR ${n}` } }),
+    line(`m${n}a`, [tool(`v${n}`, "Bash", { command: `cd /w && gh pr view ${n} --json body` })]),
+    result(`v${n}`, "a body"),
     // A message split over two lines repeats its usage; it is counted once.
     line(`m${n}b`, [{ type: "text", text: "ok" }]),
-    line(`m${n}b`, [tool("Bash", { command: `gh pr diff ${n}` })]),
-    line(`m${n}c`, [tool("Edit", { file_path: "/w/memory/notes.md", old_string: "a", new_string: "b" })]),
+    line(`m${n}b`, [tool(`d${n}`, "Bash", { command: `gh pr diff ${n}` })]),
+    result(`d${n}`, "touches /w/memory/notes.md"),
+    line(`m${n}c`, [tool(`e${n}`, "Edit", { file_path: "/w/memory/notes.md", old_string: "a", new_string: "b" })]),
+    result(`e${n}`, "edited"),
     line(`m${n}d`, [{ type: "text", text: "done" }]),
   ].join("\n")
 }
@@ -67,6 +74,30 @@ describe("bench/slice-replay.py", () => {
     const r = run(["count", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--min-seats", "3", "--json", out])
     expect(r.status, r.stderr).toBe(0)
     expect(JSON.parse(readFileSync(out, "utf8"))).toMatchObject({ patterns: 0, coveredCalls: 0, savingHighPct: 0 })
+  })
+
+  it("splits the cost of a call by its place in the session", () => {
+    const out = join(dir, "calls.json")
+    const r = run(["calls", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--json", out])
+    expect(r.status, r.stderr).toBe(0)
+    const c = JSON.parse(readFileSync(out, "utf8"))
+    expect(c).toMatchObject({ toolCalls: 15, chains: 5, medianChainCalls: 3, shellJoining2Plus: 50, callsInMultiToolRequests: 0 })
+    expect(c.byPlace.first).toMatchObject({ requests: 5, avgCacheRead: 1_000_000, sharePct: 25 })
+    expect(c.byPlace.chain).toMatchObject({ requests: 10, sharePct: 50 })
+    expect(c.byPlace.answer).toMatchObject({ requests: 5, sharePct: 25 })
+    expect(c.byPlace.chain.parts.reread).toBeCloseTo(99.5, 0)
+  })
+
+  it("does not count a step whose arguments came back in an earlier result as fixed ahead", () => {
+    const out = join(dir, "ahead.json")
+    const r = run(["ahead", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--json", out])
+    expect(r.status, r.stderr).toBe(0)
+    const a = JSON.parse(readFileSync(out, "utf8"))
+    // view > diff is fixed; diff > edit is not, the edit's path came back in the diff.
+    expect(a.byLength["2"]).toEqual({ windows: 10, fixed: 5, fixedPct: 50 })
+    expect(a.byLength["3"]).toEqual({ windows: 5, fixed: 0, fixedPct: 0 })
+    expect(a.savingHighPct).toBeCloseTo(25, 1)
+    expect(a.savingNoWritePct).toBeCloseTo(25, 1) // the fixture writes nothing to the cache
   })
 
   it("marks a catalog on unseen sessions only and writes a bounded hand check", () => {
