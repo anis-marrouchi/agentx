@@ -239,6 +239,22 @@ try {
       await wait(".fx-sheet[open]"); await sleep(200); await shot("activity-choice-sheet"); await key("Escape")
     },
     // --- Alerts ---
+    "desk": async () => { await open("/app"); await tab("desk", "#panel-desk .fx-card"); await shot("desk") },
+    "desk-with-agents": async () => {
+      await open("/app"); await tab("desk", "#panel-desk .fx-card")
+      await click('[data-col="agent"]'); await wait('[data-col="agent"][aria-pressed="true"]'); await sleep(200); await shot("desk-with-agents")
+    },
+    "desk-answer-sheet": async () => {
+      await open("/app"); await tab("desk", "#panel-desk .fx-card")
+      await click('#panel-desk [data-act="pick"][data-n="1"]')
+      await wait(".fx-sheet[open]"); await sleep(200); await shot("desk-answer-sheet"); await key("Escape")
+    },
+    "desk-write-sheet": async () => {
+      await open("/app"); await tab("desk", "#panel-desk .fx-card")
+      await click('#panel-desk [data-act="reply"]')
+      await wait(".fx-sheet[open]"); await type("#fx-input", "Green, to match the shop sign."); await ev("document.activeElement.blur()"); await sleep(200)
+      await shot("desk-write-sheet"); await key("Escape")
+    },
     "alerts": async () => { await scene({ push: "off" }); await open("/app"); await alerts("#al-btn:not([hidden])"); await shot("alerts") },
     "alerts-chat-finish": async () => {
       await scene({ push: "on" }); await open("/app", { flags: { pushOn: true } })

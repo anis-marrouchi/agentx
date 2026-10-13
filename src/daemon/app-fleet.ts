@@ -52,6 +52,9 @@ export interface ApprovalItem {
   choices?: string[]
   /** Cards: the suggested message, `{choice}` not filled in yet. */
   draft?: string
+  /** A short excerpt of what is being decided, for the Desk (#959). */
+  detail?: string
+  createdAt?: string
 }
 
 /** A card's pick (1-based number or label) and the message as edited. */
