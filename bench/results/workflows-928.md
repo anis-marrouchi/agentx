@@ -40,7 +40,7 @@ not the cache write, unless the raw result also stays out of the context.
 | Look ahead: the agent fixes its next 2 to 4 calls in one call, run with no model | 1% to 3% | Count, plus a replay of 60 moments | Not built |
 | Checked batch: 2 to 4 steps in one call, a check on each, stop at the first failed check | 3.5% to 5% (6% at most) | 240 graded stretches, 40 graded by hand | Not built; below the 50% bar set before the test |
 | A stronger model on the deciding call | A loss: about 1.19 USD per call against 0.07 to 0.11 saved | Arithmetic | Not built |
-| Reader on the small model: the main model asks, a reader does the looking up and returns a short note | 20% to 27% (calculated); 12% on 9 small tasks with the copied-lines rule | Priced on logged reading stretches; two offline runs | Open: quality at today's run-to-run level, 3 to 4 times slower; a live seat trial is the next step and needs the owner's yes |
+| Reader on the small model: the main model asks, a reader does the looking up and returns a short note | 20% to 27% (calculated); 12% on 9 small tasks with the copied-lines rule | Priced on logged reading stretches; two offline runs | Stopped 2026-10-13: the owner declined a live trial; no seat changed. Offline: quality at today's run-to-run level, 12% cheaper, 3 to 4 times slower |
 
 ### The checked batch, in more detail
 
@@ -156,12 +156,16 @@ same node and window, agent workspace seats only (580 main sessions against
 
 - **Checked batch:** reopen if a sample of another node or another period
   shows a check deciding the next step in half the places or more.
-- **Reader design:** carry the copied-lines rule forward and drop the
-  re-read. The open question, the saving and the corrections on long work
-  that changes things, can only be answered on one live seat (not voice,
-  because of the speed) for a few days. That is a live change and waits for
-  the owner's decision. Do not expect the calculated 20% to 27% from this
-  alone: measured so far is 12% on small tasks.
+- **Reader design: stopped.** On 2026-10-13 the owner answered "No, stop
+  here" to a live trial: no seat is switched to the reader and nothing is
+  built for it. The offline result above stays as the record. If it is ever
+  reopened, start from the copied-lines rule (the re-read added no
+  quality). What offline runs cannot answer is the saving and the
+  corrections on long work that changes things, which needs one live seat
+  (not voice, because of the speed) for a few days. Do not expect the
+  calculated 20% to 27% from it: measured so far is 12% on small tasks.
+- **Whole-job workflow dry-run** on #928 is a separate question and was
+  still open on 2026-10-13; this page does not cover it.
 - **Session start (18%)** is shared with #615 and #947, not with these forms.
 - **Prices:** check which of 4 / 20 and 5 / 25 matches the invoice for
   Opus 5.5, and whether AgentX's table needs a Haiku 5 family.
