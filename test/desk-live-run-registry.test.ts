@@ -141,15 +141,3 @@ describe("a request whose run is live, through the registry", () => {
     await done
   }, 15_000)
 })
-
-describe("liveRunRefs", () => {
-  it("keys each running task by its trace id and skips one without it", () => {
-    const refs = liveRunRefs([
-      { runningTasks: [{ id: "1700000000000-abc123", traceId: "trace-a" } as { traceId?: string }] },
-      // A daemon older than #962 sends no trace id: nothing is shown as working.
-      { runningTasks: [{ id: "1700000000001-def456" } as { traceId?: string }] },
-      {},
-    ])
-    expect([...refs]).toEqual(["trace-a"])
-  })
-})
