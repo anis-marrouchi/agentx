@@ -394,6 +394,67 @@ question is whether a full-profile channel can take that setting-sources
 change without losing the user-level parts it still needs. Check this
 before any build.
 
+### Step B result (Dev Session seat, 2026-10-13, one run)
+
+The test ran 20 past read-only tasks, each twice (today's start and the short
+start), graded blind against the answer recorded at the time.
+
+**What the short start was:**
+
+- no skill list, only a few lines naming the seat's own used skills;
+- a titles-only memory index;
+- the user-level instruction file cut to its core (whole for the Coder on
+  GitLab);
+- project instruction files whole;
+- only the AgentX tool server.
+
+**Quality:**
+
+| | As good or better | Slightly worse | Worse |
+|---|---|---|---|
+| Today's start, repeated (noise level) | 18 of 20 | 2 | 0 |
+| Short start | 16 of 20 | 4 | 0 |
+
+- The gap of 2 is inside run-to-run noise. Compared head to head, the short
+  start was better in 9 tasks and today's in 7.
+- The three short-start shortfalls were runs that looked less far. None
+  traces back to a removed skill, rule or memory line.
+- All 3 instruction-rule tasks were followed in all 6 runs.
+
+**Cost:**
+
+- Start size: -30% on full channels, -11% on lean ones.
+- Run cost: -21% with the cache effect removed (-34% metered).
+- Time and tool calls were unchanged.
+- These tasks are short, so for the real bill the step A figure stays the
+  one to use: **9.9% net**.
+
+**Spend:** 19.03 USD metered, about 24 USD with the seat's own session. That
+is under the 26 USD quote and the 30 USD cap.
+
+**Against the bar:** saving ≥ 10%: yes. Quality at the repeat's level: yes,
+within noise. No rule missed: yes.
+
+**What it does not show:**
+
+- **Skills.** No task needed one, and neither arm called one. Skills are
+  the largest item (5.5%), so the case where a seat needs a skill it no
+  longer sees listed is still untested.
+- **Tasks that change things.** That is 91% of the bill.
+- **A small loss.** With 20 tasks, a loss of one answer in ten would look
+  the same.
+
+**Recommendation (Dev Session seat):**
+
+- Build the parts that need no decision: the short skill list, the
+  titles-only memory index and the core-only user instruction file.
+- Make it a per-seat setting, off by default.
+- Judge it in a live trial on one full-channel seat. Pick a seat that
+  calls skills (step A: the Secretary, 11 skills), so the trial covers the
+  untested case.
+- Do not build the per-message memory decision yet.
+- The live trial needs its own yes from the owner.
+
 ## Side findings from the code
 
 These are not part of the design. They are not tested, and each would be its
