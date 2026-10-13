@@ -175,6 +175,31 @@ python3 bench/slice-replay.py phases --from ... --to ... --min-calls 3 --json ph
   size is bytes / 4. What a reader would cost, and whether its notes are
   good enough, needs a real run and is not here.
 
+These figures do not match the #928 results page, which came from the
+developer seat's own scripts. `calls`, `ahead` and `phases` can switch each
+of the four rules that may explain the gap, one at a time. The default is
+the first choice of each, which gives what the PR #954 check reported:
+
+| Option | Default | Other choice |
+|---|---|---|
+| `--first` | `file`: only the first request of a session file is a first call | `message`: so is every request right after a message |
+| `--change` | `broad`: `cp`, `mkdir`, `tee`, a `>` redirect to a file, and MCP tools named add, set or update are changes | `narrow`: they are not |
+| `--result-size` | `text`: only the text parts of a result count | `all`: images and other parts count too, at their length in the log |
+| `--chain` | `message`: a chain ends at any message | `answer`: it ends only at a request with no tool call |
+
+To find which rule closes the gap, on the node and window of the results
+page (terminal, from the repository root):
+
+1. Run `phases` with no rule option, and keep the output:
+   `python3 bench/slice-replay.py phases --from 2026-10-09 --to 2026-10-12 --json base.json`
+2. Run it again with one option changed, for example
+   `--change narrow --json change.json`.
+3. Compare the shares with the results page. Repeat step 2 for each option,
+   then with the options that moved the shares together.
+
+The JSON output has a `rules` field, and the first line of the printed
+report names every rule set away from its default.
+
 ### The history block (#636, parked)
 
 Pruning today's earlier messages with a Jev seat before a fresh session

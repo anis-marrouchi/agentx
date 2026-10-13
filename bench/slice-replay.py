@@ -60,6 +60,11 @@ src/daemon/token-tracker.ts (CACHE_AWARE_PRICING); the 200k-token long-context
 tier is left out. A test checks the two tables match. --prices replaces rates
 per family, for example with what the runtime reports per call, which on
 2026-10-13 differed from that table for Opus 5.5 (#928).
+
+calls, ahead and phases take --first, --change, --result-size and --chain to
+switch the rules that may differ from the developer seat's scripts, one at a
+time (see RULES below). The defaults give the figures the owner-sweep check
+of PR #954 reported, not the ones on bench/results/workflows-928.md.
 """
 
 import argparse
@@ -195,6 +200,32 @@ def arg_shape(name, args, width=120):
     return text if len(text) <= width else text[: width - 1] + "…"
 
 
+# ---- rules -----------------------------------------------------------------
+
+# Rules the #928 results page names as possible causes of the gap between this
+# script and the developer seat's scripts (bench/results/workflows-928.md,
+# "Re-running with this repository's script"). The first value of each is the
+# default and gives the figures the owner-sweep check of PR #954 reported; the
+# others let someone with the seat scripts switch one rule at a time.
+#   first        file: only the first request of a session file is a first call.
+#                message: so is every request right after a message.
+#   change       broad: cp, mkdir, tee, a > redirect to a file and MCP tools
+#                named add, set or update count as changes. narrow: they do not.
+#   result_size  text: a result's size is its text parts. all: other parts
+#                (images and the like) count too, at their length in the log.
+#   chain        message: a chain ends at any message. answer: it ends only at
+#                a request with no tool call.
+RULE_CHOICES = {"first": ("file", "message"), "change": ("broad", "narrow"),
+                "result_size": ("text", "all"), "chain": ("message", "answer")}
+RULES = {k: v[0] for k, v in RULE_CHOICES.items()}
+
+
+def rules_note():
+    """The rules set away from their default, for a report's first line."""
+    changed = [f"--{k.replace('_', '-')} {v}" for k, v in RULES.items() if v != RULE_CHOICES[k][0]]
+    return f" (rules: {', '.join(changed)})" if changed else ""
+
+
 # ---- reading logs ----------------------------------------------------------
 
 def load_session(path, since, until):
@@ -231,7 +262,7 @@ def load_session(path, since, until):
                     text = result_text(block)
                     by_id[owner[block["tool_use_id"]]]["results"][block["tool_use_id"]] = named(text)
                     by_id[owner[block["tool_use_id"]]]["heads"][block["tool_use_id"]] = head(text)
-                    by_id[owner[block["tool_use_id"]]]["sizes"][block["tool_use_id"]] = len(text.encode("utf-8", "replace"))
+                    by_id[owner[block["tool_use_id"]]]["sizes"][block["tool_use_id"]] = result_size(block, text)
                 elif block.get("type") == "text" and block.get("text"):
                     prompt |= named(block["text"])
                     # Text sent along with tool results is a reminder, not a message.
@@ -277,6 +308,15 @@ def result_text(block):
     if isinstance(content, list):
         return "\n".join(p.get("text", "") for p in content if isinstance(p, dict) and p.get("type") == "text")
     return ""
+
+
+def result_size(block, text):
+    """Bytes of a result: its text parts, plus its other parts under --result-size all."""
+    size = len(text.encode("utf-8", "replace"))
+    content = block.get("content")
+    if RULES["result_size"] == "all" and isinstance(content, list):
+        size += sum(len(json.dumps(p)) for p in content if isinstance(p, dict) and p.get("type") != "text")
+    return size
 
 
 def load_all(projects, since, until):
@@ -394,19 +434,29 @@ def count(args):
 
 # ---- calls -----------------------------------------------------------------
 
-def place(i, r):
-    if i == 0:
+def is_first(i, r):
+    return i == 0 or (RULES["first"] == "message" and r["afterMessage"])
+
+
+def breaks_chain(i, r, requests):
+    """True when request i, with tool calls, starts a chain rather than continuing one."""
+    return i == 0 or not requests[i - 1]["calls"] or (RULES["chain"] == "message" and r["afterMessage"])
+
+
+def place(i, r, requests):
+    if is_first(i, r):
         return "first"
     if not r["calls"]:
         return "answer"
-    return "afterMessage" if r["afterMessage"] else "chain"
+    return "afterMessage" if r["afterMessage"] and breaks_chain(i, r, requests) else "chain"
 
 
 def chains(requests):
-    """Chain number per request: a run of requests with tool calls and no message between."""
+    """Chain number per request: a run of requests with tool calls and no message between
+    (under --chain answer, no request without a tool call between)."""
     out, n = [], -1
     for i, r in enumerate(requests):
-        if r["calls"] and (i == 0 or r["afterMessage"] or not requests[i - 1]["calls"]):
+        if r["calls"] and breaks_chain(i, r, requests):
             n += 1
         out.append(n if r["calls"] else None)
     return out
@@ -421,7 +471,7 @@ def calls_report(args):
     chain_len = defaultdict(int)
     for (seat, sid), requests in sessions.items():
         for i, (r, c) in enumerate(zip(requests, chains(requests))):
-            b = rows[place(i, r)]
+            b = rows[place(i, r, requests)]
             p = PRICES[family(r["model"])]
             u = r["usage"]
             b["requests"] += 1
@@ -449,11 +499,11 @@ def calls_report(args):
     lengths = sorted(chain_len.values())
     result = {
         "from": args.since, "to": args.until, "sessions": len(sessions), "spendUsd": round(total_spend, 4),
-        "byPlace": {}, "toolCalls": tool_calls, "chains": len(lengths), "medianChainCalls": lengths[len(lengths) // 2] if lengths else 0,
+        "rules": dict(RULES), "byPlace": {}, "toolCalls": tool_calls, "chains": len(lengths), "medianChainCalls": lengths[len(lengths) // 2] if lengths else 0,
         "callsInMultiToolRequests": pct(multi_calls, tool_calls), "callsPerMultiToolRequest": round(multi_calls / multi_requests, 1) if multi_requests else 0.0,
         "shellJoining2Plus": pct(shell2, shell), "shellJoining3Plus": pct(shell3, shell),
     }
-    print(f"Calls {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD")
+    print(f"Calls {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD{rules_note()}")
     print(f"  {'place':<13} {'requests':>8} {'read':>8} {'written':>8} {'output':>7} {'cost':>7} {'share':>6}   re-read  write  output  input")
     for name in ("first", "afterMessage", "chain", "answer"):
         b = rows.get(name)
@@ -562,13 +612,13 @@ def ahead(args):
 
     pct = lambda x, d: round(x / d * 100, 1) if d else 0.0
     result = {
-        "from": args.since, "to": args.until, "sessions": len(sessions), "spendUsd": round(total_spend, 4), "maxLen": args.max_len,
+        "from": args.since, "to": args.until, "sessions": len(sessions), "spendUsd": round(total_spend, 4), "rules": dict(RULES), "maxLen": args.max_len,
         "known": bool(args.known), "byLength": {str(k): {"windows": w, "fixed": f, "fixedPct": pct(f, w)} for k, (w, f) in sorted(windows.items())},
         "savingLowPct": round(low / total_spend * 100, 2) if total_spend else 0.0, "savingHighPct": round(high / total_spend * 100, 2) if total_spend else 0.0,
         "savingNoWritePct": round(nowrite / total_spend * 100, 2) if total_spend else 0.0,
         "removableRequests": removed,
     }
-    print(f"Look-ahead {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD")
+    print(f"Look-ahead {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD{rules_note()}")
     for k, b in result["byLength"].items():
         print(f"  {k} steps: {b['fixed']} of {b['windows']} windows ({b['fixedPct']}%) use nothing new from a result inside the window")
     where = f"only sequences seen in {args.min_sessions}+ sessions and {args.min_seats}+ seats" if args.known else f"any window of up to {args.max_len} calls"
@@ -590,14 +640,19 @@ def ahead(args):
 
 # What a call does, from the tool name and the command text. A request takes
 # the strongest kind among its calls: change > run > read.
-CHANGE_RE = re.compile(
+CHANGE_NARROW = (
     r"\bgit\s+(commit|push|merge|rebase|reset|tag|cherry-pick)\b|\bgh\s+(pr|issue|release|repo)\s+(create|merge|comment|close|edit|review|reopen|delete)\b"
-    r"|\bgh\s+api\b.*-X\s*(POST|PATCH|PUT|DELETE)|\bcurl\b.*-X\s*(POST|PATCH|PUT|DELETE)|\b(rm|mv|cp|mkdir|chmod|ln|tee)\s"
-    r"|\b(npm|pnpm)\s+publish\b|\bdocker\s+(push|run|compose\s+up)\b|\bkubectl\s+(apply|delete|rollout|scale)\b|\bsystemctl\s+(start|stop|restart)\b|\bdeploy\b|[^>&0-9]>{1,2}\s*(?!/dev/null)[\w/~.]")
+    r"|\bgh\s+api\b.*-X\s*(POST|PATCH|PUT|DELETE)|\bcurl\b.*-X\s*(POST|PATCH|PUT|DELETE)|\b(rm|mv|chmod|ln)\s"
+    r"|\b(npm|pnpm)\s+publish\b|\bdocker\s+(push|run|compose\s+up)\b|\bkubectl\s+(apply|delete|rollout|scale)\b|\bsystemctl\s+(start|stop|restart)\b|\bdeploy\b")
+# --change broad (the default) adds copies, new folders, tee and > redirects to a file.
+CHANGE_RE = {"narrow": re.compile(CHANGE_NARROW),
+             "broad": re.compile(CHANGE_NARROW + r"|\b(cp|mkdir|tee)\s|[^>&0-9]>{1,2}\s*(?!/dev/null)[\w/~.]")}
 # Programs that run something, matched at the start of a command: 'pnpm test', 'python3', 'make'.
 RUN_RE = re.compile(r"^(node|python3?|tsx|ts-node|make|pytest|vitest|jest|tsc|bash|sh|deno|bun|ruby|php"
                     r"|cargo (test|run|build|bench)|go (test|run|build)|(npm|pnpm|yarn|npx) \S+)$")
-CHANGE_MCP_RE = re.compile(r"(create|update|delete|merge|write|send|post|comment|push|add|set|close|edit|remove|reply)", re.I)
+CHANGE_MCP_NARROW = r"create|delete|merge|write|send|post|comment|push|close|edit|remove|reply"
+CHANGE_MCP_RE = {"narrow": re.compile(f"({CHANGE_MCP_NARROW})", re.I),
+                 "broad": re.compile(f"({CHANGE_MCP_NARROW}|update|add|set)", re.I)}
 
 
 def call_kind(name, args):
@@ -605,18 +660,18 @@ def call_kind(name, args):
         return "change"
     if name == "Bash":
         command = args.get("command", "")
-        if CHANGE_RE.search(command):
+        if CHANGE_RE[RULES["change"]].search(command):
             return "change"
         return "run" if any(RUN_RE.match(c) for c in shell_commands(command)) else "read"
     if name.startswith("mcp__"):
-        return "change" if CHANGE_MCP_RE.search(name.split("__")[-1]) else "read"
+        return "change" if CHANGE_MCP_RE[RULES["change"]].search(name.split("__")[-1]) else "read"
     if name in ("Task", "Agent"):
         return "run"
     return "read"
 
 
 def request_kind(i, r):
-    if i == 0:
+    if is_first(i, r):
         return "first"
     if not r["calls"]:
         return "answer"
@@ -662,13 +717,13 @@ def phases(args):
 
     pct = lambda x: round(x / total_spend * 100, 1) if total_spend else 0.0
     result = {
-        "from": args.since, "to": args.until, "sessions": len(sessions), "spendUsd": round(total_spend, 4),
+        "from": args.since, "to": args.until, "sessions": len(sessions), "spendUsd": round(total_spend, 4), "rules": dict(RULES),
         "byKind": {k: {"requests": rows[k]["requests"], "costUsd": round(rows[k]["cost"], 4), "sharePct": pct(rows[k]["cost"])}
                    for k in ("first", "read", "run", "change", "answer") if k in rows},
         "readingStretches": {"minCalls": args.min_calls, "stretches": stretches, "calls": stretch_calls,
                              "resultTokens": stretch_bytes // 4, "costUsd": round(stretch_cost, 4), "sharePct": pct(stretch_cost)},
     }
-    print(f"Phases {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD")
+    print(f"Phases {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD{rules_note()}")
     names = {"first": "first call of a session", "read": "only reads", "run": "reads plus a test or script run",
              "change": "changes something", "answer": "answer, no tool"}
     for k, b in result["byKind"].items():
@@ -806,6 +861,11 @@ def main():
         p.add_argument("--projects", default=str(Path.home() / ".claude" / "projects"))
         p.add_argument("--prices", help="JSON file of {family: {input, output, cacheRead, cacheCreate}} to use in place of the built-in table")
 
+    def rules(p):
+        for rule, choices in RULE_CHOICES.items():
+            p.add_argument(f"--{rule.replace('_', '-')}", dest=f"rule_{rule}", choices=choices, default=choices[0],
+                           help=f"rule to compare with the seat scripts (default {choices[0]}; see RULES)")
+
     p = sub.add_parser("count", help="find repeated slices and price them")
     window(p)
     p.add_argument("--level", choices=["command", "kind"], default="command")
@@ -819,11 +879,13 @@ def main():
 
     p = sub.add_parser("calls", help="cost per call by its place in a session, and how calls are grouped")
     window(p)
+    rules(p)
     p.add_argument("--json", dest="out")
     p.set_defaults(func=calls_report)
 
     p = sub.add_parser("ahead", help="ceiling on how many coming calls can be fixed without seeing results")
     window(p)
+    rules(p)
     p.add_argument("--max-len", type=int, default=4)
     p.add_argument("--known", action="store_true", help="only count sequences seen in --min-sessions and --min-seats")
     p.add_argument("--min-sessions", type=int, default=5)
@@ -836,6 +898,7 @@ def main():
 
     p = sub.add_parser("phases", help="spend by what each call does, and the reading stretches in it")
     window(p)
+    rules(p)
     p.add_argument("--min-calls", type=int, default=2, help="calls a reading stretch needs")
     p.add_argument("--json", dest="out")
     p.set_defaults(func=phases)
@@ -860,6 +923,9 @@ def main():
     p.set_defaults(func=lambda a: print(json.dumps(PRICES, sort_keys=True)))
 
     args = ap.parse_args()
+    for rule in RULE_CHOICES:
+        if hasattr(args, f"rule_{rule}"):
+            RULES[rule] = getattr(args, f"rule_{rule}")
     if getattr(args, "prices", None):
         for fam, rates in json.loads(Path(args.prices).read_text()).items():
             if fam not in PRICES:
