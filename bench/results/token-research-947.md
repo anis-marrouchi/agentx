@@ -170,8 +170,8 @@ Two items above are not in that table:
   so the table's "days, needs code" for the first-call cost stands.
 - **C** costs tokens that the measured logs could not see.
 
-**Left out because they do not fit the bar:** medium effort (quality
-needs days of answers to judge), fewer round trips (a guess), per-task
+**Left out because they do not fit the bar:** medium effort (the
+offline test above found no saving), fewer round trips (a guess), per-task
 budgets (needs the 20 most expensive sessions read first), and masking
 old results (negative here).
 
