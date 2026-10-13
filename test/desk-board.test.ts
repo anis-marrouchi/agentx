@@ -43,6 +43,9 @@ describe("with an agent needs proof", () => {
     const board = buildDesk(input(s, { liveRuns: new Set(["run-live"]) }))
     expect(column(board, "request:live")).toBe("agent")
     expect(board.cards.find((c) => c.key === "request:live")!.live).toBe(true)
+    // A written word starts its own turn: not offered beside a live run.
+    expect(board.cards.find((c) => c.key === "request:live")!.can.reply).toBe(false)
+    expect(board.cards.find((c) => c.key === "request:fresh")!.can.reply).toBe(true)
     expect(column(board, "request:fresh")).toBe("agent")
     expect(board.cards.find((c) => c.key === "request:fresh")!.live).toBeUndefined()
     expect(column(board, "request:silent")).toBe("quiet")

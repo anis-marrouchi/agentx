@@ -67,7 +67,7 @@ import { openDb } from "@/storage/sqlite"
 import { logSlowQueries } from "@/storage/slow-queries"
 import type { AppFleetDeps, ApprovalItem, NodeApprovals, NodeReply } from "./app-fleet"
 import type { AppDeskDeps } from "./app-desk"
-import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX } from "@/desk/board"
+import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX, type DeskRequest } from "@/desk/board"
 import { listCards, type DecisionCard } from "@/approvals/cards"
 import { readInboxState } from "@/approvals/state"
 import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
@@ -2542,18 +2542,24 @@ function appDeskDeps(config: DaemonConfig): AppDeskDeps {
     async board() {
       const [inbox, snap] = await Promise.all([fleet.approvals(), fleet.snapshot()])
       const liveRuns = new Set<string>()
-      for (const n of snap.nodes) {
-        if (n.url.replace(/\/+$/, "") !== primary) continue
-        for (const a of n.agents) for (const t of a.runningTasks ?? []) liveRuns.add(t.id)
+      const errors: string[] = []
+      const here = snap.nodes.find((n) => n.url.replace(/\/+$/, "") === primary)
+      // A last-known answer is no proof that a run is live now.
+      if (!here || !here.reachable || (here as { stale?: boolean }).stale) {
+        errors.push("The running tasks could not be read, so no request is shown as working now.")
+      } else {
+        for (const a of here.agents) for (const t of a.runningTasks ?? []) liveRuns.add(t.id)
       }
       const now = Date.now()
-      const store = requestStoreFor(ctx)
-      const requests = store
-        ? [...store.listOpen(), ...store.listClosedSince(now - DESK_DONE_DAYS * 86_400_000, DESK_DONE_MAX)]
-          .map((record) => ({ record, links: store.links(record.id) }))
-        : null
+      let requests: DeskRequest[] | null = null
+      try {
+        const store = requestStoreFor(ctx)
+        if (store) {
+          requests = [...store.listOpen(), ...store.listClosedSince(now - DESK_DONE_DAYS * 86_400_000, DESK_DONE_MAX)]
+            .map((record) => ({ record, links: store.links(record.id) }))
+        }
+      } catch (e: any) { errors.push(`Requests could not be read: ${e.message}`) }
       let cards: DecisionCard[] = []
-      const errors: string[] = []
       try { cards = listCards(ctx.root).filter((c) => c.status !== "pending") } catch (e: any) { errors.push(`Finished cards could not be read: ${e.message}`) }
       const deferred = new Set(Object.entries(readInboxState(ctx.root).snoozed).filter(([, until]) => Date.parse(until) > now).map(([key]) => key))
       const board = buildDesk({ now, node: primary, nodeName: config.node?.name || "this computer", inbox, requests, cards, liveRuns, deferred })

@@ -40,7 +40,7 @@ Each answer is a button as wide as the card. Under **Yes** and **No**, the card 
 
 ![Confirming the choice "Send Monday", with the message the agent will get](/screenshots/mobile-app/desk-answer-sheet.png)
 
-The answer is recorded where the decision lives, and the agent that asked is told. A card that someone already answered elsewhere is refused with "nothing waiting", and leaves the board at the next refresh.
+The answer is recorded where the decision lives, and the agent that asked is told. A card that someone already answered elsewhere is refused (for example "… is already decided"), and leaves the board at the next refresh.
 
 **Later** answers nothing: the card is hidden for a day (or the time set in your approval settings) and then shown again. A card with a time limit still decides itself on time.
 
@@ -56,13 +56,15 @@ When an agent asked you a question in a request, or a request needs your word, y
 
 The agent that has the request gets your words within a minute and goes on with it. The card moves to **With agents**.
 
-On a card under **With agents** or **No news** the same button is called **Write to the agent**. Use it to add something or to ask where the work stands.
+On a card under **With agents** or **No news** the same button is called **Write to the agent**. The agent starts a new turn on the request with your words, so use it to add something or to get quiet work moving again. A card marked **Working now** has no such button: a task is already running. To speak to that task, use **Follow up** under [Activity](./mobile-fleet.md#stop-or-steer-a-running-task).
 
 ## What the board shows
 
 - **Decisions** from every computer the dashboard can see, the same list as **Needs you** under [Activity](./mobile-fleet.md).
 - **Requests** of the computer that runs the dashboard. Requests kept on another computer show only when they need your word.
-- Short excerpts only: a title of at most 120 characters and at most 280 characters of what is known.
+- Cut text: a title of at most 120 characters, a question of at most 600 and at most 280 characters of what is known. A WhatsApp reply waiting for your yes is the exception inside that limit: its question carries the reply itself, because you approve exactly what is sent.
+- Work an agent handed to another agent counts as proof only while it changes the request. A request waiting on another agent for more than 3 hours shows under **No news** even if that agent is still working.
+- When the running tasks cannot be read, the board says so and shows no request as **Working now**.
 
 The Desk is for the owner. It is served only to a paired phone, never to members, guests or agents.
 
@@ -73,13 +75,13 @@ The Desk is for the owner. It is served only to a paired phone, never to members
    ```sh
    agentx requests list
    ```
-   Each one is on the board, under **Your turn**, **With agents** or **No news**.
-3. **Phone:** answer a card. It leaves **Your turn** at once and shows under **Done** with your answer.
+   Each one is on the board, under **Your turn**, **With agents** or **No news**, except one you put off with **Later**.
+3. **Phone:** answer a decision card an agent raised on this computer. It leaves **Your turn** at once and shows under **Done** with your answer. Other kinds of decision (a schedule, a fact, a wiki article, a WhatsApp reply) leave the board once answered.
 
 ## If something is wrong
 
-- **"With agents" and "No news" are always empty** — open requests are off, so nothing is tracked. Turn them on as described in [Open requests](../jobs/open-requests.md).
-- **"Requests are off, so nothing would tell the agent"** when you send an answer — the same cause. Turn open requests on, then send it again.
+- **"With agents" and "No news" stay empty, or hold only old cards** — open requests are off, so nothing new is tracked and nothing old moves. Turn them on as described in [Open requests](../jobs/open-requests.md).
+- **"Requests are off, so nothing would tell the agent…"** when you send an answer — the same cause. The settings it mentions are on the dashboard's Approvals page, not on the phone. Turn open requests on there, then send it again.
 - **"What waits on … could not be read"** — the dashboard cannot reach that computer, so its decisions are missing from **Your turn**. The rest of the board is still right. Start AgentX there, or check the mesh with `agentx mesh list`.
 - **"… failed: nothing waiting for …"** — the card was answered somewhere else, or its time ran out. Tap **Refresh**.
 - **A card has no "Write an answer" button** — it belongs to another computer. Answer it with **Yes** or **No**, or open that computer's dashboard.

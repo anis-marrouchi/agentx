@@ -28,6 +28,8 @@ export const DESK_DONE_DAYS = 7
 export const DESK_DONE_MAX = 50
 export const DESK_TITLE_MAX = 120
 export const DESK_FACTS_MAX = 280
+/** A question is shown whole where it can be; one of pages is cut. */
+export const DESK_ASK_MAX = 600
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
@@ -142,7 +144,7 @@ function inboxCard(node: DeskInbox, item: DeskInboxItem, local: boolean): DeskCa
     node: node.node,
     nodeName: node.nodeName,
     title: clip(item.title, DESK_TITLE_MAX),
-    ...(item.ask ? { ask: item.ask } : {}),
+    ...(item.ask ? { ask: clip(item.ask, DESK_ASK_MAX) } : {}),
     ...(item.detail ? { facts: clip(item.detail, DESK_FACTS_MAX) } : {}),
     ...(item.recommend ? { recommend: item.recommend } : {}),
     ...(item.raisedBy ? { agent: item.raisedBy } : {}),
@@ -179,12 +181,13 @@ function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<stri
     case "waiting_owner":
       // Its question is a decision card that is in the inbox: one card, not two.
       if (links.some((l) => l.kind === "card" && waiting.has(`card:${l.ref}`))) return null
-      return { ...base, column: "yours", ...(q.question ? { ask: q.question } : {}), can: { answer: false, later: false, reply: true } }
+      return { ...base, column: "yours", ...(q.question ? { ask: clip(q.question, DESK_ASK_MAX) } : {}), can: { answer: false, later: false, reply: true } }
     case "in_progress":
     case "waiting_other": {
       const live = links.some((l) => l.kind === "run" && input.liveRuns.has(l.ref))
       const fresh = input.now - q.updatedAt < (input.quietHours ?? DESK_QUIET_HOURS) * HOUR
-      return { ...base, column: live || fresh ? "agent" : "quiet", ...(live ? { live } : {}), can: { answer: false, later: false, reply: true } }
+      // A written word starts a turn of its own: not beside a run that is live.
+      return { ...base, column: live || fresh ? "agent" : "quiet", ...(live ? { live } : {}), can: { answer: false, later: false, reply: !live } }
     }
     default: {
       const detail = q.state === "done" ? q.evidence : q.closeReason
