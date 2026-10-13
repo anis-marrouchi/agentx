@@ -66,6 +66,9 @@ and after, comes from `agentx usage channels`.
 
 ### Small reusable workflows (#928)
 
+What #928 measured with it, and what is still open, is in
+[results/workflows-928.md](results/workflows-928.md).
+
 `bench/slice-replay.py` reads the same session logs and asks how much
 folding a repeated run of tool calls into one call (a registered action, or
 a short workflow that returns one result) could save. A run of 5 calls
@@ -128,11 +131,15 @@ python3 bench/slice-replay.py calls --from ... --to ... --prices runtime-prices.
   in it carries one that first appeared in an earlier result of the same
   window. It also prints how many round trips sit in such windows. It cannot
   see a choice that depends on a result, so for steps fixed ahead it is an
-  upper bound. It is not one for a workflow that passes values between its
+  upper bound. On a graded sample (#928) it missed about half of
+  the places where the next step used something the result gave (a line
+  number, a file name, a commit), so its share is about twice the real
+  one. Treat it as a loose ceiling. It is not one for a workflow that passes values between its
   steps, or for a batch that stops at the first failed check.
 - `ahead --sample` writes `windows.jsonl`: each window's calls, the first 300
   characters of each result, and the agent's own text or thinking between
-  them. A grader (a person or a model run separately) marks whether a check
+  them. Thinking is mostly not in the logs (a token count only), so most
+  windows have no text between calls. A grader (a person or a model run separately) marks whether a check
   on the result would have decided the next step. No model is called here.
   The file holds the start of real tool output, so keep it on the node.
 - `--prices` takes `{"<family>": {"input": ..., "output": ..., "cacheRead":

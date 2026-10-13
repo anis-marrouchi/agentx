@@ -20,6 +20,9 @@ and --json.
             such window became one call. It cannot see a decision that hangs
             on a result, so for steps fixed ahead it is an upper bound; it is
             not one for a workflow that passes values between its steps.
+            A graded sample on #928 found it counts about twice the real
+            share: it misses line numbers, file names and identities that
+            the next step took from a result. bench/results/workflows-928.md
             --sample writes windows with the start of each result and the
             agent's text between calls, for grading whether a check on the
             result would have decided the next step.
