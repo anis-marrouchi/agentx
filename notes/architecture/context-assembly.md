@@ -407,7 +407,8 @@ own issue.
   `content.slice(0, max)`. A long chat therefore keeps its oldest turns and
   loses the newest ones, including the closing "respond to the latest
   message" line. Long-memory recall is cut the same way. This matters for
-  the place the design keeps pushed, so it is worth fixing before step B.
+  the place the design keeps pushed. It does not bias step B, because both
+  starts build the history block the same way.
 - **Sent twice on a full start:** the agent's system prompt (in the
   generated CLAUDE.md, the appended system prompt and the identity block)
   and the memory index (in CLAUDE.md and in the appended system prompt).
