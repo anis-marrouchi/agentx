@@ -322,6 +322,67 @@ The decision rule:
 - **In between:** keep only the two changes that need no decision, the
   skill list and the memory index.
 
+### Step A result (dev seat, 2026-10-13, logs only)
+
+The replay covered the same 521 sessions. Each seat's short lists were built
+only from that seat's earlier sessions (1,664 logs, oldest 2026-10-02), so a
+list never knew the future. A used item missing from the list counts as one
+lookup, which costs a median 0.034 USD and 3 to 5 s.
+
+**Net saving: 9.9% of spend** (90.6 of 916 USD over 4.5 days). That is
+10.6% saved minus 0.7% spent on lookups. No session came out more expensive
+than today.
+
+| Split | Net |
+|---|---|
+| Full starts (voice, app, GitLab; 310 sessions) | **13.4%** |
+| Lean starts (a2a, cron, workflow; 211 sessions) | **4.7%** |
+| Secretary / PM / Accountant | 15.1% / 14.8% / 12.1% |
+| DevOps / Dev Session / Coder | 9.4% / 7.2% / 5.6% |
+
+| Item | Net | Lookups it caused |
+|---|---|---|
+| Skill list: the seat's own skills (≤ 10) + search | 5.5% | 9, in 8 sessions |
+| Memory index: title and file only | 2.3% (1.9% at worst) | not knowable from logs |
+| Tool names, sub-agent types, server instructions per seat | 1.2% | 5, in 3 sessions |
+| User-level instruction file: core always, rest on demand | 0.9% | 154, in 102 sessions |
+| Project file: the two shared how-to sections | 0.0% | 6 |
+
+What it adds to the plan:
+
+- **The skill list is the safe half.** It saves 5.5% for 9 lookups. The
+  lists are short: skills ever called per seat range from 0 (Coder) to 11
+  (Secretary), against about 122 listed today. One tool server per seat,
+  plus one more for a single seat.
+- **Keep the user-level instruction file whole on the Coder's GitLab and
+  app sessions.** There, reading sections back costs more (2.2%) than
+  leaving them out saves (1.9%). On every other seat it pays.
+
+Not covered:
+
+- **Two calculated items were not replayed:** AgentX memory blocks by
+  decision (at most 1.5%) and seat-specific project file sections (about
+  1%). That is the gap to the 11% to 13% estimate.
+- **Quality.** That is step B.
+- **The step-1 check proposed above** (continuations judged standalone)
+  was not part of this replay. It only matters if step 1 is built.
+  Without it, step 1 has no safety figure.
+
+**Reading against the bar.** The bar was 10% net; the replay gives 9.9%
+overall. Read per profile, it clears the bar on full starts (13.4%) and is
+small on lean starts (4.7%). So the build case is for the voice, app and
+GitLab profile first, and step B should draw its 20 tasks from those
+channels.
+
+**How the short skill list could be built without a runtime flag (not
+checked).** The runtime has no option to list only some skills (#615). But
+a lean start already reads only project-level settings
+(`session.lean.settingSources`). So listing only the skills present in the
+workspace's own skill folder would give a per-seat list. The remaining
+question is whether a full-profile channel can take that setting-sources
+change without losing the user-level parts it still needs. Check this
+before any build.
+
 ## Side findings from the code
 
 These are not part of the design. They are not tested, and each would be its
