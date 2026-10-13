@@ -38,6 +38,13 @@ export interface Call {
   summary: string | null
 }
 
+/** A call waiting for a busy owner: since when, and when the owner was
+ *  last told. Ms since the epoch. */
+export interface Waiting {
+  since: number
+  toldAt: number
+}
+
 /** Calls still in progress: an agent has at most one of these. */
 export const LIVE: CallStatus[] = ["ringing", "answered", "later"]
 
@@ -59,6 +66,22 @@ export class CallStore {
     if (!have.has("kind")) db.exec("ALTER TABLE calls ADD COLUMN kind TEXT NOT NULL DEFAULT 'voice'")
     if (!have.has("channel")) db.exec("ALTER TABLE calls ADD COLUMN channel TEXT")
     if (!have.has("chat_id")) db.exec("ALTER TABLE calls ADD COLUMN chat_id TEXT")
+    // A call waiting for a busy owner (#969), kept so a restart does not
+    // forget it: since when it waits, and when the owner was last told.
+    if (!have.has("waiting_since")) db.exec("ALTER TABLE calls ADD COLUMN waiting_since INTEGER")
+    if (!have.has("told_at")) db.exec("ALTER TABLE calls ADD COLUMN told_at INTEGER")
+  }
+
+  /** Ringing calls marked as waiting for a busy owner, by id. */
+  waiting(): Map<string, Waiting> {
+    const rows = this.db.prepare("SELECT id, waiting_since AS since, told_at AS toldAt FROM calls WHERE waiting_since IS NOT NULL AND status='ringing'")
+      .all() as Array<{ id: string } & Waiting>
+    return new Map(rows.map(({ id, since, toldAt }) => [id, { since, toldAt: toldAt ?? since }]))
+  }
+
+  /** Mark a call as waiting, or clear the mark with null. */
+  setWaiting(id: string, w: Waiting | null): void {
+    this.db.prepare("UPDATE calls SET waiting_since=?, told_at=? WHERE id=?").run(w?.since ?? null, w?.toldAt ?? null, id)
   }
 
   insert(call: Call): void {

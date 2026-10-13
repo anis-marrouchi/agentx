@@ -15,6 +15,7 @@ let now: number
 let cfg: CallsConfig
 let notices: Array<{ title: string; message: string; urgent: boolean }>
 let calls: CallService
+let deps: CallDeps
 let inFocus: boolean
 
 beforeEach(async () => {
@@ -22,7 +23,7 @@ beforeEach(async () => {
   cfg = callsSchema.parse({ allow: ["*"] })
   notices = []
   inFocus = false
-  const deps: CallDeps = {
+  deps = {
     store: new CallStore(new Database(":memory:")),
     config: () => cfg,
     agentName: (id) => ({ writer: "Writer", ops: "Ops", sales: "Sales" } as Record<string, string>)[id] ?? null,
@@ -314,9 +315,30 @@ describe("the caller of a busy owner (#969)", () => {
     const at = Date.UTC(2026, 0, 1, 12, 0)
     const text = busyText({ why: "call", with: "Writer", remindAt: at + 5 * 60_000, waitsUntil: at + 10 * 60_000 }, at)
     expect(text).toMatch(/^The owner is busy in another call \(with Writer\)\./)
-    expect(text).toMatch(/Still busy at \d\d:\d\d \(in 5 min\), they are told again/)
-    expect(text).toMatch(/waits until \d\d:\d\d \(in 10 min\) at most/)
+    expect(text).toMatch(/Still busy at \d\d:\d\d \S+ \(in 5 min\), they are told again/)
+    expect(text).toMatch(/waits until \d\d:\d\d \S+ \(in 10 min\) at most/)
+    // The time names its zone.
+    expect(busyText({ why: "call", with: null, remindAt: null, waitsUntil: at + 10 * 60_000 }, at, "UTC")).toMatch(/waits until 12:10 UTC \(in 10 min\)/)
     expect(text).toContain("do not call again")
     expect(busyText({ why: "voice", with: null, remindAt: null, waitsUntil: at + 60_000 }, at)).not.toMatch(/told again/)
+  })
+
+  it("a daemon restart keeps the wait: same waitsUntil, no second notice, still missed as widget busy", async () => {
+    const first = await place("writer")
+    await talk(first.id)
+    const r = await request("ops")
+    if (!r.ok || !r.busy) throw new Error("not waiting")
+    await poll(60_000, { busy: true })
+
+    // A new service over the same store, as after a restart.
+    calls = new CallService(deps)
+    cfg = { ...cfg, maxCallMinutes: 60 }
+    await poll(POLL_MS, { busy: true })
+    expect(titles()).toEqual(["Call waiting: Ops"])
+    await poll(r.busy.waitsUntil - now - POLL_MS * 2, { busy: true })
+    expect(calls.get(r.call.id)?.status).toBe("ringing")
+    await poll(POLL_MS * 2, { busy: true })
+    expect(calls.get(r.call.id)).toMatchObject({ status: "missed", note: "widget busy" })
+    expect(titles()).toEqual(["Call waiting: Ops", "Call waiting: Ops", "Missed call from Ops"])
   })
 })
