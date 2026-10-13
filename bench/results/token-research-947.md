@@ -50,7 +50,7 @@ are of the spend measured on the one host. Nothing below is switched on.
 | # | Change | Measured in | Size | Cost and risk |
 |---|---|---|---|---|
 | A | Find why a new session rewrites 16.6k tokens it should read | tested, 24 sessions, 2.7 USD | **well under 1%**: the hypothesis was wrong (see below) | Not applied |
-| B | Turn ObservationPack on (already built) | a few busy hours | about 6.2%, before the re-reads it also saves | Setting plus daemon restart. Risk: the agent reads back a cut original; each pack is logged |
+| B | Turn ObservationPack on (already built) | a few busy hours | about 6.2%, before the re-reads it also saves | **Closed: the owner chose to leave it off (2026-10-13). Do not propose it again.** |
 | C | Monitor reviewer on Sonnet instead of Opus | one hour, about 2 USD | half of a cost nothing counts today | One env var. Risk: weaker reviews, checked side by side first |
 | D | The 5-minute cache, judged in hours, not days | 3 busy hours on the GitLab agent | 7.9% overall predicted, GitLab alone 2.8% | One env var. Risk: misses after pauses, already counted in the prediction |
 
@@ -97,7 +97,7 @@ in `src`).
   move the instruction files into the system prompt, about 3.5%. That
   needs code.
 
-**B. ObservationPack.** The owner measured 963 tool results over its
+**B. ObservationPack.** *Closed on 2026-10-13: the owner answered "No, leave off". It stays off for every agent, with no trial; the text below is kept as the record.* The owner measured 963 tool results over its
 10 KB limit, worth about 6.2% of the spend. Each pack is written to
 `.agentx/observations/<agent>/index.jsonl`, so a few hours on a busy
 agent give a count, the bytes withheld, and how often the agent read an
