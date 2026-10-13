@@ -64,6 +64,46 @@ same session log). It is an upper limit: it ignores compaction and what the
 agent reads back from a saved original. The recorded cost per channel, before
 and after, comes from `agentx usage channels`.
 
+### Small reusable workflows (#928)
+
+`bench/slice-replay.py` reads the same session logs and asks how much
+folding a repeated run of tool calls into one call (a registered action, or
+a short workflow that returns one result) could save. A run of 5 calls
+folded into 1 is 4 model requests not made, so 4 re-reads of the context
+not paid. No model is called.
+
+```bash
+# The count: slices of 2 to 5 calls seen in 5+ sessions on 2+ seats
+python3 bench/slice-replay.py count --from 2026-10-09 --to 2026-10-12 --skip-repeats
+python3 bench/slice-replay.py count --from ... --to ... --level kind --json count.json
+
+# The test, step 1: outlines of 60 sessions spread over the seats, for a mining agent
+python3 bench/slice-replay.py outline --from ... --to ... --sample 60 --out mine/
+# Step 2: mark and price the agent's catalog on the sessions it did not see
+python3 bench/slice-replay.py mark --from ... --to ... --catalog catalog.json --seen mine/seen.json --out marked/
+# Step 3: read marked/hand-check.md (30 places) and write pass or fail on each
+```
+
+- A **seat** is one project folder under `~/.claude/projects`. A **slice**
+  is named by the first command of each call (`bash:gh pr view`,
+  `Edit:memory`, an MCP tool name), or with `--level kind` only by its kind
+  (`shell`, `file`), which is too coarse for a script to run.
+- `--skip-repeats` leaves out one command repeated in a row, which is the
+  agent exploring.
+- The low figure prices only the cache re-reads of the requests a fold
+  removes; the high figure prices their whole cost. Both are shares of the
+  window's spend at list price, from the same table as the dashboard (a
+  test keeps the two equal).
+- A catalog is a JSON list of `{"id": "...", "steps": ["regex", ...]}`; each
+  step is matched against `label<TAB>arguments`, with numbers shown as
+  `<n>`, so `"^bash:gh pr view\\t"` matches any PR number.
+- Outlines and the hand check show each call's arguments cut at 120
+  characters and never the tool output, but they still hold commands and
+  paths: keep them on the node.
+
+It finds only calls in a row and in the same order. The stop rule from #928:
+under 10% saved on unseen sessions, drop the token case for this form.
+
 ### The history block (#636, parked)
 
 Pruning today's earlier messages with a Jev seat before a fresh session
