@@ -62,14 +62,14 @@ const until = async (ok: () => boolean, ms = 10_000) => {
 // What the dashboard gets from the daemon's agent list: JSON, parsed.
 const agentList = () => JSON.parse(JSON.stringify(registry.list()))
 
-function card() {
+function card(liveRuns: ReadonlySet<string> = liveRunRefs(agentList())) {
   const store = requests.store
   // Long past the quiet limit: only a live run keeps the request off "No news".
   const now = store.get("req-1")!.updatedAt + 30 * HOUR
   const board = buildDesk({
     now, node: "http://studio-mac:18800", nodeName: "studio-mac", inbox: [], cards: [],
     requests: store.listOpen().map((record) => ({ record, links: store.links(record.id) })),
-    liveRuns: liveRunRefs(agentList()),
+    liveRuns,
   })
   return board.cards.find((c) => c.key === "request:req-1")!
 }
@@ -90,10 +90,26 @@ describe("a request whose run is live, through the registry", () => {
     expect(runRefs).not.toContain(task.id)
 
     expect(card()).toMatchObject({ column: "agent", live: true, can: { reply: false } })
+    // The defect of #959: built from the registry's own run ids, the same
+    // live run matches no link and the card falls under "No news".
+    const byRegistryId = new Set<string>(agentList().flatMap((a: any) => a.runningTasks.map((t: any) => t.id)))
+    expect(card(byRegistryId)).toMatchObject({ column: "quiet", can: { reply: true } })
 
     finish({ content: "ok", duration: 1 })
     await done
     expect(card()).toMatchObject({ column: "quiet", can: { reply: true } })
     expect(card().live).toBeUndefined()
   }, 15_000)
+})
+
+describe("liveRunRefs", () => {
+  it("keys each running task by its trace id and skips one without it", () => {
+    const refs = liveRunRefs([
+      { runningTasks: [{ id: "1700000000000-abc123", traceId: "trace-a" } as { traceId?: string }] },
+      // A daemon older than #962 sends no trace id: nothing is shown as working.
+      { runningTasks: [{ id: "1700000000001-def456" } as { traceId?: string }] },
+      {},
+    ])
+    expect([...refs]).toEqual(["trace-a"])
+  })
 })
