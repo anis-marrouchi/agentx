@@ -23,6 +23,12 @@ and --json.
             --sample writes windows with the start of each result and the
             agent's text between calls, for grading whether a check on the
             result would have decided the next step.
+  phases    Spend by what each request does (first call of a session, only
+            reads, reads plus a test or script run, changes something,
+            answer), from the tool names and the command text, and the
+            stretches of 2+ reading calls in a row with the size of their
+            results: what a reader on a small model could take (the 10-13
+            reading design on #928). The rules are a heuristic; read them.
   outline   Write bounded tool outlines of a sample of sessions spread over
             the seats, for a mining agent to read (step 1 of the test).
   mark      Mark where a catalog of proposed workflows would have applied in
@@ -36,6 +42,7 @@ Usage:
   python3 bench/slice-replay.py count --from ... --to ... --level kind
   python3 bench/slice-replay.py calls --from ... --to ...
   python3 bench/slice-replay.py ahead --from ... --to ... [--known]
+  python3 bench/slice-replay.py phases --from ... --to ...
   python3 bench/slice-replay.py outline --from ... --to ... --sample 60 --out mine/
   python3 bench/slice-replay.py mark --from ... --to ... --catalog catalog.json --seen mine/seen.json --out marked/
 
@@ -121,6 +128,13 @@ SEARCH_TOOLS = {"Grep", "Glob", "LS"}
 
 def shell_command(command):
     """First real command of a shell line: 'gh pr view', 'grep', 'python3'."""
+    found = shell_commands(command)
+    return found[0] if found else "?"
+
+
+def shell_commands(command):
+    """Every command of a shell line, named as shell_command names the first."""
+    out = []
     for part in SPLIT_RE.split(command or ""):
         try:
             words = shlex.split(part, comments=True)
@@ -140,8 +154,8 @@ def shell_command(command):
             if len(subs) >= keep or w.startswith("-"):
                 break
             subs.append(w)
-        return " ".join([name] + subs)
-    return "?"
+        out.append(" ".join([name] + subs))
+    return out
 
 
 def is_memory(path):
@@ -184,7 +198,8 @@ def load_session(path, since, until):
     """Requests of one main session in the window, in order.
 
     Each request: {id, day, model, usage, calls: [(tool, args, use id)],
-    afterMessage, prompt, results, heads, text}. heads holds the first 300
+    afterMessage, prompt, results, heads, sizes, text}. sizes holds each
+    result's length in bytes. heads holds the first 300
     characters of each call's result and text those of the agent's own text
     or thinking in the request. afterMessage is true when a message (not
     a tool result) came in since the request before; prompt holds the named
@@ -213,6 +228,7 @@ def load_session(path, since, until):
                     text = result_text(block)
                     by_id[owner[block["tool_use_id"]]]["results"][block["tool_use_id"]] = named(text)
                     by_id[owner[block["tool_use_id"]]]["heads"][block["tool_use_id"]] = head(text)
+                    by_id[owner[block["tool_use_id"]]]["sizes"][block["tool_use_id"]] = len(text.encode("utf-8", "replace"))
                 elif block.get("type") == "text" and block.get("text"):
                     prompt |= named(block["text"])
                     # Text sent along with tool results is a reminder, not a message.
@@ -222,7 +238,7 @@ def load_session(path, since, until):
         if mid not in by_id:
             day = (obj.get("timestamp") or "")[:10]
             by_id[mid] = {"id": mid, "day": day, "model": msg.get("model", ""), "usage": msg.get("usage") or {}, "calls": [],
-                          "afterMessage": message, "prompt": prompt, "results": {}, "heads": {}, "text": ""}
+                          "afterMessage": message, "prompt": prompt, "results": {}, "heads": {}, "sizes": {}, "text": ""}
             order.append(mid)
             prompt, message = set(), False
         for block in content if isinstance(content, list) else []:
@@ -567,6 +583,101 @@ def ahead(args):
         print(f"\nSaved {args.out}")
 
 
+# ---- phases ----------------------------------------------------------------
+
+# What a call does, from the tool name and the command text. A request takes
+# the strongest kind among its calls: change > run > read.
+CHANGE_RE = re.compile(
+    r"\bgit\s+(commit|push|merge|rebase|reset|tag|cherry-pick)\b|\bgh\s+(pr|issue|release|repo)\s+(create|merge|comment|close|edit|review|reopen|delete)\b"
+    r"|\bgh\s+api\b.*-X\s*(POST|PATCH|PUT|DELETE)|\bcurl\b.*-X\s*(POST|PATCH|PUT|DELETE)|\b(rm|mv|cp|mkdir|chmod|ln|tee)\s"
+    r"|\b(npm|pnpm)\s+publish\b|\bdocker\s+(push|run|compose\s+up)\b|\bkubectl\s+(apply|delete|rollout|scale)\b|\bsystemctl\s+(start|stop|restart)\b|\bdeploy\b|[^>&0-9]>{1,2}\s*(?!/dev/null)[\w/~.]")
+# Programs that run something, matched at the start of a command: 'pnpm test', 'python3', 'make'.
+RUN_RE = re.compile(r"^(node|python3?|tsx|ts-node|make|pytest|vitest|jest|tsc|bash|sh|deno|bun|ruby|php"
+                    r"|cargo (test|run|build|bench)|go (test|run|build)|(npm|pnpm|yarn|npx) \S+)$")
+CHANGE_MCP_RE = re.compile(r"(create|update|delete|merge|write|send|post|comment|push|add|set|close|edit|remove|reply)", re.I)
+
+
+def call_kind(name, args):
+    if name in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
+        return "change"
+    if name == "Bash":
+        command = args.get("command", "")
+        if CHANGE_RE.search(command):
+            return "change"
+        return "run" if any(RUN_RE.match(c) for c in shell_commands(command)) else "read"
+    if name.startswith("mcp__"):
+        return "change" if CHANGE_MCP_RE.search(name.split("__")[-1]) else "read"
+    if name in ("Task", "Agent"):
+        return "run"
+    return "read"
+
+
+def request_kind(i, r):
+    if i == 0:
+        return "first"
+    if not r["calls"]:
+        return "answer"
+    kinds = {call_kind(name, a) for name, a, _ in r["calls"]}
+    return "change" if "change" in kinds else "run" if "run" in kinds else "read"
+
+
+def phases(args):
+    """Spend by what each call does, and the stretches of reading a cheaper reader could take."""
+    sessions = load_all(args.projects, args.since, args.until)
+    total_spend = spend(sessions)
+    rows = defaultdict(lambda: {"requests": 0, "cost": 0.0})
+    stretches, stretch_calls, stretch_bytes, stretch_cost = 0, 0, 0, 0.0
+    for requests in sessions.values():
+        run_calls = run_bytes = 0
+        run_cost = 0.0
+        prev_chain = None
+        per_request = chains(requests)
+
+        def close():
+            nonlocal stretches, stretch_calls, stretch_bytes, stretch_cost
+            if run_calls >= args.min_calls:
+                stretches += 1
+                stretch_calls += run_calls
+                stretch_bytes += run_bytes
+                stretch_cost += run_cost
+
+        for i, r in enumerate(requests):
+            kind = request_kind(i, r)
+            c = cost(r["model"], r["usage"])[0]
+            rows[kind]["requests"] += 1
+            rows[kind]["cost"] += c
+            # A stretch: requests in a row, in one chain, that only read.
+            if kind == "read" and per_request[i] == prev_chain:
+                run_calls += len(r["calls"])
+                run_bytes += sum(r["sizes"].values())
+                run_cost += c
+            else:
+                close()
+                run_calls, run_bytes, run_cost = (len(r["calls"]), sum(r["sizes"].values()), c) if kind == "read" else (0, 0, 0.0)
+            prev_chain = per_request[i]
+        close()
+
+    pct = lambda x: round(x / total_spend * 100, 1) if total_spend else 0.0
+    result = {
+        "from": args.since, "to": args.until, "sessions": len(sessions), "spendUsd": round(total_spend, 4),
+        "byKind": {k: {"requests": rows[k]["requests"], "costUsd": round(rows[k]["cost"], 4), "sharePct": pct(rows[k]["cost"])}
+                   for k in ("first", "read", "run", "change", "answer") if k in rows},
+        "readingStretches": {"minCalls": args.min_calls, "stretches": stretches, "calls": stretch_calls,
+                             "resultTokens": stretch_bytes // 4, "costUsd": round(stretch_cost, 4), "sharePct": pct(stretch_cost)},
+    }
+    print(f"Phases {args.since}..{args.until}: {len(sessions)} main sessions, {total_spend:.2f} USD")
+    names = {"first": "first call of a session", "read": "only reads", "run": "reads plus a test or script run",
+             "change": "changes something", "answer": "answer, no tool"}
+    for k, b in result["byKind"].items():
+        print(f"  {names[k]:<32} {b['requests']:>6} requests {b['sharePct']:>5.1f}%")
+    st = result["readingStretches"]
+    print(f"\n  {st['stretches']} reading stretches of {args.min_calls}+ calls: {st['calls']} calls, results about {st['resultTokens'] / 1e6:.2f}M tokens,"
+          f" {st['sharePct']}% of spend in their requests")
+    if args.out:
+        Path(args.out).write_text(json.dumps(result, indent=2))
+        print(f"\nSaved {args.out}")
+
+
 # ---- outline ---------------------------------------------------------------
 
 def sample_spread(keys, n, seed):
@@ -719,6 +830,12 @@ def main():
     p.add_argument("--seed", type=int, default=928)
     p.add_argument("--json", dest="out")
     p.set_defaults(func=ahead)
+
+    p = sub.add_parser("phases", help="spend by what each call does, and the reading stretches in it")
+    window(p)
+    p.add_argument("--min-calls", type=int, default=2, help="calls a reading stretch needs")
+    p.add_argument("--json", dest="out")
+    p.set_defaults(func=phases)
 
     p = sub.add_parser("outline", help="write tool outlines of a sample of sessions")
     window(p)

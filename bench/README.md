@@ -144,6 +144,27 @@ python3 bench/slice-replay.py calls --from ... --to ... --prices runtime-prices.
   back to the agent and are written into the cache, so read the `write`
   column of `calls` next to the `ahead` saving.
 
+One more command covers the reading design (a reader on a small model makes
+the look-ups and returns a short note; the main model decides, edits and
+answers):
+
+```bash
+# Spend by what each request does, and the stretches of 2+ reading calls in a row
+python3 bench/slice-replay.py phases --from 2026-10-09 --to 2026-10-12
+python3 bench/slice-replay.py phases --from ... --to ... --min-calls 3 --json phases.json
+```
+
+- A request is sorted by the strongest of its calls. **Changes something**
+  is a file edit, a shell line that commits, pushes, merges, posts, moves,
+  deletes, deploys or writes a file with `>`, or an MCP tool whose name
+  creates, updates, sends or posts. **Reads plus a run** is a shell line
+  that starts a program (`node`, `python3`, `make`, `pnpm <anything>`) or a
+  sub-agent. **Only reads** is everything else. These rules read only the
+  tool name and the command text, so check a sample before trusting a share.
+- A reading stretch is a run of read-only requests in one chain. The result
+  size is bytes / 4. What a reader would cost, and whether its notes are
+  good enough, needs a real run and is not here.
+
 ### The history block (#636, parked)
 
 Pruning today's earlier messages with a Jev seat before a fresh session

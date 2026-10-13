@@ -100,6 +100,21 @@ describe("bench/slice-replay.py", () => {
     expect(a.savingNoWritePct).toBeCloseTo(25, 1) // the fixture writes nothing to the cache
   })
 
+  it("splits spend by what each call does and counts the reading stretches", () => {
+    const out = join(dir, "phases.json")
+    let r = run(["phases", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--json", out])
+    expect(r.status, r.stderr).toBe(0)
+    const p = JSON.parse(readFileSync(out, "utf8"))
+    // Per session: view (first call), diff (reads), memory edit (changes), reply (answer).
+    for (const kind of ["first", "read", "change", "answer"]) expect(p.byKind[kind]).toMatchObject({ requests: 5, sharePct: 25 })
+    expect(p.byKind.run).toBeUndefined()
+    expect(p.readingStretches).toMatchObject({ stretches: 0, calls: 0 })
+    r = run(["phases", "--from", "2026-10-09", "--to", "2026-10-12", "--projects", dir, "--min-calls", "1", "--json", out])
+    expect(r.status, r.stderr).toBe(0)
+    const bytes = Buffer.byteLength("touches /w/memory/notes.md")
+    expect(JSON.parse(readFileSync(out, "utf8")).readingStretches).toMatchObject({ stretches: 5, calls: 5, resultTokens: Math.floor((5 * bytes) / 4), sharePct: 25 })
+  })
+
   it("writes sampled windows with the start of each result for grading", () => {
     const out = join(dir, "ahead-sample.json")
     const windows = join(dir, "windows")
