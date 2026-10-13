@@ -728,7 +728,7 @@ const TOOLS = [
       "Ring the owner for a live voice call on their desktop widget, when you need them directly and a message will not do. " +
       "When they answer you speak first, so give the reason in one line. Only agents the owner allowed (calls.allow) can call; " +
       "a few calls an hour at most. urgency 'urgent' rings through Focus: use it only for something that cannot wait. " +
-      "Returns how it rang, or why it did not.",
+      "Returns how it rang, or why it did not. When the owner is already in a call, yours waits and rings again by itself a few minutes later; you are told when.",
     inputSchema: {
       type: "object" as const,
       properties: {
@@ -1514,6 +1514,14 @@ async function handleToolCall(
       })
       const data = await res.json().catch(() => ({})) as any
       if (!res.ok) return { content: [{ type: "text", text: `Call not placed: ${data?.error || `HTTP ${res.status}`}` }] }
+      if (data.busy) {
+        const text = data.ringAgainAt
+          ? `Call ${data.call?.id} placed, but the owner is busy in another call. They got a "call waiting" notice with your name and reason. ` +
+            `Your call rings again by itself at ${new Date(data.ringAgainAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}, or as soon as their call ends after that; you need do nothing. ` +
+            "If it cannot wait, call again with urgency 'urgent': the same call rings as soon as they are free. If a message will do, send one instead and leave the call to ring or not."
+          : `Call ${data.call?.id} placed as urgent. The owner is busy in another call; it rings as soon as that call ends.`
+        return { content: [{ type: "text", text }] }
+      }
       const how = data.rang === "widget" ? "It is ringing on the owner's desktop widget. When they answer you will be asked to open the conversation."
         : data.rang === "notify" ? "The desktop widget is not running, so the owner got a notification instead."
         : `It did not ring (${data.call?.note ?? "held"}); the owner sees it as a missed call.`

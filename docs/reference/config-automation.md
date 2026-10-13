@@ -189,6 +189,9 @@ Agents ringing you for a live voice call on AgentX Voice. See [Calls from your a
 | `calls.maxCallMinutes` | number (1–240) | `30` | An answered call nobody hung up ends after this many minutes (the widget quit or crashed, the Mac slept), so the agent can call again. |
 | `calls.ringSound` | string | `"Submarine"` | The ring: a sound from `/System/Library/Sounds`, without the extension. |
 | `calls.summary` | boolean | `true` | After hang-up, the agent writes a short summary, filed in the dashboard's Ask history. |
+| `calls.busy` | object | `{}` | A call that comes in while you are already in a call. See [When you are already in a call](/dashboard/calls#when-you-are-already-in-a-call). |
+| `calls.busy.ringAgainMinutes` | number (1–60) | `5` | It rings again by itself after this many minutes, or as soon as your call ends after that. |
+| `calls.busy.notice` | string (up to 300) | `"{agent} is calling: {reason}. You are in a call, so it rings again in {minutes} min."` | The **Call waiting** notification. `{agent}`, `{reason}`, `{minutes}` and `{time}` are filled in. |
 
 ## `approvals`
 

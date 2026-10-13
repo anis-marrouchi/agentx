@@ -1148,6 +1148,14 @@ export const callsSchema = z.object({
   /** After hang-up, ask the agent for a short summary and file it in the
    *  dashboard's conversation history. */
   summary: z.boolean().default(true),
+  /** A call that arrives while the owner is in another call (#969). */
+  busy: z.object({
+    /** It rings again by itself after this many minutes. */
+    ringAgainMinutes: z.number().int().min(1).max(60).default(5),
+    /** The owner's "call waiting" notice. {agent}, {reason}, {minutes}
+     *  and {time} are filled in. */
+    notice: z.string().min(1).max(300).default("{agent} is calling: {reason}. You are in a call, so it rings again in {minutes} min."),
+  }).default({}),
 }).default({})
 
 export type CallsConfig = z.infer<typeof callsSchema>

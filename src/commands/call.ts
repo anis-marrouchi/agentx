@@ -63,6 +63,13 @@ const request = new Command("request")
     if (!agentId) throw new Error("no agent: calls are placed from inside an agent's run, which sets AGENTX_AGENT_ID")
     const r = await daemon("POST", "/calls", { agentId, reason: opts.reason, urgency: opts.urgent ? "urgent" : "normal" }, callerHeaders())
     if (opts.json) { console.log(JSON.stringify(r, null, 2)); return }
+    if (r.busy) {
+      const when = r.ringAgainAt
+        ? `rings again by itself at ${new Date(r.ringAgainAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+        : "urgent: rings as soon as that call ends"
+      console.log(`  ${chalk.yellow("⏸")} ${r.call.id} the owner is busy in another call; ${when}`)
+      return
+    }
     const how = r.rang === "widget" ? "ringing on AgentX Voice"
       : r.rang === "notify" ? "AgentX Voice is not running; sent a notification instead"
       : `not rung: ${r.call.note ?? "held"} — it is listed as a missed call`

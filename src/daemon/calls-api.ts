@@ -6,6 +6,11 @@
 //                               X-AgentX-Chat: a running turn of agentId
 //                               201 ringing {call, rang}; 202 held as a
 //                               missed call (Focus) {call, rang: false};
+//                               202 the owner is in another call {call,
+//                               rang: false, busy: true, ringAgainAt}: it
+//                               rings again by itself then. An urgent call
+//                               then is 201 with busy: true, ringAgainAt:
+//                               null: it rings when the widget is free.
 //                               403 no such running turn, or not in
 //                               calls.allow; 409 one already in
 //                               progress; 429 over calls.maxPerHour
@@ -52,7 +57,8 @@ export async function handleCalls(
     if (method === "POST") {
       const r = await calls.request(body, proof)
       if (!r.ok) return { status: r.status, body: { error: r.error } }
-      return { status: r.rang === false ? 202 : 201, body: { call: r.call, rang: r.rang } }
+      const busy = r.busy ? { busy: true, ringAgainAt: r.busy.ringAgainAt } : {}
+      return { status: r.rang === false ? 202 : 201, body: { call: r.call, rang: r.rang, ...busy } }
     }
     if (method !== "GET") return { status: 405, body: { error: "GET or POST" } }
     await calls.sweep()

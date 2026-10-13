@@ -48,11 +48,26 @@ Agents call through the `agentx_call_owner` tool, which AgentX gives them. Insid
 
 A call counts only when it comes from a turn of that agent that is running now. AgentX checks this against the runs it started, so an agent can't simply type another agent's name to get through your allowlist. This stops an agent from naming another by mistake. It isn't a security boundary between agents on the same Mac: every local agent runs as your user and can also edit `calls.allow`. It also means you can't place a call from your own terminal. To try it out, ask an agent to call you, as below.
 
+## When you are already in a call
+
+Like a phone, AgentX has *call waiting*: a second call doesn't cut into the call you are on.
+
+1. **Mac:** you are talking with one agent, and a second agent calls.
+2. **Mac:** your current call goes on. You get one short **Call waiting** notification, with a sound, that names the second agent and its reason.
+3. The second agent is told you are busy in another call, and the time its call will ring again.
+4. **Mac:** after 5 minutes (the setting `calls.busy.ringAgainMinutes`) the call rings again by itself. If you are still talking then, it rings as soon as you hang up.
+
+If several agents are waiting, they ring one at a time, oldest first. The next one rings only after the one before it is answered and hung up, declined, or missed.
+
+The agent doesn't have to do anything. If its matter can't wait, it can call again as urgent: its waiting call then rings right away, with the urgent rules below. A call that is urgent from the start also follows those rules. A waiting call still counts once toward `calls.maxPerHour`.
+
+To see waiting calls, run `agentx call list --status later` in the **Terminal**. They carry the note `owner in a call`.
+
 ## Focus, missed calls and limits
 
 - **Focus (Do Not Disturb), or the widget's hold switch:** a call that isn't urgent doesn't ring. It is recorded as a missed call, and you get a notice once Focus ends. Urgent calls ring anyway, the same way `agentx notify --urgent` does.
 - **AgentX Voice isn't running:** you get a notification instead, with the caller and the reason. If you open AgentX Voice while the call is still ringing, the pill rings.
-- **AgentX Voice is busy:** while it runs a turn of yours, records, or is in another call, a new call can't ring. It waits, and you get a notification at once with the caller and the reason. The pill rings as soon as it is free, and the ring time starts then. A call waits 10 minutes at most. If AgentX Voice is still busy then, the ring time runs out and the call counts as missed, with the note `widget busy`. This needs AgentX Voice built from this version: run `agentx desktop install` after an update.
+- **AgentX Voice is busy:** while it runs a turn of yours or records, or when an urgent call comes in during another call, a new call can't ring. It waits, and you get a notification at once with the caller and the reason. The pill rings as soon as it is free, and the ring time starts then. A call waits 10 minutes at most. If AgentX Voice is still busy then, the ring time runs out and the call counts as missed, with the note `widget busy`. This needs AgentX Voice built from this version: run `agentx desktop install` after an update.
 - **Missed calls:** run `agentx call list --status missed`.
 - **Limits:** one call in progress per agent, and at most `calls.maxPerHour` calls per agent in an hour (3 by default).
 
@@ -68,11 +83,15 @@ All settings are under `calls` in `agentx.json`:
 | `calls.maxCallMinutes` | `30` | An answered call that was never hung up ends after this many minutes, for example when AgentX Voice quit or the Mac slept. Until then the agent can't call again. |
 | `calls.ringSound` | `"Submarine"` | The ring: a sound name from `/System/Library/Sounds`, without `.aiff`. |
 | `calls.summary` | `true` | After you hang up, ask the agent for a short summary. |
+| `calls.busy.ringAgainMinutes` | `5` | A call that comes in while you are in another call rings again after this many minutes (1 to 60). |
+| `calls.busy.notice` | see below | The text of the **Call waiting** notification. `{agent}`, `{reason}`, `{minutes}` and `{time}` are filled in. |
+
+The default notice reads: `{agent} is calling: {reason}. You are in a call, so it rings again in {minutes} min.`
 
 For example:
 
 ```json
-"calls": { "allow": ["writer", "ops"], "ringSeconds": 60, "ringSound": "Glass" }
+"calls": { "allow": ["writer", "ops"], "ringSeconds": 60, "ringSound": "Glass", "busy": { "ringAgainMinutes": 3 } }
 ```
 
 ## Check it worked
@@ -84,11 +103,21 @@ For example:
 5. **Mac:** say "bye". The call ends.
 6. **Terminal:** run `agentx call list`. The call shows as `ended`, and a moment later it has a summary.
 
+To check call waiting, you need two agents that may call you, for example `writer` and `ops`:
+
+1. **Terminal:** run `agentx daemon send writer "Call me with agentx_call_owner, reason: First call"`.
+2. **Mac:** answer the call on the pill. Stay on it.
+3. **Terminal:** run `agentx daemon send ops "Call me with agentx_call_owner, reason: Second call"`. The agent replies that you are busy in another call, and says when it rings again.
+4. **Mac:** a **Call waiting** notification names Ops and its reason. Your call with Writer goes on.
+5. **Mac:** say "bye" to end the first call. When the time comes, Ops rings.
+
 ## If something is wrong
 
 - **`may not call the owner`**: the agent isn't allowed yet. Run `agentx call allow <agent>` in the folder that holds `agentx.json`.
 - **`No running turn of <agent> placed this call`**: the call didn't come from inside that agent's run, for example from a terminal. Ask the agent to call you instead. On version 0.81.0 or earlier, a run started with `agentx daemon send` or `POST /task` and no chat was refused the same way: update AgentX.
 - **`has placed 3 calls in the last hour`**: the agent hit `calls.maxPerHour`. Wait, or raise the limit.
+- **`already has a call in progress; it rings again at …`**: the agent's call is waiting because you were in a call. It rings by itself at that time. To drop it, run `agentx call decline <id>`.
+- **A waiting call never rings**: you are still in a call. An answered call that was never hung up ends by itself after `calls.maxCallMinutes`; then the waiting call rings.
 - **`already has a call in progress`**: answer, decline or hang up that call first. An answered call that was never hung up ends by itself after `calls.maxCallMinutes`. `agentx call list` shows it, and `agentx call decline <id>` ends it.
 - **The command says `sent a notification instead`**: AgentX Voice isn't running. Start it with `agentx desktop start`.
 - **The command says `not rung`**: you are in Focus, or the widget's hold switch is on, and the call wasn't urgent. It is listed as a missed call.

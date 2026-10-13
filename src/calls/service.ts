@@ -16,6 +16,14 @@
 //   4. Focus: a non-urgent call does not ring. It becomes a missed call,
 //      and its notice goes through notify, which holds it until Focus
 //      ends. Urgent calls ring through, as `notify --urgent` does.
+//   5. The owner is in another call (#969): a non-urgent voice call does
+//      not ring now. It waits as "later" with the note IN_A_CALL, the
+//      owner gets one "call waiting" notice (calls.busy.notice), and the
+//      agent is told the owner is busy and when it rings again
+//      (calls.busy.ringAgainMinutes). When it comes due and the owner is
+//      free, waiting calls ring one at a time, oldest first. An urgent
+//      call rings as before; an agent whose call waits can still ring
+//      urgently, which turns that call urgent and rings it now.
 //
 // A camera ask (#325 phase 3, kind "camera") goes through the same checks
 // and the same table. It never rings the widget: the notice goes to the
@@ -35,10 +43,17 @@ export const WIDGET_FRESH_MS = 10_000
 export const BUSY_WAIT_MAX_MS = 10 * 60_000
 export const LATER_DEFAULT_MINUTES = 10
 export const LATER_MAX_MINUTES = 240
+/** The note on a call waiting because the owner is in another call. */
+export const IN_A_CALL = "owner in a call"
 
 export type CallResult =
   | { ok: true; call: Call }
   | { ok: false; status: number; error: string }
+
+/** What `request` adds when the owner is in another call. A normal call
+ *  rings again at `ringAgainAt`; an urgent one (null) as soon as the
+ *  widget is free. */
+export interface Busy { ringAgainAt: number | null }
 
 /** What the request says about the turn placing it: the run's
  *  AGENTX_TASK_ID, or, for a warm process that has none, its
@@ -112,7 +127,7 @@ export class CallService {
 
   /** An agent asks for a call, or to see (kind "camera"). 201 ringing,
    *  202 held as missed (Focus). */
-  async request(input: { agentId?: unknown; reason?: unknown; urgency?: unknown; kind?: unknown }, proof: CallerProof = {}): Promise<CallResult & { rang?: "widget" | "notify" | false }> {
+  async request(input: { agentId?: unknown; reason?: unknown; urgency?: unknown; kind?: unknown }, proof: CallerProof = {}): Promise<CallResult & { rang?: "widget" | "notify" | false; busy?: Busy }> {
     const agentId = String(input.agentId ?? "").trim()
     const reason = String(input.reason ?? "").replace(/\s+/g, " ").trim()
     const urgency: CallUrgency = input.urgency === "urgent" ? "urgent" : "normal"
@@ -131,8 +146,16 @@ export class CallService {
       return { ok: false, status: 403, error: `${agentId} ${verb}. Add it to calls.allow in agentx.json (or: agentx call allow ${agentId}).` }
     }
     await this.sweep()
-    if (this.deps.store.list({ status: LIVE, limit: 200 }).some((c) => c.agentId === agentId)) {
-      return { ok: false, status: 409, error: `${agentId} already has a call in progress` }
+    const own = this.deps.store.list({ status: LIVE, limit: 200 }).find((c) => c.agentId === agentId)
+    // A call waiting on the owner's other call can be made urgent: the
+    // same call, with the new reason, rings now.
+    if (own && urgency === "urgent" && kind === "voice" && own.kind === "voice" && own.status === "later" && own.note === IN_A_CALL) {
+      const up = await this.urgentNow(own, reason)
+      if (up) return { ok: true, call: this.deps.store.get(own.id)!, rang: up.rang, busy: this.inACall() ? { ringAgainAt: null } : undefined }
+    }
+    if (own) {
+      const when = own.status === "later" && own.ringAgainAt !== null ? `; it rings again at ${clock(own.ringAgainAt)}` : ""
+      return { ok: false, status: 409, error: `${agentId} already has a call in progress${when}` }
     }
     const now = this.now()
     if (this.deps.store.countSince(agentId, now - 3_600_000) >= cfg.maxPerHour) {
@@ -148,11 +171,40 @@ export class CallService {
       channel: session.channel && session.chatId ? session.channel : null,
       chatId: session.channel && session.chatId ? session.chatId : null,
     }
+    // The owner is in another call: a normal voice call waits its turn,
+    // unless Focus holds it as missed anyway.
+    const inACall = kind === "voice" && this.inACall()
+    if (inACall && urgency === "normal" && !(this.deps.focus ?? readFocus)().active) {
+      const minutes = cfg.busy.ringAgainMinutes
+      Object.assign(call, { status: "later", ringingSince: null, ringAgainAt: now + minutes * 60_000, note: IN_A_CALL })
+      this.deps.store.insert(call)
+      this.deps.log?.(`[calls] ${agentId} asks for a call (${urgency}), waits: the owner is in a call: ${reason}`)
+      await this.alert(call, "Call waiting", fill(cfg.busy.notice, {
+        agent: this.name(agentId), reason, minutes: String(minutes), time: clock(call.ringAgainAt!),
+      }))
+      return { ok: true, call: this.deps.store.get(call.id)!, rang: false, busy: { ringAgainAt: call.ringAgainAt } }
+    }
     this.deps.store.insert(call)
     this.deps.log?.(`[calls] ${agentId} asks ${kind === "camera" ? "to see" : "for a call"} (${urgency}): ${reason}`)
     const rang = await this.ring(call)
     const saved = this.deps.store.get(call.id)!
-    return { ok: true, call: saved, rang }
+    return { ok: true, call: saved, rang, busy: inACall && urgency === "urgent" ? { ringAgainAt: null } : undefined }
+  }
+
+  /** True while the owner is on an answered voice call. */
+  inACall(): boolean {
+    return this.deps.store.list({ status: ["answered"], kind: "voice", limit: 1 }).length > 0
+  }
+
+  /** A call waiting on the owner's other call turns urgent and rings now. */
+  private async urgentNow(call: Call, reason: string): Promise<{ rang: "widget" | "notify" | false } | undefined> {
+    const now = this.now()
+    const again = this.deps.store.transition(call.id, "later", {
+      status: "ringing", urgency: "urgent", reason, ringingSince: now, ringAgainAt: null, note: null,
+    })
+    if (!again) return undefined
+    this.deps.log?.(`[calls] ${call.id} from ${call.agentId} is now urgent: ${reason}`)
+    return { rang: await this.ring(again) }
   }
 
   /** Ring now, or hold as missed in Focus. Returns how it rang. */
@@ -176,11 +228,12 @@ export class CallService {
   }
 
   private async notice(call: Call, title: string, extra?: string): Promise<void> {
+    await this.alert(call, title, extra ? `${call.reason}\n${extra}` : call.reason)
+  }
+
+  private async alert(call: Call, title: string, message: string): Promise<void> {
     try {
-      await this.deps.alert({
-        title, message: extra ? `${call.reason}\n${extra}` : call.reason,
-        urgent: call.urgency === "urgent", from: call.agentId,
-      })
+      await this.deps.alert({ title, message, urgent: call.urgency === "urgent", from: call.agentId })
     } catch (e: any) {
       this.deps.log?.(`[calls] notice for ${call.id} failed: ${e?.message ?? e}`)
     }
@@ -250,10 +303,31 @@ export class CallService {
         if (!this.deps.store.transition(call.id, "answered", { status: "ended", endedAt: now, note: "no hang-up" })) continue
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} ended: no hang-up in ${this.deps.config().maxCallMinutes} min`)
       } else if (call.status === "later" && call.ringAgainAt !== null && now >= call.ringAgainAt) {
+        // A call waiting on the owner's other call rings below, in turn.
+        if (call.note === IN_A_CALL) continue
         const again = this.deps.store.transition(call.id, "later", { status: "ringing", ringingSince: now, ringAgainAt: null })
         if (again) await this.ring(again)
       }
     }
+    await this.nextWaiting(now)
+  }
+
+  /** Calls that waited on the owner's other call ring one at a time,
+   *  oldest first, once it is due and nothing else is on the line: no
+   *  voice call answered or ringing. One still due while the owner talks
+   *  rings as soon as they hang up. */
+  private async nextWaiting(now: number): Promise<void> {
+    if (this.deps.store.list({ status: ["answered", "ringing"], kind: "voice", limit: 1 }).length) return
+    // The list is newest first; reversed, two calls placed in the same
+    // millisecond keep the order they were placed in.
+    const next = this.deps.store.list({ status: ["later"], kind: "voice", limit: 200 }).reverse()
+      .filter((c) => c.note === IN_A_CALL && c.ringAgainAt !== null && now >= c.ringAgainAt)
+      .sort((a, b) => a.createdAt - b.createdAt)[0]
+    if (!next) return
+    const again = this.deps.store.transition(next.id, "later", { status: "ringing", ringingSince: now, ringAgainAt: null, note: null })
+    if (!again) return
+    this.deps.log?.(`[calls] ${next.id} from ${next.agentId} rings again: the owner is free`)
+    await this.ring(again)
   }
 
   /** The owner picked up, or tapped Show. Returns the call and, for a
@@ -323,6 +397,16 @@ export class CallService {
   get(id: string): Call | undefined { return this.deps.store.get(id) }
 
   list(opts: Parameters<CallStore["list"]>[0] = {}): Call[] { return this.deps.store.list(opts) }
+}
+
+/** Fill {name} placeholders; an unknown one stays as written. */
+export function fill(template: string, values: Record<string, string>): string {
+  return template.replace(/\{(\w+)\}/g, (m, k: string) => values[k] ?? m)
+}
+
+/** A time of day, as the owner's machine shows it. */
+function clock(ms: number): string {
+  return new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
 }
 
 const unknown = (id: string): CallResult => ({ ok: false, status: 404, error: `No such call: ${id}` })

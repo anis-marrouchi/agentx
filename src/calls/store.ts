@@ -92,7 +92,7 @@ export class CallStore {
   transition(id: string, from: CallStatus | CallStatus[], patch: Partial<Omit<Call, "id" | "agentId" | "createdAt">>): Call | undefined {
     const statuses = Array.isArray(from) ? from : [from]
     const cols: Record<string, string> = {
-      status: "status", ringingSince: "ringing_since", answeredAt: "answered_at", endedAt: "ended_at",
+      reason: "reason", urgency: "urgency", status: "status", ringingSince: "ringing_since", answeredAt: "answered_at", endedAt: "ended_at",
       ringAgainAt: "ring_again_at", note: "note", summary: "summary",
     }
     const keys = Object.keys(patch).filter((k) => k in cols)
