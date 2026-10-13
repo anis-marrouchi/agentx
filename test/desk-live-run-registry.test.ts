@@ -22,7 +22,7 @@ import { attachRequests, type AttachedRequests } from "../src/requests/attach"
 import { pickupContext, type RequestSettings } from "../src/requests/tracker"
 import { buildDesk, liveRunRefs } from "../src/desk/board"
 
-const settings: RequestSettings = { enabled: true, channels: [], from: [], staleAfterHours: 24, retentionDays: 90 }
+const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:42"], staleAfterHours: 24, retentionDays: 90 }
 const HOUR = 3_600_000
 
 let dir: string
@@ -62,17 +62,20 @@ const until = async (ok: () => boolean, ms = 10_000) => {
 // What the dashboard gets from the daemon's agent list: JSON, parsed.
 const agentList = () => JSON.parse(JSON.stringify(registry.list()))
 
-function card() {
+function card(id = "req-1", liveRuns: ReadonlySet<string> = liveRunRefs(agentList())) {
   const store = requests.store
   // Long past the quiet limit: only a live run keeps the request off "No news".
-  const now = store.get("req-1")!.updatedAt + 30 * HOUR
+  const now = store.get(id)!.updatedAt + 30 * HOUR
   const board = buildDesk({
     now, node: "http://studio-mac:18800", nodeName: "studio-mac", inbox: [], cards: [],
     requests: store.listOpen().map((record) => ({ record, links: store.links(record.id) })),
-    liveRuns: liveRunRefs(agentList()),
+    liveRuns,
   })
-  return board.cards.find((c) => c.key === "request:req-1")!
+  return board.cards.find((c) => c.key === `request:${id}`)!
 }
+
+// The live set built from the running tasks' own ids, as before #959.
+const byRunId = () => new Set<string>(agentList().flatMap((a: any) => a.runningTasks.map((t: any) => t.id)))
 
 describe("a request whose run is live, through the registry", () => {
   it("is shown as working while the run lasts, and not after", async () => {
@@ -90,10 +93,37 @@ describe("a request whose run is live, through the registry", () => {
     expect(runRefs).not.toContain(task.id)
 
     expect(card()).toMatchObject({ column: "agent", live: true, can: { reply: false } })
+    // Control: the same card, matched on the running tasks' own ids, lands under "No news".
+    expect(card("req-1", byRunId())).toMatchObject({ column: "quiet", can: { reply: true } })
 
     finish({ content: "ok", duration: 1 })
     await done
     expect(card()).toMatchObject({ column: "quiet", can: { reply: true } })
     expect(card().live).toBeUndefined()
+  }, 15_000)
+
+  it("is shown as working when the owner's own turn opened it", async () => {
+    let finish: (v: any) => void = () => {}
+    let entered = false
+    run.impl = () => new Promise((resolve) => { entered = true; finish = resolve })
+
+    const done = registry.execute({
+      agentId: "writer", message: "plan the spring newsletter",
+      context: { channel: "telegram", chatId: "c1", sender: "Owner", senderId: "42" },
+    })
+    await until(() => entered)
+
+    const [task] = agentList()[0].runningTasks
+    const record = requests.store.byLink("run", task.traceId)
+    expect(record).not.toBeNull()
+    expect(requests.store.byLink("run", task.id)).toBeNull()
+    // A captured turn is a candidate until work is under way; the Desk lists open requests only.
+    requests.store.progress(record!.id, Date.now())
+
+    expect(card(record!.id)).toMatchObject({ column: "agent", live: true, can: { reply: false } })
+    expect(card(record!.id, byRunId())).toMatchObject({ column: "quiet", can: { reply: true } })
+
+    finish({ content: "ok", duration: 1 })
+    await done
   }, 15_000)
 })
