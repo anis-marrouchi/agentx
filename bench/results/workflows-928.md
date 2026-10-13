@@ -38,7 +38,7 @@ not the cache write, unless the raw result also stays out of the context.
 | Look ahead: the agent fixes its next 2 to 4 calls in one call, run with no model | 1% to 3% | Count, plus a replay of 60 moments | Not built |
 | Checked batch: 2 to 4 steps in one call, a check on each, stop at the first failed check | 3.5% to 5% (6% at most) | 240 graded stretches, 40 graded by hand | Not built; below the 50% bar set before the test |
 | A stronger model on the deciding call | A loss: about 1.19 USD per call against 0.07 to 0.11 saved | Arithmetic | Not built |
-| Reader on the small model: the main model asks, a reader does the looking up and returns a short note | 20% to 27% (calculated); 15% in one offline run of 10 tasks | Priced on logged reading stretches; one real run | Open: answers graded lower than today's |
+| Reader on the small model: the main model asks, a reader does the looking up and returns a short note | 20% to 27% (calculated); 12% on 9 small tasks with the copied-lines rule | Priced on logged reading stretches; two offline runs | Open: quality at today's run-to-run level, 3 to 4 times slower; a live seat trial is the next step and needs the owner's yes |
 
 ### The checked batch, in more detail
 
@@ -84,16 +84,45 @@ short note. Text the main model is about to edit it reads itself.
   and graded as good as today's answer in 2 of 10 (a repeat of today's
   setting: 5 of 10). In the 3 "worse" cases the note had a gap or a wrong
   fact that the main model repeated.
+- **Second run, three reader rules on 9 of the same tasks** (27 runs; the
+  tenth was stopped by the spend guard). Main model Opus 5.5 at high effort,
+  reader Haiku 5.5, all answers for a task graded in one blind pass:
+
+  | | Repeat of today | First design | Copied lines | Re-read | Both |
+  |---|---|---|---|---|---|
+  | As good as today's answer, or better | 4 | 2 | **4** | 3 | 3 |
+  | Slightly worse | 2 | 3 | 2 | 4 | 3 |
+  | Worse | 3 | 4 | 3 | 2 | 3 |
+  | Cost against today (5.69 USD) | same | 15% less | **12% less** | 12% less | 6% less |
+  | Time for the 9 tasks (today: 493 s) | 524 s | 2,055 s | 1,991 s | 1,495 s | 1,976 s |
+
+  - **Copied lines:** the reader may only state a fact backed by a line
+    copied from a file or a command, with its location, and lists what it
+    could not back. **Re-read:** the main model checks the facts its answer
+    turns on itself, in at most six look-ups. **Both:** the two together.
+  - Copied lines meets the rule set before the run (the repeat's quality at
+    10% or more saved), narrowly. Re-read adds no quality here and, with
+    copied lines, halves the saving.
+  - The references were written a day earlier. On two tasks the work had
+    since been done and the answers that said so were graded "worse"
+    (every answer on one of them, the repeat included). Without those two:
+    copied lines 4 / 2 / 1, re-read 3 / 4 / 0, repeat 3 / 2 / 2. This is
+    read from the grader's reasons, not checked at the source.
+  - Small read-only tasks are about half session start, which the design
+    does not touch, and drift day to day against their reference. More of
+    them will not settle the question.
 - **Not tested:** long sessions that change things, where most spend sits.
 
 ## What would reopen or close these
 
 - **Checked batch:** reopen if a sample of another node or another period
   shows a check deciding the next step in half the places or more.
-- **Reader design:** the proposed next test (three reader rules: quoted
-  lines, re-read of the deciding lines, both; 20 tasks; about 12 USD) waits
-  for the owner's yes. Go on only if a variant reaches the repeat's quality
-  (5 of 10 as good) at 10% or more saved.
+- **Reader design:** carry the copied-lines rule forward and drop the
+  re-read. The open question, the saving and the corrections on long work
+  that changes things, can only be answered on one live seat (not voice,
+  because of the speed) for a few days. That is a live change and waits for
+  the owner's decision. Do not expect the calculated 20% to 27% from this
+  alone: measured so far is 12% on small tasks.
 - **Session start (18%)** is shared with #615 and #947, not with these forms.
 - **Prices:** check which of 4 / 20 and 5 / 25 matches the invoice for
   Opus 5.5, and whether AgentX's table needs a Haiku 5 family.
