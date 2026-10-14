@@ -354,7 +354,10 @@ export class CallService {
         this.deps.log?.(`[calls] ${call.id} from ${call.agentId} ended: no hang-up in ${this.deps.config().maxCallMinutes} min`)
       } else if (call.status === "later" && call.ringAgainAt !== null && now >= call.ringAgainAt) {
         const again = this.deps.store.transition(call.id, "later", { status: "ringing", ringingSince: now, ringAgainAt: null })
-        if (again) await this.ring(again)
+        if (!again) continue
+        // A wait from before the snooze does not carry over.
+        this.setWaiting(call.id, null)
+        await this.ring(again)
       }
     }
   }

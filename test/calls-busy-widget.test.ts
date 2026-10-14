@@ -341,4 +341,27 @@ describe("the caller of a busy owner (#969)", () => {
     expect(calls.get(r.call.id)).toMatchObject({ status: "missed", note: "widget busy" })
     expect(titles()).toEqual(["Call waiting: Ops", "Call waiting: Ops", "Missed call from Ops"])
   })
+
+  it("a call snoozed while it waited starts a fresh wait when it rings again, even across a restart", async () => {
+    const first = await place("writer")
+    await talk(first.id)
+    const r = await request("ops")
+    if (!r.ok || !r.busy) throw new Error("not waiting")
+    await poll(60_000, { busy: true })
+
+    // Snoozed from the notification while the widget is not polling.
+    expect(calls.later(r.call.id, 5).ok).toBe(true)
+    expect(deps.store.waiting().has(r.call.id)).toBe(false)
+
+    // Due again past the longest wait; the phone's poll rings it, then a restart.
+    now += Math.max(5 * 60_000, maxWait())
+    await calls.asking()
+    expect(calls.get(r.call.id)?.status).toBe("ringing")
+    calls = new CallService(deps)
+    cfg = { ...cfg, maxCallMinutes: 60 }
+
+    await poll(cfg.ringSeconds * 2000, { busy: true })
+    expect(calls.get(r.call.id)?.status).toBe("ringing")
+    expect(titles()).toEqual(["Call waiting: Ops", "Ops is calling", "Call waiting: Ops"])
+  })
 })
