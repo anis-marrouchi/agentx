@@ -26,7 +26,8 @@ import { MessageRouter } from "@/channels/router"
 import { setMessageRouter } from "@/channels/router-instance"
 import { TelegramAdapter, TELEGRAM_ALLOW_EVERYONE } from "@/channels/telegram"
 import { WhatsAppAdapter } from "@/channels/whatsapp"
-import { GitLabAdapter } from "@/channels/gitlab"
+import { GitLabAdapter, gitlabErrorDetail } from "@/channels/gitlab"
+import { sendAnswer, type PostingIdentity } from "./send-answer"
 import { GitHubAdapter, parseWebhookBody } from "@/channels/github"
 import { WebRtcSignalBroker, ringNotice, type WebRtcSignal } from "@/channels/webrtc-signal"
 import { WebRtcBot, nativeI420ToRgba } from "@/channels/webrtc-bot"
@@ -1267,6 +1268,29 @@ export class AgentXDaemon {
     return out.sort((a, b) => b.ageSeconds - a.ageSeconds)
   }
 
+  /** Which token a GitLab write for this agent would use (#984). */
+  private postingIdentity(channel: string, agentId?: string): PostingIdentity | undefined {
+    if (channel !== "gitlab") return undefined
+    return (this.router.getChannel("gitlab") as GitLabAdapter | undefined)?.postingIdentity?.(agentId)
+  }
+
+  /** GitLab token health for /health: absent when the channel is off. A
+   *  rejected global token is called out, since every agent without its
+   *  own token posts with it (#984). */
+  private gitlabHealth(): Record<string, unknown> | undefined {
+    const gitlab = this.router.getChannel("gitlab") as GitLabAdapter | undefined
+    if (!gitlab?.tokenHealth) return undefined
+    const tokens = gitlab.tokenHealth()
+    const bad = [
+      ...(tokens.global?.ok === false ? ["global"] : []),
+      ...Object.entries(tokens.agents).filter(([, t]) => !t.ok).map(([id]) => id),
+    ]
+    return {
+      tokens,
+      ...(bad.length ? { warning: `GitLab rejected ${bad.map((b) => b === "global" ? "the global token" : `the token of agent "${b}"`).join(", ")}; writes with ${bad.length === 1 ? "it" : "them"} fail until the token is replaced.` } : {}),
+    }
+  }
+
   private inflightCounts(): { local: number; meshForwards: number; total: number } {
     const local = this.registry.getActiveTaskCount()
     const meshForwards = this.router.getActiveMeshForwardCount()
@@ -2483,44 +2507,39 @@ export class AgentXDaemon {
         // the local global token resolves to (the group-access-token bot).
         gitlab.setSendNoteForwarder(async (node, project, noteableType, noteableIid, agentId, text): Promise<string> => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
-          if (!peer) {
-            this.log(`[gitlab] send-note forward: peer "${node}" not found or unhealthy`)
-            return ""
-          }
+          // Every failure throws, so the agent hears why its note did not
+          // land instead of reading an empty ID as success (#984).
+          if (!peer) throw new Error(`peer "${node}" not found or unhealthy`)
           const url = `${peer.peerUrl}/gitlab/send-note`
-          try {
-            const r = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
-              body: JSON.stringify({ project, noteableType, noteableIid, agentId, text }),
-            })
-            const data = await r.json().catch(() => ({}))
-            this.log(`[gitlab] send-note forward -> ${url} : ${r.status} noteId=${(data as any).noteId || "?"}`)
-            return (data as any).noteId || ""
-          } catch (e: any) {
-            this.log(`[gitlab] send-note forward FAILED -> ${url} : ${e.message}`)
-            return ""
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+            body: JSON.stringify({ project, noteableType, noteableIid, agentId, text }),
+          })
+          const data = await r.json().catch(() => ({})) as { noteId?: string; ok?: boolean; status?: number; error?: string }
+          this.log(`[gitlab] send-note forward -> ${url} : ${r.status} noteId=${data.noteId || "?"}`)
+          if (!r.ok || data.ok === false || !data.noteId) {
+            throw new Error(`GitLab answered ${data.status ?? r.status}: ${data.error || "no note ID returned"}`)
           }
+          return data.noteId
         })
 
         // Same for time tracking — peer posts /add_spent_time as its own user.
         gitlab.setLogTimeForwarder(async (node, project, noteableType, noteableIid, agentId, durationMs): Promise<void> => {
           const peer = this.mesh!.directory().find(p => p.peer === node && p.healthy)
-          if (!peer) {
-            this.log(`[gitlab] log-time forward: peer "${node}" not found or unhealthy`)
-            return
-          }
+          if (!peer) throw new Error(`peer "${node}" not found or unhealthy`)
           const url = `${peer.peerUrl}/gitlab/log-time`
-          try {
-            const r = await fetch(url, {
-              method: "POST",
-              headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
-              body: JSON.stringify({ project, noteableType, noteableIid, agentId, durationMs }),
-            })
-            const respText = await r.text().catch(() => "")
-            this.log(`[gitlab] log-time forward -> ${url} : ${r.status} ${respText.slice(0, 160)}`)
-          } catch (e: any) {
-            this.log(`[gitlab] log-time forward FAILED -> ${url} : ${e.message}`)
+          const r = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...this.mesh!.authHeaders(peer.peer) },
+            body: JSON.stringify({ project, noteableType, noteableIid, agentId, durationMs }),
+          })
+          const respText = await r.text().catch(() => "")
+          this.log(`[gitlab] log-time forward -> ${url} : ${r.status} ${respText.slice(0, 160)}`)
+          let data: { ok?: boolean; status?: number; error?: string } = {}
+          try { data = JSON.parse(respText) } catch { /* not JSON */ }
+          if (!r.ok || data.ok === false) {
+            throw new Error(`GitLab answered ${data.status ?? r.status}: ${data.error || respText.slice(0, 200) || "no response body"}`)
           }
         })
       }
@@ -5647,6 +5666,8 @@ export class AgentXDaemon {
             // Whether this process can measure a phone recording (#233);
             // checked now, so it follows an ffmpeg install without a restart.
             voice: { canMeasure: findFfmpeg() != null, allowUnmeasured: this.config.voice.allowUnmeasured },
+            // Whether GitLab still accepts this node's tokens (#984).
+            gitlab: this.gitlabHealth(),
           })
           break
         }
@@ -5991,7 +6012,9 @@ export class AgentXDaemon {
             let noteId = ""
             try { noteId = String((JSON.parse(respBody) as any).id || "") } catch { /* ignore */ }
             this.log(`[gitlab/send-note] agent="${agentId}" -> POST ${ep} : ${glRes.status} noteId=${noteId || "?"}`)
-            this.json(res, 200, { ok: glRes.ok, status: glRes.status, noteId })
+            // GitLab's own message travels back, so the sending node can
+            // tell its agent why the note did not land (#984).
+            this.json(res, 200, { ok: glRes.ok, status: glRes.status, noteId, ...(glRes.ok ? {} : { error: gitlabErrorDetail(respBody) }) })
           } catch (e: any) {
             this.log(`[gitlab/send-note] FETCH ERROR: ${e.message}`)
             this.json(res, 500, { error: e.message })
@@ -6024,7 +6047,8 @@ export class AgentXDaemon {
               body: JSON.stringify({ duration }),
             })
             this.log(`[gitlab/log-time] agent="${agentId}" duration=${duration} -> POST ${ep} : ${glRes.status}`)
-            this.json(res, 200, { ok: glRes.ok, status: glRes.status, duration })
+            const error = glRes.ok ? undefined : gitlabErrorDetail(await glRes.text().catch(() => ""))
+            this.json(res, 200, { ok: glRes.ok, status: glRes.status, duration, ...(error ? { error } : {}) })
           } catch (e: any) {
             this.log(`[gitlab/log-time] FETCH ERROR: ${e.message}`)
             this.json(res, 500, { error: e.message })
@@ -6382,7 +6406,8 @@ export class AgentXDaemon {
               agentId: body.agentId as string | undefined,
               accountId: body.accountId as string | undefined,
             })
-            this.json(res, 200, { ok: true, messageId: messageId || null, contactId: result.contact.id, channel: picked.channel })
+            const answer = sendAnswer(messageId, { channel: picked.channel, agentId: body.agentId as string | undefined, identity: this.postingIdentity(picked.channel, body.agentId as string | undefined) })
+            this.json(res, answer.status, { ...answer.body, contactId: result.contact.id, channel: picked.channel })
           } catch (e: any) {
             this.json(res, 400, { error: e.message })
           }
@@ -6410,7 +6435,8 @@ export class AgentXDaemon {
               poll: body.poll as any,
               media: body.media as any,
             })
-            this.json(res, 200, { ok: true, messageId: messageId || null })
+            const answer = sendAnswer(messageId, { channel: body.channel as string, agentId: body.agentId as string | undefined, identity: this.postingIdentity(body.channel as string, body.agentId as string | undefined) })
+            this.json(res, answer.status, answer.body)
           } catch (e: any) {
             this.json(res, 400, { error: e.message })
           }

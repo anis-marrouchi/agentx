@@ -61,6 +61,7 @@ To turn it off again, run `agentx request-status gitlab off`. Details: [`request
 3. Within a minute or two, the agent replies in the issue.
 4. **Browser, in AgentX:** open **Activity**. The request appears under the agent.
 5. If request status is on: a comment that starts with `Request status:` appears in the issue when the agent starts, and the same comment changes to **Done** when it ends. There is still only one such comment.
+6. **Terminal:** run `agentx daemon status`. No red `GitLab:` line appears. A red line means GitLab refused one of your tokens (see below).
 
 ## If something is wrong
 
@@ -68,5 +69,10 @@ To turn it off again, run `agentx request-status gitlab off`. Details: [`request
 - **GitLab shows `401`:** the **Secret token** in GitLab doesn't match `webhookSecret` in AgentX.
 - **GitLab shows `200` but nothing happens:** the comment has no @-mention, or it mentions a username no agent answers to. Check `agentMappings`.
 - **The agent runs but never posts a reply:** the token in `.env` is missing, revoked, or belongs to a user without access to the project. Check `agentx daemon logs` for `GitLab API error`.
+- **`agentx daemon status` shows a red `GitLab:` line, such as "GitLab rejected the global token":** GitLab answered `401` (not signed in) when AgentX checked or used that token, for example because it was revoked. Every post made with it fails until you replace it. The agent is told: its send returns an error with GitLab's message instead of "Message sent". To fix it:
+  1. **Browser, in GitLab:** create a new token with the `api` scope, as in step 1.
+  2. **Terminal:** put the new token in `.env` in place of the old one.
+  3. **Terminal:** run `agentx daemon restart`.
+- **A send says "Posted with the shared global gitlab token":** the post went through, but under the shared bot user, because that agent has no GitLab token of its own. To post as the agent, give it a token in `channels.gitlab.agentMappings`.
 - **The status comment stays on "Working" after the agent answered:** the edit was refused. Check `agentx daemon logs` for `GitLab edit error`. The token must belong to the same GitLab user that wrote the comment.
 - **Still stuck:** follow [It's not answering](../help/its-not-answering.md).

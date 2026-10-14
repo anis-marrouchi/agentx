@@ -1329,11 +1329,10 @@ async function handleToolCall(
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ channel, chatId, text, agentId: args.agentId }),
       })
-      const data = await res.json() as any
-      if (!res.ok) {
-        return { content: [{ type: "text", text: `Error: ${data.error || res.statusText}` }] }
-      }
-      return { content: [{ type: "text", text: `Message sent. ID: ${data.messageId || "ok"}` }] }
+      const data = await res.json().catch(() => ({})) as any
+      // Never "ok" in place of a missing ID: that hid lost GitLab notes (#984).
+      const { sendResultText } = await import("@/daemon/send-answer")
+      return { content: [{ type: "text", text: sendResultText(res.ok, data, res.statusText) }] }
     }
 
     case "agentx_send_agent": {

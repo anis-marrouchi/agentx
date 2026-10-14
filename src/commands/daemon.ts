@@ -264,6 +264,8 @@ daemon
       console.log(chalk.bold(`  ${data.node.name}`) + chalk.dim(` (${data.node.id})`))
       console.log(chalk.green("  Status: running") + chalk.dim(` — uptime ${formatDuration(data.uptime)}`))
       for (const line of statusBlock(data, service, Date.now(), Intl.DateTimeFormat().resolvedOptions().timeZone)) console.log(`  ${line}`)
+      // A GitLab token GitLab now rejects: every write with it fails (#984).
+      if (data.gitlab?.warning) console.log(chalk.red(`  GitLab: ${data.gitlab.warning}`))
       console.log()
 
       // Agents

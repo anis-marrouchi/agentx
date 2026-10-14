@@ -158,7 +158,9 @@ export const channelLabel: BuiltinAction<ChannelLabelInput, ChannelLabelOutput> 
       remove: input.remove,
       agentId: input.agentId,
     })
-    return { labels: Array.isArray(labels) ? labels : [] }
+    // null means the change did not land; an empty list is a real answer.
+    if (!Array.isArray(labels)) throw new Error("setLabels did not apply the change — see daemon log for details")
+    return { labels }
   },
 }
 
@@ -208,7 +210,8 @@ export const channelAssign: BuiltinAction<ChannelAssignInput, ChannelAssignOutpu
       assignees: input.assignees,
       agentId: input.agentId,
     })
-    return { assigneeIds: Array.isArray(ids) ? ids : [] }
+    if (!Array.isArray(ids)) throw new Error("setAssignees did not apply the change (no assignee resolved, or no token) — see daemon log for details")
+    return { assigneeIds: ids }
   },
 }
 
