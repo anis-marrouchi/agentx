@@ -22,18 +22,24 @@ import { attachRequests, type AttachedRequests } from "../src/requests/attach"
 import { pickupContext, type RequestSettings } from "../src/requests/tracker"
 import { buildDesk, liveRunRefs } from "../src/desk/board"
 
-const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:42"], staleAfterHours: 24, retentionDays: 90 }
+// Captures no turn unless a test lists a sender in `from`.
+let settings: RequestSettings
 const HOUR = 3_600_000
 
 let dir: string
 let db: Database.Database
 let requests: AttachedRequests
 let registry: AgentRegistry
+let release: () => void = () => {}
+let pending: Promise<unknown> = Promise.resolve()
 const prevCwd = process.cwd()
 
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "agentx-desk-live-"))
   process.chdir(dir)
+  settings = { enabled: true, channels: [], from: [], staleAfterHours: 24, retentionDays: 90 }
+  release = () => {}
+  pending = Promise.resolve()
   getEventBus().removeAllListeners()
   db = new Database(join(dir, "requests.sqlite"))
   requests = attachRequests(db, () => settings, () => {})
@@ -44,7 +50,10 @@ beforeEach(() => {
   requests.store.addCandidate({ id: "req-1", runId: "t1", channel: "voice", chatId: "studio", sender: null, agentId: "writer", text: "draft the newsletter", now: 1000 })
   requests.store.progress("req-1", 2000)
 })
-afterEach(() => {
+afterEach(async () => {
+  // A failed assertion leaves the mocked run pending: end it before teardown.
+  release()
+  await pending
   requests.detach()
   db.close()
   process.chdir(prevCwd)
@@ -82,8 +91,10 @@ describe("a request whose run is live, through the registry", () => {
     let finish: (v: any) => void = () => {}
     let entered = false
     run.impl = () => new Promise((resolve) => { entered = true; finish = resolve })
+    release = () => finish({ content: "ok", duration: 1 })
 
     const done = registry.execute({ agentId: "writer", message: "pick it up again", context: pickupContext("req-1") })
+    pending = done.catch(() => {})
     await until(() => entered)
 
     const [task] = agentList()[0].runningTasks
@@ -103,14 +114,17 @@ describe("a request whose run is live, through the registry", () => {
   }, 15_000)
 
   it("is shown as working when the owner's own turn opened it", async () => {
+    settings.from = ["telegram:42"]
     let finish: (v: any) => void = () => {}
     let entered = false
     run.impl = () => new Promise((resolve) => { entered = true; finish = resolve })
+    release = () => finish({ content: "ok", duration: 1 })
 
     const done = registry.execute({
       agentId: "writer", message: "plan the spring newsletter",
       context: { channel: "telegram", chatId: "c1", sender: "Owner", senderId: "42" },
     })
+    pending = done.catch(() => {})
     await until(() => entered)
 
     const [task] = agentList()[0].runningTasks
