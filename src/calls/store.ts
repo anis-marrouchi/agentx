@@ -45,7 +45,6 @@ export interface Waiting {
   toldAt: number
 }
 
-/** Calls still in progress: an agent has at most one of these. */
 /** A call that stops ringing (answered, snoozed, missed...) is no longer
  *  waiting: the mark goes in the same write, so a call that rings again
  *  later starts a fresh wait, even across a restart. */
@@ -53,6 +52,7 @@ function leaving(patch: { status?: CallStatus }): string {
   return patch.status && patch.status !== "ringing" ? ", waiting_since=NULL, told_at=NULL" : ""
 }
 
+/** Calls still in progress: an agent has at most one of these. */
 export const LIVE: CallStatus[] = ["ringing", "answered", "later"]
 
 const COLUMNS = `id, agent_id AS agentId, kind, reason, urgency, status, created_at AS createdAt,
