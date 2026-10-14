@@ -113,6 +113,20 @@ See every setting in [Settings: channels › WhatsApp](../reference/config-chann
 - **For a while:** run `agentx config set channels.whatsapp.enabled false`, then `agentx daemon restart`. Set it back to `true` and restart again to resume.
 - **For good:** on the phone, open **Settings › Linked devices**, select the AgentX device and select **Log out**. Then delete the `.agentx/whatsapp-sessions` folder.
 
+## When the connection drops
+
+WhatsApp sometimes closes the link to AgentX. AgentX reconnects by itself. What it does depends on why the link closed:
+
+| What the log says | What it means | What AgentX does |
+|---|---|---|
+| `WhatsApp network timeout (408)` | The network was slow or down for a moment. The number is still paired. | Tries again after 10 seconds, then waits twice as long each time, up to 5 minutes between tries. It never gives up. |
+| `WhatsApp pairing timed out (408, QR not scanned)` | A QR code was shown but nobody scanned it. | Tries again 4 times, then stops. |
+| `WhatsApp conflict (440)` | Another copy of AgentX, or another program, signed in with the same paired session. | Tries again 4 times, then stops. Network timeouts in between do not count toward this limit. |
+
+The counts start again once the connection stays up for one minute, or as soon as a message arrives.
+
+When AgentX stops trying, it sends you a notification titled **WhatsApp stopped reconnecting** (see [Get notified](./notifications.md)). The channel then stays off until you restart the daemon. `/reload` and changes to `agentx.json` do not restart it.
+
 ## Check it worked
 
 1. **Phone:** from another phone (on the allow-list, if you chose option B), send the separate number a question the agent's material answers.
@@ -129,5 +143,8 @@ See every setting in [Settings: channels › WhatsApp](../reference/config-chann
 - **The agent answers people who are not on the list:** the list contains `"*"`, which lets everyone in, or a short entry that is part of other numbers. Check it with `agentx config get channels.whatsapp.allowFrom`.
 - **The agent answers in a group:** the list contains `"*"`, someone on the list wrote there, or the group's chat ID is on the list. Remove the number from the group, or change the list.
 - **The log says `Logged out. Delete session dir and restart to re-scan QR.`:** the phone unlinked AgentX, or WhatsApp signed it out. Run `agentx daemon stop`, delete `.agentx/whatsapp-sessions`, and pair again (step 2). If it keeps happening, WhatsApp may be limiting the number.
-- **The log says `Another session is active for this number`:** another copy of AgentX uses the same session. Stop it, then restart the daemon.
+- **The log says `giving up after 5 conflict (440) closes. Another session is active for this number`:** another copy of AgentX uses the same session. Stop it, then run `agentx daemon restart`.
+- **The log says `giving up after 5 pairing timeouts (408)`:** the QR code was never scanned. Pair again (step 2), then run `agentx daemon restart`.
+- **The log keeps showing `WhatsApp network timeout (408)`:** the computer cannot reach WhatsApp. Check its internet connection. AgentX keeps trying and reconnects by itself once the network is back; you don't need to restart.
+- **You got a "WhatsApp stopped reconnecting" notification:** read the message in it, fix the cause from the lines above, then run `agentx daemon restart`.
 - **You wanted drafts to approve, not automatic replies:** use [Watch a WhatsApp chat](./watch-whatsapp.md) instead, and turn this channel off.

@@ -2409,6 +2409,12 @@ export class AgentXDaemon {
           // surface the pairing code in the browser.
           onQR: setWhatsAppQR,
           onStatus: setWhatsAppStatus,
+          // The channel stopped reconnecting: tell the owner instead of
+          // letting it stay silent until the next restart (#982).
+          onGiveUp: (message) => {
+            void this.notifyOwner("WhatsApp stopped reconnecting", `${message}\nRun \`agentx daemon restart\` once fixed.`, "whatsapp", 4)
+              .catch((e: any) => this.log(`[whatsapp] give-up notification failed: ${e?.message ?? e}`))
+          },
         },
         this.log,
       )
