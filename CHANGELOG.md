@@ -2,6 +2,16 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.139.1](https://github.com/anis-marrouchi/agentx/compare/v0.139.0...v0.139.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* **calls:** clear the waiting mark when a call stops ringing ([#977](https://github.com/anis-marrouchi/agentx/issues/977) follow-up) ([ce99a27](https://github.com/anis-marrouchi/agentx/commit/ce99a27ac0a7eef1d9bd206774540fac2785d8ef))
+* **calls:** clear the waiting mark when a call stops ringing ([#977](https://github.com/anis-marrouchi/agentx/issues/977) follow-up) ([860d0ce](https://github.com/anis-marrouchi/agentx/commit/860d0cef32a6a5607149a8a6153f2a37a565152b))
+* **calls:** keep waiting calls across a restart, name the time zone ([#971](https://github.com/anis-marrouchi/agentx/issues/971) follow-up) ([4cba50e](https://github.com/anis-marrouchi/agentx/commit/4cba50e3e9128286179236a45726321a48893071))
+* **calls:** keep waiting calls across a restart, name the time zone ([#971](https://github.com/anis-marrouchi/agentx/issues/971)) ([6a175a3](https://github.com/anis-marrouchi/agentx/commit/6a175a3897684ca5d08f06cba33b63ad14f4864b))
+
 ## [0.139.0](https://github.com/anis-marrouchi/agentx/compare/v0.138.1...v0.139.0) (2026-10-13)
 
 
