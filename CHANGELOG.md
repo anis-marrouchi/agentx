@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.139.2](https://github.com/anis-marrouchi/agentx/compare/v0.139.1...v0.139.2) (2026-10-15)
+
+
+### Bug Fixes
+
+* **gitlab:** surface failed writes instead of reporting success ([#984](https://github.com/anis-marrouchi/agentx/issues/984)) ([#985](https://github.com/anis-marrouchi/agentx/issues/985)) ([fb74666](https://github.com/anis-marrouchi/agentx/commit/fb74666950ac4fca3dbfb14f929d46393c1c7a60))
+* **whatsapp:** treat 408 on a paired session as a network timeout, not a conflict ([#983](https://github.com/anis-marrouchi/agentx/issues/983)) ([4bbbc5a](https://github.com/anis-marrouchi/agentx/commit/4bbbc5a334a554b38cb2752fb147c074a407c072)), closes [#982](https://github.com/anis-marrouchi/agentx/issues/982)
+
 ## [0.139.1](https://github.com/anis-marrouchi/agentx/compare/v0.139.0...v0.139.1) (2026-10-14)
 
 
