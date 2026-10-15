@@ -274,8 +274,11 @@ const setLabelHandler: NodeHandler = async (ctx) => {
 
   const agentId = findUpstreamAgentId(ctx)
   const kind = (rendered.kind === "merge_request" ? "merge_request" : "issue") as "issue" | "merge_request"
-  const labels = await adapter.setLabels({ project, kind, iid, add, remove, agentId })
-  return { output: { labels: labels ?? [], add, remove } }
+  try {
+    const labels = await adapter.setLabels({ project, kind, iid, add, remove, agentId })
+    if (!labels) return { error: "action.setLabel failed: the label change did not apply (see adapter log)" }
+    return { output: { labels, add, remove } }
+  } catch (e: any) { return { error: `action.setLabel failed: ${e.message}` } }
 }
 
 /** Action.readLabel: fetch the current labels on an issue/MR so downstream
