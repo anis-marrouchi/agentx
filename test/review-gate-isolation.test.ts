@@ -68,11 +68,11 @@ describe("an isolated run", () => {
     expect(context ?? "").not.toContain("OTHER-CHAT-SECRET")
     expect(context ?? "").not.toContain("Long-memory recall")
     expect(context ?? "").not.toContain("agentx_recent")
-    // No MCP server at all and only read-only built-in tools.
+    // No MCP server and no built-in tool: nothing that reads local files.
     const args: string[] = task.claudeArgs
     expect(args).toContain("--strict-mcp-config")
     expect(JSON.parse(args[args.indexOf("--mcp-config") + 1])).toEqual({ mcpServers: {} })
-    expect(args[args.indexOf("--tools") + 1]).toBe("Read,Glob,Grep")
+    expect(args[args.indexOf("--tools") + 1]).toBe("")
     // Held read-only, so a runtime that cannot enforce it refuses.
     expect(task.autonomy).toBe("report")
   })

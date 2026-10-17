@@ -338,10 +338,16 @@ interface Running {
 
 const DAY_MS = 24 * 60 * 60_000
 
+/** Errors another event for the same commit would only repeat: the run
+ *  went over budget, the PR hit its daily limit, or reviewer and author
+ *  share a model. Any other error is retried, a review stopped by closing
+ *  the PR included, so reopening it reviews the commit again. */
+const FINAL_ERRORS = ["over budget", "review limit", "reviewer and author both use"]
+
 export class ReviewGate {
   private running = new Map<string, Running>()
   /** Commits already reviewed (or being reviewed), by repo#n@sha. */
-  private reviewed = new Map<string, { state: ReviewState | "running"; noLink?: boolean }>()
+  private reviewed = new Map<string, { state: ReviewState | "running"; noLink?: boolean; retry?: boolean }>()
   /** When the reviewer was started on each PR in the last day, for
    *  maxReviewsPerPrPerDay. Seeded from the ledger on first use. */
   private reviewerRuns = new Map<string, number[]>()
@@ -370,8 +376,10 @@ export class ReviewGate {
     const shaKey = `${key}@${event.headSha}`
     const done = this.reviewed.get(shaKey)
     // A commit is reviewed once. An edit may add the missing issue link,
-    // so a commit that failed for want of one is looked at again.
-    if (done && !(event.action === "edited" && done.noLink)) return null
+    // so a commit that failed for want of one is looked at again; and an
+    // error a new event can clear (GitHub down, a reviewer crash) is
+    // retried on the next one, or required mode blocks until a push.
+    if (done && !done.retry && !(event.action === "edited" && done.noLink)) return null
     // review() claims the commit before its first await, so a second event
     // for the same commit (opened + edited) arriving now finds it taken.
     return this.review(event.repo, event.number, { headSha: event.headSha, pushedAt: event.pushedAt, post: true })
@@ -397,7 +405,7 @@ export class ReviewGate {
     let runs = this.reviewerRuns.get(key)
     if (!runs) {
       runs = (this.deps.ledger.read?.({ from: new Date(since) }) ?? [])
-        .filter((r) => r.repo === repo && r.pr === number && r.minutes !== undefined)
+        .filter((r) => r.repo === repo && r.pr === number && (r.reviewerRan || r.minutes !== undefined))
         .map((r) => Date.parse(r.at))
       this.reviewerRuns.set(key, runs)
     }
@@ -459,7 +467,7 @@ export class ReviewGate {
         }
       }
       if (opts.post && sha) {
-        this.reviewed.set(`${key}@${sha}`, { state, noLink: reason.startsWith(NO_LINK) })
+        this.reviewed.set(`${key}@${sha}`, { state, noLink: reason.startsWith(NO_LINK), retry: state === "error" && !FINAL_ERRORS.some((p) => reason.startsWith(p)) })
         // Oldest first: forget the oldest commits past a few thousand.
         for (const k of this.reviewed.keys()) {
           if (this.reviewed.size <= 5000) break
@@ -529,6 +537,8 @@ export class ReviewGate {
 
       const prompt = buildReviewPrompt({ issues, criteria, diff, diffTruncated, checks })
       if (!opts.replay) this.reviewerRuns.set(key, [...(this.reviewerRuns.get(key) ?? []), this.now()])
+      // Counted after a restart even when the reviewer throws (no minutes).
+      record.reviewerRan = true
 
       const timer = setTimeout(() => abort.abort(new Error("timeout")), cfg.maxMinutes * 60_000)
       let run: ReviewerRun

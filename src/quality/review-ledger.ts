@@ -26,6 +26,9 @@ export interface ReviewRecord {
   defects?: number
   tokens?: { input: number; output: number; cacheRead: number; cacheWrite: number }
   costUsd?: number
+  /** The reviewer was started, whether or not it returned: counted by
+   *  maxReviewsPerPrPerDay. */
+  reviewerRan?: boolean
   /** Reviewer run time. */
   minutes?: number
   /** Time spent waiting for CI before the review started. */
