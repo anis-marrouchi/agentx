@@ -94,6 +94,10 @@ To forget an open session before its time is up:
 2. **Terminal:** open `.agentx/cloud-sessions.json` and remove the session's entry.
 3. **Terminal:** run `agentx daemon start --detach`.
 
+## Spec tests from a second agent
+
+For issues in folders you pick, a second agent can write tests from the issue text while the cloud session writes the code. See [Have a second agent write tests from the issue](/jobs/spec-tests).
+
 ## Check it worked
 
 1. **Browser:** open a new issue in the repository, with a small, clear task.
