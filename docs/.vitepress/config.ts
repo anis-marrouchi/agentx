@@ -108,6 +108,7 @@ const groups = [
   { text: "Community", collapsed: true, items: [
     { text: "Contribute to AgentX", link: "/guides/contribute" },
     { text: "Most requested", link: "/community/most-requested" },
+    { text: "PR quality report", link: "/community/pr-quality" },
   ] },
   { text: "Reference for engineers", collapsed: true, items: [
     { text: "CLI", link: "/reference/cli" },
