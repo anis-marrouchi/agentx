@@ -49,6 +49,7 @@ import { business } from "@/commands/business"
 import { plan } from "@/commands/plan"
 import { notifications } from "@/commands/notifications"
 import { retention } from "@/commands/retention"
+import { quality } from "@/commands/quality"
 import { actions as actionsCmd } from "@/commands/actions"
 import { watch } from "@/commands/watch"
 import { eventsCmd } from "@/commands/events"
@@ -161,7 +162,7 @@ const ADVANCED = [
   // Workflow / BPM
   workflow, webhook, board, backlog, business, plan,
   // Observability + forensics
-  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, signalCmd, watch, eventsCmd, dbCmd,
+  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, signalCmd, watch, eventsCmd, dbCmd, quality,
   // Fleet + extension
   mesh, a2a, skillCmd, pluginCmd, hook, actionsCmd, people,
   // Scheduling internals (`schedule` is the friendly front door)

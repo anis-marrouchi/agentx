@@ -1309,6 +1309,37 @@ export const requestStatusConfigSchema = z.object({
   channels: z.array(z.string().min(1)).default([]),
 }).default({})
 
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "use YYYY-MM-DD")
+
+/** The weekly quality report on the epic issue (src/quality, #994). */
+export const qualityReportConfigSchema = z.object({
+  /** Post the report every week. Off by default. */
+  enabled: z.boolean().default(false),
+  /** Where it goes: "owner/name" and the epic issue number. */
+  repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/, "use owner/name").optional(),
+  issue: z.number().int().positive().optional(),
+  /** Monday, local time, 24-hour HH:MM. */
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "use HH:MM, 24-hour").default("08:00"),
+  /** IANA timezone for `time`. Unset: this machine's. */
+  timezone: z.string().refine((tz) => {
+    try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true } catch { return false }
+  }, "unknown timezone").optional(),
+  /** The command whose output is posted. It must print Markdown with no
+   *  cost amounts and no names. */
+  command: z.array(z.string().min(1)).min(1).default(["agentx", "quality", "report", "--public", "--compare", "baseline"]),
+  timeoutSeconds: z.number().int().min(10).max(3600).default(600),
+  /** The gates and the dates they were turned on (and off), so each week's
+   *  comment says which gates were on. */
+  gates: z.array(z.object({
+    id: z.string().min(1),
+    label: z.string().min(1).optional(),
+    since: isoDate,
+    until: isoDate.optional(),
+  })).default([]),
+}).default({}).superRefine((q, ctx) => {
+  if (q.enabled && (!q.repo || !q.issue)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "qualityReport.enabled needs repo and issue" })
+})
+
 export const approvalsConfigSchema = z.object({
   /** A card without an `expires` gets this many days. */
   defaultExpiryDays: z.number().positive().max(365).default(3),
@@ -1573,6 +1604,9 @@ export const daemonConfigSchema = z.object({
    *  #383): each person sees the state of their own request in the place
    *  they asked. Off by default. */
   requestStatus: requestStatusConfigSchema,
+  /** Weekly quality report posted on the epic issue (src/quality, #994).
+   *  Off by default. */
+  qualityReport: qualityReportConfigSchema,
   /** Hand due Apple Reminders back to the agent that created them
    *  (src/reminders). macOS only; reads reminders whose notes end with the
    *  mac-pim skill's `agentx: agent=<id>` trailer. */
