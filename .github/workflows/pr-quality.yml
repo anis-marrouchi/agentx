@@ -1,0 +1,48 @@
+name: PR quality report
+
+# Weekly: count merged PRs that fix an earlier one, how fast they follow, and
+# where they land, against the baseline week (#987). The report goes to the
+# run summary and a JSON artifact. Settings live in contrib/pr-quality.json;
+# set "enabled": false there to switch it off.
+
+on:
+  schedule:
+    - cron: "40 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      to:
+        description: "Last day of the report week (YYYY-MM-DD). Empty: yesterday."
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: read
+
+concurrency:
+  group: pr-quality
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build the report
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TO: ${{ inputs.to }}
+        run: node scripts/pr-quality.mjs --repo "${{ github.repository }}" --json pr-quality.json ${TO:+--to "$TO"}
+
+      - name: Keep the numbers
+        if: hashFiles('pr-quality.json') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-quality
+          path: pr-quality.json
+          retention-days: 90

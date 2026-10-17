@@ -1,0 +1,24 @@
+{
+  "about": "Settings for the weekly PR quality report (.github/workflows/pr-quality.yml, #987). Set enabled to false to switch the report off.",
+  "enabled": true,
+  "scope": "all",
+  "base": null,
+  "baseline": { "from": "2026-10-09", "to": "2026-10-16" },
+  "windowDays": 7,
+  "agent": {
+    "labelPrefixes": ["agent:"],
+    "headPrefixes": ["claude/"],
+    "bodyPatterns": ["Generated with \\[Claude Code\\]"]
+  },
+  "exclude": { "headPrefixes": ["release-please--"] },
+  "fix": {
+    "titleTypes": ["fix"],
+    "titlePatterns": []
+  },
+  "reviewPattern": "\\breview",
+  "fastFixHours": 24,
+  "testPaths": ["test/**", "**/*.test.ts", "**/*.test.mjs", "**/__fixtures__/**"],
+  "uiPaths": ["src/daemon/ui/**", "src/web/**", "apps/**"],
+  "hotspots": { "depth": 2, "top": 5 },
+  "budgets": { "costPct": 20, "leadHours": 1 }
+}
