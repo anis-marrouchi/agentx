@@ -8,6 +8,16 @@ Linked issue or concrete problem:
 
 Commands run and results; include OS/Node version for installation changes:
 
+## Evidence
+
+<!-- Changed the dashboard, the phone or Mac apps, the TUI or voice? Drag a
+screenshot or a short recording into this section (or link a
+.png/.jpg/.gif/.mp4/.mov file). The ui-evidence check looks for it here.
+If users see no difference, a maintainer adds the no-ui-evidence-needed
+label, and this section gets one line of its own:
+UI evidence: not needed because <your reason>
+See CONTRIBUTING.md > UI evidence check. -->
+
 ## Docs
 
 What changed under `docs/`, or why nothing needed to.
