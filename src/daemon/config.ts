@@ -1325,8 +1325,8 @@ export const qualityReportConfigSchema = z.object({
     try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true } catch { return false }
   }, "unknown timezone").optional(),
   /** The command whose output is posted, as a code block. AgentX adds
-   *  `--since <Monday> --until <Sunday>` for the week and
-   *  `--compare <baseline>`. It must print no cost amounts and no names. */
+   *  `--repo <repo>` (unless the command names one), `--since <Monday>
+   *  --until <Sunday>` for the week and `--compare <baseline>`. It must print no cost amounts and no names. */
   command: z.array(z.string().min(1)).min(1).default(["agentx", "quality", "report", "--public"]),
   /** The baseline saved with `agentx quality report --save-baseline`:
    *  each week is compared with it, and the verdict quotes its fix share. */

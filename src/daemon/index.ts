@@ -2004,7 +2004,7 @@ export class AgentXDaemon {
           root: process.cwd(),
           settings: s,
           comments: githubIssueComments(repo, s.issue, async () => (await github?.getTokenForRepo?.(repo)) || configToken(this.config)),
-          runReport: (week) => runReportCommand(s.command, week, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000, baseline: s.baseline }),
+          runReport: (week) => runReportCommand(s.command, week, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000, baseline: s.baseline, repo: s.repo }),
           log: this.log,
         })
       } catch (e: any) {
