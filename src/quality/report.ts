@@ -1,5 +1,6 @@
 import {
-  areaOf, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, percentile, regressionOf, weekOf,
+  areaOf, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, mentionsReview, percentile, regressionOf,
+  touchesTests, touchesUi, weekOf,
   type PrRecord,
 } from "./classify"
 
@@ -39,6 +40,15 @@ export interface ReportRow {
   fixShare: number | null
   regressionFixes24h: number
   regressionFixes72h: number
+  /** Regression fixes per 100 merged PRs, so weeks of different size compare; null when there are no PRs. */
+  regressionFixes24hPer100: number | null
+  regressionFixes72hPer100: number | null
+  /** Fixes whose title or description mentions a review. */
+  fixesMentioningReview: number
+  /** Fixes that change a test file. */
+  fixesTouchingTests: number
+  /** Fixes that change dashboard or app files. */
+  fixesTouchingUi: number
   leadTime: { issue: LeadStats; pr: LeadStats }
   /** Null when CI data was not read (`--no-ci` or no access). */
   ciMinutes: number | null
@@ -70,6 +80,8 @@ export interface RowDelta {
   fixSharePts: number | null
   regressionFixes24h: number
   regressionFixes72h: number
+  regressionFixes24hPer100: number | null
+  regressionFixes72hPer100: number | null
   issueLeadMedianHours: number | null
   prLeadMedianHours: number | null
   ciMinutes: number | null
@@ -125,10 +137,16 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
 
   const row = (list: PrRecord[]): ReportRow => {
     let fixes = 0, r24 = 0, r72 = 0, ci = 0, costTotal = 0, attributed = 0, external = 0
+    let review = 0, tests = 0, ui = 0
     const issueLead: number[] = []
     const prLead: number[] = []
     for (const pr of list) {
-      if (isFix(pr.title)) fixes++
+      if (isFix(pr.title)) {
+        fixes++
+        if (mentionsReview(pr)) review++
+        if (touchesTests(pr.files)) tests++
+        if (touchesUi(pr.files)) ui++
+      }
       const reg = regressionOf(pr, mergedAt)
       if (reg.within24h) r24++
       if (reg.within72h) r72++
@@ -149,6 +167,11 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
       fixShare: list.length ? round(fixes / list.length, 4) : null,
       regressionFixes24h: r24,
       regressionFixes72h: r72,
+      regressionFixes24hPer100: per100(r24, list.length),
+      regressionFixes72hPer100: per100(r72, list.length),
+      fixesMentioningReview: review,
+      fixesTouchingTests: tests,
+      fixesTouchingUi: ui,
       leadTime: { issue: lead(issueLead), pr: lead(prLead) },
       ciMinutes: ciRead ? round(ci, 1) : null,
       cost: {
@@ -190,12 +213,16 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
   }
 }
 
+function per100(n: number, of: number): number | null {
+  return of ? round((n * 100) / of, 1) : null
+}
+
 function nullable(v: number | null, d: number): number | null {
   return v === null ? null : round(v, d)
 }
 
-const diff = (a: number | null, b: number | null, d = 1) =>
-  a === null || b === null ? null : round(a - b, d)
+const diff = (a: number | null | undefined, b: number | null | undefined, d = 1) =>
+  a == null || b == null ? null : round(a - b, d)
 
 const pctChange = (now: number | null | undefined, then: number | null | undefined) =>
   now == null || then == null || then === 0 ? null : round(((now - then) / then) * 100, 1)
@@ -206,6 +233,8 @@ function rowDelta(now: ReportRow, then: ReportRow): RowDelta {
     fixSharePts: diff(now.fixShare === null ? null : now.fixShare * 100, then.fixShare === null ? null : then.fixShare * 100),
     regressionFixes24h: now.regressionFixes24h - then.regressionFixes24h,
     regressionFixes72h: now.regressionFixes72h - then.regressionFixes72h,
+    regressionFixes24hPer100: diff(now.regressionFixes24hPer100, then.regressionFixes24hPer100),
+    regressionFixes72hPer100: diff(now.regressionFixes72hPer100, then.regressionFixes72hPer100),
     issueLeadMedianHours: diff(now.leadTime.issue.medianHours, then.leadTime.issue.medianHours),
     prLeadMedianHours: diff(now.leadTime.pr.medianHours, then.leadTime.pr.medianHours),
     ciMinutes: diff(now.ciMinutes, then.ciMinutes),
@@ -264,6 +293,7 @@ export function toPublic(report: QualityReport): QualityReport {
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`)
 const hrs = (v: number | null) => (v === null ? "—" : v < 48 ? `${round(v, 1)}h` : `${round(v / 24, 1)}d`)
+const num = (v: number | null) => (v === null ? "—" : v.toFixed(1))
 const signed = (v: number | null, unit = "") => (v === null ? "—" : `${v > 0 ? "+" : ""}${v}${unit}`)
 
 function costCell(r: ReportRow, isPublic: boolean): string {
@@ -277,15 +307,16 @@ function costCell(r: ReportRow, isPublic: boolean): string {
   return `$${(r.cost.perMergedPr ?? 0).toFixed(2)} (${rate})`
 }
 
-const HEAD = ["PRs", "Fixes", "Fix share", "Reg ≤24h", "Reg ≤72h", "Lead issue p50/p90", "Lead PR p50/p90", "CI min", "Cost/PR"]
+const HEAD = ["PRs", "Fixes", "Fix share", "Reg ≤24h (/100)", "Reg ≤72h (/100)", "Fix review/tests/UI", "Lead issue p50/p90", "Lead PR p50/p90", "CI min", "Cost/PR"]
 
 function cells(r: ReportRow, isPublic: boolean): string[] {
   return [
     String(r.mergedPrs),
     String(r.fixes),
     pct(r.fixShare),
-    String(r.regressionFixes24h),
-    String(r.regressionFixes72h),
+    `${r.regressionFixes24h} (${num(r.regressionFixes24hPer100)})`,
+    `${r.regressionFixes72h} (${num(r.regressionFixes72hPer100)})`,
+    `${r.fixesMentioningReview}/${r.fixesTouchingTests}/${r.fixesTouchingUi}`,
     `${hrs(r.leadTime.issue.medianHours)} / ${hrs(r.leadTime.issue.p90Hours)}`,
     `${hrs(r.leadTime.pr.medianHours)} / ${hrs(r.leadTime.pr.p90Hours)}`,
     r.ciMinutes === null ? "—" : String(Math.round(r.ciMinutes)),
@@ -319,7 +350,8 @@ export function renderReport(r: QualityReport): string {
     out.push("", `  Compared with baseline "${c.baseline}" (${c.baselineSince} → ${c.baselineUntil})`)
     const d = (label: string, x: RowDelta) =>
       `  ${label.padEnd(16)} PRs ${signed(x.mergedPrs)}, fix share ${signed(x.fixSharePts, " pts")}, ` +
-      `reg ≤24h ${signed(x.regressionFixes24h)}, reg ≤72h ${signed(x.regressionFixes72h)}, ` +
+      `reg ≤24h ${signed(x.regressionFixes24h)} (${signed(x.regressionFixes24hPer100, "/100")}), ` +
+      `reg ≤72h ${signed(x.regressionFixes72h)} (${signed(x.regressionFixes72hPer100, "/100")}), ` +
       `lead p50 issue ${signed(x.issueLeadMedianHours, "h")} / PR ${signed(x.prLeadMedianHours, "h")}, ` +
       `CI ${signed(x.ciMinutes, " min")}, cost/PR ${signed(x.costPerMergedPrPct, "%")}`
     out.push(d("agent PRs", c.totals.agent), d("all non-release", c.totals.all))
