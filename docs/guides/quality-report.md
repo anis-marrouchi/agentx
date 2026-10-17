@@ -34,14 +34,15 @@ These definitions are exact: the numbers are counted this way, and two reports a
 - **PRs**: merged PRs, by the day they merged, in UTC (world time, no time zone).
 - **Fixes**: PRs whose title starts with the type `fix`, as in `fix: …`, `fix(scope): …` or `fix!: …`.
 - **Fix share**: fixes divided by PRs.
-- **Reg ≤24h** and **Reg ≤72h**: regression fixes. A regression fix is a fix whose title or description mentions `#N` (or a link to pull request N), where N is a PR that merged at most 72 hours before the fix merged. **Reg ≤72h** counts all of them; **Reg ≤24h** counts those within 24 hours, so it is part of the 72-hour number. A PR merged up to 72 hours before `--since` still counts as the PR being fixed.
+- **Reg ≤24h (/100)** and **Reg ≤72h (/100)**: regression fixes, with the number per 100 merged PRs in brackets, so weeks of different sizes compare. A regression fix is a fix whose title or description mentions `#N` (or a link to pull request N), where N is a PR that merged at most 72 hours before the fix merged. **Reg ≤72h** counts all of them; **Reg ≤24h** counts those within 24 hours, so it is part of the 72-hour number. A PR merged up to 72 hours before `--since` still counts as the PR being fixed.
 - **Area**: the folder directly under `src/` with the most changed files in the PR, such as `daemon` or `channels`. Files directly in `src/` count as `src`. A PR that changes nothing under `src/` is `other`. Ties go to the name first in alphabetical order. Only the first 100 changed files are read.
 - **Lead issue p50/p90**: for PRs that close an issue (GitHub's "closing issues" link, such as `Closes #12`), the time from that issue being opened to the PR being merged. With several issues, the oldest one counts. p50 is the median (half the PRs were faster); p90 means 9 in 10 PRs were faster. Both use the nearest-rank method.
 - **Lead PR p50/p90**: the same for PRs that close no issue, from the PR being opened to it being merged.
 - **CI min**: the sum of job durations of `ci.yml` runs on the PR's commits, including re-runs. It is `—` with `--no-ci`.
 - **Cost/PR**: the model cost of the AgentX tasks that built the PR, divided by the PRs that have a cost. A task built a PR when it pushed the PR's branch (with `git push` naming the branch, or a GitHub tool naming it) or opened the PR. A task that only read, mentioned or answered on a PR does not count. A task that built two PRs is split between them. Costs use the same prices as the [Costs](../help/costs.md) page.
 - **matched**: the attribution rate: the share of PRs with a cost. When no PR in a row has one, the cell says `unattributed`, never `$0.00`.
-- **external**: PRs written in a Claude cloud session (their description links to `claude.ai/code/session_…`) that AgentX did not build. They are billed outside AgentX, so they are counted apart and left out of the attribution rate.
+- **external**: PRs written in a Claude cloud session (their description links to `claude.ai/code/session_…`). They are billed outside AgentX, so they are counted apart and left out of the attribution rate. This holds even when an AgentX task later pushed the branch, for example to rebase it or fix a merge conflict: that task did not build the PR.
+- **Local follow-up**: the cost of those later AgentX tasks on external PRs. It is never part of **Cost/PR**. When there is any, a line under the **Total** table shows it, such as `Local follow-up on external PRs (rebases, conflict fixes), not in Cost/PR: agent PRs: $1.20 on 3 PRs`. With `--public`, the line shows only the number of PRs.
 
 Model cost only covers tasks recorded on the machine where you run the report. Point `--db` at another copy of `.agentx/db.sqlite` to read a different machine's records.
 
@@ -63,9 +64,16 @@ Cost amounts stay on your machine. To post a report somewhere others can read it
 
 Without `--compare`, a public report says `no baseline` in the cost column.
 
+To post on GitHub (an issue or a PR comment), add `--format markdown` as well. The tables then show as real tables there, instead of lines of text that wrap.
+
+1. Run `agentx quality report --compare before --public --format markdown`.
+2. Paste the output into the GitHub comment box.
+
+Hints such as "No AgentX trace store at …" and "Saved baseline …" are printed on the error stream, not with the report. They can name folders on your machine, so they never end up in what you paste or post.
+
 ## Use the JSON output
 
-Add `--json` to get the same report as JSON, for scripts and for posting week by week. The shape is stable: fields are only added. A rename or removal changes the `schema` value.
+Add `--format json` (or `--json`) to get the same report as JSON, for scripts and for posting week by week. The shape is stable: fields are only added. A rename or removal changes the `schema` value.
 
 ```json
 {
@@ -93,16 +101,19 @@ Each `Row` has these fields:
 | `fixes` | Fixes among them. |
 | `fixShare` | `fixes / mergedPrs`, from 0 to 1. `null` when there are no PRs. |
 | `regressionFixes24h`, `regressionFixes72h` | Regression fixes within 24 and 72 hours. |
+| `regressionFixes24hPer100`, `regressionFixes72hPer100` | The same per 100 merged PRs, to one decimal. `null` when there are no PRs. |
 | `leadTime.issue`, `leadTime.pr` | Each `{ "n", "medianHours", "p90Hours" }`. Hours are `null` when `n` is 0. |
 | `ciMinutes` | CI minutes, or `null` with `--no-ci`. |
 | `cost.perMergedPr`, `cost.total` | Dollars. `null` when nothing matched. Left out with `--public`. |
-| `cost.attributedPrs` | PRs with a cost. |
-| `cost.externalPrs` | Cloud-session PRs with no AgentX cost. |
+| `cost.attributedPrs` | PRs with a cost. Never counts an external PR. |
+| `cost.externalPrs` | Cloud-session PRs, whether or not an AgentX task later pushed them. |
+| `cost.followUpPrs` | External PRs that an AgentX task later pushed (local follow-up). |
+| `cost.followUpTotal` | Dollars of that follow-up, not part of `perMergedPr`. `null` when there is none. Left out with `--public`. |
 | `cost.attributionRate` | `attributedPrs / (mergedPrs - externalPrs)`, from 0 to 1, or `null`. |
 | `cost.status` | `attributed`, `unattributed`, or `external` when every PR in the row is external. |
 | `cost.changePct` | Change of `perMergedPr` against the baseline, in %. Only with `--compare` (and `null` in public output without it). |
 
-With `--compare`, `comparison` holds `baseline`, `baselineSince`, `baselineUntil`, `totals.agent`, `totals.all` and `areas` (one entry per area found in both reports). Each entry has `mergedPrs`, `fixSharePts`, `regressionFixes24h`, `regressionFixes72h`, `issueLeadMedianHours`, `prLeadMedianHours`, `ciMinutes`, `costPerMergedPrPct` and `attributionRatePts`: the current value minus the baseline value.
+With `--compare`, `comparison` holds `baseline`, `baselineSince`, `baselineUntil`, `totals.agent`, `totals.all` and `areas` (one entry per area found in both reports). Each entry has `mergedPrs`, `fixSharePts`, `regressionFixes24h`, `regressionFixes72h`, `regressionFixes24hPer100`, `regressionFixes72hPer100`, `issueLeadMedianHours`, `prLeadMedianHours`, `ciMinutes`, `costPerMergedPrPct` and `attributionRatePts`: the current value minus the baseline value.
 
 ## All options
 
@@ -118,7 +129,8 @@ With `--compare`, `comparison` holds `baseline`, `baselineSince`, `baselineUntil
 | `--public` | — | Show cost only as % change against `--compare`. |
 | `--save-baseline <name>` | — | Save this report as a baseline. Letters, digits, `.`, `-` and `_`. |
 | `--compare <name>` | — | Show changes against a saved baseline. |
-| `--json` | — | Print JSON instead of tables. |
+| `--format <format>` | `text` | `text` (terminal tables), `markdown` (tables for a GitHub comment) or `json`. |
+| `--json` | — | Same as `--format json`. |
 
 ## Check it worked
 
@@ -132,6 +144,7 @@ With `--compare`, `comparison` holds `baseline`, `baselineSince`, `baselineUntil
 - **`gh auth login` or "not logged in"**: the GitHub CLI is missing or signed out. Install it, then run `gh auth login` in a terminal.
 - **"Could not tell which GitHub repository this is"**: you are outside a checkout, or its `origin` is not on GitHub. Add `--repo your-org/your-repo`.
 - **Cost says `unattributed` everywhere**: the report found no AgentX task records, or no task pushed or opened these PRs. Run it from the folder AgentX runs in, or add `--db` with the path to `.agentx/db.sqlite`. PRs built by a Claude cloud session show as `external` instead.
+- **"GitHub lists only 1,000" warning**: a week had more CI runs than GitHub returns in one list, so that week's CI minutes are lower than the real number. Report shorter windows, or treat CI minutes for that week as a minimum.
 - **It takes longer than a minute**: most of the time is CI timings. The next run is faster, because finished runs are remembered. Add `--no-ci` if you don't need CI minutes.
 - **The numbers differ from a count by hand**: check the definitions above. Merge days are in UTC, release PRs are left out, and the rows count agent PRs unless you add `--scope all`.
 - **"No baseline"**: save one first with `--save-baseline <name>`, in the same folder. Baselines live in `.agentx/quality/baselines/`.

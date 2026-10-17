@@ -1,7 +1,7 @@
 import { existsSync } from "fs"
 import { createRequire } from "module"
 import { resolve } from "path"
-import { TokenTracker } from "@/daemon/token-tracker"
+import { loadPricingWithOverrides, TokenTracker } from "@/daemon/token-tracker"
 import type { PrRecord } from "./classify"
 
 // --- Quality report: model cost per PR ---
@@ -27,8 +27,9 @@ export interface TaskCost {
   usd: number
 }
 
-/** Tool calls that build a PR: push a branch, write to one, or open the PR. */
-export const BUILD_CALL_RE = /git\s+push|gh\s+pr\s+create|create_pull_request|push_files|create_or_update_file|"head"\s*:/i
+/** Tool calls that build a PR: push a branch, write to one, or open the PR.
+ *  A bare `"head":` is not enough: read-only calls (listing PRs) pass it too. */
+export const BUILD_CALL_RE = /git\s+push|gh\s+pr\s+create|create_pull_request|push_files|create_or_update_file/i
 const CREATE_CALL_RE = /gh\s+pr\s+create|create_pull_request/i
 
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
@@ -80,7 +81,7 @@ export function readTaskCosts(dbPath: string, repo: string, fromMs: number, toMs
       FROM task_trace_steps s JOIN task_traces t ON t.task_id = s.task_id
       WHERE t.started_at >= ? AND t.started_at <= ? AND s.name = 'tool_use'
         AND (s.input_summary LIKE '%push%' OR s.input_summary LIKE '%pr create%'
-          OR s.input_summary LIKE '%"head"%' OR s.action LIKE '%pull_request%'
+          OR s.action LIKE '%pull_request%'
           OR s.action LIKE '%push_files%' OR s.action LIKE '%create_or_update_file%')
     `).all(fromMs, toMs) as Array<{ task_id: string; seq: number; action: string | null; input_summary: string | null }>
     const byTask = new Map<string, TaskCost>()
@@ -105,6 +106,8 @@ export function readTaskCosts(dbPath: string, repo: string, fromMs: number, toMs
     }
     if (!byTask.size) return []
 
+    // Same rates as the usage dashboard, .agentx/pricing/custom.json included.
+    const pricing = loadPricingWithOverrides()
     const traces = db.prepare(`
       SELECT task_id, model, input_tokens, output_tokens, cache_read_tokens, cache_create_tokens,
              ${opt("tier2_input_tokens")}, ${opt("tier2_output_tokens")},
@@ -123,7 +126,7 @@ export function readTaskCosts(dbPath: string, repo: string, fromMs: number, toMs
         tier2OutputTokens: r.tier2_output_tokens || 0,
         tier2CacheReadTokens: r.tier2_cache_read_tokens || 0,
         tier2CacheCreateTokens: r.tier2_cache_create_tokens || 0,
-      } as any, r.model || undefined)
+      } as any, r.model || undefined, pricing)
     }
     return [...byTask.values()]
   } catch {
