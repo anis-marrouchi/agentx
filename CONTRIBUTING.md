@@ -151,7 +151,7 @@ The gate runs three checks:
 
 A fourth step lists every command, flag and setting that no page mentions. It only warns for now; it will block once the docs catch up.
 
-A new run never cancels an older one. Editing the description or a label starts another run, and the newest run gives the result.
+A new run never cancels an older one. Editing the description or a label starts another run. Each run checks the description and labels as they were when it started, and runs can finish out of order. So if the result does not match the PR as it is now, re-run the newest **Docs gate** run (in the browser: open the check, then **Re-run jobs**).
 
 **Skip docs for one PR.** Use this when a user-facing file changed but users see no difference, such as a reworded help string:
 
@@ -295,6 +295,8 @@ Release PRs get the same checks as any other PR, so they still merge. A new job 
 
 - **The script says `Not Found` or `Resource not accessible`.** Your `gh` login is not a repo admin. Run `gh auth status` and sign in with an admin account.
 - **A PR waits forever on `test`.** CI did not run on it. In the browser, open **Actions**, find the **CI** run for the PR and approve it, or start **CI** on the PR's branch with **Run workflow**. Do not remove the protection to get one PR in.
+- **An older commit shows a cancelled `test`.** CI stops its run on a branch when a newer push arrives. Only the PR's latest commit counts for merging, so you can ignore it.
+- **The script says `--repo needs a value`.** A flag was given without its value, or with another flag in its place. Write it as `--repo owner/name` or `--branch name`.
 - **`--off` says `Branch not protected`.** There was nothing to remove; `main` is already unprotected.
 
 ## Releases

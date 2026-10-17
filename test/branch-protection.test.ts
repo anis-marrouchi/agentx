@@ -51,4 +51,13 @@ describe("parseArgs", () => {
   it("reads every flag", () => {
     expect(parseArgs(["--repo", "acme/demo", "--branch", "release", "--dry-run"])).toEqual({ repo: "acme/demo", branch: "release", dryRun: true, off: false })
   })
+
+  it("refuses a flag with no value", () => {
+    expect(() => parseArgs(["--repo"])).toThrow(/--repo needs a value/)
+    expect(() => parseArgs(["--dry-run", "--branch"])).toThrow(/--branch needs a value/)
+  })
+
+  it("refuses another flag as a value", () => {
+    expect(() => parseArgs(["--repo", "--off"])).toThrow(/--repo needs a value/)
+  })
 })
