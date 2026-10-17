@@ -184,14 +184,17 @@ The **Docs gate** check on your PR is green. Its log ends with `Checked N page(s
 
 ### UI evidence check
 
-Every pull request runs the **ui-evidence** check (`.github/workflows/ui-evidence.yml`). If the PR changes a screen people look at, its description must show it: a screenshot or a short recording under a `## Evidence` heading. The list of screen folders lives in one file, `scripts/ui-evidence.config.json`. Today it covers the dashboard (`src/daemon/ui/`, the dashboard panels, `src/web/`), voice (`src/voice/`), the desktop installer (`src/desktop/`), the terminal app (`src/tui/`), the Mac, Android and phone apps under `apps/`, and the Raycast extension. Tests and Markdown files in those folders do not count.
+Every pull request runs the **ui-evidence** check (`.github/workflows/ui-evidence.yml`). If the PR changes a screen people look at, its description must show it: a screenshot or a short recording under a `## Evidence` heading. The list of screen folders lives in one file, `scripts/ui-evidence.config.json`. Today it covers the dashboard (`src/daemon/ui/`, the dashboard panels, `src/web/`), the wiki viewer, the approval cards and pop-ups, voice (`src/voice/`), the desktop installer (`src/desktop/`), the terminal app (`src/tui/`), the source folders of the Mac, Android and phone apps under `apps/` (not their build files or lockfiles), and the Raycast extension. Tests and Markdown files in those folders do not count.
 
-The check gives one of four results:
+The check gives one of five results:
 
 - **No UI paths changed**: the PR touches no screen folder, so it passes.
 - **Evidence found**: the `## Evidence` section holds an image or video, so it passes.
 - **Overridden**: a maintainer approved skipping evidence, so it passes and the reason is shown in the check.
 - **UI evidence missing**: the heading or the picture is missing. The check says which, and lists the screen files the PR changed.
+- **Switched off**: a maintainer turned the check off (see the table below), so it passes.
+
+The heading may also read `## Evidence:` or carry a note in brackets, such as `## Evidence (before and after)`.
 
 What counts as evidence:
 
@@ -211,7 +214,7 @@ Hints inside `<!-- -->` comments never count.
 **Skip evidence for one PR.** Use this when a screen file changed but users see no difference, such as a renamed variable:
 
 1. In the browser, ask a maintainer to add the `no-ui-evidence-needed` label to the PR.
-2. Add a line of its own to the PR description: `UI evidence: not needed because <reason>`.
+2. Add a line of its own to the PR description: `UI evidence: not needed because <reason>`. Replace `<reason>` with your words; the placeholder itself is not accepted.
 3. Wait for the check to run again; editing the description or the labels restarts it.
 
 The label without a reason still fails, and so does a reason without the label.
@@ -222,7 +225,16 @@ The label without a reason still fails, and so does a reason without the label.
 | --- | --- |
 | not set, or `advisory` | The **ui-evidence** check shows a grey "neutral" result. The PR can still merge. This is the default. |
 | `required` | The **ui-evidence** check fails. Make it a required check in branch protection to block the merge. |
-| `false` | The check does not run. |
+| `false`, `off` or `0` | The **ui-evidence** check shows a green "Switched off" result. It still appears, so a required check never waits forever. |
+
+Any other value counts as `advisory`.
+
+**Which version of the check runs.** The check uses the scripts and `scripts/ui-evidence.config.json` from the base branch (usually `main`), not from your PR. A PR that edits the list of screen folders is judged by the old list; the new list applies to the PRs that come after it is merged. Each run reads the PR description and labels when it starts, so the newest run always judges the latest text.
+
+**Pull requests from forks.** GitHub gives a fork PR a read-only token, so its run cannot post the separate **ui-evidence** check. The job, **UI evidence job**, still runs and gives the result in its log and summary. Before making the check required, pick one of these:
+
+- Require **ui-evidence** and accept that fork PRs wait for a maintainer to merge them by hand.
+- Or require **UI evidence job** instead. In `required` mode it fails exactly when evidence is missing, and it works for forks. In the other modes it always passes, so it cannot show the grey "neutral" result.
 
 **Run it locally** (in a terminal, from the repo root):
 
@@ -238,7 +250,8 @@ The PR shows a **ui-evidence** check. Click it: the title gives the result, and 
 - **It says the heading is missing, but it is there.** Make sure the heading is a line of its own that reads `## Evidence`, outside any `<!-- -->` comment.
 - **Your picture is not found.** Drag the file into the description again, or link the file itself (ending in `.png`, `.mp4` and so on), not a page that shows it.
 - **A folder is missing from the list, or should not be on it.** Edit `paths` or `ignorePaths` in `scripts/ui-evidence.config.json` in the same PR and say why in the description.
-- **There is no ui-evidence check on a PR from a fork.** Forks cannot post the separate check. Open the **UI evidence / gate** job instead; its log and summary give the same result.
+- **There is no ui-evidence check on a PR from a fork.** Forks cannot post the separate check. Open the **UI evidence / UI evidence job** job instead; its log and summary give the same result.
+- **Your change to the folder list has no effect on your own PR.** That is expected: the check uses the list from the base branch. It applies once the PR is merged.
 
 ### Reproduce the screenshots
 

@@ -4,10 +4,22 @@ import { describe, expect, it } from "vitest"
 import * as lib from "../scripts/ui-evidence-lib.mjs"
 
 const config = JSON.parse(readFileSync(new URL("../scripts/ui-evidence.config.json", import.meta.url), "utf8"))
-const { evaluate, evidenceSection, findMedia, uiPaths } = lib
+const { evaluate, evidenceSection, findMedia, parseMode, uiPaths } = lib
 
 const IMG = "https://github.com/user-attachments/assets/0b3c6f6e-1d2a-4b8e-9c3f-5a6b7c8d9e0f"
 const run = (files: string[], body = "", labels: string[] = []) => evaluate({ files, pr: { body, labels }, config })
+
+describe("parseMode", () => {
+  it("defaults to advisory when unset or unknown", () => {
+    for (const raw of [undefined, null, "", "  ", "advisory", "Advisory", "true", "requird"]) expect(parseMode(raw), String(raw)).toBe("advisory")
+  })
+
+  it("reads required and the off values, ignoring case and spaces", () => {
+    expect(parseMode("required")).toBe("required")
+    expect(parseMode(" REQUIRED ")).toBe("required")
+    for (const raw of ["false", "FALSE", "off", "Off", "0", " 0 "]) expect(parseMode(raw), raw).toBe("off")
+  })
+})
 
 describe("uiPaths", () => {
   it("matches the configured UI directories", () => {
@@ -26,10 +38,14 @@ describe("uiPaths", () => {
           "apps/phone/lib/main.dart",
           "apps/android/app/src/main/res/layout/main.xml",
           "integrations/raycast/src/index.tsx",
+          "src/wiki/serve.ts",
+          "src/approvals/card-window.ts",
+          "src/approvals/popup.ts",
+          "src/daemon/ui-labels.ts",
         ],
         config,
       ),
-    ).toHaveLength(12)
+    ).toHaveLength(16)
   })
 
   it("leaves out non-UI code, tests and docs", () => {
@@ -46,6 +62,11 @@ describe("uiPaths", () => {
           "apps/android/README.md",
           ".github/workflows/ci.yml",
           "docs/guide/dashboard.md",
+          "src/daemon/board-dashboard.ts",
+          "apps/android/build.gradle.kts",
+          "apps/phone/pubspec.lock",
+          "apps/mac-voice/build.sh",
+          "apps/phone/ios/Podfile",
         ],
         config,
       ),
@@ -69,6 +90,12 @@ describe("evidenceSection", () => {
 
   it("is case insensitive and accepts other heading levels", () => {
     expect(evidenceSection("### evidence\nshot")).toBe("shot")
+  })
+
+  it("accepts a colon or a note in brackets after the name", () => {
+    expect(evidenceSection("## Evidence:\nshot")).toBe("shot")
+    expect(evidenceSection("## Evidence (before / after)\nshot")).toBe("shot")
+    expect(evidenceSection("## Evidence of nothing\nshot")).toBeNull()
   })
 
   it("returns null without the heading, and ignores it inside comments or code", () => {
@@ -135,6 +162,14 @@ describe("evaluate", () => {
     const reason = run(["src/voice/hotkey.ts"], "UI evidence: not needed because no change")
     expect(reason.status).toBe("failed")
     expect(reason.summary).toMatch(/only a maintainer/)
+  })
+
+  it("does not take the template placeholder as a reason", () => {
+    for (const body of ["UI evidence: not needed because <your reason>", "UI evidence: not needed because <reason>  "]) {
+      const v = run(["src/voice/hotkey.ts"], body, ["no-ui-evidence-needed"])
+      expect(v.status, body).toBe("failed")
+      expect(v.reason).toBeNull()
+    }
   })
 
   it("accepts the PR template with evidence filled in", () => {

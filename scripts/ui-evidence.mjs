@@ -7,16 +7,21 @@
 //   node scripts/ui-evidence.mjs --base <ref> --head <ref>
 //     Changed files from git (for a local run).
 //   node scripts/ui-evidence.mjs --pr <number> [--post-check <sha>]
-//     Changed files from the GitHub API (in CI). With --post-check, also
-//     posts the verdict as a "ui-evidence" check run on that commit.
+//     Changed files, description and labels from the GitHub API (in CI),
+//     read when the run starts, so a run that finishes after a newer one
+//     still judges the latest description. With --post-check, also posts the
+//     verdict as a "ui-evidence" check run on that commit, unless the PR has
+//     moved on to a newer commit (whose own run gives the verdict).
 //
-// Reads PR_BODY and PR_LABELS (comma or newline separated) from the env.
-// UI_EVIDENCE_MODE is "advisory" (default: a failure is reported as
-// neutral and exits 0), "required" (a failure exits 1) or "false"/"off".
+// A local run reads PR_BODY and PR_LABELS (comma or newline separated) from
+// the env. UI_EVIDENCE_MODE is parsed by parseMode(): "advisory" (default: a
+// failure is reported as neutral and exits 0), "required" (a failure exits 1)
+// or "false"/"off"/"0" (the check run is posted as a success saying the
+// check is switched off).
 // --json prints the verdict as JSON. Exit 2 on bad usage or API errors.
 import { execFileSync } from "node:child_process"
 import { appendFileSync, readFileSync } from "node:fs"
-import { evaluate } from "./ui-evidence-lib.mjs"
+import { evaluate, parseMode } from "./ui-evidence-lib.mjs"
 
 const args = process.argv.slice(2)
 const opt = (name) => {
@@ -25,11 +30,13 @@ const opt = (name) => {
 }
 const config = JSON.parse(readFileSync(opt("config") ?? new URL("./ui-evidence.config.json", import.meta.url), "utf8"))
 const inActions = process.env.GITHUB_ACTIONS === "true"
-const rawMode = (process.env.UI_EVIDENCE_MODE ?? "").trim().toLowerCase()
-const mode = ["false", "off", "0"].includes(rawMode) ? "off" : rawMode === "required" ? "required" : "advisory"
+const mode = parseMode(process.env.UI_EVIDENCE_MODE)
+
+// Workflow commands treat %, \r and \n as special; escape % first.
+const escapeCommand = (text) => text.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A")
 
 function report(level, message) {
-  if (inActions) console.log(`::${level}::${message.replace(/\n/g, "%0A")}`)
+  if (inActions) console.log(`::${level}::${escapeCommand(message)}`)
   else console.log(`${level}: ${message}`)
 }
 
@@ -51,8 +58,7 @@ async function api(path, init = {}) {
 
 const repo = () => process.env.GITHUB_REPOSITORY ?? fail("GITHUB_REPOSITORY is not set")
 
-async function changedFiles() {
-  const pr = opt("pr")
+async function changedFiles(pr) {
   if (pr) {
     // The API lists at most 3000 files per PR, 100 per page. A rename
     // counts for both its old and its new path.
@@ -72,16 +78,29 @@ async function changedFiles() {
     .filter(Boolean)
 }
 
-if (mode === "off") {
-  console.log("UI evidence check is switched off (QUALITY_UI_EVIDENCE_ENABLED=false).")
-  process.exit(0)
+/** Description and labels: live from the API in CI, from the env locally. */
+async function prDetails(pr) {
+  if (pr) {
+    const live = await api(`/repos/${repo()}/pulls/${pr}`)
+    return { body: live.body ?? "", labels: (live.labels ?? []).map((l) => l.name), headSha: live.head?.sha }
+  }
+  return { body: process.env.PR_BODY ?? "", labels: (process.env.PR_LABELS ?? "").split(/[,\n]/).map((l) => l.trim()).filter(Boolean) }
 }
 
-const verdict = evaluate({
-  files: await changedFiles(),
-  pr: { body: process.env.PR_BODY ?? "", labels: (process.env.PR_LABELS ?? "").split(/[,\n]/).map((l) => l.trim()).filter(Boolean) },
-  config,
-})
+const prNumber = opt("pr")
+let verdict
+let details = {}
+if (mode === "off") {
+  // Still posts a check run, so a required ui-evidence check never waits forever.
+  verdict = { status: "off", title: "Switched off", summary: "The UI evidence check is switched off (QUALITY_UI_EVIDENCE_ENABLED is false, off or 0).", uiFiles: [], media: [], reason: null }
+} else {
+  try {
+    details = await prDetails(prNumber)
+    verdict = evaluate({ files: await changedFiles(prNumber), pr: details, config })
+  } catch (e) {
+    fail(e.message)
+  }
+}
 const blocking = verdict.status === "failed" && mode === "required"
 const conclusion = verdict.status !== "failed" ? "success" : blocking ? "failure" : "neutral"
 const title = verdict.status === "failed" && !blocking ? `${verdict.title} (advisory)` : verdict.title
@@ -96,7 +115,9 @@ if (process.env.GITHUB_STEP_SUMMARY) {
 }
 
 const sha = opt("post-check")
-if (sha) {
+if (sha && details.headSha && details.headSha !== sha) {
+  console.log(`The PR has moved on to ${details.headSha}; that commit's own run posts the ui-evidence check.`)
+} else if (sha) {
   try {
     await api(`/repos/${repo()}/check-runs`, {
       method: "POST",

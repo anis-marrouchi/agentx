@@ -4,28 +4,30 @@
     "src/daemon/ui/**",
     "src/daemon/*-panel.ts",
     "src/daemon/topbar.ts",
-    "src/daemon/board-dashboard.ts",
+    "src/daemon/ui-labels.ts",
     "src/daemon/call-page.ts",
     "src/daemon/setup-wizard.ts",
     "src/approvals/card-page*.ts",
+    "src/approvals/card-window.ts",
+    "src/approvals/popup.ts",
+    "src/wiki/serve.ts",
     "src/wiki/ontology/view-*.ts",
     "src/voice/**",
     "src/desktop/**",
     "src/tui/**",
-    "apps/android/**",
-    "apps/mac-helper/**",
-    "apps/mac-voice/**",
-    "apps/phone/**",
+    "apps/android/app/src/main/**",
+    "apps/mac-helper/Sources/**",
+    "apps/mac-helper/Resources/**",
+    "apps/mac-voice/Sources/**",
+    "apps/mac-voice/Resources/**",
+    "apps/phone/lib/**",
     "integrations/raycast/src/**"
   ],
   "ignorePaths": [
     "**/*.md",
     "**/*.test.ts",
     "**/__fixtures__/**",
-    "apps/*/Tests/**",
-    "apps/*/test/**",
-    "apps/android/app/src/test/**",
-    "apps/android/app/src/androidTest/**"
+    "apps/*/Tests/**"
   ],
   "heading": "Evidence",
   "mediaExtensions": ["png", "jpg", "jpeg", "gif", "webp", "mp4", "mov", "webm"],
@@ -36,6 +38,6 @@
   ],
   "override": {
     "label": "no-ui-evidence-needed",
-    "reasonPattern": "^\\s*UI evidence: not needed because \\S.*$"
+    "reasonPattern": "^\\s*UI evidence: not needed because (?!<[^>]*>\\s*$)\\S.*$"
   }
 }

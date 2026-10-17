@@ -4,10 +4,12 @@ name: UI evidence
 # "## Evidence" (CONTRIBUTING.md › UI evidence check). Paths and patterns
 # live in scripts/ui-evidence.config.json.
 #
-# Repository variable QUALITY_UI_EVIDENCE_ENABLED (quality.uiEvidence.enabled):
-#   unset or "advisory"  a missing screenshot posts a neutral ui-evidence check
-#   "required"           a missing screenshot fails the check
-#   "false"              the check does not run
+# Repository variable QUALITY_UI_EVIDENCE_ENABLED (quality.uiEvidence.enabled),
+# parsed by parseMode() in scripts/ui-evidence-lib.mjs:
+#   unset or "advisory"      a missing screenshot posts a neutral ui-evidence check
+#   "required"               a missing screenshot fails the check
+#   "false", "off" or "0"    the check is posted as a success saying it is off
+# The job always runs, so a required ui-evidence check is posted in every mode.
 on:
   pull_request:
     # "edited", "labeled" and "unlabeled" re-run the check when the PR body
@@ -20,18 +22,28 @@ permissions:
   # Posts the verdict as the "ui-evidence" check run (neutral in advisory mode).
   checks: write
 
-concurrency:
-  group: ui-evidence-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+# No concurrency group, as in the docs gate (#995): a cancelled run reads as
+# neither pass nor fail. Every run reads the description and labels from the
+# API when it starts, so the run that finishes last still posts a current
+# verdict.
 
 jobs:
-  gate:
-    if: ${{ vars.QUALITY_UI_EVIDENCE_ENABLED != 'false' }}
+  evidence:
+    name: UI evidence job
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
-      # Only the scripts are needed; the changed files come from the API.
+      # The scripts come from the base branch, so a PR cannot loosen the
+      # check that judges it. Changed files come from the API.
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      # Bootstrap only: until the check is on the base branch, use the PR's.
+      - if: ${{ hashFiles('scripts/ui-evidence.mjs') == '' }}
+        uses: actions/checkout@v4
         with:
           sparse-checkout: scripts
           persist-credentials: false
@@ -44,9 +56,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           UI_EVIDENCE_MODE: ${{ vars.QUALITY_UI_EVIDENCE_ENABLED }}
-          # Passed through env, never inlined into the script.
-          PR_BODY: ${{ github.event.pull_request.body }}
-          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: node scripts/ui-evidence.mjs --pr "$PR_NUMBER" --post-check "$HEAD_SHA"

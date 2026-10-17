@@ -4,19 +4,32 @@
 // (#988) can call evaluate() on fetched PRs to count evidence and overrides.
 import { matchesAny } from "./docs-gate-lib.mjs"
 
+/**
+ * The QUALITY_UI_EVIDENCE_ENABLED switch: "required" blocks on a failure,
+ * "false", "off" or "0" switches the check off, and anything else (unset,
+ * "advisory", a typo) is advisory. Case and spaces are ignored.
+ */
+export function parseMode(raw) {
+  const value = String(raw ?? "").trim().toLowerCase()
+  if (["false", "off", "0"].includes(value)) return "off"
+  return value === "required" ? "required" : "advisory"
+}
+
 /** Changed paths that count as UI under config.paths / config.ignorePaths. */
 export const uiPaths = (paths, config) =>
   paths.filter((p) => matchesAny(p, config.paths) && !matchesAny(p, config.ignorePaths ?? []))
 
 /**
  * The body of the first heading named config.heading (any level, case
- * insensitive), up to the next heading of the same or a higher level.
+ * insensitive, optionally followed by ":" or a "(…)" note, such as
+ * "## Evidence (before/after)"), up to the next heading of the same or a
+ * higher level.
  * HTML comments are dropped first, so template hints never count. Fenced
  * code is kept out of heading detection. Returns null when there is none.
  */
 export function evidenceSection(body = "", heading = "Evidence") {
   const lines = stripComments(body).split(/\r?\n/)
-  const name = heading.toLowerCase()
+  const name = new RegExp(`^${heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(\\(.*\\))?\\s*:?$`, "i")
   let level = 0
   let fence = false
   const out = []
@@ -26,7 +39,7 @@ export function evidenceSection(body = "", heading = "Evidence") {
     if (level) {
       if (h && h[1].length <= level) break
       out.push(line)
-    } else if (h && h[2].toLowerCase() === name) level = h[1].length
+    } else if (h && name.test(h[2])) level = h[1].length
   }
   return level ? out.join("\n") : null
 }
