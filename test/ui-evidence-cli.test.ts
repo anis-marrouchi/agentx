@@ -101,6 +101,17 @@ describe("ui-evidence CLI: re-read before posting", () => {
   })
 })
 
+describe("ui-evidence CLI: switched off", () => {
+  it("still posts a success check without reading the PR", async () => {
+    const r = await runCli({ pulls: [{ body: "", labels: [] }], filesStatus: 502 }, "off")
+    expect(r.code).toBe(0)
+    expect(r.pullReads).toBe(0)
+    expect(r.checks).toHaveLength(1)
+    expect(r.checks[0].conclusion).toBe("success")
+    expect(r.checks[0].output.title).toBe("Switched off")
+  })
+})
+
 describe("ui-evidence CLI: API errors", () => {
   it("posts a failure in required mode and exits 2", async () => {
     const r = await runCli({ pulls: [{ body: WITH_EVIDENCE, labels: [] }], filesStatus: 502 }, "required")
