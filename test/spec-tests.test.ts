@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs"
-import { tmpdir } from "os"
+import { homedir, tmpdir } from "os"
 import { join } from "path"
 import { execFileSync } from "child_process"
 import {
@@ -12,15 +12,20 @@ import {
   execProcess,
   extractAcceptanceCriteria,
   extractNamedInterfaces,
+  findSecrets,
   formatSpecTestPrRecord,
   isTestFile,
   matchesPilotPath,
+  parsePorcelainEntriesZ,
   parsePorcelainZ,
   parseSpecAgentOutput,
   parseSpecTestPrRecord,
   planSpecTests,
   runSpecTests,
+  selectSpecTestFiles,
+  spawnWithTimeout,
   specAgentArgs,
+  specAgentDenyRules,
   specTestAuthorInstructions,
   type SpecAgentFn,
   type SpecIssue,
@@ -91,6 +96,14 @@ describe("planSpecTests", () => {
     expect(planSpecTests({ settings: on(), issue: ISSUE, codeAgent: "coder", previous })).toMatchObject({ run: false })
   })
 
+  it("a running record blocks a second run until it is stale", () => {
+    const now = 10 * 60 * 60_000
+    const running = { status: "running", startedAt: now - 60_000 } as SpecTestRun
+    expect(planSpecTests({ settings: on(), issue: ISSUE, codeAgent: "coder", previous: running, now })).toEqual({ run: false, reason: "spec tests are already running for this issue" })
+    const stale = { status: "running", startedAt: now - 31 * 60_000 } as SpecTestRun // 20 min limit + 10 min grace
+    expect(planSpecTests({ settings: on(), issue: ISSUE, codeAgent: "coder", previous: stale, now }).run).toBe(true)
+  })
+
   it("skips when the issue could not be read", () => {
     expect(planSpecTests({ settings: on(), issue: undefined, codeAgent: "coder" })).toMatchObject({ run: false })
   })
@@ -141,6 +154,25 @@ describe("test agent input", () => {
     expect(args[args.indexOf("--model") + 1]).toBe("sonnet")
     expect(args).toContain("--strict-mcp-config")
   })
+
+  it("denies the file tools everything outside the worktree that holds secrets", () => {
+    const rules = specAgentDenyRules("/tmp/agentx-spec-42-x", ["/srv/clone", "/srv/agentx"])
+    for (const p of ["/srv/clone", "/srv/agentx", homedir(), join(homedir(), ".ssh"), "/proc"]) {
+      expect(rules).toContain(`Read(/${p}/**)`)
+      expect(rules).toContain(`Edit(/${p}/**)`)
+    }
+    expect(rules.some((r) => r.includes("agentx-spec-42-x"))).toBe(false)
+    const settings = JSON.parse(specAgentArgs({ maxBudgetUsd: 1, deny: rules }).find((a) => a.includes("permissions"))!)
+    expect(settings).toEqual({ disableAllHooks: true, permissions: { deny: rules } })
+  })
+
+  it("never denies a folder that holds the worktree, only its secrets", () => {
+    const dir = join(homedir(), "work", "agentx-spec-1")
+    const rules = specAgentDenyRules(dir, [join(homedir(), "work")])
+    expect(rules).not.toContain(`Read(/${homedir()}/**)`)
+    expect(rules).not.toContain(`Read(/${join(homedir(), "work")}/**)`)
+    expect(rules).toContain(`Read(/${join(homedir(), ".ssh")}/**)`)
+  })
 })
 
 describe("records", () => {
@@ -186,6 +218,29 @@ describe("helpers", () => {
     expect(parsePorcelainZ("?? test/a.test.ts\0R  test/new.ts\0test/old.ts\0 M src/x.ts\0")).toEqual(["test/a.test.ts", "test/new.ts", "src/x.ts"])
   })
 
+  it("keeps only new untracked test files", () => {
+    const entries = parsePorcelainEntriesZ("?? test/new.test.ts\0 M test/old.test.ts\0 D test/fixtures/a.json\0?? test/fixtures/b.json\0R  test/x.test.ts\0test/y.test.ts\0?? src/z.ts\0")
+    expect(selectSpecTestFiles(entries)).toEqual({
+      keep: ["test/new.test.ts", "test/fixtures/b.json"],
+      discard: ["test/old.test.ts (M, existing file)", "test/fixtures/a.json (D, existing file)", "test/x.test.ts (R, existing file)", "src/z.ts (new, not a test file)"],
+    })
+  })
+
+  it("finds secrets without returning them", () => {
+    const gh = "ghp_" + "A1b2C3d4".repeat(5)
+    expect(findSecrets(`const token = "${gh}"`)).toEqual(["GitHub token"])
+    expect(findSecrets("-----BEGIN OPENSSH PRIVATE KEY-----\nabc")).toEqual(["private key"])
+    expect(findSecrets("fetch('https://user:" + "hunter2hunter2" + "@example.invalid/x')")).toEqual(["password in a URL"])
+    expect(findSecrets("it('retries a 500', () => { expect(sk).toBe('sk-short') })")).toEqual([])
+  })
+
+  it("a time-out ends with SIGKILL when the process ignores SIGTERM", async () => {
+    const started = Date.now()
+    const r = await spawnWithTimeout(process.execPath, ["-e", "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { cwd: tmpdir(), timeoutMs: 200, killGraceMs: 200 })
+    expect(r.timedOut).toBe(true)
+    expect(Date.now() - started).toBeLessThan(3_000)
+  })
+
   it("reads the CLI result, budget stop included", () => {
     expect(parseSpecAgentOutput(JSON.stringify({ subtype: "success", result: "done", total_cost_usd: 0.3 }), 0)).toEqual({ ok: true, costUsd: 0.3, reply: "done" })
     expect(parseSpecAgentOutput(JSON.stringify({ subtype: "error_max_budget_usd", is_error: true, total_cost_usd: 2.01 }), 1)).toEqual({ ok: false, budgetStopped: true, costUsd: 2.01 })
@@ -207,6 +262,9 @@ function setup() {
   git(checkout, "config", "user.email", "author@example.invalid")
   mkdirSync(join(checkout, "src/daemon"), { recursive: true })
   writeFileSync(join(checkout, "src/daemon/webhooks.ts"), "export const x = 1\n")
+  mkdirSync(join(checkout, "test/fixtures"), { recursive: true })
+  writeFileSync(join(checkout, "test/existing.test.ts"), "it('works', () => {})\n")
+  writeFileSync(join(checkout, "test/fixtures/data.json"), "{}\n")
   git(checkout, "add", "-A")
   git(checkout, "commit", "-m", "base")
   git(checkout, "push", "origin", "main")
@@ -238,7 +296,7 @@ function harness(runAgent: SpecAgentFn, settings = on()) {
 
 describe("runSpecTests", () => {
   it("pushes one commit authored by the test agent to spec-tests/issue-N", async () => {
-    let seen: { prompt: string; dir: string; maxBudgetUsd: number } | undefined
+    let seen: { prompt: string; dir: string; maxBudgetUsd: number; deny: string[] } | undefined
     let sawImplementation = true
     const h = harness(async (opts) => {
       seen = opts
@@ -252,7 +310,9 @@ describe("runSpecTests", () => {
       const run = await runSpecTests(h.deps)
       expect(run).toMatchObject({ status: "pushed", branch: "spec-tests/issue-42", testFiles: ["test/webhooks-spec.test.ts"], testsWritten: 2, costUsd: 0.42, agent: "spec-tests", codeAgent: "coder" })
       expect(run.minutes).toBeGreaterThanOrEqual(0)
-      expect(h.runs).toEqual([run])
+      expect(h.runs).toHaveLength(2)
+      expect(h.runs[0]).toMatchObject({ status: "running", repo: ISSUE.repo, number: 42 })
+      expect(h.runs[1]).toEqual(run)
       expect(h.notes).toEqual([])
       expect(h.told[0]).toContain("spec-tests/issue-42")
 
@@ -262,6 +322,8 @@ describe("runSpecTests", () => {
       expect(seen!.prompt).toBe(buildSpecTestPrompt(buildSpecTestInput(ISSUE)))
       expect(seen!.prompt).not.toContain("IMPLEMENTATION")
       expect(seen!.maxBudgetUsd).toBe(SPEC_TESTS_DEFAULTS.maxCostPerIssue)
+      expect(seen!.deny).toContain(`Read(/${h.env.checkout}/**)`)
+      expect(seen!.deny.some((r) => r.includes(seen!.dir))).toBe(false)
 
       const log = git(h.env.remote, "log", "-1", "--format=%an <%ae>|%s", "spec-tests/issue-42")
       expect(log).toBe("spec-tests <spec-tests@spec-tests.agentx.invalid>|test: spec tests for #42")
@@ -271,6 +333,62 @@ describe("runSpecTests", () => {
       // The worktree is gone and the author's checkout is untouched.
       expect(git(h.env.checkout, "worktree", "list")).not.toContain("agentx-spec")
       expect(git(h.env.checkout, "status", "--porcelain")).toBe("M src/daemon/webhooks.ts")
+    } finally {
+      rmSync(h.env.root, { recursive: true, force: true })
+    }
+  })
+
+  it("never commits a change to an existing test or fixture", async () => {
+    const h = harness(async (opts) => {
+      writeFileSync(join(opts.dir, "test/existing.test.ts"), "// weakened\n")
+      rmSync(join(opts.dir, "test/fixtures/data.json"))
+      writeFileSync(join(opts.dir, "test/webhooks-spec.test.ts"), "it('retries a 500', () => {})\n")
+      return { ok: true }
+    })
+    const lines: string[] = []
+    try {
+      const run = await runSpecTests({ ...h.deps, log: (l: string) => lines.push(l) })
+      expect(run).toMatchObject({ status: "pushed", testFiles: ["test/webhooks-spec.test.ts"] })
+      expect(git(h.env.remote, "show", "--name-status", "--format=", "spec-tests/issue-42")).toBe("A\ttest/webhooks-spec.test.ts")
+      expect(git(h.env.remote, "show", "spec-tests/issue-42:test/existing.test.ts")).toBe("it('works', () => {})")
+      expect(git(h.env.remote, "show", "spec-tests/issue-42:test/fixtures/data.json")).toBe("{}")
+      const discarded = lines.find((l) => l.includes("discarded"))
+      expect(discarded).toContain("test/existing.test.ts (M, existing file)")
+      expect(discarded).toContain("test/fixtures/data.json (D, existing file)")
+    } finally {
+      rmSync(h.env.root, { recursive: true, force: true })
+    }
+  })
+
+  it("a run that only changes existing tests pushes nothing and leaves a note", async () => {
+    const h = harness(async (opts) => {
+      writeFileSync(join(opts.dir, "test/existing.test.ts"), "// weakened\n")
+      return { ok: true }
+    })
+    try {
+      const run = await runSpecTests(h.deps)
+      expect(run.status).toBe("no-tests")
+      expect(h.notes[0]).toContain("test/existing.test.ts (M, existing file)")
+      expect(() => git(h.env.remote, "rev-parse", "spec-tests/issue-42")).toThrow()
+    } finally {
+      rmSync(h.env.root, { recursive: true, force: true })
+    }
+  })
+
+  it("a test file that holds a secret is not pushed", async () => {
+    const token = "ghp_" + "A1b2C3d4".repeat(5)
+    const h = harness(async (opts) => {
+      writeFileSync(join(opts.dir, "test/webhooks-spec.test.ts"), `it('uses ${token}', () => {})\n`)
+      return { ok: true }
+    })
+    try {
+      const run = await runSpecTests(h.deps)
+      expect(run.status).toBe("blocked")
+      expect(h.notes).toHaveLength(1)
+      expect(h.notes[0]).toContain("GitHub token in test/webhooks-spec.test.ts")
+      expect(h.notes[0]).not.toContain(token)
+      expect(() => git(h.env.remote, "rev-parse", "spec-tests/issue-42")).toThrow()
+      expect(h.told).toEqual([])
     } finally {
       rmSync(h.env.root, { recursive: true, force: true })
     }

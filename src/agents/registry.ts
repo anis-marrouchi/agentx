@@ -71,7 +71,7 @@ import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerso
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
-import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
+import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -1151,7 +1151,9 @@ export class AgentRegistry {
       },
     })
     if (!result) return null
-    if (spec && route.route === "cloud" && !result.error && !result.cloudSession.followUp) {
+    // Checked again after the launch's await: a second dispatch for the
+    // issue may have started a run meanwhile (it records `running` at once).
+    if (spec && route.route === "cloud" && !result.error && !result.cloudSession.followUp && !previousRunBlocks(this.specTestStore().get(spec.repo, spec.number), this.specTestSettings())) {
       const sessionId = result.cloudSession.id
       void this.startSpecTests(task.agentId, spec, route.cwd, (text) => launch({ cwd: route.cwd, prompt: text, sessionId }).then((r) => { if (!r.ok) throw new Error(r.reason) }))
     }

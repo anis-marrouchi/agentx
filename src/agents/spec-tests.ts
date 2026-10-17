@@ -1,7 +1,7 @@
 import { spawn as nodeSpawn } from "child_process"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs"
-import { tmpdir } from "os"
-import { dirname, join } from "path"
+import { homedir, tmpdir } from "os"
+import { dirname, join, resolve, sep } from "path"
 import { markBody } from "@/channels/outbound-marker"
 import { claudeCliEnv } from "@/utils/workspace-env"
 
@@ -214,7 +214,10 @@ export function parseSpecTestPrRecord(body: string | undefined | null): SpecTest
 
 // --- Per-issue run record ---
 
-export type SpecTestRunStatus = "pushed" | "no-tests" | "budget-stopped" | "timed-out" | "failed" | "skipped"
+/** `running` is written when a run starts, so a second dispatch for the
+ *  same issue does not start another one; `finish` replaces it. `blocked`:
+ *  a written file looked like it held a secret, so nothing was pushed. */
+export type SpecTestRunStatus = "running" | "pushed" | "no-tests" | "budget-stopped" | "timed-out" | "failed" | "blocked" | "skipped"
 
 export interface SpecTestRun {
   repo: string
@@ -293,6 +296,18 @@ export class SpecTestStore {
 
 // --- Planning ---
 
+/** A `running` record older than the time limit plus this is from a daemon
+ *  that stopped mid-run, and no longer blocks a new run. */
+const STALE_RUNNING_GRACE_MS = 10 * 60_000
+
+/** Why an earlier record stops a new run for the issue, or undefined. */
+export function previousRunBlocks(previous: SpecTestRun | undefined, settings: SpecTestsSettings, now = Date.now()): string | undefined {
+  if (!previous) return undefined
+  if (previous.status !== "running") return `spec tests already ran for this issue (${previous.status})`
+  if (now - previous.startedAt > settings.maxMinutes * 60_000 + STALE_RUNNING_GRACE_MS) return undefined
+  return "spec tests are already running for this issue"
+}
+
 export type SpecTestPlan =
   | { run: true; input: SpecTestInput }
   | { run: false; reason: string }
@@ -303,6 +318,7 @@ export function planSpecTests(opts: {
   issue: SpecIssue | undefined
   codeAgent: string
   previous?: SpecTestRun
+  now?: number
 }): SpecTestPlan {
   const { settings, issue } = opts
   if (!settings.enabled) return { run: false, reason: "spec tests are off" }
@@ -313,14 +329,15 @@ export function planSpecTests(opts: {
   if (settings.agent.trim().toLowerCase() === opts.codeAgent.trim().toLowerCase()) {
     return { run: false, reason: `the test agent "${settings.agent}" is the coding agent; set quality.specTests.agent to another name` }
   }
-  if (opts.previous) return { run: false, reason: `spec tests already ran for this issue (${opts.previous.status})` }
+  const blocked = previousRunBlocks(opts.previous, settings, opts.now)
+  if (blocked) return { run: false, reason: blocked }
   return { run: true, input: buildSpecTestInput(issue) }
 }
 
 // --- Running ---
 
 export interface ExecResult { code: number; stdout: string; stderr: string }
-export type ExecFn = (cmd: string, args: string[], opts: { cwd: string; timeoutMs?: number }) => Promise<ExecResult>
+export type ExecFn = (cmd: string, args: string[], opts: { cwd: string; timeoutMs?: number; killGraceMs?: number }) => Promise<ExecResult>
 
 export interface SpecAgentResult {
   ok: boolean
@@ -331,8 +348,9 @@ export interface SpecAgentResult {
   error?: string
 }
 
-/** Runs the test agent's model on `prompt` in `dir`. */
-export type SpecAgentFn = (opts: { prompt: string; dir: string; model?: string; maxBudgetUsd: number; timeoutMs: number }) => Promise<SpecAgentResult>
+/** Runs the test agent's model on `prompt` in `dir`. `deny` holds the
+ *  permission rules that keep its file tools out of everything but `dir`. */
+export type SpecAgentFn = (opts: { prompt: string; dir: string; model?: string; maxBudgetUsd: number; timeoutMs: number; deny: string[] }) => Promise<SpecAgentResult>
 
 export interface SpecTestRunDeps {
   settings: SpecTestsSettings
@@ -350,6 +368,9 @@ export interface SpecTestRunDeps {
   log: (line: string) => void
   now?: () => number
   makeTempDir?: () => string
+  /** Folders the test agent's file tools may not read or write. Default:
+   *  the checkout, the daemon's folder and the home folder. */
+  protectedPaths?: string[]
 }
 
 /** A file the test agent may leave behind. Anything else is discarded. */
@@ -362,17 +383,87 @@ export function countTestCases(source: string): number {
   return (source.match(/(^|[^\w.$])(it|test)(\.(only|skip|todo|concurrent|each\([^)]*\)))?\s*\(/g) ?? []).length
 }
 
-/** Paths from `git status --porcelain -z --untracked-files=all`. */
-export function parsePorcelainZ(out: string): string[] {
+export interface PorcelainEntry {
+  /** The two-letter XY status: `??` for a new untracked file. */
+  status: string
+  path: string
+}
+
+/** Entries from `git status --porcelain -z --untracked-files=all`. */
+export function parsePorcelainEntriesZ(out: string): PorcelainEntry[] {
   const parts = out.split("\0").filter(Boolean)
-  const files: string[] = []
+  const entries: PorcelainEntry[] = []
   for (let i = 0; i < parts.length; i++) {
     const entry = parts[i]
     const status = entry.slice(0, 2)
-    files.push(entry.slice(3))
+    entries.push({ status, path: entry.slice(3) })
     if (status.startsWith("R") || status.startsWith("C")) i++ // the rename's source path follows
   }
-  return files
+  return entries
+}
+
+/** Paths from `git status --porcelain -z --untracked-files=all`. */
+export function parsePorcelainZ(out: string): string[] {
+  return parsePorcelainEntriesZ(out).map((e) => e.path)
+}
+
+/** The files the daemon commits: new, untracked test files. A change to a
+ *  file that already exists (an edit, a deletion, a rename), a test or a
+ *  fixture included, is never committed, so the test agent cannot weaken
+ *  or remove the repository's existing tests. */
+export function selectSpecTestFiles(entries: PorcelainEntry[]): { keep: string[]; discard: string[] } {
+  const keep: string[] = []
+  const discard: string[] = []
+  for (const e of entries) {
+    if (e.status === "??" && isTestFile(e.path)) keep.push(e.path)
+    else discard.push(e.status === "??" ? `${e.path} (new, not a test file)` : `${e.path} (${e.status.trim() || "changed"}, existing file)`)
+  }
+  return { keep, discard }
+}
+
+// --- Secrets ---
+
+const SECRET_PATTERNS: Array<[string, RegExp]> = [
+  ["private key", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----/],
+  ["GitHub token", /\b(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,})/],
+  ["GitLab token", /\bglpat-[A-Za-z0-9_-]{20,}/],
+  ["Anthropic key", /\bsk-ant-[A-Za-z0-9_-]{20,}/],
+  ["API key (sk-)", /\bsk-(proj-)?[A-Za-z0-9]{32,}/],
+  ["AWS access key", /\b(AKIA|ASIA)[0-9A-Z]{16}\b/],
+  ["Google API key", /\bAIza[0-9A-Za-z_-]{35}\b/],
+  ["Slack token", /\bxox[abposr]-[A-Za-z0-9-]{10,}/],
+  ["Telegram bot token", /\b\d{8,10}:AA[A-Za-z0-9_-]{33}\b/],
+  ["password in a URL", /\b[a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:[^\s@/]{8,}@/i],
+]
+
+/** The kinds of secret `text` looks like it holds. Never returns the value. */
+export function findSecrets(text: string): string[] {
+  return SECRET_PATTERNS.filter(([, re]) => re.test(text)).map(([kind]) => kind)
+}
+
+// --- File access ---
+
+const SENSITIVE_HOME_PATHS = [".ssh", ".gnupg", ".aws", ".config", ".claude", ".claude.json", ".netrc", ".git-credentials", ".npmrc", ".docker", ".kube"]
+
+const permissionPath = (p: string) => `/${resolve(p).replace(/\\/g, "/").replace(/^\/+/, "")}`
+
+/** `--settings` deny rules that keep the test agent's file tools (Read rules
+ *  also cover Glob and Grep; Edit rules cover Write) out of each protected
+ *  folder, its secrets in the home folder and `/proc` (the environment of
+ *  running processes). A folder that contains the worktree cannot be denied
+ *  whole, so only its sensitive entries are. */
+export function specAgentDenyRules(dir: string, protectedPaths: string[]): string[] {
+  const work = resolve(dir)
+  const inside = (p: string) => work === p || work.startsWith(p.endsWith(sep) ? p : p + sep)
+  const home = homedir()
+  const paths = [...protectedPaths, home, ...SENSITIVE_HOME_PATHS.map((x) => join(home, x)), "/proc"].map((p) => resolve(p))
+  const rules: string[] = []
+  for (const p of [...new Set(paths)]) {
+    if (inside(p)) continue
+    const glob = `/${permissionPath(p)}/**`
+    rules.push(`Read(${glob})`, `Edit(${glob})`)
+  }
+  return rules
 }
 
 /** Writes the spec tests, commits them as the test agent and pushes them to
@@ -388,6 +479,8 @@ export async function runSpecTests(deps: SpecTestRunDeps): Promise<SpecTestRun> 
   }
   let dir: string | undefined
   const git = (args: string[], cwd: string, timeoutMs = 120_000) => exec("git", args, { cwd, timeoutMs })
+  // Before the first await, so a second dispatch that checks the store sees it.
+  deps.store.record({ ...base, status: "running", finishedAt: startedAt, minutes: 0 })
 
   const finish = async (fields: Partial<SpecTestRun> & { status: SpecTestRunStatus }): Promise<SpecTestRun> => {
     const finishedAt = now()
@@ -421,6 +514,7 @@ export async function runSpecTests(deps: SpecTestRunDeps): Promise<SpecTestRun> 
       model: settings.model,
       maxBudgetUsd: settings.maxCostPerIssue,
       timeoutMs: settings.maxMinutes * 60_000,
+      deny: specAgentDenyRules(dir, deps.protectedPaths ?? [deps.checkout, process.cwd()]),
     })
     if (agent.budgetStopped) {
       return await finish({ status: "budget-stopped", costUsd: agent.costUsd, note: `stopped at the budget of $${settings.maxCostPerIssue.toFixed(2)} (quality.specTests.maxCostPerIssue). No tests were pushed; review the issue's acceptance criteria by hand.` })
@@ -433,21 +527,27 @@ export async function runSpecTests(deps: SpecTestRunDeps): Promise<SpecTestRun> 
     }
 
     const status = await git(["status", "--porcelain", "-z", "--untracked-files=all"], dir)
-    const changed = parsePorcelainZ(status.stdout)
-    const testFiles = changed.filter(isTestFile)
-    const other = changed.filter((f) => !isTestFile(f))
-    if (other.length) deps.log(`[spec-tests] ${input.repo}#${input.number}: discarding non-test changes: ${other.join(", ")}`)
+    if (status.code !== 0) return await finish({ status: "failed", costUsd: agent.costUsd, note: `could not list the files the test agent wrote: ${status.stderr.trim().slice(0, 300)}` })
+    const { keep: testFiles, discard } = selectSpecTestFiles(parsePorcelainEntriesZ(status.stdout))
+    if (discard.length) deps.log(`[spec-tests] ${input.repo}#${input.number}: discarded (only new test files are committed): ${discard.join(", ")}`)
     if (!testFiles.length) {
-      return await finish({ status: "no-tests", costUsd: agent.costUsd, note: `the test agent wrote no test file${other.length ? ` (it changed only non-test files, which were discarded: ${other.join(", ")})` : ""}.` })
+      return await finish({ status: "no-tests", costUsd: agent.costUsd, note: `the test agent wrote no new test file${discard.length ? ` (its other changes were discarded: ${discard.join(", ")})` : ""}.` })
     }
 
     let testsWritten = 0
+    const secrets: string[] = []
     for (const f of testFiles) {
-      try { testsWritten += countTestCases(readFileSync(join(dir, f), "utf8")) } catch { /* deleted file */ }
+      const source = readFileSync(join(dir, f), "utf8")
+      testsWritten += countTestCases(source)
+      for (const kind of findSecrets(source)) secrets.push(`${kind} in ${f}`)
+    }
+    if (secrets.length) {
+      return await finish({ status: "blocked", costUsd: agent.costUsd, testFiles, note: `a written file looks like it holds a secret (${secrets.join(", ")}), so nothing was pushed. The operator should check what the test agent could read.` })
     }
     const author = specTestAuthor(settings.agent)
     const identity = ["-c", `user.name=${author.name}`, "-c", `user.email=${author.email}`]
-    const staged = await git(["add", "-A", "--", ...testFiles], dir)
+    // Untracked files only, so `add` cannot stage a deletion or an edit.
+    const staged = await git(["add", "--", ...testFiles], dir)
     if (staged.code !== 0) return await finish({ status: "failed", costUsd: agent.costUsd, note: `could not stage the tests: ${staged.stderr.trim().slice(0, 300)}` })
     const body = `Written by ${settings.agent} from the text of #${input.number} and its acceptance criteria only, without the implementation (#992).`
     const committed = await git([...identity, "commit", "--no-verify", "-m", specTestCommitMessage(input.number), "-m", body], dir)
@@ -477,35 +577,76 @@ export async function runSpecTests(deps: SpecTestRunDeps): Promise<SpecTestRun> 
 
 // --- Real process runners ---
 
-export const execProcess: ExecFn = (cmd, args, opts) => new Promise((resolve) => {
-  let stdout = ""
-  let stderr = ""
-  let child: ReturnType<typeof nodeSpawn>
-  try {
-    child = nodeSpawn(cmd, args, { cwd: opts.cwd, stdio: ["ignore", "pipe", "pipe"] })
-  } catch (e: any) {
-    resolve({ code: -1, stdout, stderr: e?.message || String(e) })
-    return
-  }
-  const timer = opts.timeoutMs ? setTimeout(() => child.kill("SIGTERM"), opts.timeoutMs) : undefined
-  child.stdout?.on("data", (d) => { stdout += d })
-  child.stderr?.on("data", (d) => { stderr += d })
-  child.on("error", (e) => { if (timer) clearTimeout(timer); resolve({ code: -1, stdout, stderr: e.message }) })
-  child.on("close", (code) => { if (timer) clearTimeout(timer); resolve({ code: code ?? -1, stdout, stderr }) })
-})
+/** How long a timed-out process gets after SIGTERM before SIGKILL, and
+ *  again after SIGKILL before the wait ends without its exit. */
+export const KILL_GRACE_MS = 5_000
+
+export interface SpawnResult extends ExecResult { timedOut: boolean }
+
+/** Runs a process with a time limit that always ends the wait: SIGTERM at
+ *  the limit, SIGKILL after `killGraceMs`, and a result after one more
+ *  grace period even if a grandchild still holds the output open. */
+export function spawnWithTimeout(cmd: string, args: string[], opts: { cwd: string; env?: NodeJS.ProcessEnv; input?: string; timeoutMs?: number; killGraceMs?: number }): Promise<SpawnResult> {
+  return new Promise((done) => {
+    let stdout = ""
+    let stderr = ""
+    let timedOut = false
+    let settled = false
+    const timers: ReturnType<typeof setTimeout>[] = []
+    const settle = (code: number, err?: string) => {
+      if (settled) return
+      settled = true
+      for (const t of timers) clearTimeout(t)
+      done({ code, stdout, stderr: err ?? stderr, timedOut })
+    }
+    let child: ReturnType<typeof nodeSpawn>
+    try {
+      child = nodeSpawn(cmd, args, { cwd: opts.cwd, env: opts.env, stdio: [opts.input === undefined ? "ignore" : "pipe", "pipe", "pipe"] })
+    } catch (e: any) {
+      settle(-1, e?.message || String(e))
+      return
+    }
+    const grace = opts.killGraceMs ?? KILL_GRACE_MS
+    if (opts.timeoutMs) {
+      timers.push(setTimeout(() => {
+        timedOut = true
+        child.kill("SIGTERM")
+        timers.push(setTimeout(() => {
+          child.kill("SIGKILL")
+          timers.push(setTimeout(() => {
+            child.stdout?.destroy()
+            child.stderr?.destroy()
+            settle(-1)
+          }, grace))
+        }, grace))
+      }, opts.timeoutMs))
+    }
+    child.stdout?.on("data", (d) => { stdout += d })
+    child.stderr?.on("data", (d) => { stderr += d })
+    child.stdin?.on("error", () => { /* the process exited before reading its input */ })
+    child.on("error", (e) => settle(-1, e.message))
+    child.on("close", (code) => settle(code ?? -1))
+    if (opts.input !== undefined) child.stdin?.end(opts.input)
+  })
+}
+
+export const execProcess: ExecFn = async (cmd, args, opts) => {
+  const r = await spawnWithTimeout(cmd, args, opts)
+  return { code: r.code, stdout: r.stdout, stderr: r.stderr }
+}
 
 /** File tools only: the test agent can read the base checkout and write a
  *  test file, but has no shell or network to look up the pull request. */
 export const SPEC_AGENT_TOOLS = "Read,Glob,Grep,Write,Edit"
 
-export function specAgentArgs(opts: { model?: string; maxBudgetUsd: number }): string[] {
+export function specAgentArgs(opts: { model?: string; maxBudgetUsd: number; deny?: string[] }): string[] {
   return [
     "-p", "-", "--output-format", "json",
     "--tools", SPEC_AGENT_TOOLS, "--permission-mode", "acceptEdits",
     "--max-budget-usd", String(opts.maxBudgetUsd),
     ...(opts.model ? ["--model", opts.model] : []),
     "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}',
-    "--settings", '{"disableAllHooks":true}', "--no-session-persistence",
+    "--settings", JSON.stringify({ disableAllHooks: true, permissions: { deny: opts.deny ?? [] } }), "--no-session-persistence",
   ]
 }
 
@@ -522,24 +663,13 @@ export function parseSpecAgentOutput(stdout: string, code: number | null): SpecA
   return { ok: true, costUsd: cost, reply: String(envelope.result ?? "") }
 }
 
-export const claudeSpecAgent: SpecAgentFn = (opts) => new Promise((resolve) => {
-  const child = nodeSpawn("claude", specAgentArgs(opts), { cwd: opts.dir, env: claudeCliEnv(), stdio: ["pipe", "pipe", "pipe"] })
-  let stdout = ""
-  let stderr = ""
-  let timedOut = false
-  const timer = setTimeout(() => { timedOut = true; child.kill("SIGTERM") }, opts.timeoutMs)
-  child.stdout.on("data", (d) => { stdout += d })
-  child.stderr.on("data", (d) => { stderr += d })
-  child.on("error", (e) => { clearTimeout(timer); resolve({ ok: false, error: e.message }) })
-  child.on("close", (code) => {
-    clearTimeout(timer)
-    if (timedOut) { resolve({ ok: false, timedOut: true, costUsd: parseSpecAgentOutput(stdout, code).costUsd }); return }
-    const parsed = parseSpecAgentOutput(stdout, code)
-    if (!parsed.ok && !parsed.budgetStopped && !parsed.error && stderr) parsed.error = stderr.trim().slice(0, 300)
-    resolve(parsed)
-  })
-  child.stdin.end(opts.prompt)
-})
+export const claudeSpecAgent: SpecAgentFn = async (opts) => {
+  const r = await spawnWithTimeout("claude", specAgentArgs(opts), { cwd: opts.dir, env: claudeCliEnv(), input: opts.prompt, timeoutMs: opts.timeoutMs })
+  if (r.timedOut) return { ok: false, timedOut: true, costUsd: parseSpecAgentOutput(r.stdout, r.code).costUsd }
+  const parsed = parseSpecAgentOutput(r.stdout, r.code)
+  if (!parsed.ok && !parsed.budgetStopped && r.stderr && (!parsed.error || !r.stdout)) parsed.error = r.stderr.trim().slice(0, 300)
+  return parsed
+}
 
 /** The issue as `gh issue view` reads it, or undefined. */
 export async function fetchIssueWithGh(exec: ExecFn, repo: string, number: number, cwd: string): Promise<SpecIssue | undefined> {
