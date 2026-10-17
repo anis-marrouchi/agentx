@@ -1,0 +1,41 @@
+{
+  "paths": [
+    "src/web/**",
+    "src/daemon/ui/**",
+    "src/daemon/*-panel.ts",
+    "src/daemon/topbar.ts",
+    "src/daemon/board-dashboard.ts",
+    "src/daemon/call-page.ts",
+    "src/daemon/setup-wizard.ts",
+    "src/approvals/card-page*.ts",
+    "src/wiki/ontology/view-*.ts",
+    "src/voice/**",
+    "src/desktop/**",
+    "src/tui/**",
+    "apps/android/**",
+    "apps/mac-helper/**",
+    "apps/mac-voice/**",
+    "apps/phone/**",
+    "integrations/raycast/src/**"
+  ],
+  "ignorePaths": [
+    "**/*.md",
+    "**/*.test.ts",
+    "**/__fixtures__/**",
+    "apps/*/Tests/**",
+    "apps/*/test/**",
+    "apps/android/app/src/test/**",
+    "apps/android/app/src/androidTest/**"
+  ],
+  "heading": "Evidence",
+  "mediaExtensions": ["png", "jpg", "jpeg", "gif", "webp", "mp4", "mov", "webm"],
+  "attachmentPatterns": [
+    "^https://github\\.com/user-attachments/assets/[\\w-]+",
+    "^https://github\\.com/[\\w.-]+/[\\w.-]+/assets/\\d+/[\\w-]+",
+    "^https://(private-)?user-images\\.githubusercontent\\.com/"
+  ],
+  "override": {
+    "label": "no-ui-evidence-needed",
+    "reasonPattern": "^\\s*UI evidence: not needed because \\S.*$"
+  }
+}
