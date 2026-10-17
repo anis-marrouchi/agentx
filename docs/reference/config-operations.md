@@ -281,6 +281,7 @@ Gates that check agent pull requests before they merge. Each one is off by defau
 | `quality.reviewGate.paths` | string[] | `[]` | Only review pull requests that change a matching file. Empty: all. |
 | `quality.reviewGate.maxCostPerReview` | number | `2` | US dollars; a dearer review ends as `error`. `0`: no limit. |
 | `quality.reviewGate.maxMinutes` | number | `10` | A longer review is stopped and ends as `error`. |
+| `quality.reviewGate.maxReviewsPerPrPerDay` | number | `6` | Most reviews of one pull request in 24 hours; past it the status is `error`. `0`: no limit. |
 | `quality.reviewGate.ciWaitMinutes` | number | `5` | How long to wait for other checks before reviewing. |
 | `quality.reviewGate.maxDiffKb` | number | `256` | A longer diff is cut, and the reviewer is told. |
 

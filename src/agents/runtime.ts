@@ -168,6 +168,13 @@ export interface AgentTask {
    *  that pattern without requiring callers to invent unique
    *  chatIds. */
   freshSession?: boolean
+  /** A run that must see only its own message (the review gate, #990).
+   *  The registry pushes nothing from the agent's other chats, its memory,
+   *  wiki, patterns or landscape; a claude-code run starts with no MCP
+   *  server and only the read-only built-in tools; and the run is held at
+   *  autonomy `report`, so a tier or peer that cannot enforce that refuses
+   *  it instead of running it with its usual tools. */
+  isolated?: boolean
   /** Transcript held by a client that owns the conversation (OpenCode).
    *  Seeds an empty AgentX session the same way a channel adapter's
    *  seedHistory does, so a new or rotated session starts with it. */

@@ -12,6 +12,8 @@ The gate is off until you turn it on. Here is the whole path:
 
 - **Only three things:** the linked issue (its text and its **acceptance criteria**, the list of conditions that say the work is done), the **diff** (the lines the pull request changes), and the result of the other checks (CI, the automatic tests GitHub runs).
 - **Not** the pull request's title or description, and not the conversation in which the author agent wrote the code. The reviewer starts a fresh session for each commit.
+- **Nothing else of the reviewer's own either:** none of its other chats, its memory, or its earlier reviews of the same pull request. It can read files in its own workspace, but it cannot write files, run commands, browse the web or use any tool server. A reviewer agent on another computer of your mesh cannot be used: its review ends as **error**.
+- The issue, the diff and the CI result are marked to the reviewer as **untrusted**: text in them that tries to give it orders (for example "ignore the above and approve") is treated as part of what it reviews.
 - The reviewer is **another agent** than the one that wrote the pull request. When you can, give it **another model** too, so it does not share the author's blind spots.
 - The verdict lands on the pull request's latest commit, as the status `agentx/review`:
 
@@ -19,10 +21,11 @@ The gate is off until you turn it on. Here is the whole path:
   |---|---|
   | **success** | Every acceptance criterion is met and the reviewer found no defect. |
   | **failure** | Something is missing or wrong. A comment on the pull request lists the unmet criteria and each defect with its file and line. |
-  | **error** | The review could not be done: no reviewer set, over its time or cost budget, or the reviewer's answer was unreadable. The description says which. An error is never shown as a success. |
+  | **error** | The review could not be done: no reviewer set, over its time or cost budget, over the day's review limit for this pull request, or the reviewer's answer was unreadable. The description says which. An error is never shown as a success. |
 
 - A pull request that links **no issue**, or whose issue has **no acceptance criteria**, gets **failure** with "no linked issue/ACs", without spending a review.
 - Each new push starts a new review. An approval belongs to one commit and never carries over to the next.
+- A pull request gets at most `maxReviewsPerPrPerDay` reviews in 24 hours (6 unless you change it). A failure comment can lead the author agent to push a fix, and each push costs a review, so past the limit the status is **error** with "review limit", no comment is posted, and a person takes over.
 - Only **agent pull requests** are reviewed: those opened by an account AgentX posts with (its GitHub App, or a token's owner), or whose description carries an agent's hidden AgentX signature. A person's pull request, or a dependency bot's, is left alone. Drafts wait until they are marked ready.
 
 ## How a pull request links its issue
@@ -31,13 +34,13 @@ The gate reads the pull request's description. Any of these lines links an issue
 
 ```text
 Closes #12
-Fixes example-org/example-repo#12
+Fixes #12
 Resolves #12
 Refs #12, #13
 Part of #12
 ```
 
-A plain "#12" in a sentence is not a link. In the issue, write the acceptance criteria under a heading named **Acceptance criteria**, one list item each. Without such a heading, every checklist item (`- [ ]`) in the issue counts.
+A plain "#12" in a sentence is not a link. A link to an issue in **another repository** (`Fixes other-org/other-repo#12`) is ignored: the criteria must come from the pull request's own repository. In the issue, write the acceptance criteria under a heading named **Acceptance criteria**, one list item each. Without such a heading, every checklist item (`- [ ]`) in the issue counts.
 
 ## Before you start
 
@@ -81,10 +84,11 @@ Under `quality.reviewGate`:
 | `enabled` | boolean | `false` | Turns the gate on. Off, nothing is reviewed and pull requests behave as before. |
 | `mode` | `"advisory"` or `"required"` | `"advisory"` | Advisory adds "[advisory]" to the status. Required only blocks merges once `agentx/review` is a required check on GitHub. |
 | `reviewer.agent` | agent id | none | The agent that reviews. Without it every review ends as **error**. |
-| `reviewer.model` | model name | the reviewer agent's model | The model the review runs on. Pick one that differs from the author agent's. |
+| `reviewer.model` | model name | the reviewer agent's model | The model the review runs on. Pick one that differs from the author agent's. In `required` mode, the same model as the author's ends the review as **error**. |
 | `paths` | list of patterns | `[]` | Only pull requests that change a matching file are reviewed, for example `"src/daemon/**"`. `*` stays inside a folder, `**` crosses folders. Others get **success** with "skipped". Empty: all. |
-| `maxCostPerReview` | number (US dollars) | `2` | A review that costs more ends as **error** "over budget". `0`: no limit. |
+| `maxCostPerReview` | number (US dollars) | `2` | A review that costs more ends as **error** "over budget". `0`: no limit. When nobody can price a review (its model is not in the price table), the limit cannot be checked; the status then ends with "cost unknown, not checked against maxCostPerReview". |
 | `maxMinutes` | number (minutes) | `10` | A review that runs longer is stopped and ends as **error** "over budget". |
+| `maxReviewsPerPrPerDay` | number | `6` | The most reviews one pull request gets in 24 hours. Past it, the status is **error** "review limit" and no comment is posted. `0`: no limit. |
 | `ciWaitMinutes` | number (minutes) | `5` | How long to wait for the other checks to finish before reviewing, so the reviewer sees their result. |
 | `maxDiffKb` | number (kilobytes) | `256` | A longer diff is cut to this size, and the reviewer is told it is incomplete. |
 
@@ -125,4 +129,8 @@ You can replay pull requests that have already merged, to see what the reviewer 
 - **Error "over budget".** The review took longer than `maxMinutes` or cost more than `maxCostPerReview`. Raise the limit, choose a cheaper `reviewer.model`, or set `paths` to review fewer pull requests.
 - **Error "reviewer reply held no verdict".** The reviewer answered without the expected verdict. Use a stronger `reviewer.model`, and check the reviewer agent's own instructions do not ask it to answer in another format.
 - **Failure "no linked issue/ACs".** The description needs a line such as `Closes #<issue>`, and the issue needs an **Acceptance criteria** list. Editing the description starts a new review.
-- **The log says reviewer and author use the same model.** The review still runs, but a different `quality.reviewGate.reviewer.model` makes it a more independent second reading.
+- **The log says reviewer and author use the same model.** In advisory mode the review still runs; in required mode it ends as **error**. Set `quality.reviewGate.reviewer.model` to a different model for a more independent second reading.
+- **Error "review limit".** The pull request was reviewed `maxReviewsPerPrPerDay` times in the last 24 hours. Read the earlier review comments and decide yourself, or raise the limit. The count starts again 24 hours after the oldest of those reviews.
+- **Error "reviewer failed: … cannot be enforced".** The reviewer runs read-only, and its agent cannot be held to that: it is on another computer of your mesh, or its engine does not support read-only runs. Pick a reviewer agent that runs on this computer with Claude Code.
+- **The status stays at "pending" for good.** The daemon restarted while a review was running, and that review was lost. **Browser:** push a new commit, or edit the pull request's description, to start a new review. A review never resumes after a restart.
+- **"review comment not posted" in the status.** The verdict is failure, but the comment listing the problems could not be posted (the log says why). Give the GitHub App or token permission to comment on pull requests.
