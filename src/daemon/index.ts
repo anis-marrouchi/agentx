@@ -212,6 +212,10 @@ import { listAgentFiles } from "./file-ops"
 import { ScreenBuffer, sweepStaleDumps } from "./screen-buffer"
 import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
+import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
+import { createReviewGateGitHub } from "@/quality/review-gate-github"
+import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
+import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -252,6 +256,10 @@ export class AgentXDaemon {
   private taskRunPrune?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
+  /** Pre-merge review gate (#990). Built with the GitHub channel; does
+   *  nothing while quality.reviewGate.enabled is false. */
+  private reviewGate?: ReviewGate
+  private reviewLedger = new FileReviewLedger(reviewLedgerPath(), (m) => this.log(`[review-gate] ${m}`))
   private webrtc?: WebRtcSignalBroker
   private botManager?: BotManager
   /** Agents watching the phone camera (#325); needs channels.webrtc. */
@@ -1229,6 +1237,44 @@ export class AgentXDaemon {
 
     this.log(`  Shutdown complete (${Date.now() - start}ms)`)
     process.exit(this.exitCode)
+  }
+
+  /** The review gate (#990): the reviewer runs as its own agent in a fresh
+   *  session keyed by the reviewed commit, so it never resumes the
+   *  author's conversation or an earlier review. */
+  private buildReviewGate(github: GitHubAdapter): ReviewGate {
+    return new ReviewGate({
+      config: () => this.config.quality.reviewGate,
+      github: createReviewGateGitHub((repo) => github.getTokenForRepo(repo)),
+      repoAgent: (repo) => github.agentFor(repo),
+      agentModel: (agentId) => this.registry.getAgent(agentId)?.model,
+      isAgentLogin: (login) => github.isAgentLogin(login),
+      ledger: this.reviewLedger,
+      log: (m) => this.log(`[review-gate] ${m}`),
+      runReviewer: async (req) => {
+        const started = Date.now()
+        const res = await this.registry.execute({
+          message: req.prompt,
+          agentId: req.agentId,
+          model: req.model,
+          freshSession: true,
+          timeoutMinutes: req.timeoutMinutes,
+          callerSignal: req.signal,
+          context: { channel: REVIEW_CHANNEL, chatId: req.chatId, sender: REVIEW_CHANNEL },
+        })
+        const model = res.billedModel ?? req.model
+        const u = res.usage
+        return {
+          content: res.cloudSession ? "" : res.content,
+          error: res.cloudSession ? "the reviewer agent hands work to a cloud session; pick an agent that runs here" : res.error,
+          timedOut: res.errorKind === "timeout",
+          model,
+          tokens: u ? { input: u.inputTokens, output: u.outputTokens, cacheRead: u.cacheReadTokens, cacheWrite: u.cacheCreateTokens } : undefined,
+          costUsd: res.costUsd ?? (u ? this.registry.getTokenTracker().cost(u as any, model) : undefined),
+          durationMs: res.duration ?? Date.now() - started,
+        }
+      },
+    })
   }
 
   /** Deliver a notice to the owner through the channel router: the
@@ -2603,6 +2649,8 @@ export class AgentXDaemon {
       // posting logins are ours too, or its agents answer themselves (#522).
       if (this.mesh) this.github.setPeerPostingLogins(() => this.mesh!.directory().flatMap((p) => p.githubLogins))
       this.github.setProjectRules(this.projectRules)
+      this.reviewGate = this.buildReviewGate(this.github)
+      this.github.onPullRequestEvent((event) => { void this.reviewGate?.onPullRequest(event) })
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }
@@ -5429,6 +5477,37 @@ export class AgentXDaemon {
             this.json(res, 500, { error: e?.message || String(e) })
           }
         }
+        return
+      }
+
+      // Review gate (#990): the review ledger, and replaying past PRs for
+      // the seeded check. Gated by isControlPost / isMeshGatedPath.
+      if (isReviewGatePath(path)) {
+        if (req.method === "GET" && path === "/api/review-gate/reviews") {
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(JSON.stringify(reviewsReply(this.reviewLedger, url.searchParams)))
+          return
+        }
+        if (req.method === "POST" && path === "/api/review-gate/replay") {
+          const parsed = parseReplayBody((await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>)
+          const gate = this.reviewGate
+          if ("error" in parsed || !gate) {
+            res.writeHead(400, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({ error: "error" in parsed ? parsed.error : "the GitHub channel is off on this node" }))
+            return
+          }
+          res.writeHead(200, { "Content-Type": "application/x-ndjson" })
+          const beat = setInterval(() => res.write("\n"), 30_000)
+          try {
+            await replayReviews(gate, parsed.repo, parsed.prs, (line) => res.write(JSON.stringify(line) + "\n"))
+          } finally {
+            clearInterval(beat)
+            res.end()
+          }
+          return
+        }
+        res.writeHead(405, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: "method not allowed" }))
         return
       }
 

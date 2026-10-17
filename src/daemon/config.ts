@@ -1229,6 +1229,34 @@ const screenSchema = z.object({
   }).default({}),
 }).default({})
 
+/** Pre-merge review gate (src/quality/review-gate.ts, #990). The reviewer
+ *  sees only the linked issue, the diff and the CI result. `mode` says
+ *  whether the status is meant to block merges: "required" only takes
+ *  effect once `agentx/review` is a required check in branch protection. */
+export const reviewGateConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  mode: z.enum(["advisory", "required"]).default("advisory"),
+  reviewer: z.object({
+    /** The agent that reviews. Must not be the agent that wrote the PR. */
+    agent: z.string().min(1).optional(),
+    /** Model for the review. Unset: the reviewer agent's own model. Pick
+     *  one that differs from the author agent's model when you can. */
+    model: z.string().min(1).optional(),
+  }).default({}),
+  /** Only PRs that change a file matching one of these globs are
+   *  reviewed (`*` within a folder, `**` across folders). Empty: all. */
+  paths: z.array(z.string().min(1)).default([]),
+  /** Review cost above this many US dollars ends as `error`. 0: no limit. */
+  maxCostPerReview: z.number().min(0).default(2),
+  /** Review time above this many minutes ends as `error`. */
+  maxMinutes: z.number().positive().max(120).default(10),
+  /** How long to wait for other CI checks to finish before reviewing. */
+  ciWaitMinutes: z.number().min(0).max(60).default(5),
+  /** Diffs longer than this many kilobytes are cut, and the reviewer is
+   *  told the diff is incomplete. */
+  maxDiffKb: z.number().int().positive().max(2048).default(256),
+}).default({})
+
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and
  *  when the operator hears about what is waiting. */
 export const requestsConfigSchema = z.object({
@@ -1562,6 +1590,14 @@ export const daemonConfigSchema = z.object({
     allowPeers: z.array(z.string().min(1)).default([]),
     /** Loop brake: most signals one root id may carry in a day. */
     maxPerRoot: z.number().int().min(1).max(100).default(6),
+  }).default({}),
+  /** Agent PR quality gates (#987). Each gate has its own switch and is
+   *  off by default. */
+  quality: z.object({
+    /** Pre-merge review gate (#990): a different agent, in a fresh
+     *  session, checks an agent's pull request against its linked issue
+     *  and posts the commit status `agentx/review` on the head commit. */
+    reviewGate: reviewGateConfigSchema,
   }).default({}),
   /** Open requests (src/requests, #356): what a person asked an agent for
    *  is recorded and followed until it is done, declined or dropped. Off
