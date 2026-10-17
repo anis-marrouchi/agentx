@@ -1,0 +1,52 @@
+name: UI evidence
+
+# A PR that changes UI paths shows a screenshot or recording under
+# "## Evidence" (CONTRIBUTING.md › UI evidence check). Paths and patterns
+# live in scripts/ui-evidence.config.json.
+#
+# Repository variable QUALITY_UI_EVIDENCE_ENABLED (quality.uiEvidence.enabled):
+#   unset or "advisory"  a missing screenshot posts a neutral ui-evidence check
+#   "required"           a missing screenshot fails the check
+#   "false"              the check does not run
+on:
+  pull_request:
+    # "edited", "labeled" and "unlabeled" re-run the check when the PR body
+    # or the no-ui-evidence-needed label changes.
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+  # Posts the verdict as the "ui-evidence" check run (neutral in advisory mode).
+  checks: write
+
+concurrency:
+  group: ui-evidence-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    if: ${{ vars.QUALITY_UI_EVIDENCE_ENABLED != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      # Only the scripts are needed; the changed files come from the API.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts
+          persist-credentials: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: UI changes come with a screenshot or recording
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          UI_EVIDENCE_MODE: ${{ vars.QUALITY_UI_EVIDENCE_ENABLED }}
+          # Passed through env, never inlined into the script.
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/ui-evidence.mjs --pr "$PR_NUMBER" --post-check "$HEAD_SHA"

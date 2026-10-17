@@ -180,6 +180,64 @@ The **Docs gate** check on your PR is green. Its log ends with `Checked N page(s
 - **It names a page that mentions a removed setting.** Edit that line of the page; the log gives the file and line.
 - **It flags a word that is fine.** Adjust the pattern in `scripts/docs-gate.config.json` in the same PR and say why in the description.
 
+### UI evidence check
+
+Every pull request runs the **ui-evidence** check (`.github/workflows/ui-evidence.yml`). If the PR changes a screen people look at, its description must show it: a screenshot or a short recording under a `## Evidence` heading. The list of screen folders lives in one file, `scripts/ui-evidence.config.json`. Today it covers the dashboard (`src/daemon/ui/`, the dashboard panels, `src/web/`), voice (`src/voice/`), the desktop installer (`src/desktop/`), the terminal app (`src/tui/`), the Mac, Android and phone apps under `apps/`, and the Raycast extension. Tests and Markdown files in those folders do not count.
+
+The check gives one of four results:
+
+- **No UI paths changed**: the PR touches no screen folder, so it passes.
+- **Evidence found**: the `## Evidence` section holds an image or video, so it passes.
+- **Overridden**: a maintainer approved skipping evidence, so it passes and the reason is shown in the check.
+- **UI evidence missing**: the heading or the picture is missing. The check says which, and lists the screen files the PR changed.
+
+What counts as evidence:
+
+- A file dragged into the PR description in the browser (GitHub stores it as an attachment).
+- A link to a `.png`, `.jpg`, `.gif`, `.webp`, `.mp4`, `.mov` or `.webm` file.
+- A picture committed in the PR, such as `![after](docs/public/screenshots/live/after.png)`.
+
+Hints inside `<!-- -->` comments never count.
+
+**Add evidence** (in the browser):
+
+1. Open your PR and click **Edit** on the description.
+2. Find the `## Evidence` heading, or type it on a line of its own.
+3. Drag a screenshot or recording below the heading.
+4. Click **Update comment**. The check runs again.
+
+**Skip evidence for one PR.** Use this when a screen file changed but users see no difference, such as a renamed variable:
+
+1. In the browser, ask a maintainer to add the `no-ui-evidence-needed` label to the PR.
+2. Add a line of its own to the PR description: `UI evidence: not needed because <reason>`.
+3. Wait for the check to run again; editing the description or the labels restarts it.
+
+The label without a reason still fails, and so does a reason without the label.
+
+**Advisory or required.** The repository variable `QUALITY_UI_EVIDENCE_ENABLED` (the `quality.uiEvidence.enabled` switch) sets how strict the check is. A maintainer sets it in the browser under **Settings › Secrets and variables › Actions › Variables**:
+
+| Value | What happens when evidence is missing |
+| --- | --- |
+| not set, or `advisory` | The **ui-evidence** check shows a grey "neutral" result. The PR can still merge. This is the default. |
+| `required` | The **ui-evidence** check fails. Make it a required check in branch protection to block the merge. |
+| `false` | The check does not run. |
+
+**Run it locally** (in a terminal, from the repo root):
+
+1. Run `PR_BODY="$(cat my-description.md)" node scripts/ui-evidence.mjs --base origin/main --head HEAD`
+2. Read the first line of the output: it gives the result.
+
+#### Check it worked
+
+The PR shows a **ui-evidence** check. Click it: the title gives the result, and the details list the screen files and the evidence it found, or the override reason.
+
+#### If something is wrong
+
+- **It says the heading is missing, but it is there.** Make sure the heading is a line of its own that reads `## Evidence`, outside any `<!-- -->` comment.
+- **Your picture is not found.** Drag the file into the description again, or link the file itself (ending in `.png`, `.mp4` and so on), not a page that shows it.
+- **A folder is missing from the list, or should not be on it.** Edit `paths` or `ignorePaths` in `scripts/ui-evidence.config.json` in the same PR and say why in the description.
+- **There is no ui-evidence check on a PR from a fork.** Forks cannot post the separate check. Open the **UI evidence / gate** job instead; its log and summary give the same result.
+
 ### Reproduce the screenshots
 
 With Node 22 and Chrome or Chromium installed:
