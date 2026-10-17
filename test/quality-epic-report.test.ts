@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync, readFileSync } from "fs"
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { qualityReportConfigSchema } from "../src/daemon/config"
 import {
-  gateState, isoWeek, parseVerdict, postWeekly, publicProblem, readQualityState, reportFile,
-  verdictComment, weekMarker, weekRange, weeklyDue, weeksBetween, writeQualityState,
+  baselineFile, fenced, gateState, isoWeek, parseVerdict, postWeekly, publicProblem, readBaseline, readQualityState,
+  reportCommandLine, reportFile, verdictComment, weekMarker, weekRange, weeklyDue, weeksBetween, writeQualityState,
   type IssueComments, type QualityReportSettings,
 } from "../src/quality/epic-report"
 
@@ -68,6 +68,27 @@ describe("weeks", () => {
   })
 })
 
+describe("the report command", () => {
+  const proc = { execPath: "/opt/node/bin/node", argv: ["/opt/node/bin/node", "/srv/agentx/dist/cli.js"] }
+
+  it("adds the week and the baseline, and runs this install's CLI", () => {
+    expect(reportCommandLine(["agentx", "quality", "report", "--public"], "2026-W42", "baseline", proc)).toEqual([
+      "/opt/node/bin/node", "/srv/agentx/dist/cli.js", "quality", "report", "--public",
+      "--since", "2026-10-12", "--until", "2026-10-18", "--compare", "baseline",
+    ])
+  })
+
+  it("leaves another command and a bare agentx binary as they are", () => {
+    expect(reportCommandLine(["./report.sh"], "2026-W42", undefined, proc)).toEqual(["./report.sh", "--since", "2026-10-12", "--until", "2026-10-18"])
+    expect(reportCommandLine(["agentx", "quality", "report"], "2026-W42", undefined, { execPath: "/x/node", argv: ["/x/node", "/usr/bin/agentx"] })[0]).toBe("agentx")
+  })
+
+  it("fences the fixed-width table, even when it holds backticks", () => {
+    expect(fenced("  a  b\n  1  2\n")).toBe("```text\n  a  b\n  1  2\n```")
+    expect(fenced("x ``` y")).toBe("````text\nx ``` y\n````")
+  })
+})
+
 describe("gates", () => {
   it("says how each gate stood that week", () => {
     expect(gateState({ id: "a", since: "2026-10-01" }, "2026-W42")).toBe("on (since 2026-10-01)")
@@ -107,6 +128,7 @@ describe("postWeekly", () => {
     expect(comments[0].body).toContain(weekMarker("2026-W42"))
     expect(comments[0].body).toContain("| Pre-merge review | on from 2026-10-14 |")
     expect(comments[0].body).toContain("+8%")
+    expect(comments[0].body).toContain("```text\n| Metric |")
     expect(readFileSync(reportFile(root, "2026-W42"), "utf-8")).toContain("Fix share")
   })
 
@@ -138,6 +160,18 @@ describe("postWeekly", () => {
     expect(logs.join("\n")).toMatch(/WARNING.*2026-W41/)
   })
 
+  it("names a week that failed all week as failed, not as missed", async () => {
+    const { gh, comments } = fakeGitHub()
+    writeQualityState(root, { lastPosted: "2026-W40" })
+    const s = settings({ gates: [] })
+    await postWeekly(deps(gh, { settings: s, runReport: async () => { throw new Error("gh: not logged in") }, now: Date.parse("2026-10-12T09:00:00Z") }))
+    expect(readQualityState(root).failed?.["2026-W41"]).toBeTruthy()
+    await postWeekly(deps(gh, { settings: s }))
+    expect(comments[0].body).toContain("No report was posted for 2026-W41: every try failed")
+    expect(comments[0].body).not.toContain("daemon was not running")
+    expect(logs.join("\n")).toMatch(/WARNING.*2026-W41 \(every try failed\)/)
+  })
+
   it("flags the verdict as due after week 3", async () => {
     const { gh, comments } = fakeGitHub()
     const s = settings({ gates: [{ id: "review", since: "2026-09-21" }] })
@@ -155,12 +189,28 @@ describe("verdict", () => {
     expect(() => parseVerdict("ui=maybe")).toThrow()
   })
 
+  const baseline = { name: "baseline", since: "2026-10-09", until: "2026-10-16", agent: 0.48, all: 0.4615 }
+
   it("needs every gate and cites the numbers", () => {
     const report = { week: "2026-W42", text: REPORT }
-    expect(() => verdictComment({ verdicts: [parseVerdict("review=keep")], gates, report })).toThrow(/no verdict for: ui/)
-    const body = verdictComment({ verdicts: [parseVerdict("review=keep"), parseVerdict("ui=tune:slow")], gates, report })
+    expect(() => verdictComment({ verdicts: [parseVerdict("review=keep")], gates, report, baseline })).toThrow(/no verdict for: ui/)
+    const body = verdictComment({ verdicts: [parseVerdict("review=keep"), parseVerdict("ui=tune:slow")], gates, report, baseline })
     expect(body).toContain("| UI evidence | 2026-09-24 | **tune** | slow |")
     expect(body).toContain("Fix share")
-    expect(body).toContain("37%")
+    expect(body).toContain("2026-10-09 to 2026-10-16 baseline (48% agent PRs, 46% all non-release PRs)")
+  })
+
+  it("reads the baseline's fix share from the saved report", () => {
+    const root = mkdtempSync(join(tmpdir(), "quality-"))
+    try {
+      expect(readBaseline(root, "baseline")).toBeUndefined()
+      mkdirSync(join(root, ".agentx/quality/baselines"), { recursive: true })
+      writeFileSync(baselineFile(root, "baseline"), JSON.stringify({
+        since: "2026-10-09", until: "2026-10-16", totals: { agent: { fixShare: 0.4792 }, all: { fixShare: 0.4615 } },
+      }))
+      expect(readBaseline(root, "baseline")).toEqual({ ...baseline, agent: 0.4792 })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 })

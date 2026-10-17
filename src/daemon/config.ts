@@ -1324,9 +1324,13 @@ export const qualityReportConfigSchema = z.object({
   timezone: z.string().refine((tz) => {
     try { new Intl.DateTimeFormat("en-US", { timeZone: tz }); return true } catch { return false }
   }, "unknown timezone").optional(),
-  /** The command whose output is posted. It must print Markdown with no
-   *  cost amounts and no names. */
-  command: z.array(z.string().min(1)).min(1).default(["agentx", "quality", "report", "--public", "--compare", "baseline"]),
+  /** The command whose output is posted, as a code block. AgentX adds
+   *  `--since <Monday> --until <Sunday>` for the week and
+   *  `--compare <baseline>`. It must print no cost amounts and no names. */
+  command: z.array(z.string().min(1)).min(1).default(["agentx", "quality", "report", "--public"]),
+  /** The baseline saved with `agentx quality report --save-baseline`:
+   *  each week is compared with it, and the verdict quotes its fix share. */
+  baseline: z.string().regex(/^[\w.-]{1,64}$/, "use letters, digits, dot, dash or underscore").default("baseline"),
   timeoutSeconds: z.number().int().min(10).max(3600).default(600),
   /** The gates and the dates they were turned on (and off), so each week's
    *  comment says which gates were on. */

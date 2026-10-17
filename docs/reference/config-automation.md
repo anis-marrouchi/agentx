@@ -312,7 +312,7 @@ In a mesh, an edit is made with the same agent account that wrote the comment. W
 
 ## `qualityReport`
 
-The weekly quality report posted on a GitHub issue every Monday, and the gates it reports on. Off by default. See [post a weekly quality report](/jobs/quality-report).
+The weekly quality report posted on a GitHub issue every Monday, and the gates it reports on. Off by default. Turn it on on one computer only. See [post a weekly quality report](/jobs/quality-report).
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -321,7 +321,8 @@ The weekly quality report posted on a GitHub issue every Monday, and the gates i
 | `qualityReport.issue` | number | — | The issue the report is posted on. |
 | `qualityReport.time` | string `HH:MM` | `"08:00"` | When the report is due on Monday. A daemon that was off then posts later that week. |
 | `qualityReport.timezone` | string | — | The timezone `time` is read in, for example `Europe/Paris`. Unset: this computer's. |
-| `qualityReport.command` | list of strings | `["agentx", "quality", "report", "--public", "--compare", "baseline"]` | The command whose output is posted. It gets the week in `AGENTX_QUALITY_WEEK`, `AGENTX_QUALITY_FROM` and `AGENTX_QUALITY_TO`. |
+| `qualityReport.command` | list of strings | `["agentx", "quality", "report", "--public"]` | The command whose output is posted, shown as a fixed-width block. AgentX adds `--since <Monday> --until <Sunday>` for the week and `--compare <baseline>`. A leading `agentx` runs the same AgentX install as the daemon, whatever its `PATH`. The week is also in `AGENTX_QUALITY_WEEK`, `AGENTX_QUALITY_FROM` and `AGENTX_QUALITY_TO`. |
+| `qualityReport.baseline` | string | `"baseline"` | The baseline saved with `agentx quality report --save-baseline`. Each week is compared with it, and the verdict quotes its fix share. |
 | `qualityReport.timeoutSeconds` | number (10–3600) | `600` | Time limit for the command. |
 | `qualityReport.gates` | list | `[]` | The gates and when they were on, shown in each comment. |
 | `qualityReport.gates[].id` | string | required | Short name, used by `agentx quality verdict --gate`. |

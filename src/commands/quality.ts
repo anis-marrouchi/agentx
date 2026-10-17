@@ -11,7 +11,7 @@ import {
 } from "@/quality/report"
 import {
   VERDICT_MARKER, configToken, githubIssueComments, isoWeek, latestReport, parseVerdict, postWeekly,
-  publicProblem, readQualityState, runReportCommand, upsertComment, verdictComment, writeQualityState,
+  publicProblem, readBaseline, readQualityState, runReportCommand, upsertComment, verdictComment, writeQualityState,
 } from "@/quality/epic-report"
 
 // --- agentx quality ---
@@ -117,7 +117,7 @@ quality
         root: process.cwd(),
         settings: s,
         comments: githubIssueComments(repo, issue, async () => configToken(config)),
-        runReport: (w) => runReportCommand(s.command, w, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000 }),
+        runReport: (w) => runReportCommand(s.command, w, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000, baseline: s.baseline }),
         log: (m) => console.error(chalk.dim(m)),
       }, { week, dryRun: opts.dryRun })
       if (res.status === "failed") { console.error(chalk.red(res.error)); process.exitCode = 1; return }
@@ -140,6 +140,8 @@ quality
       const { config, s, repo, issue } = settings(opts.config)
       const report = latestReport(process.cwd())
       if (!report) throw new Error("no weekly report stored yet (.agentx/quality/reports): post one first with `agentx quality weekly`")
+      const baseline = readBaseline(process.cwd(), s.baseline)
+      if (!baseline) throw new Error(`no baseline "${s.baseline}" (.agentx/quality/baselines): save one with \`agentx quality report --since <date> --until <date> --save-baseline ${s.baseline}\``)
       const state = readQualityState(process.cwd())
       const gh = githubIssueComments(repo, issue, async () => configToken(config))
       const reportId = state.comments?.[report.week]
@@ -148,6 +150,7 @@ quality
         gates: s.gates,
         report,
         reportUrl: reportId ? `https://github.com/${repo}/issues/${issue}#issuecomment-${reportId}` : undefined,
+        baseline,
       })
       const problem = publicProblem(body)
       if (problem) throw new Error(`not posted: the verdict ${problem}`)

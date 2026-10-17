@@ -123,11 +123,23 @@ export function publicProblem(text: string): string | undefined {
 export const weekMarker = (week: string) => `<!-- agentx:quality-report week=${week} -->`
 export const VERDICT_MARKER = "<!-- agentx:quality-verdict -->"
 
+/** The report as a code block: it is a fixed-width table, which Markdown
+ *  would otherwise fold into one paragraph. The fence is longer than any
+ *  run of backticks in the text, so the text can't close it. */
+export function fenced(text: string): string {
+  const longest = Math.max(0, ...(text.match(/`+/g) ?? []).map((r) => r.length))
+  const fence = "`".repeat(Math.max(3, longest + 1))
+  return `${fence}text\n${text.replace(/^\n+|\s+$/g, "")}\n${fence}`
+}
+
 export function weeklyComment(opts: {
   week: string
   report: string
   gates: GateSetting[]
+  /** Weeks with no comment because the daemon was not running. */
   skipped?: string[]
+  /** Weeks with no comment because every try failed. */
+  failed?: string[]
   verdictDue?: boolean
 }): string {
   const { from, to } = weekRange(opts.week)
@@ -139,7 +151,10 @@ export function weeklyComment(opts: {
     for (const g of opts.gates) lines.push(`| ${g.label ?? g.id} | ${gateState(g, opts.week)} |`)
     lines.push("")
   }
-  lines.push("### Numbers", "", opts.report.trim(), "")
+  lines.push("### Numbers", "", fenced(opts.report), "")
+  if (opts.failed?.length) {
+    lines.push(`> No report was posted for ${opts.failed.join(", ")}: every try failed (see \`[quality]\` in the daemon log). Run \`agentx quality weekly --week <week>\` to post one.`, "")
+  }
   if (opts.skipped?.length) {
     lines.push(`> No report was posted for ${opts.skipped.join(", ")}: the daemon was not running when it was due. Run \`agentx quality weekly --week <week>\` to post one.`, "")
   }
@@ -157,6 +172,9 @@ export interface QualityState {
   lastPosted?: string
   /** The last failed try, for the retry delay. */
   failure?: { week: string; at: string; error: string }
+  /** Weeks whose last try failed, with when: a week that is never posted
+   *  is then named as failed, not as missed while the daemon was down. */
+  failed?: Record<string, string>
   /** Comment ids by week, so a re-run edits the same comment. */
   comments?: Record<string, number>
   verdictComment?: number
@@ -263,10 +281,29 @@ export function configToken(config: Pick<DaemonConfig, "channels">): string | un
 
 // --- Running the report ---
 
-/** Run the report command for a week and return its stdout. The week is
- *  passed in the environment so the report can cover it. */
-export function runReportCommand(command: string[], week: string, opts: { cwd: string; timeoutMs: number }): Promise<string> {
+/** The command line for a week: the configured command with the week's
+ *  Monday and Sunday (`--since/--until`) and the baseline (`--compare`)
+ *  added. A leading `agentx` runs this install's own CLI file with this
+ *  Node, so the daemon's PATH does not matter. */
+export function reportCommandLine(
+  command: string[],
+  week: string,
+  baseline: string | undefined,
+  proc: { execPath: string; argv: string[] } = process,
+): string[] {
+  const { from, to } = weekRange(week)
   const [bin, ...args] = command
+  const cli = proc.argv[1] ? resolve(proc.argv[1]) : ""
+  const head = bin === "agentx" && /\.[cm]?js$/.test(cli) ? [proc.execPath, cli] : [bin]
+  return [...head, ...args, "--since", from, "--until", to, ...(baseline ? ["--compare", baseline] : [])]
+}
+
+/** Run the report command for a week and return its stdout. The week is
+ *  also passed in the environment, for a custom command. */
+export function runReportCommand(
+  command: string[], week: string, opts: { cwd: string; timeoutMs: number; baseline?: string },
+): Promise<string> {
+  const [bin, ...args] = reportCommandLine(command, week, opts.baseline)
   const { from, to } = weekRange(week)
   return new Promise((resolvePromise, reject) => {
     execFile(bin, args, {
@@ -304,18 +341,21 @@ export async function postWeekly(deps: WeeklyDeps, opts: { week?: string; dryRun
   const state = readQualityState(root)
   let week = opts.week
   let skipped: string[] = []
+  let failed: string[] = []
   if (!week) {
     const due = weeklyDue(s, state, now)
     if (!due.due) return { status: "not-due" }
     week = due.week
-    skipped = due.skipped
+    failed = due.skipped.filter((w) => state.failed?.[w])
+    skipped = due.skipped.filter((w) => !state.failed?.[w])
+    if (failed.length) log(`[quality] WARNING: no weekly report was posted for ${failed.join(", ")} (every try failed)`)
     if (skipped.length) log(`[quality] WARNING: no weekly report was posted for ${skipped.join(", ")} (daemon not running when due)`)
   }
   try {
     const report = await deps.runReport(week)
     const verdictOn = verdictDueDate(s.gates)
     const body = weeklyComment({
-      week, report, gates: s.gates, skipped,
+      week, report, gates: s.gates, skipped, failed,
       verdictDue: !!verdictOn && !state.verdictComment && verdictOn <= weekRange(week).to,
     })
     const problem = publicProblem(body)
@@ -328,6 +368,10 @@ export async function postWeekly(deps: WeeklyDeps, opts: { week?: string; dryRun
     next.comments = { ...next.comments, [week]: res.id }
     if (!next.lastPosted || week > next.lastPosted) next.lastPosted = week
     if (next.failure?.week === week) delete next.failure
+    if (next.failed?.[week]) {
+      const { [week]: _, ...rest } = next.failed
+      next.failed = rest
+    }
     writeQualityState(root, next)
     log(`[quality] weekly report ${week} ${res.created ? "posted" : "updated"}: ${res.url}`)
     return { status: res.created ? "posted" : "updated", week, url: res.url }
@@ -336,6 +380,7 @@ export async function postWeekly(deps: WeeklyDeps, opts: { week?: string; dryRun
     if (!opts.dryRun) {
       const next = readQualityState(root)
       next.failure = { week, at: new Date(now).toISOString(), error }
+      next.failed = { ...next.failed, [week]: next.failure.at }
       writeQualityState(root, next)
     }
     log(`[quality] weekly report ${week} FAILED (retrying in ${RETRY_MS / 60_000} min): ${error}`)
@@ -348,13 +393,40 @@ export async function postWeekly(deps: WeeklyDeps, opts: { week?: string; dryRun
 export type Verdict = "keep" | "tune" | "switch-off"
 export interface GateVerdict { gate: string; verdict: Verdict; reason?: string }
 
-const CRITERIA = [
-  "Fix share of merged agent PRs is below the 9–16 Oct baseline (37%).",
-  "Fixes landing ≤24 h after the PR they fix go down vs baseline (per week, per 100 merged PRs).",
-  "Model cost per merged PR rises by no more than 20% vs baseline.",
-  "Median issue→merge lead time rises by no more than 1 h vs baseline.",
-  "Every gate has a documented, tested config switch; a gate over its own cost/time budget is switched off.",
-]
+/** The fix shares of the saved baseline report (#988), for the criteria. */
+export interface BaselineShares {
+  name: string
+  since: string
+  until: string
+  agent: number | null
+  all: number | null
+}
+
+export const baselineFile = (root: string, name: string) => resolve(qualityDir(root), "baselines", `${name}.json`)
+
+/** Read the fix shares from a baseline saved with
+ *  `agentx quality report --save-baseline <name>`. */
+export function readBaseline(root: string, name: string): BaselineShares | undefined {
+  try {
+    const b = JSON.parse(readFileSync(baselineFile(root, name), "utf-8"))
+    const share = (v: unknown) => (typeof v === "number" ? v : null)
+    return { name, since: String(b.since), until: String(b.until), agent: share(b.totals?.agent?.fixShare), all: share(b.totals?.all?.fixShare) }
+  } catch {
+    return undefined
+  }
+}
+
+const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`)
+
+function criteria(b: BaselineShares): string[] {
+  return [
+    `Fix share of merged agent PRs is below the ${b.since} to ${b.until} baseline (${pct(b.agent)} agent PRs, ${pct(b.all)} all non-release PRs).`,
+    "Fixes landing ≤24 h after the PR they fix go down vs baseline.",
+    "Model cost per merged PR rises by no more than 20% vs baseline.",
+    "Median issue→merge lead time rises by no more than 1 h vs baseline.",
+    "Every gate has a documented, tested config switch; a gate over its own cost/time budget is switched off.",
+  ]
+}
 
 /** Parse "id=keep" or "id=tune:reason". */
 export function parseVerdict(arg: string): GateVerdict {
@@ -371,6 +443,7 @@ export function verdictComment(opts: {
   gates: GateSetting[]
   report: { week: string; text: string }
   reportUrl?: string
+  baseline: BaselineShares
 }): string {
   const missing = opts.gates.filter((g) => !opts.verdicts.some((v) => v.gate === g.id)).map((g) => g.id)
   if (missing.length) throw new Error(`no verdict for: ${missing.join(", ")}`)
@@ -383,9 +456,9 @@ export function verdictComment(opts: {
     const g = opts.gates.find((x) => x.id === v.gate)!
     lines.push(`| ${label(v.gate)} | ${g.since} | **${v.verdict}** | ${(v.reason ?? "").replace(/\|/g, "\\|")} |`)
   }
-  lines.push("", "### Success criteria", "", ...CRITERIA.map((c) => `- ${c}`), "")
+  lines.push("", "### Success criteria", "", ...criteria(opts.baseline).map((c) => `- ${c}`), "")
   const src = opts.reportUrl ? `[${opts.report.week}](${opts.reportUrl})` : opts.report.week
-  lines.push(`### Numbers (report ${src})`, "", opts.report.text.trim(), "")
+  lines.push(`### Numbers (report ${src})`, "", fenced(opts.report.text), "")
   lines.push("_The verdicts are the owner's. A gate marked switch-off is turned off in its config switch._")
   return lines.join("\n")
 }
