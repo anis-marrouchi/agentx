@@ -56,7 +56,7 @@ function setup(specTests: Record<string, unknown>) {
     r,
     "trace-1",
   )
-  return { route, run }
+  return { route, run: Object.assign(run, { registry }) }
 }
 
 const ghCalls = () => mocks.exec.mock.calls.filter(([cmd]) => cmd === "gh")
@@ -97,6 +97,19 @@ describe("spec tests in the registry", () => {
     await run(followUp)
     expect(ghCalls()).toEqual([])
     expect(mocks.launch.mock.calls[0][0].prompt).toBe(MESSAGE)
+    await new Promise((r) => setTimeout(r, 20))
+    expect(mocks.runSpecTests).not.toHaveBeenCalled()
+  })
+
+  it("does not start the test agent when another dispatch started a run during the launch", async () => {
+    const { run } = setup({ enabled: true })
+    const registry = (run as any).registry
+    mocks.launch.mockImplementation(async () => {
+      registry.specTestStore().record({ repo: "example-org/example-repo", number: 42, agent: "tester", codeAgent: "coder", status: "running", startedAt: Date.now(), finishedAt: 0, minutes: 0 })
+      return { ok: true, sessionId: "session_new", url: "https://example.invalid/s" }
+    })
+    await run()
+    expect(mocks.launch.mock.calls[0][0].prompt).toContain("spec-tests/issue-42")
     await new Promise((r) => setTimeout(r, 20))
     expect(mocks.runSpecTests).not.toHaveBeenCalled()
   })
