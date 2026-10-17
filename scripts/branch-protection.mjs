@@ -24,7 +24,14 @@ export const GITHUB_ACTIONS_APP_ID = 15368
 const CI_WORKFLOW = new URL('../.github/workflows/ci.yml', import.meta.url)
 
 export function parseArgs(argv) {
-  const value = (flag, fallback) => (argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : fallback)
+  // A flag's value must be there and must not be the next flag: `--repo --off`
+  // would otherwise aim at repo "--off" and also turn the rollback on.
+  const value = (flag, fallback) => {
+    if (!argv.includes(flag)) return fallback
+    const next = argv[argv.indexOf(flag) + 1]
+    if (next === undefined || next.startsWith('--')) throw new Error(`${flag} needs a value`)
+    return next
+  }
   return {
     repo: value('--repo', 'anis-marrouchi/agentx'),
     branch: value('--branch', 'main'),
