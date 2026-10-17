@@ -107,6 +107,7 @@ const groups = [
   ] },
   { text: "Community", collapsed: true, items: [
     { text: "Contribute to AgentX", link: "/guides/contribute" },
+    { text: "Measure code quality", link: "/guides/quality-report" },
     { text: "Most requested", link: "/community/most-requested" },
   ] },
   { text: "Reference for engineers", collapsed: true, items: [

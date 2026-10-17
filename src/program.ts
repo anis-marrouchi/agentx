@@ -62,6 +62,7 @@ import { whatsapp } from "@/commands/whatsapp"
 import { plugin as pluginCmd } from "@/commands/plugin"
 import { completion } from "@/commands/completion"
 import { contribute } from "@/commands/contribute"
+import { quality } from "@/commands/quality"
 import { getPackageInfo } from "@/utils/get-package-info"
 import { commandPath, recordSurfaceUse, shouldRecordCommand } from "@/observability/surface-usage"
 
@@ -161,7 +162,7 @@ const ADVANCED = [
   // Workflow / BPM
   workflow, webhook, board, backlog, business, plan,
   // Observability + forensics
-  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, signalCmd, watch, eventsCmd, dbCmd,
+  ledgerCmd, decisionsCmd, traceCmd, retroCmd, processCmd, signalCmd, watch, eventsCmd, dbCmd, quality,
   // Fleet + extension
   mesh, a2a, skillCmd, pluginCmd, hook, actionsCmd, people,
   // Scheduling internals (`schedule` is the friendly front door)
