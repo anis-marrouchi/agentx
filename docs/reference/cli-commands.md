@@ -3654,6 +3654,30 @@ Delete files older than --days from each retention target.
 | `--dry-run` | — | List candidates, don't delete. |
 | `--target <name>` | — | Limit to one target dir (e.g. .agentx/sessions). |
 
+## quality (advanced)
+
+`agentx quality`: Weekly quality report on the epic issue, and the per-gate verdict. **Advanced.** See [post a weekly quality report](/jobs/quality-report).
+
+### `agentx quality weekly`
+
+Post (or preview) the weekly report for a week; edits that week's comment if it exists.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--week <week>` | last week | ISO week, e.g. `2026-W42`. |
+| `--dry-run` | — | Print the comment instead of posting it. |
+| `-c, --config <path>` | — | Config file. |
+
+### `agentx quality verdict`
+
+Post the keep / tune / switch-off verdict per gate on the epic, citing the latest weekly report.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-g, --gate <id=verdict[:reason]>` | required | One per gate in `qualityReport.gates`, e.g. `review=keep:"fixes down"`. Repeat it for each gate. |
+| `--dry-run` | — | Print the comment instead of posting it. |
+| `-c, --config <path>` | — | Config file. |
+
 ## notifications (advanced)
 
 `agentx notifications`: Manage notifications routing — destination, event toggles, long-task threshold. **Advanced.**
