@@ -151,6 +151,8 @@ The gate runs three checks:
 
 A fourth step lists every command, flag and setting that no page mentions. It only warns for now; it will block once the docs catch up.
 
+A new run never cancels an older one. Editing the description or a label starts another run, and the newest run gives the result.
+
 **Skip docs for one PR.** Use this when a user-facing file changed but users see no difference, such as a reworded help string:
 
 1. In the browser, ask a maintainer to add the `no-docs-needed` label to the PR.
@@ -316,6 +318,42 @@ The issue author's own reaction, bots, and accounts younger than 7 days are not 
 ## Security
 
 Do **not** open public issues for vulnerabilities. Follow the [security reporting instructions](SECURITY.md#reporting-a-vulnerability).
+
+## Branch protection
+
+`main` only accepts a pull request whose **CI** checks passed. The rules live in `scripts/branch-protection.mjs`, so they are written down and can be put back the same way:
+
+- Every job in `.github/workflows/ci.yml` is a required check, and only GitHub Actions can satisfy it. Today that is `test`, which also builds the package.
+- The checks are not strict: a PR does not have to be brought up to date with `main` before it merges.
+- The rules apply to admins too. Every PR here is opened and merged by one admin account, and without this that account skips every rule.
+- No approving review is required, because an author cannot approve their own PR.
+- Nobody can force-push to `main` or delete it.
+
+Changing these rules is a repository settings change. Run the script only with the owner's go, signed in to `gh` as a repo admin.
+
+**Turn it on** (in a terminal, from the repo root):
+
+1. Preview the request: `node scripts/branch-protection.mjs --dry-run`
+2. Apply it: `node scripts/branch-protection.mjs`
+
+**Turn it off** (rollback):
+
+1. Preview the request: `node scripts/branch-protection.mjs --off --dry-run`
+2. Remove it: `node scripts/branch-protection.mjs --off`
+
+Release PRs get the same checks as any other PR, so they still merge. A new job in `ci.yml` becomes required the next time the script runs. A job with a `matrix` posts one check per combination; the script stops and asks you to list those names by hand.
+
+#### Check it worked
+
+1. In a terminal, run `gh api repos/anis-marrouchi/agentx/branches/main/protection`.
+2. The answer lists `test` under `required_status_checks.checks` and shows `"enforce_admins": { "enabled": true, … }`.
+3. In the browser, a PR with a red `test` check shows **Merging is blocked**; once `test` is green, the merge button works.
+
+#### If something is wrong
+
+- **The script says `Not Found` or `Resource not accessible`.** Your `gh` login is not a repo admin. Run `gh auth status` and sign in with an admin account.
+- **A PR waits forever on `test`.** CI did not run on it. In the browser, open **Actions**, find the **CI** run for the PR and approve it, or start **CI** on the PR's branch with **Run workflow**. Do not remove the protection to get one PR in.
+- **`--off` says `Branch not protected`.** There was nothing to remove; `main` is already unprotected.
 
 ## Releases
 
