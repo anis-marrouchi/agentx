@@ -268,6 +268,22 @@ The wiki as seen from its pages. See [Wiki › Ask an agent to curate a page](/d
 | `wiki.curator.enabled` | boolean | `true` | Shows the chat button on every wiki page in the dashboard. Off, the button is hidden and curator requests are refused. |
 | `wiki.curator.agent` | string | — | Agent that answers on every page. Unset, the page's owner agent answers. |
 
+## quality
+
+Gates that check agent pull requests before they merge. Each one is off by default. See [Have a second agent review pull requests](/jobs/review-gate).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `quality.reviewGate.enabled` | boolean | `false` | A different agent reviews each agent pull request against its linked issue and posts the `agentx/review` status. |
+| `quality.reviewGate.mode` | `"advisory"` or `"required"` | `"advisory"` | Advisory marks the status "[advisory]". Required blocks merges once `agentx/review` is a required check on GitHub. |
+| `quality.reviewGate.reviewer.agent` | string | — | The reviewing agent. Must not be the pull request's author. |
+| `quality.reviewGate.reviewer.model` | string | the agent's model | Model for reviews; pick one other than the author's. |
+| `quality.reviewGate.paths` | string[] | `[]` | Only review pull requests that change a matching file. Empty: all. |
+| `quality.reviewGate.maxCostPerReview` | number | `2` | US dollars; a dearer review ends as `error`. `0`: no limit. |
+| `quality.reviewGate.maxMinutes` | number | `10` | A longer review is stopped and ends as `error`. |
+| `quality.reviewGate.ciWaitMinutes` | number | `5` | How long to wait for other checks before reviewing. |
+| `quality.reviewGate.maxDiffKb` | number | `256` | A longer diff is cut, and the reviewer is told. |
+
 ## decisions
 
 Typed decisions ("seats") let a small, fast model answer fixed-choice questions with a probability. Everything is off by default. See [Jev and typed decisions](/architecture/jev).

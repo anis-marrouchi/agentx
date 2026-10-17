@@ -79,7 +79,9 @@ export function isMeshGatedPath(path: string): boolean {
     path === "/api/wiki/curate" || path === "/api/wiki/curate/restore" ||
     // Stopped tasks and their resume plans (#857): each holds the request
     // and what the agent did. Stop and resume are control posts below.
-    path === "/api/signals/stopped" || path.startsWith("/api/signals/stopped/")
+    path === "/api/signals/stopped" || path.startsWith("/api/signals/stopped/") ||
+    // Pre-merge reviews (#990): PRs, verdicts and what each review cost.
+    path === "/api/review-gate/reviews"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
@@ -100,7 +102,9 @@ export function isControlPost(path: string): boolean {
     // Stopping a workflow run (#788).
     /^\/workflow-runs\/[^/]+\/cancel$/.test(path) ||
     // Stop and resume signals (#857).
-    path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop"
+    path === "/api/signals/stop" || path === "/api/signals/resume" || path === "/api/signals/drop" ||
+    // Replaying past PRs through the review gate spends model budget (#990).
+    path === "/api/review-gate/replay"
 }
 
 /** True when the socket peer is on this host. Used by loopback-only
