@@ -7,8 +7,8 @@ import {
   areaOf, citedNumbers, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, percentile, regressionOf, weekOf,
   type PrRecord,
 } from "../src/quality/classify"
-import { buildReport, compareReports, renderReport, toPublic, QUALITY_REPORT_SCHEMA } from "../src/quality/report"
-import { matchCosts, mentionsBranch, readTaskCosts, type TaskCost } from "../src/quality/cost"
+import { buildReport, compareReports, renderMarkdown, renderReport, toPublic, QUALITY_REPORT_SCHEMA } from "../src/quality/report"
+import { BUILD_CALL_RE, matchCosts, mentionsBranch, readTaskCosts, type TaskCost } from "../src/quality/cost"
 import { fetchCiMinutes, fetchMergedPrs, weekChunks, type GhRunner } from "../src/quality/github"
 
 function pr(over: Partial<PrRecord> & { number: number }): PrRecord {
@@ -166,6 +166,42 @@ describe("buildReport", () => {
     expect(report.totals.agent.regressionFixes72h).toBe(1)
   })
 
+  it("regression fixes per 100 merged PRs", () => {
+    expect(report.totals.agent.regressionFixes24hPer100).toBe(0)
+    expect(report.totals.agent.regressionFixes72hPer100).toBe(33.3) // 1 of 3
+    expect(report.totals.all.regressionFixes72hPer100).toBe(25) // 1 of 4
+    const empty = buildReport([], { repo: "o/r", since: "2026-01-05", until: "2026-01-11" })
+    expect(empty.totals.all.regressionFixes24hPer100).toBeNull()
+  })
+
+  it("a cloud-session PR stays external when a local task pushed it; that cost is follow-up", () => {
+    // #4 is a cloud-session PR that a local task rebased for $5.
+    const r = buildReport(fixture, { repo: "o/r", since: "2026-01-05", until: "2026-01-11" },
+      { cost: new Map([[3, 1.5], [4, 5], [5, 0.5]]) })
+    expect(r.totals.agent.cost).toMatchObject({
+      perMergedPr: 1, total: 2, attributedPrs: 2, externalPrs: 1, attributionRate: 1,
+      followUpPrs: 1, followUpTotal: 5, status: "attributed",
+    })
+    const onlyExternal = buildReport(fixture, { repo: "o/r", since: "2026-01-05", until: "2026-01-11" }, { cost: new Map([[4, 5]]) })
+    expect(onlyExternal.totals.agent.cost.attributedPrs).toBe(0)
+    expect(onlyExternal.totals.agent.cost.perMergedPr).toBeNull()
+    expect(renderReport(r)).toContain("Local follow-up on external PRs (rebases, conflict fixes), not in Cost/PR: agent PRs: $5.00 on 1 PR;")
+    const pub = toPublic(r)
+    expect(JSON.stringify(pub)).not.toContain("followUpTotal")
+    expect(renderReport(pub)).toContain("agent PRs: 1 PR;")
+    expect(renderReport(pub)).not.toMatch(/\$\d/)
+  })
+
+  it("--format markdown renders GitHub tables", () => {
+    const md = renderMarkdown(report)
+    expect(md).toContain("### Quality report — o/r (main), 2026-01-05 → 2026-01-11")
+    expect(md).toContain("| Total | PRs | Fixes | Fix share | Reg ≤24h (/100) |")
+    expect(md).toContain("| --- | ---: |")
+    expect(md).toContain("| agent PRs | 3 | 2 | 67% | 0 (0) | 1 (33.3) |")
+    expect(md).toContain("| Week of |")
+    expect(md).toContain("| Area |")
+  })
+
   it("lead time splits issue-linked and unlinked PRs", () => {
     expect(report.totals.agent.leadTime.issue).toEqual({ n: 1, medianHours: 24, p90Hours: 24 })
     expect(report.totals.agent.leadTime.pr.n).toBe(2)
@@ -262,6 +298,12 @@ describe("cost attribution", () => {
     expect(mentionsBranch("origin feat/claude/x-1", "claude/x-1")).toBe(false)
   })
 
+  it("read-only calls that pass a head branch are not build calls", () => {
+    expect(BUILD_CALL_RE.test('mcp__github__list_pull_requests {"head":"o:claude/x-1","state":"open"}')).toBe(false)
+    expect(BUILD_CALL_RE.test('mcp__github__create_pull_request {"head":"claude/x-1","base":"main"}')).toBe(true)
+    expect(BUILD_CALL_RE.test('mcp__github__push_files {"branch":"claude/x-1"}')).toBe(true)
+  })
+
   it("a cloud-session link marks a PR external", () => {
     expect(isExternalPr({ body: "https://claude.ai/code/session_01ABC" })).toBe(true)
     expect(isExternalPr({ body: "plain" })).toBe(false)
@@ -321,6 +363,19 @@ describe("GitHub readers (fake gh, no network)", () => {
     await fetchCiMinutes("o/r", prs, "2026-01-05", "2026-01-06", { gh, cache })
     expect(jobCalls).toEqual(["repos/o/r/actions/runs/101/jobs?filter=all&per_page=100"])
   })
+
+  it("warns when a 7-day chunk has more runs than GitHub lists", async () => {
+    const pages: string[] = []
+    const gh: GhRunner = async ([, path]) => {
+      if (path.includes("/runs?")) { pages.push(path); return JSON.stringify({ total_count: 1500, workflow_runs: [] }) }
+      return JSON.stringify({ jobs: [] })
+    }
+    const warnings: string[] = []
+    await fetchCiMinutes("o/r", [pr({ number: 1, createdAt: "2026-01-05T00:00:00Z" })], "2026-01-05", "2026-01-06",
+      { gh, onWarning: (m) => warnings.push(m) })
+    expect(pages).toHaveLength(10)
+    expect(warnings).toEqual(["CI runs 2026-01-05..2026-01-06: 1500 runs, GitHub lists only 1,000. CI minutes for that week are a lower bound."])
+  })
 })
 
 describe("readTaskCosts (temporary trace store)", () => {
@@ -338,6 +393,7 @@ describe("readTaskCosts (temporary trace store)", () => {
       const trace = db.prepare("INSERT INTO task_traces VALUES (?, 'claude-sonnet-4-6', ?, 1000000, 0, 0, 0)")
       trace.run("built", 1000)
       trace.run("talked", 1000)
+      trace.run("listed", 1000)
       trace.run("too-old", 1)
       const step = db.prepare("INSERT INTO task_trace_steps VALUES (?, ?, ?, ?, ?, ?)")
       step.run("built", 0, "tool_use", "Bash", '{"command":"git push -u origin claude/x-1"}', null)
@@ -345,6 +401,7 @@ describe("readTaskCosts (temporary trace store)", () => {
       step.run("built", 2, "tool_use", "Bash", '{"command":"gh pr create --fill"}', null)
       step.run("built", 3, "tool_result", null, null, "https://github.com/o/r/pull/42")
       step.run("talked", 0, "tool_use", "Bash", '{"command":"gh pr view 42"}', null)
+      step.run("listed", 0, "tool_use", "mcp__github__list_pull_requests", '{"head":"o:claude/x-1"}', null)
       step.run("too-old", 0, "tool_use", "Bash", '{"command":"git push origin claude/x-1"}', null)
       db.close()
 

@@ -3237,7 +3237,8 @@ Per-week and per-area report of merged PRs on the base branch (reads GitHub thro
 | `--public` | — | Show cost only as % change vs --compare, never as an amount. |
 | `--save-baseline <name>` | — | Store this report locally as a baseline. |
 | `--compare <name>` | — | Show changes against a stored baseline. |
-| `--json` | — | JSON output (schema agentx.quality-report/v1). |
+| `--format <format>` | `text` | Output: text \| markdown (for a GitHub comment) \| json. |
+| `--json` | — | Same as --format json (schema agentx.quality-report/v1). |
 
 ## mesh (advanced)
 

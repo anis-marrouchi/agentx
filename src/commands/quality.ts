@@ -5,7 +5,7 @@ import { resolve } from "path"
 import { detectRepo, fetchCiMinutes, fetchMergedPrs } from "@/quality/github"
 import { matchCosts, readTaskCosts } from "@/quality/cost"
 import {
-  buildReport, compareReports, renderReport, toPublic, QUALITY_REPORT_SCHEMA,
+  buildReport, compareReports, renderMarkdown, renderReport, toPublic, QUALITY_REPORT_SCHEMA,
   type QualityReport, type Scope,
 } from "@/quality/report"
 
@@ -40,9 +40,12 @@ quality
   .option("--public", "show cost only as % change vs --compare, never as an amount")
   .option("--save-baseline <name>", "store this report locally as a baseline")
   .option("--compare <name>", "show changes against a stored baseline")
-  .option("--json", "JSON output (schema agentx.quality-report/v1)")
+  .option("--format <format>", "output: text | markdown (for a GitHub comment) | json", "text")
+  .option("--json", "same as --format json (schema agentx.quality-report/v1)")
   .action(async (opts) => {
     try {
+      const format: string = opts.json ? "json" : opts.format
+      if (!["text", "markdown", "json"].includes(format)) throw new Error("--format must be text, markdown or json.")
       const until: string = opts.until ?? new Date().toISOString().slice(0, 10)
       const since: string = opts.since ?? new Date(Date.parse(until) - 20 * DAY).toISOString().slice(0, 10)
       for (const [flag, v] of [["--since", since], ["--until", until]]) {
@@ -67,7 +70,9 @@ quality
       let ciMinutes: Map<number, number> | undefined
       if (opts.ci) {
         const cache = loadCiCache(repo)
-        ciMinutes = await fetchCiMinutes(repo, inWindow, since, until, { cache })
+        ciMinutes = await fetchCiMinutes(repo, inWindow, since, until, {
+          cache, onWarning: (msg) => console.error(chalk.yellow(`  ${msg}`)),
+        })
         saveCiCache(repo, cache)
       }
       const tasks = readTaskCosts(opts.db, repo, from - 30 * DAY, Date.parse(`${until}T23:59:59.999Z`))
@@ -78,10 +83,12 @@ quality
       if (baseline) report = compareReports(report, baseline, opts.compare)
       if (opts.public) report = toPublic(report)
 
-      if (opts.json) { console.log(JSON.stringify(report, null, 2)); return }
-      console.log(renderReport(report))
-      if (!tasks) console.log(chalk.dim(`  No AgentX trace store at ${opts.db}; cost is unattributed. Run from the AgentX folder or pass --db.\n`))
-      if (opts.saveBaseline) console.log(chalk.dim(`  Saved baseline "${opts.saveBaseline}" in ${BASELINE_DIR}.\n`))
+      // Hints go to stderr: stdout may be posted on a public issue (#994),
+      // and --db can be an absolute local path.
+      if (!tasks) console.error(chalk.dim(`  No AgentX trace store at ${opts.db}; cost is unattributed. Run from the AgentX folder or pass --db.`))
+      if (opts.saveBaseline) console.error(chalk.dim(`  Saved baseline "${opts.saveBaseline}" in ${BASELINE_DIR}.`))
+      if (format === "json") console.log(JSON.stringify(report, null, 2))
+      else console.log(format === "markdown" ? renderMarkdown(report) : renderReport(report))
     } catch (e: any) {
       const msg = String(e?.stderr || e?.message || e)
       console.error(chalk.red(`  ${msg.trim()}`))
