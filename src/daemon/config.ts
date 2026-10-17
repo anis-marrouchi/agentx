@@ -1250,6 +1250,10 @@ export const reviewGateConfigSchema = z.object({
   maxCostPerReview: z.number().min(0).default(2),
   /** Review time above this many minutes ends as `error`. */
   maxMinutes: z.number().positive().max(120).default(10),
+  /** Most reviewer runs one PR gets in 24 hours. Each failure comment can
+   *  bring a fix push and each push a review; past the limit the status
+   *  is `error` and a person takes over. 0: no limit. */
+  maxReviewsPerPrPerDay: z.number().int().min(0).max(100).default(6),
   /** How long to wait for other CI checks to finish before reviewing. */
   ciWaitMinutes: z.number().min(0).max(60).default(5),
   /** Diffs longer than this many kilobytes are cut, and the reviewer is

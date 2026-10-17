@@ -1258,6 +1258,9 @@ export class AgentXDaemon {
           agentId: req.agentId,
           model: req.model,
           freshSession: true,
+          // Only the prompt: no other chats, memory or recall, no MCP
+          // server, no write or shell tools, held at autonomy report.
+          isolated: true,
           timeoutMinutes: req.timeoutMinutes,
           callerSignal: req.signal,
           context: { channel: REVIEW_CHANNEL, chatId: req.chatId, sender: REVIEW_CHANNEL },

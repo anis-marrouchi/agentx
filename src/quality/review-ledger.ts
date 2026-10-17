@@ -40,6 +40,8 @@ export interface ReviewRecord {
 
 export interface ReviewLedger {
   append(record: ReviewRecord): void
+  /** Records since `from`, for the per-PR review limit after a restart. */
+  read?(opts: { from?: Date }): ReviewRecord[]
 }
 
 export function reviewLedgerPath(cwd = process.cwd()): string {
