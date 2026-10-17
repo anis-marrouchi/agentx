@@ -281,36 +281,44 @@ export function configToken(config: Pick<DaemonConfig, "channels">): string | un
 
 // --- Running the report ---
 
-/** The command line for a week: the configured command with the week's
- *  Monday and Sunday (`--since/--until`) and the baseline (`--compare`)
- *  added. A leading `agentx` runs this install's own CLI file with this
- *  Node, so the daemon's PATH does not matter. */
+/** The command line for a week: the configured command with the
+ *  repository (`--repo`, unless the command names one), the week's Monday
+ *  and Sunday (`--since/--until`) and the baseline (`--compare`) added.
+ *  Without `--repo` the report would read the repository from the git
+ *  origin of the daemon's folder. A leading `agentx` runs this install's
+ *  own CLI file with this Node, so the daemon's PATH does not matter. */
 export function reportCommandLine(
   command: string[],
   week: string,
-  baseline: string | undefined,
+  opts: { baseline?: string; repo?: string },
   proc: { execPath: string; argv: string[] } = process,
 ): string[] {
   const { from, to } = weekRange(week)
   const [bin, ...args] = command
   const cli = proc.argv[1] ? resolve(proc.argv[1]) : ""
   const head = bin === "agentx" && /\.[cm]?js$/.test(cli) ? [proc.execPath, cli] : [bin]
-  return [...head, ...args, "--since", from, "--until", to, ...(baseline ? ["--compare", baseline] : [])]
+  const hasRepo = args.some((a) => a === "--repo" || a.startsWith("--repo="))
+  return [
+    ...head, ...args,
+    ...(opts.repo && !hasRepo ? ["--repo", opts.repo] : []),
+    "--since", from, "--until", to,
+    ...(opts.baseline ? ["--compare", opts.baseline] : []),
+  ]
 }
 
-/** Run the report command for a week and return its stdout. The week is
- *  also passed in the environment, for a custom command. */
+/** Run the report command for a week and return its stdout. The week and
+ *  the repository are also passed in the environment, for a custom command. */
 export function runReportCommand(
-  command: string[], week: string, opts: { cwd: string; timeoutMs: number; baseline?: string },
+  command: string[], week: string, opts: { cwd: string; timeoutMs: number; baseline?: string; repo?: string },
 ): Promise<string> {
-  const [bin, ...args] = reportCommandLine(command, week, opts.baseline)
+  const [bin, ...args] = reportCommandLine(command, week, opts)
   const { from, to } = weekRange(week)
   return new Promise((resolvePromise, reject) => {
     execFile(bin, args, {
       cwd: opts.cwd,
       timeout: opts.timeoutMs,
       maxBuffer: 4 * 1024 * 1024,
-      env: { ...process.env, AGENTX_QUALITY_WEEK: week, AGENTX_QUALITY_FROM: from, AGENTX_QUALITY_TO: to },
+      env: { ...process.env, AGENTX_QUALITY_WEEK: week, AGENTX_QUALITY_FROM: from, AGENTX_QUALITY_TO: to, ...(opts.repo ? { AGENTX_QUALITY_REPO: opts.repo } : {}) },
     }, (err, stdout, stderr) => {
       if (err) reject(new Error(`${command.join(" ")} failed: ${(String(stderr).trim() || err.message).slice(0, 500)}`))
       else if (!String(stdout).trim()) reject(new Error(`${command.join(" ")} printed nothing`))

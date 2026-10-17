@@ -117,7 +117,7 @@ quality
         root: process.cwd(),
         settings: s,
         comments: githubIssueComments(repo, issue, async () => configToken(config)),
-        runReport: (w) => runReportCommand(s.command, w, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000, baseline: s.baseline }),
+        runReport: (w) => runReportCommand(s.command, w, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000, baseline: s.baseline, repo: s.repo }),
         log: (m) => console.error(chalk.dim(m)),
       }, { week, dryRun: opts.dryRun })
       if (res.status === "failed") { console.error(chalk.red(res.error)); process.exitCode = 1; return }

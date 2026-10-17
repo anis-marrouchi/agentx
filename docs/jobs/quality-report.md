@@ -32,8 +32,10 @@ Turn it on on **one computer only**. Two daemons with it on would both run the r
 3. Save the baseline once, for the days before the gates went on. Use your own dates, for example:
 
    ```sh
-   agentx quality report --since 2026-10-09 --until 2026-10-16 --save-baseline baseline
+   agentx quality report --repo acme/widgets --since 2026-10-09 --until 2026-10-16 --save-baseline baseline
    ```
+
+   Use the same repository you set as `repo` in step 5. Without `--repo`, the report reads the repository this folder was cloned from, which may be a different one.
 
    It prints the report and saves it in `.agentx/quality/baselines/baseline.json`. Every weekly report is compared with it, and the verdict quotes its fix share. Without it, every try fails with `No baseline "baseline"`.
 4. Open `agentx.json` in a text editor.
@@ -63,7 +65,7 @@ All the settings are in the [configuration reference](../reference/config-automa
 
 The report covers last week, Monday to Sunday. It is due on Monday at `time`. If the daemon was not running then, it posts as soon as it is back, any day that week.
 
-Each Monday the daemon runs `agentx quality report --public --since <Monday> --until <Sunday> --compare baseline` for last week, with the same AgentX install it runs from.
+Each Monday the daemon runs `agentx quality report --public --repo <repo> --since <Monday> --until <Sunday> --compare baseline` for last week (`<repo>` is `qualityReport.repo`), with the same AgentX install it runs from.
 
 If the report fails (the report command errors, GitHub refuses the comment, or the text fails the public check), the daemon writes a line starting with `[quality]` to its log and tries again an hour later, until it succeeds. If a week is never posted, the next comment names it and says why: the daemon was off, or every try failed. The log says so too. You can post a missed week by hand (below).
 
