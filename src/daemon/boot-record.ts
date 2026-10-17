@@ -36,6 +36,17 @@ export interface BootEntry {
   by: string | null
   /** Why the process before this one stopped; null when unknown. */
   reason: string | null
+  /** The build this boot ran: the commit tsup baked in (null when built
+   *  outside a checkout) and the package version. Absent on entries written
+   *  by older versions. The canary soak reads releases from here. */
+  commit?: string | null
+  version?: string | null
+}
+
+/** What a boot ran, as recorded in its log entry. */
+export interface BootBuild {
+  commit: string | null
+  version: string | null
 }
 
 export interface RestartSummary {
@@ -65,7 +76,12 @@ export function readBootLog(agentxDir: string, seed?: number[]): BootEntry[] {
     if (existsSync(path)) {
       const parsed = JSON.parse(readFileSync(path, "utf-8"))
       if (Array.isArray(parsed)) {
-        return parsed.filter(isEntry).map((e) => ({ at: e.at, by: e.by ?? null, reason: e.reason ?? null }))
+        return parsed.filter(isEntry).map((e) => ({
+          at: e.at,
+          by: e.by ?? null,
+          reason: e.reason ?? null,
+          ...(e.commit !== undefined ? { commit: e.commit ?? null, version: e.version ?? null } : {}),
+        }))
       }
     }
   } catch { /* corrupt log → fall back to the seed */ }
@@ -81,8 +97,8 @@ export function readBootLog(agentxDir: string, seed?: number[]): BootEntry[] {
 
 /** Record this boot with what stopped the process before it, and return the
  *  log, this boot included. `seed` is earlier start times to begin from when
- *  no log exists yet. */
-export function recordBootEntry(agentxDir: string, now = Date.now(), seed: number[] = []): BootEntry[] {
+ *  no log exists yet; `build` is what this boot runs. */
+export function recordBootEntry(agentxDir: string, now = Date.now(), seed: number[] = [], build?: BootBuild): BootEntry[] {
   const stopPath = resolve(agentxDir, LAST_STOP_FILE)
   let stop: LastStop | null = null
   try {
@@ -95,7 +111,9 @@ export function recordBootEntry(agentxDir: string, now = Date.now(), seed: numbe
   try { unlinkSync(stopPath) } catch { /* none */ }
 
   const earlier = readBootLog(agentxDir, seed).filter((e) => e.at < now)
-  const log = [...earlier, { at: now, by: stop?.by ?? null, reason: stop?.reason ?? null }].slice(-KEEP_BOOTS)
+  const entry: BootEntry = { at: now, by: stop?.by ?? null, reason: stop?.reason ?? null }
+  if (build) Object.assign(entry, { commit: build.commit, version: build.version })
+  const log = [...earlier, entry].slice(-KEEP_BOOTS)
   try {
     mkdirSync(agentxDir, { recursive: true })
     writeFileSync(resolve(agentxDir, BOOT_LOG_FILE), JSON.stringify(log))

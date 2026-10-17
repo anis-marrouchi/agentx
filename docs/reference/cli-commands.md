@@ -230,6 +230,22 @@ Deploy agentx to a remote server via rsync.
 | `-p, --path <path>` | `~/agentx` | Remote agentx path. |
 | `--restart` | — | Restart remote daemon after deploy. |
 | `--skip-checks` | — | Skip build and test before deploy. |
+| `--override-soak <reason>` | — | Deploy a release that has not passed its [canary soak](/jobs/canary-soak). The reason is logged. |
+| `--dry-run` | — | Check the canary soak and print the plan without changing anything. |
+| `-c, --config <path>` | — | Path to agentx.json. |
+
+With `quality.canary.enabled` on, the deploy refuses a release that has not passed its soak and prints the minutes left or the failed check. See [soak a release before deploying it](/jobs/canary-soak).
+
+### `agentx daemon soak [sha]`
+
+Show whether a release passed its canary soak on this daemon. Without `sha`, the release is this folder's current commit.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Path to agentx.json. |
+| `--history` | — | List soak results per release and how many were blocked. |
+| `--since <days>` | — | With `--history`: only the last N days. |
+| `--json` | — | Print JSON. |
 
 ## doctor
 
