@@ -233,6 +233,19 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.checkin.maxAsksPerPass` | number (1 to 20) | `5` | Most agents one check-in asks to write a card, whatever they answer. |
 | `approvals.checkin.composeTimeoutSeconds` | number (30 to 3600) | `300` | How long an agent may take to write one card, counted from the start of its turn. The turn is stopped at the limit. |
 
+## `quality`
+
+Quality gates for agent-written changes. Each one is off by default.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `quality.specTests.enabled` | boolean | `false` | A separate test agent writes tests from the issue text for issues that go to a [Claude cloud session](/jobs/cloud-sessions). See [Have a second agent write tests from the issue](/jobs/spec-tests). |
+| `quality.specTests.paths` | list of strings | `["src/daemon"]` | Folders in the pilot. Only an issue that names one of them gets spec tests. |
+| `quality.specTests.agent` | string | `"spec-tests"` | The test agent's name, used as the author of the spec-test commit. Must not be the coding agent's id. |
+| `quality.specTests.model` | string | unset | Model the test agent uses. Unset: the `claude` command's default. |
+| `quality.specTests.maxCostPerIssue` | number (up to 100) | `2` | Most the test agent may spend on one issue, in US dollars. Past it, it stops and leaves a note on the issue. |
+| `quality.specTests.maxMinutes` | number (1–120) | `20` | Most minutes the test agent may run for one issue. Past it, it stops and leaves a note on the issue. |
+
 ## `requests`
 
 Open requests: what you asked an agent for is recorded and followed until it is done, declined or dropped. Off by default.

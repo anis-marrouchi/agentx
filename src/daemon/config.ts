@@ -1502,6 +1502,27 @@ export const daemonConfigSchema = z.object({
   /** Watched WhatsApp chats triaged by an agent (src/whatsapp-triage). */
   whatsappTriage: whatsappTriageSchema,
   approvals: approvalsConfigSchema,
+  /** Quality gates for agent-written changes (#987). Each is off by default. */
+  quality: z.object({
+    /** Spec-first tests (#992): for an issue that names a pilot path and
+     *  goes to a Claude cloud session, a separate test agent writes tests
+     *  from the issue text only and pushes them to `spec-tests/issue-N` for
+     *  the coding session to merge. See src/agents/spec-tests.ts. */
+    specTests: z.object({
+      enabled: z.boolean().default(false),
+      /** Path prefixes; an issue that names one of them is in the pilot. */
+      paths: z.array(z.string().min(1)).default(["src/daemon"]),
+      /** The test agent's name: the spec-test commit's author. Must not be
+       *  the coding agent's id. */
+      agent: z.string().min(1).default("spec-tests"),
+      /** Model for the test agent. Unset: the `claude` CLI default. */
+      model: z.string().min(1).optional(),
+      /** USD cap for one issue's test agent run; it stops when spent. */
+      maxCostPerIssue: z.number().positive().max(100).default(2),
+      /** Minutes cap for one issue's test agent run. */
+      maxMinutes: z.number().int().min(1).max(120).default(20),
+    }).default({}),
+  }).default({}),
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({
     /** Wait this long for runs to finish before cutting them off (they are
