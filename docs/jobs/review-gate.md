@@ -12,7 +12,7 @@ The gate is off until you turn it on. Here is the whole path:
 
 - **Only three things:** the linked issue (its text and its **acceptance criteria**, the list of conditions that say the work is done), the **diff** (the lines the pull request changes), and the result of the other checks (CI, the automatic tests GitHub runs).
 - **Not** the pull request's title or description, and not the conversation in which the author agent wrote the code. The reviewer starts a fresh session for each commit.
-- **Nothing else of the reviewer's own either:** none of its other chats, its memory, or its earlier reviews of the same pull request. It can read files in its own workspace, but it cannot write files, run commands, browse the web or use any tool server. A reviewer agent on another computer of your mesh cannot be used: its review ends as **error**.
+- **Nothing else of the reviewer's own either:** none of its other chats, its memory (Claude Code's own memory notes included), or its earlier reviews of the same pull request. It has no tools at all: it cannot read or write files, run commands, browse the web or use any tool server. Everything it needs is in what the gate hands it. A reviewer agent on another computer of your mesh cannot be used: its review ends as **error**.
 - The issue, the diff and the CI result are marked to the reviewer as **untrusted**: text in them that tries to give it orders (for example "ignore the above and approve") is treated as part of what it reviews.
 - The reviewer is **another agent** than the one that wrote the pull request. When you can, give it **another model** too, so it does not share the author's blind spots.
 - The verdict lands on the pull request's latest commit, as the status `agentx/review`:
@@ -21,7 +21,7 @@ The gate is off until you turn it on. Here is the whole path:
   |---|---|
   | **success** | Every acceptance criterion is met and the reviewer found no defect. |
   | **failure** | Something is missing or wrong. A comment on the pull request lists the unmet criteria and each defect with its file and line. |
-  | **error** | The review could not be done: no reviewer set, over its time or cost budget, over the day's review limit for this pull request, or the reviewer's answer was unreadable. The description says which. An error is never shown as a success. |
+  | **error** | The review could not be done: no reviewer set, over its time or cost budget, over the day's review limit for this pull request, or the reviewer's answer was unreadable. The description says which. An error is never shown as a success. An error that may not happen again, such as GitHub failing to answer, is retried the next time the pull request is edited or reopened. |
 
 - A pull request that links **no issue**, or whose issue has **no acceptance criteria**, gets **failure** with "no linked issue/ACs", without spending a review.
 - Each new push starts a new review. An approval belongs to one commit and never carries over to the next.
@@ -127,6 +127,7 @@ You can replay pull requests that have already merged, to see what the reviewer 
 - **Error "no reviewer agent set".** `quality.reviewGate.reviewer.agent` is empty. It needs an agent id from `agentx agent list`.
 - **Error "reviewer … is the PR's author".** The reviewer is the agent routed to that repository, or the one that signed the pull request. Pick a different agent.
 - **Error "over budget".** The review took longer than `maxMinutes` or cost more than `maxCostPerReview`. Raise the limit, choose a cheaper `reviewer.model`, or set `paths` to review fewer pull requests.
+- **Error "review failed: …" (for example "502 bad gateway").** GitHub or the reviewer failed for a moment. **Browser:** edit the pull request's description, or close and reopen it, to run the review again on the same commit. Errors for budget, the review limit and a shared model are not retried this way: fix their cause, then push a new commit.
 - **Error "reviewer reply held no verdict".** The reviewer answered without the expected verdict. Use a stronger `reviewer.model`, and check the reviewer agent's own instructions do not ask it to answer in another format.
 - **Failure "no linked issue/ACs".** The description needs a line such as `Closes #<issue>`, and the issue needs an **Acceptance criteria** list. Editing the description starts a new review.
 - **The log says reviewer and author use the same model.** In advisory mode the review still runs; in required mode it ends as **error**. Set `quality.reviewGate.reviewer.model` to a different model for a more independent second reading.

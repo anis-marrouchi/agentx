@@ -208,21 +208,19 @@ export function leanClaudeArgs(
   return args
 }
 
-/** Built-in tools an isolated run (AgentTask.isolated, #990) keeps: it may
- *  read its workspace, never write, run a shell, fetch the web or start
- *  a sub-agent. */
-export const ISOLATED_TOOLS: readonly string[] = ["Read", "Glob", "Grep"]
-
-/** Flags for an isolated `claude` spawn: no MCP server at all (so none of
- *  the agentx tools that read other chats or memory) and only the
- *  read-only built-in tools. `--tools` sits next to `--strict-mcp-config`
- *  as in a lean start, so there are no MCP schemas for it to load. */
+/** Flags for an isolated `claude` spawn (AgentTask.isolated, #990): no
+ *  MCP server at all (so none of the agentx tools that read other chats or
+ *  memory) and no built-in tool either. The reviewer's whole input is its
+ *  prompt, and its workspace is not the PR checkout, so a file tool gains
+ *  it nothing and would let an injected diff read local files whose text
+ *  the verdict then posts to the PR. `--tools ""` loads no MCP schemas
+ *  here because `--strict-mcp-config` leaves none. */
 export function isolatedClaudeArgs(): string[] {
   return [
     "--strict-mcp-config",
     "--mcp-config", JSON.stringify({ mcpServers: {} }),
     "--setting-sources", "project,local",
-    "--tools", ISOLATED_TOOLS.join(","),
+    "--tools", "",
   ]
 }
 

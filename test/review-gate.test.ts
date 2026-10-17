@@ -550,3 +550,37 @@ describe("hardening (#1003 review)", () => {
     expect(t.fake.statuses.at(-1)!.description).toContain("not checked against maxCostPerReview")
   })
 })
+
+describe("hardening (#1008 review)", () => {
+  it("retries a commit whose review hit a transient error on the next event", async () => {
+    const t = gate({ config: { mode: "required" } })
+    const real = t.fake.gh.getPullRequest
+    t.fake.gh.getPullRequest = async () => { throw new Error("502 bad gateway") }
+    expect((await t.g.onPullRequest(event()))?.state).toBe("error")
+    t.fake.gh.getPullRequest = real
+    const o = await t.g.onPullRequest(event("reopened"))
+    expect(o?.state).toBe("success")
+    expect(t.fake.statuses.at(-1)).toMatchObject({ sha: SHA1, state: "success" })
+    // Reviewed now: a further event for the commit starts nothing.
+    expect(t.g.onPullRequest(event("edited"))).toBeNull()
+  })
+
+  it("does not retry an error another event would only repeat", async () => {
+    const t = gate({ config: { maxCostPerReview: 0.05 } })
+    expect((await t.g.onPullRequest(event()))?.reason).toMatch(/^over budget/)
+    expect(t.g.onPullRequest(event("edited"))).toBeNull()
+    expect(t.g.onPullRequest(event("reopened"))).toBeNull()
+    expect(t.requests).toHaveLength(1)
+  })
+
+  it("marks a run that reached the reviewer, so a restart counts it when the reviewer threw", async () => {
+    const t = gate({ reply: async () => { throw new Error("spawn failed") } })
+    expect((await t.g.onPullRequest(event()))?.state).toBe("error")
+    expect(t.records[0]).toMatchObject({ reviewerRan: true })
+    expect(t.records[0].minutes).toBeUndefined()
+
+    const restarted = gate({ config: { maxReviewsPerPrPerDay: 1 }, ledgerRows: [{ ...t.records[0], sha: SHA2 }] })
+    expect((await restarted.g.onPullRequest(event()))?.reason).toMatch(/^review limit/)
+    expect(restarted.requests).toEqual([])
+  })
+})
