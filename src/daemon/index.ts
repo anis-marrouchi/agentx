@@ -71,6 +71,7 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { configToken, githubIssueComments, postWeekly, runReportCommand } from "@/quality/epic-report"
 import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
@@ -876,6 +877,7 @@ export class AgentXDaemon {
     // midnight run; any restart before midnight lost that day's row.)
     this.scheduleMidnightHook()
     this.startApprovalsSweep()
+    this.startQualityReport()
     this.startReminders()
     // Messages received before the last stop but never handed to an agent.
     const waQueued = this.waTriage?.resume() ?? 0
@@ -1205,6 +1207,7 @@ export class AgentXDaemon {
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
     if (this.approvalsTimer) clearInterval(this.approvalsTimer)
+    if (this.qualityTimer) clearInterval(this.qualityTimer)
     if (this.pushRosterTimer) clearInterval(this.pushRosterTimer)
     this.stopReminders?.()
     this.waTriage?.stop()
@@ -1983,6 +1986,37 @@ export class AgentXDaemon {
       return r.ok && data.ok === true
     }
   }
+  private qualityTimer?: ReturnType<typeof setInterval>
+  private qualityPosting = false
+
+  /** Every minute: post the weekly quality report on the epic issue once
+   *  it is due (src/quality/epic-report.ts, #994). Failures are logged
+   *  and retried hourly; the settings are read on each tick. */
+  private startQualityReport(): void {
+    const tick = async () => {
+      const s = this.config.qualityReport
+      if (!s.enabled || !s.repo || !s.issue || this.qualityPosting || this.shuttingDown) return
+      this.qualityPosting = true
+      try {
+        const repo = s.repo
+        const github = this.router.getChannel("github") as { getTokenForRepo?: (repo?: string) => Promise<string | undefined> } | undefined
+        await postWeekly({
+          root: process.cwd(),
+          settings: s,
+          comments: githubIssueComments(repo, s.issue, async () => (await github?.getTokenForRepo?.(repo)) || configToken(this.config)),
+          runReport: (week) => runReportCommand(s.command, week, { cwd: process.cwd(), timeoutMs: s.timeoutSeconds * 1000 }),
+          log: this.log,
+        })
+      } catch (e: any) {
+        this.log(`[quality] weekly report failed: ${e?.message ?? e}`)
+      } finally {
+        this.qualityPosting = false
+      }
+    }
+    this.qualityTimer = setInterval(() => { void tick() }, 60_000)
+    this.qualityTimer.unref?.()
+  }
+
   private approvalsTimer?: ReturnType<typeof setInterval>
   /** On a push relay: sends the phone roster to the host (#711). */
   private pushRosterTimer?: ReturnType<typeof setInterval>
