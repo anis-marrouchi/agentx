@@ -11,12 +11,14 @@ During the soak, AgentX counts, from what it already records:
 - **restarts:** times the daemon was restarted on this release, after the restart that started the soak.
 - **crashes:** times it stopped without being asked to (a crash, or a forced kill).
 - **crash loop:** several restarts close together (`resume.crashLoop`: 3 within 10 minutes unless you change it).
-- **failed tasks:** tasks that ended with an error or ran out of time.
+- **failed tasks:** tasks that ended with an error or ran out of time. A task someone stopped on purpose does not count.
 - **error rate:** the share of failed tasks, compared with the release that ran before. This check is skipped when there were fewer than 10 tasks to compare.
 
 When the soak time is up and every check is within its limit, the release is marked `soak: passed`. When a check goes over its limit, the release is marked `failed` right away, and the deploy says which check failed. The first pass or fail is kept, so trouble after the soak does not undo a pass.
 
 The soak is off unless you switch it on. While it is off, `agentx daemon deploy` works exactly as before.
+
+Only `agentx daemon deploy` is held back. Other ways of putting a release on a machine, such as copying files by hand, running `git pull` there, or a self-update, are not checked.
 
 ## Switch the soak on
 
@@ -28,6 +30,8 @@ The soak is off unless you switch it on. While it is off, `agentx daemon deploy`
    }
    ```
 3. **Terminal:** restart the daemon so it records which release it runs: `agentx daemon restart --when-idle`.
+
+Write `true` exactly as shown. Any other value, such as `"true"` in quotes or a `${…}` placeholder, leaves the soak off.
 
 The settings and their limits are listed under [`quality`](/reference/config-automation#quality).
 
@@ -45,7 +49,7 @@ The settings and their limits are listed under [`quality`](/reference/config-aut
    agentx daemon deploy second-host --dry-run
    ```
    It prints `✓ Canary soak: 1a2b3c4: soak passed` and the commands it would run.
-5. **Terminal:** deploy for real: `agentx daemon deploy second-host --restart`. AgentX builds the release again from the same commit, so the second machine gets exactly what soaked here.
+5. **Terminal:** deploy for real: `agentx daemon deploy second-host --restart`. AgentX builds the release again from the same commit, so the second machine gets exactly what soaked here. If the folder moves to another commit while the deploy runs, AgentX stops before copying anything.
 
 Replace `second-host` with the name or address of your second machine.
 
@@ -60,7 +64,7 @@ Use this only when waiting is worse than the risk, for example to ship the fix f
 2. AgentX prints `⚠ Canary soak: soak override (…)`, then deploys.
 3. The override is written, with your reason, the release, the machine and your user name, to `.agentx/canary/events.jsonl`.
 
-A `--dry-run` with `--override-soak` shows what would happen and writes nothing.
+A `--dry-run`, with or without `--override-soak`, shows what would happen and writes nothing: no soak result is kept and no event is logged.
 
 ## See the soak history
 
@@ -79,7 +83,8 @@ A `--dry-run` with `--override-soak` shows what would happen and writes nothing.
 - **`has uncommitted changes, so it is not a release`:** commit first, then restart this machine's daemon on the new commit.
 - **`interrupted: replaced after …`:** another release was started here before the soak ended. Restart the daemon on the release you want to deploy, and wait again.
 - **`failed: crashes (1 unclean stop(s) …)`:** the daemon stopped without being asked to during the soak. Read `agentx daemon logs`, fix the cause, commit, and soak the new release.
-- **`failed: failed-tasks (task history unavailable …)`:** AgentX could not read its task history in `.agentx/db.sqlite`. Run `agentx doctor`. The soak cannot pass without it.
+- **`not judged: task history unavailable …`:** AgentX could not read its task history in `.agentx/db.sqlite`. Check that you run the command from the daemon's own folder, then run `agentx doctor`. Nothing is recorded, so the release is judged again once the history can be read.
+- **`this checkout moved from … to …`:** the folder changed commit during the deploy. Run the deploy again; it checks the soak of the new commit.
 - **`failed: error-rate (…)`:** more tasks failed than on the release before. Look at the failed tasks on the dashboard, fix the cause, and soak a new release.
 - **The deploy is not gated at all:** check that `quality.canary.enabled` is `true` in the `agentx.json` of the folder you deploy from, or pass that file with `--config`.
 - **A release passed, but you want to block it after all:** the first decision is kept in `.agentx/canary/releases.json`. Deploy a newer release instead.

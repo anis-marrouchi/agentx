@@ -1554,6 +1554,8 @@ export const daemonConfigSchema = z.object({
      *  has run on this (local) daemon for soakMinutes without new trouble.
      *  Judged from the boot log and task history (src/daemon/canary-soak). */
     canary: z.object({
+      /** Deploy reads only this key from the raw file (no .env, no
+       *  validation), so only a literal `true` turns the gate on. */
       enabled: z.boolean().default(false),
       soakMinutes: z.number().int().min(1).max(10_080).default(120),
       thresholds: z.object({
@@ -1562,7 +1564,8 @@ export const daemonConfigSchema = z.object({
         maxRestarts: z.number().int().min(0).default(1),
         /** Unclean stops (crash, kill) allowed during the soak. */
         maxCrashes: z.number().int().min(0).default(0),
-        /** Failed or timed-out tasks allowed during the soak. */
+        /** Failed or timed-out tasks allowed during the soak (stopped ones
+         *  do not count). */
         maxFailedTasks: z.number().int().min(0).default(3),
         /** Largest rise in the share of failed tasks vs the previous
          *  release, as a fraction (0.1 = 10 percentage points). */

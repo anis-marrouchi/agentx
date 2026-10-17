@@ -4,7 +4,7 @@ import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import chalk from "chalk"
 import { existsSync, readFileSync } from "fs"
 import { restartCommand } from "./daemon-restart"
-import { soakCommand, soakGate } from "./daemon-soak"
+import { headCommit, soakCommand, soakGate } from "./daemon-soak"
 import { lastBoot, statusBlock, stoppedBlock, type StatusService } from "./daemon-status"
 
 // --- agentx daemon: start/stop/status/logs ---
@@ -544,15 +544,26 @@ daemon
     }
 
     // The soak judged this checkout's HEAD; ship a build of exactly that.
+    // HEAD is checked again before the build and before rsync, since the
+    // tests and the build take minutes and the tree can move meanwhile.
     if (gate.enabled) {
+      const moved = () => {
+        const now = headCommit()
+        if (now === gate.commit) return false
+        console.log(chalk.red(`  ✗ Canary soak: this checkout moved from ${gate.commit} to ${now ?? "an unknown commit"} after the soak check. Run the deploy again.`))
+        process.exitCode = 1
+        return true
+      }
+      if (moved()) return
       try {
-        execSync("npx tsup --no-dts", { stdio: "pipe", cwd: process.cwd() })
+        execSync("npx tsup --no-dts", { stdio: "pipe", cwd: process.cwd(), env: { ...process.env, AGENTX_BUILD_COMMIT: gate.commit! } })
         console.log(chalk.green(`  ✓ Built ${gate.commit}`))
       } catch (e: any) {
         console.log(chalk.red(`  ✗ Build failed: ${e.message}`))
         process.exitCode = 1
         return
       }
+      if (moved()) return
     }
 
     console.log(chalk.dim(`  Deploying to ${opts.user}@${host}:${opts.path}...`))

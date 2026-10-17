@@ -1,4 +1,4 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs"
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import type { BootEntry } from "./boot-record"
 
@@ -10,11 +10,12 @@ import type { BootEntry } from "./boot-record"
 //   * restarts       clean restarts on that commit, after the first boot
 //   * crashes        restarts with no last-stop.json before them (crash, kill)
 //   * crash-loop     resume.crashLoop's restarts within its window, any time
-//   * failed-tasks   task_history rows that did not end "ok"
+//   * failed-tasks   task_history rows that ended "error" or "timeout"
 //   * error-rate     share of failed tasks vs the previous release's run
 //
 // Any failed check fails the soak at once. A run replaced by another commit
-// before its soak ends is "interrupted". The first pass or fail is kept in
+// before its soak ends is "interrupted". When task history can't be read the
+// soak is "unavailable": not judged, never kept. The first pass or fail is kept in
 // canary/releases.json, so later trouble on a passed release does not undo
 // it. Refusals and overrides are appended to canary/events.jsonl.
 //
@@ -54,7 +55,7 @@ export interface TaskCounts {
 /** Counts tasks started in [from, to). Null when task history can't be read. */
 export type TaskCounter = (from: number, to: number) => TaskCounts | null
 
-export type SoakStatus = "passed" | "failed" | "soaking" | "interrupted" | "not-started"
+export type SoakStatus = "passed" | "failed" | "soaking" | "interrupted" | "not-started" | "unavailable"
 
 export type SoakCheckName = "restarts" | "crashes" | "crash-loop" | "failed-tasks" | "error-rate"
 
@@ -161,7 +162,7 @@ export function evaluateSoak(input: {
 
   const current = tasks(run.start, until)
   if (!current) {
-    checks.push({ name: "failed-tasks", ok: false, detail: "task history unavailable (.agentx/db.sqlite)" })
+    checks.push({ name: "failed-tasks", ok: null, detail: "task history unavailable (.agentx/db.sqlite)" })
   } else {
     checks.push({
       name: "failed-tasks",
@@ -189,6 +190,12 @@ export function evaluateSoak(input: {
   const failed = checks.filter((c) => c.ok === false)
   if (failed.length) {
     return { ...base, status: "failed", remainingMinutes: 0, reason: `failed: ${failed.map((c) => `${c.name} (${c.detail})`).join("; ")}` }
+  }
+  if (until >= soakEnd && !current) {
+    return {
+      ...base, status: "unavailable", remainingMinutes: 0,
+      reason: "not judged: task history unavailable (.agentx/db.sqlite). Nothing is recorded; check again once it can be read.",
+    }
   }
   if (until >= soakEnd) {
     return { ...base, status: "passed", remainingMinutes: 0, reason: `passed after ${settings.soakMinutes} min on the local daemon` }
@@ -274,11 +281,19 @@ export function canaryReport(releases: ReleaseRecord[], events: CanaryEvent[], s
   }
 }
 
-export function readReleases(agentxDir: string): Record<string, ReleaseRecord> {
+/** The ledger; null when the file exists but can't be read, so a write
+ *  never replaces kept decisions with an empty ledger. */
+function loadReleases(agentxDir: string): Record<string, ReleaseRecord> | null {
+  const path = resolve(agentxDir, CANARY_DIR, RELEASES_FILE)
+  if (!existsSync(path)) return {}
   try {
-    const parsed = JSON.parse(readFileSync(resolve(agentxDir, CANARY_DIR, RELEASES_FILE), "utf-8"))
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}
-  } catch { return {} }
+    const parsed = JSON.parse(readFileSync(path, "utf-8"))
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null
+  } catch { return null }
+}
+
+export function readReleases(agentxDir: string): Record<string, ReleaseRecord> {
+  return loadReleases(agentxDir) ?? {}
 }
 
 export function readEvents(agentxDir: string): CanaryEvent[] {
@@ -307,14 +322,19 @@ export function recordedSoak(agentxDir: string, commit: string): ReleaseRecord |
 export function recordSoak(agentxDir: string, result: SoakResult): ReleaseRecord | null {
   const kept = recordedSoak(agentxDir, result.commit)
   if (kept || (result.status !== "passed" && result.status !== "failed")) return kept
-  const releases = readReleases(agentxDir)
+  const releases = loadReleases(agentxDir)
+  if (!releases) return null
   const record: ReleaseRecord = {
     commit: result.commit, status: result.status, decidedAt: result.checkedAt,
     startedAt: result.startedAt, reason: result.reason, checks: result.checks,
   }
   releases[result.commit] = record
   mkdirSync(resolve(agentxDir, CANARY_DIR), { recursive: true })
-  writeFileSync(resolve(agentxDir, CANARY_DIR, RELEASES_FILE), JSON.stringify(releases, null, 2) + "\n")
+  // Temp file + rename: a torn write never leaves a half ledger behind.
+  const path = resolve(agentxDir, CANARY_DIR, RELEASES_FILE)
+  const tmp = `${path}.${process.pid}.tmp`
+  writeFileSync(tmp, JSON.stringify(releases, null, 2) + "\n")
+  renameSync(tmp, path)
   return record
 }
 
