@@ -87,6 +87,7 @@ const groups = [
     { text: "Tailscale setup", link: "/jobs/tailscale" },
     { text: "Keep it safe", link: "/jobs/keep-it-safe" },
     { text: "Restart without losing work", link: "/jobs/restart-safely" },
+    { text: "Soak a release before deploying it", link: "/jobs/canary-soak" },
     { text: "Dashboard on your own address", link: "/jobs/reverse-proxy" },
   ] },
   { text: "When something goes wrong", collapsed: true, items: [

@@ -1012,7 +1012,7 @@ export class AgentXDaemon {
     // finish connecting; fully isolated so nothing in it can affect the
     // running daemon.
     this.bootTimes = recordBoot(resolve(process.cwd(), ".agentx"))
-    this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1))
+    this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1), buildInfo)
     // Paused tasks whose plan-writing turn the restart cut off (#857): a
     // plan from the trace, so they can be resumed. Before the resume pass,
     // which skips the cut-off wind-down turns themselves.
