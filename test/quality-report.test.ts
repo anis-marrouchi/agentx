@@ -248,6 +248,19 @@ describe("baselines and --public", () => {
     expect(c.totals.agent.cost.changePct).toBe(-50)
   })
 
+  it("a baseline saved without the per-100 fields gives null deltas, not NaN", () => {
+    const old = structuredClone(then) as any
+    for (const r of [old.totals.agent, old.totals.all, ...old.areas]) {
+      delete r.regressionFixes24hPer100
+      delete r.regressionFixes72hPer100
+    }
+    const c = compareReports(now, old, "old")
+    expect(c.comparison?.totals.agent.regressionFixes24hPer100).toBeNull()
+    expect(c.comparison?.totals.agent.regressionFixes72hPer100).toBeNull()
+    expect(renderReport(c)).not.toContain("NaN")
+    expect(renderMarkdown(c)).not.toContain("NaN")
+  })
+
   it("--public removes every absolute amount", () => {
     const pub = toPublic(compareReports(now, then, "before"))
     expect(pub.public).toBe(true)

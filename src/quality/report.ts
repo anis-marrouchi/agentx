@@ -214,8 +214,9 @@ function nullable(v: number | null, d: number): number | null {
   return v === null ? null : round(v, d)
 }
 
-const diff = (a: number | null, b: number | null, d = 1) =>
-  a === null || b === null ? null : round(a - b, d)
+// `== null` also catches fields missing from a baseline saved before they existed.
+const diff = (a: number | null | undefined, b: number | null | undefined, d = 1) =>
+  a == null || b == null ? null : round(a - b, d)
 
 const pctChange = (now: number | null | undefined, then: number | null | undefined) =>
   now == null || then == null || then === 0 ? null : round(((now - then) / then) * 100, 1)
