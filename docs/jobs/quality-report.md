@@ -37,7 +37,7 @@ Each week gets one comment. If the same week is posted again, AgentX edits that 
    }
    ```
 
-4. Check that `channels.github` has a token that may comment on that repository (`token` or `tokenFile`), or that the daemon runs with `GITHUB_TOKEN` set.
+4. Check that `channels.github` has a token that may comment on that repository (`token` or `tokenFile`), or that the daemon runs with `GITHUB_TOKEN` (or `GH_TOKEN`) set.
 5. Save the file. The running daemon reads the change on its own.
 
 Each time you turn a gate on or off, add or change its entry in `gates`: `since` is the day it went on, and `until` the day it went off. That way each week's comment says which gates were on, and changes in the numbers can be traced to a gate.

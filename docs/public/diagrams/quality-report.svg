@@ -34,7 +34,7 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 @media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
 </style>
 <rect width="920" height="950" rx="24" fill="#FFFFFF"/>
-<text x="44" y="56" class="h1" text-anchor="start">How the weekly quality report reaches the epic issue</text>
+<text x="44" y="56" class="h1" text-anchor="start">The weekly quality report</text>
 <text x="44" y="82" class="sub" text-anchor="start">One comment a week. The verdict is yours.</text>
 <circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You, the owner</text>
 <circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">The AgentX daemon</text>
@@ -45,20 +45,18 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="70" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:4.62s"/>
 <circle cx="70" cy="176" r="15" fill="#0B0D12"/>
 <text x="70" y="181" class="num" text-anchor="middle">1</text>
-<text x="60" y="220" class="title" text-anchor="start">Run the report</text>
-<text x="60" y="241" class="title" text-anchor="start">for last week</text>
-<text x="60" y="263" class="note" text-anchor="start">Monday at the set time,</text>
-<text x="60" y="280" class="note" text-anchor="start">or later that week</text>
+<text x="60" y="220" class="title" text-anchor="start">Run last week's report</text>
+<text x="60" y="242" class="note" text-anchor="start">Monday at the set time,</text>
+<text x="60" y="259" class="note" text-anchor="start">or later that week</text>
 </g>
 <g class="rise" style="animation-delay:0.64s">
 <rect x="328" y="148" width="264" height="136" rx="14" class="card"/>
 <circle cx="354" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:5.32s"/>
 <circle cx="354" cy="176" r="15" fill="#0B0D12"/>
 <text x="354" y="181" class="num" text-anchor="middle">2</text>
-<text x="344" y="220" class="title" text-anchor="start">Check it is</text>
-<text x="344" y="241" class="title" text-anchor="start">safe to publish</text>
-<text x="344" y="263" class="note" text-anchor="start">no cost amounts,</text>
-<text x="344" y="280" class="note" text-anchor="start">no names</text>
+<text x="344" y="220" class="title" text-anchor="start">Check it is public-safe</text>
+<text x="344" y="242" class="note" text-anchor="start">no cost amounts,</text>
+<text x="344" y="259" class="note" text-anchor="start">no names</text>
 </g>
 <g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
 <g class="rise" style="animation-delay:0.96s">
@@ -66,10 +64,9 @@ text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto
 <circle cx="638" cy="176" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:6.02s"/>
 <circle cx="638" cy="176" r="15" fill="#0B0D12"/>
 <text x="638" y="181" class="num" text-anchor="middle">3</text>
-<text x="628" y="220" class="title" text-anchor="start">Post one comment</text>
-<text x="628" y="241" class="title" text-anchor="start">on the epic issue</text>
-<text x="628" y="263" class="note" text-anchor="start">the same week again</text>
-<text x="628" y="280" class="note" text-anchor="start">edits that comment</text>
+<text x="628" y="220" class="title" text-anchor="start">Comment on the epic</text>
+<text x="628" y="242" class="note" text-anchor="start">the same week again</text>
+<text x="628" y="259" class="note" text-anchor="start">edits that comment</text>
 </g>
 <g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
 <path d="M744 284 V292 Q744 302 734 302 H80 Q70 302 70 312 V316" class="wrap" pathLength="100" style="animation-delay:1.26s"/>

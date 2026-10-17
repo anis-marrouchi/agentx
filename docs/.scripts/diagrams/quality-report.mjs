@@ -18,7 +18,7 @@ const d = createDiagram({
     "After week 3 with the gates on, the comment says the verdict is due. You run agentx quality verdict with keep, tune or switch-off for each gate, and it posts one verdict comment that cites the latest numbers.",
 })
 
-d.header("How the weekly quality report reaches the epic issue", "One comment a week. The verdict is yours.", [
+d.header("The weekly quality report", "One comment a week. The verdict is yours.", [
   [C.accent, "You, the owner"],
   [C.ink, "The AgentX daemon"],
 ])
@@ -28,9 +28,9 @@ let y = 148
 d.band(104, 2 * ROW + GAP + 64, "EVERY MONDAY", { tint: C.tintGrey })
 const weekly = d.row(
   [
-    { title: ["Run the report", "for last week"], note: ["Monday at the set time,", "or later that week"], who: "ink" },
-    { title: ["Check it is", "safe to publish"], note: ["no cost amounts,", "no names"], who: "ink" },
-    { title: ["Post one comment", "on the epic issue"], note: ["the same week again", "edits that comment"], who: "ink" },
+    { title: ["Run last week's report"], note: ["Monday at the set time,", "or later that week"], who: "ink" },
+    { title: ["Check it is public-safe"], note: ["no cost amounts,", "no names"], who: "ink" },
+    { title: ["Comment on the epic"], note: ["the same week again", "edits that comment"], who: "ink" },
   ],
   y,
 )
