@@ -60,4 +60,9 @@ describe("parseArgs", () => {
   it("refuses another flag as a value", () => {
     expect(() => parseArgs(["--repo", "--off"])).toThrow(/--repo needs a value/)
   })
+
+  it("reads --flag=value", () => {
+    expect(parseArgs(["--repo=acme/demo", "--branch=release"])).toMatchObject({ repo: "acme/demo", branch: "release", off: false })
+    expect(() => parseArgs(["--repo="])).toThrow(/--repo needs a value/)
+  })
 })
