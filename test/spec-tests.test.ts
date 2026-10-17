@@ -232,6 +232,13 @@ describe("helpers", () => {
     expect(findSecrets("-----BEGIN OPENSSH PRIVATE KEY-----\nabc")).toEqual(["private key"])
     expect(findSecrets("fetch('https://user:" + "hunter2hunter2" + "@example.invalid/x')")).toEqual(["password in a URL"])
     expect(findSecrets("it('retries a 500', () => { expect(sk).toBe('sk-short') })")).toEqual([])
+    // Built at runtime so this file holds no literal token.
+    expect(findSecrets("sk-proj-" + "Ab1_Cd2-".repeat(6))).toEqual(["API key (sk-)"])
+    expect(findSecrets("sk_" + "live_" + "A1b2C3d4".repeat(3))).toEqual(["Stripe key"])
+    expect(findSecrets("dop_" + "v1_" + "ab12".repeat(16))).toEqual(["DigitalOcean token"])
+    expect(findSecrets("hf_" + "A1b2C3d4".repeat(4))).toEqual(["Hugging Face token"])
+    expect(findSecrets("npm_" + "A1b2C3d4X".repeat(4))).toEqual(["npm token"])
+    expect(findSecrets(["eyJ" + "hbGciOiJIUzI1", "eyJ" + "zdWIiOiIxMjM0", "SflKxwRJSMeKKF2QT4fwpM"].join("."))).toEqual(["JSON Web Token"])
   })
 
   it("a time-out ends with SIGKILL when the process ignores SIGTERM", async () => {
