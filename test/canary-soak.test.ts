@@ -11,7 +11,7 @@ import {
   type CanarySettings, type TaskCounter, type TaskCounts,
 } from "../src/daemon/canary-soak"
 import { daemonConfigSchema } from "../src/daemon/config"
-import { headCommit, soakFor, soakGate } from "../src/commands/daemon-soak"
+import { canarySwitch, checkoutMoved, headCommit, pinnedBuildEnv, soakFor, soakGate } from "../src/commands/daemon-soak"
 
 const MIN = 60_000
 const T0 = Date.parse("2026-10-17T08:00:00Z")
@@ -244,6 +244,40 @@ describe("soak gate on a daemon folder", () => {
     rmSync(empty, { recursive: true, force: true })
     writeFileSync(join(dir, "agentx.json"), "{ not json")
     expect(soakGate("remote", { cwd: dir }).enabled).toBe(false)
+  })
+
+  it("warns when the switch reads as off only because the config is broken", () => {
+    writeFileSync(join(dir, "agentx.json"), "{ not json")
+    expect(soakGate("remote", { cwd: dir }).warning).toContain("not valid JSON")
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({ quality: { canary: { enabled: "${CANARY_ON}" } } }))
+    expect(canarySwitch(undefined, dir)).toMatchObject({ enabled: false, warning: expect.stringContaining("not true") })
+    for (const enabled of [false, undefined]) {
+      writeFileSync(join(dir, "agentx.json"), JSON.stringify({ quality: { canary: { enabled } } }))
+      expect(soakGate("remote", { cwd: dir }).warning).toBeUndefined()
+    }
+  })
+
+  it("notices when the checkout moves after the soak, and pins the build to it", () => {
+    const commit = checkout()
+    expect(checkoutMoved(commit, dir)).toBeNull()
+    writeFileSync(join(dir, "README"), "y")
+    expect(checkoutMoved(commit, dir)).toContain(`moved from ${commit} to ${commit}-dirty`)
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "next")
+    const next = headCommit(dir)!
+    expect(next).not.toBe(commit)
+    expect(checkoutMoved(commit, dir)).toContain(`to ${next}`)
+    expect(pinnedBuildEnv(commit, { PATH: "/bin", AGENTX_BUILD_COMMIT: "other" })).toEqual({ PATH: "/bin", AGENTX_BUILD_COMMIT: commit })
+  })
+
+  it("refuses to judge again when the ledger can't be read", () => {
+    const agentx = join(dir, ".agentx")
+    mkdirSync(join(agentx, "canary"), { recursive: true })
+    writeFileSync(join(agentx, "canary", "releases.json"), "{ torn")
+    recordBootEntry(agentx, Date.now() - 200 * MIN, [], { commit: "bbbbbbb", version: "1.0.0" })
+    const r = soakFor("bbbbbbb", settings, crashLoop, { cwd: dir })
+    expect(r.status).toBe("unavailable")
+    expect(r.reason).toContain("releases.json")
+    expect(deployDecision(settings, "bbbbbbb", r).allow).toBe(false)
   })
 
   it("a dry run leaves no files, even when the soak is decided", () => {

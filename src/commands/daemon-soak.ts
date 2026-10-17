@@ -7,7 +7,7 @@ import { userInfo } from "os"
 import { resolve } from "path"
 import { readBootLog } from "@/daemon/boot-record"
 import {
-  appendEvent, canaryReport, deployDecision, evaluateSoak, readEvents, readReleases,
+  appendEvent, canaryReport, deployDecision, evaluateSoak, ledgerReadable, readEvents, readReleases,
   recordSoak, recordedSoak, resultFromRecord,
   type CanarySettings, type CrashLoopSettings, type DeployDecision, type SoakResult, type TaskCounter,
 } from "@/daemon/canary-soak"
@@ -27,11 +27,24 @@ function findConfig(configPath: string | undefined, cwd: string): string | undef
 
 /** Whether quality.canary.enabled is literally true in the raw config. Reads
  *  that one key only: no .env, no validation, never throws, so with the gate
- *  off a deploy behaves exactly as it did before the gate existed. */
-export function canaryEnabled(configPath?: string, cwd = process.cwd()): boolean {
+ *  off a deploy behaves exactly as it did before the gate existed. A config
+ *  that can't be parsed, or a switch that is set but not a boolean, reads as
+ *  off with a warning, so the gate never turns off without a word. */
+export function canarySwitch(configPath?: string, cwd = process.cwd()): { enabled: boolean; warning?: string } {
   const found = findConfig(configPath, cwd)
-  if (!found) return false
-  try { return JSON.parse(readFileSync(found, "utf-8"))?.quality?.canary?.enabled === true } catch { return false }
+  if (!found) return { enabled: false }
+  let raw: any
+  try { raw = JSON.parse(readFileSync(found, "utf-8")) } catch {
+    return { enabled: false, warning: `${found} is not valid JSON, so the canary soak is treated as off.` }
+  }
+  const value = raw?.quality?.canary?.enabled
+  if (value === true) return { enabled: true }
+  if (value === undefined || value === false) return { enabled: false }
+  return { enabled: false, warning: `quality.canary.enabled is ${JSON.stringify(value)}, not true, so the canary soak is off.` }
+}
+
+export function canaryEnabled(configPath?: string, cwd = process.cwd()): boolean {
+  return canarySwitch(configPath, cwd).enabled
 }
 
 function canarySettings(configPath?: string, cwd = process.cwd()): { canary: CanarySettings; crashLoop: CrashLoopSettings } {
@@ -54,6 +67,18 @@ export function headCommit(cwd = process.cwd()): string | null {
     const dirty = git(["status", "--porcelain", "--untracked-files=no"])
     return sha ? (dirty ? `${sha}-dirty` : sha) : null
   } catch { return null }
+}
+
+/** Why the checkout no longer matches the soaked commit, or null when it
+ *  still does. Deploy calls it before the build and again before rsync. */
+export function checkoutMoved(soaked: string, cwd = process.cwd()): string | null {
+  const now = headCommit(cwd)
+  return now === soaked ? null : `this checkout moved from ${soaked} to ${now ?? "an unknown commit"} after the soak check. Run the deploy again.`
+}
+
+/** The build environment that bakes the soaked commit into dist/. */
+export function pinnedBuildEnv(commit: string, env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return { ...env, AGENTX_BUILD_COMMIT: commit }
 }
 
 /** Task counts from the daemon's own db, opened read-only. A missing file
@@ -83,6 +108,14 @@ export function soakFor(
 ): SoakResult {
   const dir = agentxDir(opts.cwd)
   const now = opts.now ?? Date.now()
+  // A ledger that can't be read may hold a fail: refuse to judge again.
+  if (!ledgerReadable(dir)) {
+    return {
+      commit, status: "unavailable", startedAt: null, endsAt: null, remainingMinutes: 0, checks: [],
+      checkedAt: new Date(now).toISOString(),
+      reason: "not judged: the release ledger (.agentx/canary/releases.json) can't be read, so an earlier fail can't be ruled out. Fix or move the file, then check again.",
+    }
+  }
   const kept = recordedSoak(dir, commit)
   if (kept) return resultFromRecord(kept, now)
   const result = evaluateSoak({ commit, boots: readBootLog(dir), now, settings: canary, crashLoop, tasks: taskCounter(dir) })
@@ -97,10 +130,11 @@ export function soakFor(
 export function soakGate(
   host: string,
   opts: { config?: string; overrideSoak?: string; dryRun?: boolean; cwd?: string },
-): DeployDecision & { commit: string | null; enabled: boolean } {
+): DeployDecision & { commit: string | null; enabled: boolean; warning?: string } {
   const cwd = opts.cwd ?? process.cwd()
-  if (!canaryEnabled(opts.config, cwd)) {
-    return { allow: true, message: "canary soak is off", overridden: false, commit: null, enabled: false }
+  const sw = canarySwitch(opts.config, cwd)
+  if (!sw.enabled) {
+    return { allow: true, message: "canary soak is off", overridden: false, commit: null, enabled: false, ...(sw.warning ? { warning: sw.warning } : {}) }
   }
   const { canary, crashLoop } = canarySettings(opts.config, cwd)
   if (!canary.enabled) return { ...deployDecision(canary, null, null), commit: null, enabled: false }
