@@ -1,7 +1,8 @@
 import { Command } from "commander"
 import chalk from "chalk"
 import { execFileSync } from "child_process"
-import { existsSync } from "fs"
+import Database from "better-sqlite3"
+import { existsSync, readFileSync } from "fs"
 import { userInfo } from "os"
 import { resolve } from "path"
 import { readBootLog } from "@/daemon/boot-record"
@@ -11,7 +12,6 @@ import {
   type CanarySettings, type CrashLoopSettings, type DeployDecision, type SoakResult, type TaskCounter,
 } from "@/daemon/canary-soak"
 import { daemonConfigSchema, loadDaemonConfig } from "@/daemon/config"
-import { openDb } from "@/storage/sqlite"
 
 // --- agentx daemon soak [sha] — canary soak status (#993) ---
 //
@@ -19,12 +19,25 @@ import { openDb } from "@/storage/sqlite"
 // canary-soak.ts) and keeps the first pass or fail per release. The same
 // check gates `agentx daemon deploy` when quality.canary.enabled is on.
 
-const agentxDir = () => resolve(process.cwd(), ".agentx")
+const agentxDir = (cwd = process.cwd()) => resolve(cwd, ".agentx")
 
-function canarySettings(configPath?: string): { canary: CanarySettings; crashLoop: CrashLoopSettings } {
+function findConfig(configPath: string | undefined, cwd: string): string | undefined {
+  return configPath ?? ["agentx.json", ".agentx/config.json"].map((f) => resolve(cwd, f)).find((p) => existsSync(p))
+}
+
+/** Whether quality.canary.enabled is literally true in the raw config. Reads
+ *  that one key only: no .env, no validation, never throws, so with the gate
+ *  off a deploy behaves exactly as it did before the gate existed. */
+export function canaryEnabled(configPath?: string, cwd = process.cwd()): boolean {
+  const found = findConfig(configPath, cwd)
+  if (!found) return false
+  try { return JSON.parse(readFileSync(found, "utf-8"))?.quality?.canary?.enabled === true } catch { return false }
+}
+
+function canarySettings(configPath?: string, cwd = process.cwd()): { canary: CanarySettings; crashLoop: CrashLoopSettings } {
   // No config at all (a plain checkout): the defaults, so the gate is off.
   // A config that exists but does not load still throws.
-  const found = configPath ?? ["agentx.json", ".agentx/config.json"].map((f) => resolve(process.cwd(), f)).find((p) => existsSync(p))
+  const found = findConfig(configPath, cwd)
   if (!found) {
     const { shape } = daemonConfigSchema
     return { canary: shape.quality.parse(undefined).canary, crashLoop: shape.resume.parse(undefined).crashLoop }
@@ -34,48 +47,68 @@ function canarySettings(configPath?: string): { canary: CanarySettings; crashLoo
 }
 
 /** The release SHA of this checkout, as tsup bakes it into a build. */
-export function headCommit(): string | null {
+export function headCommit(cwd = process.cwd()): string | null {
+  const git = (args: string[]) => execFileSync("git", args, { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim()
   try {
-    const sha = execFileSync("git", ["rev-parse", "--short=7", "HEAD"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim()
-    const dirty = execFileSync("git", ["status", "--porcelain", "--untracked-files=no"], { encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] }).trim()
+    const sha = git(["rev-parse", "--short=7", "HEAD"])
+    const dirty = git(["status", "--porcelain", "--untracked-files=no"])
     return sha ? (dirty ? `${sha}-dirty` : sha) : null
   } catch { return null }
 }
 
-const taskCounter: TaskCounter = (from, to) => {
-  const db = openDb()
-  if (!db) return null
-  try {
-    const row = db.prepare(
-      `SELECT COUNT(*) AS total, SUM(CASE WHEN status = 'ok' THEN 0 ELSE 1 END) AS failed
-         FROM task_history WHERE started_at >= ? AND started_at < ?`,
-    ).get(new Date(from).toISOString(), new Date(to).toISOString()) as { total: number; failed: number | null }
-    return { total: row.total, failed: row.failed ?? 0 }
-  } catch { return null }
+/** Task counts from the daemon's own db, opened read-only. A missing file
+ *  (wrong folder) reads as unavailable, never as zero tasks. Only errors and
+ *  timeouts count as failed; a task someone stopped did not fail. */
+function taskCounter(dir: string): TaskCounter {
+  return (from, to) => {
+    const path = resolve(dir, "db.sqlite")
+    if (!existsSync(path)) return null
+    let db: Database.Database | undefined
+    try {
+      db = new Database(path, { readonly: true, fileMustExist: true })
+      const row = db.prepare(
+        `SELECT COUNT(*) AS total, SUM(CASE WHEN status IN ('error', 'timeout') THEN 1 ELSE 0 END) AS failed
+           FROM task_history WHERE started_at >= ? AND started_at < ?`,
+      ).get(new Date(from).toISOString(), new Date(to).toISOString()) as { total: number; failed: number | null }
+      return { total: row.total, failed: row.failed ?? 0 }
+    } catch { return null } finally { db?.close() }
+  }
 }
 
 /** The soak result for a commit: the kept decision, else judged now (and
- *  kept when it passes or fails). */
-export function soakFor(commit: string, canary: CanarySettings, crashLoop: CrashLoopSettings, now = Date.now()): SoakResult {
-  const dir = agentxDir()
+ *  kept when it passes or fails, unless `record` is false). */
+export function soakFor(
+  commit: string, canary: CanarySettings, crashLoop: CrashLoopSettings,
+  opts: { now?: number; record?: boolean; cwd?: string } = {},
+): SoakResult {
+  const dir = agentxDir(opts.cwd)
+  const now = opts.now ?? Date.now()
   const kept = recordedSoak(dir, commit)
   if (kept) return resultFromRecord(kept, now)
-  const result = evaluateSoak({ commit, boots: readBootLog(dir), now, settings: canary, crashLoop, tasks: taskCounter })
-  recordSoak(dir, result)
+  const result = evaluateSoak({ commit, boots: readBootLog(dir), now, settings: canary, crashLoop, tasks: taskCounter(dir) })
+  if (opts.record !== false) recordSoak(dir, result)
   return result
 }
 
 /** Called by `agentx daemon deploy` before anything is copied. With the gate
- *  off it returns "allow" without reading anything. Refusals and overrides
- *  are logged to .agentx/canary/events.jsonl. */
-export function soakGate(host: string, opts: { config?: string; overrideSoak?: string; dryRun?: boolean }): DeployDecision & { commit: string | null; enabled: boolean } {
-  const { canary, crashLoop } = canarySettings(opts.config)
+ *  off it returns "allow" after reading only the switch. Refusals and
+ *  overrides are logged to .agentx/canary/events.jsonl. A dry run writes
+ *  nothing: no ledger entry, no event. */
+export function soakGate(
+  host: string,
+  opts: { config?: string; overrideSoak?: string; dryRun?: boolean; cwd?: string },
+): DeployDecision & { commit: string | null; enabled: boolean } {
+  const cwd = opts.cwd ?? process.cwd()
+  if (!canaryEnabled(opts.config, cwd)) {
+    return { allow: true, message: "canary soak is off", overridden: false, commit: null, enabled: false }
+  }
+  const { canary, crashLoop } = canarySettings(opts.config, cwd)
   if (!canary.enabled) return { ...deployDecision(canary, null, null), commit: null, enabled: false }
-  const commit = headCommit()
-  const soak = commit && !commit.endsWith("-dirty") ? soakFor(commit, canary, crashLoop) : null
+  const commit = headCommit(cwd)
+  const soak = commit && !commit.endsWith("-dirty") ? soakFor(commit, canary, crashLoop, { record: !opts.dryRun, cwd }) : null
   const decision = deployDecision(canary, commit, soak, opts.overrideSoak)
   if (!opts.dryRun && (decision.overridden || !decision.allow)) {
-    appendEvent(agentxDir(), {
+    appendEvent(agentxDir(cwd), {
       at: new Date().toISOString(),
       type: decision.overridden ? "override" : "blocked",
       commit, host, reason: decision.overridden ? opts.overrideSoak!.trim() : decision.message,

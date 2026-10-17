@@ -234,7 +234,7 @@ Deploy agentx to a remote server via rsync.
 | `--dry-run` | — | Check the canary soak and print the plan without changing anything. |
 | `-c, --config <path>` | — | Path to agentx.json. |
 
-With `quality.canary.enabled` on, the deploy refuses a release that has not passed its soak and prints the minutes left or the failed check. See [soak a release before deploying it](/jobs/canary-soak).
+With `quality.canary.enabled` on, the deploy refuses a release that has not passed its soak and prints the minutes left or the failed check. `--dry-run` writes nothing. See [soak a release before deploying it](/jobs/canary-soak).
 
 ### `agentx daemon soak [sha]`
 
