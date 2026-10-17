@@ -23,7 +23,7 @@ query($q: String!, $cursor: String) {
       ... on PullRequest {
         number title body createdAt mergedAt headRefName
         labels(first: 20) { nodes { name } }
-        files(first: 100) { nodes { path } }
+        files(first: 100) { nodes { path changeType } }
         closingIssuesReferences(first: 10) { nodes { number createdAt } }
         commits(first: 100) { nodes { commit { oid } } }
       }
@@ -79,6 +79,7 @@ function toRecord(n: any): PrRecord {
     headRefName: n.headRefName || "",
     labels: (n.labels?.nodes || []).map((l: any) => l.name),
     files: (n.files?.nodes || []).map((f: any) => f.path),
+    addedFiles: (n.files?.nodes || []).filter((f: any) => f.changeType === "ADDED").map((f: any) => f.path),
     closingIssues: (n.closingIssuesReferences?.nodes || []).map((i: any) => ({ number: i.number, createdAt: i.createdAt })),
     commits: (n.commits?.nodes || []).map((c: any) => c.commit.oid),
   }
