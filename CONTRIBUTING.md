@@ -296,7 +296,7 @@ Release PRs get the same checks as any other PR, so they still merge. A new job 
 - **The script says `Not Found` or `Resource not accessible`.** Your `gh` login is not a repo admin. Run `gh auth status` and sign in with an admin account.
 - **A PR waits forever on `test`.** CI did not run on it. In the browser, open **Actions**, find the **CI** run for the PR and approve it, or start **CI** on the PR's branch with **Run workflow**. Do not remove the protection to get one PR in.
 - **An older commit shows a cancelled `test`.** CI stops its run on a branch when a newer push arrives. Only the PR's latest commit counts for merging, so you can ignore it.
-- **The script says `--repo needs a value`.** A flag was given without its value, or with another flag in its place. Write it as `--repo owner/name` or `--branch name`.
+- **The script says `--repo needs a value`.** A flag was given without its value, or with another flag in its place. Write it as `--repo owner/name` or `--branch name` (`--repo=owner/name` also works).
 - **`--off` says `Branch not protected`.** There was nothing to remove; `main` is already unprotected.
 
 ## Releases

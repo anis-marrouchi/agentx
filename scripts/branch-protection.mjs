@@ -26,10 +26,11 @@ const CI_WORKFLOW = new URL('../.github/workflows/ci.yml', import.meta.url)
 export function parseArgs(argv) {
   // A flag's value must be there and must not be the next flag: `--repo --off`
   // would otherwise aim at repo "--off" and also turn the rollback on.
+  // `--repo=owner/name` is read the same as `--repo owner/name`.
   const value = (flag, fallback) => {
-    if (!argv.includes(flag)) return fallback
-    const next = argv[argv.indexOf(flag) + 1]
-    if (next === undefined || next.startsWith('--')) throw new Error(`${flag} needs a value`)
+    const joined = argv.find((arg) => arg.startsWith(`${flag}=`))
+    const next = joined !== undefined ? joined.slice(flag.length + 1) : argv.includes(flag) ? argv[argv.indexOf(flag) + 1] : fallback
+    if (next === undefined || next === '' || next.startsWith('--')) throw new Error(`${flag} needs a value`)
     return next
   }
   return {
