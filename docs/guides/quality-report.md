@@ -34,7 +34,8 @@ These definitions are exact: the numbers are counted this way, and two reports a
 - **PRs**: merged PRs, by the day they merged, in UTC (world time, no time zone).
 - **Fixes**: PRs whose title starts with the type `fix`, as in `fix: …`, `fix(scope): …` or `fix!: …`.
 - **Fix share**: fixes divided by PRs.
-- **Reg ≤24h** and **Reg ≤72h**: regression fixes. A regression fix is a fix whose title or description mentions `#N` (or a link to pull request N), where N is a PR that merged at most 72 hours before the fix merged. **Reg ≤72h** counts all of them; **Reg ≤24h** counts those within 24 hours, so it is part of the 72-hour number. A PR merged up to 72 hours before `--since` still counts as the PR being fixed.
+- **Reg ≤24h** and **Reg ≤72h**: regression fixes. A regression fix is a fix whose title or description mentions `#N` (or a link to pull request N), where N is a PR that merged at most 72 hours before the fix merged. **Reg ≤72h** counts all of them; **Reg ≤24h** counts those within 24 hours, so it is part of the 72-hour number. A PR merged up to 72 hours before `--since` still counts as the PR being fixed. The number in brackets is the same count per 100 merged PRs in the row, so a busy week and a quiet week can be compared.
+- **Fix review/tests/UI**: three counts among the fixes, split by `/`. The first counts fixes whose title or description mentions a review (any word starting with `review`, such as `reviewer`). The second counts fixes that change a test: a file under `test/`, a file named like `name.test.ts`, or a file in a `__fixtures__` folder. The third counts fixes that change a screen: a file under `src/daemon/ui/`, `src/web/` or `apps/`.
 - **Area**: the folder directly under `src/` with the most changed files in the PR, such as `daemon` or `channels`. Files directly in `src/` count as `src`. A PR that changes nothing under `src/` is `other`. Ties go to the name first in alphabetical order. Only the first 100 changed files are read.
 - **Lead issue p50/p90**: for PRs that close an issue (GitHub's "closing issues" link, such as `Closes #12`), the time from that issue being opened to the PR being merged. With several issues, the oldest one counts. p50 is the median (half the PRs were faster); p90 means 9 in 10 PRs were faster. Both use the nearest-rank method.
 - **Lead PR p50/p90**: the same for PRs that close no issue, from the PR being opened to it being merged.
@@ -52,7 +53,7 @@ A baseline is a saved report you compare later reports with. It is kept in `.age
 1. Run `agentx quality report --since 2026-01-05 --until 2026-01-18 --save-baseline before`.
 2. Make the change you want to measure, and let it run for a while.
 3. Run `agentx quality report --since 2026-01-19 --until 2026-02-01 --compare before`.
-4. Read the **Compared with baseline** lines under the tables: the change in PRs, fix share (in percentage points), regression fixes, median lead time, CI minutes and cost per PR (in %).
+4. Read the **Compared with baseline** lines under the tables: the change in PRs, fix share (in percentage points), regression fixes (also per 100 PRs), median lead time, CI minutes and cost per PR (in %).
 
 ## Share a report in public
 
@@ -93,6 +94,8 @@ Each `Row` has these fields:
 | `fixes` | Fixes among them. |
 | `fixShare` | `fixes / mergedPrs`, from 0 to 1. `null` when there are no PRs. |
 | `regressionFixes24h`, `regressionFixes72h` | Regression fixes within 24 and 72 hours. |
+| `regressionFixes24hPer100`, `regressionFixes72hPer100` | The same, per 100 merged PRs, rounded to one decimal. `null` when there are no PRs. |
+| `fixesMentioningReview`, `fixesTouchingTests`, `fixesTouchingUi` | Fixes that mention a review, change a test, or change a screen. |
 | `leadTime.issue`, `leadTime.pr` | Each `{ "n", "medianHours", "p90Hours" }`. Hours are `null` when `n` is 0. |
 | `ciMinutes` | CI minutes, or `null` with `--no-ci`. |
 | `cost.perMergedPr`, `cost.total` | Dollars. `null` when nothing matched. Left out with `--public`. |
@@ -102,7 +105,7 @@ Each `Row` has these fields:
 | `cost.status` | `attributed`, `unattributed`, or `external` when every PR in the row is external. |
 | `cost.changePct` | Change of `perMergedPr` against the baseline, in %. Only with `--compare` (and `null` in public output without it). |
 
-With `--compare`, `comparison` holds `baseline`, `baselineSince`, `baselineUntil`, `totals.agent`, `totals.all` and `areas` (one entry per area found in both reports). Each entry has `mergedPrs`, `fixSharePts`, `regressionFixes24h`, `regressionFixes72h`, `issueLeadMedianHours`, `prLeadMedianHours`, `ciMinutes`, `costPerMergedPrPct` and `attributionRatePts`: the current value minus the baseline value.
+With `--compare`, `comparison` holds `baseline`, `baselineSince`, `baselineUntil`, `totals.agent`, `totals.all` and `areas` (one entry per area found in both reports). Each entry has `mergedPrs`, `fixSharePts`, `regressionFixes24h`, `regressionFixes72h`, `regressionFixes24hPer100`, `regressionFixes72hPer100` (`null` against a baseline saved before these fields existed), `issueLeadMedianHours`, `prLeadMedianHours`, `ciMinutes`, `costPerMergedPrPct` and `attributionRatePts`: the current value minus the baseline value.
 
 ## All options
 

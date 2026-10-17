@@ -57,6 +57,21 @@ export function citedNumbers(pr: Pick<PrRecord, "number" | "title" | "body">): n
   return [...out]
 }
 
+/** A fix whose title or description mentions a review (`review`, `reviewer`, `reviewed`…). */
+export function mentionsReview(pr: Pick<PrRecord, "title" | "body">): boolean {
+  return /\breview/i.test(`${pr.title}\n${pr.body || ""}`)
+}
+
+/** Changes a test: anything under `test/`, a `*.test.*` file, or a `__fixtures__/` folder. */
+export function touchesTests(files: string[]): boolean {
+  return files.some((f) => f.startsWith("test/") || /\.test\.[cm]?[jt]sx?$/.test(f) || f.includes("__fixtures__/"))
+}
+
+/** Changes a screen: the dashboard (`src/daemon/ui/`, `src/web/`) or a native app (`apps/`). */
+export function touchesUi(files: string[]): boolean {
+  return files.some((f) => f.startsWith("src/daemon/ui/") || f.startsWith("src/web/") || f.startsWith("apps/"))
+}
+
 export interface RegressionHit {
   /** The cited PR merged at most 24 h before this fix merged. */
   within24h: boolean

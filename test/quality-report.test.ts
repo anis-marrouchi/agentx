@@ -4,7 +4,8 @@ import { tmpdir } from "os"
 import { join } from "path"
 import Database from "better-sqlite3"
 import {
-  areaOf, citedNumbers, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, percentile, regressionOf, weekOf,
+  areaOf, citedNumbers, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, mentionsReview, percentile, regressionOf,
+  touchesTests, touchesUi, weekOf,
   type PrRecord,
 } from "../src/quality/classify"
 import { buildReport, compareReports, renderReport, toPublic, QUALITY_REPORT_SCHEMA } from "../src/quality/report"
@@ -146,6 +147,22 @@ const fixture: PrRecord[] = [
   pr({ number: 6, title: "docs: z", headRefName: "someone/docs", mergedAt: "2026-01-08T10:00:00Z", files: ["docs/a.md"] }),
 ]
 
+describe("fix details", () => {
+  it("review mentions, test files and UI files", () => {
+    expect(mentionsReview(pr({ number: 1, title: "fix: address review on #12" }))).toBe(true)
+    expect(mentionsReview(pr({ number: 2, body: "Reviewer asked for this." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, title: "fix: preview pane" }))).toBe(false)
+    expect(touchesTests(["test/a.test.ts"])).toBe(true)
+    expect(touchesTests(["src/x/a.test.mjs"])).toBe(true)
+    expect(touchesTests(["src/x/__fixtures__/a.json"])).toBe(true)
+    expect(touchesTests(["src/testing.ts", "docs/test.md"])).toBe(false)
+    expect(touchesUi(["src/daemon/ui/assistant.ts"])).toBe(true)
+    expect(touchesUi(["src/web/activity-graph/a.ts"])).toBe(true)
+    expect(touchesUi(["apps/phone/App.tsx"])).toBe(true)
+    expect(touchesUi(["src/daemon/index.ts"])).toBe(false)
+  })
+})
+
 describe("buildReport", () => {
   const report = buildReport(fixture, { repo: "o/r", since: "2026-01-05", until: "2026-01-11", generatedAt: "2026-01-12T00:00:00Z" },
     { ciMinutes: new Map([[3, 4], [4, 6], [5, 2], [6, 1]]), cost: new Map([[3, 1.5], [5, 0.5]]) })
@@ -164,6 +181,22 @@ describe("buildReport", () => {
   it("a fix may cite a PR merged before the window", () => {
     expect(report.totals.agent.regressionFixes24h).toBe(0)
     expect(report.totals.agent.regressionFixes72h).toBe(1)
+  })
+
+  it("regression fixes per 100 merged PRs, and what fixes touched", () => {
+    expect(report.totals.agent.regressionFixes24hPer100).toBe(0)
+    expect(report.totals.agent.regressionFixes72hPer100).toBe(33.3) // 1 of 3
+    expect(report.totals.all.regressionFixes72hPer100).toBe(25) // 1 of 4
+    expect(report.totals.agent).toMatchObject({ fixesMentioningReview: 0, fixesTouchingTests: 0, fixesTouchingUi: 0 })
+    const touched = buildReport([
+      pr({ number: 7, title: "fix(ui): review follow-up", files: ["src/daemon/ui/a.ts", "test/a.test.ts"] }),
+      pr({ number: 8, title: "fix: z", files: ["test/b.test.ts"] }),
+      pr({ number: 9, title: "feat: review queue", files: ["src/web/a.ts", "test/c.test.ts"] }),
+    ], { repo: "o/r", since: "2026-01-05", until: "2026-01-11" })
+    expect(touched.totals.agent).toMatchObject({ fixesMentioningReview: 1, fixesTouchingTests: 2, fixesTouchingUi: 1 })
+    expect(renderReport(touched)).toContain("1/2/1")
+    const empty = buildReport([], { repo: "o/r", since: "2026-01-05", until: "2026-01-11" })
+    expect(empty.totals.agent.regressionFixes24hPer100).toBeNull()
   })
 
   it("lead time splits issue-linked and unlinked PRs", () => {
@@ -210,6 +243,18 @@ describe("baselines and --public", () => {
     expect(c.comparison?.totals.agent.costPerMergedPrPct).toBe(-50)
     expect(c.comparison?.totals.agent.mergedPrs).toBe(0)
     expect(c.totals.agent.cost.changePct).toBe(-50)
+    expect(c.comparison?.totals.agent.regressionFixes72hPer100).toBe(0)
+  })
+
+  it("a baseline saved before the per-100 fields compares without NaN", () => {
+    const old = structuredClone(then)
+    for (const r of [old.totals.agent, old.totals.all, ...old.areas] as any[]) {
+      delete r.regressionFixes24hPer100
+      delete r.regressionFixes72hPer100
+    }
+    const c = compareReports(now, old, "before")
+    expect(c.comparison?.totals.agent.regressionFixes24hPer100).toBeNull()
+    expect(renderReport(c)).not.toContain("NaN")
   })
 
   it("--public removes every absolute amount", () => {
