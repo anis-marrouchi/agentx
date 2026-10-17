@@ -8,17 +8,20 @@
 //     Changed files from git (for a local run).
 //   node scripts/ui-evidence.mjs --pr <number> [--post-check <sha>]
 //     Changed files, description and labels from the GitHub API (in CI),
-//     read when the run starts, so a run that finishes after a newer one
-//     still judges the latest description. With --post-check, also posts the
-//     verdict as a "ui-evidence" check run on that commit, unless the PR has
-//     moved on to a newer commit (whose own run gives the verdict).
+//     read when the run starts and again just before the check is posted, so
+//     a run that finishes after a newer one still judges the latest text.
+//     With --post-check, also posts the verdict as a "ui-evidence" check run
+//     on that commit, unless the PR has moved on to a newer commit (whose own
+//     run gives the verdict).
 //
 // A local run reads PR_BODY and PR_LABELS (comma or newline separated) from
 // the env. UI_EVIDENCE_MODE is parsed by parseMode(): "advisory" (default: a
 // failure is reported as neutral and exits 0), "required" (a failure exits 1)
 // or "false"/"off"/"0" (the check run is posted as a success saying the
 // check is switched off).
-// --json prints the verdict as JSON. Exit 2 on bad usage or API errors.
+// --json prints the verdict as JSON. Exit 2 on bad usage or API errors; with
+// --post-check, an API error still posts a check run first ("failure" in
+// required mode, "neutral" otherwise).
 import { execFileSync } from "node:child_process"
 import { appendFileSync, readFileSync } from "node:fs"
 import { evaluate, parseMode } from "./ui-evidence-lib.mjs"
@@ -88,6 +91,36 @@ async function prDetails(pr) {
 }
 
 const prNumber = opt("pr")
+const sha = opt("post-check")
+
+async function postCheck(conclusion, title, summary) {
+  try {
+    await api(`/repos/${repo()}/check-runs`, {
+      method: "POST",
+      body: JSON.stringify({
+        name: "ui-evidence",
+        head_sha: sha,
+        status: "completed",
+        conclusion,
+        output: { title, summary: `Mode: ${mode}. ${summary}`.slice(0, 65000) },
+      }),
+    })
+  } catch (e) {
+    // Fork PRs get a read-only token; the job result and log still apply.
+    report("warning", `Could not post the ui-evidence check run: ${e.message}`)
+  }
+}
+
+/** Exit 2 on an API error, but post a check first so a required ui-evidence never waits forever. */
+async function apiFailure(message) {
+  if (sha) {
+    await postCheck(mode === "required" ? "failure" : "neutral", "Could not run the check", `The GitHub API returned an error, so the PR was not judged. Re-run the job.\n\n\`${message.slice(0, 1000)}\``)
+  }
+  fail(message)
+}
+
+const sameDetails = (a, b) => a.body === b.body && a.labels.join("\n") === b.labels.join("\n")
+
 let verdict
 let details = {}
 if (mode === "off") {
@@ -96,9 +129,19 @@ if (mode === "off") {
 } else {
   try {
     details = await prDetails(prNumber)
-    verdict = evaluate({ files: await changedFiles(prNumber), pr: details, config })
+    const files = await changedFiles(prNumber)
+    verdict = evaluate({ files, pr: details, config })
+    // An edit made while this run was working starts a newer run that may
+    // finish first. Read the PR again just before posting, so this run's
+    // check also judges the latest text. Files only change with the head,
+    // and a moved head posts nothing below.
+    if (sha && prNumber && details.headSha === sha) {
+      const latest = await prDetails(prNumber)
+      if (!sameDetails(latest, details)) verdict = evaluate({ files, pr: latest, config })
+      details = latest
+    }
   } catch (e) {
-    fail(e.message)
+    await apiFailure(e.message)
   }
 }
 const blocking = verdict.status === "failed" && mode === "required"
@@ -114,25 +157,10 @@ if (process.env.GITHUB_STEP_SUMMARY) {
   appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### ui-evidence: ${title}\n\nMode: ${mode}. Result: \`${verdict.status}\`.\n\n${verdict.summary}\n`)
 }
 
-const sha = opt("post-check")
 if (sha && details.headSha && details.headSha !== sha) {
   console.log(`The PR has moved on to ${details.headSha}; that commit's own run posts the ui-evidence check.`)
 } else if (sha) {
-  try {
-    await api(`/repos/${repo()}/check-runs`, {
-      method: "POST",
-      body: JSON.stringify({
-        name: "ui-evidence",
-        head_sha: sha,
-        status: "completed",
-        conclusion,
-        output: { title, summary: `Mode: ${mode}. Result: \`${verdict.status}\`.\n\n${verdict.summary}`.slice(0, 65000) },
-      }),
-    })
-  } catch (e) {
-    // Fork PRs get a read-only token; the job result and log still apply.
-    report("warning", `Could not post the ui-evidence check run: ${e.message}`)
-  }
+  await postCheck(conclusion, title, `Result: \`${verdict.status}\`.\n\n${verdict.summary}`)
 }
 
 process.exit(blocking ? 1 : 0)
