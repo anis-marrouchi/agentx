@@ -140,6 +140,15 @@ describe("done on a loop with a check", () => {
     expect(store.get(id)!.updatedAt).toBe(before)
   })
 
+  it("an unverified done with a home does not reset the quiet timer either", async () => {
+    const id = await withCheck()
+    const before = store.get(id)!.updatedAt
+    clock += 5 * HOUR
+    verdict = { verdict: "unverifiable", detail: "could not be reached" }
+    await post({ action: "done", agentId: "coder", id, evidence: "I sent it", home: { kind: "issue", link: "https://example.com/i/1" } })
+    expect(store.get(id)).toMatchObject({ updatedAt: before, home: { kind: "issue", link: "https://example.com/i/1" } })
+  })
+
   it("the tool gives a done time for its check", async () => {
     const spy = vi.spyOn(AbortSignal, "timeout")
     try {

@@ -389,10 +389,16 @@ export class RequestStore {
     ).all(since, limit).map(toRecord).reverse()
   }
 
-  /** Name where the work lives. A later home replaces an earlier one. */
-  setHome(id: string, home: RequestHome, now: number): void {
+  /** Name where the work lives. A later home replaces an earlier one.
+   *  With `touch: false` the quiet timer (`updated_at`) is left alone. */
+  setHome(id: string, home: RequestHome, now: number, opts: { touch?: boolean } = {}): void {
+    const link = home.link.slice(0, HOME_LINK_MAX)
+    if (opts.touch === false) {
+      this.db.prepare("UPDATE requests SET home_kind = ?, home_link = ? WHERE id = ?").run(home.kind, link, id)
+      return
+    }
     this.db.prepare("UPDATE requests SET home_kind = ?, home_link = ?, updated_at = ? WHERE id = ?")
-      .run(home.kind, home.link.slice(0, HOME_LINK_MAX), now, id)
+      .run(home.kind, link, now, id)
   }
 
   /** The owner said "pick it up again": back in progress, and the agent

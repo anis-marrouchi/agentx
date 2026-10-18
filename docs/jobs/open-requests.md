@@ -108,7 +108,7 @@ One agent can hold up to 200 open promises.
 A request or a promise can carry a **check**: what proves it is finished. The agent gives it as `closeWhen`, with `promise`, `accept` or `wait`. Then:
 
 - The daemon runs the check every 10 minutes. When the check finds the evidence, the request closes as done by itself, with the check's own words as the proof.
-- When the agent says `done`, the daemon runs the check first. If the check finds the work is not finished, the agent's done is refused. If the check cannot tell (the address is down, the forge refuses to answer), the request stays open and is marked **unverified**. Saying `done` again does not count as progress: the request still shows as stalled once it has been quiet too long.
+- When the agent says `done`, the daemon runs the check first. If the check finds the work is not finished, the agent's done is refused. If the check cannot tell (the address is down, the forge refuses to answer), the request stays open and is marked **unverified**. Saying `done` again, even with a home, does not count as progress: the request still shows as stalled once it has been quiet too long.
 - A request without a check closes on the agent's word, as before.
 - You can always close it yourself, with a reason. See [Close a request](#close-a-request).
 
