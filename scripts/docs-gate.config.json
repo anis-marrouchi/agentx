@@ -38,6 +38,13 @@
     "include": ["docs/**/*.md"],
     "exclude": ["docs/index.md", "docs/.vitepress/**", "docs/public/**", "docs/.scripts/**", "docs/**/node_modules/**"],
     "baseline": [],
+    "languages": [
+      {
+        "paths": ["docs/ar/**"],
+        "endingHeadings": ["تحقّق من أنه يعمل", "إذا حدث خطأ"],
+        "stepVerbs": ["شغّل", "افتح", "انقر", "اكتب", "اضغط", "اختر", "أدخل", "الصق", "انسخ", "ثبّت", "ابدأ", "أعد تشغيل", "أوقف", "احفظ", "أضِف", "عدّل", "أنشئ"]
+      }
+    ],
     "publicDir": "docs/public",
     "endingHeadings": ["Check it worked", "If something is wrong"],
     "stepVerbs": ["Run", "Open", "Click", "Type", "Press", "Select", "Choose", "Go to", "Enter", "Paste", "Copy", "Install", "Start", "Restart", "Stop", "Save", "Set", "Add", "Edit", "Create"],

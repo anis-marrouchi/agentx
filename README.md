@@ -1,10 +1,12 @@
 <div align="center">
 
+**English** · [العربية](docs/ar/README.md)
+
 <img src="docs/public/agentx-symbol.png" alt="AgentX" width="96" />
 
 # AgentX
 
-**Put an AI teammate on the tools your team already uses.**
+**The self-hosted agent harness for small teams.**
 
 <a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
 
@@ -17,7 +19,7 @@
 
 </div>
 
-AgentX routes messages and scheduled jobs to AI agents you host. Connect Telegram, WhatsApp, GitLab, GitHub, or a webhook. Give each agent a clear job. Watch the result in a browser dashboard.
+AgentX is a harness that runs a team of AI agents on a machine you control. A harness is the program around an AI model: it gives the model its channels, tools, schedules and memory, and records what it did. AgentX connects your agents to Telegram, WhatsApp, GitLab, GitHub, schedules and webhooks, on Claude Code, Codex, OpenCode or any model API. Give each agent a clear job. Watch the result in a browser dashboard.
 
 ## Watch it
 
@@ -103,6 +105,16 @@ node dist/cli.js daemon status
 
 The npm package is `agentix-cli`; the installed executable is `agentx`. Follow the [installation guide](docs/install.md) for details.
 
+### Add AgentX to Claude Code
+
+With AgentX installed and its node running, one command adds the AgentX plugin to Claude Code (version 2.1.275 or later). The plugin brings the AgentX tool server, in look-only mode by default, and two skills:
+
+```sh
+claude plugin install agentx --marketplace anis-marrouchi/agentx
+```
+
+Start a new Claude Code session and ask it to check your AgentX node. [Step-by-step guide and settings](docs/jobs/install-the-plugin.md). For Cursor, VS Code or Windsurf, see [Use AgentX from your code editor](docs/jobs/connect-an-editor.md).
+
 ## One machine is enough to start
 
 When an agent needs to work on another machine, pair the nodes with `agentx connect mesh invite` and `agentx connect mesh join <link>`. A connected agent can pass work to another node. For example:
@@ -131,6 +143,7 @@ Real agents need a configured model. An API provider needs a key; Claude Code, C
 - **Channels:** Telegram, WhatsApp, GitLab, GitHub, and generic webhooks. [Channel reference](docs/reference/channels.md).
 - **Models:** API providers, plus the Claude Code, Codex CLI, and OpenCode CLIs.
 - **Other programs:** the local daemon accepts tasks over HTTP, and `agentx a2a` serves the A2A protocol. [Agent-to-agent reference](docs/reference/a2a.md).
+- **Coding agents:** a [Claude Code plugin](docs/jobs/install-the-plugin.md), and the `agentx serve --stdio` tool server for [Cursor, VS Code and Windsurf](docs/jobs/connect-an-editor.md).
 - **Raycast:** ask your agents and list them from Raycast. [Install from this checkout](integrations/raycast/README.md); not in the Raycast Store yet.
 
 ## Help test and improve AgentX

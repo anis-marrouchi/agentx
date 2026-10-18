@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "agentx",
+  "description": "AgentX, the self-hosted agent harness for small teams: its tool server and skills for your coding agent.",
+  "owner": {
+    "name": "AgentX contributors",
+    "url": "https://github.com/anis-marrouchi/agentx"
+  },
+  "plugins": [
+    {
+      "name": "agentx",
+      "description": "Connect your coding agent to your AgentX node: check agents, read recent chats, schedules and the wiki, and (when you allow it) hand tasks to your agents.",
+      "source": "./plugins/agentx",
+      "category": "productivity",
+      "homepage": "https://agentx-docs.pages.dev/jobs/install-the-plugin",
+      "license": "MIT"
+    }
+  ]
+}
