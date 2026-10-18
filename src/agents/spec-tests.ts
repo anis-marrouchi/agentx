@@ -428,7 +428,12 @@ const SECRET_PATTERNS: Array<[string, RegExp]> = [
   ["GitHub token", /\b(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{50,})/],
   ["GitLab token", /\bglpat-[A-Za-z0-9_-]{20,}/],
   ["Anthropic key", /\bsk-ant-[A-Za-z0-9_-]{20,}/],
-  ["API key (sk-)", /\bsk-(proj-)?[A-Za-z0-9]{32,}/],
+  ["API key (sk-)", /\bsk-(?!ant-)(proj-|svcacct-|admin-)?[A-Za-z0-9_-]{32,}/],
+  ["Stripe key", /\b[sr]k_live_[A-Za-z0-9]{20,}/],
+  ["DigitalOcean token", /\bdo[pro]_v1_[a-f0-9]{64}\b/],
+  ["Hugging Face token", /\bhf_[A-Za-z0-9]{30,}/],
+  ["npm token", /\bnpm_[A-Za-z0-9]{36}\b/],
+  ["JSON Web Token", /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/],
   ["AWS access key", /\b(AKIA|ASIA)[0-9A-Z]{16}\b/],
   ["Google API key", /\bAIza[0-9A-Za-z_-]{35}\b/],
   ["Slack token", /\bxox[abposr]-[A-Za-z0-9-]{10,}/],
@@ -635,8 +640,9 @@ export const execProcess: ExecFn = async (cmd, args, opts) => {
   return { code: r.code, stdout: r.stdout, stderr: r.stderr }
 }
 
-/** File tools only: the test agent can read the base checkout and write a
- *  test file, but has no shell or network to look up the pull request. */
+/** File tools only: the test agent reads and writes inside its own worktree
+ *  (the deny rules block the base checkout and the daemon's files), and has
+ *  no shell or network to look up the pull request. */
 export const SPEC_AGENT_TOOLS = "Read,Glob,Grep,Write,Edit"
 
 export function specAgentArgs(opts: { model?: string; maxBudgetUsd: number; deny?: string[] }): string[] {
