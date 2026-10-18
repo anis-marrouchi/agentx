@@ -126,6 +126,12 @@ export class WatcherStore {
     this.db.prepare("UPDATE task_watchers SET trace_id = ? WHERE id = ?").run(traceId, id)
   }
 
+  /** A later start of the task named its due time: it replaces the one
+   *  the watcher was made with, while the watcher has not fired. */
+  setDue(id: string, dueAt: number): void {
+    this.db.prepare("UPDATE task_watchers SET due_at = ? WHERE id = ? AND state = 'open'").run(dueAt, id)
+  }
+
   /** Open watchers whose due time has passed. */
   due(now: number): WatcherRecord[] {
     return (this.db.prepare("SELECT * FROM task_watchers WHERE state = 'open' AND due_at <= ? ORDER BY due_at").all(now) as any[]).map(toRecord)

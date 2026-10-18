@@ -273,6 +273,23 @@ describe("fire", () => {
     expect(agentAlerts).toHaveLength(1)
   })
 
+  it("leaves a run for a delegation another node started to that node", async () => {
+    const peer = new WatchCheckpoint(deps({ isLocalDelegation: () => false }))
+    expect(await peer.check(task({ key: "dlg-remote", traceId: "run-r", kind: "delegation", delegator: "secretary" })))
+      .toEqual({ action: "skipped" })
+    expect(store.list()).toHaveLength(0)
+    expect(decideCalls).toBe(0)
+  })
+
+  it("takes the due time the callee run gives over the delegation's default", async () => {
+    const local = new WatchCheckpoint(deps({ isLocalDelegation: () => true }))
+    await local.delegationStarted({ id: "dlg-8", caller: "coo", callee: "social", request: "post it at 18:00" })
+    expect(store.byKey("dlg-8")?.dueAt).toBe(clock + 120 * MIN)
+    await local.check(task({ key: "dlg-8", traceId: "callee-8", kind: "delegation", delegator: "coo", dueAt: clock + 600 * MIN }))
+    expect(store.byKey("dlg-8")?.dueAt).toBe(clock + 600 * MIN)
+    expect(store.list()).toHaveLength(1)
+  })
+
   it("leaves a delegation's watcher to the delegation's own end", async () => {
     await cp.delegationStarted({ id: "dlg-4", caller: "coo", callee: "social", request: "post it" })
     await cp.check(task({ key: "dlg-4", traceId: "callee", kind: "delegation", delegator: "coo" }))
@@ -365,8 +382,26 @@ describe("fire", () => {
     await failing.check(task({ delegator: "coo", kind: "delegation", dueAt: clock + MIN }))
     clock += 2 * MIN
     await failing.sweep()
+    await failing.settled()
     expect(ownerAlerts).toHaveLength(1)
     expect(ownerAlerts[0].text).toContain("coo could not be told")
+  })
+
+  it("does not let one slow alert turn hold up the other watchers", async () => {
+    let release!: () => void
+    const slow = new WatchCheckpoint(deps({
+      alertAgent: (agentId, text) => {
+        agentAlerts.push({ agentId, text })
+        return agentId === "coo" ? new Promise<void>((r) => { release = r }) : Promise.resolve()
+      },
+    }))
+    await slow.check(task({ key: "a", traceId: "a", delegator: "coo", kind: "delegation", dueAt: clock + MIN }))
+    await slow.check(task({ key: "b", traceId: "b", delegator: "social", kind: "delegation", dueAt: clock + MIN }))
+    clock += 2 * MIN
+    await slow.sweep()
+    expect(agentAlerts.map((a) => a.agentId)).toEqual(["coo", "social"])
+    release()
+    await slow.settled()
   })
 
   it("stops after it is marked done", async () => {
@@ -401,6 +436,16 @@ describe("fire", () => {
     await cp.delegationStarted({ id: "dlg-6", caller: "coo", callee: "social", request: "post it" })
     await cp.delegationEnded({ id: "dlg-6" }, "error", "chat closed")
     expect(store.byKey("dlg-6")?.state).toBe("alerted")
+  })
+
+  it("tells the delegator how to close the watcher in the result, only when the done signal is explicit", async () => {
+    await cp.delegationStarted({ id: "dlg-7", caller: "coo", callee: "social", request: "post it" })
+    expect(cp.doneNote("dlg-7")).toBeUndefined()
+    settings = { ...ON, doneSignal: "explicit" }
+    expect(cp.doneNote("dlg-7")).toContain("POST /watchers/watch-dlg-7/done")
+    expect(cp.doneNote("dlg-unknown")).toBeUndefined()
+    cp.markDone("watch-dlg-7")
+    expect(cp.doneNote("dlg-7")).toBeUndefined()
   })
 
   it("still fires at once on a run without a result when the done signal is explicit", async () => {

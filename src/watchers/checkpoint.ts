@@ -69,6 +69,9 @@ export interface CheckpointDeps {
   lookups?: Array<(task: { key: string; traceId: string | null }) => string | null>
   /** Is this agent on this node (can it take an alert turn)? */
   hasAgent: (agentId: string) => boolean
+  /** Did this node start the delegation? A run for a delegation another
+   *  node started is watched there, not here. Unset: every one is local. */
+  isLocalDelegation?: (id: string) => boolean
   alertAgent: (agentId: string, text: string, w: WatcherRecord) => Promise<void>
   alertOwner: (title: string, text: string, w: WatcherRecord) => Promise<void>
   /** How the alert tells the delegating agent to mark the task done. */
@@ -189,6 +192,8 @@ export class WatchCheckpoint {
   }
 
   private link(task: TaskStart, w: WatcherRecord): void {
+    // The delegation's start carries no due time; its callee run can.
+    if (task.dueAt && task.dueAt !== w.dueAt) this.deps.store.setDue(w.id, task.dueAt)
     if (!task.traceId) return
     if (task.traceId !== w.taskKey) this.deps.store.setTrace(w.id, task.traceId)
     this.deps.store.recordOnTrace(task.traceId, "existing", w.probability, w.id)
@@ -204,6 +209,12 @@ export class WatchCheckpoint {
     if (own) {
       this.link(task, own)
       return { action: "existing", watcherId: own.id, found: own.id }
+    }
+    // A run for a delegation another node started (the peer side of a
+    // mesh hand-off): the caller's node watches it and hears its end.
+    if (task.kind === "delegation" && task.traceId && task.key.startsWith("dlg-")
+      && this.deps.isLocalDelegation && !this.deps.isLocalDelegation(task.key)) {
+      return { action: "skipped" }
     }
     for (const lookup of this.deps.lookups ?? []) {
       let found: string | null = null
@@ -322,17 +333,43 @@ export class WatchCheckpoint {
   private async fire(w: WatcherRecord, reason: string): Promise<void> {
     if (w.delegator && this.deps.hasAgent(w.delegator)) {
       if (!this.deps.store.transition(w.id, ["open"], "alerted", reason, this.now())) return
-      try {
-        await this.deps.alertAgent(w.delegator, agentAlertText(w, reason, this.deps.doneHint), w)
-        this.deps.log(`[watchers] ${w.id}: told ${w.delegator} (${reason})`)
-        return
-      } catch (e: any) {
-        this.deps.log(`[watchers] ${w.id}: could not tell ${w.delegator}: ${e?.message ?? e}`)
-        await this.escalate({ ...w, state: "alerted" }, `${reason}; ${w.delegator} could not be told`)
-        return
-      }
+      // The alert is a whole agent turn: not waited for, so one slow turn
+      // does not hold up the other watchers or the next sweep.
+      const delegator = w.delegator
+      const alert = this.deps.alertAgent(delegator, agentAlertText(w, reason, this.deps.doneHint), w)
+        .then(() => this.deps.log(`[watchers] ${w.id}: told ${delegator} (${reason})`))
+        .catch(async (e: any) => {
+          this.deps.log(`[watchers] ${w.id}: could not tell ${delegator}: ${e?.message ?? e}`)
+          await this.escalate({ ...w, state: "alerted" }, `${reason}; ${delegator} could not be told`)
+        })
+        .catch(() => { /* escalate logs its own failure */ })
+        .finally(() => this.alerting.delete(alert))
+      this.alerting.add(alert)
+      return
     }
     await this.escalate(w, reason)
+  }
+
+  /** Alert turns still running. */
+  private alerting = new Set<Promise<void>>()
+
+  /** Resolves when every alert turn started so far has ended. */
+  async settled(): Promise<void> {
+    while (this.alerting.size) await Promise.all([...this.alerting])
+  }
+
+  /** For a delegation's result, when only an explicit done closes its
+   *  watcher: tells the delegating agent how to close it. */
+  doneNote(delegationId: string): string | undefined {
+    try {
+      if (this.deps.settings().doneSignal !== "explicit") return undefined
+      const w = this.deps.store.byKey(delegationId)
+      if (!w || (w.state !== "open" && w.state !== "alerted")) return undefined
+      const hint = (this.deps.doneHint ?? apiDoneHint)(w)
+      return `Watcher ${w.id} follows this task and only an explicit done closes it. If the work is really finished (not only promised), mark it done: ${hint}. Otherwise it fires at ${new Date(w.dueAt).toISOString()}.`
+    } catch {
+      return undefined
+    }
   }
 
   private async escalate(w: WatcherRecord, reason: string): Promise<void> {

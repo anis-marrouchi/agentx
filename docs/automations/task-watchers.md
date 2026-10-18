@@ -10,7 +10,7 @@ Every time a task starts, AgentX runs a short check. A task here is a message to
 
 1. **Look up.** If the task already has a watcher, nothing new is made. A [tracked plan](/jobs/tracked-plans) that follows the task also counts as a watcher.
 2. **Decide.** A decision model answers one yes/no question: does this task carry a deadline, a promise to you, or a hand-off to another agent? It gives a chance between 0 and 1. The question is the `task-watch` [decision seat](/architecture/jev).
-3. **Attach.** A watcher is attached unless the answer is a confident "no". If the decision model is off, fails or is unsure, a watcher is attached anyway. A watcher that was not needed costs nothing: it closes by itself when the task ends with a result (unless [only an explicit done](#what-counts-as-done) closes it).
+3. **Attach.** A watcher is attached unless the answer is a confident "no". If the decision model is off, fails or is unsure, a watcher is attached anyway. A watcher that was not needed does no harm: it closes by itself when the task ends with a result (unless [only an explicit done](#what-counts-as-done) closes it). Asking the decision model is one small model call per task while its seat is in `shadow` or `active` mode.
 4. **Record.** The decision, its chance and the watcher's id are kept on the watcher and on the task's trace.
 
 A watcher fires when either of these happens first:
@@ -22,11 +22,13 @@ When it fires, it tells the agent that handed the task over. That agent gets a s
 
 A run that a restart or a stop signal cut off is not reported at once, because it may resume. Its due time still applies.
 
+A hand-off to an agent on another machine (a mesh peer) is watched on the machine that handed it over. The machine that does the work does not watch it again.
+
 ### What counts as done
 
 By default (`watchers.doneSignal` `result`), a watcher closes when the agent's run ends with a reply, or when a delegation answers. A reply that only promises the work, such as "I'll publish at 18:00", also closes it.
 
-With `watchers.doneSignal` set to `explicit`, a reply does not close the watcher. Only a done signal does: `POST /watchers/<id>/done` ([section 4](#_4-mark-a-task-done-by-hand)). A watched task that replied but was never marked done fires at its due time. Every watched task then needs someone to mark it done, so use this mode with the `task-watch` seat `active` (step 2), or expect an alert for each watched task that nobody marks done.
+With `watchers.doneSignal` set to `explicit`, a reply does not close the watcher. Only a done signal does: `POST /watchers/<id>/done` ([section 4](#_4-mark-a-task-done-by-hand)). A watched task that replied but was never marked done fires at its due time. When a delegation answers, its result tells the agent that handed it over which watcher to close and how. Every watched task still needs someone to mark it done, so use this mode with the `task-watch` seat `active` (step 2), or expect an alert for each watched task that nobody marks done.
 
 ## Before you start
 

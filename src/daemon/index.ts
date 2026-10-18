@@ -561,7 +561,13 @@ export class AgentXDaemon {
         this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text)
           .catch((e: any) => this.log(`[watchers] end of ${rec.id}: ${e?.message ?? e}`))
       },
-      callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
+      callbackNote: (rec) => {
+        const notes = [
+          this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
+          this.config.watchers.enabled ? this.watchers?.checkpoint.doneNote(rec.id) : undefined,
+        ].filter(Boolean)
+        return notes.length ? notes.join("\n\n") : undefined
+      },
       onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
     })
 
@@ -2260,6 +2266,9 @@ export class AgentXDaemon {
         return r && req.plans.get(r.id)?.state === "active" ? `plan ${r.id}` : null
       }],
       hasAgent: (id) => !!this.registry.getAgent(id),
+      // A mesh peer's delegation reaches this node as a run under its dlg
+      // chat; only the caller's node holds the delegation and watches it.
+      isLocalDelegation: (id) => this.delegations.isPending(id),
       // execute() does not reject on a failed start; it reports { error }.
       alertAgent: async (agentId, text, w) => {
         const res = await this.registry.execute({

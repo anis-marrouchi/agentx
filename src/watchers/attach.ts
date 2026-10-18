@@ -22,9 +22,14 @@ export function attachWatchers(
   const checkpoint = new WatchCheckpoint({ ...deps, store })
   const bus = getEventBus()
   const started = (e: AgentXEvents["task:started"]) => {
-    if (!deps.settings().enabled) return
-    const task = taskStartOf(e, deps.settings())
-    if (task) void checkpoint.check(task)
+    try {
+      if (!deps.settings().enabled) return
+      const task = taskStartOf(e, deps.settings())
+      if (task) void checkpoint.check(task)
+    } catch (err: any) {
+      // Runs inside the emitter of the task's own start: never throw there.
+      deps.log(`[watchers] start of ${e.taskId}: ${err?.message ?? err}`)
+    }
   }
   const completed = (e: AgentXEvents["task:completed"]) => {
     if (!deps.settings().enabled) return
