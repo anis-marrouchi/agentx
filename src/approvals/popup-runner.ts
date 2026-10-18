@@ -1,9 +1,11 @@
-import { readFocus, focusLabel, type FocusState } from "@/notify/focus"
+import { focusLabel, type FocusState } from "@/notify/focus"
+import { readHold } from "@/notify/hold"
 import { summarize } from "@/requests/card-view"
 import type { RequestRecord } from "@/requests/store"
 import { CARD_LIMITS, listCards, readCard, type DecisionCard } from "./cards"
 import { decide, requestStoreFor, type InboxContext } from "./inbox"
 import { showPopup, type PopupAnswer, type PopupSettings } from "./popup"
+import { cardRuleBreak, returnedText } from "./screen-gate"
 import { readInboxState, recordPopped, recordWanted } from "./state"
 
 // --- When the Mac popup shows a card ---
@@ -13,9 +15,15 @@ import { readInboxState, recordPopped, recordWanted } from "./state"
 //   - one popup at a time, oldest waiting card first;
 //   - each card is shown once. Not now, Cancel or no answer leaves it in
 //     the inbox, where the dashboard, the CLI and the digest still have it;
-//   - in Focus (system or the widget hold) nothing shows: the card is not
-//     marked shown, so it pops on the first minute after Focus ends. Same
-//     rule as `agentx notify`: held, never dropped;
+//   - in Focus (system or the widget hold) or in a call (#394) nothing
+//     shows: the card is not marked shown, so it pops on the first minute
+//     after the hold ends. Same rule as `agentx notify`: held, never dropped;
+//   - the screen gate (#394, screen-gate.ts): a card that breaks a rule
+//     (one question, title 120, ask 300, at most 3 choices) is not shown;
+//     it stays in the inbox and its author is told why, once. A card the
+//     operator asks for himself is exempt;
+//   - the window takes no focus: it floats over the app in use without
+//     taking the keyboard from it (card-window.ts);
 //   - cards put off with "later" wait until they come back;
 //   - cards older than a day don't pop, so switching the popup on doesn't
 //     replay a backlog one dialog at a time;
@@ -38,7 +46,7 @@ export interface PopupRunnerSettings extends PopupSettings {
 
 export const POPUP_MAX_AGE_MS = 24 * 3_600_000
 
-export type PopupOutcome = "off" | "busy" | "none" | "held" | "shown"
+export type PopupOutcome = "off" | "busy" | "none" | "held" | "shown" | "returned"
 
 export interface PopupRunnerDeps {
   ctx: InboxContext
@@ -51,6 +59,8 @@ export interface PopupRunnerDeps {
   speak?: (line: string) => Promise<unknown>
   /** An agent's display name, for the card. */
   agentName?: (agentId: string) => string | undefined
+  /** Tell a card's author it was not shown, and why (the screen gate). */
+  returnToAuthor?: (card: DecisionCard, text: string) => void
   platform?: NodeJS.Platform
 }
 
@@ -125,11 +135,20 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
   const request = nextCardToPop(ctx) ? null : nextRequestToPop(ctx)
   const card = request ? requestAsCard(request, ctx.now ?? Date.now()) : nextCardToPop(ctx)
   if (!card) return "none"
-  const focus = (deps.focus ?? readFocus)()
+  const focus = (deps.focus ?? readHold)()
   if (focus.active) return "held"
 
-  showing = true
   const key = `${request ? "request" : "card"}:${card.id}`
+  const broken = (readInboxState(ctx.root).wanted ?? []).includes(key) ? null : cardRuleBreak(card)
+  if (broken) {
+    const waiting = [...listCards(ctx.root, "pending").map((c) => `card:${c.id}`), ...requestsWaiting(ctx).map((r) => `request:${r.id}`)]
+    recordPopped(ctx.root, key, waiting, ctx.now)
+    log(`[approvals] popup: ${key} not shown, back to ${card.raised_by}: ${broken}`)
+    deps.returnToAuthor?.(card, returnedText(card, broken))
+    return "returned"
+  }
+
+  showing = true
   try {
     // Marked first: a dialog that crashes must not come back every minute.
     const waiting = [...listCards(ctx.root, "pending").map((c) => `card:${c.id}`), ...requestsWaiting(ctx).map((r) => `request:${r.id}`)]

@@ -3,7 +3,7 @@ import chalk from "chalk"
 import {
   notify as sendNotification,
   flushHeld,
-  readFocus,
+  readHold,
   focusLabel,
   NotificationQueue,
   localAlert,
@@ -16,6 +16,7 @@ import { proofAlert, type Proof } from "@/notify/proof"
 import { resolveRegion } from "@/computer-use/capture"
 import { readScreenSettings } from "@/computer-use/capture-settings"
 import { defaultNotifyChannel } from "@/notify/push-settings"
+import { noticeRuleBreak } from "@/approvals/screen-gate"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -95,7 +96,7 @@ export const notify = new Command()
   .option("--json", "emit the result as JSON")
   .action(async (message: string | undefined, opts) => {
     const queue = new NotificationQueue()
-    const state = readFocus()
+    const state = readHold()
     const { alert, banner, channel } = configuredAlert(opts)
     // --proof applies to this call's own banner only: not to --flush, and
     // not to the fallback alert after a failed push.
@@ -139,6 +140,12 @@ export const notify = new Command()
       console.log(chalk.red("  nothing to say — pass a message, or use --status / --flush"))
       process.exit(1)
     }
+    // The screen gate (#394): refused, never cut; the caller shortens it.
+    const broken = noticeRuleBreak(opts.title, message.trim())
+    if (broken) {
+      console.log(chalk.red(`  not sent: ${broken}. Say it so it reads in about ten seconds, or put the detail on a card or an issue.`))
+      process.exit(1)
+    }
 
     try {
       const result = await sendNotification(
@@ -162,7 +169,7 @@ export const notify = new Command()
       const mark = result.delivered ? chalk.green("→") : chalk.yellow("⏸")
       console.log(`  ${mark} ${result.reason}`)
       if (result.held) {
-        console.log(chalk.dim("    it will arrive with the others when Focus ends"))
+        console.log(chalk.dim("    it will arrive with the others when Focus or the call ends"))
       }
       if (p?.shot) console.log(`  ${p.error ? chalk.yellow("?") : chalk.green("✓")} banner: ${p.shot.path}${chalk.dim(` · ${p.shot.waitedMs}ms`)}`)
       if (p?.error) console.log(chalk.yellow(`    ${p.error}`))

@@ -21,7 +21,9 @@ import { isRetroOrigin, RETRO_NONE, type RetroCheckOrigin, type RetroOrigin } fr
 // so tests never call a model.
 
 export const RETRO_ASK = "What should change so this can't happen again?"
-export const MAX_CANDIDATES = 4
+/** The card offers every candidate plus "none": within the screen gate's
+ *  choice limit (#394). */
+export const MAX_CANDIDATES = CHOICE_LIMITS.count - 1
 /** A candidate the operator turned down is not offered again for this long. */
 export const REJECT_QUIET_DAYS = 30
 /** Runs this much slower, or with this many more tool calls, than the
