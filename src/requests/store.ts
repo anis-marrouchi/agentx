@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3"
 import { ensureColumns, PERSON_COLUMNS } from "@/storage/sqlite"
+import { readCloseWhen, type CloseWhen } from "./checkers"
 
 // --- Open requests: what a person asked for that is not finished (#356) ---
 //
@@ -29,6 +30,12 @@ export const HOME_KINDS = ["issue", "idea", "approval", "erp", "card"] as const
 export type HomeKind = (typeof HOME_KINDS)[number]
 export interface RequestHome { kind: HomeKind; link: string }
 export const HOME_LINK_MAX = 500
+
+/** What the last run of a loop's checker said (#1039). */
+export type VerifyState = "verified" | "unverified" | "failed"
+
+/** Who a loop is owed to: the owner, an agent id, or a known person id. */
+export const OWED_TO_OWNER = "owner"
 
 export interface RequestRecord {
   id: string
@@ -65,6 +72,22 @@ export interface RequestRecord {
   askedAgent: string | null
   /** Where the work lives, once the agent named it (#394). */
   home: RequestHome | null
+  // --- The open loop (#1039). Null on requests from before it. ---
+  /** Who it is owed to: "owner", an agent id, or a known person id. A
+   *  request from the owner's turn is owed to its sender. */
+  owedTo: string | null
+  /** An agent's promise (action promise), not a turn of the owner's. */
+  promise: boolean
+  /** When it is due, epoch ms. Past it, the loop is stalled. */
+  dueAt: number | null
+  /** What proves it is finished: the checker the requests check runs. */
+  closeWhen: CloseWhen | null
+  /** When the checker last ran, and what it said. */
+  checkedAt: number | null
+  verifiedAt: number | null
+  verifyState: VerifyState | null
+  /** The checker's last words: its evidence, or why it could not say. */
+  verifyDetail: string | null
 }
 
 export const TEXT_MAX = 4000
@@ -107,7 +130,9 @@ export function ensureRequestTables(db: Database.Database): void {
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
-  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"], ["home_kind", "TEXT"], ["home_link", "TEXT"]]) {
+  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"], ["home_kind", "TEXT"], ["home_link", "TEXT"],
+    ["owed_to", "TEXT"], ["promise", "INTEGER"], ["due_at", "INTEGER"], ["close_when", "TEXT"], ["checked_at", "INTEGER"],
+    ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -133,6 +158,8 @@ function toRecord(r: any): RequestRecord {
     evidence: r.evidence ?? null, closeReason: r.close_reason ?? null, ownerNote: r.owner_note ?? null, noteSaid: !!r.note_said,
     askedAgent: r.asked_agent ?? null,
     home: r.home_kind && r.home_link ? { kind: r.home_kind, link: r.home_link } : null,
+    owedTo: r.owed_to ?? null, promise: !!r.promise, dueAt: r.due_at ?? null, closeWhen: readCloseWhen(r.close_when),
+    checkedAt: r.checked_at ?? null, verifiedAt: r.verified_at ?? null, verifyState: r.verify_state ?? null, verifyDetail: r.verify_detail ?? null,
   }
 }
 
@@ -149,11 +176,83 @@ export class RequestStore {
     id: string; runId: string; channel: string; chatId: string; sender?: string | null
     person?: string | null; agentId: string; text: string; now: number
   }): void {
+    // Owed to whoever asked: the known person, else the sender (#1039).
+    const owedTo = input.person ?? input.sender ?? null
     this.db.prepare(
-      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, person, agent_id, text, created_at, updated_at)
-       VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(input.id, input.channel, input.chatId, input.sender ?? null, input.person ?? null, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now)
+      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, person, agent_id, text, created_at, updated_at, owed_to)
+       VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(input.id, input.channel, input.chatId, input.sender ?? null, input.person ?? null, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, owedTo)
     this.link(input.id, "run", input.runId, input.now)
+  }
+
+  /** An agent's promise (#1039): open at once, in progress, owed to
+   *  `owedTo`. The chat is the one of the turn that made it. */
+  addPromise(input: {
+    id: string; channel: string; chatId: string; agentId: string; text: string; owedTo: string
+    dueAt?: number | null; closeWhen?: CloseWhen | null; home?: RequestHome | null; now: number
+  }): void {
+    this.db.prepare(
+      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, owed_to, promise, due_at, close_when, home_kind, home_link)
+       VALUES (?, 'in_progress', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+    ).run(
+      input.id, input.channel, input.chatId, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.owedTo,
+      input.dueAt ?? null, input.closeWhen ? JSON.stringify(input.closeWhen) : null,
+      input.home?.kind ?? null, input.home ? input.home.link.slice(0, HOME_LINK_MAX) : null,
+    )
+  }
+
+  /** How many open promises this agent holds. */
+  openPromises(agentId: string): number {
+    return (this.db.prepare(
+      `SELECT COUNT(*) AS n FROM requests WHERE agent_id = ? AND promise = 1 AND state IN (${placeholders(OPEN_STATES.length)})`,
+    ).get(agentId, ...OPEN_STATES) as { n: number }).n
+  }
+
+  /** Give an open request a due time or a checker, from accept or wait. */
+  setLoop(id: string, loop: { dueAt?: number | null; closeWhen?: CloseWhen | null }, now: number): void {
+    if (loop.dueAt !== undefined) this.db.prepare("UPDATE requests SET due_at = ?, updated_at = ? WHERE id = ?").run(loop.dueAt, now, id)
+    if (loop.closeWhen !== undefined) {
+      this.db.prepare("UPDATE requests SET close_when = ?, verify_state = NULL, verify_detail = NULL, updated_at = ? WHERE id = ?")
+        .run(loop.closeWhen ? JSON.stringify(loop.closeWhen) : null, now, id)
+    }
+  }
+
+  /** What the checker said. `met` is written by closeVerified, not here.
+   *  Not a touch: a check is not activity on the loop. */
+  markChecked(id: string, state: VerifyState | null, detail: string, now: number): void {
+    this.db.prepare("UPDATE requests SET checked_at = ?, verify_state = ?, verify_detail = ? WHERE id = ?")
+      .run(now, state, detail.slice(0, REASON_MAX) || null, id)
+  }
+
+  /** The checker found the evidence: closed as done, with its words. */
+  closeVerified(id: string, evidence: string, now: number): boolean {
+    const text = evidence.trim().slice(0, REASON_MAX) || "the check was met"
+    return this.db.prepare(
+      `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, evidence = ?, close_reason = NULL,
+         checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?
+       WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
+    ).run(now, now, text, now, now, text, id, ...CLOSED_STATES).changes > 0
+  }
+
+  /** Open loops with a checker whose last run is older than `before`
+   *  (or that never ran), oldest check first. */
+  dueForCheck(before: number, limit = 50): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND close_when IS NOT NULL
+         AND (checked_at IS NULL OR checked_at < ?) ORDER BY COALESCE(checked_at, 0), created_at LIMIT ?`,
+    ).all(...OPEN_STATES, before, limit).map(toRecord)
+  }
+
+  /** Open loops past their due time with nothing done since it passed,
+   *  or quiet since `quietBefore` (the owner handed one on after it fell
+   *  due: it gets the usual quiet time). A loop waiting on the owner is
+   *  left alone: its question reminds them. */
+  overdue(now: number, quietBefore: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN ('in_progress', 'waiting_other') AND due_at IS NOT NULL AND due_at < ?
+         AND (updated_at <= due_at OR updated_at < ?)
+       ORDER BY due_at, rowid`,
+    ).all(now, quietBefore).map(toRecord)
   }
 
   get(id: string): RequestRecord | null {
@@ -250,10 +349,11 @@ export class RequestStore {
     ).all(...OPEN_STATES).map(toRecord)
   }
 
-  /** Requests in these states that nothing has touched since `before`. */
+  /** Requests in these states that nothing has touched since `before`.
+   *  A loop with a due time is judged by that, not by quiet (#1039). */
   quietSince(states: RequestState[], before: number): RequestRecord[] {
     return this.db.prepare(
-      `SELECT * FROM requests WHERE state IN (${placeholders(states.length)}) AND updated_at < ? ORDER BY created_at, rowid`,
+      `SELECT * FROM requests WHERE state IN (${placeholders(states.length)}) AND updated_at < ? AND due_at IS NULL ORDER BY created_at, rowid`,
     ).all(...states, before).map(toRecord)
   }
 

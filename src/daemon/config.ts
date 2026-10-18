@@ -1327,6 +1327,27 @@ export const requestsConfigSchema = z.object({
     /** Agents that may not open a plan. */
     disabledAgents: z.array(z.string().min(1)).default([]),
   }).default({}),
+  /** Checkers that close an open loop on evidence (src/requests/checkers,
+   *  #1039). A loop with a `closeWhen` closes when its check is met; an
+   *  agent's done on it is refused while the check says not met. */
+  checkers: z.object({
+    /** Kinds agents may use. A loop of a kind turned off is unverifiable. */
+    enabled: z.array(z.enum(["url", "issue", "git-ancestor", "reply"])).default(["url", "issue", "git-ancestor", "reply"]),
+    /** How often each open loop's check runs. */
+    checkEveryMinutes: z.number().positive().max(24 * 60).default(10),
+    /** Local clones the git-ancestor check may read, by name: { "app": "/srv/app" }. */
+    repos: z.record(z.string(), z.string().min(1)).default({}),
+    /** The issue check's GitHub connector. Unset: channels.github.token. */
+    github: z.object({
+      apiUrl: z.string().url().default("https://api.github.com"),
+      token: z.string().optional(),
+    }).optional(),
+    /** The issue check's GitLab connector. Unset: channels.gitlab.host and token. */
+    gitlab: z.object({
+      url: z.string().url().optional(),
+      token: z.string().optional(),
+    }).optional(),
+  }).default({}),
 }).default({})
 
 /** People (src/people, #384): the humans who talk to the agents, one entry

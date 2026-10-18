@@ -21,7 +21,7 @@ Each request has one state:
 | Waiting on you | The agent asked you a question and needs your answer. The question is shown. |
 | Waiting on another agent | The work was handed on and the answer is not back yet. |
 | Needs attention | The work failed, ran out of time, was cut off and not picked up again, or nothing happened for a day. |
-| Done, declined, dropped | Closed. Done has a link to the proof. Declined and dropped have a reason. |
+| Done, declined, dropped | Closed. Done has a link to the proof, or the words of the check that closed it. Declined and dropped have a reason. |
 
 A request waits on you when the agent raises a [decision card](../dashboard/approvals.md) for it, or says so with its tool. The card reminds you the usual way: the Approvals inbox, the Mac card, check-ins and the daily digest. When you answer, the request goes on. If the card expires without your answer, the request needs attention; it does not close. A card never approves itself.
 
@@ -78,9 +78,71 @@ You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on,
 ## Close a request
 
 - **It is finished:** `agentx requests done <id> --evidence <link>`. The link is the proof: a pull request, an issue, a message, a deploy. In the dashboard, press **Done** on the card; the link is optional there.
+- **You checked it yourself:** `agentx requests done <id> --reason "checked by hand"`. This also closes a request whose check cannot tell. The proof then reads `closed by owner: checked by hand`. In the dashboard, a card with a check asks for the reason in the box next to **Done**.
 - **You no longer want it:** `agentx requests drop <id>`. Add `--reason "…"` to say why.
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
+
+## Promises an agent makes
+
+An agent often promises something to someone: "I will send the file by Friday", "I will deploy once the review is in". A **promise** is a request the agent opens itself, so the promise stays on your list until it is kept. It is the same kind of record as your own requests, and it shows in the same list.
+
+The agent records it with its `agentx_request` tool, action `promise`:
+
+| Field | What it holds |
+|---|---|
+| `owedTo` | Who it is owed to: `owner` (you), the id of another agent, or the id of a person in [people](./people.md). |
+| `text` | What was promised, in one sentence. |
+| `due` | Optional. When it is due, as a date such as `2030-01-31T17:00:00Z`. |
+| `closeWhen` | Optional. What proves it is kept: a check, see below. |
+| `home` | Optional. Where the work lives, see [Where a request landed](#where-a-request-landed). |
+
+For example: `{action:"promise", owedTo:"client-a", text:"Send the signed contract", due:"2030-01-31T17:00:00Z"}`.
+
+When one agent hands work to another, the hand-off itself is already followed. A promise is only for work that goes on after the answer: the agent that says "I will do it later" opens a promise owed to the agent that asked.
+
+One agent can hold up to 200 open promises.
+
+## Close on evidence, not on a claim
+
+A request or a promise can carry a **check**: what proves it is finished. The agent gives it as `closeWhen`, with `promise`, `accept` or `wait`. Then:
+
+- The daemon runs the check every 10 minutes. When the check finds the evidence, the request closes as done by itself, with the check's own words as the proof.
+- When the agent says `done`, the daemon runs the check first. If the check finds the work is not finished, the agent's done is refused. If the check cannot tell (the address is down, the forge refuses to answer), the request stays open and is marked **unverified**.
+- A request without a check closes on the agent's word, as before.
+- You can always close it yourself, with a reason. See [Close a request](#close-a-request).
+
+The checks:
+
+| Kind | Fields | Finished when |
+|---|---|---|
+| `url` | `url`, `contains` (optional) | The address answers with success, and holds the text when `contains` is given. |
+| `issue` | `provider` (`github` or `gitlab`), `ref`, `state` (optional), `notePattern` (optional) | The issue or merge request is in that state (default `closed`; a merged one counts as closed), or one of its comments matches `notePattern`. `ref` is `owner/repo#12`, `group/project!12` for a GitLab merge request, or the item's web address. |
+| `git-ancestor` | `repo`, `commit`, `ref` (optional, default `HEAD`) | The commit is part of that branch in a local copy of the repository. `repo` is a name you set up in `requests.checkers.repos`; the agent never gives a folder. |
+| `reply` | `channel`, `chatId`, `from` | The person `from` (an id from [people](./people.md)) wrote in that chat after the request was opened. |
+
+For example: `closeWhen:{kind:"issue", provider:"github", ref:"example-org/app#12", state:"merged"}`.
+
+The `issue` check reads through the GitHub and GitLab settings you already have (`channels.github`, `channels.gitlab`), or through `requests.checkers.github` and `requests.checkers.gitlab` when you set them. The `git-ancestor` check does not download anything: keep the local copy up to date yourself. For another computer, check the build it reports with a `url` check on its version address.
+
+## See what is stalled
+
+A request is **stalled** when it is past its due time, or, without a due time, when nothing has happened for a day (`--stale-hours`). One that needs attention is stalled too. Stalled requests are grouped by what they wait on:
+
+| Group | Means |
+|---|---|
+| Waiting on you | It waits for your answer, or for your decision because nothing is retrying it. |
+| Waiting on an agent | The agent that has it, the agent of the current step of its plan, or the agent it is owed to. |
+| Waiting on an outside person | A promise owed to a person who is not you. |
+
+To see them:
+
+1. **Terminal:** run `agentx requests --stalled`. Each group is listed with its requests and why each one is stalled. Add `--json` for a script.
+2. **Browser:** open **Approvals** and scroll to **Open requests**. Press **Stalled on you**, **Stalled on an agent** or **Stalled on an outside person** to show only that group; the number in brackets is how many it holds. **All** shows every open request again.
+
+Each card also says who a promise is owed to, when it is due, and what check closes it, with what the check last said.
+
+A promise past its due time comes back to you once, like a request that needs attention, with the title **Promise not kept** and the group it waits on.
 
 ## Where a request landed
 
@@ -112,6 +174,10 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --from none` | Clears the list of who counts as you. |
 | `agentx requests settings --stale-hours 48` | Hours without activity before a request comes back to you. Default 24. |
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
+| `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
+| `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
+
+The folders for the `git-ancestor` check are set only in `agentx.json`, as `requests.checkers.repos`: `{ "app": "/srv/app" }`.
 
 The same settings are the `requests` block in `agentx.json`: see [Configuration: automation](../reference/config-automation.md#requests).
 
@@ -122,6 +188,10 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 3. **Terminal:** run `agentx requests`. The request is listed as `waiting on another agent`, then `in progress` once the answer is back.
 4. **Terminal:** run `agentx requests done <id> --evidence <link>`, then `agentx requests`. It is gone from the list.
 5. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?since=$(( $(date +%s) * 1000 - 86400000 ))"`. The request is there, state `done`, with its `home` when the agent gave one.
+6. Ask an agent to promise something with a check, for example: "promise me you will close issue example-org/app#12, and close it when the issue is closed".
+7. **Terminal:** run `agentx requests show <id>`. It shows `Promised to owner` and `Closes when github example-org/app#12 is closed`.
+8. Close the issue. Within 10 minutes, `agentx requests` no longer lists the promise, and `agentx requests show <id>` gives the check's words as the evidence.
+9. **Terminal:** run `agentx requests --stalled`. It prints the stalled requests by group, or `nothing is stalled`.
 
 ## If something is wrong
 
@@ -134,4 +204,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **`a finished request needs --evidence <link>`:** add the link to the proof. From the terminal, and for agents, a request cannot be closed as done without it.
 - **A message from the phone app is not recorded:** the dashboard must run from the install folder, the one that holds `agentx.json`, so it can read `.agentx/operator.key`. Start it there. A message sent through the phone app to an agent on another computer is recorded there when the computer the phone is paired with checks its own key and vouches for you to the other one. That needs three things: both computers run 0.83.1 or later, the other computer lists the first one in `mesh.peers` with the same `token` the first one sends, and the request reaches it from another machine. A token that sits only in `MESH_TOKEN`, two different tokens, or a proxy on the same machine in front of the daemon means it is not recorded.
 - **You handed a request to another agent and no answer came in the chat:** that is expected. The chat where you asked belongs to the first agent. Open the request's card in the dashboard and read **Last answer from …**.
+- **An agent's done is refused with `Not closed: its check says it is not finished`:** that is the check working. The request closes by itself once the evidence is there. If the check is wrong, close the request yourself with `agentx requests done <id> --reason "…"`.
+- **A request is marked `unverified`:** its check could not tell. `agentx requests show <id>` says why. Common causes: the address is down, the GitHub or GitLab token is missing or cannot see the issue, the local copy of the repository does not have the commit yet (update it), or the person in a `reply` check is not in `people`. Fix the cause and wait for the next check, or close it yourself with `--reason`.
+- **`no repos are set up for this check on this node`:** add the folder under `requests.checkers.repos` in `agentx.json`.
+- **`the … check is turned off on this node`:** add the kind back with `agentx requests settings --checks`.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.

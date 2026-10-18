@@ -1,12 +1,18 @@
 import { isQueued } from "@/agents/queued"
 import type { RequestRecord, RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
+import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
+import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
+//   0. Evidence (#1039): an open loop with a `close_when` has its checker
+//      run every `checkers.checkEveryMinutes`. Met closes it as done, with
+//      the checker's evidence.
 //   1. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
-//      reported an end. A request waiting on the owner is left alone; its
+//      reported an end. A loop with a due time needs attention once it is
+//      past it instead. A request waiting on the owner is left alone; its
 //      question is what reminds them.
 //   2. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
@@ -27,11 +33,16 @@ export interface RequestSweepDeps {
    *  again. Fire and forget: the check never waits on a model. */
   tellAgent?: (agentId: string, text: string, request: RequestRecord) => Promise<void>
   hasAgent?: (agentId: string) => boolean
+  /** Runs a loop's checker (#1039). Unset: loops are not checked. */
+  check?: LoopChecker
   log: (msg: string) => void
   now?: number
 }
 
 export interface RequestSweepResult {
+  /** Loops whose checker ran, and those it closed. */
+  checked: number
+  verified: number
   quiet: number
   notified: number
   pruned: number
@@ -81,21 +92,40 @@ export function pickupText(r: RequestRecord): string {
 
 const HOUR = 3_600_000
 
-export function attentionText(r: RequestRecord): string {
+export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean = () => false): string {
   const words = r.text.replace(/\s+/g, " ").trim()
+  const said = words.length > 240 ? `${words.slice(0, 239)}…` : words
+  const on = waitsOn(r, { isAgent })
   return [
-    `A request you gave ${r.agentId} on ${r.channel} is not finished.`,
-    `You asked: ${words.length > 240 ? `${words.slice(0, 239)}…` : words}`,
+    r.promise
+      ? `A promise ${r.agentId} made to ${r.owedTo} is not kept yet.`
+      : `A request you gave ${r.agentId} on ${r.channel} is not finished.`,
+    r.promise ? `It promised: ${said}` : `You asked: ${said}`,
     `What happened: ${r.attentionReason ?? "unknown"}`,
-    "Nothing is retrying it. Ask again, or drop it.",
+    `Waiting on: ${waitsOnWords(on.group, on.who)}`,
+    ...(r.verifyState === "unverified" && r.verifyDetail ? [`Its check could not say: ${r.verifyDetail}`] : []),
+    r.closeWhen
+      ? "Nothing is retrying it. Ask again, close it by hand with a reason, or drop it."
+      : "Nothing is retrying it. Ask again, or drop it.",
   ].join("\n")
 }
 
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
   if (!settings.enabled) return result
+
+  if (deps.check) {
+    try {
+      const every = (settings.checkers ?? DEFAULT_CHECKER_SETTINGS).checkEveryMinutes
+      const r = await checkLoops(store, deps.check, { everyMinutes: every, now, log })
+      result.checked = r.checked
+      result.verified = r.closed
+    } catch (e: any) {
+      log(`[requests] loop checks failed: ${e?.message ?? e}`)
+    }
+  }
 
   try {
     // takePickups clears the mark first: a turn that hangs or fails is not started twice.
@@ -129,6 +159,9 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
         : `No activity for ${hours} h`
       if (store.needsAttention(r.id, reason, now)) result.quiet++
     }
+    for (const r of store.overdue(now, now - hours * HOUR)) {
+      if (store.needsAttention(r.id, `Past its due time (${when(r.dueAt!)})`, now)) result.quiet++
+    }
   } catch (e: any) {
     log(`[requests] quiet check failed: ${e?.message ?? e}`)
   }
@@ -139,7 +172,7 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
       store.markNotified(r.id, now)
       if (!deps.notify) continue
       try {
-        await deps.notify("Request not finished", attentionText(r), r)
+        await deps.notify(r.promise ? "Promise not kept" : "Request not finished", attentionText(r, deps.hasAgent), r)
         result.notified++
       } catch (e: any) {
         // Nothing reached the owner: try again at the next check.

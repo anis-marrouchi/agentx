@@ -9,8 +9,11 @@ import { callerHeaders } from "@/calls/service"
 //            `steps` (two or more): a tracked plan the daemon follows (#788)
 //   step     report on one step of a plan: progress, done, blocked
 //   wait     the next step is the owner's answer to this question
-//   done     finished, with a link to the evidence
+//   done     finished, with a link to the evidence. On a loop with a
+//            closeWhen the daemon runs its check first (#1039)
 //   decline  I will not do it, with the reason
+//   promise  I owe someone something (owedTo, text, due, closeWhen):
+//            an open loop of its own, listed with the open requests
 //   list     what is still open
 // It talks to the daemon's /requests endpoints. Dropping a request is the
 // owner's alone; there is no action for it here.
@@ -38,7 +41,12 @@ export function describeOpen(items: any[]): string {
     const extra = r.state === "waiting_owner" && r.question ? ` Question: ${r.question}`
       : r.state === "needs_attention" && r.attentionReason ? ` ${r.attentionReason}` : ""
     const words = String(r.text).replace(/\s+/g, " ").trim()
-    return `- ${r.id} [${STATE_WORDS[r.state] ?? r.state}] ${when} UTC, ${r.channel}, ${r.agentId}: ${words.length > 160 ? `${words.slice(0, 159)}…` : words}.${extra}`
+    const loop = [
+      r.promise && r.owedTo ? ` Promised to ${r.owedTo}.` : "",
+      r.dueAt ? ` Due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC.` : "",
+      r.closeWhen ? ` Closes on its check (${r.closeWhen.kind})${r.verifyState ? `: ${r.verifyState}` : ""}.` : "",
+    ].join("")
+    return `- ${r.id} [${STATE_WORDS[r.state] ?? r.state}] ${when} UTC, ${r.channel}, ${r.agentId}: ${words.length > 160 ? `${words.slice(0, 159)}…` : words}.${extra}${loop}`
   }).join("\n")
 }
 
@@ -74,6 +82,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         action, agentId: caller.agentId,
         id: args.id, question: args.question, evidence: args.evidence, reason: args.reason,
         steps: args.steps, step: args.step, status: args.status, note: args.note, home: args.home,
+        owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
       }),
       signal: AbortSignal.timeout(10_000),
     })
@@ -90,7 +99,14 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     if (action === "step") return [`Step reported. Plan of ${r.id}:`, ...describeSteps(data.steps)].join("\n")
     if (action === "accept") return `Request ${r.id} is open and in progress. Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.`
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`
-    if (action === "done") return `Request ${r.id} is closed as done. Evidence: ${r.evidence}`
+    if (action === "promise") {
+      return `Promise ${r.id} is open, owed to ${r.owedTo}${r.dueAt ? `, due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""}. ` +
+        (r.closeWhen ? "The daemon checks its evidence and closes it once the check is met." : `Close it with {action:"done", id:"${r.id}", evidence:"<link>"} when it is kept.`)
+    }
+    if (action === "done" && data.verify === "unverified") {
+      return `Request ${r.id} stays open: its check could not say whether it is finished (${data.detail}). It is marked unverified; the daemon checks again, and the owner can close it by hand.`
+    }
+    if (action === "done") return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}`
     return `Request ${r.id} is closed as declined. Reason: ${r.closeReason}`
   } catch (e: any) {
     return `Error: couldn't reach the daemon (${e?.message ?? e}).`
