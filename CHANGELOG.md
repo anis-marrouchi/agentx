@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.141.1](https://github.com/anis-marrouchi/agentx/compare/v0.141.0...v0.141.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **channels:** send WhatsApp replies once; find sanitized chatIds in recent ([621d58c](https://github.com/anis-marrouchi/agentx/commit/621d58c14e20814e27ebbe895114b6d56caa8fea))
+
 ## [0.141.0](https://github.com/anis-marrouchi/agentx/compare/v0.140.0...v0.141.0) (2026-10-18)
 
 
