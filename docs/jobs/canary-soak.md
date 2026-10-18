@@ -84,7 +84,9 @@ A `--dry-run`, with or without `--override-soak`, shows what would happen and wr
 - **`interrupted: replaced after …`:** another release was started here before the soak ended. Restart the daemon on the release you want to deploy, and wait again.
 - **`failed: crashes (1 unclean stop(s) …)`:** the daemon stopped without being asked to during the soak. Read `agentx daemon logs`, fix the cause, commit, and soak the new release.
 - **`not judged: task history unavailable …`:** AgentX could not read its task history in `.agentx/db.sqlite`. Check that you run the command from the daemon's own folder, then run `agentx doctor`. Nothing is recorded, so the release is judged again once the history can be read.
+- **`not judged: the release ledger (.agentx/canary/releases.json) can't be read`:** the file that keeps each release's pass or fail is damaged. AgentX will not judge a release again, because it might have failed before. Open the file and repair it, or move it aside if you accept losing the kept results, then deploy again.
 - **`this checkout moved from … to …`:** the folder changed commit during the deploy. Run the deploy again; it checks the soak of the new commit.
 - **`failed: error-rate (…)`:** more tasks failed than on the release before. Look at the failed tasks on the dashboard, fix the cause, and soak a new release.
+- **`⚠ Canary soak: … is not valid JSON` or `… is "…", not true`:** the deploy went ahead without the soak, because the switch could not be read as `true`. Fix `agentx.json` (it must be valid JSON, and the switch must be the word `true` without quotes), then deploy again.
 - **The deploy is not gated at all:** check that `quality.canary.enabled` is `true` in the `agentx.json` of the folder you deploy from, or pass that file with `--config`.
 - **A release passed, but you want to block it after all:** the first decision is kept in `.agentx/canary/releases.json`. Deploy a newer release instead.

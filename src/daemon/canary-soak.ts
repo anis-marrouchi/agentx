@@ -292,6 +292,11 @@ function loadReleases(agentxDir: string): Record<string, ReleaseRecord> | null {
   } catch { return null }
 }
 
+/** False when releases.json exists but can't be read. */
+export function ledgerReadable(agentxDir: string): boolean {
+  return loadReleases(agentxDir) !== null
+}
+
 export function readReleases(agentxDir: string): Record<string, ReleaseRecord> {
   return loadReleases(agentxDir) ?? {}
 }
