@@ -23,7 +23,7 @@ query($q: String!, $cursor: String) {
       ... on PullRequest {
         number title body createdAt mergedAt headRefName
         labels(first: 20) { nodes { name } }
-        files(first: 100) { nodes { path } }
+        files(first: 100) { nodes { path changeType } }
         closingIssuesReferences(first: 10) { nodes { number createdAt } }
         commits(first: 100) { nodes { commit { oid } } }
       }
@@ -79,6 +79,7 @@ function toRecord(n: any): PrRecord {
     headRefName: n.headRefName || "",
     labels: (n.labels?.nodes || []).map((l: any) => l.name),
     files: (n.files?.nodes || []).map((f: any) => f.path),
+    addedFiles: (n.files?.nodes || []).filter((f: any) => f.changeType === "ADDED").map((f: any) => f.path),
     closingIssues: (n.closingIssuesReferences?.nodes || []).map((i: any) => ({ number: i.number, createdAt: i.createdAt })),
     commits: (n.commits?.nodes || []).map((c: any) => c.commit.oid),
   }
@@ -103,9 +104,9 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (t: T) => Promise<R
  */
 export async function fetchCiMinutes(
   repo: string, prs: PrRecord[], fromDay: string, toDay: string,
-  opts: { workflow?: string; gh?: GhRunner; cache?: Map<number, number> } = {},
+  opts: { workflow?: string; gh?: GhRunner; cache?: Map<number, number>; onWarning?: (msg: string) => void } = {},
 ): Promise<Map<number, number>> {
-  const { workflow = "ci.yml", gh = runGh, cache = new Map<number, number>() } = opts
+  const { workflow = "ci.yml", gh = runGh, cache = new Map<number, number>(), onWarning } = opts
   const oldest = Math.min(...prs.map((p) => Date.parse(p.createdAt)), Date.parse(fromDay))
   const start = isoDay(Math.max(oldest, Date.parse(fromDay) - 30 * DAY))
   const prBySha = new Map<string, number>()
@@ -118,6 +119,9 @@ export async function fetchCiMinutes(
       "api", `repos/${repo}/actions/workflows/${workflow}/runs?created=${a}..${b}&per_page=100&page=${n}`,
     ]))
     const first = await page(1)
+    if ((first.total_count || 0) > 1000) {
+      onWarning?.(`CI runs ${a}..${b}: ${first.total_count} runs, GitHub lists only 1,000. CI minutes for that week are a lower bound.`)
+    }
     const pages = Math.min(Math.ceil((first.total_count || 0) / 100), 10)
     const rest = await mapLimit(Array.from({ length: Math.max(0, pages - 1) }, (_, i) => i + 2), 8, page)
     return [first, ...rest].flatMap((res) => res.workflow_runs || [])

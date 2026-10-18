@@ -1,5 +1,6 @@
 import {
-  areaOf, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, percentile, regressionOf, weekOf,
+  addsTest, areaOf, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, mentionsReview, percentile, regressionOf,
+  touchesUi, weekOf,
   type PrRecord,
 } from "./classify"
 
@@ -19,10 +20,16 @@ export interface CostStats {
   /** Absolute USD figures. Left out of `--public` output. */
   perMergedPr?: number | null
   total?: number | null
-  /** PRs with any AgentX cost matched. */
+  /** PRs with any AgentX cost matched (cloud-session PRs never count). */
   attributedPrs: number
-  /** PRs from a Claude cloud session with no AgentX match, billed outside AgentX. */
+  /** PRs from a Claude cloud session, billed outside AgentX, with or without
+   *  an AgentX match. */
   externalPrs: number
+  /** External PRs that a local AgentX task later pushed (a rebase or a
+   *  conflict fix). Their cost is kept out of perMergedPr. */
+  followUpPrs: number
+  /** USD of that local follow-up work. Left out of `--public` output. */
+  followUpTotal?: number | null
   /** attributedPrs / (mergedPrs - externalPrs); null when that is 0. */
   attributionRate: number | null
   /** "unattributed" when no PR in the row has a cost match; "external" when
@@ -39,6 +46,15 @@ export interface ReportRow {
   fixShare: number | null
   regressionFixes24h: number
   regressionFixes72h: number
+  /** Regression fixes per 100 merged PRs; null when there are no PRs. */
+  regressionFixes24hPer100: number | null
+  regressionFixes72hPer100: number | null
+  /** Fixes whose title or description mentions a review. */
+  fixesMentioningReview: number
+  /** Fixes that add a test file. */
+  fixesAddingTests: number
+  /** Fixes that change dashboard or app files. */
+  fixesTouchingUi: number
   leadTime: { issue: LeadStats; pr: LeadStats }
   /** Null when CI data was not read (`--no-ci` or no access). */
   ciMinutes: number | null
@@ -70,6 +86,8 @@ export interface RowDelta {
   fixSharePts: number | null
   regressionFixes24h: number
   regressionFixes72h: number
+  regressionFixes24hPer100: number | null
+  regressionFixes72hPer100: number | null
   issueLeadMedianHours: number | null
   prLeadMedianHours: number | null
   ciMinutes: number | null
@@ -124,11 +142,17 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
   const ciRead = extras.ciMinutes !== undefined
 
   const row = (list: PrRecord[]): ReportRow => {
-    let fixes = 0, r24 = 0, r72 = 0, ci = 0, costTotal = 0, attributed = 0, external = 0
+    let fixes = 0, r24 = 0, r72 = 0, ci = 0, costTotal = 0, attributed = 0, external = 0, followUp = 0, followUpTotal = 0
+    let review = 0, tests = 0, ui = 0
     const issueLead: number[] = []
     const prLead: number[] = []
     for (const pr of list) {
-      if (isFix(pr.title)) fixes++
+      if (isFix(pr.title)) {
+        fixes++
+        if (mentionsReview(pr)) review++
+        if (addsTest(pr)) tests++
+        if (touchesUi(pr.files)) ui++
+      }
       const reg = regressionOf(pr, mergedAt)
       if (reg.within24h) r24++
       if (reg.within72h) r72++
@@ -136,7 +160,12 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
       if (lead) (lead.kind === "issue" ? issueLead : prLead).push(lead.hours)
       ci += extras.ciMinutes?.get(pr.number) ?? 0
       const c = extras.cost?.get(pr.number)
-      if (c !== undefined) { costTotal += c; attributed++ } else if (isExternalPr(pr)) external++
+      // A cloud-session PR is built outside AgentX: a local task that later
+      // rebases it is follow-up work, not the cost of building it.
+      if (isExternalPr(pr)) {
+        external++
+        if (c !== undefined) { followUp++; followUpTotal += c }
+      } else if (c !== undefined) { costTotal += c; attributed++ }
     }
     const lead = (v: number[]): LeadStats => ({
       n: v.length,
@@ -149,6 +178,11 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
       fixShare: list.length ? round(fixes / list.length, 4) : null,
       regressionFixes24h: r24,
       regressionFixes72h: r72,
+      regressionFixes24hPer100: list.length ? round((r24 / list.length) * 100, 1) : null,
+      regressionFixes72hPer100: list.length ? round((r72 / list.length) * 100, 1) : null,
+      fixesMentioningReview: review,
+      fixesAddingTests: tests,
+      fixesTouchingUi: ui,
       leadTime: { issue: lead(issueLead), pr: lead(prLead) },
       ciMinutes: ciRead ? round(ci, 1) : null,
       cost: {
@@ -156,6 +190,8 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
         total: attributed ? round(costTotal) : null,
         attributedPrs: attributed,
         externalPrs: external,
+        followUpPrs: followUp,
+        followUpTotal: followUp ? round(followUpTotal) : null,
         attributionRate: list.length - external ? round(attributed / (list.length - external), 4) : null,
         status: attributed ? "attributed" : list.length && external === list.length ? "external" : "unattributed",
       },
@@ -194,8 +230,9 @@ function nullable(v: number | null, d: number): number | null {
   return v === null ? null : round(v, d)
 }
 
-const diff = (a: number | null, b: number | null, d = 1) =>
-  a === null || b === null ? null : round(a - b, d)
+// Undefined too: a baseline saved before a field existed lacks it.
+const diff = (a: number | null | undefined, b: number | null | undefined, d = 1) =>
+  a == null || b == null ? null : round(a - b, d)
 
 const pctChange = (now: number | null | undefined, then: number | null | undefined) =>
   now == null || then == null || then === 0 ? null : round(((now - then) / then) * 100, 1)
@@ -206,6 +243,8 @@ function rowDelta(now: ReportRow, then: ReportRow): RowDelta {
     fixSharePts: diff(now.fixShare === null ? null : now.fixShare * 100, then.fixShare === null ? null : then.fixShare * 100),
     regressionFixes24h: now.regressionFixes24h - then.regressionFixes24h,
     regressionFixes72h: now.regressionFixes72h - then.regressionFixes72h,
+    regressionFixes24hPer100: diff(now.regressionFixes24hPer100, then.regressionFixes24hPer100),
+    regressionFixes72hPer100: diff(now.regressionFixes72hPer100, then.regressionFixes72hPer100),
     issueLeadMedianHours: diff(now.leadTime.issue.medianHours, then.leadTime.issue.medianHours),
     prLeadMedianHours: diff(now.leadTime.pr.medianHours, then.leadTime.pr.medianHours),
     ciMinutes: diff(now.ciMinutes, then.ciMinutes),
@@ -251,6 +290,7 @@ export function toPublic(report: QualityReport): QualityReport {
   const strip = (r: ReportRow) => {
     delete r.cost.perMergedPr
     delete r.cost.total
+    delete r.cost.followUpTotal
     if (r.cost.changePct === undefined) r.cost.changePct = null
   }
   strip(out.totals.agent)
@@ -260,11 +300,12 @@ export function toPublic(report: QualityReport): QualityReport {
   return out
 }
 
-// --- Text rendering ------------------------------------------------------
+// --- Rendering: text (terminal) and markdown (GitHub comment) ----------
 
 const pct = (v: number | null) => (v === null ? "—" : `${Math.round(v * 100)}%`)
 const hrs = (v: number | null) => (v === null ? "—" : v < 48 ? `${round(v, 1)}h` : `${round(v / 24, 1)}d`)
 const signed = (v: number | null, unit = "") => (v === null ? "—" : `${v > 0 ? "+" : ""}${v}${unit}`)
+const usd = (v: number | null | undefined) => `$${(v ?? 0).toFixed(2)}`
 
 function costCell(r: ReportRow, isPublic: boolean): string {
   const ext = r.cost.externalPrs ? `, ${r.cost.externalPrs} external` : ""
@@ -274,18 +315,21 @@ function costCell(r: ReportRow, isPublic: boolean): string {
     const change = r.cost.changePct
     return `${change === null || change === undefined ? "no baseline" : signed(change, "%")} (${rate})`
   }
-  return `$${(r.cost.perMergedPr ?? 0).toFixed(2)} (${rate})`
+  return `${usd(r.cost.perMergedPr)} (${rate})`
 }
 
-const HEAD = ["PRs", "Fixes", "Fix share", "Reg ≤24h", "Reg ≤72h", "Lead issue p50/p90", "Lead PR p50/p90", "CI min", "Cost/PR"]
+const regCell = (n: number, per100: number | null) => `${n} (${per100 === null ? "—" : per100})`
+
+const HEAD = ["PRs", "Fixes", "Fix share", "Reg ≤24h (/100)", "Reg ≤72h (/100)", "Fix review/new test/UI", "Lead issue p50/p90", "Lead PR p50/p90", "CI min", "Cost/PR"]
 
 function cells(r: ReportRow, isPublic: boolean): string[] {
   return [
     String(r.mergedPrs),
     String(r.fixes),
     pct(r.fixShare),
-    String(r.regressionFixes24h),
-    String(r.regressionFixes72h),
+    regCell(r.regressionFixes24h, r.regressionFixes24hPer100),
+    regCell(r.regressionFixes72h, r.regressionFixes72hPer100),
+    `${r.fixesMentioningReview}/${r.fixesAddingTests}/${r.fixesTouchingUi}`,
     `${hrs(r.leadTime.issue.medianHours)} / ${hrs(r.leadTime.issue.p90Hours)}`,
     `${hrs(r.leadTime.pr.medianHours)} / ${hrs(r.leadTime.pr.p90Hours)}`,
     r.ciMinutes === null ? "—" : String(Math.round(r.ciMinutes)),
@@ -293,7 +337,46 @@ function cells(r: ReportRow, isPublic: boolean): string[] {
   ]
 }
 
-function table(label: string, rows: Array<[string, string[]]>): string[] {
+interface Table { label: string; rows: Array<[string, string[]]> }
+
+/** What both renderers print, in order. */
+function sections(r: QualityReport) {
+  const scopeLabel = r.scope === "agent" ? "agent PRs" : "all non-release PRs"
+  const title = `Quality report — ${r.repo} (${r.base}), ${r.since} → ${r.until}`
+  const intro = `Rows count ${scopeLabel}. ${r.excluded.releasePrs} release PRs left out (fix share with them counted: ${pct(r.excluded.fixShareWithReleases)}).` +
+    (r.public ? " Public: cost shown as change vs baseline only." : "")
+  const totals: Array<[string, ReportRow]> = [["agent PRs", r.totals.agent], ["all non-release", r.totals.all]]
+  const tables: Table[] = [
+    { label: "Total", rows: totals.map(([k, row]) => [k, cells(row, r.public)]) },
+    { label: "Week of", rows: r.weeks.map((w) => [w.week, cells(w, r.public)]) },
+    { label: "Area", rows: r.areas.map((a) => [a.area, cells(a, r.public)]) },
+  ]
+  const withFollowUp = totals.filter(([, row]) => row.cost.followUpPrs)
+  const followUp = withFollowUp.length
+    ? "Local follow-up on external PRs (rebases, conflict fixes), not in Cost/PR: " +
+      withFollowUp.map(([k, row]) => {
+        const n = row.cost.followUpPrs
+        return `${k}: ${r.public ? "" : `${usd(row.cost.followUpTotal)} on `}${n} PR${n === 1 ? "" : "s"}`
+      }).join("; ") + "."
+    : null
+  let comparison: { heading: string; lines: string[] } | null = null
+  if (r.comparison) {
+    const c = r.comparison
+    const d = (label: string, x: RowDelta) =>
+      `${label}: PRs ${signed(x.mergedPrs)}, fix share ${signed(x.fixSharePts, " pts")}, ` +
+      `reg ≤24h ${signed(x.regressionFixes24h)} (${signed(x.regressionFixes24hPer100, "/100")}), ` +
+      `reg ≤72h ${signed(x.regressionFixes72h)} (${signed(x.regressionFixes72hPer100, "/100")}), ` +
+      `lead p50 issue ${signed(x.issueLeadMedianHours, "h")} / PR ${signed(x.prLeadMedianHours, "h")}, ` +
+      `CI ${signed(x.ciMinutes, " min")}, cost/PR ${signed(x.costPerMergedPrPct, "%")}`
+    comparison = {
+      heading: `Compared with baseline "${c.baseline}" (${c.baselineSince} → ${c.baselineUntil})`,
+      lines: [d("agent PRs", c.totals.agent), d("all non-release", c.totals.all), ...c.areas.map((a) => d(a.area, a))],
+    }
+  }
+  return { title, intro, tables, followUp, comparison }
+}
+
+function textTable({ label, rows }: Table): string[] {
   const all = [[label, ...HEAD], ...rows.map(([k, c]) => [k, ...c])]
   const widths = all[0].map((_, i) => Math.max(...all.map((r) => r[i].length)))
   const line = (r: string[]) => "  " + r.map((c, i) => (i === 0 ? c.padEnd(widths[i]) : c.padStart(widths[i]))).join("  ")
@@ -301,30 +384,33 @@ function table(label: string, rows: Array<[string, string[]]>): string[] {
 }
 
 export function renderReport(r: QualityReport): string {
-  const out: string[] = []
-  const scopeLabel = r.scope === "agent" ? "agent PRs" : "all non-release PRs"
-  out.push("", `  Quality report — ${r.repo} (${r.base}), ${r.since} → ${r.until}`)
-  out.push(`  Rows count ${scopeLabel}. ${r.excluded.releasePrs} release PRs left out (fix share with them counted: ${pct(r.excluded.fixShareWithReleases)}).${r.public ? " Public: cost shown as change vs baseline only." : ""}`)
-  out.push("")
-  out.push(...table("Total", [
-    ["agent PRs", cells(r.totals.agent, r.public)],
-    ["all non-release", cells(r.totals.all, r.public)],
-  ]))
-  out.push("")
-  out.push(...table("Week of", r.weeks.map((w) => [w.week, cells(w, r.public)] as [string, string[]])))
-  out.push("")
-  out.push(...table("Area", r.areas.map((a) => [a.area, cells(a, r.public)] as [string, string[]])))
-  if (r.comparison) {
-    const c = r.comparison
-    out.push("", `  Compared with baseline "${c.baseline}" (${c.baselineSince} → ${c.baselineUntil})`)
-    const d = (label: string, x: RowDelta) =>
-      `  ${label.padEnd(16)} PRs ${signed(x.mergedPrs)}, fix share ${signed(x.fixSharePts, " pts")}, ` +
-      `reg ≤24h ${signed(x.regressionFixes24h)}, reg ≤72h ${signed(x.regressionFixes72h)}, ` +
-      `lead p50 issue ${signed(x.issueLeadMedianHours, "h")} / PR ${signed(x.prLeadMedianHours, "h")}, ` +
-      `CI ${signed(x.ciMinutes, " min")}, cost/PR ${signed(x.costPerMergedPrPct, "%")}`
-    out.push(d("agent PRs", c.totals.agent), d("all non-release", c.totals.all))
-    for (const a of c.areas) out.push(d(a.area, a))
-  }
+  const s = sections(r)
+  const out: string[] = ["", `  ${s.title}`, `  ${s.intro}`]
+  const [total, ...rest] = s.tables
+  out.push("", ...textTable(total))
+  if (s.followUp) out.push(`  ${s.followUp}`)
+  for (const t of rest) out.push("", ...textTable(t))
+  if (s.comparison) out.push("", `  ${s.comparison.heading}`, ...s.comparison.lines.map((l) => `  ${l}`))
   out.push("")
   return out.join("\n")
+}
+
+const mdCell = (c: string) => c.replace(/\|/g, "\\|")
+
+function mdTable({ label, rows }: Table): string[] {
+  const head = [label, ...HEAD]
+  const line = (r: string[]) => `| ${r.map(mdCell).join(" | ")} |`
+  return [line(head), `|${head.map((_, i) => (i === 0 ? " --- " : " ---: ")).join("|")}|`, ...rows.map(([k, c]) => line([k, ...c]))]
+}
+
+/** GitHub-flavoured markdown, for posting the report as an issue comment. */
+export function renderMarkdown(r: QualityReport): string {
+  const s = sections(r)
+  const out: string[] = [`### ${s.title}`, "", s.intro]
+  const [total, ...rest] = s.tables
+  out.push("", ...mdTable(total))
+  if (s.followUp) out.push("", s.followUp)
+  for (const t of rest) out.push("", ...mdTable(t))
+  if (s.comparison) out.push("", `**${s.comparison.heading}**`, "", ...s.comparison.lines.map((l) => `- ${l}`))
+  return out.join("\n") + "\n"
 }

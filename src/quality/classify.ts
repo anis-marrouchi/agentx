@@ -16,6 +16,8 @@ export interface PrRecord {
   labels: string[]
   /** Changed file paths (the first 100 GitHub returns). */
   files: string[]
+  /** The subset of `files` this PR adds (GitHub `changeType: ADDED`). */
+  addedFiles?: string[]
   /** Issues this PR closes (`closingIssuesReferences`). */
   closingIssues: Array<{ number: number; createdAt: string }>
   /** Commit SHAs on the PR, used to find its CI runs. */
@@ -55,6 +57,32 @@ export function citedNumbers(pr: Pick<PrRecord, "number" | "title" | "body">): n
   for (const m of text.matchAll(/\/pull\/(\d+)\b/g)) out.add(Number(m[1]))
   out.delete(pr.number)
   return [...out]
+}
+
+// The noun `review`/`reviews`/`reviewer(s)`, but not `reviewed`/`reviewing`, and
+// not process wording: "after review" (merge rules), "review only/before/needed".
+const REVIEW_FEEDBACK = /(?<!\bafter\s)\breview(?:s|ers?)?\b(?!\s+(?:only|before|needed))/i
+
+/** A fix whose title or description mentions a review ("the review of #12", "reviewer asked"…). */
+export function mentionsReview(pr: Pick<PrRecord, "title" | "body">): boolean {
+  return REVIEW_FEEDBACK.test(`${pr.title}\n${pr.body || ""}`)
+}
+
+/** A test file: anything under `test/`, a `*.test.*` file, or a `__fixtures__/` folder. */
+export function isTestFile(f: string): boolean {
+  return f.startsWith("test/") || /\.test\.[cm]?[jt]sx?$/.test(f) || f.includes("__fixtures__/")
+}
+
+/** Adds a test file. Nearly every fix edits a test, so only a new one says the fix came with new coverage. */
+export function addsTest(pr: Pick<PrRecord, "addedFiles">): boolean {
+  return (pr.addedFiles || []).some(isTestFile)
+}
+
+/** Changes a screen: the dashboard (`src/daemon/ui/`, `src/web/`, boards), or a native app (`apps/`). */
+export function touchesUi(files: string[]): boolean {
+  return files.some((f) =>
+    f.startsWith("src/daemon/ui/") || f.startsWith("src/web/") || f.startsWith("src/boards/") ||
+    f === "src/daemon/board-dashboard.ts" || f.startsWith("apps/"))
 }
 
 export interface RegressionHit {

@@ -4,11 +4,12 @@ import { tmpdir } from "os"
 import { join } from "path"
 import Database from "better-sqlite3"
 import {
-  areaOf, citedNumbers, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, percentile, regressionOf, weekOf,
+  addsTest, areaOf, citedNumbers, isAgentPr, isExternalPr, isFix, isReleasePr, isTestFile, leadTimeOf, mentionsReview,
+  percentile, regressionOf, touchesUi, weekOf,
   type PrRecord,
 } from "../src/quality/classify"
-import { buildReport, compareReports, renderReport, toPublic, QUALITY_REPORT_SCHEMA } from "../src/quality/report"
-import { matchCosts, mentionsBranch, readTaskCosts, type TaskCost } from "../src/quality/cost"
+import { buildReport, compareReports, renderMarkdown, renderReport, toPublic, QUALITY_REPORT_SCHEMA } from "../src/quality/report"
+import { BUILD_CALL_RE, matchCosts, mentionsBranch, readTaskCosts, type TaskCost } from "../src/quality/cost"
 import { fetchCiMinutes, fetchMergedPrs, weekChunks, type GhRunner } from "../src/quality/github"
 
 function pr(over: Partial<PrRecord> & { number: number }): PrRecord {
@@ -146,6 +147,38 @@ const fixture: PrRecord[] = [
   pr({ number: 6, title: "docs: z", headRefName: "someone/docs", mergedAt: "2026-01-08T10:00:00Z", files: ["docs/a.md"] }),
 ]
 
+describe("fix details", () => {
+  it("review mentions, added tests and UI files", () => {
+    expect(mentionsReview(pr({ number: 1, title: "fix: address review on #12" }))).toBe(true)
+    expect(mentionsReview(pr({ number: 2, body: "Reviewer asked for this." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, title: "fix: preview pane" }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Answers the DevOps review on #9." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "Fixes the review comments." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "I reviewed the logs and found the race." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Needs a review before release." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, title: "fix(cron): stale run guard (#938 review)" }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "Follows up the review of #933." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "Its review left one item open." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "Merge after review." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Waiting on final approval after review." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Opened for review only." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Reviewing the logs showed the race." }))).toBe(false)
+    expect(isTestFile("test/a.test.ts")).toBe(true)
+    expect(isTestFile("src/x/a.test.mjs")).toBe(true)
+    expect(isTestFile("src/x/__fixtures__/a.json")).toBe(true)
+    expect(isTestFile("src/testing.ts") || isTestFile("docs/test.md")).toBe(false)
+    expect(addsTest(pr({ number: 4, files: ["test/a.test.ts"] }))).toBe(false) // edited, not added
+    expect(addsTest(pr({ number: 5, files: ["test/b.test.ts"], addedFiles: ["test/b.test.ts"] }))).toBe(true)
+    expect(addsTest(pr({ number: 6, addedFiles: ["src/a.ts"] }))).toBe(false)
+    expect(touchesUi(["src/daemon/ui/assistant.ts"])).toBe(true)
+    expect(touchesUi(["src/web/activity-graph/a.ts"])).toBe(true)
+    expect(touchesUi(["src/boards/config.ts"])).toBe(true)
+    expect(touchesUi(["src/daemon/board-dashboard.ts"])).toBe(true)
+    expect(touchesUi(["apps/phone/App.tsx"])).toBe(true)
+    expect(touchesUi(["src/daemon/index.ts"])).toBe(false)
+  })
+})
+
 describe("buildReport", () => {
   const report = buildReport(fixture, { repo: "o/r", since: "2026-01-05", until: "2026-01-11", generatedAt: "2026-01-12T00:00:00Z" },
     { ciMinutes: new Map([[3, 4], [4, 6], [5, 2], [6, 1]]), cost: new Map([[3, 1.5], [5, 0.5]]) })
@@ -164,6 +197,53 @@ describe("buildReport", () => {
   it("a fix may cite a PR merged before the window", () => {
     expect(report.totals.agent.regressionFixes24h).toBe(0)
     expect(report.totals.agent.regressionFixes72h).toBe(1)
+  })
+
+  it("regression fixes per 100 merged PRs", () => {
+    expect(report.totals.agent.regressionFixes24hPer100).toBe(0)
+    expect(report.totals.agent.regressionFixes72hPer100).toBe(33.3) // 1 of 3
+    expect(report.totals.all.regressionFixes72hPer100).toBe(25) // 1 of 4
+    const empty = buildReport([], { repo: "o/r", since: "2026-01-05", until: "2026-01-11" })
+    expect(empty.totals.all.regressionFixes24hPer100).toBeNull()
+  })
+
+  it("counts what fixes touched", () => {
+    expect(report.totals.agent).toMatchObject({ fixesMentioningReview: 0, fixesAddingTests: 0, fixesTouchingUi: 0 })
+    const touched = buildReport([
+      pr({ number: 7, title: "fix(ui): review follow-up", files: ["src/daemon/ui/a.ts", "test/a.test.ts"], addedFiles: ["test/a.test.ts"] }),
+      pr({ number: 8, title: "fix: z", files: ["test/b.test.ts"] }),
+      pr({ number: 9, title: "feat: review queue", files: ["src/web/a.ts", "test/c.test.ts"], addedFiles: ["test/c.test.ts"] }),
+    ], { repo: "o/r", since: "2026-01-05", until: "2026-01-11" })
+    expect(touched.totals.agent).toMatchObject({ fixesMentioningReview: 1, fixesAddingTests: 1, fixesTouchingUi: 1 })
+    expect(renderReport(touched)).toContain("1/1/1")
+  })
+
+  it("a cloud-session PR stays external when a local task pushed it; that cost is follow-up", () => {
+    // #4 is a cloud-session PR that a local task rebased for $5.
+    const r = buildReport(fixture, { repo: "o/r", since: "2026-01-05", until: "2026-01-11" },
+      { cost: new Map([[3, 1.5], [4, 5], [5, 0.5]]) })
+    expect(r.totals.agent.cost).toMatchObject({
+      perMergedPr: 1, total: 2, attributedPrs: 2, externalPrs: 1, attributionRate: 1,
+      followUpPrs: 1, followUpTotal: 5, status: "attributed",
+    })
+    const onlyExternal = buildReport(fixture, { repo: "o/r", since: "2026-01-05", until: "2026-01-11" }, { cost: new Map([[4, 5]]) })
+    expect(onlyExternal.totals.agent.cost.attributedPrs).toBe(0)
+    expect(onlyExternal.totals.agent.cost.perMergedPr).toBeNull()
+    expect(renderReport(r)).toContain("Local follow-up on external PRs (rebases, conflict fixes), not in Cost/PR: agent PRs: $5.00 on 1 PR;")
+    const pub = toPublic(r)
+    expect(JSON.stringify(pub)).not.toContain("followUpTotal")
+    expect(renderReport(pub)).toContain("agent PRs: 1 PR;")
+    expect(renderReport(pub)).not.toMatch(/\$\d/)
+  })
+
+  it("--format markdown renders GitHub tables", () => {
+    const md = renderMarkdown(report)
+    expect(md).toContain("### Quality report — o/r (main), 2026-01-05 → 2026-01-11")
+    expect(md).toContain("| Total | PRs | Fixes | Fix share | Reg ≤24h (/100) |")
+    expect(md).toContain("| --- | ---: |")
+    expect(md).toContain("| agent PRs | 3 | 2 | 67% | 0 (0) | 1 (33.3) |")
+    expect(md).toContain("| Week of |")
+    expect(md).toContain("| Area |")
   })
 
   it("lead time splits issue-linked and unlinked PRs", () => {
@@ -210,6 +290,18 @@ describe("baselines and --public", () => {
     expect(c.comparison?.totals.agent.costPerMergedPrPct).toBe(-50)
     expect(c.comparison?.totals.agent.mergedPrs).toBe(0)
     expect(c.totals.agent.cost.changePct).toBe(-50)
+  })
+
+  it("a baseline saved before the per-100 fields compares without NaN", () => {
+    const old = structuredClone(then)
+    for (const r of [old.totals.agent, old.totals.all, ...old.areas] as any[]) {
+      delete r.regressionFixes24hPer100
+      delete r.regressionFixes72hPer100
+    }
+    const c = compareReports(now, old, "before")
+    expect(c.comparison?.totals.agent.regressionFixes24hPer100).toBeNull()
+    expect(renderReport(c)).not.toContain("NaN")
+    expect(renderMarkdown(c)).not.toContain("NaN")
   })
 
   it("--public removes every absolute amount", () => {
@@ -262,6 +354,12 @@ describe("cost attribution", () => {
     expect(mentionsBranch("origin feat/claude/x-1", "claude/x-1")).toBe(false)
   })
 
+  it("read-only calls that pass a head branch are not build calls", () => {
+    expect(BUILD_CALL_RE.test('mcp__github__list_pull_requests {"head":"o:claude/x-1","state":"open"}')).toBe(false)
+    expect(BUILD_CALL_RE.test('mcp__github__create_pull_request {"head":"claude/x-1","base":"main"}')).toBe(true)
+    expect(BUILD_CALL_RE.test('mcp__github__push_files {"branch":"claude/x-1"}')).toBe(true)
+  })
+
   it("a cloud-session link marks a PR external", () => {
     expect(isExternalPr({ body: "https://claude.ai/code/session_01ABC" })).toBe(true)
     expect(isExternalPr({ body: "plain" })).toBe(false)
@@ -273,7 +371,7 @@ describe("GitHub readers (fake gh, no network)", () => {
     const calls: string[] = []
     const node = (n: number) => ({
       number: n, title: `fix: ${n}`, body: null, createdAt: "2026-01-05T00:00:00Z", mergedAt: `2026-01-0${n}T00:00:00Z`,
-      headRefName: "claude/x", labels: { nodes: [{ name: "agent:coder" }] }, files: { nodes: [{ path: "src/a/b.ts" }] },
+      headRefName: "claude/x", labels: { nodes: [{ name: "agent:coder" }] }, files: { nodes: [{ path: "src/a/b.ts", changeType: "MODIFIED" }, { path: "test/n.test.ts", changeType: "ADDED" }] },
       closingIssuesReferences: { nodes: [{ number: 40, createdAt: "2026-01-01T00:00:00Z" }] },
       commits: { nodes: [{ commit: { oid: `sha${n}` } }] },
     })
@@ -290,7 +388,7 @@ describe("GitHub readers (fake gh, no network)", () => {
     expect(calls).toHaveLength(4) // two chunks × two pages
     expect(calls[0]).toContain("repo:o/r is:pr is:merged base:main merged:2026-01-01..2026-01-07")
     expect(prs.map((p) => p.number)).toEqual([1, 2])
-    expect(prs[0]).toMatchObject({ body: "", labels: ["agent:coder"], files: ["src/a/b.ts"], commits: ["sha1"],
+    expect(prs[0]).toMatchObject({ body: "", labels: ["agent:coder"], files: ["src/a/b.ts", "test/n.test.ts"], addedFiles: ["test/n.test.ts"], commits: ["sha1"],
       closingIssues: [{ number: 40, createdAt: "2026-01-01T00:00:00Z" }] })
   })
 
@@ -321,6 +419,19 @@ describe("GitHub readers (fake gh, no network)", () => {
     await fetchCiMinutes("o/r", prs, "2026-01-05", "2026-01-06", { gh, cache })
     expect(jobCalls).toEqual(["repos/o/r/actions/runs/101/jobs?filter=all&per_page=100"])
   })
+
+  it("warns when a 7-day chunk has more runs than GitHub lists", async () => {
+    const pages: string[] = []
+    const gh: GhRunner = async ([, path]) => {
+      if (path.includes("/runs?")) { pages.push(path); return JSON.stringify({ total_count: 1500, workflow_runs: [] }) }
+      return JSON.stringify({ jobs: [] })
+    }
+    const warnings: string[] = []
+    await fetchCiMinutes("o/r", [pr({ number: 1, createdAt: "2026-01-05T00:00:00Z" })], "2026-01-05", "2026-01-06",
+      { gh, onWarning: (m) => warnings.push(m) })
+    expect(pages).toHaveLength(10)
+    expect(warnings).toEqual(["CI runs 2026-01-05..2026-01-06: 1500 runs, GitHub lists only 1,000. CI minutes for that week are a lower bound."])
+  })
 })
 
 describe("readTaskCosts (temporary trace store)", () => {
@@ -338,6 +449,7 @@ describe("readTaskCosts (temporary trace store)", () => {
       const trace = db.prepare("INSERT INTO task_traces VALUES (?, 'claude-sonnet-4-6', ?, 1000000, 0, 0, 0)")
       trace.run("built", 1000)
       trace.run("talked", 1000)
+      trace.run("listed", 1000)
       trace.run("too-old", 1)
       const step = db.prepare("INSERT INTO task_trace_steps VALUES (?, ?, ?, ?, ?, ?)")
       step.run("built", 0, "tool_use", "Bash", '{"command":"git push -u origin claude/x-1"}', null)
@@ -345,6 +457,7 @@ describe("readTaskCosts (temporary trace store)", () => {
       step.run("built", 2, "tool_use", "Bash", '{"command":"gh pr create --fill"}', null)
       step.run("built", 3, "tool_result", null, null, "https://github.com/o/r/pull/42")
       step.run("talked", 0, "tool_use", "Bash", '{"command":"gh pr view 42"}', null)
+      step.run("listed", 0, "tool_use", "mcp__github__list_pull_requests", '{"head":"o:claude/x-1"}', null)
       step.run("too-old", 0, "tool_use", "Bash", '{"command":"git push origin claude/x-1"}', null)
       db.close()
 
