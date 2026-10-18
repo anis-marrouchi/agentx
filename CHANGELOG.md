@@ -2,6 +2,16 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.141.0](https://github.com/anis-marrouchi/agentx/compare/v0.140.0...v0.141.0) (2026-10-18)
+
+
+### Features
+
+* **ci:** ui-evidence check, with the [#996](https://github.com/anis-marrouchi/agentx/issues/996) review fixes ([#1004](https://github.com/anis-marrouchi/agentx/issues/1004)) ([604efa9](https://github.com/anis-marrouchi/agentx/commit/604efa937deee3faad7c3fc5cf5f67191397318c))
+* **daemon:** canary soak gate before deploying a release to a second host ([#993](https://github.com/anis-marrouchi/agentx/issues/993)) ([#999](https://github.com/anis-marrouchi/agentx/issues/999)) ([ada9950](https://github.com/anis-marrouchi/agentx/commit/ada99504c9517d8462640d4638fe1a3935f37c96))
+* **quality:** pre-merge review gate checks agent PRs against their issue ([#990](https://github.com/anis-marrouchi/agentx/issues/990)) ([#1003](https://github.com/anis-marrouchi/agentx/issues/1003)) ([aa48f18](https://github.com/anis-marrouchi/agentx/commit/aa48f18a8776c0785e9c6c2845ff14a2a6e915d2))
+* **quality:** spec-first tests from the issue text by a separate agent ([#992](https://github.com/anis-marrouchi/agentx/issues/992)) ([#998](https://github.com/anis-marrouchi/agentx/issues/998)) ([0778e73](https://github.com/anis-marrouchi/agentx/commit/0778e73b1c6e2a59bfd94f6ca52c54d3bb26d6a4))
+
 ## [0.140.0](https://github.com/anis-marrouchi/agentx/compare/v0.139.2...v0.140.0) (2026-10-18)
 
 
