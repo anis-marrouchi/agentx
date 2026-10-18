@@ -4,6 +4,7 @@ import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import chalk from "chalk"
 import { existsSync, readFileSync } from "fs"
 import { restartCommand } from "./daemon-restart"
+import { checkoutMoved, pinnedBuildEnv, soakCommand, soakGate } from "./daemon-soak"
 import { lastBoot, statusBlock, stoppedBlock, type StatusService } from "./daemon-status"
 
 // --- agentx daemon: start/stop/status/logs ---
@@ -231,6 +232,7 @@ daemon
 
 // agentx daemon restart [--when-idle] (daemon-restart.ts)
 daemon.addCommand(restartCommand)
+daemon.addCommand(soakCommand)
 
 // agentx daemon status
 daemon
@@ -484,10 +486,35 @@ daemon
   .option("-p, --path <path>", "remote agentx path", "~/agentx")
   .option("--restart", "restart remote daemon after deploy", false)
   .option("--skip-checks", "skip build and test before deploy", false)
+  .option("--override-soak <reason>", "deploy a release that has not passed its canary soak (logged)")
+  .option("--dry-run", "check the canary soak and print the plan without changing anything", false)
+  .option("-c, --config <path>", "path to agentx.json")
   .action(async (host, opts) => {
     const { execSync } = await import("child_process")
     const sshKey = opts.identity ? `-e "ssh -i ${opts.identity}"` : ""
     const remote = `${opts.user}@${host}:${opts.path}/dist/`
+
+    // Canary soak (quality.canary): off → nothing here changes the flow.
+    const gate = soakGate(host, { config: opts.config, overrideSoak: opts.overrideSoak, dryRun: opts.dryRun })
+    if (gate.warning) console.log(chalk.yellow(`  ⚠ Canary soak: ${gate.warning}`))
+    if (gate.enabled) {
+      if (!gate.allow) {
+        console.log(chalk.red(`  ✗ Canary soak: ${gate.message}`))
+        console.log(chalk.dim("  See: agentx daemon soak. To deploy anyway: --override-soak \"<reason>\" (logged)"))
+        process.exitCode = 1
+        return
+      }
+      console.log((gate.overridden ? chalk.yellow : chalk.green)(`  ${gate.overridden ? "⚠" : "✓"} Canary soak: ${gate.message}`))
+    }
+    if (opts.dryRun) {
+      if (!gate.enabled) console.log(chalk.dim("  Canary soak is off (quality.canary.enabled)."))
+      console.log(chalk.dim("  Dry run, nothing changed. Would run:"))
+      if (!opts.skipChecks) console.log(chalk.dim("    npx vitest run --reporter=dot"))
+      if (gate.enabled) console.log(chalk.dim(`    npx tsup --no-dts   (build ${gate.commit})`))
+      console.log(chalk.dim(`    rsync -avzL --delete ${sshKey} dist/ ${remote}`))
+      if (opts.restart) console.log(chalk.dim(`    ssh ${opts.user}@${host} "cd ${opts.path} && node dist/cli.js daemon restart --when-idle"`))
+      return
+    }
 
     // Pre-deploy checks
     if (!opts.skipChecks) {
@@ -515,6 +542,29 @@ daemon
         execSync("npx tsup --no-dts", { stdio: "pipe", cwd: process.cwd() })
         console.log(chalk.green("  ✓ Build complete"))
       }
+    }
+
+    // The soak judged this checkout's HEAD; ship a build of exactly that.
+    // HEAD is checked again before the build and before rsync, since the
+    // tests and the build take minutes and the tree can move meanwhile.
+    if (gate.enabled) {
+      const moved = () => {
+        const why = checkoutMoved(gate.commit!)
+        if (!why) return false
+        console.log(chalk.red(`  ✗ Canary soak: ${why}`))
+        process.exitCode = 1
+        return true
+      }
+      if (moved()) return
+      try {
+        execSync("npx tsup --no-dts", { stdio: "pipe", cwd: process.cwd(), env: pinnedBuildEnv(gate.commit!) })
+        console.log(chalk.green(`  ✓ Built ${gate.commit}`))
+      } catch (e: any) {
+        console.log(chalk.red(`  ✗ Build failed: ${e.message}`))
+        process.exitCode = 1
+        return
+      }
+      if (moved()) return
     }
 
     console.log(chalk.dim(`  Deploying to ${opts.user}@${host}:${opts.path}...`))
