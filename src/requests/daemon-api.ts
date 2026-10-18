@@ -1,4 +1,4 @@
-import type { RequestRecord, RequestStore } from "./store"
+import { HOME_KINDS, HOME_LINK_MAX, type HomeKind, type RequestHome, type RequestRecord, type RequestStore } from "./store"
 import type { RequestTracker } from "./tracker"
 import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, plansOffFor, type PlanSettings } from "./plans"
@@ -54,7 +54,21 @@ export interface RequestsApiDeps {
   planSettings?: PlanSettings
   /** A plan was made or a step moved: run the plan check soon. */
   onPlanChange?: () => void
+  /** The URL's query string (GET /requests?since=). */
+  query?: URLSearchParams
   now?: number
+}
+
+/** The optional `home` of accept, wait and done: {kind, link}. Undefined
+ *  when absent, a string when it is malformed. */
+export function parseHome(v: unknown): RequestHome | undefined | string {
+  if (v === undefined || v === null || v === "") return undefined
+  const kind = str((v as any)?.kind).toLowerCase()
+  const link = str((v as any)?.link)
+  if (!(HOME_KINDS as readonly string[]).includes(kind)) return `home.kind must be one of ${HOME_KINDS.join(", ")}`
+  if (!link) return "home.link is required: the issue URL, idea file, approval id, ERP record or card id"
+  if (link.length > HOME_LINK_MAX) return `home.link is longer than ${HOME_LINK_MAX} characters`
+  return { kind: kind as HomeKind, link }
 }
 
 export interface ApiReply {
@@ -75,6 +89,15 @@ export function handleRequestsApi(
   const { store } = deps
 
   if (path === "/requests" && m === "GET") {
+    // ?since=<epoch ms>: every request made since then, open or closed,
+    // with its links (#394). Without it: the open ones.
+    const since = deps.query?.get("since")
+    if (since != null) {
+      const at = Number(since)
+      if (!Number.isFinite(at) || at < 0) return { status: 400, body: { error: "since must be epoch milliseconds" } }
+      const items = store.listSince(at, LIST_LIMIT + 1).map((r) => ({ ...r, links: store.links(r.id) }))
+      return { status: 200, body: { enabled: deps.enabled, since: at, count: Math.min(items.length, LIST_LIMIT), items: items.slice(0, LIST_LIMIT), truncated: items.length > LIST_LIMIT } }
+    }
     const items = store.listOpen()
     return { status: 200, body: { enabled: deps.enabled, count: items.length, items: items.slice(0, LIST_LIMIT), truncated: items.length > LIST_LIMIT } }
   }
@@ -141,6 +164,10 @@ export function handleRequestsApi(
 
     if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
 
+    const home = parseHome(input.home)
+    if (typeof home === "string") return { status: 400, body: { error: home } }
+    if (home && action === "decline") return { status: 400, body: { error: "a declined request has no home: give it with accept, wait or done" } }
+
     if (action === "accept" && input.steps !== undefined) {
       const settings = deps.planSettings ?? DEFAULT_PLAN_SETTINGS
       if (!deps.plans) return { status: 409, body: { error: "This node has no plans: accept without steps." } }
@@ -150,6 +177,7 @@ export function handleRequestsApi(
       const parsed = parseSteps(input.steps, { createdBy: agentId, hasAgent: deps.hasAgent, settings })
       if (!parsed.ok) return { status: 400, body: { error: parsed.error } }
       store.progress(request.id, now)
+      if (home) store.setHome(request.id, home, now)
       deps.plans.create(request.id, agentId, parsed.steps, now)
       deps.onPlanChange?.()
       return { status: 200, body: { request: store.get(request.id), plan: deps.plans.get(request.id), steps: deps.plans.steps(request.id) } }
@@ -163,6 +191,7 @@ export function handleRequestsApi(
         store.waitOnOwner(request.id, question, now)
       } else if (action === "done") store.close(request.id, "done", str(input.evidence), now)
       else store.close(request.id, "declined", str(input.reason), now)
+      if (home) store.setHome(request.id, home, now)
     } catch (e: any) {
       return { status: 400, body: { error: e?.message ?? String(e) } }
     }

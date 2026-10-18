@@ -73,7 +73,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       body: JSON.stringify({
         action, agentId: caller.agentId,
         id: args.id, question: args.question, evidence: args.evidence, reason: args.reason,
-        steps: args.steps, step: args.step, status: args.status, note: args.note,
+        steps: args.steps, step: args.step, status: args.status, note: args.note, home: args.home,
       }),
       signal: AbortSignal.timeout(10_000),
     })

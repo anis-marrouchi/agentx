@@ -82,6 +82,22 @@ You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on,
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
 
+## Where a request landed
+
+When an agent takes a request on, waits on you, or closes it as done, it can say where the work lives: its **home**. One of:
+
+| Kind | Link |
+|---|---|
+| `issue` | the GitLab or GitHub issue URL |
+| `idea` | the idea file, e.g. `ideas/home-tv.md` |
+| `approval` | the decision card id |
+| `erp` | the ERP record |
+| `card` | the Desk card id |
+
+The agent passes it with `agentx_request`, e.g. `{action:"accept", home:{kind:"issue", link:"https://…/issues/394"}}`. A later home replaces an earlier one. Two requests can share a home.
+
+To list every request made since a time, open or closed, with its home and links, read `GET /requests?since=<epoch ms>` on the daemon (loopback, or a mesh token). A follow-up script can use it for a "what did I ask today and where did it land" list.
+
 ## Requests of several steps
 
 When a request takes two or more steps (build, deploy, check it is live, tell the client), the agent can write it as a plan. The daemon then follows each step, nudges a step that goes quiet, sends a message you approved once, and tells you at the end. See [Follow a request of several steps](./tracked-plans.md).
@@ -105,6 +121,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 2. Ask an agent, by voice or in the app, for something it must hand to another agent.
 3. **Terminal:** run `agentx requests`. The request is listed as `waiting on another agent`, then `in progress` once the answer is back.
 4. **Terminal:** run `agentx requests done <id> --evidence <link>`, then `agentx requests`. It is gone from the list.
+5. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?since=$(( $(date +%s) * 1000 - 86400000 ))"`. The request is there, state `done`, with its `home` when the agent gave one.
 
 ## If something is wrong
 
@@ -113,6 +130,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A message you sent on Telegram or GitHub is not recorded:** your id on that channel is not in `from`. Add it with `--from`, as `channel:id`.
 - **A request you only got an answer to is not listed:** that is expected. A request is kept only when work goes on after the answer or goes wrong.
 - **A request came back as `No activity for 24 h`:** nobody closed it. Close it with `done` or `drop`, or ask the agent to carry on.
+- **`home.kind must be one of …`:** the agent gave a home kind that does not exist. Use issue, idea, approval, erp or card. A declined request takes no home.
 - **`a finished request needs --evidence <link>`:** add the link to the proof. From the terminal, and for agents, a request cannot be closed as done without it.
 - **A message from the phone app is not recorded:** the dashboard must run from the install folder, the one that holds `agentx.json`, so it can read `.agentx/operator.key`. Start it there. A message sent through the phone app to an agent on another computer is recorded there when the computer the phone is paired with checks its own key and vouches for you to the other one. That needs three things: both computers run 0.83.1 or later, the other computer lists the first one in `mesh.peers` with the same `token` the first one sends, and the request reaches it from another machine. A token that sits only in `MESH_TOKEN`, two different tokens, or a proxy on the same machine in front of the daemon means it is not recorded.
 - **You handed a request to another agent and no answer came in the chat:** that is expected. The chat where you asked belongs to the first agent. Open the request's card in the dashboard and read **Last answer from …**.

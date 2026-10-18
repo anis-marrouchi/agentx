@@ -918,6 +918,12 @@ const TOOLS = [
         question: { type: "string", description: "wait: what you are asking the owner." },
         evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
         reason: { type: "string", description: "decline: why you will not do it." },
+        home: {
+          type: "object",
+          description: "accept, wait, done, optional: where the work lives, so the owner's \"what did I ask today\" list shows where it landed. kind: issue (the issue URL), idea (the ideas/ file), approval (the card id), erp (the ERP record), card (the Desk card id); link: that URL, path or id.",
+          properties: { kind: { type: "string", enum: ["issue", "idea", "approval", "erp", "card"] }, link: { type: "string" } },
+          required: ["kind", "link"],
+        },
         channel: { type: "string", description: "Current chat's channel, from your task context." },
         chatId: { type: "string", description: "Current chat id, from your task context." },
         callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
