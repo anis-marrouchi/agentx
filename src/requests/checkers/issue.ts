@@ -29,8 +29,14 @@ const STATES: readonly IssueState[] = ["open", "closed", "merged"]
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 
-/** "owner/repo#12", "group/sub/project!3", or a web address. */
+/** "owner/repo#12", "group/sub/project!3", or a web address. A project
+ *  with a "." or ".." part is refused: it would walk the API path. */
 export function parseRef(provider: "github" | "gitlab", ref: string): ParsedRef | null {
+  const parsed = parseRefParts(provider, ref)
+  return parsed && parsed.project.split("/").every((p) => p !== "." && p !== "..") ? parsed : null
+}
+
+function parseRefParts(provider: "github" | "gitlab", ref: string): ParsedRef | null {
   const short = ref.match(/^([\w.-]+(?:\/[\w.-]+)+)([#!])(\d+)$/)
   if (short) {
     if (provider === "github" && (short[2] === "!" || short[1].split("/").length !== 2)) return null

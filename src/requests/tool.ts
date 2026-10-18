@@ -24,6 +24,10 @@ export interface RequestToolDeps {
   env?: NodeJS.ProcessEnv
 }
 
+/** A done on a loop with a check waits for it: the slowest is an issue
+ *  check, three forge calls of up to 10 s each. */
+export const DONE_TIMEOUT_MS = 45_000
+
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 
 const STATE_WORDS: Record<string, string> = {
@@ -84,7 +88,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         steps: args.steps, step: args.step, status: args.status, note: args.note, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
       }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(action === "done" ? DONE_TIMEOUT_MS : 10_000),
     })
     const data = await res.json().catch(() => ({})) as any
     if (!res.ok) return `Error: ${data?.error || `HTTP ${res.status}`}`

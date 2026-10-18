@@ -266,9 +266,10 @@ export function handleRequestsApi(
           body: { error: `Not closed: its check says it is not finished (${v.detail}). It closes by itself once ${describeCloseWhen(request.closeWhen)}.` },
         }
       }
+      // Not a touch: an agent that keeps saying done must not reset the
+      // quiet timer of a loop nobody can show is finished.
       store.markChecked(request.id, "unverified", v.detail, now)
-      store.touch(request.id, now)
-      if (home) store.setHome(request.id, home, now)
+      if (home) store.setHome(request.id, home, now, { touch: false })
       return { status: 202, body: { request: store.get(request.id), verify: "unverified", detail: v.detail } }
     }
 
