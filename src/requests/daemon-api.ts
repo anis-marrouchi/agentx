@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto"
-import { HOME_KINDS, HOME_LINK_MAX, type HomeKind, type RequestHome, type RequestRecord, type RequestStore } from "./store"
+import { CLOSED_STATES, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
 import type { RequestTracker } from "./tracker"
@@ -131,6 +131,56 @@ export async function handleRequestsCall(
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 
+export const LIST_MAX = 500
+
+/** GET /requests filters (#394), all optional:
+ *    state=a,b      request states, or "open", "closed", "all" (default
+ *                   open; with since, all)
+ *    closed=1       open and closed alike (state=all)
+ *    since=<ms>     made since then;  closedSince=<ms>  closed since then
+ *    links=1        each item with its links (always on with since)
+ *    limit=<n>      1 to 500, default 100
+ *    offset=<n>     page from the oldest; the reply gives nextOffset.
+ *  Without offset, a since list past its limit keeps the newest (#1036),
+ *  any other list the oldest. */
+function parseListQuery(p: URLSearchParams): Parameters<RequestStore["query"]>[0] & { links: boolean } | string {
+  const ms = (name: string): number | undefined | string => {
+    const v = p.get(name)
+    if (v == null) return undefined
+    const n = Number(v)
+    return v.trim() && Number.isFinite(n) && n >= 0 ? n : `${name} must be epoch milliseconds`
+  }
+  const since = ms("since")
+  if (typeof since === "string") return since
+  const closedSince = ms("closedSince")
+  if (typeof closedSince === "string") return closedSince
+  const wanted = p.get("state") ?? (p.get("closed") === "1" || since !== undefined || closedSince !== undefined ? "all" : "open")
+  const groups: Record<string, readonly RequestState[]> = {
+    open: OPEN_STATES, closed: CLOSED_STATES, all: [...OPEN_STATES, ...CLOSED_STATES],
+    ...Object.fromEntries([...OPEN_STATES, ...CLOSED_STATES].map((s) => [s, [s]])),
+  }
+  const states = new Set<RequestState>()
+  for (const s of wanted.split(",").map((x) => x.trim()).filter(Boolean)) {
+    if (!Object.hasOwn(groups, s)) return `unknown state "${s}": use open, closed, all or one of ${groups.all.join(", ")}`
+    groups[s].forEach((x) => states.add(x))
+  }
+  if (!states.size) return "state is empty"
+  const whole = (name: string, min: number, max: number): number | undefined | string => {
+    const v = p.get(name)
+    if (v == null) return undefined
+    const n = Number(v)
+    return v.trim() && Number.isInteger(n) && n >= min && n <= max ? n : `${name} must be a whole number from ${min} to ${max}`
+  }
+  const limit = whole("limit", 1, LIST_MAX)
+  if (typeof limit === "string") return limit
+  const offset = whole("offset", 0, Number.MAX_SAFE_INTEGER)
+  if (typeof offset === "string") return offset
+  return {
+    states: [...states], since, closedSince, limit: limit ?? LIST_LIMIT, offset,
+    newest: offset === undefined && since !== undefined, links: since !== undefined || p.get("links") === "1",
+  }
+}
+
 export function handleRequestsApi(
   method: string,
   path: string,
@@ -142,19 +192,18 @@ export function handleRequestsApi(
   const { store } = deps
 
   if (path === "/requests" && m === "GET") {
-    // ?since=<epoch ms>: every request made since then, open or closed,
-    // with its links (#394). Without it: the open ones. Past the cap the
-    // newest are kept and `truncated` says older ones were left out.
-    const since = deps.query?.get("since")
-    if (since != null) {
-      const at = Number(since)
-      if (!since.trim() || !Number.isFinite(at) || at < 0) return { status: 400, body: { error: "since must be epoch milliseconds" } }
-      const found = store.listSince(at, LIST_LIMIT + 1)
-      const items = found.slice(-LIST_LIMIT).map((r) => ({ ...r, links: store.links(r.id) }))
-      return { status: 200, body: { enabled: deps.enabled, since: at, count: items.length, items, truncated: found.length > LIST_LIMIT } }
+    const q = parseListQuery(deps.query ?? new URLSearchParams())
+    if (typeof q === "string") return { status: 400, body: { error: q } }
+    const { items, total } = store.query(q)
+    const shown = q.links ? items.map((r) => ({ ...r, links: store.links(r.id) })) : items
+    const from = q.offset ?? 0
+    return {
+      status: 200,
+      body: {
+        enabled: deps.enabled, ...(q.since !== undefined ? { since: q.since } : {}), count: shown.length, total, items: shown,
+        truncated: total > items.length, ...(q.offset !== undefined && from + items.length < total ? { nextOffset: from + items.length } : {}),
+      },
     }
-    const items = store.listOpen()
-    return { status: 200, body: { enabled: deps.enabled, count: items.length, items: items.slice(0, LIST_LIMIT), truncated: items.length > LIST_LIMIT } }
   }
 
   const one = path.match(/^\/requests\/([^/]+)$/)

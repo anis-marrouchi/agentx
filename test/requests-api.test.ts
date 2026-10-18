@@ -288,6 +288,38 @@ describe("home and the since list (#394)", () => {
     expect(store.get("req-t1")?.home).toBeNull()
   })
 
+  it("a home is also a request link, so a request keeps every home and an issue leads back to it", () => {
+    turn("t1")
+    say("accept", { home: { kind: "issue", link: "https://example.com/i/394" } })
+    say("wait", { question: "Which file?", home: { kind: "idea", link: "ideas/followup.md" } })
+    say("done", { evidence: "https://example.com/pull/1", home: { kind: "card", link: "followup-394" } })
+    expect(store.links("req-t1").map((l) => [l.kind, l.ref])).toEqual([
+      ["run", "t1"], ["issue", "https://example.com/i/394"], ["idea", "ideas/followup.md"],
+    ])
+    expect(store.get("req-t1")?.home).toEqual({ kind: "card", link: "followup-394" })
+    expect(store.byLink("issue", "https://example.com/i/394")?.id).toBe("req-t1")
+  })
+
+  it("approval and erp homes are links too; a promise's home is linked when it is made", () => {
+    turn("t1")
+    say("accept", { home: { kind: "approval", link: "2026-10-18-x-uw01" } })
+    say("done", { evidence: "e", home: { kind: "erp", link: "SO-2026-0042" } })
+    expect(store.links("req-t1").map((l) => l.kind)).toEqual(["run", "approval", "erp"])
+    const p = say("promise", { owedTo: "owner", text: "send the brochure", home: { kind: "issue", link: "https://example.com/i/20" } }).body as any
+    expect(store.links(p.request.id)).toEqual([{ kind: "issue", ref: "https://example.com/i/20", at: 6_000 }])
+  })
+
+  it("a second request on the same issue keeps it in its column; the link stays with the first", () => {
+    turn("t1")
+    say("accept", { home: { kind: "issue", link: "https://example.com/i/394" } })
+    endTurn("t1")
+    running.set("run-t2", { agentId: "coder", channel: "telegram", chatId: "chat-1" })
+    turn("t2")
+    api("POST", "/requests", { action: "accept", agentId: "coder", home: { kind: "issue", link: "https://example.com/i/394" } }, { taskId: "run-t2" })
+    expect(store.byLink("issue", "https://example.com/i/394")?.id).toBe("req-t1")
+    expect(store.get("req-t2")?.home?.link).toBe("https://example.com/i/394")
+  })
+
   it("the tool passes home through", async () => {
     let sent: any
     const fakeFetch = (async (_u: string, init: any) => {
@@ -296,5 +328,60 @@ describe("home and the since list (#394)", () => {
     }) as typeof fetch
     await runRequestTool({ action: "accept", home: { kind: "idea", link: "ideas/a.md" } }, { daemonUrl: "http://d", fetch: fakeFetch, env: { AGENTX_AGENT_ID: "coder" } })
     expect(sent.home).toEqual({ kind: "idea", link: "ideas/a.md" })
+  })
+})
+
+describe("GET /requests filters (#394)", () => {
+  const get = (q: Record<string, string>) =>
+    handleRequestsApi("GET", "/requests", undefined, {
+      store, tracker, enabled, hasAgent: () => true, runningTurn: () => null, query: new URLSearchParams(q),
+    }) as { status: number; body: any }
+  /** Requests req-0 … req-(n-1), one ms apart; every third one closed, every third + 1 needing attention. */
+  function seed(n: number) {
+    for (let i = 0; i < n; i++) {
+      store.addCandidate({ id: `req-${i}`, runId: `r${i}`, channel: "telegram", chatId: "chat-1", agentId: "coder", text: `ask ${i}`, now: 1_000 + i })
+      store.progress(`req-${i}`, 1_000 + i)
+      if (i % 3 === 0) store.close(`req-${i}`, "done", "https://example.com/pull/1", 2_000 + i)
+      if (i % 3 === 1) store.needsAttention(`req-${i}`, "quiet", 2_000 + i)
+    }
+  }
+  const ids = (b: any) => b.items.map((r: any) => r.id)
+
+  it("without filters: open ones only, without links, as before", () => {
+    seed(6)
+    const { body } = get({})
+    expect(ids(body)).toEqual(["req-1", "req-2", "req-4", "req-5"])
+    expect(body).toMatchObject({ count: 4, total: 4, truncated: false })
+    expect(body.items[0].links).toBeUndefined()
+  })
+
+  it("state picks states and groups; closed=1 adds the closed ones; links=1 adds links", () => {
+    seed(6)
+    expect(ids(get({ state: "needs_attention" }).body)).toEqual(["req-1", "req-4"])
+    expect(ids(get({ state: "closed" }).body)).toEqual(["req-0", "req-3"])
+    expect(ids(get({ state: "done,needs_attention" }).body)).toEqual(["req-0", "req-1", "req-3", "req-4"])
+    expect(get({ closed: "1" }).body.total).toBe(6)
+    expect(get({ state: "needs_attention", links: "1" }).body.items[0].links).toEqual([{ kind: "run", ref: "r1", at: 1_001 }])
+  })
+
+  it("closedSince counts what closed since then, whenever it was made", () => {
+    seed(6)
+    expect(ids(get({ closedSince: "2003" }).body)).toEqual(["req-3"])
+  })
+
+  it("pages from the oldest with limit and offset", () => {
+    seed(7)
+    const first = get({ closed: "1", limit: "3", offset: "0" }).body
+    expect(ids(first)).toEqual(["req-0", "req-1", "req-2"])
+    expect(first).toMatchObject({ total: 7, truncated: true, nextOffset: 3 })
+    const last = get({ closed: "1", limit: "3", offset: "6" }).body
+    expect(ids(last)).toEqual(["req-6"])
+    expect(last.nextOffset).toBeUndefined()
+  })
+
+  it("refuses a bad filter", () => {
+    for (const q of [{ state: "lost" }, { state: "," }, { limit: "0" }, { limit: "501" }, { limit: "2.5" }, { offset: "-1" }, { closedSince: "x" }]) {
+      expect(get(q).status).toBe(400)
+    }
   })
 })

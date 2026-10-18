@@ -20,14 +20,19 @@ export type RequestState = "candidate" | OpenState | ClosedState
 export const OPEN_STATES: readonly OpenState[] = ["in_progress", "waiting_owner", "waiting_other", "needs_attention"]
 export const CLOSED_STATES: readonly ClosedState[] = ["done", "declined", "dropped"]
 
-export type LinkKind = "run" | "delegation" | "card" | "workflow"
+export type LinkKind = "run" | "delegation" | "card" | "workflow" | HomeLinkKind
 
 /** Where the work of a request lives (#394): the issue, idea file,
- *  approval, ERP record or Desk card the agent named. A column, not a
- *  request_links kind: links are unique per (kind, ref), and two requests
- *  often land on the same issue. */
+ *  approval, ERP record or Desk card the agent named. The latest is kept
+ *  in two columns; every home but a Desk card is also a request link, so
+ *  one request keeps all its homes and byLink traces an issue back to its
+ *  request. Links are unique per (kind, ref): when two requests land on
+ *  one issue, the link stays with the first, the column holds both. A Desk
+ *  card is a column only: "card" links are approval cards (tracker). */
 export const HOME_KINDS = ["issue", "idea", "approval", "erp", "card"] as const
 export type HomeKind = (typeof HOME_KINDS)[number]
+export const HOME_LINK_KINDS = ["issue", "idea", "approval", "erp"] as const
+export type HomeLinkKind = (typeof HOME_LINK_KINDS)[number]
 export interface RequestHome { kind: HomeKind; link: string }
 export const HOME_LINK_MAX = 500
 
@@ -199,6 +204,7 @@ export class RequestStore {
       input.dueAt ?? null, input.closeWhen ? JSON.stringify(input.closeWhen) : null,
       input.home?.kind ?? null, input.home ? input.home.link.slice(0, HOME_LINK_MAX) : null,
     )
+    if (input.home) this.linkHome(input.id, input.home, input.now)
   }
 
   /** How many open promises this agent holds. */
@@ -380,26 +386,38 @@ export class RequestStore {
     ).all(...CLOSED_STATES, since, limit).map(toRecord)
   }
 
-  /** Every request made since `since`, open or closed, oldest first: the
-   *  "what did I ask today" list (#394). Candidates are not requests yet.
-   *  Past `limit` it keeps the newest: the oldest are the ones dropped. */
-  listSince(since: number, limit = 500): RequestRecord[] {
-    return this.db.prepare(
-      "SELECT * FROM requests WHERE state != 'candidate' AND created_at >= ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
-    ).all(since, limit).map(toRecord).reverse()
-  }
-
-  /** Name where the work lives. A later home replaces an earlier one. */
-  /** Records where the work lives. touch: false keeps updated_at, for
-   *  calls that must not count as progress. */
+  /** Records where the work lives: the column holds the latest, the links
+   *  keep every one. touch: false keeps updated_at, for calls that must
+   *  not count as progress. */
   setHome(id: string, home: RequestHome, now: number, opts: { touch?: boolean } = {}): void {
     const link = home.link.slice(0, HOME_LINK_MAX)
     if (opts.touch === false) {
       this.db.prepare("UPDATE requests SET home_kind = ?, home_link = ? WHERE id = ?").run(home.kind, link, id)
-      return
+    } else {
+      this.db.prepare("UPDATE requests SET home_kind = ?, home_link = ?, updated_at = ? WHERE id = ?")
+        .run(home.kind, link, now, id)
     }
-    this.db.prepare("UPDATE requests SET home_kind = ?, home_link = ?, updated_at = ? WHERE id = ?")
-      .run(home.kind, link, now, id)
+    this.linkHome(id, home, now)
+  }
+
+  private linkHome(id: string, home: RequestHome, now: number): void {
+    if ((HOME_LINK_KINDS as readonly string[]).includes(home.kind)) this.link(id, home.kind as HomeLinkKind, home.link.slice(0, HOME_LINK_MAX), now)
+  }
+
+  /** Requests by state and age, for GET /requests (#394). Oldest first;
+   *  `newest` keeps the newest `limit` instead of the oldest. `total`
+   *  counts every match, so a caller can page with `offset`. */
+  query(q: { states: readonly RequestState[]; since?: number; closedSince?: number; limit: number; offset?: number; newest?: boolean }): { items: RequestRecord[]; total: number } {
+    const where = [`state IN (${placeholders(q.states.length)})`]
+    const args: unknown[] = [...q.states]
+    if (q.since !== undefined) { where.push("created_at >= ?"); args.push(q.since) }
+    if (q.closedSince !== undefined) { where.push("closed_at >= ?"); args.push(q.closedSince) }
+    const sql = where.join(" AND ")
+    const total = (this.db.prepare(`SELECT COUNT(*) AS n FROM requests WHERE ${sql}`).get(...args) as { n: number }).n
+    const order = q.newest ? "DESC" : "ASC"
+    const items = this.db.prepare(`SELECT * FROM requests WHERE ${sql} ORDER BY created_at ${order}, rowid ${order} LIMIT ? OFFSET ?`)
+      .all(...args, q.limit, q.offset ?? 0).map(toRecord)
+    return { items: q.newest ? items.reverse() : items, total }
   }
 
   /** The owner said "pick it up again": back in progress, and the agent
