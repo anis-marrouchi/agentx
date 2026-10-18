@@ -79,6 +79,14 @@ describe("issue", () => {
     expect(parseRef("github", "group/sub/app#1")).toBeNull()
   })
 
+  it("refuses a project with a . or .. part", () => {
+    expect(parseRef("github", "acme/..#12")).toBeNull()
+    expect(parseRef("github", "../app#12")).toBeNull()
+    expect(parseRef("gitlab", "group/../app!3")).toBeNull()
+    expect(parseRef("gitlab", "group/./app#3")).toBeNull()
+    expect(parseRef("gitlab", "group/app.v2#3")).toEqual({ project: "group/app.v2", number: 3, mr: false })
+  })
+
   it("met: closed (merged counts), or a note matches", async () => {
     const closed = spec({ kind: "issue", provider: "github", ref: "acme/app#12" })
     expect((await runCheck(closed, ctx({ forge: reader({ state: "merged", url: "u" }) }))).verdict).toBe("met")

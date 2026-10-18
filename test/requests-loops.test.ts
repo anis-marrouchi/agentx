@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { mkdtempSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
@@ -8,7 +8,7 @@ import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi, handleRequestsCall, MAX_OPEN_PROMISES, type RequestsApiDeps } from "../src/requests/daemon-api"
 import { runRequestsSweep, attentionText } from "../src/requests/sweep"
 import { stalledLoops, waitsOn } from "../src/requests/loops"
-import { runRequestTool } from "../src/requests/tool"
+import { runRequestTool, DONE_TIMEOUT_MS } from "../src/requests/tool"
 import type { CheckResult } from "../src/requests/checkers"
 import { handleRequestsPanel } from "../src/daemon/requests-panel"
 
@@ -129,6 +129,27 @@ describe("done on a loop with a check", () => {
     expect(res.status).toBe(202)
     expect(res.body).toMatchObject({ verify: "unverified", detail: "could not be reached" })
     expect(store.get(id)).toMatchObject({ state: "in_progress", verifyState: "unverified" })
+  })
+
+  it("an unverified done does not reset the quiet timer", async () => {
+    const id = await withCheck()
+    const before = store.get(id)!.updatedAt
+    clock += 5 * HOUR
+    verdict = { verdict: "unverifiable", detail: "could not be reached" }
+    await post({ action: "done", agentId: "coder", id, evidence: "I sent it" })
+    expect(store.get(id)!.updatedAt).toBe(before)
+  })
+
+  it("the tool gives a done time for its check", async () => {
+    const spy = vi.spyOn(AbortSignal, "timeout")
+    try {
+      const fake = (async () => new Response(JSON.stringify({ request: { id: "r1", evidence: "e" } }), { status: 200 })) as unknown as typeof fetch
+      await runRequestTool({ action: "done", id: "r1", evidence: "e" }, { daemonUrl: "http://127.0.0.1:1", fetch: fake, env: { AGENTX_AGENT_ID: "coder" } as any })
+      expect(spy).toHaveBeenCalledWith(DONE_TIMEOUT_MS)
+      expect(DONE_TIMEOUT_MS).toBeGreaterThan(30_000)
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it("closes with the checker's evidence when met", async () => {
