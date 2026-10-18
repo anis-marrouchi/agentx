@@ -269,7 +269,7 @@ export function handleRequestsApi(
       // Not a touch: an agent that keeps saying done must not reset the
       // quiet timer of a loop nobody can show is finished.
       store.markChecked(request.id, "unverified", v.detail, now)
-      if (home) store.setHome(request.id, home, now)
+      if (home) store.setHome(request.id, home, now, { touch: false })
       return { status: 202, body: { request: store.get(request.id), verify: "unverified", detail: v.detail } }
     }
 
