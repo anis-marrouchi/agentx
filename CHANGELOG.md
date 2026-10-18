@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.142.0](https://github.com/anis-marrouchi/agentx/compare/v0.141.1...v0.142.0) (2026-10-18)
+
+
+### Features
+
+* **requests:** record where a request's work lives, list requests since a time ([#1035](https://github.com/anis-marrouchi/agentx/issues/1035)) ([c574305](https://github.com/anis-marrouchi/agentx/commit/c5743050b76a0a85df67a03c3e3f78fce06cac21))
+
 ## [0.141.1](https://github.com/anis-marrouchi/agentx/compare/v0.141.0...v0.141.1) (2026-10-18)
 
 
