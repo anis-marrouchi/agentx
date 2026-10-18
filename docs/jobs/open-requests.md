@@ -160,9 +160,27 @@ When an agent takes a request on, waits on you, or closes it as done, it can say
 | `erp` | the ERP record |
 | `card` | the Desk card id |
 
-The agent passes it with `agentx_request`, e.g. `{action:"accept", home:{kind:"issue", link:"https://…/issues/394"}}`. A later home replaces an earlier one. Two requests can share a home.
+The agent passes it with `agentx_request`, e.g. `{action:"accept", home:{kind:"issue", link:"https://…/issues/394"}}`. The request shows its latest home. Every `issue`, `idea`, `approval` and `erp` home is also kept as a link of the request, so a request that moved from an idea to an issue keeps both, and `agentx requests show <id>` lists them. Two requests can share a home; the link then stays with the first one, and the second keeps it as its home.
 
-To list every request made since a time, open or closed, with its home and links, read `GET /requests?since=<epoch ms>` on the daemon (loopback, or a mesh token). A follow-up script can use it for a "what did I ask today and where did it land" list. The list holds at most 100 requests, oldest first. On a busy day it keeps the newest 100 and says `truncated: true`: the oldest ones are left out.
+### What did I ask today
+
+Run `agentx requests today`. It lists every request made since 00:00 Tunis time, one row each: the time, its first words, its state, the agent that owns it, and where it landed (issue, idea, approval, ERP record, Desk card, plan, or the evidence it closed with). Requests with nowhere to land are in red, at the top. A declined or dropped request is never red. `--json` gives the same list for the Desk and for voice.
+
+### Read the list from a script
+
+`GET /requests` on the daemon (loopback, or a mesh token) lists requests. Without filters it gives the open ones, oldest first, at most 100. Filters, all optional:
+
+| Filter | What it does |
+|---|---|
+| `state=needs_attention,waiting_owner` | Only these states. Also `open`, `closed` and `all`. |
+| `closed=1` | Open and closed alike, like `state=all`. |
+| `since=<epoch ms>` | Made since then, open or closed, each with its links. |
+| `closedSince=<epoch ms>` | Closed since then, whenever it was made. |
+| `links=1` | Each request with its links: runs, delegations, cards and homes. |
+| `limit=<n>` | 1 to 500. Default 100. |
+| `offset=<n>` | Page from the oldest; the reply gives `nextOffset` while there is more. |
+
+Every reply says `total`, the number of requests that match, and `truncated: true` when it shows fewer. Without `offset`, a `since` list past its limit keeps the newest; any other list keeps the oldest.
 
 ## Requests of several steps
 
@@ -196,6 +214,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 7. **Terminal:** run `agentx requests show <id>`. It shows `Promised to owner` and `Closes when github example-org/app#12 is closed`.
 8. Close the issue. Within 10 minutes, `agentx requests` no longer lists the promise, and `agentx requests show <id>` gives the check's words as the evidence.
 9. **Terminal:** run `agentx requests --stalled`. It prints the stalled requests by group, or `nothing is stalled`.
+10. **Terminal:** run `agentx requests today`. Each request you made since midnight is listed; the ones with no home are red, at the top.
+11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
 
 ## If something is wrong
 
