@@ -140,7 +140,11 @@ To see them:
 1. **Terminal:** run `agentx requests --stalled`. Each group is listed with its requests and why each one is stalled. Add `--json` for a script.
 2. **Browser:** open **Approvals** and scroll to **Open requests**. Press **Stalled on you**, **Stalled on an agent** or **Stalled on an outside person** to show only that group; the number in brackets is how many it holds. **All** shows every open request again.
 
-Each card also says who a promise is owed to, when it is due, and what check closes it, with what the check last said.
+![Open requests showing only the promise stalled on an outside person](/screenshots/approvals/open-loops-stalled-person.png)
+
+Each card also says who a promise is owed to, when it is due, and what check closes it, with what the check last said. A check that could not tell is shown in amber, with the reason.
+
+![Open requests with promises, due times, checks and stalled lines](/screenshots/approvals/open-loops-all.png)
 
 A promise past its due time comes back to you once, like a request that needs attention, with the title **Promise not kept** and the group it waits on.
 

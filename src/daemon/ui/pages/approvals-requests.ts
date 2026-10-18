@@ -16,10 +16,10 @@ export const REQUESTS_HTML = `
     <p class="apv__lead">What you asked agents for that is not finished, oldest first. Reply, hand it to an agent, close it as done, or drop it. Nothing leaves this list by getting old.</p>
     <p id="req-off" class="apv__foot" hidden>Requests are off. Turn them on in the settings below.</p>
     <div class="apv__stallbar" id="req-stall" role="group" aria-label="Show">
-      <button type="button" class="ax-btn" data-stall="" aria-pressed="true">All</button>
-      <button type="button" class="ax-btn" data-stall="owner" aria-pressed="false">Stalled on you <span></span></button>
-      <button type="button" class="ax-btn" data-stall="agent" aria-pressed="false">Stalled on an agent <span></span></button>
-      <button type="button" class="ax-btn" data-stall="person" aria-pressed="false">Stalled on an outside person <span></span></button>
+      <button type="button" class="ax-chip apv__f is-on" data-stall="" aria-pressed="true">All</button>
+      <button type="button" class="ax-chip apv__f" data-stall="owner" aria-pressed="false">Stalled on you <span></span></button>
+      <button type="button" class="ax-chip apv__f" data-stall="agent" aria-pressed="false">Stalled on an agent <span></span></button>
+      <button type="button" class="ax-chip apv__f" data-stall="person" aria-pressed="false">Stalled on an outside person <span></span></button>
     </div>
     <ol id="req-list" class="apv__list" aria-label="Open requests"></ol>
     <details class="apv__settings" id="req-settings">
@@ -70,9 +70,7 @@ export const REQUESTS_CSS = `
 .apv__plan .is-done { color: var(--ax-ok, inherit); }
 .apv__plan .is-blocked { color: var(--ax-err); }
 .apv__plan small { display: block; color: var(--ax-muted); }
-.apv__stallbar { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
-.apv__stallbar [aria-pressed=true] { border-color: var(--ax-text); color: var(--ax-text); }
-.apv__stallbar span { font-family: var(--ax-mono); color: var(--ax-muted); }
+.apv__stallbar { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .apv__loop { margin: 6px 0 0; font-size: 13px; color: var(--ax-text-2); overflow-wrap: anywhere; }
 .apv__loop b { color: var(--ax-text); font-weight: 600; }
 .apv__loop .is-failed, .apv__loop .is-unverified { color: var(--ax-amber-ink); }
@@ -117,8 +115,8 @@ function loop(r){
   if (l && l.promise && l.owedTo) bits.push('Promised to <b>' + esc(l.owedTo === 'owner' ? 'you' : agentName(l.owedTo)) + '</b>');
   if (l && l.dueAt) bits.push('Due ' + esc(when(l.dueAt)));
   if (l && l.check) bits.push('Closes when ' + esc(l.check) + (l.verifyState ? ' <span class="is-' + esc(l.verifyState) + '">(' + esc(VERIFY[l.verifyState] || l.verifyState) + (l.verifyDetail ? ': ' + esc(l.verifyDetail) : '') + ')</span>' : ''));
-  if (r.stall) bits.push('<span class="apv__stalled">Stalled, waiting on ' + esc(r.stall.group === 'agent' ? agentName(r.stall.who) : r.stall.group === 'person' ? r.stall.who : 'you') + ': ' + esc(r.stall.why) + '</span>');
-  return bits.length ? '<p class="apv__loop">' + bits.join(' · ') + '</p>' : '';
+  var stalled = r.stall ? '<p class="apv__loop apv__stalled">Stalled, waiting on ' + esc(r.stall.group === 'agent' ? agentName(r.stall.who) : r.stall.group === 'person' ? r.stall.who : 'you') + ': ' + esc(r.stall.why) + '</p>' : '';
+  return (bits.length ? '<p class="apv__loop">' + bits.join(' · ') + '</p>' : '') + stalled;
 }
 function more(label, html){ return html ? '<details class="apv__detail"><summary>' + esc(label) + '</summary><div class="apv__md">' + html + '</div></details>' : ''; }
 
@@ -199,7 +197,10 @@ $('req-stall').addEventListener('click', function(ev){
   var b = ev.target.closest && ev.target.closest('button[data-stall]');
   if (!b) return;
   SHOW = b.getAttribute('data-stall');
-  [].forEach.call($('req-stall').querySelectorAll('button[data-stall]'), function(x){ x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+  [].forEach.call($('req-stall').querySelectorAll('button[data-stall]'), function(x){
+    x.setAttribute('aria-pressed', x === b ? 'true' : 'false');
+    x.classList.toggle('is-on', x === b);
+  });
   draw();
 });
 
