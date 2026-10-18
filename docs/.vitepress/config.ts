@@ -46,6 +46,7 @@ const groups = [
     { text: "Check that it worked", link: "/automations/check-it-worked" },
     { text: "Schedules from chat", link: "/automations/schedules-from-chat" },
     { text: "Due reminders", link: "/automations/reminders" },
+    { text: "Watch tasks that must finish", link: "/automations/task-watchers" },
     { text: "Follow events", link: "/automations/event-subscriptions" },
   ] },
   { text: "Everyday tasks", collapsed: true, items: [
@@ -72,7 +73,9 @@ const groups = [
     { text: "Capture the screen at the right moment", link: "/jobs/screen-capture" },
     { text: "Work from your Claude Code session", link: "/jobs/claude-code-session" },
     { text: "Use AgentX from your code editor", link: "/jobs/connect-an-editor" },
+    { text: "Install the AgentX plugin in Claude Code", link: "/jobs/install-the-plugin" },
     { text: "Send coding tasks to Claude cloud sessions", link: "/jobs/cloud-sessions" },
+    { text: "Have a second agent write tests from the issue", link: "/jobs/spec-tests" },
   ] },
   { text: "Teamwork", collapsed: true, items: [
     { text: "When an agent asks another", link: "/jobs/ask-another-agent" },
@@ -88,6 +91,7 @@ const groups = [
     { text: "Tailscale setup", link: "/jobs/tailscale" },
     { text: "Keep it safe", link: "/jobs/keep-it-safe" },
     { text: "Restart without losing work", link: "/jobs/restart-safely" },
+    { text: "Soak a release before deploying it", link: "/jobs/canary-soak" },
     { text: "Dashboard on your own address", link: "/jobs/reverse-proxy" },
   ] },
   { text: "When something goes wrong", collapsed: true, items: [

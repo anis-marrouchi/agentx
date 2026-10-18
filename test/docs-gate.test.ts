@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest"
 import * as lib from "../scripts/docs-gate-lib.mjs"
 
 const config = JSON.parse(readFileSync(new URL("../scripts/docs-gate.config.json", import.meta.url), "utf8"))
-const { applyBaseline, checkImpact, checkPage, coverageGaps, globToRegExp, keyPatterns, parseDiff, staleMentions, titleType } = lib
+const { applyBaseline, checkImpact, checkPage, coverageGaps, globToRegExp, keyPatterns, parseDiff, rulesForPage, staleMentions, titleType } = lib
 
 const GOOD_ENDING = "\n## Check it worked\n\nOpen the page.\n\n## If something is wrong\n\nRestart it.\n"
 
@@ -270,6 +270,29 @@ describe("applyBaseline", () => {
   it("asks to remove a fixed page from the baseline", () => {
     const { errors } = applyBaseline("docs/old.md", [], ["docs/old.md"])
     expect(errors[0].message).toContain("Remove \"docs/old.md\" from rules.baseline")
+  })
+})
+
+describe("rulesForPage", () => {
+  // #1024 — a translated page gets its own ending headings and step
+  // verbs; the private-data and image checks still apply to it.
+  const page = (path: string, text: string) => checkPage(path, text, rulesForPage(path, config.rules), () => true)
+  const AR_ENDING = "\n## تحقّق من أنه يعمل\n\nنعم.\n\n## إذا حدث خطأ\n\nلا.\n"
+
+  it("keeps the English rules for an English page", () => {
+    expect(rulesForPage("docs/guide/page.md", config.rules)).toBe(config.rules)
+  })
+
+  it("passes an Arabic page that ends with the Arabic sections", () => {
+    expect(page("docs/ar/page.md", `# صفحة\n\nمقدّمة.${AR_ENDING}`)).toEqual([])
+    expect(page("docs/ar/page.md", "# صفحة\n\nمقدّمة.\n")).toHaveLength(2)
+  })
+
+  it("flags Arabic bullet steps and private data on an Arabic page", () => {
+    const steps = page("docs/ar/page.md", `# صفحة\n\n- شغّل الأمر.\n- افتح المتصفّح.\n${AR_ENDING}`)
+    expect(steps.some((e: { message: string }) => e.message.includes("numbered list"))).toBe(true)
+    const leak = page("docs/ar/page.md", `# صفحة\n\nالمسار /Users/someone/agentx.\n${AR_ENDING}`)
+    expect(leak.some((e: { kind: string }) => e.kind === "content")).toBe(true)
   })
 })
 

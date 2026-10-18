@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, the weekly quality report, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, the weekly quality report, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -233,6 +233,19 @@ The Approvals inbox. See [Approvals](/dashboard/approvals#settings).
 | `approvals.checkin.maxAsksPerPass` | number (1 to 20) | `5` | Most agents one check-in asks to write a card, whatever they answer. |
 | `approvals.checkin.composeTimeoutSeconds` | number (30 to 3600) | `300` | How long an agent may take to write one card, counted from the start of its turn. The turn is stopped at the limit. |
 
+## `quality`
+
+Quality gates for agent-written changes. Each one is off by default.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `quality.specTests.enabled` | boolean | `false` | A separate test agent writes tests from the issue text for issues that go to a [Claude cloud session](/jobs/cloud-sessions). See [Have a second agent write tests from the issue](/jobs/spec-tests). |
+| `quality.specTests.paths` | list of strings | `["src/daemon"]` | Folders in the pilot. Only an issue that names one of them gets spec tests. |
+| `quality.specTests.agent` | string | `"spec-tests"` | The test agent's name, used as the author of the spec-test commit. Must not be the coding agent's id. |
+| `quality.specTests.model` | string | unset | Model the test agent uses. Unset: the `claude` command's default. |
+| `quality.specTests.maxCostPerIssue` | number (up to 100) | `2` | Most the test agent may spend on one issue, in US dollars. Past it, it stops and leaves a note on the issue. |
+| `quality.specTests.maxMinutes` | number (1–120) | `20` | Most minutes the test agent may run for one issue. Past it, it stops and leaves a note on the issue. |
+
 ## `requests`
 
 Open requests: what you asked an agent for is recorded and followed until it is done, declined or dropped. Off by default.
@@ -271,6 +284,25 @@ To turn it on by hand:
 | `requests.plans.maxNudges` | whole number (0 to 20) | `3` | Nudges per step before it counts as blocked and you are told. |
 | `requests.plans.approveKinds` | list of strings | `["message"]` | Step kinds you approve once, on a decision card, when the plan is made. An approved `message` step is sent by the daemon without asking again. |
 | `requests.plans.disabledAgents` | list of strings | `[]` | Agents that may not make a plan. |
+
+## `watchers`
+
+Task watchers: when a task starts (a message to an agent, a hand-off from one agent to another, a scheduled run), AgentX decides whether something should watch it. A watched task that passes its due time with no done signal, or that ends without a result, is reported to the agent that handed it over, and then to you. Off by default.
+
+The decision is the `task-watch` decision seat: it gives the chance that the task carries a deadline, a promise to you, or a hand-off. A watcher is attached unless the seat is `active` and the chance is below `noBelow`. A seat that is off, failed, in `shadow` mode or unsure attaches one. How it works, step by step: [Watch tasks that must finish](/automations/task-watchers).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `watchers.enabled` | boolean | `false` | Runs the check at every task start and follows the watchers. |
+| `watchers.skipChannels` | list of strings | `[]` | Channels whose tasks are never checked, for example `["voice"]`. The watchers' own alert turns (channel `watchers`) never are. |
+| `watchers.defaultDueMinutes` | number (up to 43200) | `120` | Minutes from the start of a task to its due time, when the task gives none. A caller gives one as `dueAt` (an ISO date or milliseconds) in the task's `context`. |
+| `watchers.noBelow` | number (0 to 1) | `0.2` | A chance below this is a confident "no". Only an `active` seat skips the watcher on it. |
+| `watchers.yesAt` | number (0 to 1) | `0.7` | A chance at or above this is recorded as "yes". Between `noBelow` and `yesAt` it is "uncertain", which attaches a watcher. |
+| `watchers.escalateAfterMinutes` | number (up to 10080) | `30` | Minutes after the agent that handed the task over is told before you are told too, if the task is still not done. |
+| `watchers.owner.channel` | string | — | Channel you are told on. Unset: your default notification channel. |
+| `watchers.owner.chatId` | string | — | Chat on that channel. Unset: `default`. |
+| `watchers.retentionDays` | number (up to 3650) | `30` | Days a finished watcher is kept before it is deleted. Watchers still watching are never deleted. |
+| `watchers.doneSignal` | `"result"` or `"explicit"` | `"result"` | What closes a watcher. `result`: the agent's run ends with a reply, or the delegation answers. `explicit`: only `POST /watchers/<id>/done`, so a reply that only promises ("I'll publish at 18:00") keeps the watcher open until its due time. A run that ends without a result fires at once in both modes. |
 
 ## `requestStatus`
 
@@ -356,6 +388,24 @@ What happens to work a restart cut off. Chat messages are picked up again in the
 | `resume.crashLoop` | object | `{}` | Stops picking up work when the daemon keeps restarting. |
 | `resume.crashLoop.restarts` | number (1 or more) | `3` | This many restarts… |
 | `resume.crashLoop.windowMinutes` | number | `10` | …within this many minutes pauses picking up work. |
+
+## `quality`
+
+Release quality gates. Each one has its own switch and is off unless you turn it on.
+
+`quality.canary` holds a release back from a second machine until it has run on this one for a while without new trouble. See [soak a release before deploying it](/jobs/canary-soak).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `quality.canary.enabled` | boolean | `false` | Makes `agentx daemon deploy` refuse a release that has not passed its soak. Only the literal `true` turns it on. Off: deploys work as before. Other ways of shipping a release are not gated. |
+| `quality.canary.soakMinutes` | number (1–10080) | `120` | How long a release must run on this daemon. |
+| `quality.canary.thresholds.maxRestarts` | number | `1` | Restarts allowed during the soak, not counting the one that started it. |
+| `quality.canary.thresholds.maxCrashes` | number | `0` | Stops without being asked to (crash, forced kill) allowed during the soak. |
+| `quality.canary.thresholds.maxFailedTasks` | number | `3` | Failed or timed-out tasks allowed during the soak. Stopped tasks do not count. |
+| `quality.canary.thresholds.maxErrorRateIncrease` | number (0–1) | `0.1` | How much the share of failed tasks may rise over the release before, as a fraction: `0.1` is 10 percentage points. |
+| `quality.canary.thresholds.minTasksForRate` | number | `10` | Fewer tasks than this during the soak skips the error-rate check. |
+
+A crash loop (`resume.crashLoop` above) during the soak always fails it.
 
 ## `signals`
 

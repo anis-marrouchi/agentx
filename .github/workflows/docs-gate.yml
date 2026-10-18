@@ -11,9 +11,12 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: docs-gate-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+# No concurrency group: a PR often fires opened, edited and labeled within a
+# second, and cancelling the older runs left a "cancelled" gate on the commit
+# that read as neither pass nor fail (#989). Each run takes under a minute, so
+# every run finishes. Each run checks the PR body and labels from its own
+# event, and runs can finish out of order, so the last result shown is not
+# always the newest. Re-run the gate if it disagrees with the current PR.
 
 jobs:
   gate:

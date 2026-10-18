@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.140.0](https://github.com/anis-marrouchi/agentx/compare/v0.139.2...v0.140.0) (2026-10-18)
+
+
+### Features
+
+* **readme:** harness tagline, Claude Code plugin pack, Arabic README ([#1024](https://github.com/anis-marrouchi/agentx/issues/1024)) ([#1026](https://github.com/anis-marrouchi/agentx/issues/1026)) ([17cb86b](https://github.com/anis-marrouchi/agentx/commit/17cb86b0cbf986e346784192712e7599c69c48d8))
+* **watchers:** watcher checkpoint at every task start, explicit done mode ([#1030](https://github.com/anis-marrouchi/agentx/issues/1030)) ([#1032](https://github.com/anis-marrouchi/agentx/issues/1032)) ([1a266a0](https://github.com/anis-marrouchi/agentx/commit/1a266a0adaca717ba9b2b51e198ca9bb89c7fcce))
+
 ## [0.139.2](https://github.com/anis-marrouchi/agentx/compare/v0.139.1...v0.139.2) (2026-10-15)
 
 
