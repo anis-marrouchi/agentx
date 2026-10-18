@@ -26,6 +26,9 @@ export interface ReviewRecord {
   defects?: number
   tokens?: { input: number; output: number; cacheRead: number; cacheWrite: number }
   costUsd?: number
+  /** The reviewer was started, whether or not it returned: counted by
+   *  maxReviewsPerPrPerDay. */
+  reviewerRan?: boolean
   /** Reviewer run time. */
   minutes?: number
   /** Time spent waiting for CI before the review started. */
@@ -40,6 +43,8 @@ export interface ReviewRecord {
 
 export interface ReviewLedger {
   append(record: ReviewRecord): void
+  /** Records since `from`, for the per-PR review limit after a restart. */
+  read?(opts: { from?: Date }): ReviewRecord[]
 }
 
 export function reviewLedgerPath(cwd = process.cwd()): string {

@@ -140,6 +140,7 @@ interface GitHubPREvent {
     base: { ref: string }
     user: GitHubUser
     draft?: boolean
+    updated_at?: string
   }
   /** Who caused the event: the person or app that labeled, assigned,
    *  closed or edited. Differs from `pull_request.user`, the author. */
@@ -702,7 +703,9 @@ export class GitHubAdapter implements ChannelAdapter {
         repo: event.repository.full_name,
         number: pr.number,
         headSha: pr.head.sha,
-        pushedAt: Date.now(),
+        // When GitHub last saw the PR change: the push, for synchronize
+        // and opened. Arrival time only when the payload has none.
+        pushedAt: Date.parse(pr.updated_at ?? "") || Date.now(),
         draft: !!pr.draft,
         authorLogin: pr.user?.login ?? "",
         title: pr.title ?? "",
