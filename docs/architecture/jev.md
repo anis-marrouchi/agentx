@@ -33,6 +33,7 @@ A *seat* is a named decision point in the application. Each has its own inputs, 
 | `session-continuity` | Does this turn need the earlier conversation, or can the session start fresh early? |
 | `intent-path` | Which intent-graph category, then which verb within it, does this message belong to? Replaces the model call the classifier makes on a cache miss. |
 | `task-tier` | Does this task need the strongest model, or would a cheaper one do? Steers model routing when `active` and `decisions.routing` names a cheap model. |
+| `task-watch` | Does a task that is starting carry a deadline, a promise to the owner, or a hand-off, so something should watch it? Asked at every task start while `watchers.enabled` is on. Only an `active` seat's confident "no" skips the watcher; see [Watch tasks that must finish](/automations/task-watchers). |
 | `wake-gate` | Does this event need an agent run at all? Not yet asked on the live path; replayed on recorded runs by the [backtest](./jev-backtest.md). |
 | `tool-set` | Which set of built-in tools does a new Claude Code session need: read-only, change code, or everything? Shadow only: it records, the session still gets every tool. See [Tool set](#tool-set). |
 

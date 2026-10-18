@@ -46,6 +46,7 @@ const groups = [
     { text: "Check that it worked", link: "/automations/check-it-worked" },
     { text: "Schedules from chat", link: "/automations/schedules-from-chat" },
     { text: "Due reminders", link: "/automations/reminders" },
+    { text: "Watch tasks that must finish", link: "/automations/task-watchers" },
     { text: "Follow events", link: "/automations/event-subscriptions" },
   ] },
   { text: "Everyday tasks", collapsed: true, items: [

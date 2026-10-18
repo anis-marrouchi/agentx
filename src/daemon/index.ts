@@ -79,6 +79,9 @@ import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
+import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
+import { WATCHER_CHANNEL } from "@/watchers/checkpoint"
+import { handleWatchersApi } from "@/watchers/daemon-api"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
@@ -547,12 +550,24 @@ export class AgentXDaemon {
       replies: this.callbackReplies,
       recordDispatch: (agentId, context, message, senderAgentId) =>
         this.recordInboundDispatch(agentId, context, message, senderAgentId),
-      onStarted: (rec) => { this.requests?.tracker.delegationStarted(rec); this.status?.board.delegationStarted(rec) },
+      onStarted: (rec) => {
+        this.requests?.tracker.delegationStarted(rec)
+        this.status?.board.delegationStarted(rec)
+        void this.watchers?.checkpoint.delegationStarted(rec)
+      },
       onDone: (rec, result) => {
         this.requests?.tracker.delegationDone(rec, result.status, result.text)
         this.status?.board.delegationDone(rec, result.status)
+        this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text)
+          .catch((e: any) => this.log(`[watchers] end of ${rec.id}: ${e?.message ?? e}`))
       },
-      callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
+      callbackNote: (rec) => {
+        const notes = [
+          this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
+          this.config.watchers.enabled ? this.watchers?.checkpoint.doneNote(rec.id) : undefined,
+        ].filter(Boolean)
+        return notes.length ? notes.join("\n\n") : undefined
+      },
       onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
     })
 
@@ -593,6 +608,13 @@ export class AgentXDaemon {
           this.requests = attachRequests(db, () => this.config.requests, this.log)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
+        }
+        // Task watchers (#1030). Attached whatever the setting says, like
+        // requests: the checkpoint reads `watchers.enabled` on every event.
+        try {
+          this.watchers = this.attachTaskWatchers(db)
+        } catch (e: any) {
+          this.log(`  Watchers: not available (${e?.message ?? e})`)
         }
         // Request status where the request was made (#383). Attached the
         // same way; it does nothing for a channel that is not listed in
@@ -1964,6 +1986,9 @@ export class AgentXDaemon {
    *  is the owner's (requests/operator, #393). */
   private operatorKey: string | null = null
   private requestsSweeping = false
+  /** Task watchers (src/watchers, #1030). */
+  private watchers: AttachedWatchers | null = null
+  private watchersSweeping = false
   private status: AttachedStatus | null = null
 
   /** Send a status-comment edit to the peer that holds the agent's token. */
@@ -2034,6 +2059,14 @@ export class AgentXDaemon {
             .finally(() => { this.requestsSweeping = false })
         }
         this.status?.board.sweep()
+        // Task watchers (#1030): overdue tasks fire, unanswered alerts go
+        // to the owner. Beside the sweep, like requests.
+        if (this.watchers && !this.watchersSweeping) {
+          this.watchersSweeping = true
+          void this.watchers.checkpoint.sweep()
+            .catch((e: any) => this.log(`[watchers] sweep failed: ${e?.message ?? e}`))
+            .finally(() => { this.watchersSweeping = false })
+        }
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts). Not over a
         // demo or a recording: the card waits for the floor to be free.
@@ -2216,6 +2249,44 @@ export class AgentXDaemon {
           this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`)
         })
       },
+      log: this.log,
+    })
+  }
+
+  /** The watcher checkpoint at every task start (src/watchers, #1030). */
+  private attachTaskWatchers(db: NonNullable<ReturnType<typeof openDb>>): AttachedWatchers {
+    const port = parseInt(this.config.node.bind.split(":")[1] || "18800", 10)
+    return attachWatchers(db, {
+      settings: () => this.config.watchers,
+      // A tracked plan already nudges its steps and tells the owner.
+      lookups: [({ key, traceId }) => {
+        const req = this.requests
+        if (!req) return null
+        const r = (traceId ? req.store.byLink("run", traceId) : null) ?? req.store.byLink("delegation", key)
+        return r && req.plans.get(r.id)?.state === "active" ? `plan ${r.id}` : null
+      }],
+      hasAgent: (id) => !!this.registry.getAgent(id),
+      // A mesh peer's delegation reaches this node as a run under its dlg
+      // chat; only the caller's node holds the delegation and watches it.
+      isLocalDelegation: (id) => this.delegations.isPending(id),
+      // execute() does not reject on a failed start; it reports { error }.
+      alertAgent: async (agentId, text, w) => {
+        const res = await this.registry.execute({
+          agentId,
+          message: text,
+          context: { channel: WATCHER_CHANNEL, chatId: w.id, sender: "watcher" },
+        })
+        if (res.error && !res.content?.trim()) throw new Error(res.error)
+      },
+      alertOwner: async (title, text) => {
+        const to = this.config.watchers.owner
+        if (to.channel) {
+          await this.router.sendOutbound({ channel: to.channel, chatId: to.chatId ?? "default", text: `${title}\n${text}` } as any)
+          return
+        }
+        await this.notifyOwner(title, text, "watchers")
+      },
+      doneHint: (w) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":"<proof>"}'`,
       log: this.log,
     })
   }
@@ -4098,6 +4169,18 @@ export class AgentXDaemon {
           planSettings: this.config.requests.plans,
           onPlanChange: () => this.kickPlans(),
         }, this.callerProof(req))
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // Task watchers (#1030): list them, mark a task done.
+      if (path === "/watchers" || path.startsWith("/watchers/")) {
+        if (!this.watchers) { this.json(res, 503, { error: "watchers need the database" }); return }
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleWatchersApi(req.method || "GET", path, url.searchParams, body as Record<string, unknown> | undefined, {
+          store: this.watchers.store,
+          checkpoint: this.watchers.checkpoint,
+        })
         this.json(res, reply.status, reply.body)
         return
       }

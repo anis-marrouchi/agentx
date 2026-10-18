@@ -1229,6 +1229,41 @@ const screenSchema = z.object({
   }).default({}),
 }).default({})
 
+/** Task watchers (src/watchers, #1030). At every task start (a dispatch, a
+ *  delegation, a cron run) the `task-watch` decision seat says whether the
+ *  task carries a deadline, a promise or a hand-off; a watcher is attached
+ *  unless the seat is active and confidently says no. A watcher tells the
+ *  delegating agent, then the owner, when the due time passes with no done
+ *  signal or the task ends without a result. */
+export const watchersConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Channels whose runs are never checked (the watchers' own alert turns
+   *  never are). */
+  skipChannels: z.array(z.string().min(1)).default([]),
+  /** The due time of a task that gives none, from its start. */
+  defaultDueMinutes: z.number().positive().max(30 * 24 * 60).default(120),
+  /** A seat probability below this is a confident "no". Only an active
+   *  seat skips the watcher on it. */
+  noBelow: z.number().min(0).max(1).default(0.2),
+  /** At or above: "yes". Between `noBelow` and this: "uncertain", which
+   *  attaches a watcher (fail-safe). */
+  yesAt: z.number().min(0).max(1).default(0.7),
+  /** After the delegating agent is told, the owner is told this much later
+   *  if the task is still not done. */
+  escalateAfterMinutes: z.number().positive().max(7 * 24 * 60).default(30),
+  /** Where the owner is told. Unset: the default notification channel. */
+  owner: z.object({
+    channel: z.string().min(1).optional(),
+    chatId: z.string().min(1).optional(),
+  }).default({}),
+  /** Finished watchers are deleted after this many days. */
+  retentionDays: z.number().positive().max(3650).default(30),
+  /** What closes a watcher. "result": the run ends with a reply, or the
+   *  delegation answers. "explicit": only POST /watchers/:id/done, so a
+   *  reply that only promises ("I'll publish at 18:00") keeps it open. */
+  doneSignal: z.enum(["result", "explicit"]).default("result"),
+}).default({}).refine((w) => w.noBelow <= w.yesAt, { message: "watchers.noBelow must not be above watchers.yesAt" })
+
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and
  *  when the operator hears about what is waiting. */
 export const requestsConfigSchema = z.object({
@@ -1567,6 +1602,9 @@ export const daemonConfigSchema = z.object({
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */
   requests: requestsConfigSchema,
+  /** Task watchers (src/watchers, #1030): every task start decides whether
+   *  the task needs a watcher and attaches one. Off by default. */
+  watchers: watchersConfigSchema,
   people: peopleConfigSchema,
   members: membersConfigSchema,
   /** Request status where the request was made (src/requests/status-board,

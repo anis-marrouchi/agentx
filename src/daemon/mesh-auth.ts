@@ -41,6 +41,8 @@ export function isMeshGatedPath(path: string): boolean {
     // written from off-box would ask the operator in an agent's name.
     path === "/approvals" || path.startsWith("/approvals/") ||
     path === "/requests" || path.startsWith("/requests/") ||
+    // Watchers carry each watched task's summary and who handed it over (#1030).
+    path === "/watchers" || path.startsWith("/watchers/") ||
     // Follow-up runs name people, chats and what was said to them (#788).
     path === "/follow-up" || path.startsWith("/follow-up/") ||
     // Recent events name agents, chats and errors across the node.
