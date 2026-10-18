@@ -2,7 +2,9 @@ import { Command } from "commander"
 import { existsSync, readFileSync } from "fs"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
-import { RequestStore, type RequestRecord } from "@/requests/store"
+import { CLOSED_STATES, OPEN_STATES, RequestStore, type RequestRecord } from "@/requests/store"
+import { LIST_MAX } from "@/requests/daemon-api"
+import { startOfDay, todayRows } from "@/requests/today"
 import { readRequestSettings, updateRequestSettings, type RequestSettingsPatch } from "@/requests/settings"
 import { findConfigPath } from "@/daemon/config-mutator"
 import { PlanStore, type PlanStep } from "@/requests/plan-store"
@@ -96,6 +98,33 @@ requests
     if (items.length === 0) { console.log(chalk.dim("  no open requests")); return }
     for (const r of items) printRequest(r)
     console.log(chalk.dim(`\n  ${items.length} open. Close one: agentx requests done <id> --evidence <link> · agentx requests drop <id>`))
+  })
+
+requests
+  .command("today")
+  .description("what you asked since 00:00 Tunis and where each one landed; no home first, in red")
+  .option("--json", "machine-readable output, for the Desk and voice")
+  .action((opts: { json?: boolean }) => {
+    const s = store()
+    if (!s) return
+    const since = startOfDay(Date.now())
+    const { items, total } = s.query({ states: [...OPEN_STATES, ...CLOSED_STATES], since, limit: LIST_MAX, newest: true })
+    const plans = planStore()
+    const rows = todayRows(items.map((r) => ({ ...r, links: s.links(r.id) })), { hasPlan: (id) => !!plans?.get(id) })
+    const counts = {
+      total, noHome: rows.filter((r) => r.noHome).length,
+      open: rows.filter((r) => (OPEN_STATES as readonly string[]).includes(r.state)).length,
+      done: rows.filter((r) => r.state === "done").length,
+    }
+    if (opts.json) { console.log(JSON.stringify({ since, counts, truncated: total > items.length, rows }, null, 2)); return }
+    console.log(`  Since 00:00 Tunis: ${counts.total} request(s), ${counts.open} open, ${counts.done} done, ` +
+      (counts.noHome ? chalk.red(`${counts.noHome} with no home`) : "all with a home"))
+    if (total > items.length) console.log(chalk.dim(`  only the newest ${items.length} are listed`))
+    for (const r of rows) {
+      const where = r.noHome ? chalk.red("no home") : chalk.dim(r.landed.map((l) => `${l.kind} ${l.ref}`).join(" · "))
+      console.log(`  ${(r.noHome ? chalk.red : chalk.white)(r.time)}  ${chalk.dim(`[${STATE_LABEL[r.state] ?? r.state}] ${r.owner}`)}  ${r.words}`)
+      console.log(`         → ${where}  ${chalk.dim(r.id)}`)
+    }
   })
 
 /** This node's agent ids, from agentx.json. Empty when it cannot be read. */
