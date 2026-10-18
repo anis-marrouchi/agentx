@@ -72,15 +72,21 @@ describe("the report command", () => {
   const proc = { execPath: "/opt/node/bin/node", argv: ["/opt/node/bin/node", "/srv/agentx/dist/cli.js"] }
 
   it("adds the week and the baseline, and runs this install's CLI", () => {
-    expect(reportCommandLine(["agentx", "quality", "report", "--public"], "2026-W42", "baseline", proc)).toEqual([
+    expect(reportCommandLine(["agentx", "quality", "report", "--public"], "2026-W42", { baseline: "baseline", repo: "acme/widgets" }, proc)).toEqual([
       "/opt/node/bin/node", "/srv/agentx/dist/cli.js", "quality", "report", "--public",
-      "--since", "2026-10-12", "--until", "2026-10-18", "--compare", "baseline",
+      "--repo", "acme/widgets", "--since", "2026-10-12", "--until", "2026-10-18", "--compare", "baseline",
     ])
   })
 
   it("leaves another command and a bare agentx binary as they are", () => {
-    expect(reportCommandLine(["./report.sh"], "2026-W42", undefined, proc)).toEqual(["./report.sh", "--since", "2026-10-12", "--until", "2026-10-18"])
-    expect(reportCommandLine(["agentx", "quality", "report"], "2026-W42", undefined, { execPath: "/x/node", argv: ["/x/node", "/usr/bin/agentx"] })[0]).toBe("agentx")
+    expect(reportCommandLine(["./report.sh"], "2026-W42", {}, proc)).toEqual(["./report.sh", "--since", "2026-10-12", "--until", "2026-10-18"])
+    expect(reportCommandLine(["agentx", "quality", "report"], "2026-W42", {}, { execPath: "/x/node", argv: ["/x/node", "/usr/bin/agentx"] })[0]).toBe("agentx")
+  })
+
+  it("keeps a --repo the command already names", () => {
+    expect(reportCommandLine(["./report.sh", "--repo", "acme/other"], "2026-W42", { repo: "acme/widgets" }, proc))
+      .toEqual(["./report.sh", "--repo", "acme/other", "--since", "2026-10-12", "--until", "2026-10-18"])
+    expect(reportCommandLine(["./report.sh", "--repo=acme/other"], "2026-W42", { repo: "acme/widgets" }, proc)).not.toContain("acme/widgets")
   })
 
   it("fences the fixed-width table, even when it holds backticks", () => {
