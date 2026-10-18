@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -271,6 +271,35 @@ To turn it on by hand:
 | `requests.plans.maxNudges` | whole number (0 to 20) | `3` | Nudges per step before it counts as blocked and you are told. |
 | `requests.plans.approveKinds` | list of strings | `["message"]` | Step kinds you approve once, on a decision card, when the plan is made. An approved `message` step is sent by the daemon without asking again. |
 | `requests.plans.disabledAgents` | list of strings | `[]` | Agents that may not make a plan. |
+
+## `watchers`
+
+Task watchers: when a task starts, AgentX decides whether something should keep an eye on it, and if so attaches a **watcher**. A watcher alerts the agent that handed the task on, then you, when the task's due time passes and it is not done, or when the run doing it ends without a result. Off by default.
+
+The check runs at the start of three kinds of task:
+
+- **Delegation:** one agent hands work to another.
+- **Cron hand-off:** a schedule starts an agent.
+- **Dispatch:** a run that has a due time, was started by another agent, or arrives on a channel listed in `dispatchChannels`. A person's ordinary chat message is not checked unless its channel is listed.
+
+A task always gets a watcher when it has a due time or was handed on by another agent. For other tasks, the `task-watch` decision seat (see [Jev decisions](/architecture/jev)) is asked. Only when that seat is `active` and answers below `skipBelow` is no watcher attached. When the seat is off, unreachable, only recording (`shadow`) or unsure, a watcher is attached anyway, to be safe. A task that already has a watcher never gets a second one. A task with no due time that is already followed as an [open request](/jobs/open-requests) counts as watched too.
+
+Every check is recorded against the task, whatever it decided: the decision, the seat's probability and the watcher's id. In the run's trace (`agentx trace show <taskId>`) it appears as a step named `watcher`.
+
+How to set a due time and what the alerts look like: [Watch tasks that must not be dropped](/jobs/task-watchers).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `watchers.enabled` | boolean | `false` | Runs the check at the start of tasks and fires watchers. |
+| `watchers.sources` | list of `"dispatch"`, `"delegation"`, `"cron"` | all three | Which kinds of task are checked. |
+| `watchers.dispatchChannels` | list of strings | `[]` | Runs on these channels are checked even with no due time and no delegating agent. |
+| `watchers.skipBelow` | number (0 to 1) | `0.2` | An `active` seat answer below this means "no watcher needed". |
+| `watchers.attachAbove` | number (0 to 1) | `0.6` | An answer at or above this is recorded as "yes"; between `skipBelow` and this it is "uncertain". Both attach. Must not be below `skipBelow`. |
+| `watchers.escalateAfterMinutes` | number (up to 10080) | `30` | Minutes between the alert to the delegating agent and the alert to you, when the task is still not done. |
+| `watchers.quietAfterHours` | number (up to 8760) | `24` | A watcher with no due time fires when it hears nothing for this long. |
+| `watchers.ownerChannel` | string | — | Channel your alerts go to. Unset: your normal notification channel. |
+| `watchers.ownerChatId` | string | — | Chat on that channel. Unset: the channel's default. |
+| `watchers.retentionDays` | number (up to 3650) | `30` | Days finished watchers and check records are kept. Watchers still waiting are never deleted. |
 
 ## `requestStatus`
 

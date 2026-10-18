@@ -66,6 +66,7 @@ import { matchProcedures, renderProcedureContext } from "@/procedures/match"
 import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
+import { watchFields } from "@/watchers/watcher"
 import { isOperatorTurn } from "@/requests/operator"
 import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
@@ -1912,6 +1913,7 @@ export class AgentRegistry {
       humanRoot: isHumanFacingTurn(task.context as any),
       pickup: isPickup(task.context),
       operator: isOperatorTurn(task.context),
+      ...watchFields(task),
     })
     traceOpened = true
 

@@ -79,6 +79,8 @@ import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
+import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
+import { askTaskWatchSeat, parseDueAt, WATCHER_CHANNEL } from "@/watchers/watcher"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
@@ -547,10 +549,15 @@ export class AgentXDaemon {
       replies: this.callbackReplies,
       recordDispatch: (agentId, context, message, senderAgentId) =>
         this.recordInboundDispatch(agentId, context, message, senderAgentId),
-      onStarted: (rec) => { this.requests?.tracker.delegationStarted(rec); this.status?.board.delegationStarted(rec) },
+      onStarted: (rec) => {
+        this.requests?.tracker.delegationStarted(rec)
+        this.status?.board.delegationStarted(rec)
+        void this.watchers?.watcher.delegationStarted(rec)
+      },
       onDone: (rec, result) => {
         this.requests?.tracker.delegationDone(rec, result.status, result.text)
         this.status?.board.delegationDone(rec, result.status)
+        void this.watchers?.watcher.delegationDone(rec, result.status, result.text)
       },
       callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
       onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
@@ -593,6 +600,13 @@ export class AgentXDaemon {
           this.requests = attachRequests(db, () => this.config.requests, this.log)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
+        }
+        // Task watchers (#1030). Attached the same way as requests: the
+        // watcher reads `watchers.enabled` on every event.
+        try {
+          this.watchers = this.attachTaskWatchers(db)
+        } catch (e: any) {
+          this.log(`  Watchers: not available (${e?.message ?? e})`)
         }
         // Request status where the request was made (#383). Attached the
         // same way; it does nothing for a channel that is not listed in
@@ -1965,6 +1979,53 @@ export class AgentXDaemon {
   private operatorKey: string | null = null
   private requestsSweeping = false
   private status: AttachedStatus | null = null
+  /** Task watchers (src/watchers, #1030); null when the database is unavailable. */
+  private watchers: AttachedWatchers | null = null
+  private watchersSweeping = false
+
+  private attachTaskWatchers(db: NonNullable<ReturnType<typeof openDb>>): AttachedWatchers {
+    return attachWatchers(db, {
+      settings: () => this.config.watchers,
+      log: this.log,
+      decide: askTaskWatchSeat,
+      lookups: [
+        // An open request already brings a failed hand-off back to the
+        // owner. It has no due time, so it covers only tasks without one.
+        (input) => {
+          if (input.dueAt || !this.requests) return null
+          const req = this.requests.store.byLink(input.source === "delegation" ? "delegation" : "run", input.taskKey)
+          return req && req.state !== "candidate" ? { kind: "request", id: req.id } : null
+        },
+      ],
+      // Fire and forget: the sweep never waits on a model.
+      alertAgent: async (agentId, text, w) => {
+        void this.registry.execute({
+          agentId,
+          message: text,
+          context: { channel: WATCHER_CHANNEL, chatId: w.id, sender: "watcher" },
+        }).then((res) => {
+          if (res.error) this.log(`[watchers] ${w.id}: alert turn on ${agentId} failed: ${res.error}`)
+        }).catch((e: any) => this.log(`[watchers] ${w.id}: alert turn on ${agentId} failed: ${e?.message ?? e}`))
+      },
+      alertOwner: async (title, text, w) => {
+        const cfg = this.config.watchers
+        await notify({ title, message: text, from: w.agentId, priority: 4 }, async (m) => {
+          try {
+            await this.router.sendOutbound({
+              channel: cfg.ownerChannel ?? m.channel ?? defaultNotifyChannel(this.config),
+              chatId: cfg.ownerChatId ?? m.chatId ?? "default",
+              text: `${m.title}\n${m.message}`,
+              priority: m.priority,
+              agentId: w.agentId,
+            } as any)
+          } catch (e: any) {
+            this.log(`[watchers] owner alert for ${w.id} failed: ${e?.message ?? e}`)
+            if (process.platform !== "darwin") throw e
+          }
+        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+      },
+    })
+  }
 
   /** Send a status-comment edit to the peer that holds the agent's token. */
   private forwardCommentEdit(channel: "gitlab" | "github") {
@@ -2034,6 +2095,12 @@ export class AgentXDaemon {
             .finally(() => { this.requestsSweeping = false })
         }
         this.status?.board.sweep()
+        // Watchers beside the sweep too: an owner alert that hangs must
+        // not hold the approvals sweep.
+        if (this.watchers && !this.watchersSweeping) {
+          this.watchersSweeping = true
+          void this.watchers.watcher.sweep().finally(() => { this.watchersSweeping = false })
+        }
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts). Not over a
         // demo or a recording: the card waits for the floor to be free.
@@ -3297,6 +3364,7 @@ export class AgentXDaemon {
       )
       if (intentRef) extras.intentRef = intentRef
     }
+    const dueAt = parseDueAt(body.dueAt ?? target.calleeContext?.dueAt)
     const { taskId } = this.delegations.start({
       caller,
       callee: target.callee,
@@ -3304,6 +3372,7 @@ export class AgentXDaemon {
       message: target.message,
       calleeContext: target.calleeContext,
       extras,
+      ...(dueAt ? { dueAt } : {}),
     })
     return acceptedBody(taskId, target.callee, peer)
   }
@@ -6513,6 +6582,8 @@ export class AgentXDaemon {
           // A mesh peer sends the root its task belongs to; any other caller
           // starts a new one.
           const taskRoot = rootFromTaskBody(body)
+          // When the work is due (#1030): read by the watcher checkpoint.
+          const taskDueAt = parseDueAt(body.dueAt) ?? undefined
 
           // No-op onDelta enables stream-json runtime mode so the dashboard
           // task modal can see tool calls + tool results live. The caller still
@@ -6645,6 +6716,7 @@ export class AgentXDaemon {
                   contextStrategy,
                   intentRef,
                   freshSession,
+                  ...(taskDueAt ? { dueAt: taskDueAt } : {}),
                   onStart: track.onStart,
                   callerSignal: callerGone.signal,
                 },
@@ -6683,6 +6755,7 @@ export class AgentXDaemon {
               contextStrategy,
               intentRef,
               freshSession,
+              ...(taskDueAt ? { dueAt: taskDueAt } : {}),
               // A Mac speaking for this agent sends only a few voice fields;
               // the instruction itself is built here.
               systemPromptAppend: remoteVoiceAppend(body.context),

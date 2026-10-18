@@ -686,6 +686,10 @@ const TOOLS = [
           type: "boolean",
           description: "Start the target agent with a clean AgentX-side conversation. Defaults to true for agent-to-agent delegation.",
         },
+        dueAt: {
+          type: "string",
+          description: "Optional ISO time the work is due (for example 2026-10-20T09:00:00Z). When task watchers are on, the delegating agent and then the owner are alerted if it passes unfinished.",
+        },
         chatId: {
           type: "string",
           description: "Optional stable chat/session id for this delegated task. Omit for a one-off isolated delegation.",
@@ -1472,7 +1476,7 @@ async function handleToolCall(
       const res = await daemonFetch(`${daemonUrl()}/task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context, ...callerFields() }),
+        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context, ...(typeof args.dueAt === "string" && args.dueAt ? { dueAt: args.dueAt } : {}), ...callerFields() }),
       })
       const data = await res.json() as any
       // #277 — the daemon took it in the background (a person is waiting

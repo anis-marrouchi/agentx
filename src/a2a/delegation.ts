@@ -57,6 +57,9 @@ export interface DelegationRecord {
   origin: DelegationOrigin
   root: RootInitiator
   startedAt: number
+  /** When the work is due (epoch ms), when the caller named one. Read by
+   *  the watcher checkpoint (src/watchers, #1030). */
+  dueAt?: number
 }
 
 export interface DelegationResult {
@@ -282,6 +285,8 @@ export class DelegationManager {
     calleeContext?: Record<string, unknown>
     /** Passed to runLocal untouched (e.g. the intent-ledger ref). */
     extras?: Record<string, unknown>
+    /** When the work is due (epoch ms). */
+    dueAt?: number
   }): { taskId: string; record: DelegationRecord } {
     const origin = originOf(opts.caller.context)
     if (!origin) throw new Error("caller turn has no channel/chatId to call back to")
@@ -296,6 +301,7 @@ export class DelegationManager {
       origin,
       root,
       startedAt: this.now(),
+      ...(opts.dueAt ? { dueAt: opts.dueAt } : {}),
     }
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt })
@@ -306,10 +312,14 @@ export class DelegationManager {
       channel: "a2a",
       chatId: `a2a:${record.caller}:${record.callee}:${id}`,
       sender: `agent:${record.caller}`,
+      ...(record.dueAt ? { dueAt: new Date(record.dueAt).toISOString() } : {}),
       ...(opts.calleeContext ?? {}),
       // The root always travels, and always as computed here: a caller
       // cannot claim a different origin for work it hands on.
       initiator: root,
+      // The run's watcher shares the delegation's (src/watchers, #1030),
+      // whatever chat id the caller chose.
+      delegationId: id,
     }
     const who = record.peer ? `${record.callee}@${record.peer}` : record.callee
     this.deps.log(`[delegation ${id}] ${record.caller} -> ${who} started (root=${root.kind}:${root.channel}, callback to ${origin.channel}:${origin.chatId})`)

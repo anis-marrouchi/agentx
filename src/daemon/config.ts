@@ -1263,6 +1263,36 @@ export const requestsConfigSchema = z.object({
   }).default({}),
 }).default({})
 
+/** Task watchers (src/watchers, #1030): at the start of a dispatched run,
+ *  a delegation or a cron hand-off, decide whether the task needs a watcher
+ *  and attach one. A watcher alerts the delegating agent, then the owner,
+ *  when the due time passes with no done signal or the run ends with no
+ *  result. Off until enabled. */
+export const watchersConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Where the checkpoint runs. */
+  sources: z.array(z.enum(["dispatch", "delegation", "cron"])).default(["dispatch", "delegation", "cron"]),
+  /** Runs on these channels are checked even with no due time and no
+   *  delegating agent. Empty: only runs that have one of those. */
+  dispatchChannels: z.array(z.string().min(1)).default([]),
+  /** The task-watch seat's answer below this is a confident "no" and no
+   *  watcher is attached. Only an `active` seat can skip. */
+  skipBelow: z.number().min(0).max(1).default(0.2),
+  /** At or above this the answer is a "yes"; between the two it is
+   *  "uncertain". Both attach (fail-safe). */
+  attachAbove: z.number().min(0).max(1).default(0.6),
+  /** Minutes between the alert to the delegating agent and the alert to
+   *  the owner, when no done signal arrives in between. */
+  escalateAfterMinutes: z.number().positive().max(7 * 24 * 60).default(30),
+  /** A watcher with no due time that hears nothing for this long fires. */
+  quietAfterHours: z.number().positive().max(24 * 365).default(24),
+  /** Owner alerts go here. Unset: the default notification channel. */
+  ownerChannel: z.string().min(1).optional(),
+  ownerChatId: z.string().min(1).optional(),
+  /** Finished watchers and checkpoint records are deleted after this many days. */
+  retentionDays: z.number().positive().max(3650).default(30),
+}).refine((w) => w.skipBelow <= w.attachAbove, { message: "skipBelow must not be above attachAbove" }).default({})
+
 /** People (src/people, #384): the humans who talk to the agents, one entry
  *  per person whatever channel they use. Empty: this machine's owner is the
  *  only known person and nothing else changes. */
@@ -1567,6 +1597,7 @@ export const daemonConfigSchema = z.object({
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */
   requests: requestsConfigSchema,
+  watchers: watchersConfigSchema,
   people: peopleConfigSchema,
   members: membersConfigSchema,
   /** Request status where the request was made (src/requests/status-board,

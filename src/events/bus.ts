@@ -152,6 +152,11 @@ export interface AgentXEvents {
      *  node's own surfaces (requests/operator): it started the turn itself,
      *  or the /task caller showed the operator key (#393). */
     operator?: boolean
+    /** When the task's work is due, as ISO, when the caller named one
+     *  (watchers, #1030). */
+    dueAt?: string
+    /** The delegation this run carries out, when it is a delegated run. */
+    delegationId?: string
   }
 
   /** A single step inside an in-flight task — typically a tool call or

@@ -63,6 +63,8 @@ Channel and chat are accepted on purpose: an agent kept warm between turns has n
 
 Add `"async": false` to the request body to wait for the answer anyway. Add `"async": true` to get the callback from a turn no person started, such as a schedule. `"async": true` has no effect inside a delegation: a turn that is itself answering another agent, or a turn that carries a delegation result, always waits. This stops one callback from starting another.
 
+Add `"dueAt"` with an ISO time (for example `"2026-10-20T18:00:00Z"`) when the work has a deadline; the `agentx_task` tool takes the same field. When [task watchers](./task-watchers.md) are on, the asking agent and then the owner are told if that time passes and the work is not done.
+
 ### Sending with `agentx_send_agent`
 
 `agentx_send_agent` and `POST /send/agent` never wait for the other agent to finish. Even when no person started the conversation (a schedule, a workflow), the daemon answers with status `202` as soon as the message is queued:

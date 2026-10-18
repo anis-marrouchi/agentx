@@ -34,6 +34,8 @@ curl http://127.0.0.1:18800/task \
   -d '{"agent":"helper","message":"Reply with a short hello"}'
 ```
 
+Add `"dueAt"` with an ISO time when the work has a deadline; with [task watchers](../jobs/task-watchers.md) on, you are told if it passes unfinished.
+
 The request stays open until the agent answers. If the agent is busy with other work, the request first waits for it to be free, for up to 25 minutes.
 
 **Keep the connection open if the message must run.** A caller that disconnects (for example `curl -m 30` timing out) before the agent is free has its request dropped: it never runs, and nothing is sent back. Once the agent has started the work, a disconnect no longer stops it. There is no fire-and-forget mode for scripts: only an agent asking from a conversation a person started gets an early answer and its reply later ([When an agent asks another agent](../jobs/ask-another-agent.md)). So set your client's timeout to more than 25 minutes plus the time the work takes, and don't treat a timeout as "delivered". If you resend after a timeout, the message may run twice when the first attempt had already started.

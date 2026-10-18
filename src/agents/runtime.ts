@@ -105,6 +105,11 @@ export interface AgentTask {
    *  from benchmark harnesses that want to A/B the same request under
    *  "layered" and "planner" without reloading daemon config. */
   contextStrategy?: "layered" | "planner"
+  /** When the work this task carries is due (ISO time or epoch ms), when
+   *  the caller named one. Read by the watcher checkpoint (src/watchers,
+   *  #1030); it does not bound the run — timeoutMinutes does. Also read
+   *  from `context.dueAt`, which travels across a mesh hop. */
+  dueAt?: string | number
   /** Upper bound on how long this task may run. Applied to mesh
    *  forwarding (as fetch timeout) and local execution when the runtime
    *  supports it. Workflow `agent` nodes pass this through from their
