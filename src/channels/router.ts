@@ -932,7 +932,10 @@ export class MessageRouter {
     // live message is edited in place; once it grows past one Telegram chunk
     // it rolls into additional messages instead of freezing/truncating (the
     // old single-`sentMessageId` path clipped everything past ~3900 chars).
-    const canStream = typeof adapter.editMessage === "function"
+    // WhatsApp is excluded: its clients show an edited message as deleted,
+    // so a streamed reply (first block sent, the rest as edits) looks gone.
+    // Each WhatsApp reply goes out as one final message instead.
+    const canStream = typeof adapter.editMessage === "function" && msg.channel !== "whatsapp"
     let fullStreamText = ""
     let anchorSends = 0
     const streaming = canStream

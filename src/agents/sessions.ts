@@ -769,8 +769,10 @@ export class SessionStore {
     // and day suffix vary so we filter those after parse. Note `chatId` may
     // itself contain colons (GitLab chatIds look like "group/project:issue:123"),
     // so we can't naively split on ":". Cheap pre-filter: must contain
-    // `:${channel}:${chatId}:` as a substring.
-    const key = `:${opts.channel}:${opts.chatId}:`
+    // `:${channel}:${chatId}:` as a substring, sanitized the way sessionFile()
+    // names the file (WhatsApp "…@s.whatsapp.net" and GitLab "a/b" chatIds
+    // are stored with "_" in place of "@", "." and "/").
+    const key = `:${opts.channel}:${opts.chatId}:`.replace(/[^a-zA-Z0-9_:-]/g, "_")
     const candidates = allFiles.filter((f) => {
       if (!f.includes(key)) return false
       // Day suffix prefilter — skip files whose day is older than sinceDay.
