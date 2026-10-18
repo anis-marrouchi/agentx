@@ -1,7 +1,6 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "agentx",
-  "version": "1.0.0",
   "description": "Connect your coding agent to your AgentX node: check agents, read recent chats, schedules and the wiki, and (when you allow it) hand tasks to your agents.",
   "author": {
     "name": "AgentX contributors",

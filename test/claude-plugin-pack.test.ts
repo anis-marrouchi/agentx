@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { existsSync, readFileSync } from "fs"
 import { join } from "path"
+import { listedTools } from "../src/mcp"
 import { AGENTX_TOOL_NAMES, MCP_TOOL_SETS, READ_TOOL_NAMES } from "../src/mcp/tool-names"
 
 // #1024 — the Claude Code plugin pack. `claude plugin install agentx
@@ -46,6 +47,17 @@ describe("Claude Code plugin pack (#1024)", () => {
     const lookSection = skill.split("## 2. Look before you act")[1].split("## 3.")[0]
     const lookTools = lookSection.match(/agentx_[a-z_]+/g) ?? []
     expect(lookTools.filter((t) => !READ_TOOL_NAMES.includes(t))).toEqual([])
+  })
+
+  it("names each tool's fields as the tool server defines them", () => {
+    const tools = listedTools({}, "full")
+    const uses = [...skill.matchAll(/`(agentx_[a-z_]+)` \(fields ([^)]+)\)/g)]
+    expect(uses.length).toBeGreaterThan(0)
+    for (const [, name, list] of uses) {
+      const props = Object.keys(tools.find((t) => t.name === name)?.inputSchema.properties ?? {})
+      const fields = [...list.matchAll(/`([A-Za-z]+)`/g)].map((m) => m[1])
+      expect(fields.filter((f) => !props.includes(f)), name).toEqual([])
+    }
   })
 
   it("ships the same contribute skill as skills/agentx-contribute", () => {
