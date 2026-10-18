@@ -89,6 +89,9 @@ export interface TraceEndInput {
    *  reconstructing it from the step ledger. NULL when the response
    *  wasn't captured (older rows or non-text outputs). */
   finalResponse?: string | null
+  /** Model the turn was billed on. Known only once the turn ends, so the
+   *  start row usually has none. Omitted leaves the column untouched. */
+  model?: string | null
 }
 
 /** Ids of the lessons injected into one task's prompt. Memory facts and
@@ -260,6 +263,7 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
       injected_context = COALESCE(?, injected_context),
       error = ?,
       final_response = COALESCE(?, final_response),
+      model = COALESCE(?, model),
       finished_at = ?,
       duration_ms = ? - started_at
     WHERE task_id = ?
@@ -281,6 +285,7 @@ export function recordTraceEnd(db: Database.Database, taskId: string, input: Tra
     input.injectedContext ? JSON.stringify(boundInjectedContext(input.injectedContext)) : null,
     input.error ?? null,
     input.finalResponse ?? null,
+    input.model ?? null,
     finishedAt,
     finishedAt,
     taskId,
@@ -519,6 +524,23 @@ export function listTraces(db: Database.Database, filters: ListTracesFilters = {
   `
   params.push(limit)
   return (db.prepare(sql).all(...params) as Record<string, unknown>[]).map(rowToTrace)
+}
+
+/** Every trace row of these workflow runs, oldest first. Unbounded by
+ *  design: a report over a few hundred runs needs all of their rows. */
+export function listTracesForRuns(db: Database.Database, runIds: string[]): TraceRecord[] {
+  const out: TraceRecord[] = []
+  // SQLite caps bound parameters; stay well under it.
+  for (let i = 0; i < runIds.length; i += 500) {
+    const chunk = runIds.slice(i, i + 500)
+    if (!chunk.length) continue
+    const rows = db.prepare(`
+      SELECT * FROM task_traces WHERE workflow_run_id IN (${chunk.map(() => "?").join(",")})
+       ORDER BY started_at
+    `).all(...chunk) as Record<string, unknown>[]
+    out.push(...rows.map(rowToTrace))
+  }
+  return out
 }
 
 /** The tool calls one run made, in order: what a stop signal's resume plan
