@@ -2,6 +2,22 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.144.0](https://github.com/anis-marrouchi/agentx/compare/v0.143.0...v0.144.0) (2026-10-18)
+
+
+### Features
+
+* **approvals:** screen gate and call check for the owner's screen ([#394](https://github.com/anis-marrouchi/agentx/issues/394) b3) ([#1046](https://github.com/anis-marrouchi/agentx/issues/1046)) ([0309b01](https://github.com/anis-marrouchi/agentx/commit/0309b014515d9880d24a89923ed280708215aa11))
+* **quality:** agentx quality report — fix share, regressions, lead time, CI and cost per PR ([#988](https://github.com/anis-marrouchi/agentx/issues/988)) ([#1002](https://github.com/anis-marrouchi/agentx/issues/1002)) ([6c583b3](https://github.com/anis-marrouchi/agentx/commit/6c583b3d9fa3552a53ebda4b3bcb8a3e535c8919))
+* **requests:** homes as request links, GET /requests filters, requests today ([#394](https://github.com/anis-marrouchi/agentx/issues/394) b2) ([#1045](https://github.com/anis-marrouchi/agentx/issues/1045)) ([0a770b1](https://github.com/anis-marrouchi/agentx/commit/0a770b1adc402cbab576df35d67d7ddf27a2373e))
+* **workflows:** pilot-report compares a dry-run pilot with the live workflow ([#928](https://github.com/anis-marrouchi/agentx/issues/928)) ([#929](https://github.com/anis-marrouchi/agentx/issues/929)) ([f4e1a61](https://github.com/anis-marrouchi/agentx/commit/f4e1a6101c18300c1203729a9fe4b4fdf68de436))
+
+
+### Bug Fixes
+
+* **requests:** refuse a home on step, keep the newest in ?since (follow-up to [#1035](https://github.com/anis-marrouchi/agentx/issues/1035)) ([#1036](https://github.com/anis-marrouchi/agentx/issues/1036)) ([4a981d9](https://github.com/anis-marrouchi/agentx/commit/4a981d91c720c8a118e23672a7dfeab9076245eb))
+* **requests:** tidy open-loop edges from the [#1040](https://github.com/anis-marrouchi/agentx/issues/1040) review ([#1041](https://github.com/anis-marrouchi/agentx/issues/1041)) ([19a05c9](https://github.com/anis-marrouchi/agentx/commit/19a05c97b7cce397a83c1ac32f41fddb3f75fd68))
+
 ## [0.143.0](https://github.com/anis-marrouchi/agentx/compare/v0.142.0...v0.143.0) (2026-10-18)
 
 
