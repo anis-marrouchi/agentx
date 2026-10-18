@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.143.0](https://github.com/anis-marrouchi/agentx/compare/v0.142.0...v0.143.0) (2026-10-18)
+
+
+### Features
+
+* **requests:** open-loop ledger with evidence-checked close ([#1040](https://github.com/anis-marrouchi/agentx/issues/1040)) ([313551f](https://github.com/anis-marrouchi/agentx/commit/313551fc79235c98f030dce9095bfed038bcfe25))
+
 ## [0.142.0](https://github.com/anis-marrouchi/agentx/compare/v0.141.1...v0.142.0) (2026-10-18)
 
 
