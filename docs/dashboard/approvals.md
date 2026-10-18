@@ -80,7 +80,7 @@ To see only one kind, click **Cards**, **Schedules**, **Memory**, **Wiki** or **
 
 The card shows who is asking, the background (**context**), the question, the ready-made answers, and the suggested message. When the agent's recommendation starts with one of the answers, that answer carries a dot and is already picked when the card opens, with the agent's reason under the answers. A recommendation that starts any other way picks nothing and is shown whole.
 
-1. Click an answer, or press its number (**1** to **5**). The message below fills in with your pick.
+1. Click an answer, or press its number (**1** to **3**). The message below fills in with your pick.
 2. Read the message and change the wording if you like. **Edited** shows next to it once you have, with **Reset** to put the suggested message back. If you pick another answer after editing, your edits stay and only the pick in the text changes.
 3. Click **Send**, or press **⌘↩**. The agent that asked is told your pick and the exact message, and it does the sending.
 
@@ -90,7 +90,9 @@ The card is a plain web page shown by macOS itself. There is no app to install. 
 
 The popup behaves like your other notifications:
 
-- **Focus is respected.** While a Focus mode (Do Not Disturb) or the widget's hold is on, nothing pops up. The card appears within a minute after Focus ends.
+- **Focus and calls are respected.** While a Focus mode (Do Not Disturb) or the widget's hold is on, or while you are in a call, nothing pops up. The card appears within a minute after the Focus or the call ends. See [Hold messages during Focus and calls](../jobs/notifications.md#4-hold-messages-during-focus-and-calls).
+- **It doesn't take the keyboard.** The card floats over the app you are using, and that app keeps the keyboard, so you can finish the sentence you are typing. One click on the card answers it.
+- **The screen gate.** A card goes on your screen only if it asks one question, its title is at most 120 characters, its question at most 300, and it offers at most 3 answers. A new card that breaks one of these rules is refused when the agent raises it, and the agent is told why. An older card that breaks one is not shown: it stays in Approvals, unchanged, and the agent that raised it is told why, once. A card you ask for with **Show on Mac** always shows.
 - **One at a time,** oldest first. Each new card pops up once, and again at each [check-in](#check-ins-a-few-times-a-day).
 - **Cards you put off with Later** pop up when they come back. Cards older than a day don't pop up by themselves, so switching the popup on doesn't replay a backlog. Check-ins bring them back.
 
@@ -265,7 +267,8 @@ A card can also offer ready-made answers. The popup and `agentx approvals approv
 
 | Field | Meaning |
 |---|---|
-| `choices` | Up to 5 short answers to pick from, such as three free times |
+| `choices` | Up to 3 short answers to pick from, such as three free times |
+| `followup` | Marks a follow-up card: `resurface`, `bring-back`, `weekly` or `cleanup`. Follow-up cards share a budget of 5 a day, at most 3 of them `resurface`; past it the card is refused until the next day |
 | `draft` | A suggested message you can edit. `{choice}` is replaced by your pick |
 | `say` | The short line the popup speaks. Default: the title |
 | `context` | A few lines of background shown above the question, such as what the other person wrote (up to 600 characters) |
@@ -339,6 +342,15 @@ For check-ins (Mac):
 3. **Terminal:** within a few minutes, `agentx approvals list` shows a card from your `checkin.agent` for that reminder, and the Mac card opens for it.
 4. **Terminal:** the daemon log has a line starting `[checkin] check pass:` with the number of cards raised.
 
+For the screen gate:
+
+1. **Terminal:** raise a card that asks two things:
+   ```sh
+   agentx approvals request --agent helper --title "Test gate" --ask "Send it? And post it?" \
+     --recommend "No: test" --if-silent discard --expires 1h
+   ```
+2. **Terminal:** it is refused with `ask holds more than one question: one card asks one thing`, and `agentx approvals list` does not show it.
+
 ## If something is wrong
 
 - **The Approvals tab shows nothing, but `agentx schedule list` shows a request:** the dashboard reads the folder it was started in. Start `agentx board serve` from the same folder as the daemon.
@@ -348,7 +360,7 @@ For check-ins (Mac):
 - **A card says `then: keep` although the agent asked for `approve`:** that is expected. A card never approves itself; answer it yourself if the work should go ahead.
 - **An agent gets "already has 25 cards waiting":** it has too many open questions. Answer or let some expire first.
 - **No daily message:** check that `digest.enabled` is on, that the time has passed today, and that `notifications.destination` or `digest.destination` is set. Nothing is sent on days when nothing is waiting.
-- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode or widget hold is on, and that the card is less than a day old. Each card pops up once; use `agentx approvals popup <key>`, or **Show on Mac** on the Approvals tab, to show it again. The daemon log has a line starting `[approvals] popup`.
+- **No popup appears:** check that `agentx approvals settings` shows **Mac popup on**, that no Focus mode, widget hold or call is on (`agentx notify --status`), and that the card is less than a day old. A card that breaks a screen-gate rule is never shown by itself: the daemon log says `not shown, back to <agent>`. Each card pops up once; use `agentx approvals popup <key>`, or **Show on Mac** on the Approvals tab, to show it again. The daemon log has a line starting `[approvals] popup`.
 - **A card went away and you don't know why:** the daemon log says how each popup ended. `left waiting: not now` means **Not now** or **Esc**, `timed out` means the wait ran out, and `closed` means the window was closed. The card is still in Approvals in all three cases.
 - **The card window never opens, but the plain dialogs do:** the web window couldn't start, so AgentX fell back to the dialogs. Run `agentx approvals popup --sample` in a terminal to see the error. To keep the dialogs, set `--popup-style dialog`.
 - **Check-ins raise no cards:** check that `agentx approvals settings` shows **Check-ins on**, that `remindctl show today` lists your reminders, and that `checkin.agent` names an agent from `agentx agent list`. The daemon log lines starting `[checkin]` say what happened to each reminder: "no agent owns it", "couldn't compose a card", or the pass totals.

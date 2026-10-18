@@ -8,7 +8,7 @@ A notification can reach you in three ways. You can use any of them on its own:
 - **On your Mac**, as a banner in the top-right corner of the screen, with a short sound.
 - **In a chat app** (Telegram or WhatsApp), for messages about tasks the agents run.
 
-AgentX also respects **Focus**. While your Mac is in Focus (Do Not Disturb), it keeps messages back and sends them together when Focus ends.
+AgentX also respects **Focus** and **calls**. While your Mac is in Focus (Do Not Disturb), or you are in a call, it keeps messages back and sends them together when the Focus or the call ends.
 
 You can change every setting in two places. Both save to the same settings file, `agentx.json`:
 
@@ -200,7 +200,7 @@ agentx notifications route --clear   # stop
 ```
 :::
 
-## 4. Hold messages during Focus
+## 4. Hold messages during Focus and calls
 
 While you are in Focus, a message gets no push, no banner and no sound. AgentX keeps it and sends everything held as one message when Focus ends. A message sent with `--urgent` always goes through.
 
@@ -219,6 +219,13 @@ Without that permission, AgentX cannot see Focus and never holds a message, so n
 2. To release the messages, delete the file or change it to `{"active": false}`.
 
 AgentX checks every 30 seconds. When Focus ends, it sends what it held: one message per destination, with one banner and one sound.
+
+**Calls.** While you are in a call, messages and decision cards are held the same way, and they come when the call ends. AgentX counts you as in a call when:
+
+- you answered a call from an agent and it has not ended (for up to two hours);
+- the AgentX widget is busy: a call, its microphone, or a reply it is speaking.
+
+The daemon writes this every 15 seconds to `~/.agentx/call.json`, with a time limit, so `agentx notify` run by an agent sees it too. Another tool that knows you are in a call, such as a phone bridge, can write `{"active": true, "source": "<its name>", "until": "<ISO time>"}` to the same file. The daemon never removes a hold written by another source. Calls to you from agents keep their own rule: see [Calls](../dashboard/calls.md).
 
 ## 5. Send a notification yourself
 
@@ -246,6 +253,7 @@ agentx notify --flush         # deliver what is held now
 - `agentx notify` reads its settings from `./agentx.json`. When it runs from another folder, as scheduled jobs do, add `-c /path/to/agentx.json`. Without a settings file it uses the defaults.
 - It waits for the banner and the sound to finish before it exits (about two seconds), so a job that ends straight afterwards still gets both.
 - The phone push goes through the running AgentX daemon. If the daemon is stopped, the command reports an error, but the banner and sound still play.
+- A message must read in about ten seconds: the title can be up to 120 characters and the message up to 300. A longer one is not sent. The command says why and exits with an error, so the agent or script that sent it can shorten it. AgentX never cuts it.
 
 ## Check it worked
 
@@ -257,6 +265,8 @@ agentx notify --flush         # deliver what is held now
 6. Create `~/.agentx/focus.json` containing `{"active": true}` and send another message.
 7. Run `agentx notify --status` and check that the message is listed as held.
 8. Delete `~/.agentx/focus.json`. Within 30 seconds, the held message arrives.
+9. Create `~/.agentx/call.json` containing `{"active": true, "source": "test"}`. Run `agentx notify --status`: it says `in a call`. Delete the file; within 30 seconds anything held arrives.
+10. Run `agentx notify "$(printf 'x%.0s' {1..301})"`. It says `not sent: message is longer than 300 characters` and sends nothing.
 
 `agentx doctor` runs the same helper check under **Notifications**, along with its other checks.
 
