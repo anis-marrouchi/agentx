@@ -230,6 +230,22 @@ Deploy agentx to a remote server via rsync.
 | `-p, --path <path>` | `~/agentx` | Remote agentx path. |
 | `--restart` | — | Restart remote daemon after deploy. |
 | `--skip-checks` | — | Skip build and test before deploy. |
+| `--override-soak <reason>` | — | Deploy a release that has not passed its [canary soak](/jobs/canary-soak). The reason is logged. |
+| `--dry-run` | — | Check the canary soak and print the plan without changing anything. |
+| `-c, --config <path>` | — | Path to agentx.json. |
+
+With `quality.canary.enabled` on, the deploy refuses a release that has not passed its soak and prints the minutes left or the failed check. `--dry-run` writes nothing. See [soak a release before deploying it](/jobs/canary-soak).
+
+### `agentx daemon soak [sha]`
+
+Show whether a release passed its canary soak on this daemon. Without `sha`, the release is this folder's current commit.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-c, --config <path>` | — | Path to agentx.json. |
+| `--history` | — | List soak results per release and how many were blocked. |
+| `--since <days>` | — | With `--history`: only the last N days. |
+| `--json` | — | Print JSON. |
 
 ## doctor
 
@@ -2994,6 +3010,26 @@ Re-run a recorded task against the current agent config.
 | `--daemon <url>` | `http://127.0.0.1:18800` | Daemon API base URL. |
 | `--diff` | — | Show original input + output vs new output side-by-side. |
 | `--no-fresh` | — | Do NOT freshSession (default is fresh — required for clean replay). |
+
+## review-gate (advanced)
+
+`agentx review-gate`: The pre-merge review gate: a different agent checks each agent pull request against its linked issue. **Advanced.** Asks the running daemon. See [Have a second agent review pull requests](../jobs/review-gate.md).
+
+### `agentx review-gate list`
+
+Recent reviews: how many passed, failed or ended in error, what they cost, and the time from a push to its status.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--days <n>` | `7` | How many days back. |
+| `--replays` | — | Include reviews run by `replay`. |
+| `-c, --config <path>` | `agentx.json` | Daemon config file. |
+| `--node <url>` | `dashboard.daemonUrl` | Daemon URL. |
+| `--token <token>` | `dashboard.token` | Bearer token. |
+
+### `agentx review-gate replay <repo> <prs...>`
+
+Review past pull requests at their latest commit without posting anything on GitHub, and print how many the reviewer flagged. Spends model budget like a real review. Takes the same `--config`, `--node` and `--token` flags.
 
 ## retro (advanced)
 

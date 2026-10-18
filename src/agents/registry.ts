@@ -53,7 +53,7 @@ import { getProcessRegistry } from "./process-registry-instance"
 import { getMessageRouter } from "@/channels/router-instance"
 import { preflightQuotaGate, recordClaudeCodeDispatch, recordRateLimitEvent, warnIfNearingCap, setDispatchBudget } from "./claude-code-quota"
 import { promptSizeKey, recordPromptSize, warnIfPromptGrowing } from "./prompt-size-tracker"
-import { describeProfile, fullClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
+import { describeProfile, fullClaudeArgs, isolatedClaudeArgs, leanClaudeArgs, leanConfig, leanLoadsWorkspace, onDemandContextNote, resolveSessionProfile } from "./session-profile"
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { WorkflowStore, matchWorkflow } from "@/workflows"
@@ -67,10 +67,12 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
+import { dueAtOf } from "@/watchers/due"
 import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
+import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -687,6 +689,8 @@ export class AgentRegistry {
   /** Claude cloud sessions this node launched (#622), by issue. Created on
    *  first use so a fleet with the setting off never touches the file. */
   private cloudSessions?: CloudSessionStore
+  /** Spec-test runs (#992), one per issue. Created on first use. */
+  private specTests?: SpecTestStore
   /** The context each running task was started with, by RunningTask id.
    *  Kept apart from RunningTask because /agents serialises that, and a
    *  context can carry a whole conversation history. Read by A2A
@@ -1126,14 +1130,16 @@ export class AgentRegistry {
     const settings = { ...CLOUD_SESSIONS_DEFAULTS, ...(def.cloudSessions ?? {}) }
     const started = Date.now()
     const env = claudeBillingEnv(withCallerEnv(buildAgentEnv(def.workspace), task), def.billing)
+    const launch = (opts: { cwd: string; prompt: string; sessionId?: string }) => launchCloudSession({ ...opts, env, timeoutMs: settings.launchTimeoutSeconds * 1000 })
+    const spec = await this.planSpecTests(task.agentId, route)
     const result = await dispatchCloudSession({
       route,
       agentId: task.agentId,
-      message: task.message,
+      message: spec ? `${task.message}\n${specTestAuthorInstructions(spec.number, this.specTestSettings().agent)}` : task.message,
       settings,
       store: this.cloudSessionStore(),
       traceId,
-      launch: (opts) => launchCloudSession({ ...opts, env, timeoutMs: settings.launchTimeoutSeconds * 1000 }),
+      launch,
       log: (line) => this.log(line),
       trace: (s) => {
         try {
@@ -1146,7 +1152,58 @@ export class AgentRegistry {
       },
     })
     if (!result) return null
+    // Checked again after the launch's await: a second dispatch for the
+    // issue may have started a run meanwhile (it records `running` at once).
+    if (spec && route.route === "cloud" && !result.error && !result.cloudSession.followUp && !previousRunBlocks(this.specTestStore().get(spec.repo, spec.number), this.specTestSettings())) {
+      const sessionId = result.cloudSession.id
+      void this.startSpecTests(task.agentId, spec, route.cwd, (text) => launch({ cwd: route.cwd, prompt: text, sessionId }).then((r) => { if (!r.ok) throw new Error(r.reason) }))
+    }
     return { content: result.content, error: result.error, cloudSession: result.cloudSession, duration: Date.now() - started }
+  }
+
+  private specTestSettings() {
+    return { ...SPEC_TESTS_DEFAULTS, ...(this.config.quality?.specTests ?? {}) }
+  }
+
+  private specTestStore(): SpecTestStore {
+    if (!this.specTests) this.specTests = new SpecTestStore(resolve(process.cwd(), ".agentx/spec-tests.json"))
+    return this.specTests
+  }
+
+  /** The spec-test input for a new cloud session on an issue (#992), or
+   *  null when the test agent does not run (the reason is logged unless the
+   *  setting is off). Reads the whole issue with `gh`: the channel's task
+   *  text carries only its first 500 characters. */
+  private async planSpecTests(codeAgent: string, route: CloudRoute): Promise<SpecTestInput | null> {
+    const settings = this.specTestSettings()
+    if (!settings.enabled || route.route !== "cloud" || route.kind !== "issue") return null
+    const issue = await fetchIssueWithGh(execProcess, route.repo, route.number, route.cwd)
+    const plan = planSpecTests({ settings, issue, codeAgent, previous: this.specTestStore().get(route.repo, route.number) })
+    if (!plan.run) {
+      this.log(`[spec-tests] ${route.repo}#${route.number}: not running: ${plan.reason}`)
+      return null
+    }
+    return plan.input
+  }
+
+  /** Runs the test agent in the background, beside the coding session. */
+  private async startSpecTests(codeAgent: string, input: SpecTestInput, checkout: string, tellAuthor: (text: string) => Promise<void>): Promise<void> {
+    try {
+      await runSpecTests({
+        settings: this.specTestSettings(),
+        input,
+        codeAgent,
+        checkout,
+        exec: execProcess,
+        runAgent: claudeSpecAgent,
+        store: this.specTestStore(),
+        noteOnIssue: (body) => commentOnIssueWithGh(execProcess, input.repo, input.number, checkout, body),
+        tellAuthor,
+        log: (line) => this.log(line),
+      })
+    } catch (e: any) {
+      this.log(`[spec-tests] ${input.repo}#${input.number}: ${e?.message || e}`)
+    }
   }
 
   /** The answer for a run whose HTTP caller left before it got a slot
@@ -1246,6 +1303,11 @@ export class AgentRegistry {
     // session, a mesh peer, the local queue.
     const refusal = this.refusalFor(task.agentId, task.context)
     if (refusal) return { content: refusal, duration: 0 }
+
+    // An isolated run (#990) is read-only whoever asked: autonomy `report`
+    // keeps it off attached sessions and mesh peers and makes a tier that
+    // cannot enforce it refuse, rather than run it with its usual tools.
+    if (task.isolated) task.autonomy = "report"
 
     // Attach mode: a live Claude Code session may have claimed this identity.
     // If so it gets first refusal — but only for a bounded window. When the
@@ -1847,7 +1909,10 @@ export class AgentRegistry {
     // servers, skills and settings. Chat channels stay `full`.
     const sessionProfile = resolveSessionProfile(this.config.session, channel, state.def.tier)
     const lean = leanConfig(this.config.session)
-    const leanOnDemand = sessionProfile === "lean" && lean.contextOnDemand
+    // An isolated run (#990) gets none of the context below, pushed or on
+    // demand: only its own message.
+    const isolated = task.isolated === true
+    const leanOnDemand = !isolated && sessionProfile === "lean" && lean.contextOnDemand
 
     // Improvement plan #8 — caller-driven session reset. Honour it before
     // seeding or recording the current inbound message; otherwise the fresh
@@ -1912,6 +1977,7 @@ export class AgentRegistry {
       humanRoot: isHumanFacingTurn(task.context as any),
       pickup: isPickup(task.context),
       operator: isOperatorTurn(task.context),
+      dueAt: dueAtOf(task.context as Record<string, unknown> | undefined),
     })
     traceOpened = true
 
@@ -2373,7 +2439,7 @@ export class AgentRegistry {
     // actually refers to another conversation, a peer agent, or earlier
     // activity. Otherwise it's pure waste AND breaks prompt cache every turn.
     // Lean sessions read other chats with agentx_recent (no chatId) instead.
-    let crossChatContext = leanOnDemand ? "" : this.sessions.getCrossSessionSummary(
+    let crossChatContext = isolated || leanOnDemand ? "" : this.sessions.getCrossSessionSummary(
       task.agentId, channel, chatId, task.message,
     )
 
@@ -2385,7 +2451,7 @@ export class AgentRegistry {
     // claude session the agent would either fabricate context (the
     // observed "Jordan Ellis" gmail-search failure) or pester the user.
     let longMemoryRecall: string | undefined
-    const lmHint = detectLongMemoryHint(task.message)
+    const lmHint = isolated ? null : detectLongMemoryHint(task.message)
     if (lmHint) {
       try {
         const recall = this.sessions.recallTurns({
@@ -2439,7 +2505,7 @@ export class AgentRegistry {
     if (requestGate.arm === "holdout") this.log(`[${task.agentId}] request-gate holdout: skipping Jev preprocessing for this turn`)
     // A lean session has nothing for the planner to curate: history and
     // cross-chat are fetched by the agent, not pushed.
-    if (strategy === "planner" && !requestGate.active && !leanOnDemand && channel !== "voice" && channel !== "desktop") {
+    if (strategy === "planner" && !isolated && !requestGate.active && !leanOnDemand && channel !== "voice" && channel !== "desktop") {
       try {
         const { planContext } = await import("./context-planner")
         const plan = await step("plan-context", () => planContext({
@@ -2513,7 +2579,7 @@ export class AgentRegistry {
     // project / reference). Inlined into the cacheable system prompt so
     // it survives --resume and shows up on every turn. Empty when the
     // agent has no memories yet — no prompt bloat for fresh agents.
-    const agentMemoryBlock = this.agentMemory.indexMarkdown(task.agentId, this.config.session.memoryIndexMaxChars)
+    const agentMemoryBlock = isolated ? "" : this.agentMemory.indexMarkdown(task.agentId, this.config.session.memoryIndexMaxChars)
 
     // Context Surgery — Fix 4: code-first operating principle for coding-tier
     // agents. Cacheable (lives in the system-prompt prefix). Empty for non-
@@ -2536,7 +2602,7 @@ export class AgentRegistry {
     // project unless a lean profile leaves it out. Appending it here as well
     // sent it twice (#615 for lean, #455 for full: about 2.5k characters on
     // every call of a session).
-    const claudeLoadsWorkspace = state.def.tier === "claude-code" && (sessionProfile !== "lean" || leanLoadsWorkspace(lean))
+    const claudeLoadsWorkspace = state.def.tier === "claude-code" && (isolated || sessionProfile !== "lean" || leanLoadsWorkspace(lean))
     let projectClaudeMd = ""
     if (state.def.workspace && !claudeLoadsWorkspace) {
       const claudeMdPath = resolve(state.def.workspace, "CLAUDE.md")
@@ -2665,6 +2731,14 @@ export class AgentRegistry {
         : undefined,
       message: task.message,
     }
+    if (isolated) {
+      Object.assign(contextInput, {
+        landscape: undefined, patternContext: undefined, procedureContext: undefined, workflowRunContext: undefined,
+        references: undefined, skillInjection: undefined, sessionHistory: undefined, memoryContext: undefined,
+        crossChatContext: undefined, longMemoryRecall: undefined, contextOnDemand: undefined, wikiContext: undefined,
+        handoverNote: undefined, rotationMemo: undefined, eventDigest: undefined, attachHint: undefined,
+      } satisfies Partial<ContextInput>)
+    }
 
     // Route mechanical work to a cheaper model, when the seat is active
     // and sure. Everything that is not an explicit confident "no" keeps
@@ -2789,10 +2863,12 @@ export class AgentRegistry {
     // process, so a resumed session carries them too.
     const claudeArgs = state.def.tier !== "claude-code"
       ? undefined
-      : sessionProfile === "lean"
-        ? leanClaudeArgs(state.def.workspace, lean, undefined, channel)
-        : fullClaudeArgs(state.def.workspace)
-    if (sessionProfile === "lean" && !resumeSessionId) {
+      : isolated
+        ? isolatedClaudeArgs()
+        : sessionProfile === "lean"
+          ? leanClaudeArgs(state.def.workspace, lean, undefined, channel)
+          : fullClaudeArgs(state.def.workspace)
+    if (sessionProfile === "lean" && !isolated && !resumeSessionId) {
       this.log(`[${task.agentId}] session profile for ${channel}: ${describeProfile(sessionProfile, lean, channel)}`)
     }
 

@@ -208,6 +208,22 @@ export function leanClaudeArgs(
   return args
 }
 
+/** Flags for an isolated `claude` spawn (AgentTask.isolated, #990): no
+ *  MCP server at all (so none of the agentx tools that read other chats or
+ *  memory) and no built-in tool either. The reviewer's whole input is its
+ *  prompt, and its workspace is not the PR checkout, so a file tool gains
+ *  it nothing and would let an injected diff read local files whose text
+ *  the verdict then posts to the PR. `--tools ""` loads no MCP schemas
+ *  here because `--strict-mcp-config` leaves none. */
+export function isolatedClaudeArgs(): string[] {
+  return [
+    "--strict-mcp-config",
+    "--mcp-config", JSON.stringify({ mcpServers: {} }),
+    "--setting-sources", "project,local",
+    "--tools", "",
+  ]
+}
+
 /** Claude Code tool that loads a deferred tool's description on demand. */
 export const TOOL_SEARCH = "ToolSearch"
 

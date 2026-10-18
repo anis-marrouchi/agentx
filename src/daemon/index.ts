@@ -79,6 +79,9 @@ import type { OwnerPort } from "@/workflows/nodes/types"
 import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
+import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
+import { WATCHER_CHANNEL } from "@/watchers/checkpoint"
+import { handleWatchersApi } from "@/watchers/daemon-api"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
@@ -212,6 +215,10 @@ import { listAgentFiles } from "./file-ops"
 import { ScreenBuffer, sweepStaleDumps } from "./screen-buffer"
 import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
+import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
+import { createReviewGateGitHub } from "@/quality/review-gate-github"
+import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
+import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
 
 // --- AgentX Daemon: the thin orchestration layer ---
 //
@@ -252,6 +259,10 @@ export class AgentXDaemon {
   private taskRunPrune?: ReturnType<typeof setInterval>
   private webhooks: WebhookHandler
   private github?: GitHubAdapter
+  /** Pre-merge review gate (#990). Built with the GitHub channel; does
+   *  nothing while quality.reviewGate.enabled is false. */
+  private reviewGate?: ReviewGate
+  private reviewLedger = new FileReviewLedger(reviewLedgerPath(), (m) => this.log(`[review-gate] ${m}`))
   private webrtc?: WebRtcSignalBroker
   private botManager?: BotManager
   /** Agents watching the phone camera (#325); needs channels.webrtc. */
@@ -547,12 +558,24 @@ export class AgentXDaemon {
       replies: this.callbackReplies,
       recordDispatch: (agentId, context, message, senderAgentId) =>
         this.recordInboundDispatch(agentId, context, message, senderAgentId),
-      onStarted: (rec) => { this.requests?.tracker.delegationStarted(rec); this.status?.board.delegationStarted(rec) },
+      onStarted: (rec) => {
+        this.requests?.tracker.delegationStarted(rec)
+        this.status?.board.delegationStarted(rec)
+        void this.watchers?.checkpoint.delegationStarted(rec)
+      },
       onDone: (rec, result) => {
         this.requests?.tracker.delegationDone(rec, result.status, result.text)
         this.status?.board.delegationDone(rec, result.status)
+        this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text)
+          .catch((e: any) => this.log(`[watchers] end of ${rec.id}: ${e?.message ?? e}`))
       },
-      callbackNote: (rec) => (this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined),
+      callbackNote: (rec) => {
+        const notes = [
+          this.config.requests.enabled ? this.requests?.tracker.closingNote(rec.id) : undefined,
+          this.config.watchers.enabled ? this.watchers?.checkpoint.doneNote(rec.id) : undefined,
+        ].filter(Boolean)
+        return notes.length ? notes.join("\n\n") : undefined
+      },
       onRelayFailed: (rec, result, reason) => this.requests?.tracker.relayFailed(rec, result.text, reason),
     })
 
@@ -593,6 +616,13 @@ export class AgentXDaemon {
           this.requests = attachRequests(db, () => this.config.requests, this.log)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
+        }
+        // Task watchers (#1030). Attached whatever the setting says, like
+        // requests: the checkpoint reads `watchers.enabled` on every event.
+        try {
+          this.watchers = this.attachTaskWatchers(db)
+        } catch (e: any) {
+          this.log(`  Watchers: not available (${e?.message ?? e})`)
         }
         // Request status where the request was made (#383). Attached the
         // same way; it does nothing for a channel that is not listed in
@@ -1012,7 +1042,7 @@ export class AgentXDaemon {
     // finish connecting; fully isolated so nothing in it can affect the
     // running daemon.
     this.bootTimes = recordBoot(resolve(process.cwd(), ".agentx"))
-    this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1))
+    this.bootLog = recordBootEntry(resolve(process.cwd(), ".agentx"), Date.parse(buildInfo.startedAt), this.bootTimes.slice(0, -1), buildInfo)
     // Paused tasks whose plan-writing turn the restart cut off (#857): a
     // plan from the trace, so they can be resumed. Before the resume pass,
     // which skips the cut-off wind-down turns themselves.
@@ -1229,6 +1259,47 @@ export class AgentXDaemon {
 
     this.log(`  Shutdown complete (${Date.now() - start}ms)`)
     process.exit(this.exitCode)
+  }
+
+  /** The review gate (#990): the reviewer runs as its own agent in a fresh
+   *  session keyed by the reviewed commit, so it never resumes the
+   *  author's conversation or an earlier review. */
+  private buildReviewGate(github: GitHubAdapter): ReviewGate {
+    return new ReviewGate({
+      config: () => this.config.quality.reviewGate,
+      github: createReviewGateGitHub((repo) => github.getTokenForRepo(repo)),
+      repoAgent: (repo) => github.agentFor(repo),
+      agentModel: (agentId) => this.registry.getAgent(agentId)?.model,
+      isAgentLogin: (login) => github.isAgentLogin(login),
+      ledger: this.reviewLedger,
+      log: (m) => this.log(`[review-gate] ${m}`),
+      runReviewer: async (req) => {
+        const started = Date.now()
+        const res = await this.registry.execute({
+          message: req.prompt,
+          agentId: req.agentId,
+          model: req.model,
+          freshSession: true,
+          // Only the prompt: no other chats, memory or recall, no MCP
+          // server, no write or shell tools, held at autonomy report.
+          isolated: true,
+          timeoutMinutes: req.timeoutMinutes,
+          callerSignal: req.signal,
+          context: { channel: REVIEW_CHANNEL, chatId: req.chatId, sender: REVIEW_CHANNEL },
+        })
+        const model = res.billedModel ?? req.model
+        const u = res.usage
+        return {
+          content: res.cloudSession ? "" : res.content,
+          error: res.cloudSession ? "the reviewer agent hands work to a cloud session; pick an agent that runs here" : res.error,
+          timedOut: res.errorKind === "timeout",
+          model,
+          tokens: u ? { input: u.inputTokens, output: u.outputTokens, cacheRead: u.cacheReadTokens, cacheWrite: u.cacheCreateTokens } : undefined,
+          costUsd: res.costUsd ?? (u ? this.registry.getTokenTracker().cost(u as any, model) : undefined),
+          durationMs: res.duration ?? Date.now() - started,
+        }
+      },
+    })
   }
 
   /** Deliver a notice to the owner through the channel router: the
@@ -1964,6 +2035,9 @@ export class AgentXDaemon {
    *  is the owner's (requests/operator, #393). */
   private operatorKey: string | null = null
   private requestsSweeping = false
+  /** Task watchers (src/watchers, #1030). */
+  private watchers: AttachedWatchers | null = null
+  private watchersSweeping = false
   private status: AttachedStatus | null = null
 
   /** Send a status-comment edit to the peer that holds the agent's token. */
@@ -2034,6 +2108,14 @@ export class AgentXDaemon {
             .finally(() => { this.requestsSweeping = false })
         }
         this.status?.board.sweep()
+        // Task watchers (#1030): overdue tasks fire, unanswered alerts go
+        // to the owner. Beside the sweep, like requests.
+        if (this.watchers && !this.watchersSweeping) {
+          this.watchersSweeping = true
+          void this.watchers.checkpoint.sweep()
+            .catch((e: any) => this.log(`[watchers] sweep failed: ${e?.message ?? e}`))
+            .finally(() => { this.watchersSweeping = false })
+        }
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts). Not over a
         // demo or a recording: the card waits for the floor to be free.
@@ -2216,6 +2298,44 @@ export class AgentXDaemon {
           this.log(`[requests] ${r.id}: turn on ${agentId} failed: ${e?.message ?? e}`)
         })
       },
+      log: this.log,
+    })
+  }
+
+  /** The watcher checkpoint at every task start (src/watchers, #1030). */
+  private attachTaskWatchers(db: NonNullable<ReturnType<typeof openDb>>): AttachedWatchers {
+    const port = parseInt(this.config.node.bind.split(":")[1] || "18800", 10)
+    return attachWatchers(db, {
+      settings: () => this.config.watchers,
+      // A tracked plan already nudges its steps and tells the owner.
+      lookups: [({ key, traceId }) => {
+        const req = this.requests
+        if (!req) return null
+        const r = (traceId ? req.store.byLink("run", traceId) : null) ?? req.store.byLink("delegation", key)
+        return r && req.plans.get(r.id)?.state === "active" ? `plan ${r.id}` : null
+      }],
+      hasAgent: (id) => !!this.registry.getAgent(id),
+      // A mesh peer's delegation reaches this node as a run under its dlg
+      // chat; only the caller's node holds the delegation and watches it.
+      isLocalDelegation: (id) => this.delegations.isPending(id),
+      // execute() does not reject on a failed start; it reports { error }.
+      alertAgent: async (agentId, text, w) => {
+        const res = await this.registry.execute({
+          agentId,
+          message: text,
+          context: { channel: WATCHER_CHANNEL, chatId: w.id, sender: "watcher" },
+        })
+        if (res.error && !res.content?.trim()) throw new Error(res.error)
+      },
+      alertOwner: async (title, text) => {
+        const to = this.config.watchers.owner
+        if (to.channel) {
+          await this.router.sendOutbound({ channel: to.channel, chatId: to.chatId ?? "default", text: `${title}\n${text}` } as any)
+          return
+        }
+        await this.notifyOwner(title, text, "watchers")
+      },
+      doneHint: (w) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":"<proof>"}'`,
       log: this.log,
     })
   }
@@ -2603,6 +2723,8 @@ export class AgentXDaemon {
       // posting logins are ours too, or its agents answer themselves (#522).
       if (this.mesh) this.github.setPeerPostingLogins(() => this.mesh!.directory().flatMap((p) => p.githubLogins))
       this.github.setProjectRules(this.projectRules)
+      this.reviewGate = this.buildReviewGate(this.github)
+      this.github.onPullRequestEvent((event) => { void this.reviewGate?.onPullRequest(event) })
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }
@@ -4102,6 +4224,18 @@ export class AgentXDaemon {
         return
       }
 
+      // Task watchers (#1030): list them, mark a task done.
+      if (path === "/watchers" || path.startsWith("/watchers/")) {
+        if (!this.watchers) { this.json(res, 503, { error: "watchers need the database" }); return }
+        const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
+        const reply = handleWatchersApi(req.method || "GET", path, url.searchParams, body as Record<string, unknown> | undefined, {
+          store: this.watchers.store,
+          checkpoint: this.watchers.checkpoint,
+        })
+        this.json(res, reply.status, reply.body)
+        return
+      }
+
       // Follow-up workflows, agent side (#788): agentx_workflow posts here.
       if (path === "/follow-up" || path.startsWith("/follow-up/")) {
         if (!this.workflowDispatcher || !this.workflowStore || !this.workflowRuns) {
@@ -5429,6 +5563,37 @@ export class AgentXDaemon {
             this.json(res, 500, { error: e?.message || String(e) })
           }
         }
+        return
+      }
+
+      // Review gate (#990): the review ledger, and replaying past PRs for
+      // the seeded check. Gated by isControlPost / isMeshGatedPath.
+      if (isReviewGatePath(path)) {
+        if (req.method === "GET" && path === "/api/review-gate/reviews") {
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(JSON.stringify(reviewsReply(this.reviewLedger, url.searchParams)))
+          return
+        }
+        if (req.method === "POST" && path === "/api/review-gate/replay") {
+          const parsed = parseReplayBody((await readJsonBody(req).catch(() => ({}))) as Record<string, unknown>)
+          const gate = this.reviewGate
+          if ("error" in parsed || !gate) {
+            res.writeHead(400, { "Content-Type": "application/json" })
+            res.end(JSON.stringify({ error: "error" in parsed ? parsed.error : "the GitHub channel is off on this node" }))
+            return
+          }
+          res.writeHead(200, { "Content-Type": "application/x-ndjson" })
+          const beat = setInterval(() => res.write("\n"), 30_000)
+          try {
+            await replayReviews(gate, parsed.repo, parsed.prs, (line) => res.write(JSON.stringify(line) + "\n"))
+          } finally {
+            clearInterval(beat)
+            res.end()
+          }
+          return
+        }
+        res.writeHead(405, { "Content-Type": "application/json" })
+        res.end(JSON.stringify({ error: "method not allowed" }))
         return
       }
 
