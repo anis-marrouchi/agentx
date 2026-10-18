@@ -59,9 +59,13 @@ export function citedNumbers(pr: Pick<PrRecord, "number" | "title" | "body">): n
   return [...out]
 }
 
-/** A fix whose title or description mentions a review (`review`, `reviewer`, `reviewed`…). */
+// The noun `review`/`reviews`/`reviewer(s)`, but not `reviewed`/`reviewing`, and
+// not process wording: "after review" (merge rules), "review only/before/needed".
+const REVIEW_FEEDBACK = /(?<!\bafter\s)\breview(?:s|ers?)?\b(?!\s+(?:only|before|needed))/i
+
+/** A fix whose title or description mentions a review ("the review of #12", "reviewer asked"…). */
 export function mentionsReview(pr: Pick<PrRecord, "title" | "body">): boolean {
-  return /\breview/i.test(`${pr.title}\n${pr.body || ""}`)
+  return REVIEW_FEEDBACK.test(`${pr.title}\n${pr.body || ""}`)
 }
 
 /** A test file: anything under `test/`, a `*.test.*` file, or a `__fixtures__/` folder. */
