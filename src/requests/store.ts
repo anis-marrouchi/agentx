@@ -381,11 +381,12 @@ export class RequestStore {
   }
 
   /** Every request made since `since`, open or closed, oldest first: the
-   *  "what did I ask today" list (#394). Candidates are not requests yet. */
+   *  "what did I ask today" list (#394). Candidates are not requests yet.
+   *  Past `limit` it keeps the newest: the oldest are the ones dropped. */
   listSince(since: number, limit = 500): RequestRecord[] {
     return this.db.prepare(
-      "SELECT * FROM requests WHERE state != 'candidate' AND created_at >= ? ORDER BY created_at, rowid LIMIT ?",
-    ).all(since, limit).map(toRecord)
+      "SELECT * FROM requests WHERE state != 'candidate' AND created_at >= ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
+    ).all(since, limit).map(toRecord).reverse()
   }
 
   /** Name where the work lives. A later home replaces an earlier one. */

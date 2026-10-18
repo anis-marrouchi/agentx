@@ -265,6 +265,27 @@ describe("home and the since list (#394)", () => {
     expect(body.items[0].links).toEqual([{ kind: "run", ref: "t1", at: 5_000 }])
     expect((getSince("6000").body as any).items).toEqual([])
     expect(getSince("soon").status).toBe(400)
+    expect(getSince("").status).toBe(400)
+  })
+
+  it("past 100, the since list keeps the newest, oldest first", () => {
+    for (let i = 0; i < 105; i++) {
+      store.addCandidate({ id: `req-${i}`, runId: `r${i}`, channel: "telegram", chatId: "chat-1", agentId: "coder", text: "x", now: 1_000 + i })
+      store.progress(`req-${i}`, 1_000 + i)
+    }
+    const body = getSince("0").body as any
+    expect(body).toMatchObject({ count: 100, truncated: true })
+    expect(body.items[0].id).toBe("req-5")
+    expect(body.items[99].id).toBe("req-104")
+  })
+
+  it("a step report with a home is refused", () => {
+    turn("t1")
+    say("accept")
+    expect(say("step", { step: 1, status: "done", home: { kind: "issue", link: "https://example.com/i/1" } })).toMatchObject({
+      status: 400, body: { error: expect.stringContaining("takes no home") },
+    })
+    expect(store.get("req-t1")?.home).toBeNull()
   })
 
   it("the tool passes home through", async () => {

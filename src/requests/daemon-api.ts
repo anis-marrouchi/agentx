@@ -143,13 +143,15 @@ export function handleRequestsApi(
 
   if (path === "/requests" && m === "GET") {
     // ?since=<epoch ms>: every request made since then, open or closed,
-    // with its links (#394). Without it: the open ones.
+    // with its links (#394). Without it: the open ones. Past the cap the
+    // newest are kept and `truncated` says older ones were left out.
     const since = deps.query?.get("since")
     if (since != null) {
       const at = Number(since)
-      if (!Number.isFinite(at) || at < 0) return { status: 400, body: { error: "since must be epoch milliseconds" } }
-      const items = store.listSince(at, LIST_LIMIT + 1).map((r) => ({ ...r, links: store.links(r.id) }))
-      return { status: 200, body: { enabled: deps.enabled, since: at, count: Math.min(items.length, LIST_LIMIT), items: items.slice(0, LIST_LIMIT), truncated: items.length > LIST_LIMIT } }
+      if (!since.trim() || !Number.isFinite(at) || at < 0) return { status: 400, body: { error: "since must be epoch milliseconds" } }
+      const found = store.listSince(at, LIST_LIMIT + 1)
+      const items = found.slice(-LIST_LIMIT).map((r) => ({ ...r, links: store.links(r.id) }))
+      return { status: 200, body: { enabled: deps.enabled, since: at, count: items.length, items, truncated: found.length > LIST_LIMIT } }
     }
     const items = store.listOpen()
     return { status: 200, body: { enabled: deps.enabled, count: items.length, items: items.slice(0, LIST_LIMIT), truncated: items.length > LIST_LIMIT } }
@@ -223,6 +225,9 @@ export function handleRequestsApi(
     // A step report comes from the agent that owns the step, which is
     // often not the agent the request was asked of.
     if (action === "step") {
+      if (input.home !== undefined && input.home !== null && input.home !== "") {
+        return { status: 400, body: { error: "a step report takes no home: give it with accept, wait or done" } }
+      }
       if (!deps.plans) return { status: 409, body: { error: "This node has no plans." } }
       const status = str(input.status).toLowerCase() as StepStatus
       if (!["progress", "done", "blocked"].includes(status)) return { status: 400, body: { error: "step needs status: progress, done or blocked" } }
