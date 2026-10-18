@@ -44,7 +44,13 @@ export interface WatcherSettings {
   escalateAfterMinutes: number
   /** Finished watchers are deleted after this many days. */
   retentionDays: number
+  /** What closes a watcher. "result": a run that ends with a reply, or a
+   *  delegation that answers. "explicit": only a done signal (POST
+   *  /watchers/:id/done), so a reply that only promises keeps it open. */
+  doneSignal: DoneSignal
 }
+
+export type DoneSignal = "result" | "explicit"
 
 export interface DecideResult {
   probability: number | null
@@ -268,6 +274,9 @@ export class WatchCheckpoint {
     // A restart or a stop signal cut it: it may resume, so the due time decides.
     if (e.interrupted || e.stopped) return
     if (!e.error && e.finalResponse?.trim()) {
+      // Explicit: a reply can be a promise ("I'll publish at 18:00"), so
+      // only a done signal closes the watcher; the due time still applies.
+      if (this.deps.settings().doneSignal === "explicit") return
       // Also after an alert: a late result spares the owner the escalation.
       this.deps.store.transition(w.id, ["open", "alerted"], "done", "ended with a result", this.now())
       return
@@ -275,12 +284,14 @@ export class WatchCheckpoint {
     await this.fire(w, e.error ? `the run ended with an error: ${clip(e.error, 160)}` : "the run ended without a result")
   }
 
-  /** A delegation ended: done closes its watcher, anything else fires it. */
+  /** A delegation ended: done closes its watcher (unless the done signal
+   *  is explicit), anything else fires it. */
   async delegationEnded(rec: Pick<DelegationRecord, "id">, status: DelegationStatus, text = ""): Promise<void> {
     await this.inflight.get(rec.id)
     const w = this.deps.store.byKey(rec.id)
     if (!w) return
     if (status === "done") {
+      if (this.deps.settings().doneSignal === "explicit") return
       this.deps.store.transition(w.id, ["open", "alerted"], "done", "delegation answered", this.now())
       return
     }

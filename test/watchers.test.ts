@@ -19,7 +19,7 @@ import { taskWatchQuestions, taskWatchState } from "../src/decisions/seats/task-
 const MIN = 60_000
 const ON: WatcherSettings = {
   enabled: true, skipChannels: [], defaultDueMinutes: 120, noBelow: 0.2, yesAt: 0.7,
-  escalateAfterMinutes: 30, retentionDays: 30,
+  escalateAfterMinutes: 30, retentionDays: 30, doneSignal: "result",
 }
 
 let tmp: string
@@ -99,6 +99,9 @@ describe("settings", () => {
     expect(s.yesAt).toBe(0.7)
     expect(s.escalateAfterMinutes).toBe(30)
     expect(s.owner).toEqual({})
+    expect(s.doneSignal).toBe("result")
+    expect(watchersConfigSchema.parse({ doneSignal: "explicit" }).doneSignal).toBe("explicit")
+    expect(watchersConfigSchema.safeParse({ doneSignal: "reply" }).success).toBe(false)
   })
 
   it("refuses a no threshold above the yes threshold", () => {
@@ -373,6 +376,38 @@ describe("fire", () => {
     await cp.sweep()
     expect(agentAlerts).toHaveLength(0)
     expect(store.get("watch-trace-1")).toMatchObject({ state: "done", reason: "posted" })
+  })
+
+  it("keeps watching a promise-only reply when the done signal is explicit", async () => {
+    settings = { ...ON, doneSignal: "explicit" }
+    await cp.check(task({ delegator: "coo", kind: "delegation", dueAt: clock + 10 * MIN }))
+    await cp.taskEnded({ taskId: "trace-1", agentId: "social", channel: "x", chatId: "x", durationMs: 5, finalResponse: "I'll publish at 18:00", at: "" } as any)
+    expect(store.byKey("trace-1")?.state).toBe("open")
+    clock += 11 * MIN
+    await cp.sweep()
+    expect(agentAlerts.map((a) => a.agentId)).toEqual(["coo"])
+    expect(cp.markDone("watch-trace-1", "https://example.com/v/1")).toBe(true)
+    clock += 60 * MIN
+    await cp.sweep()
+    expect(ownerAlerts).toHaveLength(0)
+    expect(store.get("watch-trace-1")).toMatchObject({ state: "done", reason: "https://example.com/v/1" })
+  })
+
+  it("keeps an answered delegation open when the done signal is explicit, and still fires a failed one", async () => {
+    settings = { ...ON, doneSignal: "explicit" }
+    await cp.delegationStarted({ id: "dlg-5", caller: "coo", callee: "social", request: "post it" })
+    await cp.delegationEnded({ id: "dlg-5" }, "done", "will post tonight")
+    expect(store.byKey("dlg-5")?.state).toBe("open")
+    await cp.delegationStarted({ id: "dlg-6", caller: "coo", callee: "social", request: "post it" })
+    await cp.delegationEnded({ id: "dlg-6" }, "error", "chat closed")
+    expect(store.byKey("dlg-6")?.state).toBe("alerted")
+  })
+
+  it("still fires at once on a run without a result when the done signal is explicit", async () => {
+    settings = { ...ON, doneSignal: "explicit" }
+    await cp.check(task({ delegator: "coo", kind: "delegation", dueAt: clock + 60 * MIN }))
+    await cp.taskEnded({ taskId: "trace-1", agentId: "social", channel: "x", chatId: "x", durationMs: 5, finalResponse: "", at: "" } as any)
+    expect(store.byKey("trace-1")?.state).toBe("alerted")
   })
 
   it("deletes finished watchers after the retention period", async () => {

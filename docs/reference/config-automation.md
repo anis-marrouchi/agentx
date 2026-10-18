@@ -289,6 +289,7 @@ The decision is the `task-watch` decision seat: it gives the chance that the tas
 | `watchers.owner.channel` | string | — | Channel you are told on. Unset: your default notification channel. |
 | `watchers.owner.chatId` | string | — | Chat on that channel. Unset: `default`. |
 | `watchers.retentionDays` | number (up to 3650) | `30` | Days a finished watcher is kept before it is deleted. Watchers still watching are never deleted. |
+| `watchers.doneSignal` | `"result"` or `"explicit"` | `"result"` | What closes a watcher. `result`: the agent's run ends with a reply, or the delegation answers. `explicit`: only `POST /watchers/<id>/done`, so a reply that only promises ("I'll publish at 18:00") keeps the watcher open until its due time. A run that ends without a result fires at once in both modes. |
 
 ## `requestStatus`
 

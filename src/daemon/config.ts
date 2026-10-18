@@ -1258,6 +1258,10 @@ export const watchersConfigSchema = z.object({
   }).default({}),
   /** Finished watchers are deleted after this many days. */
   retentionDays: z.number().positive().max(3650).default(30),
+  /** What closes a watcher. "result": the run ends with a reply, or the
+   *  delegation answers. "explicit": only POST /watchers/:id/done, so a
+   *  reply that only promises ("I'll publish at 18:00") keeps it open. */
+  doneSignal: z.enum(["result", "explicit"]).default("result"),
 }).default({}).refine((w) => w.noBelow <= w.yesAt, { message: "watchers.noBelow must not be above watchers.yesAt" })
 
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and
