@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, the weekly quality report, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -309,6 +309,26 @@ To turn it on:
 | `requestStatus.channels` | list of strings | `[]` | Channels that show request status: `gitlab`, `github`. Empty: off. Ended requests are forgotten after `requests.retentionDays`. |
 
 In a mesh, an edit is made with the same agent account that wrote the comment. When that account's token lives on another machine, the edit is sent there; that machine must run a version that has request status, or the comment stays at its first state.
+
+## `qualityReport`
+
+The weekly quality report posted on a GitHub issue every Monday, and the gates it reports on. Off by default. Turn it on on one computer only. See [post a weekly quality report](/jobs/quality-report).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `qualityReport.enabled` | boolean | `false` | Posts the report every week. Needs `repo` and `issue`. |
+| `qualityReport.repo` | string `owner/name` | — | The GitHub repository of the issue. |
+| `qualityReport.issue` | number | — | The issue the report is posted on. |
+| `qualityReport.time` | string `HH:MM` | `"08:00"` | When the report is due on Monday. A daemon that was off then posts later that week. |
+| `qualityReport.timezone` | string | — | The timezone `time` is read in, for example `Europe/Paris`. Unset: this computer's. |
+| `qualityReport.command` | list of strings | `["agentx", "quality", "report", "--public"]` | The command whose output is posted, shown as a fixed-width block. AgentX adds `--repo <repo>` (unless the command already has one), `--since <Monday> --until <Sunday>` for the week and `--compare <baseline>`. A leading `agentx` runs the same AgentX install as the daemon, whatever its `PATH`. The week is also in `AGENTX_QUALITY_WEEK`, `AGENTX_QUALITY_FROM` and `AGENTX_QUALITY_TO`, and the repository in `AGENTX_QUALITY_REPO`. |
+| `qualityReport.baseline` | string | `"baseline"` | The baseline saved with `agentx quality report --save-baseline`. Each week is compared with it, and the verdict quotes its fix share. |
+| `qualityReport.timeoutSeconds` | number (10–3600) | `600` | Time limit for the command. |
+| `qualityReport.gates` | list | `[]` | The gates and when they were on, shown in each comment. |
+| `qualityReport.gates[].id` | string | required | Short name, used by `agentx quality verdict --gate`. |
+| `qualityReport.gates[].label` | string | — | Name shown in the comment. Unset: `id`. |
+| `qualityReport.gates[].since` | string `YYYY-MM-DD` | required | The day the gate went on. The verdict is due three weeks after the first gate's `since`. |
+| `qualityReport.gates[].until` | string `YYYY-MM-DD` | — | The day the gate went off. |
 
 ## `shutdown`
 

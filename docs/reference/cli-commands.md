@@ -3219,7 +3219,7 @@ Run an arbitrary read-only SQL query (escape hatch).
 
 ## quality (advanced)
 
-`agentx quality`: Engineering quality from merged PRs: fix share, regressions, lead time, CI and model cost. See [Measure code quality](../guides/quality-report.md).
+`agentx quality`: Engineering quality from merged PRs: fix share, regressions, lead time, CI and model cost, and the weekly report on the epic issue. **Advanced.** See [Measure code quality](../guides/quality-report.md) and [Post a weekly quality report](../jobs/quality-report.md).
 
 ### `agentx quality report`
 
@@ -3239,6 +3239,26 @@ Per-week and per-area report of merged PRs on the base branch (reads GitHub thro
 | `--compare <name>` | — | Show changes against a stored baseline. |
 | `--format <format>` | `text` | Output: text \| markdown (for a GitHub comment) \| json. |
 | `--json` | — | Same as --format json (schema agentx.quality-report/v1). |
+
+### `agentx quality weekly`
+
+Post (or preview) the weekly report for a week; edits that week's comment if it exists.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--week <week>` | last week | ISO week, e.g. `2026-W42`. |
+| `--dry-run` | — | Print the comment instead of posting it. |
+| `-c, --config <path>` | — | Config file. |
+
+### `agentx quality verdict`
+
+Post the keep / tune / switch-off verdict per gate on the epic, citing the latest weekly report.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-g, --gate <id=verdict[:reason]>` | required | One per gate in `qualityReport.gates`, e.g. `review=keep:"fixes down"`. Repeat it for each gate. |
+| `--dry-run` | — | Print the comment instead of posting it. |
+| `-c, --config <path>` | — | Config file. |
 
 ## mesh (advanced)
 
