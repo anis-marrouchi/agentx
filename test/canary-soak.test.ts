@@ -1,4 +1,6 @@
-import { mkdtempSync, rmSync } from "fs"
+import Database from "better-sqlite3"
+import { execFileSync } from "child_process"
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
@@ -9,6 +11,7 @@ import {
   type CanarySettings, type TaskCounter, type TaskCounts,
 } from "../src/daemon/canary-soak"
 import { daemonConfigSchema } from "../src/daemon/config"
+import { canarySwitch, checkoutMoved, headCommit, pinnedBuildEnv, soakFor, soakGate } from "../src/commands/daemon-soak"
 
 const MIN = 60_000
 const T0 = Date.parse("2026-10-17T08:00:00Z")
@@ -111,10 +114,21 @@ describe("canary soak rules", () => {
     expect(first.status).toBe("passed")
   })
 
-  it("cannot pass without task history", () => {
+  it("cannot pass without task history, and is not judged (nor kept) either", () => {
     const r = judge([...prevRun, clean(T0, "bbbbbbb")], T0 + 121 * MIN, () => null)
-    expect(r.status).toBe("failed")
+    expect(r.status).toBe("unavailable")
     expect(r.reason).toContain("task history unavailable")
+    expect(deployDecision(settings, "bbbbbbb", r).allow).toBe(false)
+    const dir = mkdtempSync(join(tmpdir(), "canary-"))
+    try {
+      expect(recordSoak(dir, r)).toBeNull()
+      expect(existsSync(join(dir, "canary"))).toBe(false)
+    } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it("still fails on boot trouble when task history is unavailable", () => {
+    const r = judge([...prevRun, clean(T0, "bbbbbbb"), crash(T0 + 30 * MIN, "bbbbbbb")], T0 + 121 * MIN, () => null)
+    expect(r.status).toBe("failed")
   })
 
   it("is interrupted when another commit replaced it before the soak ended", () => {
@@ -187,8 +201,125 @@ describe("ledger and boot log", () => {
     expect(log[1]).toEqual({ at: T0 + MIN, by: null, reason: null })
   })
 
+  it("does not replace a ledger it cannot read, and writes atomically", () => {
+    mkdirSync(join(dir, "canary"))
+    writeFileSync(join(dir, "canary", "releases.json"), "{ torn")
+    expect(recordSoak(dir, judge([clean(T0, "bbbbbbb")], T0 + 121 * MIN))).toBeNull()
+    rmSync(join(dir, "canary", "releases.json"))
+    expect(recordSoak(dir, judge([clean(T0, "bbbbbbb")], T0 + 121 * MIN))?.status).toBe("passed")
+    expect(readdirSync(join(dir, "canary"))).toEqual(["releases.json"])
+  })
+
   it("is off by default in config", () => {
     const q = daemonConfigSchema.shape.quality.parse(undefined).canary
     expect(q).toEqual({ enabled: false, soakMinutes: 120, thresholds: settings.thresholds })
+  })
+})
+
+describe("soak gate on a daemon folder", () => {
+  let dir: string
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "canary-gate-")) })
+  afterEach(() => rmSync(dir, { recursive: true, force: true }))
+
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: dir, stdio: "ignore" })
+  function checkout(): string {
+    git("init", "-q")
+    writeFileSync(join(dir, "README"), "x")
+    git("add", "README")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "init")
+    return headCommit(dir)!
+  }
+
+  it("with the switch off reads only the switch, writes nothing and allows", () => {
+    // An invalid config and a .env: loading either would throw or leak.
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({ agents: "not an object", quality: { canary: { enabled: false } } }))
+    writeFileSync(join(dir, ".env"), "CANARY_GATE_TEST_LEAK=1\n")
+    const g = soakGate("remote", { cwd: dir })
+    expect(g).toMatchObject({ allow: true, overridden: false, enabled: false, commit: null })
+    expect(process.env.CANARY_GATE_TEST_LEAK).toBeUndefined()
+    expect(readdirSync(dir).sort()).toEqual([".env", "agentx.json"])
+    // No config at all, or unreadable JSON: also off.
+    const empty = mkdtempSync(join(tmpdir(), "canary-empty-"))
+    expect(soakGate("remote", { cwd: empty }).enabled).toBe(false)
+    rmSync(empty, { recursive: true, force: true })
+    writeFileSync(join(dir, "agentx.json"), "{ not json")
+    expect(soakGate("remote", { cwd: dir }).enabled).toBe(false)
+  })
+
+  it("warns when the switch reads as off only because the config is broken", () => {
+    writeFileSync(join(dir, "agentx.json"), "{ not json")
+    expect(soakGate("remote", { cwd: dir }).warning).toContain("not valid JSON")
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({ quality: { canary: { enabled: "${CANARY_ON}" } } }))
+    expect(canarySwitch(undefined, dir)).toMatchObject({ enabled: false, warning: expect.stringContaining("not true") })
+    for (const enabled of [false, undefined]) {
+      writeFileSync(join(dir, "agentx.json"), JSON.stringify({ quality: { canary: { enabled } } }))
+      expect(soakGate("remote", { cwd: dir }).warning).toBeUndefined()
+    }
+  })
+
+  it("notices when the checkout moves after the soak, and pins the build to it", () => {
+    const commit = checkout()
+    expect(checkoutMoved(commit, dir)).toBeNull()
+    writeFileSync(join(dir, "README"), "y")
+    expect(checkoutMoved(commit, dir)).toContain(`moved from ${commit} to ${commit}-dirty`)
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qam", "next")
+    const next = headCommit(dir)!
+    expect(next).not.toBe(commit)
+    expect(checkoutMoved(commit, dir)).toContain(`to ${next}`)
+    expect(pinnedBuildEnv(commit, { PATH: "/bin", AGENTX_BUILD_COMMIT: "other" })).toEqual({ PATH: "/bin", AGENTX_BUILD_COMMIT: commit })
+  })
+
+  it("refuses to judge again when the ledger can't be read", () => {
+    const agentx = join(dir, ".agentx")
+    mkdirSync(join(agentx, "canary"), { recursive: true })
+    writeFileSync(join(agentx, "canary", "releases.json"), "{ torn")
+    recordBootEntry(agentx, Date.now() - 200 * MIN, [], { commit: "bbbbbbb", version: "1.0.0" })
+    const r = soakFor("bbbbbbb", settings, crashLoop, { cwd: dir })
+    expect(r.status).toBe("unavailable")
+    expect(r.reason).toContain("releases.json")
+    expect(deployDecision(settings, "bbbbbbb", r).allow).toBe(false)
+  })
+
+  it("a dry run leaves no files, even when the soak is decided", () => {
+    const commit = checkout()
+    writeFileSync(join(dir, "agentx.json"), JSON.stringify({ node: { id: "t", name: "t" }, agents: {}, quality: { canary: { enabled: true, soakMinutes: 1 } } }))
+    git("add", "agentx.json")
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-qm", "config")
+    const head = headCommit(dir)!
+    expect(head).not.toBe(commit)
+    const agentx = join(dir, ".agentx")
+    mkdirSync(agentx)
+    recordBootEntry(agentx, Date.now() - 10 * MIN, [], { commit: head, version: "1.0.0" })
+    const db = new Database(join(agentx, "db.sqlite"))
+    db.exec("CREATE TABLE task_history (started_at TEXT, status TEXT)")
+    db.close()
+    const before = readdirSync(agentx).sort()
+    const g = soakGate("remote", { cwd: dir, dryRun: true })
+    expect(g).toMatchObject({ enabled: true, allow: true, commit: head })
+    expect(soakGate("remote", { cwd: dir, dryRun: true, overrideSoak: "test" }).allow).toBe(true)
+    expect(readdirSync(agentx).sort()).toEqual(before)
+    // Without --dry-run the pass is kept.
+    soakGate("remote", { cwd: dir })
+    expect(readReleases(agentx)[head]?.status).toBe("passed")
+  })
+
+  it("counts only errors and timeouts, and reads a missing db as unavailable", () => {
+    const agentx = join(dir, ".agentx")
+    mkdirSync(agentx)
+    const start = Date.now() - 200 * MIN
+    recordBootEntry(agentx, start, [], { commit: "bbbbbbb", version: "1.0.0" })
+    const loose = { ...settings, thresholds: { ...settings.thresholds, maxFailedTasks: 1 } }
+    const missing = soakFor("bbbbbbb", loose, crashLoop, { cwd: dir, record: false })
+    expect(missing.status).toBe("unavailable")
+    expect(existsSync(join(agentx, "db.sqlite"))).toBe(false)
+
+    const db = new Database(join(agentx, "db.sqlite"))
+    db.exec("CREATE TABLE task_history (started_at TEXT, status TEXT)")
+    const at = new Date(start + 5 * MIN).toISOString()
+    for (const status of ["ok", "stopped", "stopped", "error"]) db.prepare("INSERT INTO task_history VALUES (?, ?)").run(at, status)
+    db.close()
+    const r = soakFor("bbbbbbb", loose, crashLoop, { cwd: dir, record: false })
+    expect(r.checks.find((c) => c.name === "failed-tasks")?.detail).toBe("1 of 4 task(s) failed, 1 allowed")
+    expect(r.status).toBe("passed")
   })
 })

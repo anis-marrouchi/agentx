@@ -4,7 +4,7 @@ import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
 import chalk from "chalk"
 import { existsSync, readFileSync } from "fs"
 import { restartCommand } from "./daemon-restart"
-import { soakCommand, soakGate } from "./daemon-soak"
+import { checkoutMoved, pinnedBuildEnv, soakCommand, soakGate } from "./daemon-soak"
 import { lastBoot, statusBlock, stoppedBlock, type StatusService } from "./daemon-status"
 
 // --- agentx daemon: start/stop/status/logs ---
@@ -496,6 +496,7 @@ daemon
 
     // Canary soak (quality.canary): off → nothing here changes the flow.
     const gate = soakGate(host, { config: opts.config, overrideSoak: opts.overrideSoak, dryRun: opts.dryRun })
+    if (gate.warning) console.log(chalk.yellow(`  ⚠ Canary soak: ${gate.warning}`))
     if (gate.enabled) {
       if (!gate.allow) {
         console.log(chalk.red(`  ✗ Canary soak: ${gate.message}`))
@@ -544,15 +545,26 @@ daemon
     }
 
     // The soak judged this checkout's HEAD; ship a build of exactly that.
+    // HEAD is checked again before the build and before rsync, since the
+    // tests and the build take minutes and the tree can move meanwhile.
     if (gate.enabled) {
+      const moved = () => {
+        const why = checkoutMoved(gate.commit!)
+        if (!why) return false
+        console.log(chalk.red(`  ✗ Canary soak: ${why}`))
+        process.exitCode = 1
+        return true
+      }
+      if (moved()) return
       try {
-        execSync("npx tsup --no-dts", { stdio: "pipe", cwd: process.cwd() })
+        execSync("npx tsup --no-dts", { stdio: "pipe", cwd: process.cwd(), env: pinnedBuildEnv(gate.commit!) })
         console.log(chalk.green(`  ✓ Built ${gate.commit}`))
       } catch (e: any) {
         console.log(chalk.red(`  ✗ Build failed: ${e.message}`))
         process.exitCode = 1
         return
       }
+      if (moved()) return
     }
 
     console.log(chalk.dim(`  Deploying to ${opts.user}@${host}:${opts.path}...`))

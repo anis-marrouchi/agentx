@@ -345,11 +345,11 @@ Release quality gates. Each one has its own switch and is off unless you turn it
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
-| `quality.canary.enabled` | boolean | `false` | Makes `agentx daemon deploy` refuse a release that has not passed its soak. Off: deploys work as before. |
+| `quality.canary.enabled` | boolean | `false` | Makes `agentx daemon deploy` refuse a release that has not passed its soak. Only the literal `true` turns it on. Off: deploys work as before. Other ways of shipping a release are not gated. |
 | `quality.canary.soakMinutes` | number (1–10080) | `120` | How long a release must run on this daemon. |
 | `quality.canary.thresholds.maxRestarts` | number | `1` | Restarts allowed during the soak, not counting the one that started it. |
 | `quality.canary.thresholds.maxCrashes` | number | `0` | Stops without being asked to (crash, forced kill) allowed during the soak. |
-| `quality.canary.thresholds.maxFailedTasks` | number | `3` | Failed or timed-out tasks allowed during the soak. |
+| `quality.canary.thresholds.maxFailedTasks` | number | `3` | Failed or timed-out tasks allowed during the soak. Stopped tasks do not count. |
 | `quality.canary.thresholds.maxErrorRateIncrease` | number (0–1) | `0.1` | How much the share of failed tasks may rise over the release before, as a fraction: `0.1` is 10 percentage points. |
 | `quality.canary.thresholds.minTasksForRate` | number | `10` | Fewer tasks than this during the soak skips the error-rate check. |
 
