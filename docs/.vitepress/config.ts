@@ -71,6 +71,7 @@ const groups = [
     { text: "Capture the screen at the right moment", link: "/jobs/screen-capture" },
     { text: "Work from your Claude Code session", link: "/jobs/claude-code-session" },
     { text: "Use AgentX from your code editor", link: "/jobs/connect-an-editor" },
+    { text: "Install the AgentX plugin in Claude Code", link: "/jobs/install-the-plugin" },
     { text: "Send coding tasks to Claude cloud sessions", link: "/jobs/cloud-sessions" },
   ] },
   { text: "Teamwork", collapsed: true, items: [

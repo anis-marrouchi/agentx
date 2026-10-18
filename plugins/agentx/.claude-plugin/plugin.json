@@ -1,0 +1,42 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "agentx",
+  "version": "1.0.0",
+  "description": "Connect your coding agent to your AgentX node: check agents, read recent chats, schedules and the wiki, and (when you allow it) hand tasks to your agents.",
+  "author": {
+    "name": "AgentX contributors",
+    "url": "https://github.com/anis-marrouchi/agentx"
+  },
+  "homepage": "https://agentx-docs.pages.dev/jobs/install-the-plugin",
+  "repository": "https://github.com/anis-marrouchi/agentx",
+  "license": "MIT",
+  "keywords": ["agentx", "harness", "agents", "mcp", "self-hosted"],
+  "userConfig": {
+    "tools": {
+      "type": "string",
+      "title": "Tool set",
+      "description": "read only looks: agents, health, recent chats, events, schedules and the wiki. full also sends messages, starts tasks, changes schedules and answers approvals.",
+      "default": "read",
+      "options": ["read", "full"]
+    },
+    "daemon_url": {
+      "type": "string",
+      "title": "Node address",
+      "description": "Address of your AgentX node, for example http://node.example.com:18800. Empty uses node.bind from agentx.json in the folder below, else http://localhost:18800.",
+      "default": ""
+    },
+    "token": {
+      "type": "string",
+      "title": "Node token",
+      "description": "The node's MESH_TOKEN. Needed only for a node on another machine. Empty falls back to MESH_TOKEN, then the install's .env file, then dashboard.token.",
+      "sensitive": true,
+      "default": ""
+    },
+    "install_dir": {
+      "type": "string",
+      "title": "AgentX folder",
+      "description": "The folder that holds agentx.json, as a full path, for example /home/you/agentx. The default . is the folder Claude Code was started in.",
+      "default": "."
+    }
+  }
+}
