@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, request status, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -271,6 +271,24 @@ To turn it on by hand:
 | `requests.plans.maxNudges` | whole number (0 to 20) | `3` | Nudges per step before it counts as blocked and you are told. |
 | `requests.plans.approveKinds` | list of strings | `["message"]` | Step kinds you approve once, on a decision card, when the plan is made. An approved `message` step is sent by the daemon without asking again. |
 | `requests.plans.disabledAgents` | list of strings | `[]` | Agents that may not make a plan. |
+
+## `watchers`
+
+Task watchers: when a task starts (a message to an agent, a hand-off from one agent to another, a scheduled run), AgentX decides whether something should watch it. A watched task that passes its due time with no done signal, or that ends without a result, is reported to the agent that handed it over, and then to you. Off by default.
+
+The decision is the `task-watch` decision seat: it gives the chance that the task carries a deadline, a promise to you, or a hand-off. A watcher is attached unless the seat is `active` and the chance is below `noBelow`. A seat that is off, failed, in `shadow` mode or unsure attaches one. How it works, step by step: [Watch tasks that must finish](/automations/task-watchers).
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `watchers.enabled` | boolean | `false` | Runs the check at every task start and follows the watchers. |
+| `watchers.skipChannels` | list of strings | `[]` | Channels whose tasks are never checked, for example `["voice"]`. The watchers' own alert turns (channel `watchers`) never are. |
+| `watchers.defaultDueMinutes` | number (up to 43200) | `120` | Minutes from the start of a task to its due time, when the task gives none. A caller gives one as `dueAt` (an ISO date or milliseconds) in the task's `context`. |
+| `watchers.noBelow` | number (0 to 1) | `0.2` | A chance below this is a confident "no". Only an `active` seat skips the watcher on it. |
+| `watchers.yesAt` | number (0 to 1) | `0.7` | A chance at or above this is recorded as "yes". Between `noBelow` and `yesAt` it is "uncertain", which attaches a watcher. |
+| `watchers.escalateAfterMinutes` | number (up to 10080) | `30` | Minutes after the agent that handed the task over is told before you are told too, if the task is still not done. |
+| `watchers.owner.channel` | string | — | Channel you are told on. Unset: your default notification channel. |
+| `watchers.owner.chatId` | string | — | Chat on that channel. Unset: `default`. |
+| `watchers.retentionDays` | number (up to 3650) | `30` | Days a finished watcher is kept before it is deleted. Watchers still watching are never deleted. |
 
 ## `requestStatus`
 

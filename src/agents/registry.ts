@@ -67,6 +67,7 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
+import { dueAtOf } from "@/watchers/due"
 import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
@@ -1912,6 +1913,7 @@ export class AgentRegistry {
       humanRoot: isHumanFacingTurn(task.context as any),
       pickup: isPickup(task.context),
       operator: isOperatorTurn(task.context),
+      dueAt: dueAtOf(task.context as Record<string, unknown> | undefined),
     })
     traceOpened = true
 
