@@ -284,6 +284,12 @@ To turn it on by hand:
 | `requests.plans.maxNudges` | whole number (0 to 20) | `3` | Nudges per step before it counts as blocked and you are told. |
 | `requests.plans.approveKinds` | list of strings | `["message"]` | Step kinds you approve once, on a decision card, when the plan is made. An approved `message` step is sent by the daemon without asking again. |
 | `requests.plans.disabledAgents` | list of strings | `[]` | Agents that may not make a plan. |
+| `requests.checkers` | object | `{}` | Checks that close a request or a promise on evidence (`closeWhen`). See [Close on evidence, not on a claim](/jobs/open-requests#close-on-evidence-not-on-a-claim). |
+| `requests.checkers.enabled` | list of strings | all four | Checks agents may use: `url`, `issue`, `git-ancestor`, `reply`. A request whose check is not on the list is unverified. |
+| `requests.checkers.checkEveryMinutes` | number (up to 1440) | `10` | Minutes between two runs of a request's check. |
+| `requests.checkers.repos` | object | `{}` | Local copies of repositories the `git-ancestor` check may read, by name: `{ "app": "/srv/app" }`. Agents give the name, never a folder. |
+| `requests.checkers.github` | object | — | The `issue` check's GitHub access: `apiUrl` (default `https://api.github.com`) and `token`. Unset: `channels.github.token` (or `tokenFile`). |
+| `requests.checkers.gitlab` | object | — | The `issue` check's GitLab access: `url` and `token`. Unset: `channels.gitlab.host` and `channels.gitlab.token`. |
 
 ## `watchers`
 

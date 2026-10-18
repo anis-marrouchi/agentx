@@ -1,5 +1,6 @@
 import type { AgentXEvents } from "@/events/bus"
 import type { PlanSettings } from "./plans"
+import type { CheckerSettings } from "./checkers"
 import { OPEN_STATES, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
@@ -27,6 +28,9 @@ export interface RequestSettings {
   retentionDays: number
   /** Tracked plans (#788). Unset: the defaults (DEFAULT_PLAN_SETTINGS). */
   plans?: PlanSettings
+  /** The checkers that close loops on evidence (#1039). Unset: the
+   *  defaults (DEFAULT_CHECKER_SETTINGS). */
+  checkers?: CheckerSettings
 }
 
 /** Channel of the turn that hands a request back to its agent. */

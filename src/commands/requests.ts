@@ -1,5 +1,5 @@
 import { Command } from "commander"
-import { existsSync } from "fs"
+import { existsSync, readFileSync } from "fs"
 import chalk from "chalk"
 import { openDb } from "@/storage/sqlite"
 import { RequestStore, type RequestRecord } from "@/requests/store"
@@ -8,6 +8,8 @@ import { findConfigPath } from "@/daemon/config-mutator"
 import { PlanStore, type PlanStep } from "@/requests/plan-store"
 import { ownerStepAction, type OwnerStepAction } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
+import { CHECK_KINDS, DEFAULT_CHECKER_SETTINGS, describeCloseWhen, type CheckKind } from "@/requests/checkers"
+import { activeStepAgentOf, STALL_GROUPS, stalledLoops, waitsOnWords } from "@/requests/loops"
 
 // --- agentx requests — what you asked for that is not finished (#356) ---
 //
@@ -68,6 +70,12 @@ function printRequest(r: RequestRecord): void {
   console.log(`    ${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
   if (r.state === "waiting_owner" && r.question) console.log(chalk.yellow(`    Question: ${r.question}`))
   if (r.state === "needs_attention" && r.attentionReason) console.log(chalk.red(`    ${r.attentionReason}`))
+  if (r.promise && r.owedTo) console.log(chalk.dim(`    Promised to ${r.owedTo}`))
+  if (r.dueAt) console.log((r.closedAt === null && Date.now() > r.dueAt ? chalk.red : chalk.dim)(`    Due ${when(r.dueAt)}`))
+  if (r.closeWhen) {
+    const v = r.verifyState ? ` [${r.verifyState}${r.verifyDetail ? `: ${r.verifyDetail}` : ""}]` : ""
+    console.log((r.verifyState === "failed" || r.verifyState === "unverified" ? chalk.yellow : chalk.dim)(`    Closes when ${describeCloseWhen(r.closeWhen)}${v}`))
+  }
   if (r.evidence) console.log(chalk.green(`    Evidence: ${r.evidence}`))
   if (r.closeReason) console.log(chalk.dim(`    Reason: ${r.closeReason}`))
 }
@@ -77,9 +85,11 @@ requests
   .alias("ls")
   .description("open requests, oldest first")
   .option("--json", "machine-readable output")
-  .action((opts: { json?: boolean }) => {
+  .option("--stalled", "only the stalled ones (past their due time, or quiet too long), grouped by what they wait on")
+  .action((opts: { json?: boolean; stalled?: boolean }) => {
     const s = store()
     if (!s) return
+    if (opts.stalled) { printStalled(s, !!opts.json); return }
     const items = s.listOpen()
     if (opts.json) { console.log(JSON.stringify(items, null, 2)); return }
     if (!readRequestSettings().enabled) console.log(chalk.dim("  requests are off: turn them on with `agentx requests settings --enabled on`"))
@@ -87,6 +97,35 @@ requests
     for (const r of items) printRequest(r)
     console.log(chalk.dim(`\n  ${items.length} open. Close one: agentx requests done <id> --evidence <link> · agentx requests drop <id>`))
   })
+
+/** This node's agent ids, from agentx.json. Empty when it cannot be read. */
+function agentIds(): Set<string> {
+  try { return new Set(Object.keys(JSON.parse(readFileSync(findConfigPath(), "utf-8"))?.agents ?? {})) } catch { return new Set() }
+}
+
+function printStalled(s: RequestStore, json: boolean): void {
+  const agents = agentIds()
+  const groups = stalledLoops(s.listOpen(), readRequestSettings().staleAfterHours, Date.now(), {
+    isAgent: (id) => agents.has(id), activeStepAgent: activeStepAgentOf(planStore()),
+  })
+  if (json) {
+    console.log(JSON.stringify(Object.fromEntries(STALL_GROUPS.map((g) => [g, groups[g].map((l) => ({ ...l.request, waitsOn: l.who, why: l.why }))])), null, 2))
+    return
+  }
+  const title: Record<string, string> = { owner: "Waiting on you", agent: "Waiting on an agent", person: "Waiting on an outside person" }
+  let n = 0
+  for (const g of STALL_GROUPS) {
+    if (!groups[g].length) continue
+    console.log(chalk.bold(`\n  ${title[g]} (${groups[g].length})`))
+    for (const l of groups[g]) {
+      printRequest(l.request)
+      console.log(chalk.red(`    Stalled: ${l.why}${g === "owner" ? "" : ` · waiting on ${waitsOnWords(g, l.who)}`}`))
+      n++
+    }
+  }
+  if (!n) { console.log(chalk.dim("  nothing is stalled")); return }
+  console.log(chalk.dim(`\n  ${n} stalled. Close one by hand: agentx requests done <id> --reason <text> · agentx requests drop <id>`))
+}
 
 requests
   .command("show <id>")
@@ -130,14 +169,18 @@ requests
   })
 
 function closeCommand(name: "done" | "drop", description: string, flag: string, missing: string): void {
-  requests
+  const cmd = requests
     .command(`${name} <id>`)
     .description(description)
     .option(flag, name === "done" ? "link to the proof: PR, issue, message, deploy" : "why it is dropped")
-    .action((id: string, opts: { evidence?: string; reason?: string }) => {
+  if (name === "done") cmd.option("--reason <text>", "close it by hand without a link, saying why (\"checked by hand\"); also closes a loop its check cannot verify")
+  cmd.action((id: string, opts: { evidence?: string; reason?: string }) => {
       const s = store()
       if (!s) return
-      const detail = name === "done" ? opts.evidence : opts.reason ?? "dropped by the owner"
+      // The owner's hand close (#1039): the record says it skipped any check.
+      const detail = name === "done"
+        ? opts.evidence ?? (opts.reason ? `closed by owner: ${opts.reason}` : undefined)
+        : opts.reason ?? "dropped by the owner"
       if (!detail) { console.error(chalk.red(`  ${missing}`)); process.exitCode = 1; return }
       const r = s.get(id)
       if (!r || r.state === "candidate") { console.error(chalk.red(`  no request "${id}"`)); process.exitCode = 1; return }
@@ -147,7 +190,7 @@ function closeCommand(name: "done" | "drop", description: string, flag: string, 
       console.log(chalk.green(`  ✓ ${id} ${name === "done" ? "closed as done" : "dropped"}`))
     })
 }
-closeCommand("done", "close a request as finished, with a link to the evidence", "--evidence <link>", "a finished request needs --evidence <link>")
+closeCommand("done", "close a request as finished, with a link to the evidence or the reason", "--evidence <link>", "a finished request needs --evidence <link> or --reason <text>")
 closeCommand("drop", "drop a request you no longer want", "--reason <text>", "")
 
 requests
@@ -163,6 +206,8 @@ requests
   .option("--max-nudges <n>", "nudges per step before it counts as blocked and you are told")
   .option("--approve-kinds <kind,...>", "step kinds you approve once when the plan is made; \"none\" to clear")
   .option("--plans-off-for <agent,...>", "agents that may not open a plan; \"none\" to clear")
+  .option("--checks <kind,...>", `checks agents may use to close a loop (${CHECK_KINDS.join(", ")}); "none" to turn them all off`)
+  .option("--check-every <minutes>", "how often each open loop's check runs")
   .action(async (opts: Record<string, string | undefined>) => {
     const patch: RequestSettingsPatch = {}
     try {
@@ -196,6 +241,15 @@ requests
       plans.approveKinds = list(opts.approveKinds, "none")
       plans.disabledAgents = list(opts.plansOffFor, "none")
       if (Object.values(plans).some((v) => v !== undefined)) patch.plans = plans
+      const checkers: NonNullable<RequestSettingsPatch["checkers"]> = {}
+      const kinds = list(opts.checks, "none")
+      if (kinds) {
+        const bad = kinds.filter((k) => !(CHECK_KINDS as readonly string[]).includes(k))
+        if (bad.length) throw new Error(`unknown check ${bad.join(", ")}: use ${CHECK_KINDS.join(", ")}`)
+        checkers.enabled = kinds as CheckKind[]
+      }
+      checkers.checkEveryMinutes = num("--check-every", opts.checkEvery)
+      if (Object.values(checkers).some((v) => v !== undefined)) patch.checkers = checkers
     } catch (e: any) {
       console.error(chalk.red(`  ${e.message}`)); process.exitCode = 1; return
     }
@@ -215,4 +269,8 @@ requests
     console.log(`  Nudge a quiet step      after ${p.stallMinutes} minute(s), up to ${p.maxNudges} time(s)`)
     console.log(`  You approve up front    ${p.approveKinds.length ? p.approveKinds.join(", ") : "nothing"}`)
     console.log(`  Plans off for           ${p.disabledAgents.length ? p.disabledAgents.join(", ") : "no agent"}`)
+    const c = s.checkers ?? DEFAULT_CHECKER_SETTINGS
+    console.log(`  Loop checks             ${c.enabled.length ? c.enabled.join(", ") : "off"}, every ${c.checkEveryMinutes} minute(s)`)
+    const repos = Object.keys(c.repos)
+    console.log(`  Repos for git-ancestor  ${repos.length ? repos.join(", ") : "none (requests.checkers.repos in agentx.json)"}`)
   })

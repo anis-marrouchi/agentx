@@ -1,6 +1,8 @@
 import { markdownToHtml } from "@/utils/markdown-html"
 import type { RequestRecord, RequestStore } from "./store"
 import type { PlanState, PlanStore, StepState } from "./plan-store"
+import { describeCloseWhen } from "./checkers"
+import { activeStepAgentOf, stalledWhy, waitsOn, type StallGroup } from "./loops"
 
 // --- One open request as a card the owner can read in seconds (#459) ---
 //
@@ -23,6 +25,19 @@ export interface RequestCard extends RequestRecord {
   why: string | null
   ownerNoteHtml: string | null
   lastAnswer: { agentId: string; at: number; html: string } | null
+  /** The open loop (#1039): who it is owed to, when it is due, what
+   *  closes it. Null on a request with none of it. */
+  loop: {
+    owedTo: string | null
+    promise: boolean
+    dueAt: number | null
+    /** What its check waits for, in words. */
+    check: string | null
+    verifyState: string | null
+    verifyDetail: string | null
+  } | null
+  /** Stalled, and what it waits on. Null: not stalled, or not asked. */
+  stall: { group: StallGroup; who: string; why: string } | null
   /** Its tracked plan (#788), step by step. Null: no plan. */
   plan: {
     state: PlanState
@@ -50,8 +65,17 @@ export function summarize(md: string, max = SUMMARY_MAX): string {
   return end > max / 2 ? cut.slice(0, end + 1) : `${cut.slice(0, max - 1).trimEnd()}…`
 }
 
-export function requestCard(r: RequestRecord, store: Pick<RequestStore, "lastAnswer">, plans?: Pick<PlanStore, "get" | "steps"> | null): RequestCard {
+/** What the stall view needs: the quiet time, the clock, and which ids are agents. */
+export interface StallLookup { staleAfterHours: number; now: number; isAgent: (id: string) => boolean }
+
+export function requestCard(
+  r: RequestRecord,
+  store: Pick<RequestStore, "lastAnswer">,
+  plans?: Pick<PlanStore, "get" | "steps"> | null,
+  stall?: StallLookup,
+): RequestCard {
   const plan = plans?.get(r.id)
+  const why = stall ? stalledWhy(r, stall.staleAfterHours, stall.now) : null
   const answer = store.lastAnswer(r.id)
   const cutAnswer = answer && answer.text.length > ANSWER_MAX ? `${answer.text.slice(0, ANSWER_MAX)}\n\n…` : answer?.text
   return {
@@ -61,6 +85,11 @@ export function requestCard(r: RequestRecord, store: Pick<RequestStore, "lastAns
     why: r.state === "waiting_owner" ? r.question : r.state === "needs_attention" ? r.attentionReason : null,
     ownerNoteHtml: r.ownerNote ? markdownToHtml(r.ownerNote) : null,
     lastAnswer: answer ? { agentId: answer.agentId, at: answer.at, html: markdownToHtml(cutAnswer!) } : null,
+    loop: r.promise || r.dueAt !== null || r.closeWhen ? {
+      owedTo: r.owedTo, promise: r.promise, dueAt: r.dueAt, check: r.closeWhen ? describeCloseWhen(r.closeWhen) : null,
+      verifyState: r.verifyState, verifyDetail: r.verifyDetail,
+    } : null,
+    stall: stall && why ? { ...waitsOn(r, { isAgent: stall.isAgent, activeStepAgent: activeStepAgentOf(plans) }), why } : null,
     plan: plan ? {
       state: plan.state,
       steps: plans!.steps(r.id).map((s) => ({

@@ -93,7 +93,10 @@ import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/
 import { GuestStore } from "@/guests/store"
 import { GuestHostStore, askHost } from "@/guests/hosts"
 import { PairAttemptLimiter } from "@/daemon/app-pair-code"
-import { handleRequestsApi, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
+import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
+import { DEFAULT_CHECKER_SETTINGS, type CheckContext } from "@/requests/checkers"
+import { forgeReader } from "@/requests/checkers/issue"
+import { loopChecker } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
@@ -2272,6 +2275,29 @@ export class AgentXDaemon {
     }
   }
 
+  /** What the loop checkers read (#1039): the forges through the
+   *  configured connectors, the local clones under requests.checkers.repos,
+   *  and this node's own record of inbound turns. Built per check, so a
+   *  settings change applies without a restart. */
+  private requestCheckContext(requests: AttachedRequests): CheckContext {
+    const settings = this.config.requests.checkers ?? DEFAULT_CHECKER_SETTINGS
+    const gh = this.config.channels.github
+    let ghToken = settings.github?.token ?? gh?.token
+    if (!ghToken && gh?.tokenFile) {
+      try { ghToken = readFileSync(gh.tokenFile, "utf-8").trim().split("\n")[0].trim() || undefined } catch { /* no token: public reads only */ }
+    }
+    const gl = this.config.channels.gitlab
+    return {
+      now: Date.now(),
+      settings,
+      forge: forgeReader({
+        github: { apiUrl: settings.github?.apiUrl ?? "https://api.github.com", token: ghToken },
+        gitlab: { url: settings.gitlab?.url ?? gl?.host ?? "https://gitlab.com", token: settings.gitlab?.token ?? gl?.token },
+      }),
+      inbound: requests.inbound,
+    }
+  }
+
   /** Requests that went quiet come back, each is raised once, and old
    *  closed ones are deleted (src/requests/sweep.ts). Plans first: a
    *  blocked step marks its request told, so the owner hears once. */
@@ -2280,6 +2306,7 @@ export class AgentXDaemon {
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
+      check: loopChecker(() => this.requestCheckContext(requests)),
       notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       // Fire and forget: the check never waits on a model. The run is
@@ -4210,16 +4237,19 @@ export class AgentXDaemon {
       if (path === "/requests" || path.startsWith("/requests/")) {
         if (!this.requests) { this.json(res, 503, { error: "requests need the database" }); return }
         const body = req.method === "POST" ? await readBody(req).catch(() => ({})) : undefined
-        const reply = handleRequestsApi(req.method || "GET", path, body as Record<string, unknown> | undefined, {
-          store: this.requests.store,
-          tracker: this.requests.tracker,
+        const requests = this.requests
+        const reply = await handleRequestsCall(req.method || "GET", path, body as Record<string, unknown> | undefined, {
+          store: requests.store,
+          tracker: requests.tracker,
           enabled: this.config.requests.enabled,
           hasAgent: (id) => !!this.registry.getAgent(id),
           runningTurn: (id, p) => this.provenTurn(id, p),
-          plans: this.requests.plans,
+          plans: requests.plans,
           planSettings: this.config.requests.plans,
           onPlanChange: () => this.kickPlans(),
           query: url.searchParams,
+          checkers: this.config.requests.checkers,
+          check: loopChecker(() => this.requestCheckContext(requests)),
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return

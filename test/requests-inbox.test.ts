@@ -295,7 +295,7 @@ describe("the dashboard's open requests", () => {
     const r = await handleRequestsPanel("GET", P, {}, panelCtx())
     expect(r.status).toBe(200)
     expect((r.body as any).items.map((i: any) => i.id)).toEqual(["req-t1", "req-t2"])
-    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [] } })
+    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [] }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} } })
   })
 
   it("closes as done with evidence, and drops with a default reason", async () => {
@@ -320,6 +320,7 @@ describe("the dashboard's open requests", () => {
     expect((ok.body as any).settings).toEqual({
       enabled: true, channels: [], from: ["telegram:42", "github:me"], staleAfterHours: 48, retentionDays: 30,
       plans: { enabled: false, stallMinutes: 20, maxNudges: 2, approveKinds: ["message", "deploy"], disabledAgents: ["helper"] },
+      checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} },
     })
     expect((await handleRequestsPanel("POST", `${P}/settings`, { maxNudges: 1.5 }, c)).status).toBe(400)
     expect(JSON.parse(readFileSync(c.configPath, "utf-8")).requests.enabled).toBe(true)

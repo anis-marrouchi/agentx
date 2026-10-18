@@ -1,5 +1,6 @@
 import type { DecisionCard } from "@/approvals/cards"
 import { CLOSED_STATES, type RequestRecord, type RequestStore } from "./store"
+import { checkUrl } from "./checkers/url"
 import { FINISHED_STEP_STATES, type PlanRecord, type PlanStep, type PlanStore } from "./plan-store"
 import {
   approvalCardInput, blockedText, dispatchText, MESSAGE_KIND, nudgeText, planEvidence, summaryText, type PlanSettings,
@@ -55,8 +56,6 @@ export interface PlanSweepResult {
 }
 
 const MINUTE = 60_000
-const CHECK_TIMEOUT_MS = 10_000
-const CHECK_BODY_MAX = 1_000_000
 
 const isFinished = (s: PlanStep) => FINISHED_STEP_STATES.includes(s.state)
 
@@ -155,14 +154,6 @@ export function ownerStepAction(
   return null
 }
 
-async function checkUrl(step: PlanStep, doFetch: typeof fetch): Promise<boolean> {
-  const res = await doFetch(step.checkUrl!, { signal: AbortSignal.timeout(CHECK_TIMEOUT_MS), redirect: "follow" })
-  if (!res.ok) return false
-  if (!step.checkContains) return true
-  const body = (await res.text()).slice(0, CHECK_BODY_MAX)
-  return body.includes(step.checkContains)
-}
-
 /** Step 1: cards for the steps the owner approves, and their answers. */
 function settleApprovals(deps: PlanSweepDeps, r: RequestRecord, steps: PlanStep[], now: number): void {
   const { plans, requests, log } = deps
@@ -239,18 +230,16 @@ async function advance(deps: PlanSweepDeps, r: RequestRecord, steps: PlanStep[],
   }
 
   if (s.checkUrl) {
-    try {
-      if (await checkUrl(s, deps.fetch ?? fetch)) {
-        const evidence = `${s.checkUrl} answered${s.checkContains ? ` with "${s.checkContains}"` : ""}`
-        plans.updateStep(r.id, s.idx, { state: "done", evidence, updatedAt: now })
-        plans.event(r.id, s.idx, "done", `check: ${evidence}`, now)
-        requests.progress(r.id, now)
-        return true
-      }
-    } catch (e: any) {
-      // Not live yet, or not reachable: the step stays as it is.
-      log(`[plans] ${r.id} step ${s.idx}: check ${s.checkUrl} failed: ${e?.message ?? e}`)
+    // The url checker of the loops (#1039): one check for plans and loops.
+    const res = await checkUrl({ kind: "url", url: s.checkUrl, ...(s.checkContains ? { contains: s.checkContains } : {}) }, { fetch: deps.fetch })
+    if (res.verdict === "met") {
+      plans.updateStep(r.id, s.idx, { state: "done", evidence: res.detail, updatedAt: now })
+      plans.event(r.id, s.idx, "done", `check: ${res.detail}`, now)
+      requests.progress(r.id, now)
+      return true
     }
+    // Not live yet, or not reachable: the step stays as it is.
+    if (res.verdict === "unverifiable") log(`[plans] ${r.id} step ${s.idx}: check ${s.checkUrl} failed: ${res.detail}`)
   }
 
   if (deps.hasAgent && !deps.hasAgent(s.agentId)) {

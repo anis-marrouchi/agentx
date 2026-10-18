@@ -3,6 +3,7 @@ import { getEventBus } from "@/events/bus"
 import { RequestStore } from "./store"
 import { PlanStore } from "./plan-store"
 import { RequestTracker, type RequestSettings } from "./tracker"
+import { traceInbound, type InboundLog } from "./checkers/reply"
 
 // --- Hook the request tracker to the daemon's event bus (#356) ---
 
@@ -10,6 +11,8 @@ export interface AttachedRequests {
   store: RequestStore
   tracker: RequestTracker
   plans: PlanStore
+  /** Inbound turns, for the reply checker (#1039). */
+  inbound: InboundLog
   detach: () => void
 }
 
@@ -30,6 +33,7 @@ export function attachRequests(
     store,
     tracker,
     plans,
+    inbound: traceInbound(db),
     detach: () => {
       bus.off("task:started", started)
       bus.off("task:completed", completed)

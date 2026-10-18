@@ -490,6 +490,7 @@ Open requests, oldest first.
 | Flag | Default | What it does |
 |---|---|---|
 | `--json` | — | Machine-readable output. |
+| `--stalled` | — | Only the stalled ones (past their due time, or quiet too long), grouped by what they wait on: you, an agent, or an outside person. |
 
 ### `agentx requests show <id>`
 
@@ -499,11 +500,14 @@ No flags.
 
 ### `agentx requests done <id>`
 
-Close a request as finished, with a link to the evidence.
+Close a request as finished, with a link to the evidence or the reason.
 
 | Flag | Default | What it does |
 |---|---|---|
-| `--evidence <link>` | — | Link to the proof: PR, issue, message, deploy. Required. |
+| `--evidence <link>` | — | Link to the proof: PR, issue, message, deploy. |
+| `--reason <text>` | — | Close it by hand without a link, saying why ("checked by hand"). Also closes a request whose check cannot tell. The proof reads `closed by owner: <text>`. |
+
+One of `--evidence` or `--reason` is required.
 
 ### `agentx requests drop <id>`
 
@@ -524,6 +528,8 @@ Show or change the requests settings (requests in agentx.json).
 | `--channels <name,...>` | — | Channels to record on; "all" for every channel a person writes on. |
 | `--stale-hours <n>` | — | Hours without activity before an open request comes back to you. |
 | `--retention-days <n>` | — | Days a closed request is kept. |
+| `--checks <kind,...>` | — | Checks agents may use to close a request (url, issue, git-ancestor, reply); "none" to turn them all off. |
+| `--check-every <minutes>` | — | How often each open request's check runs. |
 
 ## request-status
 

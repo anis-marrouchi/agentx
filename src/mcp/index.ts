@@ -887,12 +887,13 @@ const TOOLS = [
       "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
       "The daemon hands each step to its agent in order, nudges a step that goes quiet, sends an owner-approved message itself, and tells the owner at the end or when a step is blocked. " +
       "Report on a step you own with action step (status progress, done with evidence, or blocked with a note). " +
+      "When you commit to something for someone (the owner, another agent, an outside person: 'I will send the file by Friday'), record it with promise (owedTo, text, due, closeWhen): it stays open until it is kept. " +
       "Example: {action:'done', evidence:'https://example.com/pull/42'}. " +
       "Plan example: {action:'accept', steps:[{name:'Build the fix', done:'PR merged'}, {name:'Deploy', agent:'devops', kind:'deploy', done:'release live', check:{url:'https://example.com/version', contains:'1.2.3'}}, {name:'Tell the client', kind:'message', message:'The fix is live.', to:{channel:'telegram', chatId:'123'}}]}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "list"], description: "list (default), accept, wait, done, decline or step." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "list"], description: "list (default), accept, wait, done, decline, step or promise." },
         id: { type: "string", description: "The request id, when it is not the request of this turn. Always pass it for step." },
         steps: {
           type: "array",
@@ -918,6 +919,15 @@ const TOOLS = [
         question: { type: "string", description: "wait: what you are asking the owner." },
         evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
         reason: { type: "string", description: "decline: why you will not do it." },
+        owedTo: { type: "string", description: "promise: who you owe it to: \"owner\", an agent id, or a person id." },
+        text: { type: "string", description: "promise: what you promised, in one sentence." },
+        due: { type: "string", description: "promise, accept, wait, optional: when it is due, as an ISO date. Past it, the owner sees it as stalled." },
+        closeWhen: {
+          type: "object",
+          description: "promise, accept, wait, optional: what proves it is finished; the daemon checks it and closes the loop when it is met, and refuses your done while it is not. " +
+            "One of {kind:'url', url, contains?}, {kind:'issue', provider:'github'|'gitlab', ref:'owner/repo#12', state?:'closed'|'merged'|'open', notePattern?:<plain text a comment contains>}, " +
+            "{kind:'git-ancestor', repo:<name>, commit, ref?}, {kind:'reply', channel, chatId, from:<person id>}.",
+        },
         home: {
           type: "object",
           description: "accept, wait, done, optional: where the work lives, so the owner's \"what did I ask today\" list shows where it landed. kind: issue (the issue URL), idea (the ideas/ file), approval (the card id), erp (the ERP record), card (the Desk card id); link: that URL, path or id.",
