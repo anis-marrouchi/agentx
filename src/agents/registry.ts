@@ -67,10 +67,12 @@ import { onAgentReply, onUserMessage, startTurnWatch } from "./turn-seats"
 import { isHumanFacingTurn } from "@/a2a/initiator"
 import { isPickup, senderOf } from "@/requests/tracker"
 import { isOperatorTurn } from "@/requests/operator"
+import { dueAtOf } from "@/watchers/due"
 import { personLimitsOf, nameMatches, operatorPerson, personOfTurn, refusedPerson } from "@/people/people"
 import { MemberStore } from "@/members/store"
 import { abortReason, untilAborted, withBudget, StepBudgetExceeded } from "./until-aborted"
 import { CLOUD_SESSIONS_DEFAULTS, CloudSessionStore, decideCloudRoute, dispatchCloudSession, launchCloudSession, parseGitHubChatId as parseCloudTarget, type CloudRoute } from "./cloud-sessions"
+import { SPEC_TESTS_DEFAULTS, SpecTestStore, claudeSpecAgent, commentOnIssueWithGh, execProcess, fetchIssueWithGh, planSpecTests, previousRunBlocks, runSpecTests, specTestAuthorInstructions, type SpecTestInput } from "./spec-tests"
 import { buildAgentEnv, claudeBillingEnv } from "@/utils/workspace-env"
 
 /** Own limit for each preparation step, in ms. The run's pre-spawn
@@ -687,6 +689,8 @@ export class AgentRegistry {
   /** Claude cloud sessions this node launched (#622), by issue. Created on
    *  first use so a fleet with the setting off never touches the file. */
   private cloudSessions?: CloudSessionStore
+  /** Spec-test runs (#992), one per issue. Created on first use. */
+  private specTests?: SpecTestStore
   /** The context each running task was started with, by RunningTask id.
    *  Kept apart from RunningTask because /agents serialises that, and a
    *  context can carry a whole conversation history. Read by A2A
@@ -1126,14 +1130,16 @@ export class AgentRegistry {
     const settings = { ...CLOUD_SESSIONS_DEFAULTS, ...(def.cloudSessions ?? {}) }
     const started = Date.now()
     const env = claudeBillingEnv(withCallerEnv(buildAgentEnv(def.workspace), task), def.billing)
+    const launch = (opts: { cwd: string; prompt: string; sessionId?: string }) => launchCloudSession({ ...opts, env, timeoutMs: settings.launchTimeoutSeconds * 1000 })
+    const spec = await this.planSpecTests(task.agentId, route)
     const result = await dispatchCloudSession({
       route,
       agentId: task.agentId,
-      message: task.message,
+      message: spec ? `${task.message}\n${specTestAuthorInstructions(spec.number, this.specTestSettings().agent)}` : task.message,
       settings,
       store: this.cloudSessionStore(),
       traceId,
-      launch: (opts) => launchCloudSession({ ...opts, env, timeoutMs: settings.launchTimeoutSeconds * 1000 }),
+      launch,
       log: (line) => this.log(line),
       trace: (s) => {
         try {
@@ -1146,7 +1152,58 @@ export class AgentRegistry {
       },
     })
     if (!result) return null
+    // Checked again after the launch's await: a second dispatch for the
+    // issue may have started a run meanwhile (it records `running` at once).
+    if (spec && route.route === "cloud" && !result.error && !result.cloudSession.followUp && !previousRunBlocks(this.specTestStore().get(spec.repo, spec.number), this.specTestSettings())) {
+      const sessionId = result.cloudSession.id
+      void this.startSpecTests(task.agentId, spec, route.cwd, (text) => launch({ cwd: route.cwd, prompt: text, sessionId }).then((r) => { if (!r.ok) throw new Error(r.reason) }))
+    }
     return { content: result.content, error: result.error, cloudSession: result.cloudSession, duration: Date.now() - started }
+  }
+
+  private specTestSettings() {
+    return { ...SPEC_TESTS_DEFAULTS, ...(this.config.quality?.specTests ?? {}) }
+  }
+
+  private specTestStore(): SpecTestStore {
+    if (!this.specTests) this.specTests = new SpecTestStore(resolve(process.cwd(), ".agentx/spec-tests.json"))
+    return this.specTests
+  }
+
+  /** The spec-test input for a new cloud session on an issue (#992), or
+   *  null when the test agent does not run (the reason is logged unless the
+   *  setting is off). Reads the whole issue with `gh`: the channel's task
+   *  text carries only its first 500 characters. */
+  private async planSpecTests(codeAgent: string, route: CloudRoute): Promise<SpecTestInput | null> {
+    const settings = this.specTestSettings()
+    if (!settings.enabled || route.route !== "cloud" || route.kind !== "issue") return null
+    const issue = await fetchIssueWithGh(execProcess, route.repo, route.number, route.cwd)
+    const plan = planSpecTests({ settings, issue, codeAgent, previous: this.specTestStore().get(route.repo, route.number) })
+    if (!plan.run) {
+      this.log(`[spec-tests] ${route.repo}#${route.number}: not running: ${plan.reason}`)
+      return null
+    }
+    return plan.input
+  }
+
+  /** Runs the test agent in the background, beside the coding session. */
+  private async startSpecTests(codeAgent: string, input: SpecTestInput, checkout: string, tellAuthor: (text: string) => Promise<void>): Promise<void> {
+    try {
+      await runSpecTests({
+        settings: this.specTestSettings(),
+        input,
+        codeAgent,
+        checkout,
+        exec: execProcess,
+        runAgent: claudeSpecAgent,
+        store: this.specTestStore(),
+        noteOnIssue: (body) => commentOnIssueWithGh(execProcess, input.repo, input.number, checkout, body),
+        tellAuthor,
+        log: (line) => this.log(line),
+      })
+    } catch (e: any) {
+      this.log(`[spec-tests] ${input.repo}#${input.number}: ${e?.message || e}`)
+    }
   }
 
   /** The answer for a run whose HTTP caller left before it got a slot
@@ -1920,6 +1977,7 @@ export class AgentRegistry {
       humanRoot: isHumanFacingTurn(task.context as any),
       pickup: isPickup(task.context),
       operator: isOperatorTurn(task.context),
+      dueAt: dueAtOf(task.context as Record<string, unknown> | undefined),
     })
     traceOpened = true
 

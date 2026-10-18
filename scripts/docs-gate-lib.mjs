@@ -243,6 +243,18 @@ export function applyBaseline(path, problems, baseline = []) {
 }
 
 /**
+ * The rules for one page: `rules.languages` swaps the language-bound
+ * fields (ending headings, step verbs) for translated pages, so the
+ * language-neutral checks (private data, images) still run on them.
+ */
+export function rulesForPage(path, rules) {
+  const lang = (rules.languages ?? []).find((l) => matchesAny(path, l.paths))
+  if (!lang) return rules
+  const { paths, ...fields } = lang
+  return { ...rules, ...fields }
+}
+
+/**
  * Check one page against the docs rule. `exists(repoPath)` answers whether
  * an image file is in the repo. Each problem has a `kind`: "structure"
  * (sections, numbered steps) or "content" (images, private data).
@@ -269,7 +281,9 @@ export function checkPage(path, text, rules, exists) {
   }
 
   // Procedures are numbered: flag bullet lists whose items read as steps.
-  const verbRe = new RegExp(`^(?:\\*\\*[^*]+\\*\\*:?\\s*)?(?:${rules.stepVerbs.map(escapeRe).join("|")})\\b`)
+  // A Unicode word end instead of \b, which only knows ASCII letters and
+  // so never matches after an Arabic verb.
+  const verbRe = new RegExp(`^(?:\\*\\*[^*]+\\*\\*:?\\s*)?(?:${rules.stepVerbs.map(escapeRe).join("|")})(?![\\p{L}\\p{M}\\p{N}_])`, "u")
   let list = []
   const flush = () => {
     const steps = list.filter((it) => verbRe.test(it.text))

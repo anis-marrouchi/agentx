@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agentx": {
+      "command": "agentx",
+      "args": ["serve", "--stdio", "--tools", "${user_config.tools}", "--cwd", "${user_config.install_dir}"],
+      "env": {
+        "AGENTX_DAEMON_URL": "${user_config.daemon_url}",
+        "AGENTX_TOKEN": "${user_config.token}"
+      }
+    }
+  }
+}

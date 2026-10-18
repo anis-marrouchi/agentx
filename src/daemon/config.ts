@@ -1260,6 +1260,40 @@ export const reviewGateConfigSchema = z.object({
    *  told the diff is incomplete. */
   maxDiffKb: z.number().int().positive().max(2048).default(256),
 }).default({})
+/** Task watchers (src/watchers, #1030). At every task start (a dispatch, a
+ *  delegation, a cron run) the `task-watch` decision seat says whether the
+ *  task carries a deadline, a promise or a hand-off; a watcher is attached
+ *  unless the seat is active and confidently says no. A watcher tells the
+ *  delegating agent, then the owner, when the due time passes with no done
+ *  signal or the task ends without a result. */
+export const watchersConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Channels whose runs are never checked (the watchers' own alert turns
+   *  never are). */
+  skipChannels: z.array(z.string().min(1)).default([]),
+  /** The due time of a task that gives none, from its start. */
+  defaultDueMinutes: z.number().positive().max(30 * 24 * 60).default(120),
+  /** A seat probability below this is a confident "no". Only an active
+   *  seat skips the watcher on it. */
+  noBelow: z.number().min(0).max(1).default(0.2),
+  /** At or above: "yes". Between `noBelow` and this: "uncertain", which
+   *  attaches a watcher (fail-safe). */
+  yesAt: z.number().min(0).max(1).default(0.7),
+  /** After the delegating agent is told, the owner is told this much later
+   *  if the task is still not done. */
+  escalateAfterMinutes: z.number().positive().max(7 * 24 * 60).default(30),
+  /** Where the owner is told. Unset: the default notification channel. */
+  owner: z.object({
+    channel: z.string().min(1).optional(),
+    chatId: z.string().min(1).optional(),
+  }).default({}),
+  /** Finished watchers are deleted after this many days. */
+  retentionDays: z.number().positive().max(3650).default(30),
+  /** What closes a watcher. "result": the run ends with a reply, or the
+   *  delegation answers. "explicit": only POST /watchers/:id/done, so a
+   *  reply that only promises ("I'll publish at 18:00") keeps it open. */
+  doneSignal: z.enum(["result", "explicit"]).default("result"),
+}).default({}).refine((w) => w.noBelow <= w.yesAt, { message: "watchers.noBelow must not be above watchers.yesAt" })
 
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and
  *  when the operator hears about what is waiting. */
@@ -1534,6 +1568,55 @@ export const daemonConfigSchema = z.object({
   /** Watched WhatsApp chats triaged by an agent (src/whatsapp-triage). */
   whatsappTriage: whatsappTriageSchema,
   approvals: approvalsConfigSchema,
+  /** Quality gates for agent-written changes (#987). Each is off by default. */
+  quality: z.object({
+    /** Spec-first tests (#992): for an issue that names a pilot path and
+     *  goes to a Claude cloud session, a separate test agent writes tests
+     *  from the issue text only and pushes them to `spec-tests/issue-N` for
+     *  the coding session to merge. See src/agents/spec-tests.ts. */
+    specTests: z.object({
+      enabled: z.boolean().default(false),
+      /** Path prefixes; an issue that names one of them is in the pilot. */
+      paths: z.array(z.string().min(1)).default(["src/daemon"]),
+      /** The test agent's name: the spec-test commit's author. Must not be
+       *  the coding agent's id. */
+      agent: z.string().min(1).default("spec-tests"),
+      /** Model for the test agent. Unset: the `claude` CLI default. */
+      model: z.string().min(1).optional(),
+      /** USD cap for one issue's test agent run; it stops when spent. */
+      maxCostPerIssue: z.number().positive().max(100).default(2),
+      /** Minutes cap for one issue's test agent run. */
+      maxMinutes: z.number().int().min(1).max(120).default(20),
+    }).default({}),
+    /** Canary soak (#993): `agentx daemon deploy` only ships a commit that
+     *  has run on this (local) daemon for soakMinutes without new trouble.
+     *  Judged from the boot log and task history (src/daemon/canary-soak). */
+    canary: z.object({
+      /** Deploy reads only this key from the raw file (no .env, no
+       *  validation), so only a literal `true` turns the gate on. */
+      enabled: z.boolean().default(false),
+      soakMinutes: z.number().int().min(1).max(10_080).default(120),
+      thresholds: z.object({
+        /** Clean restarts allowed during the soak (not counting the one
+         *  that started it). */
+        maxRestarts: z.number().int().min(0).default(1),
+        /** Unclean stops (crash, kill) allowed during the soak. */
+        maxCrashes: z.number().int().min(0).default(0),
+        /** Failed or timed-out tasks allowed during the soak (stopped ones
+         *  do not count). */
+        maxFailedTasks: z.number().int().min(0).default(3),
+        /** Largest rise in the share of failed tasks vs the previous
+         *  release, as a fraction (0.1 = 10 percentage points). */
+        maxErrorRateIncrease: z.number().min(0).max(1).default(0.1),
+        /** Fewer tasks than this during the soak skips the rate check. */
+        minTasksForRate: z.number().int().min(1).default(10),
+      }).default({}),
+    }).default({}),
+    /** Pre-merge review gate (#990): a different agent, in a fresh
+     *  session, checks an agent's pull request against its linked issue
+     *  and posts the commit status `agentx/review` on the head commit. */
+    reviewGate: reviewGateConfigSchema,
+  }).default({}),
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({
     /** Wait this long for runs to finish before cutting them off (they are
@@ -1595,18 +1678,13 @@ export const daemonConfigSchema = z.object({
     /** Loop brake: most signals one root id may carry in a day. */
     maxPerRoot: z.number().int().min(1).max(100).default(6),
   }).default({}),
-  /** Agent PR quality gates (#987). Each gate has its own switch and is
-   *  off by default. */
-  quality: z.object({
-    /** Pre-merge review gate (#990): a different agent, in a fresh
-     *  session, checks an agent's pull request against its linked issue
-     *  and posts the commit status `agentx/review` on the head commit. */
-    reviewGate: reviewGateConfigSchema,
-  }).default({}),
   /** Open requests (src/requests, #356): what a person asked an agent for
    *  is recorded and followed until it is done, declined or dropped. Off
    *  by default. */
   requests: requestsConfigSchema,
+  /** Task watchers (src/watchers, #1030): every task start decides whether
+   *  the task needs a watcher and attaches one. Off by default. */
+  watchers: watchersConfigSchema,
   people: peopleConfigSchema,
   members: membersConfigSchema,
   /** Request status where the request was made (src/requests/status-board,
