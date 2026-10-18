@@ -34,7 +34,7 @@ describe("parsing closeWhen", () => {
     expect(parseCloseWhen({ kind: "url", url: "file:///etc/passwd" })).toMatch(/http\(s\)/)
     expect(parseCloseWhen({ kind: "issue", provider: "bitbucket", ref: "a/b#1" })).toMatch(/github or gitlab/)
     expect(parseCloseWhen({ kind: "issue", provider: "github", ref: "a/b!1" })).toMatch(/owner\/repo#12/)
-    expect(parseCloseWhen({ kind: "issue", provider: "github", ref: "a/b#1", notePattern: "(" })).toMatch(/regular expression/)
+    expect(parseCloseWhen({ kind: "issue", provider: "github", ref: "a/b#1", notePattern: "x".repeat(201) })).toMatch(/longer than 200/)
     expect(parseCloseWhen({ kind: "reply", channel: "telegram", chatId: "1" })).toMatch(/from/)
   })
 
@@ -85,7 +85,15 @@ describe("issue", () => {
     const merged = spec({ kind: "issue", provider: "gitlab", ref: "g/app!3", state: "merged" })
     expect((await runCheck(merged, ctx({ forge: reader({ state: "merged", url: "u" }) }))).verdict).toBe("met")
     const note = spec({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "deployed to prod" })
-    expect(await runCheck(note, ctx({ forge: reader({ state: "open", url: "u", notes: ["working", "Deployed to PROD at 10:00"] }) }))).toEqual({ verdict: "met", detail: "u has a note matching /deployed to prod/" })
+    expect(await runCheck(note, ctx({ forge: reader({ state: "open", url: "u", notes: ["working", "Deployed to PROD at 10:00"] }) }))).toEqual({ verdict: "met", detail: 'u has a note with "deployed to prod"' })
+  })
+
+  it("matches notePattern as plain text: a regular expression is never run", async () => {
+    const risky = spec({ kind: "issue", provider: "github", ref: "acme/app#12", notePattern: "(a+)+$" })
+    const notes = ["a".repeat(9_000) + "!", "see (a+)+$ above"]
+    const started = Date.now()
+    expect(await runCheck(risky, ctx({ forge: reader({ state: "open", url: "u", notes }) }))).toEqual({ verdict: "met", detail: 'u has a note with "(a+)+$"' })
+    expect(Date.now() - started).toBeLessThan(1_000)
   })
 
   it("not met: another state, no matching note", async () => {

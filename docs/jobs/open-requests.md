@@ -117,7 +117,7 @@ The checks:
 | Kind | Fields | Finished when |
 |---|---|---|
 | `url` | `url`, `contains` (optional) | The address answers with success, and holds the text when `contains` is given. |
-| `issue` | `provider` (`github` or `gitlab`), `ref`, `state` (optional), `notePattern` (optional) | The issue or merge request is in that state (default `closed`; a merged one counts as closed), or one of its comments matches `notePattern`. `ref` is `owner/repo#12`, `group/project!12` for a GitLab merge request, or the item's web address. |
+| `issue` | `provider` (`github` or `gitlab`), `ref`, `state` (optional), `notePattern` (optional) | The issue or merge request is in that state (default `closed`; a merged one counts as closed), or one of its comments contains the text `notePattern` (plain text, upper or lower case does not matter). `ref` is `owner/repo#12`, `group/project!12` for a GitLab merge request, or the item's web address. |
 | `git-ancestor` | `repo`, `commit`, `ref` (optional, default `HEAD`) | The commit is part of that branch in a local copy of the repository. `repo` is a name you set up in `requests.checkers.repos`; the agent never gives a folder. |
 | `reply` | `channel`, `chatId`, `from` | The person `from` (an id from [people](./people.md)) wrote in that chat after the request was opened. |
 

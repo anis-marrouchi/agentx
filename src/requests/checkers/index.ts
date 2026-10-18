@@ -106,7 +106,7 @@ export function describeCloseWhen(spec: CloseWhen): string {
   switch (spec.kind) {
     case "url": return `${spec.url} answers${spec.contains ? ` with "${spec.contains}"` : ""}`
     case "issue": {
-      const what = [spec.state || !spec.notePattern ? `is ${spec.state ?? "closed"}` : null, spec.notePattern ? `has a note matching /${spec.notePattern}/` : null]
+      const what = [spec.state || !spec.notePattern ? `is ${spec.state ?? "closed"}` : null, spec.notePattern ? `has a note with "${spec.notePattern}"` : null]
       return `${spec.provider} ${spec.ref} ${what.filter(Boolean).join(" or ")}`
     }
     case "git-ancestor": return `commit ${spec.commit} is in ${spec.ref ?? "HEAD"} of ${spec.repo}`

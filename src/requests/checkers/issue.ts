@@ -60,9 +60,6 @@ export function parseIssueSpec(raw: Record<string, unknown>): IssueSpec | string
   if (state && !(STATES as readonly string[]).includes(state)) return `state must be one of ${STATES.join(", ")}`
   const notePattern = str(raw.notePattern)
   if (notePattern.length > PATTERN_MAX) return `notePattern is longer than ${PATTERN_MAX} characters`
-  if (notePattern) {
-    try { new RegExp(notePattern, "i") } catch { return "notePattern is not a valid regular expression" }
-  }
   return { kind: "issue", provider, ref, ...(state ? { state: state as IssueState } : {}), ...(notePattern ? { notePattern } : {}) }
 }
 
@@ -79,10 +76,12 @@ export async function checkIssue(spec: IssueSpec, ctx: Pick<CheckContext, "forge
   const want = spec.state ?? (spec.notePattern ? null : "closed")
   if (want && stateMatches(want, item.state)) return { verdict: "met", detail: `${item.url} is ${item.state}` }
   if (spec.notePattern) {
-    const re = new RegExp(spec.notePattern, "i")
-    if ((item.notes ?? []).some((n) => re.test(n.slice(0, NOTE_MAX)))) return { verdict: "met", detail: `${item.url} has a note matching /${spec.notePattern}/` }
+    // Plain text, any case: an agent's pattern never runs as a regular
+    // expression on the daemon's thread, so it cannot stall it.
+    const want = spec.notePattern.toLowerCase()
+    if ((item.notes ?? []).some((n) => n.slice(0, NOTE_MAX).toLowerCase().includes(want))) return { verdict: "met", detail: `${item.url} has a note with "${spec.notePattern}"` }
   }
-  return { verdict: "not_met", detail: `${item.url} is ${item.state}${spec.notePattern ? `, no note matches /${spec.notePattern}/` : ""}` }
+  return { verdict: "not_met", detail: `${item.url} is ${item.state}${spec.notePattern ? `, no note has "${spec.notePattern}"` : ""}` }
 }
 
 export interface ForgeConnectors {
