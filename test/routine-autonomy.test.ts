@@ -132,6 +132,13 @@ describe("runtime: enforcement per task, not per agent", () => {
     expect(mocks.execFile).toHaveBeenCalledTimes(1) // only the report task spawned
   })
 
+  it("an isolated run spawns with Claude Code's auto-memory off; others keep it", async () => {
+    await executeTask(agent({ persistentProcess: false }), cronTask({ autonomy: "report", isolated: true }), {})
+    await executeTask(agent({ persistentProcess: false }), cronTask({ autonomy: "report", taskId: "01TASKOTHER" }), {})
+    expect(mocks.execFile.mock.calls[0][2].env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBe("1")
+    expect(mocks.execFile.mock.calls[1][2].env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined()
+  })
+
   it("propose adds the hook without disallowing file tools", async () => {
     await executeTask(agent({ persistentProcess: false }), cronTask({ autonomy: "propose" }), {})
     const args: string[] = mocks.execFile.mock.calls[0][1]
