@@ -67,7 +67,7 @@ d.list(d.x0, failY + 200, {
   title: "IF IT DOES NOT WORK",
   columns: 2,
   items: [
-    ["The plugin is not listed", "Start a new Claude Code session."],
+    ["“Failed to connect”", "Install agentx, then start a new session."],
     ["“fetch failed”", "Start the node, or set its address."],
     ["“Unauthorized”", "Set the token option to the node's token."],
     ["“not in the read tool set”", "Set the tool set option to full."],
