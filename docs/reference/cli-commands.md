@@ -3271,6 +3271,49 @@ Run an arbitrary read-only SQL query (escape hatch).
 | `--cwd <cwd>` | current folder | Working directory. |
 | `--json` | — | Emit JSON. |
 
+## quality (advanced)
+
+`agentx quality`: Engineering quality from merged PRs: fix share, regressions, lead time, CI and model cost, and the weekly report on the epic issue. **Advanced.** See [Measure code quality](../guides/quality-report.md) and [Post a weekly quality report](../jobs/quality-report.md).
+
+### `agentx quality report`
+
+Per-week and per-area report of merged PRs on the base branch (reads GitHub through gh).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--since <date>` | — | First merge day, YYYY-MM-DD (default: 20 days before --until). |
+| `--until <date>` | — | Last merge day, YYYY-MM-DD (default: today, UTC). |
+| `--repo <owner/name>` | — | GitHub repository (default: the origin of this checkout). |
+| `--base <branch>` | `main` | Branch the PRs merged into. |
+| `--scope <scope>` | `agent` | Which PRs the week and area rows count: agent \| all. |
+| `--no-ci` | — | Skip CI minutes (saves one GitHub call per CI run). |
+| `--db <path>` | `.agentx/db.sqlite` | AgentX trace store to read model cost from. |
+| `--public` | — | Show cost only as % change vs --compare, never as an amount. |
+| `--save-baseline <name>` | — | Store this report locally as a baseline. |
+| `--compare <name>` | — | Show changes against a stored baseline. |
+| `--format <format>` | `text` | Output: text \| markdown (for a GitHub comment) \| json. |
+| `--json` | — | Same as --format json (schema agentx.quality-report/v1). |
+
+### `agentx quality weekly`
+
+Post (or preview) the weekly report for a week; edits that week's comment if it exists.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--week <week>` | last week | ISO week, e.g. `2026-W42`. |
+| `--dry-run` | — | Print the comment instead of posting it. |
+| `-c, --config <path>` | — | Config file. |
+
+### `agentx quality verdict`
+
+Post the keep / tune / switch-off verdict per gate on the epic, citing the latest weekly report.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `-g, --gate <id=verdict[:reason]>` | required | One per gate in `qualityReport.gates`, e.g. `review=keep:"fixes down"`. Repeat it for each gate. |
+| `--dry-run` | — | Print the comment instead of posting it. |
+| `-c, --config <path>` | — | Config file. |
+
 ## mesh (advanced)
 
 `agentx mesh`: Manage mesh peers — add, list, remove. **Advanced.**
