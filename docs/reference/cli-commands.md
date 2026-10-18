@@ -3011,6 +3011,26 @@ Re-run a recorded task against the current agent config.
 | `--diff` | — | Show original input + output vs new output side-by-side. |
 | `--no-fresh` | — | Do NOT freshSession (default is fresh — required for clean replay). |
 
+## review-gate (advanced)
+
+`agentx review-gate`: The pre-merge review gate: a different agent checks each agent pull request against its linked issue. **Advanced.** Asks the running daemon. See [Have a second agent review pull requests](../jobs/review-gate.md).
+
+### `agentx review-gate list`
+
+Recent reviews: how many passed, failed or ended in error, what they cost, and the time from a push to its status.
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--days <n>` | `7` | How many days back. |
+| `--replays` | — | Include reviews run by `replay`. |
+| `-c, --config <path>` | `agentx.json` | Daemon config file. |
+| `--node <url>` | `dashboard.daemonUrl` | Daemon URL. |
+| `--token <token>` | `dashboard.token` | Bearer token. |
+
+### `agentx review-gate replay <repo> <prs...>`
+
+Review past pull requests at their latest commit without posting anything on GitHub, and print how many the reviewer flagged. Spends model budget like a real review. Takes the same `--config`, `--node` and `--token` flags.
+
 ## retro (advanced)
 
 `agentx retro <taskId>`: Turn one run that struggled into fix choices on a decision card. **Advanced.** Refused when `approvals.forwardTo` is set: retro cards stay on the machine that raised them. See [Stop a mistake from coming back](../jobs/retro.md).

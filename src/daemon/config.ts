@@ -1229,6 +1229,37 @@ const screenSchema = z.object({
   }).default({}),
 }).default({})
 
+/** Pre-merge review gate (src/quality/review-gate.ts, #990). The reviewer
+ *  sees only the linked issue, the diff and the CI result. `mode` says
+ *  whether the status is meant to block merges: "required" only takes
+ *  effect once `agentx/review` is a required check in branch protection. */
+export const reviewGateConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  mode: z.enum(["advisory", "required"]).default("advisory"),
+  reviewer: z.object({
+    /** The agent that reviews. Must not be the agent that wrote the PR. */
+    agent: z.string().min(1).optional(),
+    /** Model for the review. Unset: the reviewer agent's own model. Pick
+     *  one that differs from the author agent's model when you can. */
+    model: z.string().min(1).optional(),
+  }).default({}),
+  /** Only PRs that change a file matching one of these globs are
+   *  reviewed (`*` within a folder, `**` across folders). Empty: all. */
+  paths: z.array(z.string().min(1)).default([]),
+  /** Review cost above this many US dollars ends as `error`. 0: no limit. */
+  maxCostPerReview: z.number().min(0).default(2),
+  /** Review time above this many minutes ends as `error`. */
+  maxMinutes: z.number().positive().max(120).default(10),
+  /** Most reviewer runs one PR gets in 24 hours. Each failure comment can
+   *  bring a fix push and each push a review; past the limit the status
+   *  is `error` and a person takes over. 0: no limit. */
+  maxReviewsPerPrPerDay: z.number().int().min(0).max(100).default(6),
+  /** How long to wait for other CI checks to finish before reviewing. */
+  ciWaitMinutes: z.number().min(0).max(60).default(5),
+  /** Diffs longer than this many kilobytes are cut, and the reviewer is
+   *  told the diff is incomplete. */
+  maxDiffKb: z.number().int().positive().max(2048).default(256),
+}).default({})
 /** Task watchers (src/watchers, #1030). At every task start (a dispatch, a
  *  delegation, a cron run) the `task-watch` decision seat says whether the
  *  task carries a deadline, a promise or a hand-off; a watcher is attached
@@ -1616,6 +1647,10 @@ export const daemonConfigSchema = z.object({
         minTasksForRate: z.number().int().min(1).default(10),
       }).default({}),
     }).default({}),
+    /** Pre-merge review gate (#990): a different agent, in a fresh
+     *  session, checks an agent's pull request against its linked issue
+     *  and posts the commit status `agentx/review` on the head commit. */
+    reviewGate: reviewGateConfigSchema,
   }).default({}),
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({
