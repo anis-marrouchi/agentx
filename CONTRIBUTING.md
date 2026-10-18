@@ -229,7 +229,7 @@ The label without a reason still fails, and so does a reason without the label.
 
 Any other value counts as `advisory`.
 
-**Which version of the check runs.** The check uses the scripts and `scripts/ui-evidence.config.json` from the base branch (usually `main`), not from your PR. A PR that edits the list of screen folders is judged by the old list; the new list applies to the PRs that come after it is merged. Each run reads the PR description and labels when it starts, so the newest run always judges the latest text.
+**Which version of the check runs.** The check uses the scripts and `scripts/ui-evidence.config.json` from the base branch (usually `main`), not from your PR. A PR that edits the list of screen folders is judged by the old list; the new list applies to the PRs that come after it is merged. Each run reads the PR description and labels when it starts, and again just before it posts its result, so a slow run that finishes after a newer one still judges the newer text. Two edits less than a second apart can, rarely, still leave the older text's result; edit the description again to re-run the check.
 
 **Pull requests from forks.** GitHub gives a fork PR a read-only token, so its run cannot post the separate **ui-evidence** check. The job, **UI evidence job**, still runs and gives the result in its log and summary. Before making the check required, pick one of these:
 
@@ -251,6 +251,7 @@ The PR shows a **ui-evidence** check. Click it: the title gives the result, and 
 - **Your picture is not found.** Drag the file into the description again, or link the file itself (ending in `.png`, `.mp4` and so on), not a page that shows it.
 - **A folder is missing from the list, or should not be on it.** Edit `paths` or `ignorePaths` in `scripts/ui-evidence.config.json` in the same PR and say why in the description.
 - **There is no ui-evidence check on a PR from a fork.** Forks cannot post the separate check. Open the **UI evidence / UI evidence job** job instead; its log and summary give the same result.
+- **The check says "Could not run the check".** GitHub's API returned an error, so the PR was not judged. In the browser, open the **UI evidence / UI evidence job** job and click **Re-run jobs**. In `required` mode this result blocks the merge until the re-run passes.
 - **Your change to the folder list has no effect on your own PR.** That is expected: the check uses the list from the base branch. It applies once the PR is merged.
 
 ### Reproduce the screenshots
