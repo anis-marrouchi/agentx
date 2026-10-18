@@ -21,6 +21,15 @@ export const CLOSED_STATES: readonly ClosedState[] = ["done", "declined", "dropp
 
 export type LinkKind = "run" | "delegation" | "card" | "workflow"
 
+/** Where the work of a request lives (#394): the issue, idea file,
+ *  approval, ERP record or Desk card the agent named. A column, not a
+ *  request_links kind: links are unique per (kind, ref), and two requests
+ *  often land on the same issue. */
+export const HOME_KINDS = ["issue", "idea", "approval", "erp", "card"] as const
+export type HomeKind = (typeof HOME_KINDS)[number]
+export interface RequestHome { kind: HomeKind; link: string }
+export const HOME_LINK_MAX = 500
+
 export interface RequestRecord {
   id: string
   state: RequestState
@@ -54,6 +63,8 @@ export interface RequestRecord {
    *  was asked in is that agent's: another agent may not be able to write
    *  there (#481). Null: never handed on. */
   askedAgent: string | null
+  /** Where the work lives, once the agent named it (#394). */
+  home: RequestHome | null
 }
 
 export const TEXT_MAX = 4000
@@ -96,7 +107,7 @@ export function ensureRequestTables(db: Database.Database): void {
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
-  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"]]) {
+  for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"], ["home_kind", "TEXT"], ["home_link", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -121,6 +132,7 @@ function toRecord(r: any): RequestRecord {
     question: r.question ?? null, closedAt: r.closed_at ?? null,
     evidence: r.evidence ?? null, closeReason: r.close_reason ?? null, ownerNote: r.owner_note ?? null, noteSaid: !!r.note_said,
     askedAgent: r.asked_agent ?? null,
+    home: r.home_kind && r.home_link ? { kind: r.home_kind, link: r.home_link } : null,
   }
 }
 
@@ -266,6 +278,20 @@ export class RequestStore {
     return this.db.prepare(
       `SELECT * FROM requests WHERE state IN (${placeholders(CLOSED_STATES.length)}) AND closed_at >= ? ORDER BY closed_at DESC, rowid DESC LIMIT ?`,
     ).all(...CLOSED_STATES, since, limit).map(toRecord)
+  }
+
+  /** Every request made since `since`, open or closed, oldest first: the
+   *  "what did I ask today" list (#394). Candidates are not requests yet. */
+  listSince(since: number, limit = 500): RequestRecord[] {
+    return this.db.prepare(
+      "SELECT * FROM requests WHERE state != 'candidate' AND created_at >= ? ORDER BY created_at, rowid LIMIT ?",
+    ).all(since, limit).map(toRecord)
+  }
+
+  /** Name where the work lives. A later home replaces an earlier one. */
+  setHome(id: string, home: RequestHome, now: number): void {
+    this.db.prepare("UPDATE requests SET home_kind = ?, home_link = ?, updated_at = ? WHERE id = ?")
+      .run(home.kind, home.link.slice(0, HOME_LINK_MAX), now, id)
   }
 
   /** The owner said "pick it up again": back in progress, and the agent

@@ -4168,6 +4168,7 @@ export class AgentXDaemon {
           plans: this.requests.plans,
           planSettings: this.config.requests.plans,
           onPlanChange: () => this.kickPlans(),
+          query: url.searchParams,
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)
         return

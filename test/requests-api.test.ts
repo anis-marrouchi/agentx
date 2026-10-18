@@ -218,3 +218,62 @@ describe("settings", () => {
     expect((await updateRequestSettings({ plans: { maxNudges: -1 } }, { configPath, reload: false })).success).toBe(false)
   })
 })
+
+describe("home and the since list (#394)", () => {
+  const getSince = (since: string) =>
+    handleRequestsApi("GET", "/requests", undefined, {
+      store, tracker, enabled, hasAgent: () => true, runningTurn: () => null, query: new URLSearchParams({ since }),
+    })
+
+  it("accept, wait and done record where the work lives", () => {
+    turn("t1")
+    expect(say("accept", { home: { kind: "issue", link: "https://gitlab.noqta.tn/noqta/noqta/-/issues/394" } }).status).toBe(200)
+    expect(store.get("req-t1")?.home).toEqual({ kind: "issue", link: "https://gitlab.noqta.tn/noqta/noqta/-/issues/394" })
+    expect(say("wait", { question: "Ship it?", home: { kind: "card", link: "followup-394" } }).status).toBe(200)
+    expect(store.get("req-t1")?.home).toEqual({ kind: "card", link: "followup-394" })
+    expect(say("done", { evidence: "https://example.com/pull/1", home: { kind: "issue", link: "https://example.com/i/1" } }).status).toBe(200)
+    expect(store.get("req-t1")).toMatchObject({ state: "done", home: { kind: "issue", link: "https://example.com/i/1" } })
+  })
+
+  it("refuses a malformed home and changes nothing", () => {
+    turn("t1")
+    expect(say("accept", { home: { kind: "chat", link: "x" } }).status).toBe(400)
+    expect(say("accept", { home: { kind: "issue" } }).status).toBe(400)
+    expect(say("accept", { home: { kind: "idea", link: "x".repeat(501) } }).status).toBe(400)
+    expect(say("decline", { reason: "no", home: { kind: "idea", link: "ideas/a.md" } }).status).toBe(400)
+    expect(store.get("req-t1")).toMatchObject({ state: "candidate", home: null })
+  })
+
+  it("two requests can share one home", () => {
+    turn("t1")
+    say("accept", { home: { kind: "issue", link: "https://example.com/i/394" } })
+    endTurn("t1")
+    running.set("run-t2", { agentId: "coder", channel: "telegram", chatId: "chat-1" })
+    turn("t2")
+    expect(api("POST", "/requests", { action: "accept", agentId: "coder", home: { kind: "issue", link: "https://example.com/i/394" } }, { taskId: "run-t2" }).status).toBe(200)
+    expect(store.get("req-t1")?.home?.link).toBe("https://example.com/i/394")
+    expect(store.get("req-t2")?.home?.link).toBe("https://example.com/i/394")
+  })
+
+  it("GET /requests?since lists open and closed requests made since then, with links", () => {
+    turn("t1")
+    say("accept")
+    say("done", { evidence: "https://example.com/pull/1" })
+    endTurn("t1")
+    const body = getSince("0").body as any
+    expect(body.items.map((r: any) => [r.id, r.state])).toEqual([["req-t1", "done"]])
+    expect(body.items[0].links).toEqual([{ kind: "run", ref: "t1", at: 5_000 }])
+    expect((getSince("6000").body as any).items).toEqual([])
+    expect(getSince("soon").status).toBe(400)
+  })
+
+  it("the tool passes home through", async () => {
+    let sent: any
+    const fakeFetch = (async (_u: string, init: any) => {
+      sent = JSON.parse(init.body)
+      return new Response(JSON.stringify({ request: { id: "req-x" } }), { status: 200 })
+    }) as typeof fetch
+    await runRequestTool({ action: "accept", home: { kind: "idea", link: "ideas/a.md" } }, { daemonUrl: "http://d", fetch: fakeFetch, env: { AGENTX_AGENT_ID: "coder" } })
+    expect(sent.home).toEqual({ kind: "idea", link: "ideas/a.md" })
+  })
+})
