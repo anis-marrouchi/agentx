@@ -96,7 +96,7 @@ When an agent takes a request on, waits on you, or closes it as done, it can say
 
 The agent passes it with `agentx_request`, e.g. `{action:"accept", home:{kind:"issue", link:"https://…/issues/394"}}`. A later home replaces an earlier one. Two requests can share a home.
 
-To list every request made since a time, open or closed, with its home and links, read `GET /requests?since=<epoch ms>` on the daemon (loopback, or a mesh token). A follow-up script can use it for a "what did I ask today and where did it land" list.
+To list every request made since a time, open or closed, with its home and links, read `GET /requests?since=<epoch ms>` on the daemon (loopback, or a mesh token). A follow-up script can use it for a "what did I ask today and where did it land" list. The list holds at most 100 requests, oldest first. On a busy day it keeps the newest 100 and says `truncated: true`: the oldest ones are left out.
 
 ## Requests of several steps
 
