@@ -1,5 +1,6 @@
 import {
-  areaOf, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, percentile, regressionOf, weekOf,
+  addsTest, areaOf, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, mentionsReview, percentile, regressionOf,
+  touchesUi, weekOf,
   type PrRecord,
 } from "./classify"
 
@@ -48,6 +49,12 @@ export interface ReportRow {
   /** Regression fixes per 100 merged PRs; null when there are no PRs. */
   regressionFixes24hPer100: number | null
   regressionFixes72hPer100: number | null
+  /** Fixes whose title or description mentions a review. */
+  fixesMentioningReview: number
+  /** Fixes that add a test file. */
+  fixesAddingTests: number
+  /** Fixes that change dashboard or app files. */
+  fixesTouchingUi: number
   leadTime: { issue: LeadStats; pr: LeadStats }
   /** Null when CI data was not read (`--no-ci` or no access). */
   ciMinutes: number | null
@@ -136,10 +143,16 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
 
   const row = (list: PrRecord[]): ReportRow => {
     let fixes = 0, r24 = 0, r72 = 0, ci = 0, costTotal = 0, attributed = 0, external = 0, followUp = 0, followUpTotal = 0
+    let review = 0, tests = 0, ui = 0
     const issueLead: number[] = []
     const prLead: number[] = []
     for (const pr of list) {
-      if (isFix(pr.title)) fixes++
+      if (isFix(pr.title)) {
+        fixes++
+        if (mentionsReview(pr)) review++
+        if (addsTest(pr)) tests++
+        if (touchesUi(pr.files)) ui++
+      }
       const reg = regressionOf(pr, mergedAt)
       if (reg.within24h) r24++
       if (reg.within72h) r72++
@@ -167,6 +180,9 @@ export function buildReport(prs: PrRecord[], opts: BuildOptions, extras: PrExtra
       regressionFixes72h: r72,
       regressionFixes24hPer100: list.length ? round((r24 / list.length) * 100, 1) : null,
       regressionFixes72hPer100: list.length ? round((r72 / list.length) * 100, 1) : null,
+      fixesMentioningReview: review,
+      fixesAddingTests: tests,
+      fixesTouchingUi: ui,
       leadTime: { issue: lead(issueLead), pr: lead(prLead) },
       ciMinutes: ciRead ? round(ci, 1) : null,
       cost: {
@@ -214,8 +230,9 @@ function nullable(v: number | null, d: number): number | null {
   return v === null ? null : round(v, d)
 }
 
-const diff = (a: number | null, b: number | null, d = 1) =>
-  a === null || b === null ? null : round(a - b, d)
+// Undefined too: a baseline saved before a field existed lacks it.
+const diff = (a: number | null | undefined, b: number | null | undefined, d = 1) =>
+  a == null || b == null ? null : round(a - b, d)
 
 const pctChange = (now: number | null | undefined, then: number | null | undefined) =>
   now == null || then == null || then === 0 ? null : round(((now - then) / then) * 100, 1)
@@ -303,7 +320,7 @@ function costCell(r: ReportRow, isPublic: boolean): string {
 
 const regCell = (n: number, per100: number | null) => `${n} (${per100 === null ? "—" : per100})`
 
-const HEAD = ["PRs", "Fixes", "Fix share", "Reg ≤24h (/100)", "Reg ≤72h (/100)", "Lead issue p50/p90", "Lead PR p50/p90", "CI min", "Cost/PR"]
+const HEAD = ["PRs", "Fixes", "Fix share", "Reg ≤24h (/100)", "Reg ≤72h (/100)", "Fix review/new test/UI", "Lead issue p50/p90", "Lead PR p50/p90", "CI min", "Cost/PR"]
 
 function cells(r: ReportRow, isPublic: boolean): string[] {
   return [
@@ -312,6 +329,7 @@ function cells(r: ReportRow, isPublic: boolean): string[] {
     pct(r.fixShare),
     regCell(r.regressionFixes24h, r.regressionFixes24hPer100),
     regCell(r.regressionFixes72h, r.regressionFixes72hPer100),
+    `${r.fixesMentioningReview}/${r.fixesAddingTests}/${r.fixesTouchingUi}`,
     `${hrs(r.leadTime.issue.medianHours)} / ${hrs(r.leadTime.issue.p90Hours)}`,
     `${hrs(r.leadTime.pr.medianHours)} / ${hrs(r.leadTime.pr.p90Hours)}`,
     r.ciMinutes === null ? "—" : String(Math.round(r.ciMinutes)),

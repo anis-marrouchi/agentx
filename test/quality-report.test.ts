@@ -4,7 +4,8 @@ import { tmpdir } from "os"
 import { join } from "path"
 import Database from "better-sqlite3"
 import {
-  areaOf, citedNumbers, isAgentPr, isExternalPr, isFix, isReleasePr, leadTimeOf, percentile, regressionOf, weekOf,
+  addsTest, areaOf, citedNumbers, isAgentPr, isExternalPr, isFix, isReleasePr, isTestFile, leadTimeOf, mentionsReview,
+  percentile, regressionOf, touchesUi, weekOf,
   type PrRecord,
 } from "../src/quality/classify"
 import { buildReport, compareReports, renderMarkdown, renderReport, toPublic, QUALITY_REPORT_SCHEMA } from "../src/quality/report"
@@ -146,6 +147,38 @@ const fixture: PrRecord[] = [
   pr({ number: 6, title: "docs: z", headRefName: "someone/docs", mergedAt: "2026-01-08T10:00:00Z", files: ["docs/a.md"] }),
 ]
 
+describe("fix details", () => {
+  it("review mentions, added tests and UI files", () => {
+    expect(mentionsReview(pr({ number: 1, title: "fix: address review on #12" }))).toBe(true)
+    expect(mentionsReview(pr({ number: 2, body: "Reviewer asked for this." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, title: "fix: preview pane" }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Answers the DevOps review on #9." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "Fixes the review comments." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "I reviewed the logs and found the race." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Needs a review before release." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, title: "fix(cron): stale run guard (#938 review)" }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "Follows up the review of #933." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "Its review left one item open." }))).toBe(true)
+    expect(mentionsReview(pr({ number: 3, body: "Merge after review." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Waiting on final approval after review." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Opened for review only." }))).toBe(false)
+    expect(mentionsReview(pr({ number: 3, body: "Reviewing the logs showed the race." }))).toBe(false)
+    expect(isTestFile("test/a.test.ts")).toBe(true)
+    expect(isTestFile("src/x/a.test.mjs")).toBe(true)
+    expect(isTestFile("src/x/__fixtures__/a.json")).toBe(true)
+    expect(isTestFile("src/testing.ts") || isTestFile("docs/test.md")).toBe(false)
+    expect(addsTest(pr({ number: 4, files: ["test/a.test.ts"] }))).toBe(false) // edited, not added
+    expect(addsTest(pr({ number: 5, files: ["test/b.test.ts"], addedFiles: ["test/b.test.ts"] }))).toBe(true)
+    expect(addsTest(pr({ number: 6, addedFiles: ["src/a.ts"] }))).toBe(false)
+    expect(touchesUi(["src/daemon/ui/assistant.ts"])).toBe(true)
+    expect(touchesUi(["src/web/activity-graph/a.ts"])).toBe(true)
+    expect(touchesUi(["src/boards/config.ts"])).toBe(true)
+    expect(touchesUi(["src/daemon/board-dashboard.ts"])).toBe(true)
+    expect(touchesUi(["apps/phone/App.tsx"])).toBe(true)
+    expect(touchesUi(["src/daemon/index.ts"])).toBe(false)
+  })
+})
+
 describe("buildReport", () => {
   const report = buildReport(fixture, { repo: "o/r", since: "2026-01-05", until: "2026-01-11", generatedAt: "2026-01-12T00:00:00Z" },
     { ciMinutes: new Map([[3, 4], [4, 6], [5, 2], [6, 1]]), cost: new Map([[3, 1.5], [5, 0.5]]) })
@@ -172,6 +205,17 @@ describe("buildReport", () => {
     expect(report.totals.all.regressionFixes72hPer100).toBe(25) // 1 of 4
     const empty = buildReport([], { repo: "o/r", since: "2026-01-05", until: "2026-01-11" })
     expect(empty.totals.all.regressionFixes24hPer100).toBeNull()
+  })
+
+  it("counts what fixes touched", () => {
+    expect(report.totals.agent).toMatchObject({ fixesMentioningReview: 0, fixesAddingTests: 0, fixesTouchingUi: 0 })
+    const touched = buildReport([
+      pr({ number: 7, title: "fix(ui): review follow-up", files: ["src/daemon/ui/a.ts", "test/a.test.ts"], addedFiles: ["test/a.test.ts"] }),
+      pr({ number: 8, title: "fix: z", files: ["test/b.test.ts"] }),
+      pr({ number: 9, title: "feat: review queue", files: ["src/web/a.ts", "test/c.test.ts"], addedFiles: ["test/c.test.ts"] }),
+    ], { repo: "o/r", since: "2026-01-05", until: "2026-01-11" })
+    expect(touched.totals.agent).toMatchObject({ fixesMentioningReview: 1, fixesAddingTests: 1, fixesTouchingUi: 1 })
+    expect(renderReport(touched)).toContain("1/1/1")
   })
 
   it("a cloud-session PR stays external when a local task pushed it; that cost is follow-up", () => {
@@ -248,6 +292,18 @@ describe("baselines and --public", () => {
     expect(c.totals.agent.cost.changePct).toBe(-50)
   })
 
+  it("a baseline saved before the per-100 fields compares without NaN", () => {
+    const old = structuredClone(then)
+    for (const r of [old.totals.agent, old.totals.all, ...old.areas] as any[]) {
+      delete r.regressionFixes24hPer100
+      delete r.regressionFixes72hPer100
+    }
+    const c = compareReports(now, old, "before")
+    expect(c.comparison?.totals.agent.regressionFixes24hPer100).toBeNull()
+    expect(renderReport(c)).not.toContain("NaN")
+    expect(renderMarkdown(c)).not.toContain("NaN")
+  })
+
   it("--public removes every absolute amount", () => {
     const pub = toPublic(compareReports(now, then, "before"))
     expect(pub.public).toBe(true)
@@ -315,7 +371,7 @@ describe("GitHub readers (fake gh, no network)", () => {
     const calls: string[] = []
     const node = (n: number) => ({
       number: n, title: `fix: ${n}`, body: null, createdAt: "2026-01-05T00:00:00Z", mergedAt: `2026-01-0${n}T00:00:00Z`,
-      headRefName: "claude/x", labels: { nodes: [{ name: "agent:coder" }] }, files: { nodes: [{ path: "src/a/b.ts" }] },
+      headRefName: "claude/x", labels: { nodes: [{ name: "agent:coder" }] }, files: { nodes: [{ path: "src/a/b.ts", changeType: "MODIFIED" }, { path: "test/n.test.ts", changeType: "ADDED" }] },
       closingIssuesReferences: { nodes: [{ number: 40, createdAt: "2026-01-01T00:00:00Z" }] },
       commits: { nodes: [{ commit: { oid: `sha${n}` } }] },
     })
@@ -332,7 +388,7 @@ describe("GitHub readers (fake gh, no network)", () => {
     expect(calls).toHaveLength(4) // two chunks × two pages
     expect(calls[0]).toContain("repo:o/r is:pr is:merged base:main merged:2026-01-01..2026-01-07")
     expect(prs.map((p) => p.number)).toEqual([1, 2])
-    expect(prs[0]).toMatchObject({ body: "", labels: ["agent:coder"], files: ["src/a/b.ts"], commits: ["sha1"],
+    expect(prs[0]).toMatchObject({ body: "", labels: ["agent:coder"], files: ["src/a/b.ts", "test/n.test.ts"], addedFiles: ["test/n.test.ts"], commits: ["sha1"],
       closingIssues: [{ number: 40, createdAt: "2026-01-01T00:00:00Z" }] })
   })
 
