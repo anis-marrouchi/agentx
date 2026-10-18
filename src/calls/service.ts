@@ -35,6 +35,9 @@ import { LIVE, type Call, type CallKind, type CallStore, type CallUrgency, type 
 export const REASON_MAX = 200
 /** The widget polls every 2 s; missing this long means it is not running. */
 export const WIDGET_FRESH_MS = 10_000
+/** An answered call older than this holds nothing: one never marked ended
+ *  must not hold the owner's notices forever. */
+export const CALL_HOLD_MAX_MS = 2 * 3_600_000
 export const LATER_DEFAULT_MINUTES = 10
 export const LATER_MAX_MINUTES = 240
 
@@ -280,6 +283,16 @@ export class CallService {
 
   private missedTitle(call: Call): string {
     return call.kind === "camera" ? `${this.name(call.agentId)} asked to see through your camera` : `Missed call from ${this.name(call.agentId)}`
+  }
+
+  /** Why the owner is in a call now, or null (#394, the call check): a
+   *  voice call answered in the last two hours and not ended, or a live
+   *  widget that says it is busy (a call, the microphone, a turn). */
+  inCall(): string | null {
+    if (this.widgetAlive() && this.widget.busy) return "the widget is busy"
+    const since = this.now() - CALL_HOLD_MAX_MS
+    const live = this.deps.store.list({ status: ["answered"], limit: 5 }).find((c) => (c.answeredAt ?? 0) >= since)
+    return live ? `on a call with ${this.name(live.agentId)}` : null
   }
 
   /** True when the widget polled recently. */

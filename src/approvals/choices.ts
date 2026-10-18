@@ -9,8 +9,9 @@
 // All optional: a card without them is the plain yes/no card it always was.
 
 export const CHOICE_LIMITS = {
-  /** Most options a card may offer. More is a form, not a choice. */
-  count: 5,
+  /** Most options a card may offer. More is a form, not a choice; the
+   *  screen gate (#394) allows 3. */
+  count: 3,
   label: 120,
   draft: 2000,
   say: 160,

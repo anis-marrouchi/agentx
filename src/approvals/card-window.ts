@@ -23,7 +23,9 @@ import { DISMISS_REASONS, type PopupAnswer, type Run } from "./popup"
 // the card's header (CARD_GRIP) is handed to the window as a drag before
 // the page sees it. A resize keeps the card where it was dragged to. It stays up when another app is clicked
 // (a panel hides then, unless told not to), and it takes a click made while
-// another app is in front, so Send never needs a second click.
+// another app is in front, so Send never needs a second click. It never
+// takes focus (#394): a non-activating panel, put in front without
+// activating anything, so what the owner is typing stays where it is.
 //
 // The script prints the page's answer, or why there was none. Nothing here
 // decides: popup-runner.ts records the answer, and only after parseAnswer
@@ -42,7 +44,7 @@ function run(argv) {
   } })
   var vis = $.NSScreen.mainScreen.visibleFrame
   var top = vis.origin.y + vis.size.height - 4, right = vis.origin.x + vis.size.width - 14 + side
-  var mask = $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskFullSizeContentView
+  var mask = $.NSWindowStyleMaskTitled | $.NSWindowStyleMaskClosable | $.NSWindowStyleMaskFullSizeContentView | $.NSWindowStyleMaskNonactivatingPanel
   var win = $.NSPanel.alloc.initWithContentRectStyleMaskBackingDefer($.NSMakeRect(right - w, top - h, w, h), mask, $.NSBackingStoreBuffered, false)
   win.titlebarAppearsTransparent = true
   win.titleVisibility = $.NSWindowTitleHidden
@@ -63,8 +65,10 @@ function run(argv) {
   win.contentView = web
   var url = $.NSURL.fileURLWithPath(path)
   web.loadFileURLAllowingReadAccessToURL(url, url.URLByDeletingLastPathComponent)
-  win.makeKeyAndOrderFront(null)
-  app.activateIgnoringOtherApps(true)
+  // No focus taken (#394): shown over the app in use, which keeps the keyboard.
+  // A click on the card still lands (acceptsFirstMouse); a click in its text
+  // box makes the panel key without bringing anything else forward.
+  win.orderFrontRegardless
   var end = Date.now() + secs * 1000, sized = 0, shot = false, seen = "", asked = false, answer = null
   // Every kind of event, as a number. JXA hands the AppKit constant for it over as text, and a
   // loop asking with that gets no event at all: no click, no drag, no key.

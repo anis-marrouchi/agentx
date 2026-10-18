@@ -453,3 +453,22 @@ describe("routes", () => {
     expect((await post("/calls/x/later", { minutes: 5 })).status).toBe(404)
   })
 })
+
+describe("inCall: the call check for notices and the popup (#394)", () => {
+  it("is on while a call is answered, and not for one answered over two hours ago", async () => {
+    expect(calls.inCall()).toBeNull()
+    await widgetUp()
+    const r = await place({ agentId: "writer", reason: "The deploy needs you" })
+    calls.answer(r.call!.id)
+    expect(calls.inCall()).toBe("on a call with Writer")
+    now += 2 * 3_600_000 + WIDGET_FRESH_MS + 1
+    expect(calls.inCall()).toBeNull()
+  })
+
+  it("is on while the live widget says it is busy", async () => {
+    await calls.ringing({ busy: true })
+    expect(calls.inCall()).toBe("the widget is busy")
+    now += WIDGET_FRESH_MS + 1 // a widget that stopped polling says nothing
+    expect(calls.inCall()).toBeNull()
+  })
+})

@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFile
 import { resolve } from "path"
 import { answerLines, buildChoices, draftFor, resolveAnswer, type CardChoices } from "./choices"
 import { isRetroOrigin, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
+import { cardRuleBreak, FOLLOWUP_KINDS, followupBudgetRefusal, type FollowupKind } from "./screen-gate"
 
 // --- Decision cards: what an agent asks the operator ---
 //
@@ -78,6 +79,8 @@ export interface DecisionCard extends CardChoices {
   resolution?: string
   /** What the card is about, when the daemon raised it (origin.ts). */
   origin?: CardOrigin
+  /** A follow-up card (#394): counted in the daily screen budget. */
+  followup?: FollowupKind
 }
 
 export const CARD_LIMITS = {
@@ -198,6 +201,7 @@ export interface CardInput {
   draft?: unknown
   say?: unknown
   context?: unknown
+  followup?: unknown
 }
 
 /** Validate what an agent sent and build a pending card. Never saves. */
@@ -241,6 +245,10 @@ export function buildCard(
   }
   const extras = buildChoices(input)
   if (!extras.ok) return extras
+  const followup = oneLine(input.followup).toLowerCase()
+  if (followup && !(FOLLOWUP_KINDS as readonly string[]).includes(followup)) {
+    return { ok: false, error: `followup must be one of ${FOLLOWUP_KINDS.join(", ")}` }
+  }
   let reply: ReplyTarget | undefined
   const r = input.reply as Record<string, unknown> | undefined
   if (r && typeof r === "object" && oneLine(r.channel) && oneLine(r.chatId)) {
@@ -264,6 +272,7 @@ export function buildCard(
       ...extras.value,
       // Set by the daemon only (check-ins), never from what an agent sent.
       ...(opts.origin ? { origin: opts.origin } : {}),
+      ...(followup ? { followup: followup as FollowupKind } : {}),
       status: "pending",
     },
   }
@@ -277,6 +286,13 @@ export function createCard(
 ): { ok: true; card: DecisionCard } | { ok: false; error: string } {
   const built = buildCard(input, opts)
   if (!built.ok) return built
+  // The screen gate (#394): refused here, the reason goes back to the author.
+  const broken = cardRuleBreak(built.card)
+  if (broken) return { ok: false, error: broken }
+  if (built.card.followup) {
+    const full = followupBudgetRefusal(listCards(root), built.card.followup, opts.now ?? Date.now())
+    if (full) return { ok: false, error: full }
+  }
   // Retro cards are raised for an agent, not by it: they get their own
   // count, so they never use up the agent's room for its own cards.
   const isRetro = (c: { origin?: CardOrigin }) => isRetroOrigin(c.origin)

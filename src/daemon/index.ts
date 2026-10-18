@@ -57,7 +57,7 @@ import type { AppPushDeps, AppPushResult } from "./app-push"
 import { pushBridgeCaller } from "./push-bridge"
 import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
-import { localAlert, localSettings, notify, type Sender } from "@/notify"
+import { localAlert, localSettings, notify, writeCallHold, type Sender } from "@/notify"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
@@ -775,6 +775,15 @@ export class AgentXDaemon {
       // a restart.
       { alert: (title, message) => localAlert(localSettings(this.config.notifications.local))(title, message) },
     )
+    // The call check (#394): while the owner is in a call, notify and the
+    // popup hold like Focus. Written to a file so `agentx notify` in an
+    // agent's process reads it too; renewed while the call lasts.
+    if (process.platform === "darwin") {
+      const callTimer = setInterval(() => {
+        try { writeCallHold(this.calls?.inCall() ?? null, 60_000) } catch (e: any) { this.log(`[notify] call hold not written: ${e?.message ?? e}`) }
+      }, 15_000)
+      callTimer.unref?.()
+    }
 
     // The opt-in in-memory screen buffer (screen.buffer), for agents that
     // arrive after the moment they needed to see.
@@ -2159,6 +2168,10 @@ export class AgentXDaemon {
         if (!this.voiceTalk.floor.view().held) void popNext({
           ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log,
           agentName: (id) => this.registry.getAgent(id)?.name,
+          // The screen gate (#394): a card not shown goes back to its author.
+          returnToAuthor: (card, text) => card.node
+            ? this.log(`[approvals] ${card.id}: not shown; its author ${card.raised_by} is on ${card.node}, not told`)
+            : this.tellAgentCardResult(card, text),
           // Through the speaking queue, never straight to `say`: the line
           // waits while the owner is dictating (#493).
           speak: (text) => this.voiceTalk.speech.say({

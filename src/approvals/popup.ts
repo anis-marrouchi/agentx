@@ -15,6 +15,9 @@ import type { DecisionCard } from "./cards"
 //   card with a draft   the message in an editable box: Send, No or Not now
 //   plain card          the question: Yes, No or Not now
 //
+// The dialogs never call `activate` (#394): they open without taking the
+// keyboard from the app in use.
+//
 // The dialogs are plain osascript, like `agentx notify`'s fallback banner. Every
 // piece of card text travels as argv, never spliced into the script, so a
 // quote in a title cannot turn into AppleScript.
@@ -97,7 +100,6 @@ function osa(lines: string[], args: string[]): string[] {
 export function chooseArgs(title: string, prompt: string, choices: string[]): string[] {
   return osa([
     "on run argv",
-    "activate",
     "set opts to items 3 thru -1 of argv",
     "set pick to choose from list opts with title (item 1 of argv) with prompt (item 2 of argv) OK button name \"Next\" cancel button name \"Not now\"",
     "if pick is false then return \"\"",
@@ -114,7 +116,6 @@ export function chooseArgs(title: string, prompt: string, choices: string[]): st
 export function dialogArgs(title: string, prompt: string, buttons: string[], seconds: number, text?: string): string[] {
   return osa([
     "on run argv",
-    "activate",
     "set AppleScript's text item delimiters to linefeed",
     "set btns to text items of (item 3 of argv)",
     "set secs to (item 5 of argv) as integer",
