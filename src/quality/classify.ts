@@ -59,18 +59,13 @@ export function citedNumbers(pr: Pick<PrRecord, "number" | "title" | "body">): n
   return [...out]
 }
 
-// Phrases that say the change answers review feedback. A bare `reviewed` or
-// `review` in passing ("reviewed the logs") is not enough.
-const REVIEW_FEEDBACK = [
-  /\b(?:address(?:es|ed|ing)?|answer(?:s|ed|ing)?|per|after|from|following)\s+(?:\S+\s+){0,2}?reviews?\b/i,
-  /\breviews?\s+(?:feedback|comments?|findings?|notes?|requests?|items?|threads?|fix(?:es)?|follow-?ups?|on\s+#\d+)\b/i,
-  /\breviewers?\s+(?:asked|requested|flagged|found|noted|spotted|caught|suggested|wanted|pointed)\b/i,
-]
+// The noun `review`/`reviews`/`reviewer(s)`, but not `reviewed`/`reviewing`, and
+// not process wording: "after review" (merge rules), "review only/before/needed".
+const REVIEW_FEEDBACK = /(?<!\bafter\s)\breview(?:s|ers?)?\b(?!\s+(?:only|before|needed))/i
 
-/** A fix whose title or description says it answers review feedback ("address review", "reviewer asked"…). */
+/** A fix whose title or description mentions a review ("the review of #12", "reviewer asked"…). */
 export function mentionsReview(pr: Pick<PrRecord, "title" | "body">): boolean {
-  const text = `${pr.title}\n${pr.body || ""}`
-  return REVIEW_FEEDBACK.some(re => re.test(text))
+  return REVIEW_FEEDBACK.test(`${pr.title}\n${pr.body || ""}`)
 }
 
 /** A test file: anything under `test/`, a `*.test.*` file, or a `__fixtures__/` folder. */
