@@ -7,6 +7,8 @@ The **AgentX plugin** is a pack you add to Claude Code with one command. It give
 
 The plugin adds about 220 tokens (the units a model reads text in) to each session, for the two skill descriptions. A skill's full text loads only when it is used.
 
+![How the AgentX plugin reaches Claude Code: you run one install command, choose the read or full tool set and start a new session; Claude Code then loads the two skills and the agentx tool server, a skill picks the tool, and your AgentX node answers](/diagrams/plugin-install.svg)
+
 For Cursor, VS Code or Windsurf, follow [Use AgentX from your code editor](./connect-an-editor.md) instead. Those editors take the same tool server but no plugin.
 
 ## Before you start
