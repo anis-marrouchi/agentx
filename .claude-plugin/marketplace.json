@@ -1,0 +1,19 @@
+{
+  "name": "agentx",
+  "owner": {
+    "name": "AgentX",
+    "url": "https://github.com/anis-marrouchi/agentx"
+  },
+  "metadata": {
+    "description": "The AgentX skill pack for Claude Code: skills and the agentx tool server in one install."
+  },
+  "plugins": [
+    {
+      "name": "agentx",
+      "source": "./plugins/agentx",
+      "description": "Skills and the agentx tool server (read-only by default) for working with a self-hosted AgentX node from Claude Code.",
+      "category": "productivity",
+      "keywords": ["agentx", "agents", "mcp", "self-hosted", "harness"]
+    }
+  ]
+}

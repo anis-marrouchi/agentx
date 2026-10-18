@@ -40,6 +40,7 @@
     "baseline": [],
     "publicDir": "docs/public",
     "endingHeadings": ["Check it worked", "If something is wrong"],
+    "localEndingHeadings": { "docs/ar/": ["تحقّق من أنه يعمل", "إذا حدث خطأ"] },
     "stepVerbs": ["Run", "Open", "Click", "Type", "Press", "Select", "Choose", "Go to", "Enter", "Paste", "Copy", "Install", "Start", "Restart", "Stop", "Save", "Set", "Add", "Edit", "Create"],
     "minUnnumberedSteps": 2,
     "forbidden": [

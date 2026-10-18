@@ -147,7 +147,7 @@ The gate runs three checks:
 
 1. **Code changes come with docs.** If the PR changes something users see (CLI commands, the config schema, `agentx.example.json`, dashboard pages, `skills/`, `apps/`, or a new `process.env.` variable) and adds or edits no page under `docs/`, the check fails. Tests, CI files and internal code do not count. PRs titled `refactor:`, `test:` or `ci:` pass.
 2. **Removed things leave the docs.** The gate reads every CLI command, flag and setting before and after the PR. If the PR removes or renames one that a page still mentions, the check fails and names the page and line. This applies even when docs are skipped.
-3. **Changed pages follow the docs rule.** Every page the PR adds or edits must end with **Check it worked** then **If something is wrong**, use numbered lists for steps, point only at images that exist, and contain no tokens, personal home paths or real company hosts.
+3. **Changed pages follow the docs rule.** Every page the PR adds or edits must end with **Check it worked** then **If something is wrong** (a translated page, such as one under `docs/ar/`, uses the same two headings in its language; `localEndingHeadings` in the config lists them), use numbered lists for steps, point only at images that exist, and contain no tokens, personal home paths or real company hosts.
 
 A fourth step lists every command, flag and setting that no page mentions. It only warns for now; it will block once the docs catch up.
 
@@ -181,6 +181,10 @@ The **Docs gate** check on your PR is green. Its log ends with `Checked N page(s
 - **It says users see a change but you only refactored.** Title the PR `refactor: …`, or use the label and reason above.
 - **It names a page that mentions a removed setting.** Edit that line of the page; the log gives the file and line.
 - **It flags a word that is fine.** Adjust the pattern in `scripts/docs-gate.config.json` in the same PR and say why in the description.
+
+### Claude Code skill pack
+
+`plugins/agentx` ships copies of some skills from `skills/`. After you edit one of them, run `node scripts/sync-plugin-skills.mjs` and commit the copies; `test/claude-plugin.test.ts` fails while they differ. Users install the pack as described in [Install the AgentX skill pack in Claude Code](docs/jobs/install-skill-pack.md).
 
 ### Reproduce the screenshots
 

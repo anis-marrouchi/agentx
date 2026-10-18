@@ -30,6 +30,8 @@ The tool server finds your node and its token by itself:
 
 ## Add it to Claude Code
 
+To get the tool server and the AgentX skills in one install, use [the AgentX skill pack](/jobs/install-skill-pack) instead. To add only the tool server:
+
 1. **Terminal:** run this command, with your own install folder:
 
    ```bash

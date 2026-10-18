@@ -252,20 +252,23 @@ export function checkPage(path, text, rules, exists) {
   const err = (line, message, kind = "structure") => errors.push({ file: path, line, message, kind })
   const prose = proseLines(text)
 
-  // Ends with "Check it worked" then "If something is wrong".
+  // Ends with "Check it worked" then "If something is wrong", or the same
+  // two sections in the page's language (rules.localEndingHeadings, by folder).
   const headings = prose.flatMap((l) => {
     const m = l.text.match(/^(#{1,6})\s+(.*?)\s*#*\s*$/)
     return m ? [{ n: l.n, level: m[1].length, text: norm(m[2]) }] : []
   })
-  const want = rules.endingHeadings.map(norm)
+  const local = Object.entries(rules.localEndingHeadings ?? {}).find(([dir]) => path.startsWith(dir))
+  const ending = local ? local[1] : rules.endingHeadings
+  const want = ending.map(norm)
   const idx = want.map((w) => headings.findIndex((h) => h.text === w))
-  want.forEach((w, i) => idx[i] < 0 && err(0, `Missing the "${rules.endingHeadings[i]}" section; every page ends with ${rules.endingHeadings.map((h) => `"${h}"`).join(" then ")}.`))
+  want.forEach((w, i) => idx[i] < 0 && err(0, `Missing the "${ending[i]}" section; every page ends with ${ending.map((h) => `"${h}"`).join(" then ")}.`))
   if (idx.every((i) => i >= 0)) {
     const inOrder = idx.every((v, i) => i === 0 || v > idx[i - 1])
     const last = headings[idx[idx.length - 1]]
     const after = headings.slice(idx[idx.length - 1] + 1).find((h) => h.level <= last.level)
-    if (!inOrder) err(last.n, `Sections must come in this order: ${rules.endingHeadings.join(", then ")}.`)
-    else if (after) err(after.n, `"${rules.endingHeadings.at(-1)}" must be the last section; move this section above it.`)
+    if (!inOrder) err(last.n, `Sections must come in this order: ${ending.join(", then ")}.`)
+    else if (after) err(after.n, `"${ending.at(-1)}" must be the last section; move this section above it.`)
   }
 
   // Procedures are numbered: flag bullet lists whose items read as steps.

@@ -1,0 +1,42 @@
+{
+  "name": "agentx",
+  "description": "Skills and the agentx tool server (read-only by default) for working with a self-hosted AgentX node from Claude Code.",
+  "author": {
+    "name": "AgentX",
+    "url": "https://github.com/anis-marrouchi/agentx"
+  },
+  "homepage": "https://agentx-docs.pages.dev/jobs/install-skill-pack",
+  "repository": "https://github.com/anis-marrouchi/agentx",
+  "license": "MIT",
+  "keywords": [
+    "agentx",
+    "agents",
+    "mcp",
+    "self-hosted",
+    "harness"
+  ],
+  "userConfig": {
+    "tools": {
+      "type": "string",
+      "title": "AgentX tool set",
+      "description": "Which agentx tools Claude Code gets: read (look only, the default) or full (also send messages, start tasks and change schedules).",
+      "default": "read",
+      "required": false
+    },
+    "daemon_url": {
+      "type": "string",
+      "title": "AgentX node address",
+      "description": "The address of your AgentX node. Leave empty for a node on this machine (http://localhost:18800).",
+      "default": "",
+      "required": false
+    },
+    "token": {
+      "type": "string",
+      "title": "AgentX token",
+      "description": "Needed only for a node on another machine: that node's MESH_TOKEN.",
+      "sensitive": true,
+      "required": false,
+      "default": ""
+    }
+  }
+}

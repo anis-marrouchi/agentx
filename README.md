@@ -4,7 +4,9 @@
 
 # AgentX
 
-**Put an AI teammate on the tools your team already uses.**
+**English** · [العربية](docs/ar/README.md)
+
+**The self-hosted agent harness for small teams.**
 
 <a href="https://www.producthunt.com/products/agentx-4?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-agentx-5" target="_blank" rel="noopener noreferrer"><img alt="AgentX - AI teammates in the tools your team already uses | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1258056&amp;theme=light&amp;t=1790073592268" /></a>
 
@@ -13,11 +15,11 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Node](https://img.shields.io/badge/node-22.19%E2%80%9326-brightgreen)](package.json)
 
-[Watch it](#watch-it) · [See the demo](#see-it-without-an-account) · [Install](#install) · [Read the guide](docs/index.md)
+[Watch it](#watch-it) · [See the demo](#see-it-without-an-account) · [Install](#install) · [Skill pack](#add-agentx-to-claude-code) · [Read the guide](docs/index.md)
 
 </div>
 
-AgentX routes messages and scheduled jobs to AI agents you host. Connect Telegram, WhatsApp, GitLab, GitHub, or a webhook. Give each agent a clear job. Watch the result in a browser dashboard.
+AgentX is the self-hosted harness that runs a team of AI agents across the chat channels your team already uses. A **harness** is the program around the AI models: it gives each agent its job, its tools and its schedule, passes it the messages meant for it, and records what it did. Connect Telegram, WhatsApp, GitLab, GitHub, or a webhook. Give each agent a clear job. Watch the result in a browser dashboard.
 
 ## Watch it
 
@@ -131,7 +133,18 @@ Real agents need a configured model. An API provider needs a key; Claude Code, C
 - **Channels:** Telegram, WhatsApp, GitLab, GitHub, and generic webhooks. [Channel reference](docs/reference/channels.md).
 - **Models:** API providers, plus the Claude Code, Codex CLI, and OpenCode CLIs.
 - **Other programs:** the local daemon accepts tasks over HTTP, and `agentx a2a` serves the A2A protocol. [Agent-to-agent reference](docs/reference/a2a.md).
+- **Claude Code:** one command installs the AgentX skills and tool server. See [Add AgentX to Claude Code](#add-agentx-to-claude-code).
 - **Raycast:** ask your agents and list them from Raycast. [Install from this checkout](integrations/raycast/README.md); not in the Raycast Store yet.
+
+## Add AgentX to Claude Code
+
+One command installs the AgentX skill pack in Claude Code: three skills and the agentx tool server, which can only look at your node until you allow more.
+
+```sh
+claude plugin install agentx --marketplace anis-marrouchi/agentx
+```
+
+Then start a new Claude Code session and ask: "Is my AgentX node healthy?" [Step-by-step guide](docs/jobs/install-skill-pack.md).
 
 ## Help test and improve AgentX
 

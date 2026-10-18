@@ -71,6 +71,7 @@ const groups = [
     { text: "Capture the screen at the right moment", link: "/jobs/screen-capture" },
     { text: "Work from your Claude Code session", link: "/jobs/claude-code-session" },
     { text: "Use AgentX from your code editor", link: "/jobs/connect-an-editor" },
+    { text: "Install the AgentX skill pack in Claude Code", link: "/jobs/install-skill-pack" },
     { text: "Send coding tasks to Claude cloud sessions", link: "/jobs/cloud-sessions" },
   ] },
   { text: "Teamwork", collapsed: true, items: [
@@ -128,7 +129,7 @@ const groups = [
 
 export default defineConfig({
   title: "AgentX",
-  description: "Put an AI teammate on the tools your team already uses.",
+  description: "The self-hosted agent harness for small teams.",
   cleanUrls: true,
   lastUpdated: true,
   head: [

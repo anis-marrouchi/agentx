@@ -214,6 +214,12 @@ describe("checkPage", () => {
     expect(check(`# P${GOOD_ENDING}\n## Extra\n\nz\n`)[0].message).toContain("must be the last section")
   })
 
+  it("asks a translated page for the two sections in its own language", () => {
+    const ar = (text: string) => checkPage("docs/ar/README.md", text, rules, () => true)
+    expect(ar("# P\n## تحقّق من أنه يعمل\n\nx\n## إذا حدث خطأ\n\ny\n")).toEqual([])
+    expect(ar(`# P${GOOD_ENDING}`)).toHaveLength(2)
+  })
+
   it("allows subsections inside the last section", () => {
     expect(check(`# P${GOOD_ENDING}\n### It will not start\n\nz\n`)).toEqual([])
   })
