@@ -1,6 +1,6 @@
 # Configuration: automation
 
-The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, the weekly quality report, resuming after a restart, due reminders and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
+The settings in `agentx.json` that make agents work on their own: schedules, services, incoming webhooks, workflows, learned procedures, notifications, approvals, open requests, task watchers, request status, the weekly quality report, resuming after a restart, due reminders, native apps and the wiki's daily contributions. For the other sections and how to edit the file, see the [Configuration reference](./config.md).
 
 "Default" is the value used when the key is left out. "required" means the entry is rejected without it; "—" means it is unset unless you set it.
 
@@ -443,6 +443,14 @@ Hands due Apple Reminders back to the agent that created them. macOS only, off b
 | `reminders.pollSeconds` | number (15 or more) | `60` | How often the lists are read. |
 | `reminders.lookbackHours` | number | `24` | A reminder overdue by more than this (the daemon was off) is reported to its agent, not run. |
 | `reminders.command` | string | `"remindctl"` | The `remindctl` program, or its full path when the daemon can't find it. |
+
+## `native`
+
+How AgentX uses the apps that come with the operating system, such as Reminders and Notification Center. All of this goes through one adapter per operating system. `agentx doctor` shows a "Native" line that says what this machine offers.
+
+| Key | Type | Default | What it does |
+|---|---|---|---|
+| `native.adapter` | `"auto"` or `"none"` | `"auto"` | `"auto"` picks the adapter for this operating system. `"none"` turns it off on this machine. A machine with no adapter yet gets `"none"` either way. |
 
 ## `wiki`
 

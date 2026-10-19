@@ -9,6 +9,7 @@ import { loadDaemonConfig } from "@/daemon/config"
 import { findOnPath, plistPathEnv } from "@/desktop/install"
 import { localSettings } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
+import { loadNativeAdapter, type NativeAdapter } from "@/native"
 import { nodeVersionSupported } from "@/utils/node-version"
 
 // --- agentx doctor ---
@@ -52,6 +53,7 @@ export async function runDoctorChecks(
   if (cfg) runCodegraphChecks(checks, cfg)
   if (cfg) await runNotificationChecks(checks, cfg)
   if (cfg) runReminderChecks(checks, cfg)
+  if (cfg) await runNativeChecks(checks, cfg)
   if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
   return { checks, summary: summarize(checks) }
 }
@@ -86,6 +88,19 @@ export async function runNotificationChecks(checks: Check[], cfg: any, status = 
     title: helper.message,
     detail: helper.path,
     fix: helper.fix,
+  })
+}
+
+/** Which native apps AgentX can use on this machine (#1062). Shown on every
+ *  OS; a machine without an adapter is fine, so that is not a warning. */
+export async function runNativeChecks(checks: Check[], cfg: any, adapter: NativeAdapter = loadNativeAdapter(cfg)): Promise<void> {
+  const d = await adapter.describe()
+  const can = (["tasks", "notes", "banner", "sound", "focus"] as const).filter((c) => d[c])
+  checks.push({
+    severity: d.os !== "none" && d.problems.length ? "warn" : "ok",
+    group: "Native",
+    title: d.os === "none" ? "Native apps: none on this machine" : `Native apps (${d.os}): ${can.join(", ") || "nothing available"}`,
+    detail: d.problems.join(" ") || undefined,
   })
 }
 
