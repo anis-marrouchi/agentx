@@ -1241,7 +1241,7 @@ async function handleToolCall(
           content: [
             {
               type: "text",
-              text: "No matching skills found. Install skills with: agentx skill install <owner/repo>",
+              text: "No matching skills found. Add skills with the runtime's own command, for example: npx -y skills add <owner/repo>",
             },
           ],
         }

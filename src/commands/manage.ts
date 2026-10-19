@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, cpSync, readdirSync
 import { resolve, join, dirname } from "path"
 import { fileURLToPath } from "url"
 import { loadDaemonConfig, validateWorkspaces } from "@/daemon/config"
+import { installedSkills, skillHome } from "@/agents/conventions"
 import { applyConfigMutation } from "@/daemon/config-mutator"
 
 // --- agentx agent/channel/cron/mesh/skill/hook management commands ---
@@ -1136,7 +1137,10 @@ skillCmd
       const agent = config.agents[agentId]
       if (!agent) { console.log(chalk.yellow(`  Agent "${agentId}" not found, skipping`)); continue }
 
-      const destDir = resolve(agent.workspace, ".claude/skills", skillName)
+      // Where this agent's runtime reads skills (#1062).
+      const home = skillHome(agent.tier, agent.workspace)
+      if (!home) { console.log(chalk.yellow(`  ${agentId}: its runtime (${agent.tier}) does not use skills, skipping`)); continue }
+      const destDir = resolve(home, skillName)
       mkdirSync(destDir, { recursive: true })
 
       if (existsSync(join(srcPath, "SKILL.md"))) {
@@ -1160,10 +1164,8 @@ skillCmd
     const config = loadConfig()
     console.log()
     for (const [id, a] of Object.entries(config.agents || {}) as any) {
-      const skillsDir = resolve(a.workspace, ".claude/skills")
-      const skills = existsSync(skillsDir)
-        ? readdirSync(skillsDir).filter((f: string) => !f.startsWith("."))
-        : []
+      if (!skillHome(a.tier, a.workspace)) { console.log(`  ${chalk.cyan(id)}: ${chalk.dim(`(${a.tier} does not use skills)`)}`); continue }
+      const skills = installedSkills(a.tier, a.workspace).map((s) => s.name)
       console.log(`  ${chalk.cyan(id)}: ${skills.length ? skills.join(", ") : chalk.dim("(none)")}`)
     }
     console.log()
@@ -1233,7 +1235,15 @@ skillCmd
         skippedN++
         continue
       }
-      const dstDir = resolve(ws, ".claude/skills", name)
+      const home = skillHome(def.tier, ws)
+      if (!home) {
+        console.log(`  ${chalk.dim("·")} ${agentId.padEnd(22)} ${chalk.dim(`(skipped — ${def.tier} does not use skills)`)}`)
+        skippedN++
+        continue
+      }
+      // An existing copy is updated where it is; a new one goes where the
+      // runtime adds skills (#1062).
+      const dstDir = installedSkills(def.tier, ws).find((s) => s.name === name)?.dir ?? resolve(home, name)
       const dst = resolve(dstDir, "SKILL.md")
 
       if (!existsSync(dst)) {
@@ -1837,9 +1847,7 @@ configCmd
         const hasClaudeDir = existsSync(resolve(ws, ".claude"))
         const hasClaudeMd = existsSync(resolve(ws, "CLAUDE.md"))
         const hasSettings = existsSync(resolve(ws, ".claude/settings.json"))
-        const skillCount = existsSync(resolve(ws, ".claude/skills"))
-          ? readdirSync(resolve(ws, ".claude/skills")).filter(f => !f.startsWith(".")).length
-          : 0
+        const skillCount = installedSkills(agent.tier, ws).length
 
         const checks = [
           hasClaudeDir ? chalk.green("✓") : chalk.red("✗"),

@@ -214,7 +214,7 @@ export const inspect = new Command()
       } else {
         console.log(chalk.bold("  Skills"))
         console.log(
-          `    ${chalk.dim("none installed")} — run ${chalk.green("agentx skill install <owner/repo>")} or ${chalk.green("agentx skill create <name>")}`
+          `    ${chalk.dim("none installed")} — run ${chalk.green("npx -y skills add <owner/repo>")} or ${chalk.green("npx -y skills init <name>")}`
         )
         logger.break()
       }
