@@ -23,6 +23,8 @@ export interface NativeTask {
 export type NativePriority = "none" | "low" | "medium" | "high"
 
 export interface NativeTasks {
+  /** Creates the list when it does not exist yet. */
+  ensureList(list: string): Promise<void>
   /** Open (not completed) tasks in one list. */
   listOpen(list: string): Promise<NativeTask[]>
   add(t: { list: string; title: string; notes: string; due?: Date; priority?: NativePriority }): Promise<{ id: string }>

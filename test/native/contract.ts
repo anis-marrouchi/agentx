@@ -26,7 +26,10 @@ export function runNativeContract(name: string, make: () => NativeAdapter): void
     it("adds, updates, completes and removes a task, when it has tasks", async () => {
       const { tasks } = make()
       if (!tasks) return
-      const due = new Date("2030-01-02T03:04:05Z")
+      // Task apps keep a due time to the minute.
+      const due = new Date("2030-01-02T03:04:00Z")
+      await tasks.ensureList("Contract")
+      await tasks.ensureList("Contract")
       const { id } = await tasks.add({ list: "Contract", title: "Card: pick a date", notes: "line 1\nline \"2\"", due, priority: "high" })
       expect(typeof id).toBe("string")
       let open = await tasks.listOpen("Contract")
@@ -41,7 +44,8 @@ export function runNativeContract(name: string, make: () => NativeAdapter): void
       await tasks.complete(id)
       expect(await tasks.listOpen("Contract")).toEqual([])
 
-      const second = await tasks.add({ list: "Contract", title: "gone soon", notes: "" })
+      const second = await tasks.add({ list: "Contract", title: "-starts with a dash", notes: "--help" })
+      expect(await tasks.listOpen("Contract")).toEqual([expect.objectContaining({ id: second.id, title: "-starts with a dash", notes: "--help" })])
       await tasks.remove(second.id)
       expect(await tasks.listOpen("Contract")).toEqual([])
     })

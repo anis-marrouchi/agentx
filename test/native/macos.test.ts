@@ -69,12 +69,22 @@ describe("macOS adapter (#1062 step 3)", () => {
     expect(await tasks.add({ list: "AgentX Desk", title: '-1 "quoted"', notes: "a\n- b", due: new Date("2030-01-02T03:04:05.678Z"), priority: "high" })).toEqual({ id: "X-1" })
     expect(output.mock.calls[0][1]).toEqual([
       "add", "--title", '\u200b-1 "quoted"', "--list", "AgentX Desk", "--notes", "a\n- b",
-      "--due", "2030-01-02T03:04:05Z", "--priority", "high", "--json", "--no-input",
+      "--due", "2030-01-02T03:04:00Z", "--priority", "high", "--json", "--no-input",
     ])
     await tasks.update("X-1", { notes: "-x", due: null })
     expect(output.mock.calls[1][1]).toEqual(["edit", "X-1", "--notes", "\u200b-x", "--clear-due", "--json", "--no-input"])
     await tasks.remove("X-1")
     expect(output.mock.calls[2][1]).toEqual(["delete", "X-1", "--force", "--json", "--no-input"])
+  })
+
+  it("creates a missing list once, and refuses a list name that starts with a dash", async () => {
+    const output = fakeRemindctl(["Reminders"])
+    const tasks = macosTasks("remindctl", output)
+    await expect(tasks.add({ list: "AgentX Desk", title: "t", notes: "" })).rejects.toThrow(/List not found/)
+    await tasks.ensureList("AgentX Desk")
+    await tasks.ensureList("AgentX Desk")
+    expect(output.lists).toEqual(["Reminders", "AgentX Desk"])
+    await expect(tasks.listOpen("-x")).rejects.toThrow(/must not be empty or start with "-"/)
   })
 
   it("fails an add whose answer has no id, and skips an update that changes nothing", async () => {
