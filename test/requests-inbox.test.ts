@@ -295,7 +295,7 @@ describe("the dashboard's open requests", () => {
     const r = await handleRequestsPanel("GET", P, {}, panelCtx())
     expect(r.status).toBe(200)
     expect((r.body as any).items.map((i: any) => i.id)).toEqual(["req-t1", "req-t2"])
-    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [] }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} } })
+    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} } })
   })
 
   it("closes as done with evidence, and drops with a default reason", async () => {
@@ -315,14 +315,16 @@ describe("the dashboard's open requests", () => {
     const ok = await handleRequestsPanel("POST", `${P}/settings`, {
       enabled: true, from: "telegram:42, github:me", channels: "", staleAfterHours: 48, retentionDays: 30,
       plansEnabled: false, stallMinutes: 20, maxNudges: 2, approveKinds: "message, deploy", plansOffFor: "helper",
+      planForWork: "code, migration", planOverMinutes: 0,
     }, c)
     expect(ok.status).toBe(200)
     expect((ok.body as any).settings).toEqual({
       enabled: true, channels: [], from: ["telegram:42", "github:me"], staleAfterHours: 48, retentionDays: 30,
-      plans: { enabled: false, stallMinutes: 20, maxNudges: 2, approveKinds: ["message", "deploy"], disabledAgents: ["helper"] },
+      plans: { enabled: false, stallMinutes: 20, maxNudges: 2, approveKinds: ["message", "deploy"], disabledAgents: ["helper"], requireForWork: ["code", "migration"], requireOverMinutes: 0 },
       checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} },
     })
     expect((await handleRequestsPanel("POST", `${P}/settings`, { maxNudges: 1.5 }, c)).status).toBe(400)
+    expect((await handleRequestsPanel("POST", `${P}/settings`, { planOverMinutes: -5 }, c)).status).toBe(400)
     expect(JSON.parse(readFileSync(c.configPath, "utf-8")).requests.enabled).toBe(true)
     expect((await handleRequestsPanel("POST", `${P}/settings`, { from: "no-channel" }, c)).status).toBe(400)
     expect(await handleRequestsPanel("POST", `${P}/settings`, { staleAfterHours: 0 }, c)).toEqual({ status: 400, body: { error: "staleAfterHours must be a positive number" } })

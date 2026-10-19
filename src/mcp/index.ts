@@ -887,6 +887,8 @@ const TOOLS = [
       "Without an id, the action applies to the request of the turn you are in; for an older request pass its id (list shows them). You cannot drop a request; only the owner can. " +
       "When the request takes two or more steps done by different agents or at different times (build, deploy, check it is live, tell the client), accept it with steps: a tracked plan. " +
       "The daemon hands each step to its agent in order, nudges a step that goes quiet, sends an owner-approved message itself, and tells the owner at the end or when a step is blocked. " +
+      "Before you start code work, or work you expect to take over 30 minutes, write the plan: accept with work (code, research, writing…), estimateMinutes and steps. " +
+      "An accept of such work without steps is refused (the owner sets which kinds and how long). " +
       "Report on a step you own with action step (status progress, done with evidence, or blocked with a note). " +
       "When you commit to something for someone (the owner, another agent, an outside person: 'I will send the file by Friday'), record it with promise (owedTo, text, due, closeWhen): it stays open until it is kept. " +
       "Example: {action:'done', evidence:'https://example.com/pull/42'}. " +
@@ -914,6 +916,8 @@ const TOOLS = [
             required: ["name"],
           },
         },
+        work: { type: "string", description: "accept: what kind of work it is, one short word: code, research, writing, ops… Code work needs steps." },
+        estimateMinutes: { type: "number", description: "accept: how many minutes you expect the work to take. Over the owner's threshold (30 by default) it needs steps." },
         step: { type: "number", description: "step: the step's number in the plan (1 is the first)." },
         status: { type: "string", enum: ["progress", "done", "blocked"], description: "step: progress (still under way), done (give evidence) or blocked (give note)." },
         note: { type: "string", description: "step: what is happening, or why it is blocked." },

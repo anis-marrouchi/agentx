@@ -1326,6 +1326,13 @@ export const requestsConfigSchema = z.object({
     approveKinds: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,30}$/, "a step kind: a short lower-case word")).default(["message"]),
     /** Agents that may not open a plan. */
     disabledAgents: z.array(z.string().min(1)).default([]),
+    /** The plan gate (#1048): kinds of work an agent must plan before it
+     *  starts. An accept that names one of these as its `work` is refused
+     *  without steps. Empty: no kind needs a plan. */
+    requireForWork: z.array(z.string().regex(/^[a-z][a-z0-9_-]{0,30}$/, "a kind of work: a short lower-case word")).default(["code"]),
+    /** An accept whose `estimateMinutes` is over this needs a plan too.
+     *  0: no estimate needs one. */
+    requireOverMinutes: z.number().min(0).max(7 * 24 * 60).default(30),
   }).default({}),
   /** Checkers that close an open loop on evidence (src/requests/checkers,
    *  #1039). A loop with a `closeWhen` closes when its check is met; an

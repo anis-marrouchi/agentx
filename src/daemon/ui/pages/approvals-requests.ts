@@ -35,6 +35,8 @@ export const REQUESTS_HTML = `
         <label>Nudges per step before you are told it is blocked<input type="number" min="0" step="1" name="maxNudges" required></label>
         <label>Step kinds you approve once, when the plan is made (separated by commas)<input type="text" name="approveKinds" placeholder="message" autocomplete="off"></label>
         <label>Agents that may not open a plan (separated by commas)<input type="text" name="plansOffFor" autocomplete="off"></label>
+        <label>Kinds of work an agent must plan before it starts (separated by commas; empty for none)<input type="text" name="planForWork" placeholder="code" autocomplete="off"></label>
+        <label>Work estimated over this many minutes needs a plan (0: never)<input type="number" min="0" step="1" name="planOverMinutes" required></label>
         <label>Checks agents may use to close a loop (separated by commas)<input type="text" name="checkKinds" placeholder="url, issue, git-ancestor, reply" autocomplete="off"></label>
         <label>Run each loop's check every this many minutes<input type="number" min="1" step="1" name="checkEveryMinutes" required></label>
         <div><button type="submit" class="ax-btn ax-btn--primary">Save settings</button></div>
@@ -162,6 +164,8 @@ function fill(s){
   f.maxNudges.value = p.maxNudges == null ? 3 : p.maxNudges;
   f.approveKinds.value = (p.approveKinds || []).join(', ');
   f.plansOffFor.value = (p.disabledAgents || []).join(', ');
+  f.planForWork.value = (p.requireForWork || []).join(', ');
+  f.planOverMinutes.value = p.requireOverMinutes == null ? 30 : p.requireOverMinutes;
   var c = s.checkers || {};
   f.checkKinds.value = (c.enabled || []).join(', ');
   f.checkEveryMinutes.value = c.checkEveryMinutes || 10;
@@ -259,6 +263,8 @@ $('req-form').addEventListener('submit', async function(ev){
     maxNudges: Number(f.maxNudges.value),
     approveKinds: f.approveKinds.value,
     plansOffFor: f.plansOffFor.value,
+    planForWork: f.planForWork.value,
+    planOverMinutes: Number(f.planOverMinutes.value),
     checkKinds: f.checkKinds.value,
     checkEveryMinutes: Number(f.checkEveryMinutes.value)
   };

@@ -130,6 +130,11 @@ async function route(
     }
     plans.approveKinds = list(body.approveKinds)
     plans.disabledAgents = list(body.plansOffFor)
+    plans.requireForWork = list(body.planForWork)
+    if (body.planOverMinutes !== undefined) {
+      if (typeof body.planOverMinutes !== "number" || !(body.planOverMinutes >= 0)) throw new Error("planOverMinutes must be a number, 0 or more")
+      plans.requireOverMinutes = body.planOverMinutes
+    }
     if (Object.values(plans).some((v) => v !== undefined)) patch.plans = plans
     const checkers: NonNullable<RequestSettingsPatch["checkers"]> = {}
     const kinds = list(body.checkKinds)

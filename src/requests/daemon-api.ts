@@ -4,7 +4,7 @@ import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type Check
 import { parseDue, type LoopChecker } from "./loops"
 import type { RequestTracker } from "./tracker"
 import type { PlanStore } from "./plan-store"
-import { DEFAULT_PLAN_SETTINGS, parseSteps, plansOffFor, type PlanSettings } from "./plans"
+import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
 import { reportStep, type StepStatus } from "./plan-sweep"
 
 // --- The daemon's /requests endpoints (#356) ---
@@ -14,7 +14,8 @@ import { reportStep, type StepStatus } from "./plan-sweep"
 //   GET  /requests        open requests, oldest first
 //   GET  /requests/:id    one request and what is linked to it
 //   POST /requests        an agent's own statement about its request:
-//                         accept (with `steps`: a tracked plan, #788),
+//                         accept (with `steps`: a tracked plan, #788;
+//                         code work or a long estimate needs one, #1048),
 //                         wait (on the owner), done, decline, or step (a
 //                         report on one step of a plan), or promise (an
 //                         open loop the agent owes someone, #1039). The
@@ -320,6 +321,23 @@ export function handleRequestsApi(
       store.markChecked(request.id, "unverified", v.detail, now)
       if (home) store.setHome(request.id, home, now, { touch: false })
       return { status: 202, body: { request: store.get(request.id), verify: "unverified", detail: v.detail } }
+    }
+
+    // The plan gate (#1048): work the owner wants planned does not start
+    // on a bare accept. Only the kinds and estimates the settings name.
+    const work = action === "accept" ? parseWork(input) : {}
+    if (typeof work === "string") return { status: 400, body: { error: work } }
+    if (action === "accept" && input.steps === undefined && deps.plans && !deps.plans.get(request.id)) {
+      const why = planRequiredFor(deps.planSettings ?? DEFAULT_PLAN_SETTINGS, agentId, work)
+      if (why) {
+        return {
+          status: 409,
+          body: {
+            error: `Not started: ${why}. Accept again with steps: two or more, each with a name and done (what proves it is finished), in the order they run.`,
+            planRequired: true,
+          },
+        }
+      }
     }
 
     if (action === "accept" && input.steps !== undefined) {

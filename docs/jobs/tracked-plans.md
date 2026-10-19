@@ -19,6 +19,21 @@ A plan is part of [open requests](./open-requests.md), so open requests must be 
 
 Plans are on as soon as open requests are on. Agents make a plan only for work of two or more steps. One-step work stays an ordinary request.
 
+## Plan before starting
+
+Some work should not start without a plan. By default, that is:
+
+- **Code work**: changing a program, a site or a script.
+- **Long work**: anything the agent expects to take more than 30 minutes.
+
+When an agent takes on such a request, it says what kind of work it is and how long it expects it to take. If the work is code work, or is estimated at more than 30 minutes, the agent must write its plan first. AgentX refuses to start the work without one, and the agent is told to send the steps.
+
+Other requests are not affected. A quick answer or a short task starts straight away, with no plan.
+
+The plan shows in the same places as every other plan: on the request's card under **Open requests** on the **Approvals** page, and in `agentx requests show <id>`.
+
+You choose which kinds of work need a plan, and the time limit. See [Change the settings](#change-the-settings).
+
 ## See a plan
 
 In the dashboard:
@@ -49,7 +64,7 @@ The step number is the one `agentx requests show` prints: 1 is the first step.
 In the dashboard:
 
 1. **Browser:** open **Approvals**, scroll to **Open requests** and open **Settings: open requests**.
-2. **Browser:** set the plan settings: **Follow requests of two or more steps as plans**, the minutes before a nudge, the number of nudges, the step kinds you approve when the plan is made, and the agents that may not make a plan.
+2. **Browser:** set the plan settings: **Follow requests of two or more steps as plans**, the minutes before a nudge, the number of nudges, the step kinds you approve when the plan is made, the agents that may not make a plan, the kinds of work an agent must plan before it starts, and the minutes of work that need a plan.
 3. **Browser:** press **Save settings**.
 
 In the terminal:
@@ -62,6 +77,8 @@ In the terminal:
 | `agentx requests settings --max-nudges 2` | Nudges per step before it counts as blocked and you are told. Default 3. `0` tells you at the first stall. |
 | `agentx requests settings --approve-kinds message,deploy` | Step kinds you approve once, when the plan is made. Default `message`. `none` approves nothing up front: a message step is then sent without a card. |
 | `agentx requests settings --plans-off-for helper,scout` | Agents that may not make a plan. `none` clears the list. |
+| `agentx requests settings --plan-for code,migration` | Kinds of work an agent must plan before it starts. Default `code`. `none` clears the list. |
+| `agentx requests settings --plan-over 60` | Work estimated at more than this many minutes needs a plan. Default 30. `0` turns this off. |
 
 The same settings are the `requests.plans` block in `agentx.json`: see [Configuration: automation](../reference/config-automation.md#requests).
 
@@ -72,6 +89,8 @@ Agents make a plan with their `agentx_request` tool, when they take the request 
 ```json
 {
   "action": "accept",
+  "work": "code",
+  "estimateMinutes": 90,
   "steps": [
     { "name": "Build the fix", "done": "pull request merged" },
     { "name": "Deploy", "agent": "deployer", "kind": "deploy", "done": "version 2.4.1 is live",
@@ -82,6 +101,9 @@ Agents make a plan with their `agentx_request` tool, when they take the request 
 }
 ```
 
+- `work` is optional: one short word for the kind of work, like `code`, `research` or `writing`.
+- `estimateMinutes` is optional: how many minutes the agent expects the work to take.
+- When `work` is a kind on your plan-before-starting list, or `estimateMinutes` is over your limit, `steps` are needed. Without them the agent gets `Not started: … needs a plan before it starts`.
 - `name` and `done` are needed on every step. A message step needs `message` and `to` instead of `done`.
 - `agent` is the step's owner. It defaults to the agent that makes the plan.
 - `kind` is one short word. The default is `task`. Only `message` changes what happens: the daemon sends it.
@@ -97,11 +119,15 @@ An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2
 3. **Terminal:** run `agentx requests`, then `agentx requests show <id>`. You see a `Plan` with both steps: the first in progress, the second not started.
 4. When the agent reports the first step done, run `agentx requests show <id>` again within a minute. The log shows the second step `started` and `dispatched` to its agent.
 5. When the last step is done you get one notice, **Plan finished**, and the request is no longer listed.
+6. **Terminal:** run `agentx requests settings`. The line `Plan before starting` lists the kinds of work and the time limit, for example `code work; work over 30 minute(s)`.
+7. Ask an agent for a small code change. Run `agentx requests show <id>`: the request has a plan, even if the change is quick.
 
 ## If something is wrong
 
 - **The agent says plans are off:** turn them on with `agentx requests settings --plans on`. When the agent's name is in the agents that may not make a plan, remove it with `--plans-off-for none`.
 - **`a plan needs 2 or more steps`:** for a single step, the agent takes the request on without a plan.
+- **The agent says `Not started: … needs a plan before it starts`:** the work is code work, or longer than your limit. The agent sends its steps and starts. To stop asking for a plan on that kind of work, remove it with `--plan-for` (or `--plan-for none`). To change the time limit, use `--plan-over`.
+- **Code work started with no plan:** the agent did not say the work was code work. Check `--plan-for` lists `code`, and that plans are not off for that agent (`--plans-off-for`).
 - **A message step stays at "not started" after the steps before it are done:** its card is still waiting for you. Answer it in the Approvals inbox. If the card expired, the step is blocked; run `agentx requests step <id> <step> --retry` to send it.
 - **The message was not sent and the step is blocked:** the daemon tried three times and the channel refused it. Check the channel is connected (`agentx doctor`), then run `--retry`.
 - **Nudges come while the work is simply slow:** the agent can report `progress` to reset the clock. To wait longer for every step, raise `--stall-minutes`. For one step, the agent sets `stallMinutes` on it.
