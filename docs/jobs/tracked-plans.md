@@ -67,6 +67,8 @@ In the dashboard:
 2. **Browser:** set the plan settings: **Follow requests of two or more steps as plans**, the minutes before a nudge, the number of nudges, the step kinds you approve when the plan is made, the agents that may not make a plan, the kinds of work an agent must plan before it starts, and the minutes of work that need a plan.
 3. **Browser:** press **Save settings**.
 
+![The open requests settings on the Approvals page. Below the plan settings are two new fields: the kinds of work an agent must plan before it starts, set to code, and the minutes of work that need a plan, set to 30.](/screenshots/approvals/plan-gate-settings.png)
+
 In the terminal:
 
 | Command | What it does |
