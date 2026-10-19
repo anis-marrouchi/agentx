@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.145.0](https://github.com/anis-marrouchi/agentx/compare/v0.144.0...v0.145.0) (2026-10-19)
+
+
+### Features
+
+* **quality:** merge policy, core paths need a person's approval ([#1047](https://github.com/anis-marrouchi/agentx/issues/1047)) ([#1053](https://github.com/anis-marrouchi/agentx/issues/1053)) ([3006c6a](https://github.com/anis-marrouchi/agentx/commit/3006c6aba5b4db5af5171a2143269115e4e84014))
+
 ## [0.144.0](https://github.com/anis-marrouchi/agentx/compare/v0.143.0...v0.144.0) (2026-10-18)
 
 
