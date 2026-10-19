@@ -768,6 +768,10 @@ const cronJobSchema = z.object({
    *  but appending an instruction to the prompt is reliably honored. Use
    *  1500 for briefs, 500 for status pings, 300 for pure classifiers. */
   maxOutputTokens: z.number().int().min(50).max(8000).optional(),
+  /** The task type of each run (`context.taskType`): picks the evidence a
+   *  watcher's done needs (`watchers.evidence.<type>`, #1049). Unset: the
+   *  `cron` rule, if there is one. */
+  taskType: z.string().trim().min(1).max(64).optional(),
   /** How much this routine may do: `report` (read-only), `propose` (branch,
    *  commit, MR/draft; never merge/deploy/delete) or `act` (the agent's full
    *  permissions — the default). Enforced per run by the guard, not by the
@@ -1319,6 +1323,19 @@ export const watchersConfigSchema = z.object({
    *  delegation answers. "explicit": only POST /watchers/:id/done, so a
    *  reply that only promises ("I'll publish at 18:00") keeps it open. */
   doneSignal: z.enum(["result", "explicit"]).default("result"),
+  /** Evidence a done needs, by task type (#1049): the caller's
+   *  `context.taskType`, else the watcher's kind (dispatch, delegation,
+   *  cron). A task of a type with a rule closes only on a done whose
+   *  evidence the rule accepts; its reply never closes it. Types with no
+   *  rule close as `doneSignal` says. */
+  evidence: z.record(z.string().min(1), z.object({
+    /** The kinds of proof that count: any one of them closes the task. */
+    accept: z.array(z.enum(["test", "output", "link"])).min(1),
+    /** The shortest output text accepted. */
+    minOutputChars: z.number().int().min(1).max(2000).default(40),
+    /** Hosts a link must be on (or a subdomain of). Empty: any host. */
+    linkHosts: z.array(z.string().min(1)).default([]),
+  })).default({}),
 }).default({}).refine((w) => w.noBelow <= w.yesAt, { message: "watchers.noBelow must not be above watchers.yesAt" })
 
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and

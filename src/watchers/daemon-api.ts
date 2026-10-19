@@ -6,7 +6,9 @@ import type { WatcherState, WatcherStore } from "./store"
 // Gated like /requests: loopback, or a mesh token.
 //   GET  /watchers            newest first; ?state=open|alerted|escalated|done
 //   GET  /watchers/:id        one watcher
-//   POST /watchers/:id/done   the task is done; body { evidence? }
+//   POST /watchers/:id/done   the task is done; body { evidence? }. A task
+//                             whose type has an evidence rule (#1049) needs
+//                             evidence it accepts, else 422.
 
 export interface WatchersApiDeps {
   store: WatcherStore
@@ -36,9 +38,9 @@ export function handleWatchersApi(
   if (!watcher) return { status: 404, body: { error: `no watcher ${id}` } }
   if (method === "GET" && parts.length === 2) return { status: 200, body: { watcher } }
   if (method === "POST" && parts.length === 3 && parts[2] === "done") {
-    const evidence = typeof body?.evidence === "string" && body.evidence.trim() ? body.evidence.trim().slice(0, 500) : "marked done"
-    const changed = deps.checkpoint.markDone(watcher.id, evidence)
-    return { status: 200, body: { watcher: deps.store.get(watcher.id), changed } }
+    const done = deps.checkpoint.markDone(watcher.id, body?.evidence)
+    if (done.error) return { status: 422, body: { error: done.error, required: done.required, watcher } }
+    return { status: 200, body: { watcher: deps.store.get(watcher.id), changed: done.changed } }
   }
   return { status: 404, body: { error: "unknown watchers route" } }
 }

@@ -24,6 +24,11 @@ import { NoteStore, renderNotesInbox } from "@/wiki/notes"
  * the model. Keeps a cheap knob available for operators without us needing
  * to invent our own token counter or hack a post-response truncate.
  */
+/** A cron run's context. `taskType` picks its watcher's evidence rule. */
+function cronContext(jobId: string, job: CronJobState): AgentTask["context"] {
+  return { channel: "cron", chatId: `cron:${jobId}`, ...(job.taskType ? { taskType: job.taskType } : {}) }
+}
+
 function withOutputCap(prompt: string, maxOutputTokens?: number): string {
   if (!maxOutputTokens) return prompt
   const approxChars = maxOutputTokens * 4
@@ -218,6 +223,7 @@ export class CronScheduler {
         timeout: def.timeout,
         model: def.model,
         maxOutputTokens: def.maxOutputTokens,
+        taskType: def.taskType,
         autonomy: def.autonomy,
         onError: def.onError,
         deliverResult: def.deliverResult !== false && Boolean(def.notify),
@@ -602,7 +608,7 @@ export class CronScheduler {
         // collide in one "default" session. Without this, the marketing
         // daily-brief and the marketing weekly-report cron share history,
         // and one job's prompt context bleeds into the other.
-        context: { channel: "cron", chatId: `cron:${jobId}` },
+        context: cronContext(jobId, job),
       }
       const response = await this.registry.execute(task)
 
@@ -761,7 +767,7 @@ export class CronScheduler {
           // must not come back at full power.
           autonomy: job.autonomy,
           timeoutMinutes: timeout / 60,
-          context: { channel: "cron", chatId: `cron:${jobId}` },
+          context: cronContext(jobId, job),
         }
         const response = await this.registry.execute(task)
 

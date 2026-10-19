@@ -155,6 +155,9 @@ export interface AgentXEvents {
     /** When the task is due (ms), when the caller gave one in the run's
      *  context as `dueAt` (watchers, #1030). */
     dueAt?: number
+    /** The task's type, when the caller gave one in the run's context as
+     *  `taskType`: it picks the evidence a done needs (watchers, #1049). */
+    taskType?: string
   }
 
   /** A single step inside an in-flight task — typically a tool call or
