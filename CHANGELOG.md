@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.146.0](https://github.com/anis-marrouchi/agentx/compare/v0.145.0...v0.146.0) (2026-10-19)
+
+
+### Features
+
+* **requests:** plan gate at task start for code work and long tasks ([#1048](https://github.com/anis-marrouchi/agentx/issues/1048)) ([#1050](https://github.com/anis-marrouchi/agentx/issues/1050)) ([3b964e7](https://github.com/anis-marrouchi/agentx/commit/3b964e73b25262823a46307302992920f483861f))
+* **watchers:** done carries evidence, checked per task type ([#1049](https://github.com/anis-marrouchi/agentx/issues/1049)) ([#1051](https://github.com/anis-marrouchi/agentx/issues/1051)) ([6612b35](https://github.com/anis-marrouchi/agentx/commit/6612b35a69dff9e3c1cf0b9ad7088ed926ec9f84))
+
 ## [0.145.0](https://github.com/anis-marrouchi/agentx/compare/v0.144.0...v0.145.0) (2026-10-19)
 
 
