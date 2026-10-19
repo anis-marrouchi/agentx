@@ -83,7 +83,7 @@ import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
 import { WATCHER_CHANNEL } from "@/watchers/checkpoint"
 import { handleWatchersApi } from "@/watchers/daemon-api"
-import { taskTypeOf } from "@/watchers/due"
+import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
 import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
@@ -6735,10 +6735,7 @@ export class AgentXDaemon {
           }
           // A top-level `taskType` (a mesh peer's /send/agent, #1049) joins
           // the run's context, where the watcher reads it.
-          const topType = taskTypeOf(body)
-          if (topType && !taskTypeOf(body.context as Record<string, unknown> | undefined)) {
-            body.context = { ...((body.context as Record<string, unknown>) ?? {}), taskType: topType }
-          }
+          if (taskTypeOf(body)) body.context = contextWithTaskType(body)
           // #277 — an agent delegating from a turn a person started gets a
           // task id now and the answer later, as a new turn in its chat.
           // Streaming callers are watching the run, so they keep waiting.
