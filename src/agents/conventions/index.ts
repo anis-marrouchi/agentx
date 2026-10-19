@@ -3,6 +3,7 @@ import { join } from "path"
 import { claudeCode } from "./claude-code"
 import { codexCli } from "./codex-cli"
 import { opencode } from "./opencode"
+import { orchestrator, sdk } from "./sdk"
 import type { RuntimeConventions } from "./types"
 
 export type { ConventionTier, RuntimeConventions } from "./types"
@@ -11,11 +12,12 @@ const BY_TIER: Record<string, RuntimeConventions> = {
   "claude-code": claudeCode,
   "codex-cli": codexCli,
   opencode,
+  sdk,
+  orchestrator,
 }
 
-/** The runtime's conventions, or null for a tier that is not a runtime CLI
- *  (sdk, orchestrator): those agents do not use skills. An unset tier is
- *  claude-code, the config default. */
+/** The runtime's conventions, or null for a tier AgentX does not know.
+ *  An unset tier is claude-code, the config default. */
 export function getConventions(tier: string | undefined): RuntimeConventions | null {
   return BY_TIER[tier ?? "claude-code"] ?? null
 }

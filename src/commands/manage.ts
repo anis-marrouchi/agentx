@@ -1847,9 +1847,7 @@ configCmd
         const hasClaudeDir = existsSync(resolve(ws, ".claude"))
         const hasClaudeMd = existsSync(resolve(ws, "CLAUDE.md"))
         const hasSettings = existsSync(resolve(ws, ".claude/settings.json"))
-        const skillCount = existsSync(resolve(ws, ".claude/skills"))
-          ? readdirSync(resolve(ws, ".claude/skills")).filter(f => !f.startsWith(".")).length
-          : 0
+        const skillCount = installedSkills(agent.tier, ws).length
 
         const checks = [
           hasClaudeDir ? chalk.green("✓") : chalk.red("✗"),

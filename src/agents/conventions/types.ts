@@ -2,10 +2,10 @@
 //
 // AgentX adds skills where the runtime itself reads them, and points people
 // at the runtime's own install command, instead of keeping a store of its
-// own. One file per runtime; a runtime AgentX does not run as a CLI (sdk,
-// orchestrator) has none.
+// own. One file per runtime; sdk and orchestrator agents run inside AgentX
+// and read skills the way AgentX does.
 
-export type ConventionTier = "claude-code" | "codex-cli" | "opencode"
+export type ConventionTier = "claude-code" | "codex-cli" | "opencode" | "sdk" | "orchestrator"
 
 export interface RuntimeConventions {
   tier: ConventionTier

@@ -30,23 +30,26 @@ describe("runtime conventions", () => {
     expect(getConventions("codex-cli")!.instructionsFile).toBe("AGENTS.md")
   })
 
-  it("lists opencode skills from all three folders it reads, first folder winning", () => {
+  it("adds opencode skills to .agents/skills, where its add command puts them, and lists all three folders", () => {
+    expect(skillHome("opencode", ws)).toBe(join(ws, ".agents", "skills"))
+    skill(".agents/skills", "deploy")
     skill(".opencode/skills", "deploy")
-    skill(".claude/skills", "deploy")
-    skill(".agents/skills", "review")
+    skill(".claude/skills", "review")
     mkdirSync(join(ws, ".claude/skills", "not-a-skill"), { recursive: true })
     expect(installedSkills("opencode", ws)).toEqual([
-      { name: "deploy", dir: join(ws, ".opencode/skills", "deploy") },
-      { name: "review", dir: join(ws, ".agents/skills", "review") },
+      { name: "deploy", dir: join(ws, ".agents/skills", "deploy") },
+      { name: "review", dir: join(ws, ".claude/skills", "review") },
     ])
   })
 
-  it("gives sdk and orchestrator agents no skills at all", () => {
+  it("gives sdk and orchestrator agents .claude/skills, and lists the other folders AgentX reads for them", () => {
     for (const tier of ["sdk", "orchestrator"]) {
-      expect(getConventions(tier)).toBeNull()
-      expect(skillHome(tier, ws)).toBeNull()
-      expect(installedSkills(tier, ws)).toEqual([])
+      expect(skillHome(tier, ws)).toBe(join(ws, ".claude", "skills"))
+      expect(getConventions(tier)!.addSkillCommand("acme/skills", ws)).toContain("-a claude-code")
     }
+    skill(".skills", "old")
+    expect(installedSkills("sdk", ws).map((s) => s.name)).toEqual(["old"])
+    expect(getConventions("something-else")).toBeNull()
   })
 
   it("quotes a workspace or package that is not a plain shell word", () => {
@@ -55,7 +58,7 @@ describe("runtime conventions", () => {
 })
 
 describe("agentx skill add (#1062)", () => {
-  it("puts a skill where each agent's runtime reads it, and skips an sdk agent", async () => {
+  it("puts a skill where each agent's runtime reads it", async () => {
     const { skillCmd } = await import("../src/commands/manage")
     const cwd = process.cwd()
     const cc = join(ws, "cc"), cx = join(ws, "cx"), sdk = join(ws, "sdk")
@@ -77,6 +80,6 @@ describe("agentx skill add (#1062)", () => {
     }
     expect(installedSkills("claude-code", cc).map((s) => s.dir)).toEqual([join(cc, ".claude", "skills", "greet")])
     expect(installedSkills("codex-cli", cx).map((s) => s.dir)).toEqual([join(cx, ".agents", "skills", "greet")])
-    expect(installedSkills("claude-code", sdk)).toEqual([])
+    expect(installedSkills("sdk", sdk).map((s) => s.dir)).toEqual([join(sdk, ".claude", "skills", "greet")])
   })
 })
