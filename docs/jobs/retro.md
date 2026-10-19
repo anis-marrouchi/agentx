@@ -205,4 +205,5 @@ Cards follow your usual [Approvals settings](../dashboard/approvals.md#settings)
 - **The before and after numbers say `no runs`:** the agent ran nothing in that span, or the rule's retro card was never answered and it has never fired. The card then recommends **Loosen it**.
 - **"No trace database":** run the command in the folder the daemon runs from, or pass `--path`.
 - **Yes does nothing on the dashboard:** the card offers choices. Pick one first; the page says so in red.
+- **A plain yes enacted a fix I didn't pick:** a Yes with no choice (for example `agentx approvals approve <key>` without `--choice`) takes the suggested fix, the first one in the recommendation. The agent is told it was a plain yes. To pick another fix, use `--choice <n>`, or choose on the dashboard.
 - **The agent never started on the fix:** check the daemon log for a line starting `[approvals]`, and that `notifyAgent` is on in [Approvals settings](../dashboard/approvals.md#settings).
