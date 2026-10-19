@@ -284,6 +284,13 @@ Gates that check agent pull requests before they merge. Each one is off by defau
 | `quality.reviewGate.maxReviewsPerPrPerDay` | number | `6` | Most reviews of one pull request in 24 hours; past it the status is `error`. `0`: no limit. |
 | `quality.reviewGate.ciWaitMinutes` | number | `5` | How long to wait for other checks before reviewing. |
 | `quality.reviewGate.maxDiffKb` | number | `256` | A longer diff is cut, and the reviewer is told. |
+| `quality.mergePolicy.enabled` | boolean | `false` | Posts the `agentx/merge-policy` status on every pull request: core paths need a person's approval. See [Let agents merge only edge changes](/jobs/merge-policy). |
+| `quality.mergePolicy.mode` | `"advisory"` or `"required"` | `"advisory"` | Advisory marks an unapproved core change "[advisory]" and passes it. Required leaves it pending until a person approves. |
+| `quality.mergePolicy.corePaths` | string[] | `[]` | Core files, as patterns. Empty: nothing is core. |
+| `quality.mergePolicy.edgePaths` | string[] | `[]` | Exceptions inside core folders that count as edge. |
+| `quality.mergePolicy.label` | string | `"core-change"` | Label put on a pull request that changes a core path. |
+| `quality.mergePolicy.approvers` | string[] | `[]` | GitHub logins whose reviews count. Empty: owners, members and collaborators, except the author and AgentX's own accounts. |
+| `quality.mergePolicy.ownerCard` | boolean | `true` | In required mode, ask the owner on an approvals card; YES approves that commit. |
 
 ## decisions
 

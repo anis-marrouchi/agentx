@@ -74,7 +74,17 @@ export interface PlanStepOrigin {
   step: number
 }
 
-export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin
+/** A pull request that changes core paths waits for the owner (merge
+ *  policy, #1047). YES approves that one commit; the policy reads the
+ *  answer and updates the PR's status. No agent is sent a result turn. */
+export interface MergePolicyOrigin {
+  kind: "merge-policy"
+  repo: string
+  pr: number
+  sha: string
+}
+
+export type CardOrigin = ReminderOrigin | RequestOrigin | RetroOrigin | RetroCheckOrigin | PlanStepOrigin | WorkflowOrigin | WorkflowProposalOrigin | MergePolicyOrigin
 
 /** Retro cards of either kind: raised for an agent, not by it. */
 export function isRetroOrigin(origin: CardOrigin | undefined): origin is RetroOrigin | RetroCheckOrigin {

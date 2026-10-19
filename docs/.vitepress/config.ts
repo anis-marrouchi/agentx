@@ -77,6 +77,7 @@ const groups = [
     { text: "Install the AgentX plugin in Claude Code", link: "/jobs/install-the-plugin" },
     { text: "Send coding tasks to Claude cloud sessions", link: "/jobs/cloud-sessions" },
     { text: "Have a second agent review pull requests", link: "/jobs/review-gate" },
+    { text: "Let agents merge only edge changes", link: "/jobs/merge-policy" },
     { text: "Have a second agent write tests from the issue", link: "/jobs/spec-tests" },
   ] },
   { text: "Teamwork", collapsed: true, items: [
