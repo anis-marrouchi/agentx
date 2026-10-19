@@ -66,12 +66,22 @@ function store(): RequestStore | null {
 
 const when = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
 
+/** "code, about 90 minute(s)": what an agent declared on accept (#1048). */
+function workLabel(work: string | null, minutes: number | null): string {
+  return [work ?? "", minutes !== null ? `about ${Math.round(minutes)} minute(s)` : ""].filter(Boolean).join(", ")
+}
+
 function printRequest(r: RequestRecord): void {
   const colour = r.state === "needs_attention" ? chalk.red : r.state === "waiting_owner" ? chalk.yellow : chalk.dim
   console.log(`  ${chalk.cyan(r.id)}  ${colour(`[${STATE_LABEL[r.state] ?? r.state}]`)} ${chalk.dim(`${when(r.createdAt)} · ${r.channel} · ${r.agentId}`)}`)
   console.log(`    ${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
   if (r.state === "waiting_owner" && r.question) console.log(chalk.yellow(`    Question: ${r.question}`))
   if (r.state === "needs_attention" && r.attentionReason) console.log(chalk.red(`    ${r.attentionReason}`))
+  if (r.work || r.estimateMinutes !== null) {
+    const first = workLabel(r.firstWork, r.firstEstimateMinutes)
+    const now = workLabel(r.work, r.estimateMinutes)
+    console.log(chalk.dim(`    Work: ${now}${first && first !== now ? ` (first declared: ${first})` : ""}`))
+  }
   if (r.promise && r.owedTo) console.log(chalk.dim(`    Promised to ${r.owedTo}`))
   if (r.dueAt) console.log((r.closedAt === null && Date.now() > r.dueAt ? chalk.red : chalk.dim)(`    Due ${when(r.dueAt)}`))
   if (r.closeWhen) {
@@ -235,6 +245,8 @@ requests
   .option("--max-nudges <n>", "nudges per step before it counts as blocked and you are told")
   .option("--approve-kinds <kind,...>", "step kinds you approve once when the plan is made; \"none\" to clear")
   .option("--plans-off-for <agent,...>", "agents that may not open a plan; \"none\" to clear")
+  .option("--plan-for <work,...>", "kinds of work an agent must plan before it starts (default code); \"none\" to clear")
+  .option("--plan-over <minutes>", "work estimated over this many minutes needs a plan (default 30); 0 turns it off")
   .option("--checks <kind,...>", `checks agents may use to close a loop (${CHECK_KINDS.join(", ")}); "none" to turn them all off`)
   .option("--check-every <minutes>", "how often each open loop's check runs")
   .action(async (opts: Record<string, string | undefined>) => {
@@ -269,6 +281,12 @@ requests
       }
       plans.approveKinds = list(opts.approveKinds, "none")
       plans.disabledAgents = list(opts.plansOffFor, "none")
+      plans.requireForWork = list(opts.planFor, "none")
+      if (opts.planOver !== undefined) {
+        const n = Number(opts.planOver)
+        if (!(n >= 0)) throw new Error("--plan-over must be a number of minutes, 0 or more")
+        plans.requireOverMinutes = n
+      }
       if (Object.values(plans).some((v) => v !== undefined)) patch.plans = plans
       const checkers: NonNullable<RequestSettingsPatch["checkers"]> = {}
       const kinds = list(opts.checks, "none")
@@ -298,6 +316,9 @@ requests
     console.log(`  Nudge a quiet step      after ${p.stallMinutes} minute(s), up to ${p.maxNudges} time(s)`)
     console.log(`  You approve up front    ${p.approveKinds.length ? p.approveKinds.join(", ") : "nothing"}`)
     console.log(`  Plans off for           ${p.disabledAgents.length ? p.disabledAgents.join(", ") : "no agent"}`)
+    const over = p.requireOverMinutes ?? DEFAULT_PLAN_SETTINGS.requireOverMinutes
+    const kinds = p.requireForWork ?? DEFAULT_PLAN_SETTINGS.requireForWork
+    console.log(`  Plan before starting    ${[kinds.length ? `${kinds.join(", ")} work` : "", over > 0 ? `work over ${over} minute(s)` : ""].filter(Boolean).join("; ") || "never required"}`)
     const c = s.checkers ?? DEFAULT_CHECKER_SETTINGS
     console.log(`  Loop checks             ${c.enabled.length ? c.enabled.join(", ") : "off"}, every ${c.checkEveryMinutes} minute(s)`)
     const repos = Object.keys(c.repos)

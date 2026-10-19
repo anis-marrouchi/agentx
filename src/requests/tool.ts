@@ -6,7 +6,9 @@ import { callerHeaders } from "@/calls/service"
 // Lets an agent say what it is doing with the owner's request, so the
 // request stays visible until it is closed:
 //   accept   I am taking this on; keep it open after this turn. With
-//            `steps` (two or more): a tracked plan the daemon follows (#788)
+//            `steps` (two or more): a tracked plan the daemon follows (#788).
+//            `work` and `estimateMinutes` say what it is: code work or a
+//            long estimate is refused without steps (#1048)
 //   step     report on one step of a plan: progress, done, blocked
 //   wait     the next step is the owner's answer to this question
 //   done     finished, with a link to the evidence. On a loop with a
@@ -85,7 +87,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       body: JSON.stringify({
         action, agentId: caller.agentId,
         id: args.id, question: args.question, evidence: args.evidence, reason: args.reason,
-        steps: args.steps, step: args.step, status: args.status, note: args.note, home: args.home,
+        steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
       }),
       signal: AbortSignal.timeout(action === "done" ? DONE_TIMEOUT_MS : 10_000),

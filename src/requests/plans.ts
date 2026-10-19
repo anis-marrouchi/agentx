@@ -18,10 +18,15 @@ export interface PlanSettings {
   approveKinds: string[]
   /** Agents that may not open a plan. */
   disabledAgents: string[]
+  /** Kinds of work that need a plan before they start (#1048). */
+  requireForWork: string[]
+  /** Work estimated over this many minutes needs a plan. 0: off. */
+  requireOverMinutes: number
 }
 
 export const DEFAULT_PLAN_SETTINGS: PlanSettings = {
   enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [],
+  requireForWork: ["code"], requireOverMinutes: 30,
 }
 
 /** The kind the daemon carries out itself: it sends the message. */
@@ -37,6 +42,54 @@ const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 export function plansOffFor(settings: PlanSettings, agentId: string): string | null {
   if (!settings.enabled) return "Plans are turned off on this node (requests.plans.enabled)."
   if (settings.disabledAgents.includes(agentId)) return `Plans are turned off for ${agentId} (requests.plans.disabledAgents).`
+  return null
+}
+
+/** What an agent says about the work when it accepts a request: its
+ *  kind (code, research…) and how long it expects it to take. */
+export interface WorkDeclaration {
+  work?: string
+  estimateMinutes?: number
+}
+
+/** The optional `work` and `estimateMinutes` of accept. A string when
+ *  one is malformed. */
+export function parseWork(input: Record<string, unknown>): WorkDeclaration | string {
+  const out: WorkDeclaration = {}
+  if (input.work !== undefined && input.work !== null && input.work !== "") {
+    const work = str(input.work).toLowerCase()
+    if (!KIND_RE.test(work)) return `work "${work}" must be a short lower-case word (code, research, writing…)`
+    out.work = work
+  }
+  if (input.estimateMinutes !== undefined && input.estimateMinutes !== null && input.estimateMinutes !== "") {
+    const n = Number(input.estimateMinutes)
+    if (!Number.isFinite(n) || n < 0) return "estimateMinutes must be a number of minutes, 0 or more"
+    out.estimateMinutes = n
+  }
+  return out
+}
+
+/** The plan gate is set for this agent (#1048): some kind of work or an
+ *  estimate can need a plan, so an accept must say what the work is. */
+export function planGateOn(settings: PlanSettings, agentId: string): boolean {
+  if (plansOffFor(settings, agentId)) return false
+  const kinds = settings.requireForWork ?? DEFAULT_PLAN_SETTINGS.requireForWork
+  const over = settings.requireOverMinutes ?? DEFAULT_PLAN_SETTINGS.requireOverMinutes
+  return kinds.length > 0 || over > 0
+}
+
+/** The plan gate (#1048): why this work needs a plan before it starts,
+ *  or null when it does not. Not every task: only the kinds of work the
+ *  owner listed, and work estimated over the threshold. A node or agent
+ *  without plans is never gated: it could not make one. */
+export function planRequiredFor(settings: PlanSettings, agentId: string, w: WorkDeclaration): string | null {
+  if (plansOffFor(settings, agentId)) return null
+  const kinds = settings.requireForWork ?? DEFAULT_PLAN_SETTINGS.requireForWork
+  const over = settings.requireOverMinutes ?? DEFAULT_PLAN_SETTINGS.requireOverMinutes
+  if (w.work && kinds.includes(w.work)) return `${w.work} work needs a plan before it starts`
+  if (over > 0 && w.estimateMinutes !== undefined && w.estimateMinutes > over) {
+    return `work estimated at ${Math.round(w.estimateMinutes)} minutes (over ${over}) needs a plan before it starts`
+  }
   return null
 }
 

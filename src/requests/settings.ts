@@ -44,7 +44,7 @@ export async function updateRequestSettings(
     }
     if (patch.plans) {
       const p = (r.plans ??= {})
-      for (const key of ["enabled", "stallMinutes", "maxNudges", "approveKinds", "disabledAgents"] as const) {
+      for (const key of ["enabled", "stallMinutes", "maxNudges", "approveKinds", "disabledAgents", "requireForWork", "requireOverMinutes"] as const) {
         if (patch.plans[key] !== undefined) p[key] = patch.plans[key]
       }
     }

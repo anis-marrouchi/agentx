@@ -99,7 +99,10 @@ function makePlan(steps: unknown[] = STEPS) {
 
 describe("settings", () => {
   it("defaults to on, a 30 minute stall, 3 nudges, and approving messages up front", () => {
-    expect(requestsConfigSchema.parse(undefined).plans).toEqual({ enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [] })
+    expect(requestsConfigSchema.parse(undefined).plans).toEqual({
+      enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30,
+    })
+    expect(requestsConfigSchema.parse(undefined).plans).toEqual(DEFAULT_PLAN_SETTINGS)
   })
 
   it("refuses a step kind that is not a short word", () => {
@@ -151,6 +154,91 @@ describe("making a plan", () => {
   it("keeps one plan per request", () => {
     makePlan()
     expect(api({ action: "accept", agentId: "coder", id: "req-1", steps: STEPS }).status).toBe(409)
+  })
+})
+
+describe("the plan gate (#1048)", () => {
+  const accept = (extra: Record<string, unknown>) => api({ action: "accept", agentId: "coder", id: "req-1", ...extra })
+
+  it("refuses to start code work without steps, and starts it with them", () => {
+    const res = accept({ work: "code" })
+    expect(res.status).toBe(409)
+    expect(res.body).toMatchObject({ planRequired: true })
+    expect((res.body as any).error).toMatch(/code work needs a plan.*steps/)
+    expect(plans.get("req-1")).toBeNull()
+    // steps: null is no steps, so it is gated too.
+    expect(accept({ work: "code", steps: null }).status).toBe(409)
+    const ok = accept({ work: "code", estimateMinutes: 90, steps: STEPS })
+    expect(ok.status).toBe(200)
+    // The plan is the one the dashboard and `requests show` already list.
+    expect(plans.steps("req-1")).toHaveLength(3)
+  })
+
+  it("refuses work estimated over the threshold, not at or under it", () => {
+    expect(accept({ estimateMinutes: 45 }).status).toBe(409)
+    expect((accept({ estimateMinutes: 45 }).body as any).error).toMatch(/45 minutes \(over 30\)/)
+    expect(accept({ work: "research", estimateMinutes: 30 }).status).toBe(200)
+  })
+
+  it("needs work on an accept without steps while the gate is set, and keeps what was declared", () => {
+    const bare = accept({})
+    expect(bare.status).toBe(400)
+    expect(bare.body).toMatchObject({ workRequired: true })
+    expect((bare.body as any).error).toMatch(/accept needs `work`/)
+    expect(accept({ work: "code", estimateMinutes: 90 }).status).toBe(409)
+    expect(requests.get("req-1")).toMatchObject({ work: "code", estimateMinutes: 90 })
+    // A later bare accept is gated on what was declared, not let through.
+    expect(accept({}).status).toBe(409)
+  })
+
+  it("keeps the first declaration when a later accept changes it", () => {
+    expect(accept({ work: "code", estimateMinutes: 90 }).status).toBe(409)
+    expect(accept({ work: "research", estimateMinutes: 10 }).status).toBe(200)
+    expect(requests.get("req-1")).toMatchObject({
+      work: "research", estimateMinutes: 10, firstWork: "code", firstEstimateMinutes: 90,
+    })
+  })
+
+  it("leaves other declared tasks alone: short, or other kinds", () => {
+    expect(accept({ work: "research", estimateMinutes: 10 }).status).toBe(200)
+    expect(requests.get("req-1")).toMatchObject({ work: "research", estimateMinutes: 10 })
+    expect(accept({ work: "writing" }).status).toBe(200)
+  })
+
+  it("does not need work once the gate is off", () => {
+    settings.requireForWork = []
+    settings.requireOverMinutes = 0
+    expect(accept({}).status).toBe(200)
+  })
+
+  it("follows the owner's kinds and threshold", () => {
+    settings.requireForWork = ["research"]
+    settings.requireOverMinutes = 0
+    expect(accept({ work: "code", estimateMinutes: 600 }).status).toBe(200)
+    expect(accept({ work: "research" }).status).toBe(409)
+    settings.requireForWork = []
+    settings.requireOverMinutes = 120
+    expect(accept({ work: "code", estimateMinutes: 60 }).status).toBe(200)
+    expect(accept({ estimateMinutes: 121 }).status).toBe(409)
+  })
+
+  it("does not gate an agent or node without plans, nor a request that has one", () => {
+    settings.disabledAgents = ["coder"]
+    expect(accept({ work: "code" }).status).toBe(200)
+    settings.disabledAgents = []
+    expect(api({ action: "accept", agentId: "coder", id: "req-1", work: "code" }, { plans: undefined }).status).toBe(200)
+    makePlan()
+    expect(accept({ work: "code" }).status).toBe(200)
+  })
+
+  it("refuses a malformed work or estimate", () => {
+    expect((accept({ work: "Big Code" }).body as any).error).toMatch(/short lower-case word/)
+    expect((accept({ estimateMinutes: "soon" }).body as any).error).toMatch(/estimateMinutes/)
+  })
+
+  it("rejects a work kind that is not a short word in the settings", () => {
+    expect(requestsConfigSchema.safeParse({ plans: { requireForWork: ["Code Work"] } }).success).toBe(false)
+    expect(requestsConfigSchema.safeParse({ plans: { requireOverMinutes: -1 } }).success).toBe(false)
   })
 })
 

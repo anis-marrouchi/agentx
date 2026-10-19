@@ -202,7 +202,7 @@ describe("settings", () => {
   it("reads defaults, saves changes through the config schema and rejects bad values", async () => {
     const configPath = path.join(tmp, "agentx.json")
     writeFileSync(configPath, JSON.stringify({ node: { id: "n", name: "n" }, agents: {} }))
-    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [] }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} } })
+    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} } })
     const ok = await updateRequestSettings({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 }, { configPath, reload: false })
     expect(ok.success).toBe(true)
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests).toEqual({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 })
@@ -214,7 +214,7 @@ describe("settings", () => {
     // Plans (#788): only the fields given are written.
     expect((await updateRequestSettings({ plans: { stallMinutes: 45, disabledAgents: ["bot"] } }, { configPath, reload: false })).success).toBe(true)
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests.plans).toEqual({ stallMinutes: 45, disabledAgents: ["bot"] })
-    expect(readRequestSettings(configPath).plans).toEqual({ enabled: true, stallMinutes: 45, maxNudges: 3, approveKinds: ["message"], disabledAgents: ["bot"] })
+    expect(readRequestSettings(configPath).plans).toEqual({ enabled: true, stallMinutes: 45, maxNudges: 3, approveKinds: ["message"], disabledAgents: ["bot"], requireForWork: ["code"], requireOverMinutes: 30 })
     expect((await updateRequestSettings({ plans: { maxNudges: -1 } }, { configPath, reload: false })).success).toBe(false)
   })
 })
@@ -328,6 +328,17 @@ describe("home and the since list (#394)", () => {
     }) as typeof fetch
     await runRequestTool({ action: "accept", home: { kind: "idea", link: "ideas/a.md" } }, { daemonUrl: "http://d", fetch: fakeFetch, env: { AGENTX_AGENT_ID: "coder" } })
     expect(sent.home).toEqual({ kind: "idea", link: "ideas/a.md" })
+  })
+
+  it("the tool passes the work and its estimate through, for the plan gate (#1048)", async () => {
+    let sent: any
+    const fakeFetch = (async (_u: string, init: any) => {
+      sent = JSON.parse(init.body)
+      return new Response(JSON.stringify({ error: "Not started: code work needs a plan before it starts." }), { status: 409 })
+    }) as typeof fetch
+    const said = await runRequestTool({ action: "accept", work: "code", estimateMinutes: 90 }, { daemonUrl: "http://d", fetch: fakeFetch, env: { AGENTX_AGENT_ID: "coder" } })
+    expect(sent).toMatchObject({ work: "code", estimateMinutes: 90 })
+    expect(said).toBe("Error: Not started: code work needs a plan before it starts.")
   })
 })
 
