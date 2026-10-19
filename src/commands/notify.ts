@@ -74,7 +74,7 @@ function configuredAlert(opts: { config?: string; sound: boolean; banner: boolea
   if (!opts.banner) settings.banner = false
   // --channel wins; then notifications.channel; then push if it is on, else ntfy.
   const channel = opts.channel ?? defaultNotifyChannel(cfg)
-  return { alert: localAlert(settings), banner: settings.banner, channel }
+  return { alert: localAlert(settings, { native: cfg?.native }), banner: settings.banner, channel }
 }
 
 export const notify = new Command()

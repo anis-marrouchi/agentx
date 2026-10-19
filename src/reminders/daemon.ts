@@ -1,7 +1,8 @@
 import { getEventBus } from "@/events/bus"
 import type { AgentResponse, AgentTask } from "@/agents/runtime"
 import { ReminderPoller, type DispatchResult, type ReminderSettings } from "./poller"
-import { remindctlSource, type ReminderSource } from "./source"
+import { loadNativeAdapter, type NativeConfig } from "@/native"
+import type { ReminderSource } from "./source"
 import { claimFile } from "./store"
 import { isQueued } from "@/agents/queued"
 import { splitContext } from "./trailer"
@@ -36,7 +37,9 @@ export interface RemindersDaemonDeps {
   isStopping: () => boolean
   log: (msg: string) => void
   platform?: NodeJS.Platform
-  /** Tests: stands in for remindctl. */
+  /** The `native` config block; adapter "none" turns the poller off. */
+  native?: NativeConfig["native"]
+  /** Tests: stands in for the OS task app. */
   source?: ReminderSource
 }
 
@@ -44,7 +47,8 @@ export interface RemindersDaemonDeps {
 export function startRemindersPoller(deps: RemindersDaemonDeps): (() => void) | null {
   const { settings, log } = deps
   if (!settings.enabled) return null
-  if ((deps.platform ?? process.platform) !== "darwin") {
+  const tasks = loadNativeAdapter({ native: deps.native, reminders: { command: settings.command } }, { platform: deps.platform }).tasks
+  if (!tasks) {
     log("[reminders] reminders.enabled is set, but Apple Reminders is only available on macOS; not polling")
     return null
   }
@@ -74,7 +78,7 @@ export function startRemindersPoller(deps: RemindersDaemonDeps): (() => void) | 
 
   const poller = new ReminderPoller({
     settings,
-    source: deps.source ?? remindctlSource(settings.command),
+    source: deps.source ?? tasks,
     claimsPath: claimFile(deps.root),
     hasAgent: deps.hasAgent,
     log,
