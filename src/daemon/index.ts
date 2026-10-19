@@ -106,6 +106,7 @@ import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { loadNativeAdapter } from "@/native"
+import { handleNoteRequest, noteCaller, type NoteReply } from "@/native/notes-api"
 import { claimFile } from "@/reminders/store"
 import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
@@ -2285,6 +2286,22 @@ export class AgentXDaemon {
 
   private forwardToWarned?: string
 
+  /** A note for the owner's notes app, sent to the peer that has it. */
+  private async forwardNote(peer: ForwardPeer, payload: Record<string, unknown>): Promise<NoteReply> {
+    const token = peer.token || process.env.MESH_TOKEN
+    try {
+      const res = await fetch(`${peer.url.replace(/\/+$/, "")}/native/notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30_000),
+      })
+      return { status: res.status, body: await res.json().catch(() => ({})) }
+    } catch (e: any) {
+      return { status: 502, body: { error: `couldn't reach ${peer.name} (${peer.url}): ${e?.message ?? e}` } }
+    }
+  }
+
   /** Where this node's cards go when `approvals.forwardTo` is set: the
    *  named peer, or undefined (with one log line per name) when the name
    *  is no peer, so cards stay here rather than vanish. */
@@ -4250,6 +4267,39 @@ export class AgentXDaemon {
           return
         }
         this.json(res, 405, { error: "Method not allowed" }); return
+      }
+
+      // Ideas to the owner's notes app (#1062): from an agent's turn here,
+      // or forwarded by a peer whose agent wrote it.
+      if (path === "/native/notes") {
+        if (req.method !== "POST") { this.json(res, 405, { error: "Method not allowed" }); return }
+        const input = ((await readBody(req).catch(() => ({}))) ?? {}) as Record<string, unknown>
+        const claimed = typeof input.agentId === "string" ? input.agentId.trim() : undefined
+        const auth = req.headers.authorization
+        const caller = noteCaller({
+          node: typeof input.node === "string" ? input.node.trim() : "",
+          selfNode: this.config.node.name,
+          tokenPeer: peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN),
+          claimed,
+          isLocalAgent: (id) => !!this.registry.getAgent(id),
+          proven: () => this.provenAgent(this.callerProof(req), claimed),
+        })
+        if ("error" in caller) { this.json(res, 400, { error: caller.error }); return }
+        const fromPeer = caller.node !== ""
+        const agentId = caller.agentId
+        const peerName = this.config.native.forwardTo ?? this.config.approvals.forwardTo
+        const peer = !fromPeer && peerName ? this.approvalsPeer(peerName) : undefined
+        const reply = await handleNoteRequest(input, {
+          root: process.cwd(),
+          settings: this.config.native.notes,
+          notes: this.native.notes,
+          agentId,
+          node: caller.node,
+          forward: peer ? async (payload) => this.forwardNote(peer, { ...payload, node: this.config.node.name }) : undefined,
+        })
+        if (reply.status === 201) this.log(`[notes] ${agentId}${fromPeer ? ` on ${input.node}` : ""} added a note${this.native.notes ? "" : ` on ${peerName}`}`)
+        this.json(res, reply.status, reply.body)
+        return
       }
 
       // Approvals inbox, agent side: raise a card, read the inbox. Deciding
