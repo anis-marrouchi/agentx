@@ -7,6 +7,10 @@ import {
   type TaskWatchInput, type TaskWatchKind,
 } from "@/decisions/seats/task-watch"
 import type { WatchDecision, WatcherRecord, WatcherStore } from "./store"
+import {
+  checkEvidence, describeEvidence, evidenceRuleFor, parseEvidence, requirementText,
+  type EvidenceRule,
+} from "./evidence"
 
 // --- The watcher checkpoint at every task start (#1030) ---
 //
@@ -23,6 +27,9 @@ import type { WatchDecision, WatcherRecord, WatcherStore } from "./store"
 // task ends without a result. It tells the delegating agent first and the
 // owner after `escalateAfterMinutes`; with no delegating agent on this node
 // it tells the owner at once.
+//
+// A task whose type has an evidence rule (#1049) closes only on a done
+// signal whose evidence the rule accepts; its reply never closes it.
 //
 // Every entry point swallows its own errors: watching a task must never
 // break the task.
@@ -48,7 +55,13 @@ export interface WatcherSettings {
    *  delegation that answers. "explicit": only a done signal (POST
    *  /watchers/:id/done), so a reply that only promises keeps it open. */
   doneSignal: DoneSignal
+  /** Evidence rules by task type (#1049). A task with no rule for its type
+   *  closes as `doneSignal` says. */
+  evidence?: Record<string, EvidenceRule>
 }
+
+/** What a done signal did: `error` is why its evidence was refused. */
+export type DoneResult = { changed: boolean; error?: undefined } | { changed: false; error: string; required: string }
 
 export type DoneSignal = "result" | "explicit"
 
@@ -89,6 +102,8 @@ export interface TaskStart {
   delegator: string | null
   message: string
   dueAt: number | null
+  /** The caller's `context.taskType`, which picks the evidence rule. */
+  taskType?: string | null
   /** The run a restart cut off, when this run resumes it. */
   resumedFrom?: string | null
 }
@@ -114,7 +129,10 @@ export function taskStartOf(e: AgentXEvents["task:started"], settings: Pick<Watc
   // The relay of a delegation's result is the end of that delegation.
   if (isDelegationRelay(e.fullMessage ?? e.messagePreview)) return null
   const message = e.requestText || e.fullMessage || e.messagePreview || ""
-  const base = { traceId, agentId: e.agentId, channel: e.channel, message, dueAt: e.dueAt ?? null, resumedFrom: e.resumedFrom ?? null }
+  const base = {
+    traceId, agentId: e.agentId, channel: e.channel, message, dueAt: e.dueAt ?? null,
+    taskType: e.taskType ?? null, resumedFrom: e.resumedFrom ?? null,
+  }
   const dlg = e.channel === "a2a" ? DLG_CHAT.exec(e.chatId)?.[1] : undefined
   const sender = e.sender?.name ?? ""
   const caller = sender.startsWith("agent:") ? sender.slice("agent:".length) : null
@@ -194,6 +212,7 @@ export class WatchCheckpoint {
   private link(task: TaskStart, w: WatcherRecord): void {
     // The delegation's start carries no due time; its callee run can.
     if (task.dueAt && task.dueAt !== w.dueAt) this.deps.store.setDue(w.id, task.dueAt)
+    if (task.taskType && task.taskType !== w.taskType) this.deps.store.setTaskType(w.id, task.taskType)
     if (!task.traceId) return
     if (task.traceId !== w.taskKey) this.deps.store.setTrace(w.id, task.traceId)
     this.deps.store.recordOnTrace(task.traceId, "existing", w.probability, w.id)
@@ -250,6 +269,7 @@ export class WatchCheckpoint {
       taskKey: task.key, traceId: task.traceId, kind: task.kind, agentId: task.agentId,
       delegator: task.delegator, summary: clip(task.message), dueAt: task.dueAt ?? now + settings.defaultDueMinutes * MINUTE,
       decision, probability: result.probability, decisionCallId: result.callId, createdAt: now,
+      taskType: task.taskType ?? null,
     })
     // Another process added one between the look-up and here.
     if (!created) {
@@ -287,7 +307,7 @@ export class WatchCheckpoint {
     if (!e.error && e.finalResponse?.trim()) {
       // Explicit: a reply can be a promise ("I'll publish at 18:00"), so
       // only a done signal closes the watcher; the due time still applies.
-      if (this.deps.settings().doneSignal === "explicit") return
+      if (this.needsExplicitDone(w)) return
       // Also after an alert: a late result spares the owner the escalation.
       this.deps.store.transition(w.id, ["open", "alerted"], "done", "ended with a result", this.now())
       return
@@ -302,7 +322,7 @@ export class WatchCheckpoint {
     const w = this.deps.store.byKey(rec.id)
     if (!w) return
     if (status === "done") {
-      if (this.deps.settings().doneSignal === "explicit") return
+      if (this.needsExplicitDone(w)) return
       this.deps.store.transition(w.id, ["open", "alerted"], "done", "delegation answered", this.now())
       return
     }
@@ -310,9 +330,38 @@ export class WatchCheckpoint {
     await this.fire(w, `${why}${text ? `: ${clip(text, 160)}` : ""}`)
   }
 
-  /** Someone said the task is done (the API, the delegating agent). */
-  markDone(id: string, evidence = "marked done"): boolean {
-    return this.deps.store.transition(id, ["open", "alerted", "escalated"], "done", evidence, this.now())
+  /** The evidence rule for a watcher's task type, if any. */
+  ruleFor(w: Pick<WatcherRecord, "taskType" | "kind">): EvidenceRule | null {
+    return evidenceRuleFor(this.deps.settings().evidence, w)
+  }
+
+  /** Only a done signal closes it: the explicit mode, or an evidence rule. */
+  private needsExplicitDone(w: WatcherRecord): boolean {
+    return this.deps.settings().doneSignal === "explicit" || !!this.ruleFor(w)
+  }
+
+  /** Someone said the task is done (the API, the delegating agent). When
+   *  the task's type has an evidence rule, the evidence must pass it; else
+   *  any evidence, or none, closes it as before. Readable evidence is kept
+   *  on the watcher either way. */
+  markDone(id: string, evidence?: unknown): DoneResult {
+    const w = this.deps.store.get(id)
+    if (!w || w.state === "done") return { changed: false }
+    const parsed = parseEvidence(evidence)
+    const rule = this.ruleFor(w)
+    if (rule) {
+      const why = typeof parsed === "string" ? parsed : checkEvidence(rule, parsed)
+      if (why) {
+        this.deps.log(`[watchers] ${w.id}: done refused (${why})`)
+        return { changed: false, error: why, required: requirementText(rule) }
+      }
+    }
+    // No rule: evidence that cannot be read is left out, as before.
+    const ev = typeof parsed === "string" ? null : parsed
+    // A plain string reads as before: the watcher's reason is that string.
+    const reason = typeof evidence === "string" && evidence.trim() ? evidence.trim() : ev ? describeEvidence(ev) : "marked done"
+    const changed = this.deps.store.transition(id, ["open", "alerted", "escalated"], "done", reason, this.now(), ev)
+    return { changed }
   }
 
   /** Every minute: fire what is overdue, escalate what was not answered,
@@ -336,7 +385,7 @@ export class WatchCheckpoint {
       // The alert is a whole agent turn: not waited for, so one slow turn
       // does not hold up the other watchers or the next sweep.
       const delegator = w.delegator
-      const alert = this.deps.alertAgent(delegator, agentAlertText(w, reason, this.deps.doneHint), w)
+      const alert = this.deps.alertAgent(delegator, agentAlertText(w, reason, this.deps.doneHint, this.ruleFor(w)), w)
         .then(() => this.deps.log(`[watchers] ${w.id}: told ${delegator} (${reason})`))
         .catch(async (e: any) => {
           this.deps.log(`[watchers] ${w.id}: could not tell ${delegator}: ${e?.message ?? e}`)
@@ -362,11 +411,13 @@ export class WatchCheckpoint {
    *  watcher: tells the delegating agent how to close it. */
   doneNote(delegationId: string): string | undefined {
     try {
-      if (this.deps.settings().doneSignal !== "explicit") return undefined
       const w = this.deps.store.byKey(delegationId)
       if (!w || (w.state !== "open" && w.state !== "alerted")) return undefined
+      if (!this.needsExplicitDone(w)) return undefined
       const hint = (this.deps.doneHint ?? apiDoneHint)(w)
-      return `Watcher ${w.id} follows this task and only an explicit done closes it. If the work is really finished (not only promised), mark it done: ${hint}. Otherwise it fires at ${new Date(w.dueAt).toISOString()}.`
+      const rule = this.ruleFor(w)
+      const proof = rule ? ` It needs evidence: ${requirementText(rule)}.` : ""
+      return `Watcher ${w.id} follows this task and only an explicit done closes it. If the work is really finished (not only promised), mark it done: ${hint}.${proof} Otherwise it fires at ${new Date(w.dueAt).toISOString()}.`
     } catch {
       return undefined
     }
@@ -388,7 +439,7 @@ export type DoneHint = (w: WatcherRecord) => string
 
 const apiDoneHint: DoneHint = (w) => `POST /watchers/${w.id}/done on this node's daemon`
 
-export function agentAlertText(w: WatcherRecord, reason: string, doneHint: DoneHint = apiDoneHint): string {
+export function agentAlertText(w: WatcherRecord, reason: string, doneHint: DoneHint = apiDoneHint, rule: EvidenceRule | null = null): string {
   return [
     `[agentx:watcher id=${w.id} task=${w.taskKey}]`,
     `A task you handed to ${w.agentId} is not finished. Why: ${reason}.`,
@@ -398,6 +449,7 @@ export function agentAlertText(w: WatcherRecord, reason: string, doneHint: DoneH
     "",
     "Find out where it stands and finish it, hand it on, or tell the owner why it cannot be done.",
     `When it is done, say so: ${doneHint(w)}`,
+    ...(rule ? [`Done needs evidence: ${requirementText(rule)}, sent as the evidence value. Without it, done is refused.`] : []),
     "If nothing happens, the owner is told.",
   ].join("\n")
 }

@@ -10,7 +10,8 @@ import {
 } from "../src/watchers/checkpoint"
 import { attachWatchers } from "../src/watchers/attach"
 import { handleWatchersApi } from "../src/watchers/daemon-api"
-import { dueAtOf } from "../src/watchers/due"
+import { dueAtOf, taskTypeOf } from "../src/watchers/due"
+import { checkEvidence, evidenceRuleFor, parseEvidence, type EvidenceRule } from "../src/watchers/evidence"
 import { watchersConfigSchema } from "../src/daemon/config"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 import { getEventBus } from "../src/events/bus"
@@ -406,7 +407,7 @@ describe("fire", () => {
 
   it("stops after it is marked done", async () => {
     await cp.check(task({ delegator: "coo", kind: "delegation", dueAt: clock + MIN }))
-    expect(cp.markDone("watch-trace-1", "posted")).toBe(true)
+    expect(cp.markDone("watch-trace-1", "posted").changed).toBe(true)
     clock += 2 * MIN
     await cp.sweep()
     expect(agentAlerts).toHaveLength(0)
@@ -421,7 +422,7 @@ describe("fire", () => {
     clock += 11 * MIN
     await cp.sweep()
     expect(agentAlerts.map((a) => a.agentId)).toEqual(["coo"])
-    expect(cp.markDone("watch-trace-1", "https://example.com/v/1")).toBe(true)
+    expect(cp.markDone("watch-trace-1", "https://example.com/v/1").changed).toBe(true)
     clock += 60 * MIN
     await cp.sweep()
     expect(ownerAlerts).toHaveLength(0)
@@ -489,5 +490,121 @@ describe("bus and API", () => {
     expect(api("GET", "/watchers/nope").status).toBe(404)
     const done = api("POST", "/watchers/watch-trace-1/done", "", { evidence: "https://example.com/post/1" })
     expect(done.body).toMatchObject({ changed: true, watcher: { state: "done", reason: "https://example.com/post/1" } })
+  })
+})
+
+describe("evidence on done (#1049)", () => {
+  const TEST: EvidenceRule = { accept: ["test"], minOutputChars: 40, linkHosts: [] }
+  const PUBLISH: EvidenceRule = { accept: ["link"], minOutputChars: 40, linkHosts: ["example.com"] }
+  const REPORT: EvidenceRule = { accept: ["output", "link"], minOutputChars: 20, linkHosts: [] }
+  const ended = (taskId: string, finalResponse = "all done") =>
+    ({ taskId, agentId: "social", channel: "x", chatId: "x", durationMs: 5, finalResponse, at: "" }) as any
+
+  beforeEach(() => {
+    settings = { ...ON, evidence: { code: TEST, publish: PUBLISH, cron: REPORT } }
+  })
+
+  it("has no rules by default, and reads per-type rules with defaults", () => {
+    expect(watchersConfigSchema.parse({}).evidence).toEqual({})
+    const parsed = watchersConfigSchema.parse({ evidence: { code: { accept: ["test"] } } })
+    expect(parsed.evidence.code).toEqual({ accept: ["test"], minOutputChars: 40, linkHosts: [] })
+    expect(() => watchersConfigSchema.parse({ evidence: { code: { accept: [] } } })).toThrow()
+    expect(() => watchersConfigSchema.parse({ evidence: { code: { accept: ["vibes"] } } })).toThrow()
+  })
+
+  it("reads the task type from the run context and the task start", () => {
+    expect(taskTypeOf({ taskType: " code " })).toBe("code")
+    expect(taskTypeOf({ taskType: 3 })).toBeUndefined()
+    expect(taskStartOf(started({ taskType: "code" }), ON)?.taskType).toBe("code")
+    expect(taskStartOf(started(), ON)?.taskType).toBeNull()
+  })
+
+  it("picks the rule by task type, else by the watcher's kind", () => {
+    const rules = settings.evidence!
+    expect(evidenceRuleFor(rules, { taskType: "code", kind: "dispatch" })).toBe(TEST)
+    expect(evidenceRuleFor(rules, { taskType: null, kind: "cron" })).toBe(REPORT)
+    expect(evidenceRuleFor(rules, { taskType: "chat", kind: "cron" })).toBe(REPORT)
+    expect(evidenceRuleFor(rules, { taskType: "chat", kind: "dispatch" })).toBeNull()
+    expect(evidenceRuleFor(undefined, { taskType: "code", kind: "dispatch" })).toBeNull()
+  })
+
+  it("reads strings and typed objects, and refuses malformed evidence", () => {
+    expect(parseEvidence(undefined)).toBeNull()
+    expect(parseEvidence("  ")).toBeNull()
+    expect(parseEvidence("https://example.com/p/1")).toEqual({ type: "link", url: "https://example.com/p/1" })
+    expect(parseEvidence("posted it")).toEqual({ type: "output", text: "posted it" })
+    expect(parseEvidence({ type: "test", passed: 12, failed: 0, command: "pnpm test" })).toEqual({ type: "test", passed: 12, failed: 0, command: "pnpm test" })
+    expect(parseEvidence({ type: "test", passed: "12" })).toMatch(/whole numbers/)
+    expect(parseEvidence({ type: "link", url: "ftp://x" })).toMatch(/http/)
+    expect(parseEvidence({ type: "output" })).toMatch(/needs text/)
+    expect(parseEvidence({ type: "screenshot" })).toMatch(/must be one of/)
+    expect(parseEvidence([1])).toMatch(/string or an object/)
+  })
+
+  it("accepts only the proof each type defines", () => {
+    expect(checkEvidence(TEST, null)).toMatch(/needs evidence: a passing test run/)
+    expect(checkEvidence(TEST, { type: "test", passed: 3, failed: 0 })).toBeNull()
+    expect(checkEvidence(TEST, { type: "test", passed: 3, failed: 1 })).toBe("1 test failed")
+    expect(checkEvidence(TEST, { type: "test", passed: 0, failed: 0 })).toBe("no test passed")
+    expect(checkEvidence(TEST, { type: "link", url: "https://example.com" })).toMatch(/link evidence does not count/)
+    expect(checkEvidence(PUBLISH, { type: "link", url: "https://cdn.example.com/v/1" })).toBeNull()
+    expect(checkEvidence(PUBLISH, { type: "link", url: "https://example.com.evil.test/v/1" })).toMatch(/must be on example.com/)
+    expect(checkEvidence(REPORT, { type: "output", text: "done" })).toMatch(/shorter than 20/)
+    expect(checkEvidence(REPORT, { type: "output", text: "Weekly report: 14 items closed, 2 open." })).toBeNull()
+  })
+
+  it("rejects done without the required evidence and closes on accepted evidence", async () => {
+    await cp.check(task({ taskType: "code" }))
+    expect(store.get("watch-trace-1")?.taskType).toBe("code")
+    expect(cp.markDone("watch-trace-1")).toMatchObject({ changed: false, error: expect.stringMatching(/needs evidence/) })
+    expect(cp.markDone("watch-trace-1", "done, trust me")).toMatchObject({ changed: false, error: expect.stringMatching(/output evidence does not count/) })
+    expect(cp.markDone("watch-trace-1", { type: "test", passed: 4, failed: 2 })).toMatchObject({ changed: false, error: "2 tests failed" })
+    expect(store.get("watch-trace-1")?.state).toBe("open")
+    expect(cp.markDone("watch-trace-1", { type: "test", passed: 40, failed: 0, command: "pnpm test" })).toEqual({ changed: true })
+    expect(store.get("watch-trace-1")).toMatchObject({
+      state: "done", reason: "tests: 40 passed, 0 failed (pnpm test)",
+      evidence: { type: "test", passed: 40, failed: 0, command: "pnpm test" },
+    })
+  })
+
+  it("does not close a task with a rule on its reply, even in result mode", async () => {
+    await cp.check(task({ taskType: "publish", delegator: "coo", kind: "delegation", dueAt: clock + 10 * MIN }))
+    await cp.taskEnded(ended("trace-1", "Published!"))
+    expect(store.byKey("trace-1")?.state).toBe("open")
+    await cp.delegationStarted({ id: "dlg-9", caller: "coo", callee: "social", request: "post it" })
+    store.setTaskType("watch-dlg-9", "publish")
+    await cp.delegationEnded({ id: "dlg-9" }, "done", "posted")
+    expect(store.byKey("dlg-9")?.state).toBe("open")
+    expect(cp.doneNote("dlg-9")).toContain("It needs evidence: a link on example.com")
+    clock += 11 * MIN
+    await cp.sweep()
+    expect(agentAlerts[0].text).toContain("Done needs evidence: a link on example.com")
+  })
+
+  it("keeps a task with no rule for its type as today", async () => {
+    await cp.check(task({ taskType: "chat" }))
+    await cp.taskEnded(ended("trace-1"))
+    expect(store.byKey("trace-1")?.state).toBe("done")
+    await cp.check(task({ key: "trace-2", traceId: "trace-2" }))
+    expect(cp.markDone("watch-trace-2", { type: "bogus" })).toEqual({ changed: true })
+    expect(store.get("watch-trace-2")).toMatchObject({ state: "done", reason: "marked done", evidence: null })
+  })
+
+  it("takes the type a delegation's callee run gives", async () => {
+    await cp.delegationStarted({ id: "dlg-3", caller: "coo", callee: "social", request: "fix the bug" })
+    await cp.check(task({ key: "dlg-3", traceId: "run-3", kind: "delegation", delegator: "coo", taskType: "code" }))
+    expect(store.byKey("dlg-3")?.taskType).toBe("code")
+    expect(cp.markDone("watch-dlg-3", "https://example.com/pr/1").changed).toBe(false)
+  })
+
+  it("answers 422 on refused evidence through the API", async () => {
+    await cp.check(task({ taskType: "publish" }))
+    const api = (body?: any) => handleWatchersApi("POST", "/watchers/watch-trace-1/done", new URLSearchParams(), body, { store, checkpoint: cp })
+    const refused = api({ evidence: "https://elsewhere.test/v/1" })
+    expect(refused.status).toBe(422)
+    expect(refused.body).toMatchObject({ error: expect.stringMatching(/example.com/), required: expect.stringMatching(/a link on example.com/) })
+    const ok = api({ evidence: { type: "link", url: "https://example.com/v/1" } })
+    expect(ok.status).toBe(200)
+    expect(ok.body).toMatchObject({ changed: true, watcher: { state: "done", reason: "link: https://example.com/v/1", evidence: { type: "link" } } })
   })
 })

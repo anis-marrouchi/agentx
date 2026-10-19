@@ -1293,6 +1293,19 @@ export const watchersConfigSchema = z.object({
    *  delegation answers. "explicit": only POST /watchers/:id/done, so a
    *  reply that only promises ("I'll publish at 18:00") keeps it open. */
   doneSignal: z.enum(["result", "explicit"]).default("result"),
+  /** Evidence a done needs, by task type (#1049): the caller's
+   *  `context.taskType`, else the watcher's kind (dispatch, delegation,
+   *  cron). A task of a type with a rule closes only on a done whose
+   *  evidence the rule accepts; its reply never closes it. Types with no
+   *  rule close as `doneSignal` says. */
+  evidence: z.record(z.string().min(1), z.object({
+    /** The kinds of proof that count: any one of them closes the task. */
+    accept: z.array(z.enum(["test", "output", "link"])).min(1),
+    /** The shortest output text accepted. */
+    minOutputChars: z.number().int().min(1).max(2000).default(40),
+    /** Hosts a link must be on (or a subdomain of). Empty: any host. */
+    linkHosts: z.array(z.string().min(1)).default([]),
+  })).default({}),
 }).default({}).refine((w) => w.noBelow <= w.yesAt, { message: "watchers.noBelow must not be above watchers.yesAt" })
 
 /** The Approvals inbox (src/approvals). Decision cards agents raise, and

@@ -309,6 +309,10 @@ The decision is the `task-watch` decision seat: it gives the chance that the tas
 | `watchers.owner.chatId` | string | — | Chat on that channel. Unset: `default`. |
 | `watchers.retentionDays` | number (up to 3650) | `30` | Days a finished watcher is kept before it is deleted. Watchers still watching are never deleted. |
 | `watchers.doneSignal` | `"result"` or `"explicit"` | `"result"` | What closes a watcher. `result`: the agent's run ends with a reply, or the delegation answers. `explicit`: only `POST /watchers/<id>/done`, so a reply that only promises ("I'll publish at 18:00") keeps the watcher open until its due time. A run that ends without a result fires at once in both modes. |
+| `watchers.evidence.<type>` | object | — | Proof a done needs for tasks of this type. The type is `taskType` in the task's `context`, else the watcher's kind: `dispatch`, `delegation` or `cron`. A task of a type with a rule is never closed by its reply, only by a done whose evidence the rule accepts; anything else is refused. Types with no rule close as `doneSignal` says. See [Require proof of done](/automations/task-watchers#_5-require-proof-of-done-optional). |
+| `watchers.evidence.<type>.accept` | list of `"test"`, `"output"`, `"link"` | required | The kinds of proof that count; any one of them closes the task. `test`: at least one test passed and none failed. `output`: the text the task produced. `link`: an `http` or `https` address. |
+| `watchers.evidence.<type>.minOutputChars` | number (1 to 2000) | `40` | The shortest `output` accepted. |
+| `watchers.evidence.<type>.linkHosts` | list of strings | `[]` | Sites a `link` must be on, for example `["example.com"]` (its subdomains count too). Empty: any site. |
 
 ## `requestStatus`
 
