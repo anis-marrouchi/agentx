@@ -229,10 +229,11 @@ describe("the answer", () => {
 
   it("tells the agent when a loosen or remove came from a plain yes (#1064)", () => {
     const card = reviewCard()
+    expect(card.recommend.startsWith(CHECK_CHOICES.loosen)).toBe(true)
     const plain = decideCard(tmp, card.id, "yes")
     if (!plain.ok) throw new Error(plain.error)
     expect(plain.card.choice_suggested).toBe(true)
-    expect([CHECK_CHOICES.loosen, CHECK_CHOICES.remove]).toContain(plain.card.choice)
+    expect(plain.card.choice).toBe(CHECK_CHOICES.loosen)
     const msg = verdictMessage(plain.card)
     expect(msg).toContain("pull request")
     expect(msg).toContain("plain yes, taken as the suggested option")
