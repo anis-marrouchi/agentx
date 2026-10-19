@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync } from "fs"
 import { resolve } from "path"
-import { daemonConfigSchema, expandEnvVars } from "./config"
+import { crossFieldProblems, daemonConfigSchema, expandEnvVars } from "./config"
 
 // --- Config mutator ---
 //
@@ -126,6 +126,8 @@ export async function applyConfigMutation(
         .join("\n")
       return { success: false, path, error: `Validation failed:\n${issues}`, after: mutated }
     }
+    const crossed = crossFieldProblems(parsed.data)
+    if (crossed.length) return { success: false, path, error: `Validation failed:\n${crossed.map((p) => `  ${p}`).join("\n")}`, after: mutated }
   }
 
   if (dryRun) {

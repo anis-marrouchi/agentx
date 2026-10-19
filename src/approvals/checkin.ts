@@ -1,6 +1,6 @@
 import { readClaims } from "@/reminders/store"
 import type { Reminder, ReminderSource } from "@/reminders/source"
-import { parseTrailer } from "@/reminders/trailer"
+import { isMirrorTrailer, parseTrailer } from "@/reminders/trailer"
 import { createCard, readCard, type CardSettings } from "./cards"
 import { composePrompt, parseCompose } from "./checkin-compose"
 import { pruneItems, readCheckinState, writeCheckinState, type CheckinState } from "./checkin-state"
@@ -137,7 +137,8 @@ export async function runCheckinPass(deps: CheckinDeps, kind: PassKind): Promise
   const claims = deps.claimsPath ? readClaims(deps.claimsPath) : {}
   const due = (r: Reminder) => (r.dueDate ? Date.parse(r.dueDate) : Infinity)
   const todo = open
-    .filter((r) => !claims[r.id] && isEligible(r, state, kind, s, root, now))
+    // A mirrored task is a card or request already on the Desk (#1062).
+    .filter((r) => !claims[r.id] && !isMirrorTrailer(r.notes) && isEligible(r, state, kind, s, root, now))
     .sort((a, b) => due(a) - due(b))
   result.looked = open.length
 

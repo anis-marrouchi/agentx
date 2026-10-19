@@ -100,6 +100,16 @@ describe("composing", () => {
 })
 
 describe("a pass", () => {
+  it("never turns a Reminders-mirror task back into a card (#1062)", async () => {
+    const { d, asked } = deps([
+      r("m", { dueDate: "2026-09-30T12:00:00Z", notes: "Which date?\nagentx: card=2026-09-30-x-ab12" }),
+      r("q", { dueDate: "2026-09-30T12:00:00Z", notes: "agentx: request=req-1" }),
+    ])
+    const res = await runCheckinPass(d, "daily")
+    expect(res.carded).toEqual([])
+    expect(asked).toEqual([])
+  })
+
   it("raises the card for the owning agent, linked to the reminder", async () => {
     const { d, asked } = deps([r("a", { dueDate: "2026-09-30T12:00:00Z", notes: "agentx: agent=helper" }), r("b", { dueDate: "2026-09-30T13:00:00Z" })])
     const res = await runCheckinPass(d, "check")

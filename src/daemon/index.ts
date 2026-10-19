@@ -71,6 +71,8 @@ import { resumedAnswerText } from "@/agents/resume/note"
 import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/agents/resume/mesh-resumer"
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
+import { runMirror } from "@/approvals/mirror"
+import { requestStoreFor } from "@/approvals/inbox"
 import { configToken, githubIssueComments, postWeekly, runReportCommand } from "@/quality/epic-report"
 import { createCard, listCards, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
@@ -2147,6 +2149,30 @@ export class AgentXDaemon {
   /** On the push host: the subscriptions table relayed phones use (#711). */
   private pushHost?: AppPushDeps
   private approvalsSweeping = false
+  private mirroring = false
+
+  /** One pass of the Reminders mirror, when it is on and this machine
+   *  has a task app (src/approvals/mirror.ts). */
+  private mirrorTick(): void {
+    const m = this.config.native.mirror
+    const tasks = this.native.tasks
+    if (!m.enabled || !tasks || this.mirroring) return
+    this.mirroring = true
+    const root = process.cwd()
+    void runMirror({
+      root,
+      settings: m,
+      tasks,
+      cards: () => listCards(root, "pending"),
+      requests: () => requestStoreFor({ root })?.listByState("waiting_owner") ?? [],
+      answerUrl: m.answerUrl ?? `http://localhost:${this.config.dashboard.port}/approvals`,
+      notify: (title, message) => this.notifyOwner(title, message, "mirror"),
+      log: this.log,
+    })
+      .then((r) => { if (r.created || r.completed || r.dismissed || r.failed) this.log(`[mirror] created ${r.created}, completed ${r.completed}, dismissed ${r.dismissed}, failed ${r.failed}`) })
+      .catch((e: any) => this.log(`[mirror] failed: ${e?.message ?? e}`))
+      .finally(() => { this.mirroring = false })
+  }
 
   /** Every minute: expire decision cards, tell agents their results, and
    *  send the day's digest when due (src/approvals/sweep.ts). */
@@ -2193,6 +2219,9 @@ export class AgentXDaemon {
             .finally(() => { this.requestsSweeping = false })
         }
         this.status?.board.sweep()
+        // The Reminders mirror (#1062): beside the sweep, because the OS
+        // task app can take seconds to answer.
+        this.mirrorTick()
         // Task watchers (#1030): overdue tasks fire, unanswered alerts go
         // to the owner. Beside the sweep, like requests.
         if (this.watchers && !this.watchersSweeping) {

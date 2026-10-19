@@ -451,6 +451,11 @@ How AgentX uses the apps that come with the operating system, such as Reminders 
 | Key | Type | Default | What it does |
 |---|---|---|---|
 | `native.adapter` | `"auto"` or `"none"` | `"auto"` | `"auto"` picks the adapter for this operating system. `"none"` turns it off on this machine. A machine with no adapter yet gets `"none"` either way. |
+| `native.mirror.enabled` | boolean | `false` | Puts each waiting card and request in Reminders with a due time. See [See waiting decisions in Reminders and Calendar](/jobs/reminders-mirror). |
+| `native.mirror.list` | string | `"AgentX Desk"` | The Reminders list. Must not start with `-`, and must not be one of `reminders.lists` or `approvals.checkin.lists`. |
+| `native.mirror.dueAfterMinutes` | number (0–1440) | `5` | How long after a card is raised its reminder falls due. Never later than the card expires. |
+| `native.mirror.include` | list of `"card"`, `"request"` | `["card", "request"]` | What is mirrored: decision cards, requests waiting on you, or both. |
+| `native.mirror.answerUrl` | URL | — | The address in each reminder where you answer. Unset: `http://localhost:<dashboard.port>/approvals`. |
 
 ## `wiki`
 

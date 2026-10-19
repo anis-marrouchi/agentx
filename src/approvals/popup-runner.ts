@@ -3,6 +3,7 @@ import { readHold } from "@/notify/hold"
 import { summarize } from "@/requests/card-view"
 import type { RequestRecord } from "@/requests/store"
 import { CARD_LIMITS, listCards, readCard, type DecisionCard } from "./cards"
+import { cardMirrored } from "./mirror"
 import { decide, requestStoreFor, type InboxContext } from "./inbox"
 import { showPopup, type PopupAnswer, type PopupSettings } from "./popup"
 import { cardRuleBreak, returnedText } from "./screen-gate"
@@ -83,6 +84,8 @@ export function nextCardToPop(ctx: InboxContext): DecisionCard | null {
   for (const card of cards) {
     const key = `card:${card.id}`
     if (popped[key]) continue
+    // It is already a reminder with its own alert (#1062): no second one.
+    if (cardMirrored(ctx.root, card.id)) continue
     const until = snoozed[key]
     if (until && Date.parse(until) > now) continue
     const created = Date.parse(card.created_at)

@@ -105,6 +105,13 @@ describe("ReminderPoller", () => {
     expect(readClaims(claimsPath)["AAAA-1"].status).toBe("done")
   })
 
+  it("leaves a Reminders-mirror task alone, even with an agent in an earlier line (#1062)", async () => {
+    const source = fakeSource([reminder({ notes: "agentx: agent=coder-agent\nWhich date?\nagentx: card=2026-09-27-x-ab12" })])
+    await poller(source).poll()
+    expect(dispatched).toHaveLength(0)
+    expect(source.completed).toEqual([])
+  })
+
   it("leaves reminders that aren't due yet alone", async () => {
     const source = fakeSource([reminder({ dueDate: "2026-09-27T11:00:00Z" }), reminder({ id: "B", dueDate: undefined })])
     await poller(source).poll()

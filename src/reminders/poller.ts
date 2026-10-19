@@ -1,4 +1,4 @@
-import { parseTrailer, type ReminderTrailer } from "./trailer"
+import { isMirrorTrailer, parseTrailer, type ReminderTrailer } from "./trailer"
 import { pruneClaims, readClaims, writeClaims, type ClaimState } from "./store"
 import type { Reminder, ReminderSource } from "./source"
 
@@ -97,6 +97,8 @@ export class ReminderPoller {
     for (const r of open) {
       const due = r.dueDate ? Date.parse(r.dueDate) : NaN
       if (!(due <= now)) continue
+      // A mirrored task is a card or request already on the Desk (#1062).
+      if (isMirrorTrailer(r.notes)) continue
       const t = parseTrailer(r.notes)
       const skip = t ? (this.deps.hasAgent(t.agent) ? null : `agent "${t.agent}" is not on this node`) : "no agentx trailer"
       if (skip) {
