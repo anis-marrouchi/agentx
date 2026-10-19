@@ -10,6 +10,7 @@ import { findOnPath, plistPathEnv } from "@/desktop/install"
 import { localSettings } from "@/notify/local"
 import { helperStatus } from "@/notify/helper-status"
 import { loadNativeAdapter, type NativeAdapter } from "@/native"
+import { readMirror } from "@/approvals/mirror"
 import { nodeVersionSupported } from "@/utils/node-version"
 
 // --- agentx doctor ---
@@ -54,6 +55,7 @@ export async function runDoctorChecks(
   if (cfg) await runNotificationChecks(checks, cfg)
   if (cfg) runReminderChecks(checks, cfg)
   if (cfg) await runNativeChecks(checks, cfg)
+  if (cfg) runMirrorChecks(checks, cfg)
   if (opts.running !== false && cfg) await runRuntimeChecks(checks, cfg)
   return { checks, summary: summarize(checks) }
 }
@@ -108,6 +110,33 @@ export async function runNativeChecks(checks: Check[], cfg: any, adapter?: Nativ
     group: "Native",
     title: d.os === "none" ? "Native apps: none on this machine" : `Native apps (${d.os}): ${can.join(", ") || "nothing available"}`,
     detail: d.problems.join(" ") || undefined,
+  })
+}
+
+/** native.mirror.enabled: is there a task app, and how did the last passes go? */
+export function runMirrorChecks(checks: Check[], cfg: any, root = process.cwd(), adapter: NativeAdapter = loadNativeAdapter(cfg)): void {
+  const m = cfg.native?.mirror
+  if (!m?.enabled) return
+  if (!adapter.tasks) {
+    checks.push({
+      severity: "warn",
+      group: "Native",
+      title: "Reminders mirror is on, but this machine has no task app",
+      detail: "native.mirror.enabled is set; nothing is mirrored here.",
+      fix: "Turn it on on the machine that holds the owner's cards (the Mac), or set native.mirror.enabled to false here.",
+    })
+    return
+  }
+  const file = readMirror(root)
+  const entries = Object.values(file.items)
+  const open = entries.filter((e) => e.state === "open").length
+  const failed = entries.filter((e) => e.state === "failed").length
+  checks.push({
+    severity: file.lastError || failed ? "warn" : "ok",
+    group: "Native",
+    title: `Reminders mirror: ${open} open in "${m.list}"${failed ? `, ${failed} could not be added` : ""}`,
+    detail: file.lastError ? `Last error ${file.lastError.at}: ${file.lastError.message}` : undefined,
+    fix: file.lastError ? "Run remindctl status, and allow Reminders for the app that runs the daemon in System Settings › Privacy & Security › Reminders." : undefined,
   })
 }
 

@@ -1820,6 +1820,18 @@ export const daemonConfigSchema = z.object({
    *  task app go through one adapter per OS. "none" turns it off here. */
   native: z.object({
     adapter: z.enum(["auto", "none"]).default("auto"),
+    /** The Reminders mirror (src/approvals/mirror.ts, #1062): each waiting
+     *  card and request becomes a task in the OS task app. Off by default. */
+    mirror: z.object({
+      enabled: z.boolean().default(false),
+      /** Not "AgentX": that is reminders.lists' default, and a list both
+       *  mirrored and watched would loop. */
+      list: z.string().min(1).refine((l) => !l.startsWith("-"), "must not start with \"-\"").default("AgentX Desk"),
+      dueAfterMinutes: z.number().int().min(0).max(1440).default(5),
+      include: z.array(z.enum(["card", "request"])).min(1).default(["card", "request"]),
+      /** Where the owner answers. Unset: the local dashboard's Approvals page. */
+      answerUrl: z.string().url().optional(),
+    }).default({}),
   }).default({}),
   /** The phone app (/app) beyond pairing and notifications (#676). */
   app: z.object({
@@ -2422,7 +2434,21 @@ export function loadDaemonConfig(configPath?: string): DaemonConfig {
     throw new Error(`Config validation failed (${foundPath}):\n${issues}${hintBlock}`)
   }
 
+  const crossed = crossFieldProblems(result.data)
+  if (crossed.length) throw new Error(`Config validation failed (${foundPath}):\n${crossed.map((p) => `  ${p}`).join("\n")}`)
+
   return withSummariesJob(withContributionJobs(result.data))
+}
+
+/** Rules that span two sections, checked after the schema. */
+export function crossFieldProblems(cfg: Pick<DaemonConfig, "native" | "reminders" | "approvals">): string[] {
+  const problems: string[] = []
+  const m = cfg.native?.mirror
+  if (m?.enabled) {
+    if (cfg.reminders?.lists?.includes(m.list)) problems.push(`native.mirror.list: "${m.list}" is also in reminders.lists; a mirrored task would be handed back to an agent. Use another list.`)
+    if (cfg.approvals?.checkin?.lists?.includes(m.list)) problems.push(`native.mirror.list: "${m.list}" is also in approvals.checkin.lists; a mirrored task would come back as a card. Use another list.`)
+  }
+  return problems
 }
 
 /**
