@@ -98,6 +98,11 @@ export interface RequestRecord {
    *  gate and for audit. */
   work: string | null
   estimateMinutes: number | null
+  /** The first `work` and `estimateMinutes` the agent declared. A later
+   *  accept can change the two above; these stay, so a change of mind
+   *  after a refused accept shows in the audit. */
+  firstWork: string | null
+  firstEstimateMinutes: number | null
 }
 
 export const TEXT_MAX = 4000
@@ -143,7 +148,7 @@ export function ensureRequestTables(db: Database.Database): void {
   for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"], ["home_kind", "TEXT"], ["home_link", "TEXT"],
     ["owed_to", "TEXT"], ["promise", "INTEGER"], ["due_at", "INTEGER"], ["close_when", "TEXT"], ["checked_at", "INTEGER"],
     ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"],
-    ["work", "TEXT"], ["estimate_minutes", "REAL"]]) {
+    ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -172,6 +177,7 @@ function toRecord(r: any): RequestRecord {
     owedTo: r.owed_to ?? null, promise: !!r.promise, dueAt: r.due_at ?? null, closeWhen: readCloseWhen(r.close_when),
     checkedAt: r.checked_at ?? null, verifiedAt: r.verified_at ?? null, verifyState: r.verify_state ?? null, verifyDetail: r.verify_detail ?? null,
     work: r.work ?? null, estimateMinutes: r.estimate_minutes ?? null,
+    firstWork: r.first_work ?? null, firstEstimateMinutes: r.first_estimate_minutes ?? null,
   }
 }
 
@@ -231,11 +237,16 @@ export class RequestStore {
   }
 
   /** What the agent declared about the work on accept (#1048). Only the
-   *  fields given are written. Not a touch: a refused accept is not
-   *  progress. */
+   *  fields given are written; the first value of each is kept too.
+   *  Not a touch: a refused accept is not progress. */
   setWork(id: string, w: { work?: string; estimateMinutes?: number }): void {
-    if (w.work !== undefined) this.db.prepare("UPDATE requests SET work = ? WHERE id = ?").run(w.work, id)
-    if (w.estimateMinutes !== undefined) this.db.prepare("UPDATE requests SET estimate_minutes = ? WHERE id = ?").run(w.estimateMinutes, id)
+    if (w.work !== undefined) {
+      this.db.prepare("UPDATE requests SET work = ?, first_work = COALESCE(first_work, ?) WHERE id = ?").run(w.work, w.work, id)
+    }
+    if (w.estimateMinutes !== undefined) {
+      this.db.prepare("UPDATE requests SET estimate_minutes = ?, first_estimate_minutes = COALESCE(first_estimate_minutes, ?) WHERE id = ?")
+        .run(w.estimateMinutes, w.estimateMinutes, id)
+    }
   }
 
   /** What the checker said. `met` is written by closeVerified, not here.

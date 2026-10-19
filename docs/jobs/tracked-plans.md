@@ -108,9 +108,10 @@ Agents make a plan with their `agentx_request` tool, when they take the request 
 }
 ```
 
-- `work` is one short word for the kind of work, like `code`, `research` or `writing`. It is needed on an accept without `steps`, unless both plan-before-starting settings are off (`--plan-for none --plan-over 0`). Without it the agent gets ``accept needs `work` ``.
+- `work` is one short word for the kind of work, like `code`, `research` or `writing`. It is needed on an accept without `steps`, unless both plan-before-starting settings are off (`--plan-for none --plan-over 0`) or plans are off on the node or for that agent (`--plans off`, `--plans-off-for`). Without it the agent gets ``accept needs `work` ``.
 - `estimateMinutes` is how many minutes the agent expects the work to take. It is optional.
 - AgentX keeps `work` and `estimateMinutes` on the request. A later accept without them uses the kept values.
+- A later accept can change them. AgentX also keeps the first values the agent gave, so `agentx requests show` and the dashboard card show both, like `Work: research (first declared: code, about 90 minute(s))`.
 - When `work` is a kind on your plan-before-starting list, or `estimateMinutes` is over your limit, `steps` are needed. Without them the agent gets `Not started: … needs a plan before it starts`.
 - `name` and `done` are needed on every step. A message step needs `message` and `to` instead of `done`.
 - `agent` is the step's owner. It defaults to the agent that makes the plan.
