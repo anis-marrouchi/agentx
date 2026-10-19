@@ -2,6 +2,16 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.147.0](https://github.com/anis-marrouchi/agentx/compare/v0.146.0...v0.147.0) (2026-10-19)
+
+
+### Features
+
+* **agents:** add skills where each runtime reads them ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 10) ([#1074](https://github.com/anis-marrouchi/agentx/issues/1074)) ([61c1253](https://github.com/anis-marrouchi/agentx/commit/61c1253701b70e2fccc0b24dbf48853c3a6d8735))
+* **approvals:** Reminders mirror for waiting cards and requests ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 5) ([#1073](https://github.com/anis-marrouchi/agentx/issues/1073)) ([be7ef91](https://github.com/anis-marrouchi/agentx/commit/be7ef91407fe12c87af2ef765e666a34e2ad1f93))
+* **native:** add, update and remove Apple Reminders on macOS ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 4) ([#1072](https://github.com/anis-marrouchi/agentx/issues/1072)) ([f52e588](https://github.com/anis-marrouchi/agentx/commit/f52e5880e25d6576c07315f5cfedf65c2081df56))
+* **native:** NativeAdapter types, none adapter and doctor line ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 2) ([#1068](https://github.com/anis-marrouchi/agentx/issues/1068)) ([3981ff9](https://github.com/anis-marrouchi/agentx/commit/3981ff94e8d56b4b88949a79282c9e825a93a5d6))
+
 ## [0.146.0](https://github.com/anis-marrouchi/agentx/compare/v0.145.0...v0.146.0) (2026-10-19)
 
 
