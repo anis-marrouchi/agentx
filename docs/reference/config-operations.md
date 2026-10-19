@@ -270,7 +270,7 @@ The wiki as seen from its pages. See [Wiki › Ask an agent to curate a page](/d
 
 ## quality
 
-Gates that check agent pull requests before they merge. Each one is off by default. See [Have a second agent review pull requests](/jobs/review-gate).
+Gates that check agent pull requests before they merge. Each one is off by default. See [Have a second agent review pull requests](/jobs/review-gate) and [Let agents merge only changes at the edges](/jobs/merge-policy).
 
 | Key | Type | Default | What it does |
 |---|---|---|---|
@@ -284,6 +284,12 @@ Gates that check agent pull requests before they merge. Each one is off by defau
 | `quality.reviewGate.maxReviewsPerPrPerDay` | number | `6` | Most reviews of one pull request in 24 hours; past it the status is `error`. `0`: no limit. |
 | `quality.reviewGate.ciWaitMinutes` | number | `5` | How long to wait for other checks before reviewing. |
 | `quality.reviewGate.maxDiffKb` | number | `256` | A longer diff is cut, and the reviewer is told. |
+| `quality.mergePolicy.enabled` | boolean | `false` | Posts the `agentx/merge-policy` status: an agent pull request that touches a core path waits for a person's approval. |
+| `quality.mergePolicy.corePaths` | string[] | `[]` | Files and folders that need a person's approval. |
+| `quality.mergePolicy.edgePaths` | string[] | `[]` | Files and folders agents may merge alone. Empty: all but `corePaths`. Set: a file under neither list is core. |
+| `quality.mergePolicy.label` | string | `"core-change"` | Label on pull requests that touch core. `""`: no label. |
+| `quality.mergePolicy.requiredApprovals` | number | `1` | People who must approve the latest commit of a core agent pull request. |
+| `quality.mergePolicy.approvers` | string[] | `[]` | Only these GitHub logins' approvals count. Empty: anyone with write access. |
 
 ## decisions
 

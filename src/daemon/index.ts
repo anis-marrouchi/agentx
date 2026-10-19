@@ -221,6 +221,8 @@ import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
 import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
 import { createReviewGateGitHub } from "@/quality/review-gate-github"
+import { MergePolicy } from "@/quality/merge-policy"
+import { createMergePolicyGitHub } from "@/quality/merge-policy-github"
 import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
 import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
 
@@ -266,6 +268,9 @@ export class AgentXDaemon {
   /** Pre-merge review gate (#990). Built with the GitHub channel; does
    *  nothing while quality.reviewGate.enabled is false. */
   private reviewGate?: ReviewGate
+  /** Merge policy (#1047). Built with the GitHub channel; does nothing
+   *  while quality.mergePolicy.enabled is false. */
+  private mergePolicy?: MergePolicy
   private reviewLedger = new FileReviewLedger(reviewLedgerPath(), (m) => this.log(`[review-gate] ${m}`))
   private webrtc?: WebRtcSignalBroker
   private botManager?: BotManager
@@ -2798,7 +2803,18 @@ export class AgentXDaemon {
       if (this.mesh) this.github.setPeerPostingLogins(() => this.mesh!.directory().flatMap((p) => p.githubLogins))
       this.github.setProjectRules(this.projectRules)
       this.reviewGate = this.buildReviewGate(this.github)
-      this.github.onPullRequestEvent((event) => { void this.reviewGate?.onPullRequest(event) })
+      const github = this.github
+      this.mergePolicy = new MergePolicy({
+        config: () => this.config.quality.mergePolicy,
+        github: createMergePolicyGitHub((repo) => github.getTokenForRepo(repo)),
+        isAgentLogin: (login) => github.isAgentLogin(login),
+        log: (m) => this.log(`[merge-policy] ${m}`),
+      })
+      this.github.onPullRequestEvent((event) => {
+        void this.reviewGate?.onPullRequest(event)
+        void this.mergePolicy?.onEvent({ kind: "pull_request", action: event.action, repo: event.repo, number: event.number })
+      })
+      this.github.onPullRequestReviewEvent((event) => { void this.mergePolicy?.onEvent({ kind: "pull_request_review", ...event }) })
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }

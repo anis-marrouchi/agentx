@@ -1260,6 +1260,25 @@ export const reviewGateConfigSchema = z.object({
    *  told the diff is incomplete. */
   maxDiffKb: z.number().int().positive().max(2048).default(256),
 }).default({})
+/** Merge policy (src/quality/merge-policy.ts, #1047): pull requests that
+ *  touch a core path get a label, and an agent's needs a person's approval
+ *  of its head commit before `agentx/merge-policy` turns green. Edge-only
+ *  pull requests pass at once. No paths are set by default. */
+export const mergePolicyConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Globs of core files or folders (`*` within a folder, `**` across). */
+  corePaths: z.array(z.string().min(1)).default([]),
+  /** Globs of edge files or folders. Empty: every path not in corePaths is
+   *  edge. Set: a path under neither list is core. */
+  edgePaths: z.array(z.string().min(1)).default([]),
+  /** Label put on pull requests that touch a core path. Empty: no label. */
+  label: z.string().default("core-change"),
+  /** Person approvals of the head commit a core agent PR needs. */
+  requiredApprovals: z.number().int().min(1).max(10).default(1),
+  /** GitHub logins whose approval counts. Empty: anyone with write access
+   *  who is not the author and not an account AgentX posts with. */
+  approvers: z.array(z.string().min(1)).default([]),
+}).default({})
 /** Task watchers (src/watchers, #1030). At every task start (a dispatch, a
  *  delegation, a cron run) the `task-watch` decision seat says whether the
  *  task carries a deadline, a promise or a hand-off; a watcher is attached
@@ -1672,6 +1691,9 @@ export const daemonConfigSchema = z.object({
      *  session, checks an agent's pull request against its linked issue
      *  and posts the commit status `agentx/review` on the head commit. */
     reviewGate: reviewGateConfigSchema,
+    /** Merge policy (#1047): core paths need a person's approval, edge
+     *  paths merge on green CI. Posts `agentx/merge-policy`. */
+    mergePolicy: mergePolicyConfigSchema,
   }).default({}),
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({
