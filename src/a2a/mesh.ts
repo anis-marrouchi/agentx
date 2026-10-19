@@ -328,6 +328,9 @@ export class A2AMesh {
       /** This node checked its own operator key on the forward: tell the
        *  peer the turn is the owner's (requests/operator, #407). */
       vouchOwner?: boolean
+      /** The task's type (#1049): picks the evidence the peer's watcher
+       *  asks for before the task counts as done. */
+      taskType?: string
     } = {},
   ): Promise<string> {
     const state = this.peers.get(peerName)
@@ -383,6 +386,9 @@ export class A2AMesh {
           // Optional for back-compat — older callers continue to work, with
           // the receiver defaulting channel/chatId as before.
           ...(opts.context ? { context: opts.context } : {}),
+          // Top level, so a call with no context stays the classic A2A
+          // shape on the receiver; it moves into the run's context there.
+          ...(opts.taskType ? { taskType: opts.taskType } : {}),
           ...(opts.replyVia ? { replyVia: { node: this.config.node.name, ...opts.replyVia } } : {}),
           ...root,
         }),

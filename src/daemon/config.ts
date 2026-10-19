@@ -768,6 +768,10 @@ const cronJobSchema = z.object({
    *  but appending an instruction to the prompt is reliably honored. Use
    *  1500 for briefs, 500 for status pings, 300 for pure classifiers. */
   maxOutputTokens: z.number().int().min(50).max(8000).optional(),
+  /** The task type of each run (`context.taskType`): picks the evidence a
+   *  watcher's done needs (`watchers.evidence.<type>`, #1049). Unset: the
+   *  `cron` rule, if there is one. */
+  taskType: z.string().trim().min(1).max(64).optional(),
   /** How much this routine may do: `report` (read-only), `propose` (branch,
    *  commit, MR/draft; never merge/deploy/delete) or `act` (the agent's full
    *  permissions — the default). Enforced per run by the guard, not by the

@@ -8,7 +8,7 @@ import {
 } from "@/decisions/seats/task-watch"
 import type { WatchDecision, WatcherRecord, WatcherStore } from "./store"
 import {
-  checkEvidence, describeEvidence, evidenceRuleFor, parseEvidence, requirementText,
+  checkEvidence, describeEvidence, evidenceExample, evidenceRuleFor, parseEvidence, requirementText,
   type EvidenceRule,
 } from "./evidence"
 
@@ -29,7 +29,9 @@ import {
 // it tells the owner at once.
 //
 // A task whose type has an evidence rule (#1049) closes only on a done
-// signal whose evidence the rule accepts; its reply never closes it.
+// signal whose evidence the rule accepts; its reply never closes it. A run
+// with no delegating agent (a cron, a dispatch) is told so in its own
+// prompt (runNote), since no one else would close its watcher.
 //
 // Every entry point swallows its own errors: watching a task must never
 // break the task.
@@ -87,7 +89,8 @@ export interface CheckpointDeps {
   isLocalDelegation?: (id: string) => boolean
   alertAgent: (agentId: string, text: string, w: WatcherRecord) => Promise<void>
   alertOwner: (title: string, text: string, w: WatcherRecord) => Promise<void>
-  /** How the alert tells the delegating agent to mark the task done. */
+  /** How an agent is told to mark the task done, with the evidence the
+   *  task's rule accepts. */
   doneHint?: DoneHint
   log: (msg: string) => void
   now?: () => number
@@ -288,10 +291,10 @@ export class WatchCheckpoint {
   /** A delegation started: checked under its id, which the callee's own
    *  run on this node shares, so the two starts make one watcher. A peer
    *  callee runs elsewhere, and this is the only start this node sees. */
-  delegationStarted(rec: Pick<DelegationRecord, "id" | "caller" | "callee" | "peer" | "request">, dueAt: number | null = null): Promise<CheckResult> {
+  delegationStarted(rec: Pick<DelegationRecord, "id" | "caller" | "callee" | "peer" | "request" | "taskType">, dueAt: number | null = null): Promise<CheckResult> {
     return this.check({
       key: rec.id, traceId: null, kind: "delegation", agentId: rec.peer ? `${rec.callee}@${rec.peer}` : rec.callee,
-      channel: "a2a", delegator: rec.caller, message: rec.request, dueAt,
+      channel: "a2a", delegator: rec.caller, message: rec.request, dueAt, taskType: rec.taskType ?? null,
     })
   }
 
@@ -385,7 +388,7 @@ export class WatchCheckpoint {
       // The alert is a whole agent turn: not waited for, so one slow turn
       // does not hold up the other watchers or the next sweep.
       const delegator = w.delegator
-      const alert = this.deps.alertAgent(delegator, agentAlertText(w, reason, this.deps.doneHint, this.ruleFor(w)), w)
+      const alert = this.deps.alertAgent(delegator, agentAlertText(w, reason, this.deps.doneHint ?? apiDoneHint, this.ruleFor(w)), w)
         .then(() => this.deps.log(`[watchers] ${w.id}: told ${delegator} (${reason})`))
         .catch(async (e: any) => {
           this.deps.log(`[watchers] ${w.id}: could not tell ${delegator}: ${e?.message ?? e}`)
@@ -414,10 +417,41 @@ export class WatchCheckpoint {
       const w = this.deps.store.byKey(delegationId)
       if (!w || (w.state !== "open" && w.state !== "alerted")) return undefined
       if (!this.needsExplicitDone(w)) return undefined
-      const hint = (this.deps.doneHint ?? apiDoneHint)(w)
       const rule = this.ruleFor(w)
+      const hint = (this.deps.doneHint ?? apiDoneHint)(w, rule)
       const proof = rule ? ` It needs evidence: ${requirementText(rule)}.` : ""
       return `Watcher ${w.id} follows this task and only an explicit done closes it. If the work is really finished (not only promised), mark it done: ${hint}.${proof} Otherwise it fires at ${new Date(w.dueAt).toISOString()}.`
+    } catch {
+      return undefined
+    }
+  }
+
+  /** For a run's own prompt, when nothing but that run can close the
+   *  watcher that may follow it: a run with no delegating agent (a cron, a
+   *  dispatch) whose task only an explicit done closes (an evidence rule,
+   *  or `doneSignal: "explicit"`). Without it the run never learns it is
+   *  watched, and every such run is escalated to the owner at its due
+   *  time. The watcher is attached after the run starts, so the note names
+   *  the id it gets. Undefined: nothing to say. */
+  runNote(e: AgentXEvents["task:started"]): string | undefined {
+    try {
+      const settings = this.deps.settings()
+      if (!settings.enabled) return undefined
+      const task = taskStartOf(e, settings)
+      if (!task || task.delegator) return undefined
+      const own = this.deps.store.byKey(task.key) ?? (task.resumedFrom ? this.deps.store.byTrace(task.resumedFrom) : null)
+      if (own?.state === "done") return undefined
+      const typed = { taskType: own?.taskType ?? task.taskType ?? null, kind: task.kind }
+      const rule = evidenceRuleFor(settings.evidence, typed)
+      if (!rule && settings.doneSignal !== "explicit") return undefined
+      const id = own?.id ?? `watch-${task.key}`
+      const hint = (this.deps.doneHint ?? apiDoneHint)({ id }, rule)
+      return [
+        `[agentx:watcher id=${id}] A watcher may follow this run. Your reply does not close it.`,
+        `When the work is really finished (not only promised), mark it done: ${hint}`,
+        rule ? `Done needs evidence: ${requirementText(rule)}. Without it, done is refused.` : "",
+        "If it is not marked done, the owner is told at its due time. A 404 answer means no watcher follows this run.",
+      ].filter(Boolean).join("\n")
     } catch {
       return undefined
     }
@@ -434,10 +468,11 @@ export class WatchCheckpoint {
   }
 }
 
-/** How a watcher is marked done, as told to the delegating agent. */
-export type DoneHint = (w: WatcherRecord) => string
+/** How a watcher is marked done, as told to an agent. `rule` is the
+ *  task's evidence rule, so the example evidence is one it accepts. */
+export type DoneHint = (w: Pick<WatcherRecord, "id">, rule: EvidenceRule | null) => string
 
-const apiDoneHint: DoneHint = (w) => `POST /watchers/${w.id}/done on this node's daemon`
+const apiDoneHint: DoneHint = (w, rule) => `POST /watchers/${w.id}/done on this node's daemon with {"evidence":${evidenceExample(rule)}}`
 
 export function agentAlertText(w: WatcherRecord, reason: string, doneHint: DoneHint = apiDoneHint, rule: EvidenceRule | null = null): string {
   return [
@@ -448,7 +483,7 @@ export function agentAlertText(w: WatcherRecord, reason: string, doneHint: DoneH
     `Due: ${new Date(w.dueAt).toISOString()}`,
     "",
     "Find out where it stands and finish it, hand it on, or tell the owner why it cannot be done.",
-    `When it is done, say so: ${doneHint(w)}`,
+    `When it is done, say so: ${doneHint(w, rule)}`,
     ...(rule ? [`Done needs evidence: ${requirementText(rule)}, sent as the evidence value. Without it, done is refused.`] : []),
     "If nothing happens, the owner is told.",
   ].join("\n")

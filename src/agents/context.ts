@@ -171,6 +171,12 @@ export interface ContextInput {
   // already has it from its first turn.
   attachHint?: string
 
+  // How to close the watcher that may follow this run, when only this run
+  // can close it (a cron or a dispatch whose task needs an explicit done,
+  // #1049). From watchers/checkpoint.ts runNote(); every turn, since each
+  // run gets its own watcher.
+  watcherNote?: string
+
   // Intent (graph classification — when absent, Intent layer falls back
   // to the legacy regex tag extractor).
   intent?: {
@@ -505,6 +511,17 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("attachments", 250),
       content: input.attachHint,
       tags: ["channel", "attachments"],
+    })
+  }
+
+  // 7g. How to close this run's watcher. Every turn.
+  if (input.watcherNote) {
+    layers.push({
+      name: "watcher",
+      priority: 2.6,
+      maxTokens: budget("watcher", 400),
+      content: input.watcherNote,
+      tags: ["watcher", "done"],
     })
   }
 

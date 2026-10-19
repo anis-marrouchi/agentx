@@ -83,6 +83,8 @@ import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
 import { WATCHER_CHANNEL } from "@/watchers/checkpoint"
 import { handleWatchersApi } from "@/watchers/daemon-api"
+import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
+import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
@@ -625,6 +627,9 @@ export class AgentXDaemon {
         // requests: the checkpoint reads `watchers.enabled` on every event.
         try {
           this.watchers = this.attachTaskWatchers(db)
+          // A cron or dispatch run is told how to close its own watcher.
+          const checkpoint = this.watchers.checkpoint
+          this.registry.setRunNote((started) => checkpoint.runNote(started))
         } catch (e: any) {
           this.log(`  Watchers: not available (${e?.message ?? e})`)
         }
@@ -2409,7 +2414,7 @@ export class AgentXDaemon {
         }
         await this.notifyOwner(title, text, "watchers")
       },
-      doneHint: (w) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":"<proof>"}'`,
+      doneHint: (w, rule) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":${evidenceExample(rule)}}'`,
       log: this.log,
     })
   }
@@ -6486,6 +6491,9 @@ export class AgentXDaemon {
           const targetAgent = String(body.agentId)
           const text = String(body.text)
           const senderAgentId = body.senderAgentId ? String(body.senderAgentId) : undefined
+          // The task's type picks the evidence its watcher's done needs
+          // (#1049); it travels in the callee's context on every path.
+          const taskType = taskTypeOf(body)
           const wait = body.async === false
           const dedupeKey = sendAgentKey(senderAgentId, targetAgent, text)
           const seen = wait ? null : this.sendAgentDedupe.get(dedupeKey)
@@ -6496,7 +6504,7 @@ export class AgentXDaemon {
           }
           // #277 — same gate as /task: refuse a cycle, or call back when a
           // person started it.
-          const gate = this.delegationGate(req, body, { callee: targetAgent, message: text })
+          const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType ? { calleeContext: { taskType } } : {}) })
           if (!("track" in gate)) {
             const a = gateAnswer(gate)
             if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)
@@ -6510,7 +6518,7 @@ export class AgentXDaemon {
             // Only a caller that waits holds the callee in syncWaits: a
             // queued send leaves the caller free, so it can't form a cycle.
             const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
-              const context = { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a" }
+              const context = { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}) }
               // A remote target records on its own node's /task; a local one
               // has no other hop that would put this delegation in the ledger.
               const intentRef = this.recordInboundDispatch(
@@ -6568,7 +6576,7 @@ export class AgentXDaemon {
           }
           if (wait) {
             try {
-              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType })
               this.json(res, 200, { ok: true, messageId, peer: peer.peer })
             } catch (e: any) {
               this.json(res, 500, { error: e.message, peer: peer.peer })
@@ -6580,7 +6588,7 @@ export class AgentXDaemon {
             peer: peer.peer,
             log: (m) => this.log(m),
             run: async () => {
-              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId })
+              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType })
               return { ok: true }
             },
           })
@@ -6725,6 +6733,9 @@ export class AgentXDaemon {
           if (looksLikeA2A && !senderAgentId) {
             this.log(`[a2a] /task accepted without senderAgentId for agent="${agentId}" from ${(req.socket?.remoteAddress) || "unknown"} — caller should upgrade. Required in next release.`)
           }
+          // A top-level `taskType` (a mesh peer's /send/agent, #1049) joins
+          // the run's context, where the watcher reads it.
+          if (taskTypeOf(body)) body.context = contextWithTaskType(body)
           // #277 — an agent delegating from a turn a person started gets a
           // task id now and the answer later, as a new turn in its chat.
           // Streaming callers are watching the run, so they keep waiting.

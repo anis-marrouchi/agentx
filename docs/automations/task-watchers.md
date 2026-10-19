@@ -28,7 +28,7 @@ A hand-off to an agent on another machine (a mesh peer) is watched on the machin
 
 By default (`watchers.doneSignal` `result`), a watcher closes when the agent's run ends with a reply, or when a delegation answers. A reply that only promises the work, such as "I'll publish at 18:00", also closes it.
 
-With `watchers.doneSignal` set to `explicit`, a reply does not close the watcher. Only a done signal does: `POST /watchers/<id>/done` ([section 4](#_4-mark-a-task-done-by-hand)). A watched task that replied but was never marked done fires at its due time. When a delegation answers, its result tells the agent that handed it over which watcher to close and how. Every watched task still needs someone to mark it done, so use this mode with the `task-watch` seat `active` (step 2), or expect an alert for each watched task that nobody marks done.
+With `watchers.doneSignal` set to `explicit`, a reply does not close the watcher. Only a done signal does: `POST /watchers/<id>/done` ([section 4](#_4-mark-a-task-done-by-hand)). A watched task that replied but was never marked done fires at its due time. When a delegation answers, its result tells the agent that handed it over which watcher to close and how. A scheduled run or a message sent straight to an agent has no one who handed it over, so that run is told in its own instructions which watcher follows it and how to close it. Every watched task still needs someone to mark it done, so use this mode with the `task-watch` seat `active` (step 2), or expect an alert for each watched task that nobody marks done.
 
 You can also ask for **proof** (also called evidence) before a task counts as done, per type of task: a passing test run, the output it produced, or a link to the result. A task of a type with such a rule is closed only by a done signal that carries the proof; its reply never closes it, whatever `doneSignal` says. See [section 5](#_5-require-proof-of-done-optional). Types without a rule work as described above.
 
@@ -82,6 +82,17 @@ The same context can name the task's type, which decides what proof its done nee
 { "agentId": "<agent-id>", "message": "Fix the login bug", "context": { "taskType": "code" } }
 ```
 
+Other ways to give a task its type:
+
+| Who starts the task | How to give its type |
+|---|---|
+| A program calling `POST /task` | `context.taskType`, as above, or `taskType` next to `message` |
+| A program calling `POST /send/agent` | `taskType` next to `text` |
+| An agent handing work to another agent | the `taskType` field of the `agentx_send_agent` or `agentx_task` tool. It travels with the hand-off, also to an agent on another machine. |
+| A schedule | the job's `taskType` setting, for example `agentx config set crons.weekly-report.taskType report` ([crons reference](/reference/config-automation)) |
+
+A task with no type uses its kind (`dispatch`, `delegation` or `cron`) instead.
+
 ## 4. Mark a task done by hand
 
 An agent, or you, can say a watched task is done:
@@ -128,8 +139,15 @@ A plain text `evidence` counts as a `link` when it is a web address, and as an `
    ```sh
    agentx config set watchers.evidence.cron '{"accept":["output","link"],"minOutputChars":80}'
    ```
+   A rule on a kind (`cron` or `dispatch`) applies to every run of that kind. No agent handed those runs over, so each run is told in its own instructions which watcher follows it, what proof it needs and the command that marks it done. A run that does not send that command is reported to you at its due time, so expect one message for each watched run that does not. To ask only some schedules for proof, remove the `cron` rule, give those jobs a `taskType` ([section 3](#_3-give-a-task-a-due-time-for-callers)) and write a rule for that type. While the `cron` rule stays, it still applies to a typed job whose type has no rule of its own.
 
-When such a watcher fires, or a delegation answers, the agent that handed the task over is told which proof the done needs. All the settings are in the [configuration reference](/reference/config-automation#watchers).
+   The `dispatch` kind covers every message to an agent that is not a hand-off or a schedule, including your own chats with it. A `dispatch` rule, or `doneSignal: "explicit"`, adds the watcher note (a few lines) to each of those chat turns too.
+
+When such a watcher fires, or a delegation answers, the agent that handed the task over is told which proof the done needs, with a done command whose `evidence` has the shape the rule accepts.
+
+::: warning Proof is what the agent says it is
+AgentX checks the shape of the proof, not that it is true. It does not run the tests, open the link or read the output. An agent could send `{"type":"test","passed":1,"failed":0}` without running any test. The rule makes an agent say exactly what it did, and keeps that on the watcher for you to check; it does not replace your own check of work that matters.
+::: All the settings are in the [configuration reference](/reference/config-automation#watchers).
 
 ## Check it worked
 
@@ -148,5 +166,6 @@ When such a watcher fires, or a delegation answers, the agent that handed the ta
 - **No watcher appears:** check that `watchers.enabled` is `true` and that the task's channel is not in `watchers.skipChannels`. A task whose seat is `active` and confident it needs none gets no watcher; its trace shows `watch_decision` `no`.
 - **The agent that handed over the task is not told:** it must be an agent on this machine. When it is not, or its turn cannot start, you are told instead.
 - **A done is refused with `422`:** the task's type has a proof rule. Read `required` in the answer and send that as `evidence`. A test run with a failed test, or none passed, is never proof. To stop asking a type for proof, remove its rule: `agentx config unset watchers.evidence.<type>`.
+- **Every scheduled run sends you a "not finished" message:** a rule on `cron` (or `dispatch`) asks every such run for proof. Check the daemon log for `done refused` lines: a refused done says what was missing. If the agent never tries, it is not following the watcher note in its instructions. Remove the `cron` rule, give only the schedules that need proof a `taskType`, and write the rule for that type. A typed job whose type has no rule still falls back to the `cron` rule.
 - **A task with a proof rule closes without one:** check its type with `curl -s http://127.0.0.1:18800/watchers/<watcher-id>`. A `taskType` with no rule of its own falls back to the rule for its kind, and to none if the kind has no rule either.
 - **You are told too often:** raise `watchers.defaultDueMinutes`, add busy chat channels to `watchers.skipChannels`, or move the `task-watch` seat to `active` once its answers are good.
