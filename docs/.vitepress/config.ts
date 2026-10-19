@@ -58,6 +58,7 @@ const groups = [
     { text: "Watch a WhatsApp chat", link: "/jobs/watch-whatsapp" },
     { text: "Get notified", link: "/jobs/notifications" },
     { text: "See waiting decisions in Reminders and Calendar", link: "/jobs/reminders-mirror" },
+    { text: "Get agents' ideas in Apple Notes", link: "/jobs/ideas-to-notes" },
     { text: "Fire a routine from outside", link: "/jobs/fire-a-routine" },
     { text: "Keep track of what you asked for", link: "/jobs/open-requests" },
     { text: "Let a workflow follow a request", link: "/jobs/follow-up-workflows" },

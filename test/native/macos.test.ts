@@ -9,10 +9,10 @@ import { fakeRemindctl } from "./fake-remindctl"
 // Every program is faked, so this runs on any OS in CI.
 
 const HELPER = "/Apps/AgentX Helper.app/Contents/MacOS/agentx-mac-helper"
-const fakeIo = () => ({
+const fakeIo = (remindctl = fakeRemindctl()) => ({
   run: vi.fn(async () => true),
   capture: vi.fn(async () => '{"authorization":"authorized","alertStyle":"banner"}'),
-  output: fakeRemindctl(),
+  output: Object.assign((f: string, a: string[]) => f.endsWith("osascript") ? Promise.resolve("note-1") : remindctl(f, a), {}) as any,
   helper: HELPER,
   isExecutable: () => true,
 })

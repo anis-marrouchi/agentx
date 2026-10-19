@@ -27,6 +27,7 @@ export const AGENTX_TOOL_NAMES: readonly string[] = [
   "agentx_crons",
   "agentx_schedule",
   "agentx_approval",
+  "agentx_note",
   "agentx_request",
   "agentx_workflow",
   "agentx_debug",

@@ -50,6 +50,14 @@ export function runNativeContract(name: string, make: () => NativeAdapter): void
       expect(await tasks.listOpen("Contract")).toEqual([])
     })
 
+    it("adds a note and returns its id, when it has notes", async () => {
+      const { notes } = make()
+      if (!notes) return
+      const { id } = await notes.add({ folder: "Contract", title: "An idea", body: "line 1\nline 2" })
+      expect(typeof id).toBe("string")
+      expect(id.length).toBeGreaterThan(0)
+    })
+
     it("explains every missing capability", async () => {
       const d = await make().describe()
       if (CAPABILITIES.some((c) => !d[c])) expect(d.problems.length).toBeGreaterThan(0)

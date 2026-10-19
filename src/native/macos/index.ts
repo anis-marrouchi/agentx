@@ -3,6 +3,7 @@ import { findOnPath } from "@/desktop/install"
 import { readSystemFocus } from "@/notify/focus"
 import type { NativeAdapter, NativeFocus } from "../types"
 import { macosBanner } from "./banner"
+import { macosNotes } from "./notes"
 import type { Capture, Output, Run } from "./run"
 import { macosSound } from "./sound"
 import { macosTasks } from "./tasks"
@@ -38,15 +39,16 @@ export function macosAdapter(cfg: { reminders?: { command?: string } } = {}, io:
   return {
     os: "macos",
     tasks: macosTasks(command, io.output),
+    notes: macosNotes(io.output),
     banner: macosBanner(io),
     sound: macosSound(io),
     focus,
     async describe() {
-      const problems = ["Apple Notes is not available yet."]
+      const problems: string[] = []
       const isExec = io.isExecutable ?? executable
       const found = command.includes("/") ? isExec(command) : !!findOnPath(command, process.env.PATH || "", isExec)
       if (!found) problems.push(`Reminders: ${command} not found (brew install steipete/tap/remindctl, or set reminders.command).`)
-      return { os: "macos", tasks: true, notes: false, banner: true, sound: true, focus: true, problems }
+      return { os: "macos", tasks: true, notes: true, banner: true, sound: true, focus: true, problems }
     },
   }
 }

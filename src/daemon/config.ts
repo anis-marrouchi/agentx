@@ -1832,6 +1832,16 @@ export const daemonConfigSchema = z.object({
       /** Where the owner answers. Unset: the local dashboard's Approvals page. */
       answerUrl: z.string().url().optional(),
     }).default({}),
+    /** The mesh peer that has the owner's notes app, for a node without
+     *  one. Unset: approvals.forwardTo. */
+    forwardTo: z.string().min(1).optional(),
+    /** Ideas to the owner's notes app (agentx_note, src/native/notes-api.ts).
+     *  Off by default. */
+    notes: z.object({
+      enabled: z.boolean().default(false),
+      folder: z.string().min(1).default("AgentX"),
+      perAgentPerDay: z.number().int().min(1).max(50).default(10),
+    }).default({}),
   }).default({}),
   /** The phone app (/app) beyond pairing and notifications (#676). */
   app: z.object({

@@ -886,6 +886,23 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_note",
+    description:
+      "Put an idea for the owner into their notes app (Apple Notes, folder AgentX), instead of sending it in chat. " +
+      "Use it for ideas and suggestions the owner can read when they have time, not for questions (use agentx_approval) or work (use agentx_request). " +
+      "Off unless the owner turned it on; a few notes a day per agent at most. The note is signed with your agent id and the date. " +
+      "Example: {title:'Idea: weekly digest of client replies', body:'Most client replies arrive on Thursday...'}.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        title: { type: "string", description: "The idea in one line (max 120 characters)." },
+        body: { type: "string", description: "The idea in a few short paragraphs (max 4000 characters)." },
+        callerAgentId: { type: "string", description: "Your agent id. Ignored when the AgentX runtime already identifies you (AGENTX_AGENT_ID)." },
+      },
+      required: ["title", "body"],
+    },
+  },
+  {
     name: "agentx_request",
     description:
       "Say what you are doing with a request the owner gave you, so it stays on their list of open requests until it is closed. " +
@@ -1746,6 +1763,12 @@ async function handleToolCall(
     case "agentx_approval": {
       const { runApprovalTool } = await import("@/approvals/tool")
       const text = await runApprovalTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
+      return { content: [{ type: "text", text }] }
+    }
+
+    case "agentx_note": {
+      const { runNoteTool } = await import("@/native/note-tool")
+      const text = await runNoteTool(args, { daemonUrl: daemonUrl(), fetch: daemonFetch })
       return { content: [{ type: "text", text }] }
     }
 
