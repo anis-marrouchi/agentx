@@ -787,7 +787,7 @@ export class AgentXDaemon {
       (m) => this.log(m),
       // Read the settings per flush so a dashboard change applies without
       // a restart.
-      { alert: (title, message) => localAlert(localSettings(this.config.notifications.local))(title, message) },
+      { alert: (title, message) => localAlert(localSettings(this.config.notifications.local), { native: this.config.native })(title, message) },
     )
     // The call check (#394): while the owner is in a call, notify and the
     // popup hold like Focus. Written to a file so `agentx notify` in an
@@ -884,7 +884,7 @@ export class AgentXDaemon {
           // Push and ntfy take the title from the first line of the text.
           const send = this.ownerSender()
           await notify({ title, message, from: "voice" }, (m) => send({ ...m, message: `${m.title}\n${m.message}` }), {
-            alert: (t, m) => localAlert(localSettings(this.config.notifications.local))(t, m),
+            alert: (t, m) => localAlert(localSettings(this.config.notifications.local), { native: this.config.native })(t, m),
           })
         },
         log: (m) => this.log(m),
@@ -2296,7 +2296,7 @@ export class AgentXDaemon {
         // No banner on this machine to fall back on: nothing reached the owner.
         if (!this.native.banner) throw e
       }
-    }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+    }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
   }
 
   private plansSweeping = false
@@ -2470,7 +2470,7 @@ export class AgentXDaemon {
         // No banner on this machine to fall back on: nothing reached the owner.
         if (!this.native.banner) throw e
       }
-    }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+    }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
   }
 
   /** A card raised for a workflow (#788): a step's answer resumes its
@@ -2545,7 +2545,7 @@ export class AgentXDaemon {
           } catch (e: any) {
             this.log(`[checkin] push for "${m.title}" failed: ${e?.message ?? e}`)
           }
-        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+        }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
       },
       log: this.log,
     }
@@ -2566,6 +2566,7 @@ export class AgentXDaemon {
       fallbackDestination: dest ? { channel: dest.channel, chatId: dest.chatId, accountId: dest.accountId } : undefined,
       isStopping: () => this.shuttingDown,
       log: this.log,
+      native: this.config.native,
     })
   }
 
@@ -3763,7 +3764,7 @@ export class AgentXDaemon {
           } catch (e: any) {
             this.log(`[whatsapp-triage] push for "${m.title}" failed: ${e?.message ?? e}`)
           }
-        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+        }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
       },
       log: (m) => this.log(m),
     })
@@ -3797,7 +3798,7 @@ export class AgentXDaemon {
           } catch (e: any) {
             this.log(`[calls] push for "${m.title}" failed: ${e?.message ?? e}`)
           }
-        }, { alert: localAlert(localSettings(this.config.notifications.local)) })
+        }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
       },
       // Same chat id as /ask, so the agent summarises the call it just had.
       summarize: async (call) => {

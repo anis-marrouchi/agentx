@@ -1,7 +1,7 @@
 import { existsSync } from "fs"
 import { homedir } from "os"
 import { isAbsolute } from "path"
-import { loadNativeAdapter, type NativeIo } from "@/native"
+import { loadNativeAdapter, type NativeConfig, type NativeIo } from "@/native"
 
 export { findHelper } from "@/desktop/install"
 
@@ -49,9 +49,9 @@ export function localSettings(cfg: Partial<LocalSettings> | undefined): LocalSet
 
 export function localAlert(
   settings: LocalSettings,
-  deps: { run?: NativeIo["run"]; platform?: NodeJS.Platform; helper?: string | null } = {},
+  deps: { run?: NativeIo["run"]; platform?: NodeJS.Platform; helper?: string | null; native?: NativeConfig["native"] } = {},
 ): LocalAlert {
-  const native = loadNativeAdapter({}, { platform: deps.platform, io: { run: deps.run, helper: deps.helper } })
+  const native = loadNativeAdapter({ native: deps.native }, { platform: deps.platform, io: { run: deps.run, helper: deps.helper } })
   return async (title, message) => {
     const steps: Promise<unknown>[] = []
     if (settings.banner && native.banner) steps.push(native.banner.post({ title, message }))
@@ -79,7 +79,7 @@ export function patchLocal(
   if ("soundName" in patch) {
     const name = String(patch.soundName).trim()
     const ok = native.sound ? native.sound.has(name) : /^[\w -]+$/.test(name)
-    if (!ok) throw new Error(`no system sound named "${name}"`)
+    if (!ok) throw new Error(`no system sound named "${name}" on this machine`)
     next.soundName = name
   }
   if ("icon" in patch) {

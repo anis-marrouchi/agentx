@@ -68,7 +68,20 @@ describe("macOS adapter (#1062 step 3)", () => {
     expect(d.problems.join(" ")).toMatch(/remindctl not found/)
   })
 
-  it("is turned off by native.adapter none", () => {
+  it("is turned off by native.adapter none, for banners, sounds and the reminders poller too", async () => {
     expect(loadNativeAdapter({ native: { adapter: "none" } }, { platform: "darwin" }).os).toBe("none")
+    const { localAlert, DEFAULT_LOCAL } = await import("../../src/notify/local")
+    const run = vi.fn(async () => true)
+    await localAlert(DEFAULT_LOCAL, { run, platform: "darwin", helper: HELPER, native: { adapter: "none" } })("t", "m")
+    expect(run).not.toHaveBeenCalled()
+    const { startRemindersPoller } = await import("../../src/reminders/daemon")
+    const logs: string[] = []
+    const stop = startRemindersPoller({
+      settings: { enabled: true, lists: ["AgentX"], pollSeconds: 3600, lookbackHours: 24, command: "remindctl" },
+      root: "/nonexistent", execute: async () => ({ content: "" }), hasAgent: () => true, send: async () => {},
+      isStopping: () => false, log: (m) => logs.push(m), platform: "darwin", native: { adapter: "none" },
+    } as any)
+    expect(stop).toBeNull()
+    expect(logs[0]).toMatch(/not polling/)
   })
 })
