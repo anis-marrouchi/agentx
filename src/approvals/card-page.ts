@@ -1,7 +1,7 @@
 import { randomBytes } from "crypto"
 import { esc } from "@/daemon/ui/util"
 import { CARD_CSS } from "./card-page-style"
-import { CHOICE_PLACEHOLDER } from "./choices"
+import { CHOICE_PLACEHOLDER, recommended } from "./choices"
 import type { DecisionCard } from "./cards"
 
 // --- The Mac card: one decision card as a small web page ---
@@ -58,30 +58,9 @@ function initials(name: string): string {
   return (words.length > 1 ? words[0][0] + words[1][0] : name.trim().slice(0, 1)).toUpperCase()
 }
 
-/**
- * The option the recommendation names, and the reason that is left. The
- * card stores its advice as one line ("Thursday 10:00: your calendar is
- * free"); when that line starts with an option, the card marks that option
- * and starts with it picked. The option must be the whole start: the line
- * ends there, or a separator and a space follow ("No: ..." names No; "Not
- * yet", "No strong view" and "No-one" name nothing, and "Thu 10" is not
- * named by "Thu 10:30"). An option only mentioned further on is
- * not the advice ("do not approve"). No match: nothing is picked, the line
- * shows whole.
- */
-export function recommended(card: Pick<DecisionCard, "recommend" | "choices">): { index: number; why: string } {
-  const text = (card.recommend ?? "").trim()
-  const low = text.toLowerCase()
-  const choices = card.choices ?? []
-  let index = -1
-  choices.forEach((c, i) => {
-    if (!low.startsWith(c.toLowerCase()) || !/^\s*($|[:,.;–—-](\s|$))/.test(text.slice(c.length))) return
-    if (index < 0 || c.length > choices[index].length) index = i
-  })
-  if (index < 0) return { index, why: text }
-  const why = text.slice(choices[index].length).replace(/^[\s:,.;–—-]+/, "")
-  return { index, why: why.slice(0, 1).toUpperCase() + why.slice(1) }
-}
+// The option the recommendation names lives with the other choice rules,
+// since a plain yes takes it too (#1064).
+export { recommended }
 
 function primaryLabel(card: DecisionCard): string {
   if (card.origin?.kind === "request") return "Hand it back"

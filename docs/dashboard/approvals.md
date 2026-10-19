@@ -118,7 +118,7 @@ To show one real card now:
 
 1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
 
-You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer from the dashboard](#answer-from-the-dashboard) and [the phone app](./mobile-fleet.md#answer-a-decision).
+You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. A plain `agentx approvals approve <key>` (no `--choice`) takes the agent's suggested choice, the one its recommendation starts with, and the agent is told it was a plain yes. When the recommendation names no choice, a plain yes is refused with the list of choices. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer from the dashboard](#answer-from-the-dashboard) and [the phone app](./mobile-fleet.md#answer-a-decision).
 
 ## Agents on another machine
 
@@ -371,7 +371,7 @@ For the screen gate:
 - **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.
 - **"Pick one of the choices first":** you clicked **Yes** on a card with choices without picking one. Click a choice, then **Yes**.
-- **"This card offers choices: pick one":** the answer reached the machine without a choice, for example from an older phone app page. Reload the page, or answer with `agentx approvals approve <key> --choice <n>`.
+- **"This card offers choices and suggests none: pick one of …":** a plain yes reached the machine, and the agent's recommendation does not start with one of the choices, so there is nothing to take. Pick a choice on the dashboard, or answer with `agentx approvals approve <key> --choice <n>`.
 - **The agent never heard the result:** check `notifyAgent` is on, and that the agent still exists on this machine. The daemon log line starting `[approvals]` says what happened.
 - **An agent on another machine says the `agentx_approval` tool is missing:** its daemon is older than this feature, or the agent is not on a `claude-code` engine. Update AgentX there and restart its daemon; a session started after that has the tool.
 - **A card raised on another machine never shows here:** on that machine, `agentx approvals settings` must say **Cards go to** this machine, and `agentx mesh list` must show this machine as `healthy`. Its daemon log says `forwarded to <machine>` for each card it sent, or names the machine it could not reach. `approvals.forwardTo names "…", which is not in mesh.peers` means the name is wrong: use the name from that machine's `agentx mesh list`.

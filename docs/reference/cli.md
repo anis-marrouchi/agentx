@@ -210,7 +210,7 @@ One list of every decision waiting for you: [Approvals](../dashboard/approvals.m
 | Command | What it does |
 |---|---|
 | `agentx approvals list [--all] [--json]` | What is waiting, most urgent first; `--all` includes items put off |
-| `agentx approvals approve <key> [--note] [--force] [--choice] [--text]` | Say yes; `--force` approves a wiki lesson whose article changed since; `--choice` and `--text` answer a card that offers choices |
+| `agentx approvals approve <key> [--note] [--force] [--choice] [--text]` | Say yes; `--force` approves a wiki lesson whose article changed since; `--choice` and `--text` answer a card that offers choices; without `--choice`, the suggested choice is taken |
 | `agentx approvals reject <key> [--note]` | Say no |
 | `agentx approvals later <key> [--hours]` | Put an item off (default 24 hours) |
 | `agentx approvals request --agent … --title … --ask … --recommend … --if-silent … [--choice …] [--draft] [--say] [--context]` | Raise a decision card yourself, for example to test |
