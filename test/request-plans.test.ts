@@ -166,6 +166,8 @@ describe("the plan gate (#1048)", () => {
     expect(res.body).toMatchObject({ planRequired: true })
     expect((res.body as any).error).toMatch(/code work needs a plan.*steps/)
     expect(plans.get("req-1")).toBeNull()
+    // steps: null is no steps, so it is gated too.
+    expect(accept({ work: "code", steps: null }).status).toBe(409)
     const ok = accept({ work: "code", estimateMinutes: 90, steps: STEPS })
     expect(ok.status).toBe(200)
     // The plan is the one the dashboard and `requests show` already list.
@@ -175,13 +177,38 @@ describe("the plan gate (#1048)", () => {
   it("refuses work estimated over the threshold, not at or under it", () => {
     expect(accept({ estimateMinutes: 45 }).status).toBe(409)
     expect((accept({ estimateMinutes: 45 }).body as any).error).toMatch(/45 minutes \(over 30\)/)
-    expect(accept({ estimateMinutes: 30 }).status).toBe(200)
+    expect(accept({ work: "research", estimateMinutes: 30 }).status).toBe(200)
   })
 
-  it("leaves every other task alone: short, other kinds, or undeclared", () => {
-    expect(accept({}).status).toBe(200)
+  it("needs work on an accept without steps while the gate is set, and keeps what was declared", () => {
+    const bare = accept({})
+    expect(bare.status).toBe(400)
+    expect(bare.body).toMatchObject({ workRequired: true })
+    expect((bare.body as any).error).toMatch(/accept needs `work`/)
+    expect(accept({ work: "code", estimateMinutes: 90 }).status).toBe(409)
+    expect(requests.get("req-1")).toMatchObject({ work: "code", estimateMinutes: 90 })
+    // A later bare accept is gated on what was declared, not let through.
+    expect(accept({}).status).toBe(409)
+  })
+
+  it("keeps the first declaration when a later accept changes it", () => {
+    expect(accept({ work: "code", estimateMinutes: 90 }).status).toBe(409)
     expect(accept({ work: "research", estimateMinutes: 10 }).status).toBe(200)
+    expect(requests.get("req-1")).toMatchObject({
+      work: "research", estimateMinutes: 10, firstWork: "code", firstEstimateMinutes: 90,
+    })
+  })
+
+  it("leaves other declared tasks alone: short, or other kinds", () => {
+    expect(accept({ work: "research", estimateMinutes: 10 }).status).toBe(200)
+    expect(requests.get("req-1")).toMatchObject({ work: "research", estimateMinutes: 10 })
     expect(accept({ work: "writing" }).status).toBe(200)
+  })
+
+  it("does not need work once the gate is off", () => {
+    settings.requireForWork = []
+    settings.requireOverMinutes = 0
+    expect(accept({}).status).toBe(200)
   })
 
   it("follows the owner's kinds and threshold", () => {
