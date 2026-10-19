@@ -18,7 +18,7 @@ For each pull request (a proposed change on GitHub), AgentX reads the list of ch
 | changes a core path and someone requested changes | **pending** | "core paths changed … requested changes" |
 | its changed files could not be read | **error** | "could not read the changed files" |
 
-- "Opened by a person" means opened by a GitHub account that AgentX does not post with. A person's own pull request passes without a second review, because it is their change rather than an agent's. The accounts AgentX posts with (its GitHub App, the owner of its personal token, and any account listed for an agent) always count as agents. So if one account both runs AgentX and opens your own pull requests, every core pull request from it needs an approval: the card or a review from someone else.
+- "Opened by a person" means opened by a GitHub account that AgentX does not post with. A person's own pull request passes without a second review, because it is their change rather than an agent's. The accounts AgentX posts with (its GitHub App, the owner of its personal token, any account listed for an agent, and the accounts your other AgentX machines post with) always count as agents. So if one account both runs AgentX and opens your own pull requests, every core pull request from it needs an approval: the card or a review from someone else.
 - A renamed file counts at its old path too, so moving a file out of a core folder is a core change. A pull request with 3,000 changed files or more counts as core, because GitHub may not list them all.
 
 - A pull request that changes a core path also gets a **label**, `core-change` unless you choose another, so you can find these in the pull request list. The label comes off again when a later push no longer touches a core path.
