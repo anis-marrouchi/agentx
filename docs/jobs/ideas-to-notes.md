@@ -11,7 +11,7 @@ It is off by default.
 - Each agent can add at most 10 notes a day. After that the tool says the limit is reached, until the next day.
 - AgentX only writes notes. It never reads, changes or deletes them.
 - A note can only come from an agent's running task, not from other programs on the machine.
-- **Several machines:** a machine without Apple Notes (a Linux server, for example) sends the note to your Mac over the mesh. It uses the peer named in `native.forwardTo`, or `approvals.forwardTo` when that is unset. Turn notes on on both machines; the Mac's daily limit applies too.
+- **Several machines:** a machine without Apple Notes (a Linux server, for example) sends the note to your Mac over the mesh. It uses the peer named in `native.forwardTo`, or `approvals.forwardTo` when that is unset. Turn notes on on both machines; the Mac's daily limit applies too. The Mac accepts a note only from a peer that uses its own token in `mesh.peers` (the same rule as forwarded approval cards), and only for that peer's agents.
 
 ## Before you start
 
@@ -48,3 +48,4 @@ The first note asks macOS whether the program running the daemon may control Not
 - **The agent says `could not add the note`, with `not allowed`:** follow step 2, then ask again.
 - **The agent says the limit is reached:** it already added `perAgentPerDay` notes today. Raise the limit, or wait until tomorrow.
 - **The agent says `only an agent's running turn can add a note`:** the call did not come from an agent's task. Notes can't be added from scripts.
+- **A note forwarded from another machine is refused with `only an agent's running turn`:** the Mac does not recognise the other machine's token. Give that peer its own `token` in `mesh.peers` on both machines.

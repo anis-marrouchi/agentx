@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { macosNotes, NOTES_SCRIPT } from "../../src/native/macos/notes"
-import { handleNoteRequest, type NoteDeps } from "../../src/native/notes-api"
+import { handleNoteRequest, noteCaller, type NoteDeps } from "../../src/native/notes-api"
 import { runNoteTool } from "../../src/native/note-tool"
 import { daemonConfigSchema } from "../../src/daemon/config"
 import { isMeshGatedPath } from "../../src/daemon/mesh-auth"
@@ -79,6 +79,39 @@ describe("POST /native/notes (#1062)", () => {
     expect(isMeshGatedPath("/native/notes")).toBe(true)
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
     expect(cfg.native.notes).toEqual({ enabled: false, folder: "AgentX", perAgentPerDay: 10 })
+  })
+})
+
+describe("who a note is from", () => {
+  const base = { selfNode: "mac", isLocalAgent: (id: string) => id === "scout", proven: () => "scout" as string | null }
+
+  it("is the proven turn for a local call, whatever the body claims", () => {
+    expect(noteCaller({ ...base, node: "", tokenPeer: null, claimed: "boss" })).toEqual({ agentId: "scout", node: "" })
+  })
+
+  it("does not believe a node with this machine's own mesh token (no peer token)", () => {
+    // A local agent holding MESH_TOKEN, naming a peer and any agent.
+    expect(noteCaller({ ...base, node: "linux-box", tokenPeer: null, claimed: "anyone", proven: () => null })).toEqual({ agentId: null, node: "" })
+  })
+
+  it("does not believe a node other than the token's own peer", () => {
+    expect(noteCaller({ ...base, node: "linux-box", tokenPeer: "other-box", claimed: "anyone", proven: () => null })).toEqual({ agentId: null, node: "" })
+  })
+
+  it("believes the peer whose token it is, for its own agents only", () => {
+    expect(noteCaller({ ...base, node: "linux-box", tokenPeer: "linux-box", claimed: "coder" })).toEqual({ agentId: "coder", node: "linux-box" })
+    expect(noteCaller({ ...base, node: "linux-box", tokenPeer: "linux-box", claimed: "scout" })).toEqual({ error: expect.stringMatching(/agent on this node/) })
+  })
+})
+
+describe("the daily limit under load", () => {
+  it("lets only the allowed number through when notes arrive at once", async () => {
+    let release!: () => void
+    const gate = new Promise<void>((r) => { release = r })
+    const { d } = deps({ settings: { ...ON, perAgentPerDay: 1 }, notes: { add: async () => { await gate; return { id: "n" } } } })
+    const both = Promise.all([handleNoteRequest({ title: "a", body: "b" }, d), handleNoteRequest({ title: "a", body: "b" }, d)])
+    release()
+    expect((await both).map((r) => r.status).sort()).toEqual([201, 429])
   })
 })
 

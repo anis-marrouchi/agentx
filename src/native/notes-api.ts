@@ -45,6 +45,30 @@ export interface NoteDeps {
   now?: number
 }
 
+/** Who a note is from. A peer is believed only when the call's token is
+ *  that peer's own token (not this node's MESH_TOKEN, which local agents
+ *  hold) and the agent it names is not one of this node's; otherwise the
+ *  agent is the one the running turn proves. */
+export function noteCaller(c: {
+  node: string
+  selfNode: string
+  /** The peer whose own token the call carries, or null. */
+  tokenPeer: string | null
+  claimed?: string
+  isLocalAgent: (id: string) => boolean
+  /** The agent the call's running turn proves, or null. */
+  proven: () => string | null
+}): { agentId: string | null; node: string } | { error: string } {
+  const fromPeer = !!c.node && c.node !== c.selfNode && c.tokenPeer === c.node
+  if (!fromPeer) return { agentId: c.proven(), node: "" }
+  if (c.claimed && c.isLocalAgent(c.claimed)) return { error: `"${c.claimed}" is an agent on this node; a peer may only write for its own agents` }
+  return { agentId: c.claimed || null, node: c.node }
+}
+
+/** Notes being written now, per agent: counted against the limit, so two
+ *  at once cannot both pass it. */
+const inFlight = new Map<string, number>()
+
 function countsPath(root: string): string {
   return resolve(root, ".agentx", "native-notes.json")
 }
@@ -85,10 +109,27 @@ export async function handleNoteRequest(input: Record<string, unknown> | undefin
   const date = localDate(now)
   const counts = readCounts(root, date)
   const key = deps.node ? `${deps.agentId}@${deps.node}` : deps.agentId
-  if ((counts[key] ?? 0) >= settings.perAgentPerDay) {
+  if ((counts[key] ?? 0) + (inFlight.get(key) ?? 0) >= settings.perAgentPerDay) {
     return { status: 429, body: { error: `${deps.agentId} already added ${settings.perAgentPerDay} notes today; the limit is native.notes.perAgentPerDay` } }
   }
+  inFlight.set(key, (inFlight.get(key) ?? 0) + 1)
+  try {
+    const reply = await write(title, body, deps, now)
+    if (reply.status === 201) {
+      const fresh = readCounts(root, date)
+      fresh[key] = (fresh[key] ?? 0) + 1
+      writeCounts(root, date, fresh)
+    }
+    return reply
+  } finally {
+    const n = (inFlight.get(key) ?? 1) - 1
+    if (n > 0) inFlight.set(key, n)
+    else inFlight.delete(key)
+  }
+}
 
+async function write(title: string, body: string, deps: NoteDeps, now: number): Promise<NoteReply> {
+  const { settings } = deps
   let reply: NoteReply
   if (deps.notes) {
     const signed = `${body}\n\n— ${deps.agentId}${deps.node ? ` on ${deps.node}` : ""}, ${new Date(now).toISOString()}`
@@ -99,12 +140,9 @@ export async function handleNoteRequest(input: Record<string, unknown> | undefin
       return { status: 502, body: { error: `could not add the note: ${e?.message ?? e}` } }
     }
   } else if (deps.forward) {
-    reply = await deps.forward({ title, body, agentId: deps.agentId, node: deps.node })
-    if (reply.status !== 201) return reply
+    reply = await deps.forward({ title, body, agentId: deps.agentId!, node: deps.node })
   } else {
     return { status: 501, body: { error: "this machine has no notes app, and native.forwardTo (or approvals.forwardTo) names no peer to send it to" } }
   }
-  counts[key] = (counts[key] ?? 0) + 1
-  writeCounts(root, date, counts)
   return reply
 }

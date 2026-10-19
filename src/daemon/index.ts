@@ -106,7 +106,7 @@ import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { loadNativeAdapter } from "@/native"
-import { handleNoteRequest, type NoteReply } from "@/native/notes-api"
+import { handleNoteRequest, noteCaller, type NoteReply } from "@/native/notes-api"
 import { claimFile } from "@/reminders/store"
 import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
@@ -4275,11 +4275,18 @@ export class AgentXDaemon {
         if (req.method !== "POST") { this.json(res, 405, { error: "Method not allowed" }); return }
         const input = ((await readBody(req).catch(() => ({}))) ?? {}) as Record<string, unknown>
         const claimed = typeof input.agentId === "string" ? input.agentId.trim() : undefined
-        // Believed from a peer only with a mesh token and a node that is a
-        // known peer, as card results are (forward.ts).
-        const fromPeer = this.carriesMeshToken(req) && typeof input.node === "string" && input.node.trim() !== "" &&
-          input.node !== this.config.node.name && !!this.approvalsPeer(input.node.trim())
-        const agentId = fromPeer ? (claimed || null) : this.provenAgent(this.callerProof(req), claimed)
+        const auth = req.headers.authorization
+        const caller = noteCaller({
+          node: typeof input.node === "string" ? input.node.trim() : "",
+          selfNode: this.config.node.name,
+          tokenPeer: peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN),
+          claimed,
+          isLocalAgent: (id) => !!this.registry.getAgent(id),
+          proven: () => this.provenAgent(this.callerProof(req), claimed),
+        })
+        if ("error" in caller) { this.json(res, 400, { error: caller.error }); return }
+        const fromPeer = caller.node !== ""
+        const agentId = caller.agentId
         const peerName = this.config.native.forwardTo ?? this.config.approvals.forwardTo
         const peer = !fromPeer && peerName ? this.approvalsPeer(peerName) : undefined
         const reply = await handleNoteRequest(input, {
@@ -4287,7 +4294,7 @@ export class AgentXDaemon {
           settings: this.config.native.notes,
           notes: this.native.notes,
           agentId,
-          node: fromPeer ? String(input.node).trim() : "",
+          node: caller.node,
           forward: peer ? async (payload) => this.forwardNote(peer, { ...payload, node: this.config.node.name }) : undefined,
         })
         if (reply.status === 201) this.log(`[notes] ${agentId}${fromPeer ? ` on ${input.node}` : ""} added a note${this.native.notes ? "" : ` on ${peerName}`}`)
