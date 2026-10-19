@@ -11,7 +11,10 @@ import {
 import { attachWatchers } from "../src/watchers/attach"
 import { handleWatchersApi } from "../src/watchers/daemon-api"
 import { dueAtOf, taskTypeOf } from "../src/watchers/due"
-import { checkEvidence, evidenceRuleFor, parseEvidence, type EvidenceRule } from "../src/watchers/evidence"
+import { checkEvidence, evidenceExample, evidenceRuleFor, parseEvidence, type EvidenceRule } from "../src/watchers/evidence"
+import { DelegationManager, type DelegationDeps } from "../src/a2a/delegation"
+import { CronScheduler } from "../src/crons/scheduler"
+import { buildAgentContext } from "../src/agents/context"
 import { watchersConfigSchema } from "../src/daemon/config"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 import { getEventBus } from "../src/events/bus"
@@ -539,6 +542,8 @@ describe("evidence on done (#1049)", () => {
     expect(parseEvidence({ type: "output" })).toMatch(/needs text/)
     expect(parseEvidence({ type: "screenshot" })).toMatch(/must be one of/)
     expect(parseEvidence([1])).toMatch(/string or an object/)
+    // A cut link points elsewhere: refused, as in the object form.
+    expect(parseEvidence(`https://example.com/${"a".repeat(1000)}`)).toMatch(/longer than 1000/)
   })
 
   it("accepts only the proof each type defines", () => {
@@ -572,7 +577,9 @@ describe("evidence on done (#1049)", () => {
     await cp.taskEnded(ended("trace-1", "Published!"))
     expect(store.byKey("trace-1")?.state).toBe("open")
     await cp.delegationStarted({ id: "dlg-9", caller: "coo", callee: "social", request: "post it" })
-    store.setTaskType("watch-dlg-9", "publish")
+    // The callee's own run on this node names the type.
+    await cp.check(taskStartOf(started({ channel: "a2a", chatId: "a2a:coo:social:dlg-9", taskId: "run-9", sender: { name: "agent:coo" }, taskType: "publish" }), ON)!)
+    expect(store.byKey("dlg-9")?.taskType).toBe("publish")
     await cp.delegationEnded({ id: "dlg-9" }, "done", "posted")
     expect(store.byKey("dlg-9")?.state).toBe("open")
     expect(cp.doneNote("dlg-9")).toContain("It needs evidence: a link on example.com")
@@ -606,5 +613,92 @@ describe("evidence on done (#1049)", () => {
     const ok = api({ evidence: { type: "link", url: "https://example.com/v/1" } })
     expect(ok.status).toBe(200)
     expect(ok.body).toMatchObject({ changed: true, watcher: { state: "done", reason: "link: https://example.com/v/1", evidence: { type: "link" } } })
+  })
+
+  it("shows a done example the task's rule accepts", async () => {
+    expect(evidenceExample(null)).toBe(`"<proof>"`)
+    expect(evidenceExample(TEST)).toMatch(/^\{"type":"test","passed":<n>,"failed":0/)
+    expect(evidenceExample(PUBLISH)).toContain(`"url":"https://example.com/`)
+    expect(evidenceExample(REPORT)).toContain(`"type":"output"`)
+    const hints: Array<EvidenceRule | null> = []
+    cp = new WatchCheckpoint(deps({ doneHint: (w, rule) => { hints.push(rule); return `done ${w.id} ${evidenceExample(rule)}` } }))
+    await cp.check(task({ taskType: "code", delegator: "coo", kind: "delegation", dueAt: clock + MIN }))
+    clock += 2 * MIN
+    await cp.sweep()
+    expect(hints).toEqual([TEST])
+    expect(agentAlerts[0].text).toContain(`done watch-trace-1 {"type":"test"`)
+  })
+
+  it("tells a cron or dispatch run with a rule how to close its own watcher", async () => {
+    const cron = started({ channel: "cron", chatId: "cron:weekly", taskId: "run-c" })
+    const note = cp.runNote(cron)!
+    expect(note).toContain("[agentx:watcher id=watch-run-c]")
+    expect(note).toContain("POST /watchers/watch-run-c/done")
+    expect(note).toContain(`{"evidence":{"type":"output"`)
+    expect(note).toMatch(/Done needs evidence: the output, at least 20 characters/)
+    // The type a caller gives wins over the kind's rule.
+    expect(cp.runNote(started({ taskId: "run-d", taskType: "code" }))).toMatch(/a passing test run/)
+    // No rule, result mode: the reply closes it, nothing to say.
+    expect(cp.runNote(started({ taskId: "run-e" }))).toBeUndefined()
+    // A delegating agent is told instead (doneNote, the alert).
+    expect(cp.runNote(started({ taskId: "run-f", sender: { name: "agent:coo" }, taskType: "code" }))).toBeUndefined()
+    // Explicit mode needs a done whatever the type.
+    settings = { ...settings, doneSignal: "explicit" }
+    expect(cp.runNote(started({ taskId: "run-e" }))).toContain(`{"evidence":"<proof>"}`)
+    // Off, or already done: nothing.
+    await cp.check(task({ key: "run-c", traceId: "run-c", kind: "cron", channel: "cron" }))
+    cp.markDone("watch-run-c", "Weekly report: 14 items closed, 2 still open.")
+    expect(cp.runNote(cron)).toBeUndefined()
+    settings = { ...settings, enabled: false }
+    expect(cp.runNote(started({ taskId: "run-d", taskType: "code" }))).toBeUndefined()
+  })
+
+  it("puts the run's note in its prompt", () => {
+    const ctx = buildAgentContext({ channel: "cron", message: "Summarise the week", watcherNote: "[agentx:watcher id=watch-x] mark it done" })
+    expect(ctx).toContain("[agentx:watcher id=watch-x] mark it done")
+  })
+
+  it("carries a delegation's task type to its watcher, local or on a peer", async () => {
+    const runs: Array<Record<string, unknown>> = []
+    const dlgDeps: DelegationDeps = {
+      timeoutMs: 60_000, pollMs: 1,
+      runLocal: (_c, _m, context) => { runs.push(context); return new Promise(() => {}) },
+      runPeer: (_p, _c, _m, context) => { runs.push(context); return new Promise(() => {}) },
+      injectTurn: async () => ({ content: "" }), isChatBusy: () => false, canDeliver: () => true,
+      deliver: async () => {}, log: () => {},
+      onStarted: (rec) => { void cp.delegationStarted(rec) },
+    }
+    const mgr = new DelegationManager(dlgDeps)
+    const caller = { agentId: "coo", taskId: "run-1", context: { channel: "telegram", chatId: "chat-1", sender: "Sam" } }
+    const { record } = mgr.start({ caller, callee: "social", message: "fix the bug", calleeContext: { taskType: "code" } })
+    const peer = mgr.start({ caller, callee: "social", peer: "node-b", message: "post it", calleeContext: { taskType: "publish" } })
+    mgr.stop()
+    await cp.settled()
+    await new Promise((r) => setTimeout(r, 5))
+    expect(record.taskType).toBe("code")
+    expect(runs[0]).toMatchObject({ channel: "a2a", taskType: "code" })
+    expect(runs[1]).toMatchObject({ taskType: "publish" })
+    expect(store.byKey(record.id)?.taskType).toBe("code")
+    expect(store.byKey(peer.record.id)?.taskType).toBe("publish")
+    expect(cp.doneNote(peer.record.id)).toContain("a link on example.com")
+  })
+
+  it("gives a cron run the job's task type", async () => {
+    const execute = async (t: any) => { calls.push(t.context); return { content: "ok", duration: 1 } }
+    const calls: any[] = []
+    const prev = process.cwd()
+    process.chdir(tmp)
+    try {
+      const job = { enabled: true, schedule: "0 3 * * *", timezone: "UTC", agent: "social", prompt: "Weekly report", timeout: 30, onError: ["log"] }
+      const s: any = new CronScheduler({ crons: { weekly: { ...job, taskType: "report" }, daily: job }, agents: {}, notifications: {} } as any, { execute } as any)
+      s.scheduleNext = () => {}
+      s.running = true
+      await s.executeJob("weekly")
+      await s.executeJob("daily")
+    } finally {
+      process.chdir(prev)
+    }
+    expect(calls[0]).toEqual({ channel: "cron", chatId: "cron:weekly", taskType: "report" })
+    expect(calls[1]).toEqual({ channel: "cron", chatId: "cron:daily" })
   })
 })

@@ -20,6 +20,8 @@ export interface CronJobState {
    *  via the prompt tail; reliably honored and keeps cache-hit intact
    *  (hint text is per-job, not per-run). */
   maxOutputTokens?: number
+  /** The run's `context.taskType` (watchers' evidence rules, #1049). */
+  taskType?: string
   /** Routine autonomy level; unset = act (full agent permissions). */
   autonomy?: AutonomyLevel
   onError: Array<"log" | "notify" | "disable">

@@ -24,6 +24,7 @@ import { dirname } from "path"
 import { randomBytes } from "crypto"
 import { isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
 import { isQueued } from "@/agents/queued"
+import { taskTypeOf } from "@/watchers/due"
 
 export type DelegationStatus = "done" | "error" | "timeout" | "lost"
 
@@ -57,6 +58,9 @@ export interface DelegationRecord {
   origin: DelegationOrigin
   root: RootInitiator
   startedAt: number
+  /** The caller's task type (`context.taskType`), which picks the evidence
+   *  a watcher's done needs (watchers, #1049). */
+  taskType?: string
 }
 
 export interface DelegationResult {
@@ -287,6 +291,7 @@ export class DelegationManager {
     if (!origin) throw new Error("caller turn has no channel/chatId to call back to")
     const id = `dlg-${this.now().toString(36)}-${randomBytes(4).toString("hex")}`
     const root = rootInitiatorOf(opts.caller.context as any, opts.caller.agentId)
+    const taskType = taskTypeOf(opts.calleeContext)
     const record: DelegationRecord = {
       id,
       caller: opts.caller.agentId,
@@ -296,6 +301,7 @@ export class DelegationManager {
       origin,
       root,
       startedAt: this.now(),
+      ...(taskType ? { taskType } : {}),
     }
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt })

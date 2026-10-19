@@ -55,7 +55,9 @@ export function parseEvidence(raw: unknown): Evidence | null | string {
   if (typeof raw === "string") {
     const s = raw.trim()
     if (!s) return null
-    return isUrl(s) ? { type: "link", url: s.slice(0, URL_MAX) } : { type: "output", text: s.slice(0, OUTPUT_MAX) }
+    if (!isUrl(s)) return { type: "output", text: s.slice(0, OUTPUT_MAX) }
+    // A cut link points somewhere else: refused, as in the object form.
+    return s.length > URL_MAX ? `url is longer than ${URL_MAX} characters` : { type: "link", url: s }
   }
   if (typeof raw !== "object" || Array.isArray(raw)) return "evidence must be a string or an object with a type"
   const o = raw as Record<string, unknown>
@@ -120,6 +122,17 @@ export function requirementText(rule: EvidenceRule): string {
     return `a link${on} ({"type":"link","url":"<url>"})`
   })
   return parts.join(", or ")
+}
+
+/** The `evidence` value of a done the rule accepts, as JSON with
+ *  placeholders: what the done command shows the agent. No rule: any
+ *  string closes the task. */
+export function evidenceExample(rule: EvidenceRule | null): string {
+  const t = rule?.accept[0]
+  if (t === "test") return `{"type":"test","passed":<n>,"failed":0,"command":"<command>"}`
+  if (t === "output") return `{"type":"output","text":"<at least ${rule!.minOutputChars} characters of output>"}`
+  if (t === "link") return `{"type":"link","url":"https://${rule!.linkHosts[0] ?? "<host>"}/<path>"}`
+  return `"<proof>"`
 }
 
 /** One line for the watcher's reason. */

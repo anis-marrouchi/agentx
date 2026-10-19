@@ -558,6 +558,10 @@ const TOOLS = [
           type: "string",
           description: "Optional. The agentId on whose behalf this call is being made. Recorded in route_traces and (with A2A protocolVersion >= 2) validated by the receiving daemon.",
         },
+        taskType: {
+          type: "string",
+          description: "Optional. The kind of task (e.g. 'code-change', 'report'). When this node's watchers.evidence has a rule for it, the task counts as done only with the proof that rule asks for.",
+        },
       },
       required: ["agentId", "text"],
     },
@@ -689,6 +693,10 @@ const TOOLS = [
         chatId: {
           type: "string",
           description: "Optional stable chat/session id for this delegated task. Omit for a one-off isolated delegation.",
+        },
+        taskType: {
+          type: "string",
+          description: "Optional. The kind of task (e.g. 'code-change', 'report'). When this node's watchers.evidence has a rule for it, the task counts as done only with the proof that rule asks for.",
         },
       },
       required: ["agent", "message"],
@@ -1356,6 +1364,7 @@ async function handleToolCall(
       const agentId = args.agentId as string | undefined
       const text = args.text as string | undefined
       const senderAgentId = args.senderAgentId as string | undefined
+      const taskType = typeof args.taskType === "string" && args.taskType.trim() ? args.taskType.trim() : undefined
       if (!agentId || !text) {
         return { content: [{ type: "text", text: "Error: agentId and text are required." }] }
       }
@@ -1368,7 +1377,7 @@ async function handleToolCall(
         res = await daemonFetch(`${daemonUrl()}/send/agent`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...callerFields() }),
+          body: JSON.stringify({ agentId, text, senderAgentId: senderAgentId || process.env.AGENTX_AGENT_ID, ...(taskType ? { taskType } : {}), ...callerFields() }),
           signal: AbortSignal.timeout(SEND_AGENT_TIMEOUT_MS),
         })
       } catch (e) {
@@ -1455,6 +1464,7 @@ async function handleToolCall(
       const explicitFresh = typeof args.freshSession === "boolean" ? args.freshSession as boolean : undefined
       const freshSession = explicitFresh !== undefined ? explicitFresh : (senderAgentId ? true : undefined)
       const explicitChatId = args.chatId as string | undefined
+      const taskType = typeof args.taskType === "string" && args.taskType.trim() ? args.taskType.trim() : undefined
 
       // Elicit missing params
       if (!agent || !message) {
@@ -1489,7 +1499,7 @@ async function handleToolCall(
       const res = await daemonFetch(`${daemonUrl()}/task`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context, ...callerFields() }),
+        body: JSON.stringify({ agent, message, senderAgentId, freshSession, context, ...(taskType ? { taskType } : {}), ...callerFields() }),
       })
       const data = await res.json() as any
       // #277 — the daemon took it in the background (a person is waiting

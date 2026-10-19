@@ -35,7 +35,7 @@ import { loadReferences, renderReferences } from "./references/loader"
 import { getDefaultLedger } from "@/intent/instance"
 import { loadRecipes, resolveRecipes, type RecipeIndex } from "./references/recipes"
 import type { ReferenceIndex } from "./references/types"
-import { getEventBus } from "@/events/bus"
+import { getEventBus, type AgentXEvents } from "@/events/bus"
 
 /** How long the pipeline waits for the intent classification before
  *  workflow matching (cache hits only) and before the wiki entry stamp. */
@@ -629,6 +629,8 @@ export class AgentRegistry {
     sendTask: (peerName: string, text: string, agentId?: string, opts?: { timeoutMs?: number }) => Promise<string>
     directory: () => Array<{ peer: string; healthy: boolean; skills: Array<{ id: string }> }>
   }
+  /** See setRunNote. */
+  private runNote?: (started: AgentXEvents["task:started"]) => string | undefined
   /** Workflow auto-runner — invoked when workflow matching is in `mode: "auto"`
    *  and a candidate workflow's confidence ≥ autoRunThreshold. Wired by the
    *  daemon after the workflow dispatcher is constructed. Returns the runId of
@@ -791,6 +793,13 @@ export class AgentRegistry {
    *  reload). */
   setWorkflowRunStore(runs: WorkflowRunStore | undefined): void {
     this.workflowRuns = runs
+  }
+
+  /** Wire the watcher's note for a run's prompt (#1049): how to close the
+   *  watcher only that run can close. The daemon calls this once watchers
+   *  attach; unset, no note is added. */
+  setRunNote(note: ((started: AgentXEvents["task:started"]) => string | undefined) | undefined): void {
+    this.runNote = note
   }
 
   setWorkflowAutoRunner(runner: NonNullable<AgentRegistry["workflowAutoRunner"]> | undefined): void {
@@ -1955,7 +1964,7 @@ export class AgentRegistry {
     // callback). Including it in task:started lets the SQLite
     // subscriber open the trace row under the same id the per-step
     // emitter uses.
-    getEventBus().emit("task:started", {
+    const started: AgentXEvents["task:started"] = {
       agentId: task.agentId,
       channel,
       chatId,
@@ -1979,7 +1988,8 @@ export class AgentRegistry {
       operator: isOperatorTurn(task.context),
       dueAt: dueAtOf(task.context as Record<string, unknown> | undefined),
       taskType: taskTypeOf(task.context as Record<string, unknown> | undefined),
-    })
+    }
+    getEventBus().emit("task:started", started)
     traceOpened = true
 
     // Classify the message through the intent graph when enabled. Skip for
@@ -2710,6 +2720,8 @@ export class AgentRegistry {
       contextOnDemand: leanOnDemand && !resumeSessionId ? onDemandContextNote(channel, chatId) : undefined,
       wikiContext,
       handoverNote: this.buildHandoverNote(task.agentId, channel, chatId),
+      // Kept on an isolated run too: it is about this run, not its context.
+      watcherNote: (() => { try { return this.runNote?.(started) } catch { return undefined } })(),
       rotationMemo,
       // Checked here, after the planner may have dropped the session.
       eventDigest: !resumeSessionId ? buildEventDigest(task.agentId, this.config.agents[task.agentId]?.subscriptions ?? state.def.subscriptions) : undefined,
