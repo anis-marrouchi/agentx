@@ -18,3 +18,13 @@ export function taskTypeOf(ctx: Record<string, unknown> | undefined | null): str
   const v = ctx?.taskType
   return typeof v === "string" && v.trim() ? v.trim().slice(0, 64) : undefined
 }
+
+/** A request body whose top-level `taskType` (a mesh peer's /send/agent)
+ *  joins its `context`, where the watcher reads it. A type already in the
+ *  context wins. Returns the context to use, or the body's own. */
+export function contextWithTaskType(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  const ctx = body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : undefined
+  const top = taskTypeOf(body)
+  if (!top || taskTypeOf(ctx)) return ctx
+  return { ...(ctx ?? {}), taskType: top }
+}
