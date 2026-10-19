@@ -66,6 +66,11 @@ function store(): RequestStore | null {
 
 const when = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
 
+/** "code, about 90 minute(s)": what an agent declared on accept (#1048). */
+function workLabel(work: string | null, minutes: number | null): string {
+  return [work ?? "", minutes !== null ? `about ${Math.round(minutes)} minute(s)` : ""].filter(Boolean).join(", ")
+}
+
 function printRequest(r: RequestRecord): void {
   const colour = r.state === "needs_attention" ? chalk.red : r.state === "waiting_owner" ? chalk.yellow : chalk.dim
   console.log(`  ${chalk.cyan(r.id)}  ${colour(`[${STATE_LABEL[r.state] ?? r.state}]`)} ${chalk.dim(`${when(r.createdAt)} · ${r.channel} · ${r.agentId}`)}`)
@@ -73,7 +78,9 @@ function printRequest(r: RequestRecord): void {
   if (r.state === "waiting_owner" && r.question) console.log(chalk.yellow(`    Question: ${r.question}`))
   if (r.state === "needs_attention" && r.attentionReason) console.log(chalk.red(`    ${r.attentionReason}`))
   if (r.work || r.estimateMinutes !== null) {
-    console.log(chalk.dim(`    Work: ${[r.work ?? "", r.estimateMinutes !== null ? `about ${Math.round(r.estimateMinutes)} minute(s)` : ""].filter(Boolean).join(", ")}`))
+    const first = workLabel(r.firstWork, r.firstEstimateMinutes)
+    const now = workLabel(r.work, r.estimateMinutes)
+    console.log(chalk.dim(`    Work: ${now}${first && first !== now ? ` (first declared: ${first})` : ""}`))
   }
   if (r.promise && r.owedTo) console.log(chalk.dim(`    Promised to ${r.owedTo}`))
   if (r.dueAt) console.log((r.closedAt === null && Date.now() > r.dueAt ? chalk.red : chalk.dim)(`    Due ${when(r.dueAt)}`))

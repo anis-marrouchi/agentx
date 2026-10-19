@@ -191,6 +191,14 @@ describe("the plan gate (#1048)", () => {
     expect(accept({}).status).toBe(409)
   })
 
+  it("keeps the first declaration when a later accept changes it", () => {
+    expect(accept({ work: "code", estimateMinutes: 90 }).status).toBe(409)
+    expect(accept({ work: "research", estimateMinutes: 10 }).status).toBe(200)
+    expect(requests.get("req-1")).toMatchObject({
+      work: "research", estimateMinutes: 10, firstWork: "code", firstEstimateMinutes: 90,
+    })
+  })
+
   it("leaves other declared tasks alone: short, or other kinds", () => {
     expect(accept({ work: "research", estimateMinutes: 10 }).status).toBe(200)
     expect(requests.get("req-1")).toMatchObject({ work: "research", estimateMinutes: 10 })

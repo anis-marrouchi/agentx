@@ -111,13 +111,18 @@ function plan(p){
       (extra ? '<small>' + esc(extra) + '</small>' : '') + '</li>';
   }).join('') + '</ol>';
 }
+function workLabel(work, minutes){ return [work || '', minutes != null ? 'about ' + Math.round(minutes) + ' min' : ''].filter(Boolean).join(', '); }
 // Who it is owed to, when it is due, what closes it, and why it is stalled (#1039).
 function loop(r){
   var l = r.loop, bits = [];
   if (l && l.promise && l.owedTo) bits.push('Promised to <b>' + esc(l.owedTo === 'owner' ? 'you' : agentName(l.owedTo)) + '</b>');
   if (l && l.dueAt) bits.push('Due ' + esc(when(l.dueAt)));
   // What the agent declared when it accepted (#1048).
-  if (r.work || r.estimateMinutes != null) bits.push('Work: ' + esc([r.work || '', r.estimateMinutes != null ? 'about ' + Math.round(r.estimateMinutes) + ' min' : ''].filter(Boolean).join(', ')));
+  // A change after a refused accept shows the first declaration too.
+  if (r.work || r.estimateMinutes != null) {
+    var now = workLabel(r.work, r.estimateMinutes), first = workLabel(r.firstWork, r.firstEstimateMinutes);
+    bits.push('Work: ' + esc(now) + (first && first !== now ? ' <small>(first declared: ' + esc(first) + ')</small>' : ''));
+  }
   if (l && l.check) bits.push('Closes when ' + esc(l.check) + (l.verifyState ? ' <span class="is-' + esc(l.verifyState) + '">(' + esc(VERIFY[l.verifyState] || l.verifyState) + (l.verifyDetail ? ': ' + esc(l.verifyDetail) : '') + ')</span>' : ''));
   var stalled = r.stall ? '<p class="apv__loop apv__stalled">Stalled, waiting on ' + esc(r.stall.group === 'agent' ? agentName(r.stall.who) : r.stall.group === 'person' ? r.stall.who : 'you') + ': ' + esc(r.stall.why) + '</p>' : '';
   return (bits.length ? '<p class="apv__loop">' + bits.join(' · ') + '</p>' : '') + stalled;
