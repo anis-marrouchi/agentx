@@ -1,0 +1,27 @@
+{
+  "why": "Files outside src/native that still name an OS tool or platform (#1062). Remove a file from this list when its OS code moves into src/native; never add one. test/native/no-os-in-core.test.ts checks both.",
+  "files": [
+    "src/approvals/card-window.ts",
+    "src/approvals/origin.ts",
+    "src/approvals/popup-runner.ts",
+    "src/approvals/popup.ts",
+    "src/commands/approvals-card.ts",
+    "src/commands/doctor.ts",
+    "src/daemon/config.ts",
+    "src/daemon/index.ts",
+    "src/daemon/restart-host.ts",
+    "src/daemon/screen-buffer.ts",
+    "src/daemon/ui/pages/admin.ts",
+    "src/decisions/seats/voice-narration.ts",
+    "src/desktop/install.ts",
+    "src/guard/confirm.ts",
+    "src/notify/helper-status.ts",
+    "src/notify/local.ts",
+    "src/reminders/daemon.ts",
+    "src/reminders/source.ts",
+    "src/utils/open-browser.ts",
+    "src/voice/siri.ts",
+    "src/voice/speaker.ts",
+    "src/voice/system-voices.ts"
+  ]
+}
