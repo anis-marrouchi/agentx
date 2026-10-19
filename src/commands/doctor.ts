@@ -92,12 +92,19 @@ export async function runNotificationChecks(checks: Check[], cfg: any, status = 
 }
 
 /** Which native apps AgentX can use on this machine (#1062). Shown on every
- *  OS; a machine without an adapter is fine, so that is not a warning. */
-export async function runNativeChecks(checks: Check[], cfg: any, adapter: NativeAdapter = loadNativeAdapter(cfg)): Promise<void> {
-  const d = await adapter.describe()
+ *  OS. A missing capability is information, not a fault: the features that
+ *  need one say so in their own checks. */
+export async function runNativeChecks(checks: Check[], cfg: any, adapter?: NativeAdapter): Promise<void> {
+  let d: Awaited<ReturnType<NativeAdapter["describe"]>>
+  try {
+    d = await (adapter ?? loadNativeAdapter(cfg)).describe()
+  } catch (e: any) {
+    checks.push({ severity: "warn", group: "Native", title: "Native apps: could not be read", detail: e?.message ?? String(e) })
+    return
+  }
   const can = (["tasks", "notes", "banner", "sound", "focus"] as const).filter((c) => d[c])
   checks.push({
-    severity: d.os !== "none" && d.problems.length ? "warn" : "ok",
+    severity: "ok",
     group: "Native",
     title: d.os === "none" ? "Native apps: none on this machine" : `Native apps (${d.os}): ${can.join(", ") || "nothing available"}`,
     detail: d.problems.join(" ") || undefined,

@@ -31,7 +31,7 @@ describe("doctor Native line (#1062)", () => {
     expect(checks).toEqual([expect.objectContaining({ severity: "ok", group: "Native", title: "Native apps: none on this machine" })])
   })
 
-  it("lists what an OS adapter offers and warns on its problems", async () => {
+  it("lists what an OS adapter offers, with its problems as detail", async () => {
     const { runNativeChecks } = await import("../../src/commands/doctor")
     const checks: any[] = []
     const adapter = {
@@ -42,6 +42,13 @@ describe("doctor Native line (#1062)", () => {
       },
     }
     await runNativeChecks(checks, {}, adapter)
-    expect(checks[0]).toMatchObject({ severity: "warn", title: "Native apps (macos): banner", detail: "remindctl not found." })
+    expect(checks[0]).toMatchObject({ severity: "ok", title: "Native apps (macos): banner", detail: "remindctl not found." })
+  })
+
+  it("warns instead of failing doctor when the adapter throws", async () => {
+    const { runNativeChecks } = await import("../../src/commands/doctor")
+    const checks: any[] = []
+    await runNativeChecks(checks, {}, { os: "macos", async describe() { throw new Error("boom") } })
+    expect(checks[0]).toMatchObject({ severity: "warn", title: "Native apps: could not be read", detail: "boom" })
   })
 })
