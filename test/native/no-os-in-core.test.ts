@@ -78,6 +78,11 @@ describe("no OS-specific code in core (#1062)", () => {
     expect(added, "move this OS work into src/native/; the allowlist may only shrink").toEqual([])
   })
 
+  it("trims BASELINE when the allowlist shrinks", () => {
+    const dropped = BASELINE.filter((f) => !allowlist.includes(f))
+    expect(dropped, "delete these lines from BASELINE in test/native/no-os-in-core.test.ts").toEqual([])
+  })
+
   it("keeps the allowlist sorted and without repeats", () => {
     expect(allowlist).toEqual([...new Set(allowlist)].sort())
   })
