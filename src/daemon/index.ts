@@ -221,7 +221,7 @@ import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
 import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
 import { createMergePolicyGitHub, createReviewGateGitHub } from "@/quality/review-gate-github"
-import { approvalCardInput, MergePolicy } from "@/quality/merge-policy"
+import { approvalCardInput, cardVerdict, MergePolicy } from "@/quality/merge-policy"
 import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
 import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
 
@@ -1285,17 +1285,14 @@ export class AgentXDaemon {
    *  approval survives a restart. */
   private buildMergePolicy(github: GitHubAdapter): MergePolicy {
     const root = process.cwd()
-    const cardFor = (repo: string, pr: number, sha: string, status: "pending" | "decided") =>
-      listCards(root, status).find((c) => c.origin?.kind === "merge-policy" && c.origin.repo === repo && c.origin.pr === pr && c.origin.sha === sha)
+    const verdict = (repo: string, pr: number, sha: string) =>
+      cardVerdict([...listCards(root, "pending"), ...listCards(root, "decided")], repo, pr, sha)
     return new MergePolicy({
       config: () => this.config.quality.mergePolicy,
       github: createMergePolicyGitHub((repo) => github.getTokenForRepo(repo)),
       isAgentLogin: (login) => github.isAgentLogin(login),
-      cardApproval: (repo, pr, sha) => {
-        const card = cardFor(repo, pr, sha, "decided")
-        return card?.verdict === "yes" ? (card.decided_by || "the owner") : undefined
-      },
-      cardPending: (repo, pr, sha) => !!cardFor(repo, pr, sha, "pending"),
+      cardApproval: (repo, pr, sha) => verdict(repo, pr, sha).approvedBy,
+      cardAsked: (repo, pr, sha) => verdict(repo, pr, sha).asked,
       raiseCard: (req) => {
         const res = createCard(root, approvalCardInput(req, github.agentFor(req.repo) ?? "agentx"), {
           settings: this.config.approvals,
@@ -2836,6 +2833,12 @@ export class AgentXDaemon {
         void this.mergePolicy?.onPullRequest(event)
       })
       this.github.onPullRequestReviewEvent((event) => { void this.mergePolicy?.onReview(event) })
+      // YES answers from the last day: one given while the daemon was down,
+      // or that GitHub failed to hear, still reaches the PR's status.
+      const since = new Date(Date.now() - 86_400_000).toISOString()
+      void this.mergePolicy.recheck(listCards(process.cwd(), "decided")
+        .filter((c) => c.origin?.kind === "merge-policy" && c.verdict === "yes" && (c.decided_at ?? "") >= since)
+        .map((c) => ({ repo: (c.origin as { repo: string }).repo, pr: (c.origin as { pr: number }).pr })))
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }

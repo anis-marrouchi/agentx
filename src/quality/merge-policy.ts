@@ -17,6 +17,11 @@ import { matchesPath, statusText } from "./review-gate"
 //   core, approved            success  ("approved by …")
 //   core, not approved        pending  in required mode, success marked
 //                                       "[advisory]" in advisory mode
+//   core, changes requested   pending
+//   files unreadable          error    (never a success on a list not read)
+//
+// A renamed file counts at its old path too, and a list as long as GitHub
+// can give (MAX_LISTED_FILES) counts as core: it may be cut short.
 //
 // A core PR also gets a label, so it shows in the PR list. The status only
 // blocks a merge once it is a required check on the protected branch; the
@@ -38,7 +43,15 @@ export const MERGE_POLICY_CONTEXT = "agentx/merge-policy"
 /** Pull request actions that (re)check the policy. */
 const CHECK_ACTIONS = new Set(["opened", "reopened", "synchronize", "ready_for_review"])
 
-export type PolicyState = "success" | "pending"
+export type PolicyState = "success" | "pending" | "error"
+
+/** GitHub lists at most this many changed files for a pull request. A
+ *  list this long may be cut short, so it counts as core. */
+export const MAX_LISTED_FILES = 3000
+
+/** Author associations that can approve when `approvers` is empty: people
+ *  with a say in the repository, not any passer-by with an account. */
+const TRUSTED_ASSOCIATIONS = new Set(["OWNER", "MEMBER", "COLLABORATOR"])
 
 export interface Classified {
   core: string[]
@@ -71,11 +84,14 @@ export interface PolicyReview {
   /** approved | changes_requested | commented | dismissed (lower case). */
   state: string
   commitId: string
+  /** GitHub's author_association: OWNER, MEMBER, COLLABORATOR, … */
+  association?: string
 }
 
 /** What the policy needs from GitHub. */
 export interface MergePolicyGitHub {
   getPullRequest(repo: string, number: number): Promise<PolicyPullRequest>
+  /** Every path a PR changes: a renamed file is listed at its old path too. */
   getChangedFiles(repo: string, number: number): Promise<string[]>
   getReviews(repo: string, number: number): Promise<PolicyReview[]>
   setStatus(repo: string, sha: string, state: PolicyState, description: string): Promise<void>
@@ -98,12 +114,19 @@ export interface MergePolicyDeps {
   isAgentLogin: (login: string) => boolean
   /** Who decided YES on the owner's card for this commit, else undefined. */
   cardApproval: (repo: string, number: number, sha: string) => string | undefined
-  /** True when a card for this commit is still waiting for an answer. */
-  cardPending: (repo: string, number: number, sha: string) => boolean
+  /** True when a card for this commit is waiting for an answer, or was
+   *  answered NO: the owner is asked once per commit. */
+  cardAsked: (repo: string, number: number, sha: string) => boolean
   /** Raise the owner's card. Throws when the card could not be raised. */
   raiseCard: (req: ApprovalCardRequest) => void
   log?: (msg: string) => void
+  /** Wait between tries of a check a YES started (tests pass a fake). */
+  sleep?: (ms: number) => Promise<void>
 }
+
+/** A YES that GitHub failed to hear is tried this many times, a minute apart. */
+const CARD_TRIES = 3
+const CARD_RETRY_MS = 60_000
 
 export interface PolicyOutcome {
   state: PolicyState
@@ -136,11 +159,13 @@ function fileList(files: string[], max = 2): string {
 
 export class MergePolicy {
   /** One check per PR at a time; a second event waits for the first. */
-  private running = new Map<string, Promise<PolicyOutcome | null>>()
+  private running = new Map<string, Promise<PolicyOutcome | null | undefined>>()
   private readonly log: (msg: string) => void
+  private readonly sleep: (ms: number) => Promise<void>
 
   constructor(private deps: MergePolicyDeps) {
     this.log = deps.log ?? (() => {})
+    this.sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)))
   }
 
   /** Called for every pull_request webhook. Does nothing while off. */
@@ -164,15 +189,37 @@ export class MergePolicy {
     const o = card.origin
     if (o?.kind !== "merge-policy" || !o.repo || !o.pr) return null
     if (card.status !== "decided" || card.verdict !== "yes") return null
-    return this.queue(o.repo, o.pr)
+    return this.checkWithRetry(o.repo, o.pr)
   }
 
-  private queue(repo: string, number: number): Promise<PolicyOutcome | null> {
+  /** Check PRs whose card the owner answered YES while the daemon was
+   *  down or GitHub was failing: the card is marked told before its
+   *  result is acted on, so nothing else would bring the YES back. */
+  recheck(prs: Array<{ repo: string; pr: number }>): Promise<Array<PolicyOutcome | null>> {
+    if (!this.deps.config().enabled) return Promise.resolve([])
+    const seen = new Set<string>()
+    const unique = prs.filter((p) => !seen.has(`${p.repo}#${p.pr}`) && !!seen.add(`${p.repo}#${p.pr}`))
+    return Promise.all(unique.map((p) => this.checkWithRetry(p.repo, p.pr)))
+  }
+
+  private async checkWithRetry(repo: string, number: number): Promise<PolicyOutcome | null> {
+    for (let i = 1; ; i++) {
+      const o = await this.queue(repo, number, true)
+      if (o !== undefined || i >= CARD_TRIES) return o ?? null
+      await this.sleep(CARD_RETRY_MS)
+    }
+  }
+
+  /** Run a check after any earlier one for the same PR. A failed check
+   *  is logged and ends as null, or as undefined with `failAsUndefined`. */
+  private queue(repo: string, number: number): Promise<PolicyOutcome | null>
+  private queue(repo: string, number: number, failAsUndefined: true): Promise<PolicyOutcome | null | undefined>
+  private queue(repo: string, number: number, failAsUndefined = false): Promise<PolicyOutcome | null | undefined> {
     const key = `${repo}#${number}`
     const prev = this.running.get(key) ?? Promise.resolve(null)
     const next = prev.catch(() => null).then(() => this.check(repo, number)).catch((e: any) => {
       this.log(`${key}: check failed: ${e?.message ?? e}`)
-      return null
+      return failAsUndefined ? undefined : null
     })
     this.running.set(key, next)
     void next.finally(() => { if (this.running.get(key) === next) this.running.delete(key) })
@@ -186,7 +233,16 @@ export class MergePolicy {
     const pr = await gh.getPullRequest(repo, number)
     if (pr.state !== "open" || pr.draft) return null
     const sha = pr.headSha
-    const { core } = classifyFiles(await gh.getChangedFiles(repo, number), cfg)
+    let changed: string[]
+    try {
+      changed = await gh.getChangedFiles(repo, number)
+    } catch (e: any) {
+      // Never a success on a list we could not read.
+      await gh.setStatus(repo, sha, "error", statusText(`could not read the changed files: ${e?.message ?? e}`))
+      throw e
+    }
+    const { core } = classifyFiles(changed, cfg)
+    if (changed.length >= MAX_LISTED_FILES && !core.length) core.push(`over ${MAX_LISTED_FILES} files changed`)
     const hasLabel = pr.labels.some((l) => l.toLowerCase() === cfg.label.toLowerCase())
 
     const post = async (o: PolicyOutcome): Promise<PolicyOutcome> => {
@@ -207,14 +263,15 @@ export class MergePolicy {
       return post({ state: "success", description: `${files}; opened by ${pr.authorLogin}, a person`, core, approvedBy: pr.authorLogin })
     }
 
-    const approvedBy = await this.approval(repo, pr)
+    const { approvedBy, heldBy } = await this.approval(repo, pr)
+    if (heldBy) return post({ state: "pending", description: `${files}; ${heldBy} requested changes`, core })
     if (approvedBy) return post({ state: "success", description: `${files}; approved by ${approvedBy}`, core, approvedBy })
 
     if (cfg.mode === "advisory") {
       return post({ state: "success", description: `[advisory] ${files}; a person should approve before merge`, core })
     }
     let cardRaised = false
-    if (cfg.ownerCard && !this.deps.cardPending(repo, number, sha)) {
+    if (cfg.ownerCard && !this.deps.cardAsked(repo, number, sha)) {
       try {
         this.deps.raiseCard({ repo, number, sha, core, url: pr.url })
         cardRaised = true
@@ -225,11 +282,12 @@ export class MergePolicy {
     return post({ state: "pending", description: `${files}; waiting for a person to approve`, core, cardRaised })
   }
 
-  /** Who approved the head commit, or undefined. */
-  private async approval(repo: string, pr: PolicyPullRequest): Promise<string | undefined> {
+  /** Who approved the head commit, and who holds it with a standing
+   *  "changes requested". The owner's card YES outranks both. */
+  private async approval(repo: string, pr: PolicyPullRequest): Promise<{ approvedBy?: string; heldBy?: string }> {
     const cfg = this.deps.config()
     const fromCard = this.deps.cardApproval(repo, pr.number, pr.headSha)
-    if (fromCard) return fromCard
+    if (fromCard) return { approvedBy: fromCard }
     const allowed = cfg.approvers.map((a) => a.toLowerCase())
     // The latest review per login counts: a later "changes requested" or a
     // dismissal takes an approval back.
@@ -239,13 +297,35 @@ export class MergePolicy {
       if (r.state === "commented") continue
       latest.set(login, r)
     }
+    let approvedBy: string | undefined
     for (const [login, r] of latest) {
-      if (r.state !== "approved" || r.commitId !== pr.headSha) continue
       if (login === pr.authorLogin.toLowerCase() || this.deps.isAgentLogin(r.login)) continue
-      if (allowed.length && !allowed.includes(login)) continue
-      return r.login
+      if (allowed.length ? !allowed.includes(login) : !TRUSTED_ASSOCIATIONS.has((r.association ?? "").toUpperCase())) continue
+      if (r.state === "changes_requested") return { heldBy: r.login }
+      if (r.state === "approved" && r.commitId === pr.headSha) approvedBy ??= r.login
     }
-    return undefined
+    return { approvedBy }
+  }
+}
+
+interface CardLike {
+  status: string
+  verdict?: string
+  decided_by?: string
+  decided_at?: string
+  origin?: { kind: string; repo?: string; pr?: number; sha?: string }
+}
+
+/** What the owner's cards say about one commit: who approved it (the
+ *  latest answer wins, so a YES after a NO approves), and whether to hold
+ *  off asking (a card waits, or the latest answer is NO). An expired card
+ *  may be raised again. */
+export function cardVerdict(cards: CardLike[], repo: string, pr: number, sha: string): { approvedBy?: string; asked: boolean } {
+  const mine = cards.filter((c) => c.origin?.kind === "merge-policy" && c.origin.repo === repo && c.origin.pr === pr && c.origin.sha === sha)
+  const last = mine.filter((c) => c.status === "decided").sort((a, b) => (a.decided_at ?? "").localeCompare(b.decided_at ?? "")).pop()
+  return {
+    approvedBy: last?.verdict === "yes" ? (last.decided_by || "the owner") : undefined,
+    asked: mine.some((c) => c.status === "pending") || last?.verdict === "no",
   }
 }
 

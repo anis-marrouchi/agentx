@@ -33,11 +33,15 @@ function restCall(tokenFor: (repo: string) => Promise<string | undefined>, fetch
   }
 }
 
-async function changedFiles(call: RestCall, repo: string, number: number): Promise<string[]> {
+/** The PR's changed files; with `oldPaths`, a renamed file's old path too. */
+async function changedFiles(call: RestCall, repo: string, number: number, oldPaths = false): Promise<string[]> {
   const files: string[] = []
   for (let page = 1; page <= 30; page++) {
     const rows = await (await call(repo, `/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`)).json() as any[]
-    files.push(...rows.map((f) => f.filename))
+    for (const f of rows) {
+      files.push(f.filename)
+      if (oldPaths && f.previous_filename) files.push(f.previous_filename)
+    }
     if (rows.length < 100) break
   }
   return files
@@ -138,14 +142,16 @@ export function createMergePolicyGitHub(
     },
 
     async getChangedFiles(repo, number) {
-      return changedFiles(call, repo, number)
+      return changedFiles(call, repo, number, true)
     },
 
     async getReviews(repo, number) {
       const out: PolicyReview[] = []
       for (let page = 1; page <= 10; page++) {
         const rows = await json(repo, `/repos/${repo}/pulls/${number}/reviews?per_page=100&page=${page}`) as any[]
-        for (const r of rows) out.push({ login: r.user?.login ?? "", state: String(r.state ?? "").toLowerCase(), commitId: r.commit_id ?? "" })
+        for (const r of rows) {
+          out.push({ login: r.user?.login ?? "", state: String(r.state ?? "").toLowerCase(), commitId: r.commit_id ?? "", association: r.author_association ?? "" })
+        }
         if (rows.length < 100) break
       }
       return out

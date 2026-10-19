@@ -85,7 +85,6 @@ export const GITHUB_EVENT_DEFAULTS = {
  *  token owner is often a person who opens issues by hand. */
 const ALWAYS_COUNTED_ACTIONS = new Set(["opened", "reopened"])
 
-/** A pull_request event as the review gate sees it (#990). */
 /** A pull_request_review webhook, for the merge policy (#1047). */
 export interface PullRequestReviewEventInfo {
   action: string
@@ -96,6 +95,7 @@ export interface PullRequestReviewEventInfo {
   login: string
 }
 
+/** A pull_request event as the review gate sees it (#990). */
 export interface PullRequestEventInfo {
   action: string
   repo: string

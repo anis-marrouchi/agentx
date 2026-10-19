@@ -1278,8 +1278,9 @@ export const mergePolicyConfigSchema = z.object({
   /** Label put on a PR that changes a core path, and taken off when it no
    *  longer does. */
   label: z.string().min(1).max(50).default("core-change"),
-  /** GitHub logins whose "Approve" review counts. Empty: any login other
-   *  than the PR's author and the accounts AgentX posts with. */
+  /** GitHub logins whose reviews count. Empty: the repository's owners,
+   *  members and collaborators, other than the PR's author and the
+   *  accounts AgentX posts with. */
   approvers: z.array(z.string().min(1)).default([]),
   /** In required mode, raise an approvals card for the owner on each
    *  unapproved core commit; YES approves that commit. */

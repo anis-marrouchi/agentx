@@ -15,6 +15,10 @@ For each pull request (a proposed change on GitHub), AgentX reads the list of ch
 | changes a core path and was opened by a person | **success** | "core paths changed … opened by …" |
 | changes a core path, no approval yet, **required** mode | **pending** | "core paths changed … waiting for a person" |
 | changes a core path, no approval yet, **advisory** mode | **success** | "[advisory] core paths changed" |
+| changes a core path and someone requested changes | **pending** | "core paths changed … requested changes" |
+| its changed files could not be read | **error** | "could not read the changed files" |
+
+- A renamed file counts at its old path too, so moving a file out of a core folder is a core change. A pull request with 3,000 changed files or more counts as core, because GitHub may not list them all.
 
 - A pull request that changes a core path also gets a **label**, `core-change` unless you choose another, so you can find these in the pull request list. The label comes off again when a later push no longer touches a core path.
 - Every pull request still runs the full CI (the automatic tests GitHub runs). The policy adds a check; it never skips one.
@@ -24,7 +28,7 @@ For each pull request (a proposed change on GitHub), AgentX reads the list of ch
 
 An approval belongs to one commit. A new push needs a new approval.
 
-- **On GitHub:** an **Approve** review on the latest commit, from someone other than the pull request's author and other than the accounts AgentX posts with. If you set `approvers`, only those logins count. A later "Request changes" or a dismissed review takes the approval back.
+- **On GitHub:** an **Approve** review on the latest commit, from someone other than the pull request's author and other than the accounts AgentX posts with, who is an owner, member or collaborator of the repository. If you set `approvers`, only those logins count. Each person's latest review is the one that counts: a later "Request changes" or a dismissal takes their approval back, and a standing "Request changes" from anyone who counts holds the pull request.
 - **On your approvals card:** in required mode, AgentX also raises a card for you (the same cards as in [Approvals](/dashboard/approvals)) that asks whether to approve the pull request at that commit. **YES** approves it; within about a minute the status turns green. This is the way to approve when one GitHub account opens every pull request, because GitHub does not let an author approve their own pull request.
 
 ## Before you start
@@ -73,7 +77,7 @@ Under `quality.mergePolicy`:
 | `corePaths` | list of patterns | `[]` | Files that count as core. Empty: nothing is core, every pull request is "edge only". |
 | `edgePaths` | list of patterns | `[]` | Exceptions carved out of `corePaths`. |
 | `label` | text | `"core-change"` | The label put on a core pull request. |
-| `approvers` | list of GitHub logins | `[]` | Only these logins' approvals count. Empty: anyone but the author and AgentX's own accounts. |
+| `approvers` | list of GitHub logins | `[]` | Only these logins' reviews count. Empty: owners, members and collaborators of the repository, except the author and AgentX's own accounts. |
 | `ownerCard` | boolean | `true` | In required mode, raise an approvals card for each unapproved core commit. |
 
 ## Check it worked

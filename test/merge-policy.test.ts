@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { daemonConfigSchema, mergePolicyConfigSchema } from "../src/daemon/config"
 import {
-  approvalCardInput, classifyFiles, MERGE_POLICY_CONTEXT, MergePolicy,
+  approvalCardInput, cardVerdict, classifyFiles, MERGE_POLICY_CONTEXT, MergePolicy,
   type ApprovalCardRequest, type MergePolicyGitHub, type PolicyReview,
 } from "../src/quality/merge-policy"
 import { createMergePolicyGitHub } from "../src/quality/review-gate-github"
@@ -49,7 +49,8 @@ function policy(opts: { config?: Record<string, unknown>; fake?: Fake; approvedB
     github: fake.gh,
     isAgentLogin: (login) => login === AGENT,
     cardApproval: (_r, _n, sha) => (opts.approvedBy && sha === SHA1 ? opts.approvedBy : undefined),
-    cardPending: () => !!opts.pending,
+    cardAsked: () => !!opts.pending,
+    sleep: async () => {},
     raiseCard: (req) => {
       if (opts.failCard) throw new Error("too many cards")
       cards.push(req)
@@ -155,16 +156,20 @@ describe("MergePolicy", () => {
 
   it("counts a GitHub approval from a person on the head commit", async () => {
     const { p, fake } = policy()
-    fake.reviews.push({ login: "carol", state: "approved", commitId: SHA1 })
+    fake.reviews.push({ login: "carol", state: "approved", commitId: SHA1, association: "MEMBER" })
     expect(await p.onReview({ action: "submitted", repo: REPO, number: 7, state: "approved" })).toMatchObject({ state: "success", approvedBy: "carol" })
   })
 
   it("does not count approvals from the author, an agent account, an old commit or a withdrawn review", async () => {
     const cases: PolicyReview[][] = [
       [{ login: AGENT, state: "approved", commitId: SHA1 }],
-      [{ login: "carol", state: "approved", commitId: SHA2 }],
-      [{ login: "carol", state: "approved", commitId: SHA1 }, { login: "carol", state: "changes_requested", commitId: SHA1 }],
-      [{ login: "carol", state: "approved", commitId: SHA1 }, { login: "carol", state: "dismissed", commitId: SHA1 }],
+      [{ login: "carol", state: "approved", commitId: SHA2, association: "MEMBER" }],
+      [{ login: "carol", state: "approved", commitId: SHA1, association: "MEMBER" }, { login: "carol", state: "changes_requested", commitId: SHA1, association: "MEMBER" }],
+      // Another person's standing "changes requested" holds it.
+      [{ login: "carol", state: "approved", commitId: SHA1, association: "MEMBER" }, { login: "dave", state: "changes_requested", commitId: SHA1, association: "MEMBER" }],
+      // Without approvers, only people with a say in the repository count.
+      [{ login: "erin", state: "approved", commitId: SHA1, association: "CONTRIBUTOR" }],
+      [{ login: "carol", state: "approved", commitId: SHA1, association: "MEMBER" }, { login: "carol", state: "dismissed", commitId: SHA1, association: "MEMBER" }],
     ]
     for (const reviews of cases) {
       const { p, fake } = policy()
@@ -173,15 +178,15 @@ describe("MergePolicy", () => {
     }
     // A later plain comment does not take an approval back.
     const { p, fake } = policy()
-    fake.reviews.push({ login: "carol", state: "approved", commitId: SHA1 }, { login: "carol", state: "commented", commitId: SHA1 })
+    fake.reviews.push({ login: "carol", state: "approved", commitId: SHA1, association: "MEMBER" }, { login: "carol", state: "commented", commitId: SHA1, association: "MEMBER" })
     expect((await p.onPullRequest(opened))?.state).toBe("success")
   })
 
   it("only counts listed approvers when approvers is set", async () => {
     const { p, fake } = policy({ config: { approvers: ["Dave"] } })
-    fake.reviews.push({ login: "carol", state: "approved", commitId: SHA1 })
+    fake.reviews.push({ login: "carol", state: "approved", commitId: SHA1, association: "MEMBER" })
     expect((await p.onPullRequest(opened))?.state).toBe("pending")
-    fake.reviews.push({ login: "dave", state: "approved", commitId: SHA1 })
+    fake.reviews.push({ login: "dave", state: "approved", commitId: SHA1, association: "MEMBER" })
     expect(await p.onPullRequest(opened)).toMatchObject({ state: "success", approvedBy: "dave" })
   })
 
@@ -206,17 +211,63 @@ describe("MergePolicy", () => {
   it("runs one check per PR at a time, in order", async () => {
     const { p, fake } = policy()
     const a = p.onPullRequest(opened)
-    fake.reviews.push({ login: "carol", state: "approved", commitId: SHA1 })
+    fake.reviews.push({ login: "carol", state: "approved", commitId: SHA1, association: "MEMBER" })
     const b = p.onReview({ action: "submitted", repo: REPO, number: 7, state: "approved" })
     await Promise.all([a, b])
     expect(fake.statuses.map((s) => s.state)).toEqual(["success", "success"])
   })
 
-  it("a GitHub failure is logged, not thrown", async () => {
+  it("a failed file read posts error, never success, and is not thrown", async () => {
     const fake = fakeGitHub(["src/core/a.ts"])
     fake.gh.getChangedFiles = async () => { throw new Error("GitHub GET /files: 502") }
     const { p } = policy({ fake })
     expect(await p.onPullRequest(opened)).toBeNull()
+    expect(fake.statuses).toEqual([{ sha: SHA1, state: "error", description: "could not read the changed files: GitHub GET /files: 502" }])
+  })
+
+  it("a file list GitHub may have cut short counts as core", async () => {
+    const fake = fakeGitHub(Array.from({ length: 3000 }, (_, i) => `docs/p${i}.md`))
+    const { p } = policy({ fake })
+    const o = await p.onPullRequest(opened)
+    expect(o).toMatchObject({ state: "pending", core: ["over 3000 files changed"] })
+  })
+})
+
+describe("YES that GitHub missed", () => {
+  it("retries a check a YES started, and gives up after three tries", async () => {
+    const { p, fake } = policy({ approvedBy: "anis" })
+    let fails = 2
+    const real = fake.gh.getPullRequest
+    fake.gh.getPullRequest = async (...a) => { if (fails-- > 0) throw new Error("GitHub GET: 502"); return real(...a) }
+    const card = { status: "decided", verdict: "yes", origin: { kind: "merge-policy", repo: REPO, pr: 7, sha: SHA1 } }
+    expect(await p.onCard(card)).toMatchObject({ state: "success", approvedBy: "anis" })
+    fails = 5
+    expect(await p.onCard(card)).toBeNull()
+    expect(fails).toBe(2)
+  })
+
+  it("re-checks each PR once on start", async () => {
+    const { p, fake } = policy({ approvedBy: "anis" })
+    const out = await p.recheck([{ repo: REPO, pr: 7 }, { repo: REPO, pr: 7 }])
+    expect(out).toHaveLength(1)
+    expect(fake.statuses).toEqual([expect.objectContaining({ sha: SHA1, state: "success" })])
+  })
+})
+
+describe("cardVerdict", () => {
+  const origin = { kind: "merge-policy", repo: REPO, pr: 7, sha: SHA1 }
+  it("the latest answer wins, and a NO stops new cards for that commit", () => {
+    const no = { status: "decided", verdict: "no", decided_at: "2026-10-19T08:00:00Z", origin }
+    const yes = { status: "decided", verdict: "yes", decided_by: "anis", decided_at: "2026-10-19T09:00:00Z", origin }
+    expect(cardVerdict([no], REPO, 7, SHA1)).toEqual({ approvedBy: undefined, asked: true })
+    expect(cardVerdict([yes, no], REPO, 7, SHA1)).toEqual({ approvedBy: "anis", asked: false })
+    expect(cardVerdict([{ ...yes, decided_at: "2026-10-19T07:00:00Z" }, no], REPO, 7, SHA1).approvedBy).toBeUndefined()
+  })
+
+  it("a waiting card holds off a new one; other commits and expired cards do not", () => {
+    expect(cardVerdict([{ status: "pending", origin }], REPO, 7, SHA1).asked).toBe(true)
+    expect(cardVerdict([{ status: "pending", origin: { ...origin, sha: SHA2 } }], REPO, 7, SHA1).asked).toBe(false)
+    expect(cardVerdict([{ status: "expired", origin }], REPO, 7, SHA1).asked).toBe(false)
   })
 })
 
@@ -237,7 +288,8 @@ describe("createMergePolicyGitHub", () => {
     const calls: Array<{ url: string; method: string; body?: string }> = []
     const fetchImpl = (async (url: string, init: RequestInit) => {
       calls.push({ url, method: init.method ?? "GET", body: init.body as string | undefined })
-      if (url.includes("/reviews")) return new Response(JSON.stringify([{ user: { login: "carol" }, state: "APPROVED", commit_id: SHA1 }]))
+      if (url.includes("/reviews")) return new Response(JSON.stringify([{ user: { login: "carol" }, state: "APPROVED", commit_id: SHA1, author_association: "MEMBER" }]))
+      if (url.includes("/files")) return new Response(JSON.stringify([{ filename: "src/new.ts", previous_filename: "src/core/old.ts" }, { filename: "a.md" }]))
       if (init.method === "DELETE") return new Response("", { status: 404 })
       return new Response("{}")
     }) as unknown as typeof fetch
@@ -245,7 +297,7 @@ describe("createMergePolicyGitHub", () => {
     await gh.setStatus(REPO, SHA1, "pending", "waiting")
     await gh.addLabel(REPO, 7, "core-change")
     await gh.removeLabel(REPO, 7, "core change")
-    expect(await gh.getReviews(REPO, 7)).toEqual([{ login: "carol", state: "approved", commitId: SHA1 }])
+    expect(await gh.getReviews(REPO, 7)).toEqual([{ login: "carol", state: "approved", commitId: SHA1, association: "MEMBER" }])
     expect(JSON.parse(calls[0].body!)).toEqual({ state: "pending", description: "waiting", context: MERGE_POLICY_CONTEXT })
     expect(calls[1]).toMatchObject({ method: "POST", url: `https://api.github.com/repos/${REPO}/issues/7/labels` })
     expect(calls[2].url).toBe(`https://api.github.com/repos/${REPO}/issues/7/labels/core%20change`)

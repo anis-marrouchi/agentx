@@ -289,7 +289,7 @@ Gates that check agent pull requests before they merge. Each one is off by defau
 | `quality.mergePolicy.corePaths` | string[] | `[]` | Core files, as patterns. Empty: nothing is core. |
 | `quality.mergePolicy.edgePaths` | string[] | `[]` | Exceptions inside core folders that count as edge. |
 | `quality.mergePolicy.label` | string | `"core-change"` | Label put on a pull request that changes a core path. |
-| `quality.mergePolicy.approvers` | string[] | `[]` | GitHub logins whose approval counts. Empty: anyone but the author and AgentX's own accounts. |
+| `quality.mergePolicy.approvers` | string[] | `[]` | GitHub logins whose reviews count. Empty: owners, members and collaborators, except the author and AgentX's own accounts. |
 | `quality.mergePolicy.ownerCard` | boolean | `true` | In required mode, ask the owner on an approvals card; YES approves that commit. |
 
 ## decisions
