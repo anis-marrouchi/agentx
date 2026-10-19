@@ -13,9 +13,10 @@ const SKIP = new Set(["native", "computer-use"].map((d) => join(SRC, d)))
 // Whole words only, so names like `darwinism` or `win32api` do not count.
 const OS_WORDS = /\b(darwin|win32|osascript|afplay|remindctl)\b|\/System\/Library/
 
-/** The allowlist as it was made on 2026-10-19 (main at 6612b35). Never add to it.
+/** The allowlist as of main at 88fec94. Never add to it.
  * CI checks out the PR without main's history, so "may only shrink" is held
- * against this frozen copy rather than a diff against main. */
+ * against this frozen copy rather than a diff against main.
+ * A PR that shrinks os-allowlist.json trims BASELINE to match in the same PR. */
 const BASELINE = [
   "src/approvals/card-window.ts",
   "src/approvals/origin.ts",
@@ -31,10 +32,6 @@ const BASELINE = [
   "src/decisions/seats/voice-narration.ts",
   "src/desktop/install.ts",
   "src/guard/confirm.ts",
-  "src/notify/helper-status.ts",
-  "src/notify/local.ts",
-  "src/reminders/daemon.ts",
-  "src/reminders/source.ts",
   "src/utils/open-browser.ts",
   "src/voice/siri.ts",
   "src/voice/speaker.ts",
