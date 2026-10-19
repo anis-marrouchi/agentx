@@ -14,7 +14,7 @@ There are two ways to open an issue. Pick the one you like.
 
 `agentx contribute` is an optional helper. Your own AgentX agent looks for duplicates, drafts the issue in the right form with you, and gives you a link to a filled-in form. You read it, change what you like, and submit it yourself. Nothing is posted for you.
 
-1. In a terminal, install the skill in your agent's workspace folder: `agentx skill install anis-marrouchi/agentx/agentx-contribute`
+1. In a terminal, in your agent's workspace folder, install the skill: `npx -y skills add anis-marrouchi/agentx --skill agentx-contribute`. It asks which runtime your agent uses (Claude Code, Codex, opencode).
 2. Ask your agent, in any channel: "Help me file an AgentX issue about …"
 3. Answer its questions and review the draft it shows you.
 4. Open the link it gives you, check the form, and press **Create**.
