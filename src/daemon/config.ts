@@ -1816,6 +1816,11 @@ export const daemonConfigSchema = z.object({
     /** The remindctl binary, when it isn't on the daemon's PATH. */
     command: z.string().min(1).default("remindctl"),
   }).default({}),
+  /** The OS layer (src/native, #1062): banners, sounds, Focus and the OS
+   *  task app go through one adapter per OS. "none" turns it off here. */
+  native: z.object({
+    adapter: z.enum(["auto", "none"]).default("auto"),
+  }).default({}),
   /** The phone app (/app) beyond pairing and notifications (#676). */
   app: z.object({
     /** The AgentX Android app (apps/android). Chrome shows it full screen,
