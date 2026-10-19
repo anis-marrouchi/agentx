@@ -1260,6 +1260,31 @@ export const reviewGateConfigSchema = z.object({
    *  told the diff is incomplete. */
   maxDiffKb: z.number().int().positive().max(2048).default(256),
 }).default({})
+/** Merge policy (#1047): pull requests that change a core path wait for a
+ *  person's approval; edge-only ones merge on green CI. Both path lists
+ *  start empty, so nothing is core until the repository's owner says so.
+ *  The status `agentx/merge-policy` blocks a merge only once it is a
+ *  required check on the protected branch. */
+export const mergePolicyConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** Advisory posts success marked "[advisory]" on an unapproved core PR;
+   *  required posts pending until a person approves. */
+  mode: z.enum(["advisory", "required"]).default("advisory"),
+  /** Core files, as globs (`*` within a folder, `**` across folders, a
+   *  folder name covers everything under it). */
+  corePaths: z.array(z.string().min(1)).default([]),
+  /** Exceptions carved out of corePaths: a file matching one is edge. */
+  edgePaths: z.array(z.string().min(1)).default([]),
+  /** Label put on a PR that changes a core path, and taken off when it no
+   *  longer does. */
+  label: z.string().min(1).max(50).default("core-change"),
+  /** GitHub logins whose "Approve" review counts. Empty: any login other
+   *  than the PR's author and the accounts AgentX posts with. */
+  approvers: z.array(z.string().min(1)).default([]),
+  /** In required mode, raise an approvals card for the owner on each
+   *  unapproved core commit; YES approves that commit. */
+  ownerCard: z.boolean().default(true),
+}).default({})
 /** Task watchers (src/watchers, #1030). At every task start (a dispatch, a
  *  delegation, a cron run) the `task-watch` decision seat says whether the
  *  task carries a deadline, a promise or a hand-off; a watcher is attached
@@ -1672,6 +1697,9 @@ export const daemonConfigSchema = z.object({
      *  session, checks an agent's pull request against its linked issue
      *  and posts the commit status `agentx/review` on the head commit. */
     reviewGate: reviewGateConfigSchema,
+    /** Merge policy (#1047): core paths need a person's approval; the
+     *  commit status `agentx/merge-policy` says which a PR is. */
+    mergePolicy: mergePolicyConfigSchema,
   }).default({}),
   /** How a daemon stop treats runs still in flight. */
   shutdown: z.object({

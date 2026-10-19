@@ -72,7 +72,7 @@ import { createMeshResumer, forwardedTaskAnswer, meshOriginFromTask } from "@/ag
 import { handleApprovalsApi } from "@/approvals/daemon-api"
 import { runApprovalsSweep } from "@/approvals/sweep"
 import { configToken, githubIssueComments, postWeekly, runReportCommand } from "@/quality/epic-report"
-import { createCard, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
+import { createCard, listCards, readCard, verdictMessage, type DecisionCard } from "@/approvals/cards"
 import { blockedText, runEvidence, runSummary, slimPausedAt } from "@/workflows/follow-up"
 import { handleFollowUpApi } from "@/workflows/follow-up-api"
 import { closeStaleWraps, requiredFor } from "@/workflows/required"
@@ -220,7 +220,8 @@ import { ScreenBuffer, sweepStaleDumps } from "./screen-buffer"
 import { screenSettings } from "@/computer-use/capture-settings"
 import { findHelper } from "@/notify/local"
 import { REVIEW_CHANNEL, ReviewGate } from "@/quality/review-gate"
-import { createReviewGateGitHub } from "@/quality/review-gate-github"
+import { createMergePolicyGitHub, createReviewGateGitHub } from "@/quality/review-gate-github"
+import { approvalCardInput, MergePolicy } from "@/quality/merge-policy"
 import { FileReviewLedger, reviewLedgerPath } from "@/quality/review-ledger"
 import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsReply } from "@/quality/review-gate-api"
 
@@ -266,6 +267,9 @@ export class AgentXDaemon {
   /** Pre-merge review gate (#990). Built with the GitHub channel; does
    *  nothing while quality.reviewGate.enabled is false. */
   private reviewGate?: ReviewGate
+  /** Core vs edge paths (#1047); does nothing while
+   *  quality.mergePolicy.enabled is false. */
+  private mergePolicy?: MergePolicy
   private reviewLedger = new FileReviewLedger(reviewLedgerPath(), (m) => this.log(`[review-gate] ${m}`))
   private webrtc?: WebRtcSignalBroker
   private botManager?: BotManager
@@ -1276,6 +1280,33 @@ export class AgentXDaemon {
     process.exit(this.exitCode)
   }
 
+  /** The merge policy (#1047). The owner's approval is an approvals card
+   *  whose origin names the commit; the card store is the record, so an
+   *  approval survives a restart. */
+  private buildMergePolicy(github: GitHubAdapter): MergePolicy {
+    const root = process.cwd()
+    const cardFor = (repo: string, pr: number, sha: string, status: "pending" | "decided") =>
+      listCards(root, status).find((c) => c.origin?.kind === "merge-policy" && c.origin.repo === repo && c.origin.pr === pr && c.origin.sha === sha)
+    return new MergePolicy({
+      config: () => this.config.quality.mergePolicy,
+      github: createMergePolicyGitHub((repo) => github.getTokenForRepo(repo)),
+      isAgentLogin: (login) => github.isAgentLogin(login),
+      cardApproval: (repo, pr, sha) => {
+        const card = cardFor(repo, pr, sha, "decided")
+        return card?.verdict === "yes" ? (card.decided_by || "the owner") : undefined
+      },
+      cardPending: (repo, pr, sha) => !!cardFor(repo, pr, sha, "pending"),
+      raiseCard: (req) => {
+        const res = createCard(root, approvalCardInput(req, github.agentFor(req.repo) ?? "agentx"), {
+          settings: this.config.approvals,
+          origin: { kind: "merge-policy", repo: req.repo, pr: req.number, sha: req.sha },
+        })
+        if (!res.ok) throw new Error(res.error)
+      },
+      log: (m) => this.log(`[merge-policy] ${m}`),
+    })
+  }
+
   /** The review gate (#990): the reviewer runs as its own agent in a fresh
    *  session keyed by the reviewed commit, so it never resumes the
    *  author's conversation or an earlier review. */
@@ -2127,6 +2158,7 @@ export class AgentXDaemon {
             this.requests?.tracker.cardResolved(card)
             this.status?.board.cardResolved(card)
             this.workflowCardResult(card)
+            void this.mergePolicy?.onCard(card)
           },
           // A short turn on the agent that raised the card, so it can act on
           // the result. Fire and forget: the sweep never waits on a model.
@@ -2798,7 +2830,12 @@ export class AgentXDaemon {
       if (this.mesh) this.github.setPeerPostingLogins(() => this.mesh!.directory().flatMap((p) => p.githubLogins))
       this.github.setProjectRules(this.projectRules)
       this.reviewGate = this.buildReviewGate(this.github)
-      this.github.onPullRequestEvent((event) => { void this.reviewGate?.onPullRequest(event) })
+      this.mergePolicy = this.buildMergePolicy(this.github)
+      this.github.onPullRequestEvent((event) => {
+        void this.reviewGate?.onPullRequest(event)
+        void this.mergePolicy?.onPullRequest(event)
+      })
+      this.github.onPullRequestReviewEvent((event) => { void this.mergePolicy?.onReview(event) })
       this.router.addChannel(this.github)
       this.log(`  GitHub: enabled (${githubConfig.routes.length} repo routes)`)
     }
