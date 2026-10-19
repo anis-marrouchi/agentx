@@ -14,9 +14,9 @@ Every minute, on the machine that holds your cards:
 - The reminder's notes hold the question, the choices, what the agent recommends, the address where you answer, and a last line such as `agentx: card=<id>`.
 - When you answer the card, or it expires or is closed, or the request stops waiting on you, AgentX ticks the reminder off.
 - **Ticking off a reminder is not an answer.** If you tick it off or delete it while the card is still waiting, the card stays on the Desk, and AgentX does not add that reminder again.
-- A card with an open reminder no longer pops up as the floating card on the Mac, so you are not alerted twice. **Show on Mac** on the Approvals page still shows it.
+- While the mirror runs, cards no longer pop up as the floating card on the Mac, so you are not alerted twice. **Show on Mac** on the Approvals page still shows one. A card whose reminder could not be added still pops up. If the mirror stops (you turn it off, or Reminders can't be read), the popup comes back within 5 minutes.
 - Check-ins and [due reminders](/automations/reminders) skip these reminders, so a mirrored reminder never turns back into a card or into a task for an agent.
-- If a reminder can't be added three times in a row, you get one notification saying so, and AgentX stops trying for that card. It is still on the Desk.
+- If a reminder can't be added three times in a row, AgentX stops trying for that card. It is still on the Desk. You get one notification about it, at most once a day.
 
 If your agents run on several machines, cards already go to your own machine (`approvals.forwardTo`), and the mirror runs there.
 
@@ -37,7 +37,9 @@ If your agents run on several machines, cards already go to your own machine (`a
    ```
 2. Optional. To use another list, run `agentx config set native.mirror.list "My list"`. The list must not also be one of `reminders.lists` or `approvals.checkin.lists`, and AgentX refuses the setting if it is. The list is created when it doesn't exist.
 
-The daemon picks up the change within a minute, without a restart. All settings are in the [configuration reference](/reference/config-automation#native).
+The daemon picks up the change within a minute, without a restart.
+
+To turn it off, set `native.mirror.enabled` to `false`. Reminders already in the list stay there; delete them or the list in Reminders. All settings are in the [configuration reference](/reference/config-automation#native).
 
 ## 2. Allow access to Reminders
 

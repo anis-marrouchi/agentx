@@ -2164,7 +2164,13 @@ export class AgentXDaemon {
       settings: m,
       tasks,
       cards: () => listCards(root, "pending"),
-      requests: () => requestStoreFor({ root })?.listByState("waiting_owner") ?? [],
+      // No store is an error, not "nothing waiting": that would close
+      // every request's task and re-make it next pass.
+      requests: () => {
+        const store = requestStoreFor({ root })
+        if (!store) throw new Error("the requests database is not open")
+        return store.listByState("waiting_owner")
+      },
       answerUrl: m.answerUrl ?? `http://localhost:${this.config.dashboard.port}/approvals`,
       notify: (title, message) => this.notifyOwner(title, message, "mirror"),
       log: this.log,

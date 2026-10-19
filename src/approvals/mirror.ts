@@ -58,6 +58,14 @@ export interface MirrorEntry {
 export interface MirrorFile {
   /** Keyed `card:<id>` or `request:<id>`, the inbox's keys. */
   items: Record<string, MirrorEntry>
+  /** ISO time of the last pass that read every list it needed. Stale
+   *  (the mirror was turned off, or the list can't be read) means the
+   *  mirror no longer covers anything, and the Mac popup is back. */
+  checkedAt?: string
+  /** That pass mirrored cards (include has "card"). */
+  cards?: boolean
+  /** ISO time the owner was last told adds are failing: once a day. */
+  failureToldAt?: string
   /** The latest pass's last error, for doctor. */
   lastError?: { at: string; message: string }
 }
@@ -73,7 +81,7 @@ export function mirrorPath(root: string): string {
 export function readMirror(root: string): MirrorFile {
   try {
     const parsed = JSON.parse(readFileSync(mirrorPath(root), "utf-8"))
-    return { items: parsed?.items && typeof parsed.items === "object" ? parsed.items : {}, ...(parsed?.lastError ? { lastError: parsed.lastError } : {}) }
+    return { ...parsed, items: parsed?.items && typeof parsed.items === "object" ? parsed.items : {} }
   } catch {
     return { items: {} }
   }
@@ -87,9 +95,18 @@ function writeMirror(root: string, file: MirrorFile): void {
   renameSync(tmp, path)
 }
 
-/** True when this card has an open task: the Mac popup leaves it alone. */
-export function cardMirrored(root: string, cardId: string): boolean {
-  return readMirror(root).items[`card:${cardId}`]?.state === "open"
+/** A pass older than this means the mirror is not running. */
+export const MIRROR_FRESH_MS = 5 * 60_000
+
+/** True when the mirror is running and covers this card: it has a task,
+ *  or gets one on the next pass, or the owner ticked its task off. The Mac
+ *  popup then leaves it alone, so the owner is not alerted twice. A card
+ *  whose task could not be added is not covered. */
+export function mirrorCovers(root: string, cardId: string, now = Date.now()): boolean {
+  const file = readMirror(root)
+  const checked = file.checkedAt ? Date.parse(file.checkedAt) : NaN
+  if (!file.cards || !(now - checked <= MIRROR_FRESH_MS)) return false
+  return file.items[`card:${cardId}`]?.state !== "failed"
 }
 
 /** What one task says. */
@@ -186,6 +203,7 @@ export async function runMirror(deps: MirrorDeps): Promise<MirrorResult> {
   // Close or notice dismissal for what is already mirrored. The open list
   // is read once per list; when it can't be read, nothing is closed or
   // dismissed this pass, so a hiccup never loses a task.
+  let allRead = true
   const openIds = new Map<string, Set<string> | null>()
   const openIn = async (list: string): Promise<Set<string> | null> => {
     if (!openIds.has(list)) {
@@ -195,6 +213,7 @@ export async function runMirror(deps: MirrorDeps): Promise<MirrorResult> {
         log(`[mirror] could not read list "${list}": ${e?.message ?? e}`)
         fail(String(e?.message ?? e))
         openIds.set(list, null)
+        allRead = false
       }
     }
     return openIds.get(list)!
@@ -224,6 +243,7 @@ export async function runMirror(deps: MirrorDeps): Promise<MirrorResult> {
   }
 
   let listReady: boolean | null = null
+  const gaveUp: { title: string; message: string }[] = []
   for (const [key, item] of waiting) {
     const entry = file.items[key]
     if (entry && (entry.state === "open" || entry.state === "dismissed")) continue
@@ -251,14 +271,27 @@ export async function runMirror(deps: MirrorDeps): Promise<MirrorResult> {
       fail(message)
       result.failed++
       log(`[mirror] ${key}: could not add to Reminders (${n}/${MAX_ADD_FAILURES}): ${message}`)
-      if (n === MAX_ADD_FAILURES) {
-        try {
-          await deps.notify("Could not add to Reminders", `${item.title}: ${summarize(message, 200)}. It is still on the Desk.`)
-        } catch (err: any) {
-          log(`[mirror] ${key}: could not tell the owner: ${err?.message ?? err}`)
-        }
-      }
+      if (n === MAX_ADD_FAILURES) gaveUp.push({ title: item.title, message })
     }
+  }
+
+  // One notification a day at most, however many items gave up: a missing
+  // permission fails every card the same way.
+  const told = file.failureToldAt ? Date.parse(file.failureToldAt) : NaN
+  if (gaveUp.length && !(now - told < DAY_MS)) {
+    const first = gaveUp[0]
+    const more = gaveUp.length > 1 ? ` (and ${gaveUp.length - 1} more)` : ""
+    try {
+      await deps.notify("Could not add to Reminders", `${first.title}${more}: ${summarize(first.message, 200)}. Still on the Desk.`)
+      file.failureToldAt = at
+    } catch (err: any) {
+      log(`[mirror] could not tell the owner: ${err?.message ?? err}`)
+    }
+  }
+
+  if (allRead) {
+    file.checkedAt = at
+    file.cards = settings.include.includes("card")
   }
 
   for (const [key, entry] of Object.entries(file.items)) {

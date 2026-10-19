@@ -132,6 +132,7 @@ describe("Reminders mirror (#1062)", () => {
 
   it("tells the owner once after three failed adds, then stops trying that item", async () => {
     raise()
+    raise({ title: "Another" })
     const failing = Object.assign(async (_f: string, args: string[]) => {
       if (args[0] === "list") return "[]"
       throw new Error("Reminders access denied")
@@ -140,8 +141,12 @@ describe("Reminders mirror (#1062)", () => {
     for (let i = 0; i < MAX_ADD_FAILURES + 2; i++) await pass(NOW + i * 60_000)
     expect(notify).toHaveBeenCalledOnce()
     expect(notify.mock.calls[0][0]).toBe("Could not add to Reminders")
-    expect(notify.mock.calls[0][1]).toMatch(/access denied.*still on the Desk/)
+    expect(notify.mock.calls[0][1]).toMatch(/and 1 more.*access denied.*Still on the Desk/)
     expect(Object.values(readMirror(root).items)[0]).toMatchObject({ state: "failed", failures: MAX_ADD_FAILURES })
+    // A card raised later that fails the same way is not told again the same day.
+    raise({ title: "Third" })
+    for (let i = 0; i < MAX_ADD_FAILURES; i++) await pass(NOW + (10 + i) * 60_000)
+    expect(notify).toHaveBeenCalledOnce()
   })
 
   it("mirrors only what include names", async () => {
@@ -151,11 +156,44 @@ describe("Reminders mirror (#1062)", () => {
     expect(output.items[0].notes).toContain("request=req-1")
   })
 
-  it("keeps the Mac popup off a card that has an open reminder", async () => {
+  it("keeps the Mac popup off cards while the mirror runs, and gives them back when it stops", async () => {
     const card = raise()
     expect(nextCardToPop({ root, now: NOW })?.id).toBe(card.id)
     await setup().pass()
     expect(nextCardToPop({ root, now: NOW })).toBeNull()
+    // A card raised after the last pass is covered too: it gets its task next pass.
+    const later = raise({ title: "Second" })
+    expect(nextCardToPop({ root, now: NOW + 60_000 })).toBeNull()
+    // Turned off (no pass for longer than 5 minutes): the popup is back.
+    expect(nextCardToPop({ root, now: NOW + 6 * 60_000 })?.id).toBeDefined()
+    expect([card.id, later.id]).toContain(nextCardToPop({ root, now: NOW + 6 * 60_000 })!.id)
+  })
+
+  it("gives the popup back when the list can't be read", async () => {
+    raise()
+    await setup().pass()
+    const broken = Object.assign(async () => { throw new Error("not allowed") }, { items: [], lists: [] }) as any
+    await setup({ output: broken }).pass(NOW + 4 * 60_000)
+    expect(nextCardToPop({ root, now: NOW + 6 * 60_000 })).not.toBeNull()
+  })
+
+  it("does not cover cards when only requests are mirrored", async () => {
+    const card = raise()
+    await setup({ settings: { include: ["request"] } }).pass()
+    expect(nextCardToPop({ root, now: NOW })?.id).toBe(card.id)
+  })
+
+  it("closes nothing when what is waiting can't be read", async () => {
+    raise()
+    const { output, pass } = setup({ requests: [request()] })
+    await pass()
+    const logs: string[] = []
+    const r = await runMirror({
+      root, settings: SETTINGS, tasks: macosTasks("remindctl", output), cards: () => listCards(root, "pending"),
+      requests: () => { throw new Error("the requests database is not open") }, answerUrl: URL, notify: async () => {}, log: (m) => logs.push(m), now: NOW + 60_000,
+    })
+    expect(r).toEqual({ created: 0, completed: 0, dismissed: 0, failed: 0 })
+    expect(output.items.every((i) => !i.isCompleted)).toBe(true)
   })
 })
 
