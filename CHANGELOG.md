@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.148.0](https://github.com/anis-marrouchi/agentx/compare/v0.147.0...v0.148.0) (2026-10-19)
+
+
+### Features
+
+* **native:** agents put ideas in Apple Notes with agentx_note ([#1062](https://github.com/anis-marrouchi/agentx/issues/1062) step 9) ([#1075](https://github.com/anis-marrouchi/agentx/issues/1075)) ([490f4fc](https://github.com/anis-marrouchi/agentx/commit/490f4fca4f07040573be72c9c209f502283a4c04))
+
 ## [0.147.0](https://github.com/anis-marrouchi/agentx/compare/v0.146.0...v0.147.0) (2026-10-19)
 
 
