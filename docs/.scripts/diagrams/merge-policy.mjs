@@ -10,7 +10,7 @@ const d = createDiagram({
   height: 1000,
   title: "How the merge policy sorts a pull request",
   desc:
-    "Seven steps in three parts. You prepare: list your core folders, turn the policy on, and make agentx/merge-policy a required check. " +
+    "Nine steps in three parts. You prepare: list your core folders, turn the policy on, and make agentx/merge-policy a required check. " +
     "A pull request arrives: an agent opens it or pushes to it, and AgentX reads the changed files. An edge-only pull request gets success at once and merges on green CI. " +
     "A pull request that touches a core path gets the core-change label and stays pending until a person approves its latest commit; then it turns green and merges on green CI. A new push asks for a new approval.",
 })
