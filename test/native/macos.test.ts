@@ -3,6 +3,7 @@ import { loadNativeAdapter } from "../../src/native"
 import { macosAdapter } from "../../src/native/macos"
 import { macosTasks } from "../../src/native/macos/tasks"
 import { runNativeContract } from "./contract"
+import { fakeRemindctl } from "./fake-remindctl"
 
 // #1062 step 3: the macOS adapter wraps what AgentX already did on a Mac.
 // Every program is faked, so this runs on any OS in CI.
@@ -11,7 +12,7 @@ const HELPER = "/Apps/AgentX Helper.app/Contents/MacOS/agentx-mac-helper"
 const fakeIo = () => ({
   run: vi.fn(async () => true),
   capture: vi.fn(async () => '{"authorization":"authorized","alertStyle":"banner"}'),
-  output: vi.fn(async () => "[]"),
+  output: fakeRemindctl(),
   helper: HELPER,
   isExecutable: () => true,
 })
@@ -60,6 +61,38 @@ describe("macOS adapter (#1062 step 3)", () => {
       ["/opt/bin/remindctl", ["show", "all", "--list", "AgentX", "--json", "--no-input"]],
       ["/opt/bin/remindctl", ["complete", "A", "--json", "--no-input"]],
     ])
+  })
+
+  it("passes quotes and newlines as argv, and protects a value that starts with a dash", async () => {
+    const output = vi.fn(async (_f: string, _a: string[]) => '{"id":"X-1"}')
+    const tasks = macosTasks("remindctl", output)
+    expect(await tasks.add({ list: "AgentX Desk", title: '-1 "quoted"', notes: "a\n- b", due: new Date("2030-01-02T03:04:05.678Z"), priority: "high" })).toEqual({ id: "X-1" })
+    expect(output.mock.calls[0][1]).toEqual([
+      "add", "--title", '\u200b-1 "quoted"', "--list", "AgentX Desk", "--notes", "a\n- b",
+      "--due", "2030-01-02T03:04:00Z", "--priority", "high", "--json", "--no-input",
+    ])
+    await tasks.update("X-1", { notes: "-x", due: null })
+    expect(output.mock.calls[1][1]).toEqual(["edit", "X-1", "--notes", "\u200b-x", "--clear-due", "--json", "--no-input"])
+    await tasks.remove("X-1")
+    expect(output.mock.calls[2][1]).toEqual(["delete", "X-1", "--force", "--json", "--no-input"])
+  })
+
+  it("creates a missing list once, and refuses a list name that starts with a dash", async () => {
+    const output = fakeRemindctl(["Reminders"])
+    const tasks = macosTasks("remindctl", output)
+    await expect(tasks.add({ list: "AgentX Desk", title: "t", notes: "" })).rejects.toThrow(/List not found/)
+    await tasks.ensureList("AgentX Desk")
+    await tasks.ensureList("AgentX Desk")
+    expect(output.lists).toEqual(["Reminders", "AgentX Desk"])
+    await expect(tasks.listOpen("-x")).rejects.toThrow(/must not be empty or start with "-"/)
+  })
+
+  it("fails an add whose answer has no id, and skips an update that changes nothing", async () => {
+    const output = vi.fn(async () => "✓ done")
+    const tasks = macosTasks("remindctl", output)
+    await expect(tasks.add({ list: "L", title: "t", notes: "" })).rejects.toThrow(/no reminder id/)
+    await tasks.update("X-1", {})
+    expect(output).toHaveBeenCalledOnce()
   })
 
   it("names a missing remindctl in describe()", async () => {
