@@ -116,6 +116,8 @@ function loop(r){
   var l = r.loop, bits = [];
   if (l && l.promise && l.owedTo) bits.push('Promised to <b>' + esc(l.owedTo === 'owner' ? 'you' : agentName(l.owedTo)) + '</b>');
   if (l && l.dueAt) bits.push('Due ' + esc(when(l.dueAt)));
+  // What the agent declared when it accepted (#1048).
+  if (r.work || r.estimateMinutes != null) bits.push('Work: ' + esc([r.work || '', r.estimateMinutes != null ? 'about ' + Math.round(r.estimateMinutes) + ' min' : ''].filter(Boolean).join(', ')));
   if (l && l.check) bits.push('Closes when ' + esc(l.check) + (l.verifyState ? ' <span class="is-' + esc(l.verifyState) + '">(' + esc(VERIFY[l.verifyState] || l.verifyState) + (l.verifyDetail ? ': ' + esc(l.verifyDetail) : '') + ')</span>' : ''));
   var stalled = r.stall ? '<p class="apv__loop apv__stalled">Stalled, waiting on ' + esc(r.stall.group === 'agent' ? agentName(r.stall.who) : r.stall.group === 'person' ? r.stall.who : 'you') + ': ' + esc(r.stall.why) + '</p>' : '';
   return (bits.length ? '<p class="apv__loop">' + bits.join(' · ') + '</p>' : '') + stalled;

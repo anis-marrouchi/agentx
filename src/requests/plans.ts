@@ -69,6 +69,15 @@ export function parseWork(input: Record<string, unknown>): WorkDeclaration | str
   return out
 }
 
+/** The plan gate is set for this agent (#1048): some kind of work or an
+ *  estimate can need a plan, so an accept must say what the work is. */
+export function planGateOn(settings: PlanSettings, agentId: string): boolean {
+  if (plansOffFor(settings, agentId)) return false
+  const kinds = settings.requireForWork ?? DEFAULT_PLAN_SETTINGS.requireForWork
+  const over = settings.requireOverMinutes ?? DEFAULT_PLAN_SETTINGS.requireOverMinutes
+  return kinds.length > 0 || over > 0
+}
+
 /** The plan gate (#1048): why this work needs a plan before it starts,
  *  or null when it does not. Not every task: only the kinds of work the
  *  owner listed, and work estimated over the threshold. A node or agent

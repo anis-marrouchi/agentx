@@ -4,7 +4,7 @@ import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type Check
 import { parseDue, type LoopChecker } from "./loops"
 import type { RequestTracker } from "./tracker"
 import type { PlanStore } from "./plan-store"
-import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
+import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
 import { reportStep, type StepStatus } from "./plan-sweep"
 
 // --- The daemon's /requests endpoints (#356) ---
@@ -324,23 +324,41 @@ export function handleRequestsApi(
     }
 
     // The plan gate (#1048): work the owner wants planned does not start
-    // on a bare accept. Only the kinds and estimates the settings name.
-    const work = action === "accept" ? parseWork(input) : {}
-    if (typeof work === "string") return { status: 400, body: { error: work } }
-    if (action === "accept" && input.steps === undefined && deps.plans && !deps.plans.get(request.id)) {
-      const why = planRequiredFor(deps.planSettings ?? DEFAULT_PLAN_SETTINGS, agentId, work)
-      if (why) {
-        return {
-          status: 409,
-          body: {
-            error: `Not started: ${why}. Accept again with steps: two or more, each with a name and done (what proves it is finished), in the order they run.`,
-            planRequired: true,
-          },
+    // on a bare accept. While the gate is set, an accept without steps
+    // must say what the work is. The declaration is kept on the request,
+    // even when refused, so a later bare accept is gated on it too.
+    const declared = action === "accept" ? parseWork(input) : {}
+    if (typeof declared === "string") return { status: 400, body: { error: declared } }
+    if (action === "accept") {
+      store.setWork(request.id, declared)
+      const settings = deps.planSettings ?? DEFAULT_PLAN_SETTINGS
+      if (input.steps == null && deps.plans && !deps.plans.get(request.id) && planGateOn(settings, agentId)) {
+        const kept = store.get(request.id)
+        const work = { work: kept?.work ?? undefined, estimateMinutes: kept?.estimateMinutes ?? undefined }
+        const why = planRequiredFor(settings, agentId, work)
+        if (why) {
+          return {
+            status: 409,
+            body: {
+              error: `Not started: ${why}. Accept again with steps: two or more, each with a name and done (what proves it is finished), in the order they run.`,
+              planRequired: true,
+            },
+          }
+        }
+        if (!work.work) {
+          return {
+            status: 400,
+            body: {
+              error: "accept needs `work`: one short word for the kind of work (code, research, writing…), and estimateMinutes when you can say how long. " +
+                "Some work needs a plan before it starts.",
+              workRequired: true,
+            },
+          }
         }
       }
     }
 
-    if (action === "accept" && input.steps !== undefined) {
+    if (action === "accept" && input.steps != null) {
       const settings = deps.planSettings ?? DEFAULT_PLAN_SETTINGS
       if (!deps.plans) return { status: 409, body: { error: "This node has no plans: accept without steps." } }
       const off = plansOffFor(settings, agentId)

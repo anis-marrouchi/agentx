@@ -26,9 +26,14 @@ Some work should not start without a plan. By default, that is:
 - **Code work**: changing a program, a site or a script.
 - **Long work**: anything the agent expects to take more than 30 minutes.
 
-When an agent takes on such a request, it says what kind of work it is and how long it expects it to take. If the work is code work, or is estimated at more than 30 minutes, the agent must write its plan first. AgentX refuses to start the work without one, and the agent is told to send the steps.
+When an agent takes on a request, it must say what kind of work it is, and how long it expects it to take. AgentX keeps both on the request, and shows them on its card and in `agentx requests show <id>`. If the work is code work, or is estimated at more than 30 minutes, the agent is told to plan first: AgentX turns down its "I'm taking this on" until it sends the steps of a plan. This is an instruction to the agent, not a lock: AgentX does not stop the agent from working, it only refuses to record the request as started without a plan.
 
 Other requests are not affected. A quick answer or a short task starts straight away, with no plan.
+
+What is covered:
+
+- Only **recorded requests**: the messages you send yourself, on the channels where open requests are on (`requests.enabled`, see [Open requests](./open-requests.md)).
+- Not covered yet: tasks that start from an @mention by someone else, a scheduled job (cron), or another agent (agent-to-agent tasks). These start without the plan check.
 
 The plan shows in the same places as every other plan: on the request's card under **Open requests** on the **Approvals** page, and in `agentx requests show <id>`.
 
@@ -103,8 +108,9 @@ Agents make a plan with their `agentx_request` tool, when they take the request 
 }
 ```
 
-- `work` is optional: one short word for the kind of work, like `code`, `research` or `writing`.
-- `estimateMinutes` is optional: how many minutes the agent expects the work to take.
+- `work` is one short word for the kind of work, like `code`, `research` or `writing`. It is needed on an accept without `steps`, unless both plan-before-starting settings are off (`--plan-for none --plan-over 0`). Without it the agent gets ``accept needs `work` ``.
+- `estimateMinutes` is how many minutes the agent expects the work to take. It is optional.
+- AgentX keeps `work` and `estimateMinutes` on the request. A later accept without them uses the kept values.
 - When `work` is a kind on your plan-before-starting list, or `estimateMinutes` is over your limit, `steps` are needed. Without them the agent gets `Not started: … needs a plan before it starts`.
 - `name` and `done` are needed on every step. A message step needs `message` and `to` instead of `done`.
 - `agent` is the step's owner. It defaults to the agent that makes the plan.
@@ -122,14 +128,15 @@ An agent reports a step with `{"action": "step", "id": "<request id>", "step": 2
 4. When the agent reports the first step done, run `agentx requests show <id>` again within a minute. The log shows the second step `started` and `dispatched` to its agent.
 5. When the last step is done you get one notice, **Plan finished**, and the request is no longer listed.
 6. **Terminal:** run `agentx requests settings`. The line `Plan before starting` lists the kinds of work and the time limit, for example `code work; work over 30 minute(s)`.
-7. Ask an agent for a small code change. Run `agentx requests show <id>`: the request has a plan, even if the change is quick.
+7. Ask an agent for a small code change. Run `agentx requests show <id>`: the request shows `Work: code` and has a plan, even if the change is quick.
 
 ## If something is wrong
 
 - **The agent says plans are off:** turn them on with `agentx requests settings --plans on`. When the agent's name is in the agents that may not make a plan, remove it with `--plans-off-for none`.
 - **`a plan needs 2 or more steps`:** for a single step, the agent takes the request on without a plan.
 - **The agent says `Not started: … needs a plan before it starts`:** the work is code work, or longer than your limit. The agent sends its steps and starts. To stop asking for a plan on that kind of work, remove it with `--plan-for` (or `--plan-for none`). To change the time limit, use `--plan-over`.
-- **Code work started with no plan:** the agent did not say the work was code work. Check `--plan-for` lists `code`, and that plans are not off for that agent (`--plans-off-for`).
+- **Code work started with no plan:** run `agentx requests show <id>` and read the `Work:` line. If it names another kind, the agent did not call the work code work. If there is no `Work:` line, the task did not come from a recorded request (an @mention, a scheduled job or another agent), which this check does not cover yet. Also check `--plan-for` lists `code`, and that plans are not off for that agent (`--plans-off-for`).
+- **The agent says ``accept needs `work` ``:** the agent took the request on without saying what kind of work it is. It accepts again with `work`. To stop asking, turn both settings off: `--plan-for none --plan-over 0`.
 - **A message step stays at "not started" after the steps before it are done:** its card is still waiting for you. Answer it in the Approvals inbox. If the card expired, the step is blocked; run `agentx requests step <id> <step> --retry` to send it.
 - **The message was not sent and the step is blocked:** the daemon tried three times and the channel refused it. Check the channel is connected (`agentx doctor`), then run `--retry`.
 - **Nudges come while the work is simply slow:** the agent can report `progress` to reset the clock. To wait longer for every step, raise `--stall-minutes`. For one step, the agent sets `stallMinutes` on it.

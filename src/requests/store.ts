@@ -93,6 +93,11 @@ export interface RequestRecord {
   verifyState: VerifyState | null
   /** The checker's last words: its evidence, or why it could not say. */
   verifyDetail: string | null
+  /** What the agent said the work is when it accepted (#1048): its kind
+   *  (code, research…) and its estimate in minutes. Kept for the plan
+   *  gate and for audit. */
+  work: string | null
+  estimateMinutes: number | null
 }
 
 export const TEXT_MAX = 4000
@@ -137,7 +142,8 @@ export function ensureRequestTables(db: Database.Database): void {
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
   for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"], ["home_kind", "TEXT"], ["home_link", "TEXT"],
     ["owed_to", "TEXT"], ["promise", "INTEGER"], ["due_at", "INTEGER"], ["close_when", "TEXT"], ["checked_at", "INTEGER"],
-    ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"]]) {
+    ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"],
+    ["work", "TEXT"], ["estimate_minutes", "REAL"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -165,6 +171,7 @@ function toRecord(r: any): RequestRecord {
     home: r.home_kind && r.home_link ? { kind: r.home_kind, link: r.home_link } : null,
     owedTo: r.owed_to ?? null, promise: !!r.promise, dueAt: r.due_at ?? null, closeWhen: readCloseWhen(r.close_when),
     checkedAt: r.checked_at ?? null, verifiedAt: r.verified_at ?? null, verifyState: r.verify_state ?? null, verifyDetail: r.verify_detail ?? null,
+    work: r.work ?? null, estimateMinutes: r.estimate_minutes ?? null,
   }
 }
 
@@ -221,6 +228,14 @@ export class RequestStore {
       this.db.prepare("UPDATE requests SET close_when = ?, verify_state = NULL, verify_detail = NULL, updated_at = ? WHERE id = ?")
         .run(loop.closeWhen ? JSON.stringify(loop.closeWhen) : null, now, id)
     }
+  }
+
+  /** What the agent declared about the work on accept (#1048). Only the
+   *  fields given are written. Not a touch: a refused accept is not
+   *  progress. */
+  setWork(id: string, w: { work?: string; estimateMinutes?: number }): void {
+    if (w.work !== undefined) this.db.prepare("UPDATE requests SET work = ? WHERE id = ?").run(w.work, id)
+    if (w.estimateMinutes !== undefined) this.db.prepare("UPDATE requests SET estimate_minutes = ? WHERE id = ?").run(w.estimateMinutes, id)
   }
 
   /** What the checker said. `met` is written by closeVerified, not here.

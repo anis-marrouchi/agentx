@@ -72,6 +72,9 @@ function printRequest(r: RequestRecord): void {
   console.log(`    ${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
   if (r.state === "waiting_owner" && r.question) console.log(chalk.yellow(`    Question: ${r.question}`))
   if (r.state === "needs_attention" && r.attentionReason) console.log(chalk.red(`    ${r.attentionReason}`))
+  if (r.work || r.estimateMinutes !== null) {
+    console.log(chalk.dim(`    Work: ${[r.work ?? "", r.estimateMinutes !== null ? `about ${Math.round(r.estimateMinutes)} minute(s)` : ""].filter(Boolean).join(", ")}`))
+  }
   if (r.promise && r.owedTo) console.log(chalk.dim(`    Promised to ${r.owedTo}`))
   if (r.dueAt) console.log((r.closedAt === null && Date.now() > r.dueAt ? chalk.red : chalk.dim)(`    Due ${when(r.dueAt)}`))
   if (r.closeWhen) {
