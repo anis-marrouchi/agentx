@@ -103,7 +103,7 @@ import { loopChecker } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
-import { remindctlSource } from "@/reminders/source"
+import { loadNativeAdapter } from "@/native"
 import { claimFile } from "@/reminders/store"
 import { startRemindersPoller } from "@/reminders/daemon"
 import { recordBoot } from "@/agents/resume/note"
@@ -237,6 +237,11 @@ import { isReviewGatePath, parseReplayBody, replay as replayReviews, reviewsRepl
 
 export class AgentXDaemon {
   private config: DaemonConfig
+  /** The OS layer (src/native). Read from the config on each use, so a
+   *  reload that changes native.adapter or reminders.command applies. */
+  private get native() {
+    return loadNativeAdapter(this.config)
+  }
   private registry: AgentRegistry
   private router: MessageRouter
   private cron: CronScheduler
@@ -2288,8 +2293,8 @@ export class AgentXDaemon {
         } as any)
       } catch (e: any) {
         this.log(`[requests] push for ${r.id} failed: ${e?.message ?? e}`)
-        // No Mac banner to fall back on: nothing reached the owner.
-        if (process.platform !== "darwin") throw e
+        // No banner on this machine to fall back on: nothing reached the owner.
+        if (!this.native.banner) throw e
       }
     }, { alert: localAlert(localSettings(this.config.notifications.local)) })
   }
@@ -2462,8 +2467,8 @@ export class AgentXDaemon {
         } as any)
       } catch (e: any) {
         this.log(`[workflows] push "${title}" failed: ${e?.message ?? e}`)
-        // No Mac banner to fall back on: nothing reached the owner.
-        if (process.platform !== "darwin") throw e
+        // No banner on this machine to fall back on: nothing reached the owner.
+        if (!this.native.banner) throw e
       }
     }, { alert: localAlert(localSettings(this.config.notifications.local)) })
   }
@@ -2502,14 +2507,15 @@ export class AgentXDaemon {
     }
   }
 
-  /** A check-in pass when one is due, or `force` now. macOS only. */
+  /** A check-in pass when one is due, or `force` now. Needs the OS task app. */
   runCheckin(force?: PassKind) {
-    if (process.platform !== "darwin") return Promise.resolve(null)
+    const tasks = this.native.tasks
+    if (!tasks) return Promise.resolve(null)
     const deps: CheckinDeps = {
       root: process.cwd(),
       settings: this.config.approvals.checkin,
       cardSettings: this.config.approvals,
-      source: remindctlSource(this.config.reminders.command),
+      source: tasks,
       ...(this.config.reminders.enabled ? { claimsPath: claimFile(process.cwd()) } : {}),
       hasAgent: (id) => !!this.registry.getAgent(id),
       // "reminder" waits for a free slot instead of queueing (registry.ts),
@@ -4269,7 +4275,7 @@ export class AgentXDaemon {
             const peer = peerOfToken(Array.isArray(auth) ? auth[0] : auth, this.config.mesh.peers ?? [], process.env.MESH_TOKEN)
             return !!peer && this.approvalsPeer(node)?.name === peer
           },
-          ...(process.platform === "darwin" ? {
+          ...(this.native.tasks ? {
             runCheckin: (kind: PassKind) => { void this.runCheckin(kind).catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`)) },
           } : {}),
         })

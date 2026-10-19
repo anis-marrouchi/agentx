@@ -46,6 +46,8 @@ export interface NativeBanner {
 
 export interface NativeSound {
   play(name: string, volume: number): Promise<void>
+  /** Is there a sound by this name? Synchronous, for config checks. */
+  has(name: string): boolean
   names(): Promise<string[]>
 }
 

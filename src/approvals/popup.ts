@@ -1,5 +1,5 @@
 import { execFile } from "child_process"
-import { soundPath } from "@/notify/local"
+import { soundPath } from "@/native/macos/sound"
 import { draftFor } from "./choices"
 import { showCardWindow } from "./card-window"
 import type { DecisionCard } from "./cards"

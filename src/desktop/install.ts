@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
 
 export const DESKTOP_LABEL = 'tn.acme.agentx.voice'
 export const DESKTOP_APP = 'AgentX Desktop.app'
@@ -107,4 +108,10 @@ export function resolveHelper(root: string | null, home: string, override?: stri
   const installed = installedHelper(home)
   if (existsSync(installed) || !root) return installed
   return join(root, 'apps/mac-helper/build', HELPER_APP, 'Contents/MacOS/agentx-mac-helper')
+}
+/** The AgentX Helper binary when one is built or installed, else null.
+ *  AGENTX_MAC_HELPER points at a helper somewhere else. */
+export function findHelper(): string | null {
+  const path = resolveHelper(packageRoot(), homedir(), process.env.AGENTX_MAC_HELPER)
+  return existsSync(path) ? path : null
 }
