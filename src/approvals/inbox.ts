@@ -396,7 +396,7 @@ export async function decide(ctx: InboxContext, key: string, action: InboxAction
     case "card": {
       const r = decideCard(ctx.root, ref, yes ? "yes" : "no", { by, note: opts.note, now, choice: opts.choice, text: opts.text })
       if (!r.ok) return r
-      return { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}${r.card.choice ? ` (${r.card.choice})` : ""}` }
+      return { ok: true, message: `${key}: ${r.card.raised_by} will be told ${yes ? "yes" : "no"}${r.card.choice ? ` (${r.card.choice}${r.card.choice_suggested ? ", the suggested option" : ""})` : ""}` }
     }
     case "schedule": {
       const r = await (yes ? approveSchedule : rejectSchedule)(ref, { configPath: configPathFor(ctx), reload: ctx.reload })

@@ -71,6 +71,9 @@ export interface DecisionCard extends CardChoices {
   note?: string
   /** The option the operator picked, when the card offered choices. */
   choice?: string
+  /** Set when `choice` came from a plain yes taking the suggested option
+   *  (#1064), not from the operator picking it. */
+  choice_suggested?: boolean
   /** The message the operator approved, after any edit. */
   text?: string
   /** Set once the raising agent has been told the result. */
@@ -327,6 +330,7 @@ export function decideCard(
     decided_at: new Date(opts.now ?? Date.now()).toISOString(),
     ...(note ? { note } : {}),
     ...(answer.choice ? { choice: answer.choice } : {}),
+    ...(answer.suggested ? { choice_suggested: true } : {}),
     ...(answer.text ? { text: answer.text } : {}),
   }
   saveCard(root, decided)
