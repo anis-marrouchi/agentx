@@ -13,7 +13,7 @@ import {
   type UICandidate,
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
-import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
+import { HELPER, readScreen, rectFor, type ScreenRead } from "@/computer-use/screen"
 import { daemon } from "@/commands/call"
 import { GUIDE_EXPRESSIONS, GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
 
@@ -111,12 +111,12 @@ export const point = new Command()
       process.exit(1)
     }
 
-    let screen
+    let screen: ScreenRead
     try {
       // Reads the accessibility tree, and falls back to local OCR when the
       // tree is too thin to choose from — which is the only thing that
       // makes Electron apps addressable at all.
-      screen = await readScreen({ max: Number(opts.max) || 100 })
+      screen = await readScreen({ max: Number(opts.max) || 100, request })
     } catch (e: any) {
       console.log(chalk.red(`  could not read the screen: ${e?.message ?? e}`))
       process.exit(1)
@@ -152,6 +152,7 @@ export const point = new Command()
     const chosen = rectFor(screen, sel.id)
     const chosenCand = candidates.find((c) => c.id === sel.id)
     const chosenLabel = chosenCand?.label ?? ""
+    const inBrowser = chosenCand?.area === "browser"
     const fromOCR = screen.ocrRects.has(sel.id)
 
     // `present` is read BEFORE `target`, always. A Choice over a candidate
@@ -168,7 +169,7 @@ export const point = new Command()
 
     if (opts.json) {
       console.log(JSON.stringify({
-        app: screen.app, request, chosen: { ...chosen, label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR }, present: sel.present,
+        app: screen.app, request, chosen: { ...chosen, label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR, inBrowser }, present: sel.present,
         confidence: sel.confidence,
         ranked: sel.ranked.slice(0, 5).map((r) => ({
           ...r, label: candidates.find((c) => c.id === r.id)?.label, shown: candidates.find((c) => c.id === r.id)?.shown,
@@ -180,7 +181,7 @@ export const point = new Command()
     const name = chosenLabel
     console.log(
       `  ${chalk.green("→")} ${chalk.bold(name)} ` +
-      chalk.dim(`(${fromOCR ? "read from screen" : "control"}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),
+      chalk.dim(`(${fromOCR ? "read from screen" : inBrowser ? "browser control" : "control"}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),
     )
     await show(chosen, name, opts)
   })

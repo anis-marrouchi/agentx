@@ -110,7 +110,27 @@ const BROWSER_NOISE = /^AX(Toolbar|TabGroup)$/
  * buttons carry no label on macOS, and dropping everything unnamed
  * removes the controls people most often ask for.
  */
-export function buildCandidates(elements: RawElement[], max = 60): UICandidate[] {
+/** Words of the request worth matching against labels. */
+function requestWords(request: string): string[] {
+  const filler = new Set(["the", "a", "an", "of", "on", "in", "to", "at", "for", "and", "or", "this", "that", "my", "button", "icon"])
+  return request.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 1 && !filler.has(w))
+}
+
+/** How many of the request's words a label carries, as whole words or
+ *  word prefixes ("restart" matches "Restart when idle"). */
+function overlap(label: string, words: string[]): number {
+  if (!words.length) return 0
+  const have = label.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+  return words.filter((w) => have.some((h) => h === w || (w.length >= 4 && h.startsWith(w)))).length
+}
+
+export interface CandidateOptions {
+  /** What the person asked for. Lets labels that share its words survive
+   *  the cap on a long page. */
+  request?: string
+}
+
+export function buildCandidates(elements: RawElement[], max = 60, opts: CandidateOptions = {}): UICandidate[] {
   // Rank before capping.
   //
   // Slicing in tree order drops whatever appears late, and on x.com the
@@ -142,17 +162,31 @@ export function buildCandidates(elements: RawElement[], max = 60): UICandidate[]
     .map((e, i) => ({ e, i }))
     .sort((a, b) => (canvas.has(a.e.id) ? 1 : rank(a.e.role)) - (canvas.has(b.e.id) ? 1 : rank(b.e.role)) || a.i - b.i)
     .map(({ e }) => e)
+  // Labels sharing the request's words survive the cap first: on a long
+  // settings page "Restart when idle" sat past it behind forty other
+  // buttons (#1093). Only who survives changes; the survivors keep their
+  // tier order, so when nothing is cut the model sees the same list.
+  const words = requestWords(opts.request ?? "")
+  const capped = (ranked: RawElement[], n: number) => {
+    if (ranked.length <= n || !words.length) return ranked.slice(0, n)
+    const keep = new Set(ranked
+      .map((e, i) => ({ e, i, hits: overlap(`${e.label} ${e.value ?? ""}`, words) }))
+      .sort((a, b) => b.hits - a.hits || a.i - b.i)
+      .slice(0, n)
+      .map(({ e }) => e.id))
+    return ranked.filter((e) => keep.has(e.id))
+  }
 
   // The browser's own controls are few (17 in Chrome) and always the same
   // kind, so they get a few slots first. Ranked into the page's tiers they
   // lose to every link on a busy page and are cut, which is the bug. The
   // reserve is capped so a small caller (teach, at 45) keeps most of its
   // slots for the page.
-  const own = byRank(browser.filter((e) => INTERESTING_ROLE.test(e.role) && !BROWSER_NOISE.test(e.role) && usable(e)))
-    .slice(0, Math.min(20, Math.floor(max / 4)))
+  const own = capped(byRank(browser.filter((e) => INTERESTING_ROLE.test(e.role) && !BROWSER_NOISE.test(e.role) && usable(e))),
+    Math.min(20, Math.floor(max / 4)))
 
-  const fromPage = byRank(page.filter((e) => (INTERESTING_ROLE.test(e.role) || canvas.has(e.id)) && usable(e)))
-    .slice(0, max - own.length)
+  const fromPage = capped(byRank(page.filter((e) => (INTERESTING_ROLE.test(e.role) || canvas.has(e.id)) && usable(e))),
+    max - own.length)
 
   const outside = new Set(own.map((e) => e.id))
   const frame = elements.find((e) => e.role === "AXWindow") ?? null
@@ -185,6 +219,7 @@ export function buildCandidates(elements: RawElement[], max = 60): UICandidate[]
       value: e.value ?? null,
       enabled: e.enabled,
       ...(frame ? { where: region(e, frame) } : {}),
+      ...(outside.has(e.id) ? { area: "browser" as const } : {}),
     }
   })
 }

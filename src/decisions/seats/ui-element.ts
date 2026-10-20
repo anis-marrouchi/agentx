@@ -33,6 +33,10 @@ export interface UICandidate {
    *  cannot say what the control is: "outside the page: Reload",
    *  'history → in "@marketing-agent"'. `label` stays the app's own name. */
   shown?: string
+  /** Set when the control sits outside the web page: the browser's toolbar,
+   *  tabs and window buttons, or a native app's own controls around a web
+   *  view. The model reads this through `shown` ("outside the page: …"). */
+  area?: "browser"
 }
 
 /** Something already attempted on this screen, and what came of it. */

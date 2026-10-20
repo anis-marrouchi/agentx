@@ -98,7 +98,7 @@ export const CHECK_CHOICES = { keep: "Keep it", loosen: "Loosen it", remove: "Re
  *  and silence all leave the rule as it is. */
 export function retroCheckLines(
   origin: RetroCheckOrigin,
-  card: { status: string; verdict?: string; choice?: string },
+  card: { status: string; verdict?: string; choice?: string; choice_suggested?: boolean },
   edited?: string,
 ): string[] {
   const rule = `guard rule \`${origin.ruleId}\` in \`${origin.file}\``
@@ -111,10 +111,15 @@ export function retroCheckLines(
   lines.push(card.choice === CHECK_CHOICES.remove
     ? `The operator chose to remove it. Delete ${rule} as a pull request.`
     : `The operator chose to loosen it. Narrow ${rule} (a tighter match, or \`applies_to\`) so it stops firing on good work, keep its \`retro:${origin.taskId}\` tag, and open it as a pull request.`)
+  if (card.choice_suggested) lines.push(SUGGESTED_NOTE)
   if (edited) lines.push("The operator's note:", edited)
   lines.push("Do not change the live policy directly: the operator reviews the pull request first.")
   return lines
 }
+
+/** Told to the agent when the choice came from a plain yes (#1064): the
+ *  operator accepted the suggestion rather than picking it by hand. */
+const SUGGESTED_NOTE = "(The operator gave a plain yes, taken as the suggested option.)"
 
 /** True when the operator answered a retro card with something to build:
  *  YES and a fix picked. YES on "None of these" counts as NO. */
@@ -129,7 +134,7 @@ export function retroApproved(card: { status: string; verdict?: string; choice?:
  *  `edited` is the operator's text when they changed the suggested one. */
 export function retroLines(
   origin: RetroOrigin,
-  card: { status: string; verdict?: string; choice?: string; choices?: string[] },
+  card: { status: string; verdict?: string; choice?: string; choices?: string[]; choice_suggested?: boolean },
   edited?: string,
 ): string[] {
   const lines = [`This was a retro card about run ${origin.taskId} (\`agentx trace show ${origin.taskId}\`).`]
@@ -138,6 +143,7 @@ export function retroLines(
     return lines
   }
   lines.push(`The operator picked this fix: ${card.choice}`)
+  if (card.choice_suggested) lines.push(SUGGESTED_NOTE)
   const spec = origin.specs?.[(card.choices ?? []).indexOf(card.choice!)]
   if (spec) {
     lines.push(

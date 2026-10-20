@@ -118,7 +118,7 @@ To show one real card now:
 
 1. **Terminal:** run `agentx approvals popup <key>`, using a key from `agentx approvals list`.
 
-You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. A plain `agentx approvals approve <key>` (no `--choice`) takes the agent's suggested choice, the one its recommendation starts with, and the agent is told it was a plain yes. When the recommendation names no choice, a plain yes is refused with the list of choices. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer from the dashboard](#answer-from-the-dashboard) and [the phone app](./mobile-fleet.md#answer-a-decision).
+You can also answer a card with choices from the terminal: `agentx approvals approve <key> --choice 2`, and add `--text "…"` to change the message. A plain `agentx approvals approve <key>` (no `--choice`) takes the agent's suggested choice, the one its recommendation starts with, and the agent is told it was a plain yes. When the recommendation names no choice, a plain yes is refused with the list of choices. A plain yes means yes to the advice, so on a card whose choices are Yes and No and whose recommendation starts with "No: …", a plain yes records the choice No. The dashboard and the phone app let you pick a choice and edit the message too: see [Answer from the dashboard](#answer-from-the-dashboard) and [the phone app](./mobile-fleet.md#answer-a-decision).
 
 ## Agents on another machine
 

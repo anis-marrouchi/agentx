@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { buildCandidates, scopeToPage, type RawElement } from "../src/computer-use/candidates"
-import { uiElementState, type PriorAttempt } from "../src/decisions/seats/ui-element"
+import { uiElementQuestions, uiElementState, type PriorAttempt } from "../src/decisions/seats/ui-element"
 
 // What can and cannot be tested here.
 //
@@ -223,6 +223,58 @@ describe("buildCandidates", () => {
     const elements = Array.from({ length: 80 }, (_, i) =>
       el({ id: i, role: "AXButton", label: `b${i}` }))
     expect(buildCandidates(elements, 12)).toHaveLength(12)
+  })
+})
+
+describe("browser chrome — marked, and kept apart from the page (#1093, #1095)", () => {
+  // A Chrome window: its toolbar, and a page with its own search box and
+  // its own "Bookmark" (x.com's per-post one).
+  const browser = [
+    el({ id: 0, role: "AXWindow" }),
+    el({ id: 1, role: "AXTextField", label: "Address and search bar", parent: 0 }),
+    el({ id: 2, role: "AXButton", label: "Reload", parent: 0 }),
+    el({ id: 3, role: "AXButton", label: "Bookmark this tab", parent: 0 }),
+    el({ id: 4, role: "AXWebArea", parent: 0 }),
+    el({ id: 5, role: "AXTextField", label: "Search query", parent: 4 }),
+    el({ id: 6, role: "AXButton", label: "Bookmark", parent: 4 }),
+  ]
+
+  it("marks the browser's controls, and only those", () => {
+    const out = buildCandidates(browser, 40, { request: "the search box" })
+    expect(out.find((c) => c.label === "Reload")?.area).toBe("browser")
+    expect(out.find((c) => c.label === "Search query")?.area).toBeUndefined()
+  })
+
+  it("keeps a page's own Bookmark apart from the browser's star", () => {
+    // "bookmark" names both; only the marking separates them.
+    const out = buildCandidates(browser, 40, { request: "the bookmark button" })
+    expect(out.find((c) => c.label === "Bookmark")?.area).toBeUndefined()
+    expect(out.find((c) => c.label === "Bookmark this tab")?.area).toBe("browser")
+    const criteria = Object.values((uiElementQuestions(out) as any).target.criteria) as string[]
+    expect(criteria.some((c) => /^button: Bookmark \(/.test(c))).toBe(true)
+    expect(criteria.some((c) => c.startsWith("button: outside the page: Bookmark this tab"))).toBe(true)
+  })
+})
+
+describe("buildCandidates — reaching more of the screen (#1092)", () => {
+  it("keeps a label that shares the request's words past the cap", () => {
+    // "Restart when idle" sat late on a settings page behind forty buttons.
+    const elements = [
+      ...Array.from({ length: 50 }, (_, i) => el({ id: i, role: "AXButton", label: `option ${i}` })),
+      el({ id: 99, role: "AXButton", label: "Restart when idle" }),
+    ]
+    const labels = buildCandidates(elements, 10, { request: "the restart when idle button" }).map((c) => c.label)
+    expect(labels).toContain("Restart when idle")
+    expect(labels).toHaveLength(10)
+  })
+
+  it("changes only who survives the cap, not the order shown", () => {
+    // Inputs still come before buttons, whatever the request says.
+    const elements = [
+      el({ id: 1, role: "AXButton", label: "Search options" }),
+      el({ id: 2, role: "AXTextField", label: "Query" }),
+    ]
+    expect(buildCandidates(elements, 10, { request: "search options" }).map((c) => c.label)).toEqual(["Query", "Search options"])
   })
 })
 
