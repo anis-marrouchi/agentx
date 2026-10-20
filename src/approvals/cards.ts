@@ -314,7 +314,7 @@ export function createCard(
   // per pushed commit on the same PR link.
   const twin = sameSourcePending(pending, built.card)
   if (twin) {
-    return { ok: false, error: `a card from you on this source is still pending: ${twin.id}. Close or update it instead of raising a second one.` }
+    return { ok: false, error: `a card from you on this source is still pending: ${twin.id}. Wait for its answer, or resolve it first and then raise the new one.` }
   }
   // Retro cards are raised for an agent, not by it: they get their own
   // count, so they never use up the agent's room for its own cards.

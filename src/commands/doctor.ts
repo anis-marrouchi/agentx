@@ -445,7 +445,9 @@ export function meshPeerTokenChecks(
 
 function runMeshTokenChecks(checks: Check[], cfg: any): void {
   const env = readEnvFile()
-  const value = (name: string) => (process.env[name] ?? env[name] ?? "").trim().replace(/^["']|["']$/g, "")
+  // As the daemon reads it (loadDotEnv): an empty variable falls through
+  // to .env, and quotes are kept as part of the value.
+  const value = (name: string) => (process.env[name] || env[name] || "").trim()
   // agentx.json may name a token as ${VAR}; the daemon expands it from the environment.
   const expand = (raw: unknown) => typeof raw === "string" ? raw.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/gi, (_, n) => value(n)) : undefined
   const peers = ((cfg.mesh?.peers ?? []) as Array<{ name?: unknown; token?: unknown }>)
