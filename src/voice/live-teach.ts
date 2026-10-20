@@ -261,8 +261,9 @@ export class LiveTeach {
     const label = target !== null ? screen.candidates.find((c) => c.id === target)?.label ?? "" : ""
     // A close window / close tab / quit control is clicked only when the
     // goal asks to close something; otherwise it is shown, not pressed.
+    // Typing clicks the target first, so it is held back too.
     const closes = target !== null && closeBlocked(screen.candidates.find((c) => c.id === target), this.opts.goal)
-    const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed && !(plan.action === "click" && closes)
+    const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed && !((plan.action === "click" || plan.action === "type") && closes)
     // The lesson never leaves its app to go and find another one.
     if (mayAct && plan.action === "key" && plan.text && leavesApp(plan.text)) return this.refuseToLeave(n, plan.text, screen.app)
     // Click and type only when allowed; otherwise show it instead.

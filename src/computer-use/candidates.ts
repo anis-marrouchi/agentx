@@ -243,9 +243,10 @@ function closes(e: RawElement, onPage: boolean): boolean {
   return !onPage && /^(close|quit)\b/i.test(named(e))
 }
 
-/** Does the request ask to close or quit something? */
+/** Does the request ask to close or quit something? Not "exit": "exit
+ *  full screen" is common and its button sits next to the red light. */
 export function asksToClose(request: string): boolean {
-  return /\b(close|closing|quit|exit|shut)\b/i.test(request)
+  return /\b(close|closing|quit)\b(?!-up)/i.test(request)
 }
 
 /** True when the pick closes something the request never asked to close:

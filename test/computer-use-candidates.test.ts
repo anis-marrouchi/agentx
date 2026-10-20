@@ -373,6 +373,8 @@ describe("close, quit: never by accident (#1094)", () => {
     expect(closeBlocked(tabX, "Bookmark this page")).toBe(true)
     expect(closeBlocked(tabX, "close this tab")).toBe(false)
     expect(closeBlocked(tabX, "quit Chrome")).toBe(false)
+    expect(closeBlocked(tabX, "exit full screen")).toBe(true)
+    expect(closeBlocked(tabX, "the close-up photo")).toBe(true)
     expect(closeBlocked(buildCandidates(chrome, 40).find((c) => c.id === 3), "Bookmark this page")).toBe(false)
   })
 

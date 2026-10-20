@@ -238,6 +238,19 @@ describe("LiveTeach", () => {
     expect(s.acted).toEqual(["click New"])
   })
 
+  it.each(["click", "type"])("act: never %ss a control that closes something the goal never asked to close", async (action) => {
+    // Typing clicks the target first, so it is held back as well.
+    const s = setup("act", [`TARGET: 1\nACTION: ${action}\nTEXT: hi\nSAY: Use New.`, DONE], { actionsAllowed: true, userActsAfter: 40 })
+    const inner = (s.t as any).deps.readScreen
+    ;(s.t as any).deps.readScreen = async () => {
+      const v = await inner()
+      return { ...v, candidates: v.candidates.map((c: any) => c.id === 1 ? { ...c, closes: true } : c) }
+    }
+    await s.t.run()
+    expect(s.acted).toEqual([])
+    expect(s.log).toContain("move 10 highlight")
+  })
+
   it("stop ends the lesson and removes the presence", async () => {
     const s = setup("watch", [STEP1], { speakMs: 100 })
     const run = s.t.run()
