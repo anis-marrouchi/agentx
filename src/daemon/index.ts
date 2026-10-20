@@ -215,6 +215,7 @@ import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
+import { homeOfBody } from "@/a2a/home"
 import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
@@ -3650,6 +3651,9 @@ export class AgentXDaemon {
       calleeContext: target.calleeContext,
       extras,
       ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes) }) } : {}),
+      // One session per piece of work (#1100): the body's home, or the one
+      // a /task context carries.
+      ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
     })
     return acceptedBody(taskId, target.callee, peer, send)
   }
@@ -6723,6 +6727,8 @@ export class AgentXDaemon {
                 // The hop count goes on through a plain send too, so two
                 // agents past the cap are not called back again (#1100).
                 ...(from ? { sendDepth: callbackDepthOf(from.context) + 1 } : {}),
+                // What the work is about (#1100): a second run on it is told.
+                ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
               }
               // A remote target records on its own node's /task; a local one
               // has no other hop that would put this delegation in the ledger.
@@ -6941,6 +6947,9 @@ export class AgentXDaemon {
           // A top-level `taskType` (a mesh peer's /send/agent, #1049) joins
           // the run's context, where the watcher reads it.
           if (taskTypeOf(body)) body.context = contextWithTaskType(body)
+          // So does a top-level `home` (#1100): a second run on it is told.
+          const taskHome = homeOfBody(body)
+          if (taskHome) body.context = { ...(body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : {}), home: taskHome }
           // #277 — an agent delegating from a turn a person started gets a
           // task id now and the answer later, as a new turn in its chat.
           // Streaming callers are watching the run, so they keep waiting.

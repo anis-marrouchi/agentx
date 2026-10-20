@@ -22,6 +22,7 @@ import type { IncomingMessage as HttpRequest } from "http"
 import { DelegationManager, type CallerTurn, type DelegationDeps } from "@/a2a/delegation"
 import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
+import type { SessionStore } from "@/agents/sessions"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { MessageRouter } from "@/channels/router"
 import type { DaemonConfig } from "./config"
@@ -287,6 +288,25 @@ export function sendTimeoutMs(maxExecutionMinutes: number | undefined): number {
   return ((maxExecutionMinutes ?? 20) + 25 + 5) * 60_000
 }
 
+/** Point a callee's new chat at the agent session of its earlier chats on
+ *  the same home (#1100), newest first: the first that has one is
+ *  continued, with the counters the rotation checks read (SessionStore.
+ *  continueFrom). The earlier run has ended: the delegation waits for it.
+ *  False when there was nothing to continue, so the run starts fresh. */
+export function continueSession(
+  store: Pick<SessionStore, "continueFrom">,
+  agentId: string,
+  from: ReadonlyArray<{ channel: string; chatId: string }>,
+  to: { channel: string; chatId: string },
+): boolean {
+  if (!to.chatId) return false
+  try {
+    return from.some((f) => store.continueFrom(agentId, f, to))
+  } catch {
+    return false
+  }
+}
+
 /** What a callee gets back when its message to the agent that asked it
  *  was passed into that agent's conversation (#1100). */
 export function replyBody(taskId: string, caller: string): Record<string, unknown> {
@@ -438,7 +458,11 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       agentId: callee,
       message,
       context: context as any,
-      freshSession: true,
+      // A follow-up on the same home continues that run's session (#1100).
+      freshSession: !(opts.resumeFrom && continueSession(w.registry.getSessionStore(), callee, opts.resumeFrom, {
+        channel: String((context as any).channel ?? "a2a"),
+        chatId: String((context as any).chatId ?? ""),
+      })),
       timeoutMinutes: Math.ceil(opts.timeoutMs / 60_000),
       onStart: opts.onStart,
       ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),

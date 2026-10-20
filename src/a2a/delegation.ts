@@ -25,6 +25,7 @@ import { randomBytes } from "crypto"
 import { HUMAN_CHANNELS, isHumanFacingTurn, isInsideDelegation, rootInitiatorOf, type RootInitiator } from "./initiator"
 import { isQueued } from "@/agents/queued"
 import { taskTypeOf } from "@/watchers/due"
+import { normalizeHome } from "./home"
 
 export type DelegationStatus = "done" | "error" | "timeout" | "lost"
 
@@ -68,6 +69,8 @@ export interface DelegationRecord {
   /** How many callback turns led to the asking turn. Bounded, so two
    *  agents cannot call each other back forever. */
   depth?: number
+  /** The issue or merge request it is about, in comparable form (#1100). */
+  home?: string
 }
 
 export interface DelegationResult {
@@ -87,7 +90,14 @@ export interface DelegationDeps {
     callee: string,
     message: string,
     context: Record<string, unknown>,
-    opts: { timeoutMs: number; onStart: (runId: string) => void; extras?: Record<string, unknown> },
+    opts: {
+      timeoutMs: number
+      onStart: (runId: string) => void
+      extras?: Record<string, unknown>
+      /** Continue the callee's session from this chat of its own, the
+       *  last run on the same home (#1100), instead of a fresh one. */
+      resumeFrom?: Array<{ channel: string; chatId: string }>
+    },
   ): Promise<{ content: string; error?: string }>
   /** Run the callee on a mesh peer and return its answer text. */
   runPeer(
@@ -142,6 +152,9 @@ export interface DelegationDeps {
   /** How long a callback waits for the caller's chat to be free. */
   busyWaitMs?: number
   pollMs?: number
+  /** How long after a callee's run on a home ended a new delegation on
+   *  that home still continues its session (#1100). Default 12 h. */
+  sameHomeMs?: number
   /** start/done log; omit to keep state in memory only (tests). */
   logPath?: string
   now?: () => number
@@ -291,6 +304,11 @@ export class DelegationManager {
   /** Delegations whose callee already wrote to the caller (relayReply):
    *  their plain end is not called back a second time. */
   private answered = new Set<string>()
+  /** Per callee and home (#1100): the chat of its last run there, and
+   *  that run while it is still going. In memory: a restart starts over. */
+  private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null }>()
+  /** Callee chats with a same-home run going right now: never continued. */
+  private busyChats = new Set<string>()
   private readonly now: () => number
 
   constructor(private deps: DelegationDeps) {
@@ -369,6 +387,10 @@ export class DelegationManager {
     kind?: "send"
     /** Upper bound for this one, instead of the default. */
     timeoutMs?: number
+    /** The issue or merge request the work is about (#1100). A local
+     *  callee already on the same home finishes first; this one then
+     *  resumes that session instead of starting beside it. */
+    home?: string
   }): { taskId: string; record: DelegationRecord } {
     const origin = originOf(opts.caller.context)
     if (!origin) throw new Error("caller turn has no channel/chatId to call back to")
@@ -376,6 +398,7 @@ export class DelegationManager {
     const root = rootInitiatorOf(opts.caller.context as any, opts.caller.agentId)
     const taskType = taskTypeOf(opts.calleeContext)
     const depth = callbackDepthOf(opts.caller.context)
+    const home = normalizeHome(opts.home)
     const record: DelegationRecord = {
       id,
       caller: opts.caller.agentId,
@@ -388,6 +411,7 @@ export class DelegationManager {
       ...(taskType ? { taskType } : {}),
       ...(opts.kind ? { kind: opts.kind } : {}),
       ...(depth ? { depth } : {}),
+      ...(home ? { home } : {}),
     }
     this.pendingById.set(id, record)
     this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin })
@@ -404,29 +428,76 @@ export class DelegationManager {
       initiator: root,
       // The callee's own sends count on from here (MAX_SEND_DEPTH).
       ...(record.kind === "send" ? { sendDepth: depth + 1 } : {}),
+      ...(home ? { home } : {}),
     }
     const who = record.peer ? `${record.callee}@${record.peer}` : record.callee
     this.deps.log(`[delegation ${id}] ${record.caller} -> ${who} started (root=${root.kind}:${root.channel}, callback to ${origin.channel}:${origin.chatId})`)
 
-    const timeoutMs = opts.timeoutMs ?? this.deps.timeoutMs
-    const timer = setTimeout(() => {
-      const runId = this.localRuns.get(id)
-      if (runId) {
-        try { this.deps.cancelLocal?.(runId, `delegation ${id} timed out`) } catch { /* best effort */ }
+    // One session per piece of work (#1100): the callee's run on the same
+    // home, still going or recent, is the session this one continues.
+    const homeKey = home && !record.peer ? `${record.callee}\u0000${home}` : null
+    const prior = homeKey ? this.sameHome(homeKey) : null
+    const calleeChat = { channel: String(calleeContext.channel), chatId: String(calleeContext.chatId) }
+    // Newest first: a run that failed before it saved a session falls back
+    // to the one before it. Read when it launches: while any earlier run on
+    // the home is still going (one this delegation stopped waiting for), it
+    // starts fresh instead, since that run may be writing the very session
+    // an older chat names. No two runs write one session.
+    const chatKeyOf = (c: { channel: string; chatId: string }) => `${record.callee}\u0000${c.channel}\u0000${c.chatId}`
+    const resumable = () => {
+      const chats = prior?.chats ?? []
+      if (chats.some((c) => this.busyChats.has(chatKeyOf(c)))) {
+        this.deps.log(`[delegation ${id}] a run on ${home} is still going; starting a fresh session instead`)
+        return []
       }
-      void this.complete(id, { status: "timeout", text: `No answer from ${who} after ${Math.round(timeoutMs / 60_000) || 1} minute(s).` })
-    }, timeoutMs)
-    ;(timer as any).unref?.()
-    this.timers.set(id, timer)
+      return chats.filter((c) => !(c.channel === calleeChat.channel && c.chatId === calleeChat.chatId))
+    }
+    if (prior) {
+      this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? "waits for it, then " : ""}continues its session`)
+    }
 
-    const run = record.peer
-      ? this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
+    const timeoutMs = opts.timeoutMs ?? this.deps.timeoutMs
+    const launch = (): Promise<{ content: string; error?: string }> => {
+      // Gone already (a restart reported it lost while it waited).
+      if (!this.pendingById.has(id)) return Promise.resolve({ content: "", error: "no longer pending" })
+      // The clock starts when the work does, not while it waits its turn.
+      const timer = setTimeout(() => {
+        const runId = this.localRuns.get(id)
+        if (runId) {
+          try { this.deps.cancelLocal?.(runId, `delegation ${id} timed out`) } catch { /* best effort */ }
+        }
+        void this.complete(id, { status: "timeout", text: `No answer from ${who} after ${Math.round(timeoutMs / 60_000) || 1} minute(s).` })
+      }, timeoutMs)
+      ;(timer as any).unref?.()
+      this.timers.set(id, timer)
+      if (record.peer) {
+        return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
           .then((text) => ({ content: text } as { content: string; error?: string }))
-      : this.deps.runLocal(record.callee, opts.message, calleeContext, {
-          timeoutMs,
-          onStart: (runId) => { this.localRuns.set(id, runId) },
-          extras: opts.extras,
-        })
+      }
+      const resumeFrom = resumable()
+      const mine = chatKeyOf(calleeChat)
+      if (homeKey) this.busyChats.add(mine)
+      return this.deps.runLocal(record.callee, opts.message, calleeContext, {
+        timeoutMs,
+        onStart: (runId) => { this.localRuns.set(id, runId) },
+        extras: opts.extras,
+        ...(resumeFrom?.length ? { resumeFrom } : {}),
+      }).finally(() => { this.busyChats.delete(mine) })
+    }
+    // The wait is bounded by this delegation's own time limit: a run ahead
+    // that never settles (stuck before it started) does not hold it forever.
+    const waitFor = prior?.running
+      ? Promise.race([prior.running, new Promise<void>((r) => { const t = setTimeout(r, timeoutMs); (t as any).unref?.() })])
+      : null
+    const run = waitFor ? waitFor.then(launch) : launch()
+    if (homeKey) {
+      const running = run.then(() => undefined, () => undefined)
+      this.homes.set(homeKey, { chats: [calleeChat, ...(prior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null })
+      void running.then(() => {
+        const h = this.homes.get(homeKey)
+        if (h?.taskId === id) { h.running = null; h.endedAt = this.now() }
+      })
+    }
     run
       .then((r) => this.complete(id, r.error
         ? { status: "error", text: r.error }
@@ -537,6 +608,17 @@ export class DelegationManager {
 
   isPending(id: string): boolean {
     return this.pendingById.has(id)
+  }
+
+  /** The callee's run on this home that a new one continues: still going,
+   *  or ended within sameHomeMs. Old entries are dropped on the way. */
+  private sameHome(key: string): { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null } | null {
+    const window = this.deps.sameHomeMs ?? 12 * 3_600_000
+    const now = this.now()
+    for (const [k, h] of this.homes) {
+      if (h.endedAt !== null && now - h.endedAt > window) this.homes.delete(k)
+    }
+    return this.homes.get(key) ?? null
   }
 
   /** The asking agent and its chat for a delegation, running or recent:

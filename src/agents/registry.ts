@@ -28,6 +28,7 @@ import { AgentMemory } from "./agent-memory"
 import { extractMemories } from "./memory-extract"
 import { serializeOrigin, type RunOrigin } from "./resume/origin"
 import { MessageQueue, staleQueueNote, type QueueMode, type QueuedMessage } from "./message-queue"
+import { homesOfRun, sameHomeNote } from "@/a2a/home"
 import { isQueued, queuedMarker } from "./queued"
 import { loadBootstrapFiles, buildBootstrapContext, detectSoulSwitch, listSoulProfiles } from "./bootstrap"
 import { PatternStore, extractPatterns } from "./patterns"
@@ -157,6 +158,9 @@ export interface RunningTask {
   sender?: string
   /** Wall-clock start. */
   startedAt: Date
+  /** The issues or merge requests the run is about (#1100), in the form
+   *  src/a2a/home.ts compares. */
+  homes?: string[]
   /** The step the run is in right now (classify, compact, agent, …). A run
    *  that hangs shows here where it stopped. */
   step?: string
@@ -1519,12 +1523,22 @@ export class AgentRegistry {
       task.queuedAt = undefined
     }
 
+    // Another run of this agent on the same issue, in another chat (#1100):
+    // this one is told, so the two do not overwrite each other's work.
+    const homes = homesOfRun({ message: task.message, home: task.context?.home })
+    const clash = sameHomeNote(state.runningTasks, homes, { channel: task.context?.channel || "api", chatId: task.context?.chatId || task.context?.group })
+    if (clash) {
+      this.log(`[${task.agentId}] ${clash.slice(0, 160)}`)
+      task.message = `${clash}\n${task.message}`
+    }
+
     state.activeTasks++
     state.totalTasks++
     state.lastActive = new Date()
 
     // Track the running task for live visibility (/agents endpoint surfaces this).
     const runningTask: RunningTask = {
+      ...(homes.length ? { homes } : {}),
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       messagePreview: (task.message || "").slice(0, 200),
       message: task.message || "",
