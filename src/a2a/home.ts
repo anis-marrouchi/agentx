@@ -3,28 +3,40 @@
 // Two runs of one agent on the same issue overwrite each other's work. A
 // delegation can name its home (`home`: an issue link or ref); runs that
 // name none are matched by the references in their message. Both are
-// reduced to one comparable form here.
+// reduced to one comparable form here: `group/project#12` for an issue
+// (and a GitHub pull request, which shares its numbers), `group/project!12`
+// for a GitLab merge request. The host is dropped, so a link and a ref to
+// the same issue meet.
 
 const HOME_MAX = 300
 
-/** One comparable form of a home: trimmed, lower case, without a link's
- *  query, comment anchor or trailing slash. Undefined for anything that
- *  is not a usable string. */
+// A segment of a project path: letters, digits, dot, dash, underscore,
+// with at least one letter (so a date such as 2026/10/20 is not a project).
+const SEG = String.raw`(?=[\w.-]*[A-Za-z])[\w.-]+`
+// The last segment is not a file name (src/home.ts#12 is a line, not work).
+const LAST = String.raw`(?=[\w.-]*[A-Za-z])(?![\w-]*\.(?:ts|js|mjs|cjs|tsx|jsx|md|py|go|rs|json|ya?ml|txt|sh|html|css)\b)[\w.-]+`
+
+const LINK = /\bhttps?:\/\/[^\s/<>()"']+\/([^\s<>()"'#?]+?)\/(?:-\/)?(issues|pull|merge_requests)\/(\d+)/gi
+const REF = new RegExp(String.raw`(?<![\w/.-])((?:${SEG}\/)+${LAST})([#!])(\d+)\b`, "g")
+
+/** The comparable form of an issue or merge request: from a link, from a
+ *  `group/project#12` or `!12` ref, or (for anything else) the trimmed
+ *  lower-cased text. Undefined for anything that is not one usable token. */
 export function normalizeHome(v: unknown): string | undefined {
   if (typeof v !== "string") return undefined
-  let s = v.trim().toLowerCase()
-  if (/^https?:\/\//.test(s)) s = s.replace(/[?#].*$/, "")
-  s = s.replace(/\/+$/, "")
-  return s && s.length <= HOME_MAX ? s : undefined
+  const s = v.trim()
+  // One token only: a home is a link or a ref, never prose (and nothing
+  // multi-line ends up quoted into another run's prompt).
+  if (!s || s.length > HOME_MAX || /\s/.test(s)) return undefined
+  const link = new RegExp(LINK.source, "i").exec(s)
+  if (link) return `${link[1].toLowerCase()}${link[2].toLowerCase() === "merge_requests" ? "!" : "#"}${link[3]}`
+  const ref = new RegExp(`^${REF.source}$`).exec(s)
+  if (ref) return `${ref[1].toLowerCase()}${ref[2]}${ref[3]}`
+  return s.replace(/\/+$/, "").toLowerCase()
 }
 
-// Issue, pull and merge request links, and `group/project#12` refs. A bare
-// `#12` is left out: without its project it names different work in
-// every repository.
-const LINK = /\bhttps?:\/\/[^\s<>()"']+\/(?:-\/)?(?:issues|pull|merge_requests)\/\d+/gi
-const REF = /(?<![\w/.-])([\w.-]+(?:\/[\w.-]+)+)[#!](\d+)\b/g
-
-/** The homes a message names, in comparable form. */
+/** The homes a message names, in comparable form. A bare `#12` is left
+ *  out: without its project it names different work in every repository. */
 export function homeRefsOf(text: string | undefined | null): string[] {
   if (!text) return []
   const out = new Set<string>()
@@ -32,10 +44,7 @@ export function homeRefsOf(text: string | undefined | null): string[] {
     const h = normalizeHome(m[0])
     if (h) out.add(h)
   }
-  for (const m of text.matchAll(REF)) {
-    const h = normalizeHome(`${m[1]}#${m[2]}`)
-    if (h) out.add(h)
-  }
+  for (const m of text.matchAll(REF)) out.add(`${m[1].toLowerCase()}${m[2]}${m[3]}`)
   return [...out]
 }
 

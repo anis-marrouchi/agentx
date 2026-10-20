@@ -96,7 +96,7 @@ export interface DelegationDeps {
       extras?: Record<string, unknown>
       /** Continue the callee's session from this chat of its own, the
        *  last run on the same home (#1100), instead of a fresh one. */
-      resumeFrom?: { channel: string; chatId: string }
+      resumeFrom?: Array<{ channel: string; chatId: string }>
     },
   ): Promise<{ content: string; error?: string }>
   /** Run the callee on a mesh peer and return its answer text. */
@@ -306,7 +306,7 @@ export class DelegationManager {
   private answered = new Set<string>()
   /** Per callee and home (#1100): the chat of its last run there, and
    *  that run while it is still going. In memory: a restart starts over. */
-  private homes = new Map<string, { chat: { channel: string; chatId: string }; taskId: string; running: Promise<void> | null; endedAt: number | null }>()
+  private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null }>()
   private readonly now: () => number
 
   constructor(private deps: DelegationDeps) {
@@ -436,7 +436,9 @@ export class DelegationManager {
     const homeKey = home && !record.peer ? `${record.callee}\u0000${home}` : null
     const prior = homeKey ? this.sameHome(homeKey) : null
     const calleeChat = { channel: String(calleeContext.channel), chatId: String(calleeContext.chatId) }
-    const resumeFrom = prior && !(prior.chat.channel === calleeChat.channel && prior.chat.chatId === calleeChat.chatId) ? prior.chat : undefined
+    // Newest first: a run that failed before it saved a session falls back
+    // to the one before it.
+    const resumeFrom = prior?.chats.filter((c) => !(c.channel === calleeChat.channel && c.chatId === calleeChat.chatId))
     if (prior) {
       this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? "waits for it, then " : ""}continues its session`)
     }
@@ -462,13 +464,18 @@ export class DelegationManager {
             timeoutMs,
             onStart: (runId) => { this.localRuns.set(id, runId) },
             extras: opts.extras,
-            ...(resumeFrom ? { resumeFrom } : {}),
+            ...(resumeFrom?.length ? { resumeFrom } : {}),
           })
     }
-    const run = prior?.running ? prior.running.then(launch) : launch()
+    // The wait is bounded by this delegation's own time limit: a run ahead
+    // that never settles (stuck before it started) does not hold it forever.
+    const waitFor = prior?.running
+      ? Promise.race([prior.running, new Promise<void>((r) => { const t = setTimeout(r, timeoutMs); (t as any).unref?.() })])
+      : null
+    const run = waitFor ? waitFor.then(launch) : launch()
     if (homeKey) {
       const running = run.then(() => undefined, () => undefined)
-      this.homes.set(homeKey, { chat: calleeChat, taskId: id, running, endedAt: null })
+      this.homes.set(homeKey, { chats: [calleeChat, ...(prior?.chats ?? [])].slice(0, 3), taskId: id, running, endedAt: null })
       void running.then(() => {
         const h = this.homes.get(homeKey)
         if (h?.taskId === id) { h.running = null; h.endedAt = this.now() }
@@ -588,7 +595,7 @@ export class DelegationManager {
 
   /** The callee's run on this home that a new one continues: still going,
    *  or ended within sameHomeMs. Old entries are dropped on the way. */
-  private sameHome(key: string): { chat: { channel: string; chatId: string }; taskId: string; running: Promise<void> | null } | null {
+  private sameHome(key: string): { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null } | null {
     const window = this.deps.sameHomeMs ?? 12 * 3_600_000
     const now = this.now()
     for (const [k, h] of this.homes) {

@@ -516,6 +516,29 @@ export class SessionStore {
     this.save(session)
   }
 
+  /**
+   * Point a new chat at the agent session of an earlier chat (#1100): the
+   * native session ids, and with them what the rotation checks read (turn
+   * count, last context size, last use), so a continued session is still
+   * rotated when it grows or goes stale. False when the earlier chat has
+   * no session to continue; nothing is written then.
+   */
+  continueFrom(agentId: string, from: { channel: string; chatId: string }, to: { channel: string; chatId: string }): boolean {
+    if (from.channel === to.channel && from.chatId === to.chatId) return false
+    const src = this.getSession(agentId, from.channel, from.chatId)
+    if (!src.claudeSessionId && !src.codexSessionId && !src.opencodeSessionId) return false
+    const dst = this.getSession(agentId, to.channel, to.chatId)
+    dst.claudeSessionId = src.claudeSessionId
+    dst.codexSessionId = src.codexSessionId
+    dst.opencodeSessionId = src.opencodeSessionId
+    dst.turnCount = src.turnCount
+    dst.lastTurnInputTokens = src.lastTurnInputTokens
+    dst.lastTurnContextTokens = src.lastTurnContextTokens
+    dst.updatedAt = src.updatedAt
+    this.save(dst)
+    return true
+  }
+
   getCodexSessionId(agentId: string, channel: string, chatId: string): string | undefined {
     const session = this.getSession(agentId, channel, chatId)
     return session.codexSessionId

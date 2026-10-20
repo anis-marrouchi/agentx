@@ -680,7 +680,7 @@ describe("one session per piece of work (#1100)", () => {
     await flush()
     expect(calls).toHaveLength(2)
     expect(calls[1].message).toBe("Use hero A instead")
-    expect(calls[1].opts.resumeFrom).toEqual({ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` })
+    expect(calls[1].opts.resumeFrom).toEqual([{ channel: "a2a", chatId: `a2a:planner:writer:${a.taskId}` }])
     expect(h.logs.some((l) => l.includes("waits for it"))).toBe(true)
   })
 
@@ -708,13 +708,37 @@ describe("one session per piece of work (#1100)", () => {
     h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "soon after", home: "team/site#7", kind: "send" })
     await flush()
     expect(calls[1].opts.resumeFrom).toBeUndefined()
-    expect(calls[2].opts.resumeFrom?.chatId).toContain("a2a:planner:writer:")
+    expect(calls[2].opts.resumeFrom?.[0].chatId).toContain("a2a:planner:writer:")
     runs[2].resolve({ content: "ok" })
     await flush()
     now += 120_000
     h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "much later", home: "team/site#7", kind: "send" })
     await flush()
     expect(calls[3].opts.resumeFrom).toBeUndefined()
+  })
+
+  it("does not wait past its own time limit for a run ahead that never settles", async () => {
+    vi.useFakeTimers()
+    const { h, calls } = twoRuns()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "stuck", home: "team/site#7", kind: "send", timeoutMs: 60_000 })
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "next", home: "team/site#7", kind: "send", timeoutMs: 5_000 })
+    await vi.advanceTimersByTimeAsync(4_000)
+    expect(calls).toHaveLength(1)
+    await vi.advanceTimersByTimeAsync(1_500)
+    expect(calls).toHaveLength(2)
+    expect(calls[1].message).toBe("next")
+  })
+
+  it("offers the older chats too, newest first, when a run ahead failed", async () => {
+    const { h, runs, calls } = twoRuns()
+    const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one", home: "team/site#7", kind: "send" })
+    const b = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "two", home: "team/site#7", kind: "send" })
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "three", home: "team/site#7", kind: "send" })
+    runs[0].resolve({ content: "ok" })
+    await flush()
+    runs[1].resolve({ content: "", error: "refused" })
+    await flush()
+    expect(calls[2].opts.resumeFrom.map((c: any) => c.chatId)).toEqual([`a2a:planner:writer:${b.taskId}`, `a2a:planner:writer:${a.taskId}`])
   })
 
   it("leaves work without a home as it was", async () => {

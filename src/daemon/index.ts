@@ -6947,6 +6947,9 @@ export class AgentXDaemon {
           // A top-level `taskType` (a mesh peer's /send/agent, #1049) joins
           // the run's context, where the watcher reads it.
           if (taskTypeOf(body)) body.context = contextWithTaskType(body)
+          // So does a top-level `home` (#1100): a second run on it is told.
+          const taskHome = homeOfBody(body)
+          if (taskHome) body.context = { ...(body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : {}), home: taskHome }
           // #277 — an agent delegating from a turn a person started gets a
           // task id now and the answer later, as a new turn in its chat.
           // Streaming callers are watching the run, so they keep waiting.

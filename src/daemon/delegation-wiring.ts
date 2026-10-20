@@ -288,26 +288,20 @@ export function sendTimeoutMs(maxExecutionMinutes: number | undefined): number {
   return ((maxExecutionMinutes ?? 20) + 25 + 5) * 60_000
 }
 
-/** Point a callee's new chat at the agent session of its earlier chat on
- *  the same home (#1100), for every tier that keeps one. The earlier run
- *  has ended: the delegation waits for it. False when there was nothing
- *  to continue, so the run starts fresh as before. */
+/** Point a callee's new chat at the agent session of its earlier chats on
+ *  the same home (#1100), newest first: the first that has one is
+ *  continued, with the counters the rotation checks read (SessionStore.
+ *  continueFrom). The earlier run has ended: the delegation waits for it.
+ *  False when there was nothing to continue, so the run starts fresh. */
 export function continueSession(
-  store: Pick<SessionStore, "getClaudeSessionId" | "setClaudeSessionId" | "getCodexSessionId" | "setCodexSessionId" | "getOpenCodeSessionId" | "setOpenCodeSessionId">,
+  store: Pick<SessionStore, "continueFrom">,
   agentId: string,
-  from: { channel: string; chatId: string },
+  from: ReadonlyArray<{ channel: string; chatId: string }>,
   to: { channel: string; chatId: string },
 ): boolean {
-  if (!to.chatId || (from.channel === to.channel && from.chatId === to.chatId)) return false
+  if (!to.chatId) return false
   try {
-    let found = false
-    const claude = store.getClaudeSessionId(agentId, from.channel, from.chatId)
-    if (claude) { store.setClaudeSessionId(agentId, to.channel, to.chatId, claude); found = true }
-    const codex = store.getCodexSessionId(agentId, from.channel, from.chatId)
-    if (codex) { store.setCodexSessionId(agentId, to.channel, to.chatId, codex); found = true }
-    const open = store.getOpenCodeSessionId(agentId, from.channel, from.chatId)
-    if (open) { store.setOpenCodeSessionId(agentId, to.channel, to.chatId, open); found = true }
-    return found
+    return from.some((f) => store.continueFrom(agentId, f, to))
   } catch {
     return false
   }
