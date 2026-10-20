@@ -2,6 +2,31 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.151.0](https://github.com/anis-marrouchi/agentx/compare/v0.150.0...v0.151.0) (2026-10-20)
+
+
+### Features
+
+* **a2a:** a run can end waiting, and is then not reported as done ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1112](https://github.com/anis-marrouchi/agentx/issues/1112)) ([f4ef0a6](https://github.com/anis-marrouchi/agentx/commit/f4ef0a6fae6b8dbd19f4b0c5946322a680b90a75))
+* **a2a:** one session per piece of work, and a note when two runs share it ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1110](https://github.com/anis-marrouchi/agentx/issues/1110)) ([4445ea1](https://github.com/anis-marrouchi/agentx/commit/4445ea1584ca1d8d56c8320860c65591f3ce04d2))
+* **screen:** titles in words, a To do line, honest changed time, and a what-is-on-screen view ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1104](https://github.com/anis-marrouchi/agentx/issues/1104)) ([c85a49d](https://github.com/anis-marrouchi/agentx/commit/c85a49d84d615709f5916bb603d7e9d7d06b6fcc))
+
+
+### Bug Fixes
+
+* **a2a:** an agent's send comes back to the asker's own chat ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1101](https://github.com/anis-marrouchi/agentx/issues/1101)) ([0547d53](https://github.com/anis-marrouchi/agentx/commit/0547d53e2e3ba85b1e271d317f702732f602f271))
+* **a2a:** close the send-routing leftovers from [#1101](https://github.com/anis-marrouchi/agentx/issues/1101) ([#1111](https://github.com/anis-marrouchi/agentx/issues/1111)) ([1467572](https://github.com/anis-marrouchi/agentx/commit/1467572bc6264f38dea6787218ce3b0dccf97636))
+* **approvals:** keep a forwarded card's node when the agent id also exists here; test doctor's token lookup ([#1102](https://github.com/anis-marrouchi/agentx/issues/1102) follow-up) ([#1108](https://github.com/anis-marrouchi/agentx/issues/1108)) ([56347f1](https://github.com/anis-marrouchi/agentx/commit/56347f12fb118c3e491b6d1b4eb9ee82dc79371d))
+* **approvals:** refuse a second pending card on the same source; doctor warns on a shared peer token ([#1100](https://github.com/anis-marrouchi/agentx/issues/1100)) ([#1102](https://github.com/anis-marrouchi/agentx/issues/1102)) ([0638c34](https://github.com/anis-marrouchi/agentx/commit/0638c347b82a21624dfbf7c7020409be2dd488f6))
+* **context:** keep the newest turns when history is cut to budget ([#1090](https://github.com/anis-marrouchi/agentx/issues/1090)) ([#1091](https://github.com/anis-marrouchi/agentx/issues/1091)) ([bd1270a](https://github.com/anis-marrouchi/agentx/commit/bd1270a327fb9307b897d5e82762c957d0cf22ec))
+* **demo:** close the front-door gaps found on 0.148.0 ([#1085](https://github.com/anis-marrouchi/agentx/issues/1085) + [#1084](https://github.com/anis-marrouchi/agentx/issues/1084) wording) ([#1089](https://github.com/anis-marrouchi/agentx/issues/1089)) ([a5c89cc](https://github.com/anis-marrouchi/agentx/commit/a5c89cca0a85a5a89b2bfedf48dd1106dfb441d2))
+* **point:** a lone control answers --json in the usual shape ([#1092](https://github.com/anis-marrouchi/agentx/issues/1092)) ([#1107](https://github.com/anis-marrouchi/agentx/issues/1107)) ([b7f4d50](https://github.com/anis-marrouchi/agentx/commit/b7f4d50200178a272daa3de64d589d3236392281))
+* **point:** a lone control with no place on screen stops with exit 2 ([#1107](https://github.com/anis-marrouchi/agentx/issues/1107) follow-up) ([#1114](https://github.com/anis-marrouchi/agentx/issues/1114)) ([49bd07a](https://github.com/anis-marrouchi/agentx/commit/49bd07a675efa6e6c5cd1cd8d01e66a385a91767))
+* **point:** close guard holds for cmd+w and Electron close controls ([#1094](https://github.com/anis-marrouchi/agentx/issues/1094)) ([#1098](https://github.com/anis-marrouchi/agentx/issues/1098)) ([90abc66](https://github.com/anis-marrouchi/agentx/commit/90abc66ce4f30a3bfac91f32b58cc5392e3a9870))
+* **point:** no x/y in --json when the close guard blocks ([#1092](https://github.com/anis-marrouchi/agentx/issues/1092)) ([#1103](https://github.com/anis-marrouchi/agentx/issues/1103)) ([b724b07](https://github.com/anis-marrouchi/agentx/commit/b724b0756f723b062ac4be066c2ddb714bc5e428))
+* **screen:** a card with no title or ask is returned, not a crash ([#1104](https://github.com/anis-marrouchi/agentx/issues/1104) follow-up) ([#1109](https://github.com/anis-marrouchi/agentx/issues/1109)) ([18315a4](https://github.com/anis-marrouchi/agentx/commit/18315a4811091d16b4500c9de353af95e46f8585))
+* **screen:** a returned card with no title is named without "undefined" ([#1109](https://github.com/anis-marrouchi/agentx/issues/1109) follow-up) ([#1116](https://github.com/anis-marrouchi/agentx/issues/1116)) ([a4dab17](https://github.com/anis-marrouchi/agentx/commit/a4dab177855d692a0ff17b65c2db16d965e4f48c))
+
 ## [0.150.0](https://github.com/anis-marrouchi/agentx/compare/v0.149.0...v0.150.0) (2026-10-20)
 
 
