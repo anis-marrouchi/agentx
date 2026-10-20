@@ -2,6 +2,19 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.149.0](https://github.com/anis-marrouchi/agentx/compare/v0.148.0...v0.149.0) (2026-10-20)
+
+
+### Features
+
+* **point:** reach browser chrome, named images and long pages ([#1092](https://github.com/anis-marrouchi/agentx/issues/1092)) ([#1093](https://github.com/anis-marrouchi/agentx/issues/1093)) ([cd11997](https://github.com/anis-marrouchi/agentx/commit/cd11997c2fd263746769621a22dc494bd62e1077))
+
+
+### Bug Fixes
+
+* **approvals:** plain yes on a choice card takes the suggested option ([#1064](https://github.com/anis-marrouchi/agentx/issues/1064)) ([#1065](https://github.com/anis-marrouchi/agentx/issues/1065)) ([5a422f1](https://github.com/anis-marrouchi/agentx/commit/5a422f144527f31e612a37d189b5ec0070c5f5d7))
+* **approvals:** tell retro agents a fix came from a plain yes ([#1065](https://github.com/anis-marrouchi/agentx/issues/1065) follow-up) ([#1067](https://github.com/anis-marrouchi/agentx/issues/1067)) ([7eb02db](https://github.com/anis-marrouchi/agentx/commit/7eb02dbe9f4265be6712ad898d2e144c76afcbc9))
+
 ## [0.148.0](https://github.com/anis-marrouchi/agentx/compare/v0.147.0...v0.148.0) (2026-10-19)
 
 
