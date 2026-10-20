@@ -91,7 +91,9 @@ it found to look for, and why, is in
 
 ### Small reusable workflows (#928)
 
-What #928 measured, and what is still open, is in
+#928 is closed: the owner stopped both the whole-job workflow and the
+reader trial on 2026-10-13, and nothing from it went live. What it
+measured, and what is still open, is in
 [results/workflows-928.md](results/workflows-928.md). Those figures come from
 other scripts, and this one gives different shares on the same logs (the
 page has both and the rule differences), so do not quote its output as the

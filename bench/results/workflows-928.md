@@ -175,8 +175,17 @@ same node and window, agent workspace seats only (580 main sessions against
   routing, no merge, the idea set aside. The record on #928 stays: 78%
   cheaper on the job it was written for, a job that is about 1% of spend.
 
-With both answers, nothing from #928 goes live. The repo keeps only the
-read-only script and this page.
+With both answers, nothing from #928 goes live, and #928 is closed. What
+the repo keeps from it:
+
+- this page and the read-only `bench/slice-replay.py` (#954, #958);
+- `agentx workflow pilot-report` and its guide,
+  [Try a cheaper workflow beside a live one](../../docs/jobs/workflow-pilot.md)
+  (#929). It is a general tool for any pilot workflow; no pilot from #928
+  is set up or routed with it.
+
+## Still open, outside #928
+
 - **Session start (18%)** is shared with #615 and #947, not with these forms.
 - **Prices:** check which of 4 / 20 and 5 / 25 matches the invoice for
   Opus 5.5, and whether AgentX's table needs a Haiku 5 family.
