@@ -32,7 +32,7 @@ What happens when a marked control is chosen and the request does not ask to clo
 | `agentx teach` | Stops before a click step on it. A step that only shows a control may still highlight it, because nothing is pressed. |
 | Live lessons | Shows the control instead of clicking it or typing into it. It also refuses keyboard shortcuts that close a tab or window (⌘W, ⌘⇧W, ⌘⌥W) and stops the lesson. ⌘Q is always refused, because it leaves the app. |
 
-When the app shows only one control, `agentx point` uses it without asking the model. With `--json`, the answer has the same fields as usual, but `present` is `null` (nobody judged whether it matches) and `confidence` is `1`. A script that reads `blocked` or the exit code first, then checks `present`, handles both cases.
+When the app shows only one control, `agentx point` uses it without asking the model. With `--json`, the answer has the same fields as usual, but `present` is `null` (nobody judged whether it matches) and `confidence` is `1`. A script that reads `blocked` or the exit code first, then checks `present`, handles both cases. If that one control has no place on screen (for example, it is scrolled out of view), `agentx point` prints a short message and stops with exit code 2, the same code it uses when nothing matches, with or without `--json`.
 
 A candidate-selection question always has a choice to return. The separate “is it present?” question lets AgentX refuse to highlight an unrelated control.
 

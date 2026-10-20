@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-const mocks = vi.hoisted(() => ({ exec: vi.fn(), askSeat: vi.fn(), readScreen: vi.fn(), daemon: vi.fn() }))
+const mocks = vi.hoisted(() => ({ exec: vi.fn(), askSeat: vi.fn(), readScreen: vi.fn(), daemon: vi.fn(), rectFor: vi.fn() }))
 vi.mock("child_process", () => ({ execFile: mocks.exec, spawn: vi.fn() }))
 vi.mock("fs", async (orig) => ({ ...(await orig<typeof import("fs")>()), existsSync: () => true }))
 vi.mock("../src/decisions/seat", () => ({ askSeat: mocks.askSeat }))
@@ -7,7 +7,7 @@ vi.mock("../src/commands/call", () => ({ daemon: mocks.daemon }))
 vi.mock("../src/computer-use/screen", () => ({
   HELPER: "/helper",
   readScreen: mocks.readScreen,
-  rectFor: (_s: unknown, id: number) => ({ x: id * 10, y: 0, width: 16, height: 16 }),
+  rectFor: mocks.rectFor,
 }))
 import { buildCandidates, type RawElement } from "../src/computer-use/candidates"
 import { point } from "../src/commands/point"
@@ -35,6 +35,7 @@ describe("agentx point — close guard", () => {
     vi.clearAllMocks()
     point.setOptionValue("json", undefined) // commander keeps flags across parseAsync calls
     mocks.readScreen.mockResolvedValue({ app: "Google Chrome", window: "x", candidates: buildCandidates(tree, 40), elements: tree, usedOCR: false, ocrRects: new Map() })
+    mocks.rectFor.mockImplementation((_s: unknown, id: number) => ({ x: id * 10, y: 0, width: 16, height: 16 }))
     mocks.daemon.mockRejectedValue(new Error("no daemon"))
     mocks.exec.mockImplementation((_f: string, _a: string[], cb: (e: null, r: { stdout: string }) => void) => cb(null, { stdout: "{}" }))
   })
@@ -91,6 +92,17 @@ describe("agentx point — close guard", () => {
     expect(out.chosen).toMatchObject({ x: 30, y: 0, width: 16, height: 16, label: "Bookmark this tab" })
     expect(out).toMatchObject({ present: null, confidence: 1, ranked: [{ id: 3, score: 1 }] })
     expect(mocks.askSeat).not.toHaveBeenCalled()
+  })
+
+  it("a lone control with no place on screen stops with exit 2, with or without --json", async () => {
+    const lone = [el({ id: 0, role: "AXWindow" }), el({ id: 3, role: "AXButton", label: "Bookmark this tab", parent: 0 })]
+    mocks.readScreen.mockResolvedValue({ app: "Google Chrome", window: "x", candidates: buildCandidates(lone, 40), elements: lone, usedOCR: false, ocrRects: new Map() })
+    mocks.rectFor.mockReturnValue(null)
+    expect(await runPoint("Bookmark this page", "--json")).toBe("exit 2")
+    expect(printed.join("\n")).toContain("no place on screen")
+    expect(await runPoint("Bookmark this page")).toBe("exit 2")
+    expect(mocks.askSeat).not.toHaveBeenCalled()
+    expect(mocks.exec).not.toHaveBeenCalled()
   })
 
   it("with --json, keeps the place when nothing is blocked", async () => {
