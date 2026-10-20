@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.150.0](https://github.com/anis-marrouchi/agentx/compare/v0.149.0...v0.150.0) (2026-10-20)
+
+
+### Features
+
+* **point:** offer browser controls, name unnamed controls, raise the cap ([#1092](https://github.com/anis-marrouchi/agentx/issues/1092)) ([#1094](https://github.com/anis-marrouchi/agentx/issues/1094)) ([1fee37a](https://github.com/anis-marrouchi/agentx/commit/1fee37abee20c07d415035404c8ccc086235b5e7))
+
 ## [0.149.0](https://github.com/anis-marrouchi/agentx/compare/v0.148.0...v0.149.0) (2026-10-20)
 
 
