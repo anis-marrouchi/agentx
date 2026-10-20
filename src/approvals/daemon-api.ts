@@ -84,9 +84,11 @@ export function handleApprovalsApi(
       const input = body ?? {}
       const raisedBy = typeof input.raised_by === "string" ? input.raised_by.trim() : ""
       // A card from another node names it; the name must be a peer of ours.
-      // A local agent's card never carries one, whatever the body says.
+      // When the agent id also exists here, the node is believed only with
+      // that peer's own mesh token: a local agent's card never carries one,
+      // whatever the body says.
       const from = typeof input.node === "string" ? input.node.trim() : ""
-      const node = from && !deps.hasAgent(raisedBy) && deps.hasPeer?.(from) ? from : undefined
+      const node = from && deps.hasPeer?.(from) && (!deps.hasAgent(raisedBy) || deps.tokenPeerIs?.(from)) ? from : undefined
       if (raisedBy && !deps.hasAgent(raisedBy) && !node) {
         return {
           status: 400,
