@@ -103,7 +103,7 @@ export const APP_FLEET_SCRIPT = `
     delete input.dataset.edited;
     pending = opts;
     if (sheet.showModal) { sheet.showModal(); if (opts.input) input.focus(); }
-    else if (p) flash(opts.panel, 'This card offers choices: answer it on the dashboard.', true);
+    else if (p) flash(opts.panel, 'This card offers choices: pick one on the dashboard.', true);
     else if (window.confirm(opts.title)) run(opts, opts.input ? window.prompt('Message') || '' : '');
   }
   sheet.addEventListener('change', function (ev) {
