@@ -12,6 +12,8 @@ import { GitHubAdapter } from "../src/channels/github"
 import { detectAgentxMarker, markBody } from "../src/channels/outbound-marker"
 import { setStatusChannel, statusChannelsOf } from "../src/requests/status-settings"
 import { renderAdminPage } from "../src/daemon/ui/pages/admin"
+import { WatcherStore } from "../src/watchers/store"
+import { WatchCheckpoint, type WatcherSettings } from "../src/watchers/checkpoint"
 
 const MIN = 60_000
 const CHAT = "acme/shop:issue:7"
@@ -335,6 +337,103 @@ describe("waiting on someone", () => {
     end("t1")
     board.delegationDone(dlg("d1"), "waiting")
     expect(state("req-t1")).toBe("waiting")
+  })
+
+  describe("a hand-off that ended waiting comes back when its work ends (#1100)", () => {
+    const WATCH: WatcherSettings = {
+      enabled: true, skipChannels: [], defaultDueMinutes: 120, noBelow: 0.2, yesAt: 0.7,
+      escalateAfterMinutes: 30, retentionDays: 30, doneSignal: "result",
+    }
+    /** The delegation's watcher, closing into the board as the daemon wires it. */
+    const watcher = (over: { delegator?: boolean } = {}) => new WatchCheckpoint({
+      store: new WatcherStore(db),
+      settings: () => WATCH,
+      decide: async () => ({ probability: 0.9, callId: null, mode: "active" }),
+      hasAgent: () => over.delegator ?? false,
+      alertAgent: async () => {},
+      alertOwner: async () => {},
+      onClosed: (w, outcome) => { if (w.taskKey.startsWith("dlg-")) board.waitEnded(w.taskKey, outcome) },
+      log: () => {},
+      now: () => clock,
+    })
+    const waitingOn = async (cp: WatchCheckpoint | null, id: string, dueAt?: number) => {
+      start("t1")
+      board.delegationStarted(dlg(id))
+      if (cp) await cp.delegationStarted({ id, caller: "coder", callee: "devops", request: "deploy it" })
+      end("t1")
+      board.delegationDone(dlg(id), "waiting", dueAt)
+      if (cp) await cp.delegationEnded({ id }, "waiting", "deploy started", dueAt)
+      expect(state("req-t1")).toBe("waiting")
+    }
+
+    it("is done when the delegation's watcher is marked done", async () => {
+      const cp = watcher()
+      await waitingOn(cp, "dlg-1", clock + 60 * MIN)
+      clock += 20 * MIN
+      board.sweep()
+      expect(state("req-t1")).toBe("waiting")
+      expect(cp.markDone("watch-dlg-1", "deployed").changed).toBe(true)
+      expect(state("req-t1")).toBe("done")
+      expect(store.get("req-t1")?.pending).toBe(0)
+    })
+
+    it("is timed out when the watcher's due time passes and the owner is told", async () => {
+      const cp = watcher()
+      await waitingOn(cp, "dlg-2", clock + 60 * MIN)
+      clock += 61 * MIN
+      await cp.sweep()
+      expect(state("req-t1")).toBe("timed_out")
+    })
+
+    it("still waits while the delegating agent is chasing it, and is done if it then finishes", async () => {
+      const cp = watcher({ delegator: true })
+      await waitingOn(cp, "dlg-3", clock + 60 * MIN)
+      clock += 61 * MIN
+      await cp.sweep()
+      expect(state("req-t1")).toBe("waiting")
+      cp.markDone("watch-dlg-3")
+      expect(state("req-t1")).toBe("done")
+    })
+
+    it("with no watcher, is timed out once the due time and the grace period pass", async () => {
+      await waitingOn(null, "dlg-4", clock + 60 * MIN)
+      clock += 89 * MIN
+      board.sweep()
+      expect(state("req-t1")).toBe("waiting")
+      clock += 1 * MIN
+      board.sweep()
+      expect(state("req-t1")).toBe("timed_out")
+    })
+
+    it("with no watcher and no due time, waits the default, then is timed out", async () => {
+      settings = { ...settings, waitDefaultMinutes: 10, waitGraceMinutes: 5 }
+      await waitingOn(null, "dlg-5")
+      clock += 14 * MIN
+      board.sweep()
+      expect(state("req-t1")).toBe("waiting")
+      clock += 1 * MIN
+      board.sweep()
+      expect(state("req-t1")).toBe("timed_out")
+    })
+
+    it("leaves a hand-off that did not end waiting as before", async () => {
+      const cp = watcher()
+      start("t1")
+      board.delegationStarted(dlg("dlg-6"))
+      board.delegationStarted(dlg("dlg-7"))
+      await cp.delegationStarted({ id: "dlg-6", caller: "coder", callee: "devops", request: "deploy it" })
+      end("t1")
+      board.delegationDone(dlg("dlg-6"), "done")
+      await cp.delegationEnded({ id: "dlg-6" }, "done")
+      // Its watcher closing must not count as a second hand-back.
+      expect(store.get("req-t1")).toMatchObject({ state: "waiting", pending: 1 })
+      board.waitEnded("dlg-6", "done")
+      clock += 24 * 60 * MIN
+      board.sweep()
+      expect(store.get("req-t1")).toMatchObject({ state: "waiting", pending: 1 })
+      board.delegationDone(dlg("dlg-7"), "done")
+      expect(state("req-t1")).toBe("done")
+    })
   })
 
   it("waits for every hand-off before it is done", () => {

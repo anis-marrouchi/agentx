@@ -101,6 +101,10 @@ export interface CheckpointDeps {
   /** How an agent is told to mark the task done, with the evidence the
    *  task's rule accepts. */
   doneHint?: DoneHint
+  /** A watcher closed: marked done ("done"), or fired and the owner was
+   *  told ("timeout"). Lets a request still waiting on the task follow it
+   *  (#1100). Must not throw; errors are logged. */
+  onClosed?: (w: WatcherRecord, outcome: "done" | "timeout") => void
   log: (msg: string) => void
   now?: () => number
 }
@@ -340,7 +344,7 @@ export class WatchCheckpoint {
       // only a done signal closes the watcher; the due time still applies.
       if (waited || this.needsExplicitDone(w)) return
       // Also after an alert: a late result spares the owner the escalation.
-      this.deps.store.transition(w.id, ["open", "alerted"], "done", "ended with a result", this.now())
+      if (this.deps.store.transition(w.id, ["open", "alerted"], "done", "ended with a result", this.now())) this.closed(w, "done")
       return
     }
     await this.fire(w, e.error ? `the run ended with an error: ${clip(e.error, 160)}` : "the run ended without a result")
@@ -355,16 +359,24 @@ export class WatchCheckpoint {
     // The callee ended its run to wait (#1100): not done. The watcher
     // stays open, due when the callee said the wait ends, if it said.
     if (status === "waiting") {
+      // Already closed (marked done, or escalated) before the run ended:
+      // nothing will close it again, so say how it closed now.
+      if (w.state === "done" || w.state === "escalated") { this.closed(w, w.state === "done" ? "done" : "timeout"); return }
       if (dueAt) this.deps.store.setDue(w.id, dueAt)
       return
     }
     if (status === "done") {
       if (this.needsExplicitDone(w)) return
-      this.deps.store.transition(w.id, ["open", "alerted"], "done", "delegation answered", this.now())
+      if (this.deps.store.transition(w.id, ["open", "alerted"], "done", "delegation answered", this.now())) this.closed(w, "done")
       return
     }
     const why = { error: "the delegation failed", timeout: "the delegation did not answer in time", lost: "the delegation was lost in a restart" }[status]
     await this.fire(w, `${why}${text ? `: ${clip(text, 160)}` : ""}`)
+  }
+
+  /** Tell onClosed, never throwing into the watcher's own path. */
+  private closed(w: WatcherRecord, outcome: "done" | "timeout"): void {
+    try { this.deps.onClosed?.(w, outcome) } catch (e: any) { this.deps.log(`[watchers] ${w.id}: closed hook: ${e?.message ?? e}`) }
   }
 
   /** The evidence rule for a watcher's task type, if any. */
@@ -398,6 +410,7 @@ export class WatchCheckpoint {
     // A plain string reads as before: the watcher's reason is that string.
     const reason = typeof evidence === "string" && evidence.trim() ? evidence.trim() : ev ? describeEvidence(ev) : "marked done"
     const changed = this.deps.store.transition(id, ["open", "alerted", "escalated"], "done", reason, this.now(), ev)
+    if (changed) this.closed(w, "done")
     return { changed }
   }
 
@@ -493,6 +506,7 @@ export class WatchCheckpoint {
 
   private async escalate(w: WatcherRecord, reason: string): Promise<void> {
     if (!this.deps.store.transition(w.id, ["open", "alerted"], "escalated", reason, this.now())) return
+    this.closed(w, "timeout")
     try {
       await this.deps.alertOwner("A task is not finished", ownerAlertText(w, reason), w)
       this.deps.log(`[watchers] ${w.id}: told the owner (${reason})`)
