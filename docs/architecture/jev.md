@@ -179,5 +179,5 @@ A wrong choice in a future active mode would stop an agent in the middle of its 
 
 - **The seat doesn't appear in `decisions stats`:** check that `decisions.enabled` is `true`, that the seat's name is spelled exactly as in the table, that the daemon was restarted, and that the feature that uses the seat actually ran.
 - **Every call fails:** run `agentx decisions backends`. A missing or wrong `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is the usual cause.
-- **`agentx point` picks a control on the page when you meant the browser's:** say so in the request, for example `agentx point "the browser's reload button"`. If it still misses, run with `--json` and check that the control is listed with `"inBrowser": true`.
+- **`agentx point` picks a control on the page when you meant the browser's:** say so in the request, for example `agentx point "the browser's reload button"`. If it still misses, run with `--json`: the browser's controls in `ranked` have a `shown` name starting with "outside the page:", and the chosen one has `"inBrowser": true`.
 - **Behavior changed in a way you didn't want:** set the seat back to `shadow` or `off` and restart the daemon. In shadow mode the existing behavior is authoritative again.

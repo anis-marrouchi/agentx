@@ -102,14 +102,6 @@ function isCanvas(e: RawElement, page: RawElement[]): boolean {
  *  groupings, not controls; their children are offered instead. */
 const BROWSER_NOISE = /^AX(Toolbar|TabGroup)$/
 
-/**
- * The set handed to the model: interesting roles only, visible, capped,
- * with a browser's own controls marked as such.
- *
- * Unlabelled controls are kept and described by subrole or role — window
- * buttons carry no label on macOS, and dropping everything unnamed
- * removes the controls people most often ask for.
- */
 /** Words of the request worth matching against labels. */
 function requestWords(request: string): string[] {
   const filler = new Set(["the", "a", "an", "of", "on", "in", "to", "at", "for", "and", "or", "this", "that", "my", "button", "icon"])
@@ -130,6 +122,14 @@ export interface CandidateOptions {
   request?: string
 }
 
+/**
+ * The set handed to the model: interesting roles only, visible, capped,
+ * with a browser's own controls marked as such.
+ *
+ * Unlabelled controls are kept and described by subrole or role — window
+ * buttons carry no label on macOS, and dropping everything unnamed
+ * removes the controls people most often ask for.
+ */
 export function buildCandidates(elements: RawElement[], max = 60, opts: CandidateOptions = {}): UICandidate[] {
   // Rank before capping.
   //
@@ -164,13 +164,14 @@ export function buildCandidates(elements: RawElement[], max = 60, opts: Candidat
     .map(({ e }) => e)
   // Labels sharing the request's words survive the cap first: on a long
   // settings page "Restart when idle" sat past it behind forty other
-  // buttons (#1093). Only who survives changes; the survivors keep their
+  // buttons (#1093). A window button is matched by its subrole name too,
+  // since it has no label. Only who survives changes; the survivors keep their
   // tier order, so when nothing is cut the model sees the same list.
   const words = requestWords(opts.request ?? "")
   const capped = (ranked: RawElement[], n: number) => {
     if (ranked.length <= n || !words.length) return ranked.slice(0, n)
     const keep = new Set(ranked
-      .map((e, i) => ({ e, i, hits: overlap(`${e.label} ${e.value ?? ""}`, words) }))
+      .map((e, i) => ({ e, i, hits: overlap(`${subroleName(e.subrole)} ${e.label} ${e.value ?? ""}`, words) }))
       .sort((a, b) => b.hits - a.hits || a.i - b.i)
       .slice(0, n)
       .map(({ e }) => e.id))

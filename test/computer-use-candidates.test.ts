@@ -269,12 +269,31 @@ describe("buildCandidates — reaching more of the screen (#1092)", () => {
   })
 
   it("changes only who survives the cap, not the order shown", () => {
-    // Inputs still come before buttons, whatever the request says.
+    // The matching button sits past the cap; once rescued it still comes
+    // after the input, as its tier says.
     const elements = [
-      el({ id: 1, role: "AXButton", label: "Search options" }),
-      el({ id: 2, role: "AXTextField", label: "Query" }),
+      el({ id: 1, role: "AXTextField", label: "Query" }),
+      ...Array.from({ length: 20 }, (_, i) => el({ id: 10 + i, role: "AXButton", label: `option ${i}` })),
+      el({ id: 99, role: "AXButton", label: "Search options" }),
     ]
-    expect(buildCandidates(elements, 10, { request: "search options" }).map((c) => c.label)).toEqual(["Query", "Search options"])
+    const labels = buildCandidates(elements, 5, { request: "search options" }).map((c) => c.label)
+    expect(labels).toHaveLength(5)
+    expect(labels[0]).toBe("Query")
+    expect(labels[labels.length - 1]).toBe("Search options")
+  })
+
+  it("rescues an unlabelled window button by its subrole name", () => {
+    const elements = [
+      el({ id: 0, role: "AXWindow" }),
+      ...Array.from({ length: 30 }, (_, i) => el({ id: 10 + i, role: "AXButton", label: `tool ${i}`, parent: 0 })),
+      el({ id: 99, role: "AXButton", label: "", subrole: "AXCloseButton", parent: 0 }),
+      el({ id: 4, role: "AXWebArea", parent: 0 }),
+      el({ id: 5, role: "AXLink", label: "Home", parent: 4 }),
+      el({ id: 6, role: "AXLink", label: "News", parent: 4 }),
+    ]
+    const out = buildCandidates(elements, 40, { request: "the red traffic light" })
+    expect(out.filter((c) => c.area === "browser")).toHaveLength(10)
+    expect(out.find((c) => c.id === 99)?.shown).toBe("outside the page: close window (red traffic light)")
   })
 })
 
