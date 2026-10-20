@@ -56,6 +56,10 @@ export interface RequestRecord {
   createdAt: number
   /** Last time anything happened under this request. */
   updatedAt: number
+  /** Last time its state changed (#400): what the Desk shows as "changed".
+   *  A run starting or ending is activity, not a change. Null on rows from
+   *  before the column. */
+  stateChangedAt: number | null
   /** Why it needs attention, in words. */
   attentionReason: string | null
   /** When the owner was told it needs attention. Told once. */
@@ -142,6 +146,7 @@ export function ensureRequestTables(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_request_links_request ON request_links(request_id);
   `)
   ensureColumns(db, "requests", PERSON_COLUMNS)
+  ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -168,7 +173,7 @@ export function hasRequestTables(db: Database.Database): boolean {
 function toRecord(r: any): RequestRecord {
   return {
     id: r.id, state: r.state, channel: r.channel, chatId: r.chat_id, sender: r.sender ?? null, person: r.person ?? null,
-    agentId: r.agent_id, text: r.text, createdAt: r.created_at, updatedAt: r.updated_at,
+    agentId: r.agent_id, text: r.text, createdAt: r.created_at, updatedAt: r.updated_at, stateChangedAt: r.state_changed_at ?? null,
     attentionReason: r.attention_reason ?? null, notifiedAt: r.notified_at ?? null,
     question: r.question ?? null, closedAt: r.closed_at ?? null,
     evidence: r.evidence ?? null, closeReason: r.close_reason ?? null, ownerNote: r.owner_note ?? null, noteSaid: !!r.note_said,
@@ -182,6 +187,10 @@ function toRecord(r: any): RequestRecord {
 }
 
 const placeholders = (n: number) => Array(n).fill("?").join(",")
+
+/** SET clause for a statement that writes `state`: the change time moves
+ *  only when the state is really different. Takes the new state, then now. */
+const STATE_CHANGED = "state_changed_at = CASE WHEN state IS ? THEN state_changed_at ELSE ? END"
 
 export class RequestStore {
   constructor(private db: Database.Database) {
@@ -197,9 +206,9 @@ export class RequestStore {
     // Owed to whoever asked: the known person, else the sender (#1039).
     const owedTo = input.person ?? input.sender ?? null
     this.db.prepare(
-      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, person, agent_id, text, created_at, updated_at, owed_to)
-       VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(input.id, input.channel, input.chatId, input.sender ?? null, input.person ?? null, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, owedTo)
+      `INSERT OR IGNORE INTO requests (id, state, channel, chat_id, sender, person, agent_id, text, created_at, updated_at, state_changed_at, owed_to)
+       VALUES (?, 'candidate', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(input.id, input.channel, input.chatId, input.sender ?? null, input.person ?? null, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, owedTo)
     this.link(input.id, "run", input.runId, input.now)
   }
 
@@ -210,10 +219,10 @@ export class RequestStore {
     dueAt?: number | null; closeWhen?: CloseWhen | null; home?: RequestHome | null; now: number
   }): void {
     this.db.prepare(
-      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, owed_to, promise, due_at, close_when, home_kind, home_link)
-       VALUES (?, 'in_progress', ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, state_changed_at, owed_to, promise, due_at, close_when, home_kind, home_link)
+       VALUES (?, 'in_progress', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
     ).run(
-      input.id, input.channel, input.chatId, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.owedTo,
+      input.id, input.channel, input.chatId, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, input.owedTo,
       input.dueAt ?? null, input.closeWhen ? JSON.stringify(input.closeWhen) : null,
       input.home?.kind ?? null, input.home ? input.home.link.slice(0, HOME_LINK_MAX) : null,
     )
@@ -260,10 +269,10 @@ export class RequestStore {
   closeVerified(id: string, evidence: string, now: number): boolean {
     const text = evidence.trim().slice(0, REASON_MAX) || "the check was met"
     return this.db.prepare(
-      `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, evidence = ?, close_reason = NULL,
+      `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(now, now, text, now, now, text, id, ...CLOSED_STATES).changes > 0
+    ).run(now, now, now, text, now, now, text, id, ...CLOSED_STATES).changes > 0
   }
 
   /** Open loops with a checker whose last run is older than `before`
@@ -334,17 +343,17 @@ export class RequestStore {
    *  attention" so a later failure is raised again. Closed stays closed. */
   progress(id: string, now: number, state: "in_progress" | "waiting_other" = "in_progress"): void {
     this.db.prepare(
-      `UPDATE requests SET state = ?, updated_at = ?, attention_reason = NULL, notified_at = NULL, question = NULL
+      `UPDATE requests SET ${STATE_CHANGED}, state = ?, updated_at = ?, attention_reason = NULL, notified_at = NULL, question = NULL
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(state, now, id, ...CLOSED_STATES)
+    ).run(state, now, state, now, id, ...CLOSED_STATES)
   }
 
   /** The next step is the owner's answer. */
   waitOnOwner(id: string, question: string, now: number): void {
     this.db.prepare(
-      `UPDATE requests SET state = 'waiting_owner', updated_at = ?, question = ?, attention_reason = NULL, notified_at = NULL
+      `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, attention_reason = NULL, notified_at = NULL
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(now, question.slice(0, TEXT_MAX), id, ...CLOSED_STATES)
+    ).run("waiting_owner", now, now, question.slice(0, TEXT_MAX), id, ...CLOSED_STATES)
   }
 
   /** The work failed, timed out, was cut off, or went quiet. A request
@@ -352,9 +361,9 @@ export class RequestStore {
    *  raised a second time. */
   needsAttention(id: string, reason: string, now: number): boolean {
     const res = this.db.prepare(
-      `UPDATE requests SET state = 'needs_attention', updated_at = ?, attention_reason = ?, notified_at = NULL
+      `UPDATE requests SET state = 'needs_attention', updated_at = ?, state_changed_at = ?, attention_reason = ?, notified_at = NULL
        WHERE id = ? AND state NOT IN ('needs_attention', ${placeholders(CLOSED_STATES.length)})`,
-    ).run(now, reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX), id, ...CLOSED_STATES)
+    ).run(now, now, reason.replace(/\s+/g, " ").trim().slice(0, REASON_MAX), id, ...CLOSED_STATES)
     return res.changes > 0
   }
 
@@ -363,9 +372,9 @@ export class RequestStore {
     const text = detail.trim()
     if (!text) throw new Error(state === "done" ? "a finished request needs a link to the evidence" : `a ${state} request needs a reason`)
     const res = this.db.prepare(
-      `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, evidence = ?, close_reason = ?
+      `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(state, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), id, ...CLOSED_STATES)
+    ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), id, ...CLOSED_STATES)
     return res.changes > 0
   }
 
@@ -450,9 +459,9 @@ export class RequestStore {
    *  is to be told at the next check. */
   requestPickup(id: string, now: number): boolean {
     return this.db.prepare(
-      `UPDATE requests SET state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?
+      `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?
        WHERE id = ? AND state = 'needs_attention'`,
-    ).run(now, now, id).changes > 0
+    ).run(now, now, now, id).changes > 0
   }
 
   /** The owner replied, or handed it to an agent (the same or another):
@@ -461,10 +470,10 @@ export class RequestStore {
    *  asked of is kept from the first time: channel and chat stay its own. */
   handOff(id: string, agentId: string, note: string, now: number): boolean {
     return this.db.prepare(
-      `UPDATE requests SET agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
+      `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
          question = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)
        WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
-    ).run(agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
+    ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
   }
 
   /** This note of the owner is given to the agent in a pick-up, or (false)

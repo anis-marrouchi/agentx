@@ -12,6 +12,7 @@ import type { LinkKind, RequestRecord } from "@/requests/store"
 //           request whose agent asked the owner a question
 //   agent   an open request with proof of work: one of its runs is live
 //           now, or something happened under it inside the quiet limit
+//           (its card's "changed" time is still its last change of state)
 //   quiet   an open request without that proof
 //   done    requests and decision cards that ended in the last days
 //
@@ -181,7 +182,9 @@ function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<stri
     title: summarize(q.text, DESK_TITLE_MAX),
     agent: q.agentId,
     askedAt: iso(q.createdAt),
-    changedAt: iso(q.updatedAt),
+    // When its state last changed: a run starting or ending is not news.
+    // Rows from before the column fall back to the last activity.
+    changedAt: iso(q.stateChangedAt ?? q.updatedAt),
   }
   switch (q.state) {
     case "candidate":
@@ -195,6 +198,7 @@ function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<stri
     case "in_progress":
     case "waiting_other": {
       const live = links.some((l) => l.kind === "run" && input.liveRuns.has(l.ref))
+      // Proof of work is any activity, not only a change of state.
       const fresh = input.now - q.updatedAt < (input.quietHours ?? DESK_QUIET_HOURS) * HOUR
       // A written word starts a turn of its own: not beside a run that is live.
       return { ...base, column: live || fresh ? "agent" : "quiet", ...(live ? { live } : {}), can: { answer: false, later: false, reply: !live } }
@@ -204,7 +208,7 @@ function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<stri
       return {
         ...base,
         column: "done",
-        changedAt: iso(q.closedAt ?? q.updatedAt),
+        changedAt: iso(q.closedAt ?? q.stateChangedAt ?? q.updatedAt),
         outcome: CLOSED_WORD[q.state] ?? q.state,
         ...(detail ? { evidence: detail } : {}),
         can: { answer: false, later: false, reply: false },
