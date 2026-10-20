@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { DelegationManager, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
+import { DelegationManager, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, contextWithSendDepth, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
 
 // A person on a chat channel asked "front"; front delegates to "worker".
 const HUMAN_TURN: CallerTurn = {
@@ -635,7 +635,7 @@ describe("an agent's send calls its asker back (#1100)", () => {
   it("keeps the asker's chat for a delegation after it ended", async () => {
     const h = harness()
     const { taskId } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
-    expect(h.mgr.originFor(taskId)).toEqual({ caller: "planner", origin: { channel: "mcp", chatId: "mcp:lead:planner:work-1" } })
+    expect(h.mgr.originFor(taskId)).toEqual({ caller: "planner", origin: { channel: "mcp", chatId: "mcp:lead:planner:work-1" }, depth: 0 })
     h.local.resolve({ content: "ok" })
     await flush()
     expect(h.mgr.originFor(taskId)?.origin.chatId).toBe("mcp:lead:planner:work-1")
@@ -647,6 +647,25 @@ describe("an agent's send calls its asker back (#1100)", () => {
     expect(delegationIdOfChat("a2a:a:b")).toBeNull()
     expect(callbackDepthOf({ delegation: { depth: 2 } })).toBe(2)
     expect(callbackDepthOf({})).toBe(0)
+  })
+
+  it("keeps the asking turn's hop count for a delegation, running or ended", async () => {
+    const h = harness()
+    const deep: CallerTurn = { ...AGENT_TURN, context: { ...AGENT_TURN.context, delegation: { taskId: "dlg-x", from: "y", status: "done", depth: 2 } } }
+    const { taskId } = h.mgr.start({ caller: deep, callee: "builder", message: "x", kind: "send" })
+    expect(h.mgr.originFor(taskId)?.depth).toBe(2)
+    h.local.resolve({ content: "ok" })
+    await flush()
+    expect(h.mgr.originFor(taskId)?.depth).toBe(2)
+  })
+
+  it("moves a peer's top-level hop count into the run's context", () => {
+    expect(contextWithSendDepth({ message: "x", sendDepth: 3 })).toEqual({ sendDepth: 3 })
+    expect(contextWithSendDepth({ context: { channel: "a2a", chatId: "c" }, sendDepth: 2 })).toEqual({ channel: "a2a", chatId: "c", sendDepth: 2 })
+    // The larger count wins; junk is ignored.
+    const ctx = { channel: "a2a", sendDepth: 4 }
+    expect(contextWithSendDepth({ context: ctx, sendDepth: 1 })).toBe(ctx)
+    expect(contextWithSendDepth({ sendDepth: "9" })).toBeUndefined()
   })
 })
 

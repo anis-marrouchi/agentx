@@ -19,7 +19,7 @@
 
 import { resolve } from "path"
 import type { IncomingMessage as HttpRequest } from "http"
-import { DelegationManager, type CallerTurn, type DelegationDeps } from "@/a2a/delegation"
+import { DelegationManager, type CallerTurn, type DelegationDeps, type DelegationOrigin } from "@/a2a/delegation"
 import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
 import type { SessionStore } from "@/agents/sessions"
@@ -28,6 +28,7 @@ import type { MessageRouter } from "@/channels/router"
 import type { DaemonConfig } from "./config"
 import { isLoopback } from "./mesh-auth"
 import { getEventBus } from "@/events/bus"
+import { WATCHER_CHANNEL } from "@/watchers/checkpoint"
 
 /** Channels with no adapter or thread of their own: a callback reply
  *  reaches the person as a push notification. The phone app ("app") is not
@@ -317,6 +318,33 @@ export function replyBody(taskId: string, caller: string): Record<string, unknow
     agent: caller,
     note: `Passed to ${caller} in the conversation it asked you from (task ${taskId}). Do not send it again.`,
   }
+}
+
+type AskedFrom = { caller: string; origin: DelegationOrigin; depth: number }
+
+/** The chat a watcher alert to `agentId` about task `taskKey` belongs in
+ *  (#1100): the one it asked from, when the task is its own delegation
+ *  and that chat is an agent's own (a2a or mcp). In a person's chat a
+ *  queued alert's answer would be posted to the person. */
+export function alertChatOf(
+  agentId: string,
+  taskKey: string,
+  originFor: (id: string) => AskedFrom | null,
+): AskedFrom | null {
+  const found = taskKey.startsWith("dlg-") ? originFor(taskKey) : null
+  if (!found || found.caller !== agentId) return null
+  return found.origin.channel === "a2a" || found.origin.channel === "mcp" ? found : null
+}
+
+/** The context a watcher alert runs in. `free` says the asking chat's turn
+ *  ended within the wait: if not, the alert goes to the watcher's own chat
+ *  rather than run beside that turn. Either way it counts one callback hop
+ *  past the asking turn, so its sends stay under MAX_SEND_DEPTH. */
+export function alertContext(asked: AskedFrom | null, watcherId: string, free: boolean): Record<string, unknown> {
+  const hops = asked ? { sendDepth: asked.depth + 1 } : {}
+  return asked && free
+    ? { ...asked.origin, sender: "system:watcher", ...hops }
+    : { channel: WATCHER_CHANNEL, chatId: watcherId, sender: "watcher", ...hops }
 }
 
 export interface DelegationWiring {

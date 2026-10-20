@@ -187,6 +187,16 @@ export function callbackDepthOf(ctx: Record<string, unknown> | undefined | null)
   return Math.max(n((ctx?.delegation as { depth?: unknown } | undefined)?.depth), n(ctx?.sendDepth))
 }
 
+/** A /task body whose top-level `sendDepth` (a mesh peer's plain
+ *  /send/agent, #1100) joins its `context`, where callbackDepthOf reads
+ *  it. The larger count wins. Returns the context to use, or the body's own. */
+export function contextWithSendDepth(body: Record<string, unknown>): Record<string, unknown> | undefined {
+  const ctx = body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : undefined
+  const top = callbackDepthOf({ sendDepth: body.sendDepth })
+  if (!top || callbackDepthOf(ctx) >= top) return ctx
+  return { ...(ctx ?? {}), sendDepth: top }
+}
+
 /** The delegation a callee's chat belongs to (`a2a:<caller>:<callee>:<dlg-id>`). */
 export function delegationIdOfChat(chatId: string | undefined | null): string | null {
   const m = typeof chatId === "string" ? /^a2a:[^:]+:[^:]+:(dlg-[A-Za-z0-9-]+)$/.exec(chatId) : null
@@ -294,7 +304,7 @@ export class DelegationManager {
   /** Finished task id → how it ended, oldest first. */
   private doneIds = new Map<string, DelegationStatus>()
   private appendsSinceCompact = 0
-  private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number; origin?: DelegationOrigin }> = []
+  private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number; origin?: DelegationOrigin; depth?: number }> = []
   /** One callback at a time per caller chat, in completion order. */
   private chains = new Map<string, Promise<void>>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
@@ -414,7 +424,7 @@ export class DelegationManager {
       ...(home ? { home } : {}),
     }
     this.pendingById.set(id, record)
-    this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin })
+    this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin, ...(depth ? { depth } : {}) })
     this.append({ type: "start", ts: record.startedAt, ...record })
     try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
 
@@ -559,7 +569,7 @@ export class DelegationManager {
     const relays = this.requeueRelays()
     const lost = [...this.pendingById.values()]
     for (const rec of lost) {
-      this.remember({ id: rec.id, caller: rec.caller, callee: rec.callee, peer: rec.peer, status: "running", startedAt: rec.startedAt, origin: rec.origin })
+      this.remember({ id: rec.id, caller: rec.caller, callee: rec.callee, peer: rec.peer, status: "running", startedAt: rec.startedAt, origin: rec.origin, ...(rec.depth ? { depth: rec.depth } : {}) })
     }
     await Promise.all(lost.map((rec) => this.complete(rec.id, {
       status: "lost",
@@ -622,12 +632,13 @@ export class DelegationManager {
   }
 
   /** The asking agent and its chat for a delegation, running or recent:
-   *  where news about that work belongs (#1100). */
-  originFor(id: string): { caller: string; origin: DelegationOrigin } | null {
+   *  where news about that work belongs (#1100). `depth` is the asking
+   *  turn's callback hop count (MAX_SEND_DEPTH). */
+  originFor(id: string): { caller: string; origin: DelegationOrigin; depth: number } | null {
     const rec = this.pendingById.get(id)
-    if (rec) return { caller: rec.caller, origin: rec.origin }
+    if (rec) return { caller: rec.caller, origin: rec.origin, depth: rec.depth ?? 0 }
     const r = this.recent.find((e) => e.id === id)
-    return r?.origin ? { caller: r.caller, origin: r.origin } : null
+    return r?.origin ? { caller: r.caller, origin: r.origin, depth: r.depth ?? 0 } : null
   }
 
   /** Stop timers (daemon shutdown, tests). Pending work stays in the log. */
