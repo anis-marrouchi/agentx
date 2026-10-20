@@ -36,8 +36,17 @@ import {
 // Every entry point swallows its own errors: watching a task must never
 // break the task.
 
-/** Channel of the turn that tells a delegating agent its watcher fired. */
+/** Channel of the turn that tells a delegating agent its watcher fired,
+ *  when the chat it delegated from is not known. */
 export const WATCHER_CHANNEL = "watchers"
+
+/** How every alert to a delegating agent starts (agentAlertText). */
+export const WATCHER_ALERT_MARKER = "[agentx:watcher "
+
+/** Is this turn message a watcher's alert? */
+export function isWatcherAlert(message: string | null | undefined): boolean {
+  return typeof message === "string" && message.startsWith(WATCHER_ALERT_MARKER)
+}
 
 export interface WatcherSettings {
   enabled: boolean
@@ -131,6 +140,8 @@ export function taskStartOf(e: AgentXEvents["task:started"], settings: Pick<Watc
   if (e.channel === WATCHER_CHANNEL || settings.skipChannels.includes(e.channel)) return null
   // The relay of a delegation's result is the end of that delegation.
   if (isDelegationRelay(e.fullMessage ?? e.messagePreview)) return null
+  // A watcher's own alert, told in the delegator's chat (#1100).
+  if (isWatcherAlert(e.fullMessage ?? e.messagePreview)) return null
   const message = e.requestText || e.fullMessage || e.messagePreview || ""
   const base = {
     traceId, agentId: e.agentId, channel: e.channel, message, dueAt: e.dueAt ?? null,
@@ -476,7 +487,7 @@ const apiDoneHint: DoneHint = (w, rule) => `POST /watchers/${w.id}/done on this 
 
 export function agentAlertText(w: WatcherRecord, reason: string, doneHint: DoneHint = apiDoneHint, rule: EvidenceRule | null = null): string {
   return [
-    `[agentx:watcher id=${w.id} task=${w.taskKey}]`,
+    `${WATCHER_ALERT_MARKER}id=${w.id} task=${w.taskKey}]`,
     `A task you handed to ${w.agentId} is not finished. Why: ${reason}.`,
     "",
     `The task: ${w.summary}`,

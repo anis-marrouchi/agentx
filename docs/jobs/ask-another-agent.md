@@ -40,6 +40,7 @@ Both settings live under `mesh.delegation` in `agentx.json`. They apply to helpe
 | `mesh.delegation.asyncWhenHuman` | `true` | Turn it off (`false`) to make every agent wait for its helper, as in older versions. |
 | `mesh.delegation.timeoutMinutes` | `30` | How long a helper has to answer. After this, your agent is told it timed out, and a helper on this machine is stopped. |
 | `mesh.delegation.requeueRelayOnRestart` | `true` | If AgentX restarts while your agent is passing a helper's answer on to you, your agent tries once more after the restart. Turn it off (`false`) to skip that second try. |
+| `mesh.delegation.callbackSends` | `true` | When one agent sends another a message and no person is waiting, the answer, a failure or a timeout still comes back to the sending agent, in the chat it sent from. Turn it off (`false`) to only queue such messages, as in older versions. |
 
 To change one:
 
@@ -65,13 +66,29 @@ Add `"async": false` to the request body to wait for the answer anyway. Add `"as
 
 ### Sending with `agentx_send_agent`
 
-`agentx_send_agent` and `POST /send/agent` never wait for the other agent to finish. Even when no person started the conversation (a schedule, a workflow), the daemon answers with status `202` as soon as the message is queued:
+`agentx_send_agent` and `POST /send/agent` never wait for the other agent to finish. The daemon answers with status `202` at once.
+
+When no person started the conversation (another agent, a schedule, a workflow) and the daemon can tell which turn is sending, the answer still comes back to the sender. It arrives as a new message in the same chat the sender asked from, where its work lives. A failure or a timeout comes back the same way. The message then asks the sender to choose: resume the work, split it into smaller asks, or drop it and tell whoever waits on it. The body looks like this:
+
+```json
+{ "accepted": true, "mode": "callback", "taskId": "dlg-…", "agent": "helper", "note": "Sent to helper (task dlg-…). …" }
+```
+
+A send to an agent on this machine may run as long as that agent's own `maxExecutionMinutes`, plus up to 25 minutes waiting for a free slot. The 30-minute `mesh.delegation.timeoutMinutes` does not cut it off. A send to an agent on another machine still uses `mesh.delegation.timeoutMinutes`.
+
+If the other agent writes back to the sender with `agentx_send_agent` while it works, that message goes into the sender's chat for that work too. It does not open a new chat. When the other agent's run ends, the sender is still told how it ended, because what it wrote may only have been a progress note.
+
+The callback turn is the sending agent's own work. Nothing from it is sent to a person. A send made from a person's chat (for example, while passing a helper's answer on to them) is not called back this way; it is queued as below.
+
+A callback can lead to a new send, which calls back in turn. The count of such hops travels with the work in both directions. After four, sends go out without a callback, so two agents cannot keep calling each other back.
+
+Otherwise (the daemon cannot tell which turn is sending, the send comes from a person's chat or is past four hops, or `mesh.delegation.callbackSends` is `false`), the message is queued and its answer is not returned to the sender:
 
 ```json
 { "accepted": true, "status": "queued", "taskId": "snd-…", "agent": "helper", "note": "Queued for helper (task snd-…). …" }
 ```
 
-The other agent works on the message in its own turn; its answer is not returned to the sender. Add `"async": false` to the request body to wait for the answer, as in older versions.
+Add `"async": false` to the request body to wait for the answer, as in older versions.
 
 Sending the same message from the same agent to the same agent again within 10 minutes is treated as a retry. The daemon does not deliver it twice; it answers with the first task id and `"duplicate": true`.
 

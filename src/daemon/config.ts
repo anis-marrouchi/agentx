@@ -975,6 +975,11 @@ const meshConfigSchema = z.object({
      *  the person (#846): run that turn once more after the next start,
      *  and if it fails again, tell the person and note the open request. */
     requeueRelayOnRestart: z.boolean().default(true),
+    /** An agent's send_agent from a turn no person waits on (#1100): the
+     *  answer, failure or timeout comes back as a turn in the asking
+     *  agent's own chat, and a message the callee writes back to it lands
+     *  there too. Off: such a send is queued and its answer only logged. */
+    callbackSends: z.boolean().default(true),
   }).default({}),
 })
 
