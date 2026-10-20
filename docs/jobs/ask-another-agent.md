@@ -107,6 +107,12 @@ When a follow-up about the same work goes to an agent as a new message, the agen
 
 Without `home`, each message starts its own session, as before.
 
+### When the helper's run ends before the work does
+
+Sometimes a helper ends its run to wait: for a build, a deploy, a monitor, or another agent. Its reply then is not the end of the work. The helper says so with the `agentx_waiting` tool before it ends the run, giving what it waits for (`on`) and, if it knows, when the wait should be over (`due`, an ISO time). The answer that comes back to the asking agent then says the work is **not finished** and what it waits for, with status `waiting`, instead of "finished". An open request stays "waiting on another agent", and a [task watcher](/automations/task-watchers) stays open until the work is marked done, due at that time. A request status comment that reads "waiting" turns done when that watcher is marked done, and timed out when it fires and the owner is told; with no watcher, it reads timed out once the due time (or `watchers.defaultDueMinutes` from the end of the run, if none was given) plus `watchers.escalateAfterMinutes` has passed.
+
+The tool works only from inside the helper's own run (`POST /runs/waiting` on its own machine).
+
 A `/mesh/task` request whose own `context` names a chat (`channel` and `chatId`) keeps its older behaviour. With `"async": true`, the helper's plain answer is posted to that chat, and no callback turn runs.
 
 Some requests are refused straight away with status `409`:

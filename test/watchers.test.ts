@@ -304,6 +304,41 @@ describe("fire", () => {
     expect(agentAlerts).toHaveLength(0)
   })
 
+  it("stays open, due when the wait ends, for a run that said it ends waiting (#1100)", async () => {
+    await cp.check(task({ delegator: "coo", kind: "delegation" }))
+    const due = clock + 90 * MIN
+    expect(cp.markWaiting("trace-1", due)).toBe(store.byKey("trace-1")?.id)
+    await cp.taskEnded({ taskId: "trace-1", agentId: "social", channel: "telegram", chatId: "x", durationMs: 5, finalResponse: "Build started; waiting for it.", at: "" } as any)
+    expect(store.byKey("trace-1")?.state).toBe("open")
+    expect(store.byKey("trace-1")?.dueAt).toBe(due)
+    expect(cp.markWaiting("trace-unknown")).toBeNull()
+
+    await cp.delegationStarted({ id: "dlg-9", caller: "coo", callee: "social", request: "build it" })
+    await cp.delegationEnded({ id: "dlg-9" }, "waiting", "started", due)
+    expect(store.byKey("dlg-9")?.state).toBe("open")
+    expect(store.byKey("dlg-9")?.dueAt).toBe(due)
+    expect(agentAlerts).toHaveLength(0)
+  })
+
+  it("says how a watcher closed, so a request waiting on it can follow (#1100)", async () => {
+    const closed: string[] = []
+    const c = new WatchCheckpoint(deps({ onClosed: (w, outcome) => { closed.push(`${w.taskKey}:${outcome}`) } }))
+    await c.delegationStarted({ id: "dlg-a", caller: "coo", callee: "social", request: "build it" })
+    await c.delegationEnded({ id: "dlg-a" }, "waiting", "started", clock + 60 * MIN)
+    expect(closed).toEqual([])
+    c.markDone("watch-dlg-a", "built")
+    await c.delegationStarted({ id: "dlg-b", caller: "nobody", callee: "social", request: "build it" })
+    await c.delegationEnded({ id: "dlg-b" }, "waiting", "started", clock + 60 * MIN)
+    clock += 61 * MIN
+    await c.sweep()
+    await c.delegationStarted({ id: "dlg-c", caller: "coo", callee: "social", request: "post it" })
+    await c.delegationEnded({ id: "dlg-c" }, "done")
+    expect(closed).toEqual(["dlg-a:done", "dlg-b:timeout", "dlg-c:done"])
+    // Closed already when the run ends waiting: told at once.
+    await c.delegationEnded({ id: "dlg-a" }, "waiting", "started")
+    expect(closed.at(-1)).toBe("dlg-a:done")
+  })
+
   it("is done when the run ends with a result", async () => {
     await cp.check(task({ delegator: "coo", kind: "delegation" }))
     await cp.taskEnded({ taskId: "trace-1", agentId: "social", channel: "telegram", chatId: "x", durationMs: 5, finalResponse: "Published: https://example.com/v/1", at: "" } as any)

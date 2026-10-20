@@ -641,6 +641,21 @@ const TOOLS = [
     },
   },
   {
+    name: "agentx_waiting",
+    description:
+      "Say that this run ends to WAIT for something before the work is done: a build, a deploy, a monitor, another agent's answer, a time. " +
+      "Call it before you end the run instead of reporting the work as done. The agent that asked you is then told the work is waiting for that, not finished; " +
+      "its watcher stays open, due when you say the wait should end. When the wait is over, finish the work and report it with its proof.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {
+        on: { type: "string", description: "What the work waits for, in plain words (e.g. 'the release build to finish', 'the reviewer's verdict')." },
+        due: { type: "string", description: "Optional. When the wait should be over: an ISO time (2030-01-31T17:00:00Z). Past it, the asker is told." },
+      },
+      required: ["on"],
+    },
+  },
+  {
     name: "agentx_send_contact",
     description:
       "Send a message to a HUMAN CONTACT by name. Resolves through .agentx/contacts.json (id → exact alias → fuzzy substring). Refuses fuzzy matches without confirmed:true so the agent must ask the user to disambiguate before sending. Refuses when the name also matches a registered agent (use agentx_send_agent for those). Use this when the target is a person, not a bot.",
@@ -1709,6 +1724,21 @@ async function handleToolCall(
       }
       const { formatEventLine } = await import("@/events/subscriptions")
       return { content: [{ type: "text", text: renderEventsAnswer(agentId, data, formatEventLine) }] }
+    }
+
+    case "agentx_waiting": {
+      const on = typeof args.on === "string" ? args.on.trim() : ""
+      if (!on) return { content: [{ type: "text", text: "Error: say what the work waits for (on)." }] }
+      const due = typeof args.due === "string" && args.due.trim() ? args.due.trim() : undefined
+      const res = await daemonFetch(`${daemonUrl()}/runs/waiting`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...callerHeaders() },
+        body: JSON.stringify({ on, ...(due ? { due } : {}), senderAgentId: process.env.AGENTX_AGENT_ID, ...callerFields() }),
+        signal: AbortSignal.timeout(10_000),
+      }).catch((e: any) => ({ ok: false, status: 0, json: async () => ({ error: e?.message ?? String(e) }) }) as any)
+      const data = await res.json().catch(() => ({})) as any
+      if (!res.ok) return { content: [{ type: "text", text: `Error: ${data.error || `HTTP ${res.status}`}` }] }
+      return { content: [{ type: "text", text: String(data.note ?? "Recorded.") }] }
     }
 
     case "agentx_signal": {

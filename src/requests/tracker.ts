@@ -225,7 +225,7 @@ export class RequestTracker {
     })
   }
 
-  delegationDone(d: DelegationSignal, status: "done" | "error" | "timeout" | "lost", text: string): void {
+  delegationDone(d: DelegationSignal, status: "done" | "waiting" | "error" | "timeout" | "lost", text: string): void {
     this.guard("delegation end", () => {
       const req = this.store.byLink("delegation", d.id)
       if (!req) return
@@ -234,6 +234,12 @@ export class RequestTracker {
       if (status === "done") {
         // The answer is back with the asking agent. Still open: closing is explicit.
         this.store.progress(req.id, now)
+        return
+      }
+      if (status === "waiting") {
+        // The callee's run ended to wait for something (#1100): the work
+        // still waits on it.
+        this.store.progress(req.id, now, "waiting_other")
         return
       }
       const what = { error: "failed", timeout: "did not answer in time", lost: "was lost in a restart" }[status]

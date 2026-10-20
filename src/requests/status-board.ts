@@ -10,6 +10,8 @@ import type { DelegationSignal } from "./tracker"
 //   - a message waits behind a busy agent   → queued
 //   - the turn starts                       → working
 //   - the turn hands work to another agent  → waiting on that agent
+//   - that agent's run ends to wait (#1100) → still waiting, until its
+//     watcher closes (done / timed out) or the wait's latest end passes
 //   - the turn raises a decision card       → waiting on the owner's answer
 //   - the turn ends, nothing handed out     → done
 //   - the turn fails / hits its time limit  → failed / timed out
@@ -25,6 +27,13 @@ export interface StatusSettings {
   /** Channels that show request status. Empty: off. */
   channels: string[]
   retentionDays: number
+  /** A delegation that ended waiting with no due time: how long it may
+   *  wait before the request reads timed out. Default 120 (the watchers'
+   *  default due). */
+  waitDefaultMinutes?: number
+  /** Past a wait's due time (or the default above), how long before the
+   *  request reads timed out. Default 30 (the watchers' escalation delay). */
+  waitGraceMinutes?: number
 }
 
 export interface StatusBoardDeps {
@@ -49,6 +58,7 @@ const WRITE_TRIES = 5
 /** After a boot, how long a run the restart cut has to be picked up again. */
 const RESTART_GRACE_MS = 120_000
 const DAY = 86_400_000
+const MINUTE = 60_000
 
 const base = (channel: string) => channel.toLowerCase().split("@")[0]
 
@@ -162,8 +172,39 @@ export class StatusBoard {
     })
   }
 
-  delegationDone(d: DelegationSignal, status: "done" | "error" | "timeout" | "lost"): void {
-    this.guard("delegation end", () => this.handedBack(this.store.byRef("delegation", d.id), status))
+  /** `dueAt`: with status "waiting", when the callee said the wait ends. */
+  delegationDone(d: DelegationSignal, status: "done" | "waiting" | "error" | "timeout" | "lost", dueAt?: number): void {
+    this.guard("delegation end", () => {
+      const row = this.store.byRef("delegation", d.id)
+      // The callee's run ended to wait (#1100): the request still waits on
+      // it, it is not handed back yet. The delegation itself is over, so
+      // nothing else will hand it back: the wait ends when the delegation's
+      // watcher closes (waitEnded, wired by the daemon) or, with no watcher
+      // (watchers off, or none attached), at the latest `until` (sweep):
+      // the due time the callee gave, or the default, plus a grace period.
+      // A later reply from the callee comes as a new message or delegation
+      // with nothing linking it to this one, so it is not used.
+      if (status === "waiting") {
+        if (!row || FINAL_STATES.includes(row.state)) return
+        const s = this.settings()
+        const from = dueAt ?? this.now() + (s.waitDefaultMinutes ?? 120) * MINUTE
+        this.store.wait(d.id, row.id, from + (s.waitGraceMinutes ?? 30) * MINUTE)
+        this.change(row.id, { state: "waiting", waitingOn: d.callee })
+        return
+      }
+      this.handedBack(row, status)
+    })
+  }
+
+  /** The work a delegation that ended waiting waits on is over (#1100):
+   *  its watcher was marked done ("done"), or fired and the owner was told
+   *  ("timeout"). Nothing for a delegation that did not end waiting: its
+   *  own end already handed it back. */
+  waitEnded(delegationId: string, outcome: "done" | "timeout"): void {
+    this.guard("wait end", () => {
+      if (!this.store.endWait(delegationId)) return
+      this.handedBack(this.store.byRef("delegation", delegationId), outcome)
+    })
   }
 
   /** The agent raised a decision card from the turn of a request: the
@@ -208,8 +249,9 @@ export class StatusBoard {
     })
   }
 
-  /** Once a minute: settle what the restart left, catch up comments that
-   *  could not be written, delete old ended requests. */
+  /** Once a minute: settle what the restart left, end waits past their
+   *  latest end, catch up comments that could not be written, delete old
+   *  ended requests. */
   sweep(): void {
     const now = this.now()
     this.guard("restart check", () => {
@@ -219,6 +261,9 @@ export class StatusBoard {
         if (row && !row.turnLive && (row.state === "queued" || row.state === "working")) this.change(id, { state: "restart" })
       }
       this.orphans.clear()
+    })
+    this.guard("waits", () => {
+      for (const id of this.store.overdueWaits(now)) this.waitEnded(id, "timeout")
     })
     this.guard("catch up", () => {
       for (const r of this.store.changedSince(now - DAY)) if (r.shown !== statusText(r) && r.writeFails < WRITE_TRIES) this.push(r.id)

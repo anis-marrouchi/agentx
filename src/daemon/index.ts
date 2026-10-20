@@ -101,7 +101,7 @@ import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { DEFAULT_CHECKER_SETTINGS, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
-import { loopChecker } from "@/requests/loops"
+import { loopChecker, parseDue } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
@@ -215,7 +215,7 @@ import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
-import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, waitingBody, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -584,8 +584,8 @@ export class AgentXDaemon {
       },
       onDone: (rec, result) => {
         this.requests?.tracker.delegationDone(rec, result.status, result.text)
-        this.status?.board.delegationDone(rec, result.status)
-        this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text)
+        this.status?.board.delegationDone(rec, result.status, result.waiting?.dueAt)
+        this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text, result.waiting?.dueAt)
           .catch((e: any) => this.log(`[watchers] end of ${rec.id}: ${e?.message ?? e}`))
       },
       callbackNote: (rec) => {
@@ -650,7 +650,14 @@ export class AgentXDaemon {
         // same way; it does nothing for a channel that is not listed in
         // `requestStatus.channels`.
         try {
-          this.status = attachStatus(db, () => ({ channels: this.config.requestStatus.channels, retentionDays: this.config.requests.retentionDays }), {
+          this.status = attachStatus(db, () => ({
+            channels: this.config.requestStatus.channels,
+            retentionDays: this.config.requests.retentionDays,
+            // A request left waiting by a delegation that ended waiting
+            // (#1100) with no watcher to close it: the watchers' own times.
+            waitDefaultMinutes: this.config.watchers.defaultDueMinutes,
+            waitGraceMinutes: this.config.watchers.escalateAfterMinutes,
+          }), {
             post: async (row, text) =>
               (await this.router.getChannel(row.channel)?.send({ channel: row.channel, chatId: row.chatId, text, agentId: row.agentId })) || "",
             edit: async (row, ref, text) => {
@@ -2538,6 +2545,11 @@ export class AgentXDaemon {
           return
         }
         await this.notifyOwner(title, text, "watchers")
+      },
+      // #1100 — a request left waiting by a delegation that ended waiting
+      // follows that delegation's watcher.
+      onClosed: (w, outcome) => {
+        if (w.kind === "delegation" && w.taskKey.startsWith("dlg-")) this.status?.board.waitEnded(w.taskKey, outcome)
       },
       doneHint: (w, rule) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":${evidenceExample(rule)}}'`,
       log: this.log,
@@ -6655,6 +6667,24 @@ export class AgentXDaemon {
           } catch (e: any) {
             this.json(res, 500, { error: e?.message || String(e) })
           }
+          break
+        }
+
+        case "POST /runs/waiting": {
+          // #1100 — a run that ends to wait for something (a build, another
+          // agent, a time) says so: the one who asked hears "waiting", not
+          // "done", and its watcher stays open. Only from the run itself.
+          const body = await readBody(req)
+          const on = typeof body.on === "string" ? body.on.trim() : ""
+          if (!on) { this.json(res, 400, { error: "Required: on (what the work waits for)" }); break }
+          const due = parseDue(body.due)
+          if (typeof due === "string") { this.json(res, 400, { error: due }); break }
+          const turn = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+          if (!turn?.taskId) { this.json(res, 403, { error: "no running turn matches this call: use the agentx_waiting tool from inside your run" }); break }
+          const rec = this.delegations.markWaiting(turn.taskId, { on, ...(due ? { dueAt: due } : {}) })
+          const traceId = this.registry.runningTraceId(turn.agentId, turn.taskId)
+          const watcher = traceId && this.config.watchers.enabled ? this.watchers?.checkpoint.markWaiting(traceId, due) ?? null : null
+          this.json(res, 200, waitingBody({ delegation: rec?.id ?? null, asker: rec?.caller ?? null, watcher, on, dueAt: due }))
           break
         }
 
