@@ -74,6 +74,55 @@ describe("with an agent needs proof", () => {
   })
 })
 
+describe("the changed time (#1100)", () => {
+  const card = (board: ReturnType<typeof buildDesk>, key: string) => board.cards.find((c) => c.key === key)!
+
+  it("moves when the state changes, not when a run starts or ends", () => {
+    const s = store()
+    ask(s, "a", NOW - 10 * HOUR)
+    s.progress("a", NOW - 9 * HOUR)
+    s.touch("a", NOW - 2 * HOUR) // a run ended
+    s.progress("a", NOW - HOUR) // a run started: still in progress
+    expect(s.get("a")!.updatedAt).toBe(NOW - HOUR)
+    expect(s.get("a")!.stateChangedAt).toBe(NOW - 9 * HOUR)
+    const board = buildDesk(input(s))
+    expect(card(board, "request:a").changedAt).toBe(new Date(NOW - 9 * HOUR).toISOString())
+    // Proof of work is still any activity: the card stays with the agent.
+    expect(column(board, "request:a")).toBe("agent")
+
+    s.progress("a", NOW - 30 * 60_000, "waiting_other")
+    expect(card(buildDesk(input(s)), "request:a").changedAt).toBe(new Date(NOW - 30 * 60_000).toISOString())
+  })
+
+  it("is set on create and by every change of state", () => {
+    const s = store()
+    ask(s, "b", NOW - 5 * HOUR)
+    expect(s.get("b")!.stateChangedAt).toBe(NOW - 5 * HOUR)
+    s.waitOnOwner("b", "Which day?", NOW - 4 * HOUR)
+    s.waitOnOwner("b", "Which day, again?", NOW - 3 * HOUR)
+    expect(s.get("b")!.stateChangedAt).toBe(NOW - 4 * HOUR)
+    s.handOff("b", "writer", "Tuesday", NOW - 2 * HOUR)
+    expect(s.get("b")!.stateChangedAt).toBe(NOW - 2 * HOUR)
+    s.handOff("b", "editor", "", NOW - HOUR) // same state, other agent
+    expect(s.get("b")!.stateChangedAt).toBe(NOW - 2 * HOUR)
+    s.needsAttention("b", "failed", NOW - 50 * 60_000)
+    expect(s.get("b")!.stateChangedAt).toBe(NOW - 50 * 60_000)
+    s.requestPickup("b", NOW - 40 * 60_000)
+    expect(s.get("b")!.stateChangedAt).toBe(NOW - 40 * 60_000)
+    s.close("b", "done", "https://example.com/proof", NOW - 10 * 60_000)
+    expect(s.get("b")!.stateChangedAt).toBe(NOW - 10 * 60_000)
+  })
+
+  it("falls back to the last activity on a row from before the column", () => {
+    const db = new Database(":memory:")
+    const s = new RequestStore(db)
+    ask(s, "old", NOW - 5 * HOUR)
+    s.progress("old", NOW - 5 * HOUR)
+    db.prepare("UPDATE requests SET state_changed_at = NULL, updated_at = ? WHERE id = 'old'").run(NOW - HOUR)
+    expect(card(buildDesk(input(s)), "request:old").changedAt).toBe(new Date(NOW - HOUR).toISOString())
+  })
+})
+
 describe("your turn", () => {
   it("lists every waiting inbox item with its answers, and a request that asks the owner", () => {
     const s = store()

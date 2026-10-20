@@ -8,6 +8,7 @@ import { generate } from "@/agent"
 import type { OutputType } from "@/agent/providers/types"
 import { existsSync, readFileSync } from "fs"
 import { describeQueue } from "@/daemon/voice-queue-api"
+import { describeScreen, type ScreenView } from "@/daemon/screen-api"
 import type { QueueView } from "@/voice/speaking-queue"
 import { resolve } from "path"
 import { busyText, callerHeaders } from "@/calls/service"
@@ -725,6 +726,18 @@ const TOOLS = [
     name: "agentx_voice_queue",
     description:
       "See what this host is saying out loud and what waits to be said: every agent's spoken answers, narration, talks and lessons share one speaking queue. It also says who holds the floor (a demo, a recording): while it is held, your spoken lines wait and the character does not move for you. Use it before speaking at length, or when asked who is talking.",
+    inputSchema: {
+      type: "object" as const,
+      properties: {},
+    },
+  },
+  {
+    name: "agentx_screen",
+    description:
+      "See what is in front of the owner right now: decision cards waiting for an answer, notices held by Focus or a call, " +
+      "lines waiting to be spoken, and open requests waiting on the owner. Titles and who raised each, never the bodies. " +
+      "Read it before you put something new in front of the owner (a card, a notice, a call, a spoken line): " +
+      "if the same thing is already there, do not add it again, and if a lot is waiting, ask yourself whether yours can wait.",
     inputSchema: {
       type: "object" as const,
       properties: {},
@@ -1552,6 +1565,12 @@ async function handleToolCall(
       const res = await daemonFetch(`${daemonUrl()}/voice/queue`)
       if (!res.ok) return { content: [{ type: "text", text: `Could not read the speaking queue: HTTP ${res.status}` }] }
       return { content: [{ type: "text", text: describeQueue(await res.json() as QueueView) }] }
+    }
+
+    case "agentx_screen": {
+      const res = await daemonFetch(`${daemonUrl()}/screen`)
+      if (!res.ok) return { content: [{ type: "text", text: `Could not read what is on the owner's screen: HTTP ${res.status}` }] }
+      return { content: [{ type: "text", text: describeScreen(await res.json() as ScreenView) }] }
     }
 
     case "agentx_call_owner": {

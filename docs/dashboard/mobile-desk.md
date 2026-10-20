@@ -65,6 +65,7 @@ On a card under **With agents** or **No news** the same button is called **Write
 - Cut text: a title of at most 120 characters, a question of at most 600 and at most 280 characters of what is known. A WhatsApp reply waiting for your yes is the exception inside that limit: its question carries the reply itself, because you approve exactly what is sent.
 - Work an agent handed to another agent counts as proof only while it changes the request. A request waiting on another agent for more than 3 hours shows under **No news** even if that agent is still working.
 - When the running tasks cannot be read, the board says so and shows no request as **Working now**.
+- The time a request card says it **changed** is when its state last changed: started, waiting on you, waiting on another agent, needing your word, or ended. A task starting or ending under it is not a change, so the time does not move then. The column still counts that activity: a request with a task in the last 3 hours stays under **With agents**. A request from before this version shows the time anything last happened under it, until its state next changes.
 
 The Desk is for the owner. It is served only to a paired phone, never to members, guests or agents.
 

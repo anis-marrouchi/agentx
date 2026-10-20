@@ -814,6 +814,7 @@ Show or change screen capture settings (agentx.json `screen`).
 |---|---|---|
 | `--from <who>` | `agentx` | Who is speaking. |
 | `--title <text>` | `AgentX` | Notification title. |
+| `--todo <text>` | — | What the owner should do about it, shown as a To do line after the message (default: nothing, FYI). |
 | `--priority <n>` | `4` | 1 (min) to 5 (max). Used by ntfy only. |
 | `--urgent` | — | Deliver even during Focus. |
 | `--channel <name>` | `notifications.channel`, else `push` when it is on, else `ntfy` | Delivery channel. |

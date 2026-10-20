@@ -16,7 +16,7 @@ import { proofAlert, type Proof } from "@/notify/proof"
 import { resolveRegion } from "@/computer-use/capture"
 import { readScreenSettings } from "@/computer-use/capture-settings"
 import { defaultNotifyChannel } from "@/notify/push-settings"
-import { noticeRuleBreak } from "@/approvals/screen-gate"
+import { noticeRuleBreak, withTodo } from "@/approvals/screen-gate"
 
 // --- `agentx notify "<message>"` ---
 //
@@ -83,6 +83,7 @@ export const notify = new Command()
   .argument("[message]", "what to say")
   .option("--from <who>", "who is speaking", "agentx")
   .option("--title <text>", "notification title", "AgentX")
+  .option("--todo <text>", "what the owner should do about it, shown as a To do line after the message (default: nothing, FYI)")
   .option("--priority <n>", "1 (min) to 5 (max)", "4")
   .option("--urgent", "deliver even during Focus")
   .option("--channel <name>", "delivery channel (default: notifications.channel, else push when it is on, else ntfy)")
@@ -140,8 +141,11 @@ export const notify = new Command()
       console.log(chalk.red("  nothing to say — pass a message, or use --status / --flush"))
       process.exit(1)
     }
+    // What the owner must do comes last, after the message, and counts
+    // toward the 300 characters like the rest of it.
+    const text = withTodo(message.trim(), opts.todo)
     // The screen gate (#394): refused, never cut; the caller shortens it.
-    const broken = noticeRuleBreak(opts.title, message.trim())
+    const broken = noticeRuleBreak(opts.title, text)
     if (broken) {
       console.log(chalk.red(`  not sent: ${broken}. Say it so it reads in about ten seconds, or put the detail on a card or an issue.`))
       process.exit(1)
@@ -150,7 +154,7 @@ export const notify = new Command()
     try {
       const result = await sendNotification(
         {
-          message: message.trim(),
+          message: text,
           from: opts.from,
           title: opts.title,
           priority: Number(opts.priority) || 4,
@@ -177,7 +181,7 @@ export const notify = new Command()
       console.log(chalk.red(`  ${e?.message ?? e}`))
       // A failed push should still show up on this machine rather than
       // failing completely silently.
-      await alert(opts.title, message.trim())
+      await alert(opts.title, text)
       process.exit(1)
     }
   })

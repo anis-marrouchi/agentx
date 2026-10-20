@@ -92,7 +92,7 @@ The popup behaves like your other notifications:
 
 - **Focus and calls are respected.** While a Focus mode (Do Not Disturb) or the widget's hold is on, or while you are in a call, nothing pops up. The card appears within a minute after the Focus or the call ends. See [Hold messages during Focus and calls](../jobs/notifications.md#4-hold-messages-during-focus-and-calls).
 - **It doesn't take the keyboard.** The card floats over the app you are using, and that app keeps the keyboard, so you can finish the sentence you are typing. One click on the card answers it.
-- **The screen gate.** A card goes on your screen only if it asks one question, its title is at most 120 characters, its question at most 300, and it offers at most 3 answers. A new card that breaks one of these rules is refused when the agent raises it, and the agent is told why. An older card that breaks one is not shown: it stays in Approvals, unchanged, and the agent that raised it is told why, once. A card you ask for with **Show on Mac** always shows.
+- **The screen gate.** A card goes on your screen only if it asks one question, its title is at most 120 characters and says what it is in words, its question is at most 300, and it offers at most 3 answers. A title that is only a reference, such as `#402`, a link, a commit hash or a request id, is refused; a reference next to words, such as `Approve the login fix (#402)`, is fine. A new card that breaks one of these rules is refused when the agent raises it, and the agent is told why. An older card that breaks one is not shown: it stays in Approvals, unchanged, and the agent that raised it is told why, once. A card you ask for with **Show on Mac** always shows.
 - **One at a time,** oldest first. Each new card pops up once, and again at each [check-in](#check-ins-a-few-times-a-day).
 - **Cards you put off with Later** pop up when they come back. Cards older than a day don't pop up by themselves, so switching the popup on doesn't replay a backlog. Check-ins bring them back.
 
@@ -305,6 +305,17 @@ A card forwarded from another machine is closed through that machine's daemon, w
 
 Agents on a `claude-code` engine get the `agentx_approval` tool in every session, whichever channel started it: the daemon adds its own tool server to each session it starts, next to the tool servers the workspace and the computer's user already load.
 
+## For agents: see what is on your screen
+
+Before an agent puts something new in front of you (a card, a notice, a call or a spoken line), it can look at what is already there with the `agentx_screen` tool. It is in the `read` tool set: it looks and changes nothing. It lists:
+
+- decision cards waiting for your answer: title, the agent that raised it, its machine, and when;
+- notices held while you are in Focus or a call: title, who sent it, and when;
+- the line being spoken and the lines waiting to be spoken, each cut to its first words;
+- open requests waiting on you: the request cut to a title, its agent, and since when.
+
+It shows titles only, never a card's question, a notice's message or a request's whole text, and at most 20 of each kind with the full count. The same view is on the daemon's local API as `GET /screen`. Like `GET /approvals`, a call from another machine needs a mesh token.
+
 ## Check it worked
 
 1. **Terminal:** raise a test card with `agentx approvals request` as shown above.
@@ -350,6 +361,12 @@ For the screen gate:
      --recommend "No: test" --if-silent discard --expires 1h
    ```
 2. **Terminal:** it is refused with `ask holds more than one question: one card asks one thing`, and `agentx approvals list` does not show it.
+3. **Terminal:** run the same command with `--title "#402"` and `--ask "Send it?"`. It is refused with `title is only a reference ("#402")`.
+
+For what is on your screen:
+
+1. **Terminal:** run `curl -s http://127.0.0.1:18800/screen`.
+2. **Terminal:** every decision card that `agentx approvals list` shows is in the `cards` list, with a `title` and no `ask`.
 
 ## If something is wrong
 

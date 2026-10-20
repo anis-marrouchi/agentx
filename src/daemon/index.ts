@@ -57,7 +57,8 @@ import type { AppPushDeps, AppPushResult } from "./app-push"
 import { pushBridgeCaller } from "./push-bridge"
 import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
-import { localAlert, localSettings, notify, writeCallHold, type Sender } from "@/notify"
+import { localAlert, localSettings, notify, writeCallHold, NotificationQueue, type Sender } from "@/notify"
+import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
 import { ResumeCoordinator } from "@/agents/resume/coordinator"
@@ -2331,6 +2332,28 @@ export class AgentXDaemon {
     return !!token && collectAcceptedMeshTokens(this.config).has(token)
   }
 
+  /** GET /screen: every source read on its own, so one that fails is
+   *  named and the rest still show. */
+  private screenView() {
+    const errors: string[] = []
+    const read = <T>(what: string, fn: () => T, fallback: T): T => {
+      try {
+        return fn()
+      } catch (e: any) {
+        errors.push(`${what}: ${e?.message ?? e}`)
+        return fallback
+      }
+    }
+    return buildScreen({
+      now: Date.now(),
+      cards: read("decision cards", () => listCards(process.cwd(), "pending"), []),
+      held: read("held notices", () => new NotificationQueue().list(), []),
+      voice: read("speaking queue", () => this.voiceTalk?.speech.view() ?? null, null),
+      requests: read("open requests", () => this.requests ? this.requests.store.listOpen() : null, null),
+      errors,
+    })
+  }
+
   /** Tell the owner about a request: a push, and the Mac banner. */
   private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }): Promise<void> {
     await notify({ title, message, from: r.agentId, priority: 4 }, async (m) => {
@@ -4322,6 +4345,14 @@ export class AgentXDaemon {
         })
         if (reply.status === 201) this.log(`[notes] ${agentId}${fromPeer ? ` on ${input.node}` : ""} added a note${this.native.notes ? "" : ` on ${peerName}`}`)
         this.json(res, reply.status, reply.body)
+        return
+      }
+
+      // What is on the owner's screen now (#1100): read only, bounded.
+      // Gated like /approvals by isMeshGatedPath above.
+      if (path === "/screen") {
+        if (req.method !== "GET") { this.json(res, 405, { error: "GET only" }); return }
+        this.json(res, 200, this.screenView())
         return
       }
 
