@@ -243,11 +243,31 @@ function fitLayer(text: string, max: number, keep: ContextLayer["keep"] = "head"
   const nl = text.indexOf("\n")
   const header = nl > 0 && nl + 1 + marker.length < max / 2 ? text.slice(0, nl + 1) : ""
   const room = max - header.length - marker.length
-  let tail = text.slice(text.length - room)
-  // Start on a whole line unless that would throw away most of the room.
-  const lineStart = tail.indexOf("\n")
-  if (lineStart >= 0 && lineStart < room / 2) tail = tail.slice(lineStart + 1)
+  let tail = wholeLineTail(text, room)
+  // A cut inside a 15-min bucket loses its "— HH:MM —" label; carry the
+  // label over so the oldest kept turns still have a time. Labels are all
+  // the same length, so the label in force after making room fits too.
+  if (!BUCKET_LABEL.test(tail.slice(0, tail.indexOf("\n") + 1 || undefined))) {
+    const before = (t: string) => text.slice(0, text.length - t.length).match(BUCKET_LABELS)?.pop()
+    const label = before(tail)
+    if (label && label.length + 1 < room / 2) {
+      tail = wholeLineTail(text, room - label.length - 1)
+      const current = BUCKET_LABEL.test(tail.slice(0, tail.indexOf("\n") + 1 || undefined)) ? "" : before(tail)
+      if (current) tail = current + "\n" + tail
+    }
+  }
   return header + marker + tail
+}
+
+const BUCKET_LABEL = /^— \d\d:\d\d —(\n|$)/
+const BUCKET_LABELS = /^— \d\d:\d\d —$/gm
+
+/** The last `room` chars of `text`, starting on a whole line unless that
+ *  would throw away most of the room. */
+function wholeLineTail(text: string, room: number): string {
+  const tail = text.slice(text.length - room)
+  const lineStart = tail.indexOf("\n")
+  return lineStart >= 0 && lineStart < room / 2 ? tail.slice(lineStart + 1) : tail
 }
 
 /**
