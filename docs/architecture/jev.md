@@ -10,16 +10,13 @@ When you run `agentx point "the search field"`:
 
 1. The native helper reads the active application's accessibility tree (the list of buttons, fields and labels that macOS exposes for screen readers).
 2. If the tree is too sparse, local OCR (reading text from the screen image) supplies readable text and its position.
-3. AgentX creates a bounded list of candidate controls. Controls whose names share words with your request go first, so they are not cut off on a busy screen. Named pictures, such as a small chart, are included.
+3. AgentX creates a bounded list of candidate controls. When a busy screen has more controls than fit, the ones whose names share words with your request are kept first. Pictures, such as icons and small charts, are included.
 4. The `ui-element` decision seat asks whether the requested control is present, and which candidate matches it.
 5. The caller checks the answer and maps the chosen ID to coordinates before drawing a highlight.
 
-In a web browser, the list holds the web page only at first. The browser's own controls (its toolbar, tabs and window buttons, called the *browser chrome*) are left out, so that "the search box" finds the page's search box and not the address bar. They come back, marked as the browser's, in two cases:
+In a web browser, the list holds the web page and, in a few reserved places, the browser's own controls (its toolbar, tabs and window buttons, called the *browser chrome*). Each browser control is shown to the model as "outside the page: Reload", so "the search box" still finds the page's search box and not the address bar, while "the reload button" or "close the tab" finds the browser's control. Window buttons with no label are named by what they do, for example "close window (red traffic light)".
 
-- **Your request names a browser part**, such as "the reload button", "close the tab", "tab search", "site info" or "the red traffic light".
-- **Nothing on the page matches.** AgentX then asks a second time, with the browser's controls only.
-
-With `--json`, the chosen control shows `"inBrowser": true` when it belongs to the browser.
+With `--json`, the chosen control shows `"inBrowser": true` when it sits outside the page.
 
 A candidate-selection question always has a choice to return. The separate “is it present?” question lets AgentX refuse to highlight an unrelated control.
 
@@ -182,5 +179,5 @@ A wrong choice in a future active mode would stop an agent in the middle of its 
 
 - **The seat doesn't appear in `decisions stats`:** check that `decisions.enabled` is `true`, that the seat's name is spelled exactly as in the table, that the daemon was restarted, and that the feature that uses the seat actually ran.
 - **Every call fails:** run `agentx decisions backends`. A missing or wrong `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` is the usual cause.
-- **`agentx point` picks a control on the page when you meant the browser's:** name the browser in the request, for example `agentx point "the browser's reload button"` or `agentx point "Chrome's profile button"`.
+- **`agentx point` picks a control on the page when you meant the browser's:** say so in the request, for example `agentx point "the browser's reload button"`. If it still misses, run with `--json`: the browser's controls in `ranked` have a `shown` name starting with "outside the page:", and the chosen one has `"inBrowser": true`.
 - **Behavior changed in a way you didn't want:** set the seat back to `shadow` or `off` and restart the daemon. In shadow mode the existing behavior is authoritative again.

@@ -14,7 +14,7 @@ import {
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
 import { HELPER, readScreen, rectFor, type ScreenRead } from "@/computer-use/screen"
-import { buildCandidates } from "@/computer-use/candidates"
+import { closeBlocked } from "@/computer-use/candidates"
 import { daemon } from "@/commands/call"
 import { GUIDE_EXPRESSIONS, GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
 
@@ -84,7 +84,10 @@ export const point = new Command()
   .name("point")
   .description("point at the on-screen control matching a description (does not click)")
   .argument("<request>", 'what you mean, e.g. "the send button"')
-  .option("--max <n>", "candidates to consider", "40")
+  // 100, not 40: on Wikipedia the flag, the anthem player and the page's
+  // own menus were all past the 60th candidate (#1092). A hundred costs
+  // about a second and a hundredth of a cent per lookup.
+  .option("--max <n>", "candidates to consider", "100")
   .option("--json", "emit the decision as JSON instead of pointing")
   .option("--min-present <p>", "refuse below this P(control exists)", "0.5")
   .option("--mark <kind>", `how the character marks it: ${GUIDE_MARKS.join(", ")}`, "box")
@@ -114,7 +117,7 @@ export const point = new Command()
       // Reads the accessibility tree, and falls back to local OCR when the
       // tree is too thin to choose from — which is the only thing that
       // makes Electron apps addressable at all.
-      screen = await readScreen({ max: Number(opts.max) || 40, request })
+      screen = await readScreen({ max: Number(opts.max) || 100, request })
     } catch (e: any) {
       console.log(chalk.red(`  could not read the screen: ${e?.message ?? e}`))
       process.exit(1)
@@ -127,6 +130,10 @@ export const point = new Command()
     }
     if (candidates.length === 1) {
       const only = rectFor(screen, candidates[0].id)
+      if (only && closeBlocked(candidates[0], request)) {
+        console.log(chalk.yellow(`  ${screen.app} exposes only ${chalk.bold(candidates[0].shown ?? candidates[0].label)}, which closes something; not pointing at it`))
+        process.exit(4)
+      }
       if (only) {
         console.log(chalk.yellow(`  ${screen.app} exposes exactly one target — pointing at it: `) +
                     chalk.bold(candidates[0].label))
@@ -135,44 +142,28 @@ export const point = new Command()
       return
     }
 
-    const ask = (offered: UICandidate[]) => askSeat(
+    const result = await askSeat(
       UI_ELEMENT_SEAT,
-      uiElementState({ request, app: screen.app, window: screen.window, candidates: offered }),
-      uiElementQuestions(offered),
-      { features: { app: screen.app, candidates: offered.length, ocr: screen.usedOCR } },
+      uiElementState({ request, app: screen.app, window: screen.window, candidates }),
+      uiElementQuestions(candidates),
+      { features: { app: screen.app, candidates: candidates.length, ocr: screen.usedOCR } },
     )
-    const result = await ask(candidates)
     if (!result) {
       console.log(chalk.red(`  the ui-element seat is unavailable — set decisions.seats.${UI_ELEMENT_SEAT}.mode`))
       process.exit(1)
     }
 
+    const sel = toSelection(result.answers as UIElementAnswers, candidates)
+    const chosen = rectFor(screen, sel.id)
+    const chosenCand = candidates.find((c) => c.id === sel.id)
+    const chosenLabel = chosenCand?.label ?? ""
+    const inBrowser = chosenCand?.area === "browser"
+    const fromOCR = screen.ocrRects.has(sel.id)
+
     // `present` is read BEFORE `target`, always. A Choice over a candidate
     // set will always name something; this is the question that can say
     // the thing simply is not on screen.
     const minPresent = Number(opts.minPresent) || 0.5
-    let offered = candidates
-    let sel = toSelection(result.answers as UIElementAnswers, candidates)
-
-    // Second look, at the browser this time (#1092). The page had no match
-    // and the chrome was held back, so the thing asked for may well be the
-    // browser's own: its reload, its star, a tab's close button. Asked
-    // separately rather than mixed into the first set (unless the request
-    // named the browser) — mixed in, Chrome's address bar wins "the search
-    // box" on a page that has one.
-    if (sel.present < minPresent && !candidates.some((c) => c.area === "browser")) {
-      const chrome = buildCandidates(screen.elements, Number(opts.max) || 40, { request, scope: "browser" })
-      // A choice needs two options; one lone browser control is no evidence.
-      const second = chrome.length >= 2 ? await ask(chrome) : null
-      const again = second ? toSelection(second.answers as UIElementAnswers, chrome) : null
-      if (again && again.present >= minPresent) { offered = chrome; sel = again }
-    }
-
-    const chosen = rectFor(screen, sel.id)
-    const chosenLabel = offered.find((c) => c.id === sel.id)?.label ?? ""
-    const inBrowser = offered.find((c) => c.id === sel.id)?.area === "browser"
-    const fromOCR = screen.ocrRects.has(sel.id)
-
     if (sel.present < minPresent || !chosen) {
       console.log(
         chalk.yellow(`  nothing on screen matches "${request}"`) +
@@ -181,18 +172,32 @@ export const point = new Command()
       process.exit(2)
     }
 
+    // A close window / close tab / quit control is only for a request that
+    // asks to close something. Otherwise it is reported, not shown: a
+    // caller that clicks where point points would lose the window.
+    const blocked = closeBlocked(chosenCand, request)
+
     if (opts.json) {
       console.log(JSON.stringify({
-        app: screen.app, request, chosen: { ...chosen, label: chosenLabel, fromOCR, inBrowser }, present: sel.present,
+        app: screen.app, request, ...(blocked ? { blocked: "closes a window, tab or app; the request does not ask to close anything" } : {}),
+        chosen: { ...chosen, label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR, inBrowser, ...(chosenCand?.closes ? { closes: true } : {}) }, present: sel.present,
         confidence: sel.confidence,
         ranked: sel.ranked.slice(0, 5).map((r) => ({
-          ...r, label: offered.find((c) => c.id === r.id)?.label,
+          ...r, label: candidates.find((c) => c.id === r.id)?.label, shown: candidates.find((c) => c.id === r.id)?.shown,
         })),
       }, null, 2))
+      if (blocked) process.exit(4)
       return
     }
 
     const name = chosenLabel
+    if (blocked) {
+      console.log(
+        chalk.yellow(`  the best match, ${chalk.bold(chosenCand?.shown ?? name)}, would close a window, tab or app; not pointing at it`) +
+        chalk.dim(` (ask to close it by name if that is what you mean)`),
+      )
+      process.exit(4)
+    }
     console.log(
       `  ${chalk.green("→")} ${chalk.bold(name)} ` +
       chalk.dim(`(${fromOCR ? "read from screen" : inBrowser ? "browser control" : "control"}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),
