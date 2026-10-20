@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
+import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
 import { getEventBus } from "../src/events/bus"
 import { persistentCallerEnv } from "../src/agents/claude-process-factory"
 import { callerFields } from "../src/mcp/index"
@@ -304,5 +304,30 @@ describe("called-back sends (#1100)", () => {
 
   it("tell a callee its message reached the asker", () => {
     expect(replyBody("dlg-2", "planner")).toMatchObject({ accepted: true, status: "delivered", taskId: "dlg-2", agent: "planner" })
+  })
+})
+
+describe("watcher alerts for a delegation (#1100)", () => {
+  const asked = { caller: "planner", origin: { channel: "mcp", chatId: "mcp:lead:planner:work-1" }, depth: 2 }
+  const originFor = (id: string) => (id === "dlg-1" ? asked : id === "dlg-2" ? { ...asked, origin: { channel: "telegram", chatId: "chat-1" } } : null)
+
+  it("go to the chat the delegator asked from, when it is an agent's own", () => {
+    expect(alertChatOf("planner", "dlg-1", originFor)).toBe(asked)
+  })
+
+  it("never go to a person's chat, another agent's work, or a plain task", () => {
+    expect(alertChatOf("planner", "dlg-2", originFor)).toBeNull()
+    expect(alertChatOf("builder", "dlg-1", originFor)).toBeNull()
+    expect(alertChatOf("planner", "run-9", originFor)).toBeNull()
+    expect(alertChatOf("planner", "dlg-unknown", originFor)).toBeNull()
+  })
+
+  it("run in that chat once its turn ended, one hop past the asking turn", () => {
+    expect(alertContext(asked, "w-1", true)).toEqual({ channel: "mcp", chatId: "mcp:lead:planner:work-1", sender: "system:watcher", sendDepth: 3 })
+  })
+
+  it("go to the watcher's own chat when that turn is still busy, keeping the count", () => {
+    expect(alertContext(asked, "w-1", false)).toEqual({ channel: "watchers", chatId: "w-1", sender: "watcher", sendDepth: 3 })
+    expect(alertContext(null, "w-1", false)).toEqual({ channel: "watchers", chatId: "w-1", sender: "watcher" })
   })
 })

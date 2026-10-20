@@ -331,6 +331,9 @@ export class A2AMesh {
       /** The task's type (#1049): picks the evidence the peer's watcher
        *  asks for before the task counts as done. */
       taskType?: string
+      /** Callback hops behind this send (#1100), so the peer's callee
+       *  stays under MAX_SEND_DEPTH. Top level, like taskType. */
+      sendDepth?: number
     } = {},
   ): Promise<string> {
     const state = this.peers.get(peerName)
@@ -389,6 +392,7 @@ export class A2AMesh {
           // Top level, so a call with no context stays the classic A2A
           // shape on the receiver; it moves into the run's context there.
           ...(opts.taskType ? { taskType: opts.taskType } : {}),
+          ...(opts.sendDepth ? { sendDepth: opts.sendDepth } : {}),
           ...(opts.replyVia ? { replyVia: { node: this.config.node.name, ...opts.replyVia } } : {}),
           ...root,
         }),

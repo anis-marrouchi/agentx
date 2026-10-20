@@ -84,7 +84,6 @@ import type { WorkflowRun } from "@/workflows/types"
 import { deliverResult, forwardCard, readForwardedCard, receiveResult, resolveForwardedCard, resolvePeerForNode, type ForwardDeps, type ForwardPeer } from "@/approvals/forward"
 import { attachRequests, type AttachedRequests } from "@/requests/attach"
 import { attachWatchers, type AttachedWatchers } from "@/watchers/attach"
-import { WATCHER_CHANNEL } from "@/watchers/checkpoint"
 import { handleWatchersApi } from "@/watchers/daemon-api"
 import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
 import { evidenceExample } from "@/watchers/evidence"
@@ -214,9 +213,9 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
-import { callbackDepthOf, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
+import { callbackDepthOf, contextWithSendDepth, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { homeOfBody } from "@/a2a/home"
-import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, alertChatOf, alertContext, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -2492,12 +2491,14 @@ export class AgentXDaemon {
   }
 
   /** Wait, up to `maxMs`, for the agent's turn in this chat to end, so a
-   *  turn told there does not run beside it (#1100). */
-  private async waitForChat(agentId: string, channel: string, chatId: string, maxMs: number): Promise<void> {
+   *  turn told there does not run beside it (#1100). False: still busy. */
+  private async waitForChat(agentId: string, channel: string, chatId: string, maxMs: number): Promise<boolean> {
     const until = Date.now() + maxMs
-    while (this.registry.isChatBusy(agentId, channel, chatId) && Date.now() < until) {
+    while (this.registry.isChatBusy(agentId, channel, chatId)) {
+      if (Date.now() >= until) return false
       await new Promise((r) => setTimeout(r, 1000))
     }
+    return true
   }
 
   /** The watcher checkpoint at every task start (src/watchers, #1030). */
@@ -2523,12 +2524,9 @@ export class AgentXDaemon {
         // Only an agent's own chat: in a person's chat a queued alert's
         // answer would be posted to the person. a2a and mcp turns wait for
         // a slot instead of queueing.
-        const found = w.taskKey.startsWith("dlg-") ? this.delegations.originFor(w.taskKey) : null
-        const asked = found && found.caller === agentId && (found.origin.channel === "a2a" || found.origin.channel === "mcp") ? found : null
-        if (asked) await this.waitForChat(agentId, asked.origin.channel, asked.origin.chatId, 10 * 60_000)
-        const context = asked
-          ? { ...asked.origin, sender: "system:watcher" }
-          : { channel: WATCHER_CHANNEL, chatId: w.id, sender: "watcher" }
+        const asked = alertChatOf(agentId, w.taskKey, (id) => this.delegations.originFor(id))
+        const free = asked ? await this.waitForChat(agentId, asked.origin.channel, asked.origin.chatId, 10 * 60_000) : false
+        const context = alertContext(asked, w.id, free)
         const res = await this.registry.execute({ agentId, message: text, context: context as any })
         // Queued behind the turn running in that chat: it is delivered.
         if (res.error && !res.content?.trim() && !isQueued(res.error)) throw new Error(res.error)
@@ -6716,6 +6714,9 @@ export class AgentXDaemon {
             break
           }
           // Local agent? Dispatch directly through the registry.
+          // The hop count goes on through a plain send too, local or to a
+          // peer, so two agents past the cap are not called back again (#1100).
+          const sendDepth = from ? callbackDepthOf(from.context) + 1 : 0
           const localDef = this.registry.getAgent(targetAgent)
           if (localDef) {
             const track = gate.track
@@ -6724,9 +6725,7 @@ export class AgentXDaemon {
             const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
               const context = {
                 channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}),
-                // The hop count goes on through a plain send too, so two
-                // agents past the cap are not called back again (#1100).
-                ...(from ? { sendDepth: callbackDepthOf(from.context) + 1 } : {}),
+                ...(sendDepth ? { sendDepth } : {}),
                 // What the work is about (#1100): a second run on it is told.
                 ...(homeOfBody(body) ? { home: homeOfBody(body) } : {}),
               }
@@ -6787,7 +6786,7 @@ export class AgentXDaemon {
           }
           if (wait) {
             try {
-              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType })
+              const messageId = await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
               this.json(res, 200, { ok: true, messageId, peer: peer.peer })
             } catch (e: any) {
               this.json(res, 500, { error: e.message, peer: peer.peer })
@@ -6799,7 +6798,7 @@ export class AgentXDaemon {
             peer: peer.peer,
             log: (m) => this.log(m),
             run: async () => {
-              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType })
+              await mesh.sendTask(peer.peer, text, targetAgent, { senderAgentId, taskType, ...(sendDepth ? { sendDepth } : {}) })
               return { ok: true }
             },
           })
@@ -6950,6 +6949,8 @@ export class AgentXDaemon {
           // So does a top-level `home` (#1100): a second run on it is told.
           const taskHome = homeOfBody(body)
           if (taskHome) body.context = { ...(body.context && typeof body.context === "object" ? body.context as Record<string, unknown> : {}), home: taskHome }
+          // So does a plain send's hop count (#1100).
+          if (body.sendDepth !== undefined) body.context = contextWithSendDepth(body)
           // #277 — an agent delegating from a turn a person started gets a
           // task id now and the answer later, as a new turn in its chat.
           // Streaming callers are watching the run, so they keep waiting.
