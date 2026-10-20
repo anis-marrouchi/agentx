@@ -97,6 +97,22 @@ describe("the operator's node keeps cards from its peers", () => {
     expect(r.status).toBe(201)
     expect((r.body as any).card.node).toBeUndefined()
   })
+
+  it("keeps the node for an agent id both nodes have when the peer's own token proves it", () => {
+    const proven = { ...deps(), tokenPeerIs: (n: string) => n === "linux-box" }
+    const r = handleApprovalsApi("POST", "/approvals", card({ node: "linux-box", source: "pr-1" }), new URLSearchParams(), proven)
+    expect(r.status).toBe(201)
+    expect((r.body as any).card).toMatchObject({ raised_by: "alpha", node: "linux-box" })
+    // It is a different agent from the local one, so the local card on the
+    // same source is no twin of it.
+    const local = handleApprovalsApi("POST", "/approvals", card({ source: "pr-1" }), new URLSearchParams(), deps())
+    expect(local.status).toBe(201)
+    expect((local.body as any).card.node).toBeUndefined()
+    // Another peer's token proves nothing for this one.
+    const other = { ...deps(), tokenPeerIs: (n: string) => n === "elsewhere" }
+    const r2 = handleApprovalsApi("POST", "/approvals", card({ node: "linux-box", source: "other-src" }), new URLSearchParams(), other)
+    expect((r2.body as any).card.node).toBeUndefined()
+  })
 })
 
 describe("the operator's sweep sends the result back", () => {

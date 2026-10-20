@@ -444,16 +444,25 @@ export function meshPeerTokenChecks(
 }
 
 function runMeshTokenChecks(checks: Check[], cfg: any): void {
-  const env = readEnvFile()
+  checks.push(...meshTokenChecksFromConfig(cfg))
+}
+
+/** meshPeerTokenChecks on agentx.json, with tokens and MESH_TOKEN read
+ *  from the environment and the install's .env. */
+export function meshTokenChecksFromConfig(
+  cfg: any,
+  procEnv: Record<string, string | undefined> = process.env,
+  fileEnv: Record<string, string> = readEnvFile(),
+): Check[] {
   // As the daemon reads it (loadDotEnv): an empty variable falls through
   // to .env, and quotes are kept as part of the value.
-  const value = (name: string) => (process.env[name] || env[name] || "").trim()
+  const value = (name: string) => (procEnv[name] || fileEnv[name] || "").trim()
   // agentx.json may name a token as ${VAR}; the daemon expands it from the environment.
   const expand = (raw: unknown) => typeof raw === "string" ? raw.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/gi, (_, n) => value(n)) : undefined
   const peers = ((cfg.mesh?.peers ?? []) as Array<{ name?: unknown; token?: unknown }>)
     .filter((p) => typeof p?.name === "string")
     .map((p) => ({ name: p.name as string, token: expand(p.token) }))
-  checks.push(...meshPeerTokenChecks(peers, value("MESH_TOKEN") || undefined))
+  return meshPeerTokenChecks(peers, value("MESH_TOKEN") || undefined)
 }
 
 function collectEnvRefs(node: unknown, into: Set<string>): void {
