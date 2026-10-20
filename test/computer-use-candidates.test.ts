@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
-import { buildCandidates, scopeToPage, type RawElement } from "../src/computer-use/candidates"
-import { uiElementState, type PriorAttempt } from "../src/decisions/seats/ui-element"
+import { browserChrome, buildCandidates, namesBrowserPart, scopeToPage, type RawElement } from "../src/computer-use/candidates"
+import { uiElementQuestions, uiElementState, type PriorAttempt } from "../src/decisions/seats/ui-element"
 
 // What can and cannot be tested here.
 //
@@ -86,12 +86,14 @@ describe("buildCandidates", () => {
 
   it("offers a drawing app's canvas, and not its icons", () => {
     // tldraw's canvas is one unnamed image the size of the page; without
-    // it a lesson cannot place a shape or a text box.
+    // it a lesson cannot place a shape or a text box. The icon inside a
+    // control is that control, already offered.
     const elements = [
       el({ id: 1, role: "AXWebArea", label: "tldraw", width: 1440, height: 800 }),
       el({ id: 2, role: "AXImage", label: "0", parent: 1, width: 1440, height: 800 }),
-      el({ id: 3, role: "AXImage", label: "Comments", parent: 1, width: 20, height: 20 }),
+      el({ id: 3, role: "AXImage", label: "Rectangle", parent: 4, width: 20, height: 20 }),
       el({ id: 4, role: "AXCheckBox", label: "Rectangle — R", parent: 1 }),
+      el({ id: 5, role: "AXImage", label: "", parent: 1, width: 20, height: 20 }),
     ]
     expect(buildCandidates(elements, 10).map((c) => c.label).sort()).toEqual(["Rectangle — R", "canvas"])
   })
@@ -100,6 +102,87 @@ describe("buildCandidates", () => {
     const elements = Array.from({ length: 80 }, (_, i) =>
       el({ id: i, role: "AXButton", label: `b${i}` }))
     expect(buildCandidates(elements, 12)).toHaveLength(12)
+  })
+})
+
+describe("browser chrome — held back, not unreachable (#1092)", () => {
+  // A Chrome window: its toolbar, and a page with its own search box.
+  const browser = [
+    el({ id: 0, role: "AXWindow" }),
+    el({ id: 1, role: "AXTextField", label: "Address and search bar", parent: 0 }),
+    el({ id: 2, role: "AXButton", label: "Reload", parent: 0 }),
+    el({ id: 3, role: "AXButton", label: "Bookmark this tab", parent: 0 }),
+    el({ id: 4, role: "AXWebArea", parent: 0 }),
+    el({ id: 5, role: "AXTextField", label: "Search query", parent: 4 }),
+    el({ id: 6, role: "AXTab", label: "Latest", parent: 4 }),
+  ]
+
+  it("keeps the chrome out of a question about the page", () => {
+    // The x.com cases page-scoping was written for must still hold.
+    for (const request of ["the search box", "the Latest tab"]) {
+      const out = buildCandidates(browser, 10, { request })
+      expect(out.map((c) => c.label)).not.toContain("Address and search bar")
+      expect(out.every((c) => !c.area)).toBe(true)
+    }
+  })
+
+  it("offers the chrome, marked as the browser's, when the request names it", () => {
+    const out = buildCandidates(browser, 10, { request: "the browser's reload button" })
+    const reload = out.find((c) => c.label === "Reload")
+    expect(reload?.area).toBe("browser")
+    // The page stays in the running, unmarked.
+    expect(out.find((c) => c.label === "Search query")?.area).toBeUndefined()
+  })
+
+  it("offers only the chrome on the second look", () => {
+    const out = buildCandidates(browser, 10, { request: "the star", scope: "browser" })
+    expect(out.map((c) => c.label).sort()).toEqual(["Address and search bar", "Bookmark this tab", "Reload"])
+    expect(out.every((c) => c.area === "browser")).toBe(true)
+  })
+
+  it("has no chrome to offer in a native app", () => {
+    const native = [el({ id: 0, role: "AXWindow" }), el({ id: 1, label: "Share", parent: 0 })]
+    expect(browserChrome(native)).toEqual([])
+    expect(buildCandidates(native, 10, { scope: "browser" })).toEqual([])
+  })
+
+  it("recognises browser parts by phrase, not by the bare word 'tab'", () => {
+    expect(namesBrowserPart("the Latest tab")).toBe(false)
+    expect(namesBrowserPart("the search box")).toBe(false)
+    expect(namesBrowserPart("close the tab")).toBe(true)
+    expect(namesBrowserPart("Chrome's tab search")).toBe(true)
+    expect(namesBrowserPart("the red traffic light")).toBe(true)
+    expect(namesBrowserPart("reload")).toBe(true)
+  })
+
+  it("tells the model which controls are the browser's", () => {
+    const out = buildCandidates(browser, 10, { scope: "browser" })
+    const state = uiElementState({ request: "reload", app: "Google Chrome", candidates: out }) as any
+    expect(state.controls.every((c: any) => c.area === "browser")).toBe(true)
+    const q = uiElementQuestions(out) as any
+    expect(Object.values(q.target.criteria).join(" ")).toMatch(/browser button: Reload/)
+  })
+})
+
+describe("buildCandidates — reaching more of the screen (#1092)", () => {
+  it("offers a named small image, and still not an unnamed one", () => {
+    const elements = [
+      el({ id: 1, role: "AXImage", label: "Requests, last hour", width: 80, height: 20 }),
+      el({ id: 2, role: "AXImage", label: "", width: 16, height: 16 }),
+      el({ id: 3, role: "AXImage", label: "0", width: 16, height: 16 }),
+    ]
+    expect(buildCandidates(elements, 10).map((c) => c.label)).toEqual(["Requests, last hour"])
+  })
+
+  it("keeps a label that shares the request's words past the cap", () => {
+    // "Restart when idle" sat late on a settings page behind forty buttons.
+    const elements = [
+      ...Array.from({ length: 50 }, (_, i) => el({ id: i, role: "AXButton", label: `option ${i}` })),
+      el({ id: 99, role: "AXButton", label: "Restart when idle" }),
+    ]
+    const labels = buildCandidates(elements, 10, { request: "the restart when idle button" }).map((c) => c.label)
+    expect(labels).toContain("Restart when idle")
+    expect(labels).toHaveLength(10)
   })
 })
 

@@ -27,6 +27,9 @@ export interface UICandidate {
   label: string
   value?: string | null
   enabled: boolean
+  /** Set when the control belongs to the browser around the page (its
+   *  toolbar, tabs, window buttons) rather than to the page itself. */
+  area?: "browser"
 }
 
 /** Something already attempted on this screen, and what came of it. */
@@ -78,6 +81,7 @@ export function uiElementState(input: UIElementInput): StateValue {
       label: clip(c.label, 120),
       value: c.value ? clip(c.value, 80) : null,
       enabled: c.enabled,
+      ...(c.area ? { area: c.area } : {}),
     })),
   }
 }
@@ -87,7 +91,7 @@ export function uiElementQuestions(candidates: UICandidate[]) {
   const criteria: Record<string, string> = {}
   for (const c of candidates) {
     const name = c.label || c.value || "(unlabelled)"
-    criteria[String(c.id)] = `${humanRole(c.role)}: ${clip(name, 80)}`
+    criteria[String(c.id)] = `${c.area ? `${c.area} ` : ""}${humanRole(c.role)}: ${clip(name, 80)}`
   }
   return {
     target: choice(
