@@ -51,6 +51,7 @@ export async function runDoctorChecks(
   if (cfg) runWorkspaceChecks(checks, cfg)
   if (cfg) runWorkspaceSettingsChecks(checks, cfg)
   if (cfg) runRoutingChecks(checks, cfg)
+  if (cfg) runMeshTokenChecks(checks, cfg)
   if (cfg) runCodegraphChecks(checks, cfg)
   if (cfg) await runNotificationChecks(checks, cfg)
   if (cfg) runReminderChecks(checks, cfg)
@@ -372,14 +373,7 @@ function runReferenceChecks(checks: Check[], cfg: any): void {
     checks.push({ severity: "ok", group: "Secrets", title: "No ${VAR} references in agentx.json" })
     return
   }
-  const envFile = resolve(process.cwd(), ".env")
-  const envFromFile: Record<string, string> = {}
-  if (existsSync(envFile)) {
-    for (const line of readFileSync(envFile, "utf-8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i)
-      if (m) envFromFile[m[1]] = m[2]
-    }
-  }
+  const envFromFile = readEnvFile()
   const missing: string[] = []
   const empty: string[] = []
   for (const name of refs) {
@@ -408,6 +402,56 @@ function runReferenceChecks(checks: Check[], cfg: any): void {
       })
     }
   }
+}
+
+/** The install's .env as name -> raw value; empty when there is none. */
+function readEnvFile(): Record<string, string> {
+  const envFile = resolve(process.cwd(), ".env")
+  const out: Record<string, string> = {}
+  if (existsSync(envFile)) {
+    for (const line of readFileSync(envFile, "utf-8").split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i)
+      if (m) out[m[1]] = m[2]
+    }
+  }
+  return out
+}
+
+/** A mesh peer with no token of its own, or with this node's MESH_TOKEN,
+ *  can't be told apart from any other caller holding that token. The
+ *  daemon then treats its calls as the owner's, not that peer's. Warn,
+ *  never fail: a small mesh may run on one shared token on purpose. */
+export function meshPeerTokenChecks(
+  peers: ReadonlyArray<{ name: string; token?: string }>,
+  meshToken: string | undefined,
+): Check[] {
+  const why = "With a shared token this node cannot tell which peer is calling. " +
+    "For example, closing an approval card forwarded from that peer is refused, and its stop/resume signals are judged as the owner's."
+  const fix = "Give this pair a token of its own: set the same new value as mesh.peers[].token here and on the peer."
+  const out: Check[] = []
+  for (const p of peers) {
+    const token = (p.token ?? "").trim()
+    if (!token) {
+      out.push({ severity: "warn", group: "Mesh", title: `mesh peer "${p.name}" has no token; calls to it use the shared MESH_TOKEN`, detail: why, fix })
+    } else if (meshToken && token === meshToken) {
+      out.push({ severity: "warn", group: "Mesh", title: `mesh peer "${p.name}" uses this node's own MESH_TOKEN`, detail: why, fix })
+    }
+  }
+  if (peers.length > 0 && out.length === 0) {
+    out.push({ severity: "ok", group: "Mesh", title: `${peers.length} mesh peer(s), each with a token of its own` })
+  }
+  return out
+}
+
+function runMeshTokenChecks(checks: Check[], cfg: any): void {
+  const env = readEnvFile()
+  const value = (name: string) => (process.env[name] ?? env[name] ?? "").trim().replace(/^["']|["']$/g, "")
+  // agentx.json may name a token as ${VAR}; the daemon expands it from the environment.
+  const expand = (raw: unknown) => typeof raw === "string" ? raw.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/gi, (_, n) => value(n)) : undefined
+  const peers = ((cfg.mesh?.peers ?? []) as Array<{ name?: unknown; token?: unknown }>)
+    .filter((p) => typeof p?.name === "string")
+    .map((p) => ({ name: p.name as string, token: expand(p.token) }))
+  checks.push(...meshPeerTokenChecks(peers, value("MESH_TOKEN") || undefined))
 }
 
 function collectEnvRefs(node: unknown, into: Set<string>): void {

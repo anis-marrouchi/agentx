@@ -123,6 +123,43 @@ describe("decision cards", () => {
     expect(createCard(root, card({ raised_by: "beta" }), { now: NOW }).ok).toBe(true)
   })
 
+  it("refuses a second pending card from the same agent on the same source, naming the first", () => {
+    const src = "https://example.com/drafts/launch"
+    const first = createCard(root, card({ source: src }), { now: NOW })
+    if (!first.ok) throw new Error(first.error)
+    const again = createCard(root, card({ source: src, title: "Publish the launch post (again)" }), { now: NOW })
+    expect(again).toMatchObject({ ok: false })
+    if (again.ok) throw new Error("expected a refusal")
+    expect(again.error).toContain(first.card.id)
+    expect(again.error).toMatch(/still pending/)
+    // Another agent, another source, or no source at all: allowed.
+    expect(createCard(root, card({ source: src, raised_by: "beta" }), { now: NOW }).ok).toBe(true)
+    expect(createCard(root, card({ source: "https://example.com/drafts/other" }), { now: NOW }).ok).toBe(true)
+    expect(createCard(root, card(), { now: NOW }).ok).toBe(true)
+    expect(createCard(root, card(), { now: NOW }).ok).toBe(true)
+    // Once the first is answered, the same source may be asked again.
+    expect(decideCard(root, first.card.id, "yes").ok).toBe(true)
+    expect(createCard(root, card({ source: src }), { now: NOW }).ok).toBe(true)
+  })
+
+  it("keeps cards from different nodes apart on the same source", () => {
+    const src = "https://example.com/issues/7"
+    expect(createCard(root, card({ source: src }), { now: NOW }).ok).toBe(true)
+    expect(createCard(root, card({ source: src }), { now: NOW, node: "far" }).ok).toBe(true)
+    expect(createCard(root, card({ source: src }), { now: NOW, node: "near" }).ok).toBe(true)
+    expect(createCard(root, card({ source: src }), { now: NOW, node: "far" })).toMatchObject({ ok: false })
+    expect(createCard(root, card({ source: src }), { now: NOW })).toMatchObject({ ok: false })
+  })
+
+  it("leaves cards the daemon raises to their own rules", () => {
+    const src = "https://example.com/pulls/9"
+    const origin = (sha: string) => ({ kind: "merge-policy" as const, repo: "acme/app", pr: 9, sha })
+    expect(createCard(root, card({ source: src }), { now: NOW, origin: origin("aaa") }).ok).toBe(true)
+    expect(createCard(root, card({ source: src }), { now: NOW, origin: origin("bbb") }).ok).toBe(true)
+    // And a daemon card does not block the agent's own.
+    expect(createCard(root, card({ source: src }), { now: NOW }).ok).toBe(true)
+  })
+
   it("applies if_silent on expiry, once", () => {
     const r = createCard(root, card({ expires: "1h" }), { now: NOW })
     if (!r.ok) throw new Error(r.error)

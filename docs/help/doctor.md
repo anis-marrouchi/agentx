@@ -64,4 +64,5 @@ The same checks are on the dashboard.
 - **`Node.js … AgentX requires Node 22.19 or newer, up to Node 26`:** install Node.js 22, then run doctor again.
 - **`agentx.json is not valid JSON`:** the detail line names the position of the mistake. Fix it, or restore the latest backup: each save from the dashboard leaves a copy named `agentx.json.bak.<number>` in the same folder.
 - **`Daemon not reachable (not running?)`:** the daemon isn't running or can't be reached. Start it with `agentx daemon start --detach`, or add `--no-running` if it's stopped on purpose.
+- **`mesh peer "…" has no token` or `mesh peer "…" uses this node's own MESH_TOKEN` (a warning):** this machine and that peer share one token, so the daemon cannot tell which peer is calling. For example, closing an approval card forwarded from that peer is refused, and its stop and resume signals count as yours. Give the pair a token of its own: set the same new value as `token` for that peer in `mesh.peers` here, and for this machine in the peer's `mesh.peers`.
 - **Everything passes but messages still get no reply:** follow [It's not answering](./its-not-answering.md).
