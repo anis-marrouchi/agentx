@@ -83,7 +83,10 @@ export const point = new Command()
   .name("point")
   .description("point at the on-screen control matching a description (does not click)")
   .argument("<request>", 'what you mean, e.g. "the send button"')
-  .option("--max <n>", "candidates to consider", "40")
+  // 100, not 40: on Wikipedia the flag, the anthem player and the page's
+  // own menus were all past the 60th candidate (#1092). A hundred costs
+  // about a second and a hundredth of a cent per lookup.
+  .option("--max <n>", "candidates to consider", "100")
   .option("--json", "emit the decision as JSON instead of pointing")
   .option("--min-present <p>", "refuse below this P(control exists)", "0.5")
   .option("--mark <kind>", `how the character marks it: ${GUIDE_MARKS.join(", ")}`, "box")
@@ -113,7 +116,7 @@ export const point = new Command()
       // Reads the accessibility tree, and falls back to local OCR when the
       // tree is too thin to choose from — which is the only thing that
       // makes Electron apps addressable at all.
-      screen = await readScreen({ max: Number(opts.max) || 40 })
+      screen = await readScreen({ max: Number(opts.max) || 100 })
     } catch (e: any) {
       console.log(chalk.red(`  could not read the screen: ${e?.message ?? e}`))
       process.exit(1)

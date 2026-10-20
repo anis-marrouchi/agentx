@@ -27,6 +27,8 @@ export interface UICandidate {
   label: string
   value?: string | null
   enabled: boolean
+  /** Coarse place in the window ("top right"), when known. */
+  where?: string
 }
 
 /** Something already attempted on this screen, and what came of it. */
@@ -78,6 +80,7 @@ export function uiElementState(input: UIElementInput): StateValue {
       label: clip(c.label, 120),
       value: c.value ? clip(c.value, 80) : null,
       enabled: c.enabled,
+      ...(c.where ? { where: c.where } : {}),
     })),
   }
 }
@@ -87,7 +90,7 @@ export function uiElementQuestions(candidates: UICandidate[]) {
   const criteria: Record<string, string> = {}
   for (const c of candidates) {
     const name = c.label || c.value || "(unlabelled)"
-    criteria[String(c.id)] = `${humanRole(c.role)}: ${clip(name, 80)}`
+    criteria[String(c.id)] = `${humanRole(c.role)}: ${clip(name, 80)}${c.where ? ` (${c.where})` : ""}`
   }
   return {
     target: choice(
@@ -98,7 +101,9 @@ export function uiElementQuestions(candidates: UICandidate[]) {
     present: noul(
       "The screen actually contains a control matching the request.",
       {
-        true: "One of the listed controls is plainly the thing the request names, or is the obvious way to perform it.",
+        true: "One of the listed controls is plainly the thing the request names, or is the obvious way to perform it. " +
+          "Requests often describe an icon or logo by how it looks while the control is named by what it does " +
+          "or where it goes, not by its picture. A control whose name fits what such an icon would do counts.",
         false:
           "Nothing listed corresponds to the request — the right control is on another screen, behind a menu, not yet visible, or this application simply cannot do what was asked.",
       },
