@@ -257,7 +257,7 @@ const CLOSE_SHORTCUT = /(⌘\s*[⇧⌥]*\s*[wq]|\b(cmd|command)\s*\+\s*((shift|a
  *  Not "close-up" or "close to": "the icon close to the logo" is about
  *  where, not about closing. */
 export function asksToClose(request: string): boolean {
-  return /\b(close[sd]?|closing|quit)\b(?!-up|\s+to\b)/i.test(request)
+  return /\b(closes?|closing|quit)\b(?!-up|\s+to\b)/i.test(request)
 }
 
 /** True when the pick closes something the request never asked to close:

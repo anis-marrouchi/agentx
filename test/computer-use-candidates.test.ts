@@ -406,6 +406,12 @@ describe("close, quit: never by accident (#1094)", () => {
     expect(closeBlocked(tabX, "the icon close to the logo")).toBe(true)
   })
 
+  it("does not read \"closed\" as a close ask: \"closed captions\" keeps the guard on", () => {
+    const tabX = buildCandidates(chrome, 40).find((c) => c.id === 2)
+    expect(closeBlocked(tabX, "the closed captions button")).toBe(true)
+    expect(closeBlocked(tabX, "show closed issues")).toBe(true)
+  })
+
   it("marks a native app's Quit and Close Window menu items", () => {
     const menu = [
       el({ id: 1, role: "AXMenuItem", label: "Quit Google Chrome" }),
