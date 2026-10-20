@@ -178,9 +178,11 @@ export const point = new Command()
     const blocked = closeBlocked(chosenCand, request)
 
     if (opts.json) {
+      // A blocked pick names the control but gives no place: a caller that
+      // clicks wherever `chosen` says must have nothing to click.
       console.log(JSON.stringify({
         app: screen.app, request, ...(blocked ? { blocked: "closes a window, tab or app; the request does not ask to close anything" } : {}),
-        chosen: { ...chosen, label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR, inBrowser, ...(chosenCand?.closes ? { closes: true } : {}) }, present: sel.present,
+        chosen: { ...(blocked ? {} : chosen), label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR, inBrowser, ...(chosenCand?.closes ? { closes: true } : {}) }, present: sel.present,
         confidence: sel.confidence,
         ranked: sel.ranked.slice(0, 5).map((r) => ({
           ...r, label: candidates.find((c) => c.id === r.id)?.label, shown: candidates.find((c) => c.id === r.id)?.shown,

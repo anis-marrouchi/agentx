@@ -33,16 +33,19 @@ const pick = (id: number) => ({ answers: {
 describe("agentx point — close guard", () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    point.setOptionValue("json", undefined) // commander keeps flags across parseAsync calls
     mocks.readScreen.mockResolvedValue({ app: "Google Chrome", window: "x", candidates: buildCandidates(tree, 40), elements: tree, usedOCR: false, ocrRects: new Map() })
     mocks.daemon.mockRejectedValue(new Error("no daemon"))
     mocks.exec.mockImplementation((_f: string, _a: string[], cb: (e: null, r: { stdout: string }) => void) => cb(null, { stdout: "{}" }))
   })
 
-  const runPoint = async (request: string) => {
+  let printed: string[] = []
+  const runPoint = async (request: string, ...flags: string[]) => {
     const exit = vi.spyOn(process, "exit").mockImplementation(((code?: number) => { throw new Error(`exit ${code}`) }) as never)
-    const said = vi.spyOn(console, "log").mockImplementation(() => {})
+    printed = []
+    const said = vi.spyOn(console, "log").mockImplementation((s: unknown) => { printed.push(String(s)) })
     try {
-      return await point.parseAsync([request], { from: "user" }).then(() => "ok", (e: Error) => e.message)
+      return await point.parseAsync([request, ...flags], { from: "user" }).then(() => "ok", (e: Error) => e.message)
     } finally {
       exit.mockRestore()
       said.mockRestore()
@@ -53,6 +56,22 @@ describe("agentx point — close guard", () => {
     mocks.askSeat.mockResolvedValue(pick(2))
     expect(await runPoint("Bookmark this page")).toBe("exit 4")
     expect(mocks.exec).not.toHaveBeenCalled()
+  })
+
+  it("with --json, names the blocked control but gives no place to click", async () => {
+    mocks.askSeat.mockResolvedValue(pick(2))
+    expect(await runPoint("Bookmark this page", "--json")).toBe("exit 4")
+    const out = JSON.parse(printed[0])
+    expect(out.blocked).toBeTruthy()
+    expect(out.chosen).toMatchObject({ label: "Close", closes: true })
+    for (const k of ["x", "y", "width", "height"]) expect(out.chosen).not.toHaveProperty(k)
+    expect(mocks.exec).not.toHaveBeenCalled()
+  })
+
+  it("with --json, keeps the place when nothing is blocked", async () => {
+    mocks.askSeat.mockResolvedValue(pick(3))
+    expect(await runPoint("Bookmark this page", "--json")).toBe("ok")
+    expect(JSON.parse(printed[0]).chosen).toMatchObject({ x: 30, y: 0, width: 16, height: 16, label: "Bookmark this tab" })
   })
 
   it("points at it when the request asks to close the tab", async () => {
