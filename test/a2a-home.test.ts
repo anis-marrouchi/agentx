@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
-import { mkdtempSync, rmSync } from "fs"
+import { mkdtempSync, readdirSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { homeOfBody, homeRefsOf, homesOfRun, normalizeHome, sameHomeNote, SAME_HOME_MARKER } from "../src/a2a/home"
@@ -96,6 +96,8 @@ describe("continuing a session in a new chat (#1100)", () => {
     expect(continueSession(store, "writer", [{ channel: "a2a", chatId: "failed" }, { channel: "a2a", chatId: "first" }], { channel: "a2a", chatId: "third" })).toBe(true)
     expect(store.getClaudeSessionId("writer", "a2a", "third")).toBe("sess-a")
     expect(continueSession(store, "writer", [{ channel: "a2a", chatId: "none" }], { channel: "a2a", chatId: "fourth" })).toBe(false)
+    // Looking did not write an empty record for the chats that had none.
+    expect(readdirSync(join(dir, ".agentx/sessions")).some((f) => f.includes("failed") || f.includes("none"))).toBe(false)
     expect(continueSession(store, "writer", [{ channel: "a2a", chatId: "x" }], { channel: "a2a", chatId: "x" })).toBe(false)
   })
 })

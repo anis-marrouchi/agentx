@@ -525,6 +525,11 @@ export class SessionStore {
    */
   continueFrom(agentId: string, from: { channel: string; chatId: string }, to: { channel: string; chatId: string }): boolean {
     if (from.channel === to.channel && from.chatId === to.chatId) return false
+    // Read without creating: getSession would write an empty record for a
+    // chat that never saved one (a run that failed early).
+    const key = this.sessionKey(agentId, from.channel, from.chatId)
+    const known = this.cache.has(key) || existsSync(this.sessionFile(key)) || this.loadPreviousDaySession(agentId, from.channel, from.chatId) !== null
+    if (!known) return false
     const src = this.getSession(agentId, from.channel, from.chatId)
     if (!src.claudeSessionId && !src.codexSessionId && !src.opencodeSessionId) return false
     const dst = this.getSession(agentId, to.channel, to.chatId)

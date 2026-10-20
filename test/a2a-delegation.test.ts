@@ -729,6 +729,17 @@ describe("one session per piece of work (#1100)", () => {
     expect(calls[1].message).toBe("next")
   })
 
+  it("starts fresh, not on a session in use, when it stopped waiting for a run still going", async () => {
+    vi.useFakeTimers()
+    const { h, calls } = twoRuns()
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "long", home: "team/site#7", kind: "send", timeoutMs: 60_000 })
+    h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "next", home: "team/site#7", kind: "send", timeoutMs: 5_000 })
+    await vi.advanceTimersByTimeAsync(5_500)
+    expect(calls).toHaveLength(2)
+    expect(calls[1].opts.resumeFrom).toBeUndefined()
+    expect(h.logs.some((l) => l.includes("starting a fresh session instead"))).toBe(true)
+  })
+
   it("offers the older chats too, newest first, when a run ahead failed", async () => {
     const { h, runs, calls } = twoRuns()
     const a = h.mgr.start({ caller: AGENT_TURN, callee: "writer", message: "one", home: "team/site#7", kind: "send" })

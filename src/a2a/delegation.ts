@@ -307,6 +307,8 @@ export class DelegationManager {
   /** Per callee and home (#1100): the chat of its last run there, and
    *  that run while it is still going. In memory: a restart starts over. */
   private homes = new Map<string, { chats: Array<{ channel: string; chatId: string }>; taskId: string; running: Promise<void> | null; endedAt: number | null }>()
+  /** Callee chats with a same-home run going right now: never continued. */
+  private busyChats = new Set<string>()
   private readonly now: () => number
 
   constructor(private deps: DelegationDeps) {
@@ -437,8 +439,19 @@ export class DelegationManager {
     const prior = homeKey ? this.sameHome(homeKey) : null
     const calleeChat = { channel: String(calleeContext.channel), chatId: String(calleeContext.chatId) }
     // Newest first: a run that failed before it saved a session falls back
-    // to the one before it.
-    const resumeFrom = prior?.chats.filter((c) => !(c.channel === calleeChat.channel && c.chatId === calleeChat.chatId))
+    // to the one before it. Read when it launches: while any earlier run on
+    // the home is still going (one this delegation stopped waiting for), it
+    // starts fresh instead, since that run may be writing the very session
+    // an older chat names. No two runs write one session.
+    const chatKeyOf = (c: { channel: string; chatId: string }) => `${record.callee}\u0000${c.channel}\u0000${c.chatId}`
+    const resumable = () => {
+      const chats = prior?.chats ?? []
+      if (chats.some((c) => this.busyChats.has(chatKeyOf(c)))) {
+        this.deps.log(`[delegation ${id}] a run on ${home} is still going; starting a fresh session instead`)
+        return []
+      }
+      return chats.filter((c) => !(c.channel === calleeChat.channel && c.chatId === calleeChat.chatId))
+    }
     if (prior) {
       this.deps.log(`[delegation ${id}] ${record.callee} is on ${home} (${prior.taskId}); ${prior.running ? "waits for it, then " : ""}continues its session`)
     }
@@ -457,15 +470,19 @@ export class DelegationManager {
       }, timeoutMs)
       ;(timer as any).unref?.()
       this.timers.set(id, timer)
-      return record.peer
-        ? this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
-            .then((text) => ({ content: text } as { content: string; error?: string }))
-        : this.deps.runLocal(record.callee, opts.message, calleeContext, {
-            timeoutMs,
-            onStart: (runId) => { this.localRuns.set(id, runId) },
-            extras: opts.extras,
-            ...(resumeFrom?.length ? { resumeFrom } : {}),
-          })
+      if (record.peer) {
+        return this.deps.runPeer(record.peer, record.callee, opts.message, calleeContext, { timeoutMs, senderAgentId: record.caller })
+          .then((text) => ({ content: text } as { content: string; error?: string }))
+      }
+      const resumeFrom = resumable()
+      const mine = chatKeyOf(calleeChat)
+      if (homeKey) this.busyChats.add(mine)
+      return this.deps.runLocal(record.callee, opts.message, calleeContext, {
+        timeoutMs,
+        onStart: (runId) => { this.localRuns.set(id, runId) },
+        extras: opts.extras,
+        ...(resumeFrom?.length ? { resumeFrom } : {}),
+      }).finally(() => { this.busyChats.delete(mine) })
     }
     // The wait is bounded by this delegation's own time limit: a run ahead
     // that never settles (stuck before it started) does not hold it forever.
