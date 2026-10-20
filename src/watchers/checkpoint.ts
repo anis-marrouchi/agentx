@@ -140,7 +140,7 @@ export function taskStartOf(e: AgentXEvents["task:started"], settings: Pick<Watc
   if (e.channel === WATCHER_CHANNEL || settings.skipChannels.includes(e.channel)) return null
   // The relay of a delegation's result is the end of that delegation.
   if (isDelegationRelay(e.fullMessage ?? e.messagePreview)) return null
-  // A watcher's own alert, told in the delegator's chat (#400).
+  // A watcher's own alert, told in the delegator's chat (#1100).
   if (isWatcherAlert(e.fullMessage ?? e.messagePreview)) return null
   const message = e.requestText || e.fullMessage || e.messagePreview || ""
   const base = {

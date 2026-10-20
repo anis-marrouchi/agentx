@@ -155,7 +155,7 @@ describe("the daemon route", () => {
     expect(route).toContain("retro:01M4DJTC01FK0BVCMFKT5K4SRQ")
   })
 
-  it("passes a callee's message to its asker's chat before the gate, and asks the gate to call sends back (#400)", () => {
+  it("passes a callee's message to its asker's chat before the gate, and asks the gate to call sends back (#1100)", () => {
     const relay = route.indexOf("this.delegations.relayReply(")
     expect(relay).toBeGreaterThan(route.indexOf("this.sendAgentDedupe.get("))
     expect(relay).toBeLessThan(route.indexOf("this.delegationGate("))

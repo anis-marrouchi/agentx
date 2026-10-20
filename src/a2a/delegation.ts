@@ -62,7 +62,7 @@ export interface DelegationRecord {
    *  a watcher's done needs (watchers, #1049). */
   taskType?: string
   /** "send": an agent's send_agent from a turn no person is waiting on.
-   *  Its answer goes back to the asking agent's own chat (#400). Absent:
+   *  Its answer goes back to the asking agent's own chat (#1100). Absent:
    *  a delegation a person started. */
   kind?: "send"
   /** How many callback turns led to the asking turn. Bounded, so two
@@ -164,7 +164,7 @@ export function stoppedByRestart(resp: { content: string; error?: string }): boo
 }
 
 /** A send from a callback turn this many hops deep is not called back
- *  again: it goes out as a plain send (#400). */
+ *  again: it goes out as a plain send (#1100). */
 export const MAX_SEND_DEPTH = 4
 
 /** How many callback turns led to this turn. */
@@ -220,7 +220,7 @@ export function buildCallbackMessage(rec: DelegationRecord, result: DelegationRe
   }[result.status]
   const ok = result.status === "done"
   // A send no person waits on: the asking agent acts on the answer here,
-  // in the conversation the ask came from (#400).
+  // in the conversation the ask came from (#1100).
   const next = rec.kind === "send"
     ? ok
       ? "Act on it here, in the work you asked for it: carry on, or pass it to whoever waits on it. Nothing is sent anywhere unless you send it."
@@ -312,7 +312,7 @@ export class DelegationManager {
   }
 
   /**
-   * An agent's send_agent that `shouldCallback` turned down (#400): no
+   * An agent's send_agent that `shouldCallback` turned down (#1100): no
    * person waits on it, but the asking agent does. Its answer, failure or
    * timeout comes back as a turn in the asking agent's own chat, instead
    * of only into a log. Inside a delegation too: that turn's chat is
@@ -529,7 +529,7 @@ export class DelegationManager {
   }
 
   /** The asking agent and its chat for a delegation, running or recent:
-   *  where news about that work belongs (#400). */
+   *  where news about that work belongs (#1100). */
   originFor(id: string): { caller: string; origin: DelegationOrigin } | null {
     const rec = this.pendingById.get(id)
     if (rec) return { caller: rec.caller, origin: rec.origin }

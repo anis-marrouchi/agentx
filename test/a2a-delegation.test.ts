@@ -491,14 +491,14 @@ describe("a callback turn stopped by a restart (#846)", () => {
   })
 })
 
-// #400 — an agent's send no person waits on: COO-style turn in its own chat.
+// #1100 — an agent's send no person waits on, from its own chat.
 const AGENT_TURN: CallerTurn = {
   agentId: "planner",
   taskId: "run-9",
   context: { channel: "mcp", chatId: "mcp:lead:planner:work-1", sender: "agent:lead", initiator: { kind: "agent", channel: "cron", agentId: "lead" } },
 }
 
-describe("an agent's send calls its asker back (#400)", () => {
+describe("an agent's send calls its asker back (#1100)", () => {
   it("is allowed from an agent's turn, inside a delegation too, but not without a chat", () => {
     const h = harness()
     expect(h.mgr.shouldCallback(AGENT_TURN)).toBe(false)

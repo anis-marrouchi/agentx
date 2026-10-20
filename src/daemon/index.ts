@@ -2485,7 +2485,7 @@ export class AgentXDaemon {
       isLocalDelegation: (id) => this.delegations.isPending(id),
       // execute() does not reject on a failed start; it reports { error }.
       alertAgent: async (agentId, text, w) => {
-        // #400 — the delegator hears it in the chat it asked from, where
+        // #1100 — the delegator hears it in the chat it asked from, where
         // the work waiting on it lives, not in a new one.
         const asked = w.taskKey.startsWith("dlg-") ? this.delegations.originFor(w.taskKey) : null
         const context = asked && asked.caller === agentId
@@ -3582,7 +3582,7 @@ export class AgentXDaemon {
   ): Record<string, unknown> | null {
     const asyncFlag = body.async === true ? true : body.async === false ? false : undefined
     // An agent's send that no person waits on still calls its asker back
-    // (#400). A send that asked to wait (async:false) never gets here.
+    // (#1100). A send that asked to wait (async:false) never gets here.
     const send = !this.delegations.shouldCallback(caller, asyncFlag)
     if (send && !(opts.send && asyncFlag !== false && this.config.mesh.delegation.callbackSends && this.delegations.shouldCallbackSend(caller))) return null
     if (!caller) return null
@@ -6644,7 +6644,7 @@ export class AgentXDaemon {
             this.json(res, 202, duplicateBody(seen))
             break
           }
-          // #400 — a callee writing to the agent that asked it, from that
+          // #1100 — a callee writing to the agent that asked it, from that
           // delegation's chat, is answering it: the message goes into the
           // asker's conversation for that work, not into a new chat.
           if (!wait && this.config.mesh.delegation.callbackSends) {
@@ -6659,7 +6659,7 @@ export class AgentXDaemon {
             }
           }
           // #277 — same gate as /task: refuse a cycle, or call back when a
-          // person started it. #400 — or when an agent sent it.
+          // person started it. #1100 — or when an agent sent it.
           const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType ? { calleeContext: { taskType } } : {}) }, { send: true })
           if (!("track" in gate)) {
             const a = gateAnswer(gate)

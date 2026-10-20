@@ -289,7 +289,7 @@ describe("caller identity for the tools an agent launches", () => {
   })
 })
 
-describe("called-back sends (#400)", () => {
+describe("called-back sends (#1100)", () => {
   it("say the answer comes back, without the person wording", () => {
     const b = acceptedBody("dlg-1", "builder", undefined, true)
     expect(b).toMatchObject({ accepted: true, mode: "callback", taskId: "dlg-1" })

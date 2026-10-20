@@ -279,7 +279,7 @@ export function acceptedBody(taskId: string, callee: string, peer?: string, send
   }
 }
 
-/** How long a called-back send to a local agent may take (#400): the
+/** How long a called-back send to a local agent may take (#1100): the
  *  callee's own time limit, plus the wait for a free slot (a2a runs wait
  *  up to 25 min) and a margin. The plain delegation timeout would cut a
  *  long build off half way. */
@@ -288,7 +288,7 @@ export function sendTimeoutMs(maxExecutionMinutes: number | undefined): number {
 }
 
 /** What a callee gets back when its message to the agent that asked it
- *  was passed into that agent's conversation (#400). */
+ *  was passed into that agent's conversation (#1100). */
 export function replyBody(taskId: string, caller: string): Record<string, unknown> {
   return {
     accepted: true,
