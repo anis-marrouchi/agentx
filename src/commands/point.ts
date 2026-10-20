@@ -153,8 +153,14 @@ export const point = new Command()
     }
     if (candidates.length === 1) {
       const only = rectFor(screen, candidates[0].id)
+      // No place on screen means nothing to point at, the same answer the
+      // seat path gives when its pick has no rect.
+      if (!only) {
+        console.log(chalk.yellow(`  ${screen.app} exposes only ${chalk.bold(candidates[0].shown ?? candidates[0].label)}, which has no place on screen`))
+        process.exit(2)
+      }
       const loneBlocked = closeBlocked(candidates[0], request)
-      if (only && opts.json) {
+      if (opts.json) {
         // No seat is asked for a lone control, so there is no P(exists):
         // `present` is null, which reads as "not shown" to a threshold check.
         printJson(screen, request, candidates, only, loneBlocked,
@@ -162,15 +168,13 @@ export const point = new Command()
         if (loneBlocked) process.exit(4)
         return
       }
-      if (only && loneBlocked) {
+      if (loneBlocked) {
         console.log(chalk.yellow(`  ${screen.app} exposes only ${chalk.bold(candidates[0].shown ?? candidates[0].label)}, which closes something; not pointing at it`))
         process.exit(4)
       }
-      if (only) {
-        console.log(chalk.yellow(`  ${screen.app} exposes exactly one target — pointing at it: `) +
-                    chalk.bold(candidates[0].label))
-        await show(only, candidates[0].label, opts)
-      }
+      console.log(chalk.yellow(`  ${screen.app} exposes exactly one target — pointing at it: `) +
+                  chalk.bold(candidates[0].label))
+      await show(only, candidates[0].label, opts)
       return
     }
 

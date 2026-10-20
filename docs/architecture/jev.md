@@ -20,7 +20,7 @@ With `--json`, the chosen control shows `"inBrowser": true` when it sits outside
 
 When the best match would close a window, tab or app and the request does not ask to close anything, `agentx point` stops with exit code 4. With `--json`, the answer has a `blocked` field, and `chosen` gives the control's name but no `x`, `y`, `width` or `height`, so a script that clicks wherever `chosen` says has nothing to click.
 
-When the app shows only one control, `agentx point` uses it without asking the model. With `--json`, the answer has the same fields as usual, but `present` is `null` (nobody judged whether it matches) and `confidence` is `1`. A script that reads `blocked` or the exit code first, then checks `present`, handles both cases.
+When the app shows only one control, `agentx point` uses it without asking the model. With `--json`, the answer has the same fields as usual, but `present` is `null` (nobody judged whether it matches) and `confidence` is `1`. A script that reads `blocked` or the exit code first, then checks `present`, handles both cases. If that one control has no place on screen (for example, it is scrolled out of view), `agentx point` prints a short message and stops with exit code 2, the same code it uses when nothing matches, with or without `--json`.
 
 A candidate-selection question always has a choice to return. The separate “is it present?” question lets AgentX refuse to highlight an unrelated control.
 
