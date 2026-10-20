@@ -281,6 +281,17 @@ export function buildCard(
   }
 }
 
+/** A pending card the same agent, on the same node, raised on the same
+ *  source. None when the new card has no source or the daemon raised it. */
+function sameSourcePending(pending: DecisionCard[], card: DecisionCard): DecisionCard | undefined {
+  if (!card.source || card.origin) return undefined
+  return pending.find((c) =>
+    !c.origin &&
+    c.source === card.source &&
+    c.raised_by === card.raised_by &&
+    (c.node ?? "") === (card.node ?? ""))
+}
+
 /** Validate, enforce the per-agent cap, and save. */
 export function createCard(
   root: string,
@@ -296,11 +307,20 @@ export function createCard(
     const full = followupBudgetRefusal(listCards(root), built.card.followup, opts.now ?? Date.now())
     if (full) return { ok: false, error: full }
   }
+  const pending = listCards(root, "pending")
+  // One open question per source: the same question raised twice comes
+  // back after it was answered. Only for cards an agent raised; cards the
+  // daemon raises (origin set) keep their own rules, such as a merge card
+  // per pushed commit on the same PR link.
+  const twin = sameSourcePending(pending, built.card)
+  if (twin) {
+    return { ok: false, error: `a card from you on this source is still pending: ${twin.id}. Wait for its answer, or resolve it first and then raise the new one.` }
+  }
   // Retro cards are raised for an agent, not by it: they get their own
   // count, so they never use up the agent's room for its own cards.
   const isRetro = (c: { origin?: CardOrigin }) => isRetroOrigin(c.origin)
   const retro = isRetro(built.card)
-  const open = listCards(root, "pending").filter((c) => c.raised_by === built.card.raised_by && isRetro(c) === retro).length
+  const open = pending.filter((c) => c.raised_by === built.card.raised_by && isRetro(c) === retro).length
   if (open >= CARD_LIMITS.pendingPerAgent) {
     const what = retro ? "retro cards" : "cards"
     return { ok: false, error: `${built.card.raised_by} already has ${open} ${what} waiting; wait for decisions before raising more` }
