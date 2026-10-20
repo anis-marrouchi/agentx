@@ -116,9 +116,10 @@ export function followupBudgetRefusal(
 }
 
 /** What the author hears when the popup does not show its card. */
-export function returnedText(card: { id: string; title: string }, reason: string): string {
+export function returnedText(card: { id: string; title?: string }, reason: string): string {
+  const title = card.title?.trim()
   return [
-    `[screen gate] Your card ${card.id} ("${card.title}") was not shown to the owner: ${reason}.`,
+    `[screen gate] Your card ${card.id}${title ? ` ("${title}")` : ""} was not shown to the owner: ${reason}.`,
     "It is still in his inbox, unchanged. If it must reach him on screen, close it (agentx_approval resolve) and raise one that passes:",
     `one question, title up to ${SCREEN_LIMITS.title} characters, ask up to ${SCREEN_LIMITS.ask}, at most ${SCREEN_LIMITS.answers} choices.`,
   ].join(" ")
