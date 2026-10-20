@@ -23,6 +23,7 @@ export interface ContextLayer {
   content: string        // rendered text
   tags: string[]         // metadata tags for filtering/matching
   rules?: string[]       // constraints/instructions specific to this layer
+  keep?: "head" | "tail" // which end survives a cut (default head)
 }
 
 export interface ContextConfig {
@@ -211,15 +212,13 @@ export function buildAgentContext(input: ContextInput, config: ContextConfig = D
     if (!layer.content) continue
 
     const layerMaxChars = layer.maxTokens * CHARS_PER_TOKEN
-    const trimmed = layer.content.length > layerMaxChars
-      ? layer.content.slice(0, layerMaxChars) + "..."
-      : layer.content
+    const trimmed = fitLayer(layer.content, layerMaxChars, layer.keep)
 
     if (totalChars + trimmed.length > maxChars) {
       // Budget exhausted — add what fits or skip
       const remaining = maxChars - totalChars
       if (remaining > 100) {
-        parts.push(trimmed.slice(0, remaining) + "...")
+        parts.push(fitLayer(trimmed, remaining, layer.keep))
       }
       break
     }
@@ -229,6 +228,26 @@ export function buildAgentContext(input: ContextInput, config: ContextConfig = D
   }
 
   return parts.join("\n\n")
+}
+
+/**
+ * Cut a layer's text to `max` chars. Most layers keep their start. A
+ * transcript keeps its end: the newest turns are the ones the next message
+ * follows from, and cutting them is what made a fresh session answer from
+ * an older subject. The header line stays so the block is still labelled.
+ */
+function fitLayer(text: string, max: number, keep: ContextLayer["keep"] = "head"): string {
+  if (text.length <= max) return text
+  if (keep !== "tail") return text.slice(0, max) + "..."
+  const marker = "...\n"
+  const nl = text.indexOf("\n")
+  const header = nl > 0 && nl + 1 + marker.length < max / 2 ? text.slice(0, nl + 1) : ""
+  const room = max - header.length - marker.length
+  let tail = text.slice(text.length - room)
+  // Start on a whole line unless that would throw away most of the room.
+  const lineStart = tail.indexOf("\n")
+  if (lineStart >= 0 && lineStart < room / 2) tail = tail.slice(lineStart + 1)
+  return header + marker + tail
 }
 
 /**
@@ -418,6 +437,7 @@ function buildLayers(input: ContextInput, config: ContextConfig): ContextLayer[]
       maxTokens: budget("history", 1200),
       content: history,
       tags: ["history", "conversation"],
+      keep: "tail",
     })
   }
 
