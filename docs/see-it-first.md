@@ -81,7 +81,7 @@ Next: [follow the annotated workflow walkthrough](tutorials/first-workflow.md), 
 
 1. **Browser:** `http://127.0.0.1:18931/live` shows agents on three machines.
 2. The terminal prints `A2A mesh healthy`, which means the three demo machines can reach each other.
-3. The scenario ends with a line that starts with `Resolved`. That line means the demo worked from start to end. If the run stops before it, copy the line that starts with `Error:` into your report.
+3. The scenario ends with a line that starts with `Resolved`. That line means the demo worked from start to end. If the run stops before it, copy the line that starts with `Demo failed:` and the `Node logs:` line under it into your report.
 
 ## If something is wrong
 
