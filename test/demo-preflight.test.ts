@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "net"
-import { busyPorts, cliCommand } from "../src/commands/demo-startup"
+import { busyPorts, cliCommand, ledgerHint } from "../src/commands/demo-startup"
 
 let server: Server | undefined
 
@@ -46,5 +46,15 @@ describe("cliCommand", () => {
   it("suggests agentx for an installed copy", () => {
     expect(cliCommand("/usr/local/bin/agentx", {})).toBe("agentx")
     expect(cliCommand("/usr/local/lib/node_modules/agentix-cli/dist/cli.js", {})).toBe("agentx")
+  })
+})
+
+describe("ledgerHint", () => {
+  it("names a ledger command that reads node-a's ledger from the demo folder", () => {
+    expect(ledgerHint("npx agentix-cli", true)).toContain("`npx agentix-cli ledger events --cwd .agentx-demo/node-a`")
+  })
+
+  it("says nothing when the demo folder is deleted at exit", () => {
+    expect(ledgerHint("npx agentix-cli", false)).toBe("")
   })
 })

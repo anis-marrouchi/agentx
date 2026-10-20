@@ -28,6 +28,8 @@ Add these after `npx agentix-cli demo`, for example `npx agentix-cli demo --once
 
 The demo also prints the command to connect a real model, written the way you started it: `npx agentix-cli setup` after `npx`, `agentx setup` after an npm install.
 
+Each demo machine records every message it handles in its own intent ledger. The scenario's last line gives the command to read it, for example `npx agentix-cli ledger events --cwd .agentx-demo/node-a`. Run it from the folder you started the demo in, while the demo is still running (`node-b` and `node-c` are the other two machines). With `--once`, the folder is deleted when the demo stops, so the line is left out; add `--keep` to read the ledgers afterwards.
+
 If you already have a built copy of the source code (see [Install › Run from source](./install.md#run-from-source)), `node dist/cli.js demo` in that folder does the same.
 
 ![Three local demo nodes in Live](/screenshots/live.png)
