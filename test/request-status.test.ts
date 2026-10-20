@@ -329,6 +329,14 @@ describe("waiting on someone", () => {
     expect(state("req-t1")).toBe("done")
   })
 
+  it("is not done when the hand-off ended waiting: it says what it waits on (#1100)", () => {
+    start("t1")
+    board.delegationStarted(dlg("d1"))
+    end("t1")
+    board.delegationDone(dlg("d1"), "waiting")
+    expect(state("req-t1")).toBe("waiting")
+  })
+
   it("waits for every hand-off before it is done", () => {
     start("t1")
     board.delegationStarted(dlg("d1"))

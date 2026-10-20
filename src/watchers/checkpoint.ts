@@ -178,6 +178,8 @@ async function seatDecide(input: TaskWatchInput, key: string): Promise<DecideRes
 export class WatchCheckpoint {
   /** Checks still deciding, by task key and by run (trace) id. */
   private inflight = new Map<string, Promise<CheckResult>>()
+  /** Watchers whose run said it ends to wait (markWaiting), until it ends. */
+  private waitingRuns = new Set<string>()
   private checking = new Map<string, Promise<CheckResult>>()
   private readonly now: () => number
 
@@ -309,6 +311,19 @@ export class WatchCheckpoint {
     })
   }
 
+  /** A running task says it ends its run to wait for something before the
+   *  work is done (#1100): its reply will not close its watcher, which is
+   *  due when the wait should end, if that was given. A delegation's
+   *  watcher hears it from the delegation's end instead. The watcher id,
+   *  or null when the run has none. */
+  markWaiting(traceId: string, dueAt?: number): string | null {
+    const w = this.deps.store.byTrace(traceId)
+    if (!w || !["open", "alerted"].includes(w.state)) return null
+    if (dueAt) this.deps.store.setDue(w.id, dueAt)
+    if (!(w.kind === "delegation" && w.taskKey.startsWith("dlg-"))) this.waitingRuns.add(w.id)
+    return w.id
+  }
+
   /** A run ended. With a result, its watcher is done; without one, it fires.
    *  A delegation's watcher follows the delegation's own end instead. */
   async taskEnded(e: AgentXEvents["task:completed"]): Promise<void> {
@@ -318,10 +333,12 @@ export class WatchCheckpoint {
     if (!w || (w.kind === "delegation" && w.taskKey.startsWith("dlg-"))) return
     // A restart or a stop signal cut it: it may resume, so the due time decides.
     if (e.interrupted || e.stopped) return
+    // The run said it ends to wait for something (#1100): not done.
+    const waited = this.waitingRuns.delete(w.id)
     if (!e.error && e.finalResponse?.trim()) {
       // Explicit: a reply can be a promise ("I'll publish at 18:00"), so
       // only a done signal closes the watcher; the due time still applies.
-      if (this.needsExplicitDone(w)) return
+      if (waited || this.needsExplicitDone(w)) return
       // Also after an alert: a late result spares the owner the escalation.
       this.deps.store.transition(w.id, ["open", "alerted"], "done", "ended with a result", this.now())
       return
@@ -331,10 +348,16 @@ export class WatchCheckpoint {
 
   /** A delegation ended: done closes its watcher (unless the done signal
    *  is explicit), anything else fires it. */
-  async delegationEnded(rec: Pick<DelegationRecord, "id">, status: DelegationStatus, text = ""): Promise<void> {
+  async delegationEnded(rec: Pick<DelegationRecord, "id">, status: DelegationStatus, text = "", dueAt?: number): Promise<void> {
     await this.inflight.get(rec.id)
     const w = this.deps.store.byKey(rec.id)
     if (!w) return
+    // The callee ended its run to wait (#1100): not done. The watcher
+    // stays open, due when the callee said the wait ends, if it said.
+    if (status === "waiting") {
+      if (dueAt) this.deps.store.setDue(w.id, dueAt)
+      return
+    }
     if (status === "done") {
       if (this.needsExplicitDone(w)) return
       this.deps.store.transition(w.id, ["open", "alerted"], "done", "delegation answered", this.now())

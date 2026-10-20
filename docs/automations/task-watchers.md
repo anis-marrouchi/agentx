@@ -26,7 +26,9 @@ A hand-off to an agent on another machine (a mesh peer) is watched on the machin
 
 ### What counts as done
 
-By default (`watchers.doneSignal` `result`), a watcher closes when the agent's run ends with a reply, or when a delegation answers. A reply that only promises the work, such as "I'll publish at 18:00", also closes it.
+By default (`watchers.doneSignal` `result`), a watcher closes when the agent's run ends with a reply, or when a delegation answers. A reply that only promises the work, such as "I'll publish at 18:00", also closes it, unless the agent said its run ends waiting.
+
+An agent whose run ends to **wait** for something (a build, a deploy, another agent's answer, a time) says so with the `agentx_waiting` tool, before it ends the run: what it waits for, and when the wait should be over. Its reply then does not close the watcher, whatever `doneSignal` says. The watcher becomes due at that time, and fires as usual if the work is still not done then. For a delegation, the agent that handed it over is told the work is waiting for that, not that it finished.
 
 With `watchers.doneSignal` set to `explicit`, a reply does not close the watcher. Only a done signal does: `POST /watchers/<id>/done` ([section 4](#_4-mark-a-task-done-by-hand)). A watched task that replied but was never marked done fires at its due time. When a delegation answers, its result tells the agent that handed it over which watcher to close and how. A scheduled run or a message sent straight to an agent has no one who handed it over, so that run is told in its own instructions which watcher follows it and how to close it. Every watched task still needs someone to mark it done, so use this mode with the `task-watch` seat `active` (step 2), or expect an alert for each watched task that nobody marks done.
 

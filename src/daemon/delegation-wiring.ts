@@ -308,6 +308,23 @@ export function continueSession(
   }
 }
 
+/** What a run that says it ends to wait gets back (#1100). */
+export function waitingBody(w: { delegation: string | null; asker: string | null; watcher: string | null; on: string; dueAt?: number }): Record<string, unknown> {
+  const due = w.dueAt ? ` by ${new Date(w.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC` : ""
+  const told = w.delegation
+    ? `When this run ends, ${w.asker} is told the work is waiting for ${w.on}${due}, not done.`
+    : "No delegation on this node waits on this run, so no one is called back; say it in your reply."
+  const watch = w.watcher
+    ? ` Its watcher ${w.watcher} stays open${due ? ` and is due${due}` : ""}; mark it done with its evidence when the work is finished.`
+    : ""
+  return {
+    ok: true,
+    delegation: w.delegation,
+    watcher: w.watcher,
+    note: `Recorded: this run ends waiting for ${w.on}${due}. ${told}${watch} When the wait is over, finish the work and report it to whoever asked.`,
+  }
+}
+
 /** What a callee gets back when its message to the agent that asked it
  *  was passed into that agent's conversation (#1100). */
 export function replyBody(taskId: string, caller: string): Record<string, unknown> {

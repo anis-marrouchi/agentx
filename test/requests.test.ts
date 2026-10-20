@@ -240,6 +240,14 @@ describe("failure", () => {
     expect(store.get("req-t1")?.state).toBe("in_progress")
   })
 
+  it("keeps a request waiting on another agent when the delegation ended waiting (#1100)", () => {
+    start("t1")
+    tracker.delegationStarted(dlg("dlg-1"))
+    end("t1")
+    tracker.delegationDone(dlg("dlg-1"), "waiting", "build started")
+    expect(store.get("req-t1")?.state).toBe("waiting_other")
+  })
+
   it("notes the request when a delegated answer was not passed on after a restart (#846)", () => {
     start("t1")
     tracker.delegationStarted(dlg("dlg-1"))

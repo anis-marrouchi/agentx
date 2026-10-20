@@ -780,3 +780,52 @@ describe("one session per piece of work (#1100)", () => {
     expect(calls[1].opts.resumeFrom).toBeUndefined()
   })
 })
+
+describe("a run that ends to wait is not done (#1100)", () => {
+  it("is reported as waiting, with what for and until when, for an agent's send", async () => {
+    const h = harness()
+    const { taskId } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Build S07", kind: "send" })
+    const due = Date.parse("2030-01-01T12:00:00Z")
+    expect(h.mgr.markWaiting("callee-run-1", { on: "the S07 build to finish", dueAt: due })?.id).toBe(taskId)
+    h.local.resolve({ content: "Started the build; the monitor will tell me when it ends." })
+    await flush()
+    expect(h.injected).toHaveLength(1)
+    const msg = h.injected[0].message
+    expect(msg).toContain("status=waiting")
+    expect(msg).toContain("is NOT finished")
+    expect(msg).toContain("the S07 build to finish, expected by 2030-01-01 12:00 UTC")
+    expect(msg).toContain("Do not count it as done")
+    expect(h.injected[0].context).toMatchObject({ delegation: { status: "waiting" } })
+  })
+
+  it("tells a person-started caller to say it is under way, and its fallback says not finished", async () => {
+    const h = harness({ injectTurn: async (turn) => { h.injected.push(turn); return { content: "" } } })
+    h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "Publish the page" })
+    h.mgr.markWaiting("callee-run-1", { on: "the deploy" })
+    h.local.resolve({ content: "Deploy started." })
+    await flush()
+    expect(h.injected[0].message).toContain("Tell the person it is under way")
+    expect(h.delivered[0].text).toContain("is not finished yet; it is waiting for the deploy")
+    expect(h.delivered[0].outcome).toBe("done")
+  })
+
+  it("only counts for the run of a pending delegation, and an error still wins", async () => {
+    const h = harness()
+    expect(h.mgr.markWaiting("some-other-run", { on: "x" })).toBeNull()
+    h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    h.mgr.markWaiting("callee-run-1", { on: "x" })
+    h.local.resolve({ content: "", error: "boom" })
+    await flush()
+    expect(h.injected[0].message).toContain("status=error")
+  })
+
+  it("tells listeners the delegation ended waiting, with its due time", async () => {
+    const ends: any[] = []
+    const h = harness({ onDone: (rec, result) => ends.push({ id: rec.id, ...result }) })
+    const { taskId } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    h.mgr.markWaiting("callee-run-1", { on: "review", dueAt: 123 })
+    h.local.resolve({ content: "asked for review" })
+    await flush()
+    expect(ends).toEqual([{ id: taskId, status: "waiting", text: "asked for review", waiting: { on: "review", dueAt: 123 } }])
+  })
+})

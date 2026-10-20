@@ -3686,6 +3686,11 @@ export class AgentRegistry {
    *  channel and chat it must be the only run on that chat. With neither
    *  there is no answer: guessing "the agent's only turn" could attach a
    *  same-host proxy's request to an unrelated conversation. */
+  /** The trace id of a running task of `agentId`, once allocated. */
+  runningTraceId(agentId: string, taskId: string): string | null {
+    return this.agents.get(agentId)?.runningTasks.find((r) => r.id === taskId)?.traceId ?? null
+  }
+
   findRunningTurn(
     agentId: string,
     by: { taskId?: string; channel?: string; chatId?: string } = {},

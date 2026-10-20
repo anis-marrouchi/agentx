@@ -27,7 +27,16 @@ import { isQueued } from "@/agents/queued"
 import { taskTypeOf } from "@/watchers/due"
 import { normalizeHome } from "./home"
 
-export type DelegationStatus = "done" | "error" | "timeout" | "lost"
+/** "waiting": the callee answered, but said its run ends to wait for
+ *  something (a build, another agent, a time) before the work is done
+ *  (#1100). It is not done. */
+export type DelegationStatus = "done" | "waiting" | "error" | "timeout" | "lost"
+
+/** What a callee said it waits for when its run ended (markWaiting). */
+export interface Waiting {
+  on: string
+  dueAt?: number
+}
 
 /** The caller's running turn, as the daemon resolved it. */
 export interface CallerTurn {
@@ -76,7 +85,11 @@ export interface DelegationRecord {
 export interface DelegationResult {
   status: DelegationStatus
   text: string
+  /** With status "waiting": what for, and until when. */
+  waiting?: Waiting
 }
+
+const whenText = (ms: number) => new Date(ms).toISOString().slice(0, 16).replace("T", " ") + " UTC"
 
 export interface InjectedTurn {
   agentId: string
@@ -237,13 +250,34 @@ export function originOf(ctx: Record<string, unknown>): DelegationOrigin | null 
  *  `wrote`: this is the end of a run that already wrote to the caller. */
 export function buildCallbackMessage(rec: DelegationRecord, result: DelegationResult, opts: { reply?: boolean; wrote?: boolean } = {}): string {
   const who = rec.peer ? `${rec.callee} on ${rec.peer}` : rec.callee
+  const w = result.waiting
+  const waitWords = w ? `${w.on}${w.dueAt ? `, expected by ${whenText(w.dueAt)}` : ""}` : ""
   const outcome = opts.reply ? `answered (${rec.callee} sent this to you itself)` : {
     done: "finished",
+    waiting: `is NOT finished: ${rec.callee} ended its run to wait for ${waitWords || "something"}`,
     error: "failed",
     timeout: "did not answer in time",
     lost: "was lost (this machine restarted before the answer came back)",
   }[result.status]
-  const ok = result.status === "done"
+  const ok = result.status === "done" || result.status === "waiting"
+  if (result.status === "waiting" && !opts.reply) {
+    const nextWait = rec.kind === "send"
+      ? "Do not count it as done. Carry on with what does not depend on it. If it is still not finished when it is due, you will be told."
+      : "Tell the person it is under way and what it waits for. Do not say it is done."
+    return [
+      `${DELEGATION_RESULT_MARKER} task=${rec.id} from=${rec.callee}${rec.peer ? ` peer=${rec.peer}` : ""} status=waiting]`,
+      `Earlier in this conversation you asked ${who} to help. That work ${outcome}.`,
+      ...(opts.wrote ? [`${rec.callee} already wrote to you during the work; this is how its run ended.`] : []),
+      "",
+      "What you asked:",
+      rec.request,
+      "",
+      `${who} said:`,
+      clip(result.text, RESULT_CLIP),
+      "",
+      nextWait,
+    ].join("\n")
+  }
   // A send no person waits on: the asking agent acts on the answer here,
   // in the conversation the ask came from (#1100).
   const next = rec.kind === "send"
@@ -272,6 +306,7 @@ export function buildCallbackMessage(rec: DelegationRecord, result: DelegationRe
 export function fallbackReply(rec: DelegationRecord, result: DelegationResult): string {
   const who = rec.peer ? `${rec.callee} on ${rec.peer}` : rec.callee
   if (result.status === "done") return `${who} finished:\n\n${clip(result.text, 3500)}`
+  if (result.status === "waiting") return `${who} is not finished yet; it is waiting for ${result.waiting?.on ?? "something"}:\n\n${clip(result.text, 3500)}`
   return `The request to ${who} did not complete (${result.status}): ${clip(result.text, 500)}`
 }
 
@@ -311,6 +346,8 @@ export class DelegationManager {
   private localRuns = new Map<string, string>()
   /** Callback turns a restart stopped, by task id (see HeldRelay). */
   private heldRelays = new Map<string, HeldRelay>()
+  /** Delegations whose callee said its run ends to wait (markWaiting). */
+  private waiting = new Map<string, Waiting>()
   /** Delegations whose callee already wrote to the caller (relayReply):
    *  their plain end is not called back a second time. */
   private answered = new Set<string>()
@@ -509,9 +546,16 @@ export class DelegationManager {
       })
     }
     run
-      .then((r) => this.complete(id, r.error
-        ? { status: "error", text: r.error }
-        : { status: "done", text: r.content || "(empty answer)" }))
+      .then((r) => {
+        // A run that said it ends to wait (markWaiting) is not done (#1100).
+        const waiting = this.waiting.get(id)
+        this.waiting.delete(id)
+        return this.complete(id, r.error
+          ? { status: "error", text: r.error }
+          : waiting
+            ? { status: "waiting", text: r.content || "(empty answer)", waiting }
+            : { status: "done", text: r.content || "(empty answer)" })
+      })
       .catch((e: any) => this.complete(id, { status: "error", text: e?.message ?? String(e) }))
 
     return { taskId: id, record }
@@ -536,6 +580,7 @@ export class DelegationManager {
     if (timer) clearTimeout(timer)
     this.timers.delete(id)
     this.localRuns.delete(id)
+    this.waiting.delete(id)
     this.append({ type: "done", id, status: result.status, ts: this.now() })
     const entry = this.recent.find((r) => r.id === id)
     if (entry) { entry.status = result.status; entry.endedAt = this.now() }
@@ -631,6 +676,22 @@ export class DelegationManager {
     return this.homes.get(key) ?? null
   }
 
+  /** A callee's run (by its run id) says it ends to wait for something
+   *  before the work is done (#1100): its end is reported as "waiting",
+   *  not done. The delegation it runs for, or null when it runs for none
+   *  on this node. */
+  markWaiting(runId: string, w: Waiting): DelegationRecord | null {
+    for (const [id, run] of this.localRuns) {
+      if (run !== runId) continue
+      const rec = this.pendingById.get(id)
+      if (!rec) return null
+      this.waiting.set(id, { on: clip(w.on, 300), ...(w.dueAt ? { dueAt: w.dueAt } : {}) })
+      this.deps.log(`[delegation ${id}] ${rec.callee} ends its run waiting for ${clip(w.on, 120)}`)
+      return rec
+    }
+    return null
+  }
+
   /** The asking agent and its chat for a delegation, running or recent:
    *  where news about that work belongs (#1100). `depth` is the asking
    *  turn's callback hop count (MAX_SEND_DEPTH). */
@@ -715,7 +776,7 @@ export class DelegationManager {
       await this.deps.deliver({
         channel, chatId, text, agentId: rec.caller, accountId: rec.origin.accountId, record: !own,
         taskId: rec.id,
-        outcome: own || result.status === "done" ? "done" : "error",
+        outcome: own || result.status === "done" || result.status === "waiting" ? "done" : "error",
       })
       this.deps.log(`[delegation ${rec.id}] ${rec.caller} updated ${channel}:${chatId}`)
     } catch (e: any) {

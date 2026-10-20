@@ -162,8 +162,17 @@ export class StatusBoard {
     })
   }
 
-  delegationDone(d: DelegationSignal, status: "done" | "error" | "timeout" | "lost"): void {
-    this.guard("delegation end", () => this.handedBack(this.store.byRef("delegation", d.id), status))
+  delegationDone(d: DelegationSignal, status: "done" | "waiting" | "error" | "timeout" | "lost"): void {
+    this.guard("delegation end", () => {
+      const row = this.store.byRef("delegation", d.id)
+      // The callee's run ended to wait (#1100): the request still waits on
+      // it, it is not handed back.
+      if (status === "waiting") {
+        if (row && !FINAL_STATES.includes(row.state)) this.change(row.id, { state: "waiting", waitingOn: d.callee })
+        return
+      }
+      this.handedBack(row, status)
+    })
   }
 
   /** The agent raised a decision card from the turn of a request: the

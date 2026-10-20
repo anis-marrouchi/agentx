@@ -304,6 +304,22 @@ describe("fire", () => {
     expect(agentAlerts).toHaveLength(0)
   })
 
+  it("stays open, due when the wait ends, for a run that said it ends waiting (#1100)", async () => {
+    await cp.check(task({ delegator: "coo", kind: "delegation" }))
+    const due = clock + 90 * MIN
+    expect(cp.markWaiting("trace-1", due)).toBe(store.byKey("trace-1")?.id)
+    await cp.taskEnded({ taskId: "trace-1", agentId: "social", channel: "telegram", chatId: "x", durationMs: 5, finalResponse: "Build started; waiting for it.", at: "" } as any)
+    expect(store.byKey("trace-1")?.state).toBe("open")
+    expect(store.byKey("trace-1")?.dueAt).toBe(due)
+    expect(cp.markWaiting("trace-unknown")).toBeNull()
+
+    await cp.delegationStarted({ id: "dlg-9", caller: "coo", callee: "social", request: "build it" })
+    await cp.delegationEnded({ id: "dlg-9" }, "waiting", "started", due)
+    expect(store.byKey("dlg-9")?.state).toBe("open")
+    expect(store.byKey("dlg-9")?.dueAt).toBe(due)
+    expect(agentAlerts).toHaveLength(0)
+  })
+
   it("is done when the run ends with a result", async () => {
     await cp.check(task({ delegator: "coo", kind: "delegation" }))
     await cp.taskEnded({ taskId: "trace-1", agentId: "social", channel: "telegram", chatId: "x", durationMs: 5, finalResponse: "Published: https://example.com/v/1", at: "" } as any)
