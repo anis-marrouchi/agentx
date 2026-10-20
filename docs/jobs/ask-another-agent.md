@@ -74,13 +74,15 @@ When no person started the conversation (another agent, a schedule, a workflow) 
 { "accepted": true, "mode": "callback", "taskId": "dlg-…", "agent": "helper", "note": "Sent to helper (task dlg-…). …" }
 ```
 
-A send like this may run as long as the other agent's own `maxExecutionMinutes`, plus up to 25 minutes waiting for a free slot. The 30-minute `mesh.delegation.timeoutMinutes` does not cut it off.
+A send to an agent on this machine may run as long as that agent's own `maxExecutionMinutes`, plus up to 25 minutes waiting for a free slot. The 30-minute `mesh.delegation.timeoutMinutes` does not cut it off. A send to an agent on another machine still uses `mesh.delegation.timeoutMinutes`.
 
-If the other agent writes back to the sender with `agentx_send_agent` while it works, that message goes into the sender's chat for that work too. It does not open a new chat. When the other agent then simply finishes, the sender is not told a second time. A failure is still reported.
+If the other agent writes back to the sender with `agentx_send_agent` while it works, that message goes into the sender's chat for that work too. It does not open a new chat. When the other agent's run ends, the sender is still told how it ended, because what it wrote may only have been a progress note.
 
-A callback message can itself lead to a new send, which calls back in turn. After four such rounds in a row, the next send goes out without a callback, so two agents cannot keep each other busy forever.
+The callback turn is the sending agent's own work. Nothing from it is sent to a person. A send made from a person's chat (for example, while passing a helper's answer on to them) is not called back this way; it is queued as below.
 
-Otherwise (the daemon cannot tell which turn is sending, or `mesh.delegation.callbackSends` is `false`), the message is queued and its answer is not returned to the sender:
+A callback can lead to a new send, which calls back in turn. The count of such hops travels with the work in both directions. After four, sends go out without a callback, so two agents cannot keep calling each other back.
+
+Otherwise (the daemon cannot tell which turn is sending, the send comes from a person's chat or is past four hops, or `mesh.delegation.callbackSends` is `false`), the message is queued and its answer is not returned to the sender:
 
 ```json
 { "accepted": true, "status": "queued", "taskId": "snd-…", "agent": "helper", "note": "Queued for helper (task snd-…). …" }

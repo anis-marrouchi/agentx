@@ -213,7 +213,7 @@ import { MeshFeedFollower } from "@/events/peer-feed"
 import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
-import { isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
+import { callbackDepthOf, isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
 import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
@@ -2467,6 +2467,15 @@ export class AgentXDaemon {
     })
   }
 
+  /** Wait, up to `maxMs`, for the agent's turn in this chat to end, so a
+   *  turn told there does not run beside it (#1100). */
+  private async waitForChat(agentId: string, channel: string, chatId: string, maxMs: number): Promise<void> {
+    const until = Date.now() + maxMs
+    while (this.registry.isChatBusy(agentId, channel, chatId) && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 1000))
+    }
+  }
+
   /** The watcher checkpoint at every task start (src/watchers, #1030). */
   private attachTaskWatchers(db: NonNullable<ReturnType<typeof openDb>>): AttachedWatchers {
     const port = parseInt(this.config.node.bind.split(":")[1] || "18800", 10)
@@ -2487,9 +2496,13 @@ export class AgentXDaemon {
       alertAgent: async (agentId, text, w) => {
         // #1100 — the delegator hears it in the chat it asked from, where
         // the work waiting on it lives, not in a new one.
-        const asked = w.taskKey.startsWith("dlg-") ? this.delegations.originFor(w.taskKey) : null
-        const context = asked && asked.caller === agentId
-          // An agent sender: in a person's chat the turn is still not theirs.
+        // Only an agent's own chat: in a person's chat a queued alert's
+        // answer would be posted to the person. a2a and mcp turns wait for
+        // a slot instead of queueing.
+        const found = w.taskKey.startsWith("dlg-") ? this.delegations.originFor(w.taskKey) : null
+        const asked = found && found.caller === agentId && (found.origin.channel === "a2a" || found.origin.channel === "mcp") ? found : null
+        if (asked) await this.waitForChat(agentId, asked.origin.channel, asked.origin.chatId, 10 * 60_000)
+        const context = asked
           ? { ...asked.origin, sender: "system:watcher" }
           : { channel: WATCHER_CHANNEL, chatId: w.id, sender: "watcher" }
         const res = await this.registry.execute({ agentId, message: text, context: context as any })
@@ -6647,8 +6660,8 @@ export class AgentXDaemon {
           // #1100 — a callee writing to the agent that asked it, from that
           // delegation's chat, is answering it: the message goes into the
           // asker's conversation for that work, not into a new chat.
+          const from = resolveCallerTurn(callerHintFrom(req, body), this.registry)
           if (!wait && this.config.mesh.delegation.callbackSends) {
-            const from = resolveCallerTurn(callerHintFrom(req, body), this.registry)
             const rec = from ? this.delegations.replyTarget({ agentId: from.agentId, chatId: String(from.context.chatId ?? "") }, targetAgent) : null
             if (rec) {
               this.delegations.relayReply(rec, text)
@@ -6674,7 +6687,12 @@ export class AgentXDaemon {
             // Only a caller that waits holds the callee in syncWaits: a
             // queued send leaves the caller free, so it can't form a cycle.
             const runLocal = (waits: boolean, onStart?: (runId: string) => void) => {
-              const context = { channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}) }
+              const context = {
+                channel: "a2a", sender: senderAgentId ? `agent:${senderAgentId}` : "agent", chatId: senderAgentId || "a2a", ...(taskType ? { taskType } : {}),
+                // The hop count goes on through a plain send too, so two
+                // agents past the cap are not called back again (#1100).
+                ...(from ? { sendDepth: callbackDepthOf(from.context) + 1 } : {}),
+              }
               // A remote target records on its own node's /task; a local one
               // has no other hop that would put this delegation in the ledger.
               const intentRef = this.recordInboundDispatch(

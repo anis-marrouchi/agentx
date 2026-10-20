@@ -562,10 +562,63 @@ describe("an agent's send calls its asker back (#1100)", () => {
     expect(h.injected[0].message).toContain("status=reply")
     expect(h.injected[0].message).toContain("Verdict: changes needed.")
 
-    h.local.resolve({ content: "Sent the verdict to planner." })
+    // Its end still comes back (the message may only have been progress),
+    // said as such.
+    h.local.resolve({ content: "Final result: approved after changes." })
     await flush()
-    expect(h.injected).toHaveLength(1)
-    expect(h.logs.some((l) => l.includes("no second callback"))).toBe(true)
+    expect(h.injected).toHaveLength(2)
+    expect(h.injected[1].message).toContain("status=done")
+    expect(h.injected[1].message).toContain("already wrote to you during the work")
+    expect(h.injected[1].message).toContain("Final result: approved after changes.")
+  })
+
+  it("does not take a person-started delegation's callee message as a reply", () => {
+    const h = harness()
+    const { taskId } = h.mgr.start({ caller: HUMAN_TURN, callee: "worker", message: "x" })
+    expect(h.mgr.replyTarget({ agentId: "worker", chatId: `a2a:front:worker:${taskId}` }, "front")).toBeNull()
+  })
+
+  it("never calls back into a person's chat, and never delivers to a person", async () => {
+    const h = harness()
+    // A callback turn in the person's chat: its sends stay plain.
+    expect(h.mgr.shouldCallbackSend(CALLBACK_TURN)).toBe(false)
+    expect(h.mgr.shouldCallbackSend({ agentId: "front", context: { channel: "voice", chatId: "v1", sender: "system:watcher" } })).toBe(false)
+    // A send's callback reply is the asker's own work: not delivered even
+    // where a route exists.
+    const routed = harness({ canDeliver: () => true })
+    routed.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    routed.local.resolve({ content: "", error: "boom" })
+    await flush()
+    expect(routed.injected).toHaveLength(1)
+    expect(routed.delivered).toHaveLength(0)
+  })
+
+  it("keeps a held reply worded as a reply after a restart", async () => {
+    let stop = true
+    const h = harness({
+      injectTurn: async (turn) => {
+        h.injected.push(turn)
+        if (stop) { stop = false; return { content: "", error: "registry-stop" } }
+        return { content: "ok" }
+      },
+    })
+    const { record } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    h.mgr.relayReply(record, "Halfway there.")
+    await flush()
+    await h.mgr.requeueRelays()
+    await flush()
+    expect(h.injected).toHaveLength(2)
+    expect(h.injected[1].message).toContain("status=reply")
+  })
+
+  it("carries the hop count to the callee, so its own sends count on", () => {
+    const h = harness()
+    const deep: CallerTurn = { ...AGENT_TURN, context: { ...AGENT_TURN.context, delegation: { taskId: "dlg-x", from: "y", status: "done", depth: 2 } } }
+    h.mgr.start({ caller: deep, callee: "builder", message: "x", kind: "send" })
+    const ctx = h.calls.runLocal[0].context
+    expect(ctx.sendDepth).toBe(3)
+    expect(callbackDepthOf(ctx)).toBe(3)
+    expect(h.mgr.shouldCallbackSend({ agentId: "builder", context: { ...ctx, sendDepth: MAX_SEND_DEPTH } })).toBe(false)
   })
 
   it("still calls back a failure after the callee wrote", async () => {
