@@ -150,7 +150,8 @@ export const point = new Command()
 
     const sel = toSelection(result.answers as UIElementAnswers, candidates)
     const chosen = rectFor(screen, sel.id)
-    const chosenLabel = candidates.find((c) => c.id === sel.id)?.label ?? ""
+    const chosenCand = candidates.find((c) => c.id === sel.id)
+    const chosenLabel = chosenCand?.label ?? ""
     const fromOCR = screen.ocrRects.has(sel.id)
 
     // `present` is read BEFORE `target`, always. A Choice over a candidate
@@ -167,10 +168,10 @@ export const point = new Command()
 
     if (opts.json) {
       console.log(JSON.stringify({
-        app: screen.app, request, chosen: { ...chosen, label: chosenLabel, fromOCR }, present: sel.present,
+        app: screen.app, request, chosen: { ...chosen, label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR }, present: sel.present,
         confidence: sel.confidence,
         ranked: sel.ranked.slice(0, 5).map((r) => ({
-          ...r, label: candidates.find((c) => c.id === r.id)?.label,
+          ...r, label: candidates.find((c) => c.id === r.id)?.label, shown: candidates.find((c) => c.id === r.id)?.shown,
         })),
       }, null, 2))
       return

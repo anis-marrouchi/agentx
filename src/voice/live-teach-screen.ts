@@ -16,7 +16,7 @@ export async function readScreenView(): Promise<ScreenView> {
   return {
     app: s.app,
     window: s.window,
-    candidates: s.candidates.map((c) => ({ id: c.id, role: c.role, label: c.label, value: c.value })),
+    candidates: s.candidates.map((c) => ({ id: c.id, role: c.role, label: c.label, shown: c.shown, value: c.value })),
     rectOf: (id) => rectFor(s, id),
   }
 }

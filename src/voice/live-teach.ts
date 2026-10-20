@@ -31,7 +31,9 @@ export type StepAction = "point" | "highlight" | "click" | "type" | "key" | "wai
 export interface ScreenView {
   app: string
   window: string | null
-  candidates: Array<{ id: number; role: string; label: string; value?: string | null }>
+  /** `label` is the app's own name (clicks are checked against it);
+   *  `shown`, when set, is the fuller text the planner reads. */
+  candidates: Array<{ id: number; role: string; label: string; shown?: string; value?: string | null }>
   rectOf(id: number): Rect | null
 }
 
@@ -210,7 +212,7 @@ export class LiveTeach {
       `Mode: ${this.opts.mode}. ${modeLine}`,
       `App: ${screen.app}${screen.window ? ` — window "${screen.window}"` : ""}`,
       "On screen:",
-      ...screen.candidates.slice(0, 80).map((c) => `${c.id} ${c.role} "${c.label.slice(0, 60)}"${c.value ? ` = "${String(c.value).slice(0, 40)}"` : ""}`),
+      ...screen.candidates.slice(0, 80).map((c) => `${c.id} ${c.role} "${(c.shown ?? c.label).slice(0, 60)}"${c.value ? ` = "${String(c.value).slice(0, 40)}"` : ""}`),
       this.history.length ? `So far:\n${this.history.slice(-8).join("\n")}` : "This is the first step.",
     ].join("\n")
     const signal = this.ac.signal
