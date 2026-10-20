@@ -24,14 +24,15 @@ export const SCREEN_BUDGET = { perDay: 5, resurface: 3 } as const
 // References an agent reads easily and the owner does not: links, issue
 // and merge request numbers (with or without their project), ULID-like
 // ids, request, delegation and send ids, and commit hashes. A hex run
-// needs a digit, so a plain word made of a-f letters is not taken for one.
+// needs a digit and a letter a-f, so neither a word made of a-f letters
+// nor a plain long number (a phone number, an amount) is taken for one.
 const REFERENCES: RegExp[] = [
   /\bhttps?:\/\/\S+/gi,
   /(?:[\w.-]+\/)*[\w.-]+[#!]\d+\b/g,
   /[#!]\d+\b/g,
   /\b[0-9A-HJKMNP-TV-Z]{26}\b/gi,
   /\b(?:req|dlg|snd)-[\w-]+/gi,
-  /\b(?=[0-9a-f]*\d)[0-9a-f]{7,}\b/gi,
+  /\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{7,}\b/gi,
 ]
 
 /** The title with every reference taken out. */
@@ -51,9 +52,11 @@ export function referenceOnlyTitle(title: string): string | null {
 }
 
 /** Why this card may not go on the owner's screen, or null. */
-export function cardRuleBreak(card: { title: string; ask: string; choices?: string[] }): string | null {
+export function cardRuleBreak(card: { title: string; ask: string; choices?: string[]; origin?: { kind: string } }): string | null {
   if (card.title.length > SCREEN_LIMITS.title) return `title is longer than ${SCREEN_LIMITS.title} characters`
-  const bare = referenceOnlyTitle(card.title)
+  // A request's card is titled with the owner's own words ("review #12"):
+  // no agent wrote it, and none could reword it.
+  const bare = card.origin?.kind === "request" ? null : referenceOnlyTitle(card.title)
   if (bare) return bare
   if (card.ask.length > SCREEN_LIMITS.ask) return `ask is longer than ${SCREEN_LIMITS.ask} characters`
   if ((card.ask.match(/\?/g) ?? []).length > 1) return "ask holds more than one question: one card asks one thing"
@@ -72,12 +75,13 @@ export function noticeRuleBreak(title: string, message: string): string | null {
   return null
 }
 
-/** An agent's notice as the owner reads it: the "To do:" line first,
- *  then the message. With nothing to do, it says so, so the owner never
- *  has to guess whether a notice wants something. */
+/** An agent's notice as the owner reads it: the message, then the
+ *  "To do:" line. With nothing to do, it says so, so the owner never has
+ *  to guess whether a notice wants something. Last, so a banner that
+ *  shows only the first line still shows the message. */
 export function withTodo(message: string, todo?: string): string {
   const what = todo?.trim().replace(/\s+/g, " ") || "nothing, FYI"
-  return `To do: ${what}\n${message}`
+  return `${message}\nTo do: ${what}`
 }
 
 /** Local midnight before `now`: the budget's day. */

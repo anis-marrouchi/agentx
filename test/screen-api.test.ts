@@ -51,6 +51,13 @@ describe("the screen view", () => {
     expect(JSON.stringify(v)).not.toContain("SECRET")
   })
 
+  it("still builds when a hand-edited card file lacks its title or date", () => {
+    const broken = card("x", { title: undefined as any, created_at: undefined as any })
+    const v = buildScreen(input({ cards: [broken, card("a")] }))
+    expect(v.cards.total).toBe(2)
+    expect(v.cards.items.find((c) => c.id === "x")?.title).toBe("")
+  })
+
   it("lists held notices by title, without their message", () => {
     const v = buildScreen(input({ held: [notice("2", NOW - 1000), notice("1", NOW - 5000)] }))
     expect(v.held.items.map((n) => n.id)).toEqual(["1", "2"])

@@ -83,7 +83,7 @@ export const notify = new Command()
   .argument("[message]", "what to say")
   .option("--from <who>", "who is speaking", "agentx")
   .option("--title <text>", "notification title", "AgentX")
-  .option("--todo <text>", "what the owner should do about it, shown under the title as a To do line (default: nothing, FYI)")
+  .option("--todo <text>", "what the owner should do about it, shown as a To do line after the message (default: nothing, FYI)")
   .option("--priority <n>", "1 (min) to 5 (max)", "4")
   .option("--urgent", "deliver even during Focus")
   .option("--channel <name>", "delivery channel (default: notifications.channel, else push when it is on, else ntfy)")
@@ -141,8 +141,8 @@ export const notify = new Command()
       console.log(chalk.red("  nothing to say — pass a message, or use --status / --flush"))
       process.exit(1)
     }
-    // What the owner must do comes first under the title, and counts
-    // toward the 300 characters like the rest of the message.
+    // What the owner must do comes last, after the message, and counts
+    // toward the 300 characters like the rest of it.
     const text = withTodo(message.trim(), opts.todo)
     // The screen gate (#394): refused, never cut; the caller shortens it.
     const broken = noticeRuleBreak(opts.title, text)

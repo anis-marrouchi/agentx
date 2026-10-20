@@ -67,8 +67,10 @@ export interface ScreenInput {
 /** Requests whose next step is the owner's, as the Desk counts them. */
 const OWNER_STATES = new Set(["waiting_owner", "needs_attention"])
 
-function clip(text: string, max: number): string {
-  const flat = text.replace(/\s+/g, " ").trim()
+// A hand-edited file may lack a field: one bad item must not take the
+// whole view down.
+function clip(text: unknown, max: number): string {
+  const flat = String(text ?? "").replace(/\s+/g, " ").trim()
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat
 }
 
@@ -86,7 +88,7 @@ function line(i: QueueItem): ScreenVoiceLine {
 export function buildScreen(input: ScreenInput): ScreenView {
   const cards = input.cards
     .filter((c) => c.status === "pending")
-    .sort((a, b) => a.created_at.localeCompare(b.created_at))
+    .sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
     .map((c) => ({ id: c.id, title: clip(c.title, TITLE_MAX), raised_by: c.raised_by, node: c.node ?? null, createdAt: c.created_at }))
   const held = [...input.held]
     .sort((a, b) => a.at.localeCompare(b.at))

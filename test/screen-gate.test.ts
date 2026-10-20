@@ -198,13 +198,24 @@ describe("a title says what it is in words", () => {
   it("refuses such a card when it is written", () => {
     expect(createCard(root, { ...BASE, title: "#402" }, { now: NOW })).toMatchObject({ ok: false, error: expect.stringContaining("only a reference") })
   })
+
+  it("takes neither a plain long number nor a word for a hash", () => {
+    expect(referenceOnlyTitle("Call 21612345678")).toBeNull()
+    expect(referenceOnlyTitle("Budget 10000000")).toBeNull()
+    expect(referenceOnlyTitle("Deploy 1cb46fc5")).toContain("only a reference")
+  })
+
+  it("leaves a request's card alone: its title is the owner's own words", () => {
+    expect(cardRuleBreak({ title: "review #1104", ask: "Hand it back, or drop it?", origin: { kind: "request" } })).toBeNull()
+    expect(cardRuleBreak({ title: "review #1104", ask: "Hand it back, or drop it?" })).toContain("only a reference")
+  })
 })
 
 describe("the To do line on an agent's notice", () => {
-  it("comes first, and says FYI when there is nothing to do", () => {
-    expect(withTodo("Backups ran.")).toBe("To do: nothing, FYI\nBackups ran.")
-    expect(withTodo("Backups ran.", "  ")).toBe("To do: nothing, FYI\nBackups ran.")
-    expect(withTodo("The disk is full.", "free  some\nspace")).toBe("To do: free some space\nThe disk is full.")
+  it("comes after the message, and says FYI when there is nothing to do", () => {
+    expect(withTodo("Backups ran.")).toBe("Backups ran.\nTo do: nothing, FYI")
+    expect(withTodo("Backups ran.", "  ")).toBe("Backups ran.\nTo do: nothing, FYI")
+    expect(withTodo("The disk is full.", "free  some\nspace")).toBe("The disk is full.\nTo do: free some space")
   })
 
   it("counts toward the 300 characters", () => {

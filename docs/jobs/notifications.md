@@ -241,7 +241,7 @@ agentx notify --flush         # deliver what is held now
 | Option | What it does |
 |---|---|
 | `--title <text>` | Notification title (default `AgentX`) |
-| `--todo <text>` | What you should do about it. Shown under the title as `To do: <text>`; without it the line says `To do: nothing, FYI` |
+| `--todo <text>` | What you should do about it. Shown after the message as `To do: <text>`; without it the line says `To do: nothing, FYI` |
 | `--priority <1-5>` | ntfy priority (default 4); the phone app ignores it |
 | `--urgent` | Deliver even during Focus |
 | `--from <who>` | Shown in a held digest, so you know who sent what |
@@ -254,7 +254,7 @@ agentx notify --flush         # deliver what is held now
 - `agentx notify` reads its settings from `./agentx.json`. When it runs from another folder, as scheduled jobs do, add `-c /path/to/agentx.json`. Without a settings file it uses the defaults.
 - It waits for the banner and the sound to finish before it exits (about two seconds), so a job that ends straight afterwards still gets both.
 - The phone push goes through the running AgentX daemon. If the daemon is stopped, the command reports an error, but the banner and sound still play.
-- Every notice from `agentx notify` starts with a **To do** line under the title, so you know at a glance whether it wants anything from you. Notices the daemon sends by itself (a failed job, a request that needs you) do not have one.
+- Every notice from `agentx notify` ends with a **To do** line after the message, so you know at a glance whether it wants anything from you. Notices the daemon sends by itself (a failed job, a request that needs you) do not have one.
 - A message must read in about ten seconds: the title can be up to 120 characters and the message up to 300, counting the To do line. A longer one is not sent. The command says why and exits with an error, so the agent or script that sent it can shorten it. AgentX never cuts it.
 - A title must say what the notice is in words. A title that is only a reference, such as `#402`, `group/project#402`, a link, a commit hash or a request id, is not sent; put the reference in the message instead. A short plain title such as `Backups` is fine, and so is a reference next to words, such as `Login fix ready (#402)`.
 
@@ -271,7 +271,7 @@ agentx notify --flush         # deliver what is held now
 9. Create `~/.agentx/call.json` containing `{"active": true, "source": "test"}`. Run `agentx notify --status`: it says `in a call`. Delete the file; within 30 seconds anything held arrives.
 10. Run `agentx notify "$(printf 'x%.0s' {1..301})"`. It says `not sent: message is longer than 300 characters` and sends nothing.
 11. Run `agentx notify "Ready for review" --title "#402"`. It says `not sent: title is only a reference ("#402")` and sends nothing.
-12. Run `agentx notify "Backups ran" --title "Backups"`. The banner shows `To do: nothing, FYI` above `Backups ran`.
+12. Run `agentx notify "Backups ran" --title "Backups"`. The notice shows `Backups ran`, then `To do: nothing, FYI` on the next line.
 
 `agentx doctor` runs the same helper check under **Notifications**, along with its other checks.
 
