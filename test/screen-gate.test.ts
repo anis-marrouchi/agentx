@@ -215,6 +215,14 @@ describe("a title says what it is in words", () => {
     expect(cardRuleBreak({ title: "  ", ask: "Ship it?" })).toContain("title is missing")
     expect(cardRuleBreak({ title: "Ship the release" } as any)).toContain("ask is missing")
   })
+
+  it("names a card with no title without printing undefined", () => {
+    const text = returnedText({ id: "c1" } as any, "title is missing")
+    expect(text).toContain("Your card c1 was not shown")
+    expect(text).not.toContain("undefined")
+    expect(returnedText({ id: "c2", title: "  " }, "title is missing")).toContain("Your card c2 was not shown")
+    expect(returnedText({ id: "c3", title: "Ship it" }, "x")).toContain('Your card c3 ("Ship it") was not shown')
+  })
 })
 
 describe("the To do line on an agent's notice", () => {
