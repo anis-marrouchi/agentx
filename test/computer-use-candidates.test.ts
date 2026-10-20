@@ -155,6 +155,19 @@ describe("browser chrome — held back, not unreachable (#1092)", () => {
     expect(namesBrowserPart("reload")).toBe(true)
   })
 
+  it("keeps a page's own Bookmark apart from the browser's star", () => {
+    // "bookmark" also names page controls: x.com's per-post Bookmark. The
+    // request brings the chrome in, so both are offered — and only the
+    // marking tells them apart, in the state and in the criteria.
+    const x = [...browser, el({ id: 7, role: "AXButton", label: "Bookmark", parent: 4 })]
+    const out = buildCandidates(x, 10, { request: "the bookmark button" })
+    expect(out.find((c) => c.id === 7)?.area).toBeUndefined()
+    expect(out.find((c) => c.id === 3)?.area).toBe("browser")
+    const criteria = (uiElementQuestions(out) as any).target.criteria
+    expect(criteria["7"]).toMatch(/^button: Bookmark$/)
+    expect(criteria["3"]).toMatch(/^browser button: Bookmark this tab$/)
+  })
+
   it("tells the model which controls are the browser's", () => {
     const out = buildCandidates(browser, 10, { scope: "browser" })
     const state = uiElementState({ request: "reload", app: "Google Chrome", candidates: out }) as any
