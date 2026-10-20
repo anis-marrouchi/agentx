@@ -8,7 +8,7 @@ import type { DecisionCard } from "../src/approvals/cards"
 import type { PendingNotification } from "../src/notify/queue"
 import type { QueueItem } from "../src/voice/speaking-queue"
 
-// GET /screen (#400): what is in front of the owner now, titles only and
+// GET /screen (#1100): what is in front of the owner now, titles only and
 // bounded. Names and texts here are invented.
 
 const NOW = Date.parse("2026-01-05T12:00:00Z")

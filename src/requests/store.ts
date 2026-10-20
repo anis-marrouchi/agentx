@@ -56,7 +56,7 @@ export interface RequestRecord {
   createdAt: number
   /** Last time anything happened under this request. */
   updatedAt: number
-  /** Last time its state changed (#400): what the Desk shows as "changed".
+  /** Last time its state changed (#1100): what the Desk shows as "changed".
    *  A run starting or ending is activity, not a change. Null on rows from
    *  before the column. */
   stateChangedAt: number | null

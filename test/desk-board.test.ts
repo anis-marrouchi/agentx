@@ -74,7 +74,7 @@ describe("with an agent needs proof", () => {
   })
 })
 
-describe("the changed time (#400)", () => {
+describe("the changed time (#1100)", () => {
   const card = (board: ReturnType<typeof buildDesk>, key: string) => board.cards.find((c) => c.key === key)!
 
   it("moves when the state changes, not when a run starts or ends", () => {

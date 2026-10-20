@@ -4325,7 +4325,7 @@ export class AgentXDaemon {
         return
       }
 
-      // What is on the owner's screen now (#400): read only, bounded.
+      // What is on the owner's screen now (#1100): read only, bounded.
       // Gated like /approvals by isMeshGatedPath above.
       if (path === "/screen") {
         if (req.method !== "GET") { this.json(res, 405, { error: "GET only" }); return }

@@ -4,7 +4,7 @@ import type { RequestRecord } from "@/requests/store"
 import { summarize } from "@/requests/card-view"
 import type { QueueItem, QueueView } from "@/voice/speaking-queue"
 
-// --- What is on the owner's screen now (#400) ---
+// --- What is on the owner's screen now (#1100) ---
 //
 //   GET /screen   {ts, cards, held, voice, requests}
 //
