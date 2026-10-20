@@ -96,6 +96,7 @@ export function handleApprovalsApi(
         }
       }
       const r = createCard(deps.ctx.root, input, { now: deps.ctx.now, settings: deps.settings, node })
+      if (!r.ok && r.duplicateOf) return { status: 409, body: { error: r.error, card_id: r.duplicateOf } }
       if (!r.ok) return { status: 400, body: { error: r.error } }
       return { status: 201, body: { card: r.card } }
     }

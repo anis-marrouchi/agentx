@@ -285,6 +285,12 @@ agentx approvals request --agent helper --title "New meeting date" \
 
 When you answer yes, the agent's result message includes **Chosen:** and the approved message. The agent sends exactly that text.
 
+### One card per question
+
+A card can name its `source`: the link to the pull request, issue or draft it is about. An agent can have only one waiting card per source. If the same agent raises a second card about the same link while the first still waits, the second is refused, and the agent is told the id of the card that is already waiting. Links are compared without a trailing `/` and in any letter case. A card about another link, from another agent or from another machine is not affected, and neither are cards AgentX raises by itself, such as a check-in or a workflow step. Once the first card is answered, expires or is closed, the agent can raise a new one.
+
+Over the local API, the refused card gets `409` with `error` and `card_id`, the id of the waiting card.
+
 The daemon also accepts cards over its local API, `POST /approvals` with the fields `title`, `ask`, `recommend`, `if_silent`, `expires`, `source`, `choices`, `draft`, `say` and `context`, plus `raised_by` (the agent id). A card from another machine of the mesh also carries `node`, that machine's name; the daemon keeps it only for a name in its peer list. `GET /approvals` lists what is waiting. `POST /approvals/checkin` starts a check-in. `POST /approvals/<id>/resolve` closes a card its own agent already handled ([When you answer in chat instead](#when-you-answer-in-chat-instead)). `POST /approvals/result` is how the machine that answered a forwarded card hands the answer back; it needs a mesh token. Answering is refused on that API on purpose.
 
 ### When you answer in chat instead
@@ -302,6 +308,8 @@ If you do answer **No** on a card whose work is already done, the agent does not
 Over the local API, an agent closes a card with `POST /approvals/<id>/resolve` and the field `reason`. The daemon works out which agent is asking from the agent's running turn (the `X-AgentX-Task` header, or `X-AgentX-Channel` and `X-AgentX-Chat`), which the `agentx_approval` tool sends by itself. A `raised_by` field is optional and must name that same agent. A call from outside a running turn, or one that names a different agent, is refused with `403` and the card stays open.
 
 A card forwarded from another machine is closed through that machine's daemon, which checks its agent the same way and then passes the request on in its own name. The machine that keeps the card accepts that only when the request carries the own mesh token of the peer that forwarded the card: the `token` of that peer in `mesh.peers`. The shared `MESH_TOKEN` is not enough, because every agent on the machine has it.
+
+`agentx doctor` warns under **Mesh** when a peer's `token` cannot name that peer: when it is the same as this machine's own `MESH_TOKEN`, or when two peers share one token. Closing a forwarded card fails until that peer has a token of its own.
 
 Agents on a `claude-code` engine get the `agentx_approval` tool in every session, whichever channel started it: the daemon adds its own tool server to each session it starts, next to the tool servers the workspace and the computer's user already load.
 
@@ -366,7 +374,8 @@ For the screen gate:
 - **Check-ins raise no cards:** check that `agentx approvals settings` shows **Check-ins on**, that `remindctl show today` lists your reminders, and that `checkin.agent` names an agent from `agentx agent list`. The daemon log lines starting `[checkin]` say what happened to each reminder: "no agent owns it", "couldn't compose a card", or the pass totals.
 - **A card comes back after you already approved it in chat:** the agent did not close it. Answer it with what you said in chat (**Yes**), or tell the agent to close it with the `resolve` action. Agents whose sessions started before this update need a new session to see that action.
 - **An agent gets "only the agent that raised the card can close it":** the call did not come from one of that agent's running turns, or it came from another agent. Only the agent that raised a card can close it, while it is working. Answer the card in **Approvals** instead.
-- **An agent on another machine can't close its card ("needs that peer's own mesh token"):** on the machine that keeps the cards, give that peer its own `token` in `mesh.peers`, and use the same token for this machine in the peer's `mesh.peers`. Until then, answer the card in **Approvals**.
+- **An agent gets "already has card … waiting on …":** the agent asked again about a link it already has a card waiting on. Answer the waiting card in **Approvals**, or let the agent close it with a reason if the question changed.
+- **An agent on another machine can't close its card ("needs that peer's own mesh token"):** on the machine that keeps the cards, give that peer its own `token` in `mesh.peers`, and use the same token for this machine in the peer's `mesh.peers`. Until then, answer the card in **Approvals**. **Terminal:** run `agentx doctor` on both machines; a warning under **Mesh** names the peer whose token is this machine's own `MESH_TOKEN` or is shared with another peer.
 - **An agent gets "card … is answered by the operator only" when it closes a card:** the card belongs to a workflow, a plan or a retro, which act on your answer themselves. Answer it in **Approvals**.
 - **A reminder you already answered comes back:** the agent didn't tick it off. It comes back at the next daily check-in while it stays open. Tick it off in Reminders, or tell the agent.
 - **No sound or voice:** check the Mac's volume, that `--popup-sound` names a sound in `/System/Library/Sounds`, and that the voice appears in `say -v '?'`.

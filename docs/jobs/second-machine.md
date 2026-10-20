@@ -42,4 +42,5 @@ Agents on the second machine sometimes need your yes or no. If your screen is on
 - **`agentx mesh list` says `Mesh: disabled`:** this machine hasn't joined a mesh yet, or its daemon settings weren't saved. Run the join step again.
 - **An authentication error:** the machines hold different mesh tokens, or a daemon wasn't restarted after joining. Restart both daemons.
 - **`401` when you reload, send a message, stop a task or kill a process on the other machine:** these control calls need the mesh token when they come from another machine. On the same machine they need no token. From another machine, pass `--token` with the mesh token. The dashboard token is not accepted.
+- **`agentx doctor` warns that a peer uses this node's own `MESH_TOKEN`, or that two peers share one token:** this machine can't tell who is calling, so closing a forwarded card, stop and resume signals and phone notifications through that peer are refused. Give each pair of machines a token of its own, set as that peer's `token` in `mesh.peers` on both machines, then restart both daemons.
 - **Only one machine sees the other:** pairing was done in one direction. Repeat it the other way.

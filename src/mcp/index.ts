@@ -871,7 +871,7 @@ const TOOLS = [
         recommend: { type: "string", description: "create: your advice and why, in one line (max 300 characters). With choices, start with the exact label you advise: the Mac card marks it and opens with it picked." },
         if_silent: { type: "string", enum: ["discard", "keep", "pause"], description: "create: what applies if nobody answers before it expires. A card never approves itself: only the operator says yes." },
         expires: { type: "string", description: "create: when the default applies. ISO date/time, or relative like '12h' or '3d'. Default: the node's setting (3 days)." },
-        source: { type: "string", description: "create: link to the draft, PR or issue." },
+        source: { type: "string", description: "create: link to the draft, PR or issue. One waiting card per link: a second one is refused with the id of the card already waiting." },
         choices: { type: "array", items: { type: "string" }, description: "create, optional: 1-3 ready-made answers the operator picks from (e.g. three free meeting slots). A yes then carries the pick." },
         followup: { type: "string", enum: ["resurface", "bring-back", "weekly", "cleanup"], description: "create, optional: mark a follow-up card (a parked item coming back, an expired ask brought back, the weekly card, the clean-up card). Follow-up cards share a budget of 5 a day, at most 3 resurface; past it the card is refused until tomorrow." },
         draft: { type: "string", description: "create, optional: a suggested message the operator may edit before approving. {choice} is replaced by the pick. On yes you get the final text: send exactly that." },

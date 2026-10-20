@@ -51,6 +51,7 @@ export async function runDoctorChecks(
   if (cfg) runWorkspaceChecks(checks, cfg)
   if (cfg) runWorkspaceSettingsChecks(checks, cfg)
   if (cfg) runRoutingChecks(checks, cfg)
+  if (cfg) runMeshTokenChecks(checks, cfg)
   if (cfg) runCodegraphChecks(checks, cfg)
   if (cfg) await runNotificationChecks(checks, cfg)
   if (cfg) runReminderChecks(checks, cfg)
@@ -372,14 +373,7 @@ function runReferenceChecks(checks: Check[], cfg: any): void {
     checks.push({ severity: "ok", group: "Secrets", title: "No ${VAR} references in agentx.json" })
     return
   }
-  const envFile = resolve(process.cwd(), ".env")
-  const envFromFile: Record<string, string> = {}
-  if (existsSync(envFile)) {
-    for (const line of readFileSync(envFile, "utf-8").split(/\r?\n/)) {
-      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i)
-      if (m) envFromFile[m[1]] = m[2]
-    }
-  }
+  const envFromFile = readDotEnv()
   const missing: string[] = []
   const empty: string[] = []
   for (const name of refs) {
@@ -408,6 +402,67 @@ function runReferenceChecks(checks: Check[], cfg: any): void {
       })
     }
   }
+}
+
+/** KEY=value lines of ./.env, as written (quotes kept). */
+function readDotEnv(): Record<string, string> {
+  const envFile = resolve(process.cwd(), ".env")
+  const out: Record<string, string> = {}
+  if (existsSync(envFile)) {
+    for (const line of readFileSync(envFile, "utf-8").split(/\r?\n/)) {
+      const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i)
+      if (m) out[m[1]] = m[2]
+    }
+  }
+  return out
+}
+
+/**
+ * mesh.peers tokens that can't name their peer (#1100). This node knows
+ * who called it by the token: one equal to this node's own MESH_TOKEN, or
+ * shared by two peers, names nobody, so that peer's card closes, stop and
+ * resume signals and phone relays are refused here. Tokens are compared
+ * after ${VAR} references resolve; an unset reference is compared by name.
+ */
+export function runMeshTokenChecks(checks: Check[], cfg: any, env: Record<string, string | undefined> = { ...readDotEnv(), ...process.env }): void {
+  const peers = ((cfg.mesh?.peers ?? []) as Array<{ name?: string; token?: string }>).filter((p) => p?.name && p.token)
+  if (peers.length === 0) return
+  const unquote = (v: string) => v.trim().replace(/^(["'])(.*)\1$/, "$2")
+  const key = (raw: string): string => {
+    const ref = /^\$\{([A-Z_][A-Z0-9_]*)\}$/.exec(raw.trim())
+    if (ref && !env[ref[1]]) return `\${${ref[1]}}`
+    return unquote(raw.replace(/\$\{([A-Z_][A-Z0-9_]*)\}/g, (_, n: string) => env[n] ?? ""))
+  }
+  const own = key("${MESH_TOKEN}")
+  const byToken = new Map<string, string[]>()
+  for (const p of peers) {
+    const k = key(p.token!)
+    if (!k) continue
+    byToken.set(k, [...(byToken.get(k) ?? []), p.name!])
+  }
+  let found = false
+  for (const [k, names] of byToken) {
+    if (k === own) {
+      found = true
+      checks.push({
+        severity: "warn",
+        group: "Mesh",
+        title: `mesh.peers ${names.map((n) => `"${n}"`).join(", ")} use${names.length === 1 ? "s" : ""} this node's own MESH_TOKEN`,
+        detail: "This node can't tell that peer's calls from any other node's, so closing a card it forwarded here, its stop and resume signals and its phone relay are refused.",
+        fix: "Give each such pair a token of its own: set the same new value as that peer's token here and as this node's peer token on that computer.",
+      })
+    } else if (names.length > 1) {
+      found = true
+      checks.push({
+        severity: "warn",
+        group: "Mesh",
+        title: `mesh.peers ${names.map((n) => `"${n}"`).join(", ")} share one token`,
+        detail: "A token shared by two peers names neither, so their card closes, stop and resume signals and phone relays are refused here.",
+        fix: "Give each peer a token of its own, on both computers of the pair.",
+      })
+    }
+  }
+  if (!found) checks.push({ severity: "ok", group: "Mesh", title: `${peers.length} mesh peer token(s), each naming one peer` })
 }
 
 function collectEnvRefs(node: unknown, into: Set<string>): void {

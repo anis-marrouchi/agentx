@@ -281,14 +281,41 @@ export function buildCard(
   }
 }
 
+/** The same link however it was typed: no trailing slash, any case. */
+function sameSource(a: string, b: string): boolean {
+  const norm = (s: string) => s.trim().replace(/\/+$/, "").toLowerCase()
+  return norm(a) === norm(b)
+}
+
+/**
+ * A pending card the same agent already raised about the same source
+ * (#1100): asking twice puts two cards for one question on the owner's
+ * screen. Only cards an agent raised itself; the daemon's own (check-ins,
+ * retros, workflow steps) are matched by their origin, not here.
+ */
+export function pendingDuplicate(root: string, card: Pick<DecisionCard, "raised_by" | "node" | "source" | "origin">): DecisionCard | null {
+  if (!card.source || card.origin) return null
+  return listCards(root, "pending").find((c) =>
+    !c.origin && c.raised_by === card.raised_by && (c.node ?? "") === (card.node ?? "") && !!c.source && sameSource(c.source, card.source!),
+  ) ?? null
+}
+
 /** Validate, enforce the per-agent cap, and save. */
 export function createCard(
   root: string,
   input: CardInput,
   opts: BuildCardOptions = {},
-): { ok: true; card: DecisionCard } | { ok: false; error: string } {
+): { ok: true; card: DecisionCard } | { ok: false; error: string; duplicateOf?: string } {
   const built = buildCard(input, opts)
   if (!built.ok) return built
+  const dup = pendingDuplicate(root, built.card)
+  if (dup) {
+    return {
+      ok: false,
+      duplicateOf: dup.id,
+      error: `${dup.raised_by} already has card "${dup.id}" waiting on ${dup.source}; wait for its answer, or close it with a reason before raising a new one`,
+    }
+  }
   // The screen gate (#394): refused here, the reason goes back to the author.
   const broken = cardRuleBreak(built.card)
   if (broken) return { ok: false, error: broken }
