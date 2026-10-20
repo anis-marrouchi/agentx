@@ -221,8 +221,37 @@ export function buildCandidates(elements: RawElement[], max = 60, opts: Candidat
       enabled: e.enabled,
       ...(frame ? { where: region(e, frame) } : {}),
       ...(outside.has(e.id) ? { area: "browser" as const } : {}),
+      ...(closes(e, isWeb && !outside.has(e.id)) ? { closes: true as const } : {}),
     }
   })
+}
+
+// --- Close, quit: never by accident ---
+//
+// Offering the red light and the tab's close button is what made "close
+// this tab" findable (#1092). It also put them one wrong pick away from
+// any other ask: "Bookmark this page" landing on the tab's x loses the page.
+// So a control that closes something is marked, and only a request that
+// asks to close something may land on it.
+
+/** Does pressing it close a window or tab, or quit the app? By subrole
+ *  for the red light, else by name: Chrome's tab x is "Close", the menus
+ *  say "Close Tab", "Close Window", "Quit Google Chrome". A web page's own
+ *  "Close" shuts a dialog on the page, not the page, so it is not marked. */
+function closes(e: RawElement, onPage: boolean): boolean {
+  if (e.subrole === "AXCloseButton") return true
+  return !onPage && /^(close|quit)\b/i.test(named(e))
+}
+
+/** Does the request ask to close or quit something? */
+export function asksToClose(request: string): boolean {
+  return /\b(close|closing|quit|exit|shut)\b/i.test(request)
+}
+
+/** True when the pick closes something the request never asked to close:
+ *  return it as a candidate and stop, never press or point at it. */
+export function closeBlocked(chosen: { closes?: boolean } | null | undefined, request: string): boolean {
+  return chosen?.closes === true && !asksToClose(request)
 }
 
 /** One entry per thing on screen. Wikipedia's infobox is in the tree three

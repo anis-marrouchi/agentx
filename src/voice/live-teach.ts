@@ -22,6 +22,7 @@ import type { SpeechOut } from "./speaking-queue"
 import type { Presence, Rect } from "./presence"
 import { DEFAULT_LISTENER, isStop } from "./talk"
 import { bubbleText, findControl, leavesApp, parsePlan, screenSignature, type Plan } from "./live-teach-plan"
+import { closeBlocked } from "@/computer-use/candidates"
 
 export { leavesApp, parsePlan, screenSignature, teachSystemPrompt, type Plan } from "./live-teach-plan"
 
@@ -33,7 +34,7 @@ export interface ScreenView {
   window: string | null
   /** `label` is the app's own name (clicks are checked against it);
    *  `shown`, when set, is the fuller text the planner reads. */
-  candidates: Array<{ id: number; role: string; label: string; shown?: string; value?: string | null }>
+  candidates: Array<{ id: number; role: string; label: string; shown?: string; value?: string | null; closes?: boolean }>
   rectOf(id: number): Rect | null
 }
 
@@ -258,7 +259,10 @@ export class LiveTeach {
     const { screen, target } = fresh
     const rect = target !== null ? screen.rectOf(target) : null
     const label = target !== null ? screen.candidates.find((c) => c.id === target)?.label ?? "" : ""
-    const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed
+    // A close window / close tab / quit control is clicked only when the
+    // goal asks to close something; otherwise it is shown, not pressed.
+    const closes = target !== null && closeBlocked(screen.candidates.find((c) => c.id === target), this.opts.goal)
+    const mayAct = this.opts.mode === "act" && this.opts.actionsAllowed && !(plan.action === "click" && closes)
     // The lesson never leaves its app to go and find another one.
     if (mayAct && plan.action === "key" && plan.text && leavesApp(plan.text)) return this.refuseToLeave(n, plan.text, screen.app)
     // Click and type only when allowed; otherwise show it instead.

@@ -14,6 +14,7 @@ import {
   type UIElementAnswers,
 } from "@/decisions/seats/ui-element"
 import { HELPER, readScreen, rectFor, type ScreenRead } from "@/computer-use/screen"
+import { closeBlocked } from "@/computer-use/candidates"
 import { daemon } from "@/commands/call"
 import { GUIDE_EXPRESSIONS, GUIDE_HOLD, GUIDE_MARKS } from "@/voice/guide"
 
@@ -129,6 +130,10 @@ export const point = new Command()
     }
     if (candidates.length === 1) {
       const only = rectFor(screen, candidates[0].id)
+      if (only && closeBlocked(candidates[0], request)) {
+        console.log(chalk.yellow(`  ${screen.app} exposes only ${chalk.bold(candidates[0].shown ?? candidates[0].label)}, which closes something; not pointing at it`))
+        process.exit(4)
+      }
       if (only) {
         console.log(chalk.yellow(`  ${screen.app} exposes exactly one target — pointing at it: `) +
                     chalk.bold(candidates[0].label))
@@ -167,18 +172,32 @@ export const point = new Command()
       process.exit(2)
     }
 
+    // A close window / close tab / quit control is only for a request that
+    // asks to close something. Otherwise it is reported, not shown: a
+    // caller that clicks where point points would lose the window.
+    const blocked = closeBlocked(chosenCand, request)
+
     if (opts.json) {
       console.log(JSON.stringify({
-        app: screen.app, request, chosen: { ...chosen, label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR, inBrowser }, present: sel.present,
+        app: screen.app, request, ...(blocked ? { blocked: "closes a window, tab or app; the request does not ask to close anything" } : {}),
+        chosen: { ...chosen, label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR, inBrowser, ...(chosenCand?.closes ? { closes: true } : {}) }, present: sel.present,
         confidence: sel.confidence,
         ranked: sel.ranked.slice(0, 5).map((r) => ({
           ...r, label: candidates.find((c) => c.id === r.id)?.label, shown: candidates.find((c) => c.id === r.id)?.shown,
         })),
       }, null, 2))
+      if (blocked) process.exit(4)
       return
     }
 
     const name = chosenLabel
+    if (blocked) {
+      console.log(
+        chalk.yellow(`  the best match, ${chalk.bold(chosenCand?.shown ?? name)}, would close a window, tab or app; not pointing at it`) +
+        chalk.dim(` (ask to close it by name if that is what you mean)`),
+      )
+      process.exit(4)
+    }
     console.log(
       `  ${chalk.green("→")} ${chalk.bold(name)} ` +
       chalk.dim(`(${fromOCR ? "read from screen" : inBrowser ? "browser control" : "control"}, confidence ${sel.confidence.toFixed(2)}, P(exists) ${sel.present.toFixed(2)})`),

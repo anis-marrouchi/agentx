@@ -37,6 +37,10 @@ export interface UICandidate {
    *  tabs and window buttons, or a native app's own controls around a web
    *  view. The model reads this through `shown` ("outside the page: …"). */
   area?: "browser"
+  /** Set when pressing it closes a window or tab, or quits the app. Such a
+   *  control is never pressed, or pointed at, unless the request asks to
+   *  close something (`closeBlocked`). */
+  closes?: true
 }
 
 /** Something already attempted on this screen, and what came of it. */

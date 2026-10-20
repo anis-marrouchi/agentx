@@ -16,6 +16,7 @@ import {
   type PriorAttempt,
 } from "@/decisions/seats/ui-element"
 import { HELPER, readScreen, rectFor } from "@/computer-use/screen"
+import { closeBlocked } from "@/computer-use/candidates"
 import { verify as verifyClaim } from "@/computer-use/verify"
 import { readScreenSettings } from "@/computer-use/capture-settings"
 import { LESSONS, type Lesson, type LessonStep } from "@/teach/lessons"
@@ -193,6 +194,12 @@ export const teach = new Command()
         throw new Error(`Could not find "${step.find}"; stopped before acting`)
       }
       await speaking
+      // A lesson step that clicks never lands on a close window / close
+      // tab / quit control unless the step itself asks to close something.
+      if (target && step.click && closeBlocked(target, step.find ?? step.label ?? "")) {
+        attempts.push({ tried: step.label ?? step.find ?? "control", changed: false, note: "refused: it closes a window, tab or app" })
+        throw new Error(`"${step.find}" matched a control that closes a window, tab or app; stopped before clicking`)
+      }
 
       if (target) {
         setState(`Step ${i + 1} of ${lesson.steps.length}`, step.say, "pointing",
@@ -370,7 +377,7 @@ async function act(argv: string[]): Promise<{ error: string | null; changed?: bo
   }
 }
 
-interface Located { x: number; y: number; width: number; height: number }
+interface Located { x: number; y: number; width: number; height: number; closes?: boolean }
 
 /** Read the screen and ask which control the description names.
  *
@@ -400,7 +407,9 @@ async function locate(description: string, priorAttempts: PriorAttempt[] = []): 
     // The `present` Noul first, always — a Choice will name something even
     // when the thing is not on screen.
     if (sel.present < 0.5) return null
-    return rectFor(screen, sel.id)
+    const rect = rectFor(screen, sel.id)
+    const closes = screen.candidates.find((c) => c.id === sel.id)?.closes === true
+    return rect ? { ...rect, ...(closes ? { closes } : {}) } : null
   } catch {
     return null
   }

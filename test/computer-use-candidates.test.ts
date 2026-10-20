@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildCandidates, scopeToPage, type RawElement } from "../src/computer-use/candidates"
+import { buildCandidates, closeBlocked, scopeToPage, type RawElement } from "../src/computer-use/candidates"
 import { uiElementQuestions, uiElementState, type PriorAttempt } from "../src/decisions/seats/ui-element"
 
 // What can and cannot be tested here.
@@ -343,5 +343,46 @@ describe("uiElementState — what the model is actually told", () => {
     const state = uiElementState(base) as any
     expect(state.controls).toHaveLength(1)
     expect(state.controls[0].label).toBe("Search")
+  })
+})
+
+describe("close, quit: never by accident (#1094)", () => {
+  // Chrome: the tab's x, the red light, the star, and a page with a
+  // dialog's own "Close".
+  const chrome = [
+    el({ id: 0, role: "AXWindow" }),
+    el({ id: 1, role: "AXButton", label: "", subrole: "AXCloseButton", parent: 0 }),
+    el({ id: 2, role: "AXButton", label: "Close", parent: 0 }),
+    el({ id: 3, role: "AXButton", label: "Bookmark this tab", parent: 0 }),
+    el({ id: 4, role: "AXWebArea", parent: 0 }),
+    el({ id: 5, role: "AXButton", label: "Close", parent: 4 }),
+    el({ id: 6, role: "AXLink", label: "Home", parent: 4 }),
+  ]
+
+  it("marks the red light and the tab's x, not the star or a dialog's Close on the page", () => {
+    const out = buildCandidates(chrome, 40, { request: "Bookmark this page" })
+    const closes = (id: number) => out.find((c) => c.id === id)?.closes
+    expect(closes(1)).toBe(true)
+    expect(closes(2)).toBe(true)
+    expect(closes(3)).toBeUndefined()
+    expect(closes(5)).toBeUndefined()
+  })
+
+  it("blocks a close pick unless the request asks to close something", () => {
+    const tabX = buildCandidates(chrome, 40).find((c) => c.id === 2)
+    expect(closeBlocked(tabX, "Bookmark this page")).toBe(true)
+    expect(closeBlocked(tabX, "close this tab")).toBe(false)
+    expect(closeBlocked(tabX, "quit Chrome")).toBe(false)
+    expect(closeBlocked(buildCandidates(chrome, 40).find((c) => c.id === 3), "Bookmark this page")).toBe(false)
+  })
+
+  it("marks a native app's Quit and Close Window menu items", () => {
+    const menu = [
+      el({ id: 1, role: "AXMenuItem", label: "Quit Google Chrome" }),
+      el({ id: 2, role: "AXMenuItem", label: "Close Window" }),
+      el({ id: 3, role: "AXMenuItem", label: "Closed Captions" }),
+    ]
+    const out = buildCandidates(menu, 40)
+    expect(out.map((c) => c.closes)).toEqual([true, true, undefined])
   })
 })
