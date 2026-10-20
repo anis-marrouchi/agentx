@@ -378,6 +378,40 @@ describe("close, quit: never by accident (#1094)", () => {
     expect(closeBlocked(buildCandidates(chrome, 40).find((c) => c.id === 3), "Bookmark this page")).toBe(false)
   })
 
+  it("marks an Electron app's editor-tab close inside the web area, not a dialog's bare Close", () => {
+    // VS Code is one web area: its editor tab's x is on the "page".
+    const vscode = [
+      el({ id: 0, role: "AXWindow" }),
+      el({ id: 1, role: "AXWebArea", parent: 0 }),
+      el({ id: 2, role: "AXButton", label: "Close (⌘W)", parent: 1 }),
+      el({ id: 3, role: "AXButton", label: "Close Editor", parent: 1 }),
+      el({ id: 4, role: "AXButton", label: "Close All", parent: 1 }),
+      el({ id: 5, role: "AXButton", label: "Close", parent: 1 }),
+      el({ id: 6, role: "AXButton", label: "Closed issues", parent: 1 }),
+      el({ id: 7, role: "AXButton", label: "Run", parent: 1 }),
+    ]
+    const out = buildCandidates(vscode, 40)
+    const closes = (id: number) => out.find((c) => c.id === id)?.closes
+    expect(closes(2)).toBe(true)
+    expect(closes(3)).toBe(true)
+    expect(closes(4)).toBe(true)
+    expect(closes(5)).toBeUndefined()
+    expect(closes(6)).toBeUndefined()
+    expect(closes(7)).toBeUndefined()
+  })
+
+  it("reads \"closes\" as a close ask and \"close to\" as a place", () => {
+    const tabX = buildCandidates(chrome, 40).find((c) => c.id === 2)
+    expect(closeBlocked(tabX, "the button that closes the tab")).toBe(false)
+    expect(closeBlocked(tabX, "the icon close to the logo")).toBe(true)
+  })
+
+  it("does not read \"closed\" as a close ask: \"closed captions\" keeps the guard on", () => {
+    const tabX = buildCandidates(chrome, 40).find((c) => c.id === 2)
+    expect(closeBlocked(tabX, "the closed captions button")).toBe(true)
+    expect(closeBlocked(tabX, "show closed issues")).toBe(true)
+  })
+
   it("marks a native app's Quit and Close Window menu items", () => {
     const menu = [
       el({ id: 1, role: "AXMenuItem", label: "Quit Google Chrome" }),

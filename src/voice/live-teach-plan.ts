@@ -50,6 +50,15 @@ export function leavesApp(keys: string): boolean {
   return mods.has("ctrl") && ["up", "down", "left", "right"].includes(key)
 }
 
+/** Keys that close a tab or window (cmd+w, cmd+shift+w, cmd+alt+w). Quit
+ *  (cmd+q) is already refused by `leavesApp`. */
+export function closesByKeys(keys: string): boolean {
+  const alias: Record<string, string> = { command: "cmd", "⌘": "cmd" }
+  const parts = keys.toLowerCase().split("+").map((k) => k.trim()).filter(Boolean)
+  const key = parts.pop() ?? ""
+  return key === "w" && parts.some((m) => (alias[m] ?? m) === "cmd")
+}
+
 /** Read the planner's reply; anything malformed becomes a spoken wait. */
 export function parsePlan(reply: string, ids: Set<number>): Plan {
   const field = (k: string) => new RegExp(`^[ \\t]*${k}[ \\t]*:[ \\t]*(.*)$`, "im").exec(reply)?.[1]?.trim() ?? ""

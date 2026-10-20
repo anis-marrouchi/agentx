@@ -236,17 +236,28 @@ export function buildCandidates(elements: RawElement[], max = 60, opts: Candidat
 
 /** Does pressing it close a window or tab, or quit the app? By subrole
  *  for the red light, else by name: Chrome's tab x is "Close", the menus
- *  say "Close Tab", "Close Window", "Quit Google Chrome". A web page's own
- *  "Close" shuts a dialog on the page, not the page, so it is not marked. */
+ *  say "Close Tab", "Close Window", "Quit Google Chrome".
+ *
+ *  Inside a web area a bare "Close" usually shuts a dialog on the page,
+ *  not the page, so only explicit names are marked there. An Electron app
+ *  is one web area from edge to edge, and VS Code's editor tab says
+ *  "Close (⌘W)": that one closes something. */
 function closes(e: RawElement, onPage: boolean): boolean {
   if (e.subrole === "AXCloseButton") return true
-  return !onPage && /^(close|quit)\b/i.test(named(e))
+  const name = named(e)
+  if (!onPage) return /^(close|quit)\b/i.test(name)
+  return /^(close (tabs?|windows?|editors?|all|others?)|quit)\b/i.test(name) || CLOSE_SHORTCUT.test(name)
 }
 
+/** ⌘W, ⌘⇧W, ⌘Q, Cmd+W in a control's name: what pressing it does. */
+const CLOSE_SHORTCUT = /(⌘\s*[⇧⌥]*\s*[wq]|\b(cmd|command)\s*\+\s*((shift|alt|option)\s*\+\s*)?[wq])\b/i
+
 /** Does the request ask to close or quit something? Not "exit": "exit
- *  full screen" is common and its button sits next to the red light. */
+ *  full screen" is common and its button sits next to the red light.
+ *  Not "close-up" or "close to": "the icon close to the logo" is about
+ *  where, not about closing. */
 export function asksToClose(request: string): boolean {
-  return /\b(close|closing|quit)\b(?!-up)/i.test(request)
+  return /\b(closes?|closing|quit)\b(?!-up|\s+to\b)/i.test(request)
 }
 
 /** True when the pick closes something the request never asked to close:
