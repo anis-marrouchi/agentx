@@ -236,6 +236,9 @@ export interface AgentTask {
     initiator?: import("@/a2a/initiator").RootInitiator
     /** Set on a callback turn: the delegation whose result it carries. */
     delegation?: { taskId: string; from: string; peer?: string; status: string }
+    /** The issue or merge request the work is about, when the delegating
+     *  agent named it (#1100). */
+    home?: string
   }
 }
 

@@ -22,6 +22,7 @@ import type { IncomingMessage as HttpRequest } from "http"
 import { DelegationManager, type CallerTurn, type DelegationDeps } from "@/a2a/delegation"
 import { rootInitiatorOf, type RootInitiator } from "@/a2a/initiator"
 import type { AgentRegistry } from "@/agents/registry"
+import type { SessionStore } from "@/agents/sessions"
 import type { A2AMesh } from "@/a2a/mesh"
 import type { MessageRouter } from "@/channels/router"
 import type { DaemonConfig } from "./config"
@@ -287,6 +288,31 @@ export function sendTimeoutMs(maxExecutionMinutes: number | undefined): number {
   return ((maxExecutionMinutes ?? 20) + 25 + 5) * 60_000
 }
 
+/** Point a callee's new chat at the agent session of its earlier chat on
+ *  the same home (#1100), for every tier that keeps one. The earlier run
+ *  has ended: the delegation waits for it. False when there was nothing
+ *  to continue, so the run starts fresh as before. */
+export function continueSession(
+  store: Pick<SessionStore, "getClaudeSessionId" | "setClaudeSessionId" | "getCodexSessionId" | "setCodexSessionId" | "getOpenCodeSessionId" | "setOpenCodeSessionId">,
+  agentId: string,
+  from: { channel: string; chatId: string },
+  to: { channel: string; chatId: string },
+): boolean {
+  if (!to.chatId || (from.channel === to.channel && from.chatId === to.chatId)) return false
+  try {
+    let found = false
+    const claude = store.getClaudeSessionId(agentId, from.channel, from.chatId)
+    if (claude) { store.setClaudeSessionId(agentId, to.channel, to.chatId, claude); found = true }
+    const codex = store.getCodexSessionId(agentId, from.channel, from.chatId)
+    if (codex) { store.setCodexSessionId(agentId, to.channel, to.chatId, codex); found = true }
+    const open = store.getOpenCodeSessionId(agentId, from.channel, from.chatId)
+    if (open) { store.setOpenCodeSessionId(agentId, to.channel, to.chatId, open); found = true }
+    return found
+  } catch {
+    return false
+  }
+}
+
 /** What a callee gets back when its message to the agent that asked it
  *  was passed into that agent's conversation (#1100). */
 export function replyBody(taskId: string, caller: string): Record<string, unknown> {
@@ -438,7 +464,11 @@ export function createDelegations(w: DelegationWiring): DelegationManager {
       agentId: callee,
       message,
       context: context as any,
-      freshSession: true,
+      // A follow-up on the same home continues that run's session (#1100).
+      freshSession: !(opts.resumeFrom && continueSession(w.registry.getSessionStore(), callee, opts.resumeFrom, {
+        channel: String((context as any).channel ?? "a2a"),
+        chatId: String((context as any).chatId ?? ""),
+      })),
       timeoutMinutes: Math.ceil(opts.timeoutMs / 60_000),
       onStart: opts.onStart,
       ...(opts.extras?.intentRef ? { intentRef: opts.extras.intentRef as { eventId: string; decidedBy: string } } : {}),

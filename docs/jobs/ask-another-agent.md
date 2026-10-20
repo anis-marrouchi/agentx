@@ -94,6 +94,15 @@ Sending the same message from the same agent to the same agent again within 10 m
 
 If the tool gets no answer from the daemon in time, it says the message was **probably delivered**, not that it failed. Sending it again is safe, for the reason above. The daemon log has a `[send/agent] snd-…` line for each queued message, and a `started as run …` line when the other agent picks it up.
 
+### One session per piece of work
+
+When a follow-up about the same work goes to an agent as a new message, the agent should not start a second session beside the one already working on it. Name the work with `home`, the link of the issue or merge request, or a reference such as `group/project#12`, on `agentx_task` or `agentx_send_agent` (`"home"` in the body of `/task` and `/send/agent`):
+
+- A new message on the same `home` to the same agent on this machine waits until the run already on it ends. It then continues that run's session, so the agent keeps what it knew. This applies when the earlier run is still going or ended in the last 12 hours, and to messages whose answer comes back as a new message (see above).
+- When a run of an agent starts while another run of the same agent, in another chat, works on the same issue, the new run is told so in a first line that starts with `[agentx:same-home]`. It names the other run's chat and start time, and asks the agent to coordinate rather than redo or overwrite that work. The issue is taken from `home`, or from issue and merge request links and `group/project#12` references in the message. A bare `#12` is not used, because it names different work in every project.
+
+Without `home`, each message starts its own session, as before.
+
 A `/mesh/task` request whose own `context` names a chat (`channel` and `chatId`) keeps its older behaviour. With `"async": true`, the helper's plain answer is posted to that chat, and no callback turn runs.
 
 Some requests are refused straight away with status `409`:
@@ -124,3 +133,5 @@ Some requests are refused straight away with status `409`:
 - **`agentx_send_agent` says "probably delivered":** the daemon took more than 10 seconds to confirm. Send the same message again; a repeat within 10 minutes returns the first task id instead of a second task. An agent that is busy with another task shows no trace until it starts the new one; search the daemon log for `[send/agent]` to see it was queued.
 - **`agentx_send_agent` says "could not be reached":** the daemon on this machine is not running. Start it with `agentx daemon start --detach`, then send again.
 - **The status list is empty:** only delegations since the last restart are listed, and only on the machine that runs the asking agent.
+- **A follow-up started a new session anyway:** check that both messages named the same `home`, and went to an agent on the same machine. After a restart, or 12 hours after the last run ended, a new session starts. The daemon log line `is on … continues its session` shows when a session was continued.
+- **Two runs still worked on the same issue:** the second one was told (its first line starts with `[agentx:same-home]`). If it went on anyway, tell the sending agent to name `home`, so the second message waits for the first run instead.
