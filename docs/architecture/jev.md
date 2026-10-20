@@ -18,7 +18,19 @@ In a web browser, the list holds the web page and, in a few reserved places, the
 
 With `--json`, the chosen control shows `"inBrowser": true` when it sits outside the page.
 
-When the best match would close a window, tab or app and the request does not ask to close anything, `agentx point` stops with exit code 4. With `--json`, the answer has a `blocked` field, and `chosen` gives the control's name but no `x`, `y`, `width` or `height`, so a script that clicks wherever `chosen` says has nothing to click.
+### Controls that close something
+
+Some controls close a tab or a window, or quit the app: the red window button, a tab's "x", menu items such as "Close Window" or "Quit", and an app's own close buttons such as "Close Editor" or "Close (⌘W)". AgentX marks these, so a request that does not ask to close anything never lands on one by mistake. A plain "Close" inside a web page is not marked, because it usually shuts a pop-up on the page, not the page itself.
+
+A request asks to close something when it says "close", "closes", "closing" or "quit". "Exit full screen", "close-up" and "close to" do not count.
+
+What happens when a marked control is chosen and the request does not ask to close anything:
+
+| Command | What it does |
+|---|---|
+| `agentx point` | Does not point at it. It stops with exit code 4. With `--json`, the answer has a `blocked` field, and `chosen` gives the control's name but no `x`, `y`, `width` or `height`, so a script that clicks wherever `chosen` says has nothing to click. |
+| `agentx teach` | Stops before a click step on it. A step that only shows a control may still highlight it, because nothing is pressed. |
+| Live lessons | Shows the control instead of clicking it or typing into it. It also refuses keyboard shortcuts that close a tab or window (⌘W, ⌘⇧W, ⌘⌥W) and stops the lesson. ⌘Q is always refused, because it leaves the app. |
 
 A candidate-selection question always has a choice to return. The separate “is it present?” question lets AgentX refuse to highlight an unrelated control.
 
