@@ -224,6 +224,19 @@ describe("the answer", () => {
     expect(msg).toContain("pull request")
     expect(msg).toContain("retro:T-deploy")
     expect(msg).not.toContain("Approved text")
+    expect(msg).not.toContain("plain yes")
+  })
+
+  it("tells the agent when a loosen or remove came from a plain yes (#1064)", () => {
+    const card = reviewCard()
+    expect(card.recommend.startsWith(CHECK_CHOICES.loosen)).toBe(true)
+    const plain = decideCard(tmp, card.id, "yes")
+    if (!plain.ok) throw new Error(plain.error)
+    expect(plain.card.choice_suggested).toBe(true)
+    expect(plain.card.choice).toBe(CHECK_CHOICES.loosen)
+    const msg = verdictMessage(plain.card)
+    expect(msg).toContain("pull request")
+    expect(msg).toContain("plain yes, taken as the suggested option")
   })
 
   it("changes nothing on Keep, No or silence", () => {
