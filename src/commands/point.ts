@@ -131,6 +131,14 @@ export const point = new Command()
     if (candidates.length === 1) {
       const only = rectFor(screen, candidates[0].id)
       if (only && closeBlocked(candidates[0], request)) {
+        if (opts.json) {
+          const c = candidates[0]
+          console.log(JSON.stringify({
+            app: screen.app, request, blocked: "closes a window, tab or app; the request does not ask to close anything",
+            chosen: { label: c.label, ...(c.shown ? { shown: c.shown } : {}), fromOCR: screen.ocrRects.has(c.id), inBrowser: c.area === "browser", closes: true },
+          }, null, 2))
+          process.exit(4)
+        }
         console.log(chalk.yellow(`  ${screen.app} exposes only ${chalk.bold(candidates[0].shown ?? candidates[0].label)}, which closes something; not pointing at it`))
         process.exit(4)
       }
@@ -178,9 +186,11 @@ export const point = new Command()
     const blocked = closeBlocked(chosenCand, request)
 
     if (opts.json) {
+      // A blocked pick names the control but gives no place: a caller that
+      // clicks wherever `chosen` says must have nothing to click.
       console.log(JSON.stringify({
         app: screen.app, request, ...(blocked ? { blocked: "closes a window, tab or app; the request does not ask to close anything" } : {}),
-        chosen: { ...chosen, label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR, inBrowser, ...(chosenCand?.closes ? { closes: true } : {}) }, present: sel.present,
+        chosen: { ...(blocked ? {} : chosen), label: chosenLabel, ...(chosenCand?.shown ? { shown: chosenCand.shown } : {}), fromOCR, inBrowser, ...(chosenCand?.closes ? { closes: true } : {}) }, present: sel.present,
         confidence: sel.confidence,
         ranked: sel.ranked.slice(0, 5).map((r) => ({
           ...r, label: candidates.find((c) => c.id === r.id)?.label, shown: candidates.find((c) => c.id === r.id)?.shown,
