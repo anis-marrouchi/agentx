@@ -10,7 +10,33 @@ import { join, relative } from "path"
 const ROOT = join(__dirname, "..", "..")
 const SRC = join(ROOT, "src")
 const SKIP = new Set(["native", "computer-use"].map((d) => join(SRC, d)))
-const OS_WORDS = /darwin|win32|osascript|afplay|remindctl|\/System\/Library/
+// Whole words only, so names like `darwinism` or `win32api` do not count.
+const OS_WORDS = /\b(darwin|win32|osascript|afplay|remindctl)\b|\/System\/Library/
+
+/** The allowlist as of main at 88fec94. Never add to it.
+ * CI checks out the PR without main's history, so "may only shrink" is held
+ * against this frozen copy rather than a diff against main.
+ * A PR that shrinks os-allowlist.json trims BASELINE to match in the same PR. */
+const BASELINE = [
+  "src/approvals/card-window.ts",
+  "src/approvals/origin.ts",
+  "src/approvals/popup-runner.ts",
+  "src/approvals/popup.ts",
+  "src/commands/approvals-card.ts",
+  "src/commands/doctor.ts",
+  "src/daemon/config.ts",
+  "src/daemon/index.ts",
+  "src/daemon/restart-host.ts",
+  "src/daemon/screen-buffer.ts",
+  "src/daemon/ui/pages/admin.ts",
+  "src/decisions/seats/voice-narration.ts",
+  "src/desktop/install.ts",
+  "src/guard/confirm.ts",
+  "src/utils/open-browser.ts",
+  "src/voice/siri.ts",
+  "src/voice/speaker.ts",
+  "src/voice/system-voices.ts",
+]
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = []
@@ -26,20 +52,30 @@ function sourceFiles(dir: string): string[] {
 }
 
 const allowlist: string[] = JSON.parse(readFileSync(join(__dirname, "os-allowlist.json"), "utf8")).files
-const offenders = sourceFiles(SRC)
-  .filter((f) => OS_WORDS.test(readFileSync(f, "utf8")))
-  .map((f) => relative(ROOT, f).split("\\").join("/"))
-  .sort()
+// Each matching file, with its first matching line so a failure points at the code to move.
+const hits = new Map<string, string>()
+for (const f of sourceFiles(SRC)) {
+  const lines = readFileSync(f, "utf8").split("\n")
+  const i = lines.findIndex((l) => OS_WORDS.test(l))
+  if (i >= 0) hits.set(relative(ROOT, f).split("\\").join("/"), `${i + 1}: ${lines[i].trim()}`)
+}
+const offenders = [...hits.keys()].sort()
 
 describe("no OS-specific code in core (#1062)", () => {
   it("names the OS only in src/native/ or an allowlisted file", () => {
-    const fresh = offenders.filter((f) => !allowlist.includes(f))
+    const fresh = offenders.filter((f) => !allowlist.includes(f)).map((f) => `${f}:${hits.get(f)}`)
     expect(fresh, "move this OS work into src/native/ instead of adding to os-allowlist.json").toEqual([])
   })
 
   it("drops allowlist entries that no longer name the OS", () => {
     const stale = allowlist.filter((f) => !offenders.includes(f))
     expect(stale, "delete these lines from test/native/os-allowlist.json").toEqual([])
+  })
+
+  it("never gains a file the allowlist did not start with", () => {
+    const baseline = new Set(BASELINE)
+    const added = allowlist.filter((f) => !baseline.has(f))
+    expect(added, "move this OS work into src/native/; the allowlist may only shrink").toEqual([])
   })
 
   it("keeps the allowlist sorted and without repeats", () => {
