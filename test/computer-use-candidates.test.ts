@@ -93,7 +93,7 @@ describe("buildCandidates", () => {
       el({ id: 3, role: "AXImage", label: "Comments", parent: 1, width: 20, height: 20 }),
       el({ id: 4, role: "AXCheckBox", label: "Rectangle — R", parent: 1 }),
     ]
-    expect(buildCandidates(elements, 10).map((c) => c.label).sort()).toEqual(["Comments", "Rectangle — R", "canvas"])
+    expect(buildCandidates(elements, 10).map((c) => c.shown ?? c.label).sort()).toEqual(["Comments", "Rectangle — R", "canvas"])
   })
 
   // A browser window: traffic lights and toolbar outside the web area.
@@ -110,32 +110,54 @@ describe("buildCandidates", () => {
     // The bug this fixes: "the circular arrow reload icon" and "the small
     // x that closes the tab" were never offered, because every control
     // outside the web area was dropped. 8 of 12 misses in the #1092 race.
-    const out = buildCandidates(browser([el({ id: 5, role: "AXTextField", label: "Search query", y: 120 })]), 10)
-    const labels = out.map((c) => c.label)
+    const out = buildCandidates(browser([el({ id: 5, role: "AXTextField", label: "Search query", y: 120 })]), 40)
+    const labels = out.map((c) => c.shown ?? c.label)
     expect(labels).toContain("Search query")
-    expect(labels).toContain("Reload (browser, outside the page)")
+    expect(labels).toContain("outside the page: Reload")
     // ...and the address bar can no longer pass for the page's search box.
-    expect(labels).toContain("Address and search bar (browser, outside the page)")
+    expect(labels).toContain("outside the page: Address and search bar")
     expect(labels).not.toContain("Address and search bar")
   })
 
-  it("keeps the browser's controls when a busy page fills the cap", () => {
+  it("keeps a few browser controls when a busy page fills the cap, and no more", () => {
     const links = Array.from({ length: 80 }, (_, i) => el({ id: 10 + i, role: "AXLink", label: `nav ${i}`, y: 100 + i }))
-    const labels = buildCandidates(browser(links), 20).map((c) => c.label)
-    expect(labels).toHaveLength(20)
-    expect(labels).toContain("Reload (browser, outside the page)")
+    const tabs = Array.from({ length: 30 }, (_, i) => el({ id: 200 + i, role: "AXButton", label: `tab ${i}`, parent: 0, y: 40 }))
+    const out = buildCandidates([...browser(links), ...tabs], 40)
+    const shown = out.map((c) => c.shown ?? c.label)
+    expect(out).toHaveLength(40)
+    expect(shown).toContain("outside the page: Reload")
+    // A quarter at most: a small caller such as teach keeps its page slots.
+    expect(shown.filter((l) => l.startsWith("outside the page:"))).toHaveLength(10)
+  })
+
+  it("keeps the control's own name as its label, for checking a click", () => {
+    // Lesson steps click with --expect <label>; a label the screen does not
+    // carry ("Reload (browser…)", "history → in …") makes the helper refuse.
+    const out = buildCandidates(browser([el({ id: 5, role: "AXTextField", label: "0", y: 120 })]), 40)
+    expect(out.find((c) => c.id === 2)?.label).toBe("Reload")
+    expect(out.find((c) => c.id === 5)?.label).toBe("0")
+  })
+
+  it("does not cut a page control off its web area when a duplicate parent is dropped", () => {
+    const box = { role: "AXGroup", label: "Infobox", x: 800, y: 300, width: 300, height: 400 }
+    const out = buildCandidates(browser([
+      el({ id: 5, ...box }),
+      el({ id: 6, ...box, parent: 5 }),
+      el({ id: 7, role: "AXLink", label: "Population", parent: 6, x: 810, y: 320 }),
+    ]), 10)
+    expect(out.find((c) => c.id === 7)?.shown ?? out.find((c) => c.id === 7)?.label).toBe("Population")
   })
 
   it("names an unlabelled traffic light by its subrole", () => {
-    const labels = buildCandidates(browser([el({ id: 5, role: "AXLink", label: "Home", y: 120 })]), 10).map((c) => c.label)
-    expect(labels).toContain("close window (red traffic light) (browser, outside the page)")
+    const labels = buildCandidates(browser([el({ id: 5, role: "AXLink", label: "Home", y: 120 })]), 40).map((c) => c.shown ?? c.label)
+    expect(labels).toContain("outside the page: close window (red traffic light)")
   })
 
   it("names a window button by its subrole even when help text is its label", () => {
     // The green light's label is "this button also has an action to zoom
     // the window", which never says it is the green one.
     const out = buildCandidates([el({ id: 1, label: "this button also has an action to zoom the window", subrole: "AXFullScreenButton" })], 10)
-    expect(out[0].label).toBe("full screen (green traffic light)")
+    expect(out[0].shown).toBe("full screen (green traffic light)")
   })
 
   it("treats Chrome's placeholder \"0\" as no name", () => {
@@ -145,7 +167,7 @@ describe("buildCandidates", () => {
       el({ id: 1, role: "AXStaticText", label: "0", value: "running 2" }),
       el({ id: 2, role: "AXImage", label: "0", width: 300, height: 20 }),
     ], 10)
-    const labels = out.map((c) => c.label)
+    const labels = out.map((c) => c.shown ?? c.label)
     expect(labels).toContain("running 2")
     expect(labels.some((l) => l.startsWith("unlabelled chart or graphic"))).toBe(true)
     expect(labels).not.toContain("0")
@@ -159,8 +181,8 @@ describe("buildCandidates", () => {
       el({ id: id + 1, role: "AXStaticText", value: "last active 1h ago", x, y: 150 }),
       el({ id: id + 2, role: "AXButton", label: "history →", x: x + 200, y: 150 }),
     ]
-    const labels = buildCandidates([...card(1, 0, "@marketing-agent"), ...card(10, 400, "@devops-agent")], 20)
-      .map((c) => c.label)
+    const labels = buildCandidates(browser([...card(10, 0, "@marketing-agent"), ...card(20, 400, "@devops-agent")]), 40)
+      .map((c) => c.shown ?? c.label)
     expect(labels).toContain('history → in "@marketing-agent last active 1h ago"')
     expect(labels).toContain('history → in "@devops-agent last active 1h ago"')
   })
@@ -189,7 +211,7 @@ describe("buildCandidates", () => {
       el({ id: 2, role: "AXCell", label: "", parent: 1 }),
       el({ id: 3, role: "AXStaticText", label: "", value: "Downloads", parent: 2 }),
     ], 10)
-    expect(out.find((c) => c.id === 1)?.label).toBe("Downloads")
+    expect(out.find((c) => c.id === 1)?.shown).toBe("Downloads")
   })
 
   it("says roughly where each control is, in words", () => {
@@ -234,6 +256,11 @@ describe("uiElementState — what the model is actually told", () => {
     const state = uiElementState({ ...base, priorAttempts: prior }) as any
     expect(state.alreadyTried).toHaveLength(4)
     expect(state.alreadyTried[3].control).toBe("try 8")
+  })
+
+  it("shows the model the fuller name, keeping the label as it was", () => {
+    const state = uiElementState({ ...base, candidates: [{ ...base.candidates[0], label: "Reload", shown: "outside the page: Reload" }] }) as any
+    expect(state.controls[0].label).toBe("outside the page: Reload")
   })
 
   it("passes the coarse place along when there is one", () => {

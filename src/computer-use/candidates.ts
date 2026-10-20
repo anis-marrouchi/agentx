@@ -12,9 +12,9 @@ import type { UICandidate } from "@/decisions/seats/ui-element"
 // the browser's own controls (reload, the star, the tab's close button, the
 // window's traffic lights), and they were never offered at all.
 //
-// So both stay, and the browser's controls say what they are. A page ask
-// still finds the page's search box. An ask about the address bar or the
-// tab finds the browser's control, because it is labelled as the browser's.
+// So both stay, and the browser's controls say what they are ("outside
+// the page: Reload"). A page ask still finds the page's search box. An ask
+// about the address bar or the tab finds the browser's control.
 
 export interface RawElement {
   id: number
@@ -131,46 +131,57 @@ export function buildCandidates(elements: RawElement[], max = 60): UICandidate[]
     return 4
   }
   const usable = (e: RawElement) => e.width >= 1 && e.height >= 1
-  const { page, browser } = splitPage(dedupe(elements))
+  // Split first, then dedupe each half: a dropped duplicate may be the
+  // parent that ties its children to the web area.
+  const split = splitPage(elements)
+  const page = dedupe(split.page)
+  const browser = dedupe(split.browser)
+  const isWeb = browser.length > 0
   const canvas = new Set(page.filter((e) => isCanvas(e, page)).map((e) => e.id))
-
-  // The browser's own controls are few (17 in Chrome) and always the same
-  // kind, so they get their slots first. Ranked into the page's tiers they
-  // lose to every link on a busy page and are cut, which is the bug.
-  const own = browser
-    .filter((e) => INTERESTING_ROLE.test(e.role) && !BROWSER_NOISE.test(e.role) && usable(e))
-    .slice(0, Math.floor(max / 2))
-
-  const fromPage = page
-    .filter((e) => INTERESTING_ROLE.test(e.role) || canvas.has(e.id))
-    .filter(usable)
+  const byRank = (list: RawElement[]) => list
     .map((e, i) => ({ e, i }))
     .sort((a, b) => (canvas.has(a.e.id) ? 1 : rank(a.e.role)) - (canvas.has(b.e.id) ? 1 : rank(b.e.role)) || a.i - b.i)
     .map(({ e }) => e)
+
+  // The browser's own controls are few (17 in Chrome) and always the same
+  // kind, so they get a few slots first. Ranked into the page's tiers they
+  // lose to every link on a busy page and are cut, which is the bug. The
+  // reserve is capped so a small caller (teach, at 45) keeps most of its
+  // slots for the page.
+  const own = byRank(browser.filter((e) => INTERESTING_ROLE.test(e.role) && !BROWSER_NOISE.test(e.role) && usable(e)))
+    .slice(0, Math.min(20, Math.floor(max / 4)))
+
+  const fromPage = byRank(page.filter((e) => (INTERESTING_ROLE.test(e.role) || canvas.has(e.id)) && usable(e)))
     .slice(0, max - own.length)
 
-  const isBrowser = new Set(own.map((e) => e.id))
+  const outside = new Set(own.map((e) => e.id))
   const frame = elements.find((e) => e.role === "AXWindow") ?? null
   const chosen = [...fromPage, ...own]
   const times = new Map<string, number>()
   for (const e of chosen) times.set(named(e), (times.get(named(e)) ?? 0) + 1)
   return chosen.map((e, i) => {
+    // `label` stays the control's own name, as the app reports it: lesson
+    // steps check a click against it (`click --expect`), so it must be
+    // text the screen really carries.
+    const label = canvas.has(e.id) ? "canvas" : (e.label || e.value || "").trim() || `${e.role.replace(/^AX/, "")} ${i + 1}`
+    // `shown` is what the model reads instead, when there is more to say.
     const own = named(e)
-    let name = canvas.has(e.id)
-      ? "canvas"
-      : subroleName(e.subrole) || own || innerText(e, elements) || unnamed(e, i)
+    let name = canvas.has(e.id) ? "canvas" : subroleName(e.subrole) || own || innerText(e, elements) || unnamed(e, i)
     // Five cards each with a "history →" and an unnamed chart: the name
     // alone cannot say which card the request means, the card's title can.
-    if (!isBrowser.has(e.id) && !canvas.has(e.id) && (!own || (times.get(own) ?? 0) > 1)) {
+    // Only inside a web page, where reading order follows the layout.
+    if (isWeb && !outside.has(e.id) && !canvas.has(e.id) && (!own || (times.get(own) ?? 0) > 1)) {
       const ctx = blockTitle(e, page)
       if (ctx) name = `${name} in "${ctx}"`
     }
+    // First, so no clipping can cut it: this is the browser's or the
+    // app's own control, not one on the page.
+    if (outside.has(e.id)) name = `outside the page: ${name}`
     return {
       id: e.id,
       role: e.role,
-      // Said in the label, where the model reads it: this is the browser's
-      // control, not one on the page.
-      label: isBrowser.has(e.id) ? `${name} (browser, outside the page)` : name,
+      label,
+      ...(name !== label ? { shown: name } : {}),
       value: e.value ?? null,
       enabled: e.enabled,
       ...(frame ? { where: region(e, frame) } : {}),

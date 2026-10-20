@@ -29,6 +29,10 @@ export interface UICandidate {
   enabled: boolean
   /** Coarse place in the window ("top right"), when known. */
   where?: string
+  /** What the model is shown instead of `label`, when the label alone
+   *  cannot say what the control is: "outside the page: Reload",
+   *  'history → in "@marketing-agent"'. `label` stays the app's own name. */
+  shown?: string
 }
 
 /** Something already attempted on this screen, and what came of it. */
@@ -77,7 +81,7 @@ export function uiElementState(input: UIElementInput): StateValue {
     controls: input.candidates.map((c) => ({
       id: String(c.id),
       role: humanRole(c.role),
-      label: clip(c.label, 120),
+      label: clip(c.shown ?? c.label, 120),
       value: c.value ? clip(c.value, 80) : null,
       enabled: c.enabled,
       ...(c.where ? { where: c.where } : {}),
@@ -89,7 +93,7 @@ export function uiElementState(input: UIElementInput): StateValue {
 export function uiElementQuestions(candidates: UICandidate[]) {
   const criteria: Record<string, string> = {}
   for (const c of candidates) {
-    const name = c.label || c.value || "(unlabelled)"
+    const name = c.shown || c.label || c.value || "(unlabelled)"
     criteria[String(c.id)] = `${humanRole(c.role)}: ${clip(name, 80)}${c.where ? ` (${c.where})` : ""}`
   }
   return {
