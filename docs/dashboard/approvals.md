@@ -305,6 +305,17 @@ A card forwarded from another machine is closed through that machine's daemon, w
 
 Agents on a `claude-code` engine get the `agentx_approval` tool in every session, whichever channel started it: the daemon adds its own tool server to each session it starts, next to the tool servers the workspace and the computer's user already load.
 
+## For agents: see what is on your screen
+
+Before an agent puts something new in front of you (a card, a notice, a call or a spoken line), it can look at what is already there with the `agentx_screen` tool. It is in the `read` tool set: it looks and changes nothing. It lists:
+
+- decision cards waiting for your answer: title, the agent that raised it, its machine, and when;
+- notices held while you are in Focus or a call: title, who sent it, and when;
+- the line being spoken and the lines waiting to be spoken, each cut to its first words;
+- open requests waiting on you: the request cut to a title, its agent, and since when.
+
+It shows titles only, never a card's question, a notice's message or a request's whole text, and at most 20 of each kind with the full count. The same view is on the daemon's local API as `GET /screen`. Like `GET /approvals`, a call from another machine needs a mesh token.
+
 ## Check it worked
 
 1. **Terminal:** raise a test card with `agentx approvals request` as shown above.
@@ -351,6 +362,11 @@ For the screen gate:
    ```
 2. **Terminal:** it is refused with `ask holds more than one question: one card asks one thing`, and `agentx approvals list` does not show it.
 3. **Terminal:** run the same command with `--title "#402"` and `--ask "Send it?"`. It is refused with `title is only a reference ("#402")`.
+
+For what is on your screen:
+
+1. **Terminal:** run `curl -s http://127.0.0.1:18800/screen`.
+2. **Terminal:** every decision card that `agentx approvals list` shows is in the `cards` list, with a `title` and no `ask`.
 
 ## If something is wrong
 
