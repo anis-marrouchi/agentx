@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { mkdtempSync, rmSync, readFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { DelegationManager, MAX_DONE_IDS, DELEGATION_RESULT_MARKER, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
+import { DelegationManager, MAX_DONE_IDS, MAX_SEND_DEPTH, DELEGATION_RESULT_MARKER, callbackDepthOf, delegationIdOfChat, isDelegationRelay, stoppedByRestart, type DelegationDeps, type CallerTurn, type InjectedTurn } from "../src/a2a/delegation"
 
 // A person on a chat channel asked "front"; front delegates to "worker".
 const HUMAN_TURN: CallerTurn = {
@@ -488,5 +488,111 @@ describe("a callback turn stopped by a restart (#846)", () => {
     expect(isDelegationRelay(`${DELEGATION_RESULT_MARKER} task=dlg-1 from=worker status=done]\n...`)).toBe(true)
     expect(isDelegationRelay("What is the weather?")).toBe(false)
     expect(isDelegationRelay(null)).toBe(false)
+  })
+})
+
+// #400 — an agent's send no person waits on: COO-style turn in its own chat.
+const AGENT_TURN: CallerTurn = {
+  agentId: "planner",
+  taskId: "run-9",
+  context: { channel: "mcp", chatId: "mcp:lead:planner:work-1", sender: "agent:lead", initiator: { kind: "agent", channel: "cron", agentId: "lead" } },
+}
+
+describe("an agent's send calls its asker back (#400)", () => {
+  it("is allowed from an agent's turn, inside a delegation too, but not without a chat", () => {
+    const h = harness()
+    expect(h.mgr.shouldCallback(AGENT_TURN)).toBe(false)
+    expect(h.mgr.shouldCallbackSend(AGENT_TURN)).toBe(true)
+    expect(h.mgr.shouldCallbackSend(DELEGATED_TURN)).toBe(true)
+    expect(h.mgr.shouldCallbackSend(null)).toBe(false)
+    expect(h.mgr.shouldCallbackSend({ agentId: "x", context: { channel: "a2a" } })).toBe(false)
+  })
+
+  it("stops after MAX_SEND_DEPTH callback hops", () => {
+    const h = harness()
+    const deep = (depth: number): CallerTurn => ({ ...AGENT_TURN, context: { ...AGENT_TURN.context, delegation: { taskId: "dlg-x", from: "y", status: "done", depth } } })
+    expect(h.mgr.shouldCallbackSend(deep(MAX_SEND_DEPTH - 1))).toBe(true)
+    expect(h.mgr.shouldCallbackSend(deep(MAX_SEND_DEPTH))).toBe(false)
+  })
+
+  it("brings the answer back into the asker's own chat, one hop deeper, worded for an agent", async () => {
+    const h = harness()
+    const { taskId } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Deploy 1.2", kind: "send", timeoutMs: 5_000 })
+    h.local.resolve({ content: "Deployed, version 1.2 live." })
+    await flush()
+    expect(h.injected).toHaveLength(1)
+    const turn = h.injected[0]
+    expect(turn.agentId).toBe("planner")
+    expect(turn.context).toMatchObject({ channel: "mcp", chatId: "mcp:lead:planner:work-1", delegation: { taskId, from: "builder", status: "done", depth: 1 } })
+    expect(turn.message).toContain("Deployed, version 1.2 live.")
+    expect(turn.message).toContain("Act on it here")
+    expect(turn.message).not.toContain("Tell the person")
+    // mcp has no route to a person: nothing is delivered anywhere.
+    expect(h.delivered).toHaveLength(0)
+  })
+
+  it("uses its own time limit and, on a timeout, asks for resume, split or drop", async () => {
+    vi.useFakeTimers()
+    const h = harness({ timeoutMs: 1000 })
+    h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Long build", kind: "send", timeoutMs: 5000 })
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(h.injected).toHaveLength(0)
+    await vi.advanceTimersByTimeAsync(4000)
+    expect(h.injected).toHaveLength(1)
+    const msg = h.injected[0].message
+    expect(msg).toContain("status=timeout")
+    expect(msg).toMatch(/resume it .*split it .*drop it/)
+  })
+
+  it("routes the callee's own message to the asker into that chat, and does not call back twice", async () => {
+    const h = harness()
+    const { taskId, record } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "Review this", kind: "send" })
+    const chatId = h.calls.runLocal[0].context.chatId
+    expect(chatId).toBe(`a2a:planner:builder:${taskId}`)
+    // Only the callee, from that chat, to the agent that asked.
+    expect(h.mgr.replyTarget({ agentId: "builder", chatId }, "planner")).toBe(record)
+    expect(h.mgr.replyTarget({ agentId: "builder", chatId }, "someone-else")).toBeNull()
+    expect(h.mgr.replyTarget({ agentId: "intruder", chatId }, "planner")).toBeNull()
+    expect(h.mgr.replyTarget({ agentId: "builder", chatId: "planner" }, "planner")).toBeNull()
+
+    h.mgr.relayReply(record, "Verdict: changes needed.")
+    await flush()
+    expect(h.injected).toHaveLength(1)
+    expect(h.injected[0].context).toMatchObject({ chatId: "mcp:lead:planner:work-1", delegation: { taskId, status: "reply" } })
+    expect(h.injected[0].message).toContain("status=reply")
+    expect(h.injected[0].message).toContain("Verdict: changes needed.")
+
+    h.local.resolve({ content: "Sent the verdict to planner." })
+    await flush()
+    expect(h.injected).toHaveLength(1)
+    expect(h.logs.some((l) => l.includes("no second callback"))).toBe(true)
+  })
+
+  it("still calls back a failure after the callee wrote", async () => {
+    const h = harness()
+    const { record } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    h.mgr.relayReply(record, "Starting now.")
+    await flush()
+    h.local.resolve({ content: "", error: "boom" })
+    await flush()
+    expect(h.injected).toHaveLength(2)
+    expect(h.injected[1].message).toContain("status=error")
+  })
+
+  it("keeps the asker's chat for a delegation after it ended", async () => {
+    const h = harness()
+    const { taskId } = h.mgr.start({ caller: AGENT_TURN, callee: "builder", message: "x", kind: "send" })
+    expect(h.mgr.originFor(taskId)).toEqual({ caller: "planner", origin: { channel: "mcp", chatId: "mcp:lead:planner:work-1" } })
+    h.local.resolve({ content: "ok" })
+    await flush()
+    expect(h.mgr.originFor(taskId)?.origin.chatId).toBe("mcp:lead:planner:work-1")
+    expect(h.mgr.originFor("dlg-unknown")).toBeNull()
+  })
+
+  it("names the delegation of a callee chat", () => {
+    expect(delegationIdOfChat("a2a:a:b:dlg-abc-12ef")).toBe("dlg-abc-12ef")
+    expect(delegationIdOfChat("a2a:a:b")).toBeNull()
+    expect(callbackDepthOf({ delegation: { depth: 2 } })).toBe(2)
+    expect(callbackDepthOf({})).toBe(0)
   })
 })

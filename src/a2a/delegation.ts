@@ -61,6 +61,13 @@ export interface DelegationRecord {
   /** The caller's task type (`context.taskType`), which picks the evidence
    *  a watcher's done needs (watchers, #1049). */
   taskType?: string
+  /** "send": an agent's send_agent from a turn no person is waiting on.
+   *  Its answer goes back to the asking agent's own chat (#400). Absent:
+   *  a delegation a person started. */
+  kind?: "send"
+  /** How many callback turns led to the asking turn. Bounded, so two
+   *  agents cannot call each other back forever. */
+  depth?: number
 }
 
 export interface DelegationResult {
@@ -156,6 +163,22 @@ export function stoppedByRestart(resp: { content: string; error?: string }): boo
   return !!resp.error && /\bregistry-stop\b/.test(resp.error) && resp.content.trim().length === 0
 }
 
+/** A send from a callback turn this many hops deep is not called back
+ *  again: it goes out as a plain send (#400). */
+export const MAX_SEND_DEPTH = 4
+
+/** How many callback turns led to this turn. */
+export function callbackDepthOf(ctx: Record<string, unknown> | undefined | null): number {
+  const d = (ctx?.delegation as { depth?: unknown } | undefined)?.depth
+  return typeof d === "number" && Number.isFinite(d) && d > 0 ? Math.floor(d) : 0
+}
+
+/** The delegation a callee's chat belongs to (`a2a:<caller>:<callee>:<dlg-id>`). */
+export function delegationIdOfChat(chatId: string | undefined | null): string | null {
+  const m = typeof chatId === "string" ? /^a2a:[^:]+:[^:]+:(dlg-[A-Za-z0-9-]+)$/.exec(chatId) : null
+  return m ? m[1] : null
+}
+
 const REQUEST_CLIP = 500
 const RESULT_CLIP = 12_000
 /** Finished task ids remembered for duplicate suppression, in memory and
@@ -185,28 +208,37 @@ export function originOf(ctx: Record<string, unknown>): DelegationOrigin | null 
   return o
 }
 
-/** The message the caller receives as its new turn. */
-export function buildCallbackMessage(rec: DelegationRecord, result: DelegationResult): string {
+/** The message the caller receives as its new turn. `reply`: the callee
+ *  wrote to the caller itself while it works, rather than ending its run. */
+export function buildCallbackMessage(rec: DelegationRecord, result: DelegationResult, opts: { reply?: boolean } = {}): string {
   const who = rec.peer ? `${rec.callee} on ${rec.peer}` : rec.callee
-  const outcome = {
+  const outcome = opts.reply ? `answered (${rec.callee} sent this to you itself)` : {
     done: "finished",
     error: "failed",
     timeout: "did not answer in time",
     lost: "was lost (this machine restarted before the answer came back)",
   }[result.status]
+  const ok = result.status === "done"
+  // A send no person waits on: the asking agent acts on the answer here,
+  // in the conversation the ask came from (#400).
+  const next = rec.kind === "send"
+    ? ok
+      ? "Act on it here, in the work you asked for it: carry on, or pass it to whoever waits on it. Nothing is sent anywhere unless you send it."
+      : `Decide now, in this conversation, and do one: resume it (ask ${rec.callee} again and say what is already done), split it into smaller asks, or drop it and tell whoever waits on it. Do not leave it unsaid.`
+    : ok
+      ? "Tell the person what came back, in your own words, and act on it if they asked you to."
+      : "Tell the person it did not work and what they can do next. Do not retry on your own unless they asked you to."
   return [
-    `${DELEGATION_RESULT_MARKER} task=${rec.id} from=${rec.callee}${rec.peer ? ` peer=${rec.peer}` : ""} status=${result.status}]`,
+    `${DELEGATION_RESULT_MARKER} task=${rec.id} from=${rec.callee}${rec.peer ? ` peer=${rec.peer}` : ""} status=${opts.reply ? "reply" : result.status}]`,
     `Earlier in this conversation you asked ${who} to help. That work ${outcome}.`,
     "",
     "What you asked:",
     rec.request,
     "",
-    result.status === "done" ? `${who} answered:` : "Details:",
+    ok ? `${who} answered:` : "Details:",
     clip(result.text, RESULT_CLIP),
     "",
-    result.status === "done"
-      ? "Tell the person what came back, in your own words, and act on it if they asked you to."
-      : "Tell the person it did not work and what they can do next. Do not retry on your own unless they asked you to.",
+    next,
   ].join("\n")
 }
 
@@ -244,13 +276,16 @@ export class DelegationManager {
   /** Finished task id → how it ended, oldest first. */
   private doneIds = new Map<string, DelegationStatus>()
   private appendsSinceCompact = 0
-  private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number }> = []
+  private recent: Array<{ id: string; caller: string; callee: string; peer?: string; status: DelegationStatus | "running"; startedAt: number; endedAt?: number; origin?: DelegationOrigin }> = []
   /** One callback at a time per caller chat, in completion order. */
   private chains = new Map<string, Promise<void>>()
   private timers = new Map<string, ReturnType<typeof setTimeout>>()
   private localRuns = new Map<string, string>()
   /** Callback turns a restart stopped, by task id (see HeldRelay). */
   private heldRelays = new Map<string, HeldRelay>()
+  /** Delegations whose callee already wrote to the caller (relayReply):
+   *  their plain end is not called back a second time. */
+  private answered = new Set<string>()
   private readonly now: () => number
 
   constructor(private deps: DelegationDeps) {
@@ -276,6 +311,38 @@ export class DelegationManager {
     return isHumanFacingTurn(caller.context) && this.deps.canDeliver(String(caller.context.channel))
   }
 
+  /**
+   * An agent's send_agent that `shouldCallback` turned down (#400): no
+   * person waits on it, but the asking agent does. Its answer, failure or
+   * timeout comes back as a turn in the asking agent's own chat, instead
+   * of only into a log. Inside a delegation too: that turn's chat is
+   * where its work lives. Not past MAX_SEND_DEPTH callback hops.
+   */
+  shouldCallbackSend(caller: CallerTurn | null): boolean {
+    if (!caller || !originOf(caller.context)) return false
+    return callbackDepthOf(caller.context) < MAX_SEND_DEPTH
+  }
+
+  /** The pending delegation a callee's message to its caller answers:
+   *  the callee writes from the delegation's own chat, to the agent that
+   *  asked. Null for anything else. Local callees only. */
+  replyTarget(from: { agentId?: string; chatId?: string }, to: string): DelegationRecord | null {
+    const id = delegationIdOfChat(from.chatId)
+    const rec = id ? this.pendingById.get(id) : undefined
+    if (!rec || rec.peer || rec.callee !== from.agentId || rec.caller !== to) return null
+    return rec
+  }
+
+  /** The callee wrote to its caller while it works: that message goes to
+   *  the caller's chat for this delegation, as a callback turn. The
+   *  delegation's own plain end is then not called back again; a failure
+   *  or timeout still is. */
+  relayReply(rec: DelegationRecord, text: string): void {
+    this.answered.add(rec.id)
+    this.deps.log(`[delegation ${rec.id}] ${rec.callee} wrote to ${rec.caller}; passed to ${rec.origin.channel}:${rec.origin.chatId}`)
+    void this.enqueue(rec, () => this.callback(rec, { status: "done", text }, 1, true))
+  }
+
   /** Launch the callee in the background and return its task id. */
   start(opts: {
     caller: CallerTurn
@@ -286,12 +353,17 @@ export class DelegationManager {
     calleeContext?: Record<string, unknown>
     /** Passed to runLocal untouched (e.g. the intent-ledger ref). */
     extras?: Record<string, unknown>
+    /** "send": see shouldCallbackSend. */
+    kind?: "send"
+    /** Upper bound for this one, instead of the default. */
+    timeoutMs?: number
   }): { taskId: string; record: DelegationRecord } {
     const origin = originOf(opts.caller.context)
     if (!origin) throw new Error("caller turn has no channel/chatId to call back to")
     const id = `dlg-${this.now().toString(36)}-${randomBytes(4).toString("hex")}`
     const root = rootInitiatorOf(opts.caller.context as any, opts.caller.agentId)
     const taskType = taskTypeOf(opts.calleeContext)
+    const depth = callbackDepthOf(opts.caller.context)
     const record: DelegationRecord = {
       id,
       caller: opts.caller.agentId,
@@ -302,9 +374,11 @@ export class DelegationManager {
       root,
       startedAt: this.now(),
       ...(taskType ? { taskType } : {}),
+      ...(opts.kind ? { kind: opts.kind } : {}),
+      ...(depth ? { depth } : {}),
     }
     this.pendingById.set(id, record)
-    this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt })
+    this.remember({ id, caller: record.caller, callee: record.callee, peer: record.peer, status: "running", startedAt: record.startedAt, origin })
     this.append({ type: "start", ts: record.startedAt, ...record })
     try { this.deps.onStarted?.(record) } catch { /* a listener never stops a delegation */ }
 
@@ -320,7 +394,7 @@ export class DelegationManager {
     const who = record.peer ? `${record.callee}@${record.peer}` : record.callee
     this.deps.log(`[delegation ${id}] ${record.caller} -> ${who} started (root=${root.kind}:${root.channel}, callback to ${origin.channel}:${origin.chatId})`)
 
-    const timeoutMs = this.deps.timeoutMs
+    const timeoutMs = opts.timeoutMs ?? this.deps.timeoutMs
     const timer = setTimeout(() => {
       const runId = this.localRuns.get(id)
       if (runId) {
@@ -373,6 +447,13 @@ export class DelegationManager {
     this.deps.log(`[delegation ${id}] ${rec.callee} ${result.status} after ${Math.round((this.now() - rec.startedAt) / 1000)}s`)
     try { this.deps.onDone?.(rec, result) } catch { /* a listener never stops a callback */ }
 
+    // The callee already wrote to the caller (relayReply): a second turn
+    // for its plain end would only repeat it.
+    const answered = this.answered.delete(id)
+    if (answered && result.status === "done") {
+      this.deps.log(`[delegation ${id}] ${rec.callee} already answered ${rec.caller}; no second callback`)
+      return true
+    }
     await this.enqueue(rec, () => this.callback(rec, result))
     return true
   }
@@ -396,7 +477,7 @@ export class DelegationManager {
     const relays = this.requeueRelays()
     const lost = [...this.pendingById.values()]
     for (const rec of lost) {
-      this.remember({ id: rec.id, caller: rec.caller, callee: rec.callee, peer: rec.peer, status: "running", startedAt: rec.startedAt })
+      this.remember({ id: rec.id, caller: rec.caller, callee: rec.callee, peer: rec.peer, status: "running", startedAt: rec.startedAt, origin: rec.origin })
     }
     await Promise.all(lost.map((rec) => this.complete(rec.id, {
       status: "lost",
@@ -447,6 +528,15 @@ export class DelegationManager {
     return this.pendingById.has(id)
   }
 
+  /** The asking agent and its chat for a delegation, running or recent:
+   *  where news about that work belongs (#400). */
+  originFor(id: string): { caller: string; origin: DelegationOrigin } | null {
+    const rec = this.pendingById.get(id)
+    if (rec) return { caller: rec.caller, origin: rec.origin }
+    const r = this.recent.find((e) => e.id === id)
+    return r?.origin ? { caller: r.caller, origin: r.origin } : null
+  }
+
   /** Stop timers (daemon shutdown, tests). Pending work stays in the log. */
   stop(): void {
     for (const t of this.timers.values()) clearTimeout(t)
@@ -454,19 +544,24 @@ export class DelegationManager {
   }
 
   /** `attempt` 2 is the one re-run of a callback a restart stopped. */
-  private async callback(rec: DelegationRecord, result: DelegationResult, attempt = 1): Promise<void> {
+  private async callback(rec: DelegationRecord, result: DelegationResult, attempt = 1, reply = false): Promise<void> {
     const { channel, chatId } = rec.origin
     await this.waitUntilFree(rec.caller, channel, chatId)
     const context: Record<string, unknown> = {
       ...rec.origin,
       sender: `agent:${rec.callee}`,
-      delegation: { taskId: rec.id, from: rec.callee, ...(rec.peer ? { peer: rec.peer } : {}), status: result.status },
+      delegation: {
+        taskId: rec.id, from: rec.callee, ...(rec.peer ? { peer: rec.peer } : {}), status: reply ? "reply" : result.status,
+        // A send from this turn counts one hop more (MAX_SEND_DEPTH).
+        depth: (rec.depth ?? 0) + 1,
+      },
     }
     let resp: { content: string; error?: string }
     try {
       let note: string | undefined
       try { note = this.deps.callbackNote?.(rec, result) } catch { /* a listener never stops a callback */ }
-      const message = note ? `${buildCallbackMessage(rec, result)}\n\n${note}` : buildCallbackMessage(rec, result)
+      const base = buildCallbackMessage(rec, result, { reply })
+      const message = note ? `${base}\n\n${note}` : base
       resp = await this.deps.injectTurn({ agentId: rec.caller, message, context })
     } catch (e: any) {
       resp = { content: "", error: e?.message ?? String(e) }

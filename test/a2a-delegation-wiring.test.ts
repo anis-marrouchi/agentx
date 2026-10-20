@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, readFileSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
-import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, resolveCallerTurn, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, createDelegations, cycleRefusal, gateAnswer, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type CallerHint } from "../src/daemon/delegation-wiring"
 import { getEventBus } from "../src/events/bus"
 import { persistentCallerEnv } from "../src/agents/claude-process-factory"
 import { callerFields } from "../src/mcp/index"
@@ -272,7 +272,7 @@ describe("createDelegations wiring", () => {
 
   it("reads the delegation settings", () => {
     const cfg = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(cfg.mesh.delegation).toEqual({ asyncWhenHuman: true, timeoutMinutes: 30, requeueRelayOnRestart: true })
+    expect(cfg.mesh.delegation).toEqual({ asyncWhenHuman: true, timeoutMinutes: 30, requeueRelayOnRestart: true, callbackSends: true })
   })
 })
 
@@ -286,5 +286,23 @@ describe("caller identity for the tools an agent launches", () => {
     expect(callerFields({ AGENTX_TASK_ID: "run-1", AGENTX_CHANNEL: "telegram", AGENTX_CHAT_ID: "chat-1" }))
       .toEqual({ callerTaskId: "run-1", callerChannel: "telegram", callerChatId: "chat-1" })
     expect(callerFields({})).toEqual({})
+  })
+})
+
+describe("called-back sends (#400)", () => {
+  it("say the answer comes back, without the person wording", () => {
+    const b = acceptedBody("dlg-1", "builder", undefined, true)
+    expect(b).toMatchObject({ accepted: true, mode: "callback", taskId: "dlg-1" })
+    expect(String(b.note)).toContain("will reach you as a new message in this conversation")
+    expect(String(b.note)).not.toContain("Tell the person")
+  })
+
+  it("wait as long as the callee may run, plus its slot wait", () => {
+    expect(sendTimeoutMs(90)).toBe(120 * 60_000)
+    expect(sendTimeoutMs(undefined)).toBe(50 * 60_000)
+  })
+
+  it("tell a callee its message reached the asker", () => {
+    expect(replyBody("dlg-2", "planner")).toMatchObject({ accepted: true, status: "delivered", taskId: "dlg-2", agent: "planner" })
   })
 })

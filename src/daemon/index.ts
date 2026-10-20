@@ -214,7 +214,7 @@ import { publishAnnouncement } from "@/events/announce"
 import { rootFromTaskBody } from "@/a2a/mesh"
 import { rootInitiatorOf } from "@/a2a/initiator"
 import { isDelegationRelay, type DelegationManager } from "@/a2a/delegation"
-import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, resolveCallerTurn, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
+import { acceptedBody, CallbackReplies, callerHintFrom, chainRootOf, createDelegations, cycleRefusal, deliverToChat, gateAnswer, hopRefusal, meshTaskMode, replyBody, resolveCallerTurn, sendTimeoutMs, SyncWaits, type DelegationGateResult } from "@/daemon/delegation-wiring"
 import { duplicateBody, queueSend, SendAgentDedupe, sendAgentKey } from "@/daemon/send-agent"
 import { getAttachRegistry, isDeliveryMode, cursorAtEnd, parseWatchSubscriptions } from "@/attach"
 import { onSessionStart, onPrompt, onStop, onSessionEnd, type HookPayload } from "@/attach/service"
@@ -2485,12 +2485,16 @@ export class AgentXDaemon {
       isLocalDelegation: (id) => this.delegations.isPending(id),
       // execute() does not reject on a failed start; it reports { error }.
       alertAgent: async (agentId, text, w) => {
-        const res = await this.registry.execute({
-          agentId,
-          message: text,
-          context: { channel: WATCHER_CHANNEL, chatId: w.id, sender: "watcher" },
-        })
-        if (res.error && !res.content?.trim()) throw new Error(res.error)
+        // #400 — the delegator hears it in the chat it asked from, where
+        // the work waiting on it lives, not in a new one.
+        const asked = w.taskKey.startsWith("dlg-") ? this.delegations.originFor(w.taskKey) : null
+        const context = asked && asked.caller === agentId
+          // An agent sender: in a person's chat the turn is still not theirs.
+          ? { ...asked.origin, sender: "system:watcher" }
+          : { channel: WATCHER_CHANNEL, chatId: w.id, sender: "watcher" }
+        const res = await this.registry.execute({ agentId, message: text, context: context as any })
+        // Queued behind the turn running in that chat: it is delivered.
+        if (res.error && !res.content?.trim() && !isQueued(res.error)) throw new Error(res.error)
       },
       alertOwner: async (title, text) => {
         const to = this.config.watchers.owner
@@ -3540,7 +3544,7 @@ export class AgentXDaemon {
     req: IncomingMessage,
     body: Record<string, unknown>,
     target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
-    opts: { callback?: boolean } = {},
+    opts: { callback?: boolean; send?: boolean } = {},
   ): DelegationGateResult {
     const hint = callerHintFrom(req, body)
     const caller = resolveCallerTurn(hint, this.registry)
@@ -3552,7 +3556,7 @@ export class AgentXDaemon {
       const why = cycleRefusal(target.callee, hint, caller, this.registry, this.syncWaits)
       if (why) return { refused: why }
     }
-    const accepted = opts.callback === false ? null : this.startCallback(body, caller, target)
+    const accepted = opts.callback === false ? null : this.startCallback(body, caller, target, { send: opts.send === true })
     if (accepted) return { accepted }
     let runId: string | undefined
     return {
@@ -3574,9 +3578,14 @@ export class AgentXDaemon {
     body: Record<string, unknown>,
     caller: ReturnType<typeof resolveCallerTurn>,
     target: { callee: string; peer?: string; message: string; calleeContext?: Record<string, unknown> },
+    opts: { send?: boolean } = {},
   ): Record<string, unknown> | null {
     const asyncFlag = body.async === true ? true : body.async === false ? false : undefined
-    if (!caller || !this.delegations.shouldCallback(caller, asyncFlag)) return null
+    // An agent's send that no person waits on still calls its asker back
+    // (#400). A send that asked to wait (async:false) never gets here.
+    const send = !this.delegations.shouldCallback(caller, asyncFlag)
+    if (send && !(opts.send && asyncFlag !== false && this.config.mesh.delegation.callbackSends && this.delegations.shouldCallbackSend(caller))) return null
+    if (!caller) return null
     let peer = target.peer
     if (!peer && !this.registry.getAgent(target.callee)) {
       const found = this.mesh?.findAgentPeer(target.callee)
@@ -3604,8 +3613,9 @@ export class AgentXDaemon {
       message: target.message,
       calleeContext: target.calleeContext,
       extras,
+      ...(send ? { kind: "send" as const, ...(peer ? {} : { timeoutMs: sendTimeoutMs(this.registry.getAgent(target.callee)?.maxExecutionMinutes) }) } : {}),
     })
-    return acceptedBody(taskId, target.callee, peer)
+    return acceptedBody(taskId, target.callee, peer, send)
   }
 
   /**
@@ -6634,9 +6644,23 @@ export class AgentXDaemon {
             this.json(res, 202, duplicateBody(seen))
             break
           }
+          // #400 — a callee writing to the agent that asked it, from that
+          // delegation's chat, is answering it: the message goes into the
+          // asker's conversation for that work, not into a new chat.
+          if (!wait && this.config.mesh.delegation.callbackSends) {
+            const from = resolveCallerTurn(callerHintFrom(req, body), this.registry)
+            const rec = from ? this.delegations.replyTarget({ agentId: from.agentId, chatId: String(from.context.chatId ?? "") }, targetAgent) : null
+            if (rec) {
+              this.delegations.relayReply(rec, text)
+              const answer = replyBody(rec.id, targetAgent)
+              this.sendAgentDedupe.put(dedupeKey, answer)
+              this.json(res, 202, answer)
+              break
+            }
+          }
           // #277 — same gate as /task: refuse a cycle, or call back when a
-          // person started it.
-          const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType ? { calleeContext: { taskType } } : {}) })
+          // person started it. #400 — or when an agent sent it.
+          const gate = this.delegationGate(req, body, { callee: targetAgent, message: text, ...(taskType ? { calleeContext: { taskType } } : {}) }, { send: true })
           if (!("track" in gate)) {
             const a = gateAnswer(gate)
             if (a.status === 202) this.sendAgentDedupe.put(dedupeKey, a.body)

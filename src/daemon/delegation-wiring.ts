@@ -263,7 +263,7 @@ export function gateAnswer(
 }
 
 /** The 202 body a caller gets back; its `note` is written for the agent. */
-export function acceptedBody(taskId: string, callee: string, peer?: string): Record<string, unknown> {
+export function acceptedBody(taskId: string, callee: string, peer?: string, send = false): Record<string, unknown> {
   const who = peer ? `${callee} on ${peer}` : callee
   return {
     accepted: true,
@@ -271,9 +271,31 @@ export function acceptedBody(taskId: string, callee: string, peer?: string): Rec
     taskId,
     agent: callee,
     ...(peer ? { peer } : {}),
-    note:
-      `Delegated to ${who} (task ${taskId}). Their answer will reach you as a new message in this conversation. ` +
-      `Tell the person who you asked and why, then end your turn. Do not wait or poll for the result.`,
+    note: send
+      ? `Sent to ${who} (task ${taskId}). The message is delivered; do not send it again. ` +
+        `Its answer, or its failure, will reach you as a new message in this conversation. Do not wait or poll for it.`
+      : `Delegated to ${who} (task ${taskId}). Their answer will reach you as a new message in this conversation. ` +
+        `Tell the person who you asked and why, then end your turn. Do not wait or poll for the result.`,
+  }
+}
+
+/** How long a called-back send to a local agent may take (#400): the
+ *  callee's own time limit, plus the wait for a free slot (a2a runs wait
+ *  up to 25 min) and a margin. The plain delegation timeout would cut a
+ *  long build off half way. */
+export function sendTimeoutMs(maxExecutionMinutes: number | undefined): number {
+  return ((maxExecutionMinutes ?? 20) + 25 + 5) * 60_000
+}
+
+/** What a callee gets back when its message to the agent that asked it
+ *  was passed into that agent's conversation (#400). */
+export function replyBody(taskId: string, caller: string): Record<string, unknown> {
+  return {
+    accepted: true,
+    status: "delivered",
+    taskId,
+    agent: caller,
+    note: `Passed to ${caller} in the conversation it asked you from (task ${taskId}). Do not send it again.`,
   }
 }
 

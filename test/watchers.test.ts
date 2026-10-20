@@ -5,7 +5,7 @@ import path from "path"
 import Database from "better-sqlite3"
 import { WatcherStore } from "../src/watchers/store"
 import {
-  WatchCheckpoint, WATCHER_CHANNEL, classify, taskStartOf,
+  WatchCheckpoint, WATCHER_CHANNEL, agentAlertText, classify, taskStartOf,
   type CheckpointDeps, type DecideResult, type TaskStart, type WatcherSettings,
 } from "../src/watchers/checkpoint"
 import { attachWatchers } from "../src/watchers/attach"
@@ -141,6 +141,9 @@ describe("what a task start is", () => {
     expect(taskStartOf(started({ channel: WATCHER_CHANNEL }), ON)).toBeNull()
     expect(taskStartOf(started({ channel: "voice" }), { skipChannels: ["voice"] })).toBeNull()
     expect(taskStartOf(started({ fullMessage: "[agentx:delegation-result task=dlg-1 from=x status=done]\n..." }), ON)).toBeNull()
+    // An alert told in the delegator's own chat (#400) is not a new task.
+    const w = { id: "w-1", taskKey: "dlg-1", agentId: "x", summary: "s", dueAt: 0 } as any
+    expect(taskStartOf(started({ channel: "mcp", chatId: "mcp:a:b:1", fullMessage: agentAlertText(w, "late") }), ON)).toBeNull()
   })
 
   it("reads a due time from the run context", () => {
