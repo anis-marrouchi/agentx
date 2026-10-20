@@ -65,6 +65,19 @@ describe("agentx point — close guard", () => {
     expect(out.blocked).toBeTruthy()
     expect(out.chosen).toMatchObject({ label: "Close", closes: true })
     for (const k of ["x", "y", "width", "height"]) expect(out.chosen).not.toHaveProperty(k)
+    for (const r of out.ranked) expect(r).not.toHaveProperty("x")
+    expect(mocks.exec).not.toHaveBeenCalled()
+  })
+
+  it("with --json, a lone close control is refused as JSON with no place", async () => {
+    const lone = [el({ id: 0, role: "AXWindow" }), el({ id: 2, role: "AXButton", label: "Close", parent: 0 })]
+    mocks.readScreen.mockResolvedValue({ app: "Google Chrome", window: "x", candidates: buildCandidates(lone, 40), elements: lone, usedOCR: false, ocrRects: new Map() })
+    expect(await runPoint("Bookmark this page", "--json")).toBe("exit 4")
+    const out = JSON.parse(printed[0])
+    expect(out.blocked).toBeTruthy()
+    expect(out.chosen).toMatchObject({ label: "Close", closes: true })
+    expect(out.chosen).not.toHaveProperty("x")
+    expect(mocks.askSeat).not.toHaveBeenCalled()
     expect(mocks.exec).not.toHaveBeenCalled()
   })
 

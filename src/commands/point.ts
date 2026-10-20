@@ -131,6 +131,14 @@ export const point = new Command()
     if (candidates.length === 1) {
       const only = rectFor(screen, candidates[0].id)
       if (only && closeBlocked(candidates[0], request)) {
+        if (opts.json) {
+          const c = candidates[0]
+          console.log(JSON.stringify({
+            app: screen.app, request, blocked: "closes a window, tab or app; the request does not ask to close anything",
+            chosen: { label: c.label, ...(c.shown ? { shown: c.shown } : {}), fromOCR: screen.ocrRects.has(c.id), inBrowser: c.area === "browser", closes: true },
+          }, null, 2))
+          process.exit(4)
+        }
         console.log(chalk.yellow(`  ${screen.app} exposes only ${chalk.bold(candidates[0].shown ?? candidates[0].label)}, which closes something; not pointing at it`))
         process.exit(4)
       }
