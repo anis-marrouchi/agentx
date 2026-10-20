@@ -77,8 +77,20 @@ describe("agentx point — close guard", () => {
     expect(out.blocked).toBeTruthy()
     expect(out.chosen).toMatchObject({ label: "Close", closes: true })
     expect(out.chosen).not.toHaveProperty("x")
+    expect(out).toMatchObject({ present: null, confidence: 1, ranked: [{ id: 2, score: 1, label: "Close" }] })
     expect(mocks.askSeat).not.toHaveBeenCalled()
     expect(mocks.exec).not.toHaveBeenCalled()
+  })
+
+  it("with --json, a lone control that is not blocked answers as JSON with its place", async () => {
+    const lone = [el({ id: 0, role: "AXWindow" }), el({ id: 3, role: "AXButton", label: "Bookmark this tab", parent: 0 })]
+    mocks.readScreen.mockResolvedValue({ app: "Google Chrome", window: "x", candidates: buildCandidates(lone, 40), elements: lone, usedOCR: false, ocrRects: new Map() })
+    expect(await runPoint("Bookmark this page", "--json")).toBe("ok")
+    const out = JSON.parse(printed[0])
+    expect(out).not.toHaveProperty("blocked")
+    expect(out.chosen).toMatchObject({ x: 30, y: 0, width: 16, height: 16, label: "Bookmark this tab" })
+    expect(out).toMatchObject({ present: null, confidence: 1, ranked: [{ id: 3, score: 1 }] })
+    expect(mocks.askSeat).not.toHaveBeenCalled()
   })
 
   it("with --json, keeps the place when nothing is blocked", async () => {
