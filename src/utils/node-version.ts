@@ -9,5 +9,5 @@ export function nodeVersionSupported(version: string): boolean {
 
 export function unsupportedNodeMessage(version: string): string | null {
   if (nodeVersionSupported(version)) return null
-  return `AgentX needs Node.js 22.19 or newer, up to 26. This is Node.js ${version}. Install Node.js 22 from https://nodejs.org and run it again.`
+  return `AgentX needs Node.js 22.19 or newer, up to 26. This is Node.js ${version}. Install Node.js 22.19 or newer from https://nodejs.org and run it again.`
 }
