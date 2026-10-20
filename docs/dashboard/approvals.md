@@ -92,7 +92,7 @@ The popup behaves like your other notifications:
 
 - **Focus and calls are respected.** While a Focus mode (Do Not Disturb) or the widget's hold is on, or while you are in a call, nothing pops up. The card appears within a minute after the Focus or the call ends. See [Hold messages during Focus and calls](../jobs/notifications.md#4-hold-messages-during-focus-and-calls).
 - **It doesn't take the keyboard.** The card floats over the app you are using, and that app keeps the keyboard, so you can finish the sentence you are typing. One click on the card answers it.
-- **The screen gate.** A card goes on your screen only if it asks one question, its title is at most 120 characters, its question at most 300, and it offers at most 3 answers. A new card that breaks one of these rules is refused when the agent raises it, and the agent is told why. An older card that breaks one is not shown: it stays in Approvals, unchanged, and the agent that raised it is told why, once. A card you ask for with **Show on Mac** always shows.
+- **The screen gate.** A card goes on your screen only if it asks one question, its title is at most 120 characters and says what it is in words, its question is at most 300, and it offers at most 3 answers. A title that is only a reference, such as `#402`, a link, a commit hash or a request id, is refused; a reference next to words, such as `Approve the login fix (#402)`, is fine. A new card that breaks one of these rules is refused when the agent raises it, and the agent is told why. An older card that breaks one is not shown: it stays in Approvals, unchanged, and the agent that raised it is told why, once. A card you ask for with **Show on Mac** always shows.
 - **One at a time,** oldest first. Each new card pops up once, and again at each [check-in](#check-ins-a-few-times-a-day).
 - **Cards you put off with Later** pop up when they come back. Cards older than a day don't pop up by themselves, so switching the popup on doesn't replay a backlog. Check-ins bring them back.
 
@@ -350,6 +350,7 @@ For the screen gate:
      --recommend "No: test" --if-silent discard --expires 1h
    ```
 2. **Terminal:** it is refused with `ask holds more than one question: one card asks one thing`, and `agentx approvals list` does not show it.
+3. **Terminal:** run the same command with `--title "#402"` and `--ask "Send it?"`. It is refused with `title is only a reference ("#402")`.
 
 ## If something is wrong
 

@@ -5,7 +5,7 @@ import { join } from "path"
 import { createCard, readCard, saveCard, type DecisionCard } from "../src/approvals/cards"
 import { popNext, type PopupRunnerSettings } from "../src/approvals/popup-runner"
 import { readInboxState, recordWanted } from "../src/approvals/state"
-import { cardRuleBreak, followupBudgetRefusal, noticeRuleBreak, returnedText } from "../src/approvals/screen-gate"
+import { cardRuleBreak, followupBudgetRefusal, noticeRuleBreak, referenceOnlyTitle, returnedText, stripReferences, withTodo } from "../src/approvals/screen-gate"
 import { notify } from "../src/notify"
 import { readCall, readHold, writeCallHold } from "../src/notify/hold"
 import { NotificationQueue } from "../src/notify/queue"
@@ -156,5 +156,60 @@ describe("the rules themselves", () => {
     expect(cardRuleBreak({ title: "t", ask: "Ship it?" })).toBeNull()
     expect(cardRuleBreak({ title: "t", ask: "Ship it, or wait until Monday?" })).toBeNull()
     expect(cardRuleBreak({ title: "t", ask: "Ship? Post?" })).toContain("one question")
+  })
+})
+
+describe("a title says what it is in words", () => {
+  const bare = [
+    "#402", "PR #402", "group/project#402", "!57", "Merge !57",
+    "https://git.example.com/group/project/-/issues/402",
+    "01HZX3Q4V8K2M6N9P0R5S7T1W2", "req-lx2k9", "dlg-abc-1234", "snd-01HZX3Q4V8K2M6N9P0R5S7T1W2",
+    "3f2a9c1", "Deploy 3f2a9c1d", "#402 #403", "#402: ok",
+  ]
+  it.each(bare)("refuses %j", (title) => {
+    const why = referenceOnlyTitle(title)
+    expect(why).toContain("title is only a reference")
+    expect(why).toContain("plain words")
+    expect(cardRuleBreak({ title, ask: "Ship it?" })).toBe(why)
+    expect(noticeRuleBreak(title, "short")).toBe(why)
+  })
+
+  it("names the title and says how to fix it", () => {
+    expect(referenceOnlyTitle("#402")).toBe('title is only a reference ("#402"); say what it is in plain words, and put the link in the body or source')
+  })
+
+  it.each([
+    "Approve the login fix (#123)",
+    "Core change waiting: group/project#12",
+    "Deploy the fixes at 3f2a9c1",
+    "Request req-lx2k9 is waiting",
+    "AgentX", // no reference: a short plain title is left alone
+    "Plan step 2: build",
+    "Defaced effaced", // a-f words are not hashes
+  ])("lets %j through", (title) => {
+    expect(referenceOnlyTitle(title)).toBeNull()
+    expect(cardRuleBreak({ title, ask: "Ship it?" })).toBeNull()
+  })
+
+  it("takes out only the references", () => {
+    expect(stripReferences("Fix login (#12) at 3f2a9c1").replace(/\s+/g, " ").trim()).toBe("Fix login ( ) at")
+  })
+
+  it("refuses such a card when it is written", () => {
+    expect(createCard(root, { ...BASE, title: "#402" }, { now: NOW })).toMatchObject({ ok: false, error: expect.stringContaining("only a reference") })
+  })
+})
+
+describe("the To do line on an agent's notice", () => {
+  it("comes first, and says FYI when there is nothing to do", () => {
+    expect(withTodo("Backups ran.")).toBe("To do: nothing, FYI\nBackups ran.")
+    expect(withTodo("Backups ran.", "  ")).toBe("To do: nothing, FYI\nBackups ran.")
+    expect(withTodo("The disk is full.", "free  some\nspace")).toBe("To do: free some space\nThe disk is full.")
+  })
+
+  it("counts toward the 300 characters", () => {
+    const msg = "x".repeat(290)
+    expect(noticeRuleBreak("Disk space", msg)).toBeNull()
+    expect(noticeRuleBreak("Disk space", withTodo(msg))).toContain("300")
   })
 })
