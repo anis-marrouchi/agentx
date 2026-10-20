@@ -38,7 +38,7 @@ function openReadOnly(opts: OpenOpts) {
   const path = resolve(root, opts.path ?? ".agentx/intent/ledger.sqlite")
   if (!existsSync(path)) {
     console.log(chalk.red(`  No ledger at ${path}`))
-    console.log(chalk.dim(`  Make sure the daemon has run with INTENT_LEDGER_MODE != "off". The file is created on first ledger write.`))
+    console.log(chalk.dim(`  Run this in the daemon's folder, or pass --cwd <folder>. Daemons keep no ledger unless it is switched on; the demo switches it on for its nodes.`))
     process.exit(1)
   }
   try {

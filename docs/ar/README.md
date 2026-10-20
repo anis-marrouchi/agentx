@@ -41,7 +41,6 @@ npx agentix-cli demo
 ```sh
 git clone https://github.com/anis-marrouchi/agentx.git
 cd agentx
-git checkout main
 cp .env.example .env
 docker compose up --build -d
 ```
