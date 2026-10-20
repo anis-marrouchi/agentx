@@ -91,6 +91,42 @@ describe("buildAgentContext", () => {
     expect(ctx.length).toBeLessThan(500 * 4 + 100) // 4 chars/token + some overhead
   })
 
+  it("keeps the newest turns when history is over its budget", () => {
+    const turns = Array.from({ length: 60 }, (_, i) => `Voice: turn ${i} ${"words ".repeat(20)}\nsecretary-agent: reply ${i}`)
+    const history = ["[Conversation history for today (2026-10-20)]", ...turns, "[End of history — respond to the latest message above]"].join("\n")
+    const ctx = buildAgentContext({ ...baseInput, channel: "voice", sessionHistory: history })
+    expect(ctx).toContain("[Conversation history for today (2026-10-20)]")
+    expect(ctx).toContain("reply 59")
+    expect(ctx).toContain("[End of history — respond to the latest message above]")
+    expect(ctx).not.toContain("turn 0 ")
+    // Cut on a line boundary, right after the header's marker.
+    expect(ctx).toMatch(/\(2026-10-20\)\]\n\.\.\.\nVoice: turn \d+ |\(2026-10-20\)\]\n\.\.\.\nsecretary-agent: reply \d+\n/)
+  })
+
+  it("keeps the time label above the oldest turns of a tail cut", () => {
+    const lines = ["[Conversation history for today (2026-10-20)]"]
+    for (let b = 0; b < 4; b++) {
+      lines.push(`— 13:${(b * 15).toString().padStart(2, "0")} —`)
+      for (let i = 0; i < 30; i++) lines.push(`Voice: b${b} turn ${i} ${"words ".repeat(20)}`)
+    }
+    lines.push("[End of history — respond to the latest message above]")
+    const ctx = buildAgentContext({ ...baseInput, channel: "voice", sessionHistory: lines.join("\n") })
+    // The cut lands inside the 13:30 bucket; its label is carried over once.
+    expect(ctx).toMatch(/\(2026-10-20\)\]\n\.\.\.\n— 13:30 —\nVoice: b2 turn \d+ /)
+    expect(ctx.match(/— 13:30 —/g)).toHaveLength(1)
+    expect(ctx.match(/— 13:45 —/g)).toHaveLength(1)
+    expect(ctx).not.toContain("— 13:15 —")
+    expect(ctx).toContain("[End of history — respond to the latest message above]")
+  })
+
+  it("keeps the newest turns when the total budget cuts history", () => {
+    const history = ["[Recent conversation]", ...Array.from({ length: 200 }, (_, i) => `Anis: line ${i}`)].join("\n")
+    const ctx = buildAgentContext({ ...baseInput, groupHistory: history }, { totalBudget: 500 })
+    expect(ctx.length).toBeLessThan(500 * 4 + 100)
+    expect(ctx).toContain("Anis: line 199")
+    expect(ctx).not.toContain("Anis: line 0\n")
+  })
+
   it("prioritizes channel over wiki", () => {
     const ctx = buildAgentContext({
       ...baseInput,
