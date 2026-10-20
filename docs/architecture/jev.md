@@ -18,6 +18,8 @@ In a web browser, the list holds the web page and, in a few reserved places, the
 
 With `--json`, the chosen control shows `"inBrowser": true` when it sits outside the page.
 
+When the best match would close a window, tab or app and the request does not ask to close anything, `agentx point` stops with exit code 4. With `--json`, the answer has a `blocked` field, and `chosen` gives the control's name but no `x`, `y`, `width` or `height`, so a script that clicks wherever `chosen` says has nothing to click.
+
 A candidate-selection question always has a choice to return. The separate “is it present?” question lets AgentX refuse to highlight an unrelated control.
 
 ## What is a decision seat?
