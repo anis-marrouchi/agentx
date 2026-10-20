@@ -52,14 +52,20 @@ export function referenceOnlyTitle(title: string): string | null {
 }
 
 /** Why this card may not go on the owner's screen, or null. */
-export function cardRuleBreak(card: { title: string; ask: string; choices?: string[]; origin?: { kind: string } }): string | null {
-  if (card.title.length > SCREEN_LIMITS.title) return `title is longer than ${SCREEN_LIMITS.title} characters`
+export function cardRuleBreak(card: { title?: string; ask?: string; choices?: string[]; origin?: { kind: string } }): string | null {
+  // A card file written by hand or by an older build may miss either:
+  // returned to its author, never a crash of the popup.
+  const title = typeof card.title === "string" ? card.title : ""
+  const ask = typeof card.ask === "string" ? card.ask : ""
+  if (!title.trim()) return "title is missing: say what it is in plain words"
+  if (title.length > SCREEN_LIMITS.title) return `title is longer than ${SCREEN_LIMITS.title} characters`
   // A request's card is titled with the owner's own words ("review #12"):
   // no agent wrote it, and none could reword it.
-  const bare = card.origin?.kind === "request" ? null : referenceOnlyTitle(card.title)
+  const bare = card.origin?.kind === "request" ? null : referenceOnlyTitle(title)
   if (bare) return bare
-  if (card.ask.length > SCREEN_LIMITS.ask) return `ask is longer than ${SCREEN_LIMITS.ask} characters`
-  if ((card.ask.match(/\?/g) ?? []).length > 1) return "ask holds more than one question: one card asks one thing"
+  if (!ask.trim()) return "ask is missing: one card asks one thing"
+  if (ask.length > SCREEN_LIMITS.ask) return `ask is longer than ${SCREEN_LIMITS.ask} characters`
+  if ((ask.match(/\?/g) ?? []).length > 1) return "ask holds more than one question: one card asks one thing"
   if ((card.choices?.length ?? 0) > SCREEN_LIMITS.answers) return `more than ${SCREEN_LIMITS.answers} choices`
   return null
 }

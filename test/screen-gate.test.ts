@@ -209,6 +209,12 @@ describe("a title says what it is in words", () => {
     expect(cardRuleBreak({ title: "review #1104", ask: "Hand it back, or drop it?", origin: { kind: "request" } })).toBeNull()
     expect(cardRuleBreak({ title: "review #1104", ask: "Hand it back, or drop it?" })).toContain("only a reference")
   })
+
+  it("returns a card with no title or ask instead of throwing", () => {
+    expect(cardRuleBreak({ ask: "Ship it?" } as any)).toContain("title is missing")
+    expect(cardRuleBreak({ title: "  ", ask: "Ship it?" })).toContain("title is missing")
+    expect(cardRuleBreak({ title: "Ship the release" } as any)).toContain("ask is missing")
+  })
 })
 
 describe("the To do line on an agent's notice", () => {
