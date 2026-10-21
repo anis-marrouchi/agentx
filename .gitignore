@@ -59,3 +59,6 @@ notes/prd
 # Harbor benchmark output (trial logs can contain task content)
 /jobs/
 __pycache__/
+
+# Local bench output (pnpm bench:browser)
+/state/

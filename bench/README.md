@@ -8,6 +8,7 @@ against the cheap ones; use the expensive ones to confirm.
 | 0 | `pnpm bench:context` | free | How much context does agentx add before the model starts? |
 | 0 | `pnpm bench:profiles` | free | What does the lean session profile save per channel and prompt section? |
 | 1 | `bench/harbor/dev.sh` | ~$8 per run on Haiku | Does a change make agentx cheaper or worse on real tasks? |
+| 1 | `pnpm bench:browser` | cents per run on Haiku and Sonnet; free with `--backend oracle` | Where does the time go when an agent drives the browser? |
 | 1 | `bench/wiki-absorb.sh <wiki snapshot>` | one absorb backlog per variant | Is a wiki absorb change faster, cheaper or worse? |
 | 2+ | `harbor run` directly, see [harbor/README.md](harbor/README.md) | $60 to $1,300+ | Publishable numbers on the full Terminal-Bench 2.0 |
 
@@ -285,6 +286,45 @@ Haiku 4.5 ten runs a cell cannot tell them apart. The owner parked the
 higher rungs of the comparison on 2026-10-05. The results, the product
 changes they led to and the conditions for reopening are gathered in
 [results/claude-code-comparison-455.md](results/claude-code-comparison-455.md).
+
+## Level 1, small: browser driving (#1118)
+
+`pnpm bench:browser` times one browser task, step by step, the way an agent
+does it: open a registration form on a local test page, fill eight fields
+(text, email, a country list, a radio button, a checkbox), submit, and read
+back the reference number. The page is served by the bench itself on
+`127.0.0.1`, with a search box and a newsletter "Email address" field as
+decoys. The browser is the agent Chrome (`scripts/agent-chrome.sh`, debug
+port 9222), driven through the real chrome-devtools MCP server, so snapshot
+sizes and tool times are the ones an agent sees.
+
+```bash
+scripts/agent-chrome.sh                            # once: the agent Chrome on port 9222
+pnpm bench:browser --backend oracle --runs 3       # no model: the browser-only floor
+pnpm bench:browser --runs 3 --big claude-sonnet-5-5 --small claude-haiku-5-5   # needs ANTHROPIC_API_KEY
+pnpm bench:browser --modes baseline,batch --runs 5 --out state/browser-spike
+```
+
+| Mode | How the task is driven |
+|---|---|
+| `baseline` | The big model picks one action per turn from a fresh snapshot; earlier snapshots stay in the conversation, as in an agent's context. |
+| `picker` | The big model plans once in words ("the work email field"); the small model maps each target to a snapshot uid, one call per field; fills go one by one. |
+| `batch` | As `picker`, but the small model maps every target in one call and the fills go out as one `fill_form`. |
+| `oneshot` | The big model returns every uid in one call, then one `fill_form`. Separates the gain of batching from the gain of the small model. |
+
+Each run records, per step: model think time and tokens, tool-call time,
+the wait for the result page, and every snapshot re-read with its size.
+Success is checked against what the test server actually received, not
+against what the model says: a field that arrived wrong, or a newsletter
+sign-up, counts as a wrong target. `--backend oracle` replaces the model
+with a label lookup in code, which gives the floor no model can beat.
+Raw timings go to `<out>/<time>/raw.jsonl` (default `state/browser-spike/`)
+and the table to `summary.md` beside them. Other options: `--cdp <url>`,
+`--mcp-bin <path to chrome-devtools-mcp.js>` (default: `npx
+chrome-devtools-mcp@latest`), `--max-turns`.
+
+First numbers and what they point at:
+[results/browser-drive-1118.md](results/browser-drive-1118.md).
 
 ## Level 1: dev set
 
