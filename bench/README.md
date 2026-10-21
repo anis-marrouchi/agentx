@@ -332,6 +332,12 @@ feature. The numbers, the owner's real-model run and the cheap wins
 (close stray tabs, keep fill batching) are in
 [results/browser-drive-1118.md](results/browser-drive-1118.md).
 
+A follow-up hands a whole run of browser steps to a program in one tool
+call (`browser_run`). The program calls the model back only to judge: an
+unexpected page, an ambiguous target, a risky click. It cut time by
+32–40% and cost by 62–81% against the baseline, with no wrong targets,
+and passed all 10 guard cases. Its numbers are in the same file.
+
 ## Level 1: dev set
 
 Claude Code and agentx, same model (Haiku 4.5), same 8 Terminal-Bench tasks

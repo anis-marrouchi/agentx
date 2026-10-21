@@ -8,6 +8,94 @@ a cost and robustness feature, at 74% cheaper, once large pages are tested.
 The cheap wins are to close stray tabs on the agent Chrome and to keep fill
 batching.
 
+**Follow-up verdict:** handing a whole run of steps to a program
+(`browser_run`, below) clears the bar. It cuts time by 32–40% and cost by
+62–81%, with no loss in accuracy and with all 10 guard cases passing. The
+next step is a PR that ports it into AgentX, with independent review.
+
+## Follow-up: hand a run of steps to a program (dev-session, the owner)
+
+**The prototype:** an MCP server in dev-session
+`state/browser-spike/harness/rx_server.py`, with two tools:
+
+- `browser_run(url, steps[], expect)` runs the steps in a single call.
+  1. It resolves every target. It tries an exact visible-label match
+     first, and calls Haiku 5.5 only for the targets left over, in one
+     batched call.
+  2. It checks the guards.
+  3. It acts: all fills go out as one `fill_form`, then the clicks and
+     key presses run in order.
+  4. It checks the result (text, URL, title) and returns `ok` or
+     `needs_judgment`.
+- `browser_look` gives the model the page summary it needs to judge
+  after a hand-back.
+
+The runner hands back to the model without acting when:
+
+- a target is missing, or matches two controls;
+- the small model answers "none" or "ambiguous";
+- a control closes a tab or window and the step did not ask to close (the
+  same rule as `asksToClose` and `closes` in
+  `src/computer-use/candidates.ts`);
+- a click looks risky (delete, pay, publish and the like) and the step
+  carries no `risky_ok`.
+
+It acts and then hands back when:
+
+- a fill failed (the form is then never submitted);
+- the expected result is not on the page.
+
+When a uid goes stale because the page re-rendered, the runner resolves
+it again once, without calling the model.
+
+**How it was measured:** 3 runs per cell, modes interleaved. Each run was
+a fresh Opus 5.5 session on the agent Chrome, reached over an ssh tunnel.
+An independent check over CDP read whether each run did the right thing;
+the model's own report was not used.
+
+| Task | Variant | Runs (s) | Mean | Model turns | Cost/run | Correct | Wrong targets |
+|---|---|---|---|---|---|---|---|
+| httpbin form | B: baseline | 32.2 / 25.8 / 39.8 | 32.6 s | 6 | $0.147 | 3/3 | 0 |
+| httpbin form | R: runner | 20.9 / 17.2 / 20.5 | **19.5 s (−40%)** | 2–3 | **$0.028 (−81%)** | 3/3 | 0 |
+| Wikipedia: open an article, search for another, check its heading | B: baseline | 26.3 / 31.4 / 39.6 | 32.4 s | 6–7 | $0.050 | 3/3 | 0 |
+| Wikipedia | R: runner | 20.6 / 22.6 / 22.9 | **22.0 s (−32%)** | 2–3 | **$0.019 (−62%)** | 3/3 | 0 |
+
+- **Every R run beat every B run.** The runner itself took 8–11 s and made
+  no model call: all 18 targets matched their exact label. Model time fell
+  from 15–28 s to 7–9 s.
+- **One wasted turn:** in 3 of the 6 R runs, the model spent one extra
+  turn re-checking a result the runner had already confirmed. Tool text
+  that says "ok means checked" should remove that turn.
+- **The large page:**
+  - The Wikipedia article's snapshot is 528k characters and takes 6–17 s.
+    The runner takes it once.
+  - Baseline Opus never took it: it queried the page directly with
+    `evaluate_script` instead. So on this page the saving comes from fewer
+    round trips, not from fewer tokens.
+  - A resolver that queries the page instead of snapshotting it would
+    make R faster on large pages. Not built.
+- **The guard suite passed 10 of 10.**
+  - These cases handed back without pressing anything:
+    - a close control, the step not asking to close;
+    - the risky buttons `Delete account` and `Pay now`;
+    - a missing target;
+    - two `Save` buttons;
+    - a login wall instead of the form;
+    - an unpicked close button.
+  - An unexpected result was pressed, then handed back.
+  - Both control cases ran: a close the step asked for, and a risky click
+    with `risky_ok`.
+  - Because its name contains "run", `browser_run` counts as a tool that
+    changes things. So AgentX's report-only mode still blocks it.
+- **Limits:**
+  - Only 2 tasks, one site each.
+  - The tasks named exact labels, so the small-model path (about 1.4 s per
+    batch) was not timed; only the guard suite exercised it.
+  - Only fresh sessions with a small context were measured. Real sessions
+    run at about 200k tokens, where every turn costs more.
+  - The full path was never timed end to end: hand back, the model
+    judges, then a second run.
+
 ## Real-model run (dev-session, the owner)
 
 - **Browser:** the agent Chrome on CDP 9222, reached over an ssh tunnel to
