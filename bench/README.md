@@ -323,7 +323,13 @@ and the table to `summary.md` beside them. Other options: `--cdp <url>`,
 `--mcp-bin <path to chrome-devtools-mcp.js>` (default: `npx
 chrome-devtools-mcp@latest`), `--max-turns`.
 
-First numbers and what they point at:
+### What it found (#1118)
+
+A small-model picker saved 12% of the time and 74% of the cost on a small
+form, with no wrong picks; the slowness is model round trips and slow
+tool calls on the agent Chrome, not the picking. Not built as a speed
+feature. The numbers, the owner's real-model run and the cheap wins
+(close stray tabs, keep fill batching) are in
 [results/browser-drive-1118.md](results/browser-drive-1118.md).
 
 ## Level 1: dev set
