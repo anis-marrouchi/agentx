@@ -338,6 +338,11 @@ unexpected page, an ambiguous target, a risky click. It cut time by
 32–40% and cost by 62–81% against the baseline, with no wrong targets,
 and passed all 10 guard cases. Its numbers are in the same file.
 
+A second follow-up lets Jev decide each step: run it as a script, or send
+it to the big model. That costs about 2 s and $0.0001 per run, and is
+not faster than the runner alone. Jev caught 2 of 2 held-out risky
+clicks that the word list missed. Same file.
+
 ## Level 1: dev set
 
 Claude Code and agentx, same model (Haiku 4.5), same 8 Terminal-Bench tasks

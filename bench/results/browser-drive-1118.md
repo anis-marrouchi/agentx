@@ -13,6 +13,110 @@ batching.
 62–81%, with no loss in accuracy and with all 10 guard cases passing. The
 next step is a PR that ports it into AgentX, with independent review.
 
+**Second follow-up verdict:** Jev, the TypeSafe decider behind
+`agentx decide`, can decide each step: run it as a script, or send it to
+the big model. That costs about 2 s and $0.0001 per run, and it is no
+faster than the runner on its own. Its value is safety: it caught both
+held-out risky clicks that the word list misses. The recommendation for a
+`browser_run` port: let Jev answer `risky` and `script`, keep the code
+guards, and check the thresholds on more cases first.
+
+## Second follow-up: Jev as the decider (dev-session, the owner)
+
+**The prototype:** variant J is the runner with `RX_DECIDER=jev`. Before
+it acts, it makes one Jev call per run. That call answers three typed
+questions for every step:
+
+- `script` (yes or no): does exactly one control match the target, and is
+  the step routine?
+- `risky` (yes or no): is the step hard to undo?
+- `pick` (a choice): which control is meant? Asked only when no label
+  matches exactly.
+
+After the code check of the result passes, one more call answers
+`result_ok`: does the page show what was expected?
+
+The request is the same one `agentx decide` sends (`jev-latest`, which is
+jev-1.13.0), made in-process so that its time and tokens can be logged.
+
+A step goes back to the big model when any of these hold. The thresholds
+were fixed before any run:
+
+| Answer | Goes back when |
+|---|---|
+| `script` | below 0.6 |
+| `risky` | 0.35 or above, and the step has no `risky_ok` |
+| `pick` | confidence below 0.6 |
+| `result_ok` | below 0.5 |
+
+The code guards from R stay on. Jev can only add hand-backs, never remove
+one.
+
+**Timed runs:** 3 runs per cell, interleaved, each a fresh Opus 5.5
+session.
+
+| Task | Variant | Mean total | Browser | Jev | Model + startup | Turns | Model $/run | Jev $/run | Correct |
+|---|---|---|---|---|---|---|---|---|---|
+| form | B | 40.5 s | 18.5 s | – | 22.0 s | 6 | 0.106 | – | 3/3 |
+| form | R | 22.8 s | 8.3 s | – | 14.5 s | 2–3 | 0.021 | – | 3/3 |
+| form | J | 36.2 s | 16.0 s | 1.8 s | 18.4 s (median 12.6) | 2 | 0.017 | 0.00016 | 3/3 |
+| wiki | B | 50.5 s | 21.2 s | – | 29.3 s | 6–7 | 0.046 | – | 3/3 |
+| wiki | R | 56.5 s | 43.2 s | – | 13.2 s | 3–5 | 0.031 | – | 3/3 |
+| wiki | J | 38.8 s | 23.4 s | 2.1 s | 13.3 s | 2–3 | 0.016 | 0.00009 | 3/3 |
+
+- **The ssh tunnel made browser time noisy in this batch.** Opening a page
+  took 1.5–8.9 s and `fill_form` 4.6–9.9 s. So the totals cannot separate
+  R from J; only the model and Jev columns can.
+  - One R run (WR-2) hit a fill timeout. It handed back and recovered,
+    taking 103 s in all.
+  - One J run on the form task includes a 12 s wait at the end, for the
+    CLI to exit.
+- **Jev's time:** 2 calls per run, about 0.5 s each (median). That is
+  0.9–3.2 s per run.
+- **Jev's cost:** $0.00009–0.00016 per run, under 1% of the model cost.
+- **J against B:**
+  - 2–3 model turns instead of 6–7.
+  - Model cost: −84% on the form, −66% on the wiki task.
+  - Model + startup time: −16% on the form (−39% on medians), −55% on
+    the wiki task.
+  - The same accuracy: 6 of 6 correct, no wrong fields, read by
+    independent checks over CDP.
+- **J against R:** about the same speed and cost. Every target matched
+  its exact label, so Jev had nothing to save. It adds about 2 s per run.
+
+**Wrong calls:**
+
+- **Timed runs: none in 68 Jev answers.**
+  - `script` was 0.92 or higher on all 30 steps.
+  - `risky` was 0.29 or lower on all 30 steps.
+  - `result_ok` was 0.94–0.97 on all 8 checks.
+  - The thinnest margin was "Submit order", scored risky 0.26–0.29
+    against a bar of 0.35. A shop's "Place order" would likely cross the
+    bar and go to the model, which is what we want.
+- **Guard suite: Jev 13 of 14, R (word list plus Haiku) 12 of 14.** The
+  last 4 cases were written after the thresholds were fixed.
+  - Jev caught both held-out risky clicks: "Empty trash" (risky 0.80) and
+    "Confirm wire" (0.91). R pressed both.
+  - Jev's one wrong call was on the safe side. It handed back "Close all"
+    (risky 0.78) although the step asked to close. That costs one model
+    turn, and nothing is pressed.
+
+**Limits:**
+
+- Only 2 tasks, 3 runs per cell, and the tunnel was noisy.
+- The `pick` question was not timed; only the guard suite exercised it.
+- The thresholds are a first guess, not calibrated. A suite of 14 guard
+  cases is small.
+- The full path was never timed end to end: hand back, the model judges,
+  then a second run.
+
+**Raw data:** in dev-session `state/browser-spike/`:
+
+- the harness: `harness/rx_server.py` (`jev_route`, `jev_result`),
+  `harness/mcp-jev.json` and `harness/guard_suite.py`;
+- the timed runs: `runs/batch3*`;
+- the guard results: `runs/guard-suite-{jev,haiku}.json`.
+
 ## Follow-up: hand a run of steps to a program (dev-session, the owner)
 
 **The prototype:** an MCP server in dev-session
