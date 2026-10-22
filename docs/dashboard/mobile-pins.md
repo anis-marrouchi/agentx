@@ -25,12 +25,16 @@ agentx app pins            # lists them, with their ids
 agentx app unpin Remote    # by name or id
 ```
 
+If the phone and the computer change the list at the same moment, one waits for the other, so neither change is lost.
+
 The phone shows a change the next time the app opens or comes back to the screen.
 
 ## How the page opens
 
 - **In the AgentX Android app**, the page opens in the app's own window. A page on the same address as the phone app opens full screen; a page on another address opens with a slim bar at the top that shows its address. The back gesture returns to the phone app.
 - **In the phone app installed from the browser**, the page opens in the same window, or, on an iPhone, in the app's built-in browser.
+
+If you tap a button while a voice message is under way (the app is listening, waiting for the answer, or reading it out), the app asks first: opening the page stops that voice message. Tap **Cancel** to stay, or **OK** to open the page.
 
 The page is opened by your phone directly. The computer only keeps the list of buttons; it never loads or passes on the page.
 
@@ -65,4 +69,5 @@ Some addresses work as a key: anyone who has the link can use the page. The list
 - **"Only https:// pages can be pinned"** — the address starts with `http://` or has no scheme. Browsers allow the microphone only on `https://` pages; serve the page over https (on a tailnet, `tailscale serve` does it).
 - **The page opens in the Chrome browser instead of the app** — the phone app was opened from Chrome, not from the AgentX app. Open **AgentX** from the app list.
 - **The page says the microphone is blocked** — open the site settings for the page's address in the browser and allow the microphone. On Android, also check **Settings** > **Apps** > **Chrome** > **Permissions** > **Microphone**.
+- **"The pinned pages file is busy"** — another change was still being saved and did not finish within 3 seconds. Try again. If it keeps happening and no `agentx` command is running, delete `.agentx/app-pins.json.lock` on the computer.
 - **The page shows "not found" or asks you to sign in** — the address is wrong or has expired. Remove the button and pin the current address.
