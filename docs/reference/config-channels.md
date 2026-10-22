@@ -205,7 +205,7 @@ A message's chat ID picks the phones: `default` sends to every phone that turned
 
 ## app
 
-The phone app beyond pairing and notifications: the AgentX Android app and place reminders. How to set them up, step by step: [Place reminders](../dashboard/mobile-places.md).
+The phone app beyond pairing and notifications: the AgentX Android app, place reminders and pinned pages. How to set them up, step by step: [Place reminders](../dashboard/mobile-places.md) and [Pinned pages](../dashboard/mobile-pinned.md).
 
 | Field | Type | Default | What it does |
 |---|---|---|---|
@@ -221,6 +221,10 @@ The phone app beyond pairing and notifications: the AgentX Android app and place
 | `app.places.cooldownMinutes` | number (0 to 1440) | `10` | A reminder set to fire every time fires at most once in this many minutes, so a phone at the edge of a place doesn't buzz again and again. |
 | `app.places.maxEventAgeMinutes` | number (1 to 1440) | `30` | A crossing the phone could only report later, for lack of signal, is dropped once it is older than this. |
 | `app.places.syncMinutes` | number (15 to 1440) | `60` | How often the Android app checks for added or removed places. Android runs background checks at most every 15 minutes. |
+| `app.pinned.enabled` | boolean | `true` | Shows pinned pages in the phone app. Off: the app's **Pinned pages** card says so, the buttons go away and new pages are refused. |
+| `app.pinned.pages` | list of `{ label, url }` | `[]` | Buttons for every phone. `label` is the button's name (up to 40 characters); `url` must start with `https://` (up to 2048 characters, 50 pages at most). They can't be renamed or removed in the app. |
+| `app.pinned.file` | string | `".agentx/pinned.json"` | Where pages pinned from the phone app are kept, relative to the folder that holds `agentx.json`. |
+| `app.pinned.max` | number (1 to 50) | `12` | Most pinned pages, counting both those in `app.pinned.pages` and those pinned from the app. |
 
 ## ntfy
 

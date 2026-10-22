@@ -1884,6 +1884,21 @@ export const daemonConfigSchema = z.object({
        *  Android runs background checks at most every 15 minutes. */
       syncMinutes: z.number().int().min(15).max(1440).default(60),
     }).default({}),
+    /** Web pages shown as buttons in the phone app (#1120). `pages` here
+     *  are read only in the app; pages added in the app go to `file`. */
+    pinned: z.object({
+      enabled: z.boolean().default(true),
+      pages: z.array(z.object({
+        label: z.string().trim().min(1).max(40),
+        /** https only: the page's microphone needs a secure origin. */
+        url: z.string().max(2048).url().refine((u) => u.startsWith("https://"), "must start with https://"),
+      }).strict()).max(50).default([]),
+      /** Where pages added in the phone app are kept. Relative paths
+       *  resolve from the folder holding agentx.json. */
+      file: z.string().min(1).default(".agentx/pinned.json"),
+      /** Most pinned pages, counting both kinds. */
+      max: z.number().int().min(1).max(50).default(12),
+    }).default({}),
   }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */
   demo: z.object({

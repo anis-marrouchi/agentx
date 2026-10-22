@@ -281,6 +281,23 @@ try {
       await type('#pl-add input[name="name"]', "Sports hall"); await type('#pl-add input[name="coords"]', "48.8530, 2.3499")
       await ev("document.activeElement.blur(); document.querySelector('#pl-add-wrap').scrollIntoView()"); await sleep(200); await shot("places-add")
     },
+    // --- Pinned pages ---
+    "pinned-strip": async () => { await scene({ pinned: true }); await open("/app", { conv: "cdemo" }); await wait("#pn-strip .pn-btn"); await shot("pinned-strip") },
+    "pinned": async () => {
+      await scene({ pinned: true }); await open("/app")
+      await alerts("#pn-list .pn-page"); await ev("document.querySelector('#pn-card').scrollIntoView()"); await sleep(200); await shot("pinned")
+    },
+    "pinned-add": async () => {
+      await scene({ pinned: true }); await open("/app")
+      await alerts("#pn-list .pn-page"); await click("#pn-add-wrap summary")
+      await type('#pn-add input[name="label"]', "Kitchen timer"); await type('#pn-add input[name="url"]', "https://tools.example.ts.net/timer")
+      await ev("document.activeElement.blur(); document.querySelector('#pn-add-wrap').scrollIntoView()"); await sleep(200); await shot("pinned-add")
+    },
+    "pinned-rename": async () => {
+      await scene({ pinned: true }); await open("/app")
+      await alerts("#pn-list .pn-page"); await click("#pn-list .pn-page:nth-child(2) .pn-more summary")
+      await ev("document.activeElement.blur(); document.querySelector('#pn-list .pn-page:nth-child(2)').scrollIntoView()"); await sleep(200); await shot("pinned-rename")
+    },
     // --- Share camera ---
     "camera-sheet": async () => { await open("/app", { conv: "cdemo" }); await camera("Workshop"); await sleep(200); await shot("camera-sheet"); await click("#cam-close") },
     "camera-agent-pick": async () => { await open("/app", { conv: "cdemo" }); await camera("bot:helper"); await sleep(200); await shot("camera-agent-pick"); await click("#cam-close") },

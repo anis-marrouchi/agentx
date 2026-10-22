@@ -128,6 +128,8 @@ const defaults = {
   pair: "ok" as "ok" | "too-many",
   // A sent message takes 15 seconds to answer, to show the thinking state.
   slow: false,
+  // Pinned pages: none, or two (one from agentx.json, one added in the app).
+  pinned: false,
 }
 let scene = { ...defaults }
 // Keep watching on the camera sheet: when it stops by itself.
@@ -241,6 +243,16 @@ function api(path: string): any {
       }
     case "/api/app/camera/watch":
       return { watch: { replies: [], streamUntil: streamUntil > Date.now() ? streamUntil : null } }
+    case "/api/app/pinned":
+      return {
+        enabled: true, reason: null, max: 12,
+        pages: scene.pinned
+          ? [
+              { id: "cfg_demo00status", label: "Status board", url: "https://status.example.ts.net/", source: "config" },
+              { id: "pin_demo00remote", label: "TV remote", url: "https://tools.example.ts.net/remote", source: "app", createdAt: iso(86400000) },
+            ]
+          : [],
+      }
     case "/api/app/places":
       return {
         enabled: true, reason: null, pushAvailable: true, pushReason: null,
