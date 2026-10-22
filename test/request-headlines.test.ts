@@ -267,6 +267,17 @@ describe("after review", () => {
     expect(store.get("req-t1")?.headline).toBe("About t1")
   })
 
+  it("calls the model once even when two passes hold an old copy of the request", async () => {
+    turn("t1")
+    store.progress("req-t1", 6_000)
+    const stale = store.get("req-t1")!
+    const generate = vi.fn(async () => '{"headline":"One call"}')
+    const w = writer(generate)
+    await Promise.all([w.ensure(stale), w.ensure(stale)])
+    expect(generate).toHaveBeenCalledTimes(1)
+    expect(store.get("req-t1")?.headline).toBe("One call")
+  })
+
   it("shows a refused request popup once its agent described it", async () => {
     const { popNext } = await import("../src/approvals/popup-runner")
     turn("t9", "review #412")

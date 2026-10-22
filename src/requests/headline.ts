@@ -103,8 +103,9 @@ export class HeadlineWriter {
   async ensure(r: RequestRecord): Promise<RequestRecord> {
     const settings = this.deps.settings()
     if (r.headline || !settings.enabled || r.headlineTriedAt) return r
-    // Marked first: a call that hangs or crashes the process is not repeated.
-    this.deps.store.markHeadlineTried(r.id, (this.deps.now ?? Date.now)())
+    // Claimed first: a call that hangs or crashes the process is not
+    // repeated, and a copy of the request read earlier cannot call twice.
+    if (!this.deps.store.markHeadlineTried(r.id, (this.deps.now ?? Date.now)())) return this.deps.store.get(r.id) ?? r
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), settings.timeoutSeconds * 1000)
     timer.unref?.()

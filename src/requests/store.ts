@@ -296,9 +296,11 @@ export class RequestStore {
     ).all(...OPEN_STATES, limit).map(toRecord)
   }
 
-  /** The model was asked for this request's headline: not asked again. */
-  markHeadlineTried(id: string, now: number): void {
-    this.db.prepare("UPDATE requests SET headline_tried_at = ? WHERE id = ?").run(now, id)
+  /** Claim the one model call for this request's headline. True for the
+   *  caller that got it; false when another caller already did, so two
+   *  passes working from older copies never both pay for it. */
+  markHeadlineTried(id: string, now: number): boolean {
+    return this.db.prepare("UPDATE requests SET headline_tried_at = ? WHERE id = ? AND headline_tried_at IS NULL").run(now, id).changes > 0
   }
 
   /** What the checker said. `met` is written by closeVerified, not here.
