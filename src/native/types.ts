@@ -58,6 +58,15 @@ export interface NativeFocus {
   active(): Promise<boolean | null>
 }
 
+/** Who else is talking to the person at this machine (#1126). */
+export interface NativeSpeech {
+  /** What is speaking or playing sound on this machine right now, in
+   *  words ("a spoken line"), or null when nothing is. Processes whose
+   *  parent is one of `exceptParents` are the caller's own and do not
+   *  count. Never throws: an OS that can't tell answers null. */
+  othersSpeaking(opts?: { exceptParents?: number[] }): Promise<string | null>
+}
+
 export interface NativeDescription {
   os: NativeOs
   tasks: boolean
@@ -76,6 +85,7 @@ export interface NativeAdapter {
   readonly banner?: NativeBanner
   readonly sound?: NativeSound
   readonly focus?: NativeFocus
+  readonly speech?: NativeSpeech
   /** For doctor and the dashboard. Never throws. */
   describe(): Promise<NativeDescription>
 }

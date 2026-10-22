@@ -74,6 +74,12 @@ export class SpeechOut {
   /** How the voice says a line's words (voice.pronunciations, #433).
    *  The queue, its events and replays keep the written text. */
   pronounce: (text: string) => string = (text) => text
+  /** What else speaks on this host outside the queue (a script's `say`),
+   *  or null (#1126). A line waits while it does, up to `othersWaitMs`,
+   *  then plays: a speaker that never stops must not silence the host. */
+  othersSpeaking?: () => Promise<string | null>
+  othersWaitMs = 10 * 60_000
+  othersPollMs = 500
 
   constructor(
     private synth: Synth = elevenLabsSynth(),
@@ -245,11 +251,25 @@ export class SpeechOut {
     this.current = e
     const run = ++this.run
     this.changed()
-    void e.audio.then((got) => {
+    void e.audio.then(async (got) => {
       if (run !== this.run) return
       if ("e" in got) return this.finish(e, false)
+      await this.othersDone(run)
+      if (run !== this.run) return
       this.playOne(e, got.f, run)
     })
+  }
+
+  /** Wait while something outside the queue speaks on this host. */
+  private async othersDone(run: number): Promise<void> {
+    if (!this.othersSpeaking) return
+    const until = Date.now() + this.othersWaitMs
+    while (run === this.run && Date.now() < until) {
+      let who: string | null = null
+      try { who = await this.othersSpeaking() } catch { /* can't tell: play */ }
+      if (!who) return
+      await new Promise((r) => setTimeout(r, this.othersPollMs))
+    }
   }
 
   private playOne(e: Entry, file: string | null, run: number): void {

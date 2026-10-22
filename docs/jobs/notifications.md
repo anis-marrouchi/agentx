@@ -243,7 +243,11 @@ agentx notify --flush         # deliver what is held now
 | `--title <text>` | Notification title (default `AgentX`) |
 | `--todo <text>` | What you should do about it. Shown after the message as `To do: <text>`; without it the line says `To do: nothing, FYI` |
 | `--priority <1-5>` | ntfy priority (default 4); the phone app ignores it |
-| `--urgent` | Deliver even during Focus |
+| `--urgent` | Deliver even during Focus, and even if you were already told the same thing |
+| `--key <id>` | What the message is about, for example `backup:nightly`. A message with the same key is told once across all channels within `notifications.told.repeatWindowHours`. Without it, a message of 40 characters or more is its own key |
+| `--request <id>` | The open request the message belongs to |
+| `--digest` | A system reminder, such as disk space or a channel that stopped. It waits for the daily digest instead of a notification now |
+| `--told` | Show what you were told in the last 24 hours: how many were sent, held, kept for the digest or not repeated, and the latest ones |
 | `--from <who>` | Shown in a held digest, so you know who sent what |
 | `--channel`, `--chat-id` | Deliver somewhere other than the default channel (`notifications.channel`, which is `push`) |
 | `--no-banner`, `--no-sound` | Skip the banner or the sound for this message |
@@ -257,6 +261,22 @@ agentx notify --flush         # deliver what is held now
 - Every notice from `agentx notify` ends with a **To do** line after the message, so you know at a glance whether it wants anything from you. Notices the daemon sends by itself (a failed job, a request that needs you) do not have one.
 - A message must read in about ten seconds: the title can be up to 120 characters and the message up to 300, counting the To do line. A longer one is not sent. The command says why and exits with an error, so the agent or script that sent it can shorten it. AgentX never cuts it.
 - A title must say what the notice is in words. A title that is only a reference, such as `#402`, `group/project#402`, a link, a commit hash or a request id, is not sent; put the reference in the message instead. A short plain title such as `Backups` is fine, and so is a reference next to words, such as `Login fix ready (#402)`.
+
+## 6. Told once, and the daily digest
+
+Every message that goes to your own addresses passes one check first, whether an agent, a script or AgentX itself sent it. Your own addresses are the phone app (`push`), ntfy, and any private chat you list in `notifications.told.addresses`. AgentX writes down what it told you, which request it belongs to and on which channel.
+
+- **Told once.** If you were already told the same thing in the last 24 hours, on any of these channels, it is not sent again. An urgent message always goes.
+- **System reminders wait for the digest.** "Not finished" for a request that stopped, a missing voice, or a channel that stopped working is not sent as a notification of its own. The request is on your Desk at once. The reminder is added as one line to the daily digest (`approvals.digest`, 09:00 by default), for example: `6 notices held for this digest: Not finished ×5 (Check the invoices batch, …); WhatsApp stopped reconnecting.`
+- **Nothing speaks over something else.** Before AgentX speaks a reply, it waits while another program on this computer is speaking or playing a sound, such as a script reading a presentation aloud with `say`. The notification sound waits up to `notifications.local.quietWaitSeconds` (15 by default); after that the banner shows without the sound. To keep AgentX quiet for longer, for a talk or a recording, take the floor: `agentx voice floor run --as "Presentation" --sound -- <your command>`.
+
+To see what you were told:
+
+1. **Terminal:** run `agentx notify --told`.
+2. The first line counts the last 24 hours by outcome: sent, held for Focus or a call, kept for the digest, not repeated, and failed.
+3. The lines after it list the latest messages.
+
+To turn the check off, set `notifications.told.enabled` to `false`. To get system reminders at once again, set `notifications.told.digestNags` to `false`. See [Configuration: automation](../reference/config-automation.md).
 
 ## Check it worked
 
@@ -272,6 +292,9 @@ agentx notify --flush         # deliver what is held now
 10. Run `agentx notify "$(printf 'x%.0s' {1..301})"`. It says `not sent: message is longer than 300 characters` and sends nothing.
 11. Run `agentx notify "Ready for review" --title "#402"`. It says `not sent: title is only a reference ("#402")` and sends nothing.
 12. Run `agentx notify "Backups ran" --title "Backups"`. The notice shows `Backups ran`, then `To do: nothing, FYI` on the next line.
+13. Run `agentx notify "Backups ran" --title "Backups" --key backup:test` twice. The first is sent; the second says `not sent: the owner was already told this`.
+14. Run `agentx notify "The test disk is nearly full" --title "Disk" --digest`. It says `not sent: kept for the daily digest`. Run `agentx notify --told`: it counts `1 kept for the digest`, and the next digest has a line for it.
+15. On a Mac, run `say "This is a long sentence that takes a few seconds to read aloud"` and, while it speaks, ask an agent something by voice. Its answer starts only after `say` is finished.
 
 `agentx doctor` runs the same helper check under **Notifications**, along with its other checks.
 
@@ -295,4 +318,8 @@ Other problems:
 | The phone does not buzz | With the phone app, see [Notifications on your phone](../dashboard/mobile-alerts.md#if-something-is-wrong). With ntfy, check that the topic in the ntfy app matches `NTFY_TOPIC` exactly, that `agentx notifications show` lists `channel ntfy`, and that you restarted AgentX after saving. |
 | Nothing is held during Focus | Give Full Disk Access to the app that runs AgentX (step 4), or use `~/.agentx/focus.json`. |
 | A scheduled job uses the wrong settings | Add `-c /path/to/agentx.json` to its `agentx notify` command. |
+| A message you expected never came | Run `agentx notify --told`. `repeat` means you were told the same thing in the last 24 hours; `digest` means it waits for the daily digest. Send it with `--urgent` if it cannot wait, or give a different `--key`. |
+| A script's message is sent every time even though it says the same thing | A message shorter than 40 characters is never taken for a repeat. Give it a `--key`. |
+| System reminders never arrive | They come in the daily digest. Check that `approvals.digest.enabled` is on and has a destination (`approvals.digest.destination`, or `notifications.destination`). |
+| An agent's spoken answer waits a long time | Another program on this computer is speaking or playing a sound. AgentX waits for it for up to 10 minutes, then speaks anyway. |
 | The new icon does not show | Run `agentx desktop install` after changing **Banner icon**, then allow notifications again if asked. |

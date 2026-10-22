@@ -177,6 +177,13 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 | `notifications.local.soundName` | string | `"Glass"` | A sound from `/System/Library/Sounds`, without the extension. |
 | `notifications.local.volume` | number (0–1) | `0.4` | Sound volume. |
 | `notifications.local.icon` | string | — | Image for the banner icon (`.png`, `.jpg` or `.icns`). Unset: the AgentX logo. Applied by `agentx desktop install`. |
+| `notifications.local.quietWaitSeconds` | whole number (0–120) | `15` | Seconds the sound waits while something else speaks on this computer, such as a spoken answer or a script using `say`. If something is still speaking after that, the banner shows without the sound. `0`: never wait. |
+| `notifications.told` | object | `{}` | The record of what you were told. Everything sent to your own addresses is written down once. Something you were already told is not sent again on any channel, and system reminders wait for the daily digest. See [Told once](/jobs/notifications#6-told-once-and-the-daily-digest). |
+| `notifications.told.enabled` | boolean | `true` | Records and checks every message to your own addresses. |
+| `notifications.told.repeatWindowHours` | number (up to 720) | `24` | Hours during which the same thing is not told again, on any channel. |
+| `notifications.told.channels` | list of strings | `["push", "ntfy"]` | Channels that only ever reach you. Every message on them goes through the record. |
+| `notifications.told.addresses` | list of strings | `[]` | Your other private chats, as `channel:chatId`, for example `telegram:123456789`. |
+| `notifications.told.digestNags` | boolean | `true` | System reminders, such as "Not finished", a missing voice or a channel that stopped, wait for the daily digest (`approvals.digest`) instead of a notification each. Off: each is sent at once. |
 
 ## `calls`
 

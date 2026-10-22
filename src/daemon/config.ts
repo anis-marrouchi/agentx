@@ -1203,6 +1203,25 @@ const notificationsSchema = z.object({
     /** Image for the AgentX Helper icon on banners (.png, .jpg, .icns).
      *  Unset: the AgentX logo. Applied by `agentx desktop install`. */
     icon: z.string().optional(),
+    /** Seconds the sound waits while something else speaks on this
+     *  machine (#1126); still speaking after that, the banner shows
+     *  without it. 0: never wait. */
+    quietWaitSeconds: z.number().int().min(0).max(120).default(15),
+  }).default({}),
+  /** The told-the-owner record (src/notify/told.ts, #1126): everything sent
+   *  to the owner's own addresses is recorded once, an item already told
+   *  on any of them is not told again, and system nags wait for the
+   *  daily digest (approvals.digest) instead of a push each. */
+  told: z.object({
+    enabled: z.boolean().default(true),
+    /** An item told within this many hours is not told again, on any channel. */
+    repeatWindowHours: z.number().positive().max(24 * 30).default(24),
+    /** Channels that only ever reach the owner: everything on them passes the gate. */
+    channels: z.array(z.string().min(1)).default(["push", "ntfy"]),
+    /** Other owner addresses, as "channel:chatId" (a private Telegram chat). */
+    addresses: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:chatId, for example telegram:123456789")).default([]),
+    /** Nags wait for the daily digest. Off: each is sent like any notice. */
+    digestNags: z.boolean().default(true),
   }).default({}),
 }).default({})
 
