@@ -647,7 +647,14 @@ export class AgentXDaemon {
         // the owner's own addresses, the daemon's notices and the router's
         // sends alike. Settings are read on every decision.
         try {
-          this.ownerGate = new OwnerGate(new ToldLedger(db), () => ({ ...DEFAULT_TELL_SETTINGS, ...this.config.notifications.told }))
+          // A nag waits for the digest only when one can go out.
+          this.ownerGate = new OwnerGate(new ToldLedger(db), () => {
+            const digest = this.config.approvals.digest
+            return {
+              ...DEFAULT_TELL_SETTINGS, ...this.config.notifications.told,
+              digestAvailable: digest.enabled && !!(digest.destination ?? this.config.notifications?.destination),
+            }
+          })
           this.router.setOwnerGate(this.ownerGate)
         } catch (e: any) {
           this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
@@ -1392,6 +1399,8 @@ export class AgentXDaemon {
         title,
         priority,
         agentId: this.config.node.defaultAgent,
+        // What Focus held was decided when it was held (#1126).
+        told: { passed: true },
       } as any)
     }
   }
@@ -2241,10 +2250,19 @@ export class AgentXDaemon {
           },
           // One digest a day, keyed by its day: the same words tomorrow are
           // a new digest, not a repeat (#1126).
+          // The digest is once a day by its own schedule: recorded, never
+          // kept back, so the nags it carries are not cleared unsent (#1126).
           sendDigest: async (d, text) => {
+            const gate = this.ownerGate
+            const { title, body } = splitTitle(text)
+            const row = gate?.isOwnerAddress(d.channel, d.chatId)
+              ? gate.decide({ channel: d.channel, chatId: d.chatId, title, text: body }, { key: `digest:${Date.now()}`, urgent: true, from: "approvals" }).rowId
+              : undefined
             await this.router.sendOutbound({
-              channel: d.channel, chatId: d.chatId, accountId: d.accountId, text,
-              told: { key: `digest:${new Date().toISOString().slice(0, 10)}`, from: "approvals" },
+              channel: d.channel, chatId: d.chatId, accountId: d.accountId, text, told: { passed: true },
+            }).catch((e) => {
+              if (row !== undefined) gate?.outcome(row, "failed")
+              throw e
             })
           },
           ...(this.ownerGate ? {
@@ -2626,7 +2644,8 @@ export class AgentXDaemon {
   ): Promise<"sent" | "held" | "repeat" | "digest"> {
     const channel = input.channel ?? defaultNotifyChannel(this.config)
     const chatId = input.chatId ?? "default"
-    const meta: TellMeta = { key: input.key, requestId: input.requestId, kind: input.kind, urgent: input.urgent, from: input.from }
+    // The daemon's own notices: the same words again are a repeat.
+    const meta: TellMeta = { key: input.key, requestId: input.requestId, kind: input.kind, urgent: input.urgent, from: input.from, textKey: true }
     const gate = this.ownerGate
     let row: number | undefined
     if (gate?.isOwnerAddress(channel, chatId)) {
@@ -2661,7 +2680,12 @@ export class AgentXDaemon {
   /** The banner and sound for one notice on this machine. The sound waits
    *  while something else speaks here (#1126). */
   private ownerAlert() {
-    return localAlert(localSettings(this.config.notifications.local), { native: this.config.native })
+    const alert = localAlert(localSettings(this.config.notifications.local), { native: this.config.native })
+    // Not awaited: a sound waiting for quiet must not hold the check that
+    // is telling the owner about the next thing.
+    return async (title: string, message: string) => {
+      void alert(title, message).catch((e: any) => this.log(`[told] banner or sound failed: ${e?.message ?? e}`))
+    }
   }
 
   /** A card raised for a workflow (#788): a step's answer resumes its
@@ -8501,6 +8525,9 @@ export class AgentXDaemon {
         agentId: typeof body.agentId === "string" ? body.agentId : undefined,
         // Set by a push relay, so a relay never forwards a relayed message.
         relayed: body.relayed === true ? true : undefined,
+        // The relaying node's own gate already decided it (#1126): deciding
+        // again here, by text alone, would lose its key and its urgency.
+        ...(body.relayed === true ? { told: { passed: true } } : {}),
         // The relaying node, so the host can address that node's phones:
         // the peer its token belongs to, not the name it gives (#711).
         origin,

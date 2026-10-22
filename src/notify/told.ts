@@ -37,6 +37,10 @@ export interface TellMeta {
   urgent?: boolean
   /** Who is telling: an agent id, or a daemon part (requests, watchers). */
   from?: string
+  /** Without a key, the text is the key: only for notices (the daemon's
+   *  own, `agentx notify`), never for an agent's answer, which may well
+   *  say the same thing twice on purpose. */
+  textKey?: boolean
 }
 
 export interface ToldRow {
@@ -60,6 +64,9 @@ export interface TellSettings {
   channels: string[]
   addresses: string[]
   digestNags: boolean
+  /** A daily digest can go out (on, with a destination). False: a nag is
+   *  sent at once, or it would never reach anyone. Unset: true. */
+  digestAvailable?: boolean
 }
 
 export const DEFAULT_TELL_SETTINGS: TellSettings = {
@@ -69,6 +76,8 @@ export const DEFAULT_TELL_SETTINGS: TellSettings = {
 /** A text shorter than this is not its own key: "Done." twice in a day is
  *  two answers, not a repeat. */
 export const TEXT_KEY_MIN = 40
+/** Longest a text alone keeps an item told. */
+export const TEXT_WINDOW_HOURS = 20
 /** Days a row of the record is kept. */
 export const TOLD_KEEP_DAYS = 90
 const TEXT_MAX = 2000
@@ -77,7 +86,9 @@ const HOUR = 3_600_000
 /** The item a message is about. Null: it has none, and is never a repeat. */
 export function tellKey(meta: TellMeta, title: string, text: string): string | null {
   if (meta.key?.trim()) return meta.key.trim().slice(0, 200)
-  if (meta.requestId) return `request:${meta.requestId}`
+  // A request id says which request a notice belongs to, not which notice
+  // it is: "step blocked" and "plan finished" are two things to tell.
+  if (!meta.textKey) return null
   const words = `${title}\n${text}`.replace(/\s+/g, " ").trim().toLowerCase()
   if (words.length < TEXT_KEY_MIN) return null
   return `text:${createHash("sha256").update(words).digest("hex").slice(0, 24)}`
@@ -108,6 +119,7 @@ export function ensureToldTable(db: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_owner_told_key_at ON owner_told(item_key, at);
     CREATE INDEX IF NOT EXISTS idx_owner_told_at ON owner_told(at);
+    CREATE INDEX IF NOT EXISTS idx_owner_told_digest ON owner_told(outcome, digested_at);
   `)
 }
 
@@ -146,6 +158,10 @@ export class ToldLedger {
   /** Nags waiting for the digest, oldest first. */
   waitingForDigest(limit = 500): ToldRow[] {
     return this.db.prepare("SELECT * FROM owner_told WHERE outcome = 'digest' AND digested_at IS NULL ORDER BY at LIMIT ?").all(limit).map(toRow)
+  }
+
+  waitingCount(): number {
+    return (this.db.prepare("SELECT COUNT(*) AS n FROM owner_told WHERE outcome = 'digest' AND digested_at IS NULL").get() as { n: number }).n
   }
 
   markDigested(ids: number[], at: number): void {
@@ -202,11 +218,14 @@ export class OwnerGate {
     const now = this.now()
     const key = tellKey(meta, msg.title, msg.text)
     const kind: TellKind = meta.kind ?? "notice"
+    // A text is its own key for less than a day: a report that goes out
+    // daily with the same words is not taken for a repeat of yesterday's.
+    const windowMs = (key?.startsWith("text:") ? Math.min(s.repeatWindowHours, TEXT_WINDOW_HOURS) : s.repeatWindowHours) * HOUR
     let verdict: TellDecision["verdict"] = "send"
-    if (!meta.urgent && key && this.ledger.lastTold(key, now - s.repeatWindowHours * HOUR)) verdict = "repeat"
-    else if (!meta.urgent && kind === "nag" && s.digestNags) verdict = "digest"
+    if (!meta.urgent && key && this.ledger.lastTold(key, now - windowMs)) verdict = "repeat"
+    else if (!meta.urgent && kind === "nag" && s.digestNags && s.digestAvailable !== false) verdict = "digest"
     const rowId = this.ledger.add({
-      at: now, key: key ?? `once:${now}`, requestId: meta.requestId ?? (key?.startsWith("request:") ? key.slice(8) : null),
+      at: now, key: key ?? `once:${now}`, requestId: meta.requestId ?? null,
       kind, channel: msg.channel, chatId: msg.chatId, from: meta.from ?? null, title: msg.title, text: msg.text,
       outcome: verdict === "send" ? "sent" : verdict,
     })
@@ -232,7 +251,7 @@ export class OwnerGate {
   /** What the owner was told since `since`: counts by outcome, and the
    *  newest rows. */
   report(since: number, limit = 50): { counts: Record<TellOutcome, number>; waitingForDigest: number; items: ToldRow[] } {
-    return { counts: this.ledger.counts(since), waitingForDigest: this.ledger.waitingForDigest().length, items: this.ledger.since(since, limit) }
+    return { counts: this.ledger.counts(since), waitingForDigest: this.ledger.waitingCount(), items: this.ledger.since(since, limit) }
   }
 
   /** Drop rows older than `days`. */
@@ -248,11 +267,14 @@ export function toldOfBody(v: unknown, agentId?: unknown): TellMeta & { passed?:
   const s = (x: unknown, max: number) => (typeof x === "string" && x.trim() ? x.trim().slice(0, max) : undefined)
   const kind = o.kind === "nag" || o.kind === "notice" ? o.kind : undefined
   const from = s(o.from, 100) ?? s(agentId, 100)
+  // A caller's key lives in its own space: it cannot name the daemon's
+  // items (digest:<day>, request:<id>:attention) and so silence them.
   return {
-    ...(s(o.key, 200) ? { key: s(o.key, 200) } : {}),
+    ...(s(o.key, 190) ? { key: `send:${s(o.key, 190)}` } : {}),
     ...(s(o.requestId, 100) ? { requestId: s(o.requestId, 100) } : {}),
     ...(kind ? { kind } : {}),
     ...(o.urgent === true ? { urgent: true } : {}),
+    ...(o.textKey === true ? { textKey: true } : {}),
     ...(from ? { from } : {}),
   }
 }

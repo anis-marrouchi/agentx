@@ -84,7 +84,8 @@ export function digestDue(settings: ApprovalSettings["digest"], lastDigest: stri
 
 export function digestText(items: InboxItem[], dashboardUrl?: string, nagLine?: string): string {
   const top = items[0]
-  const lines = [`${items.length} decision${items.length === 1 ? "" : "s"} waiting for you.`]
+  // A digest of nags alone does not open with "0 decisions".
+  const lines = items.length || !nagLine ? [`${items.length} decision${items.length === 1 ? "" : "s"} waiting for you.`] : []
   if (top) {
     const expires = top.expires ? ` Expires ${top.expires.slice(0, 16).replace("T", " ")} UTC${top.if_silent ? `, then: ${top.if_silent}` : ""}.` : ""
     lines.push(`Most urgent: ${top.title}: ${top.ask}${expires}`)

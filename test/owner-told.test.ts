@@ -43,13 +43,16 @@ const push = (title: string, text = "") => ({ channel: "push", chatId: "default"
 const LONG = "The Mac disk is low: 3.1 GB free on the system volume"
 
 describe("what an item is", () => {
-  it("is the caller's key, else its request, else a long enough text", () => {
+  it("is the caller's key, else, for a notice, a long enough text; a request id alone is not one", () => {
     expect(tellKey({ key: "card:abc" }, "t", "x")).toBe("card:abc")
-    expect(tellKey({ requestId: "req-1" }, "t", "x")).toBe("request:req-1")
-    expect(tellKey({}, "Mac disk low", LONG)).toMatch(/^text:[0-9a-f]{24}$/)
-    expect(tellKey({}, "Mac disk low", LONG)).toBe(tellKey({}, "Mac  disk low", ` ${LONG.toUpperCase()} `))
+    // "Plan step blocked" and "Plan finished" belong to one request and are two things to tell.
+    expect(tellKey({ requestId: "req-1" }, "t", "x")).toBeNull()
+    expect(tellKey({ textKey: true }, "Mac disk low", LONG)).toMatch(/^text:[0-9a-f]{24}$/)
+    expect(tellKey({ textKey: true }, "Mac disk low", LONG)).toBe(tellKey({ textKey: true }, "Mac  disk low", ` ${LONG.toUpperCase()} `))
+    // An agent's answer is never keyed by its words: the same answer twice is two answers.
+    expect(tellKey({}, "Mac disk low", LONG)).toBeNull()
     // "Done." twice in a day is two answers, not a repeat.
-    expect(tellKey({}, "Secretary", "Done.")).toBeNull()
+    expect(tellKey({ textKey: true }, "Secretary", "Done.")).toBeNull()
   })
 
   it("splits a channel's text into its title line and the rest", () => {
@@ -69,13 +72,29 @@ describe("the gate", () => {
   })
 
   it("tells an item once across channels within the window, and again after it", () => {
-    expect(gate.decide(push("Mac disk low", LONG)).verdict).toBe("send")
+    const N = { textKey: true }
+    expect(gate.decide(push("Mac disk low", LONG), N).verdict).toBe("send")
     clock += HOUR
-    expect(gate.decide({ channel: "telegram", chatId: "42", title: "Mac disk low", text: LONG }).verdict).toBe("repeat")
-    expect(gate.decide(push("Mac disk low", LONG)).verdict).toBe("repeat")
-    clock += 24 * HOUR
-    expect(gate.decide(push("Mac disk low", LONG)).verdict).toBe("send")
-    expect(ledger.counts(0)).toMatchObject({ sent: 2, repeat: 2 })
+    expect(gate.decide({ channel: "telegram", chatId: "42", title: "Mac disk low", text: LONG }, N).verdict).toBe("repeat")
+    expect(gate.decide(push("Mac disk low", LONG), N).verdict).toBe("repeat")
+    // A text alone is an item for 20 h: a daily report the same words is sent each day.
+    clock += 20 * HOUR
+    expect(gate.decide(push("Mac disk low", LONG), N).verdict).toBe("send")
+    // A named key holds the whole window.
+    gate.decide(push("Backups"), { key: "backup" })
+    clock += 22 * HOUR
+    expect(gate.decide(push("Backups"), { key: "backup" }).verdict).toBe("repeat")
+    expect(ledger.counts(0)).toMatchObject({ sent: 3, repeat: 3 })
+  })
+
+  it("tells two notices of one request: a request id is not an item", () => {
+    expect(gate.decide(push("Plan step blocked: Book the venue"), { requestId: "req-1", textKey: true }).verdict).toBe("send")
+    expect(gate.decide(push("Plan finished: Book the venue"), { requestId: "req-1", textKey: true }).verdict).toBe("send")
+  })
+
+  it("sends a nag at once when no digest can go out", () => {
+    settings = { ...settings, digestAvailable: false }
+    expect(gate.decide(push("WhatsApp stopped reconnecting"), { kind: "nag", key: "channel-down:whatsapp" }).verdict).toBe("send")
   })
 
   it("does not count a send that failed: the item is told again", () => {
@@ -85,8 +104,9 @@ describe("the gate", () => {
   })
 
   it("keeps a nag for the digest, and the same nag again is a repeat", () => {
-    expect(gate.decide(push("Not finished: Check the invoices"), { requestId: "req-1", kind: "nag" }).verdict).toBe("digest")
-    expect(gate.decide(push("Not finished: Check the invoices"), { requestId: "req-1", kind: "nag" }).verdict).toBe("repeat")
+    const NAG = { requestId: "req-1", kind: "nag" as const, key: "request:req-1:attention" }
+    expect(gate.decide(push("Not finished: Check the invoices"), NAG).verdict).toBe("digest")
+    expect(gate.decide(push("Not finished: Check the invoices"), NAG).verdict).toBe("repeat")
     expect(ledger.waitingForDigest()).toHaveLength(1)
     expect(ledger.waitingForDigest()[0]).toMatchObject({ requestId: "req-1", kind: "nag", outcome: "digest" })
   })
@@ -126,10 +146,39 @@ describe("the gate", () => {
   })
 })
 
+describe("the daily digest with the nags", () => {
+  const SET = { defaultExpiryDays: 3, maxExpiryDays: 30, laterHours: 24, notifyAgent: true, digest: { enabled: true, time: "09:00", timezone: "UTC" } }
+  const sweep = async (send: (text: string) => Promise<void>) => {
+    const { runApprovalsSweep } = await import("../src/approvals/sweep")
+    return runApprovalsSweep({
+      ctx: { root: tmp, now: clock + 30 * 60_000 }, settings: SET as any, log: () => {},
+      fallbackDestination: { channel: "push", chatId: "default" },
+      sendDigest: async (_d, text) => send(text),
+      nags: { line: () => gate.digestLine(), done: (ids) => gate.markDigested(ids) },
+    })
+  }
+
+  it("goes out with only nags, says them in one line without '0 decisions', and clears them", async () => {
+    gate.decide(push("Not finished: Book the venue"), { kind: "nag", key: "request:r1:attention" })
+    const texts: string[] = []
+    expect((await sweep(async (t) => { texts.push(t) })).digest).toBe("sent")
+    expect(texts[0]).toMatch(/^1 notice held for this digest: Not finished \(Book the venue\)\./)
+    expect(texts[0]).not.toContain("0 decisions")
+    expect(gate.digestLine()).toBeNull()
+  })
+
+  it("keeps the nags waiting when the digest could not be sent", async () => {
+    gate.decide(push("Not finished: Book the venue"), { kind: "nag", key: "request:r1:attention" })
+    expect((await sweep(async () => { throw new Error("down") })).digest).toBe("failed")
+    expect(gate.digestLine()).not.toBeNull()
+  })
+})
+
 describe("what a /send caller may say", () => {
   it("names the item, the request and the kind, never that it passed the gate", () => {
-    expect(toldOfBody({ key: " card:1 ", requestId: "req-2", kind: "nag", passed: true, urgent: true }, "cx"))
-      .toEqual({ key: "card:1", requestId: "req-2", kind: "nag", urgent: true, from: "cx" })
+    // Its key lives in its own space: it cannot silence digest:<day> or a request's notice.
+    expect(toldOfBody({ key: " digest:2026-10-22 ", requestId: "req-2", kind: "nag", passed: true, urgent: true, textKey: true }, "cx"))
+      .toEqual({ key: "send:digest:2026-10-22", requestId: "req-2", kind: "nag", urgent: true, textKey: true, from: "cx" })
     expect(toldOfBody(undefined)).toEqual({})
     expect(toldOfBody({ kind: "shout" })).toEqual({})
   })
@@ -146,14 +195,22 @@ describe("the router", () => {
     return { r, sent }
   }
 
-  it("gates every send to the owner's addresses, and leaves other chats alone", async () => {
+  it("records every send to the owner's addresses, keeps back repeats and nags, and leaves other chats alone", async () => {
     const { r, sent } = router()
-    await r.sendOutbound({ channel: "push", chatId: "default", text: `Mac disk low\n${LONG}` })
-    await r.sendOutbound({ channel: "telegram", chatId: "42", text: `Mac disk low\n${LONG}` })
+    await r.sendOutbound({ channel: "push", chatId: "default", text: `Mac disk low\n${LONG}`, told: { textKey: true } })
+    await r.sendOutbound({ channel: "telegram", chatId: "42", text: `Mac disk low\n${LONG}`, told: { textKey: true } })
     await r.sendOutbound({ channel: "telegram", chatId: "99", text: `Mac disk low\n${LONG}` })
     await r.sendOutbound({ channel: "push", chatId: "default", text: "Disk\nlow", told: { kind: "nag" } })
     expect(sent).toEqual([`push:default:Mac disk low\n${LONG}`, `telegram:99:Mac disk low\n${LONG}`])
     expect(ledger.counts(0)).toMatchObject({ sent: 1, repeat: 1, digest: 1 })
+  })
+
+  it("never takes an agent's answer for a repeat: the same answer twice arrives twice", async () => {
+    const { r, sent } = router()
+    await r.sendOutbound({ channel: "push", chatId: "default", agentId: "secretary", text: `Secretary: ${LONG}` })
+    await r.sendOutbound({ channel: "push", chatId: "default", agentId: "secretary", text: `Secretary: ${LONG}` })
+    expect(sent).toHaveLength(2)
+    expect(ledger.counts(0).sent).toBe(2)
   })
 
   it("does not decide again for a caller that passed the gate, and records a failed send", async () => {

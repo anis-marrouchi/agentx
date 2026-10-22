@@ -161,6 +161,8 @@ export const notify = new Command()
       ...(opts.request ? { requestId: String(opts.request) } : {}),
       ...(opts.digest ? { kind: "nag" } : {}),
       ...(opts.urgent ? { urgent: true } : {}),
+      // A notice: the same words again within the window are a repeat.
+      textKey: true,
       from: opts.from,
     }
     const sender = daemonSender(channel, opts.chatId, told)
@@ -200,7 +202,9 @@ export const notify = new Command()
           chatId: opts.chatId,
         },
         send,
-        { queue, alert: gatedAlert, focus: state },
+        // A nag goes to the daemon at once: it waits for the digest there,
+        // and the Focus queue would lose that it is one.
+        { queue, alert: gatedAlert, focus: opts.digest ? { active: false, mode: null, reason: "kept for the digest" } : state },
       )
       const p = proof?.()
       const kept = sender.keptBack()

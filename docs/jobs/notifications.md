@@ -266,8 +266,8 @@ agentx notify --flush         # deliver what is held now
 
 Every message that goes to your own addresses passes one check first, whether an agent, a script or AgentX itself sent it. Your own addresses are the phone app (`push`), ntfy, and any private chat you list in `notifications.told.addresses`. AgentX writes down what it told you, which request it belongs to and on which channel.
 
-- **Told once.** If you were already told the same thing in the last 24 hours, on any of these channels, it is not sent again. An urgent message always goes.
-- **System reminders wait for the digest.** "Not finished" for a request that stopped, a missing voice, or a channel that stopped working is not sent as a notification of its own. The request is on your Desk at once. The reminder is added as one line to the daily digest (`approvals.digest`, 09:00 by default), for example: `6 notices held for this digest: Not finished ×5 (Check the invoices batch, …); WhatsApp stopped reconnecting.`
+- **Told once.** A notice from AgentX itself or from `agentx notify` that you already got is not sent again, on any of these channels. With a `--key`, "already" means within `notifications.told.repeatWindowHours` (24 by default). Without one, the same words count as the same notice for up to 20 hours, so a daily report still arrives every day. An agent's answer to you is never held back as a repeat, and an urgent message always goes.
+- **System reminders wait for the digest.** "Not finished" for a request that stopped, a missing voice, or a channel that stopped working is not sent as a notification of its own. The request is on your Desk at once. The reminder is added as one line to the daily digest (`approvals.digest`, 09:00 by default), for example: `6 notices held for this digest: Not finished ×5 (Check the invoices batch, …); WhatsApp stopped reconnecting.` This needs the digest on and a place to send it: `approvals.digest.destination` or `notifications.destination`. Without one, reminders are sent at once as before, so none is lost.
 - **Nothing speaks over something else.** Before AgentX speaks a reply, it waits while another program on this computer is speaking or playing a sound, such as a script reading a presentation aloud with `say`. The notification sound waits up to `notifications.local.quietWaitSeconds` (15 by default); after that the banner shows without the sound. To keep AgentX quiet for longer, for a talk or a recording, take the floor: `agentx voice floor run --as "Presentation" --sound -- <your command>`.
 
 To see what you were told:
@@ -275,6 +275,8 @@ To see what you were told:
 1. **Terminal:** run `agentx notify --told`.
 2. The first line counts the last 24 hours by outcome: sent, held for Focus or a call, kept for the digest, not repeated, and failed.
 3. The lines after it list the latest messages.
+
+Scripts can read the same record with `curl -s http://127.0.0.1:18800/owner/told` (from another computer, with the mesh token). It returns the counts and the latest messages since `?since=<epoch milliseconds>`, by default the last 24 hours. A message posted to `POST /send` for one of your addresses can carry `"told": {"key": "…", "kind": "nag"}`. When the check keeps it back, the answer is `{"ok": true, "sent": false, "told": "repeat"}` or `"told": "digest"`.
 
 To turn the check off, set `notifications.told.enabled` to `false`. To get system reminders at once again, set `notifications.told.digestNags` to `false`. See [Configuration: automation](../reference/config-automation.md).
 

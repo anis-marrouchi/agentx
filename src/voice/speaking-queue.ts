@@ -267,10 +267,15 @@ export class SpeechOut {
     while (run === this.run && Date.now() < until) {
       let who: string | null = null
       try { who = await this.othersSpeaking() } catch { /* can't tell: play */ }
-      if (!who) return
+      if (!who) { this.othersOutlasted = false; return }
+      // It outlasted one full wait already: the lines after it do not
+      // each wait again, or one endless sound silences the host for good.
+      if (this.othersOutlasted) return
       await new Promise((r) => setTimeout(r, this.othersPollMs))
     }
+    if (run === this.run) this.othersOutlasted = true
   }
+  private othersOutlasted = false
 
   private playOne(e: Entry, file: string | null, run: number): void {
     const p = this.play(file, e.said)

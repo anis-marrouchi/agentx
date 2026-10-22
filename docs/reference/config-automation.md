@@ -180,10 +180,10 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 | `notifications.local.quietWaitSeconds` | whole number (0–120) | `15` | Seconds the sound waits while something else speaks on this computer, such as a spoken answer or a script using `say`. If something is still speaking after that, the banner shows without the sound. `0`: never wait. |
 | `notifications.told` | object | `{}` | The record of what you were told. Everything sent to your own addresses is written down once. Something you were already told is not sent again on any channel, and system reminders wait for the daily digest. See [Told once](/jobs/notifications#6-told-once-and-the-daily-digest). |
 | `notifications.told.enabled` | boolean | `true` | Records and checks every message to your own addresses. |
-| `notifications.told.repeatWindowHours` | number (up to 720) | `24` | Hours during which the same thing is not told again, on any channel. |
+| `notifications.told.repeatWindowHours` | number (up to 720) | `24` | Hours during which a notice with the same key is not told again, on any channel. A notice without a key is matched by its words for at most 20 hours. Agents' answers are never matched. |
 | `notifications.told.channels` | list of strings | `["push", "ntfy"]` | Channels that only ever reach you. Every message on them goes through the record. |
 | `notifications.told.addresses` | list of strings | `[]` | Your other private chats, as `channel:chatId`, for example `telegram:123456789`. |
-| `notifications.told.digestNags` | boolean | `true` | System reminders, such as "Not finished", a missing voice or a channel that stopped, wait for the daily digest (`approvals.digest`) instead of a notification each. Off: each is sent at once. |
+| `notifications.told.digestNags` | boolean | `true` | System reminders, such as "Not finished", a missing voice or a channel that stopped, wait for the daily digest (`approvals.digest`) instead of a notification each. Off, or with no digest destination: each is sent at once. |
 
 ## `calls`
 
