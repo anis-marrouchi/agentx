@@ -57,6 +57,8 @@ Every place that shows you a request uses the same words: its card in **Approval
 - Its state, the agent that has it, and why it is not finished.
 - **Last answer from …**: what the agent last told you about it, when it answered.
 
+![An open request card titled "Fix and ship the demo shop checkout button", with the line Needed from you: Nothing, just so you know, and the owner's own words under You said](/screenshots/approvals/request-headline.png)
+
 A headline must say what the request is in words. One that is only a reference, such as "#412" or a link, is refused. A popup card whose title is only a reference is not shown, and its agent is told to describe the request.
 
 ## Decide on a request
@@ -203,8 +205,20 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --from none` | Clears the list of who counts as you. |
 | `agentx requests settings --stale-hours 48` | Hours without activity before a request comes back to you. Default 24. |
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
+| `agentx requests settings --headlines off` | Stops AgentX from writing a headline for a request its agent did not describe. Such a request is then titled with the start of your words. `on` turns it back on. Default on. |
 | `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
 | `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
+
+In the dashboard, the same settings are under **Approvals** › **Settings: open requests**. The box **Write a headline when the agent gave none** is the `--headlines` switch:
+
+1. **Browser:** open **Approvals** and scroll to the bottom.
+2. **Browser:** click **Settings: open requests**.
+3. **Browser:** tick or untick **Write a headline when the agent gave none**.
+4. **Browser:** click **Save settings**.
+
+![The open requests settings, with the box Write a headline when the agent gave none ticked](/screenshots/approvals/headline-setting.png)
+
+The engine and model used for the headline are set only in `agentx.json`, under `requests.headlines`.
 
 The folders for the `git-ancestor` check are set only in `agentx.json`, as `requests.checkers.repos`: `{ "app": "/srv/app" }`.
 
@@ -224,6 +238,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 10. **Terminal:** run `agentx requests today`. Each request you made since midnight is listed; the ones with no home are red, at the top.
 11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
 12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its card under **Approvals** › **Open requests** is titled with a few plain words, shows **Needed from you**, and keeps your words under **You said**. `agentx requests show <id>` shows the same `headline`.
+13. **Terminal:** run `agentx requests settings`. The line `Headlines` says `on: written when the agent gave none`, or `off` after `--headlines off`.
 
 ## If something is wrong
 
@@ -240,6 +255,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A request is marked `unverified`:** its check could not tell. `agentx requests show <id>` says why. Common causes: the address is down, the GitHub or GitLab token is missing or cannot see the issue, the local copy of the repository does not have the commit yet (update it), or the person in a `reply` check is not in `people`. Fix the cause and wait for the next check, or close it yourself with `--reason`.
 - **`no repos are set up for this check on this node`:** add the folder under `requests.checkers.repos` in `agentx.json`.
 - **`the … check is turned off on this node`:** add the kind back with `agentx requests settings --checks`.
-- **A card is still titled with your own words:** the agent did not describe the request and no headline could be written. The daemon log has a line `[requests] <id>: headline not written: …` with the reason. A common cause is that the engine set in `requests.headlines.provider` is not signed in on this computer. Each request is tried once, and not again after a restart; the agent can still describe it. To see the start of your words as the title on purpose, set `requests.headlines.enabled` to `false`.
+- **A card is still titled with your own words:** the agent did not describe the request and no headline could be written. The daemon log has a line `[requests] <id>: headline not written: …` with the reason. A common cause is that the engine set in `requests.headlines.provider` is not signed in on this computer. Each request is tried once, and not again after a restart; the agent can still describe it. To see the start of your words as the title on purpose, run `agentx requests settings --headlines off`.
+- **`--headlines takes on or off`:** write `on` or `off`, nothing else.
 - **An agent's describe is refused with `headline is only a reference`:** the headline was only an issue number, an id or a link. Say what the request is in words, and put the link in the request's `home` instead.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.

@@ -216,6 +216,13 @@ describe("settings", () => {
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests.plans).toEqual({ stallMinutes: 45, disabledAgents: ["bot"] })
     expect(readRequestSettings(configPath).plans).toEqual({ enabled: true, stallMinutes: 45, maxNudges: 3, approveKinds: ["message"], disabledAgents: ["bot"], requireForWork: ["code"], requireOverMinutes: 30 })
     expect((await updateRequestSettings({ plans: { maxNudges: -1 } }, { configPath, reload: false })).success).toBe(false)
+    // Headlines (#1126): the switch only; provider, model and timeout stay as set.
+    const withHeadlines = JSON.parse(readFileSync(configPath, "utf-8"))
+    withHeadlines.requests.headlines = { model: "small-model" }
+    writeFileSync(configPath, JSON.stringify(withHeadlines))
+    expect((await updateRequestSettings({ headlines: { enabled: false } }, { configPath, reload: false })).success).toBe(true)
+    expect(JSON.parse(readFileSync(configPath, "utf-8")).requests.headlines).toEqual({ model: "small-model", enabled: false })
+    expect(readRequestSettings(configPath).headlines).toMatchObject({ enabled: false, model: "small-model" })
   })
 })
 
