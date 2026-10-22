@@ -113,6 +113,15 @@ export const APP_PINS_SCRIPT = `
     api('POST', '/api/app/pins/' + act, body)
       .then(load).catch(function (e) { err.textContent = e.message; b.disabled = false; });
   });
+  // Opening a pin leaves /app, which ends a voice turn under way (recording,
+  // waiting on the answer, or reading it out). Ask first; idle opens at once.
+  bar.addEventListener('click', function (ev) {
+    var a = ev.target.closest('a.pin-btn');
+    var V = window.AXVoice;
+    var state = V && typeof V.state === 'function' ? V.state() : 'idle';
+    if (!a || state === 'idle') return;
+    if (!confirm('Open ' + a.textContent + '? The voice reply in progress will stop.')) ev.preventDefault();
+  });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) load(); });
   load();
 })();

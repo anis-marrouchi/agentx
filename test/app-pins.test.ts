@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { createServer, type Server } from "http"
-import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs"
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "fs"
 import { tmpdir } from "os"
 import { join } from "path"
 import { TokenStore } from "../src/daemon/token-store"
@@ -75,6 +75,20 @@ describe("PinStore", () => {
     const partly = join(dir, "partly.json")
     writeFileSync(partly, JSON.stringify({ pins: [{ id: "pin_abcdef", label: "Ok", url: "https://ok.example", createdAt: "x" }, { id: "x" }] }))
     expect(new PinStore(partly).rename("pin_abcdef", "New")).toMatchObject({ ok: false, status: 409 })
+  })
+  it("waits for a change another process is making, and refuses when it never ends", () => {
+    const path = join(dir, "locked.json")
+    const s = new PinStore(path)
+    expect(s.add({ label: "A", url: "https://a.example" }, 5).ok).toBe(true)
+    expect(existsSync(`${path}.lock`)).toBe(false)
+    // A fresh lock: another process (the CLI, the daemon) is mid-change.
+    writeFileSync(`${path}.lock`, "")
+    const t0 = Date.now()
+    expect(s.add({ label: "B", url: "https://b.example" }, 5)).toMatchObject({ ok: false, status: 409 })
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(2000)
+    expect(s.list().map((p) => p.label)).toEqual(["A"])
+    rmSync(`${path}.lock`)
+    expect(s.add({ label: "B", url: "https://b.example" }, 5).ok).toBe(true)
   })
   it("writes the file readable by the owner only", () => {
     const path = join(dir, "mode.json")
@@ -158,13 +172,14 @@ describe("phone app page", () => {
 
   // Runs the shipped script against a minimal fake page and returns the
   // button row's HTML once /api/app/pins answered with `pins`.
-  async function barFor(pins: unknown[]): Promise<{ html: string; hidden: boolean }> {
+  async function barFor(pins: unknown[], window: any = {}, confirm: (q: string) => boolean = () => true): Promise<{ html: string; hidden: boolean; click: (target: any) => boolean }> {
     const els = new Map<string, any>()
     const el = (id: string) => {
       if (!els.has(id)) {
+        const on: Record<string, (ev: any) => void> = {}
         els.set(id, {
-          id, textContent: "", innerHTML: "", hidden: false, className: "",
-          addEventListener: () => {}, insertBefore: () => {}, elements: { namedItem: () => ({ value: "" }) },
+          id, textContent: "", innerHTML: "", hidden: false, className: "", on,
+          addEventListener: (type: string, fn: (ev: any) => void) => { on[type] = fn }, insertBefore: () => {}, elements: { namedItem: () => ({ value: "" }) },
         })
       }
       return els.get(id)
@@ -175,9 +190,15 @@ describe("phone app page", () => {
       addEventListener: () => {},
     }
     const fetch = async () => ({ ok: true, json: async () => ({ pins, max: 12 }) })
-    new Function("document", "fetch", "URL", APP_PINS_SCRIPT)(document, fetch, URL)
+    new Function("document", "fetch", "URL", "window", "confirm", APP_PINS_SCRIPT)(document, fetch, URL, window, confirm)
     await new Promise((r) => setTimeout(r, 10))
-    return { html: el("pin-bar").innerHTML, hidden: el("pin-bar").hidden }
+    // Clicks the row; true when the click was let through to the link.
+    const click = (target: any) => {
+      let prevented = false
+      el("pin-bar").on.click({ target, preventDefault: () => { prevented = true } })
+      return !prevented
+    }
+    return { html: el("pin-bar").innerHTML, hidden: el("pin-bar").hidden, click }
   }
 
   it("shows each pin as a same-window link, escaped", async () => {
@@ -191,6 +212,23 @@ describe("phone app page", () => {
     const bar = await barFor([{ id: "pin_abcdef", label: "Bad", url: "javascript:alert(1)" }])
     expect(bar.html).toBe("")
     expect(bar.hidden).toBe(true)
+  })
+
+  it("asks before a pin ends a voice turn under way, and opens at once when idle", async () => {
+    const link = { textContent: "Remote", closest: () => link }
+    const asked: string[] = []
+    let state = "idle", answer = false
+    const bar = await barFor([], { AXVoice: { state: () => state } }, (q) => { asked.push(q); return answer })
+    expect(bar.click(link)).toBe(true)
+    expect(asked).toEqual([])
+    state = "speaking"
+    expect(bar.click(link)).toBe(false)
+    expect(asked[0]).toContain("Open Remote?")
+    answer = true
+    expect(bar.click(link)).toBe(true)
+    // No voice script on the page: nothing to lose.
+    const plain = await barFor([])
+    expect(plain.click(link)).toBe(true)
   })
 })
 

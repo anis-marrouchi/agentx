@@ -4,6 +4,7 @@ import { dirname, isAbsolute, resolve } from "path"
 import { randomBytes } from "crypto"
 import type { DaemonConfig } from "./config"
 import { readJson } from "./app-fleet"
+import { LockBusyError, withLock } from "@/wiki/facts/ledger-file"
 
 // --- Pinned pages in the phone app (#1120) ---
 //
@@ -75,7 +76,11 @@ type Changed<T> = { ok: true } & T | { ok: false; status: 404 | 409; error: stri
  *
  *  A file that can't be read as pins (a hand edit gone wrong) is shown
  *  without the entries it can't use, but never written over: every change
- *  is refused until the file is fixed, so no pin is lost to a typo. */
+ *  is refused until the file is fixed, so no pin is lost to a typo.
+ *
+ *  Each change reads and writes under `<file>.lock`, so the daemon (the
+ *  phone's card) and `agentx app pin` (another process) can't drop each
+ *  other's change. */
 export class PinStore {
   constructor(private path: string, private now: () => number = Date.now) {}
 
@@ -98,6 +103,17 @@ export class PinStore {
     return { pins, damaged: !Array.isArray(raw?.pins) || pins.length !== all.length }
   }
 
+  /** Runs one change under the file's lock; a lock held too long is a
+   *  refusal, not a crash. */
+  private locked<T>(fn: () => Changed<T>): Changed<T> {
+    try {
+      return withLock(this.path, fn, { what: "The pinned pages file" })
+    } catch (e) {
+      if (e instanceof LockBusyError) return { ok: false, status: 409, error: e.message }
+      throw e
+    }
+  }
+
   /** The pins to change, or why they can't be changed. */
   private editable(): { ok: true; pins: Pin[] } | { ok: false; status: 409; error: string } {
     const { pins, damaged } = this.load()
@@ -113,6 +129,10 @@ export class PinStore {
   }
 
   add(input: { label: string; url: string }, max: number): Changed<{ pin: Pin }> {
+    return this.locked(() => this.addUnlocked(input, max))
+  }
+
+  private addUnlocked(input: { label: string; url: string }, max: number): Changed<{ pin: Pin }> {
     const e = this.editable()
     if (!e.ok) return e
     const pins = e.pins
@@ -125,6 +145,10 @@ export class PinStore {
   }
 
   rename(id: string, label: string): Changed<{ pin: Pin }> {
+    return this.locked(() => this.renameUnlocked(id, label))
+  }
+
+  private renameUnlocked(id: string, label: string): Changed<{ pin: Pin }> {
     const e = this.editable()
     if (!e.ok) return e
     const pins = e.pins
@@ -137,6 +161,10 @@ export class PinStore {
   }
 
   remove(id: string): Changed<{}> {
+    return this.locked(() => this.removeUnlocked(id))
+  }
+
+  private removeUnlocked(id: string): Changed<{}> {
     const e = this.editable()
     if (!e.ok) return e
     const left = e.pins.filter((p) => p.id !== id)
