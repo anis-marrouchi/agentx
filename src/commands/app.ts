@@ -169,7 +169,7 @@ appCmd
     const pins = store.list()
     if (!pins.length) { console.log(chalk.dim("\n  No pinned pages. Add one with: agentx app pin <label> <https-url>\n")); return }
     console.log("")
-    for (const p of pins) console.log(`  ${p.id}  ${chalk.bold(p.label)}  ${chalk.dim(new URL(p.url).host)}`)
+    for (const p of pins) console.log(`  ${p.id}  ${chalk.bold(p.label)}  ${chalk.dim(new URL(p.url).host)}${p.source === "config" ? chalk.dim("  (agentx.json)") : ""}`)
     console.log("")
   })
 

@@ -151,7 +151,7 @@ Create the key pair that lets this computer send notifications to paired phones.
 
 ### `agentx app pins`
 
-List the pages pinned as buttons in the phone app, with their ids. See [Pinned pages](../dashboard/mobile-pins.md).
+List the pages pinned as buttons in the phone app, with their ids. Buttons set in `agentx.json` (`app.pins.pages`) are marked `(agentx.json)`; `agentx app unpin` can't remove them. See [Pinned pages](../dashboard/mobile-pins.md).
 
 No flags.
 

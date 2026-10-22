@@ -9,7 +9,9 @@
 //     Chrome window and the back gesture returns here; an installed iPhone
 //     app opens it in its in-app browser. A page that asks for the
 //     microphone gets the browser's own prompt for its address.
-//   - the Pinned pages card in the Alerts tab: add, rename, remove.
+//     Offline, the row shows the buttons from the last load.
+//   - the Pinned pages card in the Alerts tab: add, rename, remove. Pins
+//     from agentx.json (source "config") are listed without those buttons.
 //
 // This string lives inside a TypeScript template literal: no backslashes,
 // no dollar-brace and no backticks in it, or the inlined script breaks.
@@ -64,23 +66,39 @@ export const APP_PINS_SCRIPT = `
       });
     });
   }
-  function paint(max) {
-    // The computer only hands out https addresses; checked again here so a
-    // stray value can never become a javascript: link.
-    var safe = pins.filter(function (p) { return typeof p.url === 'string' && p.url.indexOf('https://') === 0; });
+  // The computer only hands out https addresses; checked again here so a
+  // stray value can never become a javascript: link.
+  function https(list) {
+    return list.filter(function (p) { return p && typeof p.url === 'string' && p.url.indexOf('https://') === 0; });
+  }
+  function paintBar(safe) {
     bar.innerHTML = safe.map(function (p) {
       return '<a class="pin-btn" href="' + esc(p.url) + '">' + esc(p.label) + '</a>';
     }).join('');
     bar.hidden = !safe.length;
+  }
+  function paint(max) {
+    var safe = https(pins);
+    paintBar(safe);
+    try { localStorage.setItem('ax-pins', JSON.stringify(safe.map(function (p) { return { label: p.label, url: p.url }; }))); } catch (e) {}
     pill.textContent = safe.length + (safe.length === 1 ? ' page' : ' pages');
     pill.className = 'fx-pill ' + (safe.length ? 'fx-on' : 'fx-off');
     list.innerHTML = safe.length ? safe.map(function (p) {
+      if (p.source === 'config') {
+        return '<li class="pn-row"><span><strong>' + esc(p.label) + '</strong> <small class="fx-muted">' + esc(host(p.url)) + '</small></span>' +
+          '<small class="fx-muted">Set in agentx.json</small></li>';
+      }
       return '<li class="pn-row"><span><strong>' + esc(p.label) + '</strong> <small class="fx-muted">' + esc(host(p.url)) + '</small></span>' +
         '<span class="pn-acts"><button type="button" class="fx-btn" data-act="rename" data-id="' + esc(p.id) + '" data-label="' + esc(p.label) + '">Rename</button>' +
         '<button type="button" class="fx-btn fx-danger-o" data-act="remove" data-id="' + esc(p.id) + '" data-label="' + esc(p.label) + '">Remove</button></span></li>';
     }).join('') : '<li class="fx-muted">No pinned pages yet.</li>';
     addWrap.hidden = typeof max === 'number' && safe.length >= max;
   }
+  // Until the list loads, or while offline, show the buttons from last time.
+  try {
+    var saved = JSON.parse(localStorage.getItem('ax-pins') || '[]');
+    if (Array.isArray(saved)) paintBar(https(saved));
+  } catch (e) {}
   function load() {
     return api('GET', '/api/app/pins').then(function (s) { pins = s.pins || []; paint(s.max); })
       .catch(function (e) { pill.textContent = ''; err.textContent = 'Could not load pinned pages: ' + e.message; });

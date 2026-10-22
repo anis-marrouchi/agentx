@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { dirname, isAbsolute, resolve } from "path"
-import { randomBytes } from "crypto"
+import { createHash, randomBytes } from "crypto"
 import type { DaemonConfig } from "./config"
 import { readJson } from "./app-fleet"
 import { LockBusyError, withLock } from "@/wiki/facts/ledger-file"
@@ -21,12 +21,19 @@ import { LockBusyError, withLock } from "@/wiki/facts/ledger-file"
 //
 // A pinned address can carry a secret (a key in its path), so the file is
 // private to the owner, and neither the address nor the label is logged.
+//
+// Pins also come from `app.pins.pages` in agentx.json (#1121): the same
+// buttons on every phone, listed first and marked `source: "config"`. The
+// phone and `agentx app` can't rename or remove those; agentx.json can.
 
 export interface Pin {
   id: string
   label: string
   url: string
-  createdAt: string
+  /** Absent on pins from agentx.json. */
+  createdAt?: string
+  /** "config" for a pin from `app.pins.pages`; absent for the file's. */
+  source?: "config"
 }
 
 /** The `app.pins` defaults, for `agentx app pin` run without agentx.json. */
@@ -62,6 +69,28 @@ export function parsePinUrl(v: unknown): { ok: true; value: string } | { ok: fal
   return { ok: true, value: url.href }
 }
 
+/** Ids for agentx.json pins come from the address, so they stay the same
+ *  across reloads and reordering. */
+export function configPinId(url: string): string {
+  return `cfg_${createHash("sha256").update(url).digest("hex").slice(0, 12)}`
+}
+
+/** The pins in `app.pins.pages`, in order. An entry that repeats an earlier
+ *  address or name (any case) is left out. */
+export function configPins(pages: { label: string; url: string }[]): Pin[] {
+  const out: Pin[] = []
+  for (const p of pages) {
+    const label = parsePinLabel(p.label)
+    const url = parsePinUrl(p.url)
+    if (!label.ok || !url.ok) continue
+    if (out.some((o) => o.url === url.value || o.label.toLowerCase() === label.value.toLowerCase())) continue
+    out.push({ id: configPinId(url.value), label: label.value, url: url.value, source: "config" })
+  }
+  return out
+}
+
+const FROM_CONFIG = "This button is set in agentx.json (app.pins.pages). Change or remove it there."
+
 export function parsePinInput(body: Record<string, unknown>): { ok: true; value: { label: string; url: string } } | { ok: false; error: string } {
   const label = parsePinLabel(body.label)
   if (!label.ok) return label
@@ -80,12 +109,19 @@ type Changed<T> = { ok: true } & T | { ok: false; status: 404 | 409; error: stri
  *
  *  Each change reads and writes under `<file>.lock`, so the daemon (the
  *  phone's card) and `agentx app pin` (another process) can't drop each
- *  other's change. */
+ *  other's change.
+ *
+ *  `fixed` are the pins from agentx.json: listed first, counted toward the
+ *  limit and the names in use, and never written to the file. */
 export class PinStore {
-  constructor(private path: string, private now: () => number = Date.now) {}
+  constructor(private path: string, private now: () => number = Date.now, private fixed: Pin[] = []) {}
 
   list(): Pin[] {
-    return this.load().pins
+    return [...this.fixed, ...this.load().pins]
+  }
+
+  private isFixed(id: string): boolean {
+    return this.fixed.some((p) => p.id === id)
   }
 
   private load(): { pins: Pin[]; damaged: boolean } {
@@ -136,8 +172,8 @@ export class PinStore {
     const e = this.editable()
     if (!e.ok) return e
     const pins = e.pins
-    if (pins.length >= max) return { ok: false, status: 409, error: `You already have ${max} pinned pages, the most allowed (app.pins.max). Remove one first.` }
-    if (pins.some((p) => p.label.toLowerCase() === input.label.toLowerCase())) return { ok: false, status: 409, error: `You already have a button called ${input.label}.` }
+    if (pins.length + this.fixed.length >= max) return { ok: false, status: 409, error: `You already have ${max} pinned pages, the most allowed (app.pins.max). Remove one first.` }
+    if ([...this.fixed, ...pins].some((p) => p.label.toLowerCase() === input.label.toLowerCase())) return { ok: false, status: 409, error: `You already have a button called ${input.label}.` }
     const pin: Pin = { id: `pin_${randomBytes(6).toString("hex")}`, ...input, createdAt: new Date(this.now()).toISOString() }
     pins.push(pin)
     this.write(pins)
@@ -149,12 +185,13 @@ export class PinStore {
   }
 
   private renameUnlocked(id: string, label: string): Changed<{ pin: Pin }> {
+    if (this.isFixed(id)) return { ok: false, status: 409, error: FROM_CONFIG }
     const e = this.editable()
     if (!e.ok) return e
     const pins = e.pins
     const pin = pins.find((p) => p.id === id)
     if (!pin) return { ok: false, status: 404, error: "No such pinned page." }
-    if (pins.some((p) => p.id !== id && p.label.toLowerCase() === label.toLowerCase())) return { ok: false, status: 409, error: `You already have a button called ${label}.` }
+    if ([...this.fixed, ...pins].some((p) => p.id !== id && p.label.toLowerCase() === label.toLowerCase())) return { ok: false, status: 409, error: `You already have a button called ${label}.` }
     pin.label = label
     this.write(pins)
     return { ok: true, pin }
@@ -165,6 +202,7 @@ export class PinStore {
   }
 
   private removeUnlocked(id: string): Changed<{}> {
+    if (this.isFixed(id)) return { ok: false, status: 409, error: FROM_CONFIG }
     const e = this.editable()
     if (!e.ok) return e
     const left = e.pins.filter((p) => p.id !== id)
@@ -182,7 +220,7 @@ export interface PinsDeps {
 /** Built per request, so a config reload is picked up. */
 export function pinsDeps(config: DaemonConfig, root: string): PinsDeps {
   const s = config.app.pins
-  return { store: new PinStore(pinsFile(root, s.file)), max: s.max }
+  return { store: new PinStore(pinsFile(root, s.file), Date.now, configPins(s.pages)), max: s.max }
 }
 
 /** Handles /api/app/pins* for a paired phone. */

@@ -5,7 +5,7 @@ import { tmpdir } from "os"
 import { join } from "path"
 import { TokenStore } from "../src/daemon/token-store"
 import { handleAppRequest } from "../src/daemon/app-routes"
-import { PinStore, parsePinInput, parsePinUrl, pinsDeps, type PinsDeps } from "../src/daemon/app-pins"
+import { PinStore, configPinId, configPins, parsePinInput, parsePinUrl, pinsDeps, type PinsDeps } from "../src/daemon/app-pins"
 import { daemonConfigSchema } from "../src/daemon/config"
 import { APP_PINS_SCRIPT } from "../src/daemon/ui/pages/app-pins.client"
 import { renderAppPage } from "../src/daemon/ui/pages/app"
@@ -100,8 +100,60 @@ describe("PinStore", () => {
 describe("config", () => {
   it("has defaults and resolves the file from the folder", () => {
     const config = daemonConfigSchema.parse({ node: { id: "n", name: "n" } })
-    expect(config.app.pins).toEqual({ file: ".agentx/app-pins.json", max: 12 })
+    expect(config.app.pins).toEqual({ file: ".agentx/app-pins.json", max: 12, pages: [] })
     expect(pinsDeps(config, dir).max).toBe(12)
+  })
+  it("takes https pages and refuses anything else", () => {
+    const parse = (pages: unknown) => daemonConfigSchema.safeParse({ node: { id: "n", name: "n" }, app: { pins: { pages } } })
+    expect(parse([{ label: "Status", url: "https://status.example" }]).success).toBe(true)
+    expect(parse([{ label: "Status", url: "http://status.example" }]).success).toBe(false)
+    expect(parse([{ label: "Status", url: "https://me:pw@status.example" }]).success).toBe(false)
+    expect(parse([{ label: "", url: "https://status.example" }]).success).toBe(false)
+    expect(parse([{ label: "Status", url: "https://status.example", extra: 1 }]).success).toBe(false)
+  })
+  it("hands the pages to the store, before the file's", () => {
+    const config = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, app: { pins: { file: join(dir, "cfg-deps.json"), pages: [{ label: "Status", url: "https://status.example" }] } } })
+    const { store, max } = pinsDeps(config, dir)
+    expect(store.add({ label: "Remote", url: "https://remote.example" }, max).ok).toBe(true)
+    expect(store.list().map((p) => [p.label, p.source])).toEqual([["Status", "config"], ["Remote", undefined]])
+  })
+})
+
+// Pins from agentx.json (app.pins.pages, #1121).
+describe("config pins", () => {
+  const cfg = configPins([
+    { label: "Status", url: "https://status.example/" },
+    { label: "Again", url: "https://status.example/" },
+    { label: "STATUS", url: "https://other.example/" },
+    { label: "Plain", url: "http://plain.example/" },
+    { label: "Tool", url: "https://tool.example/a" },
+  ])
+
+  it("keeps the valid ones in order, without repeated addresses or names", () => {
+    expect(cfg.map((p) => p.label)).toEqual(["Status", "Tool"])
+    expect(cfg.every((p) => p.source === "config")).toBe(true)
+  })
+  it("gives each a stable id from its address", () => {
+    expect(cfg[0].id).toBe(configPinId("https://status.example/"))
+    expect(configPins([{ label: "Other name", url: "https://tool.example/a" }])[0].id).toBe(cfg[1].id)
+    expect(cfg[0].id).toMatch(/^cfg_[a-f0-9]{12}$/)
+  })
+  it("lists them first, counts them toward the limit and the names in use", () => {
+    const s = new PinStore(join(dir, `cfg-${n++}.json`), Date.now, cfg)
+    expect(s.add({ label: "tool", url: "https://x.example" }, 5)).toMatchObject({ ok: false, status: 409 })
+    expect(s.add({ label: "Remote", url: "https://x.example" }, 3).ok).toBe(true)
+    expect(s.add({ label: "More", url: "https://y.example" }, 3)).toMatchObject({ ok: false, status: 409 })
+    expect(s.list().map((p) => p.label)).toEqual(["Status", "Tool", "Remote"])
+    const own = s.list()[2]
+    expect(s.rename(own.id, "status")).toMatchObject({ ok: false, status: 409 })
+  })
+  it("can't be renamed or removed, and never lands in the file", () => {
+    const path = join(dir, `cfg-${n++}.json`)
+    const s = new PinStore(path, Date.now, cfg)
+    expect(s.rename(cfg[0].id, "New")).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("agentx.json") })
+    expect(s.remove(cfg[0].id)).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("agentx.json") })
+    s.add({ label: "Remote", url: "https://x.example" }, 5)
+    expect(JSON.parse(readFileSync(path, "utf-8")).pins.map((p: any) => p.label)).toEqual(["Remote"])
   })
 })
 
@@ -172,7 +224,10 @@ describe("phone app page", () => {
 
   // Runs the shipped script against a minimal fake page and returns the
   // button row's HTML once /api/app/pins answered with `pins`.
-  async function barFor(pins: unknown[], window: any = {}, confirm: (q: string) => boolean = () => true): Promise<{ html: string; hidden: boolean; click: (target: any) => boolean }> {
+  async function barFor(
+    pins: unknown[], window: any = {}, confirm: (q: string) => boolean = () => true,
+    opts: { localStorage?: any; offline?: boolean } = {},
+  ): Promise<{ html: string; hidden: boolean; list: string; click: (target: any) => boolean }> {
     const els = new Map<string, any>()
     const el = (id: string) => {
       if (!els.has(id)) {
@@ -189,8 +244,11 @@ describe("phone app page", () => {
       createElement: () => ({ set innerHTML(_: string) {} }),
       addEventListener: () => {},
     }
-    const fetch = async () => ({ ok: true, json: async () => ({ pins, max: 12 }) })
-    new Function("document", "fetch", "URL", "window", "confirm", APP_PINS_SCRIPT)(document, fetch, URL, window, confirm)
+    const fetch = async () => {
+      if (opts.offline) throw new Error("offline")
+      return { ok: true, json: async () => ({ pins, max: 12 }) }
+    }
+    new Function("document", "fetch", "URL", "window", "confirm", "localStorage", APP_PINS_SCRIPT)(document, fetch, URL, window, confirm, opts.localStorage)
     await new Promise((r) => setTimeout(r, 10))
     // Clicks the row; true when the click was let through to the link.
     const click = (target: any) => {
@@ -198,8 +256,37 @@ describe("phone app page", () => {
       el("pin-bar").on.click({ target, preventDefault: () => { prevented = true } })
       return !prevented
     }
-    return { html: el("pin-bar").innerHTML, hidden: el("pin-bar").hidden, click }
+    return { html: el("pin-bar").innerHTML, hidden: el("pin-bar").hidden, list: el("pn-list").innerHTML, click }
   }
+
+  function memoryStorage() {
+    const m = new Map<string, string>()
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => { m.set(k, String(v)) }, m }
+  }
+
+  it("lists a pin from agentx.json without Rename or Remove", async () => {
+    const bar = await barFor([
+      { id: "cfg_abcdef123456", label: "Status", url: "https://status.example/", source: "config" },
+      { id: "pin_abcdef", label: "Remote", url: "https://remote.example/" },
+    ])
+    const [cfgRow, ownRow] = bar.list.split("</li>")
+    expect(cfgRow).toContain("Set in agentx.json")
+    expect(cfgRow).not.toContain("data-act")
+    expect(ownRow).toContain('data-act="rename"')
+    expect(bar.html).toContain(">Status</a>")
+  })
+
+  it("offline, shows the buttons from the last load", async () => {
+    const storage = memoryStorage()
+    await barFor([{ id: "pin_abcdef", label: "Remote", url: "https://remote.example/" }], {}, () => true, { localStorage: storage })
+    expect(JSON.parse(storage.m.get("ax-pins")!)).toEqual([{ label: "Remote", url: "https://remote.example/" }])
+    const offline = await barFor([], {}, () => true, { localStorage: storage, offline: true })
+    expect(offline.hidden).toBe(false)
+    expect(offline.html).toBe('<a class="pin-btn" href="https://remote.example/">Remote</a>')
+    // A non-https value in the saved list is still never a link.
+    storage.setItem("ax-pins", JSON.stringify([{ label: "Bad", url: "javascript:alert(1)" }]))
+    expect((await barFor([], {}, () => true, { localStorage: storage, offline: true })).html).toBe("")
+  })
 
   it("shows each pin as a same-window link, escaped", async () => {
     const bar = await barFor([{ id: "pin_abcdef", label: "<b>Remote</b>", url: "https://host.example/a?b=1&c=2" }])
