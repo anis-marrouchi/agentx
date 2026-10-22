@@ -1901,6 +1901,10 @@ export const daemonConfigSchema = z.object({
           try { const x = new URL(u); return x.protocol === "https:" && !!x.hostname && !x.username && !x.password } catch { return false }
         }, "must be an https:// address with no user name or password"),
       }).strict()).max(50).default([]),
+    }).superRefine((v, ctx) => {
+      // More config pages than `max` would show them all and leave no room
+      // to add one from the phone, without saying why.
+      if (v.pages.length > v.max) ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["pages"], message: `has ${v.pages.length} pages, more than app.pins.max (${v.max}). Raise max or remove pages.` })
     }).default({}),
   }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */

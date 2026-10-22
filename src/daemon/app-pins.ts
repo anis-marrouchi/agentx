@@ -117,7 +117,15 @@ export class PinStore {
   constructor(private path: string, private now: () => number = Date.now, private fixed: Pin[] = []) {}
 
   list(): Pin[] {
-    return [...this.fixed, ...this.load().pins]
+    return this.shown(this.load().pins)
+  }
+
+  /** The config pins, then the file's. A file pin whose name a config pin
+   *  took later (the same page moved into agentx.json) is left out, so the
+   *  row never shows two buttons with one name. */
+  private shown(pins: Pin[]): Pin[] {
+    const taken = new Set(this.fixed.map((p) => p.label.toLowerCase()))
+    return [...this.fixed, ...pins.filter((p) => !taken.has(p.label.toLowerCase()))]
   }
 
   private isFixed(id: string): boolean {
@@ -172,7 +180,7 @@ export class PinStore {
     const e = this.editable()
     if (!e.ok) return e
     const pins = e.pins
-    if (pins.length + this.fixed.length >= max) return { ok: false, status: 409, error: `You already have ${max} pinned pages, the most allowed (app.pins.max). Remove one first.` }
+    if (this.shown(pins).length >= max) return { ok: false, status: 409, error: `You already have ${max} pinned pages, the most allowed (app.pins.max). Remove one first.` }
     if ([...this.fixed, ...pins].some((p) => p.label.toLowerCase() === input.label.toLowerCase())) return { ok: false, status: 409, error: `You already have a button called ${input.label}.` }
     const pin: Pin = { id: `pin_${randomBytes(6).toString("hex")}`, ...input, createdAt: new Date(this.now()).toISOString() }
     pins.push(pin)

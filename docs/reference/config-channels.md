@@ -223,7 +223,7 @@ The phone app beyond pairing and notifications: the AgentX Android app and place
 | `app.places.syncMinutes` | number (15 to 1440) | `60` | How often the Android app checks for added or removed places. Android runs background checks at most every 15 minutes. |
 | `app.pins.file` | string | `".agentx/app-pins.json"` | Where the phone app's pinned pages are kept, relative to the folder that holds `agentx.json`. See [Pinned pages](../dashboard/mobile-pins.md). |
 | `app.pins.max` | number (1 to 50) | `12` | Most pages you can pin as buttons in the phone app, counting `app.pins.pages`. |
-| `app.pins.pages` | array of `{ label, url }` (at most 50) | `[]` | Buttons for every paired phone, set here instead of in the app. `https://` only; read only in the phone app and `agentx app`. See [Pinned pages](../dashboard/mobile-pins.md#set-buttons-in-agentx-json). |
+| `app.pins.pages` | array of `{ label, url }` (at most 50) | `[]` | Buttons for every paired phone, set here instead of in the app. `https://` only, and no more than `app.pins.max`; read only in the phone app and `agentx app`. See [Pinned pages](../dashboard/mobile-pins.md#set-buttons-in-agentx-json). |
 
 ## ntfy
 

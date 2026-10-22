@@ -110,6 +110,11 @@ describe("config", () => {
     expect(parse([{ label: "Status", url: "https://me:pw@status.example" }]).success).toBe(false)
     expect(parse([{ label: "", url: "https://status.example" }]).success).toBe(false)
     expect(parse([{ label: "Status", url: "https://status.example", extra: 1 }]).success).toBe(false)
+    const many = Array.from({ length: 13 }, (_, i) => ({ label: `P${i}`, url: `https://p${i}.example` }))
+    const over = parse(many)
+    expect(over.success).toBe(false)
+    expect(JSON.stringify(over.error?.issues)).toContain("more than app.pins.max (12)")
+    expect(daemonConfigSchema.safeParse({ node: { id: "n", name: "n" }, app: { pins: { max: 13, pages: many } } }).success).toBe(true)
   })
   it("hands the pages to the store, before the file's", () => {
     const config = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, app: { pins: { file: join(dir, "cfg-deps.json"), pages: [{ label: "Status", url: "https://status.example" }] } } })
@@ -146,6 +151,13 @@ describe("config pins", () => {
     expect(s.list().map((p) => p.label)).toEqual(["Status", "Tool", "Remote"])
     const own = s.list()[2]
     expect(s.rename(own.id, "status")).toMatchObject({ ok: false, status: 409 })
+  })
+  it("hides a file pin whose name a config pin took later", () => {
+    const path = join(dir, `cfg-${n++}.json`)
+    new PinStore(path).add({ label: "status", url: "https://status.example/" }, 5)
+    const s = new PinStore(path, Date.now, cfg)
+    expect(s.list().map((p) => p.label)).toEqual(["Status", "Tool"])
+    expect(s.add({ label: "Remote", url: "https://x.example" }, 3).ok).toBe(true)
   })
   it("can't be renamed or removed, and never lands in the file", () => {
     const path = join(dir, `cfg-${n++}.json`)
