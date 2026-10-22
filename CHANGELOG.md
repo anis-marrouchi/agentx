@@ -2,6 +2,23 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.153.0](https://github.com/anis-marrouchi/agentx/compare/v0.152.0...v0.153.0) (2026-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **app:** app.pins.pages (shipped in 0.152.0) may no longer list more pages than app.pins.max (default 12). A config that was valid on 0.152.0 with more pages than max now fails validation; raise app.pins.max or remove pages.
+
+### Features
+
+* **notify:** one told-the-owner record, told once, nags in the digest ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1129](https://github.com/anis-marrouchi/agentx/issues/1129)) ([5b8844b](https://github.com/anis-marrouchi/agentx/commit/5b8844bcd5a073fb195f1ffea8bbb849634d8ff8))
+* **requests:** switch for daemon headlines in the CLI and dashboard ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1132](https://github.com/anis-marrouchi/agentx/issues/1132)) ([f3a42ec](https://github.com/anis-marrouchi/agentx/commit/f3a42ec52558e6c3d7ecb2809bda56823b5f8d21))
+
+
+### Bug Fixes
+
+* **app:** no repeated pinned buttons, pages within app.pins.max, unpair note ([#1125](https://github.com/anis-marrouchi/agentx/issues/1125) follow-up) ([afcabd5](https://github.com/anis-marrouchi/agentx/commit/afcabd5556925b8ef3fe7f5cee92fdb1b784f25e))
+
 ## [0.152.0](https://github.com/anis-marrouchi/agentx/compare/v0.151.0...v0.152.0) (2026-10-22)
 
 
