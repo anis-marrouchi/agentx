@@ -210,7 +210,7 @@ export function nudgeText(r: RequestRecord, steps: PlanStep[], s: PlanStep, minu
 export function blockedText(r: RequestRecord, steps: PlanStep[], s: PlanStep): string {
   return [
     `Step ${s.idx} of ${steps.length}, "${s.name}" (${s.agentId}), is blocked: ${clip(s.note ?? "no reason given", 300)}`,
-    `You asked ${r.agentId}: ${clip(r.text, 240)}`,
+    `You said: ${clip(r.text, 240)}`,
     ...stepLines(steps),
     `To go on: answer the agent, or run \`agentx requests step ${r.id} ${s.idx} --retry\` (or --skip).`,
   ].join("\n")
@@ -219,8 +219,9 @@ export function blockedText(r: RequestRecord, steps: PlanStep[], s: PlanStep): s
 /** The owner's one notice when every step is finished. */
 export function summaryText(r: RequestRecord, steps: PlanStep[]): string {
   return [
-    `Done: what you asked ${r.agentId} on ${r.channel}: ${clip(r.text, 240)}`,
+    `Done: every step ${r.agentId} planned is finished.`,
     ...stepLines(steps),
+    `You said (${r.channel}): ${clip(r.text, 240)}`,
   ].join("\n")
 }
 

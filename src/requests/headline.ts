@@ -83,17 +83,18 @@ export interface HeadlineSettings {
 export const DEFAULT_HEADLINE_SETTINGS: HeadlineSettings = { enabled: true, timeoutSeconds: 30 }
 
 export interface HeadlineWriterDeps {
-  store: Pick<RequestStore, "get" | "setHeadline" | "withoutHeadline">
+  store: Pick<RequestStore, "get" | "setHeadline" | "withoutHeadline" | "markHeadlineTried">
   /** One model call: the prompt in, the model's text out. */
   generate: (prompt: string, signal: AbortSignal) => Promise<string>
   settings: () => HeadlineSettings
   log: (msg: string) => void
+  now?: () => number
 }
 
-/** Writes the missing headlines, each request at most once per process:
- *  a model that cannot write one is not asked again every minute. */
+/** Writes the missing headlines, each request at most once: the attempt
+ *  is kept on the request, so a model that cannot write one is not asked
+ *  again every minute, nor after a restart. */
 export class HeadlineWriter {
-  private tried = new Set<string>()
   private filling = false
 
   constructor(private deps: HeadlineWriterDeps) {}
@@ -101,8 +102,9 @@ export class HeadlineWriter {
   /** The request with a headline when one could be written; as it was otherwise. */
   async ensure(r: RequestRecord): Promise<RequestRecord> {
     const settings = this.deps.settings()
-    if (r.headline || !settings.enabled || this.tried.has(r.id)) return r
-    this.tried.add(r.id)
+    if (r.headline || !settings.enabled || r.headlineTriedAt) return r
+    // Marked first: a call that hangs or crashes the process is not repeated.
+    this.deps.store.markHeadlineTried(r.id, (this.deps.now ?? Date.now)())
     const ac = new AbortController()
     const timer = setTimeout(() => ac.abort(), settings.timeoutSeconds * 1000)
     timer.unref?.()
@@ -129,10 +131,8 @@ export class HeadlineWriter {
     this.filling = true
     let written = 0
     try {
-      for (const r of this.deps.store.withoutHeadline(limit * 4)) {
-        if (this.tried.has(r.id)) continue
+      for (const r of this.deps.store.withoutHeadline(limit)) {
         if ((await this.ensure(r)).headline) written++
-        if (--limit <= 0) break
       }
     } finally {
       this.filling = false

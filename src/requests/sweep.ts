@@ -97,6 +97,8 @@ export function pickupText(r: RequestRecord): string {
 }
 
 const HOUR = 3_600_000
+/** Time one check may spend writing headlines before it tells the owner. */
+export const DESCRIBE_BUDGET_MS = 45_000
 
 /** The notice's title (#1126): what the request is, then that it stopped. */
 export function attentionTitle(r: RequestRecord): string {
@@ -181,13 +183,22 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   }
 
   try {
+    // Headlines get a share of the check, not all of it: past the budget
+    // a notice goes out with the owner's words, and the background fill
+    // writes its headline later.
+    let describing = 0
     for (const r of store.awaitingNotice()) {
       // Marked first: a notice that hangs must not be sent twice.
       store.markNotified(r.id, now)
       if (!deps.notify) continue
       try {
         // Told what it is, not only that it stopped (#1126).
-        const described = deps.describe ? await deps.describe(r) : r
+        let described = r
+        if (deps.describe && describing < DESCRIBE_BUDGET_MS) {
+          const started = Date.now()
+          described = await deps.describe(r)
+          describing += Date.now() - started
+        }
         await deps.notify(attentionTitle(described), attentionText(described, deps.hasAgent), described)
         result.notified++
       } catch (e: any) {

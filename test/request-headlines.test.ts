@@ -225,6 +225,70 @@ describe("the daemon's headline writer", () => {
   })
 })
 
+describe("after review", () => {
+  const writer = (generate: (p: string, s: AbortSignal) => Promise<string>) =>
+    new HeadlineWriter({ store, generate, settings: () => ({ enabled: true, timeoutSeconds: 5 }), log: () => {}, now: () => 6_000 })
+
+  it("drops a need written for the owner's answer once work goes on, or the request is handed back", () => {
+    turn("t1")
+    expect(api({ action: "wait", question: "Which date?", need: "Pick a date." }).status).toBe(200)
+    store.progress("req-t1", 7_000)
+    expect(store.get("req-t1")?.need).toBeNull()
+    store.setHeadline("req-t1", { need: "Pick a date." }, "agent")
+    store.needsAttention("req-t1", "quiet", 8_000)
+    store.requestPickup("req-t1", 9_000)
+    expect(store.get("req-t1")?.need).toBeNull()
+  })
+
+  it("writes a need only when its action went through", () => {
+    turn("t1")
+    expect(api({ action: "wait", need: "Pick a date." }).status).toBe(400)
+    expect(store.get("req-t1")?.need).toBeNull()
+    expect(api({ action: "accept", need: "Nothing, just so you know.", headline: "Book the venue" }).status).toBe(200)
+    expect(store.get("req-t1")).toMatchObject({ need: "Nothing, just so you know.", headline: "Book the venue" })
+  })
+
+  it("keeps saying the model wrote the headline when the agent adds only a need", () => {
+    turn("t1")
+    store.setHeadline("req-t1", { headline: "Model's words" }, "model")
+    store.setHeadline("req-t1", { need: "Nothing." }, "agent")
+    expect(store.get("req-t1")).toMatchObject({ headline: "Model's words", headlineBy: "model", need: "Nothing." })
+  })
+
+  it("asks once per request, even across restarts, and the fill gets past the ones it tried", async () => {
+    for (const t of ["t1", "t2", "t3"]) { turn(t, `ask ${t}`); store.progress(`req-${t}`, 6_000) }
+    const failing = vi.fn(async () => { throw new Error("down") })
+    expect(await writer(failing).fill(2)).toBe(0)
+    expect(failing).toHaveBeenCalledTimes(2)
+    // A new writer: the daemon restarted.
+    const working = vi.fn(async (p: string) => `{"headline":"About ${p.match(/ask (t\d)/)![1]}"}`)
+    expect(await writer(working).fill(2)).toBe(1)
+    expect(working).toHaveBeenCalledTimes(1)
+    expect(store.get("req-t1")?.headline).toBe("About t1")
+  })
+
+  it("shows a refused request popup once its agent described it", async () => {
+    const { popNext } = await import("../src/approvals/popup-runner")
+    turn("t9", "review #412")
+    store.needsAttention("req-t9", "timed out", 6_000)
+    const shown: string[] = []
+    const told: string[] = []
+    const deps = {
+      ctx: { root: tmp, now: 7_000, requests: store }, log: () => {}, platform: "darwin" as const,
+      settings: { enabled: true, speak: false, sound: "", volume: 0, timeoutSeconds: 30 },
+      focus: () => ({ active: false, mode: null, reason: "test" }),
+      show: async (c: any) => { shown.push(c.title); return { action: "dismiss" as const } },
+      returnToAuthor: (_c: any, text: string) => { told.push(text) },
+    }
+    expect(await popNext(deps as any)).toBe("returned")
+    expect(await popNext(deps as any)).toBe("none")
+    expect(told).toHaveLength(1)
+    store.setHeadline("req-t9", { headline: "Review the login fix" }, "agent")
+    await popNext(deps as any)
+    expect(shown).toEqual(["Review the login fix"])
+  })
+})
+
 describe("the owner's notice", () => {
   it("is titled with the headline written just before it is sent", async () => {
     turn("t1")

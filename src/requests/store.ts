@@ -116,6 +116,9 @@ export interface RequestRecord {
   /** Who wrote them: the agent, or the daemon's one model call when the
    *  agent did not. An agent's words are never replaced by the model's. */
   headlineBy: "agent" | "model" | null
+  /** When the daemon last asked the model for a headline: each request
+   *  is asked once, across restarts. */
+  headlineTriedAt: number | null
 }
 
 export const TEXT_MAX = 4000
@@ -163,7 +166,7 @@ export function ensureRequestTables(db: Database.Database): void {
     ["owed_to", "TEXT"], ["promise", "INTEGER"], ["due_at", "INTEGER"], ["close_when", "TEXT"], ["checked_at", "INTEGER"],
     ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"],
     ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"],
-    ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"]]) {
+    ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"], ["headline_tried_at", "INTEGER"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -194,6 +197,7 @@ function toRecord(r: any): RequestRecord {
     work: r.work ?? null, estimateMinutes: r.estimate_minutes ?? null,
     firstWork: r.first_work ?? null, firstEstimateMinutes: r.first_estimate_minutes ?? null,
     headline: r.headline ?? null, need: r.need ?? null, headlineBy: r.headline_by === "agent" || r.headline_by === "model" ? r.headline_by : null,
+    headlineTriedAt: r.headline_tried_at ?? null,
   }
 }
 
@@ -276,17 +280,25 @@ export class RequestStore {
   setHeadline(id: string, h: { headline?: string; need?: string }, by: "agent" | "model"): boolean {
     if (h.headline === undefined && h.need === undefined) return false
     const guard = by === "model" ? " AND headline IS NULL" : ""
+    // headline_by says who wrote the headline: a need alone does not change it.
     return this.db.prepare(
-      `UPDATE requests SET headline = COALESCE(?, headline), need = COALESCE(?, need), headline_by = ? WHERE id = ?${guard}`,
-    ).run(h.headline ?? null, h.need ?? null, by, id).changes > 0
+      `UPDATE requests SET headline = COALESCE(?, headline), need = COALESCE(?, need),
+         headline_by = CASE WHEN ? IS NULL THEN headline_by ELSE ? END WHERE id = ?${guard}`,
+    ).run(h.headline ?? null, h.need ?? null, h.headline ?? null, by, id).changes > 0
   }
 
-  /** Open requests the owner may see that have no headline yet, newest
-   *  first: the ones the daemon writes one for. */
+  /** Open requests the owner may see that have no headline yet and were
+   *  not tried, newest first: the ones the daemon writes one for. */
   withoutHeadline(limit = 20): RequestRecord[] {
     return this.db.prepare(
-      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND headline IS NULL ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND headline IS NULL AND headline_tried_at IS NULL
+       ORDER BY created_at DESC, rowid DESC LIMIT ?`,
     ).all(...OPEN_STATES, limit).map(toRecord)
+  }
+
+  /** The model was asked for this request's headline: not asked again. */
+  markHeadlineTried(id: string, now: number): void {
+    this.db.prepare("UPDATE requests SET headline_tried_at = ? WHERE id = ?").run(now, id)
   }
 
   /** What the checker said. `met` is written by closeVerified, not here.
@@ -373,8 +385,10 @@ export class RequestStore {
   /** Work is under way. Opens a candidate; clears an earlier "needs
    *  attention" so a later failure is raised again. Closed stays closed. */
   progress(id: string, now: number, state: "in_progress" | "waiting_other" = "in_progress"): void {
+    // A need written for the owner's answer is met once work goes on (#1126).
     this.db.prepare(
-      `UPDATE requests SET ${STATE_CHANGED}, state = ?, updated_at = ?, attention_reason = NULL, notified_at = NULL, question = NULL
+      `UPDATE requests SET ${STATE_CHANGED}, state = ?, updated_at = ?, attention_reason = NULL, notified_at = NULL, question = NULL,
+         need = CASE WHEN state IN ('waiting_owner', 'needs_attention') THEN NULL ELSE need END
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
     ).run(state, now, state, now, id, ...CLOSED_STATES)
   }
@@ -492,7 +506,7 @@ export class RequestStore {
    *  is to be told at the next check. */
   requestPickup(id: string, now: number): boolean {
     return this.db.prepare(
-      `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?
+      `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?, need = NULL
        WHERE id = ? AND state = 'needs_attention'`,
     ).run(now, now, now, id).changes > 0
   }
@@ -504,7 +518,7 @@ export class RequestStore {
   handOff(id: string, agentId: string, note: string, now: number): boolean {
     return this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
-         question = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)
+         question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)
        WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
     ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
   }

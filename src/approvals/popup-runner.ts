@@ -100,14 +100,22 @@ function requestsWaiting(ctx: InboxContext): RequestRecord[] {
   try { return requestStoreFor(ctx)?.listByState("needs_attention") ?? [] } catch { return [] }
 }
 
+/** Requests the screen gate refused, by id, with the title it refused
+ *  (#1126). Not marked shown: once its agent describes it, the new title
+ *  is tried. Kept in memory; after a restart a refused one is tried once
+ *  more. */
+const refusedTitles = new Map<string, string>()
+
 /** The next request to show: it came to need attention in the last day,
- *  was not shown yet, and was not put off. */
+ *  was not shown yet, was not put off, and is not one the gate refused
+ *  under the title it still has. */
 export function nextRequestToPop(ctx: InboxContext): RequestRecord | null {
   const now = ctx.now ?? Date.now()
   const { popped = {}, snoozed } = readInboxState(ctx.root)
   return requestsWaiting(ctx).find((r) => {
     const key = `request:${r.id}`
     const until = snoozed[key]
+    if (refusedTitles.get(r.id) === cardWords(r, CARD_LIMITS.title).headline) return false
     return !popped[key] && !(until && Date.parse(until) > now) && now - r.updatedAt <= POPUP_MAX_AGE_MS
   }) ?? null
 }
@@ -144,8 +152,11 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
   const key = `${request ? "request" : "card"}:${card.id}`
   const broken = (readInboxState(ctx.root).wanted ?? []).includes(key) ? null : cardRuleBreak(card)
   if (broken) {
-    const waiting = [...listCards(ctx.root, "pending").map((c) => `card:${c.id}`), ...requestsWaiting(ctx).map((r) => `request:${r.id}`)]
-    recordPopped(ctx.root, key, waiting, ctx.now)
+    if (request) refusedTitles.set(request.id, card.title)
+    else {
+      const waiting = [...listCards(ctx.root, "pending").map((c) => `card:${c.id}`), ...requestsWaiting(ctx).map((r) => `request:${r.id}`)]
+      recordPopped(ctx.root, key, waiting, ctx.now)
+    }
     log(`[approvals] popup: ${key} not shown, back to ${card.raised_by}: ${broken}`)
     deps.returnToAuthor?.(card, returnedText(card, broken))
     return "returned"

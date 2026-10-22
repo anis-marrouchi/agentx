@@ -304,10 +304,15 @@ export function handleRequestsApi(
 
     if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
 
-    // Written before the action runs, so an accept the plan gate refuses
-    // still leaves the request described. Not a touch.
-    store.setHeadline(request.id, described, "agent")
-    if (action === "describe") return { status: 200, body: { request: store.get(request.id) } }
+    // The headline is written before the action runs, so an accept the
+    // plan gate refuses still leaves the request described. The need only
+    // once the action went through: it says what the new state needs.
+    // Neither is a touch.
+    if (action === "describe") {
+      store.setHeadline(request.id, described, "agent")
+      return { status: 200, body: { request: store.get(request.id) } }
+    }
+    if (described.headline) store.setHeadline(request.id, { headline: described.headline }, "agent")
 
     const home = parseHome(input.home)
     if (typeof home === "string") return { status: 400, body: { error: home } }
@@ -383,6 +388,7 @@ export function handleRequestsApi(
       const parsed = parseSteps(input.steps, { createdBy: agentId, hasAgent: deps.hasAgent, settings })
       if (!parsed.ok) return { status: 400, body: { error: parsed.error } }
       store.progress(request.id, now)
+      if (described.need) store.setHeadline(request.id, { need: described.need }, "agent")
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
       deps.plans.create(request.id, agentId, parsed.steps, now)
@@ -391,8 +397,10 @@ export function handleRequestsApi(
     }
 
     try {
-      if (action === "accept") store.progress(request.id, now)
-      else if (action === "wait") {
+      if (action === "accept") {
+        store.progress(request.id, now)
+        if (described.need) store.setHeadline(request.id, { need: described.need }, "agent")
+      } else if (action === "wait") {
         const question = str(input.question)
         if (!question) return { status: 400, body: { error: "wait needs `question`: what you are asking the owner" } }
         store.waitOnOwner(request.id, question, now, described.need ?? null)

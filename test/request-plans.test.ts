@@ -308,7 +308,8 @@ describe("nudges", () => {
     expect(res.blocked).toBe(1)
     expect(plans.step("req-1", 2)).toMatchObject({ state: "blocked", note: "no progress after 3 nudges" })
     expect(requests.get("req-1")).toMatchObject({ state: "needs_attention" })
-    expect(notices).toEqual([{ title: "Plan step blocked", message: expect.stringContaining("agentx requests step req-1 2 --retry") }])
+    // Titled with what the request is (#1126).
+    expect(notices).toEqual([{ title: expect.stringMatching(/^Plan step blocked: \S/), message: expect.stringContaining("agentx requests step req-1 2 --retry") }])
     // The requests check does not raise it again with its own words.
     await runRequestsSweep({ store: requests, settings: REQ, notify: async (title, message) => { notices.push({ title, message }) }, log: () => {}, now: clock })
     clock += 31 * MIN
@@ -403,7 +404,7 @@ describe("the end of a plan", () => {
     expect(plans.get("req-1")?.state).toBe("done")
     expect(requests.get("req-1")).toMatchObject({ state: "done", evidence: expect.stringContaining("Plan finished.") })
     expect(notices).toHaveLength(1)
-    expect(notices[0]).toMatchObject({ title: "Plan finished" })
+    expect(notices[0].title).toMatch(/^Plan finished: \S/)
     expect(notices[0].message).toContain("3. Tell the client (coder) [done]: sent to telegram chat client-chat")
     await sweep()
     expect(notices).toHaveLength(1)

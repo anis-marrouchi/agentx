@@ -215,6 +215,8 @@ function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<stri
       const detail = q.state === "done" ? q.evidence : q.closeReason
       return {
         ...base,
+        // A closed request needs nothing more: no line saying so.
+        need: undefined,
         column: "done",
         changedAt: iso(q.closedAt ?? q.stateChangedAt ?? q.updatedAt),
         outcome: CLOSED_WORD[q.state] ?? q.state,
