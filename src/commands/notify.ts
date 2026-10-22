@@ -202,9 +202,9 @@ export const notify = new Command()
           chatId: opts.chatId,
         },
         send,
-        // A nag goes to the daemon at once: it waits for the digest there,
-        // and the Focus queue would lose that it is one.
-        { queue, alert: gatedAlert, focus: opts.digest ? { active: false, mode: null, reason: "kept for the digest" } : state },
+        // Focus holds a nag too: when no digest can go out, the daemon
+        // would send it at once, and Focus comes first.
+        { queue, alert: gatedAlert, focus: state },
       )
       const p = proof?.()
       const kept = sender.keptBack()

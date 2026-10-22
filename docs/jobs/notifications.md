@@ -320,7 +320,7 @@ Other problems:
 | The phone does not buzz | With the phone app, see [Notifications on your phone](../dashboard/mobile-alerts.md#if-something-is-wrong). With ntfy, check that the topic in the ntfy app matches `NTFY_TOPIC` exactly, that `agentx notifications show` lists `channel ntfy`, and that you restarted AgentX after saving. |
 | Nothing is held during Focus | Give Full Disk Access to the app that runs AgentX (step 4), or use `~/.agentx/focus.json`. |
 | A scheduled job uses the wrong settings | Add `-c /path/to/agentx.json` to its `agentx notify` command. |
-| A message you expected never came | Run `agentx notify --told`. `repeat` means you were told the same thing in the last 24 hours; `digest` means it waits for the daily digest. Send it with `--urgent` if it cannot wait, or give a different `--key`. |
+| A message you expected never came | Run `agentx notify --told`. `repeat` means you were already told the same thing (with the same `--key` in the last 24 hours, or the same words in the last 20); `digest` means it waits for the daily digest. Send it with `--urgent` if it cannot wait, or give a different `--key`. |
 | A script's message is sent every time even though it says the same thing | A message shorter than 40 characters is never taken for a repeat. Give it a `--key`. |
 | System reminders never arrive | They come in the daily digest. Check that `approvals.digest.enabled` is on and has a destination (`approvals.digest.destination`, or `notifications.destination`). |
 | An agent's spoken answer waits a long time | Another program on this computer is speaking or playing a sound. AgentX waits for it for up to 10 minutes, then speaks anyway. |

@@ -11,10 +11,12 @@ import type Database from "better-sqlite3"
 // The gate decides before anything is sent:
 //
 //   repeat   the same item was already told within the window, on any
-//            channel: not told again. An item is its key: request:<id>,
-//            card:<id>, or what the caller names; without one, a long
-//            enough text is its own key, so a script that sends the same
-//            alarm every hour is told once a day.
+//            channel: not told again. An item is its key: the daemon's
+//            (request:<id>:attention, digest), or what the caller names
+//            (send:<key>). A notice without one (the daemon's own,
+//            agentx notify) is keyed by its text for up to 20 h, so a
+//            script that sends the same alarm every hour is told about
+//            once a day. An agent's answer has no key: never a repeat.
 //   digest   a nag ("not finished", "disk low", "channel down") waits for
 //            the daily digest, which folds every waiting one into a line.
 //   send     anything else. Focus and calls still hold it (notify()).
