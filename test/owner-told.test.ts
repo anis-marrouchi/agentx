@@ -97,6 +97,14 @@ describe("the gate", () => {
     expect(gate.decide(push("WhatsApp stopped reconnecting"), { kind: "nag", key: "channel-down:whatsapp" }).verdict).toBe("send")
   })
 
+  it("does not count a nag kept for a digest that was switched off since: it goes at once", () => {
+    const NAG = { kind: "nag" as const, key: "request:req-1:attention" }
+    expect(gate.decide(push("Not finished: Book the venue"), NAG).verdict).toBe("digest")
+    settings = { ...settings, digestAvailable: false }
+    expect(gate.decide(push("Not finished: Book the venue"), NAG).verdict).toBe("send")
+    expect(gate.decide(push("Not finished: Book the venue"), NAG).verdict).toBe("repeat")
+  })
+
   it("does not count a send that failed: the item is told again", () => {
     const d = gate.decide(push("x", LONG), { key: "card:1" })
     gate.outcome(d.rowId, "failed")

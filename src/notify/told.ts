@@ -148,11 +148,12 @@ export class ToldLedger {
     this.db.prepare("UPDATE owner_told SET outcome = ? WHERE id = ?").run(outcome, id)
   }
 
-  /** The last time this item reached the owner, or was put in the digest,
-   *  since `since`. A failed send does not count: it never arrived. */
-  lastTold(key: string, since: number): ToldRow | null {
+  /** The last time this item reached the owner, or was put in the digest
+   *  (unless `digest` is false: no digest will carry it), since `since`.
+   *  A failed send does not count: it never arrived. */
+  lastTold(key: string, since: number, digest = true): ToldRow | null {
     const r = this.db.prepare(
-      "SELECT * FROM owner_told WHERE item_key = ? AND at >= ? AND outcome IN ('sent', 'held', 'digest') ORDER BY at DESC LIMIT 1",
+      `SELECT * FROM owner_told WHERE item_key = ? AND at >= ? AND outcome IN ('sent', 'held'${digest ? ", 'digest'" : ""}) ORDER BY at DESC LIMIT 1`,
     ).get(key, since)
     return r ? toRow(r) : null
   }
@@ -223,9 +224,12 @@ export class OwnerGate {
     // A text is its own key for less than a day: a report that goes out
     // daily with the same words is not taken for a repeat of yesterday's.
     const windowMs = (key?.startsWith("text:") ? Math.min(s.repeatWindowHours, TEXT_WINDOW_HOURS) : s.repeatWindowHours) * HOUR
+    // A nag kept for the digest counts as told only while a digest can
+    // still carry it: switched off since, it was never told.
+    const digestWaits = s.digestNags && s.digestAvailable !== false
     let verdict: TellDecision["verdict"] = "send"
-    if (!meta.urgent && key && this.ledger.lastTold(key, now - windowMs)) verdict = "repeat"
-    else if (!meta.urgent && kind === "nag" && s.digestNags && s.digestAvailable !== false) verdict = "digest"
+    if (!meta.urgent && key && this.ledger.lastTold(key, now - windowMs, digestWaits)) verdict = "repeat"
+    else if (!meta.urgent && kind === "nag" && digestWaits) verdict = "digest"
     const rowId = this.ledger.add({
       at: now, key: key ?? `once:${now}`, requestId: meta.requestId ?? null,
       kind, channel: msg.channel, chatId: msg.chatId, from: meta.from ?? null, title: msg.title, text: msg.text,
