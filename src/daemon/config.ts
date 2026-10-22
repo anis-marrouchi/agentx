@@ -1904,6 +1904,15 @@ export const daemonConfigSchema = z.object({
        *  the daemon runs in (the one holding agentx.json). */
       file: z.string().min(1).default(".agentx/app-pins.json"),
       max: z.number().int().min(1).max(50).default(12),
+      /** Buttons for every paired phone, set here rather than in the app
+       *  (#1121). Read only from the phone and `agentx app`; they count
+       *  toward `max`. https only, with no user name or password. */
+      pages: z.array(z.object({
+        label: z.string().trim().min(1).max(40),
+        url: z.string().max(2000).refine((u) => {
+          try { const x = new URL(u); return x.protocol === "https:" && !!x.hostname && !x.username && !x.password } catch { return false }
+        }, "must be an https:// address with no user name or password"),
+      }).strict()).max(50).default([]),
     }).default({}),
   }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */
