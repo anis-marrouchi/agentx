@@ -16,6 +16,9 @@ import { callerHeaders } from "@/calls/service"
 //   decline  I will not do it, with the reason
 //   promise  I owe someone something (owedTo, text, due, closeWhen):
 //            an open loop of its own, listed with the open requests
+//   describe what it is (headline) and what is needed from the owner
+//            (need), for every card, push and Desk line (#1126). accept,
+//            wait and promise take the two as well
 //   list     what is still open
 // It talks to the daemon's /requests endpoints. Dropping a request is the
 // owner's alone; there is no action for it here.
@@ -89,6 +92,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         id: args.id, question: args.question, evidence: args.evidence, reason: args.reason,
         steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
+        headline: args.headline, need: args.need,
       }),
       signal: AbortSignal.timeout(action === "done" ? DONE_TIMEOUT_MS : 10_000),
     })
@@ -103,6 +107,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       ].join("\n")
     }
     if (action === "step") return [`Step reported. Plan of ${r.id}:`, ...describeSteps(data.steps)].join("\n")
+    if (action === "describe") return `Request ${r.id} now reads "${r.headline ?? "(no headline)"}" on the owner's cards. Needed from them: ${r.need ?? "what follows from where it stands"}.`
     if (action === "accept") return `Request ${r.id} is open and in progress. Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.`
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`
     if (action === "promise") {

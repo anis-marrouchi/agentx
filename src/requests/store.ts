@@ -107,6 +107,15 @@ export interface RequestRecord {
    *  after a refused accept shows in the audit. */
   firstWork: string | null
   firstEstimateMinutes: number | null
+  // --- What it is, for the owner's eyes (#1126). Null until written. ---
+  /** A few words that say what the request is: the title of its card,
+   *  its push and its Desk line. The owner's own words stay in `text`. */
+  headline: string | null
+  /** The one thing needed from the owner, or "nothing, just so you know". */
+  need: string | null
+  /** Who wrote them: the agent, or the daemon's one model call when the
+   *  agent did not. An agent's words are never replaced by the model's. */
+  headlineBy: "agent" | "model" | null
 }
 
 export const TEXT_MAX = 4000
@@ -153,7 +162,8 @@ export function ensureRequestTables(db: Database.Database): void {
   for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"], ["home_kind", "TEXT"], ["home_link", "TEXT"],
     ["owed_to", "TEXT"], ["promise", "INTEGER"], ["due_at", "INTEGER"], ["close_when", "TEXT"], ["checked_at", "INTEGER"],
     ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"],
-    ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"]]) {
+    ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"],
+    ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -183,6 +193,7 @@ function toRecord(r: any): RequestRecord {
     checkedAt: r.checked_at ?? null, verifiedAt: r.verified_at ?? null, verifyState: r.verify_state ?? null, verifyDetail: r.verify_detail ?? null,
     work: r.work ?? null, estimateMinutes: r.estimate_minutes ?? null,
     firstWork: r.first_work ?? null, firstEstimateMinutes: r.first_estimate_minutes ?? null,
+    headline: r.headline ?? null, need: r.need ?? null, headlineBy: r.headline_by === "agent" || r.headline_by === "model" ? r.headline_by : null,
   }
 }
 
@@ -256,6 +267,26 @@ export class RequestStore {
       this.db.prepare("UPDATE requests SET estimate_minutes = ?, first_estimate_minutes = COALESCE(first_estimate_minutes, ?) WHERE id = ?")
         .run(w.estimateMinutes, w.estimateMinutes, id)
     }
+  }
+
+  /** What the request is, in the owner's terms (#1126). The agent's words
+   *  always win; the model's only fill a request that has none, so a late
+   *  model answer never replaces what the agent said meanwhile. A field
+   *  left undefined is kept. Not a touch: describing is not progress. */
+  setHeadline(id: string, h: { headline?: string; need?: string }, by: "agent" | "model"): boolean {
+    if (h.headline === undefined && h.need === undefined) return false
+    const guard = by === "model" ? " AND headline IS NULL" : ""
+    return this.db.prepare(
+      `UPDATE requests SET headline = COALESCE(?, headline), need = COALESCE(?, need), headline_by = ? WHERE id = ?${guard}`,
+    ).run(h.headline ?? null, h.need ?? null, by, id).changes > 0
+  }
+
+  /** Open requests the owner may see that have no headline yet, newest
+   *  first: the ones the daemon writes one for. */
+  withoutHeadline(limit = 20): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND headline IS NULL ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+    ).all(...OPEN_STATES, limit).map(toRecord)
   }
 
   /** What the checker said. `met` is written by closeVerified, not here.
@@ -348,12 +379,14 @@ export class RequestStore {
     ).run(state, now, state, now, id, ...CLOSED_STATES)
   }
 
-  /** The next step is the owner's answer. */
-  waitOnOwner(id: string, question: string, now: number): void {
+  /** The next step is the owner's answer. What it needs from the owner is
+   *  now that answer: a need written for the work before is dropped
+   *  unless the agent gives a new one (#1126). */
+  waitOnOwner(id: string, question: string, now: number, need: string | null = null): void {
     this.db.prepare(
-      `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, attention_reason = NULL, notified_at = NULL
+      `UPDATE requests SET ${STATE_CHANGED}, state = 'waiting_owner', updated_at = ?, question = ?, need = ?, attention_reason = NULL, notified_at = NULL
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run("waiting_owner", now, now, question.slice(0, TEXT_MAX), id, ...CLOSED_STATES)
+    ).run("waiting_owner", now, now, question.slice(0, TEXT_MAX), need, id, ...CLOSED_STATES)
   }
 
   /** The work failed, timed out, was cut off, or went quiet. A request

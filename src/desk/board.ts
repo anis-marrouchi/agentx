@@ -1,5 +1,5 @@
 import type { DecisionCard } from "@/approvals/cards"
-import { summarize } from "@/requests/card-view"
+import { cardWords } from "@/requests/card-view"
 import type { LinkKind, RequestRecord } from "@/requests/store"
 
 // --- The Desk: one board over what waits, what runs and what ended (#959) ---
@@ -48,6 +48,10 @@ export interface DeskCard {
   ask?: string
   /** What is known about it. Never an instruction. */
   facts?: string
+  /** A request (#1126): the one thing needed from the owner, and the
+   *  owner's own words, shown under the headline. */
+  need?: string
+  said?: string
   recommend?: string
   /** The agent that raised it or has the work. */
   agent?: string
@@ -174,12 +178,15 @@ const CLOSED_WORD: Record<string, string> = { done: "Done", declined: "Declined"
 
 function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<string>): DeskCard | null {
   const { record: q, links } = r
+  const words = cardWords(q, DESK_TITLE_MAX)
   const base = {
     key: `request:${q.id}`,
     kind: "request",
     node: input.node,
     nodeName: input.nodeName,
-    title: summarize(q.text, DESK_TITLE_MAX),
+    title: words.headline,
+    need: words.need,
+    said: clip(words.said, DESK_ASK_MAX),
     agent: q.agentId,
     askedAt: iso(q.createdAt),
     // When its state last changed: a run starting or ending is not news.

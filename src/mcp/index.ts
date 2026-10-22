@@ -953,12 +953,16 @@ const TOOLS = [
       "An accept of such work without steps is refused (the owner sets which kinds and the limit). " +
       "Report on a step you own with action step (status progress, done with evidence, or blocked with a note). " +
       "When you commit to something for someone (the owner, another agent, an outside person: 'I will send the file by Friday'), record it with promise (owedTo, text, due, closeWhen): it stays open until it is kept. " +
+      "On accept, wait or promise, give headline (what it is, in a few plain words: it titles the owner's card, push and Desk line instead of their own transcript) and need (the one thing you need from them, or 'Nothing, just so you know.'); describe changes them later. " +
       "Example: {action:'done', evidence:'https://example.com/pull/42'}. " +
+      "Describe example: {action:'accept', work:'research', estimateMinutes:20, headline:'Compare three hosting offers', need:'Nothing, just so you know.'}. " +
       "Plan example: {action:'accept', steps:[{name:'Build the fix', done:'PR merged'}, {name:'Deploy', agent:'devops', kind:'deploy', done:'release live', check:{url:'https://example.com/version', contains:'1.2.3'}}, {name:'Tell the client', kind:'message', message:'The fix is live.', to:{channel:'telegram', chatId:'123'}}]}.",
     inputSchema: {
       type: "object" as const,
       properties: {
-        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "list"], description: "list (default), accept, wait, done, decline, step or promise." },
+        action: { type: "string", enum: ["accept", "wait", "done", "decline", "step", "promise", "describe", "list"], description: "list (default), accept, wait, done, decline, step, promise or describe." },
+        headline: { type: "string", description: "accept, wait, promise, describe: what the request is, in a few plain words (at most 80 characters, no bare ids or links). Titles the owner's card, push and Desk line." },
+        need: { type: "string", description: "accept, wait, promise, describe: the one thing you need from the owner (at most 160 characters), or 'Nothing, just so you know.'" },
         id: { type: "string", description: "The request id, when it is not the request of this turn. Always pass it for step." },
         steps: {
           type: "array",

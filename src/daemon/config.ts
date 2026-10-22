@@ -1403,6 +1403,18 @@ export const requestsConfigSchema = z.object({
       token: z.string().optional(),
     }).optional(),
   }).default({}),
+  /** Headlines (src/requests/headline.ts, #1126): a request the agent did
+   *  not describe gets a few words saying what it is, written once by one
+   *  small model call, so its card, push and Desk line are not titled with
+   *  the owner's raw transcript. Off: the start of the owner's words. */
+  headlines: z.object({
+    enabled: z.boolean().default(true),
+    /** Provider for the call. "claude-code" uses the auth the operator set
+     *  up (subscription or API key); no new paid path is opened. */
+    provider: z.string().min(1).default("claude-code"),
+    model: z.string().min(1).default("claude-haiku-4-5-20251001"),
+    timeoutSeconds: z.number().int().min(5).max(120).default(30),
+  }).default({}),
 }).default({})
 
 /** People (src/people, #384): the humans who talk to the agents, one entry
