@@ -88,6 +88,8 @@ import { handleWatchersApi } from "@/watchers/daemon-api"
 import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
 import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
+import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
+import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
@@ -2466,15 +2468,46 @@ export class AgentXDaemon {
     }
   }
 
+  private headlines?: HeadlineWriter
+
+  /** Writes the headline of a request its agent did not describe (#1126):
+   *  one small call through the provider the operator set up, built on
+   *  first use and read from the settings at each call. */
+  private headlineWriter(requests: AttachedRequests): HeadlineWriter {
+    if (this.headlines) return this.headlines
+    let provider: AgentProvider | undefined
+    const settings = () => ({ ...DEFAULT_HEADLINE_SETTINGS, ...this.config.requests.headlines })
+    return this.headlines = new HeadlineWriter({
+      store: requests.store,
+      settings,
+      generate: async (prompt, signal) => {
+        const s = this.config.requests.headlines
+        provider ??= createProvider((s?.provider ?? "claude-code") as ProviderName)
+        const res = await provider.generate(
+          [
+            { role: "system", content: "You write short card headlines. Respond with a single JSON object on one line. No prose, no code fences." },
+            { role: "user", content: prompt },
+          ],
+          { model: s?.model ?? "claude-haiku-4-5-20251001", maxTokens: 200, abortSignal: signal, bare: true },
+        )
+        return res.content || ""
+      },
+      log: this.log,
+    })
+  }
+
   /** Requests that went quiet come back, each is raised once, and old
    *  closed ones are deleted (src/requests/sweep.ts). Plans first: a
    *  blocked step marks its request told, so the owner hears once. */
   private async sweepRequests(requests: AttachedRequests): Promise<void> {
     await this.sweepPlans(requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
+    const headlines = this.headlineWriter(requests)
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
       check: loopChecker(() => this.requestCheckContext(requests)),
+      describe: (r) => headlines.ensure(r),
+      fillHeadlines: () => headlines.fill(),
       notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       // Fire and forget: the check never waits on a model. The run is

@@ -293,6 +293,11 @@ To turn it on by hand:
 | `requests.checkers.repos` | object | `{}` | Local copies of repositories the `git-ancestor` check may read, by name: `{ "app": "/srv/app" }`. Agents give the name, never a folder. |
 | `requests.checkers.github` | object | — | The `issue` check's GitHub access: `apiUrl` (default `https://api.github.com`) and `token`. Unset: `channels.github.token` (or `tokenFile`). |
 | `requests.checkers.gitlab` | object | — | The `issue` check's GitLab access: `url` and `token`. Unset: `channels.gitlab.host` and `channels.gitlab.token`. |
+| `requests.headlines` | object | `{}` | Headlines: a few words that say what a request is, used as the title of its card, its notification and its Desk line instead of your own words. The agent writes them; when it did not, AgentX writes the headline once with one short model call. See [What a request's card shows](/jobs/open-requests#what-a-requests-card-shows). |
+| `requests.headlines.enabled` | boolean | `true` | Writes the missing headlines. Off: a card is titled with the start of your words, as before. |
+| `requests.headlines.provider` | string | `"claude-code"` | Engine for the call. `claude-code` uses the sign-in this computer already has (subscription or API key); no new paid account is used. |
+| `requests.headlines.model` | string | `"claude-haiku-4-5-20251001"` | Model for the call. A small, fast model is enough. |
+| `requests.headlines.timeoutSeconds` | whole number (5 to 120) | `30` | Longest wait for one headline. A request whose headline could not be written keeps your words as its title and is not asked about again. |
 
 ## `watchers`
 

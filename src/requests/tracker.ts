@@ -31,6 +31,9 @@ export interface RequestSettings {
   /** The checkers that close loops on evidence (#1039). Unset: the
    *  defaults (DEFAULT_CHECKER_SETTINGS). */
   checkers?: CheckerSettings
+  /** Headlines written for requests the agent did not describe (#1126).
+   *  Unset: on, with the defaults. */
+  headlines?: { enabled: boolean; provider?: string; model?: string; timeoutSeconds: number }
 }
 
 /** Channel of the turn that hands a request back to its agent. */

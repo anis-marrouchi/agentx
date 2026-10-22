@@ -139,8 +139,10 @@ function item(r){
     '<div class="apv__meta"><span class="apv__state is-' + esc(r.state) + '">' + esc(STATE[r.state] || r.state) + '</span>' +
     '<span class="apv__with">With <b>' + esc(agentName(r.agentId)) + '</b></span>' +
     '<span>' + esc(when(r.createdAt)) + '</span><span>' + esc(r.channel) + '</span><code>' + esc(r.id) + '</code></div>' +
-    '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' + why + loop(r) + plan(r.plan) +
-    more(r.loop && r.loop.promise ? 'What ' + agentName(r.agentId) + ' promised' : r.channel === 'voice' ? 'What you said' : 'What you asked', r.textHtml) +
+    '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' +
+    (r.needed && r.state !== 'waiting_owner' ? '<p class="apv__rec apv__need" dir="auto"><b>Needed from you:</b> ' + esc(r.needed) + '</p>' : '') +
+    why + loop(r) + plan(r.plan) +
+    more(r.loop && r.loop.promise ? 'What ' + agentName(r.agentId) + ' promised' : 'You said', r.textHtml) +
     more('Your last reply', r.ownerNoteHtml) +
     (r.lastAnswer ? more('Last answer from ' + agentName(r.lastAnswer.agentId) + ' (' + when(r.lastAnswer.at) + ')', r.lastAnswer.html) : '') +
     '<div class="apv__reply">' +

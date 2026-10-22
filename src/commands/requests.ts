@@ -74,7 +74,10 @@ function workLabel(work: string | null, minutes: number | null): string {
 function printRequest(r: RequestRecord): void {
   const colour = r.state === "needs_attention" ? chalk.red : r.state === "waiting_owner" ? chalk.yellow : chalk.dim
   console.log(`  ${chalk.cyan(r.id)}  ${colour(`[${STATE_LABEL[r.state] ?? r.state}]`)} ${chalk.dim(`${when(r.createdAt)} · ${r.channel} · ${r.agentId}`)}`)
-  console.log(`    ${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
+  // What it is first, the owner's words below it (#1126).
+  if (r.headline) console.log(`    ${chalk.bold(r.headline)}${r.headlineBy === "model" ? chalk.dim(" (written by AgentX)") : ""}`)
+  console.log(`    ${r.headline ? chalk.dim("You said: ") : ""}${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
+  if (r.need) console.log(chalk.dim(`    Needed from you: ${r.need}`))
   if (r.state === "waiting_owner" && r.question) console.log(chalk.yellow(`    Question: ${r.question}`))
   if (r.state === "needs_attention" && r.attentionReason) console.log(chalk.red(`    ${r.attentionReason}`))
   if (r.work || r.estimateMinutes !== null) {

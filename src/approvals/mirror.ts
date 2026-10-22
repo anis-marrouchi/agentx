@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs"
 import { dirname, resolve } from "path"
 import type { NativePriority, NativeTasks } from "@/native"
-import { summarize } from "@/requests/card-view"
+import { cardWords, summarize } from "@/requests/card-view"
 import type { RequestRecord } from "@/requests/store"
 import { CARD_LIMITS, type DecisionCard } from "./cards"
 
@@ -145,7 +145,7 @@ export function requestItem(r: RequestRecord, settings: MirrorSettings, answerUr
   const dueAt = r.dueAt ?? undefined
   return {
     key: `request:${r.id}`,
-    title: summarize(r.text, CARD_LIMITS.title),
+    title: cardWords(r, CARD_LIMITS.title).headline,
     notes: lines.join("\n"),
     due: dueFor(now, settings, dueAt),
     priority: dueAt !== undefined && dueAt - now <= DAY_MS ? "high" : "none",

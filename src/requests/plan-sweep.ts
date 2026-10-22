@@ -1,6 +1,7 @@
 import type { DecisionCard } from "@/approvals/cards"
 import { CLOSED_STATES, type RequestRecord, type RequestStore } from "./store"
 import { checkUrl } from "./checkers/url"
+import { cardWords } from "./card-view"
 import { FINISHED_STEP_STATES, type PlanRecord, type PlanStep, type PlanStore } from "./plan-store"
 import {
   approvalCardInput, blockedText, dispatchText, MESSAGE_KIND, nudgeText, planEvidence, summaryText, type PlanSettings,
@@ -323,7 +324,7 @@ async function tellBlocked(deps: PlanSweepDeps, now: number): Promise<void> {
       plans.updateStep(s.requestId, s.idx, { notifiedAt: now })
       if (!deps.notify) continue
       try {
-        await deps.notify("Plan step blocked", blockedText(r, steps, s), r)
+        await deps.notify(`Plan step blocked: ${cardWords(r, 80).headline}`, blockedText(r, steps, s), r)
         plans.event(s.requestId, s.idx, "owner-told", "blocked", now)
       } catch (e: any) {
         plans.updateStep(s.requestId, s.idx, { notifiedAt: null })
@@ -341,7 +342,7 @@ async function tellFinished(deps: PlanSweepDeps, now: number): Promise<void> {
     const r = requests.get(plan.requestId)
     if (!r || !deps.notify) continue
     try {
-      await deps.notify("Plan finished", summaryText(r, plans.steps(r.id)), r)
+      await deps.notify(`Plan finished: ${cardWords(r, 80).headline}`, summaryText(r, plans.steps(r.id)), r)
       plans.event(r.id, null, "owner-told", "finished", now)
     } catch (e: any) {
       plans.markNotified(plan.requestId, null)

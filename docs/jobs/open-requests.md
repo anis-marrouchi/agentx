@@ -45,12 +45,19 @@ Other people's messages are never recorded.
 2. You see every open request, oldest first, with when and where you asked, the agent, your words and the state.
 3. For one request and what is linked to it, run `agentx requests show <id>`.
 
-In the dashboard, the same list is under **Approvals**, in **Open requests**. Each request is a card:
+In the dashboard, the same list is under **Approvals**, in **Open requests**. Each request is a card. What it shows is described in the next section.
 
-- a short summary of what you asked, in plain words,
-- its state, the agent that has it, and why it is not finished,
-- **What you said** (or **What you asked**): your own words, in full. For a request you spoke, this is the transcript,
+### What a request's card shows
+
+Every place that shows you a request uses the same words: its card in **Approvals**, its line on the phone app's **Desk**, the Mac card popup, and the notification when it needs attention.
+
+- **The headline:** a few plain words that say what the request is, for example "Check the invoices batch". The agent writes it when it takes the request on. When it did not, AgentX writes it once with one short model call (`requests.headlines`). Until then, or with that setting off, the title is the start of your own words.
+- **Needed from you:** the one thing the request needs from you. When nothing is needed, it says "Nothing, just so you know.". A request waiting on your answer shows the question. A request that stopped asks you to hand it back or drop it.
+- **You said:** your own words, in full, below the headline. For a request you spoke, this is the transcript.
+- Its state, the agent that has it, and why it is not finished.
 - **Last answer from …**: what the agent last told you about it, when it answered.
+
+A headline must say what the request is in words. One that is only a reference, such as "#412" or a link, is refused. A popup card whose title is only a reference is not shown, and its agent is told to describe the request.
 
 ## Decide on a request
 
@@ -216,6 +223,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 9. **Terminal:** run `agentx requests --stalled`. It prints the stalled requests by group, or `nothing is stalled`.
 10. **Terminal:** run `agentx requests today`. Each request you made since midnight is listed; the ones with no home are red, at the top.
 11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
+12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its card under **Approvals** › **Open requests** is titled with a few plain words, shows **Needed from you**, and keeps your words under **You said**. `agentx requests show <id>` shows the same `headline`.
 
 ## If something is wrong
 
@@ -232,4 +240,6 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A request is marked `unverified`:** its check could not tell. `agentx requests show <id>` says why. Common causes: the address is down, the GitHub or GitLab token is missing or cannot see the issue, the local copy of the repository does not have the commit yet (update it), or the person in a `reply` check is not in `people`. Fix the cause and wait for the next check, or close it yourself with `--reason`.
 - **`no repos are set up for this check on this node`:** add the folder under `requests.checkers.repos` in `agentx.json`.
 - **`the … check is turned off on this node`:** add the kind back with `agentx requests settings --checks`.
+- **A card is still titled with your own words:** the agent did not describe the request and no headline could be written. The daemon log has a line `[requests] <id>: headline not written: …` with the reason. A common cause is that the engine set in `requests.headlines.provider` is not signed in on this computer. Each request is tried once, and not again after a restart; the agent can still describe it. To see the start of your words as the title on purpose, set `requests.headlines.enabled` to `false`.
+- **An agent's describe is refused with `headline is only a reference`:** the headline was only an issue number, an id or a link. Say what the request is in words, and put the link in the request's `home` instead.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.

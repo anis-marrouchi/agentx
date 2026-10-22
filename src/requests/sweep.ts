@@ -3,6 +3,7 @@ import type { RequestRecord, RequestStore } from "./store"
 import type { RequestSettings } from "./tracker"
 import { checkLoops, waitsOn, waitsOnWords, when, type LoopChecker } from "./loops"
 import { DEFAULT_CHECKER_SETTINGS } from "./checkers"
+import { cardWords } from "./card-view"
 
 // --- The daemon's requests check, once a minute (#356) ---
 //
@@ -35,6 +36,11 @@ export interface RequestSweepDeps {
   hasAgent?: (agentId: string) => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
   check?: LoopChecker
+  /** Gives a request its headline when it has none (#1126), so the owner
+   *  is told what it is. Returns it as it is when none could be written. */
+  describe?: (r: RequestRecord) => Promise<RequestRecord>
+  /** Writes missing headlines of other open requests in the background. */
+  fillHeadlines?: () => Promise<unknown>
   log: (msg: string) => void
   now?: number
 }
@@ -91,6 +97,14 @@ export function pickupText(r: RequestRecord): string {
 }
 
 const HOUR = 3_600_000
+/** Time one check may spend writing headlines before it tells the owner. */
+export const DESCRIBE_BUDGET_MS = 45_000
+
+/** The notice's title (#1126): what the request is, then that it stopped. */
+export function attentionTitle(r: RequestRecord): string {
+  const { headline } = cardWords(r, 80)
+  return `${r.promise ? "Promise not kept" : "Not finished"}: ${headline}`
+}
 
 export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean = () => false): string {
   const words = r.text.replace(/\s+/g, " ").trim()
@@ -100,13 +114,15 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
     r.promise
       ? `A promise ${r.agentId} made to ${r.owedTo} is not kept yet.`
       : `A request you gave ${r.agentId} on ${r.channel} is not finished.`,
-    r.promise ? `It promised: ${said}` : `You asked: ${said}`,
     `What happened: ${r.attentionReason ?? "unknown"}`,
     `Waiting on: ${waitsOnWords(on.group, on.who)}`,
     ...(r.verifyState === "unverified" && r.verifyDetail ? [`Its check could not say: ${r.verifyDetail}`] : []),
+    "Nothing is retrying it.",
     r.closeWhen
-      ? "Nothing is retrying it. Ask again, close it by hand with a reason, or drop it."
-      : "Nothing is retrying it. Ask again, or drop it.",
+      ? `Needed from you: hand it back to ${r.agentId}, close it by hand with a reason, or drop it.`
+      : `Needed from you: ${cardWords(r).need}`,
+    // The owner's own words last, under the headline the title carries.
+    r.promise ? `It promised: ${said}` : `You said: ${said}`,
   ].join("\n")
 }
 
@@ -167,12 +183,23 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   }
 
   try {
+    // Headlines get a share of the check, not all of it: past the budget
+    // a notice goes out with the owner's words, and the background fill
+    // writes its headline later.
+    let describing = 0
     for (const r of store.awaitingNotice()) {
       // Marked first: a notice that hangs must not be sent twice.
       store.markNotified(r.id, now)
       if (!deps.notify) continue
       try {
-        await deps.notify(r.promise ? "Promise not kept" : "Request not finished", attentionText(r, deps.hasAgent), r)
+        // Told what it is, not only that it stopped (#1126).
+        let described = r
+        if (deps.describe && describing < DESCRIBE_BUDGET_MS) {
+          const started = Date.now()
+          described = await deps.describe(r)
+          describing += Date.now() - started
+        }
+        await deps.notify(attentionTitle(described), attentionText(described, deps.hasAgent), described)
         result.notified++
       } catch (e: any) {
         // Nothing reached the owner: try again at the next check.
@@ -183,6 +210,10 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
   } catch (e: any) {
     log(`[requests] notices failed: ${e?.message ?? e}`)
   }
+
+  // Not awaited: the check never waits on a model for requests nobody
+  // is being told about right now.
+  if (deps.fillHeadlines) void deps.fillHeadlines().catch((e: any) => log(`[requests] headlines failed: ${e?.message ?? e}`))
 
   try {
     result.pruned = store.pruneClosed(now - settings.retentionDays * 24 * HOUR)
