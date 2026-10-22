@@ -186,7 +186,8 @@ function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<stri
     nodeName: input.nodeName,
     title: words.headline,
     need: words.need,
-    said: clip(words.said, DESK_ASK_MAX),
+    // Without a headline the title already is the owner's words.
+    ...(q.headline ? { said: clip(words.said, DESK_ASK_MAX) } : {}),
     agent: q.agentId,
     askedAt: iso(q.createdAt),
     // When its state last changed: a run starting or ending is not news.

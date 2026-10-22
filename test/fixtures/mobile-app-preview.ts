@@ -157,9 +157,13 @@ const desk = () => buildDesk({
     },
   ] }],
   requests: [
-    request("r1", "Make the photos on the website smaller", "in_progress", 20 * 60_000),
+    // Spoken requests carry a headline (#1126): what it is on top, the
+    // transcript under "You said".
+    request("r1", "ok so the photos on the website, the big ones on the home page, they take ages on my phone, can you make them smaller", "in_progress", 20 * 60_000,
+      { headline: "Make the home page photos smaller", need: null, headlineBy: "model" } as Partial<RequestRecord>),
     request("r2", "Update the opening hours on the site", "waiting_other", 2 * HOUR),
-    request("r3", "Compare three hosting plans for the shop and say which one to take", "in_progress", 9 * HOUR),
+    request("r3", "so we got three hosting offers for the shop, the cheap one, the middle one and the big one, can you compare them and tell me which one to take", "in_progress", 9 * HOUR,
+      { headline: "Compare three hosting plans for the shop", need: "Nothing, just so you know.", headlineBy: "agent" } as Partial<RequestRecord>),
     request("r4", "Choose a cover for the catalogue", "waiting_owner", 2 * HOUR, { question: "Blue or green for the catalogue cover?" }),
     request("r5", "Rename the photo folders by date", "done", 3 * HOUR, { closedAt: now - 3 * HOUR, evidence: "142 folders renamed, list in the shared drive" }),
   ],

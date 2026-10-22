@@ -61,7 +61,7 @@ export const APP_DESK_SCRIPT = `
     var key = c.node + '|' + c.key;
     return '<article class="fx-card"><div class="fx-row"><h4>' + esc(c.title) + '</h4>' + pill(c) + '</div>' +
       (c.ask ? '<p>' + esc(c.ask) + '</p>' : '') +
-      (c.need && !c.ask ? '<p><strong>Needed from you:</strong> ' + esc(c.need) + '</p>' : '') +
+      (c.need && !c.ask ? '<p class="fx-muted">Needed from you: ' + esc(c.need) + '</p>' : '') +
       (c.said ? '<details data-key="' + esc(key + '|said') + '"' + (openKeys[key + '|said'] ? ' open' : '') + '><summary>You said</summary><p class="fx-muted" dir="auto">' + esc(c.said) + '</p></details>' : '') +
       (c.outcome ? '<p><strong>' + esc(c.outcome) + '</strong>' + (c.evidence ? ' · ' + esc(c.evidence) : '') + '</p>' : '') +
       (c.recommend ? '<p class="fx-muted">Suggested: ' + esc(c.recommend) + '</p>' : '') +

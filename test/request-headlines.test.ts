@@ -142,6 +142,17 @@ describe("how every surface titles a request", () => {
     })
     expect(board.cards[0]).toMatchObject({ title: "Check the invoices batch", need: "Nothing, just so you know.", said: SAID })
   })
+
+  it("does not repeat the owner's words under a title that already is them", () => {
+    turn("t1")
+    store.progress("req-t1", 6_000)
+    const board = buildDesk({
+      now: 6_000, node: "local", nodeName: "Local", inbox: [], cards: [], liveRuns: new Set(),
+      requests: [{ record: store.get("req-t1")!, links: [] }],
+    })
+    expect(board.cards[0].title).toBe(SAID)
+    expect(board.cards[0].said).toBeUndefined()
+  })
 })
 
 describe("the agentx_request actions", () => {
