@@ -58,7 +58,7 @@ On the **Pinned pages** card in **Alerts**, a button from `agentx.json` says **S
 
 ![The Pinned pages card: Status is set in agentx.json, Remote and Notes have Rename and Remove](/screenshots/mobile-app/pins-config.png)
 
-These buttons count toward `app.pins.max`. If a page repeats an earlier page's address or name, only the first one shows.
+These buttons count toward `app.pins.max`, so `app.pins.pages` can't list more pages than `app.pins.max` allows: AgentX refuses to load `agentx.json` until you raise `app.pins.max` or remove a page. If a page repeats an earlier page's address or name, only the first one shows. If you had already pinned the same page (same address or name) from the phone, only the `agentx.json` button shows; the phone's copy stays in `.agentx/app-pins.json` and comes back if you take the page out of `agentx.json`.
 
 ## How the page opens
 
@@ -77,14 +77,14 @@ If the page says the microphone is blocked, open the browser's site settings for
 
 ## Keep the address private
 
-Some addresses work as a key: anyone who has the link can use the page. The list of buttons is kept on the computer in `.agentx/app-pins.json` (and `agentx.json`, for the buttons set there), readable only by you, and given only to phones paired with this computer. Each phone also keeps the last list it loaded, so the row works offline. AgentX never writes the addresses or the button names to its logs, and the phone app sends no referrer when it opens one.
+Some addresses work as a key: anyone who has the link can use the page. The list of buttons is kept on the computer in `.agentx/app-pins.json` (and `agentx.json`, for the buttons set there), readable only by you, and given only to phones paired with this computer. Each phone also keeps the last list it loaded, so the row works offline. Unpairing a phone doesn't delete that saved list: to clear it, delete the stored data for this computer's address in Chrome's site settings on the phone. AgentX never writes the addresses or the button names to its logs, and the phone app sends no referrer when it opens one.
 
 ## Settings
 
 | Field | Default | What it does |
 |---|---|---|
 | `app.pins.file` | `".agentx/app-pins.json"` | Where the buttons are kept, relative to the folder that holds `agentx.json`. |
-| `app.pins.max` | `12` | Most buttons you can pin (1 to 50), counting the ones in `app.pins.pages`. |
+| `app.pins.max` | `12` | Most buttons you can pin (1 to 50), counting the ones in `app.pins.pages`. Must be at least the number of pages in `app.pins.pages`. |
 | `app.pins.pages` | `[]` | Buttons for every phone: a list of `{ "label": …, "url": … }`, `https://` only. Read only in the phone app and `agentx app`. |
 
 ## Check it worked
@@ -103,5 +103,6 @@ Some addresses work as a key: anyone who has the link can use the page. The list
 - **The page says the microphone is blocked** — open the site settings for the page's address in the browser and allow the microphone. On Android, also check **Settings** > **Apps** > **Chrome** > **Permissions** > **Microphone**.
 - **"The pinned pages file is busy"** — another change was still being saved and did not finish within 3 seconds. Try again. If it keeps happening and no `agentx` command is running, delete `.agentx/app-pins.json.lock` on the computer.
 - **"This button is set in agentx.json"** — the button comes from `app.pins.pages`. Edit or remove it in `agentx.json` on the computer.
-- **`agentx config check` reports `app.pins.pages`** — an address there is not `https://`, has a user name or password in it, or a `label` is empty or longer than 40 characters. Fix the entry named in the error.
+- **`agentx config check` reports `app.pins.pages`** — an address there is not `https://`, has a user name or password in it, or a `label` is empty or longer than 40 characters. Fix the entry named in the error. If the error says there are more pages than `app.pins.max` allows, raise `app.pins.max` or remove a page.
+- **"This page is already a button, set in agentx.json"** — the page you tried to pin on the phone is already in `app.pins.pages`. Use that button.
 - **The page shows "not found" or asks you to sign in** — the address is wrong or has expired. Remove the button and pin the current address.
