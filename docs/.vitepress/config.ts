@@ -39,6 +39,7 @@ const groups = [
     { text: "Phone app: Notifications", link: "/dashboard/mobile-alerts" },
     { text: "Phone app: Share camera", link: "/dashboard/mobile-camera" },
     { text: "Phone app: Place reminders", link: "/dashboard/mobile-places" },
+    { text: "Phone app: Pinned pages", link: "/dashboard/mobile-pins" },
   ] },
   { text: "Automations", collapsed: true, items: [
     { text: "Overview", link: "/automations/" },

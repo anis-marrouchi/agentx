@@ -149,6 +149,24 @@ Create the key pair that lets this computer send notifications to paired phones.
 |---|---|---|
 | `--force` | — | Replace existing keys (every phone must turn notifications on again). |
 
+### `agentx app pins`
+
+List the pages pinned as buttons in the phone app, with their ids. See [Pinned pages](../dashboard/mobile-pins.md).
+
+No flags.
+
+### `agentx app pin <label> <url>`
+
+Pin an `https://` page as a button named `<label>` in the phone app. The phone shows it the next time the app opens. See [Pinned pages](../dashboard/mobile-pins.md).
+
+No flags.
+
+### `agentx app unpin <id-or-label>`
+
+Remove a pinned page, by its id or its name.
+
+No flags.
+
 ## daemon
 
 `agentx daemon`: Manage the agentx daemon — start, stop, status, logs.
