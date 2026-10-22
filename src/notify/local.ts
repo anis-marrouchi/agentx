@@ -75,7 +75,10 @@ export function localAlert(
 }
 
 /** True once nothing else speaks on this machine, false when something
- *  still does after `waitMs`. Without a way to tell, true at once. */
+ *  still does after `waitMs`. Without a way to tell, true at once. The
+ *  daemon's own speech counts too (no `exceptParents` here, unlike the
+ *  speaking queue): a chime over a spoken reply is the same interruption,
+ *  so it waits, and past the wait the banner shows without the sound. */
 async function quiet(speech: NativeSpeech | undefined, waitMs: number, pollMs: number): Promise<boolean> {
   if (!speech || waitMs <= 0) return true
   const until = Date.now() + waitMs
