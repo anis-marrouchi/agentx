@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.153.1](https://github.com/anis-marrouchi/agentx/compare/v0.153.0...v0.153.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **approvals:** never overwrite a card with the same id ([#1135](https://github.com/anis-marrouchi/agentx/issues/1135)) ([40e6894](https://github.com/anis-marrouchi/agentx/commit/40e68940344aa2ba3df08eb046bc0e540391f487)), closes [#1134](https://github.com/anis-marrouchi/agentx/issues/1134)
+
 ## [0.153.0](https://github.com/anis-marrouchi/agentx/compare/v0.152.0...v0.153.0) (2026-10-22)
 
 
