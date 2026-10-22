@@ -1,6 +1,6 @@
 import { focusLabel, type FocusState } from "@/notify/focus"
 import { readHold } from "@/notify/hold"
-import { summarize } from "@/requests/card-view"
+import { requestTitle, youSaid } from "@/requests/card-view"
 import type { RequestRecord } from "@/requests/store"
 import { CARD_LIMITS, listCards, readCard, type DecisionCard } from "./cards"
 import { mirrorCovers } from "./mirror"
@@ -117,10 +117,11 @@ export function nextRequestToPop(ctx: InboxContext): RequestRecord | null {
 export function requestAsCard(r: RequestRecord, now: number): DecisionCard {
   return {
     id: r.id,
-    title: summarize(r.text, CARD_LIMITS.title),
-    context: r.attentionReason ?? "It is not finished and nothing is retrying it.",
+    title: requestTitle(r, CARD_LIMITS.title),
+    context: [r.need, r.attentionReason ?? "It is not finished and nothing is retrying it.", r.headline ? `You said: ${youSaid(r, 160)}` : ""]
+      .filter(Boolean).join(" · "),
     ask: `Hand it back to ${r.agentId}, or drop it?`,
-    say: "A request you made is not finished.",
+    say: r.headline ? `A request you made is not finished: ${requestTitle(r, CARD_LIMITS.title)}.` : "A request you made is not finished.",
     recommend: "",
     if_silent: "keep",
     expires: new Date(now + POPUP_MAX_AGE_MS).toISOString(),

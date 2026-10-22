@@ -295,7 +295,7 @@ describe("the dashboard's open requests", () => {
     const r = await handleRequestsPanel("GET", P, {}, panelCtx())
     expect(r.status).toBe(200)
     expect((r.body as any).items.map((i: any) => i.id)).toEqual(["req-t1", "req-t2"])
-    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} } })
+    expect((r.body as any).settings).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, headlines: { enabled: true }, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} } })
   })
 
   it("closes as done with evidence, and drops with a default reason", async () => {
@@ -313,13 +313,13 @@ describe("the dashboard's open requests", () => {
   it("saves every setting from the form and rejects a bad one", async () => {
     const c = panelCtx()
     const ok = await handleRequestsPanel("POST", `${P}/settings`, {
-      enabled: true, from: "telegram:42, github:me", channels: "", staleAfterHours: 48, retentionDays: 30,
+      enabled: true, from: "telegram:42, github:me", channels: "", staleAfterHours: 48, retentionDays: 30, headlines: false,
       plansEnabled: false, stallMinutes: 20, maxNudges: 2, approveKinds: "message, deploy", plansOffFor: "helper",
       planForWork: "code, migration", planOverMinutes: 0,
     }, c)
     expect(ok.status).toBe(200)
     expect((ok.body as any).settings).toEqual({
-      enabled: true, channels: [], from: ["telegram:42", "github:me"], staleAfterHours: 48, retentionDays: 30,
+      enabled: true, channels: [], from: ["telegram:42", "github:me"], staleAfterHours: 48, retentionDays: 30, headlines: { enabled: false },
       plans: { enabled: false, stallMinutes: 20, maxNudges: 2, approveKinds: ["message", "deploy"], disabledAgents: ["helper"], requireForWork: ["code", "migration"], requireOverMinutes: 0 },
       checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} },
     })

@@ -107,7 +107,20 @@ export interface RequestRecord {
    *  after a refused accept shows in the audit. */
   firstWork: string | null
   firstEstimateMinutes: number | null
+  // --- What the owner reads first (#1126). Null until written. ---
+  /** What it is, in a few words: the title of its card, push and Desk line. */
+  headline: string | null
+  /** What is needed from the owner, in one line. "Nothing, just so you
+   *  know" is a need too. */
+  need: string | null
+  /** Who wrote them: the agent (agentx_request), or the daemon's one
+   *  model call when the agent did not. The agent's words always win. */
+  headlineBy: "agent" | "daemon" | null
 }
+
+/** A headline is a title: short enough to read at a glance. */
+export const HEADLINE_MAX = 100
+export const NEED_MAX = 200
 
 export const TEXT_MAX = 4000
 const REASON_MAX = 500
@@ -153,7 +166,8 @@ export function ensureRequestTables(db: Database.Database): void {
   for (const [name, type] of [["pickup_at", "INTEGER"], ["owner_note", "TEXT"], ["note_said", "INTEGER"], ["asked_agent", "TEXT"], ["home_kind", "TEXT"], ["home_link", "TEXT"],
     ["owed_to", "TEXT"], ["promise", "INTEGER"], ["due_at", "INTEGER"], ["close_when", "TEXT"], ["checked_at", "INTEGER"],
     ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"],
-    ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"]]) {
+    ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"],
+    ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"], ["headline_tried_at", "INTEGER"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -183,6 +197,7 @@ function toRecord(r: any): RequestRecord {
     checkedAt: r.checked_at ?? null, verifiedAt: r.verified_at ?? null, verifyState: r.verify_state ?? null, verifyDetail: r.verify_detail ?? null,
     work: r.work ?? null, estimateMinutes: r.estimate_minutes ?? null,
     firstWork: r.first_work ?? null, firstEstimateMinutes: r.first_estimate_minutes ?? null,
+    headline: r.headline ?? null, need: r.need ?? null, headlineBy: r.headline_by ?? null,
   }
 }
 
@@ -256,6 +271,37 @@ export class RequestStore {
       this.db.prepare("UPDATE requests SET estimate_minutes = ?, first_estimate_minutes = COALESCE(first_estimate_minutes, ?) WHERE id = ?")
         .run(w.estimateMinutes, w.estimateMinutes, id)
     }
+  }
+
+  /** Its headline and need line (#1126). The agent's are written as
+   *  given; the daemon's only where no agent wrote one, so a model's guess
+   *  never replaces the agent's words. Not a touch: describing a request
+   *  is not progress on it. */
+  describe(id: string, d: { headline?: string; need?: string }, by: "agent" | "daemon"): boolean {
+    const one = (v: string | undefined, max: number) => v === undefined ? undefined : v.replace(/\s+/g, " ").trim().slice(0, max) || null
+    const headline = one(d.headline, HEADLINE_MAX)
+    const need = one(d.need, NEED_MAX)
+    const sets: string[] = []
+    const args: unknown[] = []
+    if (headline !== undefined) { sets.push("headline = ?"); args.push(headline) }
+    if (need !== undefined) { sets.push("need = ?"); args.push(need) }
+    if (!sets.length) return false
+    return this.db.prepare(`UPDATE requests SET ${sets.join(", ")}, headline_by = ? WHERE id = ?${by === "daemon" ? " AND (headline_by IS NULL OR headline_by = 'daemon')" : ""}`)
+      .run(...args, by, id).changes > 0
+  }
+
+  /** Open requests with no headline that the daemon has not tried to
+   *  describe yet, oldest first. */
+  needingHeadline(limit: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT * FROM requests WHERE state IN (${placeholders(OPEN_STATES.length)}) AND headline IS NULL AND headline_tried_at IS NULL
+       ORDER BY created_at, rowid LIMIT ?`,
+    ).all(...OPEN_STATES, limit).map(toRecord)
+  }
+
+  /** The daemon tried to describe it: one try, whatever came of it. */
+  markHeadlineTried(id: string, now: number): void {
+    this.db.prepare("UPDATE requests SET headline_tried_at = ? WHERE id = ?").run(now, id)
   }
 
   /** What the checker said. `met` is written by closeVerified, not here.

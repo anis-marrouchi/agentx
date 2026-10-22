@@ -1,5 +1,5 @@
 import type { DecisionCard } from "@/approvals/cards"
-import { summarize } from "@/requests/card-view"
+import { requestTitle, youSaid } from "@/requests/card-view"
 import type { LinkKind, RequestRecord } from "@/requests/store"
 
 // --- The Desk: one board over what waits, what runs and what ended (#959) ---
@@ -179,7 +179,10 @@ function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<stri
     kind: "request",
     node: input.node,
     nodeName: input.nodeName,
-    title: summarize(q.text, DESK_TITLE_MAX),
+    // Its headline, then what is needed, then the owner's words (#1126).
+    title: requestTitle(q, DESK_TITLE_MAX),
+    ...(q.need ? { ask: clip(q.need, DESK_ASK_MAX) } : {}),
+    ...(q.headline ? { facts: clip(`You said: ${youSaid(q, DESK_FACTS_MAX)}`, DESK_FACTS_MAX) } : {}),
     agent: q.agentId,
     askedAt: iso(q.createdAt),
     // When its state last changed: a run starting or ending is not news.

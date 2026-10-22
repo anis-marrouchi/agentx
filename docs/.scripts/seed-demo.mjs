@@ -169,9 +169,11 @@ db.transaction(() => {
 const ago = (minutes) => Date.now() - minutes * 60000
 db.transaction(() => {
   db.prepare("DELETE FROM requests WHERE id = 'req-docs-plan'").run()
-  db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at)
-    VALUES ('req-docs-plan', 'in_progress', 'dashboard', 'demo', 'Demo operator', 'cx', ?, ?, ?)`)
-    .run("Fix the demo shop checkout button, ship it, and tell the shop it is live.", ago(95), ago(2))
+  // Its headline and need line (#1126), as the agent gives them.
+  db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, headline, need, headline_by)
+    VALUES ('req-docs-plan', 'in_progress', 'dashboard', 'demo', 'Demo operator', 'cx', ?, ?, ?, ?, ?, 'agent')`)
+    .run("so the checkout button on the demo shop is broken again, can you fix it, ship it, and then let the shop know once it is live",
+      ago(95), ago(2), "Fix and ship the demo shop checkout button", "Nothing, just so you know")
   db.prepare("INSERT INTO request_plans (request_id, created_by, created_at, state) VALUES ('req-docs-plan', 'cx', ?, 'active')").run(ago(94))
   const step = db.prepare(`INSERT INTO request_plan_steps (request_id, idx, name, kind, agent_id, done_when, state, needs_approval, approval,
     message, to_channel, to_chat, evidence, dispatched_at, updated_at) VALUES ('req-docs-plan', ?, ?, ?, 'cx', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)

@@ -27,6 +27,8 @@ The line under the title counts what waits for you and since when, what is with 
 
 ![The With agents column: one request with a task running now, one that changed two hours ago](/screenshots/mobile-app/desk-with-agents.png)
 
+A request's card is titled with its headline, the few words that say what it is, with what is needed from you under it and your own words after that. See [What a request is called](../jobs/open-requests.md#what-a-request-is-called).
+
 A request with no news for longer than the limit in your request settings (24 hours unless you changed it) is raised to you once and moves to **Your turn**.
 
 ## Answer a card

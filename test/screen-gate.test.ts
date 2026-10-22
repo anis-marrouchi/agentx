@@ -205,9 +205,15 @@ describe("a title says what it is in words", () => {
     expect(referenceOnlyTitle("Deploy 1cb46fc5")).toContain("only a reference")
   })
 
-  it("leaves a request's card alone: its title is the owner's own words", () => {
-    expect(cardRuleBreak({ title: "review #1104", ask: "Hand it back, or drop it?", origin: { kind: "request" } })).toBeNull()
-    expect(cardRuleBreak({ title: "review #1104", ask: "Hand it back, or drop it?" })).toContain("only a reference")
+  it("holds a request's card to the same rule (#1126): its headline says what it is", () => {
+    expect(cardRuleBreak({ title: "review #1104", ask: "Hand it back, or drop it?", origin: { kind: "request" } })).toContain("only a reference")
+    expect(cardRuleBreak({ title: "Review the login fix", ask: "Hand it back, or drop it?", origin: { kind: "request" } })).toBeNull()
+  })
+
+  it("tells a request's agent to describe it, not to raise a new card", () => {
+    const text = returnedText({ id: "req-1", title: "review #1104", origin: { kind: "request" } }, "title is only a reference")
+    expect(text).toContain('action:"describe", id:"req-1"')
+    expect(text).not.toContain("agentx_approval")
   })
 
   it("returns a card with no title or ask instead of throwing", () => {

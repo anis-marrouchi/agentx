@@ -279,6 +279,8 @@ To turn it on by hand:
 | `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your id on that channel, as `channel:id`. That is your login on GitLab and GitHub, and the sender id everywhere else (the numeric id on Telegram, the number on WhatsApp). An entry only applies to its own channel. Usernames beside an id and display names are not matched, because the person chooses them. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
 | `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
+| `requests.headlines` | object | `{}` | Headlines: a short title and a "what is needed from you" line on every request. See [What a request is called](/jobs/open-requests#what-a-request-is-called). |
+| `requests.headlines.enabled` | boolean | `true` | When an agent did not give its request a headline, the daemon writes one, once, with one call to the model in `graph.classifierModel`, through the login or key you already set up. `false`: such a request is titled with the start of your words. |
 | `requests.plans` | object | `{}` | Tracked plans: a request of two or more steps, each with an owner agent, followed until every step is done. Needs `requests.enabled`. See [Follow a request of several steps](/jobs/tracked-plans). |
 | `requests.plans.enabled` | boolean | `true` | Agents may make plans, and the daemon follows them. |
 | `requests.plans.stallMinutes` | number (up to 10080) | `30` | Minutes without progress before a step's agent is nudged. |

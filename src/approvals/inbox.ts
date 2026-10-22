@@ -11,6 +11,7 @@ import { openDb } from "@/storage/sqlite"
 import { RequestStore, hasRequestTables } from "@/requests/store"
 import { PlanStore, hasPlanTables } from "@/requests/plan-store"
 import { readRequestSettings } from "@/requests/settings"
+import { requestTitle } from "@/requests/card-view"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -272,13 +273,14 @@ function requestItems(ctx: InboxContext): InboxItem[] {
   return store.listByState("needs_attention").map((r) => ({
     key: `request:${r.id}`,
     kind: "request" as const,
-    title: `Request not finished: ${clip(r.text, 80)}`,
+    title: r.headline ? requestTitle(r, 120) : `Request not finished: ${clip(r.text, 80)}`,
     ask: `Ask ${r.agentId} to pick it up again?`,
     yes: `hand it back to ${r.agentId}`,
     no: "drop the request",
     raised_by: r.agentId,
     created_at: new Date(r.createdAt).toISOString(),
-    detail: clip(`${r.attentionReason ?? "It needs attention"}. Asked on ${r.channel}: ${r.text}`),
+    // The headline and need first (#1126); the owner's own words below.
+    detail: clip([r.need && (/[.!?…]$/.test(r.need) ? r.need : `${r.need}.`), `${r.attentionReason ?? "It needs attention"}.`, `You said on ${r.channel}: ${r.text}`].filter(Boolean).join(" ")),
     more: `agentx requests show ${r.id}`,
   }))
 }

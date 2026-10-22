@@ -47,10 +47,30 @@ Other people's messages are never recorded.
 
 In the dashboard, the same list is under **Approvals**, in **Open requests**. Each request is a card:
 
-- a short summary of what you asked, in plain words,
+- its **headline**: what it is, in a few words (see [What a request is called](#what-a-request-is-called)),
+- **Needed from you**: what you have to do, or "Nothing, just so you know",
 - its state, the agent that has it, and why it is not finished,
-- **What you said** (or **What you asked**): your own words, in full. For a request you spoke, this is the transcript,
+- **You said**: your own words, in full. For a request you spoke, this is the transcript,
 - **Last answer from …**: what the agent last told you about it, when it answered.
+
+![An open request card with its headline, the need line and the owner's own words under You said](/screenshots/approvals/request-headline.png)
+
+## What a request is called
+
+Every request carries two short lines, so you can tell what it is at a glance or when it is read out to you:
+
+- the **headline**: what it is, in a few plain words, for example "Fix and ship the demo shop checkout button";
+- the **need**: what is needed from you, for example "Say which phone you use". When the agent can do it without you, it says "Nothing, just so you know".
+
+The headline is the title of the request everywhere: its card on the **Approvals** page, the card that pops up on a Mac, the notification you get when it needs attention, the Approvals inbox, and the [Desk](../dashboard/mobile-desk.md). The need line comes right under it. Your own words come after that, under **You said**.
+
+Who writes them:
+
+1. The agent, with its `agentx_request` tool. It gives `headline` and `need` when it takes the request on (`accept`), asks you something (`wait`) or makes a promise (`promise`), or later with the `describe` action: `{action:"describe", headline:"Fix the login page on mobile", need:"Nothing, just so you know"}`. A headline is at most 100 characters, a need at most 200.
+2. If the agent gave none, the daemon writes them once, by asking the same small AI model that sorts your messages (the intent classifier, `graph.classifierModel`). It uses the login or key you already set up, so it adds no new paid service. It tries each request one time; the agent's own words always win over the daemon's.
+3. If neither wrote one, or you turned the daemon's headlines off, the title is the start of your own words, as before.
+
+A headline must say what the request is in words. A title that is only a reference, such as "review #1104", is not shown on the Mac card: the agent is told to give the request a proper headline instead.
 
 ## Decide on a request
 
@@ -196,6 +216,7 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --from none` | Clears the list of who counts as you. |
 | `agentx requests settings --stale-hours 48` | Hours without activity before a request comes back to you. Default 24. |
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
+| `agentx requests settings --headlines off` | Stops the daemon from writing a headline for a request its agent did not describe. Such a request is then titled with the start of your words. Default on. In the dashboard: **Write a headline when the agent gave none**. |
 | `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
 | `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
 
@@ -216,6 +237,8 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 9. **Terminal:** run `agentx requests --stalled`. It prints the stalled requests by group, or `nothing is stalled`.
 10. **Terminal:** run `agentx requests today`. Each request you made since midnight is listed; the ones with no home are red, at the top.
 11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
+12. Ask an agent for something that takes a while. Within a few minutes, **Terminal:** run `agentx requests`. The request shows a headline in bold and `Needed: …` above your own words.
+13. **Browser:** open **Approvals** and scroll to **Open requests**. The card's title is the headline, with **Needed from you** under it and your words under **You said**.
 
 ## If something is wrong
 
@@ -232,4 +255,6 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A request is marked `unverified`:** its check could not tell. `agentx requests show <id>` says why. Common causes: the address is down, the GitHub or GitLab token is missing or cannot see the issue, the local copy of the repository does not have the commit yet (update it), or the person in a `reply` check is not in `people`. Fix the cause and wait for the next check, or close it yourself with `--reason`.
 - **`no repos are set up for this check on this node`:** add the folder under `requests.checkers.repos` in `agentx.json`.
 - **`the … check is turned off on this node`:** add the kind back with `agentx requests settings --checks`.
+- **A request has no headline, only the start of your words:** the agent did not describe it, and the daemon could not. Check `agentx requests settings` says `Headlines on`. The daemon tries each request once; if the model could not be reached then (no login, a rate limit), it does not try again. The daemon log says why, in a line that starts with `[requests]`. Ask the agent to describe the request instead.
+- **The agent's `describe` is refused with `headline is longer than 100 characters`:** the agent has to say it shorter. Nothing is cut for it.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.

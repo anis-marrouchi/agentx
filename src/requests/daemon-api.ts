@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto"
-import { CLOSED_STATES, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
+import { CLOSED_STATES, HEADLINE_MAX, HOME_KINDS, HOME_LINK_MAX, NEED_MAX, OPEN_STATES, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
 import type { RequestTracker } from "./tracker"
@@ -18,7 +18,9 @@ import { reportStep, type StepStatus } from "./plan-sweep"
 //                         code work or a long estimate needs one, #1048),
 //                         wait (on the owner), done, decline, or step (a
 //                         report on one step of a plan), or promise (an
-//                         open loop the agent owes someone, #1039). The
+//                         open loop the agent owes someone, #1039), or
+//                         describe (its headline and need line, #1126;
+//                         accept, wait and promise take them too). The
 //                         call must prove it comes from a running turn of
 //                         that agent (CallerProof).
 // A done on a loop with a `closeWhen` runs its checker first (#1039):
@@ -96,7 +98,23 @@ export interface ApiReply {
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
 export const MAX_OPEN_PROMISES = 200
 const OWED_TO_RE = /^[\w.@:+-]{1,200}$/
-const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise"]
+const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe"]
+
+/** The optional `headline` and `need` of accept, wait, promise and
+ *  describe (#1126): what the owner reads first. Too long is refused, not
+ *  cut: the agent can say it shorter, a cut cannot. */
+export function parseDescription(input: Record<string, unknown>): { headline?: string; need?: string } | string {
+  const out: { headline?: string; need?: string } = {}
+  for (const [key, max] of [["headline", HEADLINE_MAX], ["need", NEED_MAX]] as const) {
+    const v = input[key]
+    if (v === undefined || v === null || v === "") continue
+    if (typeof v !== "string") return `${key} must be text`
+    const text = v.replace(/\s+/g, " ").trim()
+    if (text.length > max) return `${key} is longer than ${max} characters: say it shorter`
+    if (text) out[key] = text
+  }
+  return out
+}
 
 /** The optional `due` and `closeWhen` of promise, accept and wait. */
 function parseLoop(input: Record<string, unknown>, deps: RequestsApiDeps, now: number): { dueAt?: number; closeWhen?: CloseWhen } | string {
@@ -223,7 +241,7 @@ export function handleRequestsApi(
     const action = str(input.action).toLowerCase()
     if (action === "drop") return { status: 403, body: { error: OWNER_ONLY } }
     if (!POST_ACTIONS.includes(action)) {
-      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step or promise` } }
+      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step, promise or describe` } }
     }
     if (!deps.enabled) return { status: 409, body: { error: "Requests are turned off on this node (requests.enabled)." } }
     const agentId = str(input.agentId)
@@ -233,6 +251,9 @@ export function handleRequestsApi(
     // of that agent. Without it, any local caller could close any request.
     const turn = deps.runningTurn(agentId, proof)
     if (!turn) return { status: 403, body: { error: `no running turn of "${agentId}" matches this call: use the agentx_request tool from inside your run` } }
+
+    const described = ["accept", "wait", "promise", "describe"].includes(action) ? parseDescription(input) : {}
+    if (typeof described === "string") return { status: 400, body: { error: described } }
 
     // A promise is a new loop of the agent's own, not a statement about
     // an existing request (#1039).
@@ -252,6 +273,7 @@ export function handleRequestsApi(
       }
       const id = `prm-${now.toString(36)}-${randomBytes(3).toString("hex")}`
       deps.store.addPromise({ id, channel: turn.channel, chatId: turn.chatId, agentId, text, owedTo, ...loop, home: home ?? null, now })
+      store.describe(id, described, "agent")
       return { status: 200, body: { request: store.get(id) } }
     }
 
@@ -292,6 +314,14 @@ export function handleRequestsApi(
     }
 
     if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
+
+    if (action === "describe") {
+      if (!described.headline && !described.need) {
+        return { status: 400, body: { error: "describe needs headline (what it is, in a few words) or need (what the owner must do, or \"nothing, just so you know\")" } }
+      }
+      store.describe(request.id, described, "agent")
+      return { status: 200, body: { request: store.get(request.id) } }
+    }
 
     const home = parseHome(input.home)
     if (typeof home === "string") return { status: 400, body: { error: home } }
@@ -370,6 +400,7 @@ export function handleRequestsApi(
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
       deps.plans.create(request.id, agentId, parsed.steps, now)
+      store.describe(request.id, described, "agent")
       deps.onPlanChange?.()
       return { status: 200, body: { request: store.get(request.id), plan: deps.plans.get(request.id), steps: deps.plans.steps(request.id) } }
     }
@@ -384,6 +415,7 @@ export function handleRequestsApi(
       else store.close(request.id, "declined", str(input.reason), now)
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
+      store.describe(request.id, described, "agent")
     } catch (e: any) {
       return { status: 400, body: { error: e?.message ?? String(e) } }
     }

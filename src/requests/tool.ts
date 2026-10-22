@@ -16,6 +16,9 @@ import { callerHeaders } from "@/calls/service"
 //   decline  I will not do it, with the reason
 //   promise  I owe someone something (owedTo, text, due, closeWhen):
 //            an open loop of its own, listed with the open requests
+//   describe give it a headline and a need line (#1126): what the owner
+//            reads first on its card, push and Desk line. accept, wait
+//            and promise take `headline` and `need` too
 //   list     what is still open
 // It talks to the daemon's /requests endpoints. Dropping a request is the
 // owner's alone; there is no action for it here.
@@ -46,7 +49,7 @@ export function describeOpen(items: any[]): string {
     const when = new Date(r.createdAt).toISOString().slice(0, 16).replace("T", " ")
     const extra = r.state === "waiting_owner" && r.question ? ` Question: ${r.question}`
       : r.state === "needs_attention" && r.attentionReason ? ` ${r.attentionReason}` : ""
-    const words = String(r.text).replace(/\s+/g, " ").trim()
+    const words = String(r.headline || r.text).replace(/\s+/g, " ").trim()
     const loop = [
       r.promise && r.owedTo ? ` Promised to ${r.owedTo}.` : "",
       r.dueAt ? ` Due ${new Date(r.dueAt).toISOString().slice(0, 16).replace("T", " ")} UTC.` : "",
@@ -89,6 +92,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         id: args.id, question: args.question, evidence: args.evidence, reason: args.reason,
         steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
+        headline: args.headline, need: args.need,
       }),
       signal: AbortSignal.timeout(action === "done" ? DONE_TIMEOUT_MS : 10_000),
     })
@@ -102,6 +106,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
         `Steps the owner approves get a decision card now; an approved message is sent by the daemon itself. Report your own steps with {action:"step", id:"${r.id}", step:<n>, status:"progress"|"done"|"blocked"}.`,
       ].join("\n")
     }
+    if (action === "describe") return `Request ${r.id} now reads: ${r.headline ?? "(no headline)"}. Needed from the owner: ${r.need ?? "(not said)"}.`
     if (action === "step") return [`Step reported. Plan of ${r.id}:`, ...describeSteps(data.steps)].join("\n")
     if (action === "accept") return `Request ${r.id} is open and in progress. Close it with done (and a link to the evidence) or decline (and the reason); it stays on the owner's list until then.`
     if (action === "wait") return `Request ${r.id} is waiting on the owner with your question. Ask them the question now, once.`

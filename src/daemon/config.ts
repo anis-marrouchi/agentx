@@ -1360,6 +1360,14 @@ export const requestsConfigSchema = z.object({
   staleAfterHours: z.number().positive().max(24 * 365).default(24),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
+  /** Headlines (src/requests/headline.ts, #1126): when an agent did not
+   *  give its request a headline and a need line, the daemon writes them
+   *  once, with one small call to the model the intent classifier uses
+   *  (graph.classifierModel). Off: such a request is titled with the start
+   *  of the owner's words. */
+  headlines: z.object({
+    enabled: z.boolean().default(true),
+  }).default({}),
   /** Tracked plans (src/requests/plans.ts, #788): a request with two or
    *  more steps, each with an owner agent, followed until every step is
    *  done. Needs `enabled` above. */

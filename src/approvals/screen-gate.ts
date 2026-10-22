@@ -59,9 +59,9 @@ export function cardRuleBreak(card: { title?: string; ask?: string; choices?: st
   const ask = typeof card.ask === "string" ? card.ask : ""
   if (!title.trim()) return "title is missing: say what it is in plain words"
   if (title.length > SCREEN_LIMITS.title) return `title is longer than ${SCREEN_LIMITS.title} characters`
-  // A request's card is titled with the owner's own words ("review #12"):
-  // no agent wrote it, and none could reword it.
-  const bare = card.origin?.kind === "request" ? null : referenceOnlyTitle(title)
+  // A request's card follows the rule too (#1126): its agent gives it a
+  // headline with agentx_request describe, or the daemon writes one.
+  const bare = referenceOnlyTitle(title)
   if (bare) return bare
   if (!ask.trim()) return "ask is missing: one card asks one thing"
   if (ask.length > SCREEN_LIMITS.ask) return `ask is longer than ${SCREEN_LIMITS.ask} characters`
@@ -116,8 +116,15 @@ export function followupBudgetRefusal(
 }
 
 /** What the author hears when the popup does not show its card. */
-export function returnedText(card: { id: string; title?: string }, reason: string): string {
+export function returnedText(card: { id: string; title?: string; origin?: { kind: string } }, reason: string): string {
   const title = card.title?.trim()
+  if (card.origin?.kind === "request") {
+    return [
+      `[screen gate] The request ${card.id}${title ? ` ("${title}")` : ""} was not shown to the owner: ${reason}.`,
+      "It is still in their inbox, unchanged. Give it a headline the owner can read at a glance:",
+      `agentx_request {action:"describe", id:"${card.id}", headline:"<what it is, in a few words>", need:"<what they must do, or Nothing, just so you know>"}.`,
+    ].join(" ")
+  }
   return [
     `[screen gate] Your card ${card.id}${title ? ` ("${title}")` : ""} was not shown to the owner: ${reason}.`,
     "It is still in his inbox, unchanged. If it must reach him on screen, close it (agentx_approval resolve) and raise one that passes:",

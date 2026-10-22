@@ -31,6 +31,8 @@ export interface RequestSettings {
   /** The checkers that close loops on evidence (#1039). Unset: the
    *  defaults (DEFAULT_CHECKER_SETTINGS). */
   checkers?: CheckerSettings
+  /** The daemon's headlines for undescribed requests (#1126). Unset: on. */
+  headlines?: { enabled: boolean }
 }
 
 /** Channel of the turn that hands a request back to its agent. */

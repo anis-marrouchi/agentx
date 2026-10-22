@@ -88,6 +88,7 @@ import { handleWatchersApi } from "@/watchers/daemon-api"
 import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
 import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
+import { providerHeadlineModel, writeMissingHeadlines, type HeadlineModel } from "@/requests/headline"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
@@ -2099,6 +2100,9 @@ export class AgentXDaemon {
    *  is the owner's (requests/operator, #393). */
   private operatorKey: string | null = null
   private requestsSweeping = false
+  /** The headline pass (#1126) is running: one at a time. */
+  private headlinesWriting = false
+  private headlineModel?: { model: string; call: HeadlineModel }
   /** Task watchers (src/watchers, #1030). */
   private watchers: AttachedWatchers | null = null
   private watchersSweeping = false
@@ -2233,6 +2237,9 @@ export class AgentXDaemon {
             .catch((e: any) => this.log(`[requests] sweep failed: ${e?.message ?? e}`))
             .finally(() => { this.requestsSweeping = false })
         }
+        // Headlines for requests their agent did not describe (#1126):
+        // beside the requests check, so a slow model never holds it.
+        if (this.requests && !this.headlinesWriting) this.writeHeadlines(this.requests)
         this.status?.board.sweep()
         // The Reminders mirror (#1062): beside the sweep, because the OS
         // task app can take seconds to answer.
@@ -2495,6 +2502,20 @@ export class AgentXDaemon {
       },
       log: this.log,
     })
+  }
+
+  /** A headline and need line for the open requests their agent did not
+   *  describe (src/requests/headline.ts, #1126), a few each minute. */
+  private writeHeadlines(requests: AttachedRequests): void {
+    const settings = this.config.requests
+    if (!settings.enabled || settings.headlines?.enabled === false) return
+    const model = this.config.graph?.classifierModel ?? "claude-haiku-4-5-20251001"
+    if (this.headlineModel?.model !== model) this.headlineModel = { model, call: providerHeadlineModel(model) }
+    this.headlinesWriting = true
+    void writeMissingHeadlines(requests.store, this.headlineModel.call, { log: this.log })
+      .then((n) => { if (n) this.log(`[requests] wrote ${n} headline(s)`) })
+      .catch((e: any) => this.log(`[requests] headlines failed: ${e?.message ?? e}`))
+      .finally(() => { this.headlinesWriting = false })
   }
 
   /** Wait, up to `maxMs`, for the agent's turn in this chat to end, so a

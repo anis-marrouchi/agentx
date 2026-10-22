@@ -6,18 +6,20 @@ import { activeStepAgentOf, stalledWhy, waitsOn, type StallGroup } from "./loops
 
 // --- One open request as a card the owner can read in seconds (#459) ---
 //
-// The Approvals page shows each open request as a card: a short plain
-// summary, where it stands and why it is not finished, then the words the
-// owner used and the agent's last answer, both rendered. markdownToHtml
-// escapes before it marks up, so nothing an agent or a channel wrote
-// reaches the page as HTML. No model call: the summary is the start of the
-// request's own words, without the markdown marks.
+// The Approvals page shows each open request as a card: its headline and
+// what is needed from the owner (#1126), where it stands and why it is not
+// finished, then the words the owner used ("You said") and the agent's
+// last answer, both rendered. markdownToHtml escapes before it marks up,
+// so nothing an agent or a channel wrote reaches the page as HTML. No
+// model call here: a request with no headline yet is titled with the start
+// of its own words, without the markdown marks.
 
 export const SUMMARY_MAX = 200
 /** An answer of pages is cut: the card is for reading quickly. */
 export const ANSWER_MAX = 4000
 
 export interface RequestCard extends RequestRecord {
+  /** Its headline, else the start of its words. */
   summary: string
   /** The request in the owner's words (the transcript, when spoken). */
   textHtml: string
@@ -65,6 +67,19 @@ export function summarize(md: string, max = SUMMARY_MAX): string {
   return end > max / 2 ? cut.slice(0, end + 1) : `${cut.slice(0, max - 1).trimEnd()}…`
 }
 
+/** What a request is called on every surface (#1126): the headline the
+ *  agent or the daemon wrote, else the start of the owner's words. */
+export function requestTitle(r: Pick<RequestRecord, "headline" | "text">, max = SUMMARY_MAX): string {
+  const headline = r.headline?.replace(/\s+/g, " ").trim()
+  if (!headline) return summarize(r.text, max)
+  return headline.length > max ? `${headline.slice(0, max - 1).trimEnd()}…` : headline
+}
+
+/** The owner's own words, on one line and cut, under "You said". */
+export function youSaid(r: Pick<RequestRecord, "text">, max = 240): string {
+  return summarize(r.text, max)
+}
+
 /** What the stall view needs: the quiet time, the clock, and which ids are agents. */
 export interface StallLookup { staleAfterHours: number; now: number; isAgent: (id: string) => boolean }
 
@@ -80,7 +95,7 @@ export function requestCard(
   const cutAnswer = answer && answer.text.length > ANSWER_MAX ? `${answer.text.slice(0, ANSWER_MAX)}\n\n…` : answer?.text
   return {
     ...r,
-    summary: summarize(r.text),
+    summary: requestTitle(r),
     textHtml: markdownToHtml(r.text),
     why: r.state === "waiting_owner" ? r.question : r.state === "needs_attention" ? r.attentionReason : null,
     ownerNoteHtml: r.ownerNote ? markdownToHtml(r.ownerNote) : null,

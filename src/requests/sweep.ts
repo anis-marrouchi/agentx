@@ -96,11 +96,15 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
   const words = r.text.replace(/\s+/g, " ").trim()
   const said = words.length > 240 ? `${words.slice(0, 239)}…` : words
   const on = waitsOn(r, { isAgent })
+  // The headline and what is needed come first (#1126): a banner that
+  // shows two lines shows what it is. The owner's own words come below.
   return [
+    ...(r.headline ? [r.headline] : []),
+    ...(r.need ? [`Needed from you: ${r.need}`] : []),
     r.promise
       ? `A promise ${r.agentId} made to ${r.owedTo} is not kept yet.`
       : `A request you gave ${r.agentId} on ${r.channel} is not finished.`,
-    r.promise ? `It promised: ${said}` : `You asked: ${said}`,
+    r.promise ? `It promised: ${said}` : `You said: ${said}`,
     `What happened: ${r.attentionReason ?? "unknown"}`,
     `Waiting on: ${waitsOnWords(on.group, on.who)}`,
     ...(r.verifyState === "unverified" && r.verifyDetail ? [`Its check could not say: ${r.verifyDetail}`] : []),
