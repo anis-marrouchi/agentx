@@ -4,6 +4,8 @@ A *pinned page* is a button in the [phone app](./mobile-app.md) that opens a web
 
 The buttons sit in a row under the app's header, on the **Chat** tab, where the app opens. You add, rename and remove them in **Alerts**, on the **Pinned pages** card.
 
+![Three pinned pages as buttons under the header on Chat](/screenshots/mobile-app/pins-chat.png)
+
 ## Pin a page
 
 1. Open the phone app and go to **Alerts**.
@@ -12,6 +14,8 @@ The buttons sit in a row under the app's header, on the **Chat** tab, where the 
 4. Tap **Pin page**. The button shows under the header on **Chat**.
 
 To rename or remove a button, tap **Rename** or **Remove** next to it on the same card.
+
+![The Pinned pages card in Alerts, with Rename and Remove next to each page and Pin a page below](/screenshots/mobile-app/pins-card.png)
 
 You can also do it from the computer, in the folder that holds `agentx.json`:
 
@@ -46,3 +50,19 @@ Some addresses work as a key: anyone who has the link can use the page. The list
 |---|---|---|
 | `app.pins.file` | `".agentx/app-pins.json"` | Where the buttons are kept, relative to the folder that holds `agentx.json`. |
 | `app.pins.max` | `12` | Most buttons you can pin (1 to 50). |
+
+## Check it worked
+
+1. **Phone:** open the phone app. Under the header on **Chat**, your button shows.
+2. **Phone:** tap it. The page opens inside the app.
+3. **Phone:** on a page that uses the microphone, start it (for example hold the talk button). The browser asks for the microphone the first time; after **Allow**, the page hears you.
+4. **Phone:** go back. The phone app shows again.
+5. **Terminal (computer):** `agentx app pins` lists the same button.
+
+## If something is wrong
+
+- **No row of buttons on Chat** — no page is pinned yet, or the app has not loaded the list. Check **Alerts** > **Pinned pages**; close the app and open it again.
+- **"Only https:// pages can be pinned"** — the address starts with `http://` or has no scheme. Browsers allow the microphone only on `https://` pages; serve the page over https (on a tailnet, `tailscale serve` does it).
+- **The page opens in the Chrome browser instead of the app** — the phone app was opened from Chrome, not from the AgentX app. Open **AgentX** from the app list.
+- **The page says the microphone is blocked** — open the site settings for the page's address in the browser and allow the microphone. On Android, also check **Settings** > **Apps** > **Chrome** > **Permissions** > **Microphone**.
+- **The page shows "not found" or asks you to sign in** — the address is wrong or has expired. Remove the button and pin the current address.
