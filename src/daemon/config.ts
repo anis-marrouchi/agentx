@@ -1884,6 +1884,15 @@ export const daemonConfigSchema = z.object({
        *  Android runs background checks at most every 15 minutes. */
       syncMinutes: z.number().int().min(15).max(1440).default(60),
     }).default({}),
+    /** Pinned pages: https pages the owner opens from a button in the
+     *  phone app (#1120). Added, renamed and removed from the app or with
+     *  `agentx app pin`. */
+    pins: z.object({
+      /** Where the list is kept. Relative paths resolve from the folder
+       *  the daemon runs in (the one holding agentx.json). */
+      file: z.string().min(1).default(".agentx/app-pins.json"),
+      max: z.number().int().min(1).max(50).default(12),
+    }).default({}),
   }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */
   demo: z.object({

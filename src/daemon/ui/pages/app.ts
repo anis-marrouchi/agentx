@@ -12,7 +12,9 @@
 // Phase 1 of the mobile epic shipped the shell and pairing. Chat is filled
 // by app-chat.client.ts, Fleet and Activity by app-fleet.client.ts, Desk by
 // app-desk.client.ts, Alerts
-// by app-alerts.client.ts with its Places card from app-places.client.ts; Chat is voice first (app-voice.client.ts, with
+// by app-alerts.client.ts with its Places card from app-places.client.ts
+// and its Pinned pages card from app-pins.client.ts (which also fills the
+// row of pinned buttons under the header); Chat is voice first (app-voice.client.ts, with
 // the orb in app-orb.client.ts); the header's Share camera is
 // app-camera.client.ts; a sideways swipe changes tab (app-swipe.client.ts).
 // A tab without content yet says so plainly — no simulated data.
@@ -27,6 +29,7 @@ import { APP_DESK_CSS } from "./app-desk.css"
 import { APP_ALERTS_SCRIPT } from "./app-alerts.client"
 import { APP_PLACES_CSS, APP_PLACES_SCRIPT } from "./app-places.client"
 import { locationErrorText } from "./app-places-logic"
+import { APP_PINS_BAR, APP_PINS_CSS, APP_PINS_SCRIPT } from "./app-pins.client"
 import { APP_ANNOUNCE_SCRIPT } from "./app-announce.client"
 import { APP_CHAT_SCRIPT } from "./app-chat.client"
 import { APP_CHAT_VIEW_SCRIPT } from "./app-chat-view.client"
@@ -100,7 +103,7 @@ export function renderAppPage(): string {
 
   return `<!doctype html>
 <html lang="en">
-<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}</style></head>
+<head>${head("AgentX")}<style>${APP_CSS}${APP_FLEET_CSS}${APP_DESK_CSS}${APP_CHAT_CSS}${APP_CHAT_STRIP_CSS}${APP_VOICE_CSS}${CAMERA_CSS}${CAMERA_ASKS_CSS}${APP_SWIPE_CSS}${APP_PLACES_CSS}${APP_REDESIGN_CSS}${APP_PINS_CSS}</style></head>
 <body>
 <header class="bar">
   <div>
@@ -109,6 +112,7 @@ export function renderAppPage(): string {
   </div>
   <div class="bar-btns">${CAMERA_BUTTON}<button type="button" id="theme" class="icon-btn" aria-label="Switch to light theme"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 15.5A9 9 0 0 1 8.5 4 9 9 0 1 0 20 15.5Z"/></svg></button></div>
 </header>
+${APP_PINS_BAR}
 <p id="offline" class="offline" role="status" hidden>Offline. Showing the saved app; live data needs a connection.</p>
 ${CAMERA_ASKS_BODY}
 <main>${panels}</main>
@@ -121,6 +125,7 @@ ${CAMERA_BODY}
 <script>${APP_DESK_SCRIPT}</script>
 <script>${APP_ALERTS_SCRIPT}</script>
 <script>${injectFns({ locationErrorText })}${APP_PLACES_SCRIPT}</script>
+<script>${APP_PINS_SCRIPT}</script>
 <script>${APP_ANNOUNCE_SCRIPT}</script>
 <script>${injectFns({ markdownToHtml })}${APP_CHAT_VIEW_SCRIPT}${APP_CHAT_LOG_SCRIPT}${APP_CHAT_SHEETS_SCRIPT}${APP_CHAT_SCRIPT}</script>
 <script>${injectFns({ queueSpeech, nextSpeech })}${APP_ORB_SCRIPT}${APP_VOICE_AUDIO_SCRIPT}${APP_VOICE_SCRIPT}</script>

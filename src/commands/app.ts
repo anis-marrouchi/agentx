@@ -11,6 +11,7 @@ import { isRemoteDevice } from "@/channels/push"
 import { PushStore } from "@/channels/push-store"
 import { pushOrigin } from "@/daemon/push-bridge"
 import { openDb } from "@/storage/sqlite"
+import { DEFAULT_PINS_FILE, DEFAULT_PINS_MAX, PinStore, parsePinInput, pinsDeps, pinsFile, type PinsDeps } from "@/daemon/app-pins"
 
 // --- agentx app: pair phones with the /app PWA ---
 //
@@ -151,6 +152,49 @@ appCmd
     console.log(chalk.dim(`  Keep this file private. It is readable only by you, and agentx.json never contains it.`))
     if (existing) console.log(chalk.yellow(`  ⚠ Old keys replaced: open Alerts on each phone and turn notifications on again.`))
     console.log(chalk.dim(`  Restart the daemon so it picks up the keys.\n`))
+  })
+
+// Pinned pages (#1120): the same list the phone app's Pinned pages card
+// edits, so a page can be pinned before the phone is at hand.
+function pinStore(): PinsDeps {
+  try { return pinsDeps(loadDaemonConfig(), process.cwd()) } catch { /* no agentx.json here: the defaults */ }
+  return { store: new PinStore(pinsFile(process.cwd(), DEFAULT_PINS_FILE)), max: DEFAULT_PINS_MAX }
+}
+
+appCmd
+  .command("pins")
+  .description("list the pages pinned as buttons in the phone app")
+  .action(() => {
+    const { store } = pinStore()
+    const pins = store.list()
+    if (!pins.length) { console.log(chalk.dim("\n  No pinned pages. Add one with: agentx app pin <label> <https-url>\n")); return }
+    console.log("")
+    for (const p of pins) console.log(`  ${p.id}  ${chalk.bold(p.label)}  ${chalk.dim(new URL(p.url).host)}`)
+    console.log("")
+  })
+
+appCmd
+  .command("pin <label> <url>")
+  .description("pin an https page as a button in the phone app")
+  .action((label: string, url: string) => {
+    const { store, max } = pinStore()
+    const input = parsePinInput({ label, url })
+    if (!input.ok) { console.log(chalk.red(`  ${input.error}`)); process.exit(1) }
+    const r = store.add(input.value, max)
+    if (!r.ok) { console.log(chalk.red(`  ${r.error}`)); process.exit(1) }
+    console.log(chalk.green(`\n  ✓ Pinned ${r.pin.label} (${r.pin.id}). It shows in the phone app the next time it opens.\n`))
+  })
+
+appCmd
+  .command("unpin <id-or-label>")
+  .description("remove a pinned page from the phone app")
+  .action((key: string) => {
+    const { store } = pinStore()
+    const pin = store.list().find((p) => p.id === key || p.label.toLowerCase() === key.toLowerCase())
+    if (!pin) { console.log(chalk.red(`  No pinned page ${key}. See: agentx app pins`)); process.exit(1) }
+    const r = store.remove(pin.id)
+    if (!r.ok) { console.log(chalk.red(`  ${r.error}`)); process.exit(1) }
+    console.log(chalk.green(`\n  ✓ Removed ${pin.label}.\n`))
   })
 
 /** Runs `fn` on this folder's subscriptions table. */
