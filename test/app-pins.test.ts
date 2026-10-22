@@ -111,6 +111,14 @@ describe("config", () => {
     expect(parse([{ label: "", url: "https://status.example" }]).success).toBe(false)
     expect(parse([{ label: "Status", url: "https://status.example", extra: 1 }]).success).toBe(false)
   })
+  it("refuses more pages than app.pins.max", () => {
+    const pages = [{ label: "A", url: "https://a.example" }, { label: "B", url: "https://b.example" }]
+    const parse = (max: number) => daemonConfigSchema.safeParse({ node: { id: "n", name: "n" }, app: { pins: { max, pages } } })
+    expect(parse(2).success).toBe(true)
+    const r = parse(1)
+    expect(r.success).toBe(false)
+    expect(JSON.stringify(r.error?.issues)).toContain("app.pins.max")
+  })
   it("hands the pages to the store, before the file's", () => {
     const config = daemonConfigSchema.parse({ node: { id: "n", name: "n" }, app: { pins: { file: join(dir, "cfg-deps.json"), pages: [{ label: "Status", url: "https://status.example" }] } } })
     const { store, max } = pinsDeps(config, dir)
@@ -154,6 +162,21 @@ describe("config pins", () => {
     expect(s.remove(cfg[0].id)).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("agentx.json") })
     s.add({ label: "Remote", url: "https://x.example" }, 5)
     expect(JSON.parse(readFileSync(path, "utf-8")).pins.map((p: any) => p.label)).toEqual(["Remote"])
+  })
+  it("refuses to add a page that agentx.json already pins", () => {
+    const s = new PinStore(join(dir, `cfg-${n++}.json`), Date.now, cfg)
+    expect(s.add({ label: "Mine", url: "https://status.example/" }, 5)).toMatchObject({ ok: false, status: 409, error: expect.stringContaining("agentx.json") })
+  })
+  it("hides and doesn't count a file pin that agentx.json now repeats", () => {
+    const path = join(dir, `cfg-${n++}.json`)
+    const own = new PinStore(path)
+    own.add({ label: "Status page", url: "https://status.example/" }, 5)
+    own.add({ label: "tool", url: "https://elsewhere.example/" }, 5)
+    own.add({ label: "Remote", url: "https://x.example" }, 5)
+    const s = new PinStore(path, Date.now, cfg)
+    expect(s.list().map((p) => p.label)).toEqual(["Status", "Tool", "Remote"])
+    expect(s.add({ label: "More", url: "https://y.example" }, 4).ok).toBe(true)
+    expect(JSON.parse(readFileSync(path, "utf-8")).pins).toHaveLength(4)
   })
 })
 

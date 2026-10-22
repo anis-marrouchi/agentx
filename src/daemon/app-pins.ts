@@ -117,7 +117,14 @@ export class PinStore {
   constructor(private path: string, private now: () => number = Date.now, private fixed: Pin[] = []) {}
 
   list(): Pin[] {
-    return [...this.fixed, ...this.load().pins]
+    return [...this.fixed, ...this.load().pins.filter((p) => !this.shadowed(p))]
+  }
+
+  /** A file pin with the address or name of an agentx.json pin: added on
+   *  the phone before the same page went into agentx.json. It stays in the
+   *  file but isn't shown or counted, so the page shows as one button. */
+  private shadowed(pin: Pin): boolean {
+    return this.fixed.some((p) => p.url === pin.url || p.label.toLowerCase() === pin.label.toLowerCase())
   }
 
   private isFixed(id: string): boolean {
@@ -172,8 +179,9 @@ export class PinStore {
     const e = this.editable()
     if (!e.ok) return e
     const pins = e.pins
-    if (pins.length + this.fixed.length >= max) return { ok: false, status: 409, error: `You already have ${max} pinned pages, the most allowed (app.pins.max). Remove one first.` }
+    if (pins.filter((p) => !this.shadowed(p)).length + this.fixed.length >= max) return { ok: false, status: 409, error: `You already have ${max} pinned pages, the most allowed (app.pins.max). Remove one first.` }
     if ([...this.fixed, ...pins].some((p) => p.label.toLowerCase() === input.label.toLowerCase())) return { ok: false, status: 409, error: `You already have a button called ${input.label}.` }
+    if (this.fixed.some((p) => p.url === input.url)) return { ok: false, status: 409, error: "This page is already a button, set in agentx.json (app.pins.pages)." }
     const pin: Pin = { id: `pin_${randomBytes(6).toString("hex")}`, ...input, createdAt: new Date(this.now()).toISOString() }
     pins.push(pin)
     this.write(pins)

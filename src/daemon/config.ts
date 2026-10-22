@@ -1932,6 +1932,9 @@ export const daemonConfigSchema = z.object({
           try { const x = new URL(u); return x.protocol === "https:" && !!x.hostname && !x.username && !x.password } catch { return false }
         }, "must be an https:// address with no user name or password"),
       }).strict()).max(50).default([]),
+    }).refine((p) => p.pages.length <= p.max, {
+      path: ["pages"],
+      message: "has more pages than app.pins.max allows; raise app.pins.max or remove some pages",
     }).default({}),
   }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */
