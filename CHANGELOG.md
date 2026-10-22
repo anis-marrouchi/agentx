@@ -2,6 +2,15 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.152.0](https://github.com/anis-marrouchi/agentx/compare/v0.151.0...v0.152.0) (2026-10-22)
+
+
+### Features
+
+* **app:** pin a web page as a button in the phone app ([#1120](https://github.com/anis-marrouchi/agentx/issues/1120)) ([#1122](https://github.com/anis-marrouchi/agentx/issues/1122)) ([2b9c2a9](https://github.com/anis-marrouchi/agentx/commit/2b9c2a9e193b239eddca5cc84745f8a3cb7b6def))
+* **app:** pinned pages from agentx.json, offline buttons and a diagram ([#1121](https://github.com/anis-marrouchi/agentx/issues/1121) follow-up) ([#1125](https://github.com/anis-marrouchi/agentx/issues/1125)) ([204117b](https://github.com/anis-marrouchi/agentx/commit/204117b0e0c1172199fba68b894abb35f7cff324))
+* **requests:** cards say what they are, with a headline and a need line ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1128](https://github.com/anis-marrouchi/agentx/issues/1128)) ([f4b79b4](https://github.com/anis-marrouchi/agentx/commit/f4b79b4bb8bef5ccd3227b3061688eb4d5dfce19))
+
 ## [0.151.0](https://github.com/anis-marrouchi/agentx/compare/v0.150.0...v0.151.0) (2026-10-20)
 
 
