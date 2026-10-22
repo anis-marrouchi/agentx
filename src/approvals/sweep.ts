@@ -52,6 +52,9 @@ export interface SweepDeps {
   onCardResult?: (card: DecisionCard) => void
   /** Where the operator opens the inbox, for the digest. */
   dashboardUrl?: string
+  /** The nags kept back for the digest (#1126): their one line, and how
+   *  to clear them once the digest went out. */
+  nags?: { line(): { line: string; ids: number[] } | null; done(ids: number[]): void }
   log: (msg: string) => void
 }
 
@@ -79,13 +82,16 @@ export function digestDue(settings: ApprovalSettings["digest"], lastDigest: stri
   return { due: lastDigest !== date && minutes >= h * 60 + m, date }
 }
 
-export function digestText(items: InboxItem[], dashboardUrl?: string): string {
+export function digestText(items: InboxItem[], dashboardUrl?: string, nagLine?: string): string {
   const top = items[0]
-  const lines = [`${items.length} decision${items.length === 1 ? "" : "s"} waiting for you.`]
+  // A digest of nags alone does not open with "0 decisions".
+  const lines = items.length || !nagLine ? [`${items.length} decision${items.length === 1 ? "" : "s"} waiting for you.`] : []
   if (top) {
     const expires = top.expires ? ` Expires ${top.expires.slice(0, 16).replace("T", " ")} UTC${top.if_silent ? `, then: ${top.if_silent}` : ""}.` : ""
     lines.push(`Most urgent: ${top.title}: ${top.ask}${expires}`)
   }
+  // System nags kept back for this digest instead of a push each (#1126).
+  if (nagLine) lines.push(nagLine)
   lines.push(dashboardUrl ? `Open ${dashboardUrl.replace(/\/$/, "")}/approvals, or run: agentx approvals list` : "Open Approvals in the dashboard, or run: agentx approvals list")
   return lines.join("\n")
 }
@@ -174,12 +180,15 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
     if (!dest || !deps.sendDigest) { result.digest = "no-destination"; return result }
     // Snoozed items count: "later" hides them from the list, not from the day's total.
     const { items } = listInbox(ctx, { includeSnoozed: true })
-    if (items.length === 0) { result.digest = "empty"; return result }
+    let nags: { line: string; ids: number[] } | null = null
+    try { nags = deps.nags?.line() ?? null } catch (e: any) { log(`[approvals] digest: nags not read: ${e?.message ?? e}`) }
+    if (items.length === 0 && !nags) { result.digest = "empty"; return result }
     recordDigest(ctx.root, date)
     try {
-      await deps.sendDigest(dest, digestText(items, deps.dashboardUrl))
+      await deps.sendDigest(dest, digestText(items, deps.dashboardUrl, nags?.line))
+      if (nags) deps.nags!.done(nags.ids)
       result.digest = "sent"
-      log(`[approvals] digest sent: ${items.length} waiting`)
+      log(`[approvals] digest sent: ${items.length} waiting${nags ? `, ${nags.ids.length} nags` : ""}`)
     } catch (e: any) {
       result.digest = "failed"
       log(`[approvals] digest failed: ${e?.message ?? e}`)

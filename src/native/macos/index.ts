@@ -6,6 +6,7 @@ import { macosBanner } from "./banner"
 import { macosNotes } from "./notes"
 import type { Capture, Output, Run } from "./run"
 import { macosSound } from "./sound"
+import { macosSpeech } from "./speech"
 import { macosTasks } from "./tasks"
 
 /** Programs the adapter runs, so tests can stand in for them. */
@@ -43,6 +44,7 @@ export function macosAdapter(cfg: { reminders?: { command?: string } } = {}, io:
     banner: macosBanner(io),
     sound: macosSound(io),
     focus,
+    speech: macosSpeech(io),
     async describe() {
       const problems: string[] = []
       const isExec = io.isExecutable ?? executable
