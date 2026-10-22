@@ -25,6 +25,10 @@ describe("parsePinInput", () => {
       expect(parsePinUrl(url).ok).toBe(false)
     }
   })
+  it("refuses control and invisible characters in a label", () => {
+    expect(parsePinInput({ label: "Re" + String.fromCharCode(27) + "[31mmote", url: "https://a.example" }).ok).toBe(false)
+    expect(parsePinInput({ label: "Remote" + String.fromCharCode(0x202e), url: "https://a.example" }).ok).toBe(false)
+  })
   it("refuses an empty or long label", () => {
     expect(parsePinInput({ label: " ", url: "https://a.example" }).ok).toBe(false)
     expect(parsePinInput({ label: "x".repeat(41), url: "https://a.example" }).ok).toBe(false)
@@ -40,8 +44,8 @@ describe("PinStore", () => {
     expect(s.rename(a.pin.id, "TV remote")).toMatchObject({ ok: true, pin: { label: "TV remote" } })
     expect(s.list().map((p) => p.label)).toEqual(["TV remote"])
     expect(s.rename("pin_000000", "x")).toMatchObject({ ok: false, status: 404 })
-    expect(s.remove(a.pin.id)).toBe(true)
-    expect(s.remove(a.pin.id)).toBe(false)
+    expect(s.remove(a.pin.id)).toEqual({ ok: true })
+    expect(s.remove(a.pin.id)).toMatchObject({ ok: false, status: 404 })
     expect(s.list()).toEqual([])
   })
   it("stops at the limit", () => {
@@ -57,6 +61,20 @@ describe("PinStore", () => {
       { id: "nope", label: "Bad id", url: "https://ok.example", createdAt: "x" },
     ] }))
     expect(new PinStore(path).list().map((p) => p.label)).toEqual(["Ok"])
+  })
+  it("never writes over a file it can't read, so a typo loses no pin", () => {
+    const broken = join(dir, "broken.json")
+    const text = '{ "pins": [ { "id": "pin_abcdef", "label": "A", "url": "https://a.example", "createdAt": "x" }, ] }'
+    writeFileSync(broken, text)
+    const s = new PinStore(broken)
+    expect(s.list()).toEqual([])
+    expect(s.add({ label: "B", url: "https://b.example" }, 5)).toMatchObject({ ok: false, status: 409 })
+    expect(s.remove("pin_abcdef")).toMatchObject({ ok: false, status: 409 })
+    expect(readFileSync(broken, "utf-8")).toBe(text)
+    // Entries it would drop count as damage too.
+    const partly = join(dir, "partly.json")
+    writeFileSync(partly, JSON.stringify({ pins: [{ id: "pin_abcdef", label: "Ok", url: "https://ok.example", createdAt: "x" }, { id: "x" }] }))
+    expect(new PinStore(partly).rename("pin_abcdef", "New")).toMatchObject({ ok: false, status: 409 })
   })
   it("writes the file readable by the owner only", () => {
     const path = join(dir, "mode.json")

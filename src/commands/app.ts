@@ -191,7 +191,9 @@ appCmd
   .action((key: string) => {
     const { store } = pinStore()
     const pin = store.list().find((p) => p.id === key || p.label.toLowerCase() === key.toLowerCase())
-    if (!pin || !store.remove(pin.id)) { console.log(chalk.red(`  No pinned page ${key}. See: agentx app pins`)); process.exit(1) }
+    if (!pin) { console.log(chalk.red(`  No pinned page ${key}. See: agentx app pins`)); process.exit(1) }
+    const r = store.remove(pin.id)
+    if (!r.ok) { console.log(chalk.red(`  ${r.error}`)); process.exit(1) }
     console.log(chalk.green(`\n  ✓ Removed ${pin.label}.\n`))
   })
 

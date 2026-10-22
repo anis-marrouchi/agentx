@@ -42,6 +42,9 @@ export function pinsFile(root: string, file: string): string {
 export function parsePinLabel(v: unknown): { ok: true; value: string } | { ok: false; error: string } {
   const label = typeof v === "string" ? v.trim().replace(/\s+/g, " ") : ""
   if (!label) return { ok: false, error: "Give the button a name." }
+  // No control or invisible format characters: `agentx app pins` prints
+  // labels to a terminal.
+  if (/[\p{Cc}\p{Cf}]/u.test(label)) return { ok: false, error: "Use only letters, numbers, spaces and punctuation in the name." }
   if ([...label].length > PIN_LABEL_MAX) return { ok: false, error: `Keep the name under ${PIN_LABEL_MAX} characters.` }
   return { ok: true, value: label }
 }
@@ -66,21 +69,40 @@ export function parsePinInput(body: Record<string, unknown>): { ok: true; value:
   return { ok: true, value: { label: label.value, url: url.value } }
 }
 
-/** The pins, in the order they were added, in one small JSON file. */
+type Changed<T> = { ok: true } & T | { ok: false; status: 404 | 409; error: string }
+
+/** The pins, in the order they were added, in one small JSON file.
+ *
+ *  A file that can't be read as pins (a hand edit gone wrong) is shown
+ *  without the entries it can't use, but never written over: every change
+ *  is refused until the file is fixed, so no pin is lost to a typo. */
 export class PinStore {
   constructor(private path: string, private now: () => number = Date.now) {}
 
   list(): Pin[] {
-    try {
-      const raw = JSON.parse(readFileSync(this.path, "utf-8"))
-      const pins: unknown[] = Array.isArray(raw?.pins) ? raw.pins : []
-      return pins.filter((p): p is Pin => {
-        const o = p as Pin
-        return !!o && typeof o.id === "string" && ID.test(o.id) && parsePinLabel(o.label).ok && parsePinUrl(o.url).ok
-      })
-    } catch {
-      return []
+    return this.load().pins
+  }
+
+  private load(): { pins: Pin[]; damaged: boolean } {
+    let text: string
+    try { text = readFileSync(this.path, "utf-8") } catch (e: any) {
+      return { pins: [], damaged: e?.code !== "ENOENT" }
     }
+    let raw: any
+    try { raw = JSON.parse(text) } catch { return { pins: [], damaged: true } }
+    const all: unknown[] = Array.isArray(raw?.pins) ? raw.pins : []
+    const pins = all.filter((p): p is Pin => {
+      const o = p as Pin
+      return !!o && typeof o.id === "string" && ID.test(o.id) && parsePinLabel(o.label).ok && parsePinUrl(o.url).ok
+    })
+    return { pins, damaged: !Array.isArray(raw?.pins) || pins.length !== all.length }
+  }
+
+  /** The pins to change, or why they can't be changed. */
+  private editable(): { ok: true; pins: Pin[] } | { ok: false; status: 409; error: string } {
+    const { pins, damaged } = this.load()
+    if (damaged) return { ok: false, status: 409, error: `The pinned pages file (${this.path}) can't be read. Fix or remove it on the computer, then try again.` }
+    return { ok: true, pins }
   }
 
   private write(pins: Pin[]): void {
@@ -90,18 +112,22 @@ export class PinStore {
     renameSync(tmp, this.path)
   }
 
-  add(input: { label: string; url: string }, max: number): { ok: true; pin: Pin } | { ok: false; error: string } {
-    const pins = this.list()
-    if (pins.length >= max) return { ok: false, error: `You already have ${max} pinned pages, the most allowed (app.pins.max). Remove one first.` }
-    if (pins.some((p) => p.label.toLowerCase() === input.label.toLowerCase())) return { ok: false, error: `You already have a button called ${input.label}.` }
+  add(input: { label: string; url: string }, max: number): Changed<{ pin: Pin }> {
+    const e = this.editable()
+    if (!e.ok) return e
+    const pins = e.pins
+    if (pins.length >= max) return { ok: false, status: 409, error: `You already have ${max} pinned pages, the most allowed (app.pins.max). Remove one first.` }
+    if (pins.some((p) => p.label.toLowerCase() === input.label.toLowerCase())) return { ok: false, status: 409, error: `You already have a button called ${input.label}.` }
     const pin: Pin = { id: `pin_${randomBytes(6).toString("hex")}`, ...input, createdAt: new Date(this.now()).toISOString() }
     pins.push(pin)
     this.write(pins)
     return { ok: true, pin }
   }
 
-  rename(id: string, label: string): { ok: true; pin: Pin } | { ok: false; status: 404 | 409; error: string } {
-    const pins = this.list()
+  rename(id: string, label: string): Changed<{ pin: Pin }> {
+    const e = this.editable()
+    if (!e.ok) return e
+    const pins = e.pins
     const pin = pins.find((p) => p.id === id)
     if (!pin) return { ok: false, status: 404, error: "No such pinned page." }
     if (pins.some((p) => p.id !== id && p.label.toLowerCase() === label.toLowerCase())) return { ok: false, status: 409, error: `You already have a button called ${label}.` }
@@ -110,12 +136,13 @@ export class PinStore {
     return { ok: true, pin }
   }
 
-  remove(id: string): boolean {
-    const pins = this.list()
-    const left = pins.filter((p) => p.id !== id)
-    if (left.length === pins.length) return false
+  remove(id: string): Changed<{}> {
+    const e = this.editable()
+    if (!e.ok) return e
+    const left = e.pins.filter((p) => p.id !== id)
+    if (left.length === e.pins.length) return { ok: false, status: 404, error: "No such pinned page." }
     this.write(left)
-    return true
+    return { ok: true }
   }
 }
 
@@ -151,7 +178,7 @@ export async function handleAppPins(
     const p = parsePinInput(body)
     if (!p.ok) return json(res, 400, { error: p.error })
     const r = deps.store.add(p.value, deps.max)
-    return r.ok ? json(res, 200, { ok: true, pin: r.pin }) : json(res, 409, { error: r.error })
+    return r.ok ? json(res, 200, { ok: true, pin: r.pin }) : json(res, r.status, { error: r.error })
   }
   if (sub === "/rename") {
     const label = parsePinLabel(body.label)
@@ -160,7 +187,8 @@ export async function handleAppPins(
     return r.ok ? json(res, 200, { ok: true, pin: r.pin }) : json(res, r.status, { error: r.error })
   }
   if (sub === "/remove") {
-    return deps.store.remove(id) ? json(res, 200, { ok: true }) : json(res, 404, { error: "No such pinned page." })
+    const r = deps.store.remove(id)
+    return r.ok ? json(res, 200, { ok: true }) : json(res, r.status, { error: r.error })
   }
   return json(res, 404, { error: "not found" })
 }

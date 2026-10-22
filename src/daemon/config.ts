@@ -1889,7 +1889,7 @@ export const daemonConfigSchema = z.object({
      *  `agentx app pin`. */
     pins: z.object({
       /** Where the list is kept. Relative paths resolve from the folder
-       *  holding agentx.json. */
+       *  the daemon runs in (the one holding agentx.json). */
       file: z.string().min(1).default(".agentx/app-pins.json"),
       max: z.number().int().min(1).max(50).default(12),
     }).default({}),
