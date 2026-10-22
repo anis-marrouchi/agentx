@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 720" width="920" height="720" role="img" aria-labelledby="t d" style="--cycle:4.2s">
+<title id="t">How a pinned page opens</title>
+<desc id="d">Six steps in two parts. You set it up once: serve the page over https, pin it with a name and its address in the phone app or in agentx.json, and the button appears at the top of Chat. Then, each time: you tap the button, your phone opens the page inside the AgentX app, and the page asks for the microphone if it needs it. Your computer only keeps the list of buttons; it never opens the page.</desc>
+<defs><filter id="soft" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B0D12" flood-opacity="0.07"/></filter></defs>
+<style>
+text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, 'Helvetica Neue', Arial, sans-serif; fill: #0B0D12; }
+.h1 { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; }
+.sub { font-size: 16px; fill: #475569; }
+.legend { font-size: 14px; font-weight: 600; }
+.band { font-size: 12.5px; font-weight: 700; letter-spacing: 0.12em; fill: #1A66FF; }
+.band.warn { fill: #B45309; }
+.title { font-size: 17px; font-weight: 650; }
+.note { font-size: 14px; fill: #475569; }
+.rowname { font-size: 15px; font-weight: 600; }
+.symptom { font-size: 15.5px; font-weight: 650; }
+.state { font-size: 12.5px; font-weight: 600; }
+.num { font-size: 14.5px; font-weight: 700; fill: #fff; }
+.pill { font-size: 13px; font-weight: 700; fill: #fff; }
+.wintitle { font-size: 13.5px; font-weight: 600; fill: #475569; }
+.card { fill: #fff; stroke: #E2E8F0; stroke-width: 1.25; filter: url(#soft); }
+.card.accent { stroke: #C7D9FF; }
+.card.win { stroke: #0B0D12; stroke-width: 1.5; }
+.link { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.wrap { fill: none; stroke: #1A66FF; stroke-width: 2; stroke-linecap: round; stroke-dasharray: 100; animation: draw 0.9s ease-in-out backwards; }
+.rise { animation: rise 0.55s cubic-bezier(.2,.7,.2,1) backwards; }
+.fade { animation: fade 0.4s ease-out backwards; }
+.pulse { transform-box: fill-box; transform-origin: center; opacity: 0; animation: pulse var(--cycle) ease-out infinite; }
+.blink { animation: blink 1.6s ease-in-out infinite; }
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes draw { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+@keyframes pulse { 0% { opacity: .7; transform: scale(1); } 9% { opacity: 0; transform: scale(1.9); } 100% { opacity: 0; transform: scale(1.9); } }
+@keyframes blink { 50% { opacity: .25; } }
+@media (prefers-reduced-motion: reduce) { .rise, .fade, .wrap, .pulse, .blink { animation: none; } }
+</style>
+<rect width="920" height="720" rx="24" fill="#FFFFFF"/>
+<text x="44" y="56" class="h1" text-anchor="start">How a pinned page opens</text>
+<text x="44" y="82" class="sub" text-anchor="start">Your computer keeps the buttons; the page comes from its own server.</text>
+<circle cx="704" cy="50" r="7" fill="#1A66FF"/><text x="718" y="55" class="legend" text-anchor="start">You</text>
+<circle cx="704" cy="74" r="7" fill="#0B0D12"/><text x="718" y="79" class="legend" text-anchor="start">Your phone</text>
+<rect x="20" y="104" width="880" height="200" rx="20" fill="#F3F7FF"/>
+<text x="44" y="132" class="band" text-anchor="start">YOU SET IT UP ONCE</text>
+<g class="rise" style="animation-delay:0.32s">
+<rect x="44" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:4.62s"/>
+<circle cx="70" cy="176" r="15" fill="#1A66FF"/>
+<text x="70" y="181" class="num" text-anchor="middle">1</text>
+<text x="60" y="220" class="title" text-anchor="start">Serve the page</text>
+<text x="60" y="241" class="title" text-anchor="start">over https</text>
+<text x="60" y="263" class="note" text-anchor="start">for example on your</text>
+<text x="60" y="280" class="note" text-anchor="start">tailnet</text>
+</g>
+<g class="rise" style="animation-delay:0.64s">
+<rect x="328" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="354" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:5.32s"/>
+<circle cx="354" cy="176" r="15" fill="#1A66FF"/>
+<text x="354" y="181" class="num" text-anchor="middle">2</text>
+<text x="344" y="220" class="title" text-anchor="start">Pin it with a</text>
+<text x="344" y="241" class="title" text-anchor="start">name and address</text>
+<text x="344" y="263" class="note" text-anchor="start">in the app, agentx app pin,</text>
+<text x="344" y="280" class="note" text-anchor="start">or agentx.json</text>
+</g>
+<g class="fade" style="animation-delay:0.47s"><path d="M311 216 H323" class="link"/><path d="M319 212 L324 216 L319 220" class="link"/></g>
+<g class="rise" style="animation-delay:0.96s">
+<rect x="612" y="148" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="638" cy="176" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:6.02s"/>
+<circle cx="638" cy="176" r="15" fill="#1A66FF"/>
+<text x="638" y="181" class="num" text-anchor="middle">3</text>
+<text x="628" y="220" class="title" text-anchor="start">The button shows</text>
+<text x="628" y="241" class="title" text-anchor="start">at the top of Chat</text>
+<text x="628" y="263" class="note" text-anchor="start">on every phone paired</text>
+<text x="628" y="280" class="note" text-anchor="start">with this computer</text>
+</g>
+<g class="fade" style="animation-delay:0.79s"><path d="M595 216 H607" class="link"/><path d="M603 212 L608 216 L603 220" class="link"/></g>
+<rect x="20" y="320" width="880" height="200" rx="20" fill="#F6F7F9"/>
+<text x="92" y="348" class="band" text-anchor="start">THEN, EACH TIME</text>
+<path d="M744 284 V302 Q744 312 734 312 H80 Q70 312 70 322 V360" class="wrap" pathLength="100" style="animation-delay:1.26s"/>
+<path d="M65 355 L70 361 L75 355" class="link fade" style="animation-delay:2.16s"/>
+<g class="rise" style="animation-delay:1.28s">
+<rect x="44" y="364" width="264" height="136" rx="14" class="card accent"/>
+<circle cx="70" cy="392" r="15" fill="none" stroke="#1A66FF" stroke-width="2" class="pulse" style="animation-delay:6.72s"/>
+<circle cx="70" cy="392" r="15" fill="#1A66FF"/>
+<text x="70" y="397" class="num" text-anchor="middle">4</text>
+<text x="60" y="436" class="title" text-anchor="start">Tap the button</text>
+<text x="60" y="458" class="note" text-anchor="start">one tap, no link to find</text>
+</g>
+<g class="rise" style="animation-delay:1.60s">
+<rect x="328" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="354" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:7.42s"/>
+<circle cx="354" cy="392" r="15" fill="#0B0D12"/>
+<text x="354" y="397" class="num" text-anchor="middle">5</text>
+<text x="344" y="436" class="title" text-anchor="start">The page opens</text>
+<text x="344" y="457" class="title" text-anchor="start">inside the app</text>
+<text x="344" y="479" class="note" text-anchor="start">close it to come back</text>
+<text x="344" y="496" class="note" text-anchor="start">to AgentX</text>
+</g>
+<g class="fade" style="animation-delay:1.43s"><path d="M311 432 H323" class="link"/><path d="M319 428 L324 432 L319 436" class="link"/></g>
+<g class="rise" style="animation-delay:1.92s">
+<rect x="612" y="364" width="264" height="136" rx="14" class="card"/>
+<circle cx="638" cy="392" r="15" fill="none" stroke="#0B0D12" stroke-width="2" class="pulse" style="animation-delay:8.12s"/>
+<circle cx="638" cy="392" r="15" fill="#0B0D12"/>
+<text x="638" y="397" class="num" text-anchor="middle">6</text>
+<text x="628" y="436" class="title" text-anchor="start">It asks for the</text>
+<text x="628" y="457" class="title" text-anchor="start">microphone</text>
+<text x="628" y="479" class="note" text-anchor="start">only if the page needs it:</text>
+<text x="628" y="496" class="note" text-anchor="start">tap Allow once</text>
+</g>
+<g class="fade" style="animation-delay:1.75s"><path d="M595 432 H607" class="link"/><path d="M603 428 L608 432 L603 436" class="link"/></g>
+<g class="rise" style="animation-delay:2.52s"><text x="44" y="556" class="band warn" text-anchor="start">IF IT DOES NOT WORK</text></g>
+<g class="rise" style="animation-delay:2.72s"><circle cx="49" cy="582.5" r="4" fill="#B45309"/><text x="62" y="588" class="symptom" text-anchor="start">“must start with https://”</text><text x="62" y="608" class="note" text-anchor="start">Serve the page over https.</text></g>
+<g class="rise" style="animation-delay:2.97s"><circle cx="465" cy="582.5" r="4" fill="#B45309"/><text x="478" y="588" class="symptom" text-anchor="start">The page does not load</text><text x="478" y="608" class="note" text-anchor="start">Turn Tailscale on on the phone.</text></g>
+<g class="rise" style="animation-delay:3.22s"><circle cx="49" cy="634.5" r="4" fill="#B45309"/><text x="62" y="640" class="symptom" text-anchor="start">No microphone prompt</text><text x="62" y="660" class="note" text-anchor="start">Allow the microphone for Chrome.</text></g>
+<g class="rise" style="animation-delay:3.47s"><circle cx="465" cy="634.5" r="4" fill="#B45309"/><text x="478" y="640" class="symptom" text-anchor="start">No button</text><text x="478" y="660" class="note" text-anchor="start">Open Chat: buttons show there.</text></g>
+</svg>
