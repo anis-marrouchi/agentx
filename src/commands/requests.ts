@@ -243,6 +243,7 @@ requests
   .option("--channels <name,...>", "channels to record on; \"all\" for every channel a person writes on")
   .option("--stale-hours <n>", "hours without activity before an open request comes back to you")
   .option("--retention-days <n>", "days a closed request is kept")
+  .option("--headlines <on|off>", "write a headline for a request its agent did not describe (one small model call each)")
   .option("--plans <on|off>", "follow requests of two or more steps as tracked plans")
   .option("--stall-minutes <n>", "minutes without progress before a plan step's agent is nudged")
   .option("--max-nudges <n>", "nudges per step before it counts as blocked and you are told")
@@ -271,6 +272,10 @@ requests
       patch.channels = list(opts.channels, "all")
       patch.staleAfterHours = num("--stale-hours", opts.staleHours)
       patch.retentionDays = num("--retention-days", opts.retentionDays)
+      if (opts.headlines !== undefined) {
+        if (opts.headlines !== "on" && opts.headlines !== "off") throw new Error("--headlines takes on or off")
+        patch.headlines = { enabled: opts.headlines === "on" }
+      }
       const plans: NonNullable<RequestSettingsPatch["plans"]> = {}
       if (opts.plans !== undefined) {
         if (opts.plans !== "on" && opts.plans !== "off") throw new Error("--plans takes on or off")
@@ -314,6 +319,7 @@ requests
     console.log(`  Counts as you           ${s.from.length ? s.from.join(", ") : "only voice, the app and the dashboard on this machine"}`)
     console.log(`  Comes back after        ${s.staleAfterHours} hour(s) without activity`)
     console.log(`  Closed requests kept    ${s.retentionDays} day(s)`)
+    console.log(`  Headlines               ${s.headlines?.enabled === false ? "off: titled with the start of your words" : "on: written when the agent gave none"}`)
     const p = s.plans ?? DEFAULT_PLAN_SETTINGS
     console.log(`  Plans                   ${p.enabled ? "on" : "off"}`)
     console.log(`  Nudge a quiet step      after ${p.stallMinutes} minute(s), up to ${p.maxNudges} time(s)`)

@@ -121,6 +121,7 @@ async function route(
     patch.channels = list(body.channels)
     patch.staleAfterHours = num("staleAfterHours")
     patch.retentionDays = num("retentionDays")
+    if (typeof body.headlines === "boolean") patch.headlines = { enabled: body.headlines }
     const plans: NonNullable<RequestSettingsPatch["plans"]> = {}
     if (typeof body.plansEnabled === "boolean") plans.enabled = body.plansEnabled
     plans.stallMinutes = num("stallMinutes")

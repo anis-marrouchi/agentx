@@ -40,6 +40,8 @@ const shots = [
   { name: "approvals/details", path: "/approvals", wait: ".apv__item", steps: [{ click: ".apv__detail summary" }] },
   { name: "approvals/choices", path: "/approvals", wait: ".apv__choices", steps: [{ scroll: ".apv__item:has(.apv__choices)" }] },
   { name: "approvals/plan", path: "/approvals", wait: ".apv__plan", steps: [{ scroll: ".apv__item:has(.apv__plan)" }] },
+  { name: "approvals/request-headline", path: "/approvals", wait: ".apv__plan", steps: [{ click: ".apv__item:has(.apv__plan) .apv__detail summary" }, { scroll: ".apv__item:has(.apv__plan)" }] },
+  { name: "approvals/headline-setting", path: "/approvals", wait: "#req-settings", steps: [{ click: "#req-settings summary" }, { scroll: "#req-form [name=headlines]" }] },
   { name: "settings", path: "/admin", wait: "#agent-list" },
   { name: "settings-channels", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="channels"]' }] },
   { name: "settings-crons", path: "/admin", wait: "#agent-list", steps: [{ click: '[data-tab="crons"]' }] },
