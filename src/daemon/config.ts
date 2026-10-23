@@ -1223,6 +1223,19 @@ const notificationsSchema = z.object({
     /** Nags wait for the daily digest. Off: each is sent like any notice. */
     digestNags: z.boolean().default(true),
   }).default({}),
+  /** Reach (src/notify/reach.ts, #1138 step B): an urgent item goes to
+   *  where the owner was last seen and, unseen after
+   *  `escalateAfterMinutes`, once to the next address on the ladder.
+   *  Seen/answered marks, presence and channel health are always on;
+   *  this switches the ladder only. Off by default: it sends a second
+   *  message, and seen relies on the phone app's read mark. */
+  reach: z.object({
+    enabled: z.boolean().default(false),
+    escalateAfterMinutes: z.number().int().min(1).max(24 * 60).default(10),
+    /** Owner addresses in order, as "channel:chatId". Empty: the told
+     *  channels (chat "default") and then the told addresses. */
+    ladder: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:chatId, for example telegram:123456789")).default([]),
+  }).default({}),
 }).default({})
 
 const screenRectSchema = z.object({

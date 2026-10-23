@@ -5,6 +5,7 @@ import { TokenStore, recordHasScope, type TokenRecord } from "./token-store"
 import { appIconPng } from "./app-icon"
 import { handleAppFleet, type AppFleetDeps } from "./app-fleet"
 import { handleAppDesk, type AppDeskDeps } from "./app-desk"
+import type { AppReachDeps } from "./app-reach"
 import { handleAppPush, type AppPushDeps } from "./app-push"
 import { handleAppAnnounce, type AppAnnounceDeps } from "./app-announce"
 import { handleAppChat, type AppChatDeps } from "./app-chat"
@@ -60,6 +61,8 @@ export interface AppRouteCtx {
   camera?: AppCameraDeps
   places?: PlacesDeps
   pins?: PinsDeps
+  /** Presence and read marks (#1138 step B). */
+  reach?: AppReachDeps
   /** The statement served at /.well-known/assetlinks.json, or null for 404. */
   assetLinks?: () => unknown[] | null
   pairCodes?: PairCodeStore
@@ -153,8 +156,10 @@ export async function handleAppRequest(
   if (method === "GET" && path === "/api/app/me") {
     return sendJson(res, 200, { id: rec.id, device: rec.name, node: ctx.nodeName ?? null })
   }
+  // A paired call is the owner on the phone app (#1138 step B).
+  ctx.reach?.touch("phone")
   if (ctx.fleet && await handleAppFleet(req, res, path, method, rec.name, ctx.fleet)) return true
-  if (ctx.desk && await handleAppDesk(req, res, path, method, ctx.desk)) return true
+  if (ctx.desk && await handleAppDesk(req, res, path, method, ctx.reach ? deskWithReach(ctx.desk, ctx.reach) : ctx.desk)) return true
   if (ctx.push && await handleAppPush(req, res, path, method, rec, ctx.push)) return true
   if (ctx.announce && await handleAppAnnounce(req, res, path, method, rec, ctx.announce)) return true
   if (ctx.chat && await handleAppChat(req, res, path, method, rec, ctx.chat)) return true
@@ -164,6 +169,23 @@ export async function handleAppRequest(
   if (ctx.places && await handleAppPlaces(req, res, path, method, rec, ctx.places)) return true
   if (ctx.pins && await handleAppPins(req, res, path, method, ctx.pins)) return true
   return sendJson(res, 404, { error: "not found" })
+}
+
+/** The Desk, marking what it showed as seen and a written answer as the
+ *  answer to its request (#1138 step B). Done cards are not news. */
+function deskWithReach(desk: AppDeskDeps, reach: AppReachDeps): AppDeskDeps {
+  return {
+    async board() {
+      const b = await desk.board()
+      reach.deskSeen(b.cards.filter((c) => c.column !== "done").map((c) => c.key))
+      return b
+    },
+    async reply(id, text) {
+      const r = await desk.reply(id, text)
+      if (r.status >= 200 && r.status < 300) reach.deskAnswered(id)
+      return r
+    },
+  }
 }
 
 /** The QR decoder the locked page loads when the owner taps Scan and the

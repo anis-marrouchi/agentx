@@ -137,6 +137,11 @@ export interface ChannelAdapter {
   /** Register handler for incoming messages */
   onMessage(handler: (msg: IncomingMessage) => Promise<void>): void
 
+  /** Can a send go out now (#1138 step B)? A channel that can tell it is
+   *  down says so, and the router refuses sends to it with the reason
+   *  instead of reporting them sent. Absent: taken as up. */
+  health?(): { up: boolean; reason?: string }
+
   /** Get verified context for a chat (optional — channels implement what they can) */
   getChannelMeta?(chatId: string): Promise<ChannelMeta | undefined>
 

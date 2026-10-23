@@ -184,6 +184,10 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 | `notifications.told.channels` | list of strings | `["push", "ntfy"]` | Channels that only ever reach you. Every message on them goes through the record. |
 | `notifications.told.addresses` | list of strings | `[]` | Your other private chats, as `channel:chatId`, for example `telegram:123456789`. |
 | `notifications.told.digestNags` | boolean | `true` | System reminders, such as "Not finished", a missing voice or a channel that stopped, wait for the daily digest (`approvals.digest`) instead of a notification each. Off, or with no digest destination: each is sent at once. |
+| `notifications.reach` | object | `{}` | Urgent messages that follow you. Seen and answered marks, where you were last seen and channel health are always recorded; this switches only the second send. See [Did it land](/jobs/notifications#7-did-it-land-seen-answered-and-urgent-messages). |
+| `notifications.reach.enabled` | boolean | `false` | An urgent message goes where you were seen last and, unseen, once to the next address. |
+| `notifications.reach.escalateAfterMinutes` | integer (1 to 1440) | `10` | Minutes an urgent message waits to be seen or answered before it is sent once to the next address. |
+| `notifications.reach.ladder` | list of strings | `[]` | Your addresses in order, as `channel:chatId`, for example `push:default` or `telegram:123456789`. Empty: the told channels, then the told addresses. Use only told channels and addresses: a message to any other address is not recorded, so it cannot be seen or sent on. |
 
 ## `calls`
 

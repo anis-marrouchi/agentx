@@ -29,6 +29,9 @@ export interface AppPushDeps {
   reason?: string
   /** Set on a relaying node: sends each call to the push host. */
   forward?: (call: AppPushCall) => Promise<AppPushResult>
+  /** The phone marked these pushes read: the told rows they carried are
+   *  seen (#1138 step B). Returns how many rows changed. */
+  alertsRead?: (items: Array<{ at: number; title: string }>) => number
 }
 
 /** One phone-app push request, as handled here or by the push host. */
@@ -46,8 +49,11 @@ export interface AppPushResult {
 
 /** The routes this module answers. */
 export function isAppPushPath(path: string): boolean {
-  return path === "/api/app/push" || path.startsWith("/api/app/push/") || path === "/api/app/alerts"
+  return path === "/api/app/push" || path.startsWith("/api/app/push/") || path === "/api/app/alerts" || path === "/api/app/alerts/read"
 }
+
+/** Most push ids one read mark may name ("Mark all read" on a full list). */
+const READ_MAX = 200
 
 const MAX_ENDPOINT = 2048
 const B64URL = /^[A-Za-z0-9_-]{8,256}$/
@@ -200,6 +206,13 @@ export function runAppPush(call: AppPushCall, deps: AppPushDeps): AppPushResult 
   }
   if (method === "GET" && path === "/api/app/alerts") {
     return ok(200, { items: store ? store.recent(deps.keepRecent, device.id) : [] })
+  }
+  if (method === "POST" && path === "/api/app/alerts/read") {
+    // { ids }: the push log rows the phone marked read (#1138 step B).
+    const ids = Array.isArray(body.ids) ? body.ids.filter((x: unknown) => Number.isInteger(x)).slice(0, READ_MAX) as number[] : null
+    if (!ids) return ok(400, { error: "send { ids: [push ids] }" })
+    const items = store ? store.recent(deps.keepRecent, device.id).filter((r) => ids.includes(r.id)) : []
+    return ok(200, { ok: true, seen: items.length && deps.alertsRead ? deps.alertsRead(items) : 0 })
   }
   if (method !== "POST" || (path !== "/api/app/push/subscribe" && path !== "/api/app/push/unsubscribe" && path !== "/api/app/push/prefs")) {
     return ok(404, { error: "not found" })

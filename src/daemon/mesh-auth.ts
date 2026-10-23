@@ -90,7 +90,9 @@ export function isMeshGatedPath(path: string): boolean {
     // Pre-merge reviews (#990): PRs, verdicts and what each review cost.
     path === "/api/review-gate/reviews" ||
     // What the owner was told (#1126): the words of every notice.
-    path === "/owner/told"
+    path === "/owner/told" ||
+    // Where the owner is and was last seen (#1138 step B).
+    path === "/owner/presence"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
@@ -108,6 +110,8 @@ export function isControlPost(path: string): boolean {
     // Pausing, widening, narrowing or ending a guest mesh's grant.
     /^\/mesh\/guests\/[^/]+\/(pause|resume|end|update)$/.test(path) ||
     /^\/crons\/[^/]+\/enabled$/.test(path) ||
+    // Switching a channel off or on (#1138 step B).
+    /^\/channels\/[^/]+\/switch$/.test(path) ||
     // Stopping a workflow run (#788).
     /^\/workflow-runs\/[^/]+\/cancel$/.test(path) ||
     // Stop and resume signals (#857).

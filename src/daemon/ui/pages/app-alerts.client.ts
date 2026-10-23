@@ -167,6 +167,11 @@ export const APP_ALERTS_SCRIPT = `
   var read = [], recent = [];
   try { var saved = JSON.parse(localStorage.getItem('ax-alerts-read') || '[]'); if (Array.isArray(saved)) read = saved.slice(-200); } catch (e) {}
   function key(it) { return String(it.id) + ':' + String(it.at); }
+  // The computer learns what was read, so it knows the owner saw it (#1138 step B).
+  // A mark that does not get there costs nothing: the list still shows it read.
+  function tellRead(ids) {
+    if (ids.length) api('POST', '/api/app/alerts/read', { ids: ids }).catch(function () { return null; });
+  }
   function saveRead() { read = read.slice(-200); try { localStorage.setItem('ax-alerts-read', JSON.stringify(read)); } catch (e) {} }
   function paintRecent() {
     var unread = recent.filter(function (it) { return read.indexOf(key(it)) < 0; }).length;
@@ -190,7 +195,7 @@ export const APP_ALERTS_SCRIPT = `
     if (!row) return;
     var it = recent[+row.getAttribute('data-alert')];
     if (!it || read.indexOf(key(it)) >= 0) return;
-    read.push(key(it)); saveRead();
+    read.push(key(it)); saveRead(); tellRead([it.id]);
     // Do not replace a focused button or interrupt a link's default action.
     row.classList.remove('al-unread');
     row.querySelector('button').setAttribute('aria-label', it.title + ', read');
@@ -201,8 +206,9 @@ export const APP_ALERTS_SCRIPT = `
     document.getElementById('al-read-all').disabled = !unread;
   });
   document.getElementById('al-read-all').addEventListener('click', function () {
-    recent.forEach(function (it) { if (read.indexOf(key(it)) < 0) read.push(key(it)); });
-    saveRead(); paintRecent();
+    var ids = [];
+    recent.forEach(function (it) { if (read.indexOf(key(it)) < 0) { read.push(key(it)); ids.push(it.id); } });
+    saveRead(); paintRecent(); tellRead(ids);
   });
   function loadRecent() {
     return api('GET', '/api/app/alerts').then(function (b) {

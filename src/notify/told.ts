@@ -22,10 +22,14 @@ import type Database from "better-sqlite3"
 //   send     anything else. Focus and calls still hold it (notify()).
 //
 // Urgent messages always go. The record is the base for "did he get it?"
-// (seen, answered) later: the table keeps one row per decision.
+// (#1138 step B, notify/reach.ts): a row that went out moves from sent to
+// seen (the phone app's read mark, the Desk showing its request) and to
+// answered (a reply in its request's chat, its card decided).
 
 export type TellKind = "notice" | "nag"
 export type TellOutcome = "sent" | "held" | "digest" | "repeat" | "failed"
+/** Where a row that went out stands: sent, seen by the owner, answered. */
+export type TellState = "sent" | "seen" | "answered"
 
 /** What a caller says about a message to the owner. All optional: a bare
  *  message on an owner channel is a notice keyed by its text. */
@@ -58,6 +62,20 @@ export interface ToldRow {
   text: string
   outcome: TellOutcome
   digestedAt: number | null
+  /** Sent as urgent: the reach ladder may send it once more (reach.ts). */
+  urgent: boolean
+  /** When the owner saw it, and how ("phone", "desk", "reply"). */
+  seenAt: number | null
+  seenVia: string | null
+  /** When the owner answered it, and how ("reply", "desk", "card"). */
+  answeredAt: number | null
+  answeredVia: string | null
+  /** When it was sent on to the next channel, unseen. */
+  escalatedAt: number | null
+  /** On an escalation: the row it carries on. */
+  escalationOf: number | null
+  /** sent → seen → answered, for a row that went out. */
+  state: TellState
 }
 
 export interface TellSettings {
@@ -123,25 +141,60 @@ export function ensureToldTable(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_owner_told_at ON owner_told(at);
     CREATE INDEX IF NOT EXISTS idx_owner_told_digest ON owner_told(outcome, digested_at);
   `)
+  // #1138 step B: did it land. Additive: old rows read as sent, unseen.
+  const have = new Set((db.prepare("PRAGMA table_info(owner_told)").all() as Array<{ name: string }>).map((c) => c.name))
+  for (const [col, type] of REACH_COLUMNS) {
+    if (have.has(col)) continue
+    try {
+      db.exec(`ALTER TABLE owner_told ADD COLUMN ${col} ${type}`)
+    } catch (e: any) {
+      // The daemon and the dashboard share the file: the other one may
+      // have added it a moment ago.
+      if (!/duplicate column/i.test(String(e?.message))) throw e
+    }
+  }
 }
+
+const REACH_COLUMNS: Array<[string, string]> = [
+  ["urgent", "INTEGER NOT NULL DEFAULT 0"],
+  ["seen_at", "INTEGER"], ["seen_via", "TEXT"],
+  ["answered_at", "INTEGER"], ["answered_via", "TEXT"],
+  ["escalated_at", "INTEGER"], ["escalation_of", "INTEGER"],
+]
 
 function toRow(r: any): ToldRow {
   return {
     id: r.id, at: r.at, key: r.item_key, requestId: r.request_id ?? null, kind: r.kind, channel: r.channel, chatId: r.chat_id,
     from: r.sender ?? null, title: r.title, text: r.text, outcome: r.outcome, digestedAt: r.digested_at ?? null,
+    urgent: r.urgent === 1, seenAt: r.seen_at ?? null, seenVia: r.seen_via ?? null,
+    answeredAt: r.answered_at ?? null, answeredVia: r.answered_via ?? null,
+    escalatedAt: r.escalated_at ?? null, escalationOf: r.escalation_of ?? null,
+    state: r.answered_at != null ? "answered" : r.seen_at != null ? "seen" : "sent",
   }
 }
+
+/** The fields a new row is written with. */
+export type NewToldRow = Omit<ToldRow, "id" | "digestedAt" | "urgent" | "seenAt" | "seenVia" | "answeredAt" | "answeredVia" | "escalatedAt" | "escalationOf" | "state">
+  & { urgent?: boolean; escalationOf?: number | null }
 
 export class ToldLedger {
   constructor(private db: Database.Database) {
     ensureToldTable(db)
   }
 
-  add(row: Omit<ToldRow, "id" | "digestedAt">): number {
+  add(row: NewToldRow): number {
     return Number(this.db.prepare(
-      `INSERT INTO owner_told (at, item_key, request_id, kind, channel, chat_id, sender, title, text, outcome)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(row.at, row.key, row.requestId, row.kind, row.channel, row.chatId, row.from, row.title.slice(0, 300), row.text.slice(0, TEXT_MAX), row.outcome).lastInsertRowid)
+      `INSERT INTO owner_told (at, item_key, request_id, kind, channel, chat_id, sender, title, text, outcome, urgent, escalation_of)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      row.at, row.key, row.requestId, row.kind, row.channel, row.chatId, row.from, row.title.slice(0, 300), row.text.slice(0, TEXT_MAX), row.outcome,
+      row.urgent ? 1 : 0, row.escalationOf ?? null,
+    ).lastInsertRowid)
+  }
+
+  get(id: number): ToldRow | null {
+    const r = this.db.prepare("SELECT * FROM owner_told WHERE id = ?").get(id)
+    return r ? toRow(r) : null
   }
 
   setOutcome(id: number, outcome: TellOutcome): void {
@@ -184,6 +237,18 @@ export class ToldLedger {
       out[r.outcome] = r.n
     }
     return out
+  }
+
+  /** Of the rows that went out since `since` (sent, or held and sent
+   *  later): how many are still only sent, seen, answered (#1138 step B). */
+  states(since: number): Record<TellState, number> {
+    const r = this.db.prepare(
+      `SELECT SUM(CASE WHEN answered_at IS NULL AND seen_at IS NULL THEN 1 ELSE 0 END) AS sent,
+              SUM(CASE WHEN answered_at IS NULL AND seen_at IS NOT NULL THEN 1 ELSE 0 END) AS seen,
+              SUM(CASE WHEN answered_at IS NOT NULL THEN 1 ELSE 0 END) AS answered
+       FROM owner_told WHERE at >= ? AND outcome IN ('sent', 'held')`,
+    ).get(since) as { sent: number | null; seen: number | null; answered: number | null }
+    return { sent: r.sent ?? 0, seen: r.seen ?? 0, answered: r.answered ?? 0 }
   }
 
   /** Delete rows older than `before`. */
@@ -233,7 +298,7 @@ export class OwnerGate {
     const rowId = this.ledger.add({
       at: now, key: key ?? `once:${now}`, requestId: meta.requestId ?? null,
       kind, channel: msg.channel, chatId: msg.chatId, from: meta.from ?? null, title: msg.title, text: msg.text,
-      outcome: verdict === "send" ? "sent" : verdict,
+      outcome: verdict === "send" ? "sent" : verdict, urgent: meta.urgent === true,
     })
     return { verdict, key, rowId }
   }
@@ -256,8 +321,8 @@ export class OwnerGate {
 
   /** What the owner was told since `since`: counts by outcome, and the
    *  newest rows. */
-  report(since: number, limit = 50): { counts: Record<TellOutcome, number>; waitingForDigest: number; items: ToldRow[] } {
-    return { counts: this.ledger.counts(since), waitingForDigest: this.ledger.waitingCount(), items: this.ledger.since(since, limit) }
+  report(since: number, limit = 50): { counts: Record<TellOutcome, number>; landed: Record<TellState, number>; waitingForDigest: number; items: ToldRow[] } {
+    return { counts: this.ledger.counts(since), landed: this.ledger.states(since), waitingForDigest: this.ledger.waitingCount(), items: this.ledger.since(since, limit) }
   }
 
   /** Drop rows older than `days`. */

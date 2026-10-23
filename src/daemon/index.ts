@@ -59,6 +59,9 @@ import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
 import { localAlert, localSettings, notify, writeCallHold, NotificationQueue, type Sender } from "@/notify"
 import { DEFAULT_TELL_SETTINGS, OwnerGate, splitTitle, TOLD_KEEP_DAYS, toldOfBody, ToldLedger, type TellKind, type TellMeta } from "@/notify/told"
+import { attachReach, type AttachedReach } from "@/notify/reach-attach"
+import { DEFAULT_REACH_SETTINGS } from "@/notify/reach"
+import { ChannelDownError } from "@/channels/router"
 import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
@@ -94,7 +97,7 @@ import { createProvider, type AgentProvider, type ProviderName } from "@/agent/p
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
-import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
+import { isOwnerTurn, OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
 import { isOperatorTurn, loadOperatorKey, operatorContext, operatorVouch, ownerProven } from "@/requests/operator"
 import { WikiCurateApi } from "./wiki-curate-api"
 import { GUEST_PATHS, GUESTS_PATHS, handleGuestApi, type GuestApiDeps } from "@/guests/daemon-api"
@@ -652,7 +655,8 @@ export class AgentXDaemon {
         // sends alike. Settings are read on every decision.
         try {
           // A nag waits for the digest only when one can go out.
-          this.ownerGate = new OwnerGate(new ToldLedger(db), () => {
+          const ledger = new ToldLedger(db)
+          this.ownerGate = new OwnerGate(ledger, () => {
             const digest = this.config.approvals.digest
             return {
               ...DEFAULT_TELL_SETTINGS, ...this.config.notifications.told,
@@ -660,6 +664,7 @@ export class AgentXDaemon {
             }
           })
           this.router.setOwnerGate(this.ownerGate)
+          this.reach = this.attachReach(db, ledger)
         } catch (e: any) {
           this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
         }
@@ -1298,6 +1303,8 @@ export class AgentXDaemon {
 
     if (this.midnightTimer) clearTimeout(this.midnightTimer)
     if (this.approvalsTimer) clearInterval(this.approvalsTimer)
+    if (this.reachTimer) clearInterval(this.reachTimer)
+    this.reach?.detach()
     if (this.qualityTimer) clearInterval(this.qualityTimer)
     if (this.pushRosterTimer) clearInterval(this.pushRosterTimer)
     this.stopReminders?.()
@@ -2120,6 +2127,9 @@ export class AgentXDaemon {
   private requests: AttachedRequests | null = null
   /** The told-the-owner gate (#1126). Null without a database. */
   private ownerGate: OwnerGate | null = null
+  /** Where the owner is and did it land (#1138 step B). Null without a database. */
+  private reach: AttachedReach | null = null
+  private reachTimer?: ReturnType<typeof setInterval>
   private toldPrunedAt = 0
   /** Guest meshes (#380): the grants this node opened, and the join limiter. */
   private guestStore = new GuestStore(process.cwd())
@@ -2665,6 +2675,63 @@ export class AgentXDaemon {
     })
   }
 
+  /** Reach (#1138 step B): presence, seen/answered marks, the urgent
+   *  ladder and channel health, checked once a minute. */
+  private attachReach(db: NonNullable<ReturnType<typeof openDb>>, ledger: ToldLedger): AttachedReach {
+    const reach = attachReach({
+      db,
+      ledger,
+      settings: () => ({ ...DEFAULT_REACH_SETTINGS, ...this.config.notifications.reach }),
+      told: () => ({ ...DEFAULT_TELL_SETTINGS, ...this.config.notifications.told }),
+      channels: {
+        has: (name) => this.router.getChannelNames().includes(name),
+        health: (name) => this.router.channelHealth(name),
+        all: () => this.router.channelsHealth(),
+      },
+      // The row is written already: past the gate, so it is not decided twice.
+      send: async (channel, chatId, text, row) => {
+        const id = await this.router.sendOutbound({ channel, chatId, text: `${row.title}\n${text}`, priority: 5, agentId: row.from ?? undefined, told: { passed: true } } as any)
+        if (!id) throw new Error(`the ${channel} channel returned no message ID`)
+      },
+      // One notice per down spell (ChannelWatch); the gate keeps it to one a day.
+      notice: (channel, reason) => {
+        void this.tellOwner(
+          {
+            title: `${channel} is down`,
+            message: `Sends to ${channel} are refused until it is back: ${reason}.\nIf it does not come back by itself, run \`agentx daemon restart\` once fixed.`,
+            // A nag, like every "channel down" (#1126): one line in the daily
+            // digest, or sent at once when there is none. Same key as the
+            // WhatsApp give-up notice, so the two are told once.
+            from: "reach", key: `channel-down:${channel}`, kind: "nag",
+          },
+          { soft: true },
+        ).catch((e: any) => this.log(`[reach] down notice for ${channel} failed: ${e?.message ?? e}`))
+      },
+      isOwnerTurn: (p) => {
+        const ch = p.channel.toLowerCase().split("@")[0]
+        return isOwnerTurn(this.config.requests, p.channel, p.sender, p.operator === true) ||
+          (p.person?.role === "owner" && !OPERATOR_CHANNELS.has(ch))
+      },
+      request: (id) => {
+        const store = this.requests?.store
+        const r = store?.get(id)
+        if (!store || !r) return null
+        return { channel: r.channel, chatId: r.chatId, cards: store.links(id).filter((l) => l.kind === "card").map((l) => l.ref) }
+      },
+      cardDecidedAt: (id) => {
+        const c = readCard(process.cwd(), id)
+        return c?.status === "decided" && c.decided_at ? Date.parse(c.decided_at) : null
+      },
+      idleSeconds: this.native.idle ? () => this.native.idle!.seconds() : undefined,
+      focus: async () => (await this.native.focus?.active()) ?? null,
+      inCall: () => this.calls?.inCall() ?? null,
+      log: this.log,
+    })
+    this.reachTimer = setInterval(() => { void reach.tick() }, 60_000)
+    this.reachTimer.unref?.()
+    return reach
+  }
+
   /** Tell the owner through the notify path: a push to the default
    *  channel, the Mac banner where there is one (#788). */
   private async notifyOwner(title: string, message: string, from: string, priority = 4, meta: TellMeta = {}): Promise<void> {
@@ -2681,8 +2748,10 @@ export class AgentXDaemon {
     input: { title: string; message: string; from: string; priority?: number; urgent?: boolean; channel?: string; chatId?: string } & TellMeta,
     opts: { soft?: boolean } = {},
   ): Promise<"sent" | "held" | "repeat" | "digest"> {
-    const channel = input.channel ?? defaultNotifyChannel(this.config)
-    const chatId = input.chatId ?? "default"
+    // An urgent item goes where the owner was last seen (#1138 step B).
+    const stop = input.urgent && !input.channel ? this.reach?.firstStop() ?? null : null
+    const channel = input.channel ?? stop?.channel ?? defaultNotifyChannel(this.config)
+    const chatId = input.chatId ?? stop?.chatId ?? "default"
     // The daemon's own notices: the same words again are a repeat.
     const meta: TellMeta = { key: input.key, requestId: input.requestId, kind: input.kind, urgent: input.urgent, from: input.from, textKey: true }
     const gate = this.ownerGate
@@ -6089,6 +6158,21 @@ export class AgentXDaemon {
         return
       }
 
+      // Switch a channel off (sends refused, like a down one) or back on,
+      // until the daemon restarts (#1138 step B).
+      const channelSwitchMatch = req.method === "POST" && path.match(/^\/channels\/([^/]+)\/switch$/)
+      if (channelSwitchMatch) {
+        const body = await readJsonBody(req).catch(() => ({})) as { on?: unknown; reason?: unknown }
+        if (typeof body.on !== "boolean") { this.json(res, 400, { error: "send { on: true | false, reason? }" }); return }
+        const name = decodeURIComponent(channelSwitchMatch[1])
+        try {
+          this.router.setChannelSwitch(name, body.on, typeof body.reason === "string" && body.reason.trim() ? body.reason.trim().slice(0, 200) : undefined)
+        } catch (e: any) { this.json(res, 404, { error: e.message }); return }
+        this.log(`[reach] channel ${name} switched ${body.on ? "on" : "off"}`)
+        this.json(res, 200, { ok: true, channel: name, ...this.router.channelHealth(name) })
+        return
+      }
+
       const cronEnabledMatch = req.method === "POST" && path.match(/^\/crons\/([^/]+)\/enabled$/)
       if (cronEnabledMatch) {
         const body = await readJsonBody(req).catch(() => ({})) as { enabled?: unknown }
@@ -6236,6 +6320,9 @@ export class AgentXDaemon {
             voice: { canMeasure: findFfmpeg() != null, allowUnmeasured: this.config.voice.allowUnmeasured },
             // Whether GitLab still accepts this node's tokens (#984).
             gitlab: this.gitlabHealth(),
+            // Each channel up or down, with why and since when (#1138 step B).
+            channels: Object.fromEntries(Object.entries(this.router.channelsHealth()).map(([n, h]) =>
+              [n, h.up ? h : { ...h, ...(this.reach?.watch.downSince(n) ? { since: new Date(this.reach.watch.downSince(n)!).toISOString() } : {}) }])),
           })
           break
         }
@@ -7070,8 +7157,18 @@ export class AgentXDaemon {
             const answer = sendAnswer(messageId, { channel: body.channel as string, agentId: body.agentId as string | undefined, identity: this.postingIdentity(body.channel as string, body.agentId as string | undefined) })
             this.json(res, answer.status, answer.body)
           } catch (e: any) {
-            this.json(res, 400, { error: e.message })
+            // A down channel is refused with its reason (#1138 step B).
+            if (e instanceof ChannelDownError) this.json(res, 503, { ok: false, sent: false, refused: true, channel: e.channel, reason: e.reason, error: e.message })
+            else this.json(res, 400, { error: e.message })
           }
+          break
+        }
+
+        // Where the owner is (#1138 step B): last seen per surface, the
+        // computer's idle time, Focus, a call, the ladder and the channels.
+        case "GET /owner/presence": {
+          if (!this.reach) { this.json(res, 409, { error: "Presence needs the database." }); break }
+          this.json(res, 200, await this.reach.view())
           break
         }
 

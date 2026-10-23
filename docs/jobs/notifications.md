@@ -280,6 +280,21 @@ Scripts can read the same record with `curl -s http://127.0.0.1:18800/owner/told
 
 To turn the check off, set `notifications.told.enabled` to `false`. To get system reminders at once again, set `notifications.told.digestNags` to `false`. See [Configuration: automation](../reference/config-automation.md).
 
+## 7. Did it land: seen, answered, and urgent messages
+
+AgentX also writes down whether a message reached you. Each message that went out moves from **sent** to **seen** to **answered**:
+
+- **Seen**: you marked it read in the phone app's **Alerts** tab (tap it, or **Mark all read**), or the **Desk** tab showed the request it is about.
+- **Answered**: you wrote in the chat where you asked for that work, you wrote an answer on the Desk, or you decided the request's card.
+
+`agentx notify --told` adds a line such as `Of those that went out: 3 answered, 5 seen, 2 not seen yet`, and each message shows its state and how it got there, for example `seen ... (phone)`. `GET /owner/told` returns the same as `landed`, and `seenAt`, `seenVia`, `answeredAt` and `answeredVia` on each row.
+
+AgentX also keeps where you were last seen: the phone app, its Desk tab, and each chat you wrote from. `curl -s http://127.0.0.1:18800/owner/presence` shows this, with how long this computer has been idle (Mac only), whether Focus is on and whether you are in a call.
+
+**Urgent messages can follow you.** Set `notifications.reach.enabled` to `true` to turn this on. It is off by default. An urgent message from AgentX itself, such as a call that cannot wait, then goes to the address where you were seen last. A message sent to a named channel, such as `agentx notify --urgent`, still goes to that channel. If an urgent message is still neither seen nor answered after `notifications.reach.escalateAfterMinutes` (10 by default), it is sent once more, to the next address on the list, with `(Sent again here: not seen on push for 10 min.)` at the end. It is never sent a third time. Other messages are not affected: they still follow the told-once rule and the digest. The list is `notifications.reach.ladder`, for example `["push:default", "telegram:123456789"]`. Without one, it is your told channels and then your told addresses.
+
+**A channel that is down is refused.** When a channel cannot send, for example WhatsApp with no connection, `/health` shows it under `channels` as `"up": false` with the reason and since when. A message sent to it is refused with that reason: `POST /send` answers `503` with `{"ok": false, "refused": true, "reason": "…"}`, and AgentX does not report it as sent. A channel down on two checks a minute apart raises one notice (a reminder for the digest, like other system reminders). To try this without breaking anything, switch a channel off and on again: `curl -s -X POST http://127.0.0.1:18800/channels/ntfy/switch -H 'Content-Type: application/json' -d '{"on": false}'`. It stays off until you switch it on or restart AgentX.
+
 ## Check it worked
 
 1. In the terminal, run `agentx notifications show`.
@@ -297,6 +312,8 @@ To turn the check off, set `notifications.told.enabled` to `false`. To get syste
 13. Run `agentx notify "Backups ran" --title "Backups" --key backup:test` twice. The first is sent; the second says `not sent: the owner was already told this`.
 14. Run `agentx notify "The test disk is nearly full" --title "Disk" --digest`. It says `not sent: kept for the daily digest`. Run `agentx notify --told`: it counts `1 kept for the digest`, and the next digest has a line for it.
 15. On a Mac, run `say "This is a long sentence that takes a few seconds to read aloud"` and, while it speaks, ask an agent something by voice. Its answer starts only after `say` is finished.
+16. With the phone app, run `agentx notify "Seen test" --title "Reach"`. On the phone, open **Alerts** and tap the message. Run `agentx notify --told`: the message shows `seen ... (phone)`.
+17. Switch a channel off: `curl -s -X POST http://127.0.0.1:18800/channels/ntfy/switch -H 'Content-Type: application/json' -d '{"on": false}'`. Run `curl -s http://127.0.0.1:18800/health`: `channels.ntfy` says `"up": false`. Send to it with `curl -s -X POST http://127.0.0.1:18800/send -H 'Content-Type: application/json' -d '{"channel":"ntfy","chatId":"default","text":"Test\nrefused"}'`: the answer is `503` with `"refused": true` and the reason. Switch it on again with `{"on": true}`.
 
 `agentx doctor` runs the same helper check under **Notifications**, along with its other checks.
 
@@ -321,6 +338,8 @@ Other problems:
 | Nothing is held during Focus | Give Full Disk Access to the app that runs AgentX (step 4), or use `~/.agentx/focus.json`. |
 | A scheduled job uses the wrong settings | Add `-c /path/to/agentx.json` to its `agentx notify` command. |
 | A message you expected never came | Run `agentx notify --told`. `repeat` means you were already told the same thing (with the same `--key` in the last 24 hours, or the same words in the last 20); `digest` means it waits for the daily digest. Send it with `--urgent` if it cannot wait, or give a different `--key`. |
+| A message stays `sent` although you read it | Seen comes from the phone app's read mark and the Desk. Reading the notification on the lock screen does not count. Tap it in **Alerts**. |
+| `/send` answers `refused` | The channel is down. Check `channels` in `curl -s http://127.0.0.1:18800/health` for the reason, fix it, or switch it on again if you switched it off. |
 | A script's message is sent every time even though it says the same thing | A message shorter than 40 characters is never taken for a repeat. Give it a `--key`. |
 | System reminders never arrive | They come in the daily digest. Check that `approvals.digest.enabled` is on and has a destination (`approvals.digest.destination`, or `notifications.destination`). |
 | An agent's spoken answer waits a long time | Another program on this computer is speaking or playing a sound. AgentX waits for it for up to 10 minutes, then speaks anyway. |

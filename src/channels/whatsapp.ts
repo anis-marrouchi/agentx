@@ -182,6 +182,8 @@ export class WhatsAppAdapter implements ChannelAdapter {
   private onStatus?: (status: "connecting" | "open" | "close", detail?: string) => void
   /** Fires once when the adapter stops reconnecting, so the owner hears about a silent channel. */
   private onGiveUp?: (message: string) => void
+  /** The last connection update of the current socket. */
+  private connection: { state: "connecting" | "open" | "close"; detail?: string } = { state: "connecting" }
 
   constructor(
     config: {
@@ -304,6 +306,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
       child: () => silentLogger,
     } as any
 
+    this.connection = { state: "connecting" }
     this.sock = makeWASocket({
       auth: {
         creds: state.creds,
@@ -371,6 +374,9 @@ export class WhatsAppAdapter implements ChannelAdapter {
           this.log("Install qrcode-terminal for visual QR: npm install qrcode-terminal")
         }
       }
+      if (connection && myGeneration === this.generation) {
+        this.connection = { state: connection, detail: lastDisconnect?.error?.message }
+      }
       if (connection) {
         try { this.onStatus?.(connection, lastDisconnect?.error?.message) } catch { /* */ }
       }
@@ -394,6 +400,7 @@ export class WhatsAppAdapter implements ChannelAdapter {
           const plan = planWhatsAppReconnect(this.reconnect, statusCode, isPaired())
           this.log(plan.message)
           if (plan.kind === "give-up") {
+            this.connection = { state: "close", detail: plan.message }
             try { this.onStatus?.("close", plan.message) } catch { /* */ }
             try { this.onGiveUp?.(plan.message) } catch { /* */ }
             return // Stop reconnecting
@@ -602,6 +609,15 @@ export class WhatsAppAdapter implements ChannelAdapter {
     if (conflicts === 0 && timeouts === 0) return
     this.log(`WhatsApp connection stable, resetting reconnect counters (conflicts ${conflicts}, timeouts ${timeouts})`)
     this.reconnect = { conflicts: 0, timeouts: 0 }
+  }
+
+  /** Down without a socket, or once the connection closed and was not
+   *  reopened (#1138 step B). Connecting counts as up: a reconnect takes
+   *  seconds, and the watch only reports a channel down on two checks. */
+  health(): { up: boolean; reason?: string } {
+    if (!this.sock) return { up: false, reason: "WhatsApp is not connected" }
+    if (this.connection.state === "close") return { up: false, reason: `the WhatsApp connection closed${this.connection.detail ? `: ${this.connection.detail}` : ""}` }
+    return { up: true }
   }
 
   async send(msg: OutgoingMessage): Promise<string> {
