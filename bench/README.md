@@ -10,6 +10,7 @@ against the cheap ones; use the expensive ones to confirm.
 | 1 | `bench/harbor/dev.sh` | ~$8 per run on Haiku | Does a change make agentx cheaper or worse on real tasks? |
 | 1 | `pnpm bench:browser` | cents per run on Haiku and Sonnet; free with `--backend oracle` | Where does the time go when an agent drives the browser? |
 | 1 | `bench/wiki-absorb.sh <wiki snapshot>` | one absorb backlog per variant | Is a wiki absorb change faster, cheaper or worse? |
+| 1 | `pnpm bench:catch <labelled.jsonl>` | about $0.002 per reply on Haiku | How well does the promise catch read replies? |
 | 2+ | `harbor run` directly, see [harbor/README.md](harbor/README.md) | $60 to $1,300+ | Publishable numbers on the full Terminal-Bench 2.0 |
 
 ## Level 0: context size
@@ -395,3 +396,48 @@ entries, and `EXTRA=--no-facts` to skip the system-of-record lookups.
 Results land in `$TMPDIR/wiki-absorb-<time>/<variant>/` (set `OUT` to
 change it). Each variant folder holds a full copy of the wiki, so don't
 commit it; copy only `scorecard.md` and `runs.json` into `bench/results/`.
+
+## Level 1, small: promise catch (#1138 step E)
+
+`pnpm bench:catch <labelled.jsonl>` runs the promise catch
+(`src/requests/catch.ts`) over a labelled set of replies, with the same
+word check, prompt and reader as the daemon, one `claude -p` call each on
+the operator's own sign-in. It prints precision and recall for each of
+`promise`, `waiting_owner` and `none`, the confusion table, and the cost and
+time of one call. The step's proof of done asks a precision of at least 0.8
+for `promise`.
+
+One JSON object per line: `{"reply": "...", "asked": "...", "label": "promise", "at": <epoch ms>}`.
+`at` is when the reply was written, so "tomorrow" reads as it did then.
+Real replies hold private text: keep the labelled set outside the repo.
+
+```bash
+pnpm bench:catch ~/catch-eval/labelled.jsonl
+pnpm bench:catch ~/catch-eval/labelled.jsonl --out verdicts.jsonl   # each verdict, to read the misses
+pnpm bench:catch ~/catch-eval/labelled.jsonl --think                # the CLI's default thinking on
+```
+
+### What it found (#1138 E, 2026-10-23)
+
+Real owner-facing replies from one node, 2026-10-15 to 10-23: 1,281
+replies, of which 84% pass the word check (about 126 calls a day there).
+Two sets, labelled by hand before the runs: 60 replies to shape the prompt
+(35 with promise words, 25 without) and 40 held out (22 and 18), each
+reply drawn at random. Haiku 4.5, no thinking:
+
+| Set | `promise` precision | `promise` recall | `waiting_owner` precision | `waiting_owner` recall | Accuracy |
+|---|---|---|---|---|---|
+| Shaping, first prompt (no quote rule) | 0.78 (14/18) | 0.93 | 0.71 | 1.00 | 0.77 |
+| Shaping, final prompt | 1.00 (15/15) | 1.00 | 0.76 | 1.00 | 0.87 |
+| Held out, final prompt, one run | 1.00 (8/8) | 0.89 | 0.75 | 0.95 | 0.83 |
+
+One call: about 1,400 tokens in, 55 out, $0.0017 at list price, 3.7 to 4.8 s.
+With the CLI's default thinking on, a call wrote 600 to 3,500 tokens and
+cost up to $0.019, so the daemon calls it with thinking off.
+
+The first prompt's false promises were a conditional ("if it is, I will"),
+an offer ("I can try again this afternoon"), a standing rule, and another
+agent's report. The rule that a promise needs the reply's own sentence, in
+the first person and the future, with no "if", removed them. The misses
+left are on `waiting_owner`: a closing offer ("Do you want me to…?") read
+as a question the work waits on.

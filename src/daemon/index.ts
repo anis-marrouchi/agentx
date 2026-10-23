@@ -90,6 +90,7 @@ import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
 import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
+import { CATCH_SYSTEM, CatchLog, catchSettingsOf, PromiseCatcher } from "@/requests/catch"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
 import { attachPromiseFacts, closeWatcherLoop, promiseSettingsOf, raiseWatcherLoop, watcherNotice } from "@/requests/promise"
@@ -654,6 +655,8 @@ export class AgentXDaemon {
             ledger: () => ledger ??= new FactLedger(resolve(process.cwd(), ".agentx/wiki")),
             log: this.log,
           })
+          // "I'll do X" in an owner-facing reply becomes a promise (#1138 E).
+          this.requests.tracker.setCatcher(this.promiseCatcher(db, this.requests))
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
         }
@@ -2576,6 +2579,33 @@ export class AgentXDaemon {
         return res.content || ""
       },
       log: this.log,
+    })
+  }
+
+  /** Reads an owner-facing turn's reply for a promise or a question to
+   *  the owner (#1138 E): one small call through the provider the operator
+   *  set up, no thinking, read from the settings at each call. */
+  private promiseCatcher(db: NonNullable<ReturnType<typeof openDb>>, requests: AttachedRequests): PromiseCatcher {
+    let provider: AgentProvider | undefined
+    let providerName: string | undefined
+    const settings = () => catchSettingsOf(this.config.requests)
+    return new PromiseCatcher({
+      store: requests.store,
+      log: new CatchLog(db),
+      settings,
+      generate: async (prompt, signal) => {
+        const s = settings()
+        if (!provider || providerName !== s.provider) {
+          providerName = s.provider
+          provider = createProvider((s.provider ?? "claude-code") as ProviderName)
+        }
+        const res = await provider.generate(
+          [{ role: "system", content: CATCH_SYSTEM }, { role: "user", content: prompt }],
+          { model: s.model ?? "claude-haiku-4-5-20251001", maxTokens: 300, abortSignal: signal, bare: true, noThinking: true },
+        )
+        return res.content || ""
+      },
+      say: this.log,
     })
   }
 

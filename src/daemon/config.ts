@@ -1402,6 +1402,27 @@ export const requestsConfigSchema = z.object({
      *  on the Desk only, as before. */
     cards: z.boolean().default(false),
   }).default({}),
+  /** Catch "I'll do X" (src/requests/catch.ts, #1138 E): at the end of an
+   *  owner-facing turn whose reply could hold one, one small model call
+   *  reads it. A firm promise (the agent will do a named thing later, no
+   *  condition) becomes a promise owned by that agent, owed to whoever
+   *  asked; a reply that asks the owner leaves its request waiting on
+   *  them, with the question. Off by default: it spends a model call on
+   *  most owner-facing replies. Needs `enabled` above. */
+  catchPromises: z.object({
+    enabled: z.boolean().default(false),
+    /** Model calls a day (UTC), across all agents. Past it, replies are
+     *  not read until the next day. */
+    dailyCap: z.number().int().min(1).max(10_000).default(300),
+    /** A reply that asks the owner moves its request to waiting_owner.
+     *  Off: only promises are caught. */
+    waitingOwner: z.boolean().default(true),
+    /** Provider for the call. "claude-code" uses the auth the operator set
+     *  up (subscription or API key); no new paid path is opened. */
+    provider: z.string().min(1).default("claude-code"),
+    model: z.string().min(1).default("claude-haiku-4-5-20251001"),
+    timeoutSeconds: z.number().int().min(5).max(120).default(30),
+  }).default({}),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
   /** Tracked plans (src/requests/plans.ts, #788): a request with two or

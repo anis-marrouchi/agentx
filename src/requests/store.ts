@@ -287,6 +287,13 @@ export class RequestStore {
     ).get(agentId, ...OPEN_STATES) as { n: number }).n
   }
 
+  /** Did this agent open a promise in this chat since `since`? */
+  promisedInChat(agentId: string, channel: string, chatId: string, since: number): boolean {
+    return !!this.db.prepare(
+      "SELECT 1 FROM requests WHERE agent_id = ? AND channel = ? AND chat_id = ? AND promise = 1 AND created_at >= ? LIMIT 1",
+    ).get(agentId, channel, chatId, since)
+  }
+
   /** Give an open request a due time or a checker, from accept or wait. */
   setLoop(id: string, loop: { dueAt?: number | null; closeWhen?: CloseWhen | null }, now: number): void {
     if (loop.dueAt !== undefined) this.db.prepare("UPDATE requests SET due_at = ?, updated_at = ? WHERE id = ?").run(loop.dueAt, now, id)

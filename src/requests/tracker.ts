@@ -2,6 +2,7 @@ import type { DriftSettings } from "./drift/check"
 import type { AgentXEvents } from "@/events/bus"
 import type { PlanSettings } from "./plans"
 import type { CheckerSettings } from "./checkers"
+import type { CatchSettings, PromiseCatcher } from "./catch"
 import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
 import { firstLink, OPEN_STATES, OWED_TO_OWNER, type OpenState, type RequestStore } from "./store"
 
@@ -45,6 +46,9 @@ export interface RequestSettings {
   /** One Promise (#1138 D): facts on close, cards as owner promises.
    *  Unset: the defaults (DEFAULT_PROMISE_SETTINGS). */
   promises?: Partial<PromiseSettings>
+  /** Catch "I'll do X" in an owner-facing reply as a promise (#1138 E).
+   *  Unset: off. */
+  catchPromises?: Partial<CatchSettings>
 }
 
 /** The chat of a card's promise when no turn names one: the card itself. */
@@ -152,6 +156,14 @@ export class RequestTracker {
    *  is linked through this: it can only start from a running turn. */
   private live = new Map<string, { requestId: string; runId: string }>()
 
+  /** Reads an owner-facing turn's reply for a promise (#1138 E). Unset:
+   *  turns end as before. */
+  private catcher: PromiseCatcher | null = null
+
+  setCatcher(c: PromiseCatcher | null): void {
+    this.catcher = c
+  }
+
   private guard(what: string, fn: () => void): void {
     try { fn() } catch (e: any) { this.log(`[requests] ${what} failed: ${e?.message ?? e}`) }
   }
@@ -198,6 +210,8 @@ export class RequestTracker {
         return
       }
       if (!p.humanRoot || !(isOwnerTurn(this.settings(), p.channel, p.sender, p.operator === true) || this.isListedOwner(p))) return
+      // The owner writing again answers a question caught in the last reply.
+      this.catcher?.ownerTurnStarted(p.agentId, p.channel, p.chatId, p.taskId!)
       this.live.set(key, { requestId: `req-${p.taskId}`, runId: p.taskId! })
       this.store.addCandidate({
         id: `req-${p.taskId}`, runId: p.taskId!, channel: p.channel, chatId: p.chatId,
@@ -226,8 +240,15 @@ export class RequestTracker {
         }
         return
       }
+      if (req.state !== "candidate") this.store.touch(req.id, now)
+      // The reply may promise more, or ask the owner (#1138 E): the catcher
+      // decides what becomes of a candidate once its one call is back.
+      const caught = this.catcher?.turnEnded({ request: req, runId: p.taskId!, reply: p.finalResponse })
+      if (caught) {
+        caught.settled.catch((e: any) => this.log(`[requests] ${req.id}: promise catch failed: ${e?.message ?? e}`))
+        return
+      }
       if (req.state === "candidate") this.store.discardCandidate(req.id)
-      else this.store.touch(req.id, now)
     })
   }
 

@@ -154,6 +154,26 @@ The same record follows the other things someone owes:
 - **Follow-up waits.** When handed-on work ends to wait for something with a due time, the request waits on it and is due then. If the wait runs out, the request comes back to you like any other past its due time.
 - **Decision cards** (off by default). With `promises.cards: true`, a card an agent raises outside a request is a promise you owe. It closes when you decide the card, with your answer as a fact, or is dropped when the card expires.
 
+### Promises caught in a reply
+
+Agents often end a turn with "I'll tell you when it is live" and never open a promise for it. With `requests.catchPromises.enabled: true`, the daemon reads the reply at the end of each of your turns, with one short model call, and decides between three things:
+
+| The reply | What happens |
+|---|---|
+| **A firm promise**: the agent itself will do a named thing later, with no condition left on you ("I'll send the report at 18:00", "I'll tell you once it is live") | A promise of that agent, owed to you, due when the reply said. On a request that is already open, the request gets that due time instead. |
+| **A question you must answer** before the work can go on ("Which account should I use?", "Say yes and I'll publish it") | The request waits on you, with the question. When you write to that agent again in the same chat, the wait ends. |
+| **Anything else**: a report of finished work, an offer ("Want me to…?"), something another agent will do | Nothing changes. |
+
+A word match is not enough: about half of all replies contain "I'll" or "will", and most of them are offers or conditions. So the model decides, and a promise also needs the reply's own sentence that makes it, in the first person and the future, with no "if". The word check only skips replies with no future and no question, without a call.
+
+It is off by default, because it spends one model call on most of your turns. `dailyCap` (300 by default) bounds the calls a day. Turn it on with:
+
+```bash
+agentx requests settings --catch on
+```
+
+To see how well the model reads replies on your own data, label a set of real replies and run `pnpm bench:catch <labelled.jsonl>`. See [bench/README.md](https://github.com/anis-marrouchi/agentx/blob/main/bench/README.md).
+
 ## Close on evidence, not on a claim
 
 A request or a promise can carry a **check**: what proves it is finished. The agent gives it as `closeWhen`, with `promise`, `accept` or `wait`. Then:

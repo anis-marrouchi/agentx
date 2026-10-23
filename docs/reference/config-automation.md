@@ -294,6 +294,13 @@ To turn it on by hand:
 | `requests.promises.factTtlDays` | number (up to 3650) | `7` | Days that fact stays trusted before it shows as stale. |
 | `requests.promises.watchers` | boolean | `true` | A task watcher that fires raises the request that follows its task, or opens a promise for it, and you are told once through the requests check. `false`, or an address in `watchers.owner`: the watcher tells you itself. |
 | `requests.promises.cards` | boolean | `false` | A decision card raised outside a request is a promise you owe, closed when you decide it. |
+| `requests.catchPromises` | object | `{}` | Catch "I'll do X": at the end of each of your turns, one short model call reads the agent's reply. A firm promise becomes a promise of that agent; a reply that asks you leaves the request waiting on you. See [Promises caught in a reply](/jobs/open-requests#promises-caught-in-a-reply). |
+| `requests.catchPromises.enabled` | boolean | `false` | Reads the replies. Off by default, because it spends one model call on most of your turns. Also `agentx requests settings --catch on\|off`. |
+| `requests.catchPromises.dailyCap` | number (1 to 10000) | `300` | Model calls a day (UTC), across all agents. Past it, replies are not read until the next day. Also `agentx requests settings --catch-cap <n>`. |
+| `requests.catchPromises.waitingOwner` | boolean | `true` | A reply that asks you for an answer leaves its request waiting on you, with the question. `false`: only promises are caught. |
+| `requests.catchPromises.provider` | string | `"claude-code"` | Engine for the call. `claude-code` uses the sign-in this computer already has (subscription or API key). |
+| `requests.catchPromises.model` | string | `"claude-haiku-4-5-20251001"` | Model for the call. |
+| `requests.catchPromises.timeoutSeconds` | number (5 to 120) | `30` | How long the call may take. A call that fails or runs out leaves the turn as if nothing was caught. |
 | `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
 | `requests.plans` | object | `{}` | Tracked plans: a request of two or more steps, each with an owner agent, followed until every step is done. Needs `requests.enabled`. See [Follow a request of several steps](/jobs/tracked-plans). |
 | `requests.plans.enabled` | boolean | `true` | Agents may make plans, and the daemon follows them. |
