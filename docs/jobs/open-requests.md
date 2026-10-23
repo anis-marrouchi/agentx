@@ -115,7 +115,14 @@ A request that already needs attention is not touched. To keep the old behaviour
 1. **Terminal:** run `agentx requests settings --settle off`.
 2. **Terminal:** run `agentx requests settings`. The line `Handed work came back` says `comes back to you after the quiet time`.
 
-In the dashboard, it is the box **Close a quiet request as done when all the work it handed on came back done** under **Approvals** › **Settings: open requests**.
+In the dashboard:
+
+1. **Browser:** open **Approvals** and scroll to the bottom.
+2. **Browser:** click **Settings: open requests**.
+3. **Browser:** tick or untick **Close a quiet request as done when all the work it handed on came back done**.
+4. **Browser:** click **Save settings**.
+
+![The open requests settings, with the box Close a quiet request as done when all the work it handed on came back done ticked](/screenshots/approvals/settle-setting.png)
 
 To see how a handed piece of work ended:
 
