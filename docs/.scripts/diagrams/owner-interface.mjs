@@ -1,11 +1,12 @@
 // The four parts of the owner interface: the picture at the top of docs/architecture/patterns.md.
 import { C, createDiagram } from "./kit.mjs"
 
-// Three steps to a row. Each row is ROW high.
-const ROW = 136
+// Three steps to a row. Each row is ROW high: taller than the kit's 136 so the
+// two-line notes under two-line titles keep a margin above the card's edge.
+const ROW = 152
 
 const d = createDiagram({
-  height: 704,
+  height: 736,
   title: "How work reaches you: Promise, Fact, Reach and Desk",
   desc:
     "Six steps in two parts. An agent makes a Promise: who owes what to whom, by when, and the proof that closes it. " +
@@ -29,7 +30,7 @@ const model = d.row(
     { title: ["A Fact is written"], note: ["the claim, its source,", "when it was checked"] },
   ],
   y,
-  { who: "ink" },
+  { who: "ink", h: ROW },
 )
 
 // Part 2: the controller and the view, wired by the event bus.
@@ -44,6 +45,7 @@ d.row(
     { title: ["You read one list"], note: ["the Desk, on the phone,", "the Mac or the dashboard"], who: "accent" },
   ],
   y,
+  { h: ROW },
 )
 
 d.list(d.x0, y + ROW + 64, {
