@@ -114,6 +114,7 @@ const groups = [
     { text: "Persistent Codex processes", link: "/architecture/persistent-codex-process" },
     { text: "Persistent OpenCode servers", link: "/architecture/persistent-opencode-process" },
     { text: "Evidence authority and memory backends", link: "/architecture/evidence-authority" },
+    { text: "The owner interface and its patterns", link: "/architecture/patterns" },
     { text: "Author a teach lesson", link: "/guides/teach-authoring" },
   ] },
   { text: "Community", collapsed: true, items: [
