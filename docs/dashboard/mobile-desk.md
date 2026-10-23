@@ -13,7 +13,7 @@ The board keeps no list of its own. Every time it is read, each card is placed f
 
 ## Read the board
 
-The line under the title counts what waits for you and since when, what is with agents, and what has no news. Below it are four columns. One is on screen at a time.
+The line under the title counts what waits for you and since when, what you put off for later, what is with agents, and what has no news. Below it are four columns. One is on screen at a time.
 
 1. **Phone:** open the app and tap **Desk**.
 2. **Phone:** tap a column to show its cards.
@@ -69,15 +69,52 @@ On a card under **With agents** or **No news** the same button is called **Write
 
 The Desk is for the owner. It is served only to a paired phone, never to members, guests or agents.
 
+## One list, one count
+
+What waits for you is one list. The **Your turn** column, the count at the top of the dashboard's **Approvals** page and the daily digest read the same list on the same computer, so they show the same items with the same number:
+
+- every decision waiting in [Approvals](./approvals.md);
+- every request where an agent asked you a question and has no decision card of its own waiting. The Approvals page lists it too, with a link to answer it in writing under **Open requests**.
+
+![The Approvals page on the demo: "4 waiting for you", the same number as the Desk and the digest](/screenshots/approvals/one-count.png)
+
+What you put off with **Later** is not counted as waiting. It is counted apart, everywhere in the same words: "1 put off for later". The digest says, for example, `3 waiting for you on the Desk (and 1 you put off for later).`
+
+## Choose where new items go
+
+Three settings decide where a new item reaches you. Everything else waits on the Desk and in the digest.
+
+| Setting | What it decides | Default |
+|---|---|---|
+| **Sent to your phone at once** (`notifications.desk.phone`) | A notification on the phone app, or ntfy, the moment a new item appears. | Nothing |
+| **Shown on this computer at once** (`notifications.desk.computer`) | The Mac card when the [Mac popup](./approvals.md) is on, otherwise a banner on this computer. | Everything when the Mac popup is on, nothing when it is off |
+| **Digest time** (`approvals.digest`) | When the daily digest comes, or no digest. | 09:00 |
+
+![The three settings at the top of the Approvals settings: phone, this computer, and the digest time](/screenshots/approvals/desk-settings.png)
+
+The first two take **Everything new**, **Only what expires within a day** or **Nothing: the Desk and the digest only**. The defaults are what AgentX did before these settings existed, so nothing changes until you choose.
+
+1. **Browser:** open the dashboard and click **Approvals**.
+2. **Browser:** open **Settings: where new items go, expiry, later, daily digest** at the bottom.
+3. **Browser:** pick what is sent to your phone and what is shown on this computer, set the digest time, and click **Save settings**.
+
+The next new item goes where the settings now say. Items that were already waiting are not sent again. Each item is sent to the phone once: the [told-once record](../jobs/notifications.md#6-told-once-and-the-daily-digest) also stops it on any other of your channels. An item shown on this computer during Focus or a call is shown when the hold ends.
+
 ## Check it worked
 
-1. **Phone:** tap **Desk**. The number under **Your turn** matches `agentx approvals list` on the computer that runs the dashboard, plus the requests where an agent asked you a question.
+1. **Phone:** tap **Desk**. The number under **Your turn** is the number at the top of the dashboard's **Approvals** page, and the number the next digest opens with.
 2. **Terminal:** on that computer, list the open requests:
    ```sh
    agentx requests list
    ```
    Each one is on the board, under **Your turn**, **With agents** or **No news**, except one you put off with **Later**.
 3. **Phone:** answer a decision card an agent raised on this computer. It leaves **Your turn** at once and shows under **Done** with your answer. Other kinds of decision (a schedule, a fact, a wiki article, a WhatsApp reply) leave the board once answered.
+4. **Browser:** set **Sent to your phone at once** to **Everything new**. **Terminal:** raise a test card:
+   ```sh
+   curl -s -X POST http://127.0.0.1:18800/approvals -H 'Content-Type: application/json' \
+     -d '{"title":"Desk routing test","ask":"Is this on your phone?","recommend":"Yes","if_silent":"discard","raised_by":"<an agent id>"}'
+   ```
+   Within a minute the phone gets a notification titled **Desk routing test**. Set it back to **Nothing**, raise another card, and no notification comes; the card is still under **Your turn**. Answer **No** to both.
 
 ## If something is wrong
 
@@ -86,4 +123,5 @@ The Desk is for the owner. It is served only to a paired phone, never to members
 - **"What waits on … could not be read"** — the dashboard cannot reach that computer, so its decisions are missing from **Your turn**. The rest of the board is still right. Start AgentX there, or check the mesh with `agentx mesh list`.
 - **"… failed: nothing waiting for …"** — the card was answered somewhere else, or its time ran out. Tap **Refresh**.
 - **A card has no "Write an answer" button** — it belongs to another computer. Answer it with **Yes** or **No**, or open that computer's dashboard.
+- **A new item did not reach the phone** — check **Sent to your phone at once** on the Approvals page, and that the item is new: what was already waiting when the setting changed is not sent. The same item told in the last 24 hours on another of your channels is not told again (`agentx notify --told` lists it as not repeated).
 - **The tab stays on "Loading what waits for you…"** — the phone lost its connection. The yellow bar says so; the tab fills in when the phone reconnects.

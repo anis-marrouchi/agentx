@@ -67,7 +67,8 @@ import type { AppCameraDeps } from "./app-camera"
 import { pushKeysPath, readPushKeys } from "@/channels/push-keys"
 import { openDb } from "@/storage/sqlite"
 import { logSlowQueries } from "@/storage/slow-queries"
-import type { AppFleetDeps, ApprovalItem, NodeApprovals, NodeReply } from "./app-fleet"
+import type { AppFleetDeps, NodeApprovals, NodeReply } from "./app-fleet"
+import { inboxToDesk, readOwnerList } from "@/desk/owner-list"
 import type { AppDeskDeps } from "./app-desk"
 import { buildDesk, DESK_DONE_DAYS, DESK_DONE_MAX, liveRunRefs, type DeskRequest } from "@/desk/board"
 import { listCards, type DecisionCard } from "@/approvals/cards"
@@ -764,7 +765,9 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     return
   }
   if (path.startsWith("/api/admin/approvals")) {
-    await handleApprovalsPanelApi(req, res, path, url)
+    await handleApprovalsPanelApi(req, res, path, url, {
+      node: { url: ctx.config.dashboard.daemonUrl.replace(/\/+$/, ""), name: ctx.config.node?.name || "this computer" },
+    })
     return
   }
   // People (#441): the page and its /api/admin/people data, after the token
@@ -2490,6 +2493,26 @@ function appPlacesDeps(config: DaemonConfig): PlacesDeps {
   return placesDeps(config, process.cwd(), fire, reason)
 }
 
+/** What waits on the other nodes of the dashboard, each read from that
+ *  node's own dashboard (/api/admin/approvals). */
+async function remoteApprovals(config: DaemonConfig): Promise<NodeApprovals[]> {
+  return Promise.all(config.dashboard.daemons.map(async (d): Promise<NodeApprovals> => {
+    const out: NodeApprovals = { node: d.url.replace(/\/+$/, ""), nodeName: d.name, items: [] }
+    const peer = findPeer(d.url, config)
+    if (!peer) return out
+    try {
+      const r = await fetch(`${peer.url}/api/admin/approvals`, {
+        headers: { "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
+        signal: AbortSignal.timeout(4000),
+      })
+      if (!r.ok) { out.error = `HTTP ${r.status}`; return out }
+      const body = await r.json() as { items?: InboxItem[] }
+      out.items = (body.items ?? []).map(inboxToDesk)
+    } catch (e: any) { out.error = e.message || "unreachable" }
+    return out
+  }))
+}
+
 /** What the phone app's Fleet and Activity tabs read and act through
  *  (app-fleet.ts). Built per request, like every other handler here, so a
  *  config reload is picked up without restarting the dashboard. */
@@ -2505,24 +2528,9 @@ function appFleetDeps(config: DaemonConfig): AppFleetDeps {
     async approvals() {
       const local: NodeApprovals = { node: primary, nodeName: config.node?.name || "this computer", items: [] }
       try {
-        local.items = listInbox({ root: process.cwd() }).items.map(toApprovalItem)
+        local.items = listInbox({ root: process.cwd() }).items.map(inboxToDesk)
       } catch (e: any) { local.error = e.message }
-      const remote = await Promise.all(config.dashboard.daemons.map(async (d): Promise<NodeApprovals> => {
-        const out: NodeApprovals = { node: d.url.replace(/\/+$/, ""), nodeName: d.name, items: [] }
-        const peer = findPeer(d.url, config)
-        if (!peer) return out
-        try {
-          const r = await fetch(`${peer.url}/api/admin/approvals`, {
-            headers: { "X-Agentx-Peer": "primary", ...(peer.token ? { Authorization: `Bearer ${peer.token}` } : {}) },
-            signal: AbortSignal.timeout(4000),
-          })
-          if (!r.ok) { out.error = `HTTP ${r.status}`; return out }
-          const body = await r.json() as { items?: InboxItem[] }
-          out.items = (body.items ?? []).map(toApprovalItem)
-        } catch (e: any) { out.error = e.message || "unreachable" }
-        return out
-      }))
-      return [local, ...remote]
+      return [local, ...await remoteApprovals(config)]
     },
     async decide(nodeUrl, key, action, by, answer = {}) {
       const target = nodeUrl.replace(/\/+$/, "")
@@ -2563,7 +2571,10 @@ function appDeskDeps(config: DaemonConfig): AppDeskDeps {
   const ctx = { root: process.cwd() }
   return {
     async board() {
-      const [inbox, snap] = await Promise.all([fleet.approvals(), fleet.snapshot()])
+      // This node's waiting items are the owner's one list (desk/owner-list.ts),
+      // the same the Approvals page and the digest read; other nodes' come from them.
+      const [inbox, snap] = await Promise.all([remoteApprovals(config), fleet.snapshot()])
+      const owner = readOwnerList(ctx, { url: primary, name: config.node?.name || "this computer" })
       let liveRuns: ReadonlySet<string> = new Set<string>()
       const errors: string[] = []
       const here = snap.nodes.find((n) => n.url.replace(/\/+$/, "") === primary)
@@ -2585,7 +2596,7 @@ function appDeskDeps(config: DaemonConfig): AppDeskDeps {
       let cards: DecisionCard[] = []
       try { cards = listCards(ctx.root).filter((c) => c.status !== "pending") } catch (e: any) { errors.push(`Finished cards could not be read: ${e.message}`) }
       const deferred = new Set(Object.entries(readInboxState(ctx.root).snoozed).filter(([, until]) => Date.parse(until) > now).map(([key]) => key))
-      const board = buildDesk({ now, node: primary, nodeName: config.node?.name || "this computer", inbox, requests, cards, liveRuns, deferred })
+      const board = buildDesk({ now, node: primary, nodeName: config.node?.name || "this computer", inbox, requests, cards, liveRuns, deferred, owner })
       return { ...board, errors: [...board.errors, ...errors] }
     },
     async reply(id, text) {
@@ -2723,23 +2734,6 @@ function appVoiceDeps(config: DaemonConfig): AppVoiceDeps {
 function appCameraDeps(config: DaemonConfig): AppCameraDeps {
   const url = config.dashboard.daemonUrl.replace(/\/+$/, "")
   return { daemon: { url, token: dashboardTokenForNode(config.dashboard, url) }, nodeName: config.node.name }
-}
-
-function toApprovalItem(i: InboxItem): ApprovalItem {
-  return {
-    key: i.key,
-    title: i.title,
-    ask: i.ask,
-    recommend: i.recommend,
-    yes: i.yes,
-    no: i.no,
-    raisedBy: i.raised_by,
-    expires: i.expires,
-    ...(i.choices ? { choices: i.choices } : {}),
-    ...(i.draft ? { draft: i.draft } : {}),
-    ...(i.detail ? { detail: i.detail } : {}),
-    ...(i.created_at ? { createdAt: i.created_at } : {}),
-  }
 }
 
 // --- A2A issue drafting ---

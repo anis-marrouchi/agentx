@@ -77,6 +77,7 @@ export const APP_DESK_SCRIPT = `
     var html = '<div class="fx-head"><h2>Desk</h2><button type="button" class="fx-btn" data-act="refresh">Refresh</button></div>' +
       ax.statusLine(panel, data.ts) +
       '<p class="fx-muted dk-figures">Waits for you: <strong>' + f.yours.count + '</strong>' + (f.yours.oldest ? ', the oldest asked ' + esc(ago(f.yours.oldest)) : '') +
+      (f.yours.later ? ' (' + f.yours.later + ' put off for later)' : '') +
       '. With agents: <strong>' + f.agent.count + '</strong>. No news: <strong>' + f.quiet.count + '</strong>' + (f.quiet.oldest ? ', the longest since ' + esc(ago(f.quiet.oldest)) : '') + '.</p>' +
       '<div class="dk-cols" role="group" aria-label="Column">' + COLS.map(function (x) {
         return '<button type="button" class="dk-col" aria-pressed="' + (x[0] === col) + '" data-act="col" data-col="' + x[0] + '">' + x[1] + '<span>' + f[x[0]].count + '</span></button>';

@@ -136,7 +136,7 @@ describe("the gate", () => {
     expect(d.line).toBe("5 notices held for this digest: Not finished ×4 (Check the invoices, Compare hosting plans, Book the venue, …); Mac disk low.")
     gate.markDigested(d.ids)
     expect(gate.digestLine()).toBeNull()
-    expect(digestText([], undefined, d.line)).toContain("5 notices held for this digest")
+    expect(digestText({ count: 0, later: 0, items: [] }, undefined, d.line)).toContain("5 notices held for this digest")
   })
 
   it("groups beyond five kinds into a count", () => {

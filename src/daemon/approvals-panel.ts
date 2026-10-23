@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "http"
 import { decide, listInbox, type InboxAction, type InboxContext } from "@/approvals/inbox"
 import { popAgain } from "@/approvals/popup-runner"
-import { parseDestination, readApprovalSettings, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
+import { parseDestination, readApprovalSettings, readDeskRouting, updateApprovalSettings, type ApprovalSettingsPatch } from "@/approvals/settings"
+import { readOwnerList } from "@/desk/owner-list"
+import { DESK_REACH, type DeskReach } from "@/desk/route"
 import { renderApprovalsPage } from "./ui/pages/approvals"
 import { handleRequestsPanel, REQUESTS_PANEL_PREFIX } from "./requests-panel"
 import type { TopbarPeer } from "./topbar"
@@ -15,7 +17,9 @@ import type { TopbarPeer } from "./topbar"
 // Agents never reach decide() through the daemon; see daemon-api.ts.
 //
 //   GET  /approvals                        the page
-//   GET  /api/admin/approvals[?all=1]      inbox + settings
+//   GET  /api/admin/approvals[?all=1]      inbox + settings, and `desk`: the
+//                                          owner's one list with its count
+//                                          (desk/owner-list.ts, #1138 step C)
 //   POST /api/admin/approvals/decide       { key, action: yes|no|later, note?, force?, choice?, text? }
 //   POST /api/admin/approvals/popup        { key }: show the card on the Mac again
 //   POST /api/admin/approvals/settings     settings form
@@ -62,6 +66,8 @@ export interface ApprovalsPanelOpts {
   configPath?: string
   /** Hot-reload the daemon after config writes. Default true. */
   reload?: boolean
+  /** How this node is named on the owner's list. */
+  node?: { url: string; name: string }
 }
 
 /** Returns false when the path isn't one of ours. */
@@ -90,7 +96,8 @@ export async function handleApprovalsPanelApi(
 
     if (method === "GET" && path === "/api/admin/approvals") {
       const listing = listInbox(ctx, { includeSnoozed: url.searchParams.get("all") === "1" })
-      sendJson(res, 200, { ...listing, settings: readApprovalSettings(ctx.configPath) })
+      const desk = readOwnerList(ctx, opts.node ?? { url: "", name: "this computer" })
+      sendJson(res, 200, { ...listing, desk, settings: { ...readApprovalSettings(ctx.configPath), desk: readDeskRouting(ctx.configPath) } })
       return true
     }
 
@@ -137,6 +144,14 @@ export async function handleApprovalsPanelApi(
       patch.laterHours = num("laterHours")
       if (typeof body.notifyAgent === "boolean") patch.notifyAgent = body.notifyAgent
       if (typeof body.digestEnabled === "boolean") patch.digestEnabled = body.digestEnabled
+      const reach = (k: string): DeskReach | undefined => {
+        const v = body[k]
+        if (v === undefined) return undefined
+        if (!DESK_REACH.includes(v as DeskReach)) throw new Error(`${k} must be one of ${DESK_REACH.join(", ")}`)
+        return v as DeskReach
+      }
+      patch.deskPhone = reach("deskPhone")
+      patch.deskComputer = reach("deskComputer")
       if (typeof body.digestTime === "string") patch.digestTime = body.digestTime
       if (typeof body.destination === "string") {
         const raw = body.destination.trim()
@@ -149,7 +164,7 @@ export async function handleApprovalsPanelApi(
       }
       const r = await updateApprovalSettings(patch, { configPath: ctx.configPath, reload: ctx.reload })
       if (!r.success) { sendJson(res, 400, { error: r.error }); return true }
-      sendJson(res, 200, { ok: true, settings: readApprovalSettings(ctx.configPath) })
+      sendJson(res, 200, { ok: true, settings: { ...readApprovalSettings(ctx.configPath), desk: readDeskRouting(ctx.configPath) } })
       return true
     }
   } catch (e: any) {

@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "fs"
 import { applyConfigMutation, findConfigPath, type MutationResult } from "@/daemon/config-mutator"
 import { approvalsConfigSchema, expandEnvVars } from "@/daemon/config"
 import type { ApprovalSettings } from "./sweep"
+import { deskRouting, type DeskReach, type DeskRouting } from "@/desk/route"
 
 // --- Approvals settings: read and change `approvals` in agentx.json ---
 //
@@ -17,6 +18,17 @@ export function readApprovalSettings(configPath?: string): ApprovalSettings {
   }
   const parsed = approvalsConfigSchema.safeParse(raw?.approvals)
   return (parsed.success ? parsed.data : approvalsConfigSchema.parse(undefined)) as ApprovalSettings
+}
+
+/** What reaches the phone and this computer from the Desk (desk/route.ts),
+ *  with the unset computer setting worked out from the popup switch. */
+export function readDeskRouting(configPath?: string): DeskRouting {
+  const path = findConfigPath(configPath)
+  let raw: any = {}
+  if (existsSync(path)) {
+    try { raw = expandEnvVars(JSON.parse(readFileSync(path, "utf-8"))) } catch { raw = {} }
+  }
+  return deskRouting({ desk: raw?.notifications?.desk, popupEnabled: !!readApprovalSettings(configPath).popup?.enabled })
 }
 
 /** What can be changed. `destination: null` clears it (back to notifications.destination). */
@@ -46,6 +58,9 @@ export interface ApprovalSettingsPatch {
   checkinLists?: string[]
   /** null clears it. */
   checkinAgent?: string | null
+  /** notifications.desk (#1138 step C). */
+  deskPhone?: DeskReach
+  deskComputer?: DeskReach
 }
 
 /** "channel:chatId". Everything after the first ":" is the chat id, which may contain ":" itself. */
@@ -96,6 +111,11 @@ export async function updateApprovalSettings(
     if (patch.checkinLists !== undefined) c.lists = patch.checkinLists
     if (patch.checkinAgent === null) delete c.agent
     else if (patch.checkinAgent !== undefined) c.agent = patch.checkinAgent
+    if (patch.deskPhone !== undefined || patch.deskComputer !== undefined) {
+      const desk = ((cfg.notifications ??= {}).desk ??= {})
+      if (patch.deskPhone !== undefined) desk.phone = patch.deskPhone
+      if (patch.deskComputer !== undefined) desk.computer = patch.deskComputer
+    }
     const days = a.defaultExpiryDays ?? 3
     const max = a.maxExpiryDays ?? 30
     if (days > max) throw new Error(`defaultExpiryDays (${days}) can't be more than maxExpiryDays (${max})`)

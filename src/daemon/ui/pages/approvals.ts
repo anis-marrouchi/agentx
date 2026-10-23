@@ -8,6 +8,12 @@
 // choices is answered by picking one (the agent's advice comes pre-picked),
 // and its suggested message can be edited before Yes (#743).
 //
+// The count at the top is the owner's one list (desk/owner-list.ts, #1138
+// step C), the same the phone app's Desk and the digest show: the inbox,
+// plus the requests whose agent asked a question, which are answered in
+// writing in Open requests below. The settings start with the three that
+// say where a new item goes: phone, this computer, and the digest time.
+//
 // API lives in approvals-panel.ts (dashboard side, token-gated like the
 // rest of /api/admin). This file owns only the HTML, CSS and client JS.
 // Client JS avoids backslash escapes: they collapse inside this template
@@ -44,6 +50,7 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
     </div>
   </header>
 
+  <p id="apv-count" class="apv__count" aria-live="polite"></p>
   <div id="apv-msg" class="apv__msg" role="status" aria-live="polite"></div>
   <div id="apv-errors"></div>
   <ol id="apv-list" class="apv__list" aria-label="Waiting for you"></ol>
@@ -52,8 +59,10 @@ export function renderApprovalsPage(opts: ApprovalsPageOpts = {}): string {
 ${REQUESTS_HTML}
 
   <details class="apv__settings" id="apv-settings">
-    <summary>Settings: expiry, later, daily digest</summary>
+    <summary>Settings: where new items go, expiry, later, daily digest</summary>
     <form id="apv-form" class="apv__form">
+      <label>Sent to your phone at once<select name="deskPhone">${REACH_OPTIONS}</select></label>
+      <label>Shown on this computer at once<select name="deskComputer">${REACH_OPTIONS}</select></label>
       <label>Cards expire after (days)<input type="number" min="1" step="1" name="defaultExpiryDays" required></label>
       <label>Longest a card may wait (days)<input type="number" min="1" step="1" name="maxExpiryDays" required></label>
       <label>"Later" hides an item for (hours)<input type="number" min="1" step="1" name="laterHours" required></label>
@@ -78,6 +87,9 @@ ${REQUESTS_HTML}
   })
 }
 
+// "Urgent": it expires within a day (desk/route.ts).
+const REACH_OPTIONS = `<option value="all">Everything new</option><option value="urgent">Only what expires within a day</option><option value="off">Nothing: the Desk and the digest only</option>`
+
 const APPROVALS_CSS = `
 .apv { max-width: 860px; margin: 0 auto; padding: 20px 16px 64px; color: var(--ax-text); }
 .apv__head { display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; align-items: flex-end; margin-bottom: 14px; }
@@ -87,6 +99,7 @@ const APPROVALS_CSS = `
 .apv__f { cursor: pointer; font: inherit; font-size: 12px; }
 .apv__f.is-on { border-color: var(--ax-accent); color: var(--ax-text); background: var(--ax-accent-t); }
 .apv__f span { color: var(--ax-muted); font-family: var(--ax-mono); font-size: 11px; }
+.apv__count { margin: 0 0 4px; font-size: 13px; color: var(--ax-text-2); }
 .apv__msg { min-height: 20px; font-size: 13px; margin: 4px 0 8px; }
 .apv__msg.is-err { color: var(--ax-err); }
 .apv__msg.is-ok { color: var(--ax-ok); }
@@ -128,7 +141,7 @@ const APPROVALS_CSS = `
 .apv__form { display: grid; gap: 10px; margin-top: 12px; max-width: 460px; }
 .apv__form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ax-text-2); }
 .apv__form label.apv__check { flex-direction: row; align-items: center; gap: 8px; }
-.apv__form input[type=number], .apv__form input[type=time], .apv__form input[type=text] {
+.apv__form input[type=number], .apv__form input[type=time], .apv__form input[type=text], .apv__form select {
   font: inherit; font-size: 14px; padding: 8px 10px; border-radius: var(--ax-radius-sm);
   border: 1px solid var(--ax-border); background: var(--ax-bg); color: var(--ax-text);
 }
@@ -139,7 +152,7 @@ const APPROVALS_CSS = `
 
 const APPROVALS_SCRIPT = `
 (function(){
-var state = { items: [], snoozed: 0, kind: '', showAll: false, popup: false };
+var state = { items: [], extra: [], desk: null, snoozed: 0, kind: '', showAll: false, popup: false };
 var LABEL = { card: 'Card', schedule: 'Schedule', memory: 'Memory fact', wiki: 'Wiki lesson', whatsapp: 'WhatsApp reply', request: 'Request' };
 function $(id){ return document.getElementById(id); }
 function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]; }); }
@@ -180,6 +193,10 @@ async function load(){
     var d = await r.json();
     if (!r.ok) throw new Error(d.error || ('HTTP ' + r.status));
     state.items = d.items || []; state.snoozed = d.snoozed || 0;
+    // The owner's one list: what it holds beyond the inbox is the requests
+    // whose agent asked a question (answered in Open requests below).
+    state.desk = d.desk || null;
+    state.extra = state.desk && !state.showAll ? (state.desk.items || []).filter(function(c){ return !byKey(c.key); }) : [];
     state.popup = !!(d.settings && d.settings.popup && d.settings.popup.enabled);
     $('apv-errors').innerHTML = (d.errors || []).map(function(e){ return '<p class="apv__err">Couldn&#39;t read ' + esc(e.kind) + ': ' + esc(e.error) + '. The list may be incomplete.</p>'; }).join('');
     render();
@@ -190,18 +207,22 @@ async function load(){
 function counts(){
   var c = { card: 0, schedule: 0, memory: 0, wiki: 0, whatsapp: 0, request: 0 };
   state.items.forEach(function(i){ c[i.kind] = (c[i.kind] || 0) + 1; });
-  $('n-all').textContent = state.items.length;
+  c.request += state.extra.length;
+  $('n-all').textContent = state.items.length + state.extra.length;
+  var dk = state.desk;
+  $('apv-count').textContent = dk ? dk.count + ' waiting for you' + (dk.later ? ', ' + dk.later + ' put off for later' : '') + '. The phone app’s Desk and the daily digest count the same.' : '';
   Object.keys(c).forEach(function(k){ $('n-' + k).textContent = c[k]; });
 }
 
 function render(){
   counts();
   var list = state.items.filter(function(i){ return !state.kind || i.kind === state.kind; });
+  var extra = !state.kind || state.kind === 'request' ? state.extra : [];
   var ol = $('apv-list');
-  if (!list.length) {
+  if (!list.length && !extra.length) {
     ol.innerHTML = '<li class="apv__empty"><h2>Nothing waiting for you</h2><p>New requests from agents, schedules, memory and the wiki show up here.</p></li>';
   } else {
-    ol.innerHTML = list.map(item).join('');
+    ol.innerHTML = list.map(item).join('') + extra.map(asked).join('');
     ol.querySelectorAll('.apv__item').forEach(function(li){
       var it = byKey(li.getAttribute('data-key'));
       var picked = li.querySelector('input[type=radio]:checked');
@@ -239,6 +260,17 @@ function item(i){
     + '<button type="button" class="ax-btn ax-btn--ghost" data-act="later">Later</button>'
     + (i.kind === 'card' && state.popup ? '<button type="button" class="ax-btn ax-btn--ghost" data-pop title="Show this card on the Mac again">Show on Mac</button>' : '')
     + '</div></li>';
+}
+
+// A request whose agent asked the owner a question: answered in writing,
+// in Open requests below, not with yes or no.
+function asked(c){
+  return '<li class="apv__item" data-desk="' + esc(c.key) + '">'
+    + '<div class="apv__meta"><span class="apv__kind">Request</span><span>' + (c.agent ? 'from ' + esc(c.agent) : '') + '</span>'
+    + (c.askedAt ? '<span>' + esc(rel(c.askedAt)) + '</span>' : '') + '</div>'
+    + '<h2 class="apv__title">' + esc(c.title) + '</h2>'
+    + (c.ask ? '<p class="apv__ask">' + esc(c.ask) + '</p>' : (c.need ? '<p class="apv__ask">' + esc(c.need) + '</p>' : ''))
+    + '<div class="apv__acts"><a class="ax-btn ax-btn--ghost" href="#req-section">Answer it in Open requests</a></div></li>';
 }
 
 function choices(i){
@@ -298,6 +330,7 @@ function fillSettings(s){
   f.maxExpiryDays.value = s.maxExpiryDays;
   f.laterHours.value = s.laterHours;
   f.notifyAgent.checked = !!s.notifyAgent;
+  if (s.desk) { f.deskPhone.value = s.desk.phone; f.deskComputer.value = s.desk.computer; }
   f.digestEnabled.checked = !!(s.digest && s.digest.enabled);
   f.digestTime.value = (s.digest && s.digest.time) || '09:00';
   var d = s.digest && s.digest.destination;
@@ -345,6 +378,8 @@ $('apv-form').addEventListener('submit', async function(ev){
     maxExpiryDays: Number(f.maxExpiryDays.value),
     laterHours: Number(f.laterHours.value),
     notifyAgent: f.notifyAgent.checked,
+    deskPhone: f.deskPhone.value,
+    deskComputer: f.deskComputer.value,
     digestEnabled: f.digestEnabled.checked,
     digestTime: f.digestTime.value,
     destination: f.destination.value.trim()

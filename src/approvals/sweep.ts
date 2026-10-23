@@ -1,5 +1,6 @@
 import { cardsAwaitingAgentNotice, expireCards, markAgentNotified, verdictMessage, type DecisionCard } from "./cards"
-import { listInbox, type InboxContext, type InboxItem } from "./inbox"
+import type { InboxContext } from "./inbox"
+import { readOwnerList, type OwnerList } from "@/desk/owner-list"
 import { readInboxState, recordDigest } from "./state"
 import type { PopupRunnerSettings } from "./popup-runner"
 import type { CheckinSettings } from "./checkin"
@@ -12,7 +13,9 @@ import type { CheckinSettings } from "./checkin"
 //      that raised it, once. Decisions made in the CLI or the dashboard
 //      (other processes) reach the agent through here too.
 //   3. Digest: at most one message a day to the operator, with the count
-//      and the most urgent item. Never one message per card.
+//      and the most urgent item. Never one message per card. The count is
+//      the owner's one list (desk/owner-list.ts, #1138 step C), the same
+//      the Desk and the Approvals page show.
 //
 // Every step is isolated: a failure is logged and the next step runs.
 
@@ -52,6 +55,8 @@ export interface SweepDeps {
   onCardResult?: (card: DecisionCard) => void
   /** Where the operator opens the inbox, for the digest. */
   dashboardUrl?: string
+  /** How this node is named on the owner's list. */
+  node?: { url: string; name: string }
   /** The nags kept back for the digest (#1126): their one line, and how
    *  to clear them once the digest went out. */
   nags?: { line(): { line: string; ids: number[] } | null; done(ids: number[]): void }
@@ -82,13 +87,15 @@ export function digestDue(settings: ApprovalSettings["digest"], lastDigest: stri
   return { due: lastDigest !== date && minutes >= h * 60 + m, date }
 }
 
-export function digestText(items: InboxItem[], dashboardUrl?: string, nagLine?: string): string {
-  const top = items[0]
-  // A digest of nags alone does not open with "0 decisions".
-  const lines = items.length || !nagLine ? [`${items.length} decision${items.length === 1 ? "" : "s"} waiting for you.`] : []
+export function digestText(list: Pick<OwnerList, "count" | "later" | "items">, dashboardUrl?: string, nagLine?: string): string {
+  const top = list.items[0]
+  const later = list.later ? ` (and ${list.later} you put off for later)` : ""
+  // A digest of nags alone does not open with "0 waiting".
+  const lines = list.count || list.later || !nagLine ? [`${list.count} waiting for you on the Desk${later}.`] : []
   if (top) {
-    const expires = top.expires ? ` Expires ${top.expires.slice(0, 16).replace("T", " ")} UTC${top.if_silent ? `, then: ${top.if_silent}` : ""}.` : ""
-    lines.push(`Most urgent: ${top.title}: ${top.ask}${expires}`)
+    const expires = top.expires ? ` Expires ${top.expires.slice(0, 16).replace("T", " ")} UTC${top.ifSilent ? `, then: ${top.ifSilent}` : ""}.` : ""
+    const ask = top.ask ?? top.need
+    lines.push(`Most urgent: ${top.title}${ask ? `: ${ask}` : ""}${expires}`)
   }
   // System nags kept back for this digest instead of a push each (#1126).
   if (nagLine) lines.push(nagLine)
@@ -178,17 +185,17 @@ export async function runApprovalsSweep(deps: SweepDeps): Promise<SweepResult> {
     if (!due) return result
     const dest = settings.digest.destination ?? deps.fallbackDestination
     if (!dest || !deps.sendDigest) { result.digest = "no-destination"; return result }
-    // Snoozed items count: "later" hides them from the list, not from the day's total.
-    const { items } = listInbox(ctx, { includeSnoozed: true })
+    // Put-off items are named apart: "later" hides them from the list, not from the day's total.
+    const list = readOwnerList(ctx, deps.node ?? { url: "", name: "this computer" })
     let nags: { line: string; ids: number[] } | null = null
     try { nags = deps.nags?.line() ?? null } catch (e: any) { log(`[approvals] digest: nags not read: ${e?.message ?? e}`) }
-    if (items.length === 0 && !nags) { result.digest = "empty"; return result }
+    if (list.count === 0 && list.later === 0 && !nags) { result.digest = "empty"; return result }
     recordDigest(ctx.root, date)
     try {
-      await deps.sendDigest(dest, digestText(items, deps.dashboardUrl, nags?.line))
+      await deps.sendDigest(dest, digestText(list, deps.dashboardUrl, nags?.line))
       if (nags) deps.nags!.done(nags.ids)
       result.digest = "sent"
-      log(`[approvals] digest sent: ${items.length} waiting${nags ? `, ${nags.ids.length} nags` : ""}`)
+      log(`[approvals] digest sent: ${list.count} waiting, ${list.later} later${nags ? `, ${nags.ids.length} nags` : ""}`)
     } catch (e: any) {
       result.digest = "failed"
       log(`[approvals] digest failed: ${e?.message ?? e}`)

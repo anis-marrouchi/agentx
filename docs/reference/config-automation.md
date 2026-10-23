@@ -188,6 +188,9 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 | `notifications.reach.enabled` | boolean | `false` | An urgent message goes where you were seen last and, unseen, once to the next address. |
 | `notifications.reach.escalateAfterMinutes` | integer (1 to 1440) | `10` | Minutes an urgent message waits to be seen or answered before it is sent once to the next address. |
 | `notifications.reach.ladder` | list of strings | `[]` | Your addresses in order, as `channel:chatId`, for example `push:default` or `telegram:123456789`. Empty: the told channels, then the told addresses. Use only told channels and addresses: a message to any other address is not recorded, so it cannot be seen or sent on. |
+| `notifications.desk` | object | `{}` | Where a new item on your Desk reaches you the moment it appears. With `approvals.digest`, these are the three settings of the Desk. See [Choose where new items go](/dashboard/mobile-desk#choose-where-new-items-go). |
+| `notifications.desk.phone` | `"all"`, `"urgent"` or `"off"` | `"off"` | A notification on the phone app (or ntfy) for each new item. `urgent`: only an item that expires within a day. Off: the Desk and the digest only. |
+| `notifications.desk.computer` | `"all"`, `"urgent"` or `"off"` | unset | The Mac card for each new item when `approvals.popup.enabled` is on, otherwise a banner on this computer. Unset: `all` when the popup is on, `off` when it is off. |
 
 ## `calls`
 

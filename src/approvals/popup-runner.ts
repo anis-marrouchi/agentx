@@ -62,6 +62,10 @@ export interface PopupRunnerDeps {
   agentName?: (agentId: string) => string | undefined
   /** Tell a card's author it was not shown, and why (the screen gate). */
   returnToAuthor?: (card: DecisionCard, text: string) => void
+  /** Whether this computer takes the item (notifications.desk.computer,
+   *  desk/route.ts). Unset: every item. A card the owner asked for shows
+   *  whatever it says. */
+  reaches?: (item: { expires?: string }) => boolean
   platform?: NodeJS.Platform
 }
 
@@ -74,7 +78,7 @@ const REQUEST_SAY_GAP_MS = 10 * 60_000
 let requestSaidAt = -Infinity
 
 /** The next card to show, or null. */
-export function nextCardToPop(ctx: InboxContext): DecisionCard | null {
+export function nextCardToPop(ctx: InboxContext, reaches: (item: { expires?: string }) => boolean = () => true): DecisionCard | null {
   const now = ctx.now ?? Date.now()
   const { popped = {}, snoozed, passAt, wanted = [] } = readInboxState(ctx.root)
   const pass = passAt ? Date.parse(passAt) : NaN
@@ -84,6 +88,7 @@ export function nextCardToPop(ctx: InboxContext): DecisionCard | null {
   for (const card of cards) {
     const key = `card:${card.id}`
     if (popped[key]) continue
+    if (!reaches(card)) continue
     // The Reminders mirror alerts for it (#1062): no second alert.
     if (mirrorCovers(ctx.root, card.id, now)) continue
     const until = snoozed[key]
@@ -109,9 +114,11 @@ const refusedTitles = new Map<string, string>()
 /** The next request to show: it came to need attention in the last day,
  *  was not shown yet, was not put off, and is not one the gate refused
  *  under the title it still has. */
-export function nextRequestToPop(ctx: InboxContext): RequestRecord | null {
+export function nextRequestToPop(ctx: InboxContext, reaches: (item: { expires?: string }) => boolean = () => true): RequestRecord | null {
   const now = ctx.now ?? Date.now()
   const { popped = {}, snoozed } = readInboxState(ctx.root)
+  // A request has no expiry of its own: it reaches only a computer that takes everything.
+  if (!reaches({})) return null
   return requestsWaiting(ctx).find((r) => {
     const key = `request:${r.id}`
     const until = snoozed[key]
@@ -143,8 +150,8 @@ export async function popNext(deps: PopupRunnerDeps): Promise<PopupOutcome> {
   const { ctx, settings, log } = deps
   if (!settings.enabled || (deps.platform ?? process.platform) !== "darwin") return "off"
   if (showing) return "busy"
-  const request = nextCardToPop(ctx) ? null : nextRequestToPop(ctx)
-  const card = request ? requestAsCard(request, ctx.now ?? Date.now()) : nextCardToPop(ctx)
+  const request = nextCardToPop(ctx, deps.reaches) ? null : nextRequestToPop(ctx, deps.reaches)
+  const card = request ? requestAsCard(request, ctx.now ?? Date.now()) : nextCardToPop(ctx, deps.reaches)
   if (!card) return "none"
   const focus = (deps.focus ?? readHold)()
   if (focus.active) return "held"

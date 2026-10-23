@@ -57,7 +57,7 @@ import type { AppPushDeps, AppPushResult } from "./app-push"
 import { pushBridgeCaller } from "./push-bridge"
 import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
-import { localAlert, localSettings, notify, writeCallHold, NotificationQueue, type Sender } from "@/notify"
+import { localAlert, localSettings, notify, readHold, writeCallHold, NotificationQueue, type Sender } from "@/notify"
 import { DEFAULT_TELL_SETTINGS, OwnerGate, splitTitle, TOLD_KEEP_DAYS, toldOfBody, ToldLedger, type TellKind, type TellMeta } from "@/notify/told"
 import { attachReach, type AttachedReach } from "@/notify/reach-attach"
 import { DEFAULT_REACH_SETTINGS } from "@/notify/reach"
@@ -114,6 +114,8 @@ import { syncSourceIssue } from "@/business/backlog-sync"
 import { loopChecker, parseDue } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
+import { readOwnerList } from "@/desk/owner-list"
+import { deskNotice, deskRouting, reaches, routeDesk, type DeskRouting } from "@/desk/route"
 import { checkinTick, type CheckinDeps, type PassKind } from "@/approvals/checkin"
 import { loadNativeAdapter } from "@/native"
 import { handleNoteRequest, noteCaller, type NoteReply } from "@/native/notes-api"
@@ -2201,6 +2203,7 @@ export class AgentXDaemon {
   /** On the push host: the subscriptions table relayed phones use (#711). */
   private pushHost?: AppPushDeps
   private approvalsSweeping = false
+  private deskRoutingBusy = false
   private mirroring = false
 
   /** One pass of the Reminders mirror, when it is on and this machine
@@ -2317,8 +2320,11 @@ export class AgentXDaemon {
         // The Mac popup waits on a person, so it runs beside the sweep,
         // never inside it (src/approvals/popup-runner.ts). Not over a
         // demo or a recording: the card waits for the floor to be free.
+        const desk = this.deskRouting()
         if (!this.voiceTalk.floor.view().held) void popNext({
           ctx: { root: process.cwd() }, settings: this.config.approvals.popup, log: this.log,
+          // notifications.desk.computer (#1138 step C): which cards this computer takes.
+          reaches: (item) => reaches(desk.computer, item, Date.now()),
           agentName: (id) => this.registry.getAgent(id)?.name,
           // The screen gate (#394): a card not shown goes back to its author.
           returnToAuthor: (card, text) => card.node
@@ -2331,6 +2337,15 @@ export class AgentXDaemon {
             text, kind: "line",
           }),
         }).catch((e: any) => this.log(`[approvals] popup failed: ${e?.message ?? e}`))
+        // The owner's Desk (#1138 step C): a new item goes to the phone and
+        // this computer as notifications.desk says. Beside the sweep: a
+        // push can take seconds.
+        if (!this.deskRoutingBusy) {
+          this.deskRoutingBusy = true
+          void this.routeDeskItems(desk)
+            .catch((e: any) => this.log(`[desk] routing failed: ${e?.message ?? e}`))
+            .finally(() => { this.deskRoutingBusy = false })
+        }
         // Check-ins ask agents to write cards, which takes minutes: beside
         // the sweep too (src/approvals/checkin.ts).
         void this.runCheckin().catch((e: any) => this.log(`[checkin] failed: ${e?.message ?? e}`))
@@ -2342,6 +2357,46 @@ export class AgentXDaemon {
     }
     this.approvalsTimer = setInterval(() => { void tick() }, 60_000)
     this.approvalsTimer.unref?.()
+  }
+
+  /** notifications.desk with its defaults worked out (desk/route.ts). */
+  private deskRouting(): DeskRouting {
+    return deskRouting({ desk: this.config.notifications.desk, popupEnabled: this.config.approvals.popup.enabled })
+  }
+
+  /** New items on the owner's one list, to the phone and this computer. */
+  private async routeDeskItems(routing: DeskRouting): Promise<void> {
+    const root = process.cwd()
+    const list = readOwnerList({ root }, { url: "", name: this.config.node.name })
+    // The Mac card shows this computer's items itself (popNext above);
+    // without it, a banner through the native adapter.
+    const popup = this.config.approvals.popup.enabled && process.platform === "darwin"
+    const alert = this.native.banner && !popup ? this.ownerAlert() : null
+    await routeDesk({
+      root,
+      now: Date.now(),
+      list,
+      routing,
+      phone: async (item, urgent) => {
+        const { title, message } = deskNotice(item)
+        // Not an urgent tell: an item that expires within a day is no reason
+        // to break Focus or skip the repeat check. Higher priority only.
+        await this.tellOwner({
+          title, message, from: item.agent ?? "desk", priority: urgent ? 5 : 4,
+          key: item.key, ...(item.kind === "request" ? { requestId: item.key.slice("request:".length) } : {}),
+        }, { soft: true, localAlert: false })
+      },
+      ...(alert ? {
+        computer: async (item) => {
+          // Held in Focus or a call, like every notice: tried again next minute.
+          if (readHold().active) return false
+          const { title, message } = deskNotice(item)
+          await alert(title, message)
+          return true
+        },
+      } : {}),
+      log: this.log,
+    })
   }
 
   /** The result turn on the agent that raised a card. Fire and forget:
@@ -2749,7 +2804,7 @@ export class AgentXDaemon {
    *  `soft`: then the failure is only logged. */
   private async tellOwner(
     input: { title: string; message: string; from: string; priority?: number; urgent?: boolean; channel?: string; chatId?: string } & TellMeta,
-    opts: { soft?: boolean } = {},
+    opts: { soft?: boolean; localAlert?: boolean } = {},
   ): Promise<"sent" | "held" | "repeat" | "digest"> {
     // An urgent item goes where the owner was last seen (#1138 step B).
     const stop = input.urgent && !input.channel ? this.reach?.firstStop() ?? null : null
@@ -2783,7 +2838,7 @@ export class AgentXDaemon {
         // No banner on this machine to fall back on: nothing reached the owner.
         if (!this.native.banner && !opts.soft) throw e
       }
-    }, { alert: this.ownerAlert() })
+    }, { alert: opts.localAlert === false ? false : this.ownerAlert() })
     if (res.held && row !== undefined) gate?.outcome(row, "held")
     return res.held ? "held" : "sent"
   }

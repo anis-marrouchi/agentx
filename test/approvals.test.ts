@@ -371,7 +371,7 @@ describe("the daemon sweep", () => {
     expect(sendDigest).toHaveBeenCalledTimes(1)
     const [dest, text] = sendDigest.mock.calls[0] as unknown as [any, string]
     expect(dest).toEqual({ channel: "telegram", chatId: "1000" })
-    expect(text).toMatch(/^2 decisions waiting/)
+    expect(text).toMatch(/^2 waiting for you on the Desk\./)
     expect(text).toMatch(/Most urgent: Merge the release PR/)
     expect((await runApprovalsSweep(deps("2026-09-27T09:00:00Z"))).digest).toBe("sent")
     expect(sendDigest).toHaveBeenCalledTimes(2)
@@ -389,7 +389,7 @@ describe("the daemon sweep", () => {
     expect(digestDue(d, undefined, Date.parse("2026-09-26T00:30:00Z")).due).toBe(true)
     expect(digestDue(d, "2026-09-26", Date.parse("2026-09-26T00:30:00Z")).due).toBe(false)
     expect(digestDue(d, undefined, Date.parse("2026-09-25T23:30:00Z")).due).toBe(false)
-    expect(digestText([])).toMatch(/^0 decisions/)
+    expect(digestText({ count: 0, later: 0, items: [] })).toMatch(/^0 waiting/)
   })
 })
 
