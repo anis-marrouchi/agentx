@@ -26,7 +26,10 @@ import {
 // A watcher fires when its due time passes with no done signal, or when the
 // task ends without a result. It tells the delegating agent first and the
 // owner after `escalateAfterMinutes`; with no delegating agent on this node
-// it tells the owner at once.
+// it tells the owner at once. With requests on, that escalation is the
+// request loop's (#1138 D, `raise`): the request that follows the task
+// needs attention, or the task becomes a promise, and the requests check
+// tells the owner once.
 //
 // A task whose type has an evidence rule (#1049) closes only on a done
 // signal whose evidence the rule accepts; its reply never closes it. A run
@@ -98,6 +101,10 @@ export interface CheckpointDeps {
   isLocalDelegation?: (id: string) => boolean
   alertAgent: (agentId: string, text: string, w: WatcherRecord) => Promise<void>
   alertOwner: (title: string, text: string, w: WatcherRecord) => Promise<void>
+  /** The one escalation of every loop (#1138 D): hands the watcher's
+   *  escalation to the request loop, which tells the owner once. True: it
+   *  took it, and alertOwner is not called. Unset or false: alertOwner. */
+  raise?: (w: WatcherRecord, reason: string) => boolean
   /** How an agent is told to mark the task done, with the evidence the
    *  task's rule accepts. */
   doneHint?: DoneHint
@@ -507,6 +514,14 @@ export class WatchCheckpoint {
   private async escalate(w: WatcherRecord, reason: string): Promise<void> {
     if (!this.deps.store.transition(w.id, ["open", "alerted"], "escalated", reason, this.now())) return
     this.closed(w, "timeout")
+    try {
+      if (this.deps.raise?.(w, reason)) {
+        this.deps.log(`[watchers] ${w.id}: raised on the request loop (${reason})`)
+        return
+      }
+    } catch (e: any) {
+      this.deps.log(`[watchers] ${w.id}: could not raise the request loop, telling the owner: ${e?.message ?? e}`)
+    }
     try {
       await this.deps.alertOwner("A task is not finished", ownerAlertText(w, reason), w)
       this.deps.log(`[watchers] ${w.id}: told the owner (${reason})`)

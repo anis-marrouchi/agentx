@@ -62,6 +62,7 @@
     "bench:profiles": "tsx bench/context-profiles.ts",
     "bench:compare": "tsx bench/compare-claude-code.ts",
     "bench:required": "tsx bench/workflow-required.ts",
+    "bench:catch": "tsx bench/catch-promise.ts",
     "bench:browser": "tsx bench/browser-drive.ts",
     "test": "vitest run",
     "clean": "rimraf dist",

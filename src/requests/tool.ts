@@ -11,8 +11,10 @@ import { callerHeaders } from "@/calls/service"
 //            long estimate is refused without steps (#1048)
 //   step     report on one step of a plan: progress, done, blocked
 //   wait     the next step is the owner's answer to this question
-//   done     finished, with a link to the evidence. On a loop with a
-//            closeWhen the daemon runs its check first (#1039)
+//   done     finished, with a link to the evidence, or a typed proof
+//            (link, test, output, check; #1138 D). On a loop with a
+//            closeWhen the daemon runs its check first (#1039). A promise
+//            closed with a proof leaves a dated wiki fact
 //   decline  I will not do it, with the reason
 //   promise  I owe someone something (owedTo, text, due, closeWhen):
 //            an open loop of its own, listed with the open requests
@@ -89,7 +91,7 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
       headers: { "Content-Type": "application/json", ...callerHeaders(env) },
       body: JSON.stringify({
         action, agentId: caller.agentId,
-        id: args.id, question: args.question, evidence: args.evidence, reason: args.reason,
+        id: args.id, question: args.question, evidence: args.evidence, proof: args.proof, reason: args.reason,
         steps: args.steps, work: args.work, estimateMinutes: args.estimateMinutes, step: args.step, status: args.status, note: args.note, home: args.home,
         owedTo: args.owedTo, text: args.text, due: args.due, closeWhen: args.closeWhen,
         headline: args.headline, need: args.need,
@@ -117,7 +119,10 @@ export async function runRequestTool(args: Record<string, unknown>, deps: Reques
     if (action === "done" && data.verify === "unverified") {
       return `Request ${r.id} stays open: its check could not say whether it is finished (${data.detail}). It is marked unverified; the daemon checks again, and the owner can close it by hand.`
     }
-    if (action === "done") return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}`
+    if (action === "done") {
+      const fact = r.factId ? ` It left fact ${r.factId} in the wiki (agentx wiki facts show ${r.factId}).` : ""
+      return `Request ${r.id} is closed as done${data.verified ? " (its check was met)" : ""}. Evidence: ${r.evidence}${fact}`
+    }
     return `Request ${r.id} is closed as declined. Reason: ${r.closeReason}`
   } catch (e: any) {
     return `Error: couldn't reach the daemon (${e?.message ?? e}).`

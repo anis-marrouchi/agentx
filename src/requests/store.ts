@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3"
 import { ensureColumns, PERSON_COLUMNS } from "@/storage/sqlite"
 import { readCloseWhen, type CloseWhen } from "./checkers"
+import type { Proof } from "./promise"
 
 // --- Open requests: what a person asked for that is not finished (#356) ---
 //
@@ -20,7 +21,7 @@ export type RequestState = "candidate" | OpenState | ClosedState
 export const OPEN_STATES: readonly OpenState[] = ["in_progress", "waiting_owner", "waiting_other", "needs_attention"]
 export const CLOSED_STATES: readonly ClosedState[] = ["done", "declined", "dropped"]
 
-export type LinkKind = "run" | "delegation" | "card" | "workflow" | HomeLinkKind
+export type LinkKind = "run" | "delegation" | "card" | "workflow" | "watcher" | HomeLinkKind
 
 /** Where the work of a request lives (#394): the issue, idea file,
  *  approval, ERP record or Desk card the agent named. The latest is kept
@@ -119,6 +120,26 @@ export interface RequestRecord {
   /** When the daemon last asked the model for a headline: each request
    *  is asked once, across restarts. */
   headlineTriedAt: number | null
+  // --- One Promise (#1138 D). Null on requests from before it. ---
+  /** Who owes it when it is not its agent: "owner" for a decision card. */
+  owedBy: string | null
+  /** The typed proof it closed with: a link, a test, an output or a check. */
+  proof: Proof | null
+  /** The wiki fact its close wrote (`agentx wiki facts show <id>`). */
+  factId: string | null
+}
+
+const PROOF_KIND_NAMES: readonly string[] = ["link", "test", "output", "check"]
+
+/** A stored proof, or null when there is none or it does not read. */
+export function readProof(raw: unknown): Proof | null {
+  if (typeof raw !== "string" || !raw) return null
+  try {
+    const p = JSON.parse(raw)
+    return p && PROOF_KIND_NAMES.includes(p.kind) && typeof p.value === "string" && typeof p.ranAt === "number" ? p : null
+  } catch {
+    return null
+  }
 }
 
 /** The first web link in an answer: what a delegate gave as its proof
@@ -179,7 +200,8 @@ export function ensureRequestTables(db: Database.Database): void {
     ["owed_to", "TEXT"], ["promise", "INTEGER"], ["due_at", "INTEGER"], ["close_when", "TEXT"], ["checked_at", "INTEGER"],
     ["verified_at", "INTEGER"], ["verify_state", "TEXT"], ["verify_detail", "TEXT"],
     ["work", "TEXT"], ["estimate_minutes", "REAL"], ["first_work", "TEXT"], ["first_estimate_minutes", "REAL"],
-    ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"], ["headline_tried_at", "INTEGER"]]) {
+    ["headline", "TEXT"], ["need", "TEXT"], ["headline_by", "TEXT"], ["headline_tried_at", "INTEGER"],
+    ["owed_by", "TEXT"], ["proof", "TEXT"], ["fact_id", "TEXT"]]) {
     if (cols.some((c) => c.name === name)) continue
     try {
       db.exec(`ALTER TABLE requests ADD COLUMN ${name} ${type}`)
@@ -211,6 +233,7 @@ function toRecord(r: any): RequestRecord {
     firstWork: r.first_work ?? null, firstEstimateMinutes: r.first_estimate_minutes ?? null,
     headline: r.headline ?? null, need: r.need ?? null, headlineBy: r.headline_by === "agent" || r.headline_by === "model" ? r.headline_by : null,
     headlineTriedAt: r.headline_tried_at ?? null,
+    owedBy: r.owed_by ?? null, proof: readProof(r.proof), factId: r.fact_id ?? null,
   }
 }
 
@@ -244,14 +267,14 @@ export class RequestStore {
    *  `owedTo`. The chat is the one of the turn that made it. */
   addPromise(input: {
     id: string; channel: string; chatId: string; agentId: string; text: string; owedTo: string
-    dueAt?: number | null; closeWhen?: CloseWhen | null; home?: RequestHome | null; now: number
+    owedBy?: string | null; dueAt?: number | null; closeWhen?: CloseWhen | null; home?: RequestHome | null; now: number
   }): void {
     this.db.prepare(
-      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, state_changed_at, owed_to, promise, due_at, close_when, home_kind, home_link)
-       VALUES (?, 'in_progress', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
+      `INSERT INTO requests (id, state, channel, chat_id, agent_id, text, created_at, updated_at, state_changed_at, owed_to, owed_by, promise, due_at, close_when, home_kind, home_link)
+       VALUES (?, 'in_progress', ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`,
     ).run(
       input.id, input.channel, input.chatId, input.agentId, input.text.slice(0, TEXT_MAX), input.now, input.now, input.now, input.owedTo,
-      input.dueAt ?? null, input.closeWhen ? JSON.stringify(input.closeWhen) : null,
+      input.owedBy ?? null, input.dueAt ?? null, input.closeWhen ? JSON.stringify(input.closeWhen) : null,
       input.home?.kind ?? null, input.home ? input.home.link.slice(0, HOME_LINK_MAX) : null,
     )
     if (input.home) this.linkHome(input.id, input.home, input.now)
@@ -262,6 +285,13 @@ export class RequestStore {
     return (this.db.prepare(
       `SELECT COUNT(*) AS n FROM requests WHERE agent_id = ? AND promise = 1 AND state IN (${placeholders(OPEN_STATES.length)})`,
     ).get(agentId, ...OPEN_STATES) as { n: number }).n
+  }
+
+  /** Did this agent open a promise in this chat since `since`? */
+  promisedInChat(agentId: string, channel: string, chatId: string, since: number): boolean {
+    return !!this.db.prepare(
+      "SELECT 1 FROM requests WHERE agent_id = ? AND channel = ? AND chat_id = ? AND promise = 1 AND created_at >= ? LIMIT 1",
+    ).get(agentId, channel, chatId, since)
   }
 
   /** Give an open request a due time or a checker, from accept or wait. */
@@ -323,14 +353,38 @@ export class RequestStore {
       .run(now, state, detail.slice(0, REASON_MAX) || null, id)
   }
 
-  /** The checker found the evidence: closed as done, with its words. */
+  /** The checker found the evidence: closed as done, with its words. Its
+   *  proof is the check that ran (#1138 D). */
   closeVerified(id: string, evidence: string, now: number): boolean {
     const text = evidence.trim().slice(0, REASON_MAX) || "the check was met"
-    return this.db.prepare(
+    const proof: Proof = { kind: "check", value: text, ranAt: now }
+    const closed = this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
-         checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?
+         checked_at = ?, verified_at = ?, verify_state = 'verified', verify_detail = ?, proof = ?
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(now, now, now, text, now, now, text, id, ...CLOSED_STATES).changes > 0
+    ).run(now, now, now, text, now, now, text, JSON.stringify(proof), id, ...CLOSED_STATES).changes > 0
+    if (closed) this.done(id)
+    return closed
+  }
+
+  private doneHooks = new Set<(r: RequestRecord) => void>()
+
+  /** Called after every close as done, with the closed request (#1138 D).
+   *  Returns the function that removes it. */
+  onDone(fn: (r: RequestRecord) => void): () => void {
+    this.doneHooks.add(fn)
+    return () => { this.doneHooks.delete(fn) }
+  }
+
+  private done(id: string): void {
+    if (!this.doneHooks.size) return
+    const r = this.get(id)
+    if (r) for (const fn of this.doneHooks) fn(r)
+  }
+
+  /** The wiki fact a promise's close wrote. */
+  setFact(id: string, factId: string): void {
+    this.db.prepare("UPDATE requests SET fact_id = ? WHERE id = ?").run(factId, id)
   }
 
   /** Open loops with a checker whose last run is older than `before`
@@ -486,15 +540,19 @@ export class RequestStore {
     return res.changes > 0
   }
 
-  /** Close it: done needs evidence, declined and dropped need a reason. */
-  close(id: string, state: ClosedState, detail: string, now: number): boolean {
+  /** Close it: done needs evidence, declined and dropped need a reason.
+   *  A done may carry a typed proof (#1138 D), kept beside the evidence. */
+  close(id: string, state: ClosedState, detail: string, now: number, proof: Proof | null = null): boolean {
     const text = detail.trim()
     if (!text) throw new Error(state === "done" ? "a finished request needs a link to the evidence" : `a ${state} request needs a reason`)
+    const kept = state === "done" && proof ? JSON.stringify(proof) : null
     const res = this.db.prepare(
-      `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?
+      `UPDATE requests SET state = ?, closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = ?, proof = ?
        WHERE id = ? AND state NOT IN (${placeholders(CLOSED_STATES.length)})`,
-    ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), id, ...CLOSED_STATES)
-    return res.changes > 0
+    ).run(state, now, now, now, state === "done" ? text.slice(0, REASON_MAX) : null, state === "done" ? null : text.slice(0, REASON_MAX), kept, id, ...CLOSED_STATES)
+    const closed = res.changes > 0
+    if (closed && state === "done") this.done(id)
+    return closed
   }
 
   /** A candidate whose turn ended with nothing left to follow. */

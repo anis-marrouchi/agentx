@@ -21,7 +21,9 @@ export function readRequestSettings(configPath?: string): RequestSettings {
   return parsed.success ? parsed.data : requestsConfigSchema.parse(undefined)
 }
 
-export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines" | "statusDrift">> & {
+export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines" | "statusDrift" | "catchPromises">> & {
+  /** The switch and the cap. Provider, model and timeout are set in agentx.json. */
+  catchPromises?: { enabled?: boolean; dailyCap?: number }
   /** Only the switch. Provider, model and timeout are set in agentx.json. */
   headlines?: { enabled?: boolean }
   plans?: Partial<PlanSettings>
@@ -51,6 +53,12 @@ export async function updateRequestSettings(
       }
     }
     if (patch.headlines?.enabled !== undefined) (r.headlines ??= {}).enabled = patch.headlines.enabled
+    if (patch.catchPromises) {
+      const c = (r.catchPromises ??= {})
+      for (const key of ["enabled", "dailyCap"] as const) {
+        if (patch.catchPromises[key] !== undefined) c[key] = patch.catchPromises[key]
+      }
+    }
     if (patch.checkers) {
       const c = (r.checkers ??= {})
       for (const key of ["enabled", "checkEveryMinutes"] as const) {

@@ -37,6 +37,10 @@ export interface ProviderOptions {
    *  (classifier, summaries, extraction) set this so a CLI-backed provider
    *  skips the full interactive startup instead of paying it per call. */
   bare?: boolean
+  /** No thinking before the answer. A one-line judgment gains little from
+   *  it, and on the claude-code CLI it multiplied a call's output tokens
+   *  (#1138 E). The API path does not think unless asked to. */
+  noThinking?: boolean
   /** Force the model to call one specific tool, making its whole reply the
    *  tool's structured `input`. Anthropic renders this as
    *  `tool_choice: {type:"tool", name}`; OpenAI as

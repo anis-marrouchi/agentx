@@ -246,6 +246,8 @@ requests
   .option("--stale-hours <n>", "hours without activity before an open request comes back to you")
   .option("--retention-days <n>", "days a closed request is kept")
   .option("--headlines <on|off>", "write a headline for a request its agent did not describe (one small model call each)")
+  .option("--catch <on|off>", "read the reply of each of your turns for a promise or a question to you (one small model call each)")
+  .option("--catch-cap <n>", "model calls a day the promise catch may make")
   .option("--settle <on|off>", "close a quiet request whose handed work all came back done, instead of bringing it back to you")
   .option("--plans <on|off>", "follow requests of two or more steps as tracked plans")
   .option("--stall-minutes <n>", "minutes without progress before a plan step's agent is nudged")
@@ -278,6 +280,12 @@ requests
       if (opts.headlines !== undefined) {
         if (opts.headlines !== "on" && opts.headlines !== "off") throw new Error("--headlines takes on or off")
         patch.headlines = { enabled: opts.headlines === "on" }
+      }
+      if (opts.catch !== undefined || opts.catchCap !== undefined) {
+        if (opts.catch !== undefined && opts.catch !== "on" && opts.catch !== "off") throw new Error("--catch takes on or off")
+        const cap = num("--catch-cap", opts.catchCap)
+        if (cap !== undefined && !Number.isInteger(cap)) throw new Error("--catch-cap must be a whole number")
+        patch.catchPromises = { ...(opts.catch !== undefined ? { enabled: opts.catch === "on" } : {}), ...(cap !== undefined ? { dailyCap: cap } : {}) }
       }
       if (opts.settle !== undefined) {
         if (opts.settle !== "on" && opts.settle !== "off") throw new Error("--settle takes on or off")
@@ -327,6 +335,8 @@ requests
     console.log(`  Comes back after        ${s.staleAfterHours} hour(s) without activity`)
     console.log(`  Closed requests kept    ${s.retentionDays} day(s)`)
     console.log(`  Headlines               ${s.headlines?.enabled === false ? "off: titled with the start of your words" : "on: written when the agent gave none"}`)
+    const caught = s.catchPromises
+    console.log(`  Catch promises          ${caught?.enabled ? `on: each of your turns' reply is read, up to ${caught.dailyCap} call(s) a day` : "off"}`)
     console.log(`  Handed work came back   ${s.settleHandedBack === false ? "comes back to you when quiet" : "closed when quiet, with its link or marked unproven"}`)
     const p = s.plans ?? DEFAULT_PLAN_SETTINGS
     console.log(`  Plans                   ${p.enabled ? "on" : "off"}`)

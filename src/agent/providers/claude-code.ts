@@ -241,6 +241,7 @@ export class ClaudeCodeProvider implements AgentProvider {
     const env = { ...process.env }
     delete env.ANTHROPIC_API_KEY
     delete env.ANTHROPIC_API_KEY_OLD
+    if (options?.noThinking) env.MAX_THINKING_TOKENS = "0"
 
     const result = await execa("claude", args, {
       env,
