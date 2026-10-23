@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.157.0](https://github.com/anis-marrouchi/agentx/compare/v0.156.0...v0.157.0) (2026-10-23)
+
+
+### Features
+
+* **requests:** catch "I'll do X" as a promise ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138) step E) ([#1154](https://github.com/anis-marrouchi/agentx/issues/1154)) ([f4a518b](https://github.com/anis-marrouchi/agentx/commit/f4a518b42fc21b70091a1a932c5f7e05c197461c))
+
 ## [0.156.0](https://github.com/anis-marrouchi/agentx/compare/v0.155.0...v0.156.0) (2026-10-23)
 
 
