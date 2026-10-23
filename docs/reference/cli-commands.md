@@ -546,6 +546,7 @@ Show or change the requests settings (requests in agentx.json).
 | `--channels <name,...>` | — | Channels to record on; "all" for every channel a person writes on. |
 | `--stale-hours <n>` | — | Hours without activity before an open request comes back to you. |
 | `--retention-days <n>` | — | Days a closed request is kept. |
+| `--settle <on\|off>` | — | Close a quiet request as done when all the work it handed on came back done. |
 | `--headlines <on\|off>` | — | Write a headline for a request its agent did not describe (one small model call each). |
 | `--checks <kind,...>` | — | Checks agents may use to close a request (url, issue, git-ancestor, reply); "none" to turn them all off. |
 | `--check-every <minutes>` | — | How often each open request's check runs. |

@@ -30,6 +30,7 @@ export const REQUESTS_HTML = `
         <label>Channels to record on (separated by commas; empty for all)<input type="text" name="channels" placeholder="voice, app, telegram" autocomplete="off"></label>
         <label>Comes back after this many hours without activity<input type="number" min="1" step="1" name="staleAfterHours" required></label>
         <label>Keep closed requests for (days)<input type="number" min="1" step="1" name="retentionDays" required></label>
+        <label class="apv__check"><input type="checkbox" name="settleHandedBack"> Close a quiet request as done when all the work it handed on came back done</label>
         <label class="apv__check"><input type="checkbox" name="headlines"> Write a headline when the agent gave none (one small model call per request)</label>
         <label class="apv__check"><input type="checkbox" name="plansEnabled"> Follow requests of two or more steps as plans</label>
         <label>Nudge a plan step's agent after this many minutes without progress<input type="number" min="1" step="1" name="stallMinutes" required></label>
@@ -168,6 +169,7 @@ function fill(s){
   f.channels.value = (s.channels || []).join(', ');
   f.staleAfterHours.value = s.staleAfterHours;
   f.retentionDays.value = s.retentionDays;
+  f.settleHandedBack.checked = s.settleHandedBack !== false;
   f.headlines.checked = !s.headlines || s.headlines.enabled !== false;
   var p = s.plans || {};
   f.plansEnabled.checked = p.enabled !== false;
@@ -269,6 +271,7 @@ $('req-form').addEventListener('submit', async function(ev){
     channels: f.channels.value,
     staleAfterHours: Number(f.staleAfterHours.value),
     retentionDays: Number(f.retentionDays.value),
+    settleHandedBack: f.settleHandedBack.checked,
     headlines: f.headlines.checked,
     plansEnabled: f.plansEnabled.checked,
     stallMinutes: Number(f.stallMinutes.value),

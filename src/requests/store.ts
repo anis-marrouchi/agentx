@@ -159,6 +159,8 @@ export function ensureRequestTables(db: Database.Database): void {
   `)
   ensureColumns(db, "requests", PERSON_COLUMNS)
   ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
+  // How a delegation ended, and the first link in its answer (#1138).
+  ensureColumns(db, "request_links", [["outcome", "TEXT"], ["proof", "TEXT"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -358,8 +360,47 @@ export class RequestStore {
     this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)").run(requestId, kind, ref, now)
   }
 
-  links(requestId: string): Array<{ kind: LinkKind; ref: string; at: number }> {
-    return this.db.prepare("SELECT kind, ref, at FROM request_links WHERE request_id = ? ORDER BY at, rowid").all(requestId) as any
+  /** Every link, oldest first. A delegation that ended carries its
+   *  `outcome`, and `proof` when its answer had a link (#1138). */
+  links(requestId: string): Array<{ kind: LinkKind; ref: string; at: number; outcome?: string; proof?: string }> {
+    const rows = this.db.prepare("SELECT kind, ref, at, outcome, proof FROM request_links WHERE request_id = ? ORDER BY at, rowid").all(requestId) as any[]
+    return rows.map(({ outcome, proof, ...l }) => ({ ...l, ...(outcome ? { outcome } : {}), ...(proof ? { proof } : {}) }))
+  }
+
+  /** How a linked delegation ended (done, waiting, error…), with the
+   *  first link in its answer (#1138). A later end replaces an earlier
+   *  one: a delegation that waited can still come back done. */
+  endLink(kind: LinkKind, ref: string, outcome: string, proof: string | null): void {
+    this.db.prepare("UPDATE request_links SET outcome = ?, proof = ? WHERE kind = ? AND ref = ?")
+      .run(outcome, proof ? proof.slice(0, HOME_LINK_MAX) : null, kind, ref)
+  }
+
+  /** In progress, quiet since `before`, with no due time, no checker and
+   *  no promise, whose delegations all came back done (#1138): the work
+   *  it handed on is finished and nobody closed it. Oldest first. */
+  handedBackSince(before: number): Array<RequestRecord & { proofs: string[]; delegates: number }> {
+    const rows = this.db.prepare(
+      `SELECT r.*, (SELECT COUNT(*) FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation') AS delegates
+       FROM requests r
+       WHERE r.state = 'in_progress' AND r.updated_at < ? AND r.due_at IS NULL AND r.close_when IS NULL AND COALESCE(r.promise, 0) = 0
+         AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation')
+         AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND (l.outcome IS NULL OR l.outcome != 'done'))
+       ORDER BY r.created_at, r.rowid`,
+    ).all(before) as any[]
+    const proofs = this.db.prepare(
+      "SELECT proof FROM request_links WHERE request_id = ? AND kind = 'delegation' AND proof IS NOT NULL ORDER BY at, rowid",
+    )
+    return rows.map((r) => ({ ...toRecord(r), delegates: r.delegates, proofs: (proofs.all(r.id) as Array<{ proof: string }>).map((p) => p.proof) }))
+  }
+
+  /** Closed as done because its handed work came back done (#1138). With
+   *  no link to show for it, it is marked unproven, and the detail says so. */
+  settle(id: string, evidence: string, proven: boolean, detail: string, now: number): boolean {
+    return this.db.prepare(
+      `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
+         verify_state = ?, verify_detail = ?
+       WHERE id = ? AND state = 'in_progress'`,
+    ).run(now, now, now, evidence.slice(0, REASON_MAX), proven ? null : "unverified", detail.slice(0, REASON_MAX), id).changes > 0
   }
 
   /** The agent's newest answer under this request: the final reply of its

@@ -2543,6 +2543,8 @@ export class AgentXDaemon {
       check: loopChecker(() => this.requestCheckContext(requests)),
       describe: (r) => headlines.ensure(r),
       fillHeadlines: () => headlines.fill(),
+      // A plan closes its own request when its last step is done.
+      inPlan: (id) => requests.plans.get(id)?.state === "active",
       // A stopped request is a nag: its card is on the Desk at once, the
       // line about it waits for the daily digest (#1126).
       notify: (title, message, r) => this.notifyRequestOwner(title, message, r, "nag"),

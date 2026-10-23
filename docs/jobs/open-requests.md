@@ -25,7 +25,9 @@ Each request has one state:
 
 A request waits on you when the agent raises a [decision card](../dashboard/approvals.md) for it, or says so with its tool. The card reminds you the usual way: the Approvals inbox, the Mac card, check-ins and the daily digest. When you answer, the request goes on. If the card expires without your answer, the request needs attention; it does not close. A card never approves itself.
 
-When a request needs attention you are told once, through your normal [notifications](./notifications.md). They are held while Focus is on. After that the request stays on the list. Nothing is retried for you, and nothing closes because it got old.
+When a request needs attention you are told once, through your normal [notifications](./notifications.md). They are held while Focus is on. After that the request stays on the list. Nothing is retried for you, and nothing closes just because it got old.
+
+One case closes by itself: a request whose work was handed to other agents, and all of that work came back done. See [When the handed work comes back done](#when-the-handed-work-comes-back-done).
 
 ## Turn it on
 
@@ -91,6 +93,34 @@ You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on,
 - **You no longer want it:** `agentx requests drop <id>`. Add `--reason "…"` to say why.
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
+
+### When the handed work comes back done
+
+Agents often forget to close a request once the work they handed on is finished. So AgentX settles it for them:
+
+- The request is in progress, and nothing has happened on it for the quiet time (`--stale-hours`, 24 hours by default).
+- Every piece of work it handed to another agent came back **done**.
+
+Such a request is closed as done. You are not told about it: there is nothing left for you to do. Its proof is the first web link in the answer that came back, for example the pull request the other agent opened. When no answer had a link, the request is still closed, but marked **unverified**, and its proof says it is unproven.
+
+AgentX leaves a request open, and tells you as before, when:
+
+- one piece of handed work failed, timed out, was lost, or is not back yet,
+- it is a promise an agent made,
+- it has a due time or a check that closes it,
+- it is a request of several steps (a tracked plan): the plan closes it.
+
+A request that already needs attention is not touched. To keep the old behaviour, where every quiet request comes back to you, turn it off:
+
+1. **Terminal:** run `agentx requests settings --settle off`.
+2. **Terminal:** run `agentx requests settings`. The line `Handed work came back` says `comes back to you after the quiet time`.
+
+In the dashboard, it is the box **Close a quiet request as done when all the work it handed on came back done** under **Approvals** › **Settings: open requests**.
+
+To see how a handed piece of work ended:
+
+1. **Terminal:** run `agentx requests show <id>`.
+2. Each `delegation` line ends with how it ended (`done`, `waiting`, `error`, `timeout`, `lost`), and the link its answer gave, if any.
 
 ## Promises an agent makes
 
@@ -205,6 +235,7 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --from none` | Clears the list of who counts as you. |
 | `agentx requests settings --stale-hours 48` | Hours without activity before a request comes back to you. Default 24. |
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
+| `agentx requests settings --settle off` | A quiet request whose handed work all came back done comes back to you, instead of closing as done. `on` turns settling back on. Default on. |
 | `agentx requests settings --headlines off` | Stops AgentX from writing a headline for a request its agent did not describe. Such a request is then titled with the start of your words. `on` turns it back on. Default on. |
 | `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
 | `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
@@ -239,6 +270,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
 12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its card under **Approvals** › **Open requests** is titled with a few plain words, shows **Needed from you**, and keeps your words under **You said**. `agentx requests show <id>` shows the same `headline`.
 13. **Terminal:** run `agentx requests settings`. The line `Headlines` says `on: written when the agent gave none`, or `off` after `--headlines off`.
+14. Ask an agent for something it hands to another agent, and do not close it. A day after the answer came back, `agentx requests` no longer lists it, and `agentx requests show <id>` shows it as done, with the other agent's link as the proof. The daemon log has a line `[requests] <id> settled`. No **Not finished** line about it is in `agentx notify --told`.
 
 ## If something is wrong
 
@@ -246,7 +278,9 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **The list says `requests are off`:** run `agentx requests settings --enabled on`.
 - **A message you sent on Telegram or GitHub is not recorded:** your id on that channel is not in `from`. Add it with `--from`, as `channel:id`.
 - **A request you only got an answer to is not listed:** that is expected. A request is kept only when work goes on after the answer or goes wrong.
-- **A request came back as `No activity for 24 h`:** nobody closed it. Close it with `done` or `drop`, or ask the agent to carry on.
+- **A request came back as `No activity for 24 h`:** nobody closed it. Close it with `done` or `drop`, or ask the agent to carry on. If its handed work did come back done, check that settling is on (`agentx requests settings`), and run `agentx requests show <id>`: a `delegation` line without `done` means that piece of work is not back, or did not finish.
+- **A request closed by itself and it was not finished:** the other agent answered **done** but the work was not complete. Ask the agent again; to stop requests closing this way, run `agentx requests settings --settle off`.
+- **`--settle takes on or off`:** write `on` or `off`, nothing else.
 - **`home.kind must be one of …`:** the agent gave a home kind that does not exist. Use issue, idea, approval, erp or card. A declined request takes no home.
 - **`a finished request needs --evidence <link>`:** add the link to the proof. From the terminal, and for agents, a request cannot be closed as done without it.
 - **A message from the phone app is not recorded:** the dashboard must run from the install folder, the one that holds `agentx.json`, so it can read `.agentx/operator.key`. Start it there. A message sent through the phone app to an agent on another computer is recorded there when the computer the phone is paired with checks its own key and vouches for you to the other one. That needs three things: both computers run 0.83.1 or later, the other computer lists the first one in `mesh.peers` with the same `token` the first one sends, and the request reaches it from another machine. A token that sits only in `MESH_TOKEN`, two different tokens, or a proxy on the same machine in front of the daemon means it is not recorded.

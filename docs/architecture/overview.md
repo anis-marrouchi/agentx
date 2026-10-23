@@ -56,6 +56,8 @@ The typed `request-gate` decision evaluates whether a new request benefits from 
 
 Every AgentX icon is drawn from one source, the AX symbol in `src/brand/ax-symbol.ts`. The dashboard, the phone app and the member page draw theirs from it when asked. The Android, iPhone, Mac and Raycast icons are files written from it by `npx tsx scripts/gen-icons.ts`, and the test suite fails if one of them no longer matches. To change the mark, edit that source and rerun the script.
 
+How agents keep track of what they owe a person, and the names used for it (Promise, Fact, Verdict, Approval, Chaser and more), is on [Patterns for working around a person](patterns.md).
+
 Continue to [Jev](jev.md), [A2A](../reference/a2a.md), or the [terminal command reference](../reference/cli.md).
 
 ## Check it worked

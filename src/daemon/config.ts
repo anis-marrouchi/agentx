@@ -1379,6 +1379,10 @@ export const requestsConfigSchema = z.object({
   staleAfterHours: z.number().positive().max(24 * 365).default(24),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
+  /** A request in progress, quiet for `staleAfterHours`, whose handed work
+   *  all came back done is closed as done instead of raised (#1138). The
+   *  delegate's link is its evidence; with none it is marked unproven. */
+  settleHandedBack: z.boolean().default(true),
   /** Tracked plans (src/requests/plans.ts, #788): a request with two or
    *  more steps, each with an owner agent, followed until every step is
    *  done. Needs `enabled` above. */

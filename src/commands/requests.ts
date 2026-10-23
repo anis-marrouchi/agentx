@@ -179,7 +179,7 @@ requests
     if (!r || r.state === "candidate") { console.error(chalk.red(`  no request "${id}"`)); process.exitCode = 1; return }
     printRequest(r)
     console.log(chalk.dim(`    Last activity ${when(r.updatedAt)}${r.closedAt ? ` · closed ${when(r.closedAt)}` : ""}`))
-    for (const l of s.links(id)) console.log(chalk.dim(`    ${l.kind} ${l.ref} (${when(l.at)})`))
+    for (const l of s.links(id)) console.log(chalk.dim(`    ${l.kind} ${l.ref} (${when(l.at)})${l.outcome ? `: ${l.outcome}${l.proof ? ` ${l.proof}` : ""}` : ""}`))
     const plans = planStore()
     const plan = plans?.get(id)
     if (!plans || !plan) return
@@ -243,6 +243,7 @@ requests
   .option("--channels <name,...>", "channels to record on; \"all\" for every channel a person writes on")
   .option("--stale-hours <n>", "hours without activity before an open request comes back to you")
   .option("--retention-days <n>", "days a closed request is kept")
+  .option("--settle <on|off>", "close a quiet request as done when all the work it handed on came back done")
   .option("--headlines <on|off>", "write a headline for a request its agent did not describe (one small model call each)")
   .option("--plans <on|off>", "follow requests of two or more steps as tracked plans")
   .option("--stall-minutes <n>", "minutes without progress before a plan step's agent is nudged")
@@ -272,6 +273,10 @@ requests
       patch.channels = list(opts.channels, "all")
       patch.staleAfterHours = num("--stale-hours", opts.staleHours)
       patch.retentionDays = num("--retention-days", opts.retentionDays)
+      if (opts.settle !== undefined) {
+        if (opts.settle !== "on" && opts.settle !== "off") throw new Error("--settle takes on or off")
+        patch.settleHandedBack = opts.settle === "on"
+      }
       if (opts.headlines !== undefined) {
         if (opts.headlines !== "on" && opts.headlines !== "off") throw new Error("--headlines takes on or off")
         patch.headlines = { enabled: opts.headlines === "on" }
@@ -319,6 +324,7 @@ requests
     console.log(`  Counts as you           ${s.from.length ? s.from.join(", ") : "only voice, the app and the dashboard on this machine"}`)
     console.log(`  Comes back after        ${s.staleAfterHours} hour(s) without activity`)
     console.log(`  Closed requests kept    ${s.retentionDays} day(s)`)
+    console.log(`  Handed work came back   ${s.settleHandedBack === false ? "comes back to you after the quiet time" : "closed as done after the quiet time"}`)
     console.log(`  Headlines               ${s.headlines?.enabled === false ? "off: titled with the start of your words" : "on: written when the agent gave none"}`)
     const p = s.plans ?? DEFAULT_PLAN_SETTINGS
     console.log(`  Plans                   ${p.enabled ? "on" : "off"}`)

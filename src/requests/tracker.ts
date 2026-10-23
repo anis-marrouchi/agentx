@@ -31,6 +31,9 @@ export interface RequestSettings {
   /** The checkers that close loops on evidence (#1039). Unset: the
    *  defaults (DEFAULT_CHECKER_SETTINGS). */
   checkers?: CheckerSettings
+  /** Settle a quiet request whose handed work all came back done (#1138):
+   *  closed as done instead of raised to the owner. Unset: on. */
+  settleHandedBack?: boolean
   /** Headlines written for requests the agent did not describe (#1126).
    *  Unset: on, with the defaults. */
   headlines?: { enabled: boolean; provider?: string; model?: string; timeoutSeconds: number }
@@ -114,6 +117,13 @@ function failureWord(error: string): string {
 const clip = (s: string, n = 200) => {
   const flat = s.replace(/\s+/g, " ").trim()
   return flat.length > n ? `${flat.slice(0, n - 1)}…` : flat
+}
+
+/** The first web link in a text, without the punctuation that ends a
+ *  sentence: what a delegate's answer offers as proof (#1138). */
+export function firstLink(text: string): string | null {
+  const m = /https?:\/\/[^\s<>"'`]+/i.exec(text)
+  return m ? m[0].replace(/[.,;:!?)\]}*_]+$/, "") : null
 }
 
 const chatKey = (agentId: string, channel: string, chatId: string) => `${agentId}\u0000${channel}\u0000${chatId}`
@@ -234,8 +244,12 @@ export class RequestTracker {
       if (!req) return
       const now = this.now()
       const who = d.peer ? `${d.callee} on ${d.peer}` : d.callee
+      // Kept on the link, so the requests check can settle a request whose
+      // handed work all came back done (#1138).
+      this.store.endLink("delegation", d.id, status, status === "done" ? firstLink(text) : null)
       if (status === "done") {
-        // The answer is back with the asking agent. Still open: closing is explicit.
+        // The answer is back with the asking agent. Still open: the agent
+        // closes it, or the requests check settles it once it goes quiet.
         this.store.progress(req.id, now)
         return
       }

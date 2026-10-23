@@ -10,17 +10,23 @@ import { cardWords } from "./card-view"
 //   0. Evidence (#1039): an open loop with a `close_when` has its checker
 //      run every `checkers.checkEveryMinutes`. Met closes it as done, with
 //      the checker's evidence.
-//   1. Quiet: an open request nothing has touched for `staleAfterHours`
+//   1. Settle (#1138): a request in progress, quiet for `staleAfterHours`,
+//      whose delegations all came back done, closes as done. The first
+//      link in a delegate's answer is its evidence; with none it is marked
+//      unverified. Promises, loops with a due time or a checker, requests
+//      in an active plan, and any with a delegation that failed or is still
+//      out are left to the steps below. Off with `settleHandedBack: false`.
+//   2. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
 //      reported an end. A loop with a due time needs attention once it is
 //      past it instead. A request waiting on the owner is left alone; its
 //      question is what reminds them.
-//   2. Tell once: every request that needs attention is sent to the owner
+//   3. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
 //      sent at all is tried again at the next check.
-//   3. Pick-ups: a request the owner said to pick up again is handed back
+//   4. Pick-ups: a request the owner said to pick up again is handed back
 //      to its agent as a new turn, once.
-//   4. Retention: closed requests older than `retentionDays` are deleted.
+//   5. Retention: closed requests older than `retentionDays` are deleted.
 //      Open requests never age out.
 //
 // Every step is isolated: a failure is logged and the next step runs.
@@ -39,6 +45,8 @@ export interface RequestSweepDeps {
   /** Gives a request its headline when it has none (#1126), so the owner
    *  is told what it is. Returns it as it is when none could be written. */
   describe?: (r: RequestRecord) => Promise<RequestRecord>
+  /** Is this request followed by an active plan? Its plan closes it. */
+  inPlan?: (requestId: string) => boolean
   /** Writes missing headlines of other open requests in the background. */
   fillHeadlines?: () => Promise<unknown>
   log: (msg: string) => void
@@ -49,6 +57,8 @@ export interface RequestSweepResult {
   /** Loops whose checker ran, and those it closed. */
   checked: number
   verified: number
+  /** Closed because their handed work came back done (#1138). */
+  settled: number
   quiet: number
   notified: number
   pruned: number
@@ -126,10 +136,32 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
   ].join("\n")
 }
 
+/** Close the quiet requests whose handed work all came back done
+ *  (#1138), instead of raising them to the owner. Returns how many. */
+export function settleHandedBack(
+  store: RequestStore, staleAfterHours: number, now: number,
+  inPlan: ((requestId: string) => boolean) | undefined, log: (msg: string) => void,
+): number {
+  let settled = 0
+  for (const r of store.handedBackSince(now - staleAfterHours * HOUR)) {
+    if (inPlan?.(r.id)) continue
+    const work = r.delegates === 1 ? "The work it handed on came back done" : `All ${r.delegates} pieces of work it handed on came back done`
+    const proof = r.proofs[0]
+    const detail = proof
+      ? `${work}; settled after ${staleAfterHours} h without activity`
+      : `${work}, with no link to show for it; settled after ${staleAfterHours} h without activity, unproven`
+    if (store.settle(r.id, proof ?? detail, !!proof, detail, now)) {
+      settled++
+      log(`[requests] ${r.id} settled: handed work came back done${proof ? "" : " (unproven)"}`)
+    }
+  }
+  return settled
+}
+
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
   if (!settings.enabled) return result
 
   if (deps.check) {
@@ -165,6 +197,14 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     }
   } catch (e: any) {
     log(`[requests] pick-ups failed: ${e?.message ?? e}`)
+  }
+
+  if (settings.settleHandedBack !== false) {
+    try {
+      result.settled = settleHandedBack(store, settings.staleAfterHours, now, deps.inPlan, log)
+    } catch (e: any) {
+      log(`[requests] settling handed-back requests failed: ${e?.message ?? e}`)
+    }
   }
 
   try {
