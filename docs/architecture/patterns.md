@@ -13,15 +13,7 @@ Classic apps have a well-known split: a *model* holds the data, a *view* shows i
 | **Reach** | controller | where the person is, which channel to use, whether the message landed, and what happens if it did not |
 | **Desk** | view | one list of what concerns the person, shown on any surface (phone, dashboard, computer), shaped by settings and not by code |
 
-The parts talk over the event bus (`src/events/bus.ts`): one part publishes that something changed, the others listen.
-
-```text
-            ┌──────────── event bus ────────────┐
-            │                                   │
-   Promise ─┤  "request changed", "card changed" ├─ Desk  (what the person sees)
-   Fact ────┤  "fact checked"                    ├─ Reach (how and when it reaches them)
-            └───────────────────────────────────┘
-```
+The parts are meant to talk over the event bus (`src/events/bus.ts`): one part publishes that something changed, the others listen. Today the bus carries only message, task and session events, and none of the four parts publish on it. Step 1 of #1137 adds a "request changed" and a "card changed" event.
 
 Today the four parts exist in pieces, spread across several stores. [#1137](https://github.com/anis-marrouchi/agentx/issues/1137) lists what is where and the order in which they are joined.
 
@@ -59,7 +51,7 @@ A *pattern* is a recurring shape of agent work with a name. Each entry below say
 
 - **Problem**: what a party says on a channel is heard as pings and never recorded.
 - **Shape**: a channel and the parties to watch on it, turned into records.
-- **Lives in**: `src/channels/inbound/pipeline.ts` (every inbound message passes its stages).
+- **Lives in**: `src/channels/inbound/pipeline.ts` (every inbound message passes its stages), `src/requests/tracker.ts` (turns a person's turn into a request).
 - **Do it well**: write what was heard to a record (a request, a card, a fact) before alerting anyone, so the alert can point at it.
 
 ### Party
@@ -80,8 +72,8 @@ A *pattern* is a recurring shape of agent work with a name. Each entry below say
 
 - **Problem**: the same news arrives on four surfaces.
 - **Shape**: one record of what the person was told, keyed by item, across all channels.
-- **Lives in**: `src/notify/told.ts` (`tellOwner()`).
-- **Do it well**: tell the owner through `tellOwner()`, never by calling a channel directly, so a repeat is caught.
+- **Lives in**: `src/notify/told.ts` (`ToldLedger`, `OwnerGate`), used by the daemon's `tellOwner()` in `src/daemon/index.ts`.
+- **Do it well**: tell the owner through the notify path (`agentx notify`, or the daemon's own notices), never by calling a channel directly, so a repeat is caught.
 
 ### Hold
 
