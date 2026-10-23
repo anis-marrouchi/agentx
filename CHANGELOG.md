@@ -2,6 +2,14 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.155.0](https://github.com/anis-marrouchi/agentx/compare/v0.154.2...v0.155.0) (2026-10-23)
+
+
+### Features
+
+* **notify:** reach — seen/answered, presence, urgent ladder, channel down ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138) step B) ([#1150](https://github.com/anis-marrouchi/agentx/issues/1150)) ([ef6337b](https://github.com/anis-marrouchi/agentx/commit/ef6337bd3d06f2d72aa43f369e5db56c514d44e1))
+* **requests:** tell when an issue's status label is behind the work ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138) step F) ([#1151](https://github.com/anis-marrouchi/agentx/issues/1151)) ([9224b0a](https://github.com/anis-marrouchi/agentx/commit/9224b0a441b8a76b7895261bb30496016c2729ba))
+
 ## [0.154.2](https://github.com/anis-marrouchi/agentx/compare/v0.154.1...v0.154.2) (2026-10-23)
 
 
