@@ -1,7 +1,8 @@
 import type { AgentXEvents } from "@/events/bus"
 import type { PlanSettings } from "./plans"
 import type { CheckerSettings } from "./checkers"
-import { firstLink, OPEN_STATES, type OpenState, type RequestStore } from "./store"
+import { openPromise, promiseSettingsOf, waitOnLoop, type PromiseSettings } from "./promise"
+import { firstLink, OPEN_STATES, OWED_TO_OWNER, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
 //
@@ -37,7 +38,13 @@ export interface RequestSettings {
   /** A quiet request whose handed work all came back done is settled,
    *  not raised to the owner (#1138). Unset: on. */
   settleHandedBack?: boolean
+  /** One Promise (#1138 D): facts on close, cards as owner promises.
+   *  Unset: the defaults (DEFAULT_PROMISE_SETTINGS). */
+  promises?: Partial<PromiseSettings>
 }
+
+/** The chat of a card's promise when no turn names one: the card itself. */
+export const CARD_CHANNEL = "approvals"
 
 /** Channel of the turn that hands a request back to its agent. */
 export const PICKUP_CHANNEL = "requests"
@@ -231,7 +238,7 @@ export class RequestTracker {
     })
   }
 
-  delegationDone(d: DelegationSignal, status: "done" | "waiting" | "error" | "timeout" | "lost", text: string): void {
+  delegationDone(d: DelegationSignal, status: "done" | "waiting" | "error" | "timeout" | "lost", text: string, dueAt?: number): void {
     this.guard("delegation end", () => {
       const req = this.store.byLink("delegation", d.id)
       if (!req) return
@@ -248,8 +255,8 @@ export class RequestTracker {
       }
       if (status === "waiting") {
         // The callee's run ended to wait for something (#1100): the work
-        // still waits on it.
-        this.store.progress(req.id, now, "waiting_other")
+        // still waits on it, due when the callee said the wait ends.
+        waitOnLoop(this.store, req.id, { dueAt }, now)
         return
       }
       const what = { error: "failed", timeout: "did not answer in time", lost: "was lost in a restart" }[status]
@@ -276,31 +283,57 @@ export class RequestTracker {
    *  request now waits on the owner, with the card's question. The card's
    *  own reminders (inbox, Mac card, check-ins, digest) do the reminding.
    *  `turn` is the running turn the call proved, never the chat the card
-   *  names: anyone can write another agent's id and chat on a card. */
-  cardRaised(card: { id: string; raised_by: string; ask: string }, turn: { channel: string; chatId: string } | null): void {
-    if (!turn) return
+   *  names: anyone can write another agent's id and chat on a card.
+   *  A card raised outside a request's turn is a promise owed by the owner
+   *  (#1138 D), when `promises.cards` is on: it closes when the card is
+   *  decided. */
+  cardRaised(card: { id: string; raised_by: string; ask: string; title?: string }, turn: { channel: string; chatId: string } | null): void {
     this.guard("card", () => {
       if (!this.settings().enabled) return
-      const requestId = this.live.get(chatKey(card.raised_by, turn.channel, turn.chatId))?.requestId
-      if (!requestId) return
+      const requestId = turn ? this.live.get(chatKey(card.raised_by, turn.channel, turn.chatId))?.requestId : undefined
       const now = this.now()
-      this.store.link(requestId, "card", card.id, now)
-      this.store.waitOnOwner(requestId, card.ask, now)
+      if (requestId) {
+        this.store.link(requestId, "card", card.id, now)
+        this.store.waitOnOwner(requestId, card.ask, now)
+        return
+      }
+      if (!promiseSettingsOf(this.settings()).cards || this.store.byLink("card", card.id)) return
+      // No due time: the card's own reminders and expiry do the chasing.
+      openPromise(this.store, {
+        agentId: card.raised_by, owedTo: card.raised_by, owedBy: OWED_TO_OWNER, text: card.ask,
+        channel: turn?.channel ?? CARD_CHANNEL, chatId: turn?.chatId ?? card.id,
+        link: { kind: "card", ref: card.id },
+        ...(card.title ? { headline: card.title.slice(0, 80) } : {}), now,
+      })
     })
   }
 
   /** A linked card was answered or expired. An answer lets the work go
    *  on. An expiry means the answer never came (no card approves itself,
    *  #741): the request needs attention, whatever an earlier
-   *  card's answer moved it to. It does not close. */
-  cardResolved(card: { id: string; status: string; ask: string; if_silent?: string; outcome?: string }): void {
+   *  card's answer moved it to. It does not close. A card that is itself
+   *  the owner's promise closes with it: done with the answer as its
+   *  proof, or dropped on expiry (the card already applied its default). */
+  cardResolved(card: { id: string; status: string; ask: string; if_silent?: string; outcome?: string; verdict?: string; choice?: string; decided_at?: string }): void {
     this.guard("card result", () => {
       const req = this.store.byLink("card", card.id)
       if (!req) return
       const now = this.now()
       const applied = card.outcome ?? card.if_silent
       // "resolved": the agent closed it because the owner answered in chat.
-      if (card.status === "decided" || card.status === "resolved") {
+      const answered = card.status === "decided" || card.status === "resolved"
+      if (req.promise && req.owedBy === OWED_TO_OWNER) {
+        if (!answered) {
+          this.store.close(req.id, "dropped", `the card expired unanswered; "${applied}" was applied`, now)
+          return
+        }
+        const said = card.status === "resolved" ? "answered in chat" : `${card.verdict ?? "decided"}${card.choice ? `: ${card.choice}` : ""}`
+        const at = card.decided_at ? Date.parse(card.decided_at) : NaN
+        const ranAt = Number.isFinite(at) ? Math.min(at, now) : now
+        this.store.close(req.id, "done", `card ${card.id}: ${said}`, now, { kind: "output", value: said, ranAt })
+        return
+      }
+      if (answered) {
         if (req.state === "waiting_owner") this.store.progress(req.id, now)
       } else if (this.store.needsAttention(req.id, `Your answer did not come before the card expired (${clip(card.ask)}); "${applied}" was applied`, now)) {
         this.log(`[requests] ${req.id} needs attention: card ${card.id} expired unanswered`)

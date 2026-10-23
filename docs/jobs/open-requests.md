@@ -126,6 +126,34 @@ When one agent hands work to another, the hand-off itself is already followed. A
 
 One agent can hold up to 200 open promises.
 
+### A promise closes with proof, and leaves a fact
+
+An agent's `done` on a promise needs a **proof**. One of four kinds:
+
+| Kind | What the agent gives |
+|---|---|
+| Link | A link as the `evidence`, or `proof: {kind:"link", url}`: the pull request, the deploy page, the sent message. |
+| Test | `proof: {kind:"test", passed, failed:0, command}`: a test run where every test passed. |
+| Output | `proof: {kind:"output", text}`: what the work produced, such as the version a host reports. |
+| Check | `proof: {kind:"check", value}`: a check that ran and what it found. A promise with a `closeWhen` check gets this one by itself. |
+
+A `done` without one is refused, and the promise stays open. Your own requests still close on a link or on the agent's word, as before.
+
+When a promise closes with a proof, the daemon writes a checked fact to the wiki's fact ledger: what was promised, `done: yes`, the proof as its source, and when the proof was made as its check date. The fact stays trusted for `factTtlDays` (7 days by default), then shows as stale. So "is the login fix deployed?" has a dated answer:
+
+```bash
+agentx wiki facts list
+```
+
+The request shows the fact's id, and `agentx wiki facts show <id>` shows the fact.
+
+The same record follows the other things someone owes:
+
+- **Task watchers.** A watched task that is not finished in time raises the request that follows it. With none, it becomes a promise of the agent that has the task. You are told once, through the same check as every other request, under the title **A task is not finished**. Marking the task done closes that promise, with the task's evidence as its proof. Turn this off with `promises.watchers: false`, or by giving watchers their own address in `watchers.owner`.
+- **Plan steps.** A blocked step is told through the same check, in the plan's own words.
+- **Follow-up waits.** When handed-on work ends to wait for something with a due time, the request waits on it and is due then. If the wait runs out, the request comes back to you like any other past its due time.
+- **Decision cards** (off by default). With `promises.cards: true`, a card an agent raises outside a request is a promise you owe. It closes when you decide the card, with your answer as a fact, or is dropped when the card expires.
+
 ## Close on evidence, not on a claim
 
 A request or a promise can carry a **check**: what proves it is finished. The agent gives it as `closeWhen`, with `promise`, `accept` or `wait`. Then:

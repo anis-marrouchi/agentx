@@ -21,7 +21,9 @@ import {
 //      A step that finishes here lets the next one start in the same check.
 //   3. Stall: a work step with no progress for its stall time gets a
 //      nudge, logged, up to maxNudges. One more stall and it is blocked.
-//   4. Blocked: the owner is told once, and the request needs attention.
+//   4. Blocked: the request needs attention. The requests check tells the
+//      owner once, in the plan's words (planNotice): one escalation path
+//      for every loop (#1138 D).
 //   5. Finished: every step done or skipped. The request closes as done
 //      and the owner gets one summary.
 // A plan whose request was closed some other way stops. Every plan is
@@ -60,14 +62,36 @@ const MINUTE = 60_000
 
 const isFinished = (s: PlanStep) => FINISHED_STEP_STATES.includes(s.state)
 
-/** Block a step: the request needs attention and the plan check tells the
- *  owner once, with the plan's own words. The request's generic notice is
- *  marked sent so the owner is not told twice. */
+/** Block a step: the request needs attention. The owner hears it through
+ *  the requests check, the one escalation of every loop (#1138 D), told
+ *  once and in the plan's own words (planNotice). */
 export function blockStep(requests: RequestStore, plans: PlanStore, step: PlanStep, reason: string, now: number): void {
   plans.updateStep(step.requestId, step.idx, { state: "blocked", note: reason, notifiedAt: null, updatedAt: now })
   plans.event(step.requestId, step.idx, "blocked", reason, now)
-  if (requests.needsAttention(step.requestId, `Step ${step.idx} "${step.name}" (${step.agentId}) is blocked: ${reason}`, now)) {
-    requests.markNotified(step.requestId, now)
+  const why = `Step ${step.idx} "${step.name}" (${step.agentId}) is blocked: ${reason}`
+  // Already needing attention (an earlier step): told again, for this step.
+  if (!requests.needsAttention(step.requestId, why, now) && requests.get(step.requestId)?.state === "needs_attention") {
+    requests.markNotified(step.requestId, null)
+  }
+}
+
+/** The words the requests check tells the owner a request with a blocked
+ *  plan step in, instead of its generic notice: the step, the plan, and
+ *  how to go on. A plain notice, not a nag: a blocked step stops the plan.
+ *  `told` records it on the step. Null: no blocked step. */
+export function planNotice(plans: PlanStore, r: RequestRecord): { title: string; text: string; kind: "notice"; told: (now: number) => void } | null {
+  if (plans.get(r.id)?.state !== "active") return null
+  const steps = plans.steps(r.id)
+  const s = steps.find((x) => x.state === "blocked" && x.notifiedAt === null) ?? steps.find((x) => x.state === "blocked")
+  if (!s) return null
+  return {
+    title: `Plan step blocked: ${cardWords(r, 80).headline}`,
+    text: blockedText(r, steps, s),
+    kind: "notice",
+    told: (now) => {
+      plans.updateStep(s.requestId, s.idx, { notifiedAt: now })
+      plans.event(s.requestId, s.idx, "owner-told", "blocked", now)
+    },
   }
 }
 
@@ -313,27 +337,6 @@ async function followPlan(deps: PlanSweepDeps, plan: PlanRecord, now: number, re
   }
 }
 
-/** Step 4: the owner hears about each blocked step once. */
-async function tellBlocked(deps: PlanSweepDeps, now: number): Promise<void> {
-  const { plans, requests, log } = deps
-  for (const plan of plans.listActive()) {
-    const steps = plans.steps(plan.requestId)
-    for (const s of steps.filter((x) => x.state === "blocked" && x.notifiedAt === null)) {
-      const r = requests.get(plan.requestId)
-      if (!r) continue
-      plans.updateStep(s.requestId, s.idx, { notifiedAt: now })
-      if (!deps.notify) continue
-      try {
-        await deps.notify(`Plan step blocked: ${cardWords(r, 80).headline}`, blockedText(r, steps, s), r)
-        plans.event(s.requestId, s.idx, "owner-told", "blocked", now)
-      } catch (e: any) {
-        plans.updateStep(s.requestId, s.idx, { notifiedAt: null })
-        log(`[plans] couldn't tell the owner ${r.id} step ${s.idx} is blocked, will try again: ${e?.message ?? e}`)
-      }
-    }
-  }
-}
-
 /** Step 5: one summary per finished plan. */
 async function tellFinished(deps: PlanSweepDeps, now: number): Promise<void> {
   const { plans, requests, log } = deps
@@ -366,7 +369,6 @@ export async function runPlansSweep(deps: PlanSweepDeps): Promise<PlanSweepResul
   } catch (e: any) {
     deps.log(`[plans] check failed: ${e?.message ?? e}`)
   }
-  try { await tellBlocked(deps, now) } catch (e: any) { deps.log(`[plans] blocked notices failed: ${e?.message ?? e}`) }
   try { await tellFinished(deps, now) } catch (e: any) { deps.log(`[plans] summaries failed: ${e?.message ?? e}`) }
   return result
 }

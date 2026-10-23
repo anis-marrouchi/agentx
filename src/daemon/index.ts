@@ -91,7 +91,9 @@ import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
 import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
 import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
-import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
+import { blockStep, planNotice, runPlansSweep } from "@/requests/plan-sweep"
+import { attachPromiseFacts, closeWatcherLoop, promiseSettingsOf, raiseWatcherLoop, watcherNotice } from "@/requests/promise"
+import { FactLedger } from "@/wiki/facts/ledger"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
 import { OPERATOR_CHANNELS, pickupContext } from "@/requests/tracker"
@@ -590,7 +592,7 @@ export class AgentXDaemon {
         void this.watchers?.checkpoint.delegationStarted(rec)
       },
       onDone: (rec, result) => {
-        this.requests?.tracker.delegationDone(rec, result.status, result.text)
+        this.requests?.tracker.delegationDone(rec, result.status, result.text, result.waiting?.dueAt)
         this.status?.board.delegationDone(rec, result.status, result.waiting?.dueAt)
         this.watchers?.checkpoint.delegationEnded(rec, result.status, result.text, result.waiting?.dueAt)
           .catch((e: any) => this.log(`[watchers] end of ${rec.id}: ${e?.message ?? e}`))
@@ -640,6 +642,14 @@ export class AgentXDaemon {
         // `requests.enabled` on every event and does nothing while it is off.
         try {
           this.requests = attachRequests(db, () => this.config.requests, this.log)
+          // A promise closed with a proof leaves a checked fact in the
+          // wiki's fact ledger (#1138 D): `agentx wiki facts list`.
+          let ledger: FactLedger | null = null
+          attachPromiseFacts(this.requests.store, {
+            settings: () => promiseSettingsOf(this.config.requests),
+            ledger: () => ledger ??= new FactLedger(resolve(process.cwd(), ".agentx/wiki")),
+            log: this.log,
+          })
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
         }
@@ -2532,8 +2542,8 @@ export class AgentXDaemon {
   }
 
   /** Requests that went quiet come back, each is raised once, and old
-   *  closed ones are deleted (src/requests/sweep.ts). Plans first: a
-   *  blocked step marks its request told, so the owner hears once. */
+   *  closed ones are deleted (src/requests/sweep.ts). Plans first: a step
+   *  they block is told by this same check, in the plan's words. */
   private async sweepRequests(requests: AttachedRequests): Promise<void> {
     await this.sweepPlans(requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
     const headlines = this.headlineWriter(requests)
@@ -2545,7 +2555,10 @@ export class AgentXDaemon {
       fillHeadlines: () => headlines.fill(),
       // A stopped request is a nag: its card is on the Desk at once, the
       // line about it waits for the daily digest (#1126).
-      notify: (title, message, r) => this.notifyRequestOwner(title, message, r, "nag"),
+      // A blocked plan step or a task watcher that fired is told in its
+      // own words, as a notice (#1138 D: the one escalation of every loop).
+      notify: (title, message, r, kind) => this.notifyRequestOwner(title, message, r, kind ?? "nag"),
+      noticeFor: (r) => planNotice(requests.plans, r) ?? watcherNotice(r),
       hasAgent: (id) => !!this.registry.getAgent(id),
       inPlan: (id) => requests.plans.get(id)?.state === "active",
       // Fire and forget: the check never waits on a model. The run is
@@ -2621,6 +2634,17 @@ export class AgentXDaemon {
       // follows that delegation's watcher.
       onClosed: (w, outcome) => {
         if (w.kind === "delegation" && w.taskKey.startsWith("dlg-")) this.status?.board.waitEnded(w.taskKey, outcome)
+        // A promise the watcher's escalation opened closes with it, its
+        // evidence the proof (#1138 D). Read again: `w` is from before the done.
+        if (outcome === "done" && this.requests) closeWatcherLoop(this.requests.store, this.watchers?.store.get(w.id) ?? w, Date.now())
+      },
+      // The one escalation (#1138 D): the request loop tells the owner once.
+      // An owner address set for watchers alone keeps the watcher's own push.
+      raise: (w, reason) => {
+        const s = this.config.requests
+        if (!this.requests || !s.enabled || !promiseSettingsOf(s).watchers || this.config.watchers.owner.channel) return false
+        raiseWatcherLoop(this.requests.store, w, reason, Date.now())
+        return true
       },
       doneHint: (w, rule) => `curl -s -X POST http://127.0.0.1:${port}/watchers/${w.id}/done -H 'Content-Type: application/json' -d '{"evidence":${evidenceExample(rule)}}'`,
       log: this.log,
@@ -4577,6 +4601,7 @@ export class AgentXDaemon {
           onPlanChange: () => this.kickPlans(),
           query: url.searchParams,
           checkers: this.config.requests.checkers,
+          promiseSettings: promiseSettingsOf(this.config.requests),
           check: loopChecker(() => this.requestCheckContext(requests)),
         }, this.callerProof(req))
         this.json(res, reply.status, reply.body)

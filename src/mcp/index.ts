@@ -989,6 +989,11 @@ const TOOLS = [
         note: { type: "string", description: "step: what is happening, or why it is blocked." },
         question: { type: "string", description: "wait: what you are asking the owner." },
         evidence: { type: "string", description: "done: a link to the proof (PR, issue, message, deploy)." },
+        proof: {
+          type: "object",
+          description: "done, optional: the typed proof it is finished. One of {kind:'link', url}, {kind:'test', passed:<n>, failed:0, command}, {kind:'output', text}, {kind:'check', value:<the check that ran and what it found>, ranAt?}. " +
+            "A promise closed with a proof leaves a dated fact in the wiki, so 'is it done?' has an answer. A link given as evidence counts as a link proof.",
+        },
         reason: { type: "string", description: "decline: why you will not do it." },
         owedTo: { type: "string", description: "promise: who you owe it to: \"owner\", an agent id, or a person id." },
         text: { type: "string", description: "promise: what you promised, in one sentence." },

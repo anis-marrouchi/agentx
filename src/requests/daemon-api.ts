@@ -1,4 +1,3 @@
-import { randomBytes } from "crypto"
 import { CLOSED_STATES, HOME_KINDS, HOME_LINK_MAX, OPEN_STATES, type HomeKind, type RequestHome, type RequestRecord, type RequestState, type RequestStore } from "./store"
 import { DEFAULT_CHECKER_SETTINGS, describeCloseWhen, parseCloseWhen, type CheckerSettings, type CheckResult, type CloseWhen } from "./checkers"
 import { parseDue, type LoopChecker } from "./loops"
@@ -7,6 +6,7 @@ import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
 import { reportStep, type StepStatus } from "./plan-sweep"
 import { parseDescription } from "./headline"
+import { DEFAULT_PROMISE_SETTINGS, describeProof, openPromise, parseProof, proofRefusal, type PromiseSettings } from "./promise"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -70,6 +70,8 @@ export interface RequestsApiDeps {
   query?: URLSearchParams
   /** Which checkers agents may use in closeWhen (#1039). */
   checkers?: CheckerSettings
+  /** One Promise (#1138 D): whether a promise's done needs a proof. */
+  promiseSettings?: PromiseSettings
   /** What the checker said about this request's closeWhen: the second
    *  pass of a done (handleRequestsCall). */
   verdict?: { requestId: string; result: CheckResult }
@@ -121,15 +123,15 @@ export async function handleRequestsCall(
   path: string,
   body: Record<string, unknown> | undefined,
   deps: RequestsApiDeps & { check?: LoopChecker },
-  proof: CallerProof = {},
+  caller: CallerProof = {},
 ): Promise<ApiReply> {
-  const first = handleRequestsApi(method, path, body, deps, proof)
+  const first = handleRequestsApi(method, path, body, deps, caller)
   if (!first.verify) return first
   const request = deps.store.get(first.verify.requestId)!
   const result: CheckResult = deps.check
     ? await deps.check(first.verify.spec, request).catch((e: any) => ({ verdict: "unverifiable" as const, detail: String(e?.message ?? e) }))
     : { verdict: "unverifiable", detail: "this node runs no checkers" }
-  const second = handleRequestsApi(method, path, body, { ...deps, verdict: { requestId: request.id, result } }, proof)
+  const second = handleRequestsApi(method, path, body, { ...deps, verdict: { requestId: request.id, result } }, caller)
   return { status: second.status, body: second.body }
 }
 
@@ -190,7 +192,7 @@ export function handleRequestsApi(
   path: string,
   body: Record<string, unknown> | undefined,
   deps: RequestsApiDeps,
-  proof: CallerProof = {},
+  caller: CallerProof = {},
 ): ApiReply {
   const m = method.toUpperCase()
   const { store } = deps
@@ -241,7 +243,7 @@ export function handleRequestsApi(
 
     // The body says who is speaking; the proof must show a running turn
     // of that agent. Without it, any local caller could close any request.
-    const turn = deps.runningTurn(agentId, proof)
+    const turn = deps.runningTurn(agentId, caller)
     if (!turn) return { status: 403, body: { error: `no running turn of "${agentId}" matches this call: use the agentx_request tool from inside your run` } }
 
     // A promise is a new loop of the agent's own, not a statement about
@@ -260,8 +262,7 @@ export function handleRequestsApi(
       if (store.openPromises(agentId) >= MAX_OPEN_PROMISES) {
         return { status: 409, body: { error: `${agentId} already has ${MAX_OPEN_PROMISES} open promises: close some with done or decline first` } }
       }
-      const id = `prm-${now.toString(36)}-${randomBytes(3).toString("hex")}`
-      deps.store.addPromise({ id, channel: turn.channel, chatId: turn.chatId, agentId, text, owedTo, ...loop, home: home ?? null, now })
+      const { id } = openPromise(store, { channel: turn.channel, chatId: turn.chatId, agentId, text, owedTo, ...loop, home: home ?? null, now })
       store.setHeadline(id, described, "agent")
       return { status: 200, body: { request: store.get(id) } }
     }
@@ -319,6 +320,19 @@ export function handleRequestsApi(
     if (home && action === "decline") return { status: 400, body: { error: "a declined request has no home: give it with accept, wait or done" } }
     const loop = action === "accept" || action === "wait" ? parseLoop(input, deps, now) : {}
     if (typeof loop === "string") return { status: 400, body: { error: loop } }
+    // A done's typed proof (#1138 D): a link, a passing test run, an
+    // output, or a check that ran. Without `proof`, a link given as the
+    // evidence is one. A promise closed with a proof leaves a wiki fact.
+    // A promise closes only with one (unless a closeWhen check runs: the
+    // check that ran is its proof).
+    let proof = action === "done" ? parseProof(input.proof, now) : null
+    if (typeof proof === "string") return { status: 400, body: { error: `proof: ${proof}` } }
+    if (action === "done" && !proof && input.proof == null) {
+      const fromEvidence = parseProof(str(input.evidence), now)
+      proof = typeof fromEvidence === "string" ? null : fromEvidence
+    }
+    const unproven = action === "done" && !request.closeWhen ? proofRefusal(request, proof, deps.promiseSettings ?? DEFAULT_PROMISE_SETTINGS) : null
+    if (unproven) return { status: 409, body: { error: unproven, proofRequired: true } }
 
     // A loop with a checker closes on evidence, not on the agent's word.
     if (action === "done" && request.closeWhen) {
@@ -404,7 +418,7 @@ export function handleRequestsApi(
         const question = str(input.question)
         if (!question) return { status: 400, body: { error: "wait needs `question`: what you are asking the owner" } }
         store.waitOnOwner(request.id, question, now, described.need ?? null)
-      } else if (action === "done") store.close(request.id, "done", str(input.evidence), now)
+      } else if (action === "done") store.close(request.id, "done", str(input.evidence) || (proof ? describeProof(proof) : ""), now, proof)
       else store.close(request.id, "declined", str(input.reason), now)
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)

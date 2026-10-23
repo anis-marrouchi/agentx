@@ -7,7 +7,7 @@ import { RequestStore } from "../src/requests/store"
 import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { PlanStore } from "../src/requests/plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, type PlanSettings } from "../src/requests/plans"
-import { ownerStepAction, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
+import { ownerStepAction, planNotice, runPlansSweep, type PlanSweepDeps } from "../src/requests/plan-sweep"
 import { runRequestsSweep } from "../src/requests/sweep"
 import { handleRequestsApi, type RequestsApiDeps } from "../src/requests/daemon-api"
 import { requestsConfigSchema } from "../src/daemon/config"
@@ -308,12 +308,22 @@ describe("nudges", () => {
     expect(res.blocked).toBe(1)
     expect(plans.step("req-1", 2)).toMatchObject({ state: "blocked", note: "no progress after 3 nudges" })
     expect(requests.get("req-1")).toMatchObject({ state: "needs_attention" })
-    // Titled with what the request is (#1126).
+    // The plan check does not tell the owner itself: the requests check
+    // does, the one escalation of every loop (#1138 D), in the plan's words.
+    expect(notices).toEqual([])
+    const kinds: Array<string | undefined> = []
+    const requestsSweep = () => runRequestsSweep({
+      store: requests, settings: REQ, noticeFor: (r) => planNotice(plans, r),
+      notify: async (title, message, _r, kind) => { notices.push({ title, message }); kinds.push(kind) }, log: () => {}, now: clock,
+    })
+    await requestsSweep()
+    // Titled with what the request is (#1126), and a notice, not a nag.
     expect(notices).toEqual([{ title: expect.stringMatching(/^Plan step blocked: \S/), message: expect.stringContaining("agentx requests step req-1 2 --retry") }])
-    // The requests check does not raise it again with its own words.
-    await runRequestsSweep({ store: requests, settings: REQ, notify: async (title, message) => { notices.push({ title, message }) }, log: () => {}, now: clock })
+    expect(kinds).toEqual(["notice"])
+    expect(plans.step("req-1", 2)?.notifiedAt).toBe(clock)
     clock += 31 * MIN
     await sweep()
+    await requestsSweep()
     expect(notices).toHaveLength(1)
     expect(turns).toHaveLength(4)
   })
