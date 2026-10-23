@@ -2,6 +2,18 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.156.0](https://github.com/anis-marrouchi/agentx/compare/v0.155.0...v0.156.0) (2026-10-23)
+
+
+### Features
+
+* **desk:** one desk list, three routing settings ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138) step C) ([#1152](https://github.com/anis-marrouchi/agentx/issues/1152)) ([1d720fc](https://github.com/anis-marrouchi/agentx/commit/1d720fc6165dfd61b4802ace8eb7993fa29755f3))
+
+
+### Bug Fixes
+
+* **notify:** reach ladder — no backlog flood, escalate failed sends ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138) step B) ([#1155](https://github.com/anis-marrouchi/agentx/issues/1155)) ([e35ecd2](https://github.com/anis-marrouchi/agentx/commit/e35ecd20e1d1a5ad24e24dbfcaef8987b063c77f))
+
 ## [0.155.0](https://github.com/anis-marrouchi/agentx/compare/v0.154.2...v0.155.0) (2026-10-23)
 
 
