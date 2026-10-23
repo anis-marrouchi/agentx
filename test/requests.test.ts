@@ -527,6 +527,26 @@ describe("the minute check", () => {
       expect(store.get("req-t1")?.state).toBe("needs_attention")
     })
 
+    it("settles on work that came back after the owner sent it back, with its own link", async () => {
+      handed("done", "first: https://example.test/old")
+      expect(store.handOff("req-t1", "coder", "not right, redo the totals", clock)).toBe(true)
+      store.takePickups()
+      tracker.delegationStarted(dlg("dlg-2"))
+      store.link("req-t1", "delegation", "dlg-2", clock)
+      clock += 1000
+      tracker.delegationDone(dlg("dlg-2"), "done", "redone: https://example.test/new")
+      clock += 25 * HOUR
+      expect((await sweep()).result.settled).toBe(1)
+      expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/new" })
+    })
+
+    it("keeps earlier work when a pick-up does not apply", async () => {
+      handed()
+      expect(store.requestPickup("req-t1", clock)).toBe(false)
+      clock += 25 * HOUR
+      expect((await sweep()).result.settled).toBe(1)
+    })
+
     it("takes the proof of the delegation that answered last", async () => {
       handed("done", "first: https://example.test/a")
       tracker.delegationStarted(dlg("dlg-0"))
