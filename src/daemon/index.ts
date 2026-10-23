@@ -2694,9 +2694,11 @@ export class AgentXDaemon {
         if (!id) throw new Error(`the ${channel} channel returned no message ID`)
       },
       // One notice per down spell (ChannelWatch); the gate keeps it to one a day.
-      notice: (channel, reason) => {
+      // Never to the channel that is down: `to` is the next healthy address.
+      notice: (channel, reason, to) => {
         void this.tellOwner(
           {
+            ...(to ?? {}),
             title: `${channel} is down`,
             message: `Sends to ${channel} are refused until it is back: ${reason}.\nIf it does not come back by itself, run \`agentx daemon restart\` once fixed.`,
             // A nag, like every "channel down" (#1126): one line in the daily
@@ -2707,6 +2709,7 @@ export class AgentXDaemon {
           { soft: true },
         ).catch((e: any) => this.log(`[reach] down notice for ${channel} failed: ${e?.message ?? e}`))
       },
+      defaultChannel: () => defaultNotifyChannel(this.config),
       isOwnerTurn: (p) => {
         const ch = p.channel.toLowerCase().split("@")[0]
         return isOwnerTurn(this.config.requests, p.channel, p.sender, p.operator === true) ||

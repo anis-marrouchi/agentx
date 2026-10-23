@@ -238,18 +238,26 @@ export interface EscalateDeps {
   log: (msg: string) => void
 }
 
-/** Urgent rows sent and neither seen nor answered for the set minutes.
- *  Each is claimed (escalated_at) before anything is sent, so a second
- *  sweep, or a second process, never sends it again. */
+/** How many waits back an unseen urgent row is still sent on. Older ones
+ *  are history: switching the ladder on must not re-send a backlog. */
+export const ESCALATE_WINDOW_WAITS = 3
+
+/** Urgent rows sent and neither seen nor answered for the set minutes,
+ *  and urgent rows whose send failed (at once: they never arrived). Only
+ *  rows from the last ESCALATE_WINDOW_WAITS waits. Each is claimed
+ *  (escalated_at) before anything is sent, so a second sweep, or a second
+ *  process, never sends it again. */
 export async function escalateUnseen(deps: EscalateDeps): Promise<number> {
   const { db, ledger, settings, now } = deps
   if (!settings.enabled || !(settings.escalateAfterMinutes > 0)) return 0
+  const wait = settings.escalateAfterMinutes * MINUTE
   const due = db.prepare(
     `SELECT id FROM owner_told
-     WHERE urgent = 1 AND outcome = 'sent' AND seen_at IS NULL AND answered_at IS NULL
-       AND escalated_at IS NULL AND escalation_of IS NULL AND at <= ? AND at >= ?
+     WHERE urgent = 1 AND seen_at IS NULL AND answered_at IS NULL
+       AND escalated_at IS NULL AND escalation_of IS NULL AND at >= ?
+       AND ((outcome = 'sent' AND at <= ?) OR outcome = 'failed')
      ORDER BY at LIMIT 20`,
-  ).all(now - settings.escalateAfterMinutes * MINUTE, now - ESCALATE_MAX_AGE_MS) as Array<{ id: number }>
+  ).all(Math.max(now - ESCALATE_WINDOW_WAITS * wait, now - ESCALATE_MAX_AGE_MS), now - wait) as Array<{ id: number }>
   const claim = db.prepare("UPDATE owner_told SET escalated_at = ? WHERE id = ? AND escalated_at IS NULL")
   let sent = 0
   for (const { id } of due) {
@@ -259,11 +267,12 @@ export async function escalateUnseen(deps: EscalateDeps): Promise<number> {
     const from = `${row.channel}:${row.chatId}`
     const stop = nextStop(deps.stops, from, deps.up)
     if (!stop) {
-      deps.log(`[reach] urgent "${row.title.slice(0, 80)}" unseen on ${from}; no other address to try`)
+      deps.log(`[reach] urgent "${row.title.slice(0, 80)}" ${row.outcome === "failed" ? "failed" : "unseen"} on ${from}; no other address to try`)
       continue
     }
     const minutes = Math.round((now - row.at) / MINUTE)
-    const text = `${row.text ? `${row.text}\n\n` : ""}(Sent again here: not seen on ${row.channel} for ${minutes} min.)`
+    const why = row.outcome === "failed" ? `it could not be sent on ${row.channel}` : `not seen on ${row.channel} for ${minutes} min`
+    const text = `${row.text ? `${row.text}\n\n` : ""}(Sent again here: ${why}.)`
     const copy = ledger.add({
       at: now, key: row.key, requestId: row.requestId, kind: row.kind, channel: stopChannel(stop), chatId: stopChat(stop),
       from: row.from, title: row.title, text, outcome: "sent", urgent: true, escalationOf: row.id,
@@ -271,7 +280,7 @@ export async function escalateUnseen(deps: EscalateDeps): Promise<number> {
     try {
       await deps.send(stop, row, text)
       sent++
-      deps.log(`[reach] urgent "${row.title.slice(0, 80)}" unseen on ${from} for ${minutes} min; sent once to ${stop}`)
+      deps.log(`[reach] urgent "${row.title.slice(0, 80)}": ${why}; sent once to ${stop}`)
     } catch (e: any) {
       ledger.setOutcome(copy, "failed")
       deps.log(`[reach] urgent "${row.title.slice(0, 80)}": escalation to ${stop} failed: ${e?.message ?? e}`)
