@@ -45,12 +45,21 @@ Other people's messages are never recorded.
 2. You see every open request, oldest first, with when and where you asked, the agent, your words and the state.
 3. For one request and what is linked to it, run `agentx requests show <id>`.
 
-In the dashboard, the same list is under **Approvals**, in **Open requests**. Each request is a card:
+In the dashboard, the same list is under **Approvals**, in **Open requests**. Each request is a card. What it shows is described in the next section.
 
-- a short summary of what you asked, in plain words,
-- its state, the agent that has it, and why it is not finished,
-- **What you said** (or **What you asked**): your own words, in full. For a request you spoke, this is the transcript,
+### What a request's card shows
+
+Every place that shows you a request uses the same words: its card in **Approvals**, its line on the phone app's **Desk**, the Mac card popup, and the notification when it needs attention.
+
+- **The headline:** a few plain words that say what the request is, for example "Check the invoices batch". The agent writes it when it takes the request on. When it did not, AgentX writes it once with one short model call (`requests.headlines`). Until then, or with that setting off, the title is the start of your own words.
+- **Needed from you:** the one thing the request needs from you. When nothing is needed, it says "Nothing, just so you know.". A request waiting on your answer shows the question. A request that stopped asks you to hand it back or drop it.
+- **You said:** your own words, in full, below the headline. For a request you spoke, this is the transcript.
+- Its state, the agent that has it, and why it is not finished.
 - **Last answer from …**: what the agent last told you about it, when it answered.
+
+![An open request card titled "Fix and ship the demo shop checkout button", with the line Needed from you: Nothing, just so you know, and the owner's own words under You said](/screenshots/approvals/request-headline.png)
+
+A headline must say what the request is in words. One that is only a reference, such as "#412" or a link, is refused. A popup card whose title is only a reference is not shown, and its agent is told to describe the request.
 
 ## Decide on a request
 
@@ -82,6 +91,20 @@ You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on,
 - **You no longer want it:** `agentx requests drop <id>`. Add `--reason "…"` to say why.
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
+
+### When handed-on work came back and nobody closed it
+
+Agents often forget to close a request after the work they handed on comes back. Such a request used to come back to you as "Not finished", even though the work was done. Now the daily check closes it:
+
+- It applies to a request that is in progress, has had no activity for `staleAfterHours` (default 24), and whose handed-on work **all** came back done.
+- It is closed as **done**. Its proof is the first link in the other agent's answer, for example a pull request or a deploy page. Nothing opens that link to check it, so the request is marked `unverified`.
+- With no link in the answer, the proof reads `unproven: …`. Look at it in the done list if you want to be sure.
+- Once you send a request back (a reply, a hand-off, **Pick it up again**), the work that came back before no longer counts. Only work handed on and done after that can close it. If none comes back, the request returns to you as before.
+- You are not told. It simply leaves your list.
+- It does **not** apply to promises, to requests with a check or a due time, to tracked plans, to requests with a follow-up workflow, or when any handed-on work failed or is still out. Those still come back to you as before.
+- A request that already needs attention is left as it is.
+
+To keep the old behaviour, run `agentx requests settings --settle off`.
 
 ## Promises an agent makes
 
@@ -196,8 +219,21 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --from none` | Clears the list of who counts as you. |
 | `agentx requests settings --stale-hours 48` | Hours without activity before a request comes back to you. Default 24. |
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
+| `agentx requests settings --headlines off` | Stops AgentX from writing a headline for a request its agent did not describe. Such a request is then titled with the start of your words. `on` turns it back on. Default on. |
+| `agentx requests settings --settle off` | A quiet request whose handed-on work all came back done comes back to you instead of being closed. `on` turns closing back on. Default on. See [When handed-on work came back](#when-handed-on-work-came-back-and-nobody-closed-it). |
 | `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
 | `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
+
+In the dashboard, the same settings are under **Approvals** › **Settings: open requests**. The box **Write a headline when the agent gave none** is the `--headlines` switch:
+
+1. **Browser:** open **Approvals** and scroll to the bottom.
+2. **Browser:** click **Settings: open requests**.
+3. **Browser:** tick or untick **Write a headline when the agent gave none**.
+4. **Browser:** click **Save settings**.
+
+![The open requests settings, with the box Write a headline when the agent gave none ticked](/screenshots/approvals/headline-setting.png)
+
+The engine and model used for the headline are set only in `agentx.json`, under `requests.headlines`.
 
 The folders for the `git-ancestor` check are set only in `agentx.json`, as `requests.checkers.repos`: `{ "app": "/srv/app" }`.
 
@@ -216,8 +252,13 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 9. **Terminal:** run `agentx requests --stalled`. It prints the stalled requests by group, or `nothing is stalled`.
 10. **Terminal:** run `agentx requests today`. Each request you made since midnight is listed; the ones with no home are red, at the top.
 11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
+12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its card under **Approvals** › **Open requests** is titled with a few plain words, shows **Needed from you**, and keeps your words under **You said**. `agentx requests show <id>` shows the same `headline`.
+13. **Terminal:** run `agentx requests settings`. The line `Headlines` says `on: written when the agent gave none`, or `off` after `--headlines off`.
+14. **Terminal:** in the same output, the line `Handed work came back` says `closed when quiet, with its link or marked unproven`. A day after an agent hands work on and gets a done answer without closing the request, the daemon log has a `settled` line for it, and `agentx requests show <id>` shows it done, with the link or `unproven: …` as its evidence.
 
 ## If something is wrong
+
+- **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 
 - **`no agentx.json here`:** you are not in the install folder, the one that holds `agentx.json`. A folder inside it does not count. Go to that folder and run the command again.
 - **The list says `requests are off`:** run `agentx requests settings --enabled on`.
@@ -232,4 +273,7 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 - **A request is marked `unverified`:** its check could not tell. `agentx requests show <id>` says why. Common causes: the address is down, the GitHub or GitLab token is missing or cannot see the issue, the local copy of the repository does not have the commit yet (update it), or the person in a `reply` check is not in `people`. Fix the cause and wait for the next check, or close it yourself with `--reason`.
 - **`no repos are set up for this check on this node`:** add the folder under `requests.checkers.repos` in `agentx.json`.
 - **`the … check is turned off on this node`:** add the kind back with `agentx requests settings --checks`.
+- **A card is still titled with your own words:** the agent did not describe the request and no headline could be written. The daemon log has a line `[requests] <id>: headline not written: …` with the reason. A common cause is that the engine set in `requests.headlines.provider` is not signed in on this computer. Each request is tried once, and not again after a restart; the agent can still describe it. To see the start of your words as the title on purpose, run `agentx requests settings --headlines off`.
+- **`--headlines takes on or off`:** write `on` or `off`, nothing else.
+- **An agent's describe is refused with `headline is only a reference`:** the headline was only an issue number, an id or a link. Say what the request is in words, and put the link in the request's `home` instead.
 - **An agent says it has no `agentx_request` tool:** the tool server is added when the daemon starts with requests on. Restart the daemon. If the agent's workspace has a `.mcp.json` you wrote yourself, add the server there: `agentx serve --stdio --cwd <install folder>`.

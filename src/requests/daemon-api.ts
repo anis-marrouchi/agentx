@@ -6,6 +6,7 @@ import type { RequestTracker } from "./tracker"
 import type { PlanStore } from "./plan-store"
 import { DEFAULT_PLAN_SETTINGS, parseSteps, parseWork, planGateOn, planRequiredFor, plansOffFor, type PlanSettings } from "./plans"
 import { reportStep, type StepStatus } from "./plan-sweep"
+import { parseDescription } from "./headline"
 
 // --- The daemon's /requests endpoints (#356) ---
 //
@@ -18,7 +19,9 @@ import { reportStep, type StepStatus } from "./plan-sweep"
 //                         code work or a long estimate needs one, #1048),
 //                         wait (on the owner), done, decline, or step (a
 //                         report on one step of a plan), or promise (an
-//                         open loop the agent owes someone, #1039). The
+//                         open loop the agent owes someone, #1039), or
+//                         describe (its headline and need, #1126; accept,
+//                         wait and promise take them too). The
 //                         call must prove it comes from a running turn of
 //                         that agent (CallerProof).
 // A done on a loop with a `closeWhen` runs its checker first (#1039):
@@ -96,7 +99,7 @@ export interface ApiReply {
 /** Open promises one agent may hold: a runaway loop must not fill the list. */
 export const MAX_OPEN_PROMISES = 200
 const OWED_TO_RE = /^[\w.@:+-]{1,200}$/
-const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise"]
+const POST_ACTIONS = ["accept", "wait", "done", "decline", "step", "promise", "describe"]
 
 /** The optional `due` and `closeWhen` of promise, accept and wait. */
 function parseLoop(input: Record<string, unknown>, deps: RequestsApiDeps, now: number): { dueAt?: number; closeWhen?: CloseWhen } | string {
@@ -223,7 +226,14 @@ export function handleRequestsApi(
     const action = str(input.action).toLowerCase()
     if (action === "drop") return { status: 403, body: { error: OWNER_ONLY } }
     if (!POST_ACTIONS.includes(action)) {
-      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step or promise` } }
+      return { status: 400, body: { error: `unknown action "${action}": use accept, wait, done, decline, step, promise or describe` } }
+    }
+    // What it is, for the owner's eyes (#1126): describe sets only these;
+    // accept, wait and promise take them alongside.
+    const described = ["accept", "wait", "promise", "describe"].includes(action) ? parseDescription(input) : {}
+    if (typeof described === "string") return { status: 400, body: { error: described } }
+    if (action === "describe" && !described.headline && !described.need) {
+      return { status: 400, body: { error: "describe needs headline (what it is, in a few plain words) or need (what you need from the owner), or both" } }
     }
     if (!deps.enabled) return { status: 409, body: { error: "Requests are turned off on this node (requests.enabled)." } }
     const agentId = str(input.agentId)
@@ -252,6 +262,7 @@ export function handleRequestsApi(
       }
       const id = `prm-${now.toString(36)}-${randomBytes(3).toString("hex")}`
       deps.store.addPromise({ id, channel: turn.channel, chatId: turn.chatId, agentId, text, owedTo, ...loop, home: home ?? null, now })
+      store.setHeadline(id, described, "agent")
       return { status: 200, body: { request: store.get(id) } }
     }
 
@@ -292,6 +303,16 @@ export function handleRequestsApi(
     }
 
     if (request.agentId !== agentId) return { status: 403, body: { error: `request "${request.id}" belongs to another agent` } }
+
+    // The headline is written before the action runs, so an accept the
+    // plan gate refuses still leaves the request described. The need only
+    // once the action went through: it says what the new state needs.
+    // Neither is a touch.
+    if (action === "describe") {
+      store.setHeadline(request.id, described, "agent")
+      return { status: 200, body: { request: store.get(request.id) } }
+    }
+    if (described.headline) store.setHeadline(request.id, { headline: described.headline }, "agent")
 
     const home = parseHome(input.home)
     if (typeof home === "string") return { status: 400, body: { error: home } }
@@ -367,6 +388,7 @@ export function handleRequestsApi(
       const parsed = parseSteps(input.steps, { createdBy: agentId, hasAgent: deps.hasAgent, settings })
       if (!parsed.ok) return { status: 400, body: { error: parsed.error } }
       store.progress(request.id, now)
+      if (described.need) store.setHeadline(request.id, { need: described.need }, "agent")
       if (home) store.setHome(request.id, home, now)
       store.setLoop(request.id, loop, now)
       deps.plans.create(request.id, agentId, parsed.steps, now)
@@ -375,11 +397,13 @@ export function handleRequestsApi(
     }
 
     try {
-      if (action === "accept") store.progress(request.id, now)
-      else if (action === "wait") {
+      if (action === "accept") {
+        store.progress(request.id, now)
+        if (described.need) store.setHeadline(request.id, { need: described.need }, "agent")
+      } else if (action === "wait") {
         const question = str(input.question)
         if (!question) return { status: 400, body: { error: "wait needs `question`: what you are asking the owner" } }
-        store.waitOnOwner(request.id, question, now)
+        store.waitOnOwner(request.id, question, now, described.need ?? null)
       } else if (action === "done") store.close(request.id, "done", str(input.evidence), now)
       else store.close(request.id, "declined", str(input.reason), now)
       if (home) store.setHome(request.id, home, now)

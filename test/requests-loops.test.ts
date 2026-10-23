@@ -244,8 +244,10 @@ describe("the requests check", () => {
     const res = await runRequestsSweep({ store, settings, log: () => {}, now: clock, hasAgent: (a) => AGENTS.has(a), notify: async (title, text) => { notices.push(`${title}\n${text}`) } })
     expect(res.quiet).toBe(1)
     expect(store.get(id)).toMatchObject({ state: "needs_attention", attentionReason: "Past its due time (2030-03-01 14:00 UTC)" })
-    expect(notices[0]).toMatch(/^Promise not kept\nA promise coder made to client-a is not kept yet\./)
+    // Titled with what it is (#1126): no headline was written, so the start of its words.
+    expect(notices[0]).toMatch(/^Promise not kept: Send the signed fil.*\nA promise coder made to client-a is not kept yet\./)
     expect(notices[0]).toMatch(/Waiting on: client-a \(outside person\)/)
+    expect(notices[0]).toMatch(/\nIt promised: Send the signed fil/)
   })
 
   it("a loop handed on after its due time gets the usual quiet time before it comes back", async () => {
@@ -268,7 +270,7 @@ describe("the requests check", () => {
     clock += 25 * HOUR
     await sweep()
     expect(store.get("req-t1")?.attentionReason).toBe("No activity for 24 h")
-    expect(attentionText(store.get("req-t1")!)).toMatch(/Waiting on: you\nNothing is retrying it\. Ask again, or drop it\.$/)
+    expect(attentionText(store.get("req-t1")!)).toMatch(/Waiting on: you\nNothing is retrying it\.\nNeeded from you: Hand it back to coder, or drop it\.\nYou said: /)
   })
 })
 

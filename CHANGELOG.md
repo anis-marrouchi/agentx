@@ -2,6 +2,53 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.154.1](https://github.com/anis-marrouchi/agentx/compare/v0.154.0...v0.154.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **requests:** settle on work handed back after the owner sent it back ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138)) ([#1143](https://github.com/anis-marrouchi/agentx/issues/1143)) ([3ee7964](https://github.com/anis-marrouchi/agentx/commit/3ee7964c6478fe83fb28156dc9beddfd17a1220f)), closes [#1141](https://github.com/anis-marrouchi/agentx/issues/1141)
+
+## [0.154.0](https://github.com/anis-marrouchi/agentx/compare/v0.153.1...v0.154.0) (2026-10-23)
+
+
+### Features
+
+* **requests:** settle a request whose handed work came back done ([#1138](https://github.com/anis-marrouchi/agentx/issues/1138)) ([#1141](https://github.com/anis-marrouchi/agentx/issues/1141)) ([5ff319f](https://github.com/anis-marrouchi/agentx/commit/5ff319f2f8d815684747863bc3578afe91bbeae8))
+
+## [0.153.1](https://github.com/anis-marrouchi/agentx/compare/v0.153.0...v0.153.1) (2026-10-22)
+
+
+### Bug Fixes
+
+* **approvals:** never overwrite a card with the same id ([#1135](https://github.com/anis-marrouchi/agentx/issues/1135)) ([40e6894](https://github.com/anis-marrouchi/agentx/commit/40e68940344aa2ba3df08eb046bc0e540391f487)), closes [#1134](https://github.com/anis-marrouchi/agentx/issues/1134)
+
+## [0.153.0](https://github.com/anis-marrouchi/agentx/compare/v0.152.0...v0.153.0) (2026-10-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* **app:** app.pins.pages (shipped in 0.152.0) may no longer list more pages than app.pins.max (default 12). A config that was valid on 0.152.0 with more pages than max now fails validation; raise app.pins.max or remove pages.
+
+### Features
+
+* **notify:** one told-the-owner record, told once, nags in the digest ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1129](https://github.com/anis-marrouchi/agentx/issues/1129)) ([5b8844b](https://github.com/anis-marrouchi/agentx/commit/5b8844bcd5a073fb195f1ffea8bbb849634d8ff8))
+* **requests:** switch for daemon headlines in the CLI and dashboard ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1132](https://github.com/anis-marrouchi/agentx/issues/1132)) ([f3a42ec](https://github.com/anis-marrouchi/agentx/commit/f3a42ec52558e6c3d7ecb2809bda56823b5f8d21))
+
+
+### Bug Fixes
+
+* **app:** no repeated pinned buttons, pages within app.pins.max, unpair note ([#1125](https://github.com/anis-marrouchi/agentx/issues/1125) follow-up) ([afcabd5](https://github.com/anis-marrouchi/agentx/commit/afcabd5556925b8ef3fe7f5cee92fdb1b784f25e))
+
+## [0.152.0](https://github.com/anis-marrouchi/agentx/compare/v0.151.0...v0.152.0) (2026-10-22)
+
+
+### Features
+
+* **app:** pin a web page as a button in the phone app ([#1120](https://github.com/anis-marrouchi/agentx/issues/1120)) ([#1122](https://github.com/anis-marrouchi/agentx/issues/1122)) ([2b9c2a9](https://github.com/anis-marrouchi/agentx/commit/2b9c2a9e193b239eddca5cc84745f8a3cb7b6def))
+* **app:** pinned pages from agentx.json, offline buttons and a diagram ([#1121](https://github.com/anis-marrouchi/agentx/issues/1121) follow-up) ([#1125](https://github.com/anis-marrouchi/agentx/issues/1125)) ([204117b](https://github.com/anis-marrouchi/agentx/commit/204117b0e0c1172199fba68b894abb35f7cff324))
+* **requests:** cards say what they are, with a headline and a need line ([#1126](https://github.com/anis-marrouchi/agentx/issues/1126)) ([#1128](https://github.com/anis-marrouchi/agentx/issues/1128)) ([f4b79b4](https://github.com/anis-marrouchi/agentx/commit/f4b79b4bb8bef5ccd3227b3061688eb4d5dfce19))
+
 ## [0.151.0](https://github.com/anis-marrouchi/agentx/compare/v0.150.0...v0.151.0) (2026-10-20)
 
 

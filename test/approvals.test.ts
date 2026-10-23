@@ -123,6 +123,25 @@ describe("decision cards", () => {
     expect(createCard(root, card({ raised_by: "beta" }), { now: NOW }).ok).toBe(true)
   })
 
+  it("never overwrites a card whose id is drawn again", () => {
+    // Same title, same day, same random draw: the same id every time.
+    vi.spyOn(Math, "random").mockReturnValue(0.5)
+    try {
+      const ids = new Set<string>()
+      for (let i = 0; i < CARD_LIMITS.pendingPerAgent; i++) {
+        const made = createCard(root, card(), { now: NOW })
+        if (!made.ok) throw new Error(made.error)
+        ids.add(made.card.id)
+        expect(readCard(root, made.card.id)?.id).toBe(made.card.id)
+      }
+      expect(ids.size).toBe(CARD_LIMITS.pendingPerAgent)
+      // All of them are still there, so the cap still holds.
+      expect(createCard(root, card(), { now: NOW })).toMatchObject({ ok: false })
+    } finally {
+      vi.restoreAllMocks()
+    }
+  })
+
   it("refuses a second pending card from the same agent on the same source, naming the first", () => {
     const src = "https://example.com/drafts/launch"
     const first = createCard(root, card({ source: src }), { now: NOW })

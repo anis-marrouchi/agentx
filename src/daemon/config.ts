@@ -1203,6 +1203,25 @@ const notificationsSchema = z.object({
     /** Image for the AgentX Helper icon on banners (.png, .jpg, .icns).
      *  Unset: the AgentX logo. Applied by `agentx desktop install`. */
     icon: z.string().optional(),
+    /** Seconds the sound waits while something else speaks on this
+     *  machine (#1126); still speaking after that, the banner shows
+     *  without it. 0: never wait. */
+    quietWaitSeconds: z.number().int().min(0).max(120).default(15),
+  }).default({}),
+  /** The told-the-owner record (src/notify/told.ts, #1126): everything sent
+   *  to the owner's own addresses is recorded once, an item already told
+   *  on any of them is not told again, and system nags wait for the
+   *  daily digest (approvals.digest) instead of a push each. */
+  told: z.object({
+    enabled: z.boolean().default(true),
+    /** An item told within this many hours is not told again, on any channel. */
+    repeatWindowHours: z.number().positive().max(24 * 30).default(24),
+    /** Channels that only ever reach the owner: everything on them passes the gate. */
+    channels: z.array(z.string().min(1)).default(["push", "ntfy"]),
+    /** Other owner addresses, as "channel:chatId" (a private Telegram chat). */
+    addresses: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:chatId, for example telegram:123456789")).default([]),
+    /** Nags wait for the daily digest. Off: each is sent like any notice. */
+    digestNags: z.boolean().default(true),
   }).default({}),
 }).default({})
 
@@ -1358,6 +1377,10 @@ export const requestsConfigSchema = z.object({
   from: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:id, for example telegram:123456789")).default([]),
   /** An open request with no activity for this long comes back to the owner. */
   staleAfterHours: z.number().positive().max(24 * 365).default(24),
+  /** A request in progress whose handed work all came back done, quiet
+   *  for staleAfterHours, closes as done with its delegate's link (or
+   *  marked unproven) instead of coming back to the owner (#1138). */
+  settleHandedBack: z.boolean().default(true),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
   /** Tracked plans (src/requests/plans.ts, #788): a request with two or
@@ -1402,6 +1425,18 @@ export const requestsConfigSchema = z.object({
       url: z.string().url().optional(),
       token: z.string().optional(),
     }).optional(),
+  }).default({}),
+  /** Headlines (src/requests/headline.ts, #1126): a request the agent did
+   *  not describe gets a few words saying what it is, written once by one
+   *  small model call, so its card, push and Desk line are not titled with
+   *  the owner's raw transcript. Off: the start of the owner's words. */
+  headlines: z.object({
+    enabled: z.boolean().default(true),
+    /** Provider for the call. "claude-code" uses the auth the operator set
+     *  up (subscription or API key); no new paid path is opened. */
+    provider: z.string().min(1).default("claude-code"),
+    model: z.string().min(1).default("claude-haiku-4-5-20251001"),
+    timeoutSeconds: z.number().int().min(5).max(120).default(30),
   }).default({}),
 }).default({})
 
@@ -1883,6 +1918,27 @@ export const daemonConfigSchema = z.object({
       /** How often the Android app checks for changed places, in minutes.
        *  Android runs background checks at most every 15 minutes. */
       syncMinutes: z.number().int().min(15).max(1440).default(60),
+    }).default({}),
+    /** Pinned pages: https pages the owner opens from a button in the
+     *  phone app (#1120). Added, renamed and removed from the app or with
+     *  `agentx app pin`. */
+    pins: z.object({
+      /** Where the list is kept. Relative paths resolve from the folder
+       *  the daemon runs in (the one holding agentx.json). */
+      file: z.string().min(1).default(".agentx/app-pins.json"),
+      max: z.number().int().min(1).max(50).default(12),
+      /** Buttons for every paired phone, set here rather than in the app
+       *  (#1121). Read only from the phone and `agentx app`; they count
+       *  toward `max`. https only, with no user name or password. */
+      pages: z.array(z.object({
+        label: z.string().trim().min(1).max(40),
+        url: z.string().max(2000).refine((u) => {
+          try { const x = new URL(u); return x.protocol === "https:" && !!x.hostname && !x.username && !x.password } catch { return false }
+        }, "must be an https:// address with no user name or password"),
+      }).strict()).max(50).default([]),
+    }).refine((p) => p.pages.length <= p.max, {
+      path: ["pages"],
+      message: "has more pages than app.pins.max allows; raise app.pins.max or remove some pages",
     }).default({}),
   }).default({}),
   /** `agentx demo`, read from the agentx.json in the folder it runs from. */

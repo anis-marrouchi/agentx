@@ -74,7 +74,10 @@ function workLabel(work: string | null, minutes: number | null): string {
 function printRequest(r: RequestRecord): void {
   const colour = r.state === "needs_attention" ? chalk.red : r.state === "waiting_owner" ? chalk.yellow : chalk.dim
   console.log(`  ${chalk.cyan(r.id)}  ${colour(`[${STATE_LABEL[r.state] ?? r.state}]`)} ${chalk.dim(`${when(r.createdAt)} · ${r.channel} · ${r.agentId}`)}`)
-  console.log(`    ${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
+  // What it is first, the owner's words below it (#1126).
+  if (r.headline) console.log(`    ${chalk.bold(r.headline)}${r.headlineBy === "model" ? chalk.dim(" (written by AgentX)") : ""}`)
+  console.log(`    ${r.headline ? chalk.dim("You said: ") : ""}${r.text.replace(/\s+/g, " ").trim().slice(0, 240)}`)
+  if (r.need) console.log(chalk.dim(`    Needed from you: ${r.need}`))
   if (r.state === "waiting_owner" && r.question) console.log(chalk.yellow(`    Question: ${r.question}`))
   if (r.state === "needs_attention" && r.attentionReason) console.log(chalk.red(`    ${r.attentionReason}`))
   if (r.work || r.estimateMinutes !== null) {
@@ -240,6 +243,8 @@ requests
   .option("--channels <name,...>", "channels to record on; \"all\" for every channel a person writes on")
   .option("--stale-hours <n>", "hours without activity before an open request comes back to you")
   .option("--retention-days <n>", "days a closed request is kept")
+  .option("--headlines <on|off>", "write a headline for a request its agent did not describe (one small model call each)")
+  .option("--settle <on|off>", "close a quiet request whose handed work all came back done, instead of bringing it back to you")
   .option("--plans <on|off>", "follow requests of two or more steps as tracked plans")
   .option("--stall-minutes <n>", "minutes without progress before a plan step's agent is nudged")
   .option("--max-nudges <n>", "nudges per step before it counts as blocked and you are told")
@@ -268,6 +273,14 @@ requests
       patch.channels = list(opts.channels, "all")
       patch.staleAfterHours = num("--stale-hours", opts.staleHours)
       patch.retentionDays = num("--retention-days", opts.retentionDays)
+      if (opts.headlines !== undefined) {
+        if (opts.headlines !== "on" && opts.headlines !== "off") throw new Error("--headlines takes on or off")
+        patch.headlines = { enabled: opts.headlines === "on" }
+      }
+      if (opts.settle !== undefined) {
+        if (opts.settle !== "on" && opts.settle !== "off") throw new Error("--settle takes on or off")
+        patch.settleHandedBack = opts.settle === "on"
+      }
       const plans: NonNullable<RequestSettingsPatch["plans"]> = {}
       if (opts.plans !== undefined) {
         if (opts.plans !== "on" && opts.plans !== "off") throw new Error("--plans takes on or off")
@@ -311,6 +324,8 @@ requests
     console.log(`  Counts as you           ${s.from.length ? s.from.join(", ") : "only voice, the app and the dashboard on this machine"}`)
     console.log(`  Comes back after        ${s.staleAfterHours} hour(s) without activity`)
     console.log(`  Closed requests kept    ${s.retentionDays} day(s)`)
+    console.log(`  Headlines               ${s.headlines?.enabled === false ? "off: titled with the start of your words" : "on: written when the agent gave none"}`)
+    console.log(`  Handed work came back   ${s.settleHandedBack === false ? "comes back to you when quiet" : "closed when quiet, with its link or marked unproven"}`)
     const p = s.plans ?? DEFAULT_PLAN_SETTINGS
     console.log(`  Plans                   ${p.enabled ? "on" : "off"}`)
     console.log(`  Nudge a quiet step      after ${p.stallMinutes} minute(s), up to ${p.maxNudges} time(s)`)

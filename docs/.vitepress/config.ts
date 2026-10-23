@@ -39,6 +39,7 @@ const groups = [
     { text: "Phone app: Notifications", link: "/dashboard/mobile-alerts" },
     { text: "Phone app: Share camera", link: "/dashboard/mobile-camera" },
     { text: "Phone app: Place reminders", link: "/dashboard/mobile-places" },
+    { text: "Phone app: Pinned pages", link: "/dashboard/mobile-pins" },
   ] },
   { text: "Automations", collapsed: true, items: [
     { text: "Overview", link: "/automations/" },
@@ -113,6 +114,7 @@ const groups = [
     { text: "Persistent Codex processes", link: "/architecture/persistent-codex-process" },
     { text: "Persistent OpenCode servers", link: "/architecture/persistent-opencode-process" },
     { text: "Evidence authority and memory backends", link: "/architecture/evidence-authority" },
+    { text: "The owner interface and its patterns", link: "/architecture/patterns" },
     { text: "Author a teach lesson", link: "/guides/teach-authoring" },
   ] },
   { text: "Community", collapsed: true, items: [

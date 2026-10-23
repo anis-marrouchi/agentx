@@ -21,7 +21,9 @@ export function readRequestSettings(configPath?: string): RequestSettings {
   return parsed.success ? parsed.data : requestsConfigSchema.parse(undefined)
 }
 
-export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers">> & {
+export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines">> & {
+  /** Only the switch. Provider, model and timeout are set in agentx.json. */
+  headlines?: { enabled?: boolean }
   plans?: Partial<PlanSettings>
   /** The checkers' kinds and pace. Repos and connectors are set in agentx.json. */
   checkers?: Partial<Pick<CheckerSettings, "enabled" | "checkEveryMinutes">>
@@ -39,7 +41,7 @@ export async function updateRequestSettings(
   }
   return applyConfigMutation((cfg) => {
     const r = (cfg.requests ??= {})
-    for (const key of ["enabled", "channels", "from", "staleAfterHours", "retentionDays"] as const) {
+    for (const key of ["enabled", "channels", "from", "staleAfterHours", "retentionDays", "settleHandedBack"] as const) {
       if (patch[key] !== undefined) r[key] = patch[key]
     }
     if (patch.plans) {
@@ -48,6 +50,7 @@ export async function updateRequestSettings(
         if (patch.plans[key] !== undefined) p[key] = patch.plans[key]
       }
     }
+    if (patch.headlines?.enabled !== undefined) (r.headlines ??= {}).enabled = patch.headlines.enabled
     if (patch.checkers) {
       const c = (r.checkers ??= {})
       for (const key of ["enabled", "checkEveryMinutes"] as const) {

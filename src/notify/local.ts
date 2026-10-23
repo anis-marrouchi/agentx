@@ -1,7 +1,7 @@
 import { existsSync } from "fs"
 import { homedir } from "os"
 import { isAbsolute } from "path"
-import { loadNativeAdapter, type NativeConfig, type NativeIo } from "@/native"
+import { loadNativeAdapter, type NativeConfig, type NativeIo, type NativeSpeech } from "@/native"
 
 export { findHelper } from "@/desktop/install"
 
@@ -28,6 +28,10 @@ export interface LocalSettings {
   soundName: string
   /** 0 (silent) … 1 (full). */
   volume: number
+  /** Seconds the sound waits while something else speaks on this machine
+   *  (#1126). Still speaking after that: no sound, the banner is enough.
+   *  0: never wait. */
+  quietWaitSeconds?: number
   /** Image for the helper's app icon, which macOS puts on its banners.
    *  Unset: the AgentX logo. Applied when `agentx desktop install` builds
    *  the helper, since macOS reads the icon from the app, not the banner. */
@@ -37,7 +41,7 @@ export interface LocalSettings {
 /** Glass is the gentlest system sound that is still audible over a
  *  keyboard — Basso and Sosumi are alerts, Funk and Frog are jokes, and
  *  Ping is the one every other app already uses. */
-export const DEFAULT_LOCAL: LocalSettings = { banner: true, sound: true, soundName: "Glass", volume: 0.4 }
+export const DEFAULT_LOCAL: LocalSettings = { banner: true, sound: true, soundName: "Glass", volume: 0.4, quietWaitSeconds: 15 }
 
 /** Shows the banner and plays the sound for one delivered notification. */
 export type LocalAlert = (title: string, message: string) => Promise<void>
@@ -49,14 +53,39 @@ export function localSettings(cfg: Partial<LocalSettings> | undefined): LocalSet
 
 export function localAlert(
   settings: LocalSettings,
-  deps: { run?: NativeIo["run"]; platform?: NodeJS.Platform; helper?: string | null; native?: NativeConfig["native"] } = {},
+  deps: {
+    run?: NativeIo["run"]; capture?: NativeIo["capture"]; platform?: NodeJS.Platform; helper?: string | null; native?: NativeConfig["native"]
+    /** For tests: the poll between two looks at who is speaking. */
+    pollMs?: number
+  } = {},
 ): LocalAlert {
-  const native = loadNativeAdapter({ native: deps.native }, { platform: deps.platform, io: { run: deps.run, helper: deps.helper } })
+  const native = loadNativeAdapter({ native: deps.native }, { platform: deps.platform, io: { run: deps.run, capture: deps.capture, helper: deps.helper } })
   return async (title, message) => {
     const steps: Promise<unknown>[] = []
     if (settings.banner && native.banner) steps.push(native.banner.post({ title, message }))
-    if (settings.sound && native.sound) steps.push(native.sound.play(settings.soundName, settings.volume))
+    if (settings.sound && native.sound) {
+      const sound = native.sound
+      // A chime over someone speaking is the collision #1126 is about:
+      // the banner goes up at once, the sound waits for quiet.
+      steps.push(quiet(native.speech, (settings.quietWaitSeconds ?? DEFAULT_LOCAL.quietWaitSeconds!) * 1000, deps.pollMs ?? 500)
+        .then((ok) => (ok ? sound.play(settings.soundName, settings.volume) : undefined)))
+    }
     await Promise.all(steps)
+  }
+}
+
+/** True once nothing else speaks on this machine, false when something
+ *  still does after `waitMs`. Without a way to tell, true at once. The
+ *  daemon's own speech counts too (no `exceptParents` here, unlike the
+ *  speaking queue): a chime over a spoken reply is the same interruption,
+ *  so it waits, and past the wait the banner shows without the sound. */
+async function quiet(speech: NativeSpeech | undefined, waitMs: number, pollMs: number): Promise<boolean> {
+  if (!speech || waitMs <= 0) return true
+  const until = Date.now() + waitMs
+  for (;;) {
+    if (!(await speech.othersSpeaking())) return true
+    if (Date.now() >= until) return false
+    await new Promise((r) => setTimeout(r, pollMs))
   }
 }
 

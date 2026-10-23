@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "fs"
+import { existsSync, linkSync, mkdirSync, readdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs"
 import { resolve } from "path"
 import { answerLines, buildChoices, draftFor, resolveAnswer, type CardChoices } from "./choices"
 import { isRetroOrigin, originLines, RETRO_NONE, retroApproved, retroCheckLines, retroLines, type CardOrigin } from "./origin"
@@ -122,7 +122,7 @@ function fileFor(root: string, id: string): string {
 export function newCardId(now: number, title: string): string {
   const day = new Date(now).toISOString().slice(0, 10)
   const slug = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40)
-  return `${day}-${slug || "card"}-${Math.random().toString(36).slice(2, 6)}`
+  return `${day}-${slug || "card"}-${Math.random().toString(36).slice(2, 6).padEnd(4, "0")}`
 }
 
 export function saveCard(root: string, card: DecisionCard): void {
@@ -131,6 +131,30 @@ export function saveCard(root: string, card: DecisionCard): void {
   const tmp = `${path}.${process.pid}.tmp`
   writeFileSync(tmp, JSON.stringify(card, null, 2) + "\n")
   renameSync(tmp, path)
+}
+
+/**
+ * Save a card that is new. Its id is random, so two cards with the same
+ * title on the same day can draw the same one: then the id gets "-2", "-3"
+ * and so on, and a card already on disk is never overwritten. The link
+ * fails if the file exists, so this holds across processes too.
+ */
+function saveNewCard(root: string, card: DecisionCard): DecisionCard {
+  mkdirSync(approvalsDir(root), { recursive: true })
+  for (let n = 1; ; n++) {
+    const saved = n === 1 ? card : { ...card, id: `${card.id}-${n}` }
+    const path = fileFor(root, saved.id)
+    const tmp = `${path}.${process.pid}.tmp`
+    writeFileSync(tmp, JSON.stringify(saved, null, 2) + "\n")
+    try {
+      linkSync(tmp, path)
+      return saved
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "EEXIST") throw e
+    } finally {
+      unlinkSync(tmp)
+    }
+  }
 }
 
 export function readCard(root: string, id: string): DecisionCard | null {
@@ -325,8 +349,7 @@ export function createCard(
     const what = retro ? "retro cards" : "cards"
     return { ok: false, error: `${built.card.raised_by} already has ${open} ${what} waiting; wait for decisions before raising more` }
   }
-  saveCard(root, built.card)
-  return built
+  return { ok: true, card: saveNewCard(root, built.card) }
 }
 
 /** Record the operator's answer. Refuses anything no longer pending. */

@@ -144,7 +144,7 @@ When [open requests](../jobs/open-requests.md) are on, a request you gave an age
 - **No** drops the request. A note you add is kept as the reason.
 - **Later** puts it off, like any other item.
 
-Under the inbox, **Open requests** lists everything you asked for that is not finished, oldest first, whatever its state, one card each: a short summary, the agent that has it, why it is not finished, your own words and the agent's last answer. On the card you reply, hand it to an agent, press **Done** or **Drop**: see [decide on a request](../jobs/open-requests.md#decide-on-a-request). **Settings: open requests** below the list turns the feature on and sets who counts as you, the channels, the quiet time and how long closed requests are kept.
+Under the inbox, **Open requests** lists everything you asked for that is not finished, oldest first, whatever its state, one card each: its headline and what is needed from you (see [What a request's card shows](../jobs/open-requests.md#what-a-request-s-card-shows)), the agent that has it, why it is not finished, your own words under **You said** and the agent's last answer. On the card you reply, hand it to an agent, press **Done** or **Drop**: see [decide on a request](../jobs/open-requests.md#decide-on-a-request). **Settings: open requests** below the list turns the feature on and sets who counts as you, the channels, the quiet time, how long closed requests are kept and whether AgentX writes a headline when the agent gave none.
 
 ## Check-ins: a few times a day
 

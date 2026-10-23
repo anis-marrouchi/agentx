@@ -202,7 +202,7 @@ describe("settings", () => {
   it("reads defaults, saves changes through the config schema and rejects bad values", async () => {
     const configPath = path.join(tmp, "agentx.json")
     writeFileSync(configPath, JSON.stringify({ node: { id: "n", name: "n" }, agents: {} }))
-    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} } })
+    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
     const ok = await updateRequestSettings({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 }, { configPath, reload: false })
     expect(ok.success).toBe(true)
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests).toEqual({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 })
@@ -216,6 +216,13 @@ describe("settings", () => {
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests.plans).toEqual({ stallMinutes: 45, disabledAgents: ["bot"] })
     expect(readRequestSettings(configPath).plans).toEqual({ enabled: true, stallMinutes: 45, maxNudges: 3, approveKinds: ["message"], disabledAgents: ["bot"], requireForWork: ["code"], requireOverMinutes: 30 })
     expect((await updateRequestSettings({ plans: { maxNudges: -1 } }, { configPath, reload: false })).success).toBe(false)
+    // Headlines (#1126): the switch only; provider, model and timeout stay as set.
+    const withHeadlines = JSON.parse(readFileSync(configPath, "utf-8"))
+    withHeadlines.requests.headlines = { model: "small-model" }
+    writeFileSync(configPath, JSON.stringify(withHeadlines))
+    expect((await updateRequestSettings({ headlines: { enabled: false } }, { configPath, reload: false })).success).toBe(true)
+    expect(JSON.parse(readFileSync(configPath, "utf-8")).requests.headlines).toEqual({ model: "small-model", enabled: false })
+    expect(readRequestSettings(configPath).headlines).toMatchObject({ enabled: false, model: "small-model" })
   })
 })
 

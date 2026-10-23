@@ -1,7 +1,7 @@
 import type { DecisionCard } from "@/approvals/cards"
 import type { PendingNotification } from "@/notify/queue"
 import type { RequestRecord } from "@/requests/store"
-import { summarize } from "@/requests/card-view"
+import { cardWords } from "@/requests/card-view"
 import type { QueueItem, QueueView } from "@/voice/speaking-queue"
 
 // --- What is on the owner's screen now (#1100) ---
@@ -98,7 +98,7 @@ export function buildScreen(input: ScreenInput): ScreenView {
     .sort((a, b) => a.createdAt - b.createdAt)
     .map((r) => ({
       id: r.id,
-      title: summarize(r.text, TITLE_MAX),
+      title: cardWords(r, TITLE_MAX).headline,
       agentId: r.agentId,
       state: r.state,
       since: iso(r.stateChangedAt ?? r.updatedAt),

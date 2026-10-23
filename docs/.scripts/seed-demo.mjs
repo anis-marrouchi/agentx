@@ -132,8 +132,9 @@ for (const card of [
     title: "Demo service left stopped after a deploy", ask: "What should change so this can't happen again?",
     recommend: "Deploy script: restart and check health: the most severe (high)", if_silent: "discard", expires: "3d",
     context: "The deploy stopped the demo service (step 4) and never started it again; the health check was refused (step 6).",
-    choices: ["Deploy script: restart and check health", "Watchdog: alert when the service is down", "Guard rule: warn on a stop without a start", "None of these"],
-    draft: "Build: {choice}\n\n1. Deploy script [script, high]\n   One script; CI runs it dry.\n2. Watchdog [watchdog, medium]\n3. Guard rule [guard-rule, medium]",
+    // At most three choices, as the Mac card shows them.
+    choices: ["Deploy script: restart and check health", "Watchdog: alert when the service is down", "None of these"],
+    draft: "Build: {choice}\n\n1. Deploy script [script, high]\n   One script; CI runs it dry.\n2. Watchdog [watchdog, medium]",
     source: "agentx trace show demo-task-1",
   },
 ]) await post("/approvals", { ...card, raised_by: "cx" })
@@ -169,9 +170,11 @@ db.transaction(() => {
 const ago = (minutes) => Date.now() - minutes * 60000
 db.transaction(() => {
   db.prepare("DELETE FROM requests WHERE id = 'req-docs-plan'").run()
-  db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at)
-    VALUES ('req-docs-plan', 'in_progress', 'dashboard', 'demo', 'Demo operator', 'cx', ?, ?, ?)`)
-    .run("Fix the demo shop checkout button, ship it, and tell the shop it is live.", ago(95), ago(2))
+  // Its headline and need line (#1126), as the agent gives them.
+  db.prepare(`INSERT INTO requests (id, state, channel, chat_id, sender, agent_id, text, created_at, updated_at, headline, need, headline_by)
+    VALUES ('req-docs-plan', 'in_progress', 'dashboard', 'demo', 'Demo operator', 'cx', ?, ?, ?, ?, ?, 'agent')`)
+    .run("so the checkout button on the demo shop is broken again, can you fix it, ship it, and then let the shop know once it is live",
+      ago(95), ago(2), "Fix and ship the demo shop checkout button", "Nothing, just so you know.")
   db.prepare("INSERT INTO request_plans (request_id, created_by, created_at, state) VALUES ('req-docs-plan', 'cx', ?, 'active')").run(ago(94))
   const step = db.prepare(`INSERT INTO request_plan_steps (request_id, idx, name, kind, agent_id, done_when, state, needs_approval, approval,
     message, to_channel, to_chat, evidence, dispatched_at, updated_at) VALUES ('req-docs-plan', ?, ?, ?, 'cx', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)

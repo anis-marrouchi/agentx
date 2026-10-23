@@ -297,7 +297,9 @@ export class ClaudeCodeProvider implements AgentProvider {
       model,
       max_tokens: maxTokens,
       messages: conversationMsgs,
-      tools: getLegacyTools(),
+      // A bare call is one question and one answer, as on the CLI path:
+      // no tools (#1126).
+      ...(options?.bare ? {} : { tools: getLegacyTools() }),
     }
 
     if (systemMsg) {
@@ -314,10 +316,12 @@ export class ClaudeCodeProvider implements AgentProvider {
       "x-api-key": this.credential.token,
     }
 
+    // The caller's time limit holds on this path too.
     const res = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers,
       body: JSON.stringify(body),
+      ...(options?.abortSignal ? { signal: options.abortSignal } : {}),
     })
 
     if (!res.ok) {

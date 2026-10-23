@@ -11,6 +11,7 @@ import { openDb } from "@/storage/sqlite"
 import { RequestStore, hasRequestTables } from "@/requests/store"
 import { PlanStore, hasPlanTables } from "@/requests/plan-store"
 import { readRequestSettings } from "@/requests/settings"
+import { cardWords } from "@/requests/card-view"
 
 // --- The Approvals inbox: one list over every pending decision ---
 //
@@ -269,16 +270,18 @@ const planStores = new WeakMap<object, PlanStore>()
 function requestItems(ctx: InboxContext): InboxItem[] {
   const store = requestStoreFor(ctx)
   if (!store) return []
+  // Titled with what it is (#1126); the owner's own words come after why
+  // it stopped.
   return store.listByState("needs_attention").map((r) => ({
     key: `request:${r.id}`,
     kind: "request" as const,
-    title: `Request not finished: ${clip(r.text, 80)}`,
-    ask: `Ask ${r.agentId} to pick it up again?`,
+    title: cardWords(r, 120).headline,
+    ask: `Not finished. Ask ${r.agentId} to pick it up again?`,
     yes: `hand it back to ${r.agentId}`,
     no: "drop the request",
     raised_by: r.agentId,
     created_at: new Date(r.createdAt).toISOString(),
-    detail: clip(`${r.attentionReason ?? "It needs attention"}. Asked on ${r.channel}: ${r.text}`),
+    detail: clip(`${r.attentionReason ?? "It needs attention"}. You said (${r.channel}): ${r.text}`),
     more: `agentx requests show ${r.id}`,
   }))
 }

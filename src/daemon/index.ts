@@ -58,6 +58,7 @@ import { pushBridgeCaller } from "./push-bridge"
 import { PairCodeStore } from "./pair-codes"
 import { defaultNotifyChannel } from "@/notify/push-settings"
 import { localAlert, localSettings, notify, writeCallHold, NotificationQueue, type Sender } from "@/notify"
+import { DEFAULT_TELL_SETTINGS, OwnerGate, splitTitle, TOLD_KEEP_DAYS, toldOfBody, ToldLedger, type TellKind, type TellMeta } from "@/notify/told"
 import { buildScreen } from "@/daemon/screen-api"
 import { getUsageReadMode, loadTodayRollup } from "@/storage/usage-query"
 import { getTrace, listTraces, cleanupOrphanedTraces, takeInterruptedRuns, type InterruptedRun } from "@/storage/traces"
@@ -88,6 +89,8 @@ import { handleWatchersApi } from "@/watchers/daemon-api"
 import { contextWithTaskType, taskTypeOf } from "@/watchers/due"
 import { evidenceExample } from "@/watchers/evidence"
 import { pickupEnded, runRequestsSweep } from "@/requests/sweep"
+import { DEFAULT_HEADLINE_SETTINGS, HeadlineWriter } from "@/requests/headline"
+import { createProvider, type AgentProvider, type ProviderName } from "@/agent/providers"
 import { blockStep, runPlansSweep } from "@/requests/plan-sweep"
 import { DEFAULT_PLAN_SETTINGS } from "@/requests/plans"
 import { isQueued } from "@/agents/queued"
@@ -409,6 +412,10 @@ export class AgentXDaemon {
       onFloor: (view) => this.broadcastSSE("voice", JSON.stringify({ kind: "voice:floor", ...view })),
     })
     this.voiceTalk.speech.pronounce = this.sayAs
+    // A line waits while something outside the queue speaks here, such as
+    // an agent's own `say` narration (#1126). The daemon's own players
+    // are its children and do not count.
+    this.voiceTalk.speech.othersSpeaking = async () => (await this.native.speech?.othersSpeaking({ exceptParents: [process.pid] })) ?? null
     this.voiceTalk.narrator.attach(getAgentEventBus())
 
     getAgentEventBus().on("task:step", (e: AgentXEvents["task:step"]) => {
@@ -635,6 +642,22 @@ export class AgentXDaemon {
           this.requests = attachRequests(db, () => this.config.requests, this.log)
         } catch (e: any) {
           this.log(`  Requests: not available (${e?.message ?? e})`)
+        }
+        // The told-the-owner record (#1126): one gate for every send to
+        // the owner's own addresses, the daemon's notices and the router's
+        // sends alike. Settings are read on every decision.
+        try {
+          // A nag waits for the digest only when one can go out.
+          this.ownerGate = new OwnerGate(new ToldLedger(db), () => {
+            const digest = this.config.approvals.digest
+            return {
+              ...DEFAULT_TELL_SETTINGS, ...this.config.notifications.told,
+              digestAvailable: digest.enabled && !!(digest.destination ?? this.config.notifications?.destination),
+            }
+          })
+          this.router.setOwnerGate(this.ownerGate)
+        } catch (e: any) {
+          this.log(`  Told-the-owner record: not available (${e?.message ?? e})`)
         }
         // Task watchers (#1030). Attached whatever the setting says, like
         // requests: the checkpoint reads `watchers.enabled` on every event.
@@ -891,12 +914,9 @@ export class AgentXDaemon {
     if (process.platform === "darwin") {
       restoreSpokenVoice()
       this.voiceHealth = new VoiceHealth({
+        // A voice gone missing is a nag: the daily digest says it (#1126).
         notify: async (title, message) => {
-          // Push and ntfy take the title from the first line of the text.
-          const send = this.ownerSender()
-          await notify({ title, message, from: "voice" }, (m) => send({ ...m, message: `${m.title}\n${m.message}` }), {
-            alert: (t, m) => localAlert(localSettings(this.config.notifications.local), { native: this.config.native })(t, m),
-          })
+          await this.tellOwner({ title, message, from: "voice", kind: "nag" })
         },
         log: (m) => this.log(m),
       })
@@ -1379,6 +1399,8 @@ export class AgentXDaemon {
         title,
         priority,
         agentId: this.config.node.defaultAgent,
+        // What Focus held was decided when it was held (#1126).
+        told: { passed: true },
       } as any)
     }
   }
@@ -2092,6 +2114,9 @@ export class AgentXDaemon {
 
   /** Open requests (src/requests); null when the database is unavailable. */
   private requests: AttachedRequests | null = null
+  /** The told-the-owner gate (#1126). Null without a database. */
+  private ownerGate: OwnerGate | null = null
+  private toldPrunedAt = 0
   /** Guest meshes (#380): the grants this node opened, and the join limiter. */
   private guestStore = new GuestStore(process.cwd())
   private guestJoinLimiter = new PairAttemptLimiter()
@@ -2195,6 +2220,11 @@ export class AgentXDaemon {
     const tick = async () => {
       if (this.approvalsSweeping || this.shuttingDown) return
       this.approvalsSweeping = true
+      // The told-the-owner record keeps 90 days (#1126), trimmed once a day.
+      if (this.ownerGate && Date.now() - this.toldPrunedAt > 24 * 3_600_000) {
+        this.toldPrunedAt = Date.now()
+        try { this.ownerGate.prune(TOLD_KEEP_DAYS) } catch (e: any) { this.log(`[told] prune failed: ${e?.message ?? e}`) }
+      }
       try {
         const dest = this.config.notifications?.destination
         await runApprovalsSweep({
@@ -2218,9 +2248,29 @@ export class AgentXDaemon {
             if (!peer) throw new Error(`no mesh peer named "${node}"`)
             await deliverResult(card, { self: this.config.node.name, peer })
           },
+          // One digest a day, keyed by its day: the same words tomorrow are
+          // a new digest, not a repeat (#1126).
+          // The digest is once a day by its own schedule: recorded, never
+          // kept back, so the nags it carries are not cleared unsent (#1126).
           sendDigest: async (d, text) => {
-            await this.router.sendOutbound({ channel: d.channel, chatId: d.chatId, accountId: d.accountId, text })
+            const gate = this.ownerGate
+            const { title, body } = splitTitle(text)
+            const row = gate?.isOwnerAddress(d.channel, d.chatId)
+              ? gate.decide({ channel: d.channel, chatId: d.chatId, title, text: body }, { key: `digest:${Date.now()}`, urgent: true, from: "approvals" }).rowId
+              : undefined
+            await this.router.sendOutbound({
+              channel: d.channel, chatId: d.chatId, accountId: d.accountId, text, told: { passed: true },
+            }).catch((e) => {
+              if (row !== undefined) gate?.outcome(row, "failed")
+              throw e
+            })
           },
+          ...(this.ownerGate ? {
+            nags: {
+              line: () => this.ownerGate!.digestLine(),
+              done: (ids: number[]) => this.ownerGate!.markDigested(ids),
+            },
+          } : {}),
           log: this.log,
         })
         // Beside the sweep, never inside it: a notice that hangs must not
@@ -2361,24 +2411,11 @@ export class AgentXDaemon {
     })
   }
 
-  /** Tell the owner about a request: a push, and the Mac banner. */
-  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }): Promise<void> {
-    await notify({ title, message, from: r.agentId, priority: 4 }, async (m) => {
-      // A push that fails must not take the Mac banner with it.
-      try {
-        await this.router.sendOutbound({
-          channel: m.channel ?? defaultNotifyChannel(this.config),
-          chatId: m.chatId ?? "default",
-          text: `${m.title}\n${m.message}`,
-          priority: m.priority,
-          agentId: r.agentId,
-        } as any)
-      } catch (e: any) {
-        this.log(`[requests] push for ${r.id} failed: ${e?.message ?? e}`)
-        // No banner on this machine to fall back on: nothing reached the owner.
-        if (!this.native.banner) throw e
-      }
-    }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
+  /** Tell the owner about a request: a push, and the Mac banner. `kind`
+   *  nag (a request that stopped) waits for the daily digest; its card is
+   *  on the Desk meanwhile (#1126). */
+  private async notifyRequestOwner(title: string, message: string, r: { id: string; agentId: string }, kind: TellKind = "notice"): Promise<void> {
+    await this.tellOwner({ title, message, from: r.agentId, requestId: r.id, kind, key: kind === "nag" ? `request:${r.id}:attention` : undefined })
   }
 
   private plansSweeping = false
@@ -2466,17 +2503,51 @@ export class AgentXDaemon {
     }
   }
 
+  private headlines?: HeadlineWriter
+
+  /** Writes the headline of a request its agent did not describe (#1126):
+   *  one small call through the provider the operator set up, built on
+   *  first use and read from the settings at each call. */
+  private headlineWriter(requests: AttachedRequests): HeadlineWriter {
+    if (this.headlines) return this.headlines
+    let provider: AgentProvider | undefined
+    const settings = () => ({ ...DEFAULT_HEADLINE_SETTINGS, ...this.config.requests.headlines })
+    return this.headlines = new HeadlineWriter({
+      store: requests.store,
+      settings,
+      generate: async (prompt, signal) => {
+        const s = this.config.requests.headlines
+        provider ??= createProvider((s?.provider ?? "claude-code") as ProviderName)
+        const res = await provider.generate(
+          [
+            { role: "system", content: "You write short card headlines. Respond with a single JSON object on one line. No prose, no code fences." },
+            { role: "user", content: prompt },
+          ],
+          { model: s?.model ?? "claude-haiku-4-5-20251001", maxTokens: 200, abortSignal: signal, bare: true },
+        )
+        return res.content || ""
+      },
+      log: this.log,
+    })
+  }
+
   /** Requests that went quiet come back, each is raised once, and old
    *  closed ones are deleted (src/requests/sweep.ts). Plans first: a
    *  blocked step marks its request told, so the owner hears once. */
   private async sweepRequests(requests: AttachedRequests): Promise<void> {
     await this.sweepPlans(requests).catch((e: any) => this.log(`[plans] check failed: ${e?.message ?? e}`))
+    const headlines = this.headlineWriter(requests)
     await runRequestsSweep({
       store: requests.store,
       settings: this.config.requests,
       check: loopChecker(() => this.requestCheckContext(requests)),
-      notify: (title, message, r) => this.notifyRequestOwner(title, message, r),
+      describe: (r) => headlines.ensure(r),
+      fillHeadlines: () => headlines.fill(),
+      // A stopped request is a nag: its card is on the Desk at once, the
+      // line about it waits for the daily digest (#1126).
+      notify: (title, message, r) => this.notifyRequestOwner(title, message, r, "nag"),
       hasAgent: (id) => !!this.registry.getAgent(id),
+      inPlan: (id) => requests.plans.get(id)?.state === "active",
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
       tellAgent: async (agentId, text, r) => {
@@ -2558,22 +2629,64 @@ export class AgentXDaemon {
 
   /** Tell the owner through the notify path: a push to the default
    *  channel, the Mac banner where there is one (#788). */
-  private async notifyOwner(title: string, message: string, from: string, priority = 4): Promise<void> {
-    await notify({ title, message, from, priority }, async (m) => {
+  private async notifyOwner(title: string, message: string, from: string, priority = 4, meta: TellMeta = {}): Promise<void> {
+    await this.tellOwner({ title, message, from, priority, ...meta })
+  }
+
+  /** The one way the daemon tells the owner something (#1126). The gate
+   *  decides first: an item already told is not told again, and a nag
+   *  waits for the daily digest. Otherwise notify() sends it, held in
+   *  Focus or a call, with the Mac banner. Rejects only when nothing at all
+   *  reached the owner (the send failed and there is no banner), unless
+   *  `soft`: then the failure is only logged. */
+  private async tellOwner(
+    input: { title: string; message: string; from: string; priority?: number; urgent?: boolean; channel?: string; chatId?: string } & TellMeta,
+    opts: { soft?: boolean } = {},
+  ): Promise<"sent" | "held" | "repeat" | "digest"> {
+    const channel = input.channel ?? defaultNotifyChannel(this.config)
+    const chatId = input.chatId ?? "default"
+    // The daemon's own notices: the same words again are a repeat.
+    const meta: TellMeta = { key: input.key, requestId: input.requestId, kind: input.kind, urgent: input.urgent, from: input.from, textKey: true }
+    const gate = this.ownerGate
+    let row: number | undefined
+    if (gate?.isOwnerAddress(channel, chatId)) {
+      const d = gate.decide({ channel, chatId, title: input.title, text: input.message }, meta)
+      if (d.verdict !== "send") {
+        this.log(`[told] ${d.verdict === "repeat" ? "already told" : "kept for the digest"}: ${input.title.slice(0, 80)}`)
+        return d.verdict
+      }
+      row = d.rowId
+    }
+    const res = await notify({ title: input.title, message: input.message, from: input.from, priority: input.priority ?? 4, urgent: input.urgent, channel, chatId }, async (m) => {
       try {
         await this.router.sendOutbound({
-          channel: m.channel ?? defaultNotifyChannel(this.config),
-          chatId: m.chatId ?? "default",
+          channel: m.channel ?? channel,
+          chatId: m.chatId ?? chatId,
           text: `${m.title}\n${m.message}`,
           priority: m.priority,
-          agentId: from,
+          agentId: input.from,
+          told: { ...meta, passed: true },
         } as any)
       } catch (e: any) {
-        this.log(`[workflows] push "${title}" failed: ${e?.message ?? e}`)
+        if (row !== undefined) gate?.outcome(row, "failed")
+        this.log(`[told] push "${input.title.slice(0, 80)}" from ${input.from} failed: ${e?.message ?? e}`)
         // No banner on this machine to fall back on: nothing reached the owner.
-        if (!this.native.banner) throw e
+        if (!this.native.banner && !opts.soft) throw e
       }
-    }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
+    }, { alert: this.ownerAlert() })
+    if (res.held && row !== undefined) gate?.outcome(row, "held")
+    return res.held ? "held" : "sent"
+  }
+
+  /** The banner and sound for one notice on this machine. The sound waits
+   *  while something else speaks here (#1126). */
+  private ownerAlert() {
+    const alert = localAlert(localSettings(this.config.notifications.local), { native: this.config.native })
+    // Not awaited: a sound waiting for quiet must not hold the check that
+    // is telling the owner about the next thing.
+    return async (title: string, message: string) => {
+      void alert(title, message).catch((e: any) => this.log(`[told] banner or sound failed: ${e?.message ?? e}`))
+    }
   }
 
   /** A card raised for a workflow (#788): a step's answer resumes its
@@ -2634,21 +2747,8 @@ export class AgentXDaemon {
         return res.content ?? ""
       },
       notify: async (title, message) => {
-        const from = this.config.approvals.checkin.agent
-        await notify({ title, message, from, priority: 4 }, async (m) => {
-          // A push that fails must not take the Mac banner with it.
-          try {
-            await this.router.sendOutbound({
-              channel: m.channel ?? defaultNotifyChannel(this.config),
-              chatId: m.chatId ?? "default",
-              text: `${m.title}\n${m.message}`,
-              priority: m.priority,
-              agentId: from,
-            } as any)
-          } catch (e: any) {
-            this.log(`[checkin] push for "${m.title}" failed: ${e?.message ?? e}`)
-          }
-        }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
+        // A push that fails must not take the Mac banner with it.
+        await this.tellOwner({ title, message, from: this.config.approvals.checkin.agent ?? "approvals" }, { soft: true })
       },
       log: this.log,
     }
@@ -2774,7 +2874,7 @@ export class AgentXDaemon {
           // The channel stopped reconnecting: tell the owner instead of
           // letting it stay silent until the next restart (#982).
           onGiveUp: (message) => {
-            void this.notifyOwner("WhatsApp stopped reconnecting", `${message}\nRun \`agentx daemon restart\` once fixed.`, "whatsapp", 4)
+            void this.notifyOwner("WhatsApp stopped reconnecting", `${message}\nRun \`agentx daemon restart\` once fixed.`, "whatsapp", 4, { kind: "nag", key: "channel-down:whatsapp" })
               .catch((e: any) => this.log(`[whatsapp] give-up notification failed: ${e?.message ?? e}`))
           },
         },
@@ -3862,21 +3962,9 @@ export class AgentXDaemon {
       config: () => this.config.whatsappTriage,
       stt: () => this.config.voice.stt,
       execute: (task) => this.registry.execute(task as any),
+      // A push that fails must not take the Mac banner with it.
       notify: async ({ title, message, from }) => {
-        await notify({ title, message, from, priority: 4 }, async (m) => {
-          // A push that fails must not take the Mac banner with it.
-          try {
-            await this.router.sendOutbound({
-              channel: m.channel ?? defaultNotifyChannel(this.config),
-              chatId: m.chatId ?? "default",
-              text: `${m.title}\n${m.message}`,
-              priority: m.priority,
-              agentId: from,
-            } as any)
-          } catch (e: any) {
-            this.log(`[whatsapp-triage] push for "${m.title}" failed: ${e?.message ?? e}`)
-          }
-        }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
+        await this.tellOwner({ title, message, from }, { soft: true })
       },
       log: (m) => this.log(m),
     })
@@ -3896,21 +3984,9 @@ export class AgentXDaemon {
         const run = this.registry.findRunningTurn(id, p.taskId ? { taskId: p.taskId } : { channel: p.channel, chatId: p.chatId })
         return run ? { channel: run.context.channel, chatId: run.context.chatId } : null
       },
+      // A push that fails must not take the Mac banner with it.
       alert: async ({ title, message, urgent, from }) => {
-        await notify({ title, message, urgent, from, priority: urgent ? 5 : 4 }, async (m) => {
-          // A push that fails must not take the Mac banner with it.
-          try {
-            await this.router.sendOutbound({
-              channel: m.channel ?? defaultNotifyChannel(this.config),
-              chatId: m.chatId ?? "default",
-              text: `${m.title}\n${m.message}`,
-              priority: m.priority,
-              agentId: from,
-            } as any)
-          } catch (e: any) {
-            this.log(`[calls] push for "${m.title}" failed: ${e?.message ?? e}`)
-          }
-        }, { alert: localAlert(localSettings(this.config.notifications.local), { native: this.config.native }) })
+        await this.tellOwner({ title, message, urgent, from, priority: urgent ? 5 : 4 }, { soft: true })
       },
       // Same chat id as /ask, so the agent summarises the call it just had.
       summarize: async (call) => {
@@ -6918,6 +6994,23 @@ export class AgentXDaemon {
             return
           }
           try {
+            // To the owner's own addresses, the told-the-owner gate decides
+            // first (#1126), so the caller hears whether it went out. A
+            // caller may say what it is about; it may not skip the gate.
+            const told = toldOfBody(body.told, body.agentId)
+            const gate = this.ownerGate
+            let row: number | undefined
+            if (gate?.isOwnerAddress(String(body.channel), String(body.chatId))) {
+              const { title, body: rest } = splitTitle(String(body.text))
+              const d = gate.decide({ channel: String(body.channel), chatId: String(body.chatId), title, text: rest }, told)
+              if (d.verdict !== "send") {
+                this.log(`[told] /send kept back (${d.verdict}): ${title.slice(0, 80)}`)
+                this.json(res, 200, { ok: true, sent: false, told: d.verdict, key: d.key })
+                break
+              }
+              told.passed = true
+              row = d.rowId
+            }
             const messageId = await this.router.sendOutbound({
               channel: body.channel as string,
               chatId: body.chatId as string,
@@ -6931,12 +7024,26 @@ export class AgentXDaemon {
               buttons: body.buttons as any,
               poll: body.poll as any,
               media: body.media as any,
+              told,
+            }).catch((e) => {
+              if (row !== undefined) gate?.outcome(row, "failed")
+              throw e
             })
             const answer = sendAnswer(messageId, { channel: body.channel as string, agentId: body.agentId as string | undefined, identity: this.postingIdentity(body.channel as string, body.agentId as string | undefined) })
             this.json(res, answer.status, answer.body)
           } catch (e: any) {
             this.json(res, 400, { error: e.message })
           }
+          break
+        }
+
+        // What the owner was told (#1126): counts by outcome and the
+        // latest rows, since `since` (epoch ms; default: the last 24 h).
+        case "GET /owner/told": {
+          if (!this.ownerGate) { this.json(res, 409, { error: "The told-the-owner record needs the database." }); break }
+          const since = Number(url.searchParams.get("since") ?? Date.now() - 24 * 3_600_000)
+          if (!Number.isFinite(since)) { this.json(res, 400, { error: "since must be epoch milliseconds" }); break }
+          this.json(res, 200, { since, ...this.ownerGate.report(since, Math.min(500, Number(url.searchParams.get("limit") ?? 50) || 50)) })
           break
         }
 
@@ -8419,6 +8526,9 @@ export class AgentXDaemon {
         agentId: typeof body.agentId === "string" ? body.agentId : undefined,
         // Set by a push relay, so a relay never forwards a relayed message.
         relayed: body.relayed === true ? true : undefined,
+        // The relaying node's own gate already decided it (#1126): deciding
+        // again here, by text alone, would lose its key and its urgency.
+        ...(body.relayed === true ? { told: { passed: true } } : {}),
         // The relaying node, so the host can address that node's phones:
         // the peer its token belongs to, not the name it gives (#711).
         origin,

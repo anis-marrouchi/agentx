@@ -30,6 +30,7 @@ export const REQUESTS_HTML = `
         <label>Channels to record on (separated by commas; empty for all)<input type="text" name="channels" placeholder="voice, app, telegram" autocomplete="off"></label>
         <label>Comes back after this many hours without activity<input type="number" min="1" step="1" name="staleAfterHours" required></label>
         <label>Keep closed requests for (days)<input type="number" min="1" step="1" name="retentionDays" required></label>
+        <label class="apv__check"><input type="checkbox" name="headlines"> Write a headline when the agent gave none (one small model call per request)</label>
         <label class="apv__check"><input type="checkbox" name="plansEnabled"> Follow requests of two or more steps as plans</label>
         <label>Nudge a plan step's agent after this many minutes without progress<input type="number" min="1" step="1" name="stallMinutes" required></label>
         <label>Nudges per step before you are told it is blocked<input type="number" min="0" step="1" name="maxNudges" required></label>
@@ -139,8 +140,10 @@ function item(r){
     '<div class="apv__meta"><span class="apv__state is-' + esc(r.state) + '">' + esc(STATE[r.state] || r.state) + '</span>' +
     '<span class="apv__with">With <b>' + esc(agentName(r.agentId)) + '</b></span>' +
     '<span>' + esc(when(r.createdAt)) + '</span><span>' + esc(r.channel) + '</span><code>' + esc(r.id) + '</code></div>' +
-    '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' + why + loop(r) + plan(r.plan) +
-    more(r.loop && r.loop.promise ? 'What ' + agentName(r.agentId) + ' promised' : r.channel === 'voice' ? 'What you said' : 'What you asked', r.textHtml) +
+    '<p class="apv__title" dir="auto">' + esc(r.summary) + '</p>' +
+    (r.needed && r.state !== 'waiting_owner' ? '<p class="apv__rec apv__need" dir="auto"><b>Needed from you:</b> ' + esc(r.needed) + '</p>' : '') +
+    why + loop(r) + plan(r.plan) +
+    more(r.loop && r.loop.promise ? 'What ' + agentName(r.agentId) + ' promised' : 'You said', r.textHtml) +
     more('Your last reply', r.ownerNoteHtml) +
     (r.lastAnswer ? more('Last answer from ' + agentName(r.lastAnswer.agentId) + ' (' + when(r.lastAnswer.at) + ')', r.lastAnswer.html) : '') +
     '<div class="apv__reply">' +
@@ -165,6 +168,7 @@ function fill(s){
   f.channels.value = (s.channels || []).join(', ');
   f.staleAfterHours.value = s.staleAfterHours;
   f.retentionDays.value = s.retentionDays;
+  f.headlines.checked = !s.headlines || s.headlines.enabled !== false;
   var p = s.plans || {};
   f.plansEnabled.checked = p.enabled !== false;
   f.stallMinutes.value = p.stallMinutes || 30;
@@ -265,6 +269,7 @@ $('req-form').addEventListener('submit', async function(ev){
     channels: f.channels.value,
     staleAfterHours: Number(f.staleAfterHours.value),
     retentionDays: Number(f.retentionDays.value),
+    headlines: f.headlines.checked,
     plansEnabled: f.plansEnabled.checked,
     stallMinutes: Number(f.stallMinutes.value),
     maxNudges: Number(f.maxNudges.value),

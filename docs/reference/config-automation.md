@@ -177,6 +177,13 @@ Messages about finished, failed or long tasks. See [get notified](/jobs/notifica
 | `notifications.local.soundName` | string | `"Glass"` | A sound from `/System/Library/Sounds`, without the extension. |
 | `notifications.local.volume` | number (0–1) | `0.4` | Sound volume. |
 | `notifications.local.icon` | string | — | Image for the banner icon (`.png`, `.jpg` or `.icns`). Unset: the AgentX logo. Applied by `agentx desktop install`. |
+| `notifications.local.quietWaitSeconds` | whole number (0–120) | `15` | Seconds the sound waits while something else speaks on this computer, such as a spoken answer or a script using `say`. If something is still speaking after that, the banner shows without the sound. `0`: never wait. |
+| `notifications.told` | object | `{}` | The record of what you were told. Everything sent to your own addresses is written down once. Something you were already told is not sent again on any channel, and system reminders wait for the daily digest. See [Told once](/jobs/notifications#6-told-once-and-the-daily-digest). |
+| `notifications.told.enabled` | boolean | `true` | Records and checks every message to your own addresses. |
+| `notifications.told.repeatWindowHours` | number (up to 720) | `24` | Hours during which a notice with the same key is not told again, on any channel. A notice without a key is matched by its words for at most 20 hours. Agents' answers are never matched. |
+| `notifications.told.channels` | list of strings | `["push", "ntfy"]` | Channels that only ever reach you. Every message on them goes through the record. |
+| `notifications.told.addresses` | list of strings | `[]` | Your other private chats, as `channel:chatId`, for example `telegram:123456789`. |
+| `notifications.told.digestNags` | boolean | `true` | System reminders, such as "Not finished", a missing voice or a channel that stopped, wait for the daily digest (`approvals.digest`) instead of a notification each. Off, or with no digest destination: each is sent at once. |
 
 ## `calls`
 
@@ -257,7 +264,9 @@ When it is on, AgentX notes every message you send to an agent. A message the ag
 - The run failed or hit its time limit.
 - A restart cut the run off.
 
-An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you, and nothing closes by getting old.
+An open request that fails, times out, is cut off and not picked up again, or has no activity for `staleAfterHours` is marked as needing attention. You are told once, through your normal notifications, which are held while Focus is on. Nothing is retried for you.
+
+One case is closed instead of coming back to you: a request whose handed-on work all came back done, and that nobody closed within `staleAfterHours`. It is closed as done. The proof is the first link in the other agent's answer. With no link, it is marked **unproven**. Turn this off with `settleHandedBack: false`.
 
 Who counts as you on this computer's own surfaces (voice, the phone app, the dashboard) is proven, not declared: the daemon marks the turns it starts itself, and the dashboard presents the key in `.agentx/operator.key` for the phone app. The daemon creates that file next to `agentx.json` at start, readable by your user only. A call to `POST /task` that names one of those channels without the key runs as an ordinary turn and is not recorded as your request. When the phone app talks to an agent on another computer, the computer it is paired with checks its own key on the forward and tells the other one the turn is yours; that other computer believes it only from a request that carries one of its `mesh.peers[].token` values and comes from another machine, never from a caller on the same machine or a bare header. A computer you let vouch is trusted for more than the list: the turn is yours for [people limits](/jobs/people) too. When the whole mesh shares one token, every computer in it can vouch, so share a token only between computers you own.
 
@@ -278,6 +287,7 @@ To turn it on by hand:
 | `requests.channels` | list of strings | `[]` | Channels to record on. Empty: every channel a person writes on (`telegram`, `whatsapp`, `slack`, `discord`, `gitlab`, `github`, `app`, `voice`, `dashboard`, `webrtc`). |
 | `requests.from` | list of strings | `[]` | Who counts as you on channels other people can reach: your id on that channel, as `channel:id`. That is your login on GitLab and GitHub, and the sender id everywhere else (the numeric id on Telegram, the number on WhatsApp). An entry only applies to its own channel. Usernames beside an id and display names are not matched, because the person chooses them. Empty: only this machine's own surfaces count (`voice`, `app`, `dashboard`, `webrtc`). |
 | `requests.staleAfterHours` | number (up to 8760) | `24` | Hours without activity before an open request comes back to you. |
+| `requests.settleHandedBack` | boolean | `true` | A request in progress whose handed-on work all came back done, and that has no activity for `staleAfterHours`, is closed as done instead of coming back to you. The proof is the other agent's link, or the request is marked unproven. Promises, requests with a check or a due time, and tracked plans are never closed this way. |
 | `requests.retentionDays` | number (up to 3650) | `90` | Days a closed request is kept before it is deleted. Open requests are never deleted. |
 | `requests.plans` | object | `{}` | Tracked plans: a request of two or more steps, each with an owner agent, followed until every step is done. Needs `requests.enabled`. See [Follow a request of several steps](/jobs/tracked-plans). |
 | `requests.plans.enabled` | boolean | `true` | Agents may make plans, and the daemon follows them. |
@@ -293,6 +303,11 @@ To turn it on by hand:
 | `requests.checkers.repos` | object | `{}` | Local copies of repositories the `git-ancestor` check may read, by name: `{ "app": "/srv/app" }`. Agents give the name, never a folder. |
 | `requests.checkers.github` | object | — | The `issue` check's GitHub access: `apiUrl` (default `https://api.github.com`) and `token`. Unset: `channels.github.token` (or `tokenFile`). |
 | `requests.checkers.gitlab` | object | — | The `issue` check's GitLab access: `url` and `token`. Unset: `channels.gitlab.host` and `channels.gitlab.token`. |
+| `requests.headlines` | object | `{}` | Headlines: a few words that say what a request is, used as the title of its card, its notification and its Desk line instead of your own words. The agent writes them; when it did not, AgentX writes the headline once with one short model call. See [What a request's card shows](/jobs/open-requests#what-a-request-s-card-shows). |
+| `requests.headlines.enabled` | boolean | `true` | Writes the missing headlines. Off: a card is titled with the start of your words, as before. Also `agentx requests settings --headlines on\|off`, or the box **Write a headline when the agent gave none** on the Approvals page. |
+| `requests.headlines.provider` | string | `"claude-code"` | Engine for the call. `claude-code` uses the sign-in this computer already has (subscription or API key); no new paid account is used. |
+| `requests.headlines.model` | string | `"claude-haiku-4-5-20251001"` | Model for the call. A small, fast model is enough. |
+| `requests.headlines.timeoutSeconds` | whole number (5 to 120) | `30` | Longest wait for one headline. A request whose headline could not be written keeps your words as its title and is not asked about again. |
 
 ## `watchers`
 

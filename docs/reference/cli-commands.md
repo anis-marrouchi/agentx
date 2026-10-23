@@ -149,6 +149,24 @@ Create the key pair that lets this computer send notifications to paired phones.
 |---|---|---|
 | `--force` | — | Replace existing keys (every phone must turn notifications on again). |
 
+### `agentx app pins`
+
+List the pages pinned as buttons in the phone app, with their ids. Buttons set in `agentx.json` (`app.pins.pages`) are marked `(agentx.json)`; `agentx app unpin` can't remove them. See [Pinned pages](../dashboard/mobile-pins.md).
+
+No flags.
+
+### `agentx app pin <label> <url>`
+
+Pin an `https://` page as a button named `<label>` in the phone app. The phone shows it the next time the app opens. See [Pinned pages](../dashboard/mobile-pins.md).
+
+No flags.
+
+### `agentx app unpin <id-or-label>`
+
+Remove a pinned page, by its id or its name.
+
+No flags.
+
 ## daemon
 
 `agentx daemon`: Manage the agentx daemon — start, stop, status, logs.
@@ -528,6 +546,7 @@ Show or change the requests settings (requests in agentx.json).
 | `--channels <name,...>` | — | Channels to record on; "all" for every channel a person writes on. |
 | `--stale-hours <n>` | — | Hours without activity before an open request comes back to you. |
 | `--retention-days <n>` | — | Days a closed request is kept. |
+| `--headlines <on\|off>` | — | Write a headline for a request its agent did not describe (one small model call each). |
 | `--checks <kind,...>` | — | Checks agents may use to close a request (url, issue, git-ancestor, reply); "none" to turn them all off. |
 | `--check-every <minutes>` | — | How often each open request's check runs. |
 

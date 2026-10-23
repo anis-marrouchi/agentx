@@ -88,7 +88,9 @@ export function isMeshGatedPath(path: string): boolean {
     // and what the agent did. Stop and resume are control posts below.
     path === "/api/signals/stopped" || path.startsWith("/api/signals/stopped/") ||
     // Pre-merge reviews (#990): PRs, verdicts and what each review cost.
-    path === "/api/review-gate/reviews"
+    path === "/api/review-gate/reviews" ||
+    // What the owner was told (#1126): the words of every notice.
+    path === "/owner/told"
 }
 
 /** Control POSTs that act as this daemon: reload its config, switch a
