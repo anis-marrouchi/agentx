@@ -21,7 +21,7 @@ export function readRequestSettings(configPath?: string): RequestSettings {
   return parsed.success ? parsed.data : requestsConfigSchema.parse(undefined)
 }
 
-export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines">> & {
+export type RequestSettingsPatch = Partial<Omit<RequestSettings, "plans" | "checkers" | "headlines" | "statusDrift">> & {
   /** Only the switch. Provider, model and timeout are set in agentx.json. */
   headlines?: { enabled?: boolean }
   plans?: Partial<PlanSettings>

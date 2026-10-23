@@ -104,6 +104,10 @@ import { PairAttemptLimiter } from "@/daemon/app-pair-code"
 import { handleRequestsCall, type CallerProof as RequestCallerProof } from "@/requests/daemon-api"
 import { DEFAULT_CHECKER_SETTINGS, type CheckContext } from "@/requests/checkers"
 import { forgeReader } from "@/requests/checkers/issue"
+import { runDriftSweep } from "@/requests/drift/sweep"
+import { driftForge } from "@/requests/drift/forge"
+import { forgeConnectorsOf, liveReader } from "@/requests/drift/live"
+import { syncSourceIssue } from "@/business/backlog-sync"
 import { loopChecker, parseDue } from "@/requests/loops"
 import { attachStatus, type AttachedStatus } from "@/requests/status-board"
 import { popNext } from "@/approvals/popup-runner"
@@ -2124,6 +2128,10 @@ export class AgentXDaemon {
    *  is the owner's (requests/operator, #393). */
   private operatorKey: string | null = null
   private requestsSweeping = false
+  /** Status drift (#1138 step F): its last check, and one at a time. */
+  private driftAt = 0
+  private driftSweeping = false
+  private readonly driftLiveCache = new Map<string, boolean>()
   /** Task watchers (src/watchers, #1030). */
   private watchers: AttachedWatchers | null = null
   private watchersSweeping = false
@@ -2283,6 +2291,7 @@ export class AgentXDaemon {
             .catch((e: any) => this.log(`[requests] sweep failed: ${e?.message ?? e}`))
             .finally(() => { this.requestsSweeping = false })
         }
+        this.statusDriftTick()
         this.status?.board.sweep()
         // The Reminders mirror (#1062): beside the sweep, because the OS
         // task app can take seconds to answer.
@@ -2480,25 +2489,54 @@ export class AgentXDaemon {
     }
   }
 
+  /** Status follows the work (src/requests/drift, #1138 step F): beside
+   *  the requests check, at its own pace, since each check reads the
+   *  forges. Reports drift to the owner; writes a label only in write mode. */
+  private statusDriftTick(): void {
+    const requests = this.requests
+    const settings = this.config.requests.statusDrift
+    if (!requests || !settings?.enabled || !settings.projects.length || this.driftSweeping) return
+    const now = Date.now()
+    if (now - this.driftAt < settings.checkEveryMinutes * 60_000) return
+    this.driftAt = now
+    this.driftSweeping = true
+    const connectors = forgeConnectorsOf(this.config)
+    // The writes use the same access as the reads.
+    const writeConfig = {
+      ...this.config,
+      channels: {
+        ...this.config.channels,
+        github: { ...this.config.channels.github, token: connectors.github?.token },
+        gitlab: { ...this.config.channels.gitlab, host: connectors.gitlab?.url ?? this.config.channels.gitlab.host, token: connectors.gitlab?.token },
+      },
+    }
+    void runDriftSweep({
+      settings,
+      store: requests.drift,
+      forge: driftForge(connectors),
+      readIssue: forgeReader(connectors),
+      liveCommit: liveReader({ field: settings.liveField, self: () => buildInfo.commit }),
+      checkers: this.config.requests.checkers ?? DEFAULT_CHECKER_SETTINGS,
+      liveCache: this.driftLiveCache,
+      tell: async (title, message) => { await this.tellOwner({ title, message, from: "status-drift" }) },
+      writeIssue: (issue, patch) => syncSourceIssue({ type: issue.provider, project: issue.project, iid: issue.number, url: issue.url }, patch, writeConfig, this.log),
+      log: this.log,
+    })
+      .then((r) => { if (r.drifts) this.log(`[status-drift] ${r.projects} project(s): ${r.drifts} drift(s), ${r.told} new, ${r.written} written`) })
+      .catch((e: any) => this.log(`[status-drift] check failed: ${e?.message ?? e}`))
+      .finally(() => { this.driftSweeping = false })
+  }
+
   /** What the loop checkers read (#1039): the forges through the
    *  configured connectors, the local clones under requests.checkers.repos,
    *  and this node's own record of inbound turns. Built per check, so a
    *  settings change applies without a restart. */
   private requestCheckContext(requests: AttachedRequests): CheckContext {
     const settings = this.config.requests.checkers ?? DEFAULT_CHECKER_SETTINGS
-    const gh = this.config.channels.github
-    let ghToken = settings.github?.token ?? gh?.token
-    if (!ghToken && gh?.tokenFile) {
-      try { ghToken = readFileSync(gh.tokenFile, "utf-8").trim().split("\n")[0].trim() || undefined } catch { /* no token: public reads only */ }
-    }
-    const gl = this.config.channels.gitlab
     return {
       now: Date.now(),
       settings,
-      forge: forgeReader({
-        github: { apiUrl: settings.github?.apiUrl ?? "https://api.github.com", token: ghToken },
-        gitlab: { url: settings.gitlab?.url ?? gl?.host ?? "https://gitlab.com", token: settings.gitlab?.token ?? gl?.token },
-      }),
+      forge: forgeReader(forgeConnectorsOf(this.config)),
       inbound: requests.inbound,
     }
   }

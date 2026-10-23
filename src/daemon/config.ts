@@ -1426,6 +1426,52 @@ export const requestsConfigSchema = z.object({
       token: z.string().optional(),
     }).optional(),
   }).default({}),
+  /** Status follows the work (src/requests/drift, #1138 step F): merged
+   *  merge requests are mapped to the issues they close, and an issue
+   *  whose status label no longer says what happened (merged but still
+   *  Doing, live but still Review, Done but not live) is reported to the
+   *  owner once. Only the projects listed are read. Writing the label
+   *  back is a second switch, off by default. */
+  statusDrift: z.object({
+    enabled: z.boolean().default(true),
+    /** Minutes between two checks. Each one reads the forges. */
+    checkEveryMinutes: z.number().int().min(5).max(24 * 60).default(30),
+    /** How far back merged merge requests are read. */
+    lookbackDays: z.number().int().min(1).max(60).default(7),
+    projects: z.array(z.object({
+      provider: z.enum(["gitlab", "github"]),
+      /** "group/project" on GitLab, "owner/repo" on GitHub. */
+      project: z.string().regex(/^[\w.-]+(\/[\w.-]+)+$/, "group/project or owner/repo")
+        .refine((p) => p.split("/").every((s) => s !== "." && s !== ".."), "a project path has no . or .. part"),
+      /** Where the running commit is read: "self" (this node's own build)
+       *  or a health URL whose JSON has it under `liveField`. Every one
+       *  must run a commit for it to count as live. Empty: live is not
+       *  known, and only merged-but-not-in-Review is reported. */
+      live: z.array(z.union([z.literal("self"), z.string().url()])).default([]),
+      /** A clone named in requests.checkers.repos: the live check runs
+       *  git there instead of asking the forge. */
+      repo: z.string().min(1).optional(),
+    })).default([]),
+    /** The JSON field of a health URL that holds the running commit. */
+    liveField: z.string().min(1).default("commit"),
+    /** The status labels, any case. The first label of a status is the
+     *  one written. */
+    labels: z.object({
+      todo: z.array(z.string().min(1)).default(["To Do", "Status::To Do"]),
+      doing: z.array(z.string().min(1)).default(["Doing", "Status::Doing"]),
+      review: z.array(z.string().min(1)).default(["Review", "Status::Review"]),
+      done: z.array(z.string().min(1)).default(["Done", "Status::Done"]),
+    }).default({}),
+    /** Done but not live is told only once a merge has waited this many
+     *  hours to go live: forges close the issue at merge, before a deploy. */
+    doneNotLiveAfterHours: z.number().min(0).max(24 * 30).default(24),
+    /** Write mode: an issue whose work is live gets its Done label (its
+     *  other status labels removed) and a note quoting the proof. Never
+     *  closes an issue. Needs the project in `writeProjects` too. */
+    write: z.boolean().default(false),
+    /** Projects write mode may change, as listed under `projects`. */
+    writeProjects: z.array(z.string().min(1)).default([]),
+  }).default({}),
   /** Headlines (src/requests/headline.ts, #1126): a request the agent did
    *  not describe gets a few words saying what it is, written once by one
    *  small model call, so its card, push and Desk line are not titled with

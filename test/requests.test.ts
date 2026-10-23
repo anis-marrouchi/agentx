@@ -7,6 +7,7 @@ import { RequestStore, firstLink } from "../src/requests/store"
 import { RequestTracker, isOwnerTurn, senderOf, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep, attentionText } from "../src/requests/sweep"
 import { requestsConfigSchema } from "../src/daemon/config"
+import { DEFAULT_DRIFT_SETTINGS } from "../src/requests/drift/check"
 import { DelegationManager, type DelegationDeps } from "../src/a2a/delegation"
 import { attachRequests } from "../src/requests/attach"
 import { getEventBus } from "../src/events/bus"
@@ -58,7 +59,7 @@ const dlg = (id: string) => ({ id, caller: "coder", callee: "devops", origin: { 
 
 describe("settings", () => {
   it("is off by default, with a 24 hour quiet time and 90 day retention", () => {
-    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
+    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS })
   })
 
   it("records nothing while it is off", () => {

@@ -15,6 +15,8 @@ export interface ForgeItem {
   /** The bodies of its notes, oldest first. Only read when asked for. */
   notes?: string[]
   url: string
+  /** Its label names (status drift, #1138 step F). */
+  labels?: string[]
 }
 
 /** Reads one item, or says why it could not (unknown, not visible, down). */
@@ -90,6 +92,12 @@ export async function checkIssue(spec: IssueSpec, ctx: Pick<CheckContext, "forge
   return { verdict: "not_met", detail: `${item.url} is ${item.state}${spec.notePattern ? `, no note has "${spec.notePattern}"` : ""}` }
 }
 
+/** Label names: GitLab sends strings, GitHub objects with a name. */
+function labelNames(v: unknown): string[] {
+  if (!Array.isArray(v)) return []
+  return v.map((l: any) => (typeof l === "string" ? l : String(l?.name ?? ""))).filter(Boolean)
+}
+
 export interface ForgeConnectors {
   github?: { apiUrl: string; token?: string }
   gitlab?: { url: string; token?: string }
@@ -124,10 +132,11 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
         if (pr.ok && pr.body?.merged) state = "merged"
       }
       const url = String(issue.body?.html_url ?? `${ref.project}#${ref.number}`)
-      if (!opts.notes) return { state, url }
+      const labels = labelNames(issue.body?.labels)
+      if (!opts.notes) return { state, url, labels }
       const notes = await get(`${base}/issues/${ref.number}/comments?per_page=100`, headers)
       if (!notes.ok) return { error: `its notes: ${notes.error}` }
-      return { state, url, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
+      return { state, url, labels, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")) }
     }
     const c = connectors.gitlab
     if (!c) return { error: "no gitlab connector on this node (channels.gitlab or requests.checkers.gitlab)" }
@@ -138,9 +147,10 @@ export function forgeReader(connectors: ForgeConnectors, doFetch: typeof fetch =
     const raw = String(item.body?.state ?? "")
     const state: IssueState = raw === "merged" ? "merged" : raw === "closed" ? "closed" : "open"
     const url = String(item.body?.web_url ?? `${ref.project}${ref.mr ? "!" : "#"}${ref.number}`)
-    if (!opts.notes) return { state, url }
+    const labels = labelNames(item.body?.labels)
+    if (!opts.notes) return { state, url, labels }
     const notes = await get(`${base}/notes?per_page=100&sort=desc&order_by=created_at`, headers)
     if (!notes.ok) return { error: `its notes: ${notes.error}` }
-    return { state, url, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")).reverse() }
+    return { state, url, labels, notes: (Array.isArray(notes.body) ? notes.body : []).map((n: any) => String(n?.body ?? "")).reverse() }
   }
 }

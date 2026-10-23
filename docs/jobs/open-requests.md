@@ -148,6 +148,22 @@ For example: `closeWhen:{kind:"issue", provider:"github", ref:"example-org/app#1
 
 The `issue` check reads through the GitHub and GitLab settings you already have (`channels.github`, `channels.gitlab`), or through `requests.checkers.github` and `requests.checkers.gitlab` when you set them. The `git-ancestor` check does not download anything: keep the local copy up to date yourself. For another computer, check the build it reports with a `url` check on its version address.
 
+## When an issue's status is behind the work
+
+An issue can say **Doing** or **Review** after its work has merged and gone live, or say **Done** before it is live. AgentX can catch this. Every 30 minutes it reads the merge requests merged in the last 7 days on the projects you list under `requests.statusDrift.projects`. It finds the issue each one closes, and compares that issue's status label with what happened:
+
+| Drift | Means |
+|---|---|
+| merged, not in Review | The change merged, the issue still says To Do or Doing. |
+| live, not Done | The change runs on every place listed under the project's `live`, and the issue is not Done. |
+| Done, not live | The issue says Done (or is closed), and a change it names does not run there yet. |
+
+A merge request closes an issue when its title or description says so with a closing word (`Closes #12`, `Fixes group/app#3`), or when its branch starts with the issue number (`12-fix-login`). A plain mention (`Part of #12`, `Refs #12`) is not a close, even when the branch carries that number. A step of a larger issue does not finish it.
+
+Each drift is told to you once, in one notice per check. By default nothing is written: the issue keeps its labels. With `write` on and the project in `writeProjects`, an issue whose work is live gets its Done label and a comment that quotes the merge and the running commit. It is never closed. List only your own projects. A label change on a client's project can send the client an email.
+
+To check by hand, run `agentx requests drift --project group/app`. It prints the drifts and changes nothing. Add `--live self` to compare with this computer's build, or a health address whose JSON holds `commit`.
+
 ## See what is stalled
 
 A request is **stalled** when it is past its due time, or, without a due time, when nothing has happened for a day (`--stale-hours`). One that needs attention is stalled too. Stalled requests are grouped by what they wait on:
