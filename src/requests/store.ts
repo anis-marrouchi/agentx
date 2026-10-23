@@ -380,15 +380,16 @@ export class RequestStore {
 
   /** The owner sent the request back (a reply on it, a hand-off, a
    *  pick-up): work that came back before is no longer what finishes it.
-   *  The request never settles after that, even when new work comes back:
-   *  it returns to the owner when quiet, as before (#1138). */
+   *  Only work handed on and done after that can settle the request, with
+   *  its own link (#1138). */
   private supersedeHandBacks(id: string): void {
     this.db.prepare("UPDATE request_links SET ended = 'superseded' WHERE request_id = ? AND kind = 'delegation' AND ended = 'done'").run(id)
   }
 
   /** Requests in progress, quiet since `before`, whose handed-on work all
-   *  came back done (#1138): at least one delegation, and none that is
-   *  still out, waiting, failed or from before endings were kept. Left
+   *  came back done (#1138): at least one delegation done since the owner
+   *  last sent it back, and none that is still out, waiting, failed or
+   *  from before endings were kept. Superseded ones count for neither. Left
    *  out: promises, loops with a due time or a checker, a pick-up the
    *  agent has not been told about yet, and anything with a follow-up
    *  workflow, which may still be running and reports its own end. */
@@ -397,18 +398,19 @@ export class RequestStore {
       `SELECT r.* FROM requests r
         WHERE r.state = 'in_progress' AND r.updated_at < ? AND r.due_at IS NULL AND r.close_when IS NULL
           AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
-          AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation')
+          AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation' AND l.ended = 'done')
           AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
-                          AND (l.ended IS NULL OR l.ended != 'done'))
+                          AND (l.ended IS NULL OR l.ended NOT IN ('done', 'superseded')))
           AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')
         ORDER BY r.created_at, r.rowid`,
     ).all(before).map(toRecord)
   }
 
-  /** The newest proof link the request's delegations brought back. */
+  /** The newest proof link the request's delegations brought back since
+   *  the owner last sent it back. */
   handBackProof(requestId: string): { proof: string; ref: string } | null {
     const row = this.db.prepare(
-      `SELECT proof, ref FROM request_links WHERE request_id = ? AND kind = 'delegation' AND proof IS NOT NULL ORDER BY ended_at DESC, rowid DESC LIMIT 1`,
+      `SELECT proof, ref FROM request_links WHERE request_id = ? AND kind = 'delegation' AND ended = 'done' AND proof IS NOT NULL ORDER BY ended_at DESC, rowid DESC LIMIT 1`,
     ).get(requestId) as { proof: string; ref: string } | undefined
     return row ?? null
   }
@@ -575,12 +577,14 @@ export class RequestStore {
   /** The owner said "pick it up again": back in progress, and the agent
    *  is to be told at the next check. */
   requestPickup(id: string, now: number): boolean {
-    const moved = this.db.prepare(
-      `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?, need = NULL
-       WHERE id = ? AND state = 'needs_attention'`,
-    ).run(now, now, now, id).changes > 0
-    if (moved) this.supersedeHandBacks(id)
-    return moved
+    return this.db.transaction(() => {
+      const moved = this.db.prepare(
+        `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?, need = NULL
+         WHERE id = ? AND state = 'needs_attention'`,
+      ).run(now, now, now, id).changes > 0
+      if (moved) this.supersedeHandBacks(id)
+      return moved
+    })()
   }
 
   /** The owner replied, or handed it to an agent (the same or another):
@@ -588,13 +592,15 @@ export class RequestStore {
    *  open request, not only one that needs attention. The agent it was
    *  asked of is kept from the first time: channel and chat stay its own. */
   handOff(id: string, agentId: string, note: string, now: number): boolean {
-    const moved = this.db.prepare(
-      `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
-         question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)
-       WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
-    ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
-    if (moved) this.supersedeHandBacks(id)
-    return moved
+    return this.db.transaction(() => {
+      const moved = this.db.prepare(
+        `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
+           question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)
+         WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
+      ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
+      if (moved) this.supersedeHandBacks(id)
+      return moved
+    })()
   }
 
   /** This note of the owner is given to the agent in a pick-up, or (false)
