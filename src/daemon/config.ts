@@ -1377,6 +1377,10 @@ export const requestsConfigSchema = z.object({
   from: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:id, for example telegram:123456789")).default([]),
   /** An open request with no activity for this long comes back to the owner. */
   staleAfterHours: z.number().positive().max(24 * 365).default(24),
+  /** A request in progress whose handed work all came back done, quiet
+   *  for staleAfterHours, closes as done with its delegate's link (or
+   *  marked unproven) instead of coming back to the owner (#1138). */
+  settleHandedBack: z.boolean().default(true),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
   /** Tracked plans (src/requests/plans.ts, #788): a request with two or

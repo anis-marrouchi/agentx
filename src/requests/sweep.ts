@@ -10,17 +10,22 @@ import { cardWords } from "./card-view"
 //   0. Evidence (#1039): an open loop with a `close_when` has its checker
 //      run every `checkers.checkEveryMinutes`. Met closes it as done, with
 //      the checker's evidence.
-//   1. Quiet: an open request nothing has touched for `staleAfterHours`
+//   1. Settle (#1138): a request in progress, quiet for `staleAfterHours`,
+//      whose handed work all came back done, closes as done with the link
+//      its delegate gave, or marked unproven without one. The owner is not
+//      told: the work came back, and its record leaves their list.
+//      `settleHandedBack: false` raises it as quiet instead, as before.
+//   2. Quiet: an open request nothing has touched for `staleAfterHours`
 //      needs attention. So does a candidate that old: its turn never
 //      reported an end. A loop with a due time needs attention once it is
 //      past it instead. A request waiting on the owner is left alone; its
 //      question is what reminds them.
-//   2. Tell once: every request that needs attention is sent to the owner
+//   3. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
 //      sent at all is tried again at the next check.
-//   3. Pick-ups: a request the owner said to pick up again is handed back
+//   4. Pick-ups: a request the owner said to pick up again is handed back
 //      to its agent as a new turn, once.
-//   4. Retention: closed requests older than `retentionDays` are deleted.
+//   5. Retention: closed requests older than `retentionDays` are deleted.
 //      Open requests never age out.
 //
 // Every step is isolated: a failure is logged and the next step runs.
@@ -34,6 +39,8 @@ export interface RequestSweepDeps {
    *  again. Fire and forget: the check never waits on a model. */
   tellAgent?: (agentId: string, text: string, request: RequestRecord) => Promise<void>
   hasAgent?: (agentId: string) => boolean
+  /** The request has an active tracked plan (#788): never settled here. */
+  inPlan?: (requestId: string) => boolean
   /** Runs a loop's checker (#1039). Unset: loops are not checked. */
   check?: LoopChecker
   /** Gives a request its headline when it has none (#1126), so the owner
@@ -49,6 +56,8 @@ export interface RequestSweepResult {
   /** Loops whose checker ran, and those it closed. */
   checked: number
   verified: number
+  /** Quiet requests whose handed work came back done, closed (#1138). */
+  settled: number
   quiet: number
   notified: number
   pruned: number
@@ -129,7 +138,7 @@ export function attentionText(r: RequestRecord, isAgent: (id: string) => boolean
 export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestSweepResult> {
   const { store, settings, log } = deps
   const now = deps.now ?? Date.now()
-  const result: RequestSweepResult = { checked: 0, verified: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
+  const result: RequestSweepResult = { checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 }
   if (!settings.enabled) return result
 
   if (deps.check) {
@@ -165,6 +174,25 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
     }
   } catch (e: any) {
     log(`[requests] pick-ups failed: ${e?.message ?? e}`)
+  }
+
+  if (settings.settleHandedBack !== false) {
+    try {
+      for (const r of store.handedBack(now - settings.staleAfterHours * HOUR)) {
+        // A tracked plan follows its own steps and tells the owner itself.
+        if (deps.inPlan?.(r.id)) continue
+        const back = store.handBackProof(r.id)
+        const detail = back
+          ? `The work it handed on came back done with ${back.proof}; nobody closed it in ${settings.staleAfterHours} h.`
+          : `The work it handed on came back done without a link to proof; nobody closed it in ${settings.staleAfterHours} h.`
+        if (store.settle(r.id, back?.proof ?? null, detail, now)) {
+          result.settled++
+          log(`[requests] ${r.id} settled: ${back ? `handed work came back with ${back.proof}` : "handed work came back, unproven"}`)
+        }
+      }
+    } catch (e: any) {
+      log(`[requests] settle failed: ${e?.message ?? e}`)
+    }
   }
 
   try {

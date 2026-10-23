@@ -92,6 +92,20 @@ You are told once. On a Mac with the [card popup](../dashboard/approvals.md) on,
 
 Agents close their own requests as done or declined. When work an agent handed on comes back, it is reminded to close the request. Only you can drop one.
 
+### When handed-on work came back and nobody closed it
+
+Agents often forget to close a request after the work they handed on comes back. Such a request used to come back to you as "Not finished", even though the work was done. Now the daily check closes it:
+
+- It applies to a request that is in progress, has had no activity for `staleAfterHours` (default 24), and whose handed-on work **all** came back done.
+- It is closed as **done**. Its proof is the first link in the other agent's answer, for example a pull request or a deploy page. Nothing opens that link to check it, so the request is marked `unverified`.
+- With no link in the answer, the proof reads `unproven: …`. Look at it in the done list if you want to be sure.
+- Once you send a request back (a reply, a hand-off, **Pick it up again**), the work that came back before no longer counts. That request is never closed this way and comes back to you as before.
+- You are not told. It simply leaves your list.
+- It does **not** apply to promises, to requests with a check or a due time, to tracked plans, to requests with a follow-up workflow, or when any handed-on work failed or is still out. Those still come back to you as before.
+- A request that already needs attention is left as it is.
+
+To keep the old behaviour, run `agentx requests settings --settle off`.
+
 ## Promises an agent makes
 
 An agent often promises something to someone: "I will send the file by Friday", "I will deploy once the review is in". A **promise** is a request the agent opens itself, so the promise stays on your list until it is kept. It is the same kind of record as your own requests, and it shows in the same list.
@@ -206,6 +220,7 @@ When a request takes two or more steps (build, deploy, check it is live, tell th
 | `agentx requests settings --stale-hours 48` | Hours without activity before a request comes back to you. Default 24. |
 | `agentx requests settings --retention-days 30` | Days a closed request is kept. Default 90. |
 | `agentx requests settings --headlines off` | Stops AgentX from writing a headline for a request its agent did not describe. Such a request is then titled with the start of your words. `on` turns it back on. Default on. |
+| `agentx requests settings --settle off` | A quiet request whose handed-on work all came back done comes back to you instead of being closed. `on` turns closing back on. Default on. See [When handed-on work came back](#when-handed-on-work-came-back-and-nobody-closed-it). |
 | `agentx requests settings --checks url,issue` | The checks agents may use to close a request. Default all four: `url`, `issue`, `git-ancestor`, `reply`. `none` turns them all off; a request whose check is off is then unverified. |
 | `agentx requests settings --check-every 30` | Minutes between two runs of a request's check. Default 10. |
 
@@ -239,8 +254,11 @@ The same settings are the `requests` block in `agentx.json`: see [Configuration:
 11. **Terminal:** run `curl -s "http://127.0.0.1:18800/requests?state=needs_attention&links=1"`. Only the requests that need attention come back, each with its links.
 12. Ask an agent, by voice, for something long and loosely worded. Within a few minutes, its card under **Approvals** › **Open requests** is titled with a few plain words, shows **Needed from you**, and keeps your words under **You said**. `agentx requests show <id>` shows the same `headline`.
 13. **Terminal:** run `agentx requests settings`. The line `Headlines` says `on: written when the agent gave none`, or `off` after `--headlines off`.
+14. **Terminal:** in the same output, the line `Handed work came back` says `closed when quiet, with its link or marked unproven`. A day after an agent hands work on and gets a done answer without closing the request, the daemon log has a `settled` line for it, and `agentx requests show <id>` shows it done, with the link or `unproven: …` as its evidence.
 
 ## If something is wrong
+
+- **A request was closed that was not finished:** its handed-on work came back done and nothing happened on it for a day, so it was settled. Ask the agent again, or run `agentx requests settings --settle off` if you want such requests to come back to you instead.
 
 - **`no agentx.json here`:** you are not in the install folder, the one that holds `agentx.json`. A folder inside it does not count. Go to that folder and run the command again.
 - **The list says `requests are off`:** run `agentx requests settings --enabled on`.

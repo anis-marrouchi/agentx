@@ -1,7 +1,7 @@
 import type { AgentXEvents } from "@/events/bus"
 import type { PlanSettings } from "./plans"
 import type { CheckerSettings } from "./checkers"
-import { OPEN_STATES, type OpenState, type RequestStore } from "./store"
+import { firstLink, OPEN_STATES, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
 //
@@ -34,6 +34,9 @@ export interface RequestSettings {
   /** Headlines written for requests the agent did not describe (#1126).
    *  Unset: on, with the defaults. */
   headlines?: { enabled: boolean; provider?: string; model?: string; timeoutSeconds: number }
+  /** A quiet request whose handed work all came back done is settled,
+   *  not raised to the owner (#1138). Unset: on. */
+  settleHandedBack?: boolean
 }
 
 /** Channel of the turn that hands a request back to its agent. */
@@ -234,8 +237,12 @@ export class RequestTracker {
       if (!req) return
       const now = this.now()
       const who = d.peer ? `${d.callee} on ${d.peer}` : d.callee
+      // Kept on the link: the requests check settles a request once all
+      // its handed work came back done and nobody closed it (#1138).
+      this.store.endLink("delegation", d.id, status, status === "done" ? firstLink(text) : null, now)
       if (status === "done") {
-        // The answer is back with the asking agent. Still open: closing is explicit.
+        // The answer is back with the asking agent. Still open: the agent
+        // closes it, or the requests check settles it once it goes quiet.
         this.store.progress(req.id, now)
         return
       }
@@ -307,7 +314,7 @@ export class RequestTracker {
     try {
       const req = this.store.byLink("delegation", delegationId)
       if (!req || !OPEN_STATES.includes(req.state as OpenState)) return undefined
-      return `This is part of the owner's open request ${req.id}. It stays on their list until it is closed. If it is finished now, close it with agentx_request: {action:"done", id:"${req.id}", evidence:"<link to the proof>"}. If you will not do it, use decline with the reason. If work goes on, leave it open.`
+      return `This is part of the owner's open request ${req.id}. It stays on their list until it is closed. If it is finished now, close it with agentx_request: {action:"done", id:"${req.id}", evidence:"<link to the proof>"}. If you will not do it, use decline with the reason. If work goes on, give it a due time with {action:"accept", id:"${req.id}", due:"<when>"}: without one, it is closed as done once it goes quiet, with this answer's link as its proof.`
     } catch {
       return undefined
     }
