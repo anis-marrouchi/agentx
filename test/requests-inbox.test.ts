@@ -8,6 +8,7 @@ import { RequestTracker, PICKUP_CHANNEL, isPickup, pickupContext, type RequestSe
 import { runRequestsSweep, pickupText, pickupEnded } from "../src/requests/sweep"
 import { writeFileSync, readFileSync } from "fs"
 import { decide, listInbox } from "../src/approvals/inbox"
+import { readOwnerList } from "../src/desk/owner-list"
 import { digestText } from "../src/approvals/sweep"
 import { DEFAULT_DRIFT_SETTINGS } from "../src/requests/drift/check"
 
@@ -72,7 +73,8 @@ describe("requests in the Approvals inbox", () => {
       more: "agentx requests show req-t1",
     })
     expect(items[0].detail).toContain("coder timed out")
-    expect(digestText(items)).toContain("1 decision waiting for you.")
+    // The digest counts it on the owner's one list (#1138 step C).
+    expect(digestText(readOwnerList(ctx(), { url: "", name: "studio" }))).toContain("1 waiting for you on the Desk.")
   })
 
   it("reads no database for a folder this process does not run from", () => {

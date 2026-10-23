@@ -1236,6 +1236,19 @@ const notificationsSchema = z.object({
      *  channels (chat "default") and then the told addresses. */
     ladder: z.array(z.string().regex(/^[a-z0-9_-]+:\S+$/i, "use channel:chatId, for example telegram:123456789")).default([]),
   }).default({}),
+  /** The owner's Desk (src/desk/route.ts, #1138 step C): what of the one
+   *  list of waiting items reaches each surface the moment it appears.
+   *  "all", "urgent" (it expires within a day) or "off". When the digest
+   *  comes is the third setting, `approvals.digest`. */
+  desk: z.object({
+    /** A push to the phone (the told/reach path). Off: the Desk and the
+     *  digest only, as before this setting. */
+    phone: z.enum(["all", "urgent", "off"]).default("off"),
+    /** The Mac card when `approvals.popup` is on, else a banner on this
+     *  computer. Unset: "all" with the popup on, "off" without, which is
+     *  what this computer did before this setting. */
+    computer: z.enum(["all", "urgent", "off"]).optional(),
+  }).default({}),
 }).default({})
 
 const screenRectSchema = z.object({

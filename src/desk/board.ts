@@ -61,6 +61,8 @@ export interface DeskCard {
   choices?: string[]
   draft?: string
   expires?: string
+  /** What happens if the owner says nothing by `expires`. */
+  ifSilent?: string
   askedAt?: string
   changedAt?: string
   /** Proof behind "with an agent": one of its runs is live now. */
@@ -82,6 +84,7 @@ export interface DeskInboxItem {
   no?: string
   raisedBy?: string
   expires?: string
+  ifSilent?: string
   choices?: string[]
   draft?: string
   detail?: string
@@ -115,6 +118,10 @@ export interface DeskInput {
   liveRuns: ReadonlySet<string>
   /** Inbox keys of this node the owner put off: still waiting, not shown. */
   deferred?: ReadonlySet<string>
+  /** This node's own list of what waits on the owner (desk/owner-list.ts,
+   *  #1138 step C), already read. Given: its cards are the "yours" column
+   *  for this node, and `inbox` holds the other nodes only. */
+  owner?: { items: DeskCard[]; later: number; errors: string[] }
   quietHours?: number
   doneDays?: number
 }
@@ -129,7 +136,8 @@ export function liveRunRefs(agents: ReadonlyArray<{ runningTasks?: ReadonlyArray
 }
 
 export interface DeskFigures {
-  yours: { count: number; oldest?: string }
+  /** `later`: put off by the owner, still waiting, not shown. */
+  yours: { count: number; oldest?: string; later?: number }
   agent: { count: number }
   quiet: { count: number; oldest?: string }
   done: { count: number }
@@ -168,6 +176,7 @@ function inboxCard(node: DeskInbox, item: DeskInboxItem, local: boolean): DeskCa
     ...(item.choices?.length ? { choices: item.choices } : {}),
     ...(item.draft ? { draft: item.draft } : {}),
     ...(item.expires ? { expires: item.expires } : {}),
+    ...(item.ifSilent ? { ifSilent: item.ifSilent } : {}),
     ...(item.createdAt ? { askedAt: item.createdAt } : {}),
     // A written reply goes through this node's requests; another node's are not read here.
     can: { answer: true, later: true, reply: local && kind === "request" },
@@ -176,7 +185,7 @@ function inboxCard(node: DeskInbox, item: DeskInboxItem, local: boolean): DeskCa
 
 const CLOSED_WORD: Record<string, string> = { done: "Done", declined: "Declined", dropped: "Dropped" }
 
-function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<string>): DeskCard | null {
+function requestCard(input: OwnerInput & Partial<Pick<DeskInput, "liveRuns" | "quietHours">>, r: DeskRequest, waiting: ReadonlySet<string>): DeskCard | null {
   const { record: q, links } = r
   const words = cardWords(q, DESK_TITLE_MAX)
   const base = {
@@ -205,7 +214,7 @@ function requestCard(input: DeskInput, r: DeskRequest, waiting: ReadonlySet<stri
       return { ...base, column: "yours", ...(q.question ? { ask: clip(q.question, DESK_ASK_MAX) } : {}), can: { answer: false, later: false, reply: true } }
     case "in_progress":
     case "waiting_other": {
-      const live = links.some((l) => l.kind === "run" && input.liveRuns.has(l.ref))
+      const live = links.some((l) => l.kind === "run" && !!input.liveRuns?.has(l.ref))
       // Proof of work is any activity, not only a change of state.
       const fresh = input.now - q.updatedAt < (input.quietHours ?? DESK_QUIET_HOURS) * HOUR
       // A written word starts a turn of its own: not beside a run that is live.
@@ -255,22 +264,49 @@ const time = (s: string | undefined) => (s ? Date.parse(s) || 0 : 0)
 const oldest = (cards: DeskCard[], field: "askedAt" | "changedAt") =>
   cards.map((c) => c[field]).filter((s): s is string => !!time(s)).sort((a, b) => time(a) - time(b))[0]
 
-export function buildDesk(input: DeskInput): DeskBoard {
-  const yours: DeskCard[] = []
+/** What the owner's own list is read from: the inbox of each node, the
+ *  requests here, and what the owner put off. */
+export type OwnerInput = Pick<DeskInput, "now" | "node" | "nodeName" | "inbox" | "requests" | "deferred">
+
+/** What waits on the owner, in the Desk's shape: every pending inbox item,
+ *  then each request here whose agent asked the owner a question and has
+ *  no card of its own waiting. The one list (#1138 step C): the Desk's
+ *  "yours" column, the Approvals page and the digest all show these cards
+ *  and count them. Inbox items keep the inbox's order (soonest expiry first). */
+export function ownerCards(input: OwnerInput): { cards: DeskCard[]; errors: string[] } {
+  const cards: DeskCard[] = []
   const errors: string[] = []
   for (const node of input.inbox) {
     if (node.error) errors.push(`What waits on ${node.nodeName} could not be read: ${node.error}`)
-    for (const item of node.items) yours.push(inboxCard(node, item, node.node === input.node))
+    for (const item of node.items) cards.push(inboxCard(node, item, node.node === input.node))
   }
-  // A card the owner put off still asks its request's question: "later" hides both.
-  const waiting = new Set([...yours.filter((c) => c.node === input.node).map((c) => c.key), ...(input.deferred ?? [])])
+  const waiting = waitingKeys(input, cards)
+  for (const r of input.requests ?? []) {
+    const card = requestCard(input, r, waiting)
+    if (card?.column === "yours") cards.push(card)
+  }
+  return { cards, errors }
+}
+
+// A card the owner put off still asks its request's question: "later" hides both.
+function waitingKeys(input: OwnerInput, cards: DeskCard[]): Set<string> {
+  return new Set([...cards.filter((c) => c.node === input.node).map((c) => c.key), ...(input.deferred ?? [])])
+}
+
+export function buildDesk(input: DeskInput): DeskBoard {
+  // This node's list read already: the inbox holds the other nodes only.
+  const own = ownerCards(input.owner ? { ...input, requests: null } : input)
+  const yours = input.owner ? [...input.owner.items, ...own.cards] : own.cards
+  const errors = input.owner ? [...input.owner.errors, ...own.errors] : own.errors
+  const waiting = waitingKeys(input, yours)
 
   const agent: DeskCard[] = []
   const quiet: DeskCard[] = []
   const done: DeskCard[] = []
   for (const r of input.requests ?? []) {
     const card = requestCard(input, r, waiting)
-    if (card) ({ yours, agent, quiet, done })[card.column].push(card)
+    // The ones in "yours" are in the owner's list already.
+    if (card && card.column !== "yours") ({ agent, quiet, done })[card.column].push(card)
   }
   const since = input.now - (input.doneDays ?? DESK_DONE_DAYS) * DAY
   for (const c of input.cards) {
@@ -290,7 +326,7 @@ export function buildDesk(input: DeskInput): DeskBoard {
     ts: iso(input.now),
     cards: [...yours, ...agent, ...quiet, ...shown],
     figures: {
-      yours: { count: yours.length, ...(yoursOldest ? { oldest: yoursOldest } : {}) },
+      yours: { count: yours.length, ...(yoursOldest ? { oldest: yoursOldest } : {}), ...(input.owner?.later ? { later: input.owner.later } : {}) },
       agent: { count: agent.length },
       quiet: { count: quiet.length, ...(quietOldest ? { oldest: quietOldest } : {}) },
       done: { count: shown.length },

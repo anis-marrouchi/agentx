@@ -188,11 +188,11 @@ The first time, macOS asks whether AgentX may use Reminders. Click **OK**. The d
 
 ## Get one reminder a day
 
-Once a day AgentX sends you one message: how many decisions are waiting, and the most urgent one. It never sends one message per card. It goes to the same place as your other notifications (`notifications.destination`, see [Get notified](../jobs/notifications.md)) unless you choose another.
+Once a day AgentX sends you one message: how many items are waiting, and the most urgent one. It never sends one message per card. The number is the one at the top of the Approvals page and under **Your turn** on the phone app's Desk: the decisions here, plus requests where an agent asked you a question. What you put off with **Later** is named apart. See [One list, one count](./mobile-desk.md#one-list-one-count). To have new items sent to your phone or shown on this computer at once instead, see [Choose where new items go](./mobile-desk.md#choose-where-new-items-go). It goes to the same place as your other notifications (`notifications.destination`, see [Get notified](../jobs/notifications.md)) unless you choose another.
 
 To change the time, or where it goes:
 
-1. **Browser:** on the Approvals page, open **Settings: expiry, later, daily digest** at the bottom.
+1. **Browser:** on the Approvals page, open **Settings: where new items go, expiry, later, daily digest** at the bottom.
 2. **Browser:** change **Digest time**, or type a destination such as `telegram:123456` in **Digest goes to**.
 3. **Browser:** click **Save settings**.
 

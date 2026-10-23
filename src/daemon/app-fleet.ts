@@ -48,6 +48,8 @@ export interface ApprovalItem {
   no?: string
   raisedBy?: string
   expires?: string
+  /** What happens if the owner says nothing by `expires`. */
+  ifSilent?: string
   /** Cards: the ready-made answers; yes must pick one (#743). */
   choices?: string[]
   /** Cards: the suggested message, `{choice}` not filled in yet. */

@@ -278,6 +278,8 @@ To see what you were told:
 
 Scripts can read the same record with `curl -s http://127.0.0.1:18800/owner/told` (from another computer, with the mesh token). It returns the counts and the latest messages since `?since=<epoch milliseconds>`, by default the last 24 hours. A message posted to `POST /send` for one of your addresses can carry `"told": {"key": "…", "kind": "nag"}`. When the check keeps it back, the answer is `{"ok": true, "sent": false, "told": "repeat"}` or `"told": "digest"`.
 
+The digest counts what waits for you the way the Desk does: the same items, and what you put off with **Later** apart. Whether a new item on the Desk is sent to your phone or shown on this computer at once is up to you. See [Choose where new items go](../dashboard/mobile-desk.md#choose-where-new-items-go).
+
 To turn the check off, set `notifications.told.enabled` to `false`. To get system reminders at once again, set `notifications.told.digestNags` to `false`. See [Configuration: automation](../reference/config-automation.md).
 
 ## 7. Did it land: seen, answered, and urgent messages
