@@ -175,6 +175,41 @@ describe("reach in the daemon", () => {
   })
 })
 
+describe("the channel-down notice", () => {
+  function watchWith(def: string, health: Record<string, { up: boolean; reason?: string }>) {
+    const notices: Array<{ channel: string; to: unknown }> = []
+    const reach = attachReach({
+      db, ledger,
+      settings: () => DEFAULT_REACH_SETTINGS,
+      told: () => told,
+      channels: { has: () => true, health: (n) => health[n] ?? { up: true }, all: () => health },
+      defaultChannel: () => def,
+      send: async () => {},
+      notice: (channel, _reason, to) => notices.push({ channel, to }),
+      isOwnerTurn: () => false,
+      request: () => null,
+      cardDecidedAt: () => null,
+      log: () => {},
+      now: () => clock,
+    })
+    return { reach, notices }
+  }
+
+  it("goes to the next healthy address when the default channel is the one down", async () => {
+    const { reach, notices } = watchWith("push", { push: { up: false, reason: "x" }, ntfy: { up: false, reason: "y" }, telegram: { up: true } })
+    await reach.tick(); await reach.tick()
+    expect(notices).toContainEqual({ channel: "push", to: { channel: "telegram", chatId: "42" } })
+    reach.detach()
+  })
+
+  it("goes the usual way when the default channel is up", async () => {
+    const { reach, notices } = watchWith("push", { whatsapp: { up: false, reason: "closed" }, push: { up: true } })
+    await reach.tick(); await reach.tick()
+    expect(notices).toEqual([{ channel: "whatsapp", to: null }])
+    reach.detach()
+  })
+})
+
 describe("the ladder", () => {
   const up = () => true
   it("lists the set ladder, else the told channels then addresses, only those on this node", () => {
@@ -240,6 +275,37 @@ describe("escalation", () => {
     clock += 30 * MIN
     expect(await run({ settings: { ...settings, enabled: false } }).go()).toBe(0)
     expect(ledger.get(answered)!.escalatedAt).toBeNull()
+  })
+
+  it("does not flood a backlog: only rows newer than three times the wait are sent on", async () => {
+    const old = tell("Old outage", { urgent: true })
+    clock += 31 * MIN
+    const fresh = tell("New outage", { urgent: true })
+    clock += 11 * MIN
+    const r = run()
+    expect(await r.go()).toBe(1)
+    expect(ledger.get(old)!.escalatedAt).toBeNull()
+    expect(ledger.get(fresh)!.escalatedAt).not.toBeNull()
+    expect(r.sends).toEqual(["telegram:42"])
+  })
+
+  it("sends an urgent row whose send failed on to the next channel at once, exactly once", async () => {
+    const id = tell("Push broke", { urgent: true })
+    ledger.setOutcome(id, "failed")
+    clock += 1 * MIN
+    const r = run()
+    expect(await r.go()).toBe(1)
+    expect(await r.go()).toBe(0)
+    expect(r.sends).toEqual(["telegram:42"])
+    const copy = ledger.since(0).find((x) => x.escalationOf === id)!
+    expect(copy.text).toContain("could not be sent on push")
+    // A failed non-urgent row, or one too old, is left alone.
+    const plain = tell("Plain broke")
+    ledger.setOutcome(plain, "failed")
+    const late = tell("Late broke", { urgent: true })
+    ledger.setOutcome(late, "failed")
+    clock += 31 * MIN
+    expect(await run().go()).toBe(0)
   })
 
   it("records a failed escalation and never tries it again", async () => {

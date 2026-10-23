@@ -26,8 +26,11 @@ export interface ReachDeps {
   /** Sends an escalation through the router, past the gate (its row is
    *  already written). Rejects when it did not go. */
   send: (channel: string, chatId: string, text: string, row: ToldRow) => Promise<void>
-  /** Tells the owner one channel is down. */
-  notice: (channel: string, reason: string) => void
+  /** Tells the owner one channel is down; `to`, when set, is where to
+   *  send it because the usual channel is the one down (or is down too). */
+  notice: (channel: string, reason: string, to: { channel: string; chatId: string } | null) => void
+  /** Where the owner's notices go by default (notifications.destination). */
+  defaultChannel?: () => string
   /** Is this turn the owner's own (requests' owner check)? */
   isOwnerTurn: (p: AgentXEvents["task:started"]) => boolean
   /** The chat a request was asked in, and the cards it links. */
@@ -70,9 +73,21 @@ export function attachReach(deps: ReachDeps): AttachedReach {
   const now = deps.now ?? Date.now
   const marks = new ReachMarks(deps.db, now)
   const presence = new PresenceStore(deps.db, now)
-  const watch = new ChannelWatch({ read: deps.channels.all, notice: deps.notice, log: deps.log, now })
   const up = (ch: string) => deps.channels.health(ch).up
   const stops = () => ladderStops(deps.settings(), deps.told(), deps.channels.has)
+  // A notice that a channel is down must not go to that channel: then it
+  // goes to the first address on the ladder that is up, ladder on or off.
+  const notice = (channel: string, reason: string) => {
+    const def = deps.defaultChannel?.()
+    let to: { channel: string; chatId: string } | null = null
+    if (def && (def === channel || !up(def))) {
+      const stop = stops().find((s) => stopChannel(s) !== channel && up(stopChannel(s)))
+      if (stop) to = { channel: stopChannel(stop), chatId: stopChat(stop) }
+      else deps.log(`[reach] no healthy address for the notice that ${channel} is down`)
+    }
+    deps.notice(channel, reason, to)
+  }
+  const watch = new ChannelWatch({ read: deps.channels.all, notice, log: deps.log, now })
 
   const started = (p: AgentXEvents["task:started"]) => {
     try {
