@@ -22,7 +22,9 @@ import { cardWords } from "./card-view"
 //      question is what reminds them.
 //   3. Tell once: every request that needs attention is sent to the owner
 //      one time. After that it is only listed. A notice that could not be
-//      sent at all is tried again at the next check.
+//      sent at all is tried again at the next check. This is the one
+//      escalation of every loop (#1138 D): a blocked plan step, a task
+//      watcher that fired, a wait that ran out, a promise not kept.
 //   4. Pick-ups: a request the owner said to pick up again is handed back
 //      to its agent as a new turn, once.
 //   5. Retention: closed requests older than `retentionDays` are deleted.
@@ -33,8 +35,12 @@ import { cardWords } from "./card-view"
 export interface RequestSweepDeps {
   store: RequestStore
   settings: RequestSettings
-  /** Tell the owner, through the daemon's notify path. */
-  notify?: (title: string, message: string, request: RequestRecord) => Promise<void>
+  /** Tell the owner, through the daemon's notify path. `kind` "notice"
+   *  when a loop's own words say it must not wait for the digest. */
+  notify?: (title: string, message: string, request: RequestRecord, kind?: "notice") => Promise<void>
+  /** A loop's own words for its notice, when it has them: a tracked plan
+   *  with a blocked step (planNotice). `told` runs once it went out. */
+  noticeFor?: (r: RequestRecord) => { title: string; text: string; kind?: "notice"; told?: (now: number) => void } | null
   /** Start a turn on the agent for a request the owner said to pick up
    *  again. Fire and forget: the check never waits on a model. */
   tellAgent?: (agentId: string, text: string, request: RequestRecord) => Promise<void>
@@ -227,7 +233,11 @@ export async function runRequestsSweep(deps: RequestSweepDeps): Promise<RequestS
           described = await deps.describe(r)
           describing += Date.now() - started
         }
-        await deps.notify(attentionTitle(described), attentionText(described, deps.hasAgent), described)
+        const own = deps.noticeFor?.(described) ?? null
+        if (own) {
+          await deps.notify(own.title, own.text, described, own.kind)
+          own.told?.(now)
+        } else await deps.notify(attentionTitle(described), attentionText(described, deps.hasAgent), described)
         result.notified++
       } catch (e: any) {
         // Nothing reached the owner: try again at the next check.

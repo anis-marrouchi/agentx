@@ -1381,6 +1381,27 @@ export const requestsConfigSchema = z.object({
    *  for staleAfterHours, closes as done with its delegate's link (or
    *  marked unproven) instead of coming back to the owner (#1138). */
   settleHandedBack: z.boolean().default(true),
+  /** One Promise (src/requests/promise.ts, #1138 D): what a closed promise
+   *  leaves, and whether decision cards are promises too. */
+  promises: z.object({
+    /** An agent's done on a promise needs a proof: a link, a passing test
+     *  run, an output, or a check that ran. Off: any evidence closes it. */
+    requireProof: z.boolean().default(true),
+    /** A promise closed with a proof (link, test, output, or a check that
+     *  ran) writes a checked fact to the wiki fact ledger. */
+    facts: z.boolean().default(true),
+    /** Days that fact stays trusted before it shows as stale. */
+    factTtlDays: z.number().positive().max(3650).default(7),
+    /** A task watcher that fires raises the open request that follows its
+     *  task, or opens a promise for it, and the requests check tells the
+     *  owner once: one escalation path. Off: the watcher tells the owner
+     *  itself, as before. Needs requests.enabled. */
+    watchers: z.boolean().default(true),
+    /** A decision card raised outside a request's turn opens a promise
+     *  owed by the owner, closed when the card is decided. Off: cards stay
+     *  on the Desk only, as before. */
+    cards: z.boolean().default(false),
+  }).default({}),
   /** Closed requests are deleted after this many days. Open ones never are. */
   retentionDays: z.number().positive().max(3650).default(90),
   /** Tracked plans (src/requests/plans.ts, #788): a request with two or
