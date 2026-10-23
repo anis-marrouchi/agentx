@@ -63,6 +63,12 @@ export class DriftStore {
     this.db.prepare("UPDATE status_drift SET write_tries = write_tries + 1, write_error = ? WHERE key = ?").run(error.slice(0, 500), key)
   }
 
+  /** A write whose outcome is not known (it timed out and may still land):
+   *  never tried again, so a late success cannot get a second note. */
+  writeUnknown(key: string, error: string): void {
+    this.db.prepare("UPDATE status_drift SET write_tries = ?, write_error = ? WHERE key = ?").run(WRITE_TRIES, error.slice(0, 500), key)
+  }
+
   list(limit = 100): DriftRow[] {
     return this.db.prepare("SELECT * FROM status_drift ORDER BY first_at DESC LIMIT ?").all(limit).map(toRow)
   }

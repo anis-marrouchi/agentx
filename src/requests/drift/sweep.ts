@@ -117,8 +117,14 @@ async function writeDone(d: Drift, key: string, deps: DriftSweepDeps, now: numbe
     let timer: ReturnType<typeof setTimeout> | undefined
     const res = await Promise.race([
       deps.writeIssue!({ provider: d.provider, project: d.project, number: d.number, url: d.issueUrl }, patch),
-      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer in ${WRITE_TIMEOUT_MS / 1000} s`)), WRITE_TIMEOUT_MS) }),
+      new Promise<"timeout">((resolve) => { timer = setTimeout(() => resolve("timeout"), WRITE_TIMEOUT_MS) }),
     ]).finally(() => clearTimeout(timer))
+    if (res === "timeout") {
+      // The request may still land: not tried again, so no second note.
+      deps.store.writeUnknown(key, `no answer in ${WRITE_TIMEOUT_MS / 1000} s, not tried again`)
+      deps.log(`[status-drift] ${d.issue}: no answer in ${WRITE_TIMEOUT_MS / 1000} s moving it to ${done}; not tried again, check it by hand`)
+      return false
+    }
     // The label moved (the issue's own update went through): written,
     // even when the note failed. Trying again would leave a second note
     // on a success. A note alone is not a move.

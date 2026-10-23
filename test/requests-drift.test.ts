@@ -1,11 +1,11 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import Database from "better-sqlite3"
 import { issueLinks } from "../src/requests/drift/refs"
 import { checkProject, DEFAULT_DRIFT_SETTINGS, proofNote, statusOf, type DriftCheckDeps, type DriftProject, type DriftSettings } from "../src/requests/drift/check"
 import { driftForge, sameCommit, type DriftForge, type MergedChange } from "../src/requests/drift/forge"
 import { liveReader } from "../src/requests/drift/live"
 import { DriftStore, WRITE_TRIES } from "../src/requests/drift/store"
-import { runDriftSweep, type DriftSweepDeps } from "../src/requests/drift/sweep"
+import { runDriftSweep, WRITE_TIMEOUT_MS, type DriftSweepDeps } from "../src/requests/drift/sweep"
 import type { ForgeReader } from "../src/requests/checkers/issue"
 import { requestsConfigSchema } from "../src/daemon/config"
 
@@ -319,6 +319,19 @@ describe("the daemon's drift check", () => {
     const s = setup({ write: true, writeProjects: ["acme/app"] }, { writeIssue: async () => ({ ok: true, attempts: [{ kind: "POST comment", ok: true }] }) })
     expect((await s.run()).written).toBe(0)
     expect(s.store.list().find((r) => r.kind === "live-not-done")).toMatchObject({ writtenAt: null, writeTries: 1 })
+  })
+
+  it("a write that times out is not tried again: it may still land", async () => {
+    vi.useFakeTimers()
+    try {
+      const s = setup({ write: true, writeProjects: ["acme/app"] }, { writeIssue: () => new Promise(() => {}) })
+      const run = s.run()
+      await vi.advanceTimersByTimeAsync(WRITE_TIMEOUT_MS + 1)
+      expect((await run).written).toBe(0)
+      expect(s.store.list().find((r) => r.kind === "live-not-done")).toMatchObject({ writtenAt: null, writeTries: WRITE_TRIES })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("a failed write is tried again, up to its limit", async () => {
