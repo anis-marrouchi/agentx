@@ -378,9 +378,10 @@ export class RequestStore {
       .run(ended, now, proof ? proof.slice(0, HOME_LINK_MAX) : null, kind, ref)
   }
 
-  /** The owner sent the request back (a reply, a hand-off, a pick-up):
-   *  work that came back before is no longer what finishes it, so it can
-   *  never settle the request (#1138). */
+  /** The owner sent the request back (a reply on it, a hand-off, a
+   *  pick-up): work that came back before is no longer what finishes it.
+   *  The request never settles after that, even when new work comes back:
+   *  it returns to the owner when quiet, as before (#1138). */
   private supersedeHandBacks(id: string): void {
     this.db.prepare("UPDATE request_links SET ended = 'superseded' WHERE request_id = ? AND kind = 'delegation' AND ended = 'done'").run(id)
   }
@@ -574,11 +575,12 @@ export class RequestStore {
   /** The owner said "pick it up again": back in progress, and the agent
    *  is to be told at the next check. */
   requestPickup(id: string, now: number): boolean {
-    this.supersedeHandBacks(id)
-    return this.db.prepare(
+    const moved = this.db.prepare(
       `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?, need = NULL
        WHERE id = ? AND state = 'needs_attention'`,
     ).run(now, now, now, id).changes > 0
+    if (moved) this.supersedeHandBacks(id)
+    return moved
   }
 
   /** The owner replied, or handed it to an agent (the same or another):
@@ -586,12 +588,13 @@ export class RequestStore {
    *  open request, not only one that needs attention. The agent it was
    *  asked of is kept from the first time: channel and chat stay its own. */
   handOff(id: string, agentId: string, note: string, now: number): boolean {
-    this.supersedeHandBacks(id)
-    return this.db.prepare(
+    const moved = this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
          question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)
        WHERE id = ? AND state IN (${placeholders(OPEN_STATES.length)})`,
     ).run("in_progress", now, agentId, now, now, note.trim().slice(0, TEXT_MAX) || null, id, ...OPEN_STATES).changes > 0
+    if (moved) this.supersedeHandBacks(id)
+    return moved
   }
 
   /** This note of the owner is given to the agent in a pick-up, or (false)
