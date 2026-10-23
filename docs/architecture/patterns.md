@@ -1,5 +1,7 @@
 # The owner interface and its patterns
 
+![How work reaches you. An agent makes a Promise, proof closes it, and a Fact is written. The change goes on the event bus, Reach picks one channel where you were last seen, and you read one list, the Desk. Four links are not wired yet and are built in steps 1 to 4 of issue #1137.](/diagrams/owner-interface.svg)
+
 Status: **a map, not a feature.** Nothing on this page is a setting. It names the parts AgentX uses for work that concerns a person (usually the owner, the person who runs this install), and the recurring shapes that work takes. The plan to bring the code in line with it is [#1137](https://github.com/anis-marrouchi/agentx/issues/1137).
 
 Classic apps have a well-known split: a *model* holds the data, a *view* shows it, a *controller* decides what happens. Work around a person has its own split. This page names it, so a new feature can say which part it belongs to instead of inventing a fifth place to keep a due date.
