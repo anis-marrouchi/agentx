@@ -94,6 +94,8 @@ class PlacesActivity : Activity() {
         val lines = mutableListOf<String>()
         lines += when {
             !prefs.placesOn -> getString(R.string.places_off)
+            // Location was taken away in Android's settings after turning on.
+            access != Places.Access.ALL_THE_TIME -> getString(R.string.places_no_access)
             names.isEmpty() -> getString(R.string.places_none)
             else -> getString(R.string.places_watching, names.joinToString(", "))
         }
