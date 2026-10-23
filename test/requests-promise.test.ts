@@ -214,7 +214,7 @@ describe("one escalation path", () => {
     const cp = new WatchCheckpoint({
       store: watchers, settings: () => WATCH, decide: async () => ({ probability: 0.9, callId: null, mode: "active" }),
       hasAgent: (id) => AGENTS.has(id), alertAgent: async () => {}, alertOwner: async (title) => { ownerAlerts.push(title) },
-      raise: (w, reason) => { raiseWatcherLoop(store, w, reason, clock); return true },
+      raise: (w, reason) => { const r = raiseWatcherLoop(store, w, reason, clock); return r.raised || r.opened },
       onClosed: (w, outcome) => { if (outcome === "done") closeWatcherLoop(store, watchers.get(w.id) ?? w, clock) },
       log: () => {}, now: () => clock,
     })
@@ -244,6 +244,24 @@ describe("one escalation path", () => {
     expect(cp.markDone(w.id, "https://example.com/cert/renewed").changed).toBe(true)
     expect(store.get(r.id)).toMatchObject({ state: "done", proof: { kind: "link", value: "https://example.com/cert/renewed" }, factId: expect.any(String) })
     expect(facts()[0]).toMatchObject({ subject: "renew the TLS certificate", attribute: "done", verifiedBy: "devops" })
+  })
+
+  it("a watcher that fires on a request already needing attention for another reason tells the owner itself", async () => {
+    const ownerAlerts: string[] = []
+    const { cp, watchers } = checkpoint(ownerAlerts)
+    tracker.taskStarted({
+      agentId: "devops", channel: "telegram", chatId: "chat-1", taskId: "t1", messagePreview: "renew it", fullMessage: "renew it",
+      at: "", humanRoot: true, sender: { id: "4242" },
+    } as any)
+    await cp.check({ key: "trace-1", traceId: "trace-1", kind: "dispatch", agentId: "devops", channel: "cron", delegator: null, message: "renew the TLS certificate", dueAt: clock + HOUR })
+    const w = watchers.list()[0]
+    store.link("req-t1", "watcher", w.id, clock)
+    expect(store.needsAttention("req-t1", "the run failed", clock)).toBe(true)
+    clock += 2 * HOUR
+    await cp.sweep()
+    // The request keeps its first reason, so no watcher notice would go out: the watcher's own push does.
+    expect(store.get("req-t1")).toMatchObject({ state: "needs_attention", attentionReason: "the run failed" })
+    expect(ownerAlerts).toEqual(["A task is not finished"])
   })
 
   it("a watcher on handed-on work raises the request that follows it, and does not open a second record", () => {
