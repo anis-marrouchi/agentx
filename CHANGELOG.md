@@ -2,6 +2,13 @@
 
 Notable changes per release. Older releases are summarized; see `git log` for the full record.
 
+## [0.154.2](https://github.com/anis-marrouchi/agentx/compare/v0.154.1...v0.154.2) (2026-10-23)
+
+
+### Bug Fixes
+
+* **android:** say reminders can't fire when location is removed later ([#681](https://github.com/anis-marrouchi/agentx/issues/681)) ([#903](https://github.com/anis-marrouchi/agentx/issues/903)) ([da330a9](https://github.com/anis-marrouchi/agentx/commit/da330a942dbdad0cfa03e40bedc0c681aa4c31d0))
+
 ## [0.154.1](https://github.com/anis-marrouchi/agentx/compare/v0.154.0...v0.154.1) (2026-10-23)
 
 
