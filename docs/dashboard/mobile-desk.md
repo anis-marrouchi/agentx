@@ -76,6 +76,8 @@ What waits for you is one list. The **Your turn** column, the count at the top o
 - every decision waiting in [Approvals](./approvals.md);
 - every request where an agent asked you a question and has no decision card of its own waiting. The Approvals page lists it too, with a link to answer it in writing under **Open requests**.
 
+![The Approvals page on the demo: "4 waiting for you", the same number as the Desk and the digest](/screenshots/approvals/one-count.png)
+
 What you put off with **Later** is not counted as waiting. It is counted apart, everywhere in the same words: "1 put off for later". The digest says, for example, `3 waiting for you on the Desk (and 1 you put off for later).`
 
 ## Choose where new items go
@@ -87,6 +89,8 @@ Three settings decide where a new item reaches you. Everything else waits on the
 | **Sent to your phone at once** (`notifications.desk.phone`) | A notification on the phone app, or ntfy, the moment a new item appears. | Nothing |
 | **Shown on this computer at once** (`notifications.desk.computer`) | The Mac card when the [Mac popup](./approvals.md) is on, otherwise a banner on this computer. | Everything when the Mac popup is on, nothing when it is off |
 | **Digest time** (`approvals.digest`) | When the daily digest comes, or no digest. | 09:00 |
+
+![The three settings at the top of the Approvals settings: phone, this computer, and the digest time](/screenshots/approvals/desk-settings.png)
 
 The first two take **Everything new**, **Only what expires within a day** or **Nothing: the Desk and the digest only**. The defaults are what AgentX did before these settings existed, so nothing changes until you choose.
 
