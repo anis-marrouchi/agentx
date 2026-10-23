@@ -4,6 +4,7 @@ import { RequestStore } from "./store"
 import { PlanStore } from "./plan-store"
 import { RequestTracker, type RequestSettings } from "./tracker"
 import { traceInbound, type InboundLog } from "./checkers/reply"
+import { DriftStore } from "./drift/store"
 
 // --- Hook the request tracker to the daemon's event bus (#356) ---
 
@@ -13,6 +14,8 @@ export interface AttachedRequests {
   plans: PlanStore
   /** Inbound turns, for the reply checker (#1039). */
   inbound: InboundLog
+  /** What status drift has told and written (#1138 step F). */
+  drift: DriftStore
   detach: () => void
 }
 
@@ -34,6 +37,7 @@ export function attachRequests(
     tracker,
     plans,
     inbound: traceInbound(db),
+    drift: new DriftStore(db),
     detach: () => {
       bus.off("task:started", started)
       bus.off("task:completed", completed)

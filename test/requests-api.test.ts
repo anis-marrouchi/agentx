@@ -8,6 +8,7 @@ import { RequestTracker, type RequestSettings } from "../src/requests/tracker"
 import { handleRequestsApi, OWNER_ONLY } from "../src/requests/daemon-api"
 import { runRequestTool, describeOpen } from "../src/requests/tool"
 import { readRequestSettings, updateRequestSettings } from "../src/requests/settings"
+import { DEFAULT_DRIFT_SETTINGS } from "../src/requests/drift/check"
 import { isMeshGatedPath } from "../src/daemon/mesh-auth"
 
 const settings: RequestSettings = { enabled: true, channels: [], from: ["telegram:4242"], staleAfterHours: 24, retentionDays: 90 }
@@ -202,7 +203,7 @@ describe("settings", () => {
   it("reads defaults, saves changes through the config schema and rejects bad values", async () => {
     const configPath = path.join(tmp, "agentx.json")
     writeFileSync(configPath, JSON.stringify({ node: { id: "n", name: "n" }, agents: {} }))
-    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
+    expect(readRequestSettings(configPath)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 }, statusDrift: DEFAULT_DRIFT_SETTINGS })
     const ok = await updateRequestSettings({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 }, { configPath, reload: false })
     expect(ok.success).toBe(true)
     expect(JSON.parse(readFileSync(configPath, "utf-8")).requests).toEqual({ enabled: true, from: ["telegram:4242"], staleAfterHours: 12 })

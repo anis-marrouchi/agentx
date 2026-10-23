@@ -1,3 +1,4 @@
+import type { DriftSettings } from "./drift/check"
 import type { AgentXEvents } from "@/events/bus"
 import type { PlanSettings } from "./plans"
 import type { CheckerSettings } from "./checkers"
@@ -37,6 +38,9 @@ export interface RequestSettings {
   /** A quiet request whose handed work all came back done is settled,
    *  not raised to the owner (#1138). Unset: on. */
   settleHandedBack?: boolean
+  /** Status follows the work (#1138 step F). Unset: the defaults
+   *  (DEFAULT_DRIFT_SETTINGS), which read no project. */
+  statusDrift?: DriftSettings
 }
 
 /** Channel of the turn that hands a request back to its agent. */

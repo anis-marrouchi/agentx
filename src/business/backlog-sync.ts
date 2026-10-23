@@ -71,9 +71,20 @@ export async function syncBacklogItemToSource(
   log: (...args: unknown[]) => void = () => {},
 ): Promise<SyncBackResult> {
   if (!item.source) return { ok: true, attempts: [] }
-  if (item.source.type === "gitlab") return syncToGitLab(item.source, patch, daemon, log)
-  if (item.source.type === "github") return syncToGitHub(item.source, patch, daemon, log)
-  return { ok: false, error: `unknown source.type ${(item.source as any).type}`, attempts: [] }
+  return syncSourceIssue(item.source, patch, daemon, log)
+}
+
+/** Push a patch to one upstream issue. Also used without a backlog item:
+ *  status drift writes an issue's status label back (#1138 step F). */
+export async function syncSourceIssue(
+  source: BacklogSource,
+  patch: BacklogPatch,
+  daemon: DaemonConfig,
+  log: (...args: unknown[]) => void = () => {},
+): Promise<SyncBackResult> {
+  if (source.type === "gitlab") return syncToGitLab(source, patch, daemon, log)
+  if (source.type === "github") return syncToGitHub(source, patch, daemon, log)
+  return { ok: false, error: `unknown source.type ${(source as any).type}`, attempts: [] }
 }
 
 // ---------- GitLab ----------
