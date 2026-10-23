@@ -67,6 +67,14 @@ export interface NativeSpeech {
   othersSpeaking(opts?: { exceptParents?: number[] }): Promise<string | null>
 }
 
+/** How long the person at this machine has not touched it (#1138 step B):
+ *  the computer's part of the owner's presence. */
+export interface NativeIdle {
+  /** Seconds since the last keyboard or mouse input, or null when the OS
+   *  can't tell. Never throws. */
+  seconds(): Promise<number | null>
+}
+
 export interface NativeDescription {
   os: NativeOs
   tasks: boolean
@@ -86,6 +94,7 @@ export interface NativeAdapter {
   readonly sound?: NativeSound
   readonly focus?: NativeFocus
   readonly speech?: NativeSpeech
+  readonly idle?: NativeIdle
   /** For doctor and the dashboard. Never throws. */
   describe(): Promise<NativeDescription>
 }

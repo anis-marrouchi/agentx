@@ -33,6 +33,14 @@ import { unwrapMeshError } from "@/a2a/mesh-errors"
 import { extractUiDirective, stripUiDirectiveForPreview, type UiDirective } from "./ui-directive"
 import type { Resumer } from "@/agents/resume/coordinator"
 
+/** A send refused because its channel is down (#1138 step B). */
+export class ChannelDownError extends Error {
+  constructor(readonly channel: string, readonly reason: string) {
+    super(`The ${channel} channel is down (${reason}), so the message was not sent.`)
+    this.name = "ChannelDownError"
+  }
+}
+
 /** During streaming, hide a partial or complete `agentx:ui` directive block so
  *  a half-written fence never flashes as raw text in the live preview. The
  *  final render (extractUiDirective) does the authoritative strip. */
@@ -496,6 +504,15 @@ export class MessageRouter {
     const { told: _told, ...wire } = msg
     msg = wire
 
+    // A channel that is down is refused with its reason, never reported
+    // sent (#1138 step B): the caller hears it and can try elsewhere.
+    const health = this.channelHealth(msg.channel)
+    if (!health.up) {
+      this.log(`${new Date().toISOString()} Outbound [${msg.channel}] -> ${msg.chatId}: refused, the channel is down: ${health.reason}`)
+      if (toldRow !== undefined) gate?.outcome(toldRow, "failed")
+      throw new ChannelDownError(msg.channel, health.reason ?? "no reason given")
+    }
+
     this.log(`${new Date().toISOString()} Outbound [${msg.channel}] -> ${msg.chatId}: ${msg.text.slice(0, 80)}`)
 
     // A failed send gets its own line, so the log never reads as if a push
@@ -539,6 +556,35 @@ export class MessageRouter {
     }
 
     return messageId
+  }
+
+  /** Channels switched off at runtime (POST /channels/<name>/switch),
+   *  with the reason. Until switched on or the daemon restarts. */
+  private switchedOff = new Map<string, string>()
+
+  /** Switch a channel off (refused like a down one) or back on. */
+  setChannelSwitch(name: string, on: boolean, reason = "switched off by the owner"): void {
+    if (!this.channels.has(name)) throw new Error(`Unknown channel: "${name}". Available: ${[...this.channels.keys()].join(", ")}`)
+    if (on) this.switchedOff.delete(name)
+    else this.switchedOff.set(name, reason)
+  }
+
+  /** Can a send to this channel go out now? */
+  channelHealth(name: string): { up: boolean; reason?: string } {
+    const off = this.switchedOff.get(name)
+    if (off !== undefined) return { up: false, reason: off }
+    const adapter = this.channels.get(name)
+    if (!adapter) return { up: false, reason: "not configured on this node" }
+    try {
+      return adapter.health?.() ?? { up: true }
+    } catch (e: any) {
+      return { up: false, reason: `its health check failed: ${e?.message ?? e}` }
+    }
+  }
+
+  /** Every registered channel's health, by name. */
+  channelsHealth(): Record<string, { up: boolean; reason?: string }> {
+    return Object.fromEntries([...this.channels.keys()].map((n) => [n, this.channelHealth(n)]))
   }
 
   /** List registered channel names. */

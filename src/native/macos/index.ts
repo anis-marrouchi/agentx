@@ -3,6 +3,7 @@ import { findOnPath } from "@/desktop/install"
 import { readSystemFocus } from "@/notify/focus"
 import type { NativeAdapter, NativeFocus } from "../types"
 import { macosBanner } from "./banner"
+import { macosIdle } from "./idle"
 import { macosNotes } from "./notes"
 import type { Capture, Output, Run } from "./run"
 import { macosSound } from "./sound"
@@ -45,6 +46,7 @@ export function macosAdapter(cfg: { reminders?: { command?: string } } = {}, io:
     sound: macosSound(io),
     focus,
     speech: macosSpeech(io),
+    idle: macosIdle(io),
     async describe() {
       const problems: string[] = []
       const isExec = io.isExecutable ?? executable

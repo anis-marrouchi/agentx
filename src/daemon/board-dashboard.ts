@@ -50,6 +50,7 @@ import { progressGroups, slimPausedAt } from "@/workflows/follow-up"
 import { readRequiredSettings, updateRequiredSettings, type RequiredSettingsPatch } from "@/daemon/workflow-required-settings"
 import { TokenStore, recordHasScope, extractToken, type TokenRecord } from "./token-store"
 import { handleAppRequest } from "./app-routes"
+import { appReachDeps, type AppReachDeps } from "./app-reach"
 import { dashboardIcon } from "./app-icon"
 import { assetLinks, handleDashboardPlaces, placesDeps, type PlacesDeps } from "./app-places"
 import { pinsDeps } from "./app-pins"
@@ -250,7 +251,7 @@ export async function handleBoardRequest(req: IncomingMessage, res: ServerRespon
     members: membersStore(ctx.config.members.logRetentionDays),
     db: () => dashboardDb(), linkFor: (channel, chatId) => forgeLink(channel, chatId, { gitlab: ctx.config.channels.gitlab?.host }),
   })) return
-  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), assetLinks: () => assetLinks(ctx.config) })) return
+  if (await handleAppRequest(req, res, path, method, { nodeName: ctx.config.node?.name, fleet: appFleetDeps(ctx.config), desk: appDeskDeps(ctx.config), push: appPushDeps(ctx.config), announce: appAnnounceDeps(ctx.config), chat: appChatDeps(ctx.config), voice: appVoiceDeps(ctx.config), camera: appCameraDeps(ctx.config), places: appPlacesDeps(ctx.config), pins: pinsDeps(ctx.config, process.cwd()), reach: appReach(), assetLinks: () => assetLinks(ctx.config) })) return
 
   // The AX symbol as favicon and touch icon. Public: browsers fetch icons
   // without credentials, and they hold no data.
@@ -2416,6 +2417,25 @@ async function postToNode(
 /** What the phone app's Alerts tab needs. The dashboard shares the daemon's
  *  folder (as it does for tokens.json), so it opens the same SQLite file
  *  the daemon's PushAdapter sends from. */
+/** Presence and read marks from the phone app (#1138 step B), written to
+ *  the SQLite file the daemon reads. One per dashboard process. */
+let _appReach: AppReachDeps | null = null
+function appReach(): AppReachDeps {
+  _appReach ??= appReachDeps({
+    db: () => dashboardDb(),
+    requestOfCard: (id) => {
+      try {
+        return requestStoreFor({ root: process.cwd() })?.byLink("card", id)?.id ?? null
+      } catch (e: any) {
+        console.warn(`[reach] request of card ${id} not read: ${e?.message ?? e}`)
+        return null
+      }
+    },
+    log: (m) => console.warn(m),
+  })
+  return _appReach
+}
+
 function appPushDeps(config: DaemonConfig): AppPushDeps {
   const push = config.channels.push
   const off = (reason: string): AppPushDeps => ({ store: () => null, publicKey: () => null, keepRecent: 0, allowedHosts: [], reason })
@@ -2451,6 +2471,7 @@ function appPushDeps(config: DaemonConfig): AppPushDeps {
     keepRecent: push.keepRecent,
     allowedHosts: push.allowedHosts,
     reason: "The database on this computer is unavailable, so notifications can't be saved.",
+    alertsRead: (items) => appReach().pushRead(items),
   }
 }
 

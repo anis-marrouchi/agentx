@@ -148,9 +148,14 @@ export const notify = new Command()
       const c = data.counts ?? {}
       console.log(`  Last 24 h: ${c.sent ?? 0} sent, ${c.held ?? 0} held for Focus or a call, ${c.digest ?? 0} kept for the digest, ${c.repeat ?? 0} not repeated, ${c.failed ?? 0} failed`)
       console.log(chalk.dim(`  ${data.waitingForDigest ?? 0} waiting for the next digest`))
+      // Did it land (#1138 step B): of those that went out.
+      const l = data.landed ?? {}
+      console.log(`  Of those that went out: ${l.answered ?? 0} answered, ${l.seen ?? 0} seen, ${l.sent ?? 0} not seen yet`)
       for (const r of (data.items ?? []).slice(0, 10)) {
         const when = new Date(r.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
-        console.log(chalk.dim(`     ${when}  ${r.outcome.padEnd(6)} ${r.channel}  ${String(r.title).slice(0, 70)}`))
+        const out = r.outcome === "sent" || r.outcome === "held" ? (r.state === "sent" ? r.outcome : r.state) : r.outcome
+        const how = r.state === "answered" ? r.answeredVia : r.state === "seen" ? r.seenVia : null
+        console.log(chalk.dim(`     ${when}  ${String(out).padEnd(8)} ${r.channel}  ${String(r.title).slice(0, 70)}${how ? `  (${how})` : ""}${r.escalationOf ? "  (sent on, unseen)" : ""}`))
       }
       return
     }
