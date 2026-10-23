@@ -2547,6 +2547,7 @@ export class AgentXDaemon {
       // line about it waits for the daily digest (#1126).
       notify: (title, message, r) => this.notifyRequestOwner(title, message, r, "nag"),
       hasAgent: (id) => !!this.registry.getAgent(id),
+      inPlan: (id) => requests.plans.get(id)?.state === "active",
       // Fire and forget: the check never waits on a model. The run is
       // linked to the request by its chat id, so a failure brings it back.
       tellAgent: async (agentId, text, r) => {

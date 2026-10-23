@@ -1,7 +1,7 @@
 import type { AgentXEvents } from "@/events/bus"
 import type { PlanSettings } from "./plans"
 import type { CheckerSettings } from "./checkers"
-import { OPEN_STATES, type OpenState, type RequestStore } from "./store"
+import { firstLink, OPEN_STATES, type OpenState, type RequestStore } from "./store"
 
 // --- Follow a person's request from the turn that received it (#356) ---
 //
@@ -34,6 +34,9 @@ export interface RequestSettings {
   /** Headlines written for requests the agent did not describe (#1126).
    *  Unset: on, with the defaults. */
   headlines?: { enabled: boolean; provider?: string; model?: string; timeoutSeconds: number }
+  /** A quiet request whose handed work all came back done is settled,
+   *  not raised to the owner (#1138). Unset: on. */
+  settleHandedBack?: boolean
 }
 
 /** Channel of the turn that hands a request back to its agent. */
@@ -234,8 +237,12 @@ export class RequestTracker {
       if (!req) return
       const now = this.now()
       const who = d.peer ? `${d.callee} on ${d.peer}` : d.callee
+      // Kept on the link: the requests check settles a request once all
+      // its handed work came back done and nobody closed it (#1138).
+      this.store.endLink("delegation", d.id, status, status === "done" ? firstLink(text) : null)
       if (status === "done") {
-        // The answer is back with the asking agent. Still open: closing is explicit.
+        // The answer is back with the asking agent. Still open: the agent
+        // closes it, or the requests check settles it once it goes quiet.
         this.store.progress(req.id, now)
         return
       }

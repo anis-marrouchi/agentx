@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "fs"
 import { tmpdir } from "os"
 import path from "path"
 import Database from "better-sqlite3"
-import { RequestStore } from "../src/requests/store"
+import { RequestStore, firstLink } from "../src/requests/store"
 import { RequestTracker, isOwnerTurn, senderOf, type RequestSettings } from "../src/requests/tracker"
 import { runRequestsSweep, attentionText } from "../src/requests/sweep"
 import { requestsConfigSchema } from "../src/daemon/config"
@@ -58,7 +58,7 @@ const dlg = (id: string) => ({ id, caller: "coder", callee: "devops", origin: { 
 
 describe("settings", () => {
   it("is off by default, with a 24 hour quiet time and 90 day retention", () => {
-    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
+    expect(requestsConfigSchema.parse(undefined)).toEqual({ enabled: false, channels: [], from: [], staleAfterHours: 24, settleHandedBack: true, retentionDays: 90, plans: { enabled: true, stallMinutes: 30, maxNudges: 3, approveKinds: ["message"], disabledAgents: [], requireForWork: ["code"], requireOverMinutes: 30 }, checkers: { enabled: ["url", "issue", "git-ancestor", "reply"], checkEveryMinutes: 10, repos: {} }, headlines: { enabled: true, provider: "claude-code", model: "claude-haiku-4-5-20251001", timeoutSeconds: 30 } })
   })
 
   it("records nothing while it is off", () => {
@@ -436,6 +436,7 @@ describe("the minute check", () => {
 
   it("brings back a request with no activity for staleAfterHours, not sooner", async () => {
     settings.staleAfterHours = 2
+    settings.settleHandedBack = false
     start("t1")
     tracker.delegationStarted(dlg("dlg-1"))
     end("t1")
@@ -446,6 +447,96 @@ describe("the minute check", () => {
     const { result, told } = await sweep()
     expect(result).toMatchObject({ quiet: 1, notified: 1 })
     expect(told[0]).toContain("No activity for 2 h")
+  })
+
+  describe("settles a request whose handed work came back (#1138)", () => {
+    const handed = (status: "done" | "waiting" | "error" = "done", text = "deployed: https://example.test/deploys/7.") => {
+      start("t1")
+      tracker.delegationStarted(dlg("dlg-1"))
+      end("t1")
+      tracker.delegationDone(dlg("dlg-1"), status, text)
+    }
+
+    it("closes it as done with the delegate's link once quiet, and tells nobody", async () => {
+      handed()
+      clock += 24 * HOUR - 1
+      expect((await sweep()).result.settled).toBe(0)
+      clock += 2
+      const { result, told } = await sweep()
+      expect(result).toMatchObject({ settled: 1, quiet: 0, notified: 0 })
+      expect(told).toEqual([])
+      expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/deploys/7", verifyState: null })
+      expect(logs.join("\n")).toContain("req-t1 settled: handed work came back with https://example.test/deploys/7")
+    })
+
+    it("marks it unproven when the answer gave no link", async () => {
+      handed("done", "all good")
+      clock += 25 * HOUR
+      await sweep()
+      const r = store.get("req-t1")!
+      expect(r).toMatchObject({ state: "done", verifyState: "unverified" })
+      expect(r.evidence).toMatch(/^unproven: The work it handed on came back done without a link to proof/)
+    })
+
+    it("waits for every delegation: one still out keeps it, and it comes back as quiet", async () => {
+      handed()
+      store.link("req-t1", "delegation", "dlg-2", clock)
+      clock += 25 * HOUR
+      const { result } = await sweep()
+      expect(result.settled).toBe(0)
+      expect(store.get("req-t1")?.state).toBe("needs_attention")
+    })
+
+    it("leaves a failed hand-off to the owner", async () => {
+      handed("error", "crashed")
+      clock += 25 * HOUR
+      expect((await sweep()).result.settled).toBe(0)
+      expect(store.get("req-t1")?.state).toBe("needs_attention")
+    })
+
+    it("never settles a promise, a loop with a check or a due time, or a request in a plan", async () => {
+      handed()
+      db.prepare("UPDATE requests SET promise = 1 WHERE id = 'req-t1'").run()
+      clock += 25 * HOUR
+      expect((await sweep()).result.settled).toBe(0)
+      db.prepare("UPDATE requests SET promise = 0, state = 'in_progress', attention_reason = NULL, close_when = ? WHERE id = 'req-t1'").run(JSON.stringify({ kind: "url", url: "https://example.test/" }))
+      expect((await sweep()).result.settled).toBe(0)
+      db.prepare("UPDATE requests SET close_when = NULL, state = 'in_progress', due_at = ? WHERE id = 'req-t1'").run(clock + HOUR)
+      expect((await sweep()).result.settled).toBe(0)
+      db.prepare("UPDATE requests SET due_at = NULL, state = 'in_progress' WHERE id = 'req-t1'").run()
+      expect((await sweep({ inPlan: (id) => id === "req-t1" })).result.settled).toBe(0)
+      // Each check above raised it as quiet; put it back as it was.
+      db.prepare("UPDATE requests SET state = 'in_progress', updated_at = 0 WHERE id = 'req-t1'").run()
+      expect((await sweep()).result.settled).toBe(1)
+    })
+
+    it("leaves a request that already needs attention alone", async () => {
+      handed()
+      store.needsAttention("req-t1", "No activity for 24 h", clock)
+      clock += 25 * HOUR
+      expect((await sweep()).result.settled).toBe(0)
+      expect(store.get("req-t1")?.state).toBe("needs_attention")
+    })
+
+    it("is off with settleHandedBack false", async () => {
+      settings.settleHandedBack = false
+      handed()
+      clock += 25 * HOUR
+      expect((await sweep()).result).toMatchObject({ settled: 0, quiet: 1 })
+    })
+
+    it("takes the first web link of an answer, without trailing punctuation", () => {
+      expect(firstLink("Merged (https://example.test/pr/12). Deployed.")).toBe("https://example.test/pr/12")
+      expect(firstLink("see **https://example.test/a_b**.")).toBe("https://example.test/a_b")
+      expect(firstLink("no link here")).toBeNull()
+    })
+
+    it("does not settle links from before endings were kept", async () => {
+      handed()
+      db.prepare("UPDATE request_links SET ended = NULL WHERE ref = 'dlg-1'").run()
+      clock += 25 * HOUR
+      expect((await sweep()).result.settled).toBe(0)
+    })
   })
 
   it("brings back a turn that never reported an end", async () => {
@@ -478,7 +569,7 @@ describe("the minute check", () => {
   it("does nothing while the feature is off", async () => {
     start("t1"); end("t1", { error: "a" })
     settings.enabled = false
-    expect((await sweep()).result).toEqual({ checked: 0, verified: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 })
+    expect((await sweep()).result).toEqual({ checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 })
   })
 })
 
@@ -490,7 +581,7 @@ describe("waiting on the owner", () => {
     expect(store.listOpen()[0]).toMatchObject({ state: "waiting_owner", question: "Deploy to the server now, or after the review?" })
     clock += 72 * HOUR
     const result = await runRequestsSweep({ store, settings, log: () => {}, now: clock, notify: async () => {} })
-    expect(result).toEqual({ checked: 0, verified: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 })
+    expect(result).toEqual({ checked: 0, verified: 0, settled: 0, quiet: 0, notified: 0, pruned: 0, pickedUp: 0 })
     expect(store.get("req-t1")?.state).toBe("waiting_owner")
   })
 

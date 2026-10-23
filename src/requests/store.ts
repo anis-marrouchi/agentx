@@ -121,6 +121,13 @@ export interface RequestRecord {
   headlineTriedAt: number | null
 }
 
+/** The first web link in an answer: what a delegate gave as its proof
+ *  (a PR, an issue, a deploy page). Null when it gave none. */
+export function firstLink(text: string): string | null {
+  const m = /https?:\/\/[^\s<>()"'`]+/i.exec(text ?? "")
+  return m ? m[0].replace(/[.,;:!?\]*_]+$/, "") : null
+}
+
 export const TEXT_MAX = 4000
 const REASON_MAX = 500
 
@@ -159,6 +166,8 @@ export function ensureRequestTables(db: Database.Database): void {
   `)
   ensureColumns(db, "requests", PERSON_COLUMNS)
   ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
+  // How a delegation ended, and the link its answer gave (#1138).
+  ensureColumns(db, "request_links", [["ended", "TEXT"], ["proof", "TEXT"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -356,6 +365,51 @@ export class RequestStore {
 
   link(requestId: string, kind: LinkKind, ref: string, now: number): void {
     this.db.prepare("INSERT OR IGNORE INTO request_links (request_id, kind, ref, at) VALUES (?, ?, ?, ?)").run(requestId, kind, ref, now)
+  }
+
+  /** How the linked work ended ("done", "waiting", "error"…), and the
+   *  link its answer gave as proof, if any (#1138). */
+  endLink(kind: LinkKind, ref: string, ended: string, proof: string | null): void {
+    this.db.prepare("UPDATE request_links SET ended = ?, proof = ? WHERE kind = ? AND ref = ?")
+      .run(ended, proof ? proof.slice(0, HOME_LINK_MAX) : null, kind, ref)
+  }
+
+  /** Requests in progress, quiet since `before`, whose handed-on work all
+   *  came back done (#1138): at least one delegation, and none that is
+   *  still out, waiting, failed or from before endings were kept. Left
+   *  out: promises, loops with a due time or a checker, and a pick-up the
+   *  agent has not been told about yet. */
+  handedBack(before: number): RequestRecord[] {
+    return this.db.prepare(
+      `SELECT r.* FROM requests r
+        WHERE r.state = 'in_progress' AND r.updated_at < ? AND r.due_at IS NULL AND r.close_when IS NULL
+          AND COALESCE(r.promise, 0) = 0 AND r.pickup_at IS NULL
+          AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation')
+          AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
+                          AND (l.ended IS NULL OR l.ended != 'done'))
+        ORDER BY r.created_at, r.rowid`,
+    ).all(before).map(toRecord)
+  }
+
+  /** The newest proof link the request's delegations brought back. */
+  handBackProof(requestId: string): { proof: string; ref: string } | null {
+    const row = this.db.prepare(
+      `SELECT proof, ref FROM request_links WHERE request_id = ? AND kind = 'delegation' AND proof IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT 1`,
+    ).get(requestId) as { proof: string; ref: string } | undefined
+    return row ?? null
+  }
+
+  /** Settled (#1138): the handed work came back done and nobody closed
+   *  it. Closed as done with the delegate's link, or, without one, marked
+   *  unproven: the owner can see it was not proved. Only from in progress:
+   *  anything that moved since it was read is left as it is. */
+  settle(id: string, proof: string | null, detail: string, now: number): boolean {
+    const evidence = (proof ?? `unproven: ${detail}`).trim().slice(0, REASON_MAX)
+    return this.db.prepare(
+      `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
+         verify_state = ?, verify_detail = ?
+       WHERE id = ? AND state = 'in_progress'`,
+    ).run(now, now, now, evidence, proof ? null : "unverified", detail.slice(0, REASON_MAX), id).changes > 0
   }
 
   links(requestId: string): Array<{ kind: LinkKind; ref: string; at: number }> {

@@ -41,7 +41,7 @@ export async function updateRequestSettings(
   }
   return applyConfigMutation((cfg) => {
     const r = (cfg.requests ??= {})
-    for (const key of ["enabled", "channels", "from", "staleAfterHours", "retentionDays"] as const) {
+    for (const key of ["enabled", "channels", "from", "staleAfterHours", "retentionDays", "settleHandedBack"] as const) {
       if (patch[key] !== undefined) r[key] = patch[key]
     }
     if (patch.plans) {
