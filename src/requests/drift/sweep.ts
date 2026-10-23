@@ -60,7 +60,9 @@ export async function runDriftSweep(deps: DriftSweepDeps): Promise<DriftSweepRes
         log(`[status-drift] ${d.line}`)
         fresh.push({ key, drift: d })
       }
-      const writable = settings.write && d.kind === "live-not-done" && settings.writeProjects.includes(project.project)
+      // Gated on the issue's own project, which a merge in a writable
+      // project may not share.
+      const writable = settings.write && d.kind === "live-not-done" && settings.writeProjects.some((p) => p.toLowerCase() === d.project.toLowerCase())
       if (writable && deps.writeIssue && row.writtenAt === null && row.writeTries < WRITE_TRIES) {
         if (await writeDone(d, key, deps, now)) result.written++
       }
@@ -92,8 +94,19 @@ export async function runDriftSweep(deps: DriftSweepDeps): Promise<DriftSweepRes
   return result
 }
 
+/** Longest wait for one issue write: a forge that hangs must not stop
+ *  the next checks. */
+export const WRITE_TIMEOUT_MS = 60_000
+
+/** The Done label to write: scoped ("Status::Done") when the issue's
+ *  status labels are scoped, else the first one. */
+export function doneLabelFor(d: Pick<Drift, "statusLabels">, done: string[]): string | undefined {
+  const scoped = d.statusLabels.some((l) => l.includes("::"))
+  return done.find((l) => l.includes("::") === scoped) ?? done[0]
+}
+
 async function writeDone(d: Drift, key: string, deps: DriftSweepDeps, now: number): Promise<boolean> {
-  const done = deps.settings.labels.done[0]
+  const done = doneLabelFor(d, deps.settings.labels.done)
   if (!done) return false
   const patch: BacklogPatch = {
     addLabels: [done],
@@ -101,10 +114,15 @@ async function writeDone(d: Drift, key: string, deps: DriftSweepDeps, now: numbe
     note: proofNote(d, done),
   }
   try {
-    const res = await deps.writeIssue!({ provider: d.provider, project: d.project, number: d.number, url: d.issueUrl }, patch)
-    // The label moved: written, even when the note failed. Trying again
-    // would leave a second note on a success.
-    const labelled = res.ok || res.attempts.some((a) => / issue$/.test(a.kind) && a.ok)
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const res = await Promise.race([
+      deps.writeIssue!({ provider: d.provider, project: d.project, number: d.number, url: d.issueUrl }, patch),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`no answer in ${WRITE_TIMEOUT_MS / 1000} s`)), WRITE_TIMEOUT_MS) }),
+    ]).finally(() => clearTimeout(timer))
+    // The label moved (the issue's own update went through): written,
+    // even when the note failed. Trying again would leave a second note
+    // on a success. A note alone is not a move.
+    const labelled = res.attempts.some((a) => /^(PUT|PATCH) issue$/.test(a.kind) && a.ok)
     if (labelled) {
       deps.store.written(key, now)
       if (!res.ok) deps.log(`[status-drift] ${d.issue}: label moved, its note failed: ${JSON.stringify(res.attempts)}`)

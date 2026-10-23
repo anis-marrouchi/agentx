@@ -2131,6 +2131,7 @@ export class AgentXDaemon {
   /** Status drift (#1138 step F): its last check, and one at a time. */
   private driftAt = 0
   private driftSweeping = false
+  private readonly driftLiveCache = new Map<string, boolean>()
   /** Task watchers (src/watchers, #1030). */
   private watchers: AttachedWatchers | null = null
   private watchersSweeping = false
@@ -2516,6 +2517,7 @@ export class AgentXDaemon {
       readIssue: forgeReader(connectors),
       liveCommit: liveReader({ field: settings.liveField, self: () => buildInfo.commit }),
       checkers: this.config.requests.checkers ?? DEFAULT_CHECKER_SETTINGS,
+      liveCache: this.driftLiveCache,
       tell: async (title, message) => { await this.tellOwner({ title, message, from: "status-drift" }) },
       writeIssue: (issue, patch) => syncSourceIssue({ type: issue.provider, project: issue.project, iid: issue.number, url: issue.url }, patch, writeConfig, this.log),
       log: this.log,

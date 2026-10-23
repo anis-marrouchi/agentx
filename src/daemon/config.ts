@@ -1462,6 +1462,9 @@ export const requestsConfigSchema = z.object({
       review: z.array(z.string().min(1)).default(["Review", "Status::Review"]),
       done: z.array(z.string().min(1)).default(["Done", "Status::Done"]),
     }).default({}),
+    /** Done but not live is told only once a merge has waited this many
+     *  hours to go live: forges close the issue at merge, before a deploy. */
+    doneNotLiveAfterHours: z.number().min(0).max(24 * 30).default(24),
     /** Write mode: an issue whose work is live gets its Done label (its
      *  other status labels removed) and a note quoting the proof. Never
      *  closes an issue. Needs the project in `writeProjects` too. */

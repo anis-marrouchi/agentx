@@ -119,11 +119,45 @@ describe("finding the drift", () => {
     expect(r.drifts.map((d) => d.kind)).toEqual(["live-not-done"])
   })
 
-  it("without a running commit, only merged-not-review is judged", async () => {
-    for (const p of [project({ live: [] }), project()]) {
-      const r = await checkProject(p, deps(forge, read, p.live.length ? null : "live1"))
-      expect(r.drifts.map((d) => [d.number, d.kind])).toEqual([[12, "merged-not-review"]])
-    }
+  it("with no live source, only merged-not-review is judged", async () => {
+    const r = await checkProject(project({ live: [] }), deps(forge, read))
+    expect(r.drifts.map((d) => [d.number, d.kind])).toEqual([[12, "merged-not-review"]])
+  })
+
+  it("a live source that cannot be read judges nothing, so live work is not told as 'expected Review'", async () => {
+    const r = await checkProject(project(), deps(forge, read, null))
+    expect(r.drifts).toEqual([])
+    expect(r.errors).toEqual(["acme/app: live self: down"])
+  })
+
+  it("never reaches an issue of a project that is not listed", async () => {
+    const seen: string[] = []
+    const reader: ForgeReader = async (p, ref, o) => { seen.push(ref.project); return read(p, ref, o) }
+    const crossing = fakeForge([change(1, "aaaaaaa1", { description: "Closes client/app#11 and acme/other#11" })], { live1: ["aaaaaaa1"] })
+    const alone = await checkProject(project(), deps(crossing, reader))
+    expect(alone.drifts).toEqual([])
+    expect(seen).toEqual([])
+    const listed = await checkProject(project(), { ...deps(crossing, reader), settings: { ...DEFAULT_DRIFT_SETTINGS, projects: [project(), project({ project: "acme/other" })] } })
+    expect(listed.drifts.map((d) => d.issue)).toEqual(["acme/other#11"])
+    expect(seen).toEqual(["acme/other"])
+  })
+
+  it("tells Done-not-live only once the merge has waited doneNotLiveAfterHours", async () => {
+    const fresh = fakeForge([change(3, "ccccccc3", { description: "Fixes #13", mergedAt: NOW - 3_600_000 })], { live1: [] })
+    expect((await checkProject(project(), deps(fresh, read))).drifts).toEqual([])
+    const r = await checkProject(project(), { ...deps(fresh, read), settings: { ...DEFAULT_DRIFT_SETTINGS, doneNotLiveAfterHours: 0 } })
+    expect(r.drifts.map((d) => d.kind)).toEqual(["done-not-live"])
+  })
+
+  it("looks up liveness only for merges that close an issue, and keeps the answers", async () => {
+    const asked: string[] = []
+    const counting: DriftForge = { ...forge, contains: async (p, proj, commit, l) => { asked.push(commit); return forge.contains(p, proj, commit, l) } }
+    const liveCache = new Map<string, boolean>()
+    await checkProject(project(), { ...deps(counting, read), liveCache })
+    expect(asked).not.toContain("eeeeeee5") // "Refs #15" closes nothing
+    const first = asked.length
+    await checkProject(project(), { ...deps(counting, read), liveCache })
+    expect(asked.length).toBe(first)
   })
 
   it("needs every running commit: live on one host, not the other, is not live", async () => {
@@ -167,9 +201,25 @@ describe("reading the forges", () => {
     const f = driftForge({ gitlab: { url: "https://gl.example", token: "t" } }, fake)
     const merged = await f.merged("gitlab", "acme/app", NOW - 7 * DAY)
     expect(merged).toMatchObject([{ ref: "acme/app!3", commit: "abc1234", branch: "1-x" }])
-    expect(calls[0]).toContain("/api/v4/projects/acme%2Fapp/merge_requests?state=merged")
+    expect(calls.some((c) => c.includes("/api/v4/projects/acme%2Fapp/merge_requests?state=merged"))).toBe(true)
     expect(await f.contains("gitlab", "acme/app", "abc1234", "live999")).toBe(true)
     expect(await f.contains("gitlab", "acme/app", "abc1234", "abc1234")).toBe(true)
+  })
+
+  it("keeps only merges into the default branch, on both forges", async () => {
+    const at = new Date(NOW - DAY).toISOString()
+    const gl = (async (url: string) => url.endsWith("/projects/acme%2Fapp") ? json({ default_branch: "main" })
+      : url.includes("/merge_requests?") ? json([
+        { iid: 3, target_branch: "main", merge_commit_sha: "abc1234", merged_at: at },
+        { iid: 4, target_branch: "3-stacked", merge_commit_sha: "def5678", merged_at: at },
+      ]) : json({}, 404)) as unknown as typeof fetch
+    expect((await driftForge({ gitlab: { url: "https://gl.example" } }, gl).merged("gitlab", "acme/app", NOW - 7 * DAY) as MergedChange[]).map((m) => m.ref)).toEqual(["acme/app!3"])
+    const gh = (async (url: string) => url.endsWith("/repos/o/r") ? json({ default_branch: "main" })
+      : url.includes("/pulls?") ? json([
+        { number: 5, base: { ref: "main" }, merge_commit_sha: "abc1234", merged_at: at, updated_at: at },
+        { number: 6, base: { ref: "release/1" }, merge_commit_sha: "def5678", merged_at: at, updated_at: at },
+      ]) : json({}, 404)) as unknown as typeof fetch
+    expect((await driftForge({ github: { apiUrl: "https://api.github.com" } }, gh).merged("github", "o/r", NOW - 7 * DAY) as MergedChange[]).map((m) => m.ref)).toEqual(["o/r#5"])
   })
 
   it("asks GitHub's compare, and says null when it cannot tell", async () => {
@@ -248,6 +298,27 @@ describe("the daemon's drift check", () => {
     expect(s.writes[0].patch.note).toContain("aaaaaaa1")
     await s.run(NOW + 3_600_000)
     expect(s.writes).toHaveLength(1)
+  })
+
+  it("write mode is gated on the issue's own project, any case", async () => {
+    const crossing = fakeForge([change(1, "aaaaaaa1", { description: "Closes acme/other#11" })], { live1: ["aaaaaaa1"] })
+    const projects = [project(), project({ project: "acme/other" })]
+    const mrSide = setup({ write: true, writeProjects: ["acme/app"], projects }, { forge: crossing })
+    expect((await mrSide.run()).written).toBe(0)
+    const issueSide = setup({ write: true, writeProjects: ["ACME/Other"], projects }, { forge: crossing })
+    expect((await issueSide.run()).written).toBe(1)
+  })
+
+  it("writes the scoped Done label when the issue's labels are scoped", async () => {
+    const s = setup({ write: true, writeProjects: ["acme/app"] }, { readIssue: issues({ 11: { state: "open", labels: ["Status::Review"] }, 12: { state: "open", labels: ["Doing"] } }) })
+    await s.run()
+    expect(s.writes[0].patch).toMatchObject({ addLabels: ["Status::Done"], removeLabels: ["Status::Review"] })
+  })
+
+  it("a note without the label move is not a write, and is tried again", async () => {
+    const s = setup({ write: true, writeProjects: ["acme/app"] }, { writeIssue: async () => ({ ok: true, attempts: [{ kind: "POST comment", ok: true }] }) })
+    expect((await s.run()).written).toBe(0)
+    expect(s.store.list().find((r) => r.kind === "live-not-done")).toMatchObject({ writtenAt: null, writeTries: 1 })
   })
 
   it("a failed write is tried again, up to its limit", async () => {

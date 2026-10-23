@@ -61,6 +61,14 @@ export function driftForge(connectors: ForgeConnectors, doFetch: typeof fetch = 
     }
   }
 
+  // Only merges into the default branch close issues and get deployed: a
+  // stacked change, a release branch or a backport is not the work landing.
+  // Null when it cannot be read: then nothing is left out.
+  const defaultBranch = async (projectUrl: string, headers: Record<string, string>): Promise<string | null> => {
+    const r = await get(projectUrl, headers)
+    return r.ok && typeof r.body?.default_branch === "string" && r.body.default_branch ? r.body.default_branch : null
+  }
+
   return {
     async merged(provider, project, since) {
       const out: MergedChange[] = []
@@ -68,6 +76,7 @@ export function driftForge(connectors: ForgeConnectors, doFetch: typeof fetch = 
         const gl = gitlab(project)
         if (!gl) return { error: "no gitlab connector on this node" }
         const after = encodeURIComponent(new Date(since).toISOString())
+        const main = await defaultBranch(`${gl.base}`, gl.headers)
         for (let page = 1; page <= MAX_PAGES; page++) {
           const r = await get(`${gl.base}/merge_requests?state=merged&updated_after=${after}&order_by=updated_at&sort=desc&per_page=100&page=${page}`, gl.headers)
           if (!r.ok) return { error: r.error }
@@ -75,6 +84,7 @@ export function driftForge(connectors: ForgeConnectors, doFetch: typeof fetch = 
           for (const m of rows) {
             const mergedAt = Date.parse(m?.merged_at ?? "")
             if (!(mergedAt >= since)) continue
+            if (main && m?.target_branch !== main) continue
             out.push({
               ref: `${project}!${m.iid}`,
               url: String(m.web_url ?? ""),
@@ -90,6 +100,7 @@ export function driftForge(connectors: ForgeConnectors, doFetch: typeof fetch = 
       } else {
         const gh = github()
         if (!gh) return { error: "no github connector on this node" }
+        const main = await defaultBranch(`${gh.api}/repos/${project}`, gh.headers)
         pages: for (let page = 1; page <= MAX_PAGES; page++) {
           const r = await get(`${gh.api}/repos/${project}/pulls?state=closed&sort=updated&direction=desc&per_page=100&page=${page}`, gh.headers)
           if (!r.ok) return { error: r.error }
@@ -99,6 +110,7 @@ export function driftForge(connectors: ForgeConnectors, doFetch: typeof fetch = 
             if (Date.parse(p?.updated_at ?? "") < since) break pages
             const mergedAt = Date.parse(p?.merged_at ?? "")
             if (!(mergedAt >= since)) continue
+            if (main && p?.base?.ref !== main) continue
             out.push({
               ref: `${project}#${p.number}`,
               url: String(p.html_url ?? ""),

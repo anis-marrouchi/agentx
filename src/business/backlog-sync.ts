@@ -262,6 +262,11 @@ async function syncToGitHub(
     } catch (e: any) {
       log(`[backlog-sync] github label fetch failed: ${e.message}`)
     }
+    // Without the current labels the change cannot be merged in: stop
+    // before the note, which would claim a move that did not happen.
+    if (nextLabels === undefined) {
+      return { ok: false, attempts, error: "could not read the issue's labels; nothing written", url: source.url }
+    }
   }
 
   const body: Record<string, unknown> = {}

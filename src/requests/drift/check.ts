@@ -37,6 +37,9 @@ export interface DriftSettings {
   projects: DriftProject[]
   liveField: string
   labels: StatusLabels
+  /** Done, not live is told only once a merge has waited this long to go
+   *  live: a forge closes the issue at merge time, before any deploy. */
+  doneNotLiveAfterHours: number
   write: boolean
   writeProjects: string[]
 }
@@ -44,6 +47,7 @@ export interface DriftSettings {
 export const DEFAULT_DRIFT_SETTINGS: DriftSettings = {
   enabled: true, checkEveryMinutes: 30, lookbackDays: 7, projects: [], liveField: "commit",
   labels: { todo: ["To Do", "Status::To Do"], doing: ["Doing", "Status::Doing"], review: ["Review", "Status::Review"], done: ["Done", "Status::Done"] },
+  doneNotLiveAfterHours: 24,
   write: false, writeProjects: [],
 }
 
@@ -86,7 +90,9 @@ export interface ProjectCheck {
 }
 
 export interface DriftCheckDeps {
-  settings: Pick<DriftSettings, "lookbackDays" | "labels">
+  /** `projects`: the issues a merge may name outside its own project.
+   *  `doneNotLiveAfterHours`: unset, the default. */
+  settings: Pick<DriftSettings, "lookbackDays" | "labels"> & Partial<Pick<DriftSettings, "projects" | "doneNotLiveAfterHours">>
   forge: DriftForge
   readIssue: ForgeReader
   /** The running commit of one `live` source. */
@@ -94,8 +100,14 @@ export interface DriftCheckDeps {
   /** For a project with a `repo`: the checker settings that name it. */
   checkers?: Pick<CheckerSettings, "repos">
   git?: GitRunner
+  /** Answers of "is this merge in that running commit", kept between
+   *  checks: neither changes while the two commits stay the same. */
+  liveCache?: Map<string, boolean>
   now?: number
 }
+
+/** Answers kept in a live cache before it is emptied. */
+export const LIVE_CACHE_MAX = 5000
 
 const DAY = 86_400_000
 const ORDER: Array<keyof StatusLabels> = ["done", "review", "doing", "todo"]
@@ -139,6 +151,9 @@ export async function checkProject(project: DriftProject, deps: DriftCheckDeps):
   out.merged = merged.length
   out.live = await Promise.all(project.live.map((s) => deps.liveCommit(s)))
   for (const l of out.live) if (!l.commit) out.errors.push(`${project.project}: live ${l.source}: ${l.error ?? "no commit"}`)
+  // A running commit that could not be read would turn "live" into
+  // "unknown" and tell a wrong drift: judge nothing this check.
+  if (out.live.some((l) => !l.commit)) return out
 
   // Is one merge in every running commit?
   const liveness = async (c: MergedChange): Promise<Liveness> => {
@@ -153,19 +168,26 @@ export async function checkProject(project: DriftProject, deps: DriftCheckDeps):
     return all ? "live" : "unknown"
   }
 
-  // The merges that close each issue.
+  // The merges that close each issue. An issue of another project counts
+  // only when that project is listed too: a merge never reaches a
+  // project nobody asked to watch (a client's, say).
+  const listed = new Set([project.project, ...(deps.settings.projects ?? []).filter((p) => p.provider === project.provider).map((p) => p.project)].map((p) => p.toLowerCase()))
   const byIssue = new Map<string, { project: string; number: number; changes: MergedChange[] }>()
   for (const c of merged) {
     for (const l of issueLinks(project.provider, project.project, c)) {
-      if (!l.closes) continue
+      if (!l.closes || !listed.has(l.project.toLowerCase())) continue
       const key = issueRef(l).toLowerCase()
       const entry = byIssue.get(key) ?? { project: l.project, number: l.number, changes: [] }
       entry.changes.push(c)
       byIssue.set(key, entry)
     }
   }
+  // Only the merges that close an issue are looked up.
   const live = new Map<MergedChange, Liveness>()
-  for (const c of merged) live.set(c, await liveness(c))
+  for (const { changes } of byIssue.values()) {
+    for (const c of changes) if (!live.has(c)) live.set(c, await liveness(c))
+  }
+  const graceMs = (deps.settings.doneNotLiveAfterHours ?? DEFAULT_DRIFT_SETTINGS.doneNotLiveAfterHours) * 3_600_000
 
   for (const { project: p, number, changes } of byIssue.values()) {
     const item = await deps.readIssue(project.provider, { project: p, number, mr: false }, { notes: false })
@@ -184,6 +206,7 @@ export async function checkProject(project: DriftProject, deps: DriftCheckDeps):
       : null
     if (!kind) continue
     const shown = kind === "done-not-live" ? changes.filter((c) => live.get(c) === "not-live") : changes
+    if (kind === "done-not-live" && !shown.some((c) => now - c.mergedAt >= graceMs)) continue
     const d: Omit<Drift, "line"> = {
       kind, provider: project.provider, issue: `${p}#${number}`, project: p, number, issueUrl: item.url,
       status, statusLabel: label, statusLabels: all, changes: shown,
@@ -195,12 +218,22 @@ export async function checkProject(project: DriftProject, deps: DriftCheckDeps):
 }
 
 async function containsCommit(project: DriftProject, commit: string, running: string, deps: DriftCheckDeps): Promise<boolean | null> {
+  const key = `${project.provider}:${project.project.toLowerCase()}:${commit.toLowerCase()}:${running.toLowerCase()}`
+  const cached = deps.liveCache?.get(key)
+  if (cached !== undefined) return cached
+  let has: boolean | null
   if (project.repo && deps.checkers) {
     // A local clone: the git-ancestor checker, with the running commit as the ref.
     const r = await checkGitAncestor({ kind: "git-ancestor", repo: project.repo, commit, ref: running }, { settings: { ...deps.checkers } as CheckerSettings, git: deps.git })
-    return r.verdict === "met" ? true : r.verdict === "not_met" ? false : null
+    has = r.verdict === "met" ? true : r.verdict === "not_met" ? false : null
+  } else {
+    has = await deps.forge.contains(project.provider, project.project, commit, running)
   }
-  return deps.forge.contains(project.provider, project.project, commit, running)
+  if (has !== null && deps.liveCache) {
+    if (deps.liveCache.size >= LIVE_CACHE_MAX) deps.liveCache.clear()
+    deps.liveCache.set(key, has)
+  }
+  return has
 }
 
 /** The note write mode leaves on the issue: the proof it moved on. */
