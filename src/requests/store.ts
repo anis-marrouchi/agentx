@@ -388,8 +388,9 @@ export class RequestStore {
   /** Requests in progress, quiet since `before`, whose handed-on work all
    *  came back done (#1138): at least one delegation, and none that is
    *  still out, waiting, failed or from before endings were kept. Left
-   *  out: promises, loops with a due time or a checker, and a pick-up the
-   *  agent has not been told about yet. */
+   *  out: promises, loops with a due time or a checker, a pick-up the
+   *  agent has not been told about yet, and anything with a follow-up
+   *  workflow, which may still be running and reports its own end. */
   handedBack(before: number): RequestRecord[] {
     return this.db.prepare(
       `SELECT r.* FROM requests r
@@ -398,6 +399,7 @@ export class RequestStore {
           AND EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation')
           AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'delegation'
                           AND (l.ended IS NULL OR l.ended != 'done'))
+          AND NOT EXISTS (SELECT 1 FROM request_links l WHERE l.request_id = r.id AND l.kind = 'workflow')
         ORDER BY r.created_at, r.rowid`,
     ).all(before).map(toRecord)
   }

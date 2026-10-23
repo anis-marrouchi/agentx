@@ -487,6 +487,14 @@ describe("the minute check", () => {
       expect(store.get("req-t1")?.state).toBe("needs_attention")
     })
 
+    it("never settles a request with a follow-up workflow", async () => {
+      handed()
+      store.link("req-t1", "workflow", "wf-1", clock)
+      clock += 25 * HOUR
+      expect((await sweep()).result.settled).toBe(0)
+      expect(store.get("req-t1")?.state).toBe("needs_attention")
+    })
+
     it("leaves a failed hand-off to the owner", async () => {
       handed("error", "crashed")
       clock += 25 * HOUR

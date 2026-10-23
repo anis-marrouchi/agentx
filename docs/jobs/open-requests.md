@@ -101,7 +101,7 @@ Agents often forget to close a request after the work they handed on comes back.
 - With no link in the answer, the proof reads `unproven: …`. Look at it in the done list if you want to be sure.
 - Once you send a request back (a reply, a hand-off, **Pick it up again**), the work that came back before no longer counts. That request is never closed this way and comes back to you as before.
 - You are not told. It simply leaves your list.
-- It does **not** apply to promises, to requests with a check or a due time, to tracked plans, or when any handed-on work failed or is still out. Those still come back to you as before.
+- It does **not** apply to promises, to requests with a check or a due time, to tracked plans, to requests with a follow-up workflow, or when any handed-on work failed or is still out. Those still come back to you as before.
 - A request that already needs attention is left as it is.
 
 To keep the old behaviour, run `agentx requests settings --settle off`.

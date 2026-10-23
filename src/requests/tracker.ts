@@ -314,7 +314,7 @@ export class RequestTracker {
     try {
       const req = this.store.byLink("delegation", delegationId)
       if (!req || !OPEN_STATES.includes(req.state as OpenState)) return undefined
-      return `This is part of the owner's open request ${req.id}. It stays on their list until it is closed. If it is finished now, close it with agentx_request: {action:"done", id:"${req.id}", evidence:"<link to the proof>"}. If you will not do it, use decline with the reason. If work goes on, leave it open.`
+      return `This is part of the owner's open request ${req.id}. It stays on their list until it is closed. If it is finished now, close it with agentx_request: {action:"done", id:"${req.id}", evidence:"<link to the proof>"}. If you will not do it, use decline with the reason. If work goes on, give it a due time with {action:"accept", id:"${req.id}", due:"<when>"}: without one, it is closed as done once it goes quiet, with this answer's link as its proof.`
     } catch {
       return undefined
     }
