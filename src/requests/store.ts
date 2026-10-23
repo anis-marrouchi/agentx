@@ -124,8 +124,12 @@ export interface RequestRecord {
 /** The first web link in an answer: what a delegate gave as its proof
  *  (a PR, an issue, a deploy page). Null when it gave none. */
 export function firstLink(text: string): string | null {
-  const m = /https?:\/\/[^\s<>()"'`]+/i.exec(text ?? "")
-  return m ? m[0].replace(/[.,;:!?\]*_]+$/, "") : null
+  const m = /https?:\/\/[^\s<>"'`]+/i.exec(text ?? "")
+  if (!m) return null
+  let link = m[0].replace(/[.,;:!?\]*_]+$/, "")
+  // A closing parenthesis is the link's own only when it opened one.
+  while (link.endsWith(")") && (link.match(/\(/g)?.length ?? 0) < (link.match(/\)/g)?.length ?? 0)) link = link.slice(0, -1).replace(/[.,;:!?\]*_]+$/, "")
+  return link
 }
 
 export const TEXT_MAX = 4000
@@ -167,7 +171,7 @@ export function ensureRequestTables(db: Database.Database): void {
   ensureColumns(db, "requests", PERSON_COLUMNS)
   ensureColumns(db, "requests", [["state_changed_at", "INTEGER"]])
   // How a delegation ended, and the link its answer gave (#1138).
-  ensureColumns(db, "request_links", [["ended", "TEXT"], ["proof", "TEXT"]])
+  ensureColumns(db, "request_links", [["ended", "TEXT"], ["ended_at", "INTEGER"], ["proof", "TEXT"]])
   // Added after the first version: a database that already has the table
   // gets the columns here.
   const cols = db.prepare("PRAGMA table_info(requests)").all() as Array<{ name: string }>
@@ -369,9 +373,16 @@ export class RequestStore {
 
   /** How the linked work ended ("done", "waiting", "error"…), and the
    *  link its answer gave as proof, if any (#1138). */
-  endLink(kind: LinkKind, ref: string, ended: string, proof: string | null): void {
-    this.db.prepare("UPDATE request_links SET ended = ?, proof = ? WHERE kind = ? AND ref = ?")
-      .run(ended, proof ? proof.slice(0, HOME_LINK_MAX) : null, kind, ref)
+  endLink(kind: LinkKind, ref: string, ended: string, proof: string | null, now: number): void {
+    this.db.prepare("UPDATE request_links SET ended = ?, ended_at = ?, proof = ? WHERE kind = ? AND ref = ?")
+      .run(ended, now, proof ? proof.slice(0, HOME_LINK_MAX) : null, kind, ref)
+  }
+
+  /** The owner sent the request back (a reply, a hand-off, a pick-up):
+   *  work that came back before is no longer what finishes it, so it can
+   *  never settle the request (#1138). */
+  private supersedeHandBacks(id: string): void {
+    this.db.prepare("UPDATE request_links SET ended = 'superseded' WHERE request_id = ? AND kind = 'delegation' AND ended = 'done'").run(id)
   }
 
   /** Requests in progress, quiet since `before`, whose handed-on work all
@@ -394,22 +405,22 @@ export class RequestStore {
   /** The newest proof link the request's delegations brought back. */
   handBackProof(requestId: string): { proof: string; ref: string } | null {
     const row = this.db.prepare(
-      `SELECT proof, ref FROM request_links WHERE request_id = ? AND kind = 'delegation' AND proof IS NOT NULL ORDER BY at DESC, rowid DESC LIMIT 1`,
+      `SELECT proof, ref FROM request_links WHERE request_id = ? AND kind = 'delegation' AND proof IS NOT NULL ORDER BY ended_at DESC, rowid DESC LIMIT 1`,
     ).get(requestId) as { proof: string; ref: string } | undefined
     return row ?? null
   }
 
   /** Settled (#1138): the handed work came back done and nobody closed
-   *  it. Closed as done with the delegate's link, or, without one, marked
-   *  unproven: the owner can see it was not proved. Only from in progress:
-   *  anything that moved since it was read is left as it is. */
+   *  it. Closed as done with the delegate's link, or, without one, as
+   *  "unproven: …". Either way unverified: nothing checked the link. Only
+   *  from in progress: anything that moved since it was read is left. */
   settle(id: string, proof: string | null, detail: string, now: number): boolean {
     const evidence = (proof ?? `unproven: ${detail}`).trim().slice(0, REASON_MAX)
     return this.db.prepare(
       `UPDATE requests SET state = 'done', closed_at = ?, updated_at = ?, state_changed_at = ?, evidence = ?, close_reason = NULL,
          verify_state = ?, verify_detail = ?
        WHERE id = ? AND state = 'in_progress'`,
-    ).run(now, now, now, evidence, proof ? null : "unverified", detail.slice(0, REASON_MAX), id).changes > 0
+    ).run(now, now, now, evidence, "unverified", detail.slice(0, REASON_MAX), id).changes > 0
   }
 
   links(requestId: string): Array<{ kind: LinkKind; ref: string; at: number }> {
@@ -561,6 +572,7 @@ export class RequestStore {
   /** The owner said "pick it up again": back in progress, and the agent
    *  is to be told at the next check. */
   requestPickup(id: string, now: number): boolean {
+    this.supersedeHandBacks(id)
     return this.db.prepare(
       `UPDATE requests SET state = 'in_progress', updated_at = ?, state_changed_at = ?, attention_reason = NULL, notified_at = NULL, pickup_at = ?, need = NULL
        WHERE id = ? AND state = 'needs_attention'`,
@@ -572,6 +584,7 @@ export class RequestStore {
    *  open request, not only one that needs attention. The agent it was
    *  asked of is kept from the first time: channel and chat stay its own. */
   handOff(id: string, agentId: string, note: string, now: number): boolean {
+    this.supersedeHandBacks(id)
     return this.db.prepare(
       `UPDATE requests SET ${STATE_CHANGED}, agent_id = ?, state = 'in_progress', updated_at = ?, attention_reason = NULL, notified_at = NULL,
          question = NULL, need = NULL, pickup_at = ?, owner_note = ?, note_said = NULL, asked_agent = COALESCE(asked_agent, agent_id)

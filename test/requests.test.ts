@@ -465,7 +465,7 @@ describe("the minute check", () => {
       const { result, told } = await sweep()
       expect(result).toMatchObject({ settled: 1, quiet: 0, notified: 0 })
       expect(told).toEqual([])
-      expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/deploys/7", verifyState: null })
+      expect(store.get("req-t1")).toMatchObject({ state: "done", evidence: "https://example.test/deploys/7", verifyState: "unverified" })
       expect(logs.join("\n")).toContain("req-t1 settled: handed work came back with https://example.test/deploys/7")
     })
 
@@ -510,6 +510,24 @@ describe("the minute check", () => {
       expect((await sweep()).result.settled).toBe(1)
     })
 
+    it("never settles on work that came back before the owner sent it back", async () => {
+      handed()
+      expect(store.handOff("req-t1", "coder", "not right, redo the totals", clock)).toBe(true)
+      store.takePickups()
+      clock += 25 * HOUR
+      expect((await sweep()).result).toMatchObject({ settled: 0, quiet: 1 })
+      expect(store.get("req-t1")?.state).toBe("needs_attention")
+    })
+
+    it("takes the proof of the delegation that answered last", async () => {
+      handed("done", "first: https://example.test/a")
+      tracker.delegationStarted(dlg("dlg-0"))
+      store.link("req-t1", "delegation", "dlg-0", clock - 10)
+      clock += 1000
+      tracker.delegationDone(dlg("dlg-0"), "done", "second: https://example.test/b")
+      expect(store.handBackProof("req-t1")?.proof).toBe("https://example.test/b")
+    })
+
     it("leaves a request that already needs attention alone", async () => {
       handed()
       store.needsAttention("req-t1", "No activity for 24 h", clock)
@@ -529,6 +547,7 @@ describe("the minute check", () => {
       expect(firstLink("Merged (https://example.test/pr/12). Deployed.")).toBe("https://example.test/pr/12")
       expect(firstLink("see **https://example.test/a_b**.")).toBe("https://example.test/a_b")
       expect(firstLink("no link here")).toBeNull()
+      expect(firstLink("docs: https://example.test/wiki/A_(b).")).toBe("https://example.test/wiki/A_(b)")
     })
 
     it("does not settle links from before endings were kept", async () => {

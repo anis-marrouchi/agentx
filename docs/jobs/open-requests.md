@@ -97,8 +97,9 @@ Agents close their own requests as done or declined. When work an agent handed o
 Agents often forget to close a request after the work they handed on comes back. Such a request used to come back to you as "Not finished", even though the work was done. Now the daily check closes it:
 
 - It applies to a request that is in progress, has had no activity for `staleAfterHours` (default 24), and whose handed-on work **all** came back done.
-- It is closed as **done**. Its proof is the first link in the other agent's answer, for example a pull request or a deploy page.
-- With no link in the answer, the proof reads `unproven: …`, and `agentx requests show <id>` marks it `unverified`. Look at it in the done list if you want to be sure.
+- It is closed as **done**. Its proof is the first link in the other agent's answer, for example a pull request or a deploy page. Nothing opens that link to check it, so the request is marked `unverified`.
+- With no link in the answer, the proof reads `unproven: …`. Look at it in the done list if you want to be sure.
+- Once you send a request back (a reply, a hand-off, **Pick it up again**), the work that came back before no longer counts. That request is never closed this way and comes back to you as before.
 - You are not told. It simply leaves your list.
 - It does **not** apply to promises, to requests with a check or a due time, to tracked plans, or when any handed-on work failed or is still out. Those still come back to you as before.
 - A request that already needs attention is left as it is.
